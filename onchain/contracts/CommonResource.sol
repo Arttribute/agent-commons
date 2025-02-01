@@ -9,7 +9,7 @@ import "@openzeppelin/contracts/utils/cryptography/EIP712.sol";
 import "@openzeppelin/contracts/token/ERC1155/ERC1155.sol";
 import "@openzeppelin/contracts/access/AccessControl.sol";
 
-contract CommonsResource is ERC1155, AccessControl, EIP712("CommonsResource", "1.0") {
+contract CommonResource is ERC1155, AccessControl, EIP712("CommonResource", "1.0") {
     CommonToken public commonToken;
     AgentRegistry public agentRegistry;
 
@@ -19,6 +19,7 @@ contract CommonsResource is ERC1155, AccessControl, EIP712("CommonsResource", "1
     struct Resource {
         address creator;
         string metadata;
+        string resourceFile;
         uint256 requiredReputation;
         uint256 usageCost; // in COMMON$
         address[] contributors;
@@ -52,6 +53,7 @@ contract CommonsResource is ERC1155, AccessControl, EIP712("CommonsResource", "1
 
     function createResource(
         string memory metadata,
+        string memory resourceFile,
         uint256 requiredReputation,
         uint256 usageCost,
         address[] memory contributors,
@@ -70,6 +72,7 @@ contract CommonsResource is ERC1155, AccessControl, EIP712("CommonsResource", "1
         resources[resourceId] = Resource({
             creator: isCoreResource ? address(0) : msg.sender,
             metadata: metadata,
+            resourceFile: resourceFile,
             requiredReputation: requiredReputation,
             usageCost: usageCost,
             contributors: contributors,
