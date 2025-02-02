@@ -38,6 +38,7 @@
     "use-sync-external-store": "^1.4.0",
     "vaul": "^1.1.2",
     "viem": "^2.22.17",
+    "with-selector.js": "link:use-sync-external-store/shim/with-selector.js",
     "zod": "^3.24.1"
   },
   "devDependencies": {
