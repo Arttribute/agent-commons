@@ -1,14 +1,18 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
-import "@openzeppelin/contracts/access/AccessControl.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
-import "./CommonToken.sol"; // Add this line to import CommonToken
-import "./AgentRegistry.sol"; // Add this line to import AgentRegistry
-import "./CommonResource.sol"; // Add this line to import CommonsResource
+import "@openzeppelin/contracts/access/AccessControl.sol";
+import "./CommonToken.sol";
+import "./AgentRegistry.sol";
+import "./CommonResource.sol";
 
-contract TaskManagerWithSubtasks is ReentrancyGuard, AccessControl {
+/**
+ * @title TaskManager
+ * @dev Allows creation of tasks, joining tasks, recording contributions,
+ *      distributing rewards, or creating resources in the commons.
+ */
+contract TaskManager is ReentrancyGuard, AccessControl {
     CommonToken public commonToken;
     AgentRegistry public agentRegistry;
     CommonResource public commonResource;
@@ -18,6 +22,8 @@ contract TaskManagerWithSubtasks is ReentrancyGuard, AccessControl {
         uint256 value;
     }
 
+    enum TaskStatus { Open, Completed }
+
     struct Task {
         address creator;
         string metadata;
@@ -26,13 +32,11 @@ contract TaskManagerWithSubtasks is ReentrancyGuard, AccessControl {
         TaskStatus status;
         Contribution[] contributions;
         bool rewardsDistributed;
-        uint256[] subtasks; // List of subtask IDs
-        uint256 parentTaskId; // Parent task ID, 0 if none
-        uint256 maxParticipants;      
-        uint256 currentParticipants;  
+        uint256[] subtasks;
+        uint256 parentTaskId;
+        uint256 maxParticipants;
+        uint256 currentParticipants;
     }
-
-    enum TaskStatus { Open, Completed }
 
     mapping(uint256 => Task) public tasks;
     mapping(uint256 => mapping(address => bool)) public joinedTask;
@@ -52,18 +56,41 @@ contract TaskManagerWithSubtasks is ReentrancyGuard, AccessControl {
         commonToken = CommonToken(payable(commonTokenAddress));
         agentRegistry = AgentRegistry(agentRegistryAddress);
         commonResource = CommonResource(commonsResourceAddress);
+
         _grantRole(DEFAULT_ADMIN_ROLE, msg.sender);
     }
 
-    /**
-     * @dev Creates a new task or subtask.
-     * @param metadata Metadata describing the task.
-     * @param reward The total reward for the task.
-     * @param resourceBased Indicates if the task is resource-based.
-     * @param parentTaskId The ID of the parent task, 0 if none.
-     * @param maxParticipants The maximum number of participants allowed.
-     * @return taskId The ID of the created task.
-     */
+    function getTask(uint256 taskId)
+        external
+        view
+        returns (
+            address creator,
+            string memory metadata,
+            uint256 reward,
+            bool resourceBased,
+            TaskStatus status,
+            bool rewardsDistributed,
+            uint256 parentTaskId,
+            uint256 maxParticipants,
+            uint256 currentParticipants,
+            uint256[] memory subtasks
+        )
+    {
+        Task storage t = tasks[taskId];
+        return (
+            t.creator,
+            t.metadata,
+            t.reward,
+            t.resourceBased,
+            t.status,
+            t.rewardsDistributed,
+            t.parentTaskId,
+            t.maxParticipants,
+            t.currentParticipants,
+            t.subtasks
+        );
+    }
+
     function createTask(
         string memory metadata,
         uint256 reward,
@@ -74,26 +101,22 @@ contract TaskManagerWithSubtasks is ReentrancyGuard, AccessControl {
         require(agentRegistry.registeredAgents(msg.sender), "Not a registered agent");
 
         if (!resourceBased) {
-            require(
-                commonToken.transferFrom(msg.sender, address(this), reward),
-                "Reward transfer failed"
-            );
+            bool ok = commonToken.transferFrom(msg.sender, address(this), reward);
+            require(ok, "Reward transfer failed");
         }
 
         uint256 taskId = _nextTaskId++;
-        tasks[taskId] = Task({
-            creator: msg.sender,
-            metadata: metadata,
-            reward: reward,
-            resourceBased: resourceBased,
-            status: TaskStatus.Open,
-            contributions: new Contribution[](0),
-            rewardsDistributed: false,
-            subtasks: new uint256[](0),
-            parentTaskId: parentTaskId,
-            maxParticipants: maxParticipants,
-            currentParticipants:0
-        });
+        Task storage newTask = tasks[taskId];
+
+        newTask.creator = msg.sender;
+        newTask.metadata = metadata;
+        newTask.reward = reward;
+        newTask.resourceBased = resourceBased;
+        newTask.status = TaskStatus.Open;
+        newTask.rewardsDistributed = false;
+        newTask.parentTaskId = parentTaskId;
+        newTask.maxParticipants = maxParticipants;
+        newTask.currentParticipants = 0;
 
         if (parentTaskId != 0) {
             require(tasks[parentTaskId].creator != address(0), "Parent task does not exist");
@@ -104,32 +127,19 @@ contract TaskManagerWithSubtasks is ReentrancyGuard, AccessControl {
         return taskId;
     }
 
-
-    /**
-     * @dev Join a task to become a participant. Enforces a max-participant limit.
-     *      Must join before calling recordContribution.
-     */
     function joinTask(uint256 taskId) external {
         require(agentRegistry.registeredAgents(msg.sender), "Not a registered agent");
-
         Task storage task = tasks[taskId];
         require(task.status == TaskStatus.Open, "Task is not open");
         require(task.currentParticipants < task.maxParticipants, "Max participants reached");
         require(!joinedTask[taskId][msg.sender], "Already joined this task");
 
-        // Mark that this address has joined
         joinedTask[taskId][msg.sender] = true;
-        task.currentParticipants += 1;
+        task.currentParticipants++;
 
         emit JoinedTask(taskId, msg.sender);
     }
 
-    /**
-     * @dev Adds a contribution to a task.
-     * @param taskId The ID of the task.
-     * @param contributor The address of the contributor.
-     * @param value The value of the contribution.
-     */
     function recordContribution(
         uint256 taskId,
         address contributor,
@@ -141,12 +151,8 @@ contract TaskManagerWithSubtasks is ReentrancyGuard, AccessControl {
         require(agentRegistry.registeredAgents(contributor), "Not a registered agent");
         require(value > 0, "Contribution value must be greater than zero");
         require(joinedTask[taskId][contributor], "Must join task before contributing");
-        
-        task.contributions.push(Contribution({
-            contributor: contributor,
-            value: value
-        }));
-        
+
+        task.contributions.push(Contribution({ contributor: contributor, value: value }));
         emit RecordedContribution(taskId, contributor, value);
     }
 
@@ -155,75 +161,71 @@ contract TaskManagerWithSubtasks is ReentrancyGuard, AccessControl {
         require(msg.sender == task.creator, "Only creator can complete task");
         require(task.status == TaskStatus.Open, "Task not in Open state");
 
-        // Ensure all subtasks are completed
+        // All subtasks must be completed
         for (uint256 i = 0; i < task.subtasks.length; i++) {
             require(tasks[task.subtasks[i]].status == TaskStatus.Completed, "All subtasks must be completed");
         }
 
-        // Handle contributions and rewards
         _handleTaskCompletion(taskId, resultantFile);
 
         task.status = TaskStatus.Completed;
         emit CompletedTask(taskId);
     }
 
-    /**
-     * @dev Handles the completion of a task, distributing rewards or creating a resource.
-     */
     function _handleTaskCompletion(uint256 taskId, string memory resultantFile) internal {
         Task storage task = tasks[taskId];
-    
+
         if (task.resourceBased) {
-    
+            // Build arrays for resource creation
             address[] memory contributors = new address[](task.contributions.length);
             uint256[] memory shares = new uint256[](task.contributions.length);
-    
+
             for (uint256 i = 0; i < task.contributions.length; i++) {
                 contributors[i] = task.contributions[i].contributor;
                 shares[i] = task.contributions[i].value;
             }
-    
+
+            // Now pass `task.creator` as the actual creator.
+            // So the final resource in CommonResource has .creator = agent
             commonResource.createResource(
+                task.creator,
                 task.metadata,
                 resultantFile,
-                0, // No reputation requirement
-                task.reward, // Usage cost
+                0,
+                task.reward,
                 contributors,
                 shares,
-                false // Not a core resource
+                false
             );
         } else {
             _distributeRewards(taskId);
         }
     }
 
-    /**
-     * @dev Distributes rewards among contributors based on their contributions.
-     */
     function _distributeRewards(uint256 taskId) internal {
         Task storage task = tasks[taskId];
-        uint256 totalValue = _calculateTotalContributions(task.contributions);
+        require(!task.rewardsDistributed, "Rewards already distributed");
 
+        uint256 totalValue = _calculateTotalContributions(task.contributions);
         for (uint256 i = 0; i < task.contributions.length; i++) {
-            uint256 participantReward = (task.reward * task.contributions[i].value) / totalValue;
-            require(
-                commonToken.transfer(task.contributions[i].contributor, participantReward),
-                "Reward transfer failed"
-            );
+            Contribution storage c = task.contributions[i];
+            uint256 participantReward = (task.reward * c.value) / totalValue;
+            commonToken.transfer(c.contributor, participantReward);
         }
 
         task.rewardsDistributed = true;
         emit TaskRewardsDistributed(taskId);
     }
 
-    /**
-     * @dev Calculates the total value of contributions for a task.
-     */
-    function _calculateTotalContributions(Contribution[] memory contributions) internal pure returns (uint256) {
-        uint256 totalValue = 0;
-        for (uint256 i = 0; i < contributions.length; i++) {
-            totalValue += contributions[i].value;
+    function _calculateTotalContributions(Contribution[] storage array)
+        internal
+        view
+        returns (uint256)
+    {
+        uint256 total;
+        for (uint256 i = 0; i < array.length; i++) {
+            total += array[i].value;
         }
-        return totalValue;
+        return total;
     }
 }
