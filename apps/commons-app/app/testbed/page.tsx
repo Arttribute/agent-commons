@@ -1,7 +1,7 @@
 // app/page.tsx
 "use client";
 import React, { useState, useEffect } from "react";
-import { usePrivy, useWallets } from "@privy-io/react-auth"; // or your method of obtaining a provider
+import { EIP1193Provider, usePrivy, useWallets } from "@privy-io/react-auth"; // or your method of obtaining a provider
 import { useChainClients } from "@/hooks/useChainClients";
 
 // Hooks
@@ -13,10 +13,10 @@ import { useTaskManager } from "@/hooks/useTaskManager";
 
 export default function HomePage() {
   // Example: get EIP-1193 from Privy
-  const {  ready, authenticated } = usePrivy() as any;
+  const { ready, authenticated } = usePrivy();
   const {wallets} = useWallets();
   console.log("Wallets from usePrivy:", wallets);
-  const [provider, setProvider] = useState<any | null>(null);
+  const [provider, setProvider] = useState<EIP1193Provider | null>(null);
 
   useEffect(() => {
     if (!wallets || wallets.length === 0) {
@@ -25,11 +25,11 @@ export default function HomePage() {
     }
     wallets[0]
       .getEthereumProvider()
-      .then((prov: any) => {
+      .then((prov) => {
         console.log("Obtained provider:", prov);
         setProvider(prov);
       })
-      .catch((err:any) => {
+      .catch((err) => {
         console.error("Error getting Ethereum provider:", err);
       });
   }, [wallets]);
