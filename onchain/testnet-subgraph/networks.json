@@ -3,6 +3,18 @@
     "CommonToken": {
       "address": "0x09d3e33fBeB985653bFE868eb5a62435fFA04e4F",
       "startBlock": 21366946
+    },
+    "AgentRegistry": {
+      "address": "0x86d05BF72913b5f462343a42314FC6c90d501575"
+    },
+    "CommonResource": {
+      "address": "0x15f3eB03fCE4b11ae62dF7E6E03Ba63EaD94d875"
+    },
+    "Attribution": {
+      "address": "0x295496BE27DB8B0cC90d16cde277E333eFd7FA40"
+    },
+    "TaskManager": {
+      "address": "0x31D94CcFb9b8e20CedD882e19dc21574EfdE304B"
     }
   }
 }

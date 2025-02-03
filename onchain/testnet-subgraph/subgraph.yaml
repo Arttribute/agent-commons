@@ -36,3 +36,158 @@ dataSources:
         - event: Transfer(indexed address,indexed address,uint256)
           handler: handleTransfer
       file: ./src/common-token.ts
+  - kind: ethereum
+    name: AgentRegistry
+    network: base-sepolia
+    source:
+      address: "0x86d05BF72913b5f462343a42314FC6c90d501575"
+      abi: AgentRegistry
+      startBlock: 21366947
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.7
+      language: wasm/assemblyscript
+      entities:
+        - AgentRegistered
+        - ReputationUpdated
+        - AgentRegistryRoleAdminChanged
+        - AgentRegistryRoleGranted
+        - AgentRegistryRoleRevoked
+      abis:
+        - name: AgentRegistry
+          file: ./abis/AgentRegistry.json
+      eventHandlers:
+        - event: AgentRegistered(indexed address,bool)
+          handler: handleAgentRegistered
+        - event: ReputationUpdated(indexed address,uint256)
+          handler: handleReputationUpdated
+        - event: RoleAdminChanged(indexed bytes32,indexed bytes32,indexed bytes32)
+          handler: handleRoleAdminChanged
+        - event: RoleGranted(indexed bytes32,indexed address,indexed address)
+          handler: handleRoleGranted
+        - event: RoleRevoked(indexed bytes32,indexed address,indexed address)
+          handler: handleRoleRevoked
+      file: ./src/agent-registry.ts
+  - kind: ethereum
+    name: CommonResource
+    network: base-sepolia
+    source:
+      address: "0x15f3eB03fCE4b11ae62dF7E6E03Ba63EaD94d875"
+      abi: CommonResource
+      startBlock: 21366951
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.7
+      language: wasm/assemblyscript
+      entities:
+        - ApprovalForAll
+        - EIP712DomainChanged
+        - ResourceCostUpdated
+        - ResourceCreated
+        - ResourceReputationUpdated
+        - ResourceUsed
+        - CommonResourceRoleAdminChanged
+        - CommonResourceRoleGranted
+        - CommonResourceRoleRevoked
+        - TransferBatch
+        - TransferSingle
+        - URI
+      abis:
+        - name: CommonResource
+          file: ./abis/CommonResource.json
+      eventHandlers:
+        - event: ApprovalForAll(indexed address,indexed address,bool)
+          handler: handleApprovalForAll
+        - event: EIP712DomainChanged()
+          handler: handleEIP712DomainChanged
+        - event: ResourceCostUpdated(indexed uint256,uint256)
+          handler: handleResourceCostUpdated
+        - event: ResourceCreated(indexed uint256,indexed address,bool)
+          handler: handleResourceCreated
+        - event: ResourceReputationUpdated(indexed uint256,uint256)
+          handler: handleResourceReputationUpdated
+        - event: ResourceUsed(indexed uint256,indexed address,bytes)
+          handler: handleResourceUsed
+        - event: RoleAdminChanged(indexed bytes32,indexed bytes32,indexed bytes32)
+          handler: handleRoleAdminChanged
+        - event: RoleGranted(indexed bytes32,indexed address,indexed address)
+          handler: handleRoleGranted
+        - event: RoleRevoked(indexed bytes32,indexed address,indexed address)
+          handler: handleRoleRevoked
+        - event: TransferBatch(indexed address,indexed address,indexed address,uint256[],uint256[])
+          handler: handleTransferBatch
+        - event: TransferSingle(indexed address,indexed address,indexed address,uint256,uint256)
+          handler: handleTransferSingle
+        - event: URI(string,indexed uint256)
+          handler: handleURI
+      file: ./src/common-resource.ts
+  - kind: ethereum
+    name: Attribution
+    network: base-sepolia
+    source:
+      address: "0x295496BE27DB8B0cC90d16cde277E333eFd7FA40"
+      abi: Attribution
+      startBlock: 21366954
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.7
+      language: wasm/assemblyscript
+      entities:
+        - AttributionRecorded
+        - AttributionRoleAdminChanged
+        - AttributionRoleGranted
+        - AttributionRoleRevoked
+      abis:
+        - name: Attribution
+          file: ./abis/Attribution.json
+      eventHandlers:
+        - event: AttributionRecorded(indexed uint256,uint256[],uint8[])
+          handler: handleAttributionRecorded
+        - event: RoleAdminChanged(indexed bytes32,indexed bytes32,indexed bytes32)
+          handler: handleRoleAdminChanged
+        - event: RoleGranted(indexed bytes32,indexed address,indexed address)
+          handler: handleRoleGranted
+        - event: RoleRevoked(indexed bytes32,indexed address,indexed address)
+          handler: handleRoleRevoked
+      file: ./src/attribution.ts
+  - kind: ethereum
+    name: TaskManager
+    network: base-sepolia
+    source:
+      address: "0x31D94CcFb9b8e20CedD882e19dc21574EfdE304B"
+      abi: TaskManager
+      startBlock: 21366957
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.7
+      language: wasm/assemblyscript
+      entities:
+        - CompletedTask
+        - CreatedTask
+        - JoinedTask
+        - RecordedContribution
+        - TaskManagerRoleAdminChanged
+        - TaskManagerRoleGranted
+        - TaskManagerRoleRevoked
+        - TaskRewardsDistributed
+      abis:
+        - name: TaskManager
+          file: ./abis/TaskManager.json
+      eventHandlers:
+        - event: CompletedTask(indexed uint256)
+          handler: handleCompletedTask
+        - event: CreatedTask(indexed uint256,indexed address,uint256)
+          handler: handleCreatedTask
+        - event: JoinedTask(indexed uint256,indexed address)
+          handler: handleJoinedTask
+        - event: RecordedContribution(indexed uint256,indexed address,uint256)
+          handler: handleRecordedContribution
+        - event: RoleAdminChanged(indexed bytes32,indexed bytes32,indexed bytes32)
+          handler: handleRoleAdminChanged
+        - event: RoleGranted(indexed bytes32,indexed address,indexed address)
+          handler: handleRoleGranted
+        - event: RoleRevoked(indexed bytes32,indexed address,indexed address)
+          handler: handleRoleRevoked
+        - event: TaskRewardsDistributed(indexed uint256)
+          handler: handleTaskRewardsDistributed
+      file: ./src/task-manager.ts
