@@ -325,3 +325,91 @@ type TaskRewardsDistributed @entity(immutable: true) {
   blockTimestamp: BigInt!
   transactionHash: Bytes!
 }
+
+####################################################################
+##             Entities for more intuitive querying               ##
+####################################################################
+
+# The Agent entity represents a registered agent and holds full onchain data.
+type Agent @entity {
+  id: ID! # agent address (as hex string)
+  owner: Bytes!
+  metadata: String!
+  reputation: BigInt!
+  isCommonAgent: Boolean!
+  registrationTime: BigInt!
+}
+
+# The CommonResource entity holds resource details.
+type CommonResource @entity {
+  id: ID! # resourceId as string
+  resourceId: BigInt!
+  creator: Bytes!
+  metadata: String!
+  resourceFile: String!
+  requiredReputation: BigInt!
+  usageCost: BigInt!
+  isCoreResource: Boolean!
+  totalShares: BigInt!
+  usageCount: BigInt! # Number of times this resource has been used
+  # Derived relation: list of ResourceContributor entities
+  contributors: [ResourceContributor!]! @derivedFrom(field: "resource")
+}
+
+# A ResourceContributor is part of a resource’s ownership.
+type ResourceContributor @entity {
+  id: ID! # e.g. resourceId-contributorAddress
+  resource: CommonResource!
+  address: Bytes!
+  contributionShare: BigInt!
+}
+
+# The Task entity holds tasks and nested data.
+type Task @entity {
+  id: ID! # taskId as string
+  taskId: BigInt!
+  creator: Bytes!
+  metadata: String!
+  reward: BigInt!
+  resourceBased: Boolean!
+  status: String! # "Open" or "Completed"
+  rewardsDistributed: Boolean!
+  parentTaskId: BigInt!
+  maxParticipants: BigInt!
+  currentParticipants: BigInt!
+  # Derived relation: all TaskContribution entities for this task.
+  contributions: [TaskContribution!]! @derivedFrom(field: "task")
+  # For simplicity, we store an array of subtasks (taskIds)
+  subtasks: [BigInt!]!
+}
+
+# Each task contribution is stored separately.
+type TaskContribution @entity {
+  id: ID!
+  task: Task!
+  contributor: Bytes!
+  value: BigInt!
+}
+
+# The Attribution entity holds attribution records.
+type Attribution @entity {
+  id: ID! # use resourceId as string
+  resourceId: BigInt!
+  parentResources: [BigInt!]!
+  relationTypes: [String!]!
+  contributionDescriptions: [String!]!
+  timestamp: BigInt!
+  # Derived relation: citations related to this attribution.
+  citations: [AttributionCitation!]! @derivedFrom(field: "attribution")
+  derivatives: [BigInt!]!
+}
+
+# Each citation is stored as a separate entity.
+type AttributionCitation @entity {
+  id: ID!
+  attribution: Attribution!
+  citingResourceId: BigInt!
+  citedResourceId: BigInt!
+  description: String!
+  timestamp: BigInt!
+}

@@ -48,6 +48,7 @@ dataSources:
       apiVersion: 0.0.7
       language: wasm/assemblyscript
       entities:
+        - Agent
         - AgentRegistered
         - ReputationUpdated
         - AgentRegistryRoleAdminChanged
@@ -80,6 +81,8 @@ dataSources:
       apiVersion: 0.0.7
       language: wasm/assemblyscript
       entities:
+        - CommonResource
+        - ResourceContributor
         - ApprovalForAll
         - EIP712DomainChanged
         - ResourceCostUpdated
@@ -133,6 +136,8 @@ dataSources:
       apiVersion: 0.0.7
       language: wasm/assemblyscript
       entities:
+        - Attribution
+        - AttributionCitation
         - AttributionRecorded
         - AttributionRoleAdminChanged
         - AttributionRoleGranted
@@ -162,6 +167,8 @@ dataSources:
       apiVersion: 0.0.7
       language: wasm/assemblyscript
       entities:
+        - Task
+        - TaskContribution
         - CompletedTask
         - CreatedTask
         - JoinedTask
