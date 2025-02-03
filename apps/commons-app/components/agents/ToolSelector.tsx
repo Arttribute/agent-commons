@@ -62,6 +62,7 @@ export default function ToolSelector({
       setJsonError(null);
     } catch (error) {
       setJsonError("Invalid JSON. Please check your input.");
+      console.error("Invalid JSON:", error);
     }
   };
 
