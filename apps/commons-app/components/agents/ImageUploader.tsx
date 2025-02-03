@@ -2,7 +2,6 @@
 
 import { useCallback, useState } from "react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { Button } from "@/components/ui/button";
 import { Camera, Loader2 } from "lucide-react";
 import type React from "react"; // Added import for React
 

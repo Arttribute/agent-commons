@@ -17,7 +17,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { Slider } from "@/components/ui/slider";
 import type { AgentMode, CommonAgent } from "@/types/agent";
-import { Bot, Brain, Scroll, PenToolIcon as Tool } from "lucide-react";
+import { Bot, Brain, PenToolIcon as Tool } from "lucide-react";
 import ImageUploader from "./ImageUploader";
 import ToolSelector from "./ToolSelector";
 import KnowledgeBaseInput from "./KnowledgeBaseInput";

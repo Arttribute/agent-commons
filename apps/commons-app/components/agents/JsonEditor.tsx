@@ -23,6 +23,7 @@ export function JsonEditor({ value, onChange, label }: JsonEditorProps) {
     } catch (e) {
       setIsValid(false);
       onChange(newValue);
+      console.error("Invalid JSON:", e);
     }
   };
 
