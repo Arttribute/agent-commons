@@ -1,0 +1,38 @@
+specVersion: 1.0.0
+indexerHints:
+  prune: auto
+schema:
+  file: ./schema.graphql
+dataSources:
+  - kind: ethereum
+    name: CommonToken
+    network: base-sepolia
+    source:
+      address: "0x09d3e33fBeB985653bFE868eb5a62435fFA04e4F"
+      abi: CommonToken
+      startBlock: 21366946
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.7
+      language: wasm/assemblyscript
+      entities:
+        - Approval
+        - RoleAdminChanged
+        - RoleGranted
+        - RoleRevoked
+        - Transfer
+      abis:
+        - name: CommonToken
+          file: ./abis/CommonToken.json
+      eventHandlers:
+        - event: Approval(indexed address,indexed address,uint256)
+          handler: handleApproval
+        - event: RoleAdminChanged(indexed bytes32,indexed bytes32,indexed bytes32)
+          handler: handleRoleAdminChanged
+        - event: RoleGranted(indexed bytes32,indexed address,indexed address)
+          handler: handleRoleGranted
+        - event: RoleRevoked(indexed bytes32,indexed address,indexed address)
+          handler: handleRoleRevoked
+        - event: Transfer(indexed address,indexed address,uint256)
+          handler: handleTransfer
+      file: ./src/common-token.ts

@@ -1,0 +1,8 @@
+{
+  "base-sepolia": {
+    "CommonToken": {
+      "address": "0x09d3e33fBeB985653bFE868eb5a62435fFA04e4F",
+      "startBlock": 21366946
+    }
+  }
+}
