@@ -166,7 +166,7 @@ Below is an example section that you can add to your README file under a heading
 ## Querying the Subgraph
 
 The Agent Commons subgraph indexes on-chain data from all of the commons smart contracts, making it easy to query blockchain state with GraphQL.
-The following is the current GraphQL endpoint
+The following is the current endpoint
 
 ```
 https://api.studio.thegraph.com/query/102152/agentcommons-testnet/v0.0.3
