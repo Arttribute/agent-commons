@@ -8,6 +8,7 @@
   "scripts": {
     "build": "nest build",
     "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\"",
+    "prepare": "ts-patch install",
     "start": "nest start",
     "start:dev": "nest start --watch",
     "start:debug": "nest start --debug --watch",
@@ -20,13 +21,25 @@
     "test:e2e": "jest --config ./test/jest-e2e.json"
   },
   "dependencies": {
+    "@coinbase/agentkit": "^0.1.1",
+    "@coinbase/coinbase-sdk": "^0.17.0",
+    "@nestia/core": "^4.6.1",
     "@nestjs/common": "^11.0.1",
     "@nestjs/core": "^11.0.1",
     "@nestjs/platform-express": "^11.0.7",
     "dotenv": "^16.4.7",
+    "drizzle-orm": "^0.39.1",
+    "ethers": "^6.13.5",
+    "graphql-request": "^7.1.2",
+    "lodash": "^4.17.21",
+    "openai": "^4.82.0",
     "pinata-web3": "^0.5.4",
+    "postgres": "^3.4.5",
     "reflect-metadata": "^0.2.2",
-    "rxjs": "^7.8.1"
+    "rxjs": "^7.8.1",
+    "type-fest": "^4.33.0",
+    "typia": "^7.6.3",
+    "viem": "^2.22.17"
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3.2.0",
@@ -39,8 +52,10 @@
     "@types/express": "^5.0.0",
     "@types/jest": "^29.5.14",
     "@types/multer": "^1.4.12",
+    "@types/lodash": "^4.17.15",
     "@types/node": "^22.10.7",
     "@types/supertest": "^6.0.2",
+    "drizzle-kit": "^0.30.4",
     "eslint": "^9.18.0",
     "eslint-config-prettier": "^10.0.1",
     "eslint-plugin-prettier": "^5.2.2",
@@ -52,6 +67,7 @@
     "ts-jest": "^29.2.5",
     "ts-loader": "^9.5.2",
     "ts-node": "^10.9.2",
+    "ts-patch": "^3.3.0",
     "tsconfig-paths": "^4.2.0",
     "typescript": "^5.7.3",
     "typescript-eslint": "^8.20.0"
