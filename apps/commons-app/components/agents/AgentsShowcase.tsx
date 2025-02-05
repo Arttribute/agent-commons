@@ -25,31 +25,31 @@ const agents: Agent[] = [
   {
     id: 1,
     name: "Agent One",
-    avatar: "/avatars/agent1.jpg",
+    avatar: "https://github.com/shadcn.png",
     description: "I'm Agent One. I love exploring new challenges!",
   },
   {
     id: 2,
     name: "Agent Two",
-    avatar: "/avatars/agent2.jpg",
+    avatar: "https://github.com/shadcn.png",
     description: "Agent Two here—ready to dive into action.",
   },
   {
     id: 3,
     name: "Agent Three",
-    avatar: "/avatars/agent3.jpg",
+    avatar: "https://github.com/shadcn.png",
     description: "Agent Three reporting for duty! Let's get started.",
   },
   {
     id: 4,
     name: "Agent Four",
-    avatar: "/avatars/agent4.jpg",
+    avatar: "https://github.com/shadcn.png",
     description: "Agent Four, at your service. How can I assist you today?",
   },
   {
     id: 5,
     name: "Agent Five",
-    avatar: "/avatars/agent5.jpg",
+    avatar: "https://github.com/shadcn.png",
     description: "Agent Five here. I'm excited to help you out!",
   },
 ];
@@ -164,15 +164,15 @@ export default function AgentsShowcase() {
               <Popover>
                 <PopoverTrigger asChild>
                   <button
-                    className="w-16 h-16 rounded-full overflow-hidden shadow-md hover:shadow-xl transition"
+                    className="w-20 h-20 rounded-full overflow-hidden shadow-md hover:shadow-xl transition p-0.5 border border-gray-500"
                     aria-label={agent.name}
                   >
                     <Image
                       src={agent.avatar}
                       alt={agent.name}
-                      width={64}
-                      height={64}
-                      className="object-cover"
+                      width={100}
+                      height={100}
+                      className="object-cover rounded-full border w-full h-full"
                     />
                   </button>
                 </PopoverTrigger>
