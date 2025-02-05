@@ -9,12 +9,12 @@ export function useAgentRegistry(
   publicClient: PublicClient | null,
   walletClient: WalletClient | null
 ) {
-  const [error, setError] = useState<string|null>(null);
+  const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
   // READ: registeredAgents
   async function isRegistered(agent: `0x${string}`) {
-    if(!publicClient) {
+    if (!publicClient) {
       setError("No publicClient");
       return false;
     }
@@ -26,7 +26,7 @@ export function useAgentRegistry(
         args: [agent],
       })) as boolean;
       return result;
-    } catch(err:any) {
+    } catch (err: any) {
       setError(err.message);
       return false;
     }
@@ -38,7 +38,7 @@ export function useAgentRegistry(
     metadata: string,
     isCommon: boolean
   ) {
-    if(!walletClient) {
+    if (!walletClient) {
       setError("No walletClient");
       return;
     }
@@ -51,10 +51,10 @@ export function useAgentRegistry(
         functionName: "registerAgent",
         args: [agentAddr, metadata, isCommon],
         chain: undefined,
-        account: null
+        account: null,
       });
       console.log("registerAgent txHash:", txHash);
-    } catch(err:any) {
+    } catch (err: any) {
       setError(err.message);
       console.error(err);
     } finally {
@@ -63,8 +63,8 @@ export function useAgentRegistry(
   }
 
   // WRITE: updateReputation
-  async function updateReputation(agentAddr: `0x${string}`, repChange: bigint){
-    if(!walletClient){
+  async function updateReputation(agentAddr: `0x${string}`, repChange: bigint) {
+    if (!walletClient) {
       setError("No walletClient");
       return;
     }
@@ -77,10 +77,10 @@ export function useAgentRegistry(
         functionName: "updateReputation",
         args: [agentAddr, repChange],
         chain: undefined,
-        account: null
+        account: null,
       });
       console.log("updateReputation txHash:", txHash);
-    } catch(err:any) {
+    } catch (err: any) {
       setError(err.message);
       console.error(err);
     } finally {
