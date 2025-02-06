@@ -8,7 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import KnowledgeBaseInput from "@/components/agents/KnowledgeBaseInput";
 
-export default function () {
+export default function AgentStudio() {
   const walletAddress = "0xD9303DFc71728f209EF64DD1AD97F5a557AE0Fab";
   const formattedAddress = `${walletAddress.slice(0, 8)}...${walletAddress.slice(-7)}`;
 
