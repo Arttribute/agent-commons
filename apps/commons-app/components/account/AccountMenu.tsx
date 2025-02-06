@@ -12,20 +12,9 @@ import Link from "next/link";
 import { useAuth } from "@/context/AuthContext"; // the file we created
 import RandomPixelAvatar from "@/components/account/RandomPixelAvatar";
 
-interface CustomUser {
-  name?: string | null;
-  email?: string | null;
-  image?: string | null;
-  username?: string | null;
-}
-
-interface CustomSession {
-  user?: CustomUser;
-}
-
 function AccountMenu() {
   const { authState, login, logout } = useAuth();
-  const { idToken, username, walletAddress, profileImage } = authState;
+  const { idToken, username, walletAddress } = authState;
   const isAuthenticated = !!idToken;
   return (
     <>
