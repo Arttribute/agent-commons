@@ -1,6 +1,6 @@
 "use client";
 import { Menubar, MenubarMenu, MenubarTrigger } from "@/components/ui/menubar";
-//import AccountMenu from "@/components/account/AccountMenu";
+import AccountMenu from "@/components/account/Accountmenu";
 import Link from "next/link";
 export default function AppBar() {
   return (
@@ -19,7 +19,9 @@ export default function AppBar() {
           </MenubarTrigger>
         </MenubarMenu>
         <div className="grow" />
-        <div className="flex">{/* <AccountMenu /> */}</div>
+        <div className="flex">
+          <AccountMenu />
+        </div>
       </Menubar>
     </div>
   );
