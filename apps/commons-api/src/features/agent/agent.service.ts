@@ -1,35 +1,33 @@
+import { baseSepolia } from '#/lib/baseSepolia';
 import * as schema from '#/models/schema';
+import { Wallet } from '@coinbase/coinbase-sdk';
 import { BadRequestException, Injectable } from '@nestjs/common';
+import { HDKey } from '@scure/bip32';
+import crypto from 'crypto';
+import dedent from 'dedent';
 import { eq, InferInsertModel, InferSelectModel } from 'drizzle-orm';
-import * as ethers from 'ethers';
-import { first, map, toSafeInteger } from 'lodash';
+import { AGENT_REGISTRY_ABI } from 'lib/abis/AgentRegistryABI';
+import { AGENT_REGISTRY_ADDRESS, COMMON_TOKEN_ADDRESS } from 'lib/addresses';
+import { first, map } from 'lodash';
 import { ChatCompletionTool } from 'openai/resources/chat/completions';
+import { Except } from 'type-fest';
+import typia from 'typia';
+import * as viem from 'viem';
+import { http, parseUnits } from 'viem';
+import { privateKeyToAccount } from 'viem/accounts';
 import { CoinbaseService } from '~/modules/coinbase/coinbase.service';
 import { DatabaseService } from '~/modules/database/database.service';
 import { OpenAIService } from '~/modules/openai/openai.service';
-import { Except } from 'type-fest';
-import typia from 'typia';
-import { AGENT_REGISTRY_ABI } from 'lib/abis/AgentRegistryABI';
-import { AGENT_REGISTRY_ADDRESS, COMMON_TOKEN_ADDRESS } from 'lib/addresses';
 import { EthereumTool } from '../tool/tools/ethereum-tool.service';
-import dedent from 'dedent';
-import { baseSepolia } from '#/lib/baseSepolia';
-import viem from 'viem';
-import {
-  createWalletClient,
-  custom,
-  parseUnits,
-  http,
-  Transaction,
-} from 'viem';
-import { Coinbase, Wallet, Transfer } from '@coinbase/coinbase-sdk';
-import crypto from 'crypto';
-import { HDKey } from '@scure/bip32';
 
 const app = typia.llm.application<EthereumTool, 'chatgpt'>();
 
 @Injectable()
 export class AgentService {
+  private publicClient = viem.createPublicClient({
+    chain: baseSepolia,
+    transport: http(),
+  });
   constructor(
     private db: DatabaseService,
     private openAI: OpenAIService,
@@ -44,41 +42,46 @@ export class AgentService {
     const faucetTx = await wallet.faucet();
     await faucetTx.wait();
 
+    const agentId = (await wallet.getDefaultAddress())?.getId().toLowerCase();
+
     const agentEntry = this.db
       .insert(schema.agent)
       .values({
         ...props.value,
-        agentId: (await wallet.getDefaultAddress())?.getId().toLowerCase(),
+        agentId,
         wallet: wallet.export(),
       })
       .returning()
       .then(first<InferSelectModel<typeof schema.agent>>);
 
     if (props.commonsOwned) {
-      const rpcUrl = 'https://sepolia.base.org';
-      const provider = new ethers.JsonRpcProvider(rpcUrl);
-      const commonsWallet = new ethers.Wallet(
-        process.env.WALLET_PRIVATE_KEY!,
-        provider,
-      );
-      // createWalletClient({});
-      const contract = new ethers.Contract(
-        AGENT_REGISTRY_ADDRESS,
-        AGENT_REGISTRY_ABI,
-        commonsWallet,
-      );
+      const commonsWallet = viem.createWalletClient({
+        account: privateKeyToAccount(
+          process.env.WALLET_PRIVATE_KEY! as `0x${string}`,
+        ),
+        chain: baseSepolia,
+        transport: http(),
+      });
+
+      const contract = viem.getContract({
+        abi: AGENT_REGISTRY_ABI,
+        address: AGENT_REGISTRY_ADDRESS,
+
+        client: commonsWallet,
+      });
 
       const metadata =
         'https://coral-abstract-dolphin-257.mypinata.cloud/ipfs/bafkreiewjk5fizidkxejplpx34fjva7f6i6azcolanwgtzptanhre6twui';
 
       const isCommonAgent = true;
 
-      const tx = await contract.registerAgent(
-        (await wallet.getDefaultAddress())?.getId(),
+      const txHash = await contract.write.registerAgent([
+        agentId,
         metadata,
         isCommonAgent,
-      );
-      await tx.wait();
+      ]);
+
+      await this.publicClient.waitForTransactionReceipt({ hash: txHash });
     }
 
     return agentEntry;
@@ -86,6 +89,17 @@ export class AgentService {
 
   triggerAgent(props: { agentId: string }) {
     this.runAgent({ agentId: props.agentId });
+  }
+
+  private seedToPrivateKey(seed: string) {
+    const seedBuffer = Buffer.from(seed, 'hex');
+    const hmac = crypto.createHmac('sha512', 'Bitcoin seed');
+    hmac.update(seedBuffer);
+
+    const node = HDKey.fromMasterSeed(seedBuffer);
+    const childNode = node.derive("m/44'/60'/0'/0/0"); // Standard Ethereum path
+    const privateKey = Buffer.from(childNode.privateKey!).toString('hex');
+    return privateKey;
   }
 
   async purchaseCommons(props: { agentId: string; amountInCommon: string }) {
@@ -104,24 +118,20 @@ export class AgentService {
     // Since transaction on CDP had limited gas, transaction was always failing
     // Needed to use another provider to send the transaction
 
-    const seedBuffer = Buffer.from(agent.wallet.seed, 'hex');
-    const hmac = crypto.createHmac('sha512', 'Bitcoin seed');
-    hmac.update(seedBuffer);
+    const privateKey = this.seedToPrivateKey(agent.wallet.seed);
 
-    const node = HDKey.fromMasterSeed(seedBuffer);
-    const childNode = node.derive("m/44'/60'/0'/0/0"); // Standard Ethereum path
-    const ethPrivateKey = Buffer.from(childNode.privateKey!).toString('hex');
-
-    const rpcUrl = 'https://sepolia.base.org';
-    const provider = new ethers.JsonRpcProvider(rpcUrl);
-    const wallet = new ethers.Wallet(ethPrivateKey!, provider);
-    // wallet.console.log(wallet.getNetworkId());
-
-    const tx = await wallet.sendTransaction({
+    const wallet = viem.createWalletClient({
+      account: privateKeyToAccount(`0x${privateKey}` as `0x${string}`),
+      chain: baseSepolia,
+      transport: http(),
+    });
+    const txHash = await wallet.sendTransaction({
       to: COMMON_TOKEN_ADDRESS.toLowerCase() as `0x${string}`,
       value: amountInWei,
+      chain: undefined,
     });
-    await tx.wait();
+
+    await this.publicClient.waitForTransactionReceipt({ hash: txHash });
   }
 
   async runAgent(props: { agentId: string; messages?: [] }) {
