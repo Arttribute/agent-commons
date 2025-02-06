@@ -15,14 +15,10 @@ import {
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
-import { Slider } from "@/components/ui/slider";
 import type { AgentMode, CommonAgent } from "@/types/agent";
 import { Bot, Brain, PenToolIcon as Tool } from "lucide-react";
 import ImageUploader from "./ImageUploader";
-import ToolSelector from "./ToolSelector";
 import KnowledgeBaseInput from "./KnowledgeBaseInput";
-import { JsonEditor } from "./JsonEditor";
-import { TagInput } from "./TagInput";
 import { Presets } from "./Presets";
 
 interface ModelConfig {
@@ -65,6 +61,16 @@ export function AgentForm() {
       ],
       modelConfig,
     };
+    //dummy data
+    setCustomTools({ common: "", external: "" });
+    setModelConfig({
+      temperature: 1,
+      maxTokens: 2048,
+      stopSequences: [],
+      topP: 1,
+      frequencyPenalty: 0,
+      presencePenalty: 0,
+    });
     console.log("Agent data:", finalAgent);
   };
 

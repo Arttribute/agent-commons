@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { Label } from "@/components/ui/label";
 import { Slider } from "@/components/ui/slider";
-import type { AgentMode, CommonAgent } from "@/types/agent";
+import type { CommonAgent } from "@/types/agent";
 import ToolSelector from "./ToolSelector";
 import { JsonEditor } from "./JsonEditor";
 import { TagInput } from "./TagInput";
@@ -34,22 +34,22 @@ export function Presets() {
     presencePenalty: 0,
   });
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    const finalAgent = {
-      ...agent,
-      common_tools: [
-        ...(agent.common_tools || []),
-        ...JSON.parse(`[${customTools.common}]`),
-      ],
-      external_tools: [
-        ...(agent.external_tools || []),
-        ...JSON.parse(`[${customTools.external}]`),
-      ],
-      modelConfig,
-    };
-    console.log("Agent data:", finalAgent);
-  };
+  //   const handleSubmit = (e: React.FormEvent) => {
+  //     e.preventDefault();
+  //     const finalAgent = {
+  //       ...agent,
+  //       common_tools: [
+  //         ...(agent.common_tools || []),
+  //         ...JSON.parse(`[${customTools.common}]`),
+  //       ],
+  //       external_tools: [
+  //         ...(agent.external_tools || []),
+  //         ...JSON.parse(`[${customTools.external}]`),
+  //       ],
+  //       modelConfig,
+  //     };
+  //     console.log("Agent data:", finalAgent);
+  //   };
 
   return (
     <div className="space-y-6 w-full">
