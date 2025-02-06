@@ -1,6 +1,6 @@
 "use client";
 import { Menubar, MenubarMenu, MenubarTrigger } from "@/components/ui/menubar";
-import AccountMenu from "@/components/account/Accountmenu";
+import AccountMenu from "@/components/account/AccountMenu";
 import Link from "next/link";
 export default function AppBar() {
   return (
