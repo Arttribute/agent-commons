@@ -1,6 +1,6 @@
 "use client";
 import { Menubar, MenubarMenu, MenubarTrigger } from "@/components/ui/menubar";
-import { Sparkles } from "lucide-react";
+//import { Sparkles } from "lucide-react";
 //import AccountMenu from "@/components/account/AccountMenu";
 import Link from "next/link";
 

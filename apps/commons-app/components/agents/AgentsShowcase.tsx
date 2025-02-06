@@ -137,7 +137,7 @@ export default function AgentsShowcase() {
   const agentsWithPositions = useMemo(() => generateAgentPositions(agents), []);
 
   return (
-    <div className="relative w-full h-screen overflow-auto bg-gray-50">
+    <div className="relative w-full h-screen overflow-auto">
       <div className="relative h-full">
         {agentsWithPositions.map((agent) => (
           <div
