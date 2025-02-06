@@ -2,7 +2,7 @@ import * as schema from '#/models/schema';
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { eq, InferInsertModel, InferSelectModel } from 'drizzle-orm';
 import * as ethers from 'ethers';
-import { first, map } from 'lodash';
+import { first, map, toSafeInteger } from 'lodash';
 import { ChatCompletionTool } from 'openai/resources/chat/completions';
 import { CoinbaseService } from '~/modules/coinbase/coinbase.service';
 import { DatabaseService } from '~/modules/database/database.service';
@@ -10,9 +10,18 @@ import { OpenAIService } from '~/modules/openai/openai.service';
 import { Except } from 'type-fest';
 import typia from 'typia';
 import { AGENT_REGISTRY_ABI } from 'lib/abis/AgentRegistryABI';
-import { AGENT_REGISTRY_ADDRESS } from 'lib/addresses';
+import { AGENT_REGISTRY_ADDRESS, COMMON_TOKEN_ADDRESS } from 'lib/addresses';
 import { EthereumTool } from '../tool/tools/ethereum-tool.service';
 import dedent from 'dedent';
+import { baseSepolia } from '#/lib/baseSepolia';
+import {
+  createWalletClient,
+  custom,
+  parseUnits,
+  http,
+  Transaction,
+} from 'viem';
+import { Coinbase, Wallet } from '@coinbase/coinbase-sdk';
 
 const app = typia.llm.application<EthereumTool, 'chatgpt'>();
 
@@ -29,7 +38,8 @@ export class AgentService {
     commonsOwned?: boolean;
   }) {
     const wallet = await this.coinbase.createDeveloperManagedWallet();
-    await wallet.faucet();
+    const faucetTx = await wallet.faucet();
+    await faucetTx.wait();
 
     const agentEntry = this.db
       .insert(schema.agent)
@@ -75,6 +85,44 @@ export class AgentService {
     this.runAgent({ agentId: props.agentId });
   }
 
+  async purchaseCommons(props: { agentId: string; amountInCommon: string }) {
+    const { agentId, amountInCommon } = props;
+    const agent = await this.db.query.agent.findFirst({
+      where: (t) => eq(t.agentId, agentId),
+    });
+
+    if (!agent) {
+      throw new BadRequestException('Agent not found');
+    }
+
+    const wallet = await Wallet.import(agent.wallet);
+
+    const amountInWei = BigInt(parseUnits(amountInCommon, 18)) / 100000n;
+
+    // const tx = await wallet.createTransfer({
+    //   amount: amountInWei,
+    //   destination: COMMON_TOKEN_ADDRESS.toLowerCase(),
+    //   assetId: Coinbase.assets.Wei,
+    //   gasless: false,
+    // });
+
+    await createWalletClient({
+      transport: http(baseSepolia.rpcUrls.default.http[0]),
+      chain: baseSepolia,
+    }).sendTransaction({
+      to: COMMON_TOKEN_ADDRESS.toLowerCase() as `0x${string}`,
+      value: amountInWei,
+      account: (await wallet.getDefaultAddress())!
+        .getId()
+        .toLowerCase() as `0x${string}`,
+      chain: undefined,
+      // chain: baseSepolia,
+      // assetId: Coinbase.assets.Wei,
+
+      // gasless: false,
+    });
+  }
+
   async runAgent(props: { agentId: string; messages?: [] }) {
     const { agentId } = props;
 
@@ -85,9 +133,18 @@ export class AgentService {
     if (!agent) {
       throw new BadRequestException('Agent not found');
     }
+
     // Get the agent
 
     // Check if the agent has tokens
+
+    const wallet = await Wallet.import(agent.wallet);
+
+    await this.purchaseCommons({ agentId, amountInCommon: '10' });
+
+    const commonsBalance = await wallet.getBalance(COMMON_TOKEN_ADDRESS);
+
+    console.log(commonsBalance);
 
     // cron: triggerAgent(id: string)
 
