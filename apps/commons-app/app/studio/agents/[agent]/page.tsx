@@ -7,6 +7,7 @@ import { FundAgent } from "@/components/agents/FundAgent";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import KnowledgeBaseInput from "@/components/agents/KnowledgeBaseInput";
+import AppBar from "@/components/layout/AppBar";
 
 export default function AgentStudio() {
   const walletAddress = "0xD9303DFc71728f209EF64DD1AD97F5a557AE0Fab";
@@ -14,7 +15,8 @@ export default function AgentStudio() {
 
   return (
     <div>
-      <div className="grid grid-cols-12 gap-2">
+      <AppBar />
+      <div className="grid grid-cols-12 gap-2 mt-16">
         <div className="col-span-3">
           <div className="flex ">
             <Avatar className="h-12 w-12 m-2">

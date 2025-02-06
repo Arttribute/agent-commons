@@ -76,7 +76,7 @@ export function AgentForm() {
 
   return (
     <form onSubmit={handleSubmit} className="container mx-auto max-w-lg ">
-      <Card className="bg-background border-2 h-[580px] flex flex-col">
+      <Card className="bg-background border-2 h-[570px] flex flex-col">
         <CardHeader>
           <CardTitle>Create New Agent</CardTitle>
         </CardHeader>
