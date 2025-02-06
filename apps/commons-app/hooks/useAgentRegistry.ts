@@ -45,13 +45,14 @@ export function useAgentRegistry(
     setLoading(true);
     setError(null);
     try {
+      const [address] = await walletClient.getAddresses();
       const txHash = await walletClient.writeContract({
         address: AGENT_REGISTRY_ADDRESS,
         abi: AGENT_REGISTRY_ABI,
         functionName: "registerAgent",
         args: [agentAddr, metadata, isCommon],
         chain: undefined,
-        account: null,
+        account: address,
       });
       console.log("registerAgent txHash:", txHash);
     } catch (err: any) {

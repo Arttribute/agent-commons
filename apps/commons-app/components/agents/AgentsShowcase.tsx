@@ -9,7 +9,7 @@ import {
   PopoverTrigger,
   PopoverContent,
 } from "@/components/ui/popover";
-
+import { DotPattern } from "@/components/magicui/dot-pattern";
 // ---------------------------------------------------------------------
 // 1. Types and Sample Agent Data
 // ---------------------------------------------------------------------
@@ -137,8 +137,8 @@ export default function AgentsShowcase() {
   const agentsWithPositions = useMemo(() => generateAgentPositions(agents), []);
 
   return (
-    <div className="relative w-full h-screen overflow-auto">
-      <div className="relative h-full">
+    <div className="overflow-auto">
+      <div className="h-full">
         {agentsWithPositions.map((agent) => (
           <div
             key={agent.id}
