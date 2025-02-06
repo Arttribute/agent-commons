@@ -9,11 +9,19 @@ import { eq, InferInsertModel, InferSelectModel } from 'drizzle-orm';
 import { AGENT_REGISTRY_ABI } from 'lib/abis/AgentRegistryABI';
 import { AGENT_REGISTRY_ADDRESS, COMMON_TOKEN_ADDRESS } from 'lib/addresses';
 import { first, map } from 'lodash';
-import { ChatCompletionTool } from 'openai/resources/chat/completions';
+import {
+  ChatCompletionMessageParam,
+  ChatCompletionTool,
+} from 'openai/resources/chat/completions';
 import { Except } from 'type-fest';
 import typia from 'typia';
-import * as viem from 'viem';
-import { http, parseUnits } from 'viem';
+import {
+  createPublicClient,
+  createWalletClient,
+  getContract,
+  http,
+  parseUnits,
+} from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
 import { CoinbaseService } from '~/modules/coinbase/coinbase.service';
 import { DatabaseService } from '~/modules/database/database.service';
@@ -24,7 +32,7 @@ const app = typia.llm.application<EthereumTool, 'chatgpt'>();
 
 @Injectable()
 export class AgentService {
-  private publicClient = viem.createPublicClient({
+  private publicClient = createPublicClient({
     chain: baseSepolia,
     transport: http(),
   });
@@ -55,7 +63,7 @@ export class AgentService {
       .then(first<InferSelectModel<typeof schema.agent>>);
 
     if (props.commonsOwned) {
-      const commonsWallet = viem.createWalletClient({
+      const commonsWallet = createWalletClient({
         account: privateKeyToAccount(
           process.env.WALLET_PRIVATE_KEY! as `0x${string}`,
         ),
@@ -63,7 +71,7 @@ export class AgentService {
         transport: http(),
       });
 
-      const contract = viem.getContract({
+      const contract = getContract({
         abi: AGENT_REGISTRY_ABI,
         address: AGENT_REGISTRY_ADDRESS,
 
@@ -120,7 +128,7 @@ export class AgentService {
 
     const privateKey = this.seedToPrivateKey(agent.wallet.seed);
 
-    const wallet = viem.createWalletClient({
+    const wallet = createWalletClient({
       account: privateKeyToAccount(`0x${privateKey}` as `0x${string}`),
       chain: baseSepolia,
       transport: http(),
@@ -134,7 +142,7 @@ export class AgentService {
     await this.publicClient.waitForTransactionReceipt({ hash: txHash });
   }
 
-  async runAgent(props: { agentId: string; messages?: [] }) {
+  async checkCommonsBalance(props: { agentId: string }) {
     const { agentId } = props;
 
     const agent = await this.db.query.agent.findFirst({
@@ -150,14 +158,36 @@ export class AgentService {
     // Check if the agent has tokens
 
     const wallet = await Wallet.import(agent.wallet);
+    const commonsBalance = await wallet.getBalance(COMMON_TOKEN_ADDRESS);
 
-    await this.purchaseCommons({ agentId, amountInCommon: '10' });
+    return commonsBalance.toNumber();
+  }
 
+  async runAgent(props: {
+    agentId: string;
+    messages?: ChatCompletionMessageParam[];
+  }) {
+    const { agentId } = props;
+
+    const agent = await this.db.query.agent.findFirst({
+      where: (t) => eq(t.agentId, agentId),
+    });
+
+    if (!agent) {
+      throw new BadRequestException('Agent not found');
+    }
+
+    // Get the agent
+
+    // Check if the agent has tokens
+
+    const wallet = await Wallet.import(agent.wallet);
     const commonsBalance = await wallet.getBalance(COMMON_TOKEN_ADDRESS);
 
     console.log(commonsBalance);
-
-    // cron: triggerAgent(id: string)
+    if (commonsBalance.lte(0)) {
+      throw new BadRequestException('Agent has no tokens');
+    }
 
     const response = await this.openAI.chat.completions.create({
       messages: [
@@ -167,8 +197,7 @@ export class AgentService {
         ${agent.persona}
 
         The following are the instructions you are meant to follow:
-        ${agent.instructions}
-        `,
+        ${agent.instructions}`,
         },
         ...(props.messages || []),
       ], // Get from db
@@ -180,8 +209,23 @@ export class AgentService {
             function: _,
           }) as unknown as ChatCompletionTool,
       ),
+      parallel_tool_calls: true,
       model: 'gpt-4o-mini',
     });
+
+    do {
+      // Execute the tools
+    } while (response.choices[0].message.tool_calls?.length);
+
+    // Charge for running the agent
+
+    const tx = await wallet.createTransfer({
+      amount: 1,
+      assetId: COMMON_TOKEN_ADDRESS,
+      destination: '0xd9303dfc71728f209ef64dd1ad97f5a557ae0fab',
+    });
+
+    await tx.wait();
 
     return response.choices[0].message;
   }
