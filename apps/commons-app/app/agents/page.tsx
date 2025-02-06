@@ -2,11 +2,10 @@
 import AgentsShowcase from "@/components/agents/AgentsShowcase";
 import AppBar from "@/components/layout/AppBar";
 
-export default function Home() {
+export default function CreateAgent() {
   return (
     <div>
       <AppBar />
-
       <AgentsShowcase />
     </div>
   );
