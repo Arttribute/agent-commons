@@ -14,6 +14,7 @@ import { AGENT_REGISTRY_ADDRESS, COMMON_TOKEN_ADDRESS } from 'lib/addresses';
 import { EthereumTool } from '../tool/tools/ethereum-tool.service';
 import dedent from 'dedent';
 import { baseSepolia } from '#/lib/baseSepolia';
+import viem from 'viem';
 import {
   createWalletClient,
   custom,
@@ -21,7 +22,9 @@ import {
   http,
   Transaction,
 } from 'viem';
-import { Coinbase, Wallet } from '@coinbase/coinbase-sdk';
+import { Coinbase, Wallet, Transfer } from '@coinbase/coinbase-sdk';
+import crypto from 'crypto';
+import { HDKey } from '@scure/bip32';
 
 const app = typia.llm.application<EthereumTool, 'chatgpt'>();
 
@@ -95,32 +98,30 @@ export class AgentService {
       throw new BadRequestException('Agent not found');
     }
 
-    const wallet = await Wallet.import(agent.wallet);
-
     const amountInWei = BigInt(parseUnits(amountInCommon, 18)) / 100000n;
 
-    // const tx = await wallet.createTransfer({
-    //   amount: amountInWei,
-    //   destination: COMMON_TOKEN_ADDRESS.toLowerCase(),
-    //   assetId: Coinbase.assets.Wei,
-    //   gasless: false,
-    // });
+    // Hack to get transaction to work
+    // Since transaction on CDP had limited gas, transaction was always failing
+    // Needed to use another provider to send the transaction
 
-    await createWalletClient({
-      transport: http(baseSepolia.rpcUrls.default.http[0]),
-      chain: baseSepolia,
-    }).sendTransaction({
+    const seedBuffer = Buffer.from(agent.wallet.seed, 'hex');
+    const hmac = crypto.createHmac('sha512', 'Bitcoin seed');
+    hmac.update(seedBuffer);
+
+    const node = HDKey.fromMasterSeed(seedBuffer);
+    const childNode = node.derive("m/44'/60'/0'/0/0"); // Standard Ethereum path
+    const ethPrivateKey = Buffer.from(childNode.privateKey!).toString('hex');
+
+    const rpcUrl = 'https://sepolia.base.org';
+    const provider = new ethers.JsonRpcProvider(rpcUrl);
+    const wallet = new ethers.Wallet(ethPrivateKey!, provider);
+    // wallet.console.log(wallet.getNetworkId());
+
+    const tx = await wallet.sendTransaction({
       to: COMMON_TOKEN_ADDRESS.toLowerCase() as `0x${string}`,
       value: amountInWei,
-      account: (await wallet.getDefaultAddress())!
-        .getId()
-        .toLowerCase() as `0x${string}`,
-      chain: undefined,
-      // chain: baseSepolia,
-      // assetId: Coinbase.assets.Wei,
-
-      // gasless: false,
     });
+    await tx.wait();
   }
 
   async runAgent(props: { agentId: string; messages?: [] }) {
