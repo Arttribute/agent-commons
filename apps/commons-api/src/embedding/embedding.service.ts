@@ -99,7 +99,6 @@ export class EmbeddingService {
           output = audio_embeds;
         }
         break;
-        break;
       }
       default:
         throw new BadRequestException('Unsupported resource type');

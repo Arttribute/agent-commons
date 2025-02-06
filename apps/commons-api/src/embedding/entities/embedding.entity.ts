@@ -1,7 +1,9 @@
 export class Embedding {
-  id: string;
+  resource_id: string;
+  name: string;
   resource_type: string;
   json_schema: string;
-  embedding: string;
+  embedding: Array<number>;
   tags: Array<string>;
+  created_at: string;
 }
