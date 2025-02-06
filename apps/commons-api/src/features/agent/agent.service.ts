@@ -1,15 +1,22 @@
 import { baseSepolia } from '#/lib/baseSepolia';
 import * as schema from '#/models/schema';
 import { Wallet } from '@coinbase/coinbase-sdk';
-import { BadRequestException, Injectable } from '@nestjs/common';
+import {
+  BadRequestException,
+  forwardRef,
+  Inject,
+  Injectable,
+} from '@nestjs/common';
 import { HDKey } from '@scure/bip32';
 import crypto from 'crypto';
 import dedent from 'dedent';
 import { eq, InferInsertModel, InferSelectModel } from 'drizzle-orm';
 import { AGENT_REGISTRY_ABI } from 'lib/abis/AgentRegistryABI';
 import { AGENT_REGISTRY_ADDRESS, COMMON_TOKEN_ADDRESS } from 'lib/addresses';
-import { first, map } from 'lodash';
+import { first, map, omit } from 'lodash';
 import {
+  ChatCompletion,
+  ChatCompletionCreateParamsNonStreaming,
   ChatCompletionMessageParam,
   ChatCompletionTool,
 } from 'openai/resources/chat/completions';
@@ -26,9 +33,23 @@ import { privateKeyToAccount } from 'viem/accounts';
 import { CoinbaseService } from '~/modules/coinbase/coinbase.service';
 import { DatabaseService } from '~/modules/database/database.service';
 import { OpenAIService } from '~/modules/openai/openai.service';
-import { EthereumTool } from '../tool/tools/ethereum-tool.service';
+import {
+  EthereumTool,
+  EthereumToolService,
+} from '../tool/tools/ethereum-tool.service';
+import {
+  CommonTool,
+  CommonToolService,
+} from '../tool/tools/common-tool.service';
+import {
+  ResourceTool,
+  ResourceToolService,
+} from '../tool/tools/resource-tool.service';
 
-const app = typia.llm.application<EthereumTool, 'chatgpt'>();
+const app = typia.llm.application<
+  EthereumTool & CommonTool & ResourceTool,
+  'chatgpt'
+>();
 
 @Injectable()
 export class AgentService {
@@ -40,6 +61,13 @@ export class AgentService {
     private db: DatabaseService,
     private openAI: OpenAIService,
     private coinbase: CoinbaseService,
+
+    @Inject(forwardRef(() => EthereumToolService))
+    private ethereumToolService: EthereumToolService,
+    @Inject(forwardRef(() => CommonToolService))
+    private commonToolService: CommonToolService,
+    @Inject(forwardRef(() => ResourceToolService))
+    private resourceToolService: ResourceToolService,
   ) {}
 
   async createAgent(props: {
@@ -177,45 +205,101 @@ export class AgentService {
       throw new BadRequestException('Agent not found');
     }
 
-    // Get the agent
-
     // Check if the agent has tokens
 
     const wallet = await Wallet.import(agent.wallet);
+    const privateKey = this.seedToPrivateKey(agent.wallet.seed);
+
     const commonsBalance = await wallet.getBalance(COMMON_TOKEN_ADDRESS);
 
-    console.log(commonsBalance);
     if (commonsBalance.lte(0)) {
       throw new BadRequestException('Agent has no tokens');
     }
 
-    const response = await this.openAI.chat.completions.create({
-      messages: [
-        {
-          role: 'system',
-          content: dedent`The following is the persona you are meant to adopt:
-        ${agent.persona}
+    console.log(commonsBalance);
 
-        The following are the instructions you are meant to follow:
-        ${agent.instructions}`,
-        },
-        ...(props.messages || []),
-      ], // Get from db
-      tools: map(
-        app.functions,
-        (_) =>
-          ({
-            type: 'function',
-            function: _,
-          }) as unknown as ChatCompletionTool,
-      ),
-      parallel_tool_calls: true,
+    const messages: ChatCompletionMessageParam[] = [
+      {
+        role: 'system',
+        content: dedent`You are the following agent:
+      ${JSON.stringify(omit(agent, ['instructions', 'persona', 'wallet']))}
+
+      The following is the persona you are meant to adopt:
+      ${agent.persona}
+
+      The following are the instructions you are meant to follow:
+      ${agent.instructions}`,
+      },
+      ...(props.messages || []),
+    ];
+
+    const tools = map(
+      app.functions,
+      (_) =>
+        ({
+          type: 'function',
+          function: _,
+        }) as unknown as ChatCompletionTool,
+    );
+
+    let chatGPTResponse: ChatCompletion;
+    // let sessionId: string | undefined = body.sessionId;
+
+    const prompt: ChatCompletionCreateParamsNonStreaming = {
+      messages,
+      tools,
+      tool_choice: 'auto',
+      parallel_tool_calls: false,
       model: 'gpt-4o-mini',
-    });
+    };
 
     do {
       // Execute the tools
-    } while (response.choices[0].message.tool_calls?.length);
+      console.log('Prompt', prompt);
+      chatGPTResponse = await this.openAI.chat.completions.create(prompt);
+
+      const toolCalls = chatGPTResponse.choices[0].message.tool_calls;
+
+      if (toolCalls?.length) {
+        await Promise.all(
+          toolCalls.map(async (toolCall) => {
+            if (toolCall.type === 'function') {
+              const args = JSON.parse(toolCall.function.arguments);
+              const metadata = { agentId, privateKey };
+
+              console.log('Tool Call', { toolCall, toolCallArgs: args });
+
+              const toolWithMethod = [
+                this.commonToolService,
+                this.ethereumToolService,
+                this.resourceToolService,
+                // @ts-expect-error
+              ].find((tool) => tool[toolCall.function.name]);
+
+              // console.log('Tool with method', toolWithMethod);
+
+              // @ts-expect-error
+              const data = await toolWithMethod[toolCall.function.name](
+                args,
+                metadata,
+              );
+
+              prompt.messages.push(chatGPTResponse.choices[0].message);
+
+              prompt.messages.push({
+                // append result message
+                role: 'tool',
+                tool_call_id: toolCall.id,
+                content: JSON.stringify(data),
+              });
+
+              return data;
+            }
+            return null;
+          }),
+        );
+      }
+    } while (chatGPTResponse.choices[0].message.tool_calls?.length);
 
     // Charge for running the agent
 
@@ -227,6 +311,6 @@ export class AgentService {
 
     await tx.wait();
 
-    return response.choices[0].message;
+    return chatGPTResponse.choices[0].message;
   }
 }

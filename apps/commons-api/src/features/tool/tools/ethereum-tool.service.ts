@@ -18,12 +18,18 @@ export class EthereumToolService implements EthereumTool {
   constructor(
     @Inject(forwardRef(() => AgentService)) private agentService: AgentService,
   ) {}
-  async checkCommonTokenBalance(props: {}) {
+  // @ts-expect-error
+  async checkCommonTokenBalance(props: {}, metadata: { agentId: string }) {
+    const { agentId } = metadata;
     // Find a way to get current agent
-    return await this.agentService.checkCommonsBalance({ agentId: '' });
+    return await this.agentService.checkCommonsBalance({ agentId });
   }
 
-  transferTokensToWallet(props: { address: string; amount: number }) {
-    return this.agentService.transferTokensToWallet(props);
+  // @ts-expect-error
+  async transferTokensToWallet(
+    props: { address: string; amount: number },
+    metadata: { agentId: string },
+  ) {
+    // return this.agentService.transferTokensToWallet(props);
   }
 }
