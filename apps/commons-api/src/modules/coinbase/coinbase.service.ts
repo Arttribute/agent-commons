@@ -10,7 +10,7 @@ export class CoinbaseService implements OnModuleInit {
   onModuleInit() {
     this.coinbase = Coinbase.configure({
       apiKeyName: process.env.COINBASE_API_KEY_NAME!,
-      privateKey: process.env.COINBASE_PRIVATE_KEY!,
+      privateKey: process.env.COINBASE_API_KEY_SECRET!,
     });
   }
 

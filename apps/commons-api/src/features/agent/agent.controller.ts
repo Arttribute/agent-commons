@@ -15,15 +15,18 @@ export class AgentController {
     body: Except<
       InferInsertModel<typeof schema.agent>,
       'wallet' | 'agentId' | 'createdAt'
-    >,
+    > & { commonsOwned?: boolean },
   ) {
-    const agent = await this.agent.createAgent({ value: body });
+    const agent = await this.agent.createAgent({
+      value: body as InferInsertModel<typeof schema.agent>,
+      commonsOwned: body.commonsOwned,
+    });
     return { data: agent };
   }
 
   @Post('run')
-  runAgent(@Body() body: any) {
-    this.agent.runAgent(body);
-    return { data: {} };
+  async runAgent(@Body() body: any) {
+    const response = await this.agent.runAgent(body);
+    return { data: response };
   }
 }

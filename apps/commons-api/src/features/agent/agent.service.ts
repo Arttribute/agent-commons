@@ -1,7 +1,7 @@
 import * as schema from '#/models/schema';
-import { Injectable } from '@nestjs/common';
-import { InferInsertModel, InferSelectModel } from 'drizzle-orm';
-import ethers from 'ethers';
+import { BadRequestException, Injectable } from '@nestjs/common';
+import { eq, InferInsertModel, InferSelectModel } from 'drizzle-orm';
+import * as ethers from 'ethers';
 import { first, map } from 'lodash';
 import { ChatCompletionTool } from 'openai/resources/chat/completions';
 import { CoinbaseService } from '~/modules/coinbase/coinbase.service';
@@ -12,6 +12,7 @@ import typia from 'typia';
 import { AGENT_REGISTRY_ABI } from 'lib/abis/AgentRegistryABI';
 import { AGENT_REGISTRY_ADDRESS } from 'lib/addresses';
 import { EthereumTool } from '../tool/tools/ethereum-tool.service';
+import dedent from 'dedent';
 
 const app = typia.llm.application<EthereumTool, 'chatgpt'>();
 
@@ -34,7 +35,7 @@ export class AgentService {
       .insert(schema.agent)
       .values({
         ...props.value,
-        agentId: (await wallet.getDefaultAddress())?.toString(),
+        agentId: (await wallet.getDefaultAddress())?.getId().toLowerCase(),
         wallet: wallet.export(),
       })
       .returning()
@@ -60,7 +61,7 @@ export class AgentService {
       const isCommonAgent = true;
 
       const tx = await contract.registerAgent(
-        (await wallet.getDefaultAddress())?.toString(),
+        (await wallet.getDefaultAddress())?.getId(),
         metadata,
         isCommonAgent,
       );
@@ -70,11 +71,20 @@ export class AgentService {
     return agentEntry;
   }
 
-  triggerAgent() {
-    this.runAgent({});
+  triggerAgent(props: { agentId: string }) {
+    this.runAgent({ agentId: props.agentId });
   }
 
-  async runAgent(props: { messages?: [] }) {
+  async runAgent(props: { agentId: string; messages?: [] }) {
+    const { agentId } = props;
+
+    const agent = await this.db.query.agent.findFirst({
+      where: (t) => eq(t.agentId, agentId),
+    });
+
+    if (!agent) {
+      throw new BadRequestException('Agent not found');
+    }
     // Get the agent
 
     // Check if the agent has tokens
@@ -82,7 +92,18 @@ export class AgentService {
     // cron: triggerAgent(id: string)
 
     const response = await this.openAI.chat.completions.create({
-      messages: [{ role: 'system', content: 'You are a helpful assistant.' }], // Get from db
+      messages: [
+        {
+          role: 'system',
+          content: dedent`The following is the persona you are meant to adopt:
+        ${agent.persona}
+
+        The following are the instructions you are meant to follow:
+        ${agent.instructions}
+        `,
+        },
+        ...(props.messages || []),
+      ], // Get from db
       tools: map(
         app.functions,
         (_) =>
@@ -93,5 +114,7 @@ export class AgentService {
       ),
       model: 'gpt-4o-mini',
     });
+
+    return response.choices[0].message;
   }
 }

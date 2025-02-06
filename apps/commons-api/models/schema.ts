@@ -9,6 +9,8 @@ export const agent = pgTable('agent', {
     .primaryKey(),
 
   wallet: jsonb().notNull().$type<WalletData>(),
+  instructions: text(),
+  persona: text(),
 
   createdAt: timestamp('created_at', { withTimezone: true })
     .default(sql`timezone('utc', now())`)
