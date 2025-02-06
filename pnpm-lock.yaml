@@ -33,6 +33,9 @@ importers:
       commons-api:
         specifier: 'file:'
         version: file:apps/commons-api
+      dotenv:
+        specifier: ^16.4.7
+        version: 16.4.7
       pinata-web3:
         specifier: ^0.5.4
         version: 0.5.4
@@ -42,6 +45,12 @@ importers:
       rxjs:
         specifier: ^7.8.1
         version: 7.8.1
+      sharp:
+        specifier: ^0.33.5
+        version: 0.33.5
+      wavefile:
+        specifier: ^11.0.0
+        version: 11.0.0
     devDependencies:
       '@eslint/eslintrc':
         specifier: ^3.2.0
@@ -85,9 +94,6 @@ importers:
       '@xenova/transformers':
         specifier: ^2.17.2
         version: 2.17.2
-      dotenv:
-        specifier: ^16.4.7
-        version: 16.4.7
       eslint:
         specifier: ^9.18.0
         version: 9.18.0
@@ -7499,6 +7505,7 @@ packages:
   /dotenv@16.4.7:
     resolution: {integrity: sha512-47qPchRCykZC03FhkYAhrvwU4xDBFIj1QPqaarj6mdM/hgUzfPHcpkHJOn3mJAufFeeAxAzeGsr5X0M4k6fLZQ==}
     engines: {node: '>=12'}
+    dev: false
 
   /dunder-proto@1.0.1:
     resolution: {integrity: sha512-KIN/nDJBQRcXw0MLVhZE9iQHmG68qAVIBg9CqmUYjmQIhgij9U5MFvrqkUL5FbtyyzZuOeOt0zdeRe4UY7ct+A==}
@@ -12573,7 +12580,6 @@ packages:
       '@img/sharp-win32-ia32': 0.33.5
       '@img/sharp-win32-x64': 0.33.5
     dev: false
-    optional: true
 
   /shebang-command@2.0.0:
     resolution: {integrity: sha512-kHxr2zZpYtdmrN1qDjrrX/Z1rR1kG8Dx+gkpK1G4eXmvXswmcE1hTWBWYUzlraYw1/yZp6YuDY77YtvbN0dmDA==}
@@ -14121,6 +14127,12 @@ packages:
       graceful-fs: 4.2.11
     dev: true
 
+  /wavefile@11.0.0:
+    resolution: {integrity: sha512-/OBiAALgWU24IG7sC84cDO/KfFuvajWc5Uec0oV2zrpOOZZDgGdOwHwgEzOrwh8jkubBk7PtZfQBIcI1OaE5Ng==}
+    engines: {node: '>=8'}
+    hasBin: true
+    dev: false
+
   /wcwidth@1.0.1:
     resolution: {integrity: sha512-XHPEwS0q6TaxcvG85+8EYkbiCux2XtWG2mkc47Ng2A77BQu9+DqIOJldST4HgPkuea7dvKSj5VgX3P1d4rW8Tg==}
     dependencies:
@@ -14542,6 +14554,7 @@ packages:
       pinata-web3: 0.5.4
       reflect-metadata: 0.2.2
       rxjs: 7.8.1
+      sharp: 0.33.5
     transitivePeerDependencies:
       - '@nestjs/microservices'
       - '@nestjs/websockets'
