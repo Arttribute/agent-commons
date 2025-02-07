@@ -41,15 +41,8 @@ import {
   CommonTool,
   CommonToolService,
 } from '../tool/tools/common-tool.service';
-import {
-  ResourceTool,
-  ResourceToolService,
-} from '../tool/tools/resource-tool.service';
 
-const app = typia.llm.application<
-  EthereumTool & CommonTool & ResourceTool,
-  'chatgpt'
->();
+const app = typia.llm.application<EthereumTool & CommonTool, 'chatgpt'>();
 
 @Injectable()
 export class AgentService {
@@ -66,8 +59,6 @@ export class AgentService {
     private ethereumToolService: EthereumToolService,
     @Inject(forwardRef(() => CommonToolService))
     private commonToolService: CommonToolService,
-    @Inject(forwardRef(() => ResourceToolService))
-    private resourceToolService: ResourceToolService,
   ) {}
 
   async createAgent(props: {
@@ -123,11 +114,23 @@ export class AgentService {
     return agentEntry;
   }
 
+  async getAgent(props: { agentId: string }) {
+    const agent = await this.db.query.agent.findFirst({
+      where: (t) => eq(t.agentId, props.agentId),
+    });
+
+    if (!agent) {
+      throw new BadRequestException('Agent not found');
+    }
+
+    return agent;
+  }
+
   triggerAgent(props: { agentId: string }) {
     this.runAgent({ agentId: props.agentId });
   }
 
-  private seedToPrivateKey(seed: string) {
+  public seedToPrivateKey(seed: string) {
     const seedBuffer = Buffer.from(seed, 'hex');
     const hmac = crypto.createHmac('sha512', 'Bitcoin seed');
     hmac.update(seedBuffer);
@@ -180,10 +183,6 @@ export class AgentService {
     if (!agent) {
       throw new BadRequestException('Agent not found');
     }
-
-    // Get the agent
-
-    // Check if the agent has tokens
 
     const wallet = await Wallet.import(agent.wallet);
     const commonsBalance = await wallet.getBalance(COMMON_TOKEN_ADDRESS);
@@ -272,7 +271,6 @@ export class AgentService {
               const toolWithMethod = [
                 this.commonToolService,
                 this.ethereumToolService,
-                this.resourceToolService,
                 // @ts-expect-error
               ].find((tool) => tool[toolCall.function.name]);
 
