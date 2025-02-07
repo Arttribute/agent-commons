@@ -1,6 +1,6 @@
 "use client";
 import React from "react";
-import { useAuth } from "../context/AuthContext"; // the file we created
+import { useAuth } from "@/context/AuthContext"; // the file we created
 import AppBar from "@/components/layout/AppBar";
 
 export default function HomePage() {
