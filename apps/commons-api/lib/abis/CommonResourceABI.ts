@@ -1,4 +1,4 @@
-export const xCOMMON_RESOURCE_ABI = [
+export const COMMON_RESOURCE_ABI = [
   {
     inputs: [
       {

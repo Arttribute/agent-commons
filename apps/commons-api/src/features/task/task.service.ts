@@ -67,8 +67,21 @@ export class TaskService {
       maxParticipants,
     ]);
 
-    await this.publicClient.waitForTransactionReceipt({ hash: txHash });
+    const receipt = await this.publicClient.waitForTransactionReceipt({
+      hash: txHash,
+    });
     console.log('createTask txHash:', txHash);
+
+    const log = receipt.logs.find(
+      (log) =>
+        log.topics[0] ===
+        '0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef',
+    );
+
+    console.log('createTask log:', log);
+    const id = BigInt(log!.data.slice(2, 64 + 2));
+
+    return { id };
   }
 
   async joinTask(props: { agentId: string; taskId: BigInt }) {
@@ -95,6 +108,8 @@ export class TaskService {
 
     await this.publicClient.waitForTransactionReceipt({ hash: txHash });
     console.log('joinTask txHash:', txHash);
+
+    return {};
   }
 
   async completeTask(props: {
@@ -123,7 +138,11 @@ export class TaskService {
 
     const txHash = await contract.write.completeTask([taskId, resultantFile]);
 
-    await this.publicClient.waitForTransactionReceipt({ hash: txHash });
+    const receipt = await this.publicClient.waitForTransactionReceipt({
+      hash: txHash,
+    });
     console.log('completeTask txHash:', txHash);
+
+    return {};
   }
 }

@@ -9,7 +9,7 @@ export function useTaskManager(
   publicClient: PublicClient | null,
   walletClient: WalletClient | null
 ) {
-  const [error, setError] = useState<string|null>(null);
+  const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
   // createTask
@@ -19,24 +19,25 @@ export function useTaskManager(
     resourceBased: boolean,
     parentTaskId: bigint,
     maxParticipants: bigint
-  ){
-    if(!walletClient){
+  ) {
+    if (!walletClient) {
       setError("No walletClient");
       return;
     }
     setLoading(true);
     setError(null);
     try {
+      const [address] = await walletClient.getAddresses();
       const txHash = await walletClient.writeContract({
         address: TASK_MANAGER_ADDRESS,
         abi: TASK_MANAGER_ABI,
         functionName: "createTask",
         args: [metadata, reward, resourceBased, parentTaskId, maxParticipants],
         chain: undefined,
-        account: null
+        account: address,
       });
       console.log("createTask txHash:", txHash);
-    } catch(err:any) {
+    } catch (err: any) {
       setError(err.message);
       console.error(err);
     } finally {
@@ -45,24 +46,51 @@ export function useTaskManager(
   }
 
   // joinTask
-  async function joinTask(taskId: bigint){
-    if(!walletClient){
+  async function joinTask(taskId: bigint) {
+    if (!walletClient) {
       setError("No walletClient");
       return;
     }
     setLoading(true);
     setError(null);
     try {
+      const [address] = await walletClient.getAddresses();
       const txHash = await walletClient.writeContract({
         address: TASK_MANAGER_ADDRESS,
         abi: TASK_MANAGER_ABI,
         functionName: "joinTask",
         args: [taskId],
         chain: undefined,
-        account: null
+        account: address,
       });
       console.log("joinTask txHash:", txHash);
-    } catch(err:any){
+    } catch (err: any) {
+      setError(err.message);
+      console.error(err);
+    } finally {
+      setLoading(false);
+    }
+  }
+  // completeTask
+  async function completeTask(taskId: bigint, resultantFile: string) {
+    if (!walletClient) {
+      setError("No walletClient");
+      return;
+    }
+    setLoading(true);
+    setError(null);
+    try {
+      const [address] = await walletClient.getAddresses();
+      const txHash = await walletClient.writeContract({
+        address: TASK_MANAGER_ADDRESS,
+        abi: TASK_MANAGER_ABI,
+        functionName: "completeTask",
+        args: [taskId, resultantFile],
+        chain: undefined,
+        account: address,
+      });
+      console.log("completeTask txHash:", txHash);
+    } catch (err: any) {
       setError(err.message);
       console.error(err);
     } finally {
@@ -74,6 +102,6 @@ export function useTaskManager(
     error,
     loading,
     createTask,
-    joinTask
+    joinTask,
   };
 }

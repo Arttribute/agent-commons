@@ -66,5 +66,7 @@ export class AttributionService {
 
     await this.publicClient.waitForTransactionReceipt({ hash: txHash });
     console.log('recordAttribution txHash:', txHash);
+
+    return {};
   }
 }

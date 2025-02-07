@@ -9,6 +9,7 @@ import { ResourceModule } from './features/resource';
 import { DatabaseModule } from './modules/database';
 import { OpenAIModule } from './modules/openai';
 import { CoinbaseModule } from './modules/coinbase';
+import { EmbeddingModule } from './embedding/embedding.module';
 
 @Module({
   imports: [
@@ -18,11 +19,15 @@ import { CoinbaseModule } from './modules/coinbase';
     PinataModule,
     CoinbaseModule,
 
+    PinataModule,
+    EmbeddingModule,
+
     // Feature modules
     AgentModule,
     ToolModule,
     ResourceModule,
   ],
+
   controllers: [AppController],
   providers: [AppService],
 })

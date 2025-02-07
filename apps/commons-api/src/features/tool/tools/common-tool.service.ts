@@ -1,5 +1,6 @@
 import { forwardRef, Inject, Injectable } from '@nestjs/common';
 import { ChatCompletionMessageParam } from 'openai/resources/chat/completions.mjs';
+import { EmbeddingType } from '~/embedding/dto/embedding.dto';
 import { AgentService } from '~/features/agent/agent.service';
 import { AttributionService } from '~/features/attribution/attribution.service';
 import { ResourceService } from '~/features/resource/resource.service';
@@ -20,6 +21,11 @@ export interface CommonTool {
   getResources(): any;
   getResourcesWithFilter(props: { where: { creator?: string } }): any;
   getResourceWithId(props: { id: string }): any;
+  /**
+   * Find Resources available in the network, you may filter by query and resource type
+   * The query is a string that will be used to search for resources
+   */
+  findResources(props: { query: string; resourceType: EmbeddingType }): any;
 
   /**
    * Create a new Resource in the network
@@ -37,9 +43,20 @@ export interface CommonTool {
   getTasks(): any;
   getTasksWithFilter(props: { where: { status?: string } }): any;
 
-  createTask(props: {}): any;
-  joinTask(props: {}): any;
-  completeTask(props: {}): any;
+  /**
+   * Create a new Task in the network
+   * Place the task description in the metadata field
+   * The reward should not be more than the current COMMON token balance of the agent
+   */
+  createTask(props: {
+    metadata: string;
+    reward: number;
+    resourceBased: boolean;
+    parentTaskId?: number;
+    maxParticipants: number;
+  }): any;
+  joinTask(props: { taskId: number }): any;
+  completeTask(props: { taskId: number; resultantFile: string }): any;
 
   /**
    * Get Attributions available in the network, you may get by id
@@ -47,7 +64,12 @@ export interface CommonTool {
   getAttributions(): any;
   getAttributionWithId(props: { id: string }): any;
 
-  createAttribution(props: {}): any;
+  createAttribution(props: {
+    resourceId: string;
+    parentResources: string[];
+    relationTypes: string[];
+    descriptions: string[];
+  }): any;
 
   /**
    * Interact with an agent in the network
@@ -119,64 +141,64 @@ export class CommonToolService implements CommonTool {
     const data = graphqlRequest.then(async (_) => {
       const commonResourcesDocument = _.gql`
     	{
-			commonResources {
-				id
-				resourceId
-				creator
-				metadata
-				resourceFile
-				requiredReputation
-				usageCost
-				isCoreResource
-				totalShares
-				usageCount
-				contributors {
-				address
-				contributionShare
-				}
-			}
+        commonResources {
+          id
+          resourceId
+          creator
+          metadata
+          resourceFile
+          requiredReputation
+          usageCost
+          isCoreResource
+          totalShares
+          usageCount
+          contributors {
+          address
+          contributionShare
+          }
+        }
     	}
     	`;
 
       const commonResourcesWithFilterDocument = _.gql`
     	{
-			commonResources(where: ${props?.where}) {
-				id
-				resourceId
-				creator
-				metadata
-				resourceFile
-				requiredReputation
-				usageCost
-				isCoreResource
-				totalShares
-				usageCount
-				contributors {
-				address
-				contributionShare
-				}
-			}
+        commonResources(where: ${props?.where}) {
+          id
+          resourceId
+          creator
+          metadata
+          resourceFile
+          requiredReputation
+          usageCost
+          isCoreResource
+          totalShares
+          usageCount
+          contributors {
+          address
+          contributionShare
+          }
+        }
     	}
     	`;
 
       const commonResourcesWithIdDocument = _.gql`
     	{
-			commonResources(id: ${props?.id}) {
-				id
-				resourceId
-				creator
-				metadata
-				resourceFile
-				requiredReputation
-				usageCost
-				isCoreResource
-				totalShares
-				usageCount
-				contributors {
-				address
-				contributionShare
-				}
-			}
+        commonResources(id: ${props?.id}) {
+          id
+          resourceId
+          creator
+          metadata
+          resourceFile
+          requiredReputation
+          usageCost
+          isCoreResource
+          totalShares
+          usageCount
+          contributors {
+          address
+          contributionShare
+          }
+        }
     	}
     	`;
 
@@ -203,6 +225,10 @@ export class CommonToolService implements CommonTool {
     });
   }
 
+  findResources(props: { query: string; resourceType: EmbeddingType }) {
+    return this.resource.findResources(props);
+  }
+
   // @ts-expect-error
   async createResource(
     props: {
@@ -213,9 +239,18 @@ export class CommonToolService implements CommonTool {
     },
     metadata: { agentId: string; privateKey: string },
   ) {
+    const resourceMetadata =
+      'https://coral-abstract-dolphin-257.mypinata.cloud/ipfs/bafkreibpxnfvqblz7x5q3sheky2gme3fcivtb5qroi5cxb32bt4mw4cvpu';
+    const resourceFile =
+      'https://coral-abstract-dolphin-257.mypinata.cloud/ipfs/bafybeig73decdgp666p22jdfuft6pvehgrrfknq53mcrad54h2vctd6gpu';
+    const type = EmbeddingType.image;
+
     const resource = await this.resource.createResource({
       ...props,
       agentId: metadata.agentId,
+      resourceFile,
+      resourceMetadata,
+      type,
       isCoreResource: false,
     });
 
@@ -287,15 +322,18 @@ export class CommonToolService implements CommonTool {
   async createTask(
     props: {
       metadata: string;
-      reward: BigInt;
+      reward: number;
       resourceBased: boolean;
-      parentTaskId: BigInt;
-      maxParticipants: BigInt;
+      parentTaskId?: number;
+      maxParticipants: number;
     },
     metadata: { agentId: string; privateKey: string },
   ) {
     const task = await this.task.createTask({
       ...props,
+      reward: BigInt(0), // BigInt(props.reward),
+      parentTaskId: BigInt(props.parentTaskId || 0),
+      maxParticipants: BigInt(props.maxParticipants),
       agentId: metadata.agentId,
     });
 
@@ -305,12 +343,13 @@ export class CommonToolService implements CommonTool {
   // @ts-expect-error
   async joinTask(
     props: {
-      taskId: BigInt;
+      taskId: number;
     },
     metadata: { agentId: string; privateKey: string },
   ) {
     const task = await this.task.joinTask({
       ...props,
+      taskId: BigInt(props.taskId),
       agentId: metadata.agentId,
     });
 
@@ -320,13 +359,14 @@ export class CommonToolService implements CommonTool {
   // @ts-expect-error
   async completeTask(
     props: {
-      taskId: BigInt;
+      taskId: number;
       resultantFile: string;
     },
     metadata: { agentId: string; privateKey: string },
   ) {
     const task = await this.task.completeTask({
       ...props,
+      taskId: BigInt(props.taskId),
       agentId: metadata.agentId,
     });
 
