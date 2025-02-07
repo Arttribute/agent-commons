@@ -11,5 +11,8 @@
   "license": "ISC",
   "devDependencies": {
     "concurrently": "^9.1.2"
+  },
+  "dependencies": {
+    "agent-commons": "file:"
   }
 }
