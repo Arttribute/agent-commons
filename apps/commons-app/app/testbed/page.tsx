@@ -162,20 +162,6 @@ export default function HomePage() {
     await burn(balanceAddr as `0x${string}`, amountWei);
   }
 
-  //create resource onchain
-  async function handleCreateResource() {
-    await createResource(
-      "0x1234abcd1234abcd1234abcd1234abcd1234abcd", // example
-      "test resource",
-      "ipfs://QmSomeResourceFile",
-      0n,
-      1000000000000000000n, // 1 token usage cost
-      ["0x1111bbb2222ccc3333ddd4444eee5555fff6666"],
-      [100n],
-      false
-    );
-  }
-
   return (
     <main style={{ padding: 20 }}>
       <h1>Agent Commons + viem Test UI</h1>
