@@ -1,4 +1,5 @@
-export class EmbeddingDto {
+export interface EmbeddingDto {
+  resourceId: string;
   content: string; // URL for image and audio, text for text
   type: EmbeddingType;
 }
