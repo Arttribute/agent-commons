@@ -1,47 +1,41 @@
 "use client";
 import React from "react";
-import { useAuth } from "@/context/AuthContext"; // the file we created
+import { RetroGrid } from "@/components/magicui/retro-grid";
+import { Button } from "@/components/ui/button";
+import { Sparkles } from "lucide-react";
 import AppBar from "@/components/layout/AppBar";
+import Link from "next/link";
 
-export default function HomePage() {
-  const { authState, login, logout } = useAuth();
-  const { idToken, username, walletAddress, profileImage } = authState;
-
-  const isAuthenticated = !!idToken;
-
+export default function Home() {
   return (
     <div>
       <AppBar />
-      <div className="min-h-screen  mt-16">
-        <h1>Welcome to My Next.js + Privy App</h1>
+      <div className="relative flex h-screen w-full flex-col items-center justify-center overflow-hidden rounded-lg bg-background md:shadow-xl">
+        <div className="flex z-10">
+          <p className=" h-20 pointer-events-none z-10 whitespace-pre-wrap bg-gradient-to-r from-blue-600 via-pink-500 to-indigo-500 bg-clip-text text-center text-7xl font-bold leading-none tracking-tighter text-transparent">
+            Agent Commons
+          </p>
+        </div>
+        <p className="text-xl text-center">
+          The toolkit for building interactive AI-driven experiences
+        </p>
 
-        {isAuthenticated ? (
-          <>
-            <div style={{ margin: "20px 0" }}>
-              <img
-                src={profileImage ?? ""}
-                alt="profile"
-                style={{ width: 80, height: 80, borderRadius: "50%" }}
-              />
-              <p>
-                <strong>Username:</strong> {username}
-              </p>
-              <p>
-                <strong>Wallet:</strong> {walletAddress}
-              </p>
-              <p>
-                <strong>ID Token:</strong> {idToken?.slice(0, 20)}...{" "}
-              </p>
-            </div>
+        <div className="flex gap-4 mt-4 z-10">
+          <Link href="/worlds/create" passHref>
+            <Button className="rounded-lg px-16">Create</Button>
+          </Link>
 
-            <button onClick={logout}>Logout</button>
-          </>
-        ) : (
-          <>
-            <p>You are not logged in</p>
-            <button onClick={login}>Login with Privy</button>
-          </>
-        )}
+          <Link href="/worlds" passHref>
+            <Button
+              variant="outline"
+              className="rounded-lg px-16 border border-gray-700"
+            >
+              Explore
+            </Button>
+          </Link>
+        </div>
+
+        <RetroGrid />
       </div>
     </div>
   );

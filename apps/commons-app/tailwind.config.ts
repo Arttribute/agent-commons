@@ -72,11 +72,20 @@ export default {
   				'100%': {
   					backgroundPosition: 'bottom center'
   				}
+  			},
+  			grid: {
+  				'0%': {
+  					transform: 'translateY(-50%)'
+  				},
+  				'100%': {
+  					transform: 'translateY(0)'
+  				}
   			}
   		},
   		animation: {
   			float: 'float 3s ease-in-out infinite',
-  			'background-position-spin': 'background-position-spin 3000ms infinite alternate'
+  			'background-position-spin': 'background-position-spin 3000ms infinite alternate',
+  			grid: 'grid 15s linear infinite'
   		}
   	}
   },
