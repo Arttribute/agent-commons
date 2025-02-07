@@ -10,6 +10,8 @@ export type ResourceType =
 export type AgentMode = "fullyAutonomous" | "userDriven";
 
 export interface Resource {
+  image: string | undefined;
+  title: string;
   resourceId: string;
   embedding: number[];
   resourceType: ResourceType;
