@@ -6,7 +6,7 @@ export default function ResourceList({ resources }: { resources: Resource[] }) {
   return (
     <div className="container grid grid-cols-10 gap-3">
       {resources &&
-        resources.map((resource: any, index: number) => (
+        resources.map((resource: Resource, index: number) => (
           <div className="col-span-10 lg:col-span-2 " key={index}>
             <ResourceCard resource={resource} />
           </div>
