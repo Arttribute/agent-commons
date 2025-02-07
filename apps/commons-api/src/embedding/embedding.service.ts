@@ -76,8 +76,8 @@ export class EmbeddingService {
         });
         output = await model(inputs, { pooling: 'mean', normalize: true })
           // eslint-disable-next-line @typescript-eslint/no-unsafe-return
-          .then((x) => x.text_embeds)
-          .catch((e) => {
+          .then((x: any) => x.text_embeds)
+          .catch((e: any) => {
             throw new Error(e);
           });
         break;
@@ -144,6 +144,7 @@ export class EmbeddingService {
     } = await this.supabase
       .from('resource')
       .insert({
+        resource_id: dto.resourceId,
         embedding,
         resource_type: type,
       })
@@ -157,19 +158,24 @@ export class EmbeddingService {
     return data;
   }
 
-  async find(dto: EmbeddingDto) {
+  async find(
+    dto: Pick<EmbeddingDto, 'content' | 'type'>,
+    options?: Partial<{ matchThreshold: number; matchCount: number }>,
+  ) {
     const { content, type } = dto;
+
+    const { matchThreshold = 0, matchCount = 7 } = options || {};
 
     if (!content || !type)
       throw new BadRequestException('Content and type are required');
 
-    const embedding = await this.embed(content, type);
+    const embedding = await this.embed(content, EmbeddingType.text);
 
     // Search for similar vectors in Postgres
     const { data, error } = await this.supabase.rpc('match_resources', {
       query_embedding: embedding,
-      match_threshold: 0,
-      match_count: 7,
+      match_threshold: matchThreshold,
+      match_count: matchCount,
       r_type: type, // resource type
     });
 
