@@ -2,7 +2,6 @@
 import React from "react";
 import { RetroGrid } from "@/components/magicui/retro-grid";
 import { Button } from "@/components/ui/button";
-import { Sparkles } from "lucide-react";
 import AppBar from "@/components/layout/AppBar";
 import Link from "next/link";
 
