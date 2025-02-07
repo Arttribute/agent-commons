@@ -32,14 +32,14 @@ export const tool = pgTable('tool', {
 });
 
 export const resource = pgTable('resource', {
-  resourceId: uuid('resource_id')
+  resourceId: text('resource_id')
     .default(sql`uuid_generate_v4()`)
     .primaryKey(),
-  name: text().notNull(),
 
   resourceType: text().notNull(),
 
-  // schema: jsonb().notNull().$type<>(),
+  schema: jsonb().notNull().$type<any>(),
+  tags: jsonb().notNull().$type<string[]>(),
 
   createdAt: timestamp('created_at', { withTimezone: true })
     .default(sql`timezone('utc', now())`)

@@ -9,7 +9,9 @@ import {
   http,
 } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
+import * as schema from '#/models/schema';
 import { AgentService } from '~/features/agent/agent.service';
+import { DatabaseService } from '~/modules/database/database.service';
 
 @Injectable()
 export class ResourceService {
@@ -18,11 +20,26 @@ export class ResourceService {
     transport: http(),
   });
   constructor(
+    private db: DatabaseService,
     @Inject(forwardRef(() => AgentService)) private agent: AgentService,
   ) {}
 
   getHello(): string {
     return 'Hello World!';
+  }
+
+  async getResource(props: { resourceId: string }) {
+    const { resourceId } = props;
+
+    const contract = getContract({
+      address: COMMON_RESOURCE_ADDRESS,
+      abi: COMMON_RESOURCE_ABI,
+      client: this.publicClient,
+    });
+
+    const resource = await contract.read.resource(resourceId);
+
+    return resource;
   }
 
   async createResource(props: {
@@ -77,7 +94,28 @@ export class ResourceService {
       isCoreResource,
     ]);
 
-    await this.publicClient.waitForTransactionReceipt({ hash: txHash });
+    // const unwatch = this.publicClient.watchContractEvent({
+    //   address: COMMON_RESOURCE_ADDRESS,
+    //   abi: COMMON_RESOURCE_ABI,
+    //   eventName: 'createResource',
+    //   args: { from: agentId },
+    //   onLogs: logs => console.log(logs)
+    // })
+
+    const receipt = await this.publicClient.waitForTransactionReceipt({
+      hash: txHash,
+    });
     console.log('createResource txHash:', txHash);
+
+    const log = receipt.logs.find(
+      (log) =>
+        log.topics[0] ===
+        '0xc3d58168c5ae7397731d063d5bbf3d657854427343f4c083240f7aacaa2d0f62',
+    );
+    const id = BigInt(log!.data.slice(2)[1].slice(0, 64));
+
+    this.db.insert(schema.resource).values({
+      resourceId: id.toString(),
+    });
   }
 }
