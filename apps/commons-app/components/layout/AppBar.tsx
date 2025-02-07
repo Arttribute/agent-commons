@@ -1,7 +1,7 @@
 "use client";
 import { Menubar, MenubarMenu, MenubarTrigger } from "@/components/ui/menubar";
 //import { Sparkles } from "lucide-react";
-//import AccountMenu from "@/components/account/AccountMenu";
+import AccountMenu from "@/components/account/AccountMenu";
 import Link from "next/link";
 
 export default function AppBar() {
@@ -21,7 +21,9 @@ export default function AppBar() {
           </MenubarTrigger>
         </MenubarMenu>
         <div className="grow" />
-        <div className="flex">{/* <AccountMenu /> */}</div>
+        <div className="flex">
+          <AccountMenu />
+        </div>
       </Menubar>
     </div>
   );

@@ -1,12 +1,10 @@
 "use client";
-
 import { useState } from "react";
 import { AgentForm } from "@/components/agents/CreateAgentForm";
 import { AIAgentBuilder } from "@/components/agents/AgentBuilder";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Bot, Brain } from "lucide-react";
 import AppBar from "@/components/layout/AppBar";
-import App from "next/app";
 
 export default function Page() {
   const [activeTab, setActiveTab] = useState<"manual" | "ai">("manual");

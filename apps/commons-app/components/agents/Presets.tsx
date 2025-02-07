@@ -4,7 +4,7 @@ import { useState } from "react";
 import { Label } from "@/components/ui/label";
 import { Slider } from "@/components/ui/slider";
 import type { CommonAgent } from "@/types/agent";
-import ToolSelector from "./ToolSelector";
+import ToolSelector from "@/components/tools/ToolSelector";
 import { JsonEditor } from "./JsonEditor";
 import { TagInput } from "./TagInput";
 
