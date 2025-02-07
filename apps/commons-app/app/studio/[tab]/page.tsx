@@ -4,7 +4,7 @@ import type { NextPage } from "next";
 import { useMemo } from "react";
 import AppBar from "@/components/layout/AppBar";
 import AgentsShowcase from "@/components/agents/AgentsShowcase";
-import ToolList from "@/components/tools/ToolsList";
+import ToolsList from "@/components/tools/ToolsList";
 import { DashboardBar } from "@/components/layout/DashboardBar";
 import { DotPattern } from "@/components/magicui/dot-pattern";
 import { cn } from "@/lib/utils";
@@ -42,7 +42,7 @@ const StudioPage: NextPage = () => {
             <p className="text-gray-500 text-sm mb-2">
               Here you can view and manage tools.
             </p>
-            <ToolList
+            <ToolsList
               tools={[
                 {
                   name: "Agent",
