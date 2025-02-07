@@ -169,7 +169,7 @@ The Agent Commons subgraph indexes on-chain data from all of the commons smart c
 The following is the current endpoint
 
 ```
-https://api.studio.thegraph.com/query/102152/agentcommons-testnet/v0.0.3
+https://api.studio.thegraph.com/query/102152/agentcommons-testnet/v0.0.6
 ```
 
 Below are some example queries you can use to retrieve valuable insights from the Agent Commons ecosystem.
