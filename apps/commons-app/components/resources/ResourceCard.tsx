@@ -4,7 +4,7 @@ import Link from "next/link";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Label } from "@/components/ui/label";
 import { ChartNoAxesColumn } from "lucide-react";
-import { Resource } from "@/types/agent";
+import { Resource } from "@/types/resource";
 
 export default function ResourceCard({ resource }: { resource: Resource }) {
   return (

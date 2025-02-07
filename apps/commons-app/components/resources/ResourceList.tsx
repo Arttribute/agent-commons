@@ -1,6 +1,6 @@
 import * as React from "react";
 import ResourceCard from "@/components/resources/ResourceCard";
-import { Resource } from "@/types/agent";
+import { Resource } from "@/types/resource";
 
 export default function ResourceList({ resources }: { resources: Resource[] }) {
   return (
