@@ -3,13 +3,15 @@
 import React, { useMemo } from "react";
 import Image from "next/image";
 import { motion } from "framer-motion";
+import Link from "next/link";
 // Adjust these imports to match your project’s structure.
+
 import {
-  Popover,
-  PopoverTrigger,
-  PopoverContent,
-} from "@/components/ui/popover";
-import { DotPattern } from "@/components/magicui/dot-pattern";
+  HoverCard,
+  HoverCardContent,
+  HoverCardTrigger,
+} from "@/components/ui/hover-card";
+
 // ---------------------------------------------------------------------
 // 1. Types and Sample Agent Data
 // ---------------------------------------------------------------------
@@ -161,26 +163,28 @@ export default function AgentsShowcase() {
                 delay: (agent.id % 5) * 0.2,
               }}
             >
-              <Popover>
-                <PopoverTrigger asChild>
-                  <button
-                    className="w-20 h-20 rounded-full overflow-hidden shadow-md hover:shadow-xl transition p-0.5 border border-gray-500"
-                    aria-label={agent.name}
-                  >
-                    <Image
-                      src={agent.avatar}
-                      alt={agent.name}
-                      width={100}
-                      height={100}
-                      className="object-cover rounded-full border w-full h-full"
-                    />
-                  </button>
-                </PopoverTrigger>
-                <PopoverContent className="p-4">
+              <HoverCard>
+                <HoverCardTrigger asChild>
+                  <Link href={`/studio/agents/${agent.id}`}>
+                    <button
+                      className="w-20 h-20 rounded-full overflow-hidden shadow-md hover:shadow-xl transition p-0.5 border border-gray-500"
+                      aria-label={agent.name}
+                    >
+                      <Image
+                        src={agent.avatar}
+                        alt={agent.name}
+                        width={100}
+                        height={100}
+                        className="object-cover rounded-full border w-full h-full"
+                      />
+                    </button>
+                  </Link>
+                </HoverCardTrigger>
+                <HoverCardContent className="w-80 bg-white p-4 rounded-lg shadow-lg z-20">
                   <h3 className="mb-2 text-lg font-bold">{agent.name}</h3>
                   <p className="text-sm text-gray-700">{agent.description}</p>
-                </PopoverContent>
-              </Popover>
+                </HoverCardContent>
+              </HoverCard>
             </motion.div>
           </div>
         ))}
