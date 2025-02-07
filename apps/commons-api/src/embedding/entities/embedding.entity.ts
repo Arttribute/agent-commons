@@ -1,6 +1,5 @@
-export class Embedding {
+export interface Embedding {
   resource_id: string;
-  name: string;
   resource_type: string;
   json_schema: string;
   embedding: Array<number>;
