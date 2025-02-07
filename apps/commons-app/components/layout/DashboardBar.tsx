@@ -25,14 +25,6 @@ export const DashboardBar: FC<DashboardBarProps> = ({ activeTab }) => {
     router.push(`/studio/${tab}`);
   };
 
-  /** Dynamically change "Create ..." text based on activeTab */
-  let createButtonText = "Create Agent";
-  if (activeTab === "tools") {
-    createButtonText = "Create Tools";
-  }
-  // more conditions if needed, e.g.
-  // else if (activeTab === "tools") createButtonText = "Create Tool";
-
   return (
     <div className="w-full">
       <div className="flex justify-between items-center mb-2">

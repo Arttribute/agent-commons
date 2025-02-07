@@ -6,7 +6,7 @@ import { Textarea } from "@/components/ui/textarea";
 
 export function ToolForm() {
   const handleSubmit = (e: React.FormEvent) => {
-    console.log("Form submitted");
+    console.log("Form submitted", e);
   };
 
   return (
