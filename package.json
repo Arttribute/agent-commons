@@ -12,7 +12,5 @@
   "devDependencies": {
     "concurrently": "^9.1.2"
   },
-  "dependencies": {
-    "agent-commons": "file:"
-  }
+  "packageManager": "pnpm@9.15.3"
 }
