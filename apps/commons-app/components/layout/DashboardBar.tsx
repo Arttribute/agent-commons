@@ -2,6 +2,7 @@
 import { FC } from "react";
 import { useRouter } from "next/navigation";
 import { Bot, CreditCard, BadgePlus, Wrench, User } from "lucide-react";
+import { CreateTool } from "@/components/tools/CreateTool";
 
 import {
   Command,
@@ -36,10 +37,14 @@ export const DashboardBar: FC<DashboardBarProps> = ({ activeTab }) => {
     <div className="w-full">
       <div className="flex justify-between items-center mb-2">
         <h2 className="font-semibold">Commons Studio</h2>
-        <Button size="sm">
-          <BadgePlus />
-          <p className="text-sm -ml-1">{createButtonText}</p>
-        </Button>
+        {activeTab === "tools" ? (
+          <CreateTool />
+        ) : (
+          <Button size="sm" onClick={() => router.push("/agents/create")}>
+            <BadgePlus />
+            <p className="text-sm -ml-1">Create Agent</p>
+          </Button>
+        )}
       </div>
 
       <Command className="rounded-lg">
