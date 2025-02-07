@@ -18,7 +18,7 @@ export default function ResourceCard({ resource }: { resource: Resource }) {
     >
       <div className="absolute inset-0 bg-black bg-opacity-30" />
       <Link
-        href={`/${resource}/worlds/${resource}`}
+        href={`/${resource.title}/worlds/${resource.title}`}
         className="relative z-10 block px-4"
       >
         <div>
