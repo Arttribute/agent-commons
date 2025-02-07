@@ -28,8 +28,16 @@ export class EmbeddingService {
 
   private async loadTextPipeline() {
     // text model for text
-    const { pipeline } = await import('@xenova/transformers');
-    return pipeline('feature-extraction', 'Supabase/gte-small'); // 384-dimensional embeddings
+    const { AutoTokenizer, CLIPTextModelWithProjection } = await import(
+      '@xenova/transformers'
+    );
+    const tokenizer = await AutoTokenizer.from_pretrained(
+      'Xenova/clip-vit-base-patch16',
+    );
+    const model = await CLIPTextModelWithProjection.from_pretrained(
+      'Xenova/clip-vit-base-patch16',
+    );
+    return { tokenizer, model };
   }
 
   // Note: Idea is to have a single pipeline for all types of embeddings and handle the type in the service. Can only search if the type is known. Cannot search across multiple dimensions
@@ -50,6 +58,7 @@ export class EmbeddingService {
     const model = await ClapAudioModelWithProjection.from_pretrained(
       'Xenova/larger_clap_general',
     );
+
     return { processor, model };
   }
 
@@ -58,13 +67,21 @@ export class EmbeddingService {
     let generateEmbedding: any;
     let output: any;
     switch (type) {
-      case EmbeddingType.text:
-        generateEmbedding = await this.loadTextPipeline();
-        output = await generateEmbedding(content, {
-          pooling: 'mean',
-          normalize: true,
+      case EmbeddingType.text: {
+        const { tokenizer, model } = await this.loadTextPipeline();
+
+        const inputs = tokenizer([content], {
+          padding: true,
+          truncation: true,
         });
+        output = await model(inputs, { pooling: 'mean', normalize: true })
+          // eslint-disable-next-line @typescript-eslint/no-unsafe-return
+          .then((x: any) => x.text_embeds)
+          .catch((e: any) => {
+            throw new Error(e);
+          });
         break;
+      }
       case EmbeddingType.image:
         generateEmbedding = await this.loadImagePipeline();
         output = await generateEmbedding(content, {
@@ -136,6 +153,8 @@ export class EmbeddingService {
 
     if (error) throw new Error(error.message);
 
+    console.log('Length' + data?.embedding.length);
+
     return data;
   }
 
@@ -145,12 +164,12 @@ export class EmbeddingService {
   ) {
     const { content, type } = dto;
 
-    const { matchThreshold = 0.78, matchCount = 3 } = options || {};
+    const { matchThreshold = 0, matchCount = 7 } = options || {};
 
     if (!content || !type)
       throw new BadRequestException('Content and type are required');
 
-    const embedding = await this.embed(content, type);
+    const embedding = await this.embed(content, EmbeddingType.text);
 
     // Search for similar vectors in Postgres
     const { data, error } = await this.supabase.rpc('match_resources', {
