@@ -9,7 +9,7 @@ export function useCommonResource(
   publicClient: PublicClient | null,
   walletClient: WalletClient | null
 ) {
-  const [error, setError] = useState<string|null>(null);
+  const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
   // Only implementing createResource in this example
@@ -22,14 +22,16 @@ export function useCommonResource(
     contributors: `0x${string}`[],
     shares: bigint[],
     isCoreResource: boolean
-  ){
-    if(!walletClient){
+  ) {
+    if (!walletClient) {
       setError("No walletClient");
       return;
     }
     setLoading(true);
     setError(null);
+
     try {
+      const [address] = await walletClient.getAddresses();
       const txHash = await walletClient.writeContract({
         address: COMMON_RESOURCE_ADDRESS,
         abi: COMMON_RESOURCE_ABI,
@@ -42,15 +44,37 @@ export function useCommonResource(
           usageCost,
           contributors,
           shares,
-          isCoreResource
+          isCoreResource,
         ],
         chain: undefined,
-        account: null
+        account: address,
       });
+
       console.log("createResource txHash:", txHash);
-    } catch(err:any){
-      setError(err.message);
-      console.error(err);
+      //log all the arguments
+      console.log("actualCreator:", actualCreator);
+      console.log("metadata:", metadata);
+      console.log("resourceFile:", resourceFile);
+      console.log("requiredReputation:", requiredReputation);
+      console.log("usageCost:", usageCost);
+      console.log("contributors:", contributors);
+      console.log("shares:", shares);
+      console.log("isCoreResource:", isCoreResource);
+      //show reason for transaction reverting
+    } catch (err: any) {
+      console.error("Full error object:", err);
+      console.error("Error cause:", err?.cause);
+      console.error("Error details:", err?.cause?.details);
+      console.error("Error shortMessage:", err?.cause?.shortMessage);
+
+      // If the error has a specific property for revert reason:
+      if (err?.cause?.details) {
+        setError(err.cause.details);
+      } else if (err?.cause?.shortMessage) {
+        setError(err.cause.shortMessage);
+      } else {
+        setError(err.message);
+      }
     } finally {
       setLoading(false);
     }
@@ -59,6 +83,6 @@ export function useCommonResource(
   return {
     error,
     loading,
-    createResource
+    createResource,
   };
 }

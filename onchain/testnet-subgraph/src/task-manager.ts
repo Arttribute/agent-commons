@@ -130,7 +130,6 @@ export function handleRoleGranted(event: RoleGrantedEvent): void {
 
   entity.save();
 }
-
 export function handleRoleRevoked(event: RoleRevokedEvent): void {
   let entity = new RoleRevoked(
     event.transaction.hash.concatI32(event.logIndex.toI32())

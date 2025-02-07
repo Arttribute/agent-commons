@@ -12,6 +12,8 @@ import { privateKeyToAccount } from 'viem/accounts';
 import * as schema from '#/models/schema';
 import { AgentService } from '~/features/agent/agent.service';
 import { DatabaseService } from '~/modules/database/database.service';
+import { EmbeddingService } from '~/embedding/embedding.service';
+import { EmbeddingType } from '~/embedding/dto/embedding.dto';
 
 @Injectable()
 export class ResourceService {
@@ -22,28 +24,18 @@ export class ResourceService {
   constructor(
     private db: DatabaseService,
     @Inject(forwardRef(() => AgentService)) private agent: AgentService,
+    private embedding: EmbeddingService,
   ) {}
 
   getHello(): string {
     return 'Hello World!';
   }
 
-  async getResource(props: { resourceId: string }) {
-    const { resourceId } = props;
-
-    const contract = getContract({
-      address: COMMON_RESOURCE_ADDRESS,
-      abi: COMMON_RESOURCE_ABI,
-      client: this.publicClient,
-    });
-
-    const resource = await contract.read.resource(resourceId);
-
-    return resource;
-  }
-
   async createResource(props: {
     agentId: string;
+    resourceMetadata: string;
+    resourceFile: string;
+    type: EmbeddingType;
     requiredReputation: bigint;
     usageCost: bigint;
     contributors: `0x${string}`[];
@@ -52,6 +44,9 @@ export class ResourceService {
   }) {
     const {
       agentId,
+      resourceFile,
+      resourceMetadata,
+      type,
       requiredReputation = 0n,
       usageCost = 0n,
       contributors = [agentId],
@@ -69,10 +64,6 @@ export class ResourceService {
     });
 
     const actualCreator = agentId;
-    const resourceMetadata =
-      'https://coral-abstract-dolphin-257.mypinata.cloud/ipfs/bafkreibpxnfvqblz7x5q3sheky2gme3fcivtb5qroi5cxb32bt4mw4cvpu';
-    const resourceFile =
-      'https://coral-abstract-dolphin-257.mypinata.cloud/ipfs/bafybeifrq3n5h4onservz3jlcwaeodiy5izwodbxs3ce4z6x5k4i2z4qwy';
 
     const isCoreResource = false;
 
@@ -94,14 +85,6 @@ export class ResourceService {
       isCoreResource,
     ]);
 
-    // const unwatch = this.publicClient.watchContractEvent({
-    //   address: COMMON_RESOURCE_ADDRESS,
-    //   abi: COMMON_RESOURCE_ABI,
-    //   eventName: 'createResource',
-    //   args: { from: agentId },
-    //   onLogs: logs => console.log(logs)
-    // })
-
     const receipt = await this.publicClient.waitForTransactionReceipt({
       hash: txHash,
     });
@@ -112,10 +95,30 @@ export class ResourceService {
         log.topics[0] ===
         '0xc3d58168c5ae7397731d063d5bbf3d657854427343f4c083240f7aacaa2d0f62',
     );
-    const id = BigInt(log!.data.slice(2)[1].slice(0, 64));
+    console.log('createResource log:', log);
+    const id = BigInt(log!.data.slice(2, 64 + 2));
 
-    this.db.insert(schema.resource).values({
+    const resource = this.embedding.create({
       resourceId: id.toString(),
+      content: resourceFile,
+      type,
     });
+
+    return resource;
+  }
+
+  textToDataURLBase64(text: string) {
+    const mimeType = 'text/plain'; // MIME type for plain text
+    const base64Text = btoa(encodeURIComponent(text));
+    return `data:${mimeType};base64,${base64Text}`;
+  }
+
+  findResources(props: { query: string; resourceType: EmbeddingType }) {
+    const { query, resourceType } = props;
+    const resources = this.embedding.find({
+      content: query,
+      type: resourceType,
+    });
+    return resources;
   }
 }

@@ -222,6 +222,7 @@ export class AgentService {
         role: 'system',
         content: dedent`You are the following agent:
       ${JSON.stringify(omit(agent, ['instructions', 'persona', 'wallet']))}
+      Use any tools nessecary to get information in order to perform the task.
 
       The following is the persona you are meant to adopt:
       ${agent.persona}
@@ -241,6 +242,8 @@ export class AgentService {
         }) as unknown as ChatCompletionTool,
     );
 
+    console.log(app.functions[0]);
+
     let chatGPTResponse: ChatCompletion;
     // let sessionId: string | undefined = body.sessionId;
 
@@ -248,7 +251,7 @@ export class AgentService {
       messages,
       tools,
       tool_choice: 'auto',
-      parallel_tool_calls: false,
+      parallel_tool_calls: true,
       model: 'gpt-4o-mini',
     };
 

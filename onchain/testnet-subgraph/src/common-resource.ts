@@ -91,6 +91,7 @@ export function handleResourceCreated(event: ResourceCreatedEvent): void {
   } else {
     resource.totalShares = BigInt.fromI32(0);
   }
+  resource.usageCount = BigInt.fromI32(0);
   resource.save();
 }
 

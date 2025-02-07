@@ -3,9 +3,9 @@ import { AgentService } from '~/features/agent/agent.service';
 
 export interface EthereumTool {
   /**
-   * Check the balance of the COMMON token in wallet
+   * Get the balance of the COMMON token in wallet
    */
-  checkCommonTokenBalance(): Promise<number>;
+  getCommonTokenBalance(): number;
 
   /**
    * Transfer COMMON tokens from wallet to another wallet
@@ -19,7 +19,7 @@ export class EthereumToolService implements EthereumTool {
     @Inject(forwardRef(() => AgentService)) private agentService: AgentService,
   ) {}
   // @ts-expect-error
-  async checkCommonTokenBalance(props: {}, metadata: { agentId: string }) {
+  async getCommonTokenBalance(props: {}, metadata: { agentId: string }) {
     const { agentId } = metadata;
     // Find a way to get current agent
     return await this.agentService.checkCommonsBalance({ agentId });
