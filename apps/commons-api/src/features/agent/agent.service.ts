@@ -314,4 +314,20 @@ export class AgentService {
 
     return chatGPTResponse.choices[0].message;
   }
+  //get agent by id
+  async getAgentById(agentId: string) {
+    const agent = await this.db.query.agent.findFirst({
+      where: (t) => eq(t.agentId, agentId),
+    });
+    if (!agent) {
+      throw new BadRequestException('Agent not found');
+    }
+    return agent;
+  }
+
+  //get all agents
+  async getAgents() {
+    const agents = await this.db.query.agent.findMany();
+    return agents;
+  }
 }

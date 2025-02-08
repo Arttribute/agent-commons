@@ -20,7 +20,7 @@ export default function Home() {
         </p>
 
         <div className="flex gap-4 mt-4 z-10">
-          <Link href="/worlds/create" passHref>
+          <Link href="/agents/create" passHref>
             <Button className="rounded-lg px-16">Create</Button>
           </Link>
 
