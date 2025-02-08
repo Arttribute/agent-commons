@@ -5,6 +5,7 @@ import { AgentService } from '~/features/agent/agent.service';
 import { AttributionService } from '~/features/attribution/attribution.service';
 import { ResourceService } from '~/features/resource/resource.service';
 import { TaskService } from '~/features/task/task.service';
+import { OpenAIService } from '~/modules/openai/openai.service';
 
 const graphqlRequest = import('graphql-request');
 
@@ -83,6 +84,16 @@ export interface CommonTool {
     agentId: string;
     messages?: ChatCompletionMessageParam[];
   }): any;
+
+  /**
+   * Generate an image using DALL·E 3
+   */
+  generateImage(props: {
+    prompt: string;
+    n?: number; // how many images (defaults to 1)
+    size?: '1024x1024' | '1024x1792' | '1792x1024';
+    quality?: 'standard' | 'hd';
+  }): any;
 }
 
 @Injectable()
@@ -97,6 +108,8 @@ export class CommonToolService implements CommonTool {
     private task: TaskService,
     @Inject(forwardRef(() => AttributionService))
     private attribution: AttributionService,
+    @Inject(forwardRef(() => OpenAIService))
+    private openAI: OpenAIService,
   ) {}
 
   getAgents(props?: { id?: string }) {
@@ -463,5 +476,34 @@ export class CommonToolService implements CommonTool {
     messages?: ChatCompletionMessageParam[];
   }) {
     return this.agent.runAgent(props);
+  }
+  /**
+   * Generate an image using DALL·E 3
+   * @param props
+   * @param metadata
+   * @returns
+   */
+  async generateImage(props: {
+    prompt: string;
+    n?: number;
+    size?: '1024x1024' | '1024x1792' | '1792x1024';
+    quality?: 'standard' | 'hd';
+  }) {
+    const { prompt, n = 1, size = '1024x1024', quality = 'standard' } = props;
+
+    // The quality param can be set under the "quality" key if you want "hd"
+    // For standard usage, you can omit it or pass "standard".
+    const response = await this.openAI.images.generate({
+      model: 'dall-e-3',
+      prompt,
+      n,
+      size,
+      // If you want to pass it:
+      // quality: 'hd',
+      response_format: 'url',
+    });
+
+    // Return the array of image URLs or the full data
+    return response.data; // each item will have { url, revised_prompt, etc. }
   }
 }
