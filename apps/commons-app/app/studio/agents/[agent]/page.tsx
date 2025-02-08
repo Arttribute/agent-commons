@@ -85,7 +85,7 @@ export default function AgentStudio({
                 </Avatar>
                 <div className="flex flex-col justify-center">
                   <h1 className="text-xl font-bold">
-                    {agent?.name || "Unnamed Agent"}
+                    {agent.name || "Unnamed Agent"}
                   </h1>
                   <div className="flex items-center gap-2 bg-gray-100 p-1 rounded-3xl w-52">
                     <p className="text-gray-500 text-xs">{formattedAddress}</p>
