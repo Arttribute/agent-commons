@@ -5,7 +5,7 @@ process.env.COINBASE_API_KEY_SECRET =
   process.env.COINBASE_API_KEY_SECRET &&
   decodeURIComponent(process.env.COINBASE_API_KEY_SECRET);
 process.env.SUPABASE_URL =
-  process.env.SUPABASE_URL && decodeURI(process.env.SUPABASE_URL);
+  process.env.SUPABASE_URL && decodeURIComponent(process.env.SUPABASE_URL);
 
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
