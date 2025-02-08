@@ -1,39 +1,38 @@
 {
-	"compilerOptions": {
-		"module": "NodeNext",
-		"strict": true,
-		"strictNullChecks": true,
-		"allowJs": true,
-		"declaration": true,
-		"removeComments": true,
-		"emitDecoratorMetadata": true,
-		"moduleResolution": "NodeNext",
-		"experimentalDecorators": true,
-		"allowSyntheticDefaultImports": true,
-		"esModuleInterop": true,
-		"resolveJsonModule": true,
-		"noImplicitReturns": true,
-		"forceConsistentCasingInFileNames": true,
-		"noFallthroughCasesInSwitch": true,
-		"target": "ESNext",
-		"sourceMap": true,
-		"skipLibCheck": true,
-		"lib": ["ESNext"],
-		"outDir": "./dist/nest",
-		"baseUrl": "./",
-		"incremental": true,
-		"paths": {
-			"~/*": ["./src/*"],
-			"#/*": ["./*"]
-		},
-		"plugins": [
-			{ "transform": "typia/lib/transform" },
-			{
-				"transform": "@nestia/core/lib/transform",
-				"validate": "validate",
-				"stringify": "assert"
-			}
-		]
-	},
-	"exclude": ["node_modules", "dist", "drizzle", "drizzle.config.ts"]
+  "compilerOptions": {
+    "module": "NodeNext",
+    "strict": true,
+    "strictNullChecks": true,
+    "allowJs": true,
+    "declaration": true,
+    "removeComments": true,
+    "emitDecoratorMetadata": true,
+    "moduleResolution": "NodeNext",
+    "experimentalDecorators": true,
+    "allowSyntheticDefaultImports": true,
+    "esModuleInterop": true,
+    "resolveJsonModule": true,
+    "forceConsistentCasingInFileNames": true,
+    "noFallthroughCasesInSwitch": true,
+    "target": "ESNext",
+    "sourceMap": true,
+    "skipLibCheck": true,
+    "lib": ["ESNext"],
+    "outDir": "./dist/nest",
+    "baseUrl": "./",
+    "incremental": true,
+    "paths": {
+      "~/*": ["./src/*"],
+      "#/*": ["./*"]
+    },
+    "plugins": [
+      { "transform": "typia/lib/transform" },
+      {
+        "transform": "@nestia/core/lib/transform",
+        "validate": "validate",
+        "stringify": "assert"
+      }
+    ]
+  },
+  "exclude": ["node_modules", "dist", "drizzle", "drizzle.config.ts"]
 }
