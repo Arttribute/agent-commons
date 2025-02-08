@@ -5,12 +5,12 @@ steps:
     args: ['install', '-g', 'pnpm']
   - name: node
     dir: './apps/commons-api'
-    entrypoint: 'pnpm'
-    args: ['install']
+    entrypoint: 'bash'
+    args: ["-c",'pnpm install']
   - name: node
     dir: './apps/commons-api'
-    entrypoint: 'pnpm'
-    args: ['build']
+    entrypoint: 'bash'
+    args: ["-c",'pnpm build']
   - name: 'gcr.io/cloud-builders/docker'
     dir: './apps/commons-api'
     args:
