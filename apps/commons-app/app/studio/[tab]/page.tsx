@@ -1,6 +1,5 @@
 // app/studio/[tab]/page.tsx
 "use client";
-
 import { useParams } from "next/navigation";
 import type { NextPage } from "next";
 import { useEffect, useState } from "react";
@@ -11,6 +10,7 @@ import { DashboardBar } from "@/components/layout/DashboardBar";
 import { DotPattern } from "@/components/magicui/dot-pattern";
 import { cn } from "@/lib/utils";
 import { CommonAgent } from "@/types/agent";
+import { Loader2 } from "lucide-react";
 
 const Profile: React.FC = () => (
   <div className="p-4">
@@ -67,6 +67,7 @@ const ToolsArea: React.FC = () => (
 // Our main dynamic page component
 const StudioPage: NextPage = () => {
   const { tab } = useParams() as { tab: string };
+  const [loafingAgents, setLoafingAgents] = useState(true);
 
   const [agents, setAgents] = useState<CommonAgent[]>([]);
   const activeTab = tab || "agents";
@@ -74,6 +75,7 @@ const StudioPage: NextPage = () => {
   // If user is in the "agents" tab, fetch from Nest
   useEffect(() => {
     async function fetchAgents() {
+      setLoafingAgents(true);
       if (activeTab === "agents") {
         try {
           // Could also call /api/agents if you made that GET route
@@ -88,6 +90,7 @@ const StudioPage: NextPage = () => {
           console.error("Error fetching agents:", err);
         }
       }
+      setLoafingAgents(false);
     }
     fetchAgents();
   }, [activeTab]);
@@ -111,7 +114,13 @@ const StudioPage: NextPage = () => {
           <h2 className="text-xl font-semibold">My Agents</h2>
           <p className="text-gray-500 text-sm mb-2">Manage your agents.</p>
           {/* Pass the fetched agent data to AgentsShowcase */}
-          <AgentsShowcase agents={agents} />
+          {loafingAgents ? (
+            <div className="flex items-center justify-center h-32">
+              <Loader2 className="h-5 w-5 animate-spin" />
+            </div>
+          ) : (
+            <AgentsShowcase agents={agents} />
+          )}
         </div>
       );
       break;

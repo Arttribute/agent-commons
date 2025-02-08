@@ -9,6 +9,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import KnowledgeBaseInput from "@/components/agents/KnowledgeBaseInput";
 import AppBar from "@/components/layout/AppBar";
+import { use } from "react";
 
 interface AgentData {
   agentId: string;
@@ -19,8 +20,13 @@ interface AgentData {
   // any other fields from your Drizzle schema
 }
 
-export default function AgentStudio({ params }: { params: { agent: string } }) {
-  const id = params.agent;
+export default function AgentStudio({
+  params,
+}: {
+  params: Promise<{ agent: string }>;
+}) {
+  const agentid = use(params);
+  const id = agentid.agent;
 
   const [agent, setAgent] = useState<AgentData | null>(null);
 
