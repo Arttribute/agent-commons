@@ -599,7 +599,7 @@ describe("Agent Commons Comprehensive Tests (Option B: Agent Owns Resource)", fu
 
       const tx = await taskManager
         .connect(agent1)
-        .createTask("meta", 100, false, 0, 2);
+        .createTask("meta", "description", 100, false, 0, 2);
       const rc = await tx.wait();
       const createdEv = parseEvent(rc, taskManager.interface, "CreatedTask");
       expect(createdEv).to.not.be.undefined;
@@ -612,7 +612,7 @@ describe("Agent Commons Comprehensive Tests (Option B: Agent Owns Resource)", fu
     it("Should allow creating a resource-based task without deposit", async function () {
       const tx = await taskManager
         .connect(agent1)
-        .createTask("resource-task", 10, true, 0, 5);
+        .createTask("resource-task", "description", 10, true, 0, 5);
       const rc = await tx.wait();
       const evt = parseEvent(rc, taskManager.interface, "CreatedTask");
       const taskId = evt.args.taskId;
@@ -631,14 +631,14 @@ describe("Agent Commons Comprehensive Tests (Option B: Agent Owns Resource)", fu
 
       const tx = await taskManager
         .connect(agent1)
-        .createTask("parent", 100, false, 0, 2);
+        .createTask("parent", "description", 100, false, 0, 2);
       const rc = await tx.wait();
       const pEvt = parseEvent(rc, taskManager.interface, "CreatedTask");
       const parentId = pEvt.args.taskId;
 
       const tx2 = await taskManager
         .connect(agent1)
-        .createTask("child", 50, false, parentId, 2);
+        .createTask("child", "description", 50, false, parentId, 2);
       const rc2 = await tx2.wait();
       const cEvt = parseEvent(rc2, taskManager.interface, "CreatedTask");
       const childId = cEvt.args.taskId;
@@ -653,7 +653,9 @@ describe("Agent Commons Comprehensive Tests (Option B: Agent Owns Resource)", fu
 
     it("Should revert if non-registered agent tries to create a task", async function () {
       try {
-        await taskManager.connect(outsider).createTask("xx", 50, false, 0, 2);
+        await taskManager
+          .connect(outsider)
+          .createTask("xx", "description", 50, false, 0, 2);
         expect.fail("Expected revert");
       } catch (err: any) {
         expect(err.message).to.match(/Not a registered agent/);
@@ -666,7 +668,7 @@ describe("Agent Commons Comprehensive Tests (Option B: Agent Owns Resource)", fu
 
       const tx = await taskManager
         .connect(agent1)
-        .createTask("join", 100, false, 0, 1);
+        .createTask("join", "description", 100, false, 0, 1);
       const rc = await tx.wait();
       const evt = parseEvent(rc, taskManager.interface, "CreatedTask");
       const taskId = evt.args.taskId;
@@ -690,7 +692,7 @@ describe("Agent Commons Comprehensive Tests (Option B: Agent Owns Resource)", fu
 
       const tx = await taskManager
         .connect(agent1)
-        .createTask("test", 100, false, 0, 1);
+        .createTask("test", "description", 100, false, 0, 1);
       const rc = await tx.wait();
       const evt = parseEvent(rc, taskManager.interface, "CreatedTask");
       const taskId = evt.args.taskId;
@@ -711,7 +713,7 @@ describe("Agent Commons Comprehensive Tests (Option B: Agent Owns Resource)", fu
 
       const tx = await taskManager
         .connect(agent1)
-        .createTask("meta", 100, false, 0, 2);
+        .createTask("meta", "description", 100, false, 0, 2);
       const rc = await tx.wait();
       const cEvt = parseEvent(rc, taskManager.interface, "CreatedTask");
       const taskId = cEvt.args.taskId;
@@ -748,7 +750,7 @@ describe("Agent Commons Comprehensive Tests (Option B: Agent Owns Resource)", fu
 
       const tx = await taskManager
         .connect(agent1)
-        .createTask("task", 100, false, 0, 3);
+        .createTask("task", "description", 100, false, 0, 3);
       const rc = await tx.wait();
       const e = parseEvent(rc, taskManager.interface, "CreatedTask");
       const taskId = e.args.taskId;
@@ -789,7 +791,7 @@ describe("Agent Commons Comprehensive Tests (Option B: Agent Owns Resource)", fu
       await commonToken.connect(agent1).approve(taskManager.getAddress(), 200n);
       const tx = await taskManager
         .connect(agent1)
-        .createTask("x", 100, false, 0, 2);
+        .createTask("x", "d", 100, false, 0, 2);
       const rc = await tx.wait();
       const e = parseEvent(rc, taskManager.interface, "CreatedTask");
       const taskId = e.args.taskId;
@@ -807,14 +809,14 @@ describe("Agent Commons Comprehensive Tests (Option B: Agent Owns Resource)", fu
       await commonToken.connect(agent1).approve(taskManager.getAddress(), 300n);
       const tx = await taskManager
         .connect(agent1)
-        .createTask("parent", 100, false, 0, 2);
+        .createTask("parent", "description", 100, false, 0, 2);
       const rc = await tx.wait();
       const pEvt = parseEvent(rc, taskManager.interface, "CreatedTask");
       const parentId = pEvt.args.taskId;
 
       const tx2 = await taskManager
         .connect(agent1)
-        .createTask("child", 50, false, parentId, 2);
+        .createTask("child", "description", 50, false, parentId, 2);
       const rc2 = await tx2.wait();
       const cEvt = parseEvent(rc2, taskManager.interface, "CreatedTask");
       const childId = cEvt.args.taskId;
@@ -830,7 +832,7 @@ describe("Agent Commons Comprehensive Tests (Option B: Agent Owns Resource)", fu
     it("Should allow completing a resource-based task => creates a CommonResource (creator=agent1)", async function () {
       const tx = await taskManager
         .connect(agent1)
-        .createTask("res-based", 5, true, 0, 2);
+        .createTask("res-based", "description", 5, true, 0, 2);
       const rc = await tx.wait();
       const e = parseEvent(rc, taskManager.interface, "CreatedTask");
       const taskId = e.args.taskId;
@@ -889,7 +891,7 @@ describe("Agent Commons Comprehensive Tests (Option B: Agent Owns Resource)", fu
 
       const createTx = await taskManager
         .connect(agent1)
-        .createTask("FilmProject", 50, true, 0, 3);
+        .createTask("FilmProject", "description", 50, true, 0, 3);
       const cr = await createTx.wait();
       const createEvt = parseEvent(cr, taskManager.interface, "CreatedTask");
       const filmTaskId = createEvt.args.taskId;
@@ -943,7 +945,7 @@ describe("Agent Commons Comprehensive Tests (Option B: Agent Owns Resource)", fu
       // We'll do a resource-based "DatasetSourcing" task with reward=0 if we want
       const createTx = await taskManager
         .connect(agent1)
-        .createTask("DatasetSourcing", 0, true, 0, 2);
+        .createTask("DatasetSourcing", "description", 0, true, 0, 2);
       const cr = await createTx.wait();
       const createEvt = parseEvent(cr, taskManager.interface, "CreatedTask");
       const datasetTaskId = createEvt.args.taskId;
@@ -976,7 +978,7 @@ describe("Agent Commons Comprehensive Tests (Option B: Agent Owns Resource)", fu
       // Step 2: specialized agent trains a model => also resource-based
       const modelTx = await taskManager
         .connect(agent2)
-        .createTask("TrainModel", 0, true, 0, 1);
+        .createTask("TrainModel", "description", 0, true, 0, 1);
       const modelRc = await modelTx.wait();
       const modelEvt = parseEvent(
         modelRc,
@@ -1016,7 +1018,7 @@ describe("Agent Commons Comprehensive Tests (Option B: Agent Owns Resource)", fu
       // 1) "ToolCreation"
       const toolTx = await taskManager
         .connect(agent1)
-        .createTask("ToolCreation", 100, true, 0, 2);
+        .createTask("ToolCreation", "description", 100, true, 0, 2);
       const toolRc = await toolTx.wait();
       const toolEvt = parseEvent(toolRc, taskManager.interface, "CreatedTask");
       const toolTaskId = toolEvt.args.taskId;
@@ -1048,7 +1050,7 @@ describe("Agent Commons Comprehensive Tests (Option B: Agent Owns Resource)", fu
       // 2) "DocsCreation"
       const docsTx = await taskManager
         .connect(agent2)
-        .createTask("DocsCreation", 50, true, 0, 2);
+        .createTask("DocsCreation", "description", 50, true, 0, 2);
       const docsRc = await docsTx.wait();
       const docsEvt = parseEvent(docsRc, taskManager.interface, "CreatedTask");
       const docsTaskId = docsEvt.args.taskId;

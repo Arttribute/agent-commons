@@ -159,7 +159,7 @@ dataSources:
     name: TaskManager
     network: base-sepolia
     source:
-      address: "0x9b3dEbA66f6dcCbd9AB3f8A4a8308E28710feCB7"
+      address: "0xb12a9f7F5240e5E226445966Cd27C1c4736E095D"
       abi: TaskManager
       startBlock: 21366957
     mapping:
