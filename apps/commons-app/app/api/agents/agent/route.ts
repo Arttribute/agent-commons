@@ -20,7 +20,7 @@ export async function GET(request: Request) {
     console.log("Agent got called!!!");
     const data = await res.json();
     return NextResponse.json(data, { status: res.status });
-  } catch (error: { message: string } | any) {
+  } catch (error: any) {
     console.error("Error fetching agent:", error.message);
     return NextResponse.json({ error: error.message }, { status: 500 });
   }

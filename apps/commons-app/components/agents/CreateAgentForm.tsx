@@ -52,6 +52,7 @@ export function AgentForm() {
   //const { ready, authenticated } = usePrivy();
   const { wallets } = useWallets();
   const [provider, setProvider] = useState<EIP1193Provider | null>(null);
+  const [loadingCreate, setLoadingCreate] = useState(false);
 
   useEffect(() => {
     if (!wallets || wallets.length === 0) {
@@ -73,6 +74,7 @@ export function AgentForm() {
   const { registerAgent } = useAgentRegistry(publicClient, walletClient);
 
   const handleSubmit = async (e: React.FormEvent) => {
+    setLoadingCreate(true);
     e.preventDefault();
 
     // Construct final agent data
@@ -131,6 +133,7 @@ export function AgentForm() {
       frequencyPenalty: 0,
       presencePenalty: 0,
     });
+    setLoadingCreate(false);
   };
 
   return (
@@ -268,8 +271,8 @@ export function AgentForm() {
           </Tabs>
 
           <div className="mt-auto">
-            <Button type="submit" className="w-full">
-              Create Agent
+            <Button type="submit" className="w-full" disabled={loadingCreate}>
+              {loadingCreate ? "Creating Agent..." : "Create Agent"}
             </Button>
           </div>
         </CardContent>
