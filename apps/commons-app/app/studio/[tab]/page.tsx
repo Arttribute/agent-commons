@@ -1,13 +1,16 @@
+// app/studio/[tab]/page.tsx
 "use client";
 import { useParams } from "next/navigation";
 import type { NextPage } from "next";
-import { useMemo } from "react";
+import { useEffect, useState } from "react";
 import AppBar from "@/components/layout/AppBar";
 import AgentsShowcase from "@/components/agents/AgentsShowcase";
 import ToolsList from "@/components/tools/ToolsList";
 import { DashboardBar } from "@/components/layout/DashboardBar";
 import { DotPattern } from "@/components/magicui/dot-pattern";
 import { cn } from "@/lib/utils";
+import { CommonAgent } from "@/types/agent";
+import { Loader2 } from "lucide-react";
 
 const Profile: React.FC = () => (
   <div className="p-4">
@@ -23,75 +26,105 @@ const Balances: React.FC = () => (
   </div>
 );
 
-/** Main dynamic page component */
-const StudioPage: NextPage = () => {
-  // e.g., /studio/agents => tab === 'agents'
-  // e.g., /studio/tasks => tab === 'tasks'
-  const { tab } = useParams();
+const ToolsArea: React.FC = () => (
+  <div className="p-4">
+    <h2 className="text-xl font-semibold">Tools</h2>
+    <p className="text-gray-500 text-sm mb-2">
+      Here you can view and manage tools.
+    </p>
+    <ToolsList
+      tools={[
+        {
+          name: "Agent",
+          description: "Manage your agents",
+          calls: 0,
+        },
+        {
+          name: "Tool",
+          description: "Manage your tools",
+          calls: 0,
+        },
+        {
+          name: "Knowledge Base",
+          description: "Manage knowledge entries",
+          calls: 0,
+        },
+        {
+          name: "Marketplace",
+          description: "Buy/sell agents and tools",
+          calls: 0,
+        },
+        {
+          name: "Settings",
+          description: "Manage account settings",
+          calls: 0,
+        },
+      ]}
+    />
+  </div>
+);
 
-  // Fallback to 'agents' if tab is undefined or not a string
-  const activeTab = typeof tab === "string" ? tab : "agents";
+// Our main dynamic page component
+const StudioPage: NextPage = () => {
+  const { tab } = useParams() as { tab: string };
+  const [loafingAgents, setLoafingAgents] = useState(true);
+
+  const [agents, setAgents] = useState<CommonAgent[]>([]);
+  const activeTab = tab || "agents";
+
+  // If user is in the "agents" tab, fetch from Nest
+  useEffect(() => {
+    async function fetchAgents() {
+      setLoafingAgents(true);
+      if (activeTab === "agents") {
+        try {
+          // Could also call /api/agents if you made that GET route
+          // We'll call the Nest server directly for demonstration:
+          const res = await fetch(
+            "/api/agents",
+            { cache: "no-store" } // or "no-cache"
+          );
+          const data = await res.json();
+          setAgents(data.data);
+        } catch (err) {
+          console.error("Error fetching agents:", err);
+        }
+      }
+      setLoafingAgents(false);
+    }
+    fetchAgents();
+  }, [activeTab]);
 
   // Decide which component(s) to show based on activeTab
-  const mainContent = useMemo(() => {
-    switch (activeTab) {
-      case "tools":
-        return (
-          <div className="p-4">
-            <h2 className="text-xl font-semibold">Tools</h2>
-            <p className="text-gray-500 text-sm mb-2">
-              Here you can view and manage tools.
-            </p>
-            <ToolsList
-              tools={[
-                {
-                  name: "Agent",
-                  description: "Manage your agents",
-                  calls: 0,
-                },
-                {
-                  name: "Tool",
-                  description: "Manage your tools",
-                  calls: 0,
-                },
-                {
-                  name: "Knowledge Base",
-                  description: "Manage knowledge entries",
-                  calls: 0,
-                },
-                {
-                  name: "Marketplace",
-                  description: "Buy/sell agents and tools",
-                  calls: 0,
-                },
-                {
-                  name: "Settings",
-                  description: "Manage account settings",
-                  calls: 0,
-                },
-              ]}
-            />
-          </div>
-        );
-
-      case "profile":
-        return <Profile />;
-
-      case "balances":
-        return <Balances />;
-
-      case "agents":
-      default:
-        // Also render your ToolList if desired, plus your Agents
-        return (
-          <div className="p-4">
-            <h2 className="text-xl font-semibold">My Agents</h2>
-            <p className="text-gray-500 text-sm mb-2">Manage your agents.</p>
-            <AgentsShowcase />
-          </div>
-        );
-    }
-  }, [activeTab]);
+  let mainContent;
+  switch (activeTab) {
+    case "tools":
+      mainContent = <ToolsArea />;
+      break;
+    case "profile":
+      mainContent = <Profile />;
+      break;
+    case "balances":
+      mainContent = <Balances />;
+      break;
+    case "agents":
+    default:
+      mainContent = (
+        <div className="p-4">
+          <h2 className="text-xl font-semibold">My Agents</h2>
+          <p className="text-gray-500 text-sm mb-2">Manage your agents.</p>
+          {/* Pass the fetched agent data to AgentsShowcase */}
+          {loafingAgents ? (
+            <div className="flex items-center justify-center h-32">
+              <Loader2 className="h-5 w-5 animate-spin" />
+            </div>
+          ) : (
+            <AgentsShowcase agents={agents} />
+          )}
+        </div>
+      );
+      break;
+  }
 
   return (
     <div>
@@ -112,7 +145,7 @@ const StudioPage: NextPage = () => {
           <div className="col-span-9 relative h-[88vh]">{mainContent}</div>
         </div>
 
-        {/* Pattern in the background */}
+        {/* Pattern in the background (for styling, optional) */}
         <DotPattern
           className={cn(
             "[mask-image:radial-gradient(500px_circle_at_center,white,transparent)]"

@@ -49,7 +49,7 @@ export class AttributionService {
       chain: baseSepolia,
       transport: http(),
     });
-
+    console.log('Making attribution....');
     const contract = getContract({
       address: ATTRIBUTION_ADDRESS,
       abi: ATTRIBUTION_ABI,

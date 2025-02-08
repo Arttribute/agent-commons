@@ -331,7 +331,7 @@ export class CommonToolService implements CommonTool {
   ) {
     const task = await this.task.createTask({
       ...props,
-      reward: BigInt(0), // BigInt(props.reward),
+      reward: BigInt(props.reward),
       parentTaskId: BigInt(props.parentTaskId || 0),
       maxParticipants: BigInt(props.maxParticipants),
       agentId: metadata.agentId,
