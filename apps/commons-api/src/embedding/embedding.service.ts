@@ -127,10 +127,10 @@ export class EmbeddingService {
   }
 
   async create(dto: EmbeddingDto) {
-    const { content, type } = dto;
+    const { content, type, tags } = dto;
 
     if (!content || !type)
-      throw new BadRequestException('Content and type are required');
+      throw new BadRequestException('Content type are required');
 
     const embedding = await this.embed(content, type);
 
@@ -147,6 +147,7 @@ export class EmbeddingService {
         resource_id: dto.resourceId,
         embedding,
         resource_type: type,
+        tags: tags,
       })
       .select()
       .single();

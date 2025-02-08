@@ -33,6 +33,12 @@ export interface CommonTool {
    * Create a new Resource in the network
    */
   createResource(props: {
+    name: string;
+    description: string;
+    thumbnail: string;
+    resourceFile: string;
+    resourceFileType: string;
+    tags: string[];
     requiredReputation: number;
     usageCost: number;
     contributors: `0x${string}`[];
@@ -98,11 +104,28 @@ export interface CommonTool {
     privateKey: string; // merged from second parameter
   }): Promise<
     {
-      ipfsCID: string;
       ipfsUrl: string;
       revised_prompt: string | null;
     }[]
   >;
+
+  /**
+   * Upload a file directly to IPFS via Pinata.
+   */
+  uploadFileToIPFS(props: {
+    /** Base64-encoded file data */
+    base64String: string;
+    /** The name of the file, e.g. "document.pdf" or "image.png" */
+    fileName: string;
+    /** The MIME type, e.g. "application/pdf" or "image/png" */
+    mimeType: string;
+
+    /** For Typia LLM's single-parameter approach */
+    agentId: string;
+    privateKey: string;
+  }): Promise<{
+    ipfsUrl: string;
+  }>;
 }
 
 @Injectable()
@@ -261,6 +284,12 @@ export class CommonToolService implements CommonTool {
   // @ts-expect-error
   async createResource(
     props: {
+      name: string;
+      description: string;
+      thumbnail: string;
+      resourceFile: string;
+      resourceFileType: string;
+      tags: string[];
       requiredReputation: bigint;
       usageCost: bigint;
       contributors: `0x${string}`[];
@@ -268,16 +297,31 @@ export class CommonToolService implements CommonTool {
     },
     metadata: { agentId: string; privateKey: string },
   ) {
-    const resourceMetadata =
-      'https://coral-abstract-dolphin-257.mypinata.cloud/ipfs/bafkreibpxnfvqblz7x5q3sheky2gme3fcivtb5qroi5cxb32bt4mw4cvpu';
-    const resourceFile =
-      'https://coral-abstract-dolphin-257.mypinata.cloud/ipfs/bafybeig73decdgp666p22jdfuft6pvehgrrfknq53mcrad54h2vctd6gpu';
-    const type = EmbeddingType.image;
+    const resourceMetadataJSON = {
+      name: props.name,
+      description: props.description,
+      image: props.thumbnail,
+      attributes: [],
+    };
+    //upload metadata to IPFS
+    const metadataFile = await this.pinataService.uploadJsonFile(
+      resourceMetadataJSON,
+      'metadata.json',
+    );
+    //get ipfs file url
+    const cid = metadataFile.IpfsHash;
+    const resourceMetadata = `https://${process.env.GATEWAY_URL ?? 'gateway.pinata.cloud'}/ipfs/${cid}`;
+    //dynamic type based on resourceFileType
+    const type =
+      props.resourceFileType === 'image'
+        ? EmbeddingType.image
+        : props.resourceFileType === 'audio'
+          ? EmbeddingType.audio
+          : EmbeddingType.text;
 
     const resource = await this.resource.createResource({
       ...props,
       agentId: metadata.agentId,
-      resourceFile,
       resourceMetadata,
       type,
       isCoreResource: false,
@@ -350,7 +394,9 @@ export class CommonToolService implements CommonTool {
   // @ts-expect-error
   async createTask(
     props: {
+      name: string;
       description: string;
+      thumbnail: string;
       reward: number;
       resourceBased: boolean;
       parentTaskId?: number;
@@ -358,8 +404,21 @@ export class CommonToolService implements CommonTool {
     },
     metadata: { agentId: string; privateKey: string },
   ) {
-    const taskMetadata =
-      'https://coral-abstract-dolphin-257.mypinata.cloud/ipfs/bafkreibpxnfvqblz7x5q3sheky2gme3fcivtb5qroi5cxb32bt4mw4cvpu';
+    const taskMetadataJSON = {
+      name: props.name,
+      description: props.description,
+      image: props.thumbnail,
+      attributes: [],
+    };
+    //upload metadata to IPFS
+    const metadataFile = await this.pinataService.uploadJsonFile(
+      taskMetadataJSON,
+      'metadata.json',
+    );
+    //get ipfs file url
+    const cid = metadataFile.IpfsHash;
+    const taskMetadata = `https://${process.env.GATEWAY_URL ?? 'gateway.pinata.cloud'}/ipfs/${cid}`;
+
     const task = await this.task.createTask({
       ...props,
       metadata: taskMetadata,
@@ -506,7 +565,6 @@ export class CommonToolService implements CommonTool {
     privateKey: string;
   }): Promise<
     {
-      ipfsCID: string;
       ipfsUrl: string;
       revised_prompt: string | null;
     }[]
@@ -530,7 +588,6 @@ export class CommonToolService implements CommonTool {
 
     // 2) For each returned image, store it on IPFS
     const results: {
-      ipfsCID: string;
       ipfsUrl: string;
       revised_prompt: string | null;
     }[] = [];
@@ -552,13 +609,45 @@ export class CommonToolService implements CommonTool {
       const cid = pinataResult.IpfsHash;
 
       results.push({
-        ipfsCID: cid,
-        ipfsUrl: `${process.env.GATEWAY_URL ?? 'https://gateway.pinata.cloud'}/ipfs/${cid}`,
+        ipfsUrl: `https://${process.env.GATEWAY_URL ?? 'gateway.pinata.cloud'}/ipfs/${cid}`,
         revised_prompt: revisedPrompt,
       });
     }
 
     // 3) Return IPFS info
     return results;
+  }
+
+  /**
+   * Upload a file directly to IPFS using Pinata.
+   * - `props.base64String` is your file’s data encoded in base64.
+   * - `props.fileName` is the desired name for the file on IPFS (e.g. "photo.png").
+   * - `props.mimeType` is the MIME type (e.g. "image/png").
+   * - `props.agentId` and `props.privateKey` are included to match the single param approach (Typia).
+   */
+  async uploadFileToIPFS(props: {
+    base64String: string;
+    fileName: string;
+    mimeType: string;
+    agentId: string;
+    privateKey: string;
+  }): Promise<{ ipfsUrl: string }> {
+    const { base64String, fileName, mimeType } = props;
+
+    // 1) Upload to Pinata
+    const pinataResult = await this.pinataService.uploadFileFromBase64(
+      base64String,
+      fileName,
+      mimeType,
+    );
+
+    // 2) Construct a gateway URL; you may have PINATA_GATEWAY or custom domain
+    const cid = pinataResult.IpfsHash;
+    const gatewayUrl = `https://${process.env.GATEWAY_URL ?? 'gateway.pinata.cloud'}/ipfs/${cid}`;
+
+    // 3) Return IPFS info
+    return {
+      ipfsUrl: gatewayUrl,
+    };
   }
 }
