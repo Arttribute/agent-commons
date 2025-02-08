@@ -49,7 +49,7 @@ export interface CommonTool {
    * The reward should not be more than the current COMMON token balance of the agent
    */
   createTask(props: {
-    metadata: string;
+    description: string;
     reward: number;
     resourceBased: boolean;
     parentTaskId?: number;
@@ -321,7 +321,7 @@ export class CommonToolService implements CommonTool {
   // @ts-expect-error
   async createTask(
     props: {
-      metadata: string;
+      description: string;
       reward: number;
       resourceBased: boolean;
       parentTaskId?: number;
@@ -329,8 +329,11 @@ export class CommonToolService implements CommonTool {
     },
     metadata: { agentId: string; privateKey: string },
   ) {
+    const taskMetadata =
+      'https://coral-abstract-dolphin-257.mypinata.cloud/ipfs/bafkreibpxnfvqblz7x5q3sheky2gme3fcivtb5qroi5cxb32bt4mw4cvpu';
     const task = await this.task.createTask({
       ...props,
+      metadata: taskMetadata,
       reward: BigInt(props.reward),
       parentTaskId: BigInt(props.parentTaskId || 0),
       maxParticipants: BigInt(props.maxParticipants),
