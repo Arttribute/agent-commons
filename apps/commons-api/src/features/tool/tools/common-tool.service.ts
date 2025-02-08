@@ -6,6 +6,7 @@ import { AttributionService } from '~/features/attribution/attribution.service';
 import { ResourceService } from '~/features/resource/resource.service';
 import { TaskService } from '~/features/task/task.service';
 import { OpenAIService } from '~/modules/openai/openai.service';
+import { PinataService } from '~/pinata/pinata.service';
 
 const graphqlRequest = import('graphql-request');
 
@@ -90,10 +91,18 @@ export interface CommonTool {
    */
   generateImage(props: {
     prompt: string;
-    n?: number; // how many images (defaults to 1)
-    size?: '1024x1024' | '1024x1792' | '1792x1024';
-    quality?: 'standard' | 'hd';
-  }): any;
+    n?: number; // how many images to generate (default 1)
+    size?: '1024x1024' | '1024x1792' | '1792x1024'; // optional
+    quality?: 'standard' | 'hd'; // optional
+    agentId: string; // merged from second parameter
+    privateKey: string; // merged from second parameter
+  }): Promise<
+    {
+      ipfsCID: string;
+      ipfsUrl: string;
+      revised_prompt: string | null;
+    }[]
+  >;
 }
 
 @Injectable()
@@ -110,6 +119,8 @@ export class CommonToolService implements CommonTool {
     private attribution: AttributionService,
     @Inject(forwardRef(() => OpenAIService))
     private openAI: OpenAIService,
+    @Inject(forwardRef(() => PinataService))
+    private pinataService: PinataService,
   ) {}
 
   getAgents(props?: { id?: string }) {
@@ -483,27 +494,71 @@ export class CommonToolService implements CommonTool {
    * @param metadata
    * @returns
    */
+  /**
+   * Generate an image using DALL·E 3, then store on IPFS (Pinata).
+   */
   async generateImage(props: {
     prompt: string;
     n?: number;
     size?: '1024x1024' | '1024x1792' | '1792x1024';
     quality?: 'standard' | 'hd';
-  }) {
-    const { prompt, n = 1, size = '1024x1024', quality = 'standard' } = props;
+    agentId: string;
+    privateKey: string;
+  }): Promise<
+    {
+      ipfsCID: string;
+      ipfsUrl: string;
+      revised_prompt: string | null;
+    }[]
+  > {
+    const {
+      prompt,
+      n = 1,
+      size = '1024x1024',
+      quality = 'standard', // might not always do anything in current OpenAI version
+    } = props;
 
-    // The quality param can be set under the "quality" key if you want "hd"
-    // For standard usage, you can omit it or pass "standard".
+    // 1) Call OpenAI's DALL·E 3 with base64 output
     const response = await this.openAI.images.generate({
       model: 'dall-e-3',
       prompt,
       n,
       size,
-      // If you want to pass it:
-      // quality: 'hd',
-      response_format: 'url',
+      response_format: 'b64_json',
+      // if you want "hd" => quality: 'hd' (some beta features for DALL·E 3)
     });
 
-    // Return the array of image URLs or the full data
-    return response.data; // each item will have { url, revised_prompt, etc. }
+    // 2) For each returned image, store it on IPFS
+    const results: {
+      ipfsCID: string;
+      ipfsUrl: string;
+      revised_prompt: string | null;
+    }[] = [];
+
+    for (let i = 0; i < response.data.length; i++) {
+      const imageData = response.data[i];
+      const base64String = imageData.b64_json;
+      const revisedPrompt = imageData.revised_prompt ?? null;
+
+      // Upload to Pinata
+      // We'll default to "image/png" unless you have reason to suspect a different type
+      const pinataResult = await this.pinataService.uploadFileFromBase64(
+        base64String!,
+        `dalle_image_${i}.png`,
+        'image/png',
+      );
+
+      // pinataResult will have e.g. { IpfsHash: '...' }
+      const cid = pinataResult.IpfsHash;
+
+      results.push({
+        ipfsCID: cid,
+        ipfsUrl: `${process.env.GATEWAY_URL ?? 'https://gateway.pinata.cloud'}/ipfs/${cid}`,
+        revised_prompt: revisedPrompt,
+      });
+    }
+
+    // 3) Return IPFS info
+    return results;
   }
 }
