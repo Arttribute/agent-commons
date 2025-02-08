@@ -1,5 +1,6 @@
 import { TASK_MANAGER_ABI } from '#/lib/abis/TaskManagerABI';
-import { TASK_MANAGER_ADDRESS } from '#/lib/addresses';
+import { COMMON_TOKEN_ABI } from '#/lib/abis/CommonTokenABI';
+import { TASK_MANAGER_ADDRESS, COMMON_TOKEN_ADDRESS } from '#/lib/addresses';
 import { baseSepolia } from '#/lib/baseSepolia';
 import { forwardRef, Inject, Injectable } from '@nestjs/common';
 import {
@@ -52,14 +53,37 @@ export class TaskService {
       transport: http(),
     });
 
-    const contract = getContract({
+    // If the task is not resource based, approve the TaskManager to transfer tokens.
+    if (!resourceBased) {
+      const tokenContract = getContract({
+        address: COMMON_TOKEN_ADDRESS,
+        abi: COMMON_TOKEN_ABI,
+        client: wallet,
+      });
+
+      // Sign the approval transaction so that the TaskManager can later call transferFrom()
+      console.log('Approving TaskManager to transfer tokens...');
+      const approvalTxHash = await tokenContract.write.approve([
+        TASK_MANAGER_ADDRESS,
+        reward, // Pass in the reward amount as the allowance
+      ]);
+      console.log('Approval txHash:', approvalTxHash);
+
+      // Wait for the approval transaction to be mined/confirmed
+      await this.publicClient.waitForTransactionReceipt({
+        hash: approvalTxHash,
+      });
+      console.log('Token approval confirmed.');
+    }
+
+    // Now proceed to create the task
+    const taskManagerContract = getContract({
       address: TASK_MANAGER_ADDRESS,
       abi: TASK_MANAGER_ABI,
-
       client: wallet,
     });
 
-    const txHash = await contract.write.createTask([
+    const txHash = await taskManagerContract.write.createTask([
       metadata,
       reward,
       resourceBased,
@@ -80,8 +104,7 @@ export class TaskService {
 
     console.log('createTask log:', log);
     const id = BigInt(log!.data.slice(2, 64 + 2));
-
-    return { id };
+    return { id: id.toString() };
   }
 
   async joinTask(props: { agentId: string; taskId: BigInt }) {
