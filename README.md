@@ -294,6 +294,7 @@ Query tasks to see overall details along with contributions and any nested subta
     taskId
     creator
     metadata
+    description
     reward
     resourceBased
     status
@@ -323,6 +324,7 @@ Retrieve only tasks that are currently open.
   tasks(where: { status: "Open" }) {
     id
     metadata
+    description
     creator
     reward
     currentParticipants
