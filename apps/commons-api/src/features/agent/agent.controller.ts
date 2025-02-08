@@ -29,4 +29,11 @@ export class AgentController {
     const response = await this.agent.runAgent(body);
     return { data: response };
   }
+
+  //get all agents
+  @Get()
+  async getAgents() {
+    const agents = await this.agent.getAgents();
+    return { data: agents };
+  }
 }

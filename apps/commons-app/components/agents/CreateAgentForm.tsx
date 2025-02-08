@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { useChainClients } from "@/hooks/useChainClients";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -20,6 +21,8 @@ import { Bot, Brain, PenToolIcon as Tool } from "lucide-react";
 import ImageUploader from "./ImageUploader";
 import KnowledgeBaseInput from "./KnowledgeBaseInput";
 import { Presets } from "./Presets";
+import { useAgentRegistry } from "@/hooks/useAgentRegistry";
+import { EIP1193Provider, usePrivy, useWallets } from "@privy-io/react-auth";
 
 interface ModelConfig {
   temperature: number;
@@ -46,22 +49,79 @@ export function AgentForm() {
     frequencyPenalty: 0,
     presencePenalty: 0,
   });
+  //const { ready, authenticated } = usePrivy();
+  const { wallets } = useWallets();
+  const [provider, setProvider] = useState<EIP1193Provider | null>(null);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  useEffect(() => {
+    if (!wallets || wallets.length === 0) {
+      console.log("No wallets available. User may not be signed in.");
+      return;
+    }
+    wallets[0]
+      .getEthereumProvider()
+      .then((prov) => {
+        console.log("Obtained provider:", prov);
+        setProvider(prov);
+      })
+      .catch((err) => {
+        console.error("Error getting Ethereum provider:", err);
+      });
+  }, [wallets]);
+
+  const { publicClient, walletClient } = useChainClients(provider);
+  const { registerAgent } = useAgentRegistry(publicClient, walletClient);
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    // Construct final agent data
     const finalAgent = {
       ...agent,
+      // Just an example for tools
       common_tools: [
         ...(agent.common_tools || []),
-        ...JSON.parse(`[${customTools.common}]`),
+        ...JSON.parse(`[${customTools.common || ""}]`),
       ],
       external_tools: [
         ...(agent.external_tools || []),
-        ...JSON.parse(`[${customTools.external}]`),
+        ...JSON.parse(`[${customTools.external || ""}]`),
       ],
       modelConfig,
+      // You could store persona => instructions etc. as well
+      // or rename as needed to match your Nest schema fields
+      instructions: agent.instruction,
     };
-    //dummy data
+
+    try {
+      // Call either your Next.js proxy route ("/api/agents")
+      // or the Nest server directly.
+      const res = await fetch("/api/agents", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(finalAgent),
+      });
+
+      const json = await res.json();
+      if (!res.ok) {
+        console.error("Failed creating agent", json);
+        alert("Failed creating agent.");
+      } else {
+        console.log("Agent created:", json.data);
+        // register agent in registry
+        await registerAgent(
+          json.data.agentId,
+          "https://coral-abstract-dolphin-257.mypinata.cloud/ipfs/bafkreiedckiafwwzwo3rlrgnx4tewyrtrogxylucba5qiozp5sgm47ulcy",
+          false
+        );
+        alert("Agent created successfully!");
+      }
+    } catch (error) {
+      console.error("Exception when creating agent:", error);
+      alert("Exception when creating agent.");
+    }
+
+    // Reset for demonstration
     setCustomTools({ common: "", external: "" });
     setModelConfig({
       temperature: 1,
@@ -71,11 +131,10 @@ export function AgentForm() {
       frequencyPenalty: 0,
       presencePenalty: 0,
     });
-    console.log("Agent data:", finalAgent);
   };
 
   return (
-    <form onSubmit={handleSubmit} className="container mx-auto max-w-lg ">
+    <form onSubmit={handleSubmit} className="container mx-auto max-w-lg">
       <Card className="bg-background border-2 h-[570px] flex flex-col">
         <CardHeader>
           <CardTitle>Create New Agent</CardTitle>
@@ -130,7 +189,7 @@ export function AgentForm() {
                         onChange={(e) =>
                           setAgent({ ...agent, persona: e.target.value })
                         }
-                        placeholder="Describe your agent's personality and characteristics..."
+                        placeholder="Describe your agent's personality..."
                         className="min-h-[200px]"
                       />
                     </div>
@@ -147,7 +206,7 @@ export function AgentForm() {
                         onChange={(e) =>
                           setAgent({ ...agent, instruction: e.target.value })
                         }
-                        placeholder="Provide detailed instructions for your agent..."
+                        placeholder="Provide instructions..."
                         className="h-[80px]"
                       />
                     </div>
@@ -208,7 +267,7 @@ export function AgentForm() {
             </ScrollArea>
           </Tabs>
 
-          <div className="mt-auto ">
+          <div className="mt-auto">
             <Button type="submit" className="w-full">
               Create Agent
             </Button>

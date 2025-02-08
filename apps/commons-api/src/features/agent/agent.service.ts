@@ -314,4 +314,9 @@ export class AgentService {
 
     return chatGPTResponse.choices[0].message;
   }
+  //get all agents
+  async getAgents() {
+    const agents = await this.db.query.agent.findMany();
+    return agents;
+  }
 }
