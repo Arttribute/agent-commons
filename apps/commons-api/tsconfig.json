@@ -34,5 +34,5 @@
       }
     ]
   },
-  "exclude": ["node_modules", "dist", "drizzle", "drizzle.config.ts"]
+  "exclude": ["node_modules", "dist", "models", "drizzle.config.ts"]
 }
