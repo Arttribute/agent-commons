@@ -1,0 +1,45 @@
+steps:
+  - name: 'gcr.io/cloud-builders/docker'
+    dir: '.'
+    args:
+      [
+        'build',
+        '-t',
+        'europe-west1-docker.pkg.dev/$PROJECT_ID/commons/commons-api:$SHORT_SHA',
+        '-f',
+        './Dockerfile',
+        '.',
+      ]
+
+  - name: 'gcr.io/cloud-builders/docker'
+    dir: '.'
+    args:
+      [
+        'tag',
+        'europe-west1-docker.pkg.dev/$PROJECT_ID/commons/commons-api:$SHORT_SHA',
+        'europe-west1-docker.pkg.dev/$PROJECT_ID/commons/commons-api:dev',
+      ]
+
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      [
+        'push',
+        'europe-west1-docker.pkg.dev/$PROJECT_ID/commons/commons-api',
+        '--all-tags',
+      ]
+
+  - name: 'gcr.io/cloud-builders/gcloud'
+
+    entrypoint: gcloud
+
+    args:
+      - run
+      - deploy
+      - commons-api-dev
+      - --region=europe-west1
+      - --platform=managed
+      - --image=europe-west1-docker.pkg.dev/$PROJECT_ID/commons/commons-api:dev
+
+    timeout: 1800s
+# options:
+#   machineType: "E2_MEDIUM"
