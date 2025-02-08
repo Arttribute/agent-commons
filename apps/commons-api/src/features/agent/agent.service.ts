@@ -206,7 +206,10 @@ export class AgentService {
 
     // Check if the agent has tokens
 
-    const wallet = await Wallet.import(agent.wallet);
+    const wallet = await Wallet.import(agent.wallet).catch((e) => {
+      console.log(e);
+      throw e;
+    });
     const privateKey = this.seedToPrivateKey(agent.wallet.seed);
 
     const commonsBalance = await wallet.getBalance(COMMON_TOKEN_ADDRESS);
