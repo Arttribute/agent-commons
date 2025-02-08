@@ -13,7 +13,8 @@
   "dependencies": {
     "@graphprotocol/graph-cli": "0.93.3",
     "@graphprotocol/graph-ts": "0.36.0",
-    "agentcommons-testnet": "file:"
+    "agentcommons-testnet": "file:",
+    "ethers": "^6.13.5"
   },
   "devDependencies": {
     "matchstick-as": "0.6.0"

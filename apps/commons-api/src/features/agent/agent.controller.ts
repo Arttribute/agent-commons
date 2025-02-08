@@ -1,9 +1,17 @@
-import { Body, Controller, Get, Post } from '@nestjs/common';
+import {
+  BadRequestException,
+  Body,
+  Controller,
+  Get,
+  Param,
+  Post,
+} from '@nestjs/common';
 import { AgentService } from './agent.service';
 import { TypedBody } from '@nestia/core';
 import * as schema from '#/models/schema';
 import { InferInsertModel } from 'drizzle-orm';
 import { Except } from 'type-fest';
+import { createParamDecorator, ExecutionContext } from '@nestjs/common';
 
 @Controller({ version: '1', path: 'agents' })
 export class AgentController {
@@ -28,6 +36,15 @@ export class AgentController {
   async runAgent(@Body() body: any) {
     const response = await this.agent.runAgent(body);
     return { data: response };
+  }
+
+  @Get(':agentId')
+  async getAgent(@Param('agentId') agentId: string) {
+    const agent = await this.agent.getAgent({ agentId });
+    if (!agent) {
+      throw new BadRequestException('Agent not found');
+    }
+    return { data: agent };
   }
 
   //get all agents
