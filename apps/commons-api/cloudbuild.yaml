@@ -2,7 +2,7 @@ steps:
   - name: node
     dir: './apps/commons-api'
     entrypoint: 'npm'
-    args: ['install -g pnpm']
+    args: ['install', '-g', 'pnpm']
   - name: node
     dir: './apps/commons-api'
     entrypoint: 'pnpm'
