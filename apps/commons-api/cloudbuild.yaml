@@ -1,14 +1,26 @@
 steps:
+  - name: node
+    dir: './apps/commons-api'
+    entrypoint: 'npm'
+    args: ['install -g pnpm']
+  - name: node
+    dir: './apps/commons-api'
+    entrypoint: 'pnpm'
+    args: ['install']
+  - name: node
+    dir: './apps/commons-api'
+    entrypoint: 'pnpm'
+    args: ['build']
   - name: 'gcr.io/cloud-builders/docker'
-    dir: '.'
+    dir: './apps/commons-api'
     args:
       [
         'build',
         '-t',
         'europe-west1-docker.pkg.dev/$PROJECT_ID/commons/commons-api:$SHORT_SHA',
         '-f',
-        './apps/commons-api/Dockerfile',
-        './apps/commons-api',
+        'Dockerfile',
+        '.',
       ]
 
   - name: 'gcr.io/cloud-builders/docker'
