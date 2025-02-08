@@ -10,11 +10,11 @@ export class CoinbaseService implements OnModuleInit {
   onModuleInit() {
     console.log({
       apiKeyName: process.env.COINBASE_API_KEY_NAME!,
-      privateKey: process.env.COINBASE_API_KEY_SECRET!,
+      privateKey: process.env.COINBASE_API_KEY_SECRET!.replace(/\\n/g, '\n'),
     });
     this.coinbase = Coinbase.configure({
       apiKeyName: process.env.COINBASE_API_KEY_NAME!,
-      privateKey: process.env.COINBASE_API_KEY_SECRET!,
+      privateKey: process.env.COINBASE_API_KEY_SECRET!.replace(/\\n/g, '\n'),
     });
   }
 
