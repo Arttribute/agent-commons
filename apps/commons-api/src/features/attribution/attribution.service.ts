@@ -27,17 +27,17 @@ export class AttributionService {
 
   async createAttribution(props: {
     agentId: string;
-    resourceId: string;
-    parentResources: string[];
-    relationTypes: string[];
+    resourceId: bigint;
+    parentResources: bigint[];
+    relationTypes: bigint[];
     descriptions: string[];
   }) {
     const {
       agentId,
       resourceId,
-      parentResources = [],
-      relationTypes = [],
-      descriptions = [],
+      parentResources,
+      relationTypes,
+      descriptions,
     } = props;
 
     const agent = await this.agent.getAgent({ agentId });
@@ -53,20 +53,25 @@ export class AttributionService {
     const contract = getContract({
       address: ATTRIBUTION_ADDRESS,
       abi: ATTRIBUTION_ABI,
-
       client: wallet,
     });
 
+    //consol log the sent params
+    console.log('agentId:', agentId);
+    console.log('resourceId:', BigInt(resourceId));
+    console.log('parentResources:', parentResources.map(BigInt));
+    console.log('relationTypes:', relationTypes.map(BigInt));
+    console.log('descriptions:', descriptions);
     const txHash = await contract.write.recordAttribution([
-      resourceId,
-      parentResources,
-      relationTypes,
+      BigInt(resourceId),
+      parentResources.map(BigInt),
+      relationTypes.map(BigInt),
       descriptions,
     ]);
 
     await this.publicClient.waitForTransactionReceipt({ hash: txHash });
     console.log('recordAttribution txHash:', txHash);
 
-    return {};
+    return { hash: txHash };
   }
 }

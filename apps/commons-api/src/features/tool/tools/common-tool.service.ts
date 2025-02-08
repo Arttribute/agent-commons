@@ -64,10 +64,15 @@ export interface CommonTool {
   getAttributions(): any;
   getAttributionWithId(props: { id: string }): any;
 
+  /**
+   * Create a new Attribution in the network
+   * The parentResources are the resources that were used to create the new resource
+   * relation types 0,1,2,3  DERIVED_FROM, INSPIRED_BY,USES, COLLABORATED_WITH
+   */
   createAttribution(props: {
-    resourceId: string;
-    parentResources: string[];
-    relationTypes: string[];
+    resourceId: number;
+    parentResources: number[];
+    relationTypes: number[];
     descriptions: string[];
   }): any;
 
@@ -438,9 +443,9 @@ export class CommonToolService implements CommonTool {
   // @ts-expect-error
   async createAttribution(
     props: {
-      resourceId: string;
-      parentResources: string[];
-      relationTypes: string[];
+      resourceId: bigint;
+      parentResources: bigint[];
+      relationTypes: bigint[];
       descriptions: string[];
     },
     metadata: { agentId: string; privateKey: string },
