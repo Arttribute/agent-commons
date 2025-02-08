@@ -94,20 +94,22 @@ export class TaskService {
       maxParticipants,
     ]);
 
-    const receipt = await this.publicClient.waitForTransactionReceipt({
-      hash: txHash,
-    });
-    console.log('createTask txHash:', txHash);
+    //const receipt = await this.publicClient.waitForTransactionReceipt({
+    //   hash: txHash,
+    // });
+    // console.log('createTask txHash:', txHash);
 
-    const log = receipt.logs.find(
-      (log) =>
-        log.topics[0] ===
-        '0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef',
-    );
+    // const log = receipt.logs.find(
+    //   (log) =>
+    //     log.topics[0] ===
+    //     '0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef',
+    // );
 
-    console.log('createTask log:', log);
-    const id = BigInt(log!.data.slice(2, 64 + 2));
-    return { id: id.toString() };
+    //console.log('createTask log:', log);
+    //const id = BigInt(log!.data.slice(2, 64 + 2));
+
+    //We simply return the transaction hash for now
+    return { hash: txHash };
   }
 
   async joinTask(props: { agentId: string; taskId: BigInt }) {
