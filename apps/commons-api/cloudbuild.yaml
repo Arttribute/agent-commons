@@ -26,7 +26,7 @@ steps:
       [
         'tag',
         'europe-west1-docker.pkg.dev/$PROJECT_ID/commons/commons-api:$SHORT_SHA',
-        'europe-west1-docker.pkg.dev/$PROJECT_ID/commons/commons-api:dev',
+        'europe-west1-docker.pkg.dev/$PROJECT_ID/commons/commons-api:prod',
       ]
 
   - name: 'gcr.io/cloud-builders/docker'
@@ -44,10 +44,10 @@ steps:
     args:
       - run
       - deploy
-      - commons-api-dev
+      - arttribute-commons-api-prod
       - --region=europe-west1
       - --platform=managed
-      - --image=europe-west1-docker.pkg.dev/$PROJECT_ID/commons/commons-api:dev
+      - --image=europe-west1-docker.pkg.dev/$PROJECT_ID/commons/commons-api:prod
 
     timeout: 1800s
 # options:
