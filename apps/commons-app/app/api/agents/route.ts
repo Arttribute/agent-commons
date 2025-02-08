@@ -20,7 +20,7 @@ export async function POST(request: Request) {
 
     const data = await res.json();
     return NextResponse.json(data, { status: res.status });
-  } catch (error: any) {
+  } catch (error: { message: string } | any) {
     console.error("Error creating agent:", error.message);
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
@@ -34,7 +34,7 @@ export async function GET() {
     const res = await fetch(`${baseUrl}/v1/agents`, { cache: "no-store" });
     const data = await res.json();
     return NextResponse.json(data, { status: res.status });
-  } catch (error: any) {
+  } catch (error: { message: string } | any) {
     console.error("Error fetching agents:", error.message);
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
