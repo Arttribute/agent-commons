@@ -29,6 +29,7 @@ export class TaskService {
   async createTask(props: {
     agentId: string;
     metadata: string;
+    description: string;
     reward: BigInt;
     resourceBased: boolean;
     parentTaskId: BigInt;
@@ -37,6 +38,7 @@ export class TaskService {
     const {
       agentId,
       metadata,
+      description,
       reward,
       resourceBased,
       parentTaskId,
@@ -85,6 +87,7 @@ export class TaskService {
 
     const txHash = await taskManagerContract.write.createTask([
       metadata,
+      description,
       reward,
       resourceBased,
       parentTaskId,

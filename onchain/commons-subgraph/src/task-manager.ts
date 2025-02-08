@@ -31,19 +31,20 @@ export function handleCreatedTask(event: CreatedTaskEvent): void {
   task.taskId = event.params.taskId;
   task.creator = taskData.value0;
   task.metadata = taskData.value1;
-  task.reward = taskData.value2;
-  task.resourceBased = taskData.value3;
+  task.description = taskData.value2;
+  task.reward = taskData.value3;
+  task.resourceBased = taskData.value4;
   // Convert numeric enum to string.
-  if (BigInt.fromI32(taskData.value4) == BigInt.fromI32(0)) {
-    task.status = "Open";
+  if (BigInt.fromI32(taskData.value5) == BigInt.fromI32(0)) {
+    task.status = "open";
   } else {
-    task.status = "Completed";
+    task.status = "completed";
   }
-  task.rewardsDistributed = taskData.value5;
-  task.parentTaskId = taskData.value6;
-  task.maxParticipants = taskData.value7;
-  task.currentParticipants = taskData.value8;
-  task.subtasks = taskData.value9; // assuming this is an array of BigInt
+  task.rewardsDistributed = taskData.value6;
+  task.parentTaskId = taskData.value7;
+  task.maxParticipants = taskData.value8;
+  task.currentParticipants = taskData.value9;
+  task.subtasks = taskData.value10; // assuming this is an array of BigInt
   task.save();
 
   // If there is a parent task, update its subtasks array.

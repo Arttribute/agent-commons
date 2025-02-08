@@ -18,24 +18,24 @@ async function main() {
 
   // Deploy CommonResource contract
   const commonResource = await deployCommonResource(
-    contractOwner,
     await commonToken.getAddress(),
-    await agentRegistry.getAddress()
+    await agentRegistry.getAddress(),
+    contractOwner
   );
 
   // Deploy Attribution contract
   const attribution = await deployAttribution(
-    contractOwner,
     await commonToken.getAddress(),
-    await agentRegistry.getAddress()
+    await agentRegistry.getAddress(),
+    contractOwner
   );
 
   // Deploy TaskManager contract
   const taskManager = await deployTaskManager(
-    contractOwner,
     await commonToken.getAddress(),
     await agentRegistry.getAddress(),
-    await commonResource.getAddress()
+    await commonResource.getAddress(),
+    contractOwner
   );
 
   console.log("Deployment complete.");
@@ -108,6 +108,10 @@ async function deployTaskManager(
     agentRegistryAddress,
     commonResourceAddress
   );
+  //console log addresses of the cintracts linked to the task manager
+  console.log(`CommonToken Linked with address: ${commonTokenAddress}`);
+  console.log(`AgentRegistry Linked with address: ${agentRegistryAddress}`);
+  console.log(`CommonResource Linked with address: ${commonResourceAddress}`);
 
   console.log(`TaskManager deployed at: ${await taskManager.getAddress()}`);
   return taskManager;

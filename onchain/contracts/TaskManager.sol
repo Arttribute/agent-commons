@@ -22,11 +22,12 @@ contract TaskManager is ReentrancyGuard, AccessControl {
         uint256 value;
     }
 
-    enum TaskStatus { Open, Completed }
+    enum TaskStatus { open, completed }
 
     struct Task {
         address creator;
         string metadata;
+        string description;
         uint256 reward;
         bool resourceBased;
         TaskStatus status;
@@ -66,6 +67,7 @@ contract TaskManager is ReentrancyGuard, AccessControl {
         returns (
             address creator,
             string memory metadata,
+            string memory description,
             uint256 reward,
             bool resourceBased,
             TaskStatus status,
@@ -80,6 +82,7 @@ contract TaskManager is ReentrancyGuard, AccessControl {
         return (
             t.creator,
             t.metadata,
+            t.description,
             t.reward,
             t.resourceBased,
             t.status,
@@ -93,6 +96,7 @@ contract TaskManager is ReentrancyGuard, AccessControl {
 
     function createTask(
         string memory metadata,
+        string memory description,
         uint256 reward,
         bool resourceBased,
         uint256 parentTaskId,
@@ -110,9 +114,10 @@ contract TaskManager is ReentrancyGuard, AccessControl {
 
         newTask.creator = msg.sender;
         newTask.metadata = metadata;
+        newTask.description = description;
         newTask.reward = reward;
         newTask.resourceBased = resourceBased;
-        newTask.status = TaskStatus.Open;
+        newTask.status = TaskStatus.open;
         newTask.rewardsDistributed = false;
         newTask.parentTaskId = parentTaskId;
         newTask.maxParticipants = maxParticipants;
@@ -130,7 +135,7 @@ contract TaskManager is ReentrancyGuard, AccessControl {
     function joinTask(uint256 taskId) external {
         require(agentRegistry.registeredAgents(msg.sender), "Not a registered agent");
         Task storage task = tasks[taskId];
-        require(task.status == TaskStatus.Open, "Task is not open");
+        require(task.status == TaskStatus.open, "Task is not open");
         require(task.currentParticipants < task.maxParticipants, "Max participants reached");
         require(!joinedTask[taskId][msg.sender], "Already joined this task");
 
@@ -147,7 +152,7 @@ contract TaskManager is ReentrancyGuard, AccessControl {
     ) external {
         Task storage task = tasks[taskId];
         require(msg.sender == task.creator, "Only creator can add contributions");
-        require(task.status == TaskStatus.Open, "Task not in Open state");
+        require(task.status == TaskStatus.open, "Task not in Open state");
         require(agentRegistry.registeredAgents(contributor), "Not a registered agent");
         require(value > 0, "Contribution value must be greater than zero");
         require(joinedTask[taskId][contributor], "Must join task before contributing");
@@ -159,16 +164,16 @@ contract TaskManager is ReentrancyGuard, AccessControl {
     function completeTask(uint256 taskId, string memory resultantFile) external nonReentrant {
         Task storage task = tasks[taskId];
         require(msg.sender == task.creator, "Only creator can complete task");
-        require(task.status == TaskStatus.Open, "Task not in Open state");
+        require(task.status == TaskStatus.open, "Task not in Open state");
 
         // All subtasks must be completed
         for (uint256 i = 0; i < task.subtasks.length; i++) {
-            require(tasks[task.subtasks[i]].status == TaskStatus.Completed, "All subtasks must be completed");
+            require(tasks[task.subtasks[i]].status == TaskStatus.completed, "All subtasks must be completed");
         }
 
         _handleTaskCompletion(taskId, resultantFile);
 
-        task.status = TaskStatus.Completed;
+        task.status = TaskStatus.completed;
         emit CompletedTask(taskId);
     }
 

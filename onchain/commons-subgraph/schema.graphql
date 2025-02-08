@@ -370,6 +370,7 @@ type Task @entity {
   taskId: BigInt!
   creator: Bytes!
   metadata: String!
+  description: String!
   reward: BigInt!
   resourceBased: Boolean!
   status: String! # "Open" or "Completed"
