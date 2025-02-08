@@ -10,6 +10,7 @@ import ToolsList from "@/components/tools/ToolsList";
 import { DashboardBar } from "@/components/layout/DashboardBar";
 import { DotPattern } from "@/components/magicui/dot-pattern";
 import { cn } from "@/lib/utils";
+import { CommonAgent } from "@/types/agent";
 
 const Profile: React.FC = () => (
   <div className="p-4">
@@ -67,7 +68,7 @@ const ToolsArea: React.FC = () => (
 const StudioPage: NextPage = () => {
   const { tab } = useParams() as { tab: string };
 
-  const [agents, setAgents] = useState<any[]>([]);
+  const [agents, setAgents] = useState<CommonAgent[]>([]);
   const activeTab = tab || "agents";
 
   // If user is in the "agents" tab, fetch from Nest

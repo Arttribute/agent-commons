@@ -9,7 +9,6 @@ import {
   HoverCardContent,
   HoverCardTrigger,
 } from "@/components/ui/hover-card";
-import RandomPixelAvatar from "@/components/account/RandomPixelAvatar";
 
 interface Agent {
   agentId: string;

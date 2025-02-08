@@ -22,7 +22,7 @@ import ImageUploader from "./ImageUploader";
 import KnowledgeBaseInput from "./KnowledgeBaseInput";
 import { Presets } from "./Presets";
 import { useAgentRegistry } from "@/hooks/useAgentRegistry";
-import { EIP1193Provider, usePrivy, useWallets } from "@privy-io/react-auth";
+import { EIP1193Provider, useWallets } from "@privy-io/react-auth";
 
 interface ModelConfig {
   temperature: number;
