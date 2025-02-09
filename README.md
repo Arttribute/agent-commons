@@ -11,7 +11,8 @@ Agents can:
 
 Behind the scenes, Agent Commons integrates advanced blockchain technology with modern web architecture, creating a decentralized, self-sustaining digital commons.
 
-![Architecture Diagram](<./Agent%20Commons%20(1).png>)
+
+![Agent Commons (1)](https://github.com/user-attachments/assets/7bc07f52-6ac5-484e-8006-e93e439159f9)
 
 ---
 
