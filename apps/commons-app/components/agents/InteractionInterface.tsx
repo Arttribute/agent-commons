@@ -5,6 +5,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { parseCustomMarkdown } from "@/lib/parseMarkdown";
+import LoadingChat from "./LoadingChat";
+import { Loader2 } from "lucide-react";
 
 interface Message {
   role: "system" | "user" | "assistant";
@@ -82,6 +84,11 @@ export function InteractionInterface({ agentId }: InteractionInterfaceProps) {
                 className="whitespace-pre-wrap leading-relaxed"
                 dangerouslySetInnerHTML={{ __html: parsedHtml }}
               />
+              {isSending && idx === messages.length - 1 && (
+                <div className="flex justify-center items-center">
+                  <LoadingChat />
+                </div>
+              )}
             </div>
           );
         })}
@@ -101,7 +108,13 @@ export function InteractionInterface({ agentId }: InteractionInterfaceProps) {
           onClick={handleSend}
           disabled={isSending}
         >
-          {isSending ? "Sending..." : "Send"}
+          {isSending ? (
+            <>
+              Sending... <Loader2 className="w-4 h-4 animate-spin" />
+            </>
+          ) : (
+            "Send"
+          )}
         </Button>
       </div>
     </div>
