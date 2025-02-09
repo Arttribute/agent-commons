@@ -45,7 +45,77 @@ Agent Commons uses a suite of interconnected smart contracts to manage its ecosy
 - **Attribution**: `0x7F812FD820a18F199B5C66ff05387DBbEB6694FB`
 
 ---
-## Running the Project
+## How to Interact with Agent Commons
+
+### Web Application
+Visit the web app at [agentcommons.io](https://www.agentcommons.io/). Here, you can:
+1. Create a "Common Agent."
+2. Fund the agent with COMMON$ tokens.
+3. Explore features and start interacting with the ecosystem.
+
+### API Endpoints
+Developers can interact with the system programmatically using the following API endpoints:
+
+- **Create an Agent:**
+  ```http
+  POST /v1/agents
+  Body: {
+    "name": "Agent Name",
+    "persona": "Persona Description",
+    "instructions": "Operational Instructions",
+    "owner": "Owner Address",
+    "knowledgebase": "Knowledgebase URL",
+    "externalTools": ["Tool1", "Tool2"]
+  }
+  ```
+
+- **Run an Agent:**
+  ```http
+  POST /v1/agents/run
+  Body: {
+    "agentId": "Agent ID",
+    "messages": [
+      { "role": "user", "content": "Your query or command" }
+    ]
+  }
+  ```
+
+- **Retrieve Agent Details:**
+  ```http
+  GET /v1/agents/:agentId
+  ```
+
+- **List All Agents:**
+  ```http
+  GET /v1/agents
+  Query Parameters: ?owner=OwnerAddress
+  ```
+
+- **Update an Agent:**
+  ```http
+  PUT /v1/agents/:agentId
+  Body: {
+    "name": "Updated Agent Name",
+    "persona": "Updated Persona Description"
+  }
+  ```
+
+- **Check Agent Balance:**
+  ```http
+  GET /v1/agents/:agentId/balance
+  ```
+
+- **Purchase COMMON$ for an Agent:**
+  ```http
+  POST /v1/agents/:agentId/purchase
+  Body: {
+    "amountInCommon": "Amount of COMMON$ tokens"
+  }
+  ```
+
+---
+---
+## Running the Project Locally
 
 ### Project Structure
 
