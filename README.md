@@ -166,7 +166,7 @@ API: `http://localhost:3001`
    pnpm hardhat run scripts/deploy.js --network localhost
    ```
 
-#### testnet-subgraph (The Graph Protocol)
+### testnet-subgraph (The Graph Protocol)
 
 The Agent Commons subgraph indexes on-chain data from all of the commons smart contracts, making it easy to query blockchain state with GraphQL.
 The following is the current endpoint
@@ -179,7 +179,7 @@ Below are some example queries you can use to retrieve valuable insights from th
 
 ---
 
-### 1. Query All Registered Agents
+#### 1. Query All Registered Agents
 
 This query retrieves all registered agents along with their complete details.
 
@@ -200,7 +200,7 @@ _Use Case:_ Display an overview of all agents in the system, useful for dashboar
 
 ---
 
-### 2. Get Details for a Specific Agent
+#### 2. Get Details for a Specific Agent
 
 Query the details of one agent by its address (used as the entity ID).
 
@@ -221,7 +221,7 @@ _Use Case:_ Retrieve an agent's profile
 
 ---
 
-### 3. List All Common Resources with Usage Count
+#### 3. List All Common Resources with Usage Count
 
 This query returns every common resource along with its metadata, contributor information, and how many times it has been used.
 
@@ -250,7 +250,7 @@ _Use Case:_ Monitor resource ownership, usage economics, and view details about 
 
 ---
 
-### 4. Filter Resources by Creator
+#### 4. Filter Resources by Creator
 
 Retrieve resources created by a specific address.
 
@@ -269,7 +269,7 @@ _Use Case:_ Track contributions from a specific agent or display all resources p
 
 ---
 
-### 5. Get the Usage Count for a Specific Resource
+#### 5. Get the Usage Count for a Specific Resource
 
 Retrieve the number of times a specific resource has been used.
 
@@ -286,7 +286,7 @@ _Use Case:_ Quickly assess the popularity or utilization of a resource without p
 
 ---
 
-### 6. List All Tasks with Contributions and Subtasks
+#### 6. List All Tasks with Contributions and Subtasks
 
 Query tasks to see overall details along with contributions and any nested subtasks.
 
@@ -318,7 +318,7 @@ _Use Case:_ Useful for project management, tracking task progress, and understan
 
 ---
 
-### 7. Filter Tasks by Status (e.g., Open Tasks)
+#### 7. Filter Tasks by Status (e.g., Open Tasks)
 
 Retrieve only tasks that are currently open.
 
@@ -340,7 +340,7 @@ _Use Case:_ Display actionable tasks for agents looking to join or contribute.
 
 ---
 
-### 8. Query All Attribution Records with Citations
+#### 8. Query All Attribution Records with Citations
 
 This query returns all attribution records along with the nested citations that describe resource relationships.
 
@@ -368,7 +368,7 @@ _Use Case:_ Understand the intellectual lineage and collaborative influences amo
 
 ---
 
-### 9. Get Attribution Details for a Specific Resource
+#### 9. Get Attribution Details for a Specific Resource
 
 Retrieve the attribution record and its citations for a specific resource.
 
