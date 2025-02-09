@@ -1,6 +1,7 @@
-// app/studio/[tab]/page.tsx
+// File: app/studio/[tab]/page.tsx
 "use client";
-import { useParams } from "next/navigation";
+
+import { useParams, useRouter } from "next/navigation";
 import type { NextPage } from "next";
 import { useEffect, useState } from "react";
 import AppBar from "@/components/layout/AppBar";
@@ -11,6 +12,8 @@ import { DotPattern } from "@/components/magicui/dot-pattern";
 import { cn } from "@/lib/utils";
 import { CommonAgent } from "@/types/agent";
 import { Loader2 } from "lucide-react";
+import { useWallets } from "@privy-io/react-auth";
+import { useAuth } from "@/context/AuthContext";
 
 const Profile: React.FC = () => (
   <div className="p-4">
@@ -64,38 +67,49 @@ const ToolsArea: React.FC = () => (
   </div>
 );
 
-// Our main dynamic page component
 const StudioPage: NextPage = () => {
+  //const router = useRouter();
   const { tab } = useParams() as { tab: string };
-  const [loafingAgents, setLoafingAgents] = useState(true);
+  const { authState } = useAuth();
+  const { walletAddress } = authState;
+  //const isAuthenticated = !!idToken;
 
+  //const { wallets } = useWallets();
   const [agents, setAgents] = useState<CommonAgent[]>([]);
+  const [loafingAgents, setLoafingAgents] = useState(true);
   const activeTab = tab || "agents";
 
-  // If user is in the "agents" tab, fetch from Nest
+  // Current user’s address
+  const userAddress = walletAddress?.toLocaleLowerCase();
+
   useEffect(() => {
     async function fetchAgents() {
+      if (!userAddress) {
+        // user not signed in or no wallet
+        setAgents([]);
+        return;
+      }
       setLoafingAgents(true);
+
       if (activeTab === "agents") {
         try {
-          // Could also call /api/agents if you made that GET route
-          // We'll call the Nest server directly for demonstration:
-          const res = await fetch(
-            "/api/agents",
-            { cache: "no-store" } // or "no-cache"
-          );
+          // Fetch only the user's owned agents from Nest via Next
+          console.log("Fetching agents for user:", userAddress);
+          const res = await fetch(`/api/agents?owner=${userAddress}`, {
+            cache: "no-store",
+          });
           const data = await res.json();
-          setAgents(data.data);
+          setAgents(data.data || []);
         } catch (err) {
           console.error("Error fetching agents:", err);
         }
       }
       setLoafingAgents(false);
     }
-    fetchAgents();
-  }, [activeTab]);
 
-  // Decide which component(s) to show based on activeTab
+    fetchAgents();
+  }, [activeTab, userAddress]);
+
   let mainContent;
   switch (activeTab) {
     case "tools":
@@ -112,8 +126,7 @@ const StudioPage: NextPage = () => {
       mainContent = (
         <div className="p-4">
           <h2 className="text-xl font-semibold">My Agents</h2>
-          <p className="text-gray-500 text-sm mb-2">Manage your agents.</p>
-          {/* Pass the fetched agent data to AgentsShowcase */}
+          <p className="text-gray-500 text-sm mb-2">Manage your agents</p>
           {loafingAgents ? (
             <div className="flex items-center justify-center h-32">
               <Loader2 className="h-5 w-5 animate-spin" />

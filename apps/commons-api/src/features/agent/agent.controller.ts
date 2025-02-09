@@ -5,6 +5,8 @@ import {
   Get,
   Param,
   Post,
+  Put,
+  Query,
 } from '@nestjs/common';
 import { AgentService } from './agent.service';
 import { TypedBody } from '@nestia/core';
@@ -47,10 +49,27 @@ export class AgentController {
     return { data: agent };
   }
 
-  //get all agents
   @Get()
-  async getAgents() {
-    const agents = await this.agent.getAgents();
-    return { data: agents };
+  async getAgents(@Query('owner') owner?: string) {
+    if (owner) {
+      const ownedAgents = await this.agent.getAgentsByOwner(owner);
+      return { data: ownedAgents };
+    } else {
+      const agents = await this.agent.getAgents();
+      return { data: agents };
+    }
+  }
+
+  /**
+   * PUT /v1/agents/:agentId
+   * Update an agent's data in the DB
+   */
+  @Put(':agentId')
+  async updateAgent(@Param('agentId') agentId: string, @Body() body: any) {
+    const updated = await this.agent.updateAgent(agentId, body);
+    if (!updated) {
+      throw new BadRequestException('Unable to update agent');
+    }
+    return { data: updated };
   }
 }
