@@ -59,6 +59,7 @@ export const resource = pgTable('resource', {
 
   schema: jsonb().notNull().$type<any>(),
   tags: jsonb().notNull().$type<string[]>(),
+  resourceFile: text('resource_file').notNull(),
 
   createdAt: timestamp('created_at', { withTimezone: true })
     .default(sql`timezone('utc', now())`)

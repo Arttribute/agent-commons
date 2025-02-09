@@ -11,6 +11,7 @@ import { EmbeddingDto, EmbeddingType } from './dto/embedding.dto';
 import { Embedding } from './entities/embedding.entity';
 import { createClient, type PostgrestError } from '@supabase/supabase-js';
 import { WaveFile } from 'wavefile';
+import { resource } from '#/models/schema';
 
 @Injectable()
 export class EmbeddingService {
@@ -127,7 +128,7 @@ export class EmbeddingService {
   }
 
   async create(dto: EmbeddingDto) {
-    const { content, type, tags } = dto;
+    const { content, type, tags, resourceFile } = dto;
 
     if (!content || !type)
       throw new BadRequestException('Content type are required');
@@ -148,6 +149,7 @@ export class EmbeddingService {
         embedding,
         resource_type: type,
         tags: tags,
+        resource_file: resourceFile,
       })
       .select()
       .single();
