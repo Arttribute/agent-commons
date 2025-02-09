@@ -4,6 +4,7 @@ import { useState } from "react";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { parseCustomMarkdown } from "@/lib/parseMarkdown";
 
 interface Message {
   role: "system" | "user" | "assistant";
@@ -48,12 +49,9 @@ export function InteractionInterface({ agentId }: InteractionInterfaceProps) {
 
       // data.data is the final message from the agent, e.g. { role: "assistant", content: "..." }
       const agentResponse = data.data;
-      // Some endpoints might only return content. If so, adapt as needed:
-      // { role: "assistant", content: "Hello from agent" }
       setMessages((prev) => [...prev, agentResponse]);
     } catch (err) {
       console.error("Error running agent:", err);
-      // Optionally store an error message in the chat
       setMessages((prev) => [
         ...prev,
         {
@@ -68,14 +66,27 @@ export function InteractionInterface({ agentId }: InteractionInterfaceProps) {
 
   return (
     <div className="space-y-2 rounded-lg bg-gray-100 p-12 h-[90vh] flex flex-col">
-      <ScrollArea className="flex-1 mb-4 p-4 rounded">
-        {messages.map((msg, idx) => (
-          <p key={idx} className="text-sm text-gray-600 mb-2">
-            <span className="font-semibold capitalize">{msg.role}:</span>{" "}
-            {msg.content}
-          </p>
-        ))}
+      <ScrollArea className="flex-1 mb-4 p-4 rounded space-y-4">
+        {messages.map((msg, idx) => {
+          // Convert message content to HTML
+          const parsedHtml = parseCustomMarkdown(msg.content);
+
+          return (
+            <div key={idx} className="text-sm text-gray-800 mb-2">
+              <div className="mb-1 font-semibold capitalize">{msg.role}:</div>
+              {/* 
+                We use dangerouslySetInnerHTML to render our HTML. 
+                Make sure you trust the source or sanitize in production. 
+              */}
+              <div
+                className="whitespace-pre-wrap leading-relaxed"
+                dangerouslySetInnerHTML={{ __html: parsedHtml }}
+              />
+            </div>
+          );
+        })}
       </ScrollArea>
+
       <div>
         <Textarea
           placeholder="Type your message here..."
