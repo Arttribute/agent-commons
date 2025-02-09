@@ -22,6 +22,7 @@ import AppBar from "@/components/layout/AppBar";
 import { Button } from "@/components/ui/button";
 import { use } from "react";
 import { CommonAgent } from "@/types/agent";
+import { Loader2 } from "lucide-react";
 
 /**
  * We expect a URL param: /studio/[agent]
@@ -131,7 +132,8 @@ export default function AgentStudio({
         <div className="col-span-3">
           {/* If agent is still loading, show a placeholder */}
           {loadingAgent ? (
-            <div className="m-4">
+            <div className="flex items-center justify-center h-32">
+              <Loader2 className="h-5 w-5 animate-spin" />
               <p>Loading agent details...</p>
             </div>
           ) : agent ? (
@@ -171,7 +173,9 @@ export default function AgentStudio({
               {/* Agent balance + fund button */}
               <div className="grid grid-cols-7 gap-2 m-4 border p-2 rounded-lg">
                 <div className="col-span-4 flex items-center">
-                  <p className="font-semibold text-gray-800 ml-2">Common$ 0</p>
+                  <p className="font-semibold text-gray-800 ml-2">
+                    Common$ ...
+                  </p>
                 </div>
                 <div className="col-span-3">
                   {/* Transfer from user's wallet to agent */}
