@@ -98,4 +98,15 @@ export class PinataService {
       throw error;
     }
   }
+
+  //upload json file from json object
+  async uploadJsonFile(json: any, fileName: string): Promise<any> {
+    try {
+      const fileBuffer = Buffer.from(JSON.stringify(json, null, 2));
+      return this.uploadFile(fileBuffer, fileName, 'application/json');
+    } catch (error) {
+      this.logger.error('Error uploading JSON file to Pinata', error);
+      throw error;
+    }
+  }
 }

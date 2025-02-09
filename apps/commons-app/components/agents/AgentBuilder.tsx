@@ -25,9 +25,9 @@ export function AIAgentBuilder() {
     const mockGeneratedAgent: CommonAgent = {
       agentId: "ai-generated-1",
       name: "AI Assistant",
-      profileImage: "/placeholder.svg?height=200&width=200",
+      avatar: "/placeholder.svg?height=200&width=200",
       persona: "A helpful AI assistant generated based on your description.",
-      instruction:
+      instructions:
         "Assist users with various tasks based on the given description.",
       address: "0x1234567890123456789012345678901234567890",
       mode: "userDriven",
@@ -37,6 +37,12 @@ export function AIAgentBuilder() {
       knowledgebase: "Generated knowledge based on the description.",
       memory: "",
       owner: "user123",
+      temperature: 0,
+      maxTokens: 0,
+      stopSequences: [],
+      topP: 0,
+      frequencyPenalty: 0,
+      presencePenalty: 0,
     };
 
     setGeneratedAgent(mockGeneratedAgent);

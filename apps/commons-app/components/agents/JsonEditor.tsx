@@ -15,16 +15,14 @@ export function JsonEditor({ value, onChange, label }: JsonEditorProps) {
 
   const handleChange = (newValue: string) => {
     try {
-      if (newValue) {
-        JSON.parse(newValue);
-        setIsValid(true);
+      if (newValue.trim()) {
+        JSON.parse(newValue); // validate
       }
-      onChange(newValue);
-    } catch (e) {
+      setIsValid(true);
+    } catch {
       setIsValid(false);
-      onChange(newValue);
-      console.error("Invalid JSON:", e);
     }
+    onChange(newValue);
   };
 
   return (

@@ -22,18 +22,14 @@ export default function KnowledgeBaseInput({
     if (!file) return;
 
     setIsUploading(true);
-
     try {
-      // For text files
       if (file.type === "text/plain") {
         const text = await file.text();
         onChange(text);
-      }
-      // For PDFs - In a real implementation you'd want to use a PDF parsing library
-      else if (file.type === "application/pdf") {
-        // Simulate PDF processing
+      } else if (file.type === "application/pdf") {
+        // Example placeholder: you'd parse the PDF with a library
         await new Promise((resolve) => setTimeout(resolve, 1000));
-        onChange("PDF content would be extracted here");
+        onChange("Simulated PDF content would be here");
       }
     } catch (error) {
       console.error("Error reading file:", error);

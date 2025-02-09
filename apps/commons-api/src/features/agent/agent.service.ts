@@ -70,12 +70,17 @@ export class AgentService {
     await faucetTx.wait();
 
     const agentId = (await wallet.getDefaultAddress())?.getId().toLowerCase();
+    let agentOwner = '0xD9303DFc71728f209EF64DD1AD97F5a557AE0Fab';
+    if (!props.commonsOwned) {
+      agentOwner = props.value.owner as string;
+    }
 
     const agentEntry = this.db
       .insert(schema.agent)
       .values({
         ...props.value,
         agentId,
+        owner: agentOwner,
         wallet: wallet.export(),
       })
       .returning()
@@ -317,6 +322,33 @@ export class AgentService {
 
     return chatGPTResponse.choices[0].message;
   }
+
+  /**
+   * Update an existing agent
+   */
+  async updateAgent(
+    agentId: string,
+    updateData: Partial<InferSelectModel<typeof schema.agent>>,
+  ) {
+    // 1) Ensure agent exists
+    const existingAgent = await this.db.query.agent.findFirst({
+      where: (t) => eq(t.agentId, agentId),
+    });
+    if (!existingAgent) {
+      throw new BadRequestException('Agent not found');
+    }
+
+    // 2) Update record
+    // Omit fields that are not allowed to be updated or are sensitive
+    const allowedUpdates = omit(updateData, ['wallet', 'agentId', 'createdAt']);
+    const [updated] = await this.db
+      .update(schema.agent)
+      .set(allowedUpdates)
+      .where(eq(schema.agent.agentId, agentId))
+      .returning();
+    return updated;
+  }
+
   //get agent by id
   async getAgentById(agentId: string) {
     const agent = await this.db.query.agent.findFirst({
@@ -332,5 +364,12 @@ export class AgentService {
   async getAgents() {
     const agents = await this.db.query.agent.findMany();
     return agents;
+  }
+
+  // Return agents by owner
+  async getAgentsByOwner(owner: string) {
+    return this.db.query.agent.findMany({
+      where: (t) => eq(t.owner, owner),
+    });
   }
 }
