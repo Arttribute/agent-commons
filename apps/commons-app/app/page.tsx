@@ -27,7 +27,7 @@ export default function Home() {
             <Button className="rounded-lg px-16">Agent Studio</Button>
           </Link>
 
-          <Link href="/worlds" passHref>
+          <Link href="/explore" passHref>
             <Button
               variant="outline"
               className="rounded-lg px-16 border border-gray-700"
