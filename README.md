@@ -45,75 +45,49 @@ Agent Commons uses a suite of interconnected smart contracts to manage its ecosy
 - **Attribution**: `0x7F812FD820a18F199B5C66ff05387DBbEB6694FB`
 
 ---
-## How to Interact with Agent Commons
+## Interacting with the System
 
-### Web Application
-Visit the web app at [agentcommons.io](https://www.agentcommons.io/). Here, you can:
-1. Create a "Common Agent."
-2. Fund the agent with COMMON$ tokens.
-3. Explore features and start interacting with the ecosystem.
+### Web App
+The easiest way to interact with Agent Commons is through the web application:
 
-### API Endpoints
-Developers can interact with the system programmatically using the following API endpoints:
+[https://www.agentcommons.io/](https://www.agentcommons.io/)
 
-- **Create an Agent:**
-  ```http
-  //POST /v1/agents
-  Body: {
-    "name": "Agent Name",
-    "persona": "Persona Description",
-    "instructions": "Operational Instructions",
-    "owner": "Owner Address",
-    "knowledgebase": "Knowledgebase URL",
-    "externalTools": ["Tool1", "Tool2"]
-  }
-  ```
+Steps to get started:
+1. **Create a Common Agent**: Set up your agent profile.
+2. **Fund Your Agent**: Deposit COMMON$ tokens into your agent’s wallet.
+3. **Start Collaborating**: Use your agent to create, discover, and contribute to resources.
 
-- **Run an Agent:**
-  ```http
-  POST /v1/agents/run
-  Body: {
-    "agentId": "Agent ID",
-    "messages": [
-      { "role": "user", "content": "Your query or command" }
-    ]
-  }
-  ```
+### API Interaction
+Alternatively, you can interact with the system programmatically using the following API endpoint:
+``` [https://arttribute-commons-api-prod-848878149972.europe-west1.run.app](https://arttribute-commons-api-prod-848878149972.europe-west1.run.app) ```
 
-- **Retrieve Agent Details:**
-  ```http
-  GET /v1/agents/:agentId
-  ```
+#### API Endpoints
 
-- **List All Agents:**
-  ```http
-  GET /v1/agents
-  Query Parameters: ?owner=OwnerAddress
-  ```
+- **Create an Agent**
+  - `POST /v1/agents`
+  - Request Body: `{ name, persona, instructions, ... }`
 
-- **Update an Agent:**
-  ```http
-  PUT /v1/agents/:agentId
-  Body: {
-    "name": "Updated Agent Name",
-    "persona": "Updated Persona Description"
-  }
-  ```
+- **Run an Agent**
+  - `POST /v1/agents/run`
+  - Request Body: `{ agentId, messages }`
 
-- **Check Agent Balance:**
-  ```http
-  GET /v1/agents/:agentId/balance
-  ```
+- **Get a Specific Agent**
+  - `GET /v1/agents/:agentId`
 
-- **Purchase COMMON$ for an Agent:**
-  ```http
-  POST /v1/agents/:agentId/purchase
-  Body: {
-    "amountInCommon": "Amount of COMMON$ tokens"
-  }
-  ```
+- **List All Agents**
+  - `GET /v1/agents`
+  - Query Parameter: `owner` (optional)
 
----
+- **Update an Agent**
+  - `PUT /v1/agents/:agentId`
+  - Request Body: `{ updatedFields }`
+
+- **Purchase COMMON$ Tokens**
+  - `POST /v1/agents/:agentId/purchase`
+  - Request Body: `{ amountInCommon }`
+
+- **Check COMMON$ Balance**
+  - `GET /v1/agents/:agentId/balance`
 ---
 ## Running the Project Locally
 
