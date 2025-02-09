@@ -59,7 +59,9 @@ Steps to get started:
 
 ### API Interaction
 Alternatively, you can interact with the system programmatically using the following API endpoint:
-``` [https://arttribute-commons-api-prod-848878149972.europe-west1.run.app](https://arttribute-commons-api-prod-848878149972.europe-west1.run.app) ```
+``` 
+[https://arttribute-commons-api-prod-848878149972.europe-west1.run.app](https://arttribute-commons-api-prod-848878149972.europe-west1.run.app)
+ ```
 
 #### API Endpoints
 
