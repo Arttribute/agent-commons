@@ -21,12 +21,12 @@ export function useCommonToken(
       return 0n;
     }
     try {
-      const bal = await publicClient.readContract({
+      const bal = (await publicClient.readContract({
         address: COMMON_TOKEN_ADDRESS as `0x${string}`,
         abi: COMMON_TOKEN_ABI,
         functionName: "balanceOf",
         args: [addr],
-      }) as bigint;
+      })) as bigint;
       return bal;
     } catch (err: any) {
       setError(err.message);
@@ -35,10 +35,7 @@ export function useCommonToken(
   }
 
   // WRITE: transfer
-  async function transfer(
-    recipient: `0x${string}`,
-    amountInWei: bigint
-  ) {
+  async function transfer(recipient: `0x${string}`, amountInWei: bigint) {
     if (!walletClient) {
       setError("No walletClient available");
       return;
@@ -46,13 +43,20 @@ export function useCommonToken(
     setLoading(true);
     setError(null);
     try {
+      const addresses = await walletClient.getAddresses();
+      if (!addresses || addresses.length === 0) {
+        throw new Error(
+          "No connected account found. Please connect your wallet."
+        );
+      }
+      const account = addresses[0];
       const txHash = await walletClient.writeContract({
         address: COMMON_TOKEN_ADDRESS as `0x${string}`,
         abi: COMMON_TOKEN_ABI,
         functionName: "transfer",
         args: [recipient, amountInWei],
         chain: undefined,
-        account: null
+        account, // This must be a valid Ethereum address
       });
       console.log("transfer txHash:", txHash);
     } catch (err: any) {
@@ -64,10 +68,7 @@ export function useCommonToken(
   }
 
   // WRITE: mint
-  async function mint(
-    to: `0x${string}`,
-    amountInWei: bigint
-  ) {
+  async function mint(to: `0x${string}`, amountInWei: bigint) {
     if (!walletClient) {
       setError("No walletClient available");
       return;
@@ -80,9 +81,8 @@ export function useCommonToken(
         address: COMMON_TOKEN_ADDRESS.toLowerCase() as `0x${string}`,
         abi: COMMON_TOKEN_ABI,
         functionName: "mint",
-        args: [to, amountInWei],
         chain: undefined,
-        account: null
+        account: address,
       });
       console.log("mint txHash:", txHash);
     } catch (err: any) {
@@ -94,10 +94,7 @@ export function useCommonToken(
   }
 
   // WRITE: burn
-  async function burn(
-    from: `0x${string}`,
-    amountInWei: bigint
-  ) {
+  async function burn(from: `0x${string}`, amountInWei: bigint) {
     if (!walletClient) {
       setError("No walletClient available");
       return;
@@ -111,7 +108,7 @@ export function useCommonToken(
         functionName: "burn",
         args: [from, amountInWei],
         chain: undefined,
-        account: null
+        account: null,
       });
       console.log("burn txHash:", txHash);
     } catch (err: any) {
@@ -132,15 +129,15 @@ export function useCommonToken(
     setError(null);
     try {
       // Convert COMMON$ amount to ETH equivalent and then to Wei (bigint)
-      const amountInWei = BigInt(parseUnits(amountInCommon, 18)) / 100000n; 
+      const amountInWei = BigInt(parseUnits(amountInCommon, 18)) / 100000n;
       const [address] = await walletClient.getAddresses();
       const txHash = await walletClient.sendTransaction({
         to: COMMON_TOKEN_ADDRESS.toLowerCase() as `0x${string}`, // Ensure the address is lowercase
         value: amountInWei,
         account: address,
-        chain: undefined
+        chain: undefined,
       });
-  
+
       console.log("buyCommonToken txHash:", txHash);
     } catch (err: any) {
       setError(err.message);
