@@ -3,7 +3,6 @@
 import { useCallback, useState } from "react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Camera, Loader2 } from "lucide-react";
-import type React from "react"; // Added import for React
 
 interface ImageUploaderProps {
   onImageChange: (imageUrl: string) => void;
@@ -22,26 +21,27 @@ export default function ImageUploader({
       const file = e.target.files?.[0];
       if (!file) return;
 
-      // Create preview
+      // Show a local preview
       const reader = new FileReader();
       reader.onloadend = () => {
         setPreview(reader.result as string);
       };
       reader.readAsDataURL(file);
 
-      // Simulate upload - Replace with actual upload logic
       setIsUploading(true);
-      await new Promise((resolve) => setTimeout(resolve, 1000)); // Simulated delay
+      // Simulate an upload or do a real upload to S3, etc.
+      await new Promise((resolve) => setTimeout(resolve, 1000));
       setIsUploading(false);
 
-      // In real implementation, you would get the URL from your upload response
+      // Once done, pass the final URL to the parent
+      // If you do a real upload, you'd set the actual CDN URL here
       onImageChange(URL.createObjectURL(file));
     },
     [onImageChange]
   );
 
   return (
-    <div className="flex flex-col  gap-4">
+    <div className="flex flex-col gap-4">
       <div className="w-24">
         <input
           type="file"

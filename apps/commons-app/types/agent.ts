@@ -22,9 +22,9 @@ export interface Resource {
 export interface CommonAgent {
   agentId: string;
   name: string;
-  profileImage?: string;
+  avatar?: string;
   persona: string;
-  instruction: string;
+  instructions: string;
   address: string;
   mode: AgentMode;
   autoInterval?: number;
@@ -34,4 +34,10 @@ export interface CommonAgent {
   knowledgebase: string;
   memory: string;
   owner: string;
+  temperature: number;
+  maxTokens: number;
+  stopSequences: string[];
+  topP: number;
+  frequencyPenalty: number;
+  presencePenalty: number;
 }
