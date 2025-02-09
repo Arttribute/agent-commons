@@ -1,4 +1,4 @@
-FROM public.ecr.aws/docker/library/node:22.11.0-alpine3.20 AS base
+FROM public.ecr.aws/docker/library/node:22.11.0 AS base
 
 
 FROM base AS builder
