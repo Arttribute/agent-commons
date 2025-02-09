@@ -1,5 +1,31 @@
 "use client";
 import { useEffect, useState } from "react";
+import { use } from "react";
+
+// UI Components
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Loader2 } from "lucide-react";
+
+// Local Components
+import AppBar from "@/components/layout/AppBar";
+import KnowledgeBaseInput from "@/components/agents/KnowledgeBaseInput";
+import { InteractionInterface } from "@/components/agents/InteractionInterface";
+import { Presets } from "@/components/agents/Presets";
+import { FundAgent } from "@/components/agents/FundAgent";
+import { EIP1193Provider, usePrivy, useWallets } from "@privy-io/react-auth"; // or your method of obtaining a provider
+
+// Hooks
+import { useChainClients } from "@/hooks/useChainClients";
+// import { useWalletProvider } from "@/hooks/useWalletProvider"; // Ensure this path is correct or comment it out if not needed
+import { useCommonToken } from "@/hooks/useCommonToken";
+
+// Types
+import { CommonAgent } from "@/types/agent";
 
 interface ModelConfig {
   temperature: number;
@@ -9,25 +35,7 @@ interface ModelConfig {
   frequencyPenalty: number;
   presencePenalty: number;
 }
-import { InteractionInterface } from "@/components/agents/InteractionInterface";
-import { Presets } from "@/components/agents/Presets";
-import { ScrollArea } from "@/components/ui/scroll-area";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { FundAgent } from "@/components/agents/FundAgent";
-import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
-import { Input } from "@/components/ui/input";
-import KnowledgeBaseInput from "@/components/agents/KnowledgeBaseInput";
-import AppBar from "@/components/layout/AppBar";
-import { Button } from "@/components/ui/button";
-import { use } from "react";
-import { CommonAgent } from "@/types/agent";
-import { Loader2 } from "lucide-react";
 
-/**
- * We expect a URL param: /studio/[agent]
- * The server sends { agent: string }
- */
 interface AgentData {
   agentId: string;
   name?: string;
@@ -35,7 +43,12 @@ interface AgentData {
   instructions?: string;
   knowledgebase?: string;
   avatar?: string;
-  // Additional fields from your schema
+  temperature?: number;
+  maxTokens?: number;
+  stopSequences?: string[];
+  topP?: number;
+  frequencyPenalty?: number;
+  presencePenalty?: number;
 }
 
 export default function AgentStudio({
@@ -48,25 +61,48 @@ export default function AgentStudio({
 
   const [agent, setAgent] = useState<CommonAgent | null>(null);
   const [loadingAgent, setLoadingAgent] = useState(true);
+  const [agentBalance, setAgentBalance] = useState<bigint>(0n);
+
+  const [isEditing, setIsEditing] = useState(false);
+  const [editForm, setEditForm] = useState<Partial<AgentData>>({});
 
   const [customTools, setCustomTools] = useState<{ [key: string]: string }>({
     common: "",
     external: "",
   });
   const [modelConfig, setModelConfig] = useState<ModelConfig>({
-    temperature: agent?.temperature || 0.5,
-    maxTokens: agent?.maxTokens || 100,
-    stopSequences: agent?.stopSequences || [],
-    topP: agent?.topP || 1,
-    frequencyPenalty: agent?.frequencyPenalty || 0,
-    presencePenalty: agent?.presencePenalty || 0,
+    temperature: 0.5,
+    maxTokens: 100,
+    stopSequences: [],
+    topP: 1,
+    frequencyPenalty: 0,
+    presencePenalty: 0,
   });
-  const [isEditing, setIsEditing] = useState(false);
 
-  // Local state for editing fields
-  const [editForm, setEditForm] = useState<Partial<AgentData>>({});
+  // Get the provider using your custom hook
+  const [provider, setProvider] = useState<EIP1193Provider | null>(null);
+  const { wallets } = useWallets();
+  useEffect(() => {
+    if (!wallets || wallets.length === 0) {
+      console.log("No wallets available. User may not be signed in.");
+      return;
+    }
+    wallets[0]
+      .getEthereumProvider()
+      .then((prov) => {
+        console.log("Obtained provider:", prov);
+        setProvider(prov);
+      })
+      .catch((err) => {
+        console.error("Error getting Ethereum provider:", err);
+      });
+  }, [wallets]);
 
-  // 1. Fetch agent data from NestJS
+  // Pass the provider to useChainClients
+  const { publicClient, walletClient } = useChainClients(provider);
+  const { balanceOf } = useCommonToken(publicClient, walletClient);
+
+  // 1. Fetch agent data from your backend
   useEffect(() => {
     if (id) {
       fetchAgent();
@@ -84,7 +120,6 @@ export default function AgentStudio({
       }
       const json = await res.json();
       setAgent(json.data);
-      // Initialize edit form with existing data
       setEditForm(json.data);
     } catch (err) {
       console.error("Error fetching agent:", err);
@@ -93,14 +128,18 @@ export default function AgentStudio({
     }
   }
 
-  // For display: truncated address
+  // 2. Fetch the agent's Common$ balance (public call)
+  useEffect(() => {
+    if (!agent?.agentId) return;
+    balanceOf(agent.agentId as `0x${string}`).then(setAgentBalance);
+  }, [agent?.agentId, balanceOf]);
+
   const agentAddress = agent?.agentId || "";
   const formattedAddress =
     agentAddress.length > 20
       ? `${agentAddress.slice(0, 8)}...${agentAddress.slice(-7)}`
       : agentAddress;
 
-  // 2. Handle "Save" to update agent via PUT
   async function handleSaveChanges() {
     if (!agent) return;
     try {
@@ -113,10 +152,8 @@ export default function AgentStudio({
         throw new Error("Failed to update agent.");
       }
       const json = await res.json();
-      // Update local state
       setAgent(json.data);
       setEditForm(json.data);
-      // Switch off edit mode
       setIsEditing(false);
     } catch (err) {
       console.error("Error saving agent updates:", err);
@@ -130,7 +167,6 @@ export default function AgentStudio({
       <div className="grid grid-cols-12 gap-2 mt-16">
         {/* Left Panel */}
         <div className="col-span-3">
-          {/* If agent is still loading, show a placeholder */}
           {loadingAgent ? (
             <div className="flex items-center justify-center h-32">
               <Loader2 className="h-5 w-5 animate-spin" />
@@ -138,7 +174,7 @@ export default function AgentStudio({
             </div>
           ) : agent ? (
             <>
-              {/* Agent header */}
+              {/* Agent Header */}
               <div className="flex items-center">
                 <Avatar className="h-12 w-12 m-2">
                   <AvatarImage
@@ -170,16 +206,28 @@ export default function AgentStudio({
                   </div>
                 </div>
               </div>
+
               {/* Agent balance + fund button */}
               <div className="grid grid-cols-7 gap-2 m-4 border p-2 rounded-lg">
-                <div className="col-span-4 flex items-center">
+                <div className="col-span-4 flex flex-col justify-center">
                   <p className="font-semibold text-gray-800 ml-2">
-                    Common$ ...
+                    Common$:{" "}
+                    <span className="text-blue-700">
+                      {(Number(agentBalance) / 1e18).toFixed(4)}
+                    </span>
                   </p>
                 </div>
                 <div className="col-span-3">
-                  {/* Transfer from user's wallet to agent */}
-                  <FundAgent />
+                  <FundAgent
+                    agentAddress={agent.agentId as `0x${string}`}
+                    onFundSuccess={() => {
+                      if (agent?.agentId) {
+                        balanceOf(agent.agentId as `0x${string}`).then(
+                          setAgentBalance
+                        );
+                      }
+                    }}
+                  />
                 </div>
               </div>
 
@@ -256,7 +304,7 @@ export default function AgentStudio({
                 )}
               </div>
 
-              {/* Edit / Save buttons */}
+              {/* Edit / Save Buttons */}
               <div className="m-2 flex gap-2">
                 {!isEditing ? (
                   <Button variant="outline" onClick={() => setIsEditing(true)}>
@@ -269,7 +317,7 @@ export default function AgentStudio({
                       variant="outline"
                       onClick={() => {
                         setIsEditing(false);
-                        setEditForm(agent); // revert changes
+                        setEditForm(agent);
                       }}
                     >
                       Cancel
