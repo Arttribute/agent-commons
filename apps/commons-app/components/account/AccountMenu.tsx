@@ -35,20 +35,12 @@ function AccountMenu() {
               {/* Profile Button */}
               <DropdownMenuItem>Profile</DropdownMenuItem>
               <DropdownMenuItem>
-                <Link
-                  href="https://forms.gle/g3tbYS2MuuhjiHvo9"
-                  passHref
-                  target="_blank"
-                >
+                <Link href="/" passHref target="_blank">
                   Report Issue
                 </Link>
               </DropdownMenuItem>
               <DropdownMenuItem>
-                <Link
-                  href="https://forms.gle/LZXhwd4ezJRKjxiS6"
-                  passHref
-                  target="_blank"
-                >
+                <Link href="/" passHref target="_blank">
                   Give Feedback
                 </Link>
               </DropdownMenuItem>
