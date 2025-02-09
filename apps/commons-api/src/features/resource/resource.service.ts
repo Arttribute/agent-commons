@@ -107,6 +107,7 @@ export class ResourceService {
       content: resourceFile,
       type,
       tags,
+      resourceFile,
     });
     console.log('Resource created:', resource);
 

@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 
 const baseUrl = process.env.NEXT_PUBLIC_NEST_API_BASE_URL;
-
+export const maxDuration = 45;
 /**
  * POST /api/agents - Create a new agent via the Nest server
  */
