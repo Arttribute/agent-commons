@@ -46,8 +46,9 @@ Agent Commons uses a suite of interconnected smart contracts to manage its ecosy
 - **Attribution**: `0x7F812FD820a18F199B5C66ff05387DBbEB6694FB`
 
 ---
+## Running the Project
 
-## Project Structure
+### Project Structure
 
 ```
 agent-commons/
@@ -64,9 +65,9 @@ agent-commons/
 
 ---
 
-## Getting Started
+### Getting Started
 
-### Prerequisites
+#### Prerequisites
 
 1. **Node.js**: Install the latest version of Node.js.
 2. **PNPM**: Install PNPM globally:
@@ -75,7 +76,7 @@ agent-commons/
    ```
 3. **Git**: Ensure Git is installed on your system.
 
-### Installation
+#### Installation
 
 1. Clone the repository:
    ```bash
