@@ -1,9 +1,6 @@
 "use client";
 
-import type React from "react";
-import { useState, type KeyboardEvent } from "react";
-import { X } from "lucide-react";
-import { Badge } from "@/components/ui/badge";
+import { useState } from "react";
 import { Input } from "@/components/ui/input";
 
 interface TagInputProps {
@@ -12,53 +9,50 @@ interface TagInputProps {
   placeholder?: string;
 }
 
-export function TagInput({
-  tags,
-  setTags,
-  placeholder = "Enter a tag...",
-}: TagInputProps) {
-  const [input, setInput] = useState("");
+export function TagInput({ tags, setTags, placeholder }: TagInputProps) {
+  const [inputValue, setInputValue] = useState("");
 
-  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setInput(e.target.value);
-  };
-
-  const handleInputKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === "Enter" || e.key === "Tab") {
       e.preventDefault();
-      addTag();
+      if (inputValue.trim() !== "") {
+        setTags([...tags, inputValue.trim()]);
+        setInputValue("");
+      }
     }
   };
 
-  const addTag = () => {
-    if (input.trim() && !tags.includes(input.trim())) {
-      setTags([...tags, input.trim()]);
-      setInput("");
-    }
-  };
-
-  const removeTag = (tagToRemove: string) => {
-    setTags(tags.filter((tag) => tag !== tagToRemove));
+  const removeTag = (index: number) => {
+    const newTags = [...tags];
+    newTags.splice(index, 1);
+    setTags(newTags);
   };
 
   return (
-    <div className="flex flex-wrap gap-2 p-2 border rounded-md">
-      {tags.map((tag) => (
-        <Badge key={tag} variant="secondary" className="gap-1">
-          {tag}
-          <X
-            className="h-3 w-3 cursor-pointer"
-            onClick={() => removeTag(tag)}
-          />
-        </Badge>
-      ))}
+    <div>
+      <div className="flex flex-wrap gap-2 mb-2">
+        {tags.map((tag, i) => (
+          <div
+            key={i}
+            className="bg-muted text-sm px-2 py-1 rounded flex items-center"
+          >
+            {tag}
+            <button
+              type="button"
+              className="ml-2 text-red-500 hover:text-red-700"
+              onClick={() => removeTag(i)}
+            >
+              x
+            </button>
+          </div>
+        ))}
+      </div>
       <Input
         type="text"
-        value={input}
-        onChange={handleInputChange}
-        onKeyDown={handleInputKeyDown}
-        placeholder={placeholder}
-        className="flex-grow border-none shadow-none focus-visible:ring-0"
+        placeholder={placeholder || "Enter tag"}
+        value={inputValue}
+        onChange={(e) => setInputValue(e.target.value)}
+        onKeyDown={handleKeyDown}
       />
     </div>
   );

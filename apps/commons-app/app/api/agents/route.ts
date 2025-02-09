@@ -1,9 +1,9 @@
 import { NextResponse } from "next/server";
 
 const baseUrl = process.env.NEXT_PUBLIC_NEST_API_BASE_URL;
-
+export const maxDuration = 45;
 /**
- * POST /api/agents - Create a new agent
+ * POST /api/agents - Create a new agent via the Nest server
  */
 export async function POST(request: Request) {
   try {
@@ -15,9 +15,9 @@ export async function POST(request: Request) {
     });
 
     if (!res.ok) {
-      throw new Error(`Failed to create agent: ${res.statusText}`);
+      const errData = await res.json();
+      return NextResponse.json(errData, { status: res.status });
     }
-
     const data = await res.json();
     return NextResponse.json(data, { status: res.status });
   } catch (error: any) {
@@ -25,13 +25,21 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }
+
 //get all agents
 /**
  * GET /api/agents - Get all agents
  */
-export async function GET() {
+export async function GET(request: Request) {
+  const { searchParams } = new URL(request.url);
+  const owner = searchParams.get("owner");
+
   try {
-    const res = await fetch(`${baseUrl}/v1/agents`, { cache: "no-store" });
+    const url = owner
+      ? `${baseUrl}/v1/agents?owner=${owner}`
+      : `${baseUrl}/v1/agents`;
+
+    const res = await fetch(url, { cache: "no-store" });
     const data = await res.json();
     return NextResponse.json(data, { status: res.status });
   } catch (error: any) {

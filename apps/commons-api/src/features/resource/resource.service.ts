@@ -14,6 +14,7 @@ import { AgentService } from '~/features/agent/agent.service';
 import { DatabaseService } from '~/modules/database/database.service';
 import { EmbeddingService } from '~/embedding/embedding.service';
 import { EmbeddingType } from '~/embedding/dto/embedding.dto';
+import { hexToBigInt } from 'viem';
 
 @Injectable()
 export class ResourceService {
@@ -36,6 +37,7 @@ export class ResourceService {
     resourceMetadata: string;
     resourceFile: string;
     type: EmbeddingType;
+    tags: string[];
     requiredReputation: bigint;
     usageCost: bigint;
     contributors: `0x${string}`[];
@@ -47,6 +49,7 @@ export class ResourceService {
       resourceFile,
       resourceMetadata,
       type,
+      tags,
       requiredReputation = 0n,
       usageCost = 0n,
       contributors = [agentId],
@@ -96,13 +99,17 @@ export class ResourceService {
         '0xc3d58168c5ae7397731d063d5bbf3d657854427343f4c083240f7aacaa2d0f62',
     );
     console.log('createResource log:', log);
-    const id = BigInt(log!.data.slice(2, 64 + 2));
+    const id = hexToBigInt(`0x${log!.data.slice(2, 64 + 2)}`);
+    console.log('Resource ID:', id);
 
     const resource = this.embedding.create({
       resourceId: id.toString(),
       content: resourceFile,
       type,
+      tags,
+      resourceFile,
     });
+    console.log('Resource created:', resource);
 
     return resource;
   }

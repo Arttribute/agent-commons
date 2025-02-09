@@ -6,6 +6,7 @@ import { AttributionService } from '~/features/attribution/attribution.service';
 import { ResourceService } from '~/features/resource/resource.service';
 import { TaskService } from '~/features/task/task.service';
 import { OpenAIService } from '~/modules/openai/openai.service';
+import { PinataService } from '~/pinata/pinata.service';
 
 const graphqlRequest = import('graphql-request');
 
@@ -32,6 +33,12 @@ export interface CommonTool {
    * Create a new Resource in the network
    */
   createResource(props: {
+    name: string;
+    description: string;
+    thumbnail: string;
+    resourceFile: string;
+    resourceFileType: string;
+    tags: string[];
     requiredReputation: number;
     usageCost: number;
     contributors: `0x${string}`[];
@@ -90,10 +97,35 @@ export interface CommonTool {
    */
   generateImage(props: {
     prompt: string;
-    n?: number; // how many images (defaults to 1)
-    size?: '1024x1024' | '1024x1792' | '1792x1024';
-    quality?: 'standard' | 'hd';
-  }): any;
+    n?: number; // how many images to generate (default 1)
+    size?: '1024x1024' | '1024x1792' | '1792x1024'; // optional
+    quality?: 'standard' | 'hd'; // optional
+    agentId: string; // merged from second parameter
+    privateKey: string; // merged from second parameter
+  }): Promise<
+    {
+      ipfsUrl: string;
+      revised_prompt: string | null;
+    }[]
+  >;
+
+  /**
+   * Upload a file directly to IPFS via Pinata.
+   */
+  uploadFileToIPFS(props: {
+    /** Base64-encoded file data */
+    base64String: string;
+    /** The name of the file, e.g. "document.pdf" or "image.png" */
+    fileName: string;
+    /** The MIME type, e.g. "application/pdf" or "image/png" */
+    mimeType: string;
+
+    /** For Typia LLM's single-parameter approach */
+    agentId: string;
+    privateKey: string;
+  }): Promise<{
+    ipfsUrl: string;
+  }>;
 }
 
 @Injectable()
@@ -110,6 +142,8 @@ export class CommonToolService implements CommonTool {
     private attribution: AttributionService,
     @Inject(forwardRef(() => OpenAIService))
     private openAI: OpenAIService,
+    @Inject(forwardRef(() => PinataService))
+    private pinataService: PinataService,
   ) {}
 
   getAgents(props?: { id?: string }) {
@@ -250,6 +284,12 @@ export class CommonToolService implements CommonTool {
   // @ts-expect-error
   async createResource(
     props: {
+      name: string;
+      description: string;
+      thumbnail: string;
+      resourceFile: string;
+      resourceFileType: string;
+      tags: string[];
       requiredReputation: bigint;
       usageCost: bigint;
       contributors: `0x${string}`[];
@@ -257,16 +297,31 @@ export class CommonToolService implements CommonTool {
     },
     metadata: { agentId: string; privateKey: string },
   ) {
-    const resourceMetadata =
-      'https://coral-abstract-dolphin-257.mypinata.cloud/ipfs/bafkreibpxnfvqblz7x5q3sheky2gme3fcivtb5qroi5cxb32bt4mw4cvpu';
-    const resourceFile =
-      'https://coral-abstract-dolphin-257.mypinata.cloud/ipfs/bafybeig73decdgp666p22jdfuft6pvehgrrfknq53mcrad54h2vctd6gpu';
-    const type = EmbeddingType.image;
+    const resourceMetadataJSON = {
+      name: props.name,
+      description: props.description,
+      image: props.thumbnail,
+      attributes: [],
+    };
+    //upload metadata to IPFS
+    const metadataFile = await this.pinataService.uploadJsonFile(
+      resourceMetadataJSON,
+      'metadata.json',
+    );
+    //get ipfs file url
+    const cid = metadataFile.IpfsHash;
+    const resourceMetadata = `https://${process.env.GATEWAY_URL ?? 'gateway.pinata.cloud'}/ipfs/${cid}`;
+    //dynamic type based on resourceFileType
+    const type =
+      props.resourceFileType === 'image'
+        ? EmbeddingType.image
+        : props.resourceFileType === 'audio'
+          ? EmbeddingType.audio
+          : EmbeddingType.text;
 
     const resource = await this.resource.createResource({
       ...props,
       agentId: metadata.agentId,
-      resourceFile,
       resourceMetadata,
       type,
       isCoreResource: false,
@@ -339,7 +394,9 @@ export class CommonToolService implements CommonTool {
   // @ts-expect-error
   async createTask(
     props: {
+      name: string;
       description: string;
+      thumbnail: string;
       reward: number;
       resourceBased: boolean;
       parentTaskId?: number;
@@ -347,8 +404,21 @@ export class CommonToolService implements CommonTool {
     },
     metadata: { agentId: string; privateKey: string },
   ) {
-    const taskMetadata =
-      'https://coral-abstract-dolphin-257.mypinata.cloud/ipfs/bafkreibpxnfvqblz7x5q3sheky2gme3fcivtb5qroi5cxb32bt4mw4cvpu';
+    const taskMetadataJSON = {
+      name: props.name,
+      description: props.description,
+      image: props.thumbnail,
+      attributes: [],
+    };
+    //upload metadata to IPFS
+    const metadataFile = await this.pinataService.uploadJsonFile(
+      taskMetadataJSON,
+      'metadata.json',
+    );
+    //get ipfs file url
+    const cid = metadataFile.IpfsHash;
+    const taskMetadata = `https://${process.env.GATEWAY_URL ?? 'gateway.pinata.cloud'}/ipfs/${cid}`;
+
     const task = await this.task.createTask({
       ...props,
       metadata: taskMetadata,
@@ -483,27 +553,101 @@ export class CommonToolService implements CommonTool {
    * @param metadata
    * @returns
    */
+  /**
+   * Generate an image using DALL·E 3, then store on IPFS (Pinata).
+   */
   async generateImage(props: {
     prompt: string;
     n?: number;
     size?: '1024x1024' | '1024x1792' | '1792x1024';
     quality?: 'standard' | 'hd';
-  }) {
-    const { prompt, n = 1, size = '1024x1024', quality = 'standard' } = props;
+    agentId: string;
+    privateKey: string;
+  }): Promise<
+    {
+      ipfsUrl: string;
+      revised_prompt: string | null;
+    }[]
+  > {
+    const {
+      prompt,
+      n = 1,
+      size = '1024x1024',
+      quality = 'standard', // might not always do anything in current OpenAI version
+    } = props;
 
-    // The quality param can be set under the "quality" key if you want "hd"
-    // For standard usage, you can omit it or pass "standard".
+    // 1) Call OpenAI's DALL·E 3 with base64 output
     const response = await this.openAI.images.generate({
       model: 'dall-e-3',
       prompt,
       n,
       size,
-      // If you want to pass it:
-      // quality: 'hd',
-      response_format: 'url',
+      response_format: 'b64_json',
+      // if you want "hd" => quality: 'hd' (some beta features for DALL·E 3)
     });
 
-    // Return the array of image URLs or the full data
-    return response.data; // each item will have { url, revised_prompt, etc. }
+    // 2) For each returned image, store it on IPFS
+    const results: {
+      ipfsUrl: string;
+      revised_prompt: string | null;
+    }[] = [];
+
+    for (let i = 0; i < response.data.length; i++) {
+      const imageData = response.data[i];
+      const base64String = imageData.b64_json;
+      const revisedPrompt = imageData.revised_prompt ?? null;
+
+      // Upload to Pinata
+      // We'll default to "image/png" unless you have reason to suspect a different type
+      const pinataResult = await this.pinataService.uploadFileFromBase64(
+        base64String!,
+        `dalle_image_${i}.png`,
+        'image/png',
+      );
+
+      // pinataResult will have e.g. { IpfsHash: '...' }
+      const cid = pinataResult.IpfsHash;
+
+      results.push({
+        ipfsUrl: `https://${process.env.GATEWAY_URL ?? 'gateway.pinata.cloud'}/ipfs/${cid}`,
+        revised_prompt: revisedPrompt,
+      });
+    }
+
+    // 3) Return IPFS info
+    return results;
+  }
+
+  /**
+   * Upload a file directly to IPFS using Pinata.
+   * - `props.base64String` is your file’s data encoded in base64.
+   * - `props.fileName` is the desired name for the file on IPFS (e.g. "photo.png").
+   * - `props.mimeType` is the MIME type (e.g. "image/png").
+   * - `props.agentId` and `props.privateKey` are included to match the single param approach (Typia).
+   */
+  async uploadFileToIPFS(props: {
+    base64String: string;
+    fileName: string;
+    mimeType: string;
+    agentId: string;
+    privateKey: string;
+  }): Promise<{ ipfsUrl: string }> {
+    const { base64String, fileName, mimeType } = props;
+
+    // 1) Upload to Pinata
+    const pinataResult = await this.pinataService.uploadFileFromBase64(
+      base64String,
+      fileName,
+      mimeType,
+    );
+
+    // 2) Construct a gateway URL; you may have PINATA_GATEWAY or custom domain
+    const cid = pinataResult.IpfsHash;
+    const gatewayUrl = `https://${process.env.GATEWAY_URL ?? 'gateway.pinata.cloud'}/ipfs/${cid}`;
+
+    // 3) Return IPFS info
+    return {
+      ipfsUrl: gatewayUrl,
+    };
   }
 }

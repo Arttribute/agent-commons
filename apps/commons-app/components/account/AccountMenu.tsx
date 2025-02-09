@@ -9,7 +9,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import Link from "next/link";
-import { useAuth } from "@/context/AuthContext"; // the file we created
+import { useAuth } from "@/context/AuthContext";
 import RandomPixelAvatar from "@/components/account/RandomPixelAvatar";
 
 function AccountMenu() {

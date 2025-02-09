@@ -1,5 +1,6 @@
 "use client";
 
+import { useRouter } from "next/navigation";
 import { useState, useEffect } from "react";
 import { useChainClients } from "@/hooks/useChainClients";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -23,7 +24,9 @@ import KnowledgeBaseInput from "./KnowledgeBaseInput";
 import { Presets } from "./Presets";
 import { useAgentRegistry } from "@/hooks/useAgentRegistry";
 import { EIP1193Provider, useWallets } from "@privy-io/react-auth";
+import { useAuth } from "@/context/AuthContext";
 
+/** Example interface for model config */
 interface ModelConfig {
   temperature: number;
   maxTokens: number;
@@ -34,6 +37,10 @@ interface ModelConfig {
 }
 
 export function AgentForm() {
+  const router = useRouter();
+  const { authState } = useAuth();
+  const { walletAddress } = authState;
+  //const isAuthenticated = !!idToken;
   const [agent, setAgent] = useState<Partial<CommonAgent>>({
     mode: "userDriven",
   });
@@ -49,10 +56,16 @@ export function AgentForm() {
     frequencyPenalty: 0,
     presencePenalty: 0,
   });
-  //const { ready, authenticated } = usePrivy();
   const { wallets } = useWallets();
   const [provider, setProvider] = useState<EIP1193Provider | null>(null);
   const [loadingCreate, setLoadingCreate] = useState(false);
+
+  // Grab the user's wallet address if available
+  const userAddress = walletAddress?.toLowerCase();
+
+  // For demonstration of chain clients (if you do on-chain tasks)
+  const { publicClient, walletClient } = useChainClients(provider);
+  const { registerAgent } = useAgentRegistry(publicClient, walletClient);
 
   useEffect(() => {
     if (!wallets || wallets.length === 0) {
@@ -70,17 +83,20 @@ export function AgentForm() {
       });
   }, [wallets]);
 
-  const { publicClient, walletClient } = useChainClients(provider);
-  const { registerAgent } = useAgentRegistry(publicClient, walletClient);
-
   const handleSubmit = async (e: React.FormEvent) => {
-    setLoadingCreate(true);
     e.preventDefault();
+    setLoadingCreate(true);
 
-    // Construct final agent data
+    if (!userAddress) {
+      alert("No user address found. Please connect a wallet first.");
+      setLoadingCreate(false);
+      return;
+    }
+
+    // Construct final data to send to the Nest API
     const finalAgent = {
       ...agent,
-      // Just an example for tools
+      owner: userAddress, // important for "owned" filtering
       common_tools: [
         ...(agent.common_tools || []),
         ...JSON.parse(`[${customTools.common || ""}]`),
@@ -89,41 +105,48 @@ export function AgentForm() {
         ...(agent.external_tools || []),
         ...JSON.parse(`[${customTools.external || ""}]`),
       ],
-      modelConfig,
-      // You could store persona => instructions etc. as well
-      // or rename as needed to match your Nest schema fields
-      instructions: agent.instruction,
+      // Map your "Presets" model config onto the top-level fields
+      temperature: modelConfig.temperature,
+      maxTokens: modelConfig.maxTokens,
+      stopSequence: modelConfig.stopSequences,
+      topP: modelConfig.topP,
+      frequencyPenalty: modelConfig.frequencyPenalty,
+      presencePenalty: modelConfig.presencePenalty,
+      instructions: agent.instructions,
+      persona: agent.persona,
+      // etc. Add more if your DB schema includes them
     };
 
     try {
-      // Call either your Next.js proxy route ("/api/agents")
-      // or the Nest server directly.
       const res = await fetch("/api/agents", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(finalAgent),
       });
-
       const json = await res.json();
+
       if (!res.ok) {
         console.error("Failed creating agent", json);
         alert("Failed creating agent.");
       } else {
         console.log("Agent created:", json.data);
-        // register agent in registry
+
         await registerAgent(
           json.data.agentId,
-          "https://coral-abstract-dolphin-257.mypinata.cloud/ipfs/bafkreiedckiafwwzwo3rlrgnx4tewyrtrogxylucba5qiozp5sgm47ulcy",
+          "https://someurl-metadata...",
           false
         );
+
         alert("Agent created successfully!");
+        // Redirect user to see their new agent
+        router.push("/studio/agents");
       }
     } catch (error) {
       console.error("Exception when creating agent:", error);
       alert("Exception when creating agent.");
     }
 
-    // Reset for demonstration
+    // Reset form for demonstration
     setCustomTools({ common: "", external: "" });
     setModelConfig({
       temperature: 1,
@@ -164,11 +187,12 @@ export function AgentForm() {
                 <TabsContent value="basic" className="space-y-4">
                   <div className="grid gap-4">
                     <div className="flex items-center gap-2">
+                      {/* Avatar */}
                       <ImageUploader
                         onImageChange={(imageUrl) =>
-                          setAgent({ ...agent, profileImage: imageUrl })
+                          setAgent({ ...agent, avatar: imageUrl })
                         }
-                        defaultImage={agent.profileImage}
+                        defaultImage={agent.avatar}
                       />
                       <div className="w-full">
                         <Label htmlFor="name">Agent Name</Label>
@@ -193,7 +217,7 @@ export function AgentForm() {
                           setAgent({ ...agent, persona: e.target.value })
                         }
                         placeholder="Describe your agent's personality..."
-                        className="min-h-[200px]"
+                        className="min-h-[150px]"
                       />
                     </div>
                   </div>
@@ -205,14 +229,15 @@ export function AgentForm() {
                       <Label htmlFor="instruction">Instructions</Label>
                       <Textarea
                         id="instruction"
-                        value={agent.instruction || ""}
+                        value={agent.instructions || ""}
                         onChange={(e) =>
-                          setAgent({ ...agent, instruction: e.target.value })
+                          setAgent({ ...agent, instructions: e.target.value })
                         }
-                        placeholder="Provide instructions..."
+                        placeholder="Provide the main instructions your agent should follow..."
                         className="h-[80px]"
                       />
                     </div>
+
                     <div className="grid gap-2">
                       <Label>Mode</Label>
                       <Select
@@ -234,6 +259,7 @@ export function AgentForm() {
                         </SelectContent>
                       </Select>
                     </div>
+
                     {agent.mode === "fullyAutonomous" && (
                       <div className="grid gap-2">
                         <Label htmlFor="autoInterval">Auto Interval (ms)</Label>
@@ -244,13 +270,14 @@ export function AgentForm() {
                           onChange={(e) =>
                             setAgent({
                               ...agent,
-                              autoInterval: Number.parseInt(e.target.value),
+                              autoInterval: Number(e.target.value),
                             })
                           }
                           placeholder="5000"
                         />
                       </div>
                     )}
+
                     <div className="grid gap-2">
                       <Label htmlFor="knowledgebase">Knowledge Base</Label>
                       <KnowledgeBaseInput
@@ -264,7 +291,14 @@ export function AgentForm() {
                 </TabsContent>
 
                 <TabsContent value="advanced" className="space-y-6">
-                  <Presets />
+                  <Presets
+                    agent={agent}
+                    setAgent={setAgent}
+                    customTools={customTools}
+                    setCustomTools={setCustomTools}
+                    modelConfig={modelConfig}
+                    setModelConfig={setModelConfig}
+                  />
                 </TabsContent>
               </div>
             </ScrollArea>

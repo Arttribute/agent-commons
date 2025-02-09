@@ -1,27 +1,40 @@
-// lib/parseMarkdown.ts
-
 export function parseCustomMarkdown(markdown: string): string {
-  // Step 1: Convert any special characters into HTML entities if desired.
-  // (Omitted for brevity; you might do it for security.)
-
-  // Step 2: Replace bold (naive)
+  // Step 1: Replace bold syntax: **bold**
   let html = markdown.replace(/\*\*(.*?)\*\*/g, (_match, p1) => {
     return `<strong>${p1}</strong>`;
   });
 
-  // Step 3: Replace italics (naive)
+  // Step 2: Replace italics syntax: _italic_
   html = html.replace(/\_(.*?)\_/g, (_match, p1) => {
     return `<em>${p1}</em>`;
   });
 
-  // Step 4: Replace links [text](url)
+  // Step 3: Replace inline links [text](url)
+  // If the URL ends with a common image extension, render it as an image.
+  // If the URL might be an image (e.g. an IPFS link without an extension),
+  // render an <img> that falls back to a link if loading fails.
   html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_match, text, url) => {
-    return `<a href="${url}" target="_blank" class="text-blue-600 underline">${text}</a>`;
+    if (/\.(png|jpe?g|gif|webp)(\?.*)?$/i.test(url)) {
+      // URL ends with an image extension.
+      return `<img src="${url}" alt="${text}" class="my-2 max-w-[250px] rounded shadow" />`;
+    } else if (url.includes("/ipfs/")) {
+      // The URL might be an image even though it lacks an extension.
+      // Use the onerror event: if the image fails to load,
+      // replace it with a clickable link.
+      return `<img src="${url}" alt="${text}" class="my-2 max-w-[250px] rounded shadow" onerror="this.outerHTML='<a href=\''+this.src+'\' target=\'_blank\' class=\'text-blue-600 underline\'>Image link: '+this.src+'</a>'" />`;
+    } else {
+      // For all other cases, display a normal hyperlink.
+      return `<a href="${url}" target="_blank" class="text-blue-600 underline">${text}</a>`;
+    }
   });
 
-  // Step 5: Handle bullet & numbered lists:
-  //   We'll split on line breaks and look for lines that match
-  //   bullet or number patterns, then wrap them in <li>.
+  // Step 4: Replace inline images ![alt](url)
+  // This explicitly declares an image and is rendered directly.
+  html = html.replace(/\!\[([^\]]*)\]\(([^)]+)\)/g, (_match, alt, url) => {
+    return `<img src="${url}" alt="${alt}" class="my-2 max-w-[250px] rounded shadow" />`;
+  });
+
+  // Step 5: Split lines to handle lists and paragraphs
   const lines = html.split(/\r?\n/);
   const bulletItems: string[] = [];
   const numberedItems: string[] = [];
@@ -53,41 +66,36 @@ export function parseCustomMarkdown(markdown: string): string {
     inNumberList = false;
   };
 
-  lines.forEach((line) => {
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
     const trimmed = line.trim();
 
-    // bullet line if starts with "-" or "*"
+    // Check for bullet list: "- " or "* "
     if (/^[-*]\s+/.test(trimmed)) {
-      // if we are in a numbered list, end it
       if (inNumberList) flushNumberList();
       inBulletList = true;
       bulletItems.push(trimmed.replace(/^[-*]\s+/, ""));
     }
-    // numbered line if starts with "digit. "
+    // Check for numbered list: "1. "
     else if (/^\d+\.\s+/.test(trimmed)) {
-      // if we are in a bullet list, end it
       if (inBulletList) flushBulletList();
       inNumberList = true;
       numberedItems.push(trimmed.replace(/^\d+\.\s+/, ""));
     }
-    // empty line => flush lists & add a <br> or <p>
+    // Empty line: flush lists & add a break
     else if (trimmed === "") {
       flushBulletList();
       flushNumberList();
-      // We can just add a line break or a paragraph separation
       finalHtml += "<br />";
-    }
-    // normal text
-    else {
-      // flush any existing lists
+    } else {
       if (inBulletList) flushBulletList();
       if (inNumberList) flushNumberList();
-      // just add as paragraph
+      // Treat as a paragraph.
       finalHtml += `<p class='mb-2'>${trimmed}</p>`;
     }
-  });
+  }
 
-  // flush any leftover items
+  // Flush any leftover list items.
   if (inBulletList) flushBulletList();
   if (inNumberList) flushNumberList();
 
