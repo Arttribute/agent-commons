@@ -20,6 +20,12 @@ importers:
       '@coinbase/coinbase-sdk':
         specifier: ^0.17.0
         version: 0.17.0(bufferutil@4.0.9)(typescript@5.7.3)(utf-8-validate@5.0.10)(zod@3.24.1)
+      '@img/sharp-libvips-linux-x64':
+        specifier: ^1.0.6
+        version: 1.0.6
+      '@img/sharp-linux-x64':
+        specifier: ^0.33.5
+        version: 0.33.5
       '@nestia/core':
         specifier: ^4.6.1
         version: 4.6.1(@nestia/fetcher@4.6.1(typescript@5.7.3))(@nestjs/common@11.0.8(reflect-metadata@0.2.2)(rxjs@7.8.1))(@nestjs/core@11.0.8)(bufferutil@4.0.9)(reflect-metadata@0.2.2)(rxjs@7.8.1)(typia@7.6.3(@samchon/openapi@2.4.2)(typescript@5.7.3))(utf-8-validate@5.0.10)
@@ -98,6 +104,9 @@ importers:
       rxjs:
         specifier: ^7.8.1
         version: 7.8.1
+      sharp:
+        specifier: ^0.33.5
+        version: 0.33.5
       type-fest:
         specifier: ^4.33.0
         version: 4.33.0
@@ -117,6 +126,9 @@ importers:
       '@eslint/js':
         specifier: ^9.20.0
         version: 9.20.0
+      '@img/sharp-win32-x64':
+        specifier: ^0.33.5
+        version: 0.33.5
       '@nestjs/schematics':
         specifier: ^11.0.0
         version: 11.0.0(chokidar@4.0.3)(typescript@5.7.3)
@@ -1143,6 +1155,11 @@ packages:
 
   '@img/sharp-libvips-linux-x64@1.0.4':
     resolution: {integrity: sha512-MmWmQ3iPFZr0Iev+BAgVMb3ZyC4KeFc3jFxnNbEPas60e1cIfevbtuyf9nDGIzOaW9PdnDciJm+wFFaTlj5xYw==}
+    cpu: [x64]
+    os: [linux]
+
+  '@img/sharp-libvips-linux-x64@1.0.6':
+    resolution: {integrity: sha512-/H7OsALdf2AHuMq8BGtwpoXBg1zkSQ7OE0ik+2a8tejhIYG1+RDjV11KUA85Pi5xOs8FyNG/2IMal9NWRas1Ag==}
     cpu: [x64]
     os: [linux]
 
@@ -9547,6 +9564,8 @@ snapshots:
   '@img/sharp-libvips-linux-x64@1.0.4':
     optional: true
 
+  '@img/sharp-libvips-linux-x64@1.0.6': {}
+
   '@img/sharp-libvips-linuxmusl-arm64@1.0.4':
     optional: true
 
@@ -9571,7 +9590,6 @@ snapshots:
   '@img/sharp-linux-x64@0.33.5':
     optionalDependencies:
       '@img/sharp-libvips-linux-x64': 1.0.4
-    optional: true
 
   '@img/sharp-linuxmusl-arm64@0.33.5':
     optionalDependencies:
@@ -9591,8 +9609,7 @@ snapshots:
   '@img/sharp-win32-ia32@0.33.5':
     optional: true
 
-  '@img/sharp-win32-x64@0.33.5':
-    optional: true
+  '@img/sharp-win32-x64@0.33.5': {}
 
   '@inquirer/checkbox@4.0.7(@types/node@22.13.1)':
     dependencies:
@@ -17244,7 +17261,6 @@ snapshots:
       '@img/sharp-wasm32': 0.33.5
       '@img/sharp-win32-ia32': 0.33.5
       '@img/sharp-win32-x64': 0.33.5
-    optional: true
 
   shebang-command@2.0.0:
     dependencies:
