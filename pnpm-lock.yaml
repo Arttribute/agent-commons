@@ -7,10 +7,6 @@ settings:
 importers:
 
   .:
-    dependencies:
-      agent-commons:
-        specifier: 'file:'
-        version: 'file:'
     devDependencies:
       concurrently:
         specifier: ^9.1.2
@@ -60,9 +56,6 @@ importers:
       '@xenova/transformers':
         specifier: ^2.17.2
         version: 2.17.2
-      commons-api:
-        specifier: 'file:'
-        version: 'link:'
       dedent:
         specifier: ^1.5.3
         version: 1.5.3
@@ -3615,9 +3608,6 @@ packages:
   agent-base@6.0.2:
     resolution: {integrity: sha512-RZNwNclF7+MS/8bDg70amg32dyeZGZxiDuQmZxKLAlQjr3jGyLx+4Kkk58UO7D2QdgFIQCovuSuZESne6RG6XQ==}
     engines: {node: '>= 6.0.0'}
-
-  'agent-commons@file:':
-    resolution: {directory: '', type: directory}
 
   agentkeepalive@4.6.0:
     resolution: {integrity: sha512-kja8j7PjmncONqaTsB8fQ+wE2mSU2DJ9D4XKoJ5PFWIdRMa6SLSN1ff4mOr4jCbfRSsxR4keIiySJU0N9T5hIQ==}
@@ -12646,8 +12636,6 @@ snapshots:
       debug: 4.4.0(supports-color@8.1.1)
     transitivePeerDependencies:
       - supports-color
-
-  'agent-commons@file:': {}
 
   agentkeepalive@4.6.0:
     dependencies:
