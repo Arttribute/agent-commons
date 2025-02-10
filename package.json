@@ -12,5 +12,10 @@
   "devDependencies": {
     "concurrently": "^9.1.2"
   },
+  "pnpm": {
+    "overrides": {
+      "@xenova/transformers>sharp": "0.33.5"
+    }
+  },
   "packageManager": "pnpm@9.15.3"
 }
