@@ -1,7 +1,7 @@
 // File: app/studio/[tab]/page.tsx
 "use client";
 
-import { useParams, useRouter } from "next/navigation";
+import { useParams } from "next/navigation";
 import type { NextPage } from "next";
 import { useEffect, useState } from "react";
 import AppBar from "@/components/layout/AppBar";
@@ -12,7 +12,6 @@ import { DotPattern } from "@/components/magicui/dot-pattern";
 import { cn } from "@/lib/utils";
 import { CommonAgent } from "@/types/agent";
 import { Loader2 } from "lucide-react";
-import { useWallets } from "@privy-io/react-auth";
 import { useAuth } from "@/context/AuthContext";
 
 const Profile: React.FC = () => (
@@ -71,12 +70,11 @@ const StudioPage: NextPage = () => {
   //const router = useRouter();
   const { tab } = useParams() as { tab: string };
   const { authState } = useAuth();
-  const { walletAddress } = authState;
-  //const isAuthenticated = !!idToken;
-
+  const { idToken, walletAddress } = authState;
+  const isAuthenticated = !!idToken;
   //const { wallets } = useWallets();
   const [agents, setAgents] = useState<CommonAgent[]>([]);
-  const [loafingAgents, setLoafingAgents] = useState(true);
+  const [loadingAgents, setLoadingAgents] = useState(true);
   const activeTab = tab || "agents";
 
   // Current user’s address
@@ -89,7 +87,7 @@ const StudioPage: NextPage = () => {
         setAgents([]);
         return;
       }
-      setLoafingAgents(true);
+      setLoadingAgents(true);
 
       if (activeTab === "agents") {
         try {
@@ -104,7 +102,7 @@ const StudioPage: NextPage = () => {
           console.error("Error fetching agents:", err);
         }
       }
-      setLoafingAgents(false);
+      setLoadingAgents(false);
     }
 
     fetchAgents();
@@ -127,7 +125,11 @@ const StudioPage: NextPage = () => {
         <div className="p-4">
           <h2 className="text-xl font-semibold">My Agents</h2>
           <p className="text-gray-500 text-sm mb-2">Manage your agents</p>
-          {loafingAgents ? (
+          {!isAuthenticated ? (
+            <p className="text-gray-500 text-sm mt-4">
+              You need to login to view your agents.
+            </p>
+          ) : loadingAgents ? (
             <div className="flex items-center justify-center h-32">
               <Loader2 className="h-5 w-5 animate-spin" />
             </div>

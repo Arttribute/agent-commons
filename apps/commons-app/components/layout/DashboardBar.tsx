@@ -3,6 +3,7 @@ import { FC } from "react";
 import { useRouter } from "next/navigation";
 import { Bot, CreditCard, BadgePlus, Wrench, User } from "lucide-react";
 import { CreateTool } from "@/components/tools/CreateTool";
+import { useAuth } from "@/context/AuthContext";
 
 import {
   Command,
@@ -19,6 +20,9 @@ interface DashboardBarProps {
 
 export const DashboardBar: FC<DashboardBarProps> = ({ activeTab }) => {
   const router = useRouter();
+  const { authState, login, logout } = useAuth();
+  const { idToken, username, walletAddress } = authState;
+  const isAuthenticated = !!idToken;
 
   /** Navigate to /studio/[tab] */
   const handleNavigation = (tab: string) => {
@@ -29,12 +33,21 @@ export const DashboardBar: FC<DashboardBarProps> = ({ activeTab }) => {
     <div className="w-full">
       <div className="flex justify-between items-center mb-2">
         <h2 className="font-semibold">Commons Studio</h2>
-        {activeTab === "tools" ? (
-          <CreateTool />
-        ) : (
+        {isAuthenticated && activeTab === "tools" && (
+          <Button size="sm" onClick={() => router.push("/tools/create")}>
+            <BadgePlus />
+            <p className="text-sm -ml-1">Create Tool</p>
+          </Button>
+        )}
+        {isAuthenticated && activeTab === "agents" && (
           <Button size="sm" onClick={() => router.push("/agents/create")}>
             <BadgePlus />
             <p className="text-sm -ml-1">Create Agent</p>
+          </Button>
+        )}
+        {!isAuthenticated && (
+          <Button size="sm" onClick={login}>
+            Login
           </Button>
         )}
       </div>
