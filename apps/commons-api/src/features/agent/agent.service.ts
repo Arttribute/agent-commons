@@ -271,6 +271,8 @@ export class AgentService {
       const toolCalls = chatGPTResponse.choices[0].message.tool_calls;
 
       if (toolCalls?.length) {
+        console.log('Tool Calls', toolCalls);
+        prompt.messages.push(chatGPTResponse.choices[0].message);
         await Promise.all(
           toolCalls.map(async (toolCall) => {
             if (toolCall.type === 'function') {
@@ -292,8 +294,6 @@ export class AgentService {
                 args,
                 metadata,
               );
-
-              prompt.messages.push(chatGPTResponse.choices[0].message);
 
               prompt.messages.push({
                 // append result message
