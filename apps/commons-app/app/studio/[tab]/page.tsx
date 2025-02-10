@@ -37,28 +37,28 @@ const ToolsArea: React.FC = () => (
     <ToolsList
       tools={[
         {
-          name: "Agent",
-          description: "Manage your agents",
+          name: "Tool 1",
+          description: "A tool for your agents",
           calls: 0,
         },
         {
-          name: "Tool",
-          description: "Manage your tools",
+          name: "Tool 2",
+          description: "A tool for your agents",
           calls: 0,
         },
         {
-          name: "Knowledge Base",
-          description: "Manage knowledge entries",
+          name: "Tool 3",
+          description: "A tool for your agents",
           calls: 0,
         },
         {
-          name: "Marketplace",
-          description: "Buy/sell agents and tools",
+          name: "Tool 4",
+          description: "A tool for your agents",
           calls: 0,
         },
         {
-          name: "Settings",
-          description: "Manage account settings",
+          name: "Tool 5",
+          description: "A tool for your agents",
           calls: 0,
         },
       ]}
