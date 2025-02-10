@@ -45,20 +45,22 @@ export function InteractionInterface({ agentId }: InteractionInterfaceProps) {
         }),
       });
       if (!res.ok) {
-        throw new Error("Failed to run agent");
+        const errorData = await res.json();
+        throw new Error(errorData.message || "Failed to run agent.");
       }
       const data = await res.json();
 
       // data.data is the final message from the agent, e.g. { role: "assistant", content: "..." }
       const agentResponse = data.data;
       setMessages((prev) => [...prev, agentResponse]);
-    } catch (err) {
+    } catch (err: any) {
       console.error("Error running agent:", err);
       setMessages((prev) => [
         ...prev,
         {
           role: "assistant",
-          content: "Sorry, there was an error running the agent.",
+          content:
+            err.message || "Sorry, there was an error running the agent.",
         },
       ]);
     } finally {
