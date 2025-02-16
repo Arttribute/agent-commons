@@ -58,7 +58,9 @@ function AccountMenu() {
         </div>
       ) : (
         <div>
-          <Button onClick={login}>Login</Button>
+          <Button onClick={login} className="h-8">
+            Login
+          </Button>
         </div>
       )}
     </>
