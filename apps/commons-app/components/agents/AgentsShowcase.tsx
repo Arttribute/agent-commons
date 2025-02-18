@@ -137,6 +137,7 @@ export default function AgentsShowcase({ agents = [] }: { agents: Agent[] }) {
               </HoverCardTrigger>
               <HoverCardContent className="w-80 bg-white p-4 rounded-lg shadow-lg z-20">
                 <h3 className="mb-2 text-lg font-bold">{agent.name}</h3>
+
                 <p className="text-sm text-gray-700">
                   {agent.persona || agent.description || "No description."}
                 </p>

@@ -46,7 +46,9 @@ const ToolsArea: React.FC = () => {
   return (
     <div className="p-4">
       <h2 className="text-xl font-semibold">Tools</h2>
-      <p className="text-gray-500 text-sm mb-2">Here you can view and manage tools.</p>
+      <p className="text-gray-500 text-sm mb-2">
+        Here you can view and manage tools.
+      </p>
       <ToolsList tools={tools} />
     </div>
   );
@@ -79,7 +81,11 @@ const StudioPage: NextPage = () => {
             .eq("owner", userAddress);
 
           if (error) throw error;
-          setAgents(data || []);
+          console.log("Fetched agents:", data);
+          //setting agentId to agent_id for compatibility with the frontend - could be potentially be slower than doing it in the query
+          setAgents(
+            data.map((agent) => ({ ...agent, agentId: agent.agent_id }))
+          );
         } catch (err) {
           console.error("Error fetching agents:", err);
         }
