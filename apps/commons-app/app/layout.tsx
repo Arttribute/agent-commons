@@ -4,6 +4,14 @@ import "./globals.css";
 import Providers from "@/Providers"; // The file with your <PrivyProvider> from earlier
 import { AuthProvider } from "@/context/AuthContext";
 import { Analytics } from "@vercel/analytics/react";
+import { Space_Mono } from "next/font/google";
+
+const space_mono = Space_Mono({
+  weight: ["400", "700"],
+  subsets: ["latin"],
+  display: "swap",
+  fallback: ["Helvetica", "Arial", "sans-serif"],
+});
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -27,9 +35,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <body
-        className={`${geistSans.variable} ${geistMono.variable} antialiased`}
-      >
+      <body className={space_mono.className}>
         <Providers>
           <AuthProvider>{children}</AuthProvider>
         </Providers>
