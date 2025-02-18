@@ -30,17 +30,29 @@ export const DashboardBar: FC<DashboardBarProps> = ({ activeTab }) => {
   };
 
   return (
-    <div className="w-full">
+    <div className="w-full ">
       <div className="flex justify-between items-center mb-2">
-        <h2 className="font-semibold">Commons Studio</h2>
+        <div className="bg-cyan-200 rounded-lg w-20">
+          <h2 className="text-xl font-semibold">Commons Studio</h2>
+        </div>
         {isAuthenticated && activeTab === "tools" && (
-          <Button size="sm" onClick={() => router.push("/tools/create")}>
+          <Button
+            size="sm"
+            variant="outline"
+            className="h-8 border border-gray-800 font-semibold"
+            onClick={() => router.push("/tools/create")}
+          >
             <BadgePlus />
             <p className="text-sm -ml-1">Create Tool</p>
           </Button>
         )}
         {isAuthenticated && activeTab === "agents" && (
-          <Button size="sm" onClick={() => router.push("/agents/create")}>
+          <Button
+            size="sm"
+            className="h-8 border border-gray-800 font-semibold"
+            variant="outline"
+            onClick={() => router.push("/agents/create")}
+          >
             <BadgePlus />
             <p className="text-sm -ml-1">Create Agent</p>
           </Button>
@@ -77,7 +89,7 @@ export const DashboardBar: FC<DashboardBarProps> = ({ activeTab }) => {
 
           <CommandSeparator />
 
-          <CommandGroup heading="Account">
+          <CommandGroup heading="Agent Activity">
             <CommandItem
               onSelect={() => handleNavigation("profile")}
               className={
