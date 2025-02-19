@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Loader2 } from "lucide-react";
+import RandomPixelAvatar from "@/components/account/RandomPixelAvatar";
 
 // Local Components
 import AppBar from "@/components/layout/AppBar";
@@ -177,11 +178,9 @@ export default function AgentStudio({
               {/* Agent Header */}
               <div className="flex items-center">
                 <Avatar className="h-12 w-12 m-2">
-                  <AvatarImage
-                    src={agent.avatar || "https://github.com/shadcn.png"}
-                  />
+                  <AvatarImage src={agent.avatar} />
                   <AvatarFallback>
-                    {agent?.name?.slice(0, 2).toUpperCase() || "AG"}
+                    <RandomPixelAvatar username={agent.agentId} size={48} />
                   </AvatarFallback>
                 </Avatar>
                 <div className="flex flex-col justify-center">
