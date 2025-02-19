@@ -7,6 +7,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { parseCustomMarkdown } from "@/lib/parseMarkdown";
 import LoadingChat from "./LoadingChat";
 import { Loader2 } from "lucide-react";
+import RandomPixelAvatar from "@/components/account/RandomPixelAvatar";
 
 interface Message {
   role: "system" | "user" | "assistant";

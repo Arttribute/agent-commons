@@ -113,7 +113,7 @@ export function FundAgent({ agentAddress, onFundSuccess }: FundAgentProps) {
         <div className="space-y-4">
           {/* If user has 0 tokens, show a "Buy" button */}
           {userBalance === 0n ? (
-            <div className="rounded border p-2">
+            <div className="rounded p-2">
               <p className="text-sm text-gray-500 mb-2">
                 You currently have <strong>0 Common$</strong>.
               </p>

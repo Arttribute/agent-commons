@@ -9,6 +9,7 @@ import {
   HoverCardContent,
   HoverCardTrigger,
 } from "@/components/ui/hover-card";
+import RandomPixelAvatar from "@/components/account/RandomPixelAvatar";
 
 interface Agent {
   agentId: string;
@@ -120,18 +121,20 @@ export default function AgentsShowcase({ agents = [] }: { agents: Agent[] }) {
               <HoverCardTrigger asChild>
                 <Link href={`/studio/agents/${agent.agentId}`}>
                   <button
-                    className="w-20 h-20 rounded-full overflow-hidden shadow-md hover:shadow-xl transition p-0.5 border border-gray-500"
+                    className="w-20 h-20 rounded-full overflow-hidden shadow-md hover:shadow-xl transition p-0.5 border border-gray-400"
                     aria-label={agent.name}
                   >
-                    <Image
-                      src={
-                        agent.profileImage || "https://github.com/shadcn.png" // fallback
-                      }
-                      alt={agent.name}
-                      width={100}
-                      height={100}
-                      className="object-cover rounded-full w-full h-full"
-                    />
+                    {agent.profileImage ? (
+                      <Image
+                        src={agent.profileImage}
+                        alt={agent.name}
+                        width={100}
+                        height={100}
+                        className="object-cover rounded-full w-full h-full"
+                      />
+                    ) : (
+                      <RandomPixelAvatar username={agent.agentId} size={72} />
+                    )}
                   </button>
                 </Link>
               </HoverCardTrigger>

@@ -63,59 +63,64 @@ export const DashboardBar: FC<DashboardBarProps> = ({ activeTab }) => {
           </Button>
         )}
       </div>
+      <div>
+        <Command className="rounded-lg ">
+          <CommandList>
+            <CommandGroup heading="Creations">
+              <CommandItem
+                onSelect={() => handleNavigation("agents")}
+                className={
+                  activeTab === "agents"
+                    ? "bg-accent text-accent-foreground"
+                    : ""
+                }
+              >
+                <Bot />
+                <span>Agents</span>
+              </CommandItem>
+              <CommandItem
+                onSelect={() => handleNavigation("tools")}
+                className={
+                  activeTab === "tools"
+                    ? "bg-accent text-accent-foreground"
+                    : ""
+                }
+              >
+                <Wrench />
+                <span>Tools</span>
+              </CommandItem>
+            </CommandGroup>
 
-      <Command className="rounded-lg">
-        <CommandList>
-          <CommandGroup heading="Creations">
-            <CommandItem
-              onSelect={() => handleNavigation("agents")}
-              className={
-                activeTab === "agents" ? "bg-accent text-accent-foreground" : ""
-              }
-            >
-              <Bot />
-              <span>Agents</span>
-            </CommandItem>
-            <CommandItem
-              onSelect={() => handleNavigation("tools")}
-              className={
-                activeTab === "tools" ? "bg-accent text-accent-foreground" : ""
-              }
-            >
-              <Wrench />
-              <span>Tools</span>
-            </CommandItem>
-          </CommandGroup>
+            <CommandSeparator />
 
-          <CommandSeparator />
+            <CommandGroup heading="Agent Activity">
+              <CommandItem
+                onSelect={() => handleNavigation("profile")}
+                className={
+                  activeTab === "profile"
+                    ? "bg-accent text-accent-foreground"
+                    : ""
+                }
+              >
+                <User />
+                <span>Profile</span>
+              </CommandItem>
 
-          <CommandGroup heading="Agent Activity">
-            <CommandItem
-              onSelect={() => handleNavigation("profile")}
-              className={
-                activeTab === "profile"
-                  ? "bg-accent text-accent-foreground"
-                  : ""
-              }
-            >
-              <User />
-              <span>Profile</span>
-            </CommandItem>
-
-            <CommandItem
-              onSelect={() => handleNavigation("balances")}
-              className={
-                activeTab === "balances"
-                  ? "bg-accent text-accent-foreground"
-                  : ""
-              }
-            >
-              <CreditCard />
-              <span>Balances</span>
-            </CommandItem>
-          </CommandGroup>
-        </CommandList>
-      </Command>
+              <CommandItem
+                onSelect={() => handleNavigation("balances")}
+                className={
+                  activeTab === "balances"
+                    ? "bg-accent text-accent-foreground"
+                    : ""
+                }
+              >
+                <CreditCard />
+                <span>Balances</span>
+              </CommandItem>
+            </CommandGroup>
+          </CommandList>
+        </Command>
+      </div>
     </div>
   );
 };
