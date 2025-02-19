@@ -4,7 +4,7 @@ import { useRouter } from "next/navigation";
 import { useState, useEffect } from "react";
 import { useChainClients } from "@/hooks/useChainClients";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -18,7 +18,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import type { AgentMode, CommonAgent } from "@/types/agent";
-import { Bot, Brain, PenToolIcon as Tool } from "lucide-react";
+import { Bot, Brain, Cog } from "lucide-react";
 import ImageUploader from "./ImageUploader";
 import KnowledgeBaseInput from "./KnowledgeBaseInput";
 import { Presets } from "./Presets";
@@ -161,13 +161,14 @@ export function AgentForm() {
 
   return (
     <form onSubmit={handleSubmit} className="container mx-auto max-w-lg">
-      <Card className="bg-background border-2 h-[570px] flex flex-col">
-        <CardHeader>
-          <CardTitle>Create New Agent</CardTitle>
-        </CardHeader>
+      <Card className="bg-background border border-gray-400 h-[600px] flex flex-col">
+        <div className="m-8">
+          <div className="bg-lime-300 w-48 h-8 -mb-8 rounded-lg"></div>
+          <h2 className="text-2xl font-semibold">Create New Agent</h2>
+        </div>
         <CardContent className="flex flex-col flex-grow overflow-hidden">
           <Tabs defaultValue="basic" className="space-y-6">
-            <TabsList className="grid grid-cols-3 gap-4">
+            <TabsList className="grid grid-cols-3 gap-4 border border-gray-400">
               <TabsTrigger value="basic" className="gap-2">
                 <Bot className="h-4 w-4" />
                 Basic Info
@@ -177,7 +178,7 @@ export function AgentForm() {
                 Behavior
               </TabsTrigger>
               <TabsTrigger value="advanced" className="gap-2">
-                <Tool className="h-4 w-4" />
+                <Cog className="h-4 w-4" />
                 Advanced
               </TabsTrigger>
             </TabsList>

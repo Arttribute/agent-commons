@@ -135,7 +135,7 @@ const StudioPage: NextPage = () => {
         <div className="grid grid-cols-12 px-4 gap-4">
           {/* Left Sidebar */}
           <div className="col-span-3">
-            <div className="flex bg-white p-4 rounded-lg border h-[88vh]">
+            <div className="flex bg-white p-4 rounded-lg border border-gray-400 h-[88vh] z-10">
               <DashboardBar activeTab={activeTab} />
             </div>
           </div>

@@ -53,15 +53,20 @@ export default function ImageUploader({
           disabled={isUploading}
         />
         <label htmlFor="file" className="cursor-pointer w-full">
-          <Avatar className="h-20 w-20">
-            <AvatarImage src={preview} />
-            <AvatarFallback className="bg-muted">
-              {isUploading ? (
-                <Loader2 className="h-8 w-8 animate-spin" />
-              ) : (
-                <Camera className="h-8 w-8" />
-              )}
-            </AvatarFallback>
+          <Avatar className="w-20 h-20 ">
+            <div className="border border-dashed border-gray-500 rounded-full p-1 w-full">
+              <AvatarImage
+                src={preview}
+                className="border rounded-full object-cover aspect-[1/1]"
+              />
+              <AvatarFallback className="border bg-muted">
+                {isUploading ? (
+                  <Loader2 className="h-8 w-8 animate-spin" />
+                ) : (
+                  <Camera className="h-8 w-8" />
+                )}
+              </AvatarFallback>
+            </div>
           </Avatar>
         </label>
       </div>

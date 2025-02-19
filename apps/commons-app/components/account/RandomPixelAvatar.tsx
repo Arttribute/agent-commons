@@ -1,129 +1,137 @@
-"use client";
-import React, { useEffect, useRef } from "react";
+import React from "react";
 
-interface PixelAvatarProps {
+/**
+ * A list of single or multi-color gradient classes.
+ * Make sure these classes are valid in your Tailwind config!
+ */
+
+//no gradients past 300
+const multiColorGradients = [
+  "bg-gradient-to-r from-red-200 via-yellow-200 to-green-200",
+  "bg-gradient-to-r from-blue-200 via-purple-200 to-pink-200",
+  "bg-gradient-to-r from-indigo-200 via-fuchsia-200 to-orange-200",
+  "bg-gradient-to-r from-teal-200 via-green-200 to-lime-200",
+  "bg-gradient-to-r from-rose-200 via-pink-200 to-purple-200",
+  "bg-gradient-to-r from-cyan-200 via-sky-200 to-blue-200",
+  "bg-gradient-to-r from-violet-200 via-purple-200 to-fuchsia-200",
+  "bg-gradient-to-r from-emerald-200 via-green-200 to-lime-200",
+  "bg-gradient-to-r from-amber-200 via-yellow-200 to-lime-200",
+  "bg-gradient-to-r from-red-300 via-yellow-300 to-green-300",
+  "bg-gradient-to-r from-blue-300 via-purple-300 to-pink-300",
+  "bg-gradient-to-r from-indigo-300 via-fuchsia-300 to-orange-300",
+  "bg-gradient-to-r from-teal-300 via-green-300 to-lime-300",
+  "bg-gradient-to-r from-rose-300 via-pink-300 to-purple-300",
+  "bg-gradient-to-r from-cyan-300 via-sky-300 to-blue-300",
+  "bg-gradient-to-r from-violet-300 via-purple-300 to-fuchsia-300",
+  "bg-gradient-to-r from-emerald-300 via-green-300 to-lime-300",
+  "bg-gradient-to-r from-amber-300 via-yellow-300 to-lime-300",
+  "bg-gradient-to-l from-red-200 via-yellow-200 to-green-200",
+  "bg-gradient-to-l from-blue-200 via-purple-200 to-pink-200",
+  "bg-gradient-to-l from-indigo-200 via-fuchsia-200 to-orange-200",
+  "bg-gradient-to-l from-teal-200 via-green-200 to-lime-200",
+  "bg-gradient-to-l from-rose-200 via-pink-200 to-purple-200",
+  "bg-gradient-to-l from-cyan-200 via-sky-200 to-blue-200",
+  "bg-gradient-to-l from-violet-200 via-purple-200 to-fuchsia-200",
+  "bg-gradient-to-l from-emerald-200 via-green-200 to-lime-200",
+  "bg-gradient-to-l from-amber-200 via-yellow-200 to-lime-200",
+  "bg-gradient-to-l from-red-300 via-yellow-300 to-green-300",
+  "bg-gradient-to-l from-blue-300 via-purple-300 to-pink-300",
+  "bg-gradient-to-l from-indigo-300 via-fuchsia-300 to-orange-300",
+  "bg-gradient-to-l from-teal-300 via-green-300 to-lime-300",
+  "bg-gradient-to-l from-rose-300 via-pink-300 to-purple-300",
+  "bg-gradient-to-l from-cyan-300 via-sky-300 to-blue-300",
+  "bg-gradient-to-l from-violet-300 via-purple-300 to-fuchsia-300",
+  "bg-gradient-to-l from-emerald-300 via-green-300 to-lime-300",
+  "bg-gradient-to-l from-amber-300 via-yellow-300 to-lime-300",
+  "bg-gradient-to-t from-red-200 via-yellow-200 to-green-200",
+  "bg-gradient-to-t from-blue-200 via-purple-200 to-pink-200",
+  "bg-gradient-to-t from-indigo-200 via-fuchsia-200 to-orange-200",
+  "bg-gradient-to-t from-teal-200 via-green-200 to-lime-200",
+  "bg-gradient-to-t from-rose-200 via-pink-200 to-purple-200",
+  "bg-gradient-to-t from-cyan-200 via-sky-200 to-blue-200",
+  "bg-gradient-to-t from-violet-200 via-purple-200 to-fuchsia-200",
+  "bg-gradient-to-t from-emerald-200 via-green-200 to-lime-200",
+  "bg-gradient-to-t from-amber-200 via-yellow-200 to-lime-200",
+  "bg-gradient-to-t from-red-300 via-yellow-300 to-green-300",
+  "bg-gradient-to-t from-blue-300 via-purple-300 to-pink-300",
+  "bg-gradient-to-t from-indigo-300 via-fuchsia-300 to-orange-300",
+  "bg-gradient-to-t from-teal-300 via-green-300 to-lime-300",
+  "bg-gradient-to-t from-rose-300 via-pink-300 to-purple-300",
+  "bg-gradient-to-t from-cyan-300 via-sky-300 to-blue-300",
+  "bg-gradient-to-t from-violet-300 via-purple-300 to-fuchsia-300",
+  "bg-gradient-to-t from-emerald-300 via-green-300 to-lime-300",
+  "bg-gradient-to-t from-amber-300 via-yellow-300 to-lime-300",
+  "bg-gradient-to-b from-red-200 via-yellow-200 to-green-200",
+  "bg-gradient-to-b from-blue-200 via-purple-200 to-pink-200",
+  "bg-gradient-to-b from-indigo-200 via-fuchsia-200 to-orange-200",
+  "bg-gradient-to-b from-teal-200 via-green-200 to-lime-200",
+  "bg-gradient-to-b from-rose-200 via-pink-200 to-purple-200",
+  "bg-gradient-to-b from-cyan-200 via-sky-200 to-blue-200",
+  "bg-gradient-to-b from-violet-200 via-purple-200 to-fuchsia-200",
+  "bg-gradient-to-b from-emerald-200 via-green-200 to-lime-200",
+  "bg-gradient-to-b from-amber-200 via-yellow-200 to-lime-200",
+  "bg-gradient-to-b from-red-300 via-yellow-300 to-green-300",
+  "bg-gradient-to-b from-blue-300 via-purple-300 to-pink-300",
+  "bg-gradient-to-b from-indigo-300 via-fuchsia-300 to-orange-300",
+  "bg-gradient-to-b from-teal-300 via-green-300 to-lime-300",
+  "bg-gradient-to-b from-rose-300 via-pink-300 to-purple-300",
+  "bg-gradient-to-b from-cyan-300 via-sky-300 to-blue-300",
+  "bg-gradient-to-b from-violet-300 via-purple-300 to-fuchsia-300",
+  "bg-gradient-to-b from-emerald-300 via-green-300 to-lime-300",
+  "bg-gradient-to-b from-amber-300 via-yellow-300 to-lime-300",
+];
+
+/**
+ * Simple hashing function to produce a consistent numeric hash for strings.
+ */
+function hashCode(str: string): number {
+  let hash = 0;
+  for (let i = 0; i < str.length; i++) {
+    hash = (hash << 5) - hash + str.charCodeAt(i);
+    hash |= 0; // Convert to 32-bit integer
+  }
+  return Math.abs(hash);
+}
+
+/**
+ * Given a username, return a single gradient class name.
+ */
+function getGradientForUsername(username: string): string {
+  const baseHash = hashCode(username || "default");
+  const index = baseHash % multiColorGradients.length;
+  return multiColorGradients[index];
+}
+
+interface RandomPixelAvatarProps {
   username: string;
-  size?: number; // Default avatar size (in pixels)
-  pixelSize?: number; // Number of pixels across and down for the avatar grid
+  size?: number;
 }
 
-// Helper to draw a rounded rectangle on Canvas
-function drawRoundedRect(
-  ctx: CanvasRenderingContext2D,
-  x: number,
-  y: number,
-  width: number,
-  height: number,
-  radius: number
-) {
-  // Ensure the radius isn't too large
-  const r = Math.min(radius, width / 2, height / 2);
-  ctx.beginPath();
-  ctx.moveTo(x + r, y);
-  ctx.lineTo(x + width - r, y);
-  ctx.quadraticCurveTo(x + width, y, x + width, y + r);
-  ctx.lineTo(x + width, y + height - r);
-  ctx.quadraticCurveTo(x + width, y + height, x + width - r, y + height);
-  ctx.lineTo(x + r, y + height);
-  ctx.quadraticCurveTo(x, y + height, x, y + height - r);
-  ctx.lineTo(x, y + r);
-  ctx.quadraticCurveTo(x, y, x + r, y);
-  ctx.closePath();
-  ctx.fill();
-}
-
-const PixelAvatar: React.FC<PixelAvatarProps> = ({
+/**
+ * A circular avatar that uses a multi-color gradient as the background.
+ * Displays the first two letters of the username in the center.
+ */
+export default function RandomPixelAvatar({
   username,
-  size = 64, // Increase canvas size to make "pixels" bigger
-  pixelSize = 32, // Keep the same number of squares, but bigger overall canvas
-}) => {
-  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  size = 100,
+}: RandomPixelAvatarProps) {
+  // Generate a single gradient for the entire avatar.
+  const gradientClass = getGradientForUsername(username);
 
-  // Hash the username to create a unique seed
-  const hashUsername = (username: string): number => {
-    let hash = 0;
-    for (let i = 0; i < username.length; i++) {
-      hash = (hash << 5) - hash + username.charCodeAt(i);
-      hash |= 0; // Convert to 32-bit integer
-    }
-    return hash;
-  };
-
-  // Generate a color from a seed
-  const generateColor = (seed: number): string => {
-    const r = (seed & 0xff0000) >> 16;
-    const g = (seed & 0x00ff00) >> 8;
-    const b = seed & 0x0000ff;
-    return `rgb(${r}, ${g}, ${b})`;
-  };
-
-  // Draw the pixel avatar
-  const drawAvatar = (): void => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return;
-
-    const hash = Math.abs(hashUsername(username));
-
-    // Calculate the size of each pixel block
-    const gridSize = size / pixelSize;
-
-    // Clear the canvas before drawing
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-    // Generate the pixel pattern based on the hash
-    for (let x = 0; x < pixelSize; x++) {
-      for (let y = 0; y < pixelSize; y++) {
-        const seed = (hash >> (x * y)) & 0xffffff; // Create a unique seed for each pixel
-        const color = generateColor(seed);
-
-        // Only fill half the grid (plus possible symmetry in the center)
-        if (x < pixelSize / 2 || (x === pixelSize / 2 && y % 2 === 0)) {
-          ctx.fillStyle = color;
-
-          // Coordinates for this cell
-          const xPos = x * gridSize;
-          const yPos = y * gridSize;
-
-          // Draw left half pixel
-          drawRoundedRect(ctx, xPos, yPos, gridSize, gridSize, gridSize / 4);
-
-          // Mirror it on the right half
-          const mirrorXPos = (pixelSize - 1 - x) * gridSize;
-          drawRoundedRect(
-            ctx,
-            mirrorXPos,
-            yPos,
-            gridSize,
-            gridSize,
-            gridSize / 4
-          );
-        }
-      }
-    }
-  };
-
-  // Redraw avatar when username changes
-  useEffect(() => {
-    drawAvatar();
-  }, [username]);
+  // Get first two letters (or one if the username is short).
+  const initials = username.slice(0, 3).toLowerCase();
 
   return (
-    <div>
-      <canvas
-        ref={canvasRef}
-        width={size}
-        height={size}
-        style={{
-          imageRendering: "pixelated",
-
-          borderRadius: "50%",
-        }}
-        className="rounded-full"
-      ></canvas>
+    <div
+      className={`relative overflow-hidden rounded-full ${gradientClass}`}
+      style={{ width: size, height: size }}
+    >
+      {/* Overlay initials in the center */}
+      <div className="absolute inset-0 flex items-center justify-center">
+        <span className="text-black text-xl font-bold drop-shadow-lg">
+          {initials}
+        </span>
+      </div>
     </div>
   );
-};
-
-export default PixelAvatar;
+}
