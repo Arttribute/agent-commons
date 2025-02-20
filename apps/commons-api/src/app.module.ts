@@ -2,10 +2,10 @@ import { Module } from '@nestjs/common';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 
-import { AgentModule } from './features/agent';
+import { AgentModule } from './agent';
 import { PinataModule } from './pinata/pinata.module';
-import { ToolModule } from './features/tool';
-import { ResourceModule } from './features/resource';
+import { ToolModule } from './tool';
+import { ResourceModule } from './resource';
 import { DatabaseModule } from './modules/database';
 import { OpenAIModule } from './modules/openai';
 import { CoinbaseModule } from './modules/coinbase';
