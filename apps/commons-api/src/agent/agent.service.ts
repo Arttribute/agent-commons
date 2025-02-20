@@ -13,7 +13,7 @@ import dedent from 'dedent';
 import { eq, InferInsertModel, InferSelectModel } from 'drizzle-orm';
 import { AGENT_REGISTRY_ABI } from 'lib/abis/AgentRegistryABI';
 import { AGENT_REGISTRY_ADDRESS, COMMON_TOKEN_ADDRESS } from 'lib/addresses';
-import { first, map, omit } from 'lodash';
+import { find, first, map, omit } from 'lodash';
 import {
   ChatCompletion,
   ChatCompletionCreateParamsNonStreaming,
@@ -41,6 +41,7 @@ import {
   CommonTool,
   CommonToolService,
 } from '../tool/tools/common-tool.service';
+import { name } from 'typia/lib/reflect';
 
 const app = typia.llm.application<EthereumTool & CommonTool, 'chatgpt'>();
 
@@ -247,7 +248,8 @@ export class AgentService {
         ({
           type: 'function',
           function: _,
-        }) as unknown as ChatCompletionTool,
+          endpoint: `http://localhost:${process.env.PORT}/v1/agents/tools`, // should be a self endpoint
+        }) as unknown as ChatCompletionTool & { endpoint: string },
     );
 
     console.log(app.functions[0]);
@@ -281,28 +283,32 @@ export class AgentService {
 
               console.log('Tool Call', { toolCall, toolCallArgs: args });
 
-              const toolWithMethod = [
-                this.commonToolService,
-                this.ethereumToolService,
-                // @ts-expect-error
-              ].find((tool) => tool[toolCall.function.name]);
+              const rawToolCall = find(tools, {
+                function: { name: toolCall.function.name },
+              });
 
-              // console.log('Tool with method', toolWithMethod);
+              if (!rawToolCall?.endpoint) {
+                throw new BadRequestException('Tool endpoint not found');
+              }
 
-              // @ts-expect-error
-              const data = await toolWithMethod[toolCall.function.name](
-                args,
-                metadata,
-              );
+              const response = await fetch(rawToolCall?.endpoint, {
+                method: 'POST',
+                body: JSON.stringify({ toolCall, metadata }),
+                headers: {
+                  'Content-Type': 'application/json',
+                },
+              });
+
+              const toolCallResponse = await response.json();
 
               prompt.messages.push({
                 // append result message
                 role: 'tool',
                 tool_call_id: toolCall.id,
-                content: JSON.stringify(data),
+                content: JSON.stringify(toolCallResponse),
               });
 
-              return data;
+              return toolCallResponse;
             }
             return null;
           }),
