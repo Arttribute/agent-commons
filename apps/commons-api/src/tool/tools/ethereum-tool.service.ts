@@ -1,5 +1,5 @@
 import { forwardRef, Inject, Injectable } from '@nestjs/common';
-import { AgentService } from '~/features/agent/agent.service';
+import { AgentService } from '~/agent/agent.service';
 
 export interface EthereumTool {
   /**

@@ -10,7 +10,7 @@ import {
 } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
 import * as schema from '#/models/schema';
-import { AgentService } from '~/features/agent/agent.service';
+import { AgentService } from '~/agent/agent.service';
 import { DatabaseService } from '~/modules/database/database.service';
 import { EmbeddingService } from '~/embedding/embedding.service';
 import { EmbeddingType } from '~/embedding/dto/embedding.dto';

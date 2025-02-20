@@ -10,7 +10,7 @@ import {
   http,
 } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
-import { AgentService } from '~/features/agent/agent.service';
+import { AgentService } from '~/agent/agent.service';
 
 @Injectable()
 export class TaskService {

@@ -65,3 +65,16 @@ export const resource = pgTable('resource', {
     .default(sql`timezone('utc', now())`)
     .notNull(),
 });
+
+export const session = pgTable('session', {
+  sessionId: uuid('session_id')
+    .default(sql`uuid_generate_v4()`)
+    .primaryKey(),
+  model: jsonb(),
+  query: jsonb(),
+  history: jsonb(),
+
+  createdAt: timestamp('created_at', { withTimezone: true })
+    .default(sql`timezone('utc', now())`)
+    .notNull(),
+});
