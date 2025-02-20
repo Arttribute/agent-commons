@@ -13,9 +13,10 @@ import dedent from 'dedent';
 import { eq, InferInsertModel, InferSelectModel } from 'drizzle-orm';
 import { AGENT_REGISTRY_ABI } from 'lib/abis/AgentRegistryABI';
 import { AGENT_REGISTRY_ADDRESS, COMMON_TOKEN_ADDRESS } from 'lib/addresses';
-import { first, map, omit } from 'lodash';
+import { find, first, map, omit } from 'lodash';
 import {
   ChatCompletion,
+  ChatCompletionCreateParams,
   ChatCompletionCreateParamsNonStreaming,
   ChatCompletionMessageParam,
   ChatCompletionTool,
@@ -41,6 +42,8 @@ import {
   CommonTool,
   CommonToolService,
 } from '../tool/tools/common-tool.service';
+import { name } from 'typia/lib/reflect';
+import { SessionService } from '~/session/session.service';
 
 const app = typia.llm.application<EthereumTool & CommonTool, 'chatgpt'>();
 
@@ -54,11 +57,7 @@ export class AgentService {
     private db: DatabaseService,
     private openAI: OpenAIService,
     private coinbase: CoinbaseService,
-
-    @Inject(forwardRef(() => EthereumToolService))
-    private ethereumToolService: EthereumToolService,
-    @Inject(forwardRef(() => CommonToolService))
-    private commonToolService: CommonToolService,
+    private session: SessionService,
   ) {}
 
   async createAgent(props: {
@@ -195,11 +194,62 @@ export class AgentService {
     return commonsBalance.toNumber();
   }
 
+  private async createAgentSession(agentId: string) {
+    const agent = await this.db.query.agent.findFirst({
+      where: (t) => eq(t.agentId, agentId),
+    });
+
+    if (!agent) {
+      throw new BadRequestException('Agent not found');
+    }
+
+    const messages: ChatCompletionMessageParam[] = [
+      {
+        role: 'system',
+        content: dedent`You are the following agent:
+      ${JSON.stringify(omit(agent, ['instructions', 'persona', 'wallet']))}
+      Use any tools nessecary to get information in order to perform the task.
+
+      The following is the persona you are meant to adopt:
+      ${agent.persona}
+
+      The following are the instructions you are meant to follow:
+      ${agent.instructions}`,
+      },
+      // ...(props.messages || []),
+    ];
+
+    const tools = map(
+      app.functions,
+      (_) =>
+        ({
+          type: 'function',
+          function: _,
+          endpoint: `http://localhost:${process.env.PORT}/v1/agents/tools`, // should be a self endpoint
+        }) as unknown as ChatCompletionTool & { endpoint: string },
+    );
+
+    const completionBody: ChatCompletionCreateParams = {
+      messages,
+      // ...body,
+      tools,
+      tool_choice: 'auto',
+      parallel_tool_calls: true,
+      model: 'gpt-4o-mini',
+    };
+
+    const session = await this.session.createSession({
+      value: { query: completionBody },
+    });
+    return session;
+  }
+
   async runAgent(props: {
     agentId: string;
     messages?: ChatCompletionMessageParam[];
+    sessionId?: string;
   }) {
-    const { agentId } = props;
+    const { agentId, sessionId } = props;
 
     const agent = await this.db.query.agent.findFirst({
       where: (t) => eq(t.agentId, agentId),
@@ -215,7 +265,6 @@ export class AgentService {
       console.log(e);
       throw e;
     });
-    const privateKey = this.seedToPrivateKey(agent.wallet.seed);
 
     const commonsBalance = await wallet.getBalance(COMMON_TOKEN_ADDRESS);
 
@@ -225,21 +274,23 @@ export class AgentService {
 
     console.log(commonsBalance);
 
-    const messages: ChatCompletionMessageParam[] = [
-      {
-        role: 'system',
-        content: dedent`You are the following agent:
-      ${JSON.stringify(omit(agent, ['instructions', 'persona', 'wallet']))}
-      Use any tools nessecary to get information in order to perform the task.
+    let session;
+    if (!sessionId) {
+      session = await this.createAgentSession(agentId);
+    } else {
+      session = await this.session.getSession({ id: sessionId });
+    }
 
-      The following is the persona you are meant to adopt:
-      ${agent.persona}
+    const completionBody: ChatCompletionCreateParamsNonStreaming = {
+      ...(session?.query as ChatCompletionCreateParamsNonStreaming),
+      model: 'gpt-4o-mini',
+    };
 
-      The following are the instructions you are meant to follow:
-      ${agent.instructions}`,
-      },
-      ...(props.messages || []),
-    ];
+    completionBody.messages = completionBody.messages.concat(
+      props.messages || [],
+    );
+
+    console.log(app.functions[0]);
 
     const tools = map(
       app.functions,
@@ -247,67 +298,69 @@ export class AgentService {
         ({
           type: 'function',
           function: _,
-        }) as unknown as ChatCompletionTool,
+          endpoint: `http://localhost:${process.env.PORT}/v1/agents/tools`, // should be a self endpoint
+        }) as unknown as ChatCompletionTool & { endpoint: string },
     );
-
-    console.log(app.functions[0]);
 
     let chatGPTResponse: ChatCompletion;
     // let sessionId: string | undefined = body.sessionId;
 
-    const prompt: ChatCompletionCreateParamsNonStreaming = {
-      messages,
-      tools,
-      tool_choice: 'auto',
-      parallel_tool_calls: true,
-      model: 'gpt-4o-mini',
-    };
-
     do {
       // Execute the tools
-      console.log('Prompt', prompt);
-      chatGPTResponse = await this.openAI.chat.completions.create(prompt);
+      console.log('Prompt', completionBody);
+      chatGPTResponse =
+        await this.openAI.chat.completions.create(completionBody);
 
       const toolCalls = chatGPTResponse.choices[0].message.tool_calls;
 
+      completionBody.messages.push(chatGPTResponse.choices[0].message);
+
       if (toolCalls?.length) {
         console.log('Tool Calls', toolCalls);
-        prompt.messages.push(chatGPTResponse.choices[0].message);
         await Promise.all(
           toolCalls.map(async (toolCall) => {
             if (toolCall.type === 'function') {
               const args = JSON.parse(toolCall.function.arguments);
-              const metadata = { agentId, privateKey };
+              const metadata = { agentId };
 
               console.log('Tool Call', { toolCall, toolCallArgs: args });
 
-              const toolWithMethod = [
-                this.commonToolService,
-                this.ethereumToolService,
-                // @ts-expect-error
-              ].find((tool) => tool[toolCall.function.name]);
+              const rawToolCall = find(tools, {
+                function: { name: toolCall.function.name },
+              });
 
-              // console.log('Tool with method', toolWithMethod);
+              if (!rawToolCall?.endpoint) {
+                throw new BadRequestException('Tool endpoint not found');
+              }
 
-              // @ts-expect-error
-              const data = await toolWithMethod[toolCall.function.name](
-                args,
-                metadata,
-              );
+              const response = await fetch(rawToolCall?.endpoint, {
+                method: 'POST',
+                body: JSON.stringify({ toolCall, metadata }),
+                headers: {
+                  'Content-Type': 'application/json',
+                },
+              });
 
-              prompt.messages.push({
+              const toolCallResponse = await response.json();
+
+              completionBody.messages.push({
                 // append result message
                 role: 'tool',
                 tool_call_id: toolCall.id,
-                content: JSON.stringify(data),
+                content: JSON.stringify(toolCallResponse),
               });
 
-              return data;
+              return toolCallResponse;
             }
             return null;
           }),
         );
       }
+
+      await this.session.updateSession({
+        id: session!.sessionId,
+        delta: { query: completionBody },
+      });
     } while (chatGPTResponse.choices[0].message.tool_calls?.length);
 
     // Charge for running the agent
@@ -320,7 +373,10 @@ export class AgentService {
 
     await tx.wait();
 
-    return chatGPTResponse.choices[0].message;
+    return {
+      ...chatGPTResponse.choices[0].message,
+      sessionId: session?.sessionId,
+    };
   }
 
   /**

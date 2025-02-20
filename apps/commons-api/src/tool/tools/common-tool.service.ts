@@ -1,10 +1,10 @@
 import { forwardRef, Inject, Injectable } from '@nestjs/common';
 import { ChatCompletionMessageParam } from 'openai/resources/chat/completions.mjs';
 import { EmbeddingType } from '~/embedding/dto/embedding.dto';
-import { AgentService } from '~/features/agent/agent.service';
-import { AttributionService } from '~/features/attribution/attribution.service';
-import { ResourceService } from '~/features/resource/resource.service';
-import { TaskService } from '~/features/task/task.service';
+import { AgentService } from '~/agent/agent.service';
+import { AttributionService } from '~/attribution/attribution.service';
+import { ResourceService } from '~/resource/resource.service';
+import { TaskService } from '~/task/task.service';
 import { OpenAIService } from '~/modules/openai/openai.service';
 import { PinataService } from '~/pinata/pinata.service';
 
@@ -49,7 +49,7 @@ export interface CommonTool {
    * Get Tasks available in the network, you may filter by status,
    */
   getTasks(): any;
-  getTasksWithFilter(props: { where: { status?: string } }): any;
+  getTasksWithFilter(props: { where: { status?: 'open' | 'closed' } }): any;
 
   /**
    * Create a new Task in the network
