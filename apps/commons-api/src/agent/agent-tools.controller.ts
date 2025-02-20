@@ -1,14 +1,23 @@
 import { TypedBody } from '@nestia/core';
-import { Controller, forwardRef, Inject, Post } from '@nestjs/common';
+import {
+  BadRequestException,
+  Controller,
+  forwardRef,
+  Inject,
+  Post,
+} from '@nestjs/common';
 import { InferInsertModel } from 'drizzle-orm';
 import { ChatCompletionMessageToolCall } from 'openai/resources/index.mjs';
 import { Except } from 'type-fest';
 import { CommonToolService } from '~/tool/tools/common-tool.service';
 import { EthereumToolService } from '~/tool/tools/ethereum-tool.service';
+import { AgentService } from './agent.service';
+import { merge } from 'lodash';
 
 @Controller({ version: '1', path: 'agents' })
 export class AgentToolsController {
   constructor(
+    private agent: AgentService,
     @Inject(forwardRef(() => EthereumToolService))
     private ethereumToolService: EthereumToolService,
     @Inject(forwardRef(() => CommonToolService))
@@ -25,6 +34,17 @@ export class AgentToolsController {
   ) {
     const { metadata, toolCall } = body;
     const args = JSON.parse(toolCall.function.arguments);
+
+    const { agentId } = metadata;
+
+    const agent = await this.agent.getAgent({ agentId });
+
+    if (!agent) {
+      throw new BadRequestException('Agent not found');
+    }
+
+    const privateKey = this.agent.seedToPrivateKey(agent.wallet.seed);
+    merge(metadata, { privateKey });
 
     console.log('Tool Call', { toolCall, toolCallArgs: args });
 

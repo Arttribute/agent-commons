@@ -1,7 +1,12 @@
 import { ATTRIBUTION_ABI } from '#/lib/abis/AttributionABI';
 import { ATTRIBUTION_ADDRESS } from '#/lib/addresses';
 import { baseSepolia } from '#/lib/baseSepolia';
-import { forwardRef, Inject, Injectable } from '@nestjs/common';
+import {
+  forwardRef,
+  Inject,
+  Injectable,
+  InternalServerErrorException,
+} from '@nestjs/common';
 import { eq, InferInsertModel, InferSelectModel } from 'drizzle-orm';
 import {
   createPublicClient,
@@ -27,6 +32,10 @@ export class SessionService {
       .values(value)
       .returning()
       .then(first<InferSelectModel<typeof schema.session>>);
+
+    if (!sessionEntry) {
+      throw new InternalServerErrorException('Failed to create session');
+    }
     return sessionEntry;
   }
 
