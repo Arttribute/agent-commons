@@ -373,7 +373,10 @@ export class AgentService {
 
     await tx.wait();
 
-    return chatGPTResponse.choices[0].message;
+    return {
+      ...chatGPTResponse.choices[0].message,
+      sessionId: session?.sessionId,
+    };
   }
 
   /**
