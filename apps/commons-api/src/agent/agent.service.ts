@@ -12,7 +12,7 @@ import {
 import { PostgresSaver } from '@langchain/langgraph-checkpoint-postgres';
 import { ToolNode } from '@langchain/langgraph/prebuilt';
 import { ChatOpenAI } from '@langchain/openai';
-import { BadRequestException, Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable, OnModuleInit } from '@nestjs/common';
 import { HDKey } from '@scure/bip32';
 import crypto from 'crypto';
 import dedent from 'dedent';
@@ -43,11 +43,12 @@ import { SessionService } from '~/session/session.service';
 import { CommonTool } from '../tool/tools/common-tool.service';
 import { EthereumTool } from '../tool/tools/ethereum-tool.service';
 import { AIMessage } from '@langchain/core/messages';
+const got = import('got');
 
 const app = typia.llm.application<EthereumTool & CommonTool, 'chatgpt'>();
 
 @Injectable()
-export class AgentService {
+export class AgentService implements OnModuleInit {
   private publicClient = createPublicClient({
     chain: baseSepolia,
     transport: http(),
@@ -58,6 +59,14 @@ export class AgentService {
     private coinbase: CoinbaseService,
     private session: SessionService,
   ) {}
+
+  async onModuleInit() {
+    const checkpointer = PostgresSaver.fromConnString(
+      `postgresql://${process.env.POSTGRES_USER}:${process.env.POSTGRES_PASSWORD}@${process.env.POSTGRES_HOST}:${process.env.POSTGRES_PORT}/${process.env.POSTGRES_DATABASE}`,
+    );
+
+    await checkpointer.setup();
+  }
 
   async createAgent(props: {
     value: Except<InferInsertModel<typeof schema.agent>, 'wallet' | 'agentId'>;
@@ -279,9 +288,6 @@ export class AgentService {
       `postgresql://${process.env.POSTGRES_USER}:${process.env.POSTGRES_PASSWORD}@${process.env.POSTGRES_HOST}:${process.env.POSTGRES_PORT}/${process.env.POSTGRES_DATABASE}`,
     );
 
-    await checkpointer.setup();
-    // import { api } from '#shared/src/common/website/server/request/request.server'
-
     const llm = new ChatOpenAI({
       model: 'gpt-4o-mini',
       // temperature: 0,
@@ -293,22 +299,23 @@ export class AgentService {
       return tool(
         async (args, config) => {
           // const toolCall: ChatCompletionMessageToolCall
-          return await (
-            await fetch(
-              `http://localhost:${process.env.PORT}/v1/agents/tools`,
-              {
+          const data = await got.then((_) =>
+            _.got
+              .post(`http://localhost:${process.env.PORT}/v1/agents/tools`, {
                 method: 'POST',
                 headers: {
                   'Content-Type': 'application/json',
                 },
-                body: JSON.stringify({
+                json: {
                   args,
-                  config,
+                  config: omit(config, ['configurable']),
                   metadata: { agentId },
-                }),
-              },
-            )
-          ).json();
+                },
+              })
+              .json<any>(),
+          );
+
+          return { toolData: data };
         },
         { schema: _.parameters, name: _.name, description: _.description },
       );
@@ -316,18 +323,12 @@ export class AgentService {
 
     // Find a way to use tools from other services
     const toolNode = new ToolNode(tools);
-    if (tools && tools.length > 0) {
-      // const strict = body.tools?.some((_) => _.function.strict);
-      // for now default true
-      // console.log('Here');
-      // console.log(tools);
-      const strict = false;
-      llm.bindTools(tools, {
-        parallel_tool_calls: true,
-        strict,
-        tool_choice: 'required',
-      });
-    }
+    const strict = false;
+    const llmWithTools = llm.bindTools(tools, {
+      parallel_tool_calls: true,
+      strict,
+      recursionLimit: 5,
+    });
 
     // const messageWithSingleToolCall = new AIMessage({
     //   content: '',
@@ -347,13 +348,15 @@ export class AgentService {
 
     // Define the function that calls the model
     const callModel = async (state: typeof MessagesAnnotation.State) => {
-      const llmResponse = await llm.invoke(state.messages);
+      const llmResponse = await llmWithTools.invoke(state.messages);
       return { messages: llmResponse };
     };
 
     const shouldContinue = (state: typeof MessagesAnnotation.State) => {
       const { messages } = state;
       const lastMessage = messages[messages.length - 1];
+
+      console.log({ messages, lastMessage });
       if (
         'tool_calls' in lastMessage &&
         Array.isArray(lastMessage.tool_calls) &&
@@ -399,7 +402,7 @@ export class AgentService {
       })) || [],
     );
 
-    console.log(messages);
+    // console.log(messages);
 
     const llmResponse = await graph.invoke({ messages }, config);
 

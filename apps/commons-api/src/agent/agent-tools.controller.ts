@@ -53,12 +53,12 @@ export class AgentToolsController {
       this.commonToolService,
       this.ethereumToolService,
       // @ts-expect-error
-    ].find((tool) => tool[config.runName]);
+    ].find((tool) => tool[config.toolCall.name]);
 
     // console.log('Tool with method', toolWithMethod);
 
     // @ts-expect-error
-    const data = await toolWithMethod[config.runName](args, metadata);
+    const data = await toolWithMethod[config.toolCall.name](args, metadata);
 
     return data;
   }
