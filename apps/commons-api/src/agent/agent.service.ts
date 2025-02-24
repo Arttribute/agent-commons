@@ -1,28 +1,33 @@
 import { baseSepolia } from '#/lib/baseSepolia';
 import * as schema from '#/models/schema';
 import { Wallet } from '@coinbase/coinbase-sdk';
+import { tool } from '@langchain/core/tools';
 import {
-  BadRequestException,
-  forwardRef,
-  Inject,
-  Injectable,
-} from '@nestjs/common';
+  END,
+  Messages,
+  MessagesAnnotation,
+  START,
+  StateGraph,
+} from '@langchain/langgraph';
+import { PostgresSaver } from '@langchain/langgraph-checkpoint-postgres';
+import { ToolNode } from '@langchain/langgraph/prebuilt';
+import { ChatOpenAI } from '@langchain/openai';
+import { BadRequestException, Injectable } from '@nestjs/common';
 import { HDKey } from '@scure/bip32';
 import crypto from 'crypto';
 import dedent from 'dedent';
 import { eq, InferInsertModel, InferSelectModel } from 'drizzle-orm';
 import { AGENT_REGISTRY_ABI } from 'lib/abis/AgentRegistryABI';
 import { AGENT_REGISTRY_ADDRESS, COMMON_TOKEN_ADDRESS } from 'lib/addresses';
-import { find, first, map, omit } from 'lodash';
+import { first, map, omit } from 'lodash';
 import {
-  ChatCompletion,
   ChatCompletionCreateParams,
-  ChatCompletionCreateParamsNonStreaming,
   ChatCompletionMessageParam,
   ChatCompletionTool,
 } from 'openai/resources/chat/completions';
 import { Except } from 'type-fest';
 import typia from 'typia';
+import { v4 } from 'uuid';
 import {
   createPublicClient,
   createWalletClient,
@@ -34,16 +39,10 @@ import { privateKeyToAccount } from 'viem/accounts';
 import { CoinbaseService } from '~/modules/coinbase/coinbase.service';
 import { DatabaseService } from '~/modules/database/database.service';
 import { OpenAIService } from '~/modules/openai/openai.service';
-import {
-  EthereumTool,
-  EthereumToolService,
-} from '../tool/tools/ethereum-tool.service';
-import {
-  CommonTool,
-  CommonToolService,
-} from '../tool/tools/common-tool.service';
-import { name } from 'typia/lib/reflect';
 import { SessionService } from '~/session/session.service';
+import { CommonTool } from '../tool/tools/common-tool.service';
+import { EthereumTool } from '../tool/tools/ethereum-tool.service';
+import { AIMessage } from '@langchain/core/messages';
 
 const app = typia.llm.application<EthereumTool & CommonTool, 'chatgpt'>();
 
@@ -208,7 +207,7 @@ export class AgentService {
         role: 'system',
         content: dedent`You are the following agent:
       ${JSON.stringify(omit(agent, ['instructions', 'persona', 'wallet']))}
-      Use any tools nessecary to get information in order to perform the task.
+      Use any tools necessary to get information in order to perform the task.
 
       The following is the persona you are meant to adopt:
       ${agent.persona}
@@ -238,10 +237,12 @@ export class AgentService {
       model: 'gpt-4o-mini',
     };
 
-    const session = await this.session.createSession({
-      value: { query: completionBody },
-    });
-    return session;
+    return completionBody;
+
+    // const session = await this.session.createSession({
+    //   value: { query: completionBody },
+    // });
+    // return session;
   }
 
   async runAgent(props: {
@@ -274,94 +275,135 @@ export class AgentService {
 
     console.log(commonsBalance);
 
-    let session;
-    if (!sessionId) {
-      session = await this.createAgentSession(agentId);
-    } else {
-      session = await this.session.getSession({ id: sessionId });
-    }
+    const checkpointer = PostgresSaver.fromConnString(
+      `postgresql://${process.env.POSTGRES_USER}:${process.env.POSTGRES_PASSWORD}@${process.env.POSTGRES_HOST}:${process.env.POSTGRES_PORT}/${process.env.POSTGRES_DATABASE}`,
+    );
 
-    const completionBody: ChatCompletionCreateParamsNonStreaming = {
-      ...(session?.query as ChatCompletionCreateParamsNonStreaming),
+    await checkpointer.setup();
+    // import { api } from '#shared/src/common/website/server/request/request.server'
+
+    const llm = new ChatOpenAI({
       model: 'gpt-4o-mini',
-    };
+      // temperature: 0,
+      supportsStrictToolCalling: true,
+      apiKey: process.env.OPENAI_API_KEY,
+    });
 
-    completionBody.messages = completionBody.messages.concat(
-      props.messages || [],
-    );
-
-    console.log(app.functions[0]);
-
-    const tools = map(
-      app.functions,
-      (_) =>
-        ({
-          type: 'function',
-          function: _,
-          endpoint: `http://localhost:${process.env.PORT}/v1/agents/tools`, // should be a self endpoint
-        }) as unknown as ChatCompletionTool & { endpoint: string },
-    );
-
-    let chatGPTResponse: ChatCompletion;
-    // let sessionId: string | undefined = body.sessionId;
-
-    do {
-      // Execute the tools
-      console.log('Prompt', completionBody);
-      chatGPTResponse =
-        await this.openAI.chat.completions.create(completionBody);
-
-      const toolCalls = chatGPTResponse.choices[0].message.tool_calls;
-
-      completionBody.messages.push(chatGPTResponse.choices[0].message);
-
-      if (toolCalls?.length) {
-        console.log('Tool Calls', toolCalls);
-        await Promise.all(
-          toolCalls.map(async (toolCall) => {
-            if (toolCall.type === 'function') {
-              const args = JSON.parse(toolCall.function.arguments);
-              const metadata = { agentId };
-
-              console.log('Tool Call', { toolCall, toolCallArgs: args });
-
-              const rawToolCall = find(tools, {
-                function: { name: toolCall.function.name },
-              });
-
-              if (!rawToolCall?.endpoint) {
-                throw new BadRequestException('Tool endpoint not found');
-              }
-
-              const response = await fetch(rawToolCall?.endpoint, {
+    const tools = map(app.functions, (_) => {
+      return tool(
+        async (args, config) => {
+          // const toolCall: ChatCompletionMessageToolCall
+          return await (
+            await fetch(
+              `http://localhost:${process.env.PORT}/v1/agents/tools`,
+              {
                 method: 'POST',
-                body: JSON.stringify({ toolCall, metadata }),
                 headers: {
                   'Content-Type': 'application/json',
                 },
-              });
+                body: JSON.stringify({
+                  args,
+                  config,
+                  metadata: { agentId },
+                }),
+              },
+            )
+          ).json();
+        },
+        { schema: _.parameters, name: _.name, description: _.description },
+      );
+    });
 
-              const toolCallResponse = await response.json();
-
-              completionBody.messages.push({
-                // append result message
-                role: 'tool',
-                tool_call_id: toolCall.id,
-                content: JSON.stringify(toolCallResponse),
-              });
-
-              return toolCallResponse;
-            }
-            return null;
-          }),
-        );
-      }
-
-      await this.session.updateSession({
-        id: session!.sessionId,
-        delta: { query: completionBody },
+    // Find a way to use tools from other services
+    const toolNode = new ToolNode(tools);
+    if (tools && tools.length > 0) {
+      // const strict = body.tools?.some((_) => _.function.strict);
+      // for now default true
+      // console.log('Here');
+      // console.log(tools);
+      const strict = false;
+      llm.bindTools(tools, {
+        parallel_tool_calls: true,
+        strict,
+        tool_choice: 'required',
       });
-    } while (chatGPTResponse.choices[0].message.tool_calls?.length);
+    }
+
+    // const messageWithSingleToolCall = new AIMessage({
+    //   content: '',
+    //   tool_calls: [
+    //     {
+    //       name: 'findResources',
+    //       args: { query: 'house', resourceType: 'image' },
+    //       id: 'tool_call_id',
+    //       type: 'tool_call',
+    //     },
+    //   ],
+    // });
+
+    // console.log(
+    //   await toolNode.invoke({ messages: [messageWithSingleToolCall] }),
+    // );
+
+    // Define the function that calls the model
+    const callModel = async (state: typeof MessagesAnnotation.State) => {
+      const llmResponse = await llm.invoke(state.messages);
+      return { messages: llmResponse };
+    };
+
+    const shouldContinue = (state: typeof MessagesAnnotation.State) => {
+      const { messages } = state;
+      const lastMessage = messages[messages.length - 1];
+      if (
+        'tool_calls' in lastMessage &&
+        Array.isArray(lastMessage.tool_calls) &&
+        lastMessage.tool_calls?.length
+      ) {
+        return 'tools';
+      }
+      return END;
+    };
+
+    // Define a new graph
+    const workflow = new StateGraph(MessagesAnnotation)
+      // Define the node and edge
+      .addNode('model', callModel)
+      .addNode('tools', toolNode)
+      .addEdge(START, 'model')
+      .addConditionalEdges('model', shouldContinue, ['tools', END])
+      .addEdge('tools', 'model');
+    // .addEdge('model', END);
+
+    const graph = workflow.compile({ checkpointer });
+
+    const uuid = v4();
+
+    const config: Parameters<typeof graph.invoke>[1] = {
+      configurable: { thread_id: uuid },
+    };
+
+    let messages: Messages = [];
+    if (!sessionId) {
+      const session = await this.createAgentSession(agentId);
+      messages = session.messages.map((_) => ({
+        ..._,
+        type: _.role,
+        content: _.content as string,
+      }));
+    }
+    messages = messages.concat(
+      props.messages?.map((_) => ({
+        ..._,
+        type: _.role,
+        content: _.content as string,
+      })) || [],
+    );
+
+    console.log(messages);
+
+    const llmResponse = await graph.invoke({ messages }, config);
+
+    console.log(app.functions[0]);
 
     // Charge for running the agent
 
@@ -373,9 +415,11 @@ export class AgentService {
 
     await tx.wait();
 
+    console.log(llmResponse);
+
     return {
-      ...chatGPTResponse.choices[0].message,
-      sessionId: session?.sessionId,
+      ...llmResponse.messages.at(-1),
+      sessionId: uuid,
     };
   }
 

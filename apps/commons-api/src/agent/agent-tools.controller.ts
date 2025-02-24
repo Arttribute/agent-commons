@@ -13,6 +13,7 @@ import { CommonToolService } from '~/tool/tools/common-tool.service';
 import { EthereumToolService } from '~/tool/tools/ethereum-tool.service';
 import { AgentService } from './agent.service';
 import { merge } from 'lodash';
+import { ToolRunnableConfig } from '@langchain/core/tools';
 
 @Controller({ version: '1', path: 'agents' })
 export class AgentToolsController {
@@ -28,12 +29,12 @@ export class AgentToolsController {
   async makeAgentToolCall(
     @TypedBody()
     body: {
-      toolCall: ChatCompletionMessageToolCall;
+      config: ToolRunnableConfig<Record<string, any>>;
+      args: any;
       metadata: any;
     },
   ) {
-    const { metadata, toolCall } = body;
-    const args = JSON.parse(toolCall.function.arguments);
+    const { metadata, config, args } = body;
 
     const { agentId } = metadata;
 
@@ -46,18 +47,18 @@ export class AgentToolsController {
     const privateKey = this.agent.seedToPrivateKey(agent.wallet.seed);
     merge(metadata, { privateKey });
 
-    console.log('Tool Call', { toolCall, toolCallArgs: args });
+    console.log('Tool Call', { config, toolCallArgs: args });
 
     const toolWithMethod = [
       this.commonToolService,
       this.ethereumToolService,
       // @ts-expect-error
-    ].find((tool) => tool[toolCall.function.name]);
+    ].find((tool) => tool[config.runName]);
 
     // console.log('Tool with method', toolWithMethod);
 
     // @ts-expect-error
-    const data = await toolWithMethod[toolCall.function.name](args, metadata);
+    const data = await toolWithMethod[config.runName](args, metadata);
 
     return data;
   }
