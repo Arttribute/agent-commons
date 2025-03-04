@@ -18,7 +18,7 @@ import { PinataModule } from '~/pinata/pinata.module';
     forwardRef(() => PinataModule),
   ],
   controllers: [ToolController],
-  providers: [ToolService, EthereumToolService, CommonToolService],
-  exports: [EthereumToolService, CommonToolService],
+  providers: [ToolService, EthereumToolService, CommonToolService, ToolService],
+  exports: [EthereumToolService, CommonToolService, ToolService],
 })
 export class ToolModule {}

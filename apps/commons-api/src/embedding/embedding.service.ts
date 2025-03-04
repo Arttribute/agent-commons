@@ -11,7 +11,6 @@ import { EmbeddingDto, EmbeddingType } from './dto/embedding.dto';
 import { Embedding } from './entities/embedding.entity';
 import { createClient, type PostgrestError } from '@supabase/supabase-js';
 import { WaveFile } from 'wavefile';
-import { resource } from '#/models/schema';
 
 @Injectable()
 export class EmbeddingService {
@@ -128,12 +127,13 @@ export class EmbeddingService {
   }
 
   async create(dto: EmbeddingDto) {
-    const { content, type, tags, resourceFile } = dto;
+    const { content, resourceType, embeddingType, schema, tags, resourceFile } =
+      dto;
 
-    if (!content || !type)
-      throw new BadRequestException('Content type are required');
+    if (!content || !embeddingType)
+      throw new BadRequestException('Content embedding type are required');
 
-    const embedding = await this.embed(content, type);
+    const embedding = await this.embed(content, embeddingType);
 
     // Store the vector in Postgres
     const {
@@ -147,7 +147,9 @@ export class EmbeddingService {
       .insert({
         resource_id: dto.resourceId,
         embedding,
-        resource_type: type,
+        resource_type: resourceType,
+        embedding_type: embeddingType,
+        schema: schema,
         tags: tags,
         resource_file: resourceFile,
       })
@@ -162,15 +164,15 @@ export class EmbeddingService {
   }
 
   async find(
-    dto: Pick<EmbeddingDto, 'content' | 'type'>,
+    dto: Pick<EmbeddingDto, 'content' | 'embeddingType'>,
     options?: Partial<{ matchThreshold: number; matchCount: number }>,
   ) {
-    const { content, type } = dto;
+    const { content, embeddingType } = dto;
 
     const { matchThreshold = 0, matchCount = 7 } = options || {};
 
-    if (!content || !type)
-      throw new BadRequestException('Content and type are required');
+    if (!content || !embeddingType)
+      throw new BadRequestException('Content and embeddingType are required');
 
     const embedding = await this.embed(content, EmbeddingType.text);
 
@@ -179,7 +181,7 @@ export class EmbeddingService {
       query_embedding: embedding,
       match_threshold: matchThreshold,
       match_count: matchCount,
-      r_type: type, // resource type
+      r_type: embeddingType, // resource type
     });
 
     if (error) {
