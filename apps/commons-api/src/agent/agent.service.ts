@@ -10,7 +10,13 @@ import {
 import { HDKey } from '@scure/bip32';
 import crypto from 'crypto';
 import dedent from 'dedent';
-import { eq, InferInsertModel, InferSelectModel } from 'drizzle-orm';
+import {
+  eq,
+  and,
+  InferInsertModel,
+  InferSelectModel,
+  inArray,
+} from 'drizzle-orm';
 import { AGENT_REGISTRY_ABI } from 'lib/abis/AgentRegistryABI';
 import { AGENT_REGISTRY_ADDRESS, COMMON_TOKEN_ADDRESS } from 'lib/addresses';
 import { find, first, map, omit } from 'lodash';
@@ -44,6 +50,7 @@ import {
 } from '../tool/tools/common-tool.service';
 import { name } from 'typia/lib/reflect';
 import { SessionService } from '~/session/session.service';
+import { ToolService } from '~/tool/tool.service';
 
 const app = typia.llm.application<EthereumTool & CommonTool, 'chatgpt'>();
 
@@ -58,6 +65,7 @@ export class AgentService {
     private openAI: OpenAIService,
     private coinbase: CoinbaseService,
     private session: SessionService,
+    private toolService: ToolService,
   ) {}
 
   async createAgent(props: {
@@ -219,7 +227,41 @@ export class AgentService {
       // ...(props.messages || []),
     ];
 
-    const tools = map(
+    // 3) Retrieve all dynamic tools from DB
+
+    const storedTools = await this.toolService.getAllTools();
+
+    // 4) Convert them to ChatCompletionTool array
+
+    //(B) Resource-based tools -> find by resourceId in agent.common_tools
+    const resourceIds = agent.commonTools ?? [];
+    console.log('Resource IDs', resourceIds);
+    const resourceTools = await this.db.query.resource.findMany({
+      where: (r) => inArray(r.resourceId, resourceIds),
+    });
+    console.log('Resource Tools', resourceTools);
+    const resourceBasedTools = resourceTools
+      .filter((res) => !!res.schema) // must have `schema`
+      .map((res) => {
+        const toolSchema = res.schema as ChatCompletionTool;
+        // We'll rename the function for uniqueness:
+        const resourceFunctionName = `resourceTool_${res.resourceId}`;
+        return {
+          type: 'function' as const,
+          function: { ...toolSchema, name: resourceFunctionName },
+          endpoint: `http://localhost:${process.env.PORT}/v1/agents/tools`,
+        };
+      });
+    console.log('Resource-based tools', resourceBasedTools);
+
+    const dynamicTools = storedTools.map((dbTool) => ({
+      type: 'function' as const,
+      function: { ...dbTool.schema, name: dbTool.name },
+      endpoint: `http://localhost:${process.env.PORT}/v1/agents/tools`,
+    }));
+
+    console.log('Dynamic tools', dynamicTools);
+    const staticTools = map(
       app.functions,
       (_) =>
         ({
@@ -228,6 +270,8 @@ export class AgentService {
           endpoint: `http://localhost:${process.env.PORT}/v1/agents/tools`, // should be a self endpoint
         }) as unknown as ChatCompletionTool & { endpoint: string },
     );
+
+    const tools = [...dynamicTools, ...resourceBasedTools, ...staticTools];
 
     const completionBody: ChatCompletionCreateParams = {
       messages,
@@ -292,7 +336,37 @@ export class AgentService {
 
     console.log(app.functions[0]);
 
-    const tools = map(
+    // 3) Retrieve all dynamic tools from DB
+    const storedTools = await this.toolService.getAllTools();
+    //console.log('Stored tools', storedTools);
+    // 4) Convert them to ChatCompletionTool array
+    const dynamicTools = storedTools.map((dbTool) => ({
+      type: 'function' as const,
+      function: { ...dbTool.schema, name: dbTool.name },
+      endpoint: `http://localhost:${process.env.PORT}/v1/agents/tools`,
+    }));
+
+    //(B) Resource-based tools -> find by resourceId in agent.common_tools
+    const resourceIds = agent.commonTools ?? [];
+    const resourceTools = await this.db.query.resource.findMany({
+      where: (r) => inArray(r.resourceId, resourceIds),
+    });
+    console.log('Resource Tools', resourceTools);
+    const resourceBasedTools = resourceTools
+      .filter((res) => !!res.schema) // must have `schema`
+      .map((res) => {
+        const toolSchema = res.schema as ChatCompletionTool;
+        // We'll rename the function for uniqueness:
+        const resourceFunctionName = `resourceTool_${res.resourceId}`;
+        return {
+          type: 'function' as const,
+          function: { ...toolSchema, name: resourceFunctionName },
+          endpoint: `http://localhost:${process.env.PORT}/v1/agents/tools`,
+        };
+      });
+
+    console.log('Resource-based tools', resourceBasedTools);
+    const staticTools = map(
       app.functions,
       (_) =>
         ({
@@ -301,6 +375,8 @@ export class AgentService {
           endpoint: `http://localhost:${process.env.PORT}/v1/agents/tools`, // should be a self endpoint
         }) as unknown as ChatCompletionTool & { endpoint: string },
     );
+
+    const tools = [...dynamicTools, ...resourceBasedTools, ...staticTools];
 
     let chatGPTResponse: ChatCompletion;
     // let sessionId: string | undefined = body.sessionId;
