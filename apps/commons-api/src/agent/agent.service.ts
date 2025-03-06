@@ -89,6 +89,7 @@ export class AgentService {
         agentId,
         owner: agentOwner,
         wallet: wallet.export(),
+        isLiaison: false,
       })
       .returning()
       .then(first<InferSelectModel<typeof schema.agent>>);

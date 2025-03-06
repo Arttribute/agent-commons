@@ -10,15 +10,28 @@ import { eq } from 'drizzle-orm';
 import * as crypto from 'crypto';
 import * as schema from '#/models/schema';
 import { CoinbaseService } from '~/modules/coinbase/coinbase.service';
+import { AGENT_REGISTRY_ABI } from 'lib/abis/AgentRegistryABI';
+import { AGENT_REGISTRY_ADDRESS } from 'lib/addresses';
+import {
+  createPublicClient,
+  createWalletClient,
+  getContract,
+  http,
+  parseUnits,
+} from 'viem';
+import { baseSepolia } from '#/lib/baseSepolia';
+import { privateKeyToAccount } from 'viem/accounts';
 
 const API_SECRET_HASH_KEY =
   process.env.API_SECRET_HASH_KEY || 'default_api_secret_hash_key';
 
 @Injectable()
 export class LiaisonService {
-  createDeveloperManagedWallet() {
-    throw new Error('Method not implemented.');
-  }
+  private publicClient = createPublicClient({
+    chain: baseSepolia,
+    transport: http(),
+  });
+
   constructor(
     private db: DatabaseService,
     private coinbase: CoinbaseService,
@@ -41,8 +54,8 @@ export class LiaisonService {
   }) {
     // 1) Create a wallet for the new liaison agent.
     const wallet = await this.coinbase.createDeveloperManagedWallet();
-    const faucetTx = await wallet.faucet();
-    await faucetTx.wait();
+    //const faucetTx = await wallet.faucet();
+    //await faucetTx.wait();
 
     // 2) Use the wallet's default address as the agentId.
     const agentAddress = (await wallet.getDefaultAddress())
@@ -78,6 +91,31 @@ export class LiaisonService {
       })
       .returning();
 
+    // 6) Register the new liaison agent on-chain.
+    const commonsWallet = createWalletClient({
+      account: privateKeyToAccount(
+        `0x${process.env.WALLET_PRIVATE_KEY!}` as `0x${string}`,
+      ),
+      chain: baseSepolia,
+      transport: http(),
+    });
+    const contract = getContract({
+      abi: AGENT_REGISTRY_ABI,
+      address: AGENT_REGISTRY_ADDRESS,
+      client: commonsWallet,
+    });
+
+    const metadata =
+      'https://coral-abstract-dolphin-257.mypinata.cloud/ipfs/bafkreiewjk5fizidkxejplpx34fjva7f6i6azcolanwgtzptanhre6twui';
+
+    const isCommonAgent = false;
+
+    const txHash = await contract.write.registerAgent([
+      agentAddress,
+      metadata,
+      isCommonAgent,
+    ]);
+    await this.publicClient.waitForTransactionReceipt({ hash: txHash });
     return { agent: inserted, liaisonSecret };
   }
 
