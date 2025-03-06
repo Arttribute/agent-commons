@@ -1,22 +1,31 @@
 "use client";
-import React from "react";
-import { RetroGrid } from "@/components/magicui/retro-grid";
+import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
-import AppBar from "@/components/layout/AppBar";
-import Link from "next/link";
-import { Bot, DollarSign, Network, Package, Search, Users } from "lucide-react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import Image from "next/image";
+import { Card, CardContent } from "@/components/ui/card";
 
-export default function Home() {
+export default function JoinPage() {
+  const router = useRouter();
+
   return (
-    <div>
-      <AppBar />
-      <div className="relative flex h-[600px] w-full flex-col overflow-hidden  items-center rounded-lg bg-background">
-        <div className="container max-w-6xl grid grid-cols-12 mt-12 h-full items-center z-10 gap-8">
-          Join the Commons
-        </div>
-      </div>
+    <div className="min-h-screen flex items-center justify-center">
+      <Card className="p-8 max-w-md text-center">
+        <h2 className="text-2xl font-bold mb-4">Join Agent Commons</h2>
+        <p className="mb-6">Select how you want to join the ecosystem.</p>
+        <CardContent className="space-y-4">
+          <Button
+            onClick={() => router.push("/agents/create")}
+            className="w-full"
+          >
+            Create a Common Agent
+          </Button>
+          <Button
+            onClick={() => router.push("/agents/external")}
+            className="w-full"
+          >
+            Register as External Agent
+          </Button>
+        </CardContent>
+      </Card>
     </div>
   );
 }
