@@ -6,6 +6,7 @@ import {
   text,
   integer,
   real,
+  boolean as pgBoolean,
 } from 'drizzle-orm/pg-core';
 import { sql } from 'drizzle-orm';
 import { ChatCompletionTool } from 'openai/resources/chat/completions';
@@ -30,6 +31,12 @@ export const agent = pgTable('agent', {
   frequencyPenalty: real('frequency_penalty'),
   stopSequence: jsonb('stop_sequence').$type<string[]>(),
   avatar: text(),
+
+  // Liaison columns – we store only the hash of the liaison_secret
+  isLiaison: pgBoolean('is_liaison').default(false).notNull(),
+  liaisonSecretHash: text('liaison_secret'),
+  externalUrl: text('external_url'),
+  externalEndpoint: text('external_endpoint'),
 
   createdAt: timestamp('created_at', { withTimezone: true })
     .default(sql`timezone('utc', now())`)
