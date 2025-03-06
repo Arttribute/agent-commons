@@ -66,12 +66,12 @@ export class LiaisonService {
     }
 
     // 3) Generate a random liaison_secret (32 bytes hex string).
-    const liaisonSecret = crypto.randomBytes(32).toString('hex');
+    const liaisonKey = crypto.randomBytes(32).toString('hex');
 
     // 4) Compute the HMAC-SHA256 hash of the liaison_secret.
-    const liaisonSecretHash = crypto
+    const liaisonKeyHash = crypto
       .createHmac('sha256', API_SECRET_HASH_KEY)
-      .update(liaisonSecret)
+      .update(liaisonKey)
       .digest('hex');
 
     // 5) Insert the new liaison agent into the DB.
@@ -85,7 +85,7 @@ export class LiaisonService {
         persona: props.persona ?? '',
         instructions: props.instructions ?? '',
         isLiaison: true,
-        liaisonSecretHash,
+        liaisonKeyHash,
         externalUrl: props.externalUrl ?? '',
         externalEndpoint: props.externalEndpoint ?? '',
       })
@@ -116,7 +116,7 @@ export class LiaisonService {
       isCommonAgent,
     ]);
     await this.publicClient.waitForTransactionReceipt({ hash: txHash });
-    return { agent: inserted, liaisonSecret };
+    return { agent: inserted, liaisonKey };
   }
 
   /**
@@ -135,17 +135,17 @@ export class LiaisonService {
   /**
    * Verifies the provided liaison_secret against the stored hash.
    */
-  async verifyLiaisonSecret(agentId: string, providedSecret: string) {
+  async verifyLiaisonKey(agentId: string, providedKey: string) {
     const agent = await this.getLiaisonAgent(agentId);
-    if (!agent.liaisonSecretHash) {
+    if (!agent.liaisonKeyHash) {
       throw new BadRequestException('No liaison secret set for this agent.');
     }
     const providedHash = crypto
       .createHmac('sha256', API_SECRET_HASH_KEY)
-      .update(providedSecret)
+      .update(providedKey)
       .digest('hex');
 
-    if (providedHash !== agent.liaisonSecretHash) {
+    if (providedHash !== agent.liaisonKeyHash) {
       throw new UnauthorizedException('Invalid liaison_secret.');
     }
     return true;
@@ -157,10 +157,10 @@ export class LiaisonService {
    */
   async interactWithLiaison(
     agentId: string,
-    providedSecret: string,
+    providedKey: string,
     message?: string,
   ) {
-    await this.verifyLiaisonSecret(agentId, providedSecret);
+    await this.verifyLiaisonKey(agentId, providedKey);
     const result = await this.agentService.runAgent({
       agentId,
       messages: message ? [{ role: 'user', content: message }] : [],

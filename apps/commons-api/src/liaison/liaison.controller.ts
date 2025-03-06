@@ -32,29 +32,29 @@ export class LiaisonController {
     const result = await this.liaisonService.createLiaisonAgent(body);
     return {
       data: result.agent,
-      liaisonSecret: result.liaisonSecret,
+      liaisonKey: result.liaisonKey,
       note: 'Store this liaison_secret securely. It will not be retrievable again.',
     };
   }
 
   /**
    * Interact with the liaison agent.
-   * Requires the liaisonAgentId in the body and the liaison_secret in the "x-liaison-secret" header.
+   * Requires the liaisonAgentId in the body and the liaison_secret in the "x-api-key" header.
    */
   @Post('interact')
   async interact(
     @Body() body: { liaisonAgentId: string; message?: string },
-    @Headers('x-liaison-secret') liaisonSecret: string,
+    @Headers('x-api-key') liaisonKey: string,
   ) {
     if (!body.liaisonAgentId) {
       throw new BadRequestException('liaisonAgentId is required in the body.');
     }
-    if (!liaisonSecret) {
-      throw new BadRequestException('x-liaison-secret header is required.');
+    if (!liaisonKey) {
+      throw new BadRequestException('x-api-key header is required.');
     }
     const result = await this.liaisonService.interactWithLiaison(
       body.liaisonAgentId,
-      liaisonSecret,
+      liaisonKey,
       body.message,
     );
     return { data: result };

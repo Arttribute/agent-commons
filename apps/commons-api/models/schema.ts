@@ -32,9 +32,9 @@ export const agent = pgTable('agent', {
   stopSequence: jsonb('stop_sequence').$type<string[]>(),
   avatar: text(),
 
-  // Liaison columns – we store only the hash of the liaison_secret
+  // Liaison columns – we store only the hash of the liaison_key
   isLiaison: pgBoolean('is_liaison').default(false).notNull(),
-  liaisonSecretHash: text('liaison_secret'),
+  liaisonKeyHash: text('liaison_key'),
   externalUrl: text('external_url'),
   externalEndpoint: text('external_endpoint'),
 
