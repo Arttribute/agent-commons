@@ -54,8 +54,8 @@ export class LiaisonService {
   }) {
     // 1) Create a wallet for the new liaison agent.
     const wallet = await this.coinbase.createDeveloperManagedWallet();
-    //const faucetTx = await wallet.faucet();
-    //await faucetTx.wait();
+    const faucetTx = await wallet.faucet();
+    await faucetTx.wait();
 
     // 2) Use the wallet's default address as the agentId.
     const agentAddress = (await wallet.getDefaultAddress())
@@ -138,7 +138,7 @@ export class LiaisonService {
   async verifyLiaisonKey(agentId: string, providedKey: string) {
     const agent = await this.getLiaisonAgent(agentId);
     if (!agent.liaisonKeyHash) {
-      throw new BadRequestException('No liaison secret set for this agent.');
+      throw new BadRequestException('No liaison key set for this agent.');
     }
     const providedHash = crypto
       .createHmac('sha256', API_SECRET_HASH_KEY)
@@ -146,7 +146,7 @@ export class LiaisonService {
       .digest('hex');
 
     if (providedHash !== agent.liaisonKeyHash) {
-      throw new UnauthorizedException('Invalid liaison_secret.');
+      throw new UnauthorizedException('Invalid liaison_key.');
     }
     return true;
   }
