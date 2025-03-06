@@ -35,7 +35,7 @@ export default function Home() {
               </h2>
             </div>
             <div className="flex gap-4 mt-6 z-10">
-              <Link href="/studio/agents" passHref>
+              <Link href="/join" passHref>
                 <Button className="rounded-lg w-64 px-16">
                   Join the Commons
                 </Button>
