@@ -40,7 +40,8 @@ export class EmbeddingService {
     return { tokenizer, model };
   }
 
-  // Note: Idea is to have a single pipeline for all types of embeddings and handle the type in the service. Can only search if the type is known. Cannot search across multiple dimensions
+  // Note: Idea is to have a single pipeline for all types of embeddings and handle the type in the service.
+  // Can only search if the type is known. Cannot search across multiple dimensions
 
   private async loadImagePipeline() {
     // clip model for images
@@ -69,7 +70,6 @@ export class EmbeddingService {
     switch (type) {
       case EmbeddingType.text: {
         const { tokenizer, model } = await this.loadTextPipeline();
-
         const inputs = tokenizer([content], {
           padding: true,
           truncation: true,
@@ -91,9 +91,9 @@ export class EmbeddingService {
         break;
       case EmbeddingType.audio: {
         const { processor, model } = await this.loadAudioPipeline();
-        const buffer = Buffer.from(
-          await fetch(content).then((x) => x.arrayBuffer()),
-        );
+        const arrayBuffer = await fetch(content).then((x) => x.arrayBuffer());
+        // Convert ArrayBuffer to Uint8Array before creating the Buffer
+        const buffer = Buffer.from(new Uint8Array(arrayBuffer));
         const wav = new WaveFile(buffer);
         wav.toBitDepth('32f');
         wav.toSampleRate(48000);
@@ -168,7 +168,6 @@ export class EmbeddingService {
     options?: Partial<{ matchThreshold: number; matchCount: number }>,
   ) {
     const { content, embeddingType } = dto;
-
     const { matchThreshold = 0, matchCount = 7 } = options || {};
 
     if (!content || !embeddingType)
