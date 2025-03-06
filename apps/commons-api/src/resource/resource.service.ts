@@ -13,8 +13,10 @@ import * as schema from '#/models/schema';
 import { AgentService } from '~/agent/agent.service';
 import { DatabaseService } from '~/modules/database/database.service';
 import { EmbeddingService } from '~/embedding/embedding.service';
-import { EmbeddingType } from '~/embedding/dto/embedding.dto';
+import { EmbeddingType, ResourceType } from '~/embedding/dto/embedding.dto';
 import { hexToBigInt } from 'viem';
+import { eq } from 'drizzle-orm';
+import { ToolSchema } from '~/tool/dto/tool.dto';
 
 @Injectable()
 export class ResourceService {
@@ -25,6 +27,7 @@ export class ResourceService {
   constructor(
     private db: DatabaseService,
     @Inject(forwardRef(() => AgentService)) private agent: AgentService,
+
     private embedding: EmbeddingService,
   ) {}
 
@@ -36,7 +39,9 @@ export class ResourceService {
     agentId: string;
     resourceMetadata: string;
     resourceFile: string;
-    type: EmbeddingType;
+    resourceType: ResourceType;
+    embeddingType: EmbeddingType;
+    schema?: ToolSchema;
     tags: string[];
     requiredReputation: bigint;
     usageCost: bigint;
@@ -48,7 +53,9 @@ export class ResourceService {
       agentId,
       resourceFile,
       resourceMetadata,
-      type,
+      resourceType,
+      embeddingType,
+      schema,
       tags,
       requiredReputation = 0n,
       usageCost = 0n,
@@ -104,8 +111,10 @@ export class ResourceService {
 
     const resource = this.embedding.create({
       resourceId: id.toString(),
-      content: resourceFile,
-      type,
+      content: resourceFile || 'does not require resource file',
+      resourceType: resourceType,
+      embeddingType: embeddingType,
+      schema,
       tags,
       resourceFile,
     });
@@ -120,12 +129,18 @@ export class ResourceService {
     return `data:${mimeType};base64,${base64Text}`;
   }
 
-  findResources(props: { query: string; resourceType: EmbeddingType }) {
-    const { query, resourceType } = props;
+  findResources(props: { query: string; embeddingType: EmbeddingType }) {
+    const { query, embeddingType } = props;
     const resources = this.embedding.find({
       content: query,
-      type: resourceType,
+      embeddingType: embeddingType,
     });
     return resources;
+  }
+
+  async getResourceById(resourceId: string) {
+    return this.db.query.resource.findFirst({
+      where: (r) => eq(r.resourceId, resourceId),
+    });
   }
 }

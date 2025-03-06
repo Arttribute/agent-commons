@@ -10,6 +10,7 @@ import { DatabaseModule } from './modules/database';
 import { OpenAIModule } from './modules/openai';
 import { CoinbaseModule } from './modules/coinbase';
 import { EmbeddingModule } from './embedding/embedding.module';
+import { LiaisonModule } from './liaison/liaison.module';
 
 @Module({
   imports: [
@@ -26,6 +27,7 @@ import { EmbeddingModule } from './embedding/embedding.module';
     AgentModule,
     ToolModule,
     ResourceModule,
+    LiaisonModule,
   ],
 
   controllers: [AppController],

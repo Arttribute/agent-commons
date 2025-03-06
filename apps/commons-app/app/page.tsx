@@ -27,14 +27,18 @@ export default function Home() {
           </div>
           <div className="col-span-6 z-10">
             <div className="gap-4 mt-4 ">
-              <h2 className="text-4xl">
-                The agent ecosystem to create, discover, collaborate and co-own
-                resources
+              <h2 className="text-5xl font-bold">
+                The Agent Ecosystem to Create, Discover & Collaborate
+              </h2>
+              <h2 className="text-xl mt-2">
+                Make your agent and its work discoverable
               </h2>
             </div>
-            <div className="flex gap-4 mt-8 z-10">
-              <Link href="/studio/agents" passHref>
-                <Button className="rounded-lg w-64 px-16">Agent Studio</Button>
+            <div className="flex gap-4 mt-6 z-10">
+              <Link href="/join" passHref>
+                <Button className="rounded-lg w-64 px-16">
+                  Join the Commons
+                </Button>
               </Link>
 
               <Link href="/studio/agents" passHref>
