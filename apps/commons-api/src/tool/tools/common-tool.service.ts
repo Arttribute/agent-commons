@@ -1,12 +1,18 @@
-import { forwardRef, Inject, Injectable } from '@nestjs/common';
+import {
+  BadRequestException,
+  forwardRef,
+  Inject,
+  Injectable,
+} from '@nestjs/common';
 import { ChatCompletionMessageParam } from 'openai/resources/chat/completions.mjs';
-import { EmbeddingType } from '~/embedding/dto/embedding.dto';
+import { EmbeddingType, ResourceType } from '~/embedding/dto/embedding.dto';
 import { AgentService } from '~/agent/agent.service';
 import { AttributionService } from '~/attribution/attribution.service';
 import { ResourceService } from '~/resource/resource.service';
 import { TaskService } from '~/task/task.service';
 import { OpenAIService } from '~/modules/openai/openai.service';
 import { PinataService } from '~/pinata/pinata.service';
+import { ToolSchema } from '~/tool/dto/tool.dto';
 
 const graphqlRequest = import('graphql-request');
 
@@ -27,7 +33,7 @@ export interface CommonTool {
    * Find Resources available in the network, you may filter by query and resource type
    * The query is a string that will be used to search for resources
    */
-  findResources(props: { query: string; resourceType: EmbeddingType }): any;
+  findResources(props: { query: string; embeddingType: EmbeddingType }): any;
 
   /**
    * Create a new Resource in the network
@@ -37,7 +43,9 @@ export interface CommonTool {
     description: string;
     thumbnail: string;
     resourceFile: string;
-    resourceFileType: string;
+    resourceType: string;
+    embeddigType: string;
+    schema: ToolSchema;
     tags: string[];
     requiredReputation: number;
     usageCost: number;
@@ -126,6 +134,15 @@ export interface CommonTool {
   }): Promise<{
     ipfsUrl: string;
   }>;
+
+  /**
+   * Equip a tool resource to an agent
+   */
+  equipResourceTool(props: {
+    resourceId: string;
+    agentId: string;
+    privateKey: string;
+  }): any;
 }
 
 @Injectable()
@@ -277,7 +294,7 @@ export class CommonToolService implements CommonTool {
     });
   }
 
-  findResources(props: { query: string; resourceType: EmbeddingType }) {
+  findResources(props: { query: string; embeddingType: EmbeddingType }) {
     return this.resource.findResources(props);
   }
 
@@ -288,7 +305,9 @@ export class CommonToolService implements CommonTool {
       description: string;
       thumbnail: string;
       resourceFile: string;
-      resourceFileType: string;
+      resourceType: string;
+      embeddigType: string;
+      schema: ToolSchema;
       tags: string[];
       requiredReputation: bigint;
       usageCost: bigint;
@@ -311,19 +330,34 @@ export class CommonToolService implements CommonTool {
     //get ipfs file url
     const cid = metadataFile.IpfsHash;
     const resourceMetadata = `https://${process.env.GATEWAY_URL ?? 'gateway.pinata.cloud'}/ipfs/${cid}`;
-    //dynamic type based on resourceFileType
-    const type =
-      props.resourceFileType === 'image'
+    //dynamic type based on embeddigType
+    const etype =
+      props.embeddigType === 'image'
         ? EmbeddingType.image
-        : props.resourceFileType === 'audio'
+        : props.embeddigType === 'audio'
           ? EmbeddingType.audio
           : EmbeddingType.text;
+    const rType =
+      props.resourceType === 'image'
+        ? ResourceType.image
+        : props.resourceType === 'text'
+          ? ResourceType.text
+          : props.resourceType === 'audio'
+            ? ResourceType.audio
+            : props.resourceType === 'video'
+              ? ResourceType.video
+              : props.resourceType === 'csv'
+                ? ResourceType.csv
+                : ResourceType.tool;
 
     const resource = await this.resource.createResource({
       ...props,
       agentId: metadata.agentId,
       resourceMetadata,
-      type,
+      schema: props.schema,
+      resourceType: rType,
+      embeddingType: etype,
+      tags: props.tags,
       isCoreResource: false,
     });
 
@@ -648,6 +682,41 @@ export class CommonToolService implements CommonTool {
     // 3) Return IPFS info
     return {
       ipfsUrl: gatewayUrl,
+    };
+  }
+
+  async equipResourceTool(props: {
+    resourceId: string;
+    agentId: string;
+    privateKey: string;
+  }) {
+    const { resourceId, agentId, privateKey } = props;
+
+    // 1) Confirm resource is type=tool
+    const resource = await this.resource.getResourceById(resourceId);
+    if (!resource) {
+      throw new BadRequestException(`Resource "${resourceId}" not found`);
+    }
+    if (resource.resourceType !== 'tool') {
+      throw new BadRequestException(`Resource "${resourceId}" is not a tool`);
+    }
+
+    // 2) Add to agent.common_tools
+    const agent = await this.agent.getAgent({ agentId });
+    if (!agent) {
+      throw new BadRequestException(`Agent "${agentId}" not found`);
+    }
+
+    const updatedCommonTools = new Set(agent.commonTools ?? []);
+    updatedCommonTools.add(resourceId);
+
+    await this.agent.updateAgent(agentId, {
+      commonTools: Array.from(updatedCommonTools),
+    });
+
+    return {
+      success: true,
+      message: `Tool resource "${resourceId}" equipped successfully.`,
     };
   }
 }
