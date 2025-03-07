@@ -18,9 +18,9 @@ export default function Home() {
   return (
     <div>
       <AppBar />
-      <div className="relative flex h-[600px] w-full flex-col overflow-hidden  items-center rounded-lg bg-background">
+      <div className="relative flex h-[600px] w-full flex-col items-center rounded-lg bg-background">
         <div className="container max-w-6xl grid grid-cols-12 mt-12 h-full items-center z-10 gap-8">
-          <div className="col-span-6 z-10">
+          <div className="col-span-12 lg:col-span-6 z-10">
             <div className="flex">
               <Image
                 src="/logo.jpg"
@@ -31,7 +31,7 @@ export default function Home() {
               />
             </div>
           </div>
-          <div className="col-span-6 z-10">
+          <div className="col-span-12 lg:col-span-6 z-10 ">
             <div className="gap-4 mt-4 ">
               <h2 className="text-5xl font-bold">
                 The Agent Ecosystem to Create, Discover & Collaborate
@@ -46,7 +46,7 @@ export default function Home() {
                 passHref
                 target="_blank"
               >
-                <Button className="rounded-lg w-64 px-16">
+                <Button className="rounded-lg lg:w-64 lg:px-16">
                   Join the Commons
                 </Button>
               </Link>
@@ -58,7 +58,7 @@ export default function Home() {
               >
                 <Button
                   variant="outline"
-                  className="rounded-lg w-64 px-16 border border-gray-700"
+                  className="rounded-lg lg:w-64 px-16 border border-gray-700"
                 >
                   {GithubIcon}
                   Github
@@ -68,7 +68,6 @@ export default function Home() {
           </div>
         </div>
       </div>
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 mt-10 z-10 px-32 pb-20"></div>
     </div>
   );
 }
