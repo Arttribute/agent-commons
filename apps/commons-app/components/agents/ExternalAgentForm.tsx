@@ -4,19 +4,18 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Copy, Check, InfoIcon } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import ImageUploader from "./ImageUploader";
+import { FundAgent } from "@/components/agents/FundAgent";
 
 export default function ExternalAgentForm() {
   const router = useRouter();
   const { authState } = useAuth();
   const { walletAddress } = authState;
   const userAddress = walletAddress?.toLowerCase();
-
   // State for the agent form
   const [agentData, setAgentData] = useState({
     name: "",
@@ -32,66 +31,8 @@ export default function ExternalAgentForm() {
   const [result, setResult] = useState<any>(null);
   const [loading, setLoading] = useState(false);
   const [copiedField, setCopiedField] = useState<string | null>(null);
-
-  // Static tool schema following OpenAI's function-calling structure
-  const toolSchema = {
-    info: {
-      title: "Liaison Agent Interaction API",
-      description:
-        "Allows external agents to interact with a liaison agent that gives access to all info about Agent Commons.",
-      version: "v1.0.0",
-    },
-    servers: [
-      {
-        url: "https://agent-commons.example.com", // Replace with actual base URL
-      },
-    ],
-    paths: {
-      "/liaison/interact": {
-        post: {
-          description: "Send a message to the liaison agent",
-          operationId: "interactWithLiaison",
-          parameters: [
-            {
-              name: "x-api-key",
-              in: "header",
-              description: "Secret key for authentication",
-              required: true,
-              schema: {
-                type: "string",
-              },
-            },
-          ],
-          requestBody: {
-            required: true,
-            content: {
-              "application/json": {
-                schema: {
-                  type: "object",
-                  properties: {
-                    liaisonAgentId: {
-                      type: "string",
-                      description: "The unique ID of the liaison agent",
-                    },
-                    message: {
-                      type: "string",
-                      description: "Message to send to the liaison agent",
-                    },
-                  },
-                  required: ["liaisonAgentId"],
-                },
-              },
-            },
-          },
-          responses: {
-            "200": {
-              description: "Successful interaction with the liaison agent",
-            },
-          },
-        },
-      },
-    },
-  };
+  const [toolSchema, setToolSchema] = useState<any>(null);
+  const [agentBalance, setAgentBalance] = useState<bigint>(0n);
 
   const handleChange = (
     e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>
@@ -114,8 +55,66 @@ export default function ExternalAgentForm() {
       if (!res.ok) {
         throw new Error(data.error || "Failed to create external agent.");
       }
-
+      console.log("Agent created:", data);
       setResult(data); // Store liaison details
+      setToolSchema({
+        info: {
+          title: "Liaison Agent Interaction API",
+          description:
+            "Allows external agents to interact with a liaison agent that gives access to all info about Agent Commons.",
+          version: "v1.0.0",
+        },
+        servers: [
+          {
+            url: `${process.env.NEXT_PUBLIC_NEST_API_BASE_URL}/v1`,
+          },
+        ],
+        paths: {
+          "/liaison/interact": {
+            post: {
+              description: "Send a message to the liaison agent",
+              operationId: "interactWithLiaison",
+              parameters: [
+                {
+                  name: "x-api-key",
+                  in: "header",
+                  description: "Secret key for authentication",
+                  required: true,
+                  schema: {
+                    type: "string",
+                  },
+                },
+              ],
+              requestBody: {
+                required: true,
+                content: {
+                  "application/json": {
+                    schema: {
+                      type: "object",
+                      properties: {
+                        liaisonAgentId: {
+                          type: "string",
+                          description: `The unique ID of the liaison agent which is ${data.data.agentId}`,
+                        },
+                        message: {
+                          type: "string",
+                          description: "Message to send to the liaison agent",
+                        },
+                      },
+                      required: ["liaisonAgentId"],
+                    },
+                  },
+                },
+              },
+              responses: {
+                "200": {
+                  description: "Successful interaction with the liaison agent",
+                },
+              },
+            },
+          },
+        },
+      });
     } catch (error: any) {
       alert(error.message);
     } finally {
@@ -253,6 +252,26 @@ export default function ExternalAgentForm() {
               )}{" "}
               {"Copy Schema"}
             </Button>
+          </div>
+          <div className="grid grid-cols-7 gap-2 mt-1 border p-1 rounded-lg w-full">
+            <div className="col-span-4 flex flex-col justify-center">
+              <p className="font-semibold text-gray-800 ml-2">
+                Common$:{" "}
+                <span className="text-blue-700">
+                  {(Number(agentBalance) / 1e18).toFixed(4)}
+                </span>
+              </p>
+            </div>
+            <div className="col-span-3">
+              <FundAgent
+                agentAddress={result.data.agentId as `0x${string}`}
+                onFundSuccess={() => {
+                  if (result?.agentId) {
+                    setAgentBalance(agentBalance + 20n);
+                  }
+                }}
+              />
+            </div>
           </div>
 
           {/* Instructions */}
