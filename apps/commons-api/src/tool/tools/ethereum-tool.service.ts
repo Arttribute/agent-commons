@@ -30,6 +30,9 @@ export class EthereumToolService implements EthereumTool {
     props: { address: string; amount: number },
     metadata: { agentId: string },
   ) {
-    // return this.agentService.transferTokensToWallet(props);
+    return this.agentService.transferTokensToWallet({
+      ...props,
+      agentId: metadata.agentId,
+    });
   }
 }
