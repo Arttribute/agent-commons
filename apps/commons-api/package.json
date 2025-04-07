@@ -38,6 +38,7 @@
     "@nestjs/mapped-types": "*",
     "@nestjs/platform-express": "^11.0.8",
     "@octokit/graphql": "^8.2.0",
+    "@samchon/openapi": "^3.0.0",
     "@scure/bip32": "^1.6.2",
     "@supabase/supabase-js": "^2.48.1",
     "@types/lodash": "^4.17.15",

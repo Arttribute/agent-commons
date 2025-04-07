@@ -13,8 +13,10 @@ import * as schema from '#/models/schema';
 import { AgentService } from '~/agent/agent.service';
 import { DatabaseService } from '~/modules/database/database.service';
 import { EmbeddingService } from '~/embedding/embedding.service';
-import { EmbeddingType } from '~/embedding/dto/embedding.dto';
+import { EmbeddingType, ResourceType } from '~/embedding/dto/embedding.dto';
 import { hexToBigInt } from 'viem';
+import { eq, or, sql } from 'drizzle-orm';
+import { ToolSchema } from '~/tool/dto/tool.dto';
 
 @Injectable()
 export class ResourceService {
@@ -25,6 +27,7 @@ export class ResourceService {
   constructor(
     private db: DatabaseService,
     @Inject(forwardRef(() => AgentService)) private agent: AgentService,
+
     private embedding: EmbeddingService,
   ) {}
 
@@ -36,7 +39,9 @@ export class ResourceService {
     agentId: string;
     resourceMetadata: string;
     resourceFile: string;
-    type: EmbeddingType;
+    resourceType: ResourceType;
+    embeddingType: EmbeddingType;
+    schema?: ToolSchema;
     tags: string[];
     requiredReputation: bigint;
     usageCost: bigint;
@@ -48,7 +53,9 @@ export class ResourceService {
       agentId,
       resourceFile,
       resourceMetadata,
-      type,
+      resourceType,
+      embeddingType,
+      schema,
       tags,
       requiredReputation = 0n,
       usageCost = 0n,
@@ -104,8 +111,10 @@ export class ResourceService {
 
     const resource = this.embedding.create({
       resourceId: id.toString(),
-      content: resourceFile,
-      type,
+      content: resourceFile || 'does not require resource file',
+      resourceType: resourceType,
+      embeddingType: embeddingType,
+      schema,
       tags,
       resourceFile,
     });
@@ -120,12 +129,44 @@ export class ResourceService {
     return `data:${mimeType};base64,${base64Text}`;
   }
 
-  findResources(props: { query: string; resourceType: EmbeddingType }) {
+  findResources(props: { query: string; resourceType: ResourceType }) {
     const { query, resourceType } = props;
-    const resources = this.embedding.find({
-      content: query,
-      type: resourceType,
+    if (
+      resourceType === ResourceType.text ||
+      resourceType === ResourceType.audio ||
+      resourceType === ResourceType.image
+    ) {
+      const resources = this.embedding.find({
+        content: query,
+        embeddingType: resourceType as unknown as EmbeddingType,
+      });
+      return resources;
+    }
+
+    const normalizedQuery = query?.trim().toLowerCase();
+
+    const resourceEntriesPromise = this.db.query.resource.findMany({
+      // Fuzzy Search
+      where: (t) =>
+        or(
+          query
+            ? sql`
+            (setweight(to_tsvector('english', array_to_string(${t.tags}, ', ')), 'A'))
+            @@ websearch_to_tsquery('english', ${query})
+            `
+            : undefined,
+          normalizedQuery
+            ? sql`similarity(array_to_string(${t.tags}, ', '), ${normalizedQuery}) > 0.3`
+            : undefined,
+        ),
     });
-    return resources;
+
+    return resourceEntriesPromise;
+  }
+
+  async getResourceById(resourceId: string) {
+    return this.db.query.resource.findFirst({
+      where: (r) => eq(r.resourceId, resourceId),
+    });
   }
 }
