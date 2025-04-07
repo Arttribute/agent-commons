@@ -15,7 +15,7 @@ export interface Resource {
   resourceId: string;
   embedding: number[];
   resourceType: ResourceType;
-  json_schema?: string;
+  schema?: string;
   tags?: string[];
 }
 

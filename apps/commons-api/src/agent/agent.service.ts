@@ -16,10 +16,17 @@ import { BadRequestException, Injectable, OnModuleInit } from '@nestjs/common';
 import { HDKey } from '@scure/bip32';
 import crypto from 'crypto';
 import dedent from 'dedent';
-import { eq, InferInsertModel, InferSelectModel } from 'drizzle-orm';
+import {
+  eq,
+  and,
+  InferInsertModel,
+  InferSelectModel,
+  inArray,
+  sql,
+} from 'drizzle-orm';
 import { AGENT_REGISTRY_ABI } from 'lib/abis/AgentRegistryABI';
 import { AGENT_REGISTRY_ADDRESS, COMMON_TOKEN_ADDRESS } from 'lib/addresses';
-import { first, map, omit } from 'lodash';
+import { find, first, map, omit } from 'lodash';
 import {
   ChatCompletionCreateParams,
   ChatCompletionMessageParam,
@@ -40,9 +47,12 @@ import { CoinbaseService } from '~/modules/coinbase/coinbase.service';
 import { DatabaseService } from '~/modules/database/database.service';
 import { OpenAIService } from '~/modules/openai/openai.service';
 import { SessionService } from '~/session/session.service';
+import { ToolService } from '~/tool/tool.service';
 import { CommonTool } from '../tool/tools/common-tool.service';
 import { EthereumTool } from '../tool/tools/ethereum-tool.service';
 import { AIMessage } from '@langchain/core/messages';
+import { IChatGptSchema } from '@samchon/openapi';
+import { inspect } from 'util';
 const got = import('got');
 
 const app = typia.llm.application<EthereumTool & CommonTool, 'chatgpt'>();
@@ -58,6 +68,7 @@ export class AgentService implements OnModuleInit {
     private openAI: OpenAIService,
     private coinbase: CoinbaseService,
     private session: SessionService,
+    private toolService: ToolService,
   ) {}
 
   async onModuleInit() {
@@ -82,7 +93,7 @@ export class AgentService implements OnModuleInit {
       agentOwner = props.value.owner as string;
     }
 
-    const agentEntry = this.db
+    const agentEntry = await this.db
       .insert(schema.agent)
       .values({
         ...props.value,
@@ -123,6 +134,14 @@ export class AgentService implements OnModuleInit {
       await this.publicClient.waitForTransactionReceipt({ hash: txHash });
     }
 
+    // TODO: Work on interval
+    // @ts-expect-error
+    const interval = props.interval || 10;
+
+    await this.db.execute(
+      sql`SELECT cron.schedule(FORMAT('agent:%s:schedule', ${agentEntry?.agentId}),'*/${interval} * * * *', FORMAT('SELECT trigger_agent(%L)', ${agentEntry?.agentId}))`,
+    );
+
     return agentEntry;
   }
 
@@ -138,8 +157,14 @@ export class AgentService implements OnModuleInit {
     return agent;
   }
 
-  triggerAgent(props: { agentId: string }) {
-    this.runAgent({ agentId: props.agentId });
+  async triggerAgent(props: { agentId: string }) {
+    // if agent should run
+
+    // Check if agent should run
+
+    // cronId = cron(*/5 * * * * *, SELECT triggerAgent("agentId"))
+
+    return await this.runAgent({ agentId: props.agentId });
   }
 
   public seedToPrivateKey(seed: string) {
@@ -217,6 +242,7 @@ export class AgentService implements OnModuleInit {
         content: dedent`You are the following agent:
       ${JSON.stringify(omit(agent, ['instructions', 'persona', 'wallet']))}
       Use any tools necessary to get information in order to perform the task.
+      Ensure that the arguments provided to the tools are correct and as accurate as possible.
 
       The following is the persona you are meant to adopt:
       ${agent.persona}
@@ -227,7 +253,41 @@ export class AgentService implements OnModuleInit {
       // ...(props.messages || []),
     ];
 
-    const tools = map(
+    // 3) Retrieve all dynamic tools from DB
+
+    const storedTools = await this.toolService.getAllTools();
+
+    // 4) Convert them to ChatCompletionTool array
+
+    //(B) Resource-based tools -> find by resourceId in agent.common_tools
+    const resourceIds = agent.commonTools ?? [];
+    console.log('Resource IDs', resourceIds);
+    const resourceTools = await this.db.query.resource.findMany({
+      where: (r) => inArray(r.resourceId, resourceIds),
+    });
+    console.log('Resource Tools', resourceTools);
+    const resourceBasedTools = resourceTools
+      .filter((res) => !!res.schema) // must have `schema`
+      .map((res) => {
+        const toolSchema = res.schema as ChatCompletionTool;
+        // We'll rename the function for uniqueness:
+        const resourceFunctionName = `resourceTool_${res.resourceId}`;
+        return {
+          type: 'function' as const,
+          function: { ...toolSchema, name: resourceFunctionName },
+          endpoint: `http://localhost:${process.env.PORT}/v1/agents/tools`,
+        };
+      });
+    console.log('Resource-based tools', resourceBasedTools);
+
+    const dynamicTools = storedTools.map((dbTool) => ({
+      type: 'function' as const,
+      function: { ...dbTool.schema, name: dbTool.name },
+      endpoint: `http://localhost:${process.env.PORT}/v1/agents/tools`,
+    }));
+
+    console.log('Dynamic tools', dynamicTools);
+    const staticTools = map(
       app.functions,
       (_) =>
         ({
@@ -236,6 +296,8 @@ export class AgentService implements OnModuleInit {
           endpoint: `http://localhost:${process.env.PORT}/v1/agents/tools`, // should be a self endpoint
         }) as unknown as ChatCompletionTool & { endpoint: string },
     );
+
+    const tools = [...dynamicTools, ...resourceBasedTools, ...staticTools];
 
     const completionBody: ChatCompletionCreateParams = {
       messages,
@@ -290,15 +352,58 @@ export class AgentService implements OnModuleInit {
 
     const llm = new ChatOpenAI({
       model: 'gpt-4o-mini',
-      // temperature: 0,
+      temperature: 0,
       supportsStrictToolCalling: true,
       apiKey: process.env.OPENAI_API_KEY,
     });
 
-    const tools = map(app.functions, (_) => {
+    // 3) Retrieve all dynamic tools from DB
+    const storedTools = await this.toolService.getAllTools();
+    //console.log('Stored tools', storedTools);
+    // 4) Convert them to ChatCompletionTool array
+    const dynamicTools = storedTools.map(
+      (dbTool) =>
+        ({
+          type: 'function' as const,
+          function: { ...dbTool.schema, name: dbTool.name },
+          endpoint: `http://localhost:${process.env.PORT}/v1/agents/tools`,
+        }) as ChatCompletionTool & { endpoint: string },
+    );
+
+    //(B) Resource-based tools -> find by resourceId in agent.common_tools
+    const resourceIds = agent.commonTools ?? [];
+    const resourceTools = await this.db.query.resource.findMany({
+      where: (r) => inArray(r.resourceId, resourceIds),
+    });
+    console.log('Resource Tools', resourceTools);
+    const resourceBasedTools = resourceTools
+      .filter((res) => !!res.schema) // must have `schema`
+      .map((res) => {
+        const toolSchema = res.schema as ChatCompletionTool;
+        // We'll rename the function for uniqueness:
+        const resourceFunctionName = `resourceTool_${res.resourceId}`;
+        return {
+          type: 'function' as const,
+          function: { ...toolSchema, name: resourceFunctionName },
+          endpoint: `http://localhost:${process.env.PORT}/v1/agents/tools`,
+        } as ChatCompletionTool & { endpoint: string };
+      });
+
+    console.log('Resource-based tools', resourceBasedTools);
+
+    // const tools = [...dynamicTools, ...resourceBasedTools, ...staticTools];
+
+    let toolDefinitions = app.functions.map((_) => {
+      // @ts-expect-error
+      return {
+        type: 'function' as const,
+        function: _,
+        endpoint: `http://localhost:${process.env.PORT}/v1/agents/tools`, // should be a self endpoint
+      } as ChatCompletionTool & { endpoint: string };
+    });
+    let toolRunners = map(app.functions, (_) => {
       return tool(
         async (args, config) => {
-          // const toolCall: ChatCompletionMessageToolCall
           const data = await got.then((_) =>
             _.got
               .post(`http://localhost:${process.env.PORT}/v1/agents/tools`, {
@@ -309,10 +414,18 @@ export class AgentService implements OnModuleInit {
                 json: {
                   args,
                   config: omit(config, ['configurable']),
+                  toolCall: config.toolCall,
                   metadata: { agentId },
                 },
               })
-              .json<any>(),
+              .json<any>()
+              .catch((e: typeof _.HTTPError) => {
+                if (e instanceof _.HTTPError) {
+                  // console.log(e);
+                  console.log(e.response.body);
+                }
+                throw e;
+              }),
           );
 
           return { toolData: data };
@@ -320,34 +433,66 @@ export class AgentService implements OnModuleInit {
         { schema: _.parameters, name: _.name, description: _.description },
       );
     });
+    // tools = app.functions
+
+    const additionalTools = [...dynamicTools, ...resourceBasedTools];
+
+    toolDefinitions = toolDefinitions.concat(...additionalTools);
+
+    toolRunners = toolRunners.concat(
+      map(additionalTools, (_) => {
+        console.log({ function: inspect(_, { depth: null }) });
+        return tool(
+          async (args, config) => {
+            // const toolCall: ChatCompletionMessageToolCall
+            const data = await got.then((_) =>
+              _.got
+                .post(`http://localhost:${process.env.PORT}/v1/agents/tools`, {
+                  method: 'POST',
+                  headers: {
+                    'Content-Type': 'application/json',
+                  },
+                  json: {
+                    args,
+                    config: omit(config, ['configurable']),
+                    toolCall: config.toolCall,
+                    metadata: { agentId },
+                  },
+                })
+                .json<any>()
+                .catch((e: typeof _.HTTPError) => {
+                  if (e instanceof _.HTTPError) {
+                    // console.log(e);
+                    console.log(e.response.body);
+                  }
+                  throw e;
+                }),
+            );
+
+            return { toolData: data };
+          },
+          {
+            schema: _.function.parameters,
+            name: _.function.name,
+            description: _.function.description,
+          },
+        ) as any;
+      }),
+    );
 
     // Find a way to use tools from other services
-    const toolNode = new ToolNode(tools);
+    // console.log(toolDefinitions);
+    let toolNode = new ToolNode(toolRunners);
     const strict = false;
-    const llmWithTools = llm.bindTools(tools, {
+    let llmWithTools = llm.bindTools(toolDefinitions, {
       parallel_tool_calls: true,
       strict,
       recursionLimit: 5,
     });
 
-    // const messageWithSingleToolCall = new AIMessage({
-    //   content: '',
-    //   tool_calls: [
-    //     {
-    //       name: 'findResources',
-    //       args: { query: 'house', resourceType: 'image' },
-    //       id: 'tool_call_id',
-    //       type: 'tool_call',
-    //     },
-    //   ],
-    // });
-
-    // console.log(
-    //   await toolNode.invoke({ messages: [messageWithSingleToolCall] }),
-    // );
-
     // Define the function that calls the model
     const callModel = async (state: typeof MessagesAnnotation.State) => {
+      // llmWithTools.
       const llmResponse = await llmWithTools.invoke(state.messages);
       return { messages: llmResponse };
     };
@@ -356,7 +501,6 @@ export class AgentService implements OnModuleInit {
       const { messages } = state;
       const lastMessage = messages[messages.length - 1];
 
-      console.log({ messages, lastMessage });
       if (
         'tool_calls' in lastMessage &&
         Array.isArray(lastMessage.tool_calls) &&
@@ -367,6 +511,96 @@ export class AgentService implements OnModuleInit {
       return END;
     };
 
+    const updateTools = async (state: typeof MessagesAnnotation.State) => {
+      // Check if got a resource that has a tool
+      // Find resource
+      const lastMassageContent = state.messages.at(-1)?.content;
+      if (typeof lastMassageContent == 'string') {
+        let toolContent;
+
+        try {
+          toolContent = JSON.parse(lastMassageContent);
+        } catch (err) {
+          return 'model';
+        }
+
+        const toolData = Array.isArray(toolContent.toolData)
+          ? toolContent.toolData
+          : [toolContent.toolData];
+
+        toolRunners.push(
+          ...toolData
+            .filter((_: any) => 'schema' in _ && _.schema)
+            .map((_: any) => {
+              const { schema } = _;
+
+              console.log('Added tool from response of tool call', schema.name);
+
+              return tool(
+                async (args, config) => {
+                  const data = await got.then((_) =>
+                    _.got
+                      .post(schema.endpoint, {
+                        method: 'POST',
+                        headers: {
+                          'Content-Type': 'application/json',
+                        },
+                        json: {
+                          // args,
+                          toolCall: config.toolCall,
+                          // config: omit(config, ['configurable']),
+                          metadata: { agentId },
+                        },
+                      })
+                      .json<any>()
+                      .catch((e: typeof _.HTTPError) => {
+                        if (e instanceof _.HTTPError) {
+                          // console.log(e);
+                          console.log(e.response.body);
+                        }
+                        throw e;
+                      }),
+                  );
+
+                  return { toolData: data };
+                },
+                {
+                  name: `resourceTool_${_.resourceId}`,
+                  description: schema.description,
+                  schema: schema.parameters as IChatGptSchema.IParameters,
+                },
+              );
+            }),
+        );
+        toolDefinitions.push(
+          ...toolData
+            .filter((_: any) => 'schema' in _ && _.schema)
+            .map((_: any) => ({
+              type: 'function' as const,
+              function: { ..._.schema, name: `resourceTool_${_.resourceId}` },
+              endpoint: `http://localhost:${process.env.PORT}/v1/agents/tools`,
+            })),
+        );
+
+        toolNode = new ToolNode(toolRunners);
+        llmWithTools = llm.bindTools(toolDefinitions, {
+          parallel_tool_calls: true,
+          strict,
+          recursionLimit: 5,
+        });
+      }
+
+      // Condition to check if content has tool call attached
+      // toolContent.toolData.jsonSchema
+
+      // Create new tools for langchain
+      // tools.push(tool())
+
+      // model({messgaes: [toolContent], tools: tools + newTools}) => make
+
+      return 'model';
+    };
+
     // Define a new graph
     const workflow = new StateGraph(MessagesAnnotation)
       // Define the node and edge
@@ -374,7 +608,7 @@ export class AgentService implements OnModuleInit {
       .addNode('tools', toolNode)
       .addEdge(START, 'model')
       .addConditionalEdges('model', shouldContinue, ['tools', END])
-      .addEdge('tools', 'model');
+      .addConditionalEdges('tools', updateTools, ['model']);
     // .addEdge('model', END);
 
     const graph = workflow.compile({ checkpointer });
@@ -404,19 +638,23 @@ export class AgentService implements OnModuleInit {
 
     // console.log(messages);
 
+    // message => Reminder you are an event assistant
+    // message => Reminder ensure that tools are properly called
+    // message => user content
+
     const llmResponse = await graph.invoke({ messages }, config);
 
     console.log(app.functions[0]);
 
     // Charge for running the agent
 
-    const tx = await wallet.createTransfer({
-      amount: 1,
-      assetId: COMMON_TOKEN_ADDRESS,
-      destination: '0xd9303dfc71728f209ef64dd1ad97f5a557ae0fab',
-    });
+    // const tx = await wallet.createTransfer({
+    //   amount: 1,
+    //   assetId: COMMON_TOKEN_ADDRESS,
+    //   destination: '0xd9303dfc71728f209ef64dd1ad97f5a557ae0fab',
+    // });
 
-    await tx.wait();
+    // await tx.wait();
 
     console.log(llmResponse);
 
@@ -449,6 +687,10 @@ export class AgentService implements OnModuleInit {
       .set(allowedUpdates)
       .where(eq(schema.agent.agentId, agentId))
       .returning();
+
+    // TODO: Check if interval has changed
+    // Update cron job schedule
+
     return updated;
   }
 

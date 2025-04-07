@@ -1,4 +1,3 @@
-// File: app/studio/[tab]/page.tsx
 "use client";
 
 import { useParams } from "next/navigation";
@@ -10,9 +9,9 @@ import ToolsList from "@/components/tools/ToolsList";
 import { DashboardBar } from "@/components/layout/DashboardBar";
 import { DotPattern } from "@/components/magicui/dot-pattern";
 import { cn } from "@/lib/utils";
-import { CommonAgent } from "@/types/agent";
 import { Loader2 } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
+import { supabase } from "@/lib/supabase"; // Import Supabase client
 
 const Profile: React.FC = () => (
   <div className="p-4">
@@ -28,62 +27,46 @@ const Balances: React.FC = () => (
   </div>
 );
 
-const ToolsArea: React.FC = () => (
-  <div className="p-4">
-    <h2 className="text-xl font-semibold">Tools</h2>
-    <p className="text-gray-500 text-sm mb-2">
-      Here you can view and manage tools.
-    </p>
-    <ToolsList
-      tools={[
-        {
-          name: "Tool 1",
-          description: "A tool for your agents",
-          calls: 0,
-        },
-        {
-          name: "Tool 2",
-          description: "A tool for your agents",
-          calls: 0,
-        },
-        {
-          name: "Tool 3",
-          description: "A tool for your agents",
-          calls: 0,
-        },
-        {
-          name: "Tool 4",
-          description: "A tool for your agents",
-          calls: 0,
-        },
-        {
-          name: "Tool 5",
-          description: "A tool for your agents",
-          calls: 0,
-        },
-      ]}
-    />
-  </div>
-);
+const ToolsArea: React.FC = () => {
+  const [tools, setTools] = useState<any[]>([]);
+
+  useEffect(() => {
+    async function fetchTools() {
+      try {
+        const { data, error } = await supabase.from("tools").select("*");
+        if (error) throw error;
+        setTools(data || []);
+      } catch (err) {
+        console.error("Error fetching tools:", err);
+      }
+    }
+    fetchTools();
+  }, []);
+
+  return (
+    <div className="p-4">
+      <h2 className="text-xl font-semibold">Tools</h2>
+      <p className="text-gray-500 text-sm mb-2">
+        Here you can view and manage tools.
+      </p>
+      <ToolsList tools={tools} />
+    </div>
+  );
+};
 
 const StudioPage: NextPage = () => {
-  //const router = useRouter();
   const { tab } = useParams() as { tab: string };
   const { authState } = useAuth();
-  const { idToken, walletAddress } = authState;
-  const isAuthenticated = !!idToken;
-  //const { wallets } = useWallets();
-  const [agents, setAgents] = useState<CommonAgent[]>([]);
+  const { walletAddress } = authState;
+  const [agents, setAgents] = useState<any[]>([]);
   const [loadingAgents, setLoadingAgents] = useState(true);
   const activeTab = tab || "agents";
 
-  // Current user’s address
-  const userAddress = walletAddress?.toLocaleLowerCase();
+  const userAddress = walletAddress?.toLowerCase();
 
   useEffect(() => {
     async function fetchAgents() {
       if (!userAddress) {
-        // user not signed in or no wallet
         setAgents([]);
         return;
       }
@@ -91,13 +74,18 @@ const StudioPage: NextPage = () => {
 
       if (activeTab === "agents") {
         try {
-          // Fetch only the user's owned agents from Nest via Next
           console.log("Fetching agents for user:", userAddress);
-          const res = await fetch(`/api/agents?owner=${userAddress}`, {
-            cache: "no-store",
-          });
-          const data = await res.json();
-          setAgents(data.data || []);
+          const { data, error } = await supabase
+            .from("agent") // Table name is "agent"
+            .select("agent_id, name, owner, persona, avatar, instructions")
+            .eq("owner", userAddress);
+
+          if (error) throw error;
+          console.log("Fetched agents:", data);
+          //setting agentId to agent_id for compatibility with the frontend - could be potentially be slower than doing it in the query
+          setAgents(
+            data.map((agent) => ({ ...agent, agentId: agent.agent_id }))
+          );
         } catch (err) {
           console.error("Error fetching agents:", err);
         }
@@ -125,11 +113,7 @@ const StudioPage: NextPage = () => {
         <div className="p-4">
           <h2 className="text-xl font-semibold">My Agents</h2>
           <p className="text-gray-500 text-sm mb-2">Manage your agents</p>
-          {!isAuthenticated ? (
-            <p className="text-gray-500 text-sm mt-4">
-              You need to login to view your agents.
-            </p>
-          ) : loadingAgents ? (
+          {loadingAgents ? (
             <div className="flex items-center justify-center h-32">
               <Loader2 className="h-5 w-5 animate-spin" />
             </div>
@@ -151,7 +135,7 @@ const StudioPage: NextPage = () => {
         <div className="grid grid-cols-12 px-4 gap-4">
           {/* Left Sidebar */}
           <div className="col-span-3">
-            <div className="flex bg-white p-4 rounded-lg border h-[88vh]">
+            <div className="flex bg-white p-4 rounded-lg border border-gray-400 h-[88vh] z-10">
               <DashboardBar activeTab={activeTab} />
             </div>
           </div>
