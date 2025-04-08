@@ -175,7 +175,7 @@ export default function EditPostPage({ params }: EditPostPageProps) {
           <CardHeader>
             <CardTitle>Permission Denied</CardTitle>
             <CardDescription>
-              You don't have permission to edit this post.
+              {"You don't have permission to edit this post."}
             </CardDescription>
           </CardHeader>
           <CardFooter>
