@@ -59,9 +59,13 @@ function findUser(username: string) {
   );
 }
 
-export default async function BlogPostPage({ params }: BlogPostPageProps) {
-  const user = await params.username;
-  const slug = await params.postslug;
+export default async function BlogPostPage({
+  params,
+}: {
+  params: Promise<BlogPostPageProps>;
+}) {
+  const user = (await params).username;
+  const slug = (await params).postslug;
 
   // Check if params are valid
   if (!user || !slug) {
