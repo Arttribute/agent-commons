@@ -26,8 +26,8 @@ import AppBar from "@/components/layout/AppBar";
 
 interface EditPostPageProps {
   params: {
-    user: string;
-    slug: string;
+    username: string;
+    postslug: string;
   };
 }
 
@@ -49,7 +49,7 @@ export default function EditPostPage({ params }: EditPostPageProps) {
 
   // Load post data
   useEffect(() => {
-    const post = getPostBySlugAndUsername(params.slug, params.user);
+    const post = getPostBySlugAndUsername(params.postslug, params.username);
 
     if (!post) {
       setIsLoading(false);
@@ -62,7 +62,7 @@ export default function EditPostPage({ params }: EditPostPageProps) {
     setCoverImage(post.coverImage);
     setPostId(post.id);
     setIsLoading(false);
-  }, [params.slug, params.user]);
+  }, [params.postslug, params.username]);
 
   const handleAddTag = () => {
     const trimmedTag = tagInput.trim();
@@ -167,7 +167,7 @@ export default function EditPostPage({ params }: EditPostPageProps) {
   }
 
   // Check if user is the author
-  const post = getPostBySlugAndUsername(params.slug, params.user);
+  const post = getPostBySlugAndUsername(params.postslug, params.username);
   if (post && post.author.id !== user) {
     return (
       <div className="container mx-auto px-4 py-8">
@@ -304,7 +304,9 @@ export default function EditPostPage({ params }: EditPostPageProps) {
         <CardFooter className="flex justify-between">
           <Button
             variant="outline"
-            onClick={() => router.push(`/blog/${params.user}/${params.slug}`)}
+            onClick={() =>
+              router.push(`/blog/${params.username}/${params.postslug}`)
+            }
           >
             Cancel
           </Button>
