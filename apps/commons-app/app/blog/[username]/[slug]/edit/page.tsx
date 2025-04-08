@@ -1,6 +1,7 @@
 "use client";
 
 import type React from "react";
+import { use } from "react";
 
 import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
@@ -25,13 +26,15 @@ import { notFound } from "next/navigation";
 import AppBar from "@/components/layout/AppBar";
 
 interface EditPostPageProps {
-  params: {
-    username: string;
-    postslug: string;
-  };
+  username: string;
+  postslug: string;
 }
 
-export default function EditPostPage({ params }: EditPostPageProps) {
+export default function EditPostPage({
+  params,
+}: {
+  params: Promise<EditPostPageProps>;
+}) {
   const [title, setTitle] = useState("");
   const [content, setContent] = useState("");
   const [tags, setTags] = useState<string[]>([]);
@@ -47,9 +50,14 @@ export default function EditPostPage({ params }: EditPostPageProps) {
   const { walletAddress } = authState;
   const user = walletAddress?.toLowerCase();
 
+  const pageParams = use(params);
+
   // Load post data
   useEffect(() => {
-    const post = getPostBySlugAndUsername(params.postslug, params.username);
+    const post = getPostBySlugAndUsername(
+      pageParams.postslug,
+      pageParams.username
+    );
 
     if (!post) {
       setIsLoading(false);
@@ -62,7 +70,7 @@ export default function EditPostPage({ params }: EditPostPageProps) {
     setCoverImage(post.coverImage);
     setPostId(post.id);
     setIsLoading(false);
-  }, [params.postslug, params.username]);
+  }, [pageParams.postslug, pageParams.username]);
 
   const handleAddTag = () => {
     const trimmedTag = tagInput.trim();
@@ -167,7 +175,10 @@ export default function EditPostPage({ params }: EditPostPageProps) {
   }
 
   // Check if user is the author
-  const post = getPostBySlugAndUsername(params.postslug, params.username);
+  const post = getPostBySlugAndUsername(
+    pageParams.postslug,
+    pageParams.username
+  );
   if (post && post.author.id !== user) {
     return (
       <div className="container mx-auto px-4 py-8">
@@ -305,7 +316,7 @@ export default function EditPostPage({ params }: EditPostPageProps) {
           <Button
             variant="outline"
             onClick={() =>
-              router.push(`/blog/${params.username}/${params.postslug}`)
+              router.push(`/blog/${pageParams.username}/${pageParams.postslug}`)
             }
           >
             Cancel
