@@ -5,6 +5,7 @@ import Providers from "@/Providers"; // The file with your <PrivyProvider> from 
 import { AuthProvider } from "@/context/AuthContext";
 import { Analytics } from "@vercel/analytics/react";
 import { Space_Mono } from "next/font/google";
+import { Toaster } from "@/components/ui/toaster";
 
 const space_mono = Space_Mono({
   weight: ["400", "700"],
@@ -37,7 +38,9 @@ export default function RootLayout({
     <html lang="en">
       <body className={space_mono.className}>
         <Providers>
-          <AuthProvider>{children}</AuthProvider>
+          <AuthProvider>
+            {children} <Toaster />
+          </AuthProvider>
         </Providers>
         <Analytics />
       </body>
