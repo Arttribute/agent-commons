@@ -13,15 +13,17 @@ import { EditPostButton } from "@/components/blog/edit-post-button";
 import AppBar from "@/components/layout/AppBar";
 
 interface BlogPostPageProps {
-  params: {
-    username: string;
-    postslug: string;
-  };
+  username: string;
+  postslug: string;
 }
 
-export async function generateMetadata({ params }: BlogPostPageProps) {
-  const user = await params.username;
-  const slug = await params.postslug;
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<BlogPostPageProps>;
+}) {
+  const user = (await params).username;
+  const slug = (await params).postslug;
   console.log("User:", user);
   console.log("Slug:", slug);
   console.log("Generating metadata for post:", slug, user);
