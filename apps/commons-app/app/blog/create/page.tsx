@@ -21,7 +21,7 @@ import { useAuth } from "@/context/AuthContext";
 import { Badge } from "@/components/ui/badge";
 import { X, Image } from "lucide-react";
 import { createPost } from "@/lib/post-storage";
-import AppBar from "@/components/layout/AppBar";
+import AppBar from "@/components/layout/app-bar";
 
 export default function CreatePostPage() {
   const [title, setTitle] = useState("");

@@ -21,7 +21,7 @@ import Link from "next/link";
 import { Filter, Search, ChevronLeft, ChevronRight } from "lucide-react";
 import { getAllPosts, type Post } from "@/lib/post-storage";
 import { useAuth } from "@/context/AuthContext";
-import AppBar from "@/components/layout/AppBar";
+import AppBar from "@/components/layout/app-bar";
 import { dummyAllPosts } from "@/lib/dummy-data";
 
 export default function BlogPage() {

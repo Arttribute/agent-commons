@@ -1,7 +1,7 @@
 "use client";
 import React from "react";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
-import AppBar from "@/components/layout/AppBar";
+import AppBar from "@/components/layout/app-bar";
 import ResourceList from "@/components/resources/ResourceList";
 import TasksList from "@/components/tasks/TasksList";
 

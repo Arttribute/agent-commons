@@ -23,7 +23,7 @@ import { Badge } from "@/components/ui/badge";
 import { X, Image, Loader2 } from "lucide-react";
 import { getPostBySlugAndUsername, updatePost } from "@/lib/post-storage";
 import { notFound } from "next/navigation";
-import AppBar from "@/components/layout/AppBar";
+import AppBar from "@/components/layout/app-bar";
 
 interface EditPostPageProps {
   username: string;
