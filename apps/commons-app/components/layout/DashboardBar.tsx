@@ -2,7 +2,6 @@
 import { FC } from "react";
 import { useRouter } from "next/navigation";
 import { Bot, CreditCard, BadgePlus, Wrench, User } from "lucide-react";
-import { CreateTool } from "@/components/tools/CreateTool";
 import { useAuth } from "@/context/AuthContext";
 
 import {

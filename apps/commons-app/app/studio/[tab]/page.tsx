@@ -29,11 +29,18 @@ const Balances: React.FC = () => (
 
 const ToolsArea: React.FC = () => {
   const [tools, setTools] = useState<any[]>([]);
+  const { authState } = useAuth();
+  const { walletAddress } = authState;
+
+  const userAddress = walletAddress?.toLowerCase();
 
   useEffect(() => {
     async function fetchTools() {
       try {
-        const { data, error } = await supabase.from("tools").select("*");
+        const { data, error } = await supabase
+          .from("tool")
+          .select("*")
+          .eq("owner", userAddress);
         if (error) throw error;
         setTools(data || []);
       } catch (err) {
