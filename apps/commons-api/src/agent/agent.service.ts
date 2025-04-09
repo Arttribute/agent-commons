@@ -692,7 +692,7 @@ export class AgentService implements OnModuleInit {
     console.log(llmResponse);
 
     return {
-      ...llmResponse.messages.at(-1),
+      ...llmResponse.messages.at(-1)?.toDict(),
       sessionId: uuid,
     };
   }
