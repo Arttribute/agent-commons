@@ -100,6 +100,7 @@ export class AgentService implements OnModuleInit {
         agentId,
         owner: agentOwner,
         wallet: wallet.export(),
+        isLiaison: false,
       })
       .returning()
       .then(first<InferSelectModel<typeof schema.agent>>);
@@ -225,6 +226,38 @@ export class AgentService implements OnModuleInit {
     const commonsBalance = await wallet.getBalance(COMMON_TOKEN_ADDRESS);
 
     return commonsBalance.toNumber();
+  }
+
+  async transferTokensToWallet(props: {
+    agentId: string;
+    address: string;
+    amount: number;
+  }) {
+    const { agentId, address, amount } = props;
+
+    const agent = await this.db.query.agent.findFirst({
+      where: (t) => eq(t.agentId, agentId),
+    });
+
+    if (!agent) {
+      throw new BadRequestException('Agent not found');
+    }
+
+    const wallet = await Wallet.import(agent.wallet).catch((e) => {
+      console.log(e);
+      throw e;
+    });
+
+    const tx = await wallet.createTransfer({
+      amount,
+      assetId: COMMON_TOKEN_ADDRESS,
+      destination: address,
+    });
+
+    await tx.wait();
+    const commonsBalance = await wallet.getBalance(COMMON_TOKEN_ADDRESS);
+
+    return { balance: commonsBalance.toNumber(), txHash: tx };
   }
 
   private async createAgentSession(agentId: string) {
