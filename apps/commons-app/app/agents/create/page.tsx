@@ -1,6 +1,6 @@
 "use client";
 import { AgentForm } from "@/components/agents/CreateAgentForm";
-import AppBar from "@/components/layout/AppBar";
+import AppBar from "@/components/layout/app-bar";
 
 export default function Page() {
   return (

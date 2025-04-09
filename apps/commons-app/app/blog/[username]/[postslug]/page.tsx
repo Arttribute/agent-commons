@@ -10,7 +10,7 @@ import { PostActions } from "@/components/blog/post-actions";
 import { CommentList } from "@/components/blog/comment-form";
 import { getPostBySlugAndUsername, createDummyPost } from "@/lib/post-storage";
 import { EditPostButton } from "@/components/blog/edit-post-button";
-import AppBar from "@/components/layout/AppBar";
+import AppBar from "@/components/layout/app-bar";
 
 interface BlogPostPageProps {
   username: string;

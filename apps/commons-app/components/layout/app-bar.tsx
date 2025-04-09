@@ -4,6 +4,7 @@ import { Menubar, MenubarMenu, MenubarTrigger } from "@/components/ui/menubar";
 import AccountMenu from "@/components/account/AccountMenu";
 import Link from "next/link";
 import Image from "next/image";
+import MainMenu from "@/components/layout/main-menu";
 
 export default function AppBar() {
   return (
@@ -22,6 +23,12 @@ export default function AppBar() {
             </Link>
           </MenubarTrigger>
         </MenubarMenu>
+        <div className="grow" />
+        <div className="ml-auto items-center justify-center">
+          <div className="hidden lg:flex">
+            <MainMenu />
+          </div>
+        </div>
         <div className="grow" />
         <div className="flex">
           <AccountMenu />

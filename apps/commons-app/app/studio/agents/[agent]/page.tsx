@@ -13,7 +13,7 @@ import { Loader2 } from "lucide-react";
 import RandomPixelAvatar from "@/components/account/RandomPixelAvatar";
 
 // Local Components
-import AppBar from "@/components/layout/AppBar";
+import AppBar from "@/components/layout/app-bar";
 import KnowledgeBaseInput from "@/components/agents/KnowledgeBaseInput";
 import { InteractionInterface } from "@/components/agents/InteractionInterface";
 import { Presets } from "@/components/agents/Presets";

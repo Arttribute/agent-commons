@@ -3,7 +3,7 @@
 import { useParams } from "next/navigation";
 import type { NextPage } from "next";
 import { useEffect, useState } from "react";
-import AppBar from "@/components/layout/AppBar";
+import AppBar from "@/components/layout/app-bar";
 import AgentsShowcase from "@/components/agents/AgentsShowcase";
 import ToolsList from "@/components/tools/ToolsList";
 import { DashboardBar } from "@/components/layout/DashboardBar";
