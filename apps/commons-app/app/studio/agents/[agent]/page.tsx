@@ -1,8 +1,7 @@
 "use client";
-import { useEffect, useState } from "react";
-import { use } from "react";
 
-// UI Components
+import { useEffect, useState, useRef } from "react";
+import { use } from "react";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
@@ -10,24 +9,25 @@ import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Loader2 } from "lucide-react";
-import RandomPixelAvatar from "@/components/account/RandomPixelAvatar";
 
-// Local Components
+// Layout & local components
 import AppBar from "@/components/layout/app-bar";
 import KnowledgeBaseInput from "@/components/agents/KnowledgeBaseInput";
 import { InteractionInterface } from "@/components/agents/InteractionInterface";
-import { Presets } from "@/components/agents/Presets";
+import { Presets } from "@/components/agents/presets";
 import { FundAgent } from "@/components/agents/FundAgent";
-import { EIP1193Provider, usePrivy, useWallets } from "@privy-io/react-auth"; // or your method of obtaining a provider
+import RandomPixelAvatar from "@/components/account/RandomPixelAvatar";
 
 // Hooks
+import { EIP1193Provider, useWallets } from "@privy-io/react-auth";
 import { useChainClients } from "@/hooks/useChainClients";
-// import { useWalletProvider } from "@/hooks/useWalletProvider"; // Ensure this path is correct or comment it out if not needed
 import { useCommonToken } from "@/hooks/useCommonToken";
+import { useAuth } from "@/context/AuthContext";
 
 // Types
 import { CommonAgent } from "@/types/agent";
 
+/** The model config shape you already use */
 interface ModelConfig {
   temperature: number;
   maxTokens: number;
@@ -37,6 +37,7 @@ interface ModelConfig {
   presencePenalty: number;
 }
 
+/** The main agent fields (subset) */
 interface AgentData {
   agentId: string;
   name?: string;
@@ -44,6 +45,11 @@ interface AgentData {
   instructions?: string;
   knowledgebase?: string;
   avatar?: string;
+  // If you store the arrays in your DB:
+  common_tools?: string[];
+  external_tools?: string[];
+
+  // Model hyperparams
   temperature?: number;
   maxTokens?: number;
   stopSequences?: string[];
@@ -52,11 +58,14 @@ interface AgentData {
   presencePenalty?: number;
 }
 
+const DEBOUNCE_DELAY = 1500; // 1.5 sec inactivity before auto-save
+
 export default function AgentStudio({
   params,
 }: {
   params: Promise<{ agent: string }>;
 }) {
+  // 1) Basic Setup
   const agentid = use(params);
   const id = agentid.agent;
 
@@ -64,13 +73,23 @@ export default function AgentStudio({
   const [loadingAgent, setLoadingAgent] = useState(true);
   const [agentBalance, setAgentBalance] = useState<bigint>(0n);
 
+  // Controls whether the user is editing
   const [isEditing, setIsEditing] = useState(false);
+
+  /**
+   * The "editForm" holds the data we want to edit, including tool arrays and other fields.
+   * On load, we set it to the fetched agent's data.
+   * On changes, we update it. We'll do auto-save on a debounce.
+   */
   const [editForm, setEditForm] = useState<Partial<AgentData>>({});
 
+  // For custom JSON additions (still stored in your final PUT if you wish)
   const [customTools, setCustomTools] = useState<{ [key: string]: string }>({
     common: "",
     external: "",
   });
+
+  // The model config (temp, tokens, etc.)
   const [modelConfig, setModelConfig] = useState<ModelConfig>({
     temperature: 0.5,
     maxTokens: 100,
@@ -80,34 +99,31 @@ export default function AgentStudio({
     presencePenalty: 0,
   });
 
-  // Get the provider using your custom hook
+  // Wallet / Auth
+  const { authState } = useAuth();
+  const userAddress = authState.walletAddress?.toLowerCase() || "";
+
   const [provider, setProvider] = useState<EIP1193Provider | null>(null);
   const { wallets } = useWallets();
   useEffect(() => {
     if (!wallets || wallets.length === 0) {
-      console.log("No wallets available. User may not be signed in.");
       return;
     }
     wallets[0]
       .getEthereumProvider()
-      .then((prov) => {
-        console.log("Obtained provider:", prov);
-        setProvider(prov);
-      })
-      .catch((err) => {
-        console.error("Error getting Ethereum provider:", err);
-      });
+      .then((prov) => setProvider(prov))
+      .catch((err) => console.error("Error getting Ethereum provider:", err));
   }, [wallets]);
 
-  // Pass the provider to useChainClients
   const { publicClient, walletClient } = useChainClients(provider);
   const { balanceOf } = useCommonToken(publicClient, walletClient);
 
-  // 1. Fetch agent data from your backend
+  // 2) Fetch agent data from your backend
   useEffect(() => {
     if (id) {
       fetchAgent();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
 
   async function fetchAgent() {
@@ -121,7 +137,18 @@ export default function AgentStudio({
       }
       const json = await res.json();
       setAgent(json.data);
+      // Initialize editForm with the loaded agent data
       setEditForm(json.data);
+      // Also initialize model config if your agent stores it:
+      setModelConfig((prev) => ({
+        ...prev,
+        temperature: json.data.temperature ?? prev.temperature,
+        maxTokens: json.data.maxTokens ?? prev.maxTokens,
+        stopSequences: json.data.stopSequence ?? prev.stopSequences,
+        topP: json.data.topP ?? prev.topP,
+        frequencyPenalty: json.data.frequencyPenalty ?? prev.frequencyPenalty,
+        presencePenalty: json.data.presencePenalty ?? prev.presencePenalty,
+      }));
     } catch (err) {
       console.error("Error fetching agent:", err);
     } finally {
@@ -129,10 +156,10 @@ export default function AgentStudio({
     }
   }
 
-  // 2. Fetch the agent's Common$ balance (public call)
+  // 3) Fetch the agent's Common$ balance
   useEffect(() => {
     if (!agent?.agentId) return;
-    balanceOf(agent.agentId as `0x${string}`).then(setAgentBalance);
+    balanceOf(id as `0x${string}`).then(setAgentBalance);
   }, [agent?.agentId, balanceOf]);
 
   const agentAddress = agent?.agentId || "";
@@ -141,35 +168,97 @@ export default function AgentStudio({
       ? `${agentAddress.slice(0, 8)}...${agentAddress.slice(-7)}`
       : agentAddress;
 
-  async function handleSaveChanges() {
-    if (!agent) return;
+  /**
+   * 4) The function that actually sends changes to the server.
+   * We'll call it from "auto-save" or from "Save" button.
+   */
+  async function updateAgentInDB() {
+    if (!agent) return; // no agent loaded
     try {
-      const res = await fetch(`/api/agents/agent?agentId=${agent.agentId}`, {
+      // Build the final updated data
+      const updated: Partial<AgentData> = {
+        ...editForm,
+        // Merge your modelConfig into the agent if desired
+        temperature: modelConfig.temperature,
+        maxTokens: modelConfig.maxTokens,
+        stopSequences: modelConfig.stopSequences,
+        topP: modelConfig.topP,
+        frequencyPenalty: modelConfig.frequencyPenalty,
+        presencePenalty: modelConfig.presencePenalty,
+      };
+
+      const res = await fetch(`/api/agents/agent?agentId=${id}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(editForm),
+        body: JSON.stringify(updated),
       });
       if (!res.ok) {
         throw new Error("Failed to update agent.");
       }
       const json = await res.json();
+      // The returned "json.data" should be the updated agent
       setAgent(json.data);
-      setEditForm(json.data);
-      setIsEditing(false);
+      setEditForm(json.data); // refresh local form state
+      return json.data;
     } catch (err) {
       console.error("Error saving agent updates:", err);
-      alert("Error saving changes.");
+      // In production, you might show a toast or something
     }
   }
 
+  /**
+   * 5) Manual "Save" button handler that also exits edit mode
+   */
+  async function handleSaveChanges() {
+    await updateAgentInDB();
+    setIsEditing(false);
+  }
+
+  /**
+   * 6) AUTO-SAVE HOOKS (Debounce approach)
+   * We watch for changes to `editForm`, `modelConfig`, or `customTools`.
+   * After the user is idle for DEBOUNCE_DELAY ms, we call updateAgentInDB().
+   */
+  const [debounceTimer, setDebounceTimer] = useState<NodeJS.Timeout | null>(
+    null
+  );
+
+  // This schedules a call to "updateAgentInDB" after DEBOUNCE_DELAY
+  function scheduleAutoSave() {
+    // If the user is not in editing mode, skip
+    if (!isEditing) return;
+
+    if (debounceTimer) clearTimeout(debounceTimer);
+    const timer = setTimeout(() => {
+      updateAgentInDB();
+    }, DEBOUNCE_DELAY);
+    setDebounceTimer(timer);
+  }
+
+  // If you want to watch changes in `editForm`, `customTools`, *and* `modelConfig`,
+  // you can build a single object that merges them, or just watch them individually:
+  useEffect(() => {
+    scheduleAutoSave();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editForm, modelConfig, customTools]);
+
+  // If we exit editing mode, clear any pending timer so we don't send an update
+  useEffect(() => {
+    if (!isEditing && debounceTimer) {
+      clearTimeout(debounceTimer);
+    }
+  }, [isEditing, debounceTimer]);
+
+  // 7) Render
   return (
     <div>
       <AppBar />
+
       <div className="grid grid-cols-12 gap-2 mt-16">
         {/* Left Panel */}
         <div className="col-span-3">
           {loadingAgent ? (
-            <div className="flex items-center justify-center h-32">
+            <div className="flex items-center justify-center h-32 gap-2">
               <Loader2 className="h-5 w-5 animate-spin" />
               <p>Loading agent details...</p>
             </div>
@@ -180,7 +269,7 @@ export default function AgentStudio({
                 <Avatar className="h-12 w-12 m-2">
                   <AvatarImage src={agent.avatar} />
                   <AvatarFallback>
-                    <RandomPixelAvatar username={agent.agentId} size={48} />
+                    <RandomPixelAvatar username={id} size={48} />
                   </AvatarFallback>
                 </Avatar>
                 <div className="flex flex-col justify-center">
@@ -218,12 +307,10 @@ export default function AgentStudio({
                 </div>
                 <div className="col-span-3">
                   <FundAgent
-                    agentAddress={agent.agentId as `0x${string}`}
+                    agentAddress={id as `0x${string}`}
                     onFundSuccess={() => {
                       if (agent?.agentId) {
-                        balanceOf(agent.agentId as `0x${string}`).then(
-                          setAgentBalance
-                        );
+                        balanceOf(id as `0x${string}`).then(setAgentBalance);
                       }
                     }}
                   />
@@ -232,6 +319,7 @@ export default function AgentStudio({
 
               {/* Persona + Instructions */}
               <div className="m-2 border rounded-lg p-2">
+                {/* Persona */}
                 <div className="mb-2">
                   <Label htmlFor="persona">Persona</Label>
                   {!isEditing ? (
@@ -256,6 +344,8 @@ export default function AgentStudio({
                     />
                   )}
                 </div>
+
+                {/* Instructions */}
                 <div>
                   <Label htmlFor="instructions">Instructions</Label>
                   {!isEditing ? (
@@ -311,12 +401,22 @@ export default function AgentStudio({
                   </Button>
                 ) : (
                   <>
+                    {/* Manual Save (forces immediate update, ends editing) */}
                     <Button onClick={handleSaveChanges}>Save</Button>
                     <Button
                       variant="outline"
                       onClick={() => {
                         setIsEditing(false);
+                        // revert changes to the last saved version
                         setEditForm(agent);
+                        setModelConfig({
+                          temperature: agent.temperature ?? 0.5,
+                          maxTokens: agent.maxTokens ?? 100,
+                          stopSequences: agent.stopSequences ?? [],
+                          topP: agent.topP ?? 1,
+                          frequencyPenalty: agent.frequencyPenalty ?? 0,
+                          presencePenalty: agent.presencePenalty ?? 0,
+                        });
                       }}
                     >
                       Cancel
@@ -335,7 +435,7 @@ export default function AgentStudio({
         {/* Interaction Panel */}
         <div className="col-span-6 my-2">
           {agent ? (
-            <InteractionInterface agentId={agent.agentId} />
+            <InteractionInterface agentId={id} />
           ) : (
             <div className="p-12 text-center">
               {!loadingAgent && <p>No agent loaded.</p>}
@@ -353,6 +453,7 @@ export default function AgentStudio({
               setCustomTools={setCustomTools}
               modelConfig={modelConfig}
               setModelConfig={setModelConfig}
+              userAddress={userAddress}
             />
           </ScrollArea>
         </div>
