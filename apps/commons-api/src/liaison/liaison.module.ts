@@ -5,11 +5,14 @@ import { LiaisonController } from './liaison.controller';
 import { AgentService } from '~/agent/agent.service';
 import { SessionService } from '~/session/session.service';
 import { ToolService } from '~/tool/tool.service';
+import { AgentModule } from '~/agent';
+import { SessionModule } from '~/session';
+import { ToolModule } from '~/tool';
 
 @Module({
-  imports: [],
+  imports: [AgentModule, SessionModule, ToolModule],
   controllers: [LiaisonController],
-  providers: [LiaisonService, AgentService, SessionService, ToolService],
+  providers: [LiaisonService],
   exports: [LiaisonService],
 })
 export class LiaisonModule {}
