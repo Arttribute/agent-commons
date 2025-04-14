@@ -26,7 +26,7 @@ import {
 } from 'drizzle-orm';
 import { AGENT_REGISTRY_ABI } from 'lib/abis/AgentRegistryABI';
 import { AGENT_REGISTRY_ADDRESS, COMMON_TOKEN_ADDRESS } from 'lib/addresses';
-import { find, first, map, omit } from 'lodash';
+import { compact, find, first, get, map, omit } from 'lodash';
 import {
   ChatCompletionCreateParams,
   ChatCompletionMessageParam,
@@ -50,9 +50,11 @@ import { SessionService } from '~/session/session.service';
 import { ToolService } from '~/tool/tool.service';
 import { CommonTool } from '../tool/tools/common-tool.service';
 import { EthereumTool } from '../tool/tools/ethereum-tool.service';
-import { AIMessage } from '@langchain/core/messages';
+import { LangChainCallbackHandler } from '@posthog/ai';
 import { IChatGptSchema } from '@samchon/openapi';
 import { inspect } from 'util';
+import { getPosthog } from '~/helpers/posthog';
+import { LogService } from '~/log/log.service';
 const got = import('got');
 
 const app = typia.llm.application<EthereumTool & CommonTool, 'chatgpt'>();
@@ -69,6 +71,7 @@ export class AgentService implements OnModuleInit {
     private coinbase: CoinbaseService,
     private session: SessionService,
     private toolService: ToolService,
+    private logService: LogService,
   ) {}
 
   async onModuleInit() {
@@ -354,6 +357,7 @@ export class AgentService implements OnModuleInit {
     messages?: ChatCompletionMessageParam[];
     sessionId?: string;
   }) {
+    const startTime = performance.now();
     const { agentId, sessionId } = props;
 
     const agent = await this.db.query.agent.findFirst({
@@ -472,35 +476,67 @@ export class AgentService implements OnModuleInit {
 
     toolDefinitions = toolDefinitions.concat(...additionalTools);
 
+    const toolUsage: Array<{
+      name: string;
+      status: string;
+      summary?: string;
+      duration?: number;
+    }> = [];
+
     toolRunners = toolRunners.concat(
       map(additionalTools, (_) => {
-        console.log({ function: inspect(_, { depth: null }) });
+        // console.log({ function: inspect(_, { depth: null }) });
         return tool(
           async (args, config) => {
             // const toolCall: ChatCompletionMessageToolCall
-            const data = await got.then((_) =>
-              _.got
-                .post(`http://localhost:${process.env.PORT}/v1/agents/tools`, {
-                  method: 'POST',
-                  headers: {
-                    'Content-Type': 'application/json',
-                  },
-                  json: {
-                    args,
-                    config: omit(config, ['configurable']),
-                    toolCall: config.toolCall,
-                    metadata: { agentId },
-                  },
-                })
-                .json<any>()
-                .catch((e: typeof _.HTTPError) => {
-                  if (e instanceof _.HTTPError) {
-                    // console.log(e);
-                    console.log(e.response.body);
-                  }
-                  throw e;
-                }),
-            );
+            const functionName = config.toolCall?.function?.name;
+            const callStart = performance.now();
+            const data = await got
+              .then((_) =>
+                _.got
+                  .post(
+                    `http://localhost:${process.env.PORT}/v1/agents/tools`,
+                    {
+                      method: 'POST',
+                      headers: {
+                        'Content-Type': 'application/json',
+                      },
+                      json: {
+                        args,
+                        config: omit(config, ['configurable']),
+                        toolCall: config.toolCall,
+                        metadata: { agentId },
+                      },
+                    },
+                  )
+                  .json<any>()
+                  .catch((e: typeof _.HTTPError) => {
+                    if (e instanceof _.HTTPError) {
+                      // console.log(e);
+                      console.log(e.response.body);
+                    }
+                    throw e;
+                  }),
+              )
+              .then((_) => {
+                toolUsage.push({
+                  name: functionName,
+                  status: 'success',
+                  summary: `Executed ${functionName}`,
+                  duration: performance.now() - callStart,
+                });
+
+                return _;
+              })
+              .catch((_) => {
+                toolUsage.push({
+                  name: functionName,
+                  status: 'error',
+                  summary: 'Error executing tool',
+                  duration: performance.now() - callStart,
+                });
+                throw _;
+              });
 
             return { toolData: data };
           },
@@ -523,10 +559,24 @@ export class AgentService implements OnModuleInit {
       recursionLimit: 5,
     });
 
+    const conversationId = v4();
+
+    const posthogCallback = new LangChainCallbackHandler({
+      client: getPosthog(),
+      // distinctId: 'user_123', // optional
+      // traceId: 'trace_456', // optional
+      properties: { conversationId }, // optional
+      // groups: { company: 'company_id_in_your_db' }, // optional
+      privacyMode: false, // optional
+      debug: false, // optional - when true, logs all events to console
+    });
+
     // Define the function that calls the model
     const callModel = async (state: typeof MessagesAnnotation.State) => {
       // llmWithTools.
-      const llmResponse = await llmWithTools.invoke(state.messages);
+      const llmResponse = await llmWithTools.invoke(state.messages, {
+        callbacks: [posthogCallback],
+      });
       return { messages: llmResponse };
     };
 
@@ -571,29 +621,51 @@ export class AgentService implements OnModuleInit {
 
               return tool(
                 async (args, config) => {
-                  const data = await got.then((_) =>
-                    _.got
-                      .post(schema.endpoint, {
-                        method: 'POST',
-                        headers: {
-                          'Content-Type': 'application/json',
-                        },
-                        json: {
-                          // args,
-                          toolCall: config.toolCall,
-                          // config: omit(config, ['configurable']),
-                          metadata: { agentId },
-                        },
-                      })
-                      .json<any>()
-                      .catch((e: typeof _.HTTPError) => {
-                        if (e instanceof _.HTTPError) {
-                          // console.log(e);
-                          console.log(e.response.body);
-                        }
-                        throw e;
-                      }),
-                  );
+                  const functionName = config.toolCall?.function?.name;
+                  const callStart = performance.now();
+                  const data = await got
+                    .then((_) =>
+                      _.got
+                        .post(schema.endpoint, {
+                          method: 'POST',
+                          headers: {
+                            'Content-Type': 'application/json',
+                          },
+                          json: {
+                            // args,
+                            toolCall: config.toolCall,
+                            // config: omit(config, ['configurable']),
+                            metadata: { agentId },
+                          },
+                        })
+                        .json<any>()
+                        .catch((e: typeof _.HTTPError) => {
+                          if (e instanceof _.HTTPError) {
+                            // console.log(e);
+                            console.log(e.response.body);
+                          }
+                          throw e;
+                        }),
+                    )
+                    .then((_) => {
+                      toolUsage.push({
+                        name: functionName,
+                        status: 'success',
+                        summary: `Executed ${functionName}`,
+                        duration: performance.now() - callStart,
+                      });
+
+                      return _;
+                    })
+                    .catch((_) => {
+                      toolUsage.push({
+                        name: functionName,
+                        status: 'error',
+                        summary: 'Error executing tool',
+                        duration: performance.now() - callStart,
+                      });
+                      throw _;
+                    });
 
                   return { toolData: data };
                 },
@@ -646,10 +718,8 @@ export class AgentService implements OnModuleInit {
 
     const graph = workflow.compile({ checkpointer });
 
-    const uuid = v4();
-
     const config: Parameters<typeof graph.invoke>[1] = {
-      configurable: { thread_id: uuid },
+      configurable: { thread_id: conversationId },
     };
 
     let messages: Messages = [];
@@ -677,7 +747,39 @@ export class AgentService implements OnModuleInit {
 
     const llmResponse = await graph.invoke({ messages }, config);
 
-    console.log(app.functions[0]);
+    const content = llmResponse.messages.at(-1)?.content;
+
+    let finalAIContent;
+
+    if (Array.isArray(content)) {
+      finalAIContent = compact(map(content, (_) => get(_, 'text'))).join(
+        '\n\n',
+      );
+    } else {
+      finalAIContent = content || '(No content)';
+    }
+
+    // parse "###ACTION_SUMMARY: " from finalAIContent
+    let actionSummary = 'misc request';
+    const match = finalAIContent.match(/###ACTION_SUMMARY:\s*(.+)/i);
+    if (match && match[1]) {
+      actionSummary = match[1].trim();
+    }
+
+    const totalTime = performance.now() - startTime;
+
+    const snippet = finalAIContent.slice(0, 512);
+
+    // single log
+    await this.logService.createLogEntry({
+      agentId,
+      sessionId: conversationId,
+      action: actionSummary,
+      message: snippet,
+      status: 'success',
+      responseTime: totalTime,
+      tools: toolUsage,
+    });
 
     // Charge for running the agent
 
@@ -693,7 +795,7 @@ export class AgentService implements OnModuleInit {
 
     return {
       ...llmResponse.messages.at(-1)?.toDict(),
-      sessionId: uuid,
+      sessionId: conversationId,
     };
   }
 

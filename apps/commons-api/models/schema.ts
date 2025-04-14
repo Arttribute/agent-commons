@@ -103,3 +103,27 @@ export const session = pgTable('session', {
     .default(sql`timezone('utc', now())`)
     .notNull(),
 });
+
+export const agentLog = pgTable('agent_log', {
+  logId: uuid('log_id')
+    .default(sql`uuid_generate_v4()`)
+    .primaryKey(),
+  agentId: text('agent_id').notNull(),
+  sessionId: text('session_id'),
+  action: text('action'),
+  message: text('message'),
+  status: text('status'),
+  responseTime: integer('response_time'),
+  tools: jsonb('tools').$type<
+    Array<{
+      name: string;
+      status: string;
+      summary?: string;
+      duration?: number;
+    }>
+  >(),
+
+  createdAt: timestamp('created_at', { withTimezone: true })
+    .default(sql`timezone('utc', now())`)
+    .notNull(),
+});

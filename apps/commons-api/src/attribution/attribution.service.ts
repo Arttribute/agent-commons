@@ -17,6 +17,7 @@ export class AttributionService {
     chain: baseSepolia,
     transport: http(),
   });
+
   constructor(
     @Inject(forwardRef(() => AgentService)) private agent: AgentService,
   ) {}
