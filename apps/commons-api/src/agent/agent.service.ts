@@ -430,6 +430,13 @@ export class AgentService implements OnModuleInit {
 
     // const tools = [...dynamicTools, ...resourceBasedTools, ...staticTools];
 
+    const toolUsage: Array<{
+      name: string;
+      status: string;
+      summary?: string;
+      duration?: number;
+    }> = [];
+
     let toolDefinitions = app.functions.map((_) => {
       // @ts-expect-error
       return {
@@ -441,29 +448,51 @@ export class AgentService implements OnModuleInit {
     let toolRunners = map(app.functions, (_) => {
       return tool(
         async (args, config) => {
-          const data = await got.then((_) =>
-            _.got
-              .post(`http://localhost:${process.env.PORT}/v1/agents/tools`, {
-                method: 'POST',
-                headers: {
-                  'Content-Type': 'application/json',
-                },
-                json: {
-                  args,
-                  config: omit(config, ['configurable']),
-                  toolCall: config.toolCall,
-                  metadata: { agentId },
-                },
-              })
-              .json<any>()
-              .catch((e: typeof _.HTTPError) => {
-                if (e instanceof _.HTTPError) {
-                  // console.log(e);
-                  console.log(e.response.body);
-                }
-                throw e;
-              }),
-          );
+          const functionName = config.toolCall?.function?.name;
+          const callStart = performance.now();
+          const data = await got
+            .then((_) =>
+              _.got
+                .post(`http://localhost:${process.env.PORT}/v1/agents/tools`, {
+                  method: 'POST',
+                  headers: {
+                    'Content-Type': 'application/json',
+                  },
+                  json: {
+                    args,
+                    config: omit(config, ['configurable']),
+                    toolCall: config.toolCall,
+                    metadata: { agentId },
+                  },
+                })
+                .json<any>()
+                .catch((e: typeof _.HTTPError) => {
+                  if (e instanceof _.HTTPError) {
+                    // console.log(e);
+                    console.log(e.response.body);
+                  }
+                  throw e;
+                }),
+            )
+            .then((_) => {
+              toolUsage.push({
+                name: functionName,
+                status: 'success',
+                summary: `Executed ${functionName}`,
+                duration: performance.now() - callStart,
+              });
+
+              return _;
+            })
+            .catch((_) => {
+              toolUsage.push({
+                name: functionName,
+                status: 'error',
+                summary: 'Error executing tool',
+                duration: performance.now() - callStart,
+              });
+              throw _;
+            });
 
           return { toolData: data };
         },
@@ -475,13 +504,6 @@ export class AgentService implements OnModuleInit {
     const additionalTools = [...dynamicTools, ...resourceBasedTools];
 
     toolDefinitions = toolDefinitions.concat(...additionalTools);
-
-    const toolUsage: Array<{
-      name: string;
-      status: string;
-      summary?: string;
-      duration?: number;
-    }> = [];
 
     toolRunners = toolRunners.concat(
       map(additionalTools, (_) => {
@@ -559,7 +581,7 @@ export class AgentService implements OnModuleInit {
       recursionLimit: 5,
     });
 
-    const conversationId = v4();
+    const conversationId = sessionId || v4();
 
     const posthogCallback = new LangChainCallbackHandler({
       client: getPosthog(),
@@ -730,6 +752,7 @@ export class AgentService implements OnModuleInit {
         type: _.role,
         content: _.content as string,
       }));
+      conversationId;
     }
     messages = messages.concat(
       props.messages?.map((_) => ({
