@@ -168,7 +168,16 @@ export class AgentService implements OnModuleInit {
 
     // cronId = cron(*/5 * * * * *, SELECT triggerAgent("agentId"))
 
-    return await this.runAgent({ agentId: props.agentId });
+    return await this.runAgent({
+      agentId: props.agentId,
+      messages: [
+        {
+          role: 'user',
+          content:
+            'This is an automated trigger. Your goal is to carry out tasks assigned to you.',
+        },
+      ],
+    });
   }
 
   public seedToPrivateKey(seed: string) {
@@ -575,6 +584,7 @@ export class AgentService implements OnModuleInit {
     // console.log(toolDefinitions);
     let toolNode = new ToolNode(toolRunners);
     const strict = false;
+    console.log(map(toolDefinitions, 'function.name'));
     let llmWithTools = llm.bindTools(toolDefinitions, {
       parallel_tool_calls: true,
       strict,
