@@ -1,15 +1,15 @@
 // src/liaison/liaison.module.ts
 import { Module } from '@nestjs/common';
-import { LiaisonService } from './liaison.service';
+import { AgentModule } from '~/agent';
+import { SessionModule } from '~/session';
+import { ToolModule } from '~/tool';
 import { LiaisonController } from './liaison.controller';
-import { AgentService } from '~/agent/agent.service';
-import { SessionService } from '~/session/session.service';
-import { ToolService } from '~/tool/tool.service';
+import { LiaisonService } from './liaison.service';
 
 @Module({
-  imports: [],
+  imports: [AgentModule, SessionModule, ToolModule],
   controllers: [LiaisonController],
-  providers: [LiaisonService, AgentService, SessionService, ToolService],
+  providers: [LiaisonService],
   exports: [LiaisonService],
 })
 export class LiaisonModule {}

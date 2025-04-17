@@ -40,6 +40,17 @@ export class AgentController {
     return { data: response };
   }
 
+  @Post(':agentId/trigger')
+  async triggerAgent(@Param('agentId') agentId: string) {
+    this.agent.triggerAgent({ agentId });
+
+    return { message: 'Agent triggered' };
+  }
+
+  async pauseAgent(@Param('agentId') agentId: string) {
+    //
+  }
+
   @Get(':agentId')
   async getAgent(@Param('agentId') agentId: string) {
     const agent = await this.agent.getAgent({ agentId });

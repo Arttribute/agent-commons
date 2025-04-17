@@ -23,3 +23,7 @@ export enum ResourceType {
   tool = 'tool',
   csv = 'csv',
 }
+
+// export enum ToolType {
+
+// }

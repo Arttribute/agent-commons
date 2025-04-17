@@ -24,19 +24,20 @@ export interface CommonTool {
   getAgentWithId(props: { id: string }): any;
 
   /**
-   * Get Resources available in the network, you may filter by creator or get by id
+   * Get Resources available in the network
    */
   getResources(): any;
   getResourcesWithFilter(props: { where: { creator?: string } }): any;
   getResourceWithId(props: { id: string }): any;
+
   /**
    * Find Resources available in the network, you may filter by query and resource type
    * The query is a string that will be used to search for resources
    */
-  findResources(props: { query: string; embeddingType: EmbeddingType }): any;
+  findResources(props: { query: string; resourceType: ResourceType }): any;
 
   /**
-   * Create a new Resource in the network
+   * Create a new Resource in the network if the resource is not a tool, set schema to undefined
    */
   createResource(props: {
     name: string;
@@ -44,8 +45,8 @@ export interface CommonTool {
     thumbnail: string;
     resourceFile: string;
     resourceType: string;
-    embeddigType: string;
-    schema: ToolSchema;
+    embeddingType: string;
+    schema?: ToolSchema;
     tags: string[];
     requiredReputation: number;
     usageCost: number;
@@ -138,11 +139,11 @@ export interface CommonTool {
   /**
    * Equip a tool resource to an agent
    */
-  equipResourceTool(props: {
-    resourceId: string;
-    agentId: string;
-    privateKey: string;
-  }): any;
+  // equipResourceTool(props: {
+  //   resourceId: string;
+  //   agentId: string;
+  //   privateKey: string;
+  // }): any;
 }
 
 @Injectable()
@@ -294,7 +295,7 @@ export class CommonToolService implements CommonTool {
     });
   }
 
-  findResources(props: { query: string; embeddingType: EmbeddingType }) {
+  findResources(props: { query: string; resourceType: ResourceType }) {
     return this.resource.findResources(props);
   }
 
@@ -306,7 +307,7 @@ export class CommonToolService implements CommonTool {
       thumbnail: string;
       resourceFile: string;
       resourceType: string;
-      embeddigType: string;
+      embeddingType: string;
       schema: ToolSchema;
       tags: string[];
       requiredReputation: bigint;
@@ -330,11 +331,11 @@ export class CommonToolService implements CommonTool {
     //get ipfs file url
     const cid = metadataFile.IpfsHash;
     const resourceMetadata = `https://${process.env.GATEWAY_URL ?? 'gateway.pinata.cloud'}/ipfs/${cid}`;
-    //dynamic type based on embeddigType
+    //dynamic type based on embeddingType
     const etype =
-      props.embeddigType === 'image'
+      props.embeddingType === 'image'
         ? EmbeddingType.image
-        : props.embeddigType === 'audio'
+        : props.embeddingType === 'audio'
           ? EmbeddingType.audio
           : EmbeddingType.text;
     const rType =
