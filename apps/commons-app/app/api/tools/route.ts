@@ -1,6 +1,6 @@
 // app/api/tools/route.ts
 import { NextResponse } from "next/server";
-import { supabase } from "@/lib/supabase"; // Import Supabase client
+import { supabase } from "@/lib/supabase";
 
 export async function POST(request: Request) {
   try {
