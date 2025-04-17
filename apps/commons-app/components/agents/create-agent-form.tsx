@@ -19,9 +19,10 @@ import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import type { AgentMode, CommonAgent } from "@/types/agent";
 import { Bot, Brain, Cog } from "lucide-react";
+
 import ImageUploader from "./ImageUploader";
 import KnowledgeBaseInput from "./KnowledgeBaseInput";
-import { Presets } from "./presets";
+import { Presets } from "./Presets"; // import your updated Presets
 import { useAgentRegistry } from "@/hooks/useAgentRegistry";
 import { EIP1193Provider, useWallets } from "@privy-io/react-auth";
 import { useAuth } from "@/context/AuthContext";
@@ -43,6 +44,8 @@ export function CreateAgentForm() {
 
   const [agent, setAgent] = useState<Partial<CommonAgent>>({
     mode: "userDriven",
+    common_tools: [],
+    external_tools: [],
   });
 
   const [customTools, setCustomTools] = useState<{ [key: string]: string }>({
@@ -63,10 +66,9 @@ export function CreateAgentForm() {
   const [provider, setProvider] = useState<EIP1193Provider | null>(null);
   const [loadingCreate, setLoadingCreate] = useState(false);
 
-  // Convert user address to lowercase if present
+  // The wallet address in lowercase
   const userAddress = walletAddress?.toLowerCase();
 
-  // For demonstration if you do on-chain tasks
   const { publicClient, walletClient } = useChainClients(provider);
   const { registerAgent } = useAgentRegistry(publicClient, walletClient);
 
@@ -96,24 +98,28 @@ export function CreateAgentForm() {
       return;
     }
 
-    // Construct final data to send to your backend
+    // Merging any custom JSON from user input
+    // The custom JSON might contain an array of tool IDs
+    const finalCommonTools = [
+      ...(agent.common_tools || []),
+      ...((customTools.common
+        ? JSON.parse(`[${customTools.common}]`)
+        : []) as string[]),
+    ];
+
+    const finalExternalTools = [
+      ...(agent.external_tools || []),
+      ...((customTools.external
+        ? JSON.parse(`[${customTools.external}]`)
+        : []) as string[]),
+    ];
+
+    // Build the final agent payload
     const finalAgent = {
       ...agent,
-      owner: userAddress, // important for "owned" filtering
-      common_tools: [
-        ...(agent.common_tools || []),
-        // parse custom JSON if present
-        ...((customTools.common
-          ? JSON.parse(`[${customTools.common}]`)
-          : []) as string[]),
-      ],
-      external_tools: [
-        ...(agent.external_tools || []),
-        ...((customTools.external
-          ? JSON.parse(`[${customTools.external}]`)
-          : []) as string[]),
-      ],
-      // Copy model config onto the agent
+      owner: userAddress,
+      common_tools: finalCommonTools,
+      external_tools: finalExternalTools,
       temperature: modelConfig.temperature,
       maxTokens: modelConfig.maxTokens,
       stopSequence: modelConfig.stopSequences,
@@ -123,6 +129,7 @@ export function CreateAgentForm() {
     };
 
     try {
+      // POST to /api/agents (create a new agent)
       const res = await fetch("/api/agents", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -136,9 +143,9 @@ export function CreateAgentForm() {
       } else {
         console.log("Agent created:", json.data);
 
-        // Example: if you do some on-chain registration
+        // If you do any on-chain registration
         await registerAgent(
-          json.data.agentId,
+          json.data.agent_id, // or .agentId, depending on how your DB returns it
           "https://someurl-metadata...",
           false
         );
@@ -151,6 +158,7 @@ export function CreateAgentForm() {
       alert("Exception when creating agent.");
     }
 
+    // Reset everything
     setCustomTools({ common: "", external: "" });
     setModelConfig({
       temperature: 1,
@@ -159,6 +167,11 @@ export function CreateAgentForm() {
       topP: 1,
       frequencyPenalty: 0,
       presencePenalty: 0,
+    });
+    setAgent({
+      mode: "userDriven",
+      common_tools: [],
+      external_tools: [],
     });
     setLoadingCreate(false);
   };
@@ -195,7 +208,7 @@ export function CreateAgentForm() {
                     <div className="flex items-center gap-2">
                       <ImageUploader
                         onImageChange={(imageUrl) =>
-                          setAgent({ ...agent, avatar: imageUrl })
+                          setAgent((prev) => ({ ...prev, avatar: imageUrl }))
                         }
                         defaultImage={agent.avatar}
                       />
@@ -205,7 +218,10 @@ export function CreateAgentForm() {
                           id="name"
                           value={agent.name || ""}
                           onChange={(e) =>
-                            setAgent({ ...agent, name: e.target.value })
+                            setAgent((prev) => ({
+                              ...prev,
+                              name: e.target.value,
+                            }))
                           }
                           placeholder="My Awesome Agent"
                           className="w-full"
@@ -218,7 +234,10 @@ export function CreateAgentForm() {
                         id="persona"
                         value={agent.persona || ""}
                         onChange={(e) =>
-                          setAgent({ ...agent, persona: e.target.value })
+                          setAgent((prev) => ({
+                            ...prev,
+                            persona: e.target.value,
+                          }))
                         }
                         placeholder="Describe your agent's personality..."
                         className="min-h-[150px]"
@@ -236,7 +255,10 @@ export function CreateAgentForm() {
                         id="instruction"
                         value={agent.instructions || ""}
                         onChange={(e) =>
-                          setAgent({ ...agent, instructions: e.target.value })
+                          setAgent((prev) => ({
+                            ...prev,
+                            instructions: e.target.value,
+                          }))
                         }
                         placeholder="Main instructions for your agent..."
                         className="h-[80px]"
@@ -248,7 +270,7 @@ export function CreateAgentForm() {
                       <Select
                         value={agent.mode}
                         onValueChange={(value: AgentMode) =>
-                          setAgent({ ...agent, mode: value })
+                          setAgent((prev) => ({ ...prev, mode: value }))
                         }
                       >
                         <SelectTrigger>
@@ -273,10 +295,10 @@ export function CreateAgentForm() {
                           type="number"
                           value={agent.autoInterval || ""}
                           onChange={(e) =>
-                            setAgent({
-                              ...agent,
+                            setAgent((prev) => ({
+                              ...prev,
                               autoInterval: Number(e.target.value),
-                            })
+                            }))
                           }
                           placeholder="5000"
                         />
@@ -288,7 +310,10 @@ export function CreateAgentForm() {
                       <KnowledgeBaseInput
                         value={agent.knowledgebase || ""}
                         onChange={(value) =>
-                          setAgent({ ...agent, knowledgebase: value })
+                          setAgent((prev) => ({
+                            ...prev,
+                            knowledgebase: value,
+                          }))
                         }
                       />
                     </div>
@@ -310,6 +335,7 @@ export function CreateAgentForm() {
               </div>
             </ScrollArea>
           </Tabs>
+
           <div className="mt-auto">
             <Button type="submit" className="w-full" disabled={loadingCreate}>
               {loadingCreate ? "Creating Agent..." : "Create Agent"}
