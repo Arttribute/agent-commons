@@ -254,7 +254,7 @@ export function Presets({
               />
             </div>
 
-            {/* TopP */}
+            {/* TopP preset */}
             <div className="space-y-2">
               <Label htmlFor="topP">Top P</Label>
               <Slider
