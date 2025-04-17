@@ -22,7 +22,7 @@ import { Bot, Brain, Cog } from "lucide-react";
 
 import ImageUploader from "./ImageUploader";
 import KnowledgeBaseInput from "./KnowledgeBaseInput";
-import { Presets } from "./Presets"; // import your updated Presets
+import { Presets } from "./presets"; // import your updated Presets
 import { useAgentRegistry } from "@/hooks/useAgentRegistry";
 import { EIP1193Provider, useWallets } from "@privy-io/react-auth";
 import { useAuth } from "@/context/AuthContext";
