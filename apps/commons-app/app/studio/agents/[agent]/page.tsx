@@ -14,6 +14,7 @@ import { Loader2 } from "lucide-react";
 import AppBar from "@/components/layout/app-bar";
 import KnowledgeBaseInput from "@/components/agents/KnowledgeBaseInput";
 import { InteractionInterface } from "@/components/agents/InteractionInterface";
+import { Presets } from "@/components/agents/presets";
 import { FundAgent } from "@/components/agents/FundAgent";
 import RandomPixelAvatar from "@/components/account/RandomPixelAvatar";
 
@@ -444,7 +445,17 @@ export default function AgentStudio({
 
         {/* Right Panel (Presets, etc.) */}
         <div className="col-span-3">
-          <ScrollArea className="h-[90vh] border p-3 my-2 mr-2 rounded-lg"></ScrollArea>
+          <ScrollArea className="h-[90vh] border p-3 my-2 mr-2 rounded-lg">
+            <Presets
+              agent={editForm}
+              setAgent={setEditForm}
+              customTools={customTools}
+              setCustomTools={setCustomTools}
+              modelConfig={modelConfig}
+              setModelConfig={setModelConfig}
+              userAddress={userAddress}
+            />
+          </ScrollArea>
         </div>
       </div>
     </div>
