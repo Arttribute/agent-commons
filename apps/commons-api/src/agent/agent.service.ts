@@ -1,12 +1,18 @@
 import { baseSepolia } from '#/lib/baseSepolia';
 import * as schema from '#/models/schema';
 import { Wallet } from '@coinbase/coinbase-sdk';
+import { tool } from '@langchain/core/tools';
 import {
-  BadRequestException,
-  forwardRef,
-  Inject,
-  Injectable,
-} from '@nestjs/common';
+  END,
+  Messages,
+  MessagesAnnotation,
+  START,
+  StateGraph,
+} from '@langchain/langgraph';
+import { PostgresSaver } from '@langchain/langgraph-checkpoint-postgres';
+import { ToolNode } from '@langchain/langgraph/prebuilt';
+import { ChatOpenAI } from '@langchain/openai';
+import { BadRequestException, Injectable, OnModuleInit } from '@nestjs/common';
 import { HDKey } from '@scure/bip32';
 import crypto from 'crypto';
 import dedent from 'dedent';
@@ -16,19 +22,19 @@ import {
   InferInsertModel,
   InferSelectModel,
   inArray,
+  sql,
 } from 'drizzle-orm';
 import { AGENT_REGISTRY_ABI } from 'lib/abis/AgentRegistryABI';
 import { AGENT_REGISTRY_ADDRESS, COMMON_TOKEN_ADDRESS } from 'lib/addresses';
-import { find, first, map, omit } from 'lodash';
+import { compact, find, first, get, map, omit } from 'lodash';
 import {
-  ChatCompletion,
   ChatCompletionCreateParams,
-  ChatCompletionCreateParamsNonStreaming,
   ChatCompletionMessageParam,
   ChatCompletionTool,
 } from 'openai/resources/chat/completions';
 import { Except } from 'type-fest';
 import typia from 'typia';
+import { v4 } from 'uuid';
 import {
   createPublicClient,
   createWalletClient,
@@ -40,22 +46,21 @@ import { privateKeyToAccount } from 'viem/accounts';
 import { CoinbaseService } from '~/modules/coinbase/coinbase.service';
 import { DatabaseService } from '~/modules/database/database.service';
 import { OpenAIService } from '~/modules/openai/openai.service';
-import {
-  EthereumTool,
-  EthereumToolService,
-} from '../tool/tools/ethereum-tool.service';
-import {
-  CommonTool,
-  CommonToolService,
-} from '../tool/tools/common-tool.service';
-import { name } from 'typia/lib/reflect';
 import { SessionService } from '~/session/session.service';
 import { ToolService } from '~/tool/tool.service';
+import { CommonTool } from '../tool/tools/common-tool.service';
+import { EthereumTool } from '../tool/tools/ethereum-tool.service';
+import { LangChainCallbackHandler } from '@posthog/ai';
+import { IChatGptSchema } from '@samchon/openapi';
+import { inspect } from 'util';
+import { getPosthog } from '~/helpers/posthog';
+import { LogService } from '~/log/log.service';
+const got = import('got');
 
 const app = typia.llm.application<EthereumTool & CommonTool, 'chatgpt'>();
 
 @Injectable()
-export class AgentService {
+export class AgentService implements OnModuleInit {
   private publicClient = createPublicClient({
     chain: baseSepolia,
     transport: http(),
@@ -66,7 +71,16 @@ export class AgentService {
     private coinbase: CoinbaseService,
     private session: SessionService,
     private toolService: ToolService,
+    private logService: LogService,
   ) {}
+
+  async onModuleInit() {
+    const checkpointer = PostgresSaver.fromConnString(
+      `postgresql://${process.env.POSTGRES_USER}:${process.env.POSTGRES_PASSWORD}@${process.env.POSTGRES_HOST}:${process.env.POSTGRES_PORT}/${process.env.POSTGRES_DATABASE}`,
+    );
+
+    await checkpointer.setup();
+  }
 
   async createAgent(props: {
     value: Except<InferInsertModel<typeof schema.agent>, 'wallet' | 'agentId'>;
@@ -82,7 +96,7 @@ export class AgentService {
       agentOwner = props.value.owner as string;
     }
 
-    const agentEntry = this.db
+    const agentEntry = await this.db
       .insert(schema.agent)
       .values({
         ...props.value,
@@ -124,6 +138,14 @@ export class AgentService {
       await this.publicClient.waitForTransactionReceipt({ hash: txHash });
     }
 
+    // TODO: Work on interval
+    // @ts-expect-error
+    const interval = props.interval || 10;
+
+    await this.db.execute(
+      sql`SELECT cron.schedule(FORMAT('agent:%s:schedule', ${agentEntry?.agentId}),'*/${interval} * * * *', FORMAT('SELECT trigger_agent(%L)', ${agentEntry?.agentId}))`,
+    );
+
     return agentEntry;
   }
 
@@ -139,8 +161,23 @@ export class AgentService {
     return agent;
   }
 
-  triggerAgent(props: { agentId: string }) {
-    this.runAgent({ agentId: props.agentId });
+  async triggerAgent(props: { agentId: string }) {
+    // if agent should run
+
+    // Check if agent should run
+
+    // cronId = cron(*/5 * * * * *, SELECT triggerAgent("agentId"))
+
+    return await this.runAgent({
+      agentId: props.agentId,
+      messages: [
+        {
+          role: 'user',
+          content:
+            'This is an automated trigger. Your goal is to carry out tasks assigned to you.',
+        },
+      ],
+    });
   }
 
   public seedToPrivateKey(seed: string) {
@@ -249,7 +286,8 @@ export class AgentService {
         role: 'system',
         content: dedent`You are the following agent:
       ${JSON.stringify(omit(agent, ['instructions', 'persona', 'wallet']))}
-      Use any tools nessecary to get information in order to perform the task.
+      Use any tools necessary to get information in order to perform the task.
+      Ensure that the arguments provided to the tools are correct and as accurate as possible.
 
       The following is the persona you are meant to adopt:
       ${agent.persona}
@@ -315,10 +353,12 @@ export class AgentService {
       model: 'gpt-4o-mini',
     };
 
-    const session = await this.session.createSession({
-      value: { query: completionBody },
-    });
-    return session;
+    return completionBody;
+
+    // const session = await this.session.createSession({
+    //   value: { query: completionBody },
+    // });
+    // return session;
   }
 
   async runAgent(props: {
@@ -326,6 +366,7 @@ export class AgentService {
     messages?: ChatCompletionMessageParam[];
     sessionId?: string;
   }) {
+    const startTime = performance.now();
     const { agentId, sessionId } = props;
 
     const agent = await this.db.query.agent.findFirst({
@@ -351,33 +392,29 @@ export class AgentService {
 
     console.log(commonsBalance);
 
-    let session;
-    if (!sessionId) {
-      session = await this.createAgentSession(agentId);
-    } else {
-      session = await this.session.getSession({ id: sessionId });
-    }
-
-    const completionBody: ChatCompletionCreateParamsNonStreaming = {
-      ...(session?.query as ChatCompletionCreateParamsNonStreaming),
-      model: 'gpt-4o-mini',
-    };
-
-    completionBody.messages = completionBody.messages.concat(
-      props.messages || [],
+    const checkpointer = PostgresSaver.fromConnString(
+      `postgresql://${process.env.POSTGRES_USER}:${process.env.POSTGRES_PASSWORD}@${process.env.POSTGRES_HOST}:${process.env.POSTGRES_PORT}/${process.env.POSTGRES_DATABASE}`,
     );
 
-    console.log(app.functions[0]);
+    const llm = new ChatOpenAI({
+      model: 'gpt-4o-mini',
+      temperature: 0,
+      supportsStrictToolCalling: true,
+      apiKey: process.env.OPENAI_API_KEY,
+    });
 
     // 3) Retrieve all dynamic tools from DB
     const storedTools = await this.toolService.getAllTools();
     //console.log('Stored tools', storedTools);
     // 4) Convert them to ChatCompletionTool array
-    const dynamicTools = storedTools.map((dbTool) => ({
-      type: 'function' as const,
-      function: { ...dbTool.schema, name: dbTool.name },
-      endpoint: `http://localhost:${process.env.PORT}/v1/agents/tools`,
-    }));
+    const dynamicTools = storedTools.map(
+      (dbTool) =>
+        ({
+          type: 'function' as const,
+          function: { ...dbTool.schema, name: dbTool.name },
+          endpoint: `http://localhost:${process.env.PORT}/v1/agents/tools`,
+        }) as ChatCompletionTool & { endpoint: string },
+    );
 
     //(B) Resource-based tools -> find by resourceId in agent.common_tools
     const resourceIds = agent.commonTools ?? [];
@@ -395,96 +432,403 @@ export class AgentService {
           type: 'function' as const,
           function: { ...toolSchema, name: resourceFunctionName },
           endpoint: `http://localhost:${process.env.PORT}/v1/agents/tools`,
-        };
+        } as ChatCompletionTool & { endpoint: string };
       });
 
     console.log('Resource-based tools', resourceBasedTools);
-    const staticTools = map(
-      app.functions,
-      (_) =>
-        ({
-          type: 'function',
-          function: _,
-          endpoint: `http://localhost:${process.env.PORT}/v1/agents/tools`, // should be a self endpoint
-        }) as unknown as ChatCompletionTool & { endpoint: string },
+
+    // const tools = [...dynamicTools, ...resourceBasedTools, ...staticTools];
+
+    const toolUsage: Array<{
+      name: string;
+      status: string;
+      summary?: string;
+      duration?: number;
+    }> = [];
+
+    let toolDefinitions = app.functions.map((_) => {
+      // @ts-expect-error
+      return {
+        type: 'function' as const,
+        function: _,
+        endpoint: `http://localhost:${process.env.PORT}/v1/agents/tools`, // should be a self endpoint
+      } as ChatCompletionTool & { endpoint: string };
+    });
+    let toolRunners = map(app.functions, (_) => {
+      return tool(
+        async (args, config) => {
+          const functionName = config.toolCall?.function?.name;
+          const callStart = performance.now();
+          const data = await got
+            .then((_) =>
+              _.got
+                .post(`http://localhost:${process.env.PORT}/v1/agents/tools`, {
+                  method: 'POST',
+                  headers: {
+                    'Content-Type': 'application/json',
+                  },
+                  json: {
+                    args,
+                    config: omit(config, ['configurable']),
+                    toolCall: config.toolCall,
+                    metadata: { agentId },
+                  },
+                })
+                .json<any>()
+                .catch((e: typeof _.HTTPError) => {
+                  if (e instanceof _.HTTPError) {
+                    // console.log(e);
+                    console.log(e.response.body);
+                  }
+                  throw e;
+                }),
+            )
+            .then((_) => {
+              toolUsage.push({
+                name: functionName,
+                status: 'success',
+                summary: `Executed ${functionName}`,
+                duration: performance.now() - callStart,
+              });
+
+              return _;
+            })
+            .catch((_) => {
+              toolUsage.push({
+                name: functionName,
+                status: 'error',
+                summary: 'Error executing tool',
+                duration: performance.now() - callStart,
+              });
+              throw _;
+            });
+
+          return { toolData: data };
+        },
+        { schema: _.parameters, name: _.name, description: _.description },
+      );
+    });
+    // tools = app.functions
+
+    const additionalTools = [...dynamicTools, ...resourceBasedTools];
+
+    toolDefinitions = toolDefinitions.concat(...additionalTools);
+
+    toolRunners = toolRunners.concat(
+      map(additionalTools, (_) => {
+        // console.log({ function: inspect(_, { depth: null }) });
+        return tool(
+          async (args, config) => {
+            // const toolCall: ChatCompletionMessageToolCall
+            const functionName = config.toolCall?.function?.name;
+            const callStart = performance.now();
+            const data = await got
+              .then((_) =>
+                _.got
+                  .post(
+                    `http://localhost:${process.env.PORT}/v1/agents/tools`,
+                    {
+                      method: 'POST',
+                      headers: {
+                        'Content-Type': 'application/json',
+                      },
+                      json: {
+                        args,
+                        config: omit(config, ['configurable']),
+                        toolCall: config.toolCall,
+                        metadata: { agentId },
+                      },
+                    },
+                  )
+                  .json<any>()
+                  .catch((e: typeof _.HTTPError) => {
+                    if (e instanceof _.HTTPError) {
+                      // console.log(e);
+                      console.log(e.response.body);
+                    }
+                    throw e;
+                  }),
+              )
+              .then((_) => {
+                toolUsage.push({
+                  name: functionName,
+                  status: 'success',
+                  summary: `Executed ${functionName}`,
+                  duration: performance.now() - callStart,
+                });
+
+                return _;
+              })
+              .catch((_) => {
+                toolUsage.push({
+                  name: functionName,
+                  status: 'error',
+                  summary: 'Error executing tool',
+                  duration: performance.now() - callStart,
+                });
+                throw _;
+              });
+
+            return { toolData: data };
+          },
+          {
+            schema: _.function.parameters,
+            name: _.function.name,
+            description: _.function.description,
+          },
+        ) as any;
+      }),
     );
 
-    const tools = [...dynamicTools, ...resourceBasedTools, ...staticTools];
+    // Find a way to use tools from other services
+    // console.log(toolDefinitions);
+    let toolNode = new ToolNode(toolRunners);
+    const strict = false;
+    console.log(map(toolDefinitions, 'function.name'));
+    let llmWithTools = llm.bindTools(toolDefinitions, {
+      parallel_tool_calls: true,
+      strict,
+      recursionLimit: 5,
+    });
 
-    let chatGPTResponse: ChatCompletion;
-    // let sessionId: string | undefined = body.sessionId;
+    const conversationId = sessionId || v4();
 
-    do {
-      // Execute the tools
-      console.log('Prompt', completionBody);
-      chatGPTResponse =
-        await this.openAI.chat.completions.create(completionBody);
+    const posthogCallback = new LangChainCallbackHandler({
+      client: getPosthog(),
+      // distinctId: 'user_123', // optional
+      // traceId: 'trace_456', // optional
+      properties: { conversationId }, // optional
+      // groups: { company: 'company_id_in_your_db' }, // optional
+      privacyMode: false, // optional
+      debug: false, // optional - when true, logs all events to console
+    });
 
-      const toolCalls = chatGPTResponse.choices[0].message.tool_calls;
+    // Define the function that calls the model
+    const callModel = async (state: typeof MessagesAnnotation.State) => {
+      // llmWithTools.
+      const llmResponse = await llmWithTools.invoke(state.messages, {
+        callbacks: [posthogCallback],
+      });
+      return { messages: llmResponse };
+    };
 
-      completionBody.messages.push(chatGPTResponse.choices[0].message);
+    const shouldContinue = (state: typeof MessagesAnnotation.State) => {
+      const { messages } = state;
+      const lastMessage = messages[messages.length - 1];
 
-      if (toolCalls?.length) {
-        console.log('Tool Calls', toolCalls);
-        await Promise.all(
-          toolCalls.map(async (toolCall) => {
-            if (toolCall.type === 'function') {
-              const args = JSON.parse(toolCall.function.arguments);
-              const metadata = { agentId };
+      if (
+        'tool_calls' in lastMessage &&
+        Array.isArray(lastMessage.tool_calls) &&
+        lastMessage.tool_calls?.length
+      ) {
+        return 'tools';
+      }
+      return END;
+    };
 
-              console.log('Tool Call', { toolCall, toolCallArgs: args });
+    const updateTools = async (state: typeof MessagesAnnotation.State) => {
+      // Check if got a resource that has a tool
+      // Find resource
+      const lastMassageContent = state.messages.at(-1)?.content;
+      if (typeof lastMassageContent == 'string') {
+        let toolContent;
 
-              const rawToolCall = find(tools, {
-                function: { name: toolCall.function.name },
-              });
+        try {
+          toolContent = JSON.parse(lastMassageContent);
+        } catch (err) {
+          return 'model';
+        }
 
-              if (!rawToolCall?.endpoint) {
-                throw new BadRequestException('Tool endpoint not found');
-              }
+        const toolData = Array.isArray(toolContent.toolData)
+          ? toolContent.toolData
+          : [toolContent.toolData];
 
-              const response = await fetch(rawToolCall?.endpoint, {
-                method: 'POST',
-                body: JSON.stringify({ toolCall, metadata }),
-                headers: {
-                  'Content-Type': 'application/json',
+        toolRunners.push(
+          ...toolData
+            .filter((_: any) => 'schema' in _ && _.schema)
+            .map((_: any) => {
+              const { schema } = _;
+
+              console.log('Added tool from response of tool call', schema.name);
+
+              return tool(
+                async (args, config) => {
+                  const functionName = config.toolCall?.function?.name;
+                  const callStart = performance.now();
+                  const data = await got
+                    .then((_) =>
+                      _.got
+                        .post(schema.endpoint, {
+                          method: 'POST',
+                          headers: {
+                            'Content-Type': 'application/json',
+                          },
+                          json: {
+                            // args,
+                            toolCall: config.toolCall,
+                            // config: omit(config, ['configurable']),
+                            metadata: { agentId },
+                          },
+                        })
+                        .json<any>()
+                        .catch((e: typeof _.HTTPError) => {
+                          if (e instanceof _.HTTPError) {
+                            // console.log(e);
+                            console.log(e.response.body);
+                          }
+                          throw e;
+                        }),
+                    )
+                    .then((_) => {
+                      toolUsage.push({
+                        name: functionName,
+                        status: 'success',
+                        summary: `Executed ${functionName}`,
+                        duration: performance.now() - callStart,
+                      });
+
+                      return _;
+                    })
+                    .catch((_) => {
+                      toolUsage.push({
+                        name: functionName,
+                        status: 'error',
+                        summary: 'Error executing tool',
+                        duration: performance.now() - callStart,
+                      });
+                      throw _;
+                    });
+
+                  return { toolData: data };
                 },
-              });
-
-              const toolCallResponse = await response.json();
-
-              completionBody.messages.push({
-                // append result message
-                role: 'tool',
-                tool_call_id: toolCall.id,
-                content: JSON.stringify(toolCallResponse),
-              });
-
-              return toolCallResponse;
-            }
-            return null;
-          }),
+                {
+                  name: `resourceTool_${_.resourceId}`,
+                  description: schema.description,
+                  schema: schema.parameters as IChatGptSchema.IParameters,
+                },
+              );
+            }),
         );
+        toolDefinitions.push(
+          ...toolData
+            .filter((_: any) => 'schema' in _ && _.schema)
+            .map((_: any) => ({
+              type: 'function' as const,
+              function: { ..._.schema, name: `resourceTool_${_.resourceId}` },
+              endpoint: `http://localhost:${process.env.PORT}/v1/agents/tools`,
+            })),
+        );
+
+        toolNode = new ToolNode(toolRunners);
+        llmWithTools = llm.bindTools(toolDefinitions, {
+          parallel_tool_calls: true,
+          strict,
+          recursionLimit: 5,
+        });
       }
 
-      await this.session.updateSession({
-        id: session!.sessionId,
-        delta: { query: completionBody },
-      });
-    } while (chatGPTResponse.choices[0].message.tool_calls?.length);
+      // Condition to check if content has tool call attached
+      // toolContent.toolData.jsonSchema
+
+      // Create new tools for langchain
+      // tools.push(tool())
+
+      // model({messgaes: [toolContent], tools: tools + newTools}) => make
+
+      return 'model';
+    };
+
+    // Define a new graph
+    const workflow = new StateGraph(MessagesAnnotation)
+      // Define the node and edge
+      .addNode('model', callModel)
+      .addNode('tools', toolNode)
+      .addEdge(START, 'model')
+      .addConditionalEdges('model', shouldContinue, ['tools', END])
+      .addConditionalEdges('tools', updateTools, ['model']);
+    // .addEdge('model', END);
+
+    const graph = workflow.compile({ checkpointer });
+
+    const config: Parameters<typeof graph.invoke>[1] = {
+      configurable: { thread_id: conversationId },
+    };
+
+    let messages: Messages = [];
+    if (!sessionId) {
+      const session = await this.createAgentSession(agentId);
+      messages = session.messages.map((_) => ({
+        ..._,
+        type: _.role,
+        content: _.content as string,
+      }));
+      conversationId;
+    }
+    messages = messages.concat(
+      props.messages?.map((_) => ({
+        ..._,
+        type: _.role,
+        content: _.content as string,
+      })) || [],
+    );
+
+    // console.log(messages);
+
+    // message => Reminder you are an event assistant
+    // message => Reminder ensure that tools are properly called
+    // message => user content
+
+    const llmResponse = await graph.invoke({ messages }, config);
+
+    const content = llmResponse.messages.at(-1)?.content;
+
+    let finalAIContent;
+
+    if (Array.isArray(content)) {
+      finalAIContent = compact(map(content, (_) => get(_, 'text'))).join(
+        '\n\n',
+      );
+    } else {
+      finalAIContent = content || '(No content)';
+    }
+
+    // parse "###ACTION_SUMMARY: " from finalAIContent
+    let actionSummary = 'misc request';
+    const match = finalAIContent.match(/###ACTION_SUMMARY:\s*(.+)/i);
+    if (match && match[1]) {
+      actionSummary = match[1].trim();
+    }
+
+    const totalTime = performance.now() - startTime;
+
+    const snippet = finalAIContent.slice(0, 512);
+
+    // single log
+    await this.logService.createLogEntry({
+      agentId,
+      sessionId: conversationId,
+      action: actionSummary,
+      message: snippet,
+      status: 'success',
+      responseTime: totalTime,
+      tools: toolUsage,
+    });
 
     // Charge for running the agent
 
-    const tx = await wallet.createTransfer({
-      amount: 1,
-      assetId: COMMON_TOKEN_ADDRESS,
-      destination: '0xd9303dfc71728f209ef64dd1ad97f5a557ae0fab',
-    });
+    // const tx = await wallet.createTransfer({
+    //   amount: 1,
+    //   assetId: COMMON_TOKEN_ADDRESS,
+    //   destination: '0xd9303dfc71728f209ef64dd1ad97f5a557ae0fab',
+    // });
 
-    await tx.wait();
+    // await tx.wait();
+
+    console.log(llmResponse);
 
     return {
-      ...chatGPTResponse.choices[0].message,
-      sessionId: session?.sessionId,
+      ...llmResponse.messages.at(-1)?.toDict(),
+      sessionId: conversationId,
     };
   }
 
@@ -511,6 +855,10 @@ export class AgentService {
       .set(allowedUpdates)
       .where(eq(schema.agent.agentId, agentId))
       .returning();
+
+    // TODO: Check if interval has changed
+    // Update cron job schedule
+
     return updated;
   }
 

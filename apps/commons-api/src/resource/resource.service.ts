@@ -15,7 +15,7 @@ import { DatabaseService } from '~/modules/database/database.service';
 import { EmbeddingService } from '~/embedding/embedding.service';
 import { EmbeddingType, ResourceType } from '~/embedding/dto/embedding.dto';
 import { hexToBigInt } from 'viem';
-import { eq } from 'drizzle-orm';
+import { eq, or, sql } from 'drizzle-orm';
 import { ToolSchema } from '~/tool/dto/tool.dto';
 
 @Injectable()
@@ -129,13 +129,39 @@ export class ResourceService {
     return `data:${mimeType};base64,${base64Text}`;
   }
 
-  findResources(props: { query: string; embeddingType: EmbeddingType }) {
-    const { query, embeddingType } = props;
-    const resources = this.embedding.find({
-      content: query,
-      embeddingType: embeddingType,
+  findResources(props: { query: string; resourceType: ResourceType }) {
+    const { query, resourceType } = props;
+    if (
+      resourceType === ResourceType.text ||
+      resourceType === ResourceType.audio ||
+      resourceType === ResourceType.image
+    ) {
+      const resources = this.embedding.find({
+        content: query,
+        embeddingType: resourceType as unknown as EmbeddingType,
+      });
+      return resources;
+    }
+
+    const normalizedQuery = query?.trim().toLowerCase();
+
+    const resourceEntriesPromise = this.db.query.resource.findMany({
+      // Fuzzy Search
+      where: (t) =>
+        or(
+          query
+            ? sql`
+            (setweight(to_tsvector('english', array_to_string(${t.tags}, ', ')), 'A'))
+            @@ websearch_to_tsquery('english', ${query})
+            `
+            : undefined,
+          normalizedQuery
+            ? sql`similarity(array_to_string(${t.tags}, ', '), ${normalizedQuery}) > 0.3`
+            : undefined,
+        ),
     });
-    return resources;
+
+    return resourceEntriesPromise;
   }
 
   async getResourceById(resourceId: string) {
