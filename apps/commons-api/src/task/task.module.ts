@@ -1,12 +1,12 @@
-import { forwardRef, Module } from '@nestjs/common';
-import { TaskController } from './task.controller';
+import { Module } from '@nestjs/common';
 import { TaskService } from './task.service';
-import { AgentModule } from '../agent';
+import { TaskController } from './task.controller';
+import { DatabaseModule } from '~/modules/database/database.module';
 
 @Module({
-  imports: [forwardRef(() => AgentModule)],
-  controllers: [TaskController],
+  imports: [DatabaseModule],
   providers: [TaskService],
+  controllers: [TaskController],
   exports: [TaskService],
 })
 export class TaskModule {}

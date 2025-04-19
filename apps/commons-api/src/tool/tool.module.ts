@@ -5,6 +5,7 @@ import { ToolController } from './tool.controller';
 import { ToolService } from './tool.service';
 import { CommonToolService } from './tools/common-tool.service';
 import { EthereumToolService } from './tools/ethereum-tool.service';
+import { GoalModule } from '../goal';
 import { TaskModule } from '../task';
 import { AttributionModule } from '../attribution';
 import { PinataModule } from '~/pinata/pinata.module';
@@ -13,9 +14,11 @@ import { PinataModule } from '~/pinata/pinata.module';
   imports: [
     forwardRef(() => AgentModule),
     forwardRef(() => ResourceModule),
-    forwardRef(() => TaskModule),
+    //forwardRef(() => TaskModule),
     forwardRef(() => AttributionModule),
     forwardRef(() => PinataModule),
+    forwardRef(() => GoalModule),
+    forwardRef(() => TaskModule),
   ],
   controllers: [ToolController],
   providers: [ToolService, EthereumToolService, CommonToolService, ToolService],

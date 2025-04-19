@@ -7,9 +7,11 @@ import {
 import { ChatCompletionMessageParam } from 'openai/resources/chat/completions.mjs';
 import { EmbeddingType, ResourceType } from '~/embedding/dto/embedding.dto';
 import { AgentService } from '~/agent/agent.service';
+import { GoalService, CreateGoalDto } from '~/goal/goal.service';
+import { TaskService, CreateTaskDto, TaskContext } from '~/task/task.service';
 import { AttributionService } from '~/attribution/attribution.service';
 import { ResourceService } from '~/resource/resource.service';
-import { TaskService } from '~/task/task.service';
+//import { TaskService } from '~/task/task.service';
 import { OpenAIService } from '~/modules/openai/openai.service';
 import { PinataService } from '~/pinata/pinata.service';
 import { ToolSchema } from '~/tool/dto/tool.dto';
@@ -17,6 +19,29 @@ import { ToolSchema } from '~/tool/dto/tool.dto';
 const graphqlRequest = import('graphql-request');
 
 export interface CommonTool {
+  createGoal(props: CreateGoalDto): Promise<any>;
+  updateGoalProgress(props: {
+    goalId: string;
+    progress: number;
+    status: 'pending' | 'in_progress' | 'completed' | 'failed';
+  }): Promise<any>;
+  recomputeGoalProgress(props: {
+    goalId: string;
+  }): Promise<{ success: boolean }>;
+
+  createTask(props: CreateTaskDto): Promise<any>;
+  updateTaskProgress(props: {
+    taskId: string;
+    progress: number;
+    status: 'pending' | 'in_progress' | 'completed' | 'failed';
+    resultContent: string;
+    summary: string;
+    context: Record<string, any>;
+    scheduledEnd?: Date;
+    estimatedDuration?: number;
+    metadata?: Record<string, any>;
+  }): Promise<any>;
+
   /**
    * Get Agents available in the network
    */
@@ -54,26 +79,18 @@ export interface CommonTool {
     shares: number[];
   }): any;
 
-  /**
-   * Get Tasks available in the network, you may filter by status,
-   */
-  getTasks(): any;
-  getTasksWithFilter(props: { where: { status?: 'open' | 'closed' } }): any;
-
-  /**
-   * Create a new Task in the network
-   * Place the task description in the metadata field
-   * The reward should not be more than the current COMMON token balance of the agent
-   */
-  createTask(props: {
-    description: string;
-    reward: number;
-    resourceBased: boolean;
-    parentTaskId?: number;
-    maxParticipants: number;
-  }): any;
-  joinTask(props: { taskId: number }): any;
-  completeTask(props: { taskId: number; resultantFile: string }): any;
+  // Previously for onchain tasks
+  // getTasks(): any;
+  // getTasksWithFilter(props: { where: { status?: 'open' | 'closed' } }): any;
+  // createTask(props: {
+  //   description: string;
+  //   reward: number;
+  //   resourceBased: boolean;
+  //   parentTaskId?: number;
+  //   maxParticipants: number;
+  // }): any;
+  // joinTask(props: { taskId: number }): any;
+  // completeTask(props: { taskId: number; resultantFile: string }): any;
 
   /**
    * Get Attributions available in the network, you may get by id
@@ -152,10 +169,14 @@ export class CommonToolService implements CommonTool {
   graphAPI = `https://api.studio.thegraph.com/query/102152/agentcommons-testnet/version/latest`;
   constructor(
     @Inject(forwardRef(() => AgentService)) private agent: AgentService,
+    @Inject(forwardRef(() => GoalService))
+    private goals: GoalService,
+    @Inject(forwardRef(() => TaskService))
+    private tasks: TaskService,
     @Inject(forwardRef(() => ResourceService))
     private resource: ResourceService,
-    @Inject(forwardRef(() => TaskService))
-    private task: TaskService,
+    //@Inject(forwardRef(() => TaskService)) previous for onchain tasks
+    //private task: TaskService,
     @Inject(forwardRef(() => AttributionService))
     private attribution: AttributionService,
     @Inject(forwardRef(() => OpenAIService))
@@ -163,6 +184,55 @@ export class CommonToolService implements CommonTool {
     @Inject(forwardRef(() => PinataService))
     private pinataService: PinataService,
   ) {}
+
+  async createGoal(props: CreateGoalDto) {
+    return await this.goals.create(props);
+  }
+
+  async updateGoalProgress(props: {
+    goalId: string;
+    progress: number;
+    status: 'pending' | 'in_progress' | 'completed' | 'failed';
+  }) {
+    return await this.goals.updateProgress(
+      props.goalId,
+      props.progress,
+      props.status,
+    );
+  }
+
+  async recomputeGoalProgress(props: { goalId: string }) {
+    await this.goals.recomputeProgress(props.goalId);
+    return { success: true };
+  }
+
+  async createTask(props: CreateTaskDto) {
+    return await this.tasks.create(props);
+  }
+
+  async updateTaskProgress(props: {
+    taskId: string;
+    progress: number;
+    status: 'pending' | 'in_progress' | 'completed' | 'failed';
+    resultContent: string;
+    summary: string;
+    context: TaskContext;
+    scheduledEnd?: Date;
+    estimatedDuration?: number;
+    metadata?: Record<string, any>;
+  }) {
+    return await this.tasks.updateProgress(
+      props.taskId,
+      props.progress,
+      props.status,
+      props.resultContent,
+      props.summary,
+      props.context,
+      props.scheduledEnd,
+      props.estimatedDuration,
+      props.metadata,
+    );
+  }
 
   getAgents(props?: { id?: string }) {
     const graphAPIKey = process.env.GRAPH_API_KEY;
@@ -364,140 +434,140 @@ export class CommonToolService implements CommonTool {
 
     return resource;
   }
+  //Previously for onchain tasks
+  // getTasks(props?: { where?: { status?: string } }) {
+  //   const graphAPIKey = process.env.GRAPH_API_KEY;
+  //   const data = graphqlRequest.then(async (_) => {
+  //     const tasksDocument = _.gql`
+  //   	{
+  //   		tasks {
+  //   			id
+  // 			taskId
+  // 			creator
+  // 			metadata
+  // 			reward
+  // 			resourceBased
+  // 			status
+  // 			rewardsDistributed
+  // 			parentTaskId
+  // 			maxParticipants
+  // 			currentParticipants
+  // 			contributions {
+  // 			contributor
+  // 			value
+  // 			}
+  // 			subtasks
+  //   		}
+  //   	}
+  //   	`;
+  //     const tasksWithFilterDocument = _.gql`
+  //   	{
+  //   		tasks(where: ${props?.where}) {
+  //   			id
+  // 			taskId
+  // 			creator
+  // 			metadata
+  // 			reward
+  // 			resourceBased
+  // 			status
+  // 			rewardsDistributed
+  // 			parentTaskId
+  // 			maxParticipants
+  // 			currentParticipants
+  // 			contributions {
+  // 			contributor
+  // 			value
+  // 			}
+  // 			subtasks
+  //   		}
+  //   	}
+  //   	`;
 
-  getTasks(props?: { where?: { status?: string } }) {
-    const graphAPIKey = process.env.GRAPH_API_KEY;
-    const data = graphqlRequest.then(async (_) => {
-      const tasksDocument = _.gql`
-    	{
-    		tasks {
-    			id
-				taskId
-				creator
-				metadata
-				reward
-				resourceBased
-				status
-				rewardsDistributed
-				parentTaskId
-				maxParticipants
-				currentParticipants
-				contributions {
-				contributor
-				value
-				}
-				subtasks
-    		}
-    	}
-    	`;
-      const tasksWithFilterDocument = _.gql`
-    	{
-    		tasks(where: ${props?.where}) {
-    			id
-				taskId
-				creator
-				metadata
-				reward
-				resourceBased
-				status
-				rewardsDistributed
-				parentTaskId
-				maxParticipants
-				currentParticipants
-				contributions {
-				contributor
-				value
-				}
-				subtasks
-    		}
-    	}
-    	`;
+  //     return await _.request(
+  //       this.graphAPI,
+  //       props?.where ? tasksWithFilterDocument : tasksDocument,
+  //     );
+  //   });
+  //   return data;
+  // }
+  // getTasksWithFilter(props: { where: { status?: string } }) {
+  //   return this.getTasks({
+  //     where: props.where,
+  //   });
+  // }
 
-      return await _.request(
-        this.graphAPI,
-        props?.where ? tasksWithFilterDocument : tasksDocument,
-      );
-    });
-    return data;
-  }
-  getTasksWithFilter(props: { where: { status?: string } }) {
-    return this.getTasks({
-      where: props.where,
-    });
-  }
+  // // @ts-expect-error
+  // async createTask(
+  //   props: {
+  //     name: string;
+  //     description: string;
+  //     thumbnail: string;
+  //     reward: number;
+  //     resourceBased: boolean;
+  //     parentTaskId?: number;
+  //     maxParticipants: number;
+  //   },
+  //   metadata: { agentId: string; privateKey: string },
+  // ) {
+  //   const taskMetadataJSON = {
+  //     name: props.name,
+  //     description: props.description,
+  //     image: props.thumbnail,
+  //     attributes: [],
+  //   };
+  //   //upload metadata to IPFS
+  //   const metadataFile = await this.pinataService.uploadJsonFile(
+  //     taskMetadataJSON,
+  //     'metadata.json',
+  //   );
+  //   //get ipfs file url
+  //   const cid = metadataFile.IpfsHash;
+  //   const taskMetadata = `https://${process.env.GATEWAY_URL ?? 'gateway.pinata.cloud'}/ipfs/${cid}`;
 
-  // @ts-expect-error
-  async createTask(
-    props: {
-      name: string;
-      description: string;
-      thumbnail: string;
-      reward: number;
-      resourceBased: boolean;
-      parentTaskId?: number;
-      maxParticipants: number;
-    },
-    metadata: { agentId: string; privateKey: string },
-  ) {
-    const taskMetadataJSON = {
-      name: props.name,
-      description: props.description,
-      image: props.thumbnail,
-      attributes: [],
-    };
-    //upload metadata to IPFS
-    const metadataFile = await this.pinataService.uploadJsonFile(
-      taskMetadataJSON,
-      'metadata.json',
-    );
-    //get ipfs file url
-    const cid = metadataFile.IpfsHash;
-    const taskMetadata = `https://${process.env.GATEWAY_URL ?? 'gateway.pinata.cloud'}/ipfs/${cid}`;
+  //   const task = await this.task.createTask({
+  //     ...props,
+  //     metadata: taskMetadata,
+  //     reward: BigInt(props.reward),
+  //     parentTaskId: BigInt(props.parentTaskId || 0),
+  //     maxParticipants: BigInt(props.maxParticipants),
+  //     agentId: metadata.agentId,
+  //   });
 
-    const task = await this.task.createTask({
-      ...props,
-      metadata: taskMetadata,
-      reward: BigInt(props.reward),
-      parentTaskId: BigInt(props.parentTaskId || 0),
-      maxParticipants: BigInt(props.maxParticipants),
-      agentId: metadata.agentId,
-    });
+  //   return task;
+  // }
 
-    return task;
-  }
+  // // @ts-expect-error
+  // async joinTask(
+  //   props: {
+  //     taskId: number;
+  //   },
+  //   metadata: { agentId: string; privateKey: string },
+  // ) {
+  //   const task = await this.task.joinTask({
+  //     ...props,
+  //     taskId: BigInt(props.taskId),
+  //     agentId: metadata.agentId,
+  //   });
 
-  // @ts-expect-error
-  async joinTask(
-    props: {
-      taskId: number;
-    },
-    metadata: { agentId: string; privateKey: string },
-  ) {
-    const task = await this.task.joinTask({
-      ...props,
-      taskId: BigInt(props.taskId),
-      agentId: metadata.agentId,
-    });
+  //   return task;
+  // }
 
-    return task;
-  }
+  // // @ts-expect-error
+  // async completeTask(
+  //   props: {
+  //     taskId: number;
+  //     resultantFile: string;
+  //   },
+  //   metadata: { agentId: string; privateKey: string },
+  // ) {
+  //   const task = await this.task.completeTask({
+  //     ...props,
+  //     taskId: BigInt(props.taskId),
+  //     agentId: metadata.agentId,
+  //   });
 
-  // @ts-expect-error
-  async completeTask(
-    props: {
-      taskId: number;
-      resultantFile: string;
-    },
-    metadata: { agentId: string; privateKey: string },
-  ) {
-    const task = await this.task.completeTask({
-      ...props,
-      taskId: BigInt(props.taskId),
-      agentId: metadata.agentId,
-    });
-
-    return task;
-  }
+  //   return task;
+  // }
 
   getAttributions(props?: { id?: string }) {
     const graphAPIKey = process.env.GRAPH_API_KEY;
