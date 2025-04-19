@@ -331,6 +331,7 @@ export class AgentService implements OnModuleInit {
 
   /* ─────────────────────────  CRON TRIGGER  ───────────────────────── */
   async triggerAgent(props: { agentId: string; sessionId?: string }) {
+    console.log('Triggering agent', props.agentId);
     return this.runAgent({
       agentId: props.agentId,
       messages: [
