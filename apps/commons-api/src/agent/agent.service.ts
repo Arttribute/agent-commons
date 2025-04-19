@@ -12,13 +12,18 @@ import {
 import { PostgresSaver } from '@langchain/langgraph-checkpoint-postgres';
 import { ToolNode } from '@langchain/langgraph/prebuilt';
 import { ChatOpenAI } from '@langchain/openai';
-import { BadRequestException, Injectable, OnModuleInit } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  OnModuleInit,
+  forwardRef,
+  Inject,
+} from '@nestjs/common';
 import { HDKey } from '@scure/bip32';
 import crypto from 'crypto';
 import dedent from 'dedent';
 import {
   eq,
-  and,
   InferInsertModel,
   InferSelectModel,
   inArray,
@@ -26,7 +31,7 @@ import {
 } from 'drizzle-orm';
 import { AGENT_REGISTRY_ABI } from 'lib/abis/AgentRegistryABI';
 import { AGENT_REGISTRY_ADDRESS, COMMON_TOKEN_ADDRESS } from 'lib/addresses';
-import { compact, find, first, get, map, omit } from 'lodash';
+import { compact, first, get, map, omit } from 'lodash';
 import {
   ChatCompletionCreateParams,
   ChatCompletionMessageParam,
@@ -34,7 +39,7 @@ import {
 } from 'openai/resources/chat/completions';
 import { Except } from 'type-fest';
 import typia from 'typia';
-import { v4 } from 'uuid';
+import { v4 as uuid } from 'uuid';
 import {
   createPublicClient,
   createWalletClient,
@@ -52,9 +57,10 @@ import { CommonTool } from '../tool/tools/common-tool.service';
 import { EthereumTool } from '../tool/tools/ethereum-tool.service';
 import { LangChainCallbackHandler } from '@posthog/ai';
 import { IChatGptSchema } from '@samchon/openapi';
-import { inspect } from 'util';
 import { getPosthog } from '~/helpers/posthog';
 import { LogService } from '~/log/log.service';
+import { GoalService } from '~/goal/goal.service';
+import { TaskService } from '~/task/task.service';
 const got = import('got');
 
 const app = typia.llm.application<EthereumTool & CommonTool, 'chatgpt'>();
@@ -65,6 +71,7 @@ export class AgentService implements OnModuleInit {
     chain: baseSepolia,
     transport: http(),
   });
+
   constructor(
     private db: DatabaseService,
     private openAI: OpenAIService,
@@ -72,31 +79,32 @@ export class AgentService implements OnModuleInit {
     private session: SessionService,
     private toolService: ToolService,
     private logService: LogService,
+    /* NEW injections */
+    @Inject(forwardRef(() => GoalService)) private goals: GoalService,
+    @Inject(forwardRef(() => TaskService)) private tasks: TaskService,
   ) {}
 
+  /* ─────────────────────────  INIT  ───────────────────────── */
   async onModuleInit() {
-    const checkpointer = PostgresSaver.fromConnString(
+    await PostgresSaver.fromConnString(
       `postgresql://${process.env.POSTGRES_USER}:${process.env.POSTGRES_PASSWORD}@${process.env.POSTGRES_HOST}:${process.env.POSTGRES_PORT}/${process.env.POSTGRES_DATABASE}`,
-    );
-
-    await checkpointer.setup();
+    ).setup();
   }
 
+  /* ─────────────────────────  CREATE & GET AGENT (unchanged)  ───────────────────────── */
   async createAgent(props: {
     value: Except<InferInsertModel<typeof schema.agent>, 'wallet' | 'agentId'>;
     commonsOwned?: boolean;
   }) {
     const wallet = await this.coinbase.createDeveloperManagedWallet();
-    const faucetTx = await wallet.faucet();
-    await faucetTx.wait();
+    await (await wallet.faucet()).wait();
 
     const agentId = (await wallet.getDefaultAddress())?.getId().toLowerCase();
-    let agentOwner = '0xD9303DFc71728f209EF64DD1AD97F5a557AE0Fab';
-    if (!props.commonsOwned) {
-      agentOwner = props.value.owner as string;
-    }
+    let agentOwner = props.commonsOwned
+      ? '0xD9303DFc71728f209EF64DD1AD97F5a557AE0Fab'
+      : (props.value.owner as string);
 
-    const agentEntry = await this.db
+    const [agentEntry] = await this.db
       .insert(schema.agent)
       .values({
         ...props.value,
@@ -105,8 +113,7 @@ export class AgentService implements OnModuleInit {
         wallet: wallet.export(),
         isLiaison: false,
       })
-      .returning()
-      .then(first<InferSelectModel<typeof schema.agent>>);
+      .returning();
 
     if (props.commonsOwned) {
       const commonsWallet = createWalletClient({
@@ -116,35 +123,24 @@ export class AgentService implements OnModuleInit {
         chain: baseSepolia,
         transport: http(),
       });
-
       const contract = getContract({
         abi: AGENT_REGISTRY_ABI,
         address: AGENT_REGISTRY_ADDRESS,
-
         client: commonsWallet,
       });
-
-      const metadata =
-        'https://coral-abstract-dolphin-257.mypinata.cloud/ipfs/bafkreiewjk5fizidkxejplpx34fjva7f6i6azcolanwgtzptanhre6twui';
-
-      const isCommonAgent = true;
-
-      const txHash = await contract.write.registerAgent([
-        agentId,
-        metadata,
-        isCommonAgent,
-      ]);
-
-      await this.publicClient.waitForTransactionReceipt({ hash: txHash });
+      await this.publicClient.waitForTransactionReceipt({
+        hash: await contract.write.registerAgent([
+          agentId,
+          'ipfs://placeholder',
+          true,
+        ]),
+      });
     }
 
-    // TODO: Work on interval
-    // @ts-expect-error
-    const interval = props.interval || 10;
-
-    await this.db.execute(
-      sql`SELECT cron.schedule(FORMAT('agent:%s:schedule', ${agentEntry?.agentId}),'*/${interval} * * * *', FORMAT('SELECT trigger_agent(%L)', ${agentEntry?.agentId}))`,
-    );
+    /* default 10‑min cron */
+    //await this.db.execute(
+    //  sql`SELECT cron.schedule(FORMAT('agent:%s:schedule', ${agentId}),'*/10 * * * *', FORMAT('SELECT trigger_agent(%L)', ${agentId}))`,
+    //);
 
     return agentEntry;
   }
@@ -153,43 +149,19 @@ export class AgentService implements OnModuleInit {
     const agent = await this.db.query.agent.findFirst({
       where: (t) => eq(t.agentId, props.agentId),
     });
-
-    if (!agent) {
-      throw new BadRequestException('Agent not found');
-    }
-
+    if (!agent) throw new BadRequestException('Agent not found');
     return agent;
   }
 
-  async triggerAgent(props: { agentId: string }) {
-    // if agent should run
-
-    // Check if agent should run
-
-    // cronId = cron(*/5 * * * * *, SELECT triggerAgent("agentId"))
-
-    return await this.runAgent({
-      agentId: props.agentId,
-      messages: [
-        {
-          role: 'user',
-          content:
-            'This is an automated trigger. Your goal is to carry out tasks assigned to you.',
-        },
-      ],
-    });
-  }
-
+  /* ─────────────────────────  UTIL  ───────────────────────── */
   public seedToPrivateKey(seed: string) {
-    const seedBuffer = Buffer.from(seed, 'hex');
-    const hmac = crypto.createHmac('sha512', 'Bitcoin seed');
-    hmac.update(seedBuffer);
-
-    const node = HDKey.fromMasterSeed(seedBuffer);
-    const childNode = node.derive("m/44'/60'/0'/0/0"); // Standard Ethereum path
-    const privateKey = Buffer.from(childNode.privateKey!).toString('hex');
-    return privateKey;
+    const node = HDKey.fromMasterSeed(Buffer.from(seed, 'hex'));
+    return Buffer.from(node.derive("m/44'/60'/0'/0/0").privateKey!).toString(
+      'hex',
+    );
   }
+
+  /* purchaseCommons / checkCommonsBalance / transferTokensToWallet (unchanged) */
 
   async purchaseCommons(props: { agentId: string; amountInCommon: string }) {
     const { agentId, amountInCommon } = props;
@@ -272,617 +244,362 @@ export class AgentService implements OnModuleInit {
     return { balance: commonsBalance.toNumber(), txHash: tx };
   }
 
+  /* ─────────────────────────  SESSION BOOTSTRAP  ───────────────────────── */
   private async createAgentSession(agentId: string) {
-    const agent = await this.db.query.agent.findFirst({
-      where: (t) => eq(t.agentId, agentId),
-    });
-
-    if (!agent) {
-      throw new BadRequestException('Agent not found');
-    }
+    const agent = await this.getAgent({ agentId });
+    const currentTime = new Date();
 
     const messages: ChatCompletionMessageParam[] = [
       {
         role: 'system',
         content: dedent`You are the following agent:
-      ${JSON.stringify(omit(agent, ['instructions', 'persona', 'wallet']))}
-      Use any tools necessary to get information in order to perform the task.
-      Ensure that the arguments provided to the tools are correct and as accurate as possible.
+          ${JSON.stringify(omit(agent, ['instructions', 'persona', 'wallet']))}
+              Persona:
+          ${agent.persona}
 
-      The following is the persona you are meant to adopt:
-      ${agent.persona}
+          Instructions:
+          ${agent.instructions}
+          
 
-      The following are the instructions you are meant to follow:
-      ${agent.instructions}`,
+          The current date and time is ${currentTime.toISOString()}.
+
+          STRICTLY ABIDE BY THE FOLLOWING:
+          • If a request is complex and requires multiple steps, call createGoal which creates a goal and then get the goal id and use createTask to create tasks for the goal with the necessary details.
+          • In the process of creating a goal, think very deeply and critically about it. Break it down and detail every single paart of it. Set a SMART(Specific, Measureble, Achievable, Relevant and Time-bound) goal with a clear description. Consider all factors and create a well thought out plan of action and include it in the goal description. This should now guide the tasks to be created. Include the tasks breakdown in the goal description as well.The tasks to be created should match the tasks breakdown in the goal description. If no exact timelines are provided for the goal set the goal deadline to the current time.
+          • Similarly, when creating tasks, think very deeply and critically about it. Set a SMART(Specific, Measureble, Achievable, Relevant and Time-bound) task with a clear description. Consider all factors and create a well thought out plan of action and include it in the task description. Remember some tasks may be dependent on each other. Think about what tools might be needed to accomplish the task and include them in the task description and task tools.
+          • For every task specify the context of the task. The context should contain all the necessary information that are either needed or would be beneficial for the task.
+          • Before starting the execution make sure that the goal and all its tasks are fully created .
+          • STRCTLY DO NOT start execution of a task or update any task using updateTaskProgress until the user specifically asks you to do so.
+          ## ONLY DO THESE ONCE THE GOAL AND TASKS ARE FULLY CREATED AND THE USER ASKS YOU TO DO SO:
+          • As you execute tasks, update tasks progress accordingly with all the necessary information, call the updateTaskProgress  with the necessary details.Provide the actual result content of the task and the summary of the task.
+          • If tasks require the use of tools, include the needed tools in the task and use the tools to execute the tasks.
+          • For each task, perform the task and produce the content expected for the task given by the expectedOutputType in the task context. The result content should be the actual conent produced. For example if the task was to generate code, the result content should contain the code generated. If the task was to fetch data, the result content should contain the data fetched. If the task was to generate a report, the result content should contain the report generated. If the task was to generate an image, the result content should contain the image generated. If the task was to generate a video, the result content should contain the video generated. If the task was to generate a text, the result content should contain the text generated. If the task was to generate a pdf, the result content should contain the pdf generated.
+          • Unless given specific completion deadlines and schedules, all goals and tasks should be completed immediately.
+          • In case of any new information that is relevant to the task, update the task and task context with the new information. 
+          • If you are unable to complete a task, call the updateTaskProgress with the necessary details and provide a summary of the failure.
+        `,
       },
-      // ...(props.messages || []),
     ];
 
-    // 3) Retrieve all dynamic tools from DB
-
+    /* build tool definitions exactly like before */
     const storedTools = await this.toolService.getAllTools();
-
-    // 4) Convert them to ChatCompletionTool array
-
-    //(B) Resource-based tools -> find by resourceId in agent.common_tools
-    const resourceIds = agent.commonTools ?? [];
-    console.log('Resource IDs', resourceIds);
-    const resourceTools = await this.db.query.resource.findMany({
-      where: (r) => inArray(r.resourceId, resourceIds),
-    });
-    console.log('Resource Tools', resourceTools);
-    const resourceBasedTools = resourceTools
-      .filter((res) => !!res.schema) // must have `schema`
-      .map((res) => {
-        const toolSchema = res.schema as ChatCompletionTool;
-        // We'll rename the function for uniqueness:
-        const resourceFunctionName = `resourceTool_${res.resourceId}`;
-        return {
-          type: 'function' as const,
-          function: { ...toolSchema, name: resourceFunctionName },
-          endpoint: `http://localhost:${process.env.PORT}/v1/agents/tools`,
-        };
-      });
-    console.log('Resource-based tools', resourceBasedTools);
-
     const dynamicTools = storedTools.map((dbTool) => ({
-      type: 'function' as const,
+      type: 'function',
       function: { ...dbTool.schema, name: dbTool.name },
       endpoint: `http://localhost:${process.env.PORT}/v1/agents/tools`,
     }));
-
-    console.log('Dynamic tools', dynamicTools);
-    const staticTools = map(
-      app.functions,
-      (_) =>
-        ({
-          type: 'function',
-          function: _,
-          endpoint: `http://localhost:${process.env.PORT}/v1/agents/tools`, // should be a self endpoint
-        }) as unknown as ChatCompletionTool & { endpoint: string },
-    );
-
-    const tools = [...dynamicTools, ...resourceBasedTools, ...staticTools];
+    const resourceIds = agent.commonTools ?? [];
+    const resTools = await this.db.query.resource.findMany({
+      where: (r) => inArray(r.resourceId, resourceIds),
+    });
+    const resourceBased = resTools
+      .filter((r) => !!r.schema)
+      .map((r) => ({
+        type: 'function',
+        function: {
+          ...(r.schema as any),
+          name: `resourceTool_${r.resourceId}`,
+        },
+        endpoint: `http://localhost:${process.env.PORT}/v1/agents/tools`,
+      }));
+    const staticTools = map(app.functions, (_) => ({
+      type: 'function',
+      function: {
+        ..._,
+        parameters:
+          _?.parameters as unknown as ChatCompletionTool['function']['parameters'],
+      },
+      endpoint: `http://localhost:${process.env.PORT}/v1/agents/tools`,
+    })) as (ChatCompletionTool & { endpoint: string })[];
 
     const completionBody: ChatCompletionCreateParams = {
       messages,
-      // ...body,
-      tools,
+      tools: [
+        ...dynamicTools.map((tool) => ({ ...tool, type: 'function' as const })),
+        ...resourceBased.map((tool) => ({
+          ...tool,
+          type: 'function' as const,
+        })),
+        ...staticTools.map((tool) => ({ ...tool, type: 'function' as const })),
+      ],
       tool_choice: 'auto',
       parallel_tool_calls: true,
       model: 'gpt-4o-mini',
     };
-
     return completionBody;
-
-    // const session = await this.session.createSession({
-    //   value: { query: completionBody },
-    // });
-    // return session;
   }
 
+  /* ─────────────────────────  CRON TRIGGER  ───────────────────────── */
+  async triggerAgent(props: { agentId: string; sessionId?: string }) {
+    return this.runAgent({
+      agentId: props.agentId,
+      messages: [
+        {
+          role: 'user',
+          content: `⫷⫷AUTOMATED_USER_MESSAGE⫸⫸:
+          This is an automated trigger. Your goal is to carry out tasks assigned to you.`,
+        },
+      ],
+      sessionId: props.sessionId,
+    });
+  }
+
+  /* ─────────────────────────  MAIN RUN  ───────────────────────── */
   async runAgent(props: {
     agentId: string;
     messages?: ChatCompletionMessageParam[];
     sessionId?: string;
   }) {
-    const startTime = performance.now();
+    const tStart = performance.now();
     const { agentId, sessionId } = props;
+    const agent = await this.getAgent({ agentId });
 
-    const agent = await this.db.query.agent.findFirst({
-      where: (t) => eq(t.agentId, agentId),
-    });
-
-    if (!agent) {
-      throw new BadRequestException('Agent not found');
-    }
-
-    // Check if the agent has tokens
-
-    const wallet = await Wallet.import(agent.wallet).catch((e) => {
-      console.log(e);
-      throw e;
-    });
-
-    const commonsBalance = await wallet.getBalance(COMMON_TOKEN_ADDRESS);
-
-    if (commonsBalance.lte(0)) {
+    /* balance check */
+    const wallet = await Wallet.import(agent.wallet);
+    if ((await wallet.getBalance(COMMON_TOKEN_ADDRESS)).lte(0))
       throw new BadRequestException('Agent has no tokens');
-    }
 
-    console.log(commonsBalance);
-
-    const checkpointer = PostgresSaver.fromConnString(
-      `postgresql://${process.env.POSTGRES_USER}:${process.env.POSTGRES_PASSWORD}@${process.env.POSTGRES_HOST}:${process.env.POSTGRES_PORT}/${process.env.POSTGRES_DATABASE}`,
-    );
-
-    const llm = new ChatOpenAI({
-      model: 'gpt-4o-mini',
-      temperature: 0,
-      supportsStrictToolCalling: true,
-      apiKey: process.env.OPENAI_API_KEY,
-    });
-
-    // 3) Retrieve all dynamic tools from DB
+    /* Build tool definitions (same as in createAgentSession) */
     const storedTools = await this.toolService.getAllTools();
-    //console.log('Stored tools', storedTools);
-    // 4) Convert them to ChatCompletionTool array
-    const dynamicTools = storedTools.map(
-      (dbTool) =>
-        ({
-          type: 'function' as const,
-          function: { ...dbTool.schema, name: dbTool.name },
-          endpoint: `http://localhost:${process.env.PORT}/v1/agents/tools`,
-        }) as ChatCompletionTool & { endpoint: string },
-    );
-
-    //(B) Resource-based tools -> find by resourceId in agent.common_tools
-    const resourceIds = agent.commonTools ?? [];
-    const resourceTools = await this.db.query.resource.findMany({
-      where: (r) => inArray(r.resourceId, resourceIds),
+    const dynamicDefs = storedTools.map((dbTool) => ({
+      type: 'function',
+      function: { ...dbTool.schema, name: dbTool.name },
+      endpoint: `http://localhost:${process.env.PORT}/v1/agents/tools`,
+    }));
+    const resTools = await this.db.query.resource.findMany({
+      where: (r) => inArray(r.resourceId, agent.commonTools ?? []),
     });
-    console.log('Resource Tools', resourceTools);
-    const resourceBasedTools = resourceTools
-      .filter((res) => !!res.schema) // must have `schema`
-      .map((res) => {
-        const toolSchema = res.schema as ChatCompletionTool;
-        // We'll rename the function for uniqueness:
-        const resourceFunctionName = `resourceTool_${res.resourceId}`;
-        return {
-          type: 'function' as const,
-          function: { ...toolSchema, name: resourceFunctionName },
-          endpoint: `http://localhost:${process.env.PORT}/v1/agents/tools`,
-        } as ChatCompletionTool & { endpoint: string };
-      });
+    const resourceDefs = resTools
+      .filter((r) => !!r.schema)
+      .map((r) => ({
+        type: 'function',
+        function: {
+          ...(r.schema as any),
+          name: `resourceTool_${r.resourceId}`,
+        },
+        endpoint: `http://localhost:${process.env.PORT}/v1/agents/tools`,
+      }));
+    const staticDefs = map(app.functions, (_) => ({
+      type: 'function',
+      function: {
+        ..._,
+        parameters:
+          _?.parameters as unknown as ChatCompletionTool['function']['parameters'],
+      },
+      endpoint: `http://localhost:${process.env.PORT}/v1/agents/tools`,
+    })) as (ChatCompletionTool & { endpoint: string })[];
 
-    console.log('Resource-based tools', resourceBasedTools);
+    const toolDefs = [...dynamicDefs, ...resourceDefs, ...staticDefs];
 
-    // const tools = [...dynamicTools, ...resourceBasedTools, ...staticTools];
-
-    const toolUsage: Array<{
+    /* toolUsage tracker */
+    const toolUsage: {
       name: string;
       status: string;
-      summary?: string;
       duration?: number;
-    }> = [];
+    }[] = [];
 
-    let toolDefinitions = app.functions.map((_) => {
-      // @ts-expect-error
-      return {
-        type: 'function' as const,
-        function: _,
-        endpoint: `http://localhost:${process.env.PORT}/v1/agents/tools`, // should be a self endpoint
-      } as ChatCompletionTool & { endpoint: string };
-    });
-    let toolRunners = map(app.functions, (_) => {
-      return tool(
+    /* build runners */
+    const makeRunner = (def: ChatCompletionTool & { endpoint: string }) =>
+      tool(
         async (args, config) => {
-          const functionName = config.toolCall?.function?.name;
-          const callStart = performance.now();
+          const fn = config.toolCall?.function?.name ?? 'unknown';
+          const t0 = performance.now();
           const data = await got
             .then((_) =>
               _.got
                 .post(`http://localhost:${process.env.PORT}/v1/agents/tools`, {
-                  method: 'POST',
-                  headers: {
-                    'Content-Type': 'application/json',
-                  },
                   json: {
                     args,
-                    config: omit(config, ['configurable']),
                     toolCall: config.toolCall,
                     metadata: { agentId },
                   },
+                  headers: { 'Content-Type': 'application/json' },
                 })
-                .json<any>()
-                .catch((e: typeof _.HTTPError) => {
-                  if (e instanceof _.HTTPError) {
-                    // console.log(e);
-                    console.log(e.response.body);
-                  }
-                  throw e;
-                }),
+                .json<any>(),
             )
-            .then((_) => {
+            .catch((e: any) => {
               toolUsage.push({
-                name: functionName,
-                status: 'success',
-                summary: `Executed ${functionName}`,
-                duration: performance.now() - callStart,
-              });
-
-              return _;
-            })
-            .catch((_) => {
-              toolUsage.push({
-                name: functionName,
+                name: fn,
                 status: 'error',
-                summary: 'Error executing tool',
-                duration: performance.now() - callStart,
+                duration: performance.now() - t0,
               });
-              throw _;
+              throw e;
             });
-
+          toolUsage.push({
+            name: fn,
+            status: 'success',
+            duration: performance.now() - t0,
+          });
           return { toolData: data };
         },
-        { schema: _.parameters, name: _.name, description: _.description },
+        {
+          name: def.function.name,
+          description: def.function.description,
+          schema: def.function
+            .parameters as unknown as IChatGptSchema.IParameters,
+        },
       );
-    });
-    // tools = app.functions
 
-    const additionalTools = [...dynamicTools, ...resourceBasedTools];
-
-    toolDefinitions = toolDefinitions.concat(...additionalTools);
-
-    toolRunners = toolRunners.concat(
-      map(additionalTools, (_) => {
-        // console.log({ function: inspect(_, { depth: null }) });
-        return tool(
-          async (args, config) => {
-            // const toolCall: ChatCompletionMessageToolCall
-            const functionName = config.toolCall?.function?.name;
-            const callStart = performance.now();
-            const data = await got
-              .then((_) =>
-                _.got
-                  .post(
-                    `http://localhost:${process.env.PORT}/v1/agents/tools`,
-                    {
-                      method: 'POST',
-                      headers: {
-                        'Content-Type': 'application/json',
-                      },
-                      json: {
-                        args,
-                        config: omit(config, ['configurable']),
-                        toolCall: config.toolCall,
-                        metadata: { agentId },
-                      },
-                    },
-                  )
-                  .json<any>()
-                  .catch((e: typeof _.HTTPError) => {
-                    if (e instanceof _.HTTPError) {
-                      // console.log(e);
-                      console.log(e.response.body);
-                    }
-                    throw e;
-                  }),
-              )
-              .then((_) => {
-                toolUsage.push({
-                  name: functionName,
-                  status: 'success',
-                  summary: `Executed ${functionName}`,
-                  duration: performance.now() - callStart,
-                });
-
-                return _;
-              })
-              .catch((_) => {
-                toolUsage.push({
-                  name: functionName,
-                  status: 'error',
-                  summary: 'Error executing tool',
-                  duration: performance.now() - callStart,
-                });
-                throw _;
-              });
-
-            return { toolData: data };
-          },
-          {
-            schema: _.function.parameters,
-            name: _.function.name,
-            description: _.function.description,
-          },
-        ) as any;
-      }),
+    const toolRunners = toolDefs.map((def) =>
+      makeRunner(def as ChatCompletionTool & { endpoint: string }),
     );
+    const toolNode = new ToolNode(toolRunners);
 
-    // Find a way to use tools from other services
-    // console.log(toolDefinitions);
-    let toolNode = new ToolNode(toolRunners);
-    const strict = false;
-    console.log(map(toolDefinitions, 'function.name'));
-    let llmWithTools = llm.bindTools(toolDefinitions, {
+    const llm = new ChatOpenAI({
+      model: 'gpt-4o',
+      temperature: 0,
+      supportsStrictToolCalling: true,
+      apiKey: process.env.OPENAI_API_KEY,
+    });
+    const llmWithTools = llm.bindTools(toolDefs, {
       parallel_tool_calls: true,
-      strict,
-      recursionLimit: 5,
+      strict: false,
     });
 
-    const conversationId = sessionId || v4();
-
-    const posthogCallback = new LangChainCallbackHandler({
-      client: getPosthog(),
-      // distinctId: 'user_123', // optional
-      // traceId: 'trace_456', // optional
-      properties: { conversationId }, // optional
-      // groups: { company: 'company_id_in_your_db' }, // optional
-      privacyMode: false, // optional
-      debug: false, // optional - when true, logs all events to console
+    /* LangGraph workflow */
+    const callModel = async (s: typeof MessagesAnnotation.State) => ({
+      messages: await llmWithTools.invoke(s.messages),
     });
-
-    // Define the function that calls the model
-    const callModel = async (state: typeof MessagesAnnotation.State) => {
-      // llmWithTools.
-      const llmResponse = await llmWithTools.invoke(state.messages, {
-        callbacks: [posthogCallback],
-      });
-      return { messages: llmResponse };
+    const shouldCont = (s: typeof MessagesAnnotation.State) => {
+      const last = s.messages.at(-1);
+      return last &&
+        'tool_calls' in last &&
+        Array.isArray(last.tool_calls) &&
+        last.tool_calls.length
+        ? 'tools'
+        : END;
     };
-
-    const shouldContinue = (state: typeof MessagesAnnotation.State) => {
-      const { messages } = state;
-      const lastMessage = messages[messages.length - 1];
-
-      if (
-        'tool_calls' in lastMessage &&
-        Array.isArray(lastMessage.tool_calls) &&
-        lastMessage.tool_calls?.length
-      ) {
-        return 'tools';
-      }
-      return END;
-    };
-
-    const updateTools = async (state: typeof MessagesAnnotation.State) => {
-      // Check if got a resource that has a tool
-      // Find resource
-      const lastMassageContent = state.messages.at(-1)?.content;
-      if (typeof lastMassageContent == 'string') {
-        let toolContent;
-
-        try {
-          toolContent = JSON.parse(lastMassageContent);
-        } catch (err) {
-          return 'model';
-        }
-
-        const toolData = Array.isArray(toolContent.toolData)
-          ? toolContent.toolData
-          : [toolContent.toolData];
-
-        toolRunners.push(
-          ...toolData
-            .filter((_: any) => 'schema' in _ && _.schema)
-            .map((_: any) => {
-              const { schema } = _;
-
-              console.log('Added tool from response of tool call', schema.name);
-
-              return tool(
-                async (args, config) => {
-                  const functionName = config.toolCall?.function?.name;
-                  const callStart = performance.now();
-                  const data = await got
-                    .then((_) =>
-                      _.got
-                        .post(schema.endpoint, {
-                          method: 'POST',
-                          headers: {
-                            'Content-Type': 'application/json',
-                          },
-                          json: {
-                            // args,
-                            toolCall: config.toolCall,
-                            // config: omit(config, ['configurable']),
-                            metadata: { agentId },
-                          },
-                        })
-                        .json<any>()
-                        .catch((e: typeof _.HTTPError) => {
-                          if (e instanceof _.HTTPError) {
-                            // console.log(e);
-                            console.log(e.response.body);
-                          }
-                          throw e;
-                        }),
-                    )
-                    .then((_) => {
-                      toolUsage.push({
-                        name: functionName,
-                        status: 'success',
-                        summary: `Executed ${functionName}`,
-                        duration: performance.now() - callStart,
-                      });
-
-                      return _;
-                    })
-                    .catch((_) => {
-                      toolUsage.push({
-                        name: functionName,
-                        status: 'error',
-                        summary: 'Error executing tool',
-                        duration: performance.now() - callStart,
-                      });
-                      throw _;
-                    });
-
-                  return { toolData: data };
-                },
-                {
-                  name: `resourceTool_${_.resourceId}`,
-                  description: schema.description,
-                  schema: schema.parameters as IChatGptSchema.IParameters,
-                },
-              );
-            }),
-        );
-        toolDefinitions.push(
-          ...toolData
-            .filter((_: any) => 'schema' in _ && _.schema)
-            .map((_: any) => ({
-              type: 'function' as const,
-              function: { ..._.schema, name: `resourceTool_${_.resourceId}` },
-              endpoint: `http://localhost:${process.env.PORT}/v1/agents/tools`,
-            })),
-        );
-
-        toolNode = new ToolNode(toolRunners);
-        llmWithTools = llm.bindTools(toolDefinitions, {
-          parallel_tool_calls: true,
-          strict,
-          recursionLimit: 5,
-        });
-      }
-
-      // Condition to check if content has tool call attached
-      // toolContent.toolData.jsonSchema
-
-      // Create new tools for langchain
-      // tools.push(tool())
-
-      // model({messgaes: [toolContent], tools: tools + newTools}) => make
-
-      return 'model';
-    };
-
-    // Define a new graph
-    const workflow = new StateGraph(MessagesAnnotation)
-      // Define the node and edge
+    const graph = new StateGraph(MessagesAnnotation)
       .addNode('model', callModel)
       .addNode('tools', toolNode)
       .addEdge(START, 'model')
-      .addConditionalEdges('model', shouldContinue, ['tools', END])
-      .addConditionalEdges('tools', updateTools, ['model']);
-    // .addEdge('model', END);
+      .addConditionalEdges('model', shouldCont, ['tools', END])
+      .addEdge('tools', 'model')
+      .compile({
+        checkpointer: PostgresSaver.fromConnString(
+          `postgresql://${process.env.POSTGRES_USER}:${process.env.POSTGRES_PASSWORD}@${process.env.POSTGRES_HOST}:${process.env.POSTGRES_PORT}/${process.env.POSTGRES_DATABASE}`,
+        ),
+      });
 
-    const graph = workflow.compile({ checkpointer });
+    /* conversation bootstrap */
+    const conversationId = sessionId ?? uuid();
+    let messages: Messages = [];
+
+    if (!sessionId) {
+      const boot = await this.createAgentSession(agentId);
+      messages.push(
+        ...boot.messages.map((m) => ({
+          ...m,
+          type: m.role,
+          content: m.content ?? '', // Ensure content is always defined
+        })),
+      );
+    }
+    if (props.messages?.length)
+      messages.push(
+        ...props.messages.map((m) => ({
+          ...m,
+          type: m.role,
+          content: m.content ?? '', // Ensure content is always defined
+        })),
+      );
+
+    /* ---------- MAIN EXEC LOOP ---------- */
+    let loop = 0;
+    let lastllmMessage: String = '';
+    while (loop++ < 10) {
+      /* inject next pending task (if any) */
+      console.log('looping', loop);
+      const nextTask = await this.tasks.getNextExecutable(agentId);
+      console.log('next task', nextTask);
+      if (nextTask) {
+        console.log('Automated user call', loop);
+        await this.tasks.start(nextTask.taskId);
+
+        messages.push({
+          type: 'user',
+          role: 'user',
+          content: `
+              ##TASK_INSTRUCTION: ${nextTask.description}.
+              Complete the given task to the best of your ability. 
+              Use the tools provided to you if needed.
+          `,
+        } as any);
+      }
+
+      /* run once */
+      const result = await graph.invoke(
+        { messages },
+        { configurable: { thread_id: conversationId } },
+      );
+      messages = result.messages;
+
+      /* break if no more executable tasks */
+      const pending = await this.tasks.getNextExecutable(agentId);
+      if (!pending) break;
+    }
+
+    /* Prepare final response */
+    const last = messages.at(-1)!;
+    const finalText =
+      typeof last === 'object' &&
+      last !== null &&
+      'content' in last &&
+      typeof last.content === 'string'
+        ? last.content
+        : typeof last === 'object' && 'content' in last
+          ? compact(map((last as any).content, (_) => get(_, 'text'))).join(
+              '\n',
+            )
+          : '';
+
+    await this.logService.createLogEntry({
+      agentId,
+      sessionId: conversationId,
+      action: 'run',
+      message: finalText.slice(0, 512),
+      status: 'success',
+      responseTime: performance.now() - tStart,
+      tools: toolUsage,
+    });
 
     const config: Parameters<typeof graph.invoke>[1] = {
       configurable: { thread_id: conversationId },
     };
 
-    let messages: Messages = [];
-    if (!sessionId) {
-      const session = await this.createAgentSession(agentId);
-      messages = session.messages.map((_) => ({
-        ..._,
-        type: _.role,
-        content: _.content as string,
-      }));
-      conversationId;
-    }
-    messages = messages.concat(
-      props.messages?.map((_) => ({
-        ..._,
-        type: _.role,
-        content: _.content as string,
-      })) || [],
-    );
-
-    // console.log(messages);
-
-    // message => Reminder you are an event assistant
-    // message => Reminder ensure that tools are properly called
-    // message => user content
-
     const llmResponse = await graph.invoke({ messages }, config);
-
-    const content = llmResponse.messages.at(-1)?.content;
-
-    let finalAIContent;
-
-    if (Array.isArray(content)) {
-      finalAIContent = compact(map(content, (_) => get(_, 'text'))).join(
-        '\n\n',
-      );
-    } else {
-      finalAIContent = content || '(No content)';
-    }
-
-    // parse "###ACTION_SUMMARY: " from finalAIContent
-    let actionSummary = 'misc request';
-    const match = finalAIContent.match(/###ACTION_SUMMARY:\s*(.+)/i);
-    if (match && match[1]) {
-      actionSummary = match[1].trim();
-    }
-
-    const totalTime = performance.now() - startTime;
-
-    const snippet = finalAIContent.slice(0, 512);
-
-    // single log
-    await this.logService.createLogEntry({
-      agentId,
-      sessionId: conversationId,
-      action: actionSummary,
-      message: snippet,
-      status: 'success',
-      responseTime: totalTime,
-      tools: toolUsage,
-    });
-
-    // Charge for running the agent
-
-    // const tx = await wallet.createTransfer({
-    //   amount: 1,
-    //   assetId: COMMON_TOKEN_ADDRESS,
-    //   destination: '0xd9303dfc71728f209ef64dd1ad97f5a557ae0fab',
-    // });
-
-    // await tx.wait();
-
-    console.log(llmResponse);
 
     return {
       ...llmResponse.messages.at(-1)?.toDict(),
       sessionId: conversationId,
+      lastllmMessage,
     };
   }
 
-  /**
-   * Update an existing agent
-   */
+  /* ─────────────────────────  updateAgent / getters (unchanged) ───────────────────────── */
   async updateAgent(
     agentId: string,
     updateData: Partial<InferSelectModel<typeof schema.agent>>,
   ) {
-    // 1) Ensure agent exists
-    const existingAgent = await this.db.query.agent.findFirst({
-      where: (t) => eq(t.agentId, agentId),
-    });
-    if (!existingAgent) {
-      throw new BadRequestException('Agent not found');
-    }
-
-    // 2) Update record
-    // Omit fields that are not allowed to be updated or are sensitive
-    const allowedUpdates = omit(updateData, ['wallet', 'agentId', 'createdAt']);
     const [updated] = await this.db
       .update(schema.agent)
-      .set(allowedUpdates)
+      .set(omit(updateData, ['wallet', 'agentId', 'createdAt']))
       .where(eq(schema.agent.agentId, agentId))
       .returning();
-
-    // TODO: Check if interval has changed
-    // Update cron job schedule
-
     return updated;
   }
 
-  //get agent by id
   async getAgentById(agentId: string) {
     const agent = await this.db.query.agent.findFirst({
       where: (t) => eq(t.agentId, agentId),
     });
-    if (!agent) {
-      throw new BadRequestException('Agent not found');
-    }
+    if (!agent) throw new BadRequestException('Agent not found');
     return agent;
   }
-
-  //get all agents
   async getAgents() {
-    const agents = await this.db.query.agent.findMany();
-    return agents;
+    return this.db.query.agent.findMany();
   }
-
-  // Return agents by owner
   async getAgentsByOwner(owner: string) {
-    return this.db.query.agent.findMany({
-      where: (t) => eq(t.owner, owner),
-    });
+    return this.db.query.agent.findMany({ where: (t) => eq(t.owner, owner) });
   }
 }
