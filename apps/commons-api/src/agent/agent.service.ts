@@ -334,6 +334,12 @@ export class AgentService implements OnModuleInit {
   /* ─────────────────────────  CRON TRIGGER  ───────────────────────── */
   async triggerAgent(props: { agentId: string; sessionId?: string }) {
     console.log('Triggering agent', props.agentId);
+    //if autonomous mode is not enabled then do not trigger the agent
+    const agent = await this.getAgent({ agentId: props.agentId });
+    if (!agent.autonomyEnabled) {
+      console.log('Agent is not autonomous, skipping trigger');
+      return;
+    }
     //get next executable goal
     const nextGoal = await this.goals.getNextExecutableGoal(props.agentId);
     if (!nextGoal) {
@@ -521,8 +527,14 @@ export class AgentService implements OnModuleInit {
 
     /* ---------- MAIN EXEC LOOP ---------- */
     let loop = 0;
+    let max_recurssion = 10;
+    //if autonomy is enabled for the agent, then set the max recursion to 2
+    if (agent.autonomyEnabled) {
+      max_recurssion = 2;
+    }
+
     let lastllmMessage: String = '';
-    while (loop++ < 2) {
+    while (loop++ < max_recurssion) {
       /* inject next pending task (if any) */
       console.log('looping', loop);
       const nextTask = await this.tasks.getNextExecutable(
