@@ -326,7 +326,7 @@ export class AgentService implements OnModuleInit {
       ],
       tool_choice: 'auto',
       parallel_tool_calls: true,
-      model: 'gpt-4o-mini-mini',
+      model: 'gpt-4o',
     };
     return completionBody;
   }
@@ -467,7 +467,7 @@ export class AgentService implements OnModuleInit {
     const toolNode = new ToolNode(toolRunners);
 
     const llm = new ChatOpenAI({
-      model: 'gpt-4o-mini',
+      model: 'gpt-4o', //4o is better in coding tasks so far compared to 4o-mini: however 4o-mini is cheaper for testing
       temperature: 0,
       supportsStrictToolCalling: true,
       apiKey: process.env.OPENAI_API_KEY,
@@ -552,7 +552,7 @@ export class AgentService implements OnModuleInit {
           role: 'user',
           content: `
               ##TASK_INSTRUCTION: ${nextTask.description}.
-              Complete the given task to the best of your ability. 
+              Complete the given task to the best of your ability. Ideally in one shot unless otherwise specified.
               Use the tools provided to you if needed.
           `,
         } as any);
