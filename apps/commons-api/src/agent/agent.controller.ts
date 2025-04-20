@@ -41,8 +41,8 @@ export class AgentController {
   }
 
   @Post(':agentId/trigger')
-  async triggerAgent(@Param('agentId') agentId: string, sessionId?: string) {
-    this.agent.triggerAgent({ agentId, sessionId });
+  async triggerAgent(@Param('agentId') agentId: string) {
+    this.agent.triggerAgent({ agentId });
 
     return { message: 'Agent triggered' };
   }

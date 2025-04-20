@@ -23,7 +23,7 @@ export interface CommonTool {
   updateGoalProgress(props: {
     goalId: string;
     progress: number;
-    status: 'pending' | 'in_progress' | 'completed' | 'failed';
+    status: 'pending' | 'started' | 'completed' | 'failed';
   }): Promise<any>;
   recomputeGoalProgress(props: {
     goalId: string;
@@ -33,7 +33,7 @@ export interface CommonTool {
   updateTaskProgress(props: {
     taskId: string;
     progress: number;
-    status: 'pending' | 'in_progress' | 'completed' | 'failed';
+    status: 'pending' | 'started' | 'completed' | 'failed';
     resultContent: string;
     summary: string;
     context: Record<string, any>;
@@ -192,7 +192,7 @@ export class CommonToolService implements CommonTool {
   async updateGoalProgress(props: {
     goalId: string;
     progress: number;
-    status: 'pending' | 'in_progress' | 'completed' | 'failed';
+    status: 'pending' | 'started' | 'completed' | 'failed';
   }) {
     return await this.goals.updateProgress(
       props.goalId,
@@ -213,7 +213,7 @@ export class CommonToolService implements CommonTool {
   async updateTaskProgress(props: {
     taskId: string;
     progress: number;
-    status: 'pending' | 'in_progress' | 'completed' | 'failed';
+    status: 'pending' | 'started' | 'completed' | 'failed';
     resultContent: string;
     summary: string;
     context: TaskContext;

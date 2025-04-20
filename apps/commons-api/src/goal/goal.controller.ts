@@ -1,7 +1,7 @@
 import { Controller, Post, Put, Body, Get, Param } from '@nestjs/common';
 import { GoalService } from './goal.service';
 
-type Status = 'pending' | 'in_progress' | 'completed' | 'failed';
+type Status = 'pending' | 'started' | 'completed' | 'failed';
 
 @Controller({ version: '1', path: 'goals' })
 export class GoalController {
