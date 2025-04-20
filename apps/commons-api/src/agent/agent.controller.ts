@@ -85,4 +85,17 @@ export class AgentController {
     }
     return { data: updated };
   }
+
+  //get agent session full chat by sessionId
+  @Get('sessions/:sessionId/chat')
+  async getAgentSessionFullChat(
+    @Param('agentId') agentId: string,
+    @Param('sessionId') sessionId: string,
+  ) {
+    const chat = await this.agent.getAgentChatSession(sessionId);
+    if (!chat) {
+      throw new BadRequestException('Unable to get chat');
+    }
+    return { data: chat };
+  }
 }

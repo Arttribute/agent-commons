@@ -636,4 +636,11 @@ export class AgentService implements OnModuleInit {
   async getAgentsByOwner(owner: string) {
     return this.db.query.agent.findMany({ where: (t) => eq(t.owner, owner) });
   }
+
+  //get agent session full chat
+  async getAgentChatSession(sessionId: string) {
+    const session = await this.session.getSession({ id: sessionId });
+    if (!session) throw new BadRequestException('Session not found');
+    return session;
+  }
 }
