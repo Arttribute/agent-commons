@@ -43,8 +43,10 @@ export class AgentController {
   @Post(':agentId/trigger')
   async triggerAgent(@Param('agentId') agentId: string) {
     this.agent.triggerAgent({ agentId });
-
-    return { message: 'Agent triggered' };
+    return {
+      message:
+        'Agent trigger sent.Make sure you have enabled agent autonomy for the trigger to work',
+    };
   }
 
   async pauseAgent(@Param('agentId') agentId: string) {
