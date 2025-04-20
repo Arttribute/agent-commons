@@ -11,6 +11,7 @@ import { OpenAIModule } from './modules/openai';
 import { CoinbaseModule } from './modules/coinbase';
 import { EmbeddingModule } from './embedding/embedding.module';
 import { LiaisonModule } from './liaison/liaison.module';
+import { AutonomyModule } from './autonomy/autonomy.module';
 
 @Module({
   imports: [
@@ -28,6 +29,7 @@ import { LiaisonModule } from './liaison/liaison.module';
     ToolModule,
     ResourceModule,
     LiaisonModule,
+    AutonomyModule,
   ],
 
   controllers: [AppController],
