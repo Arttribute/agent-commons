@@ -27,6 +27,7 @@ export interface TaskContext {
 export interface CreateTaskDto {
   agentId: string;
   goalId: string;
+  sessionId: string;
   title: string;
   description: string;
   context: TaskContext;
@@ -50,6 +51,7 @@ export class TaskService {
       taskId,
       agentId: dto.agentId,
       goalId: dto.goalId,
+      sessionId: dto.sessionId,
       title: dto.title,
       description: dto.description,
       context: dto.context,
@@ -88,7 +90,7 @@ export class TaskService {
   }
 
   /** Next task whose dependencies are all completed */
-  async getNextExecutable(agentId: string) {
+  async getNextExecutable(agentId: string, sessionId: string) {
     console.log('getNextExecutable', agentId);
     //from the candidate tasks order by priority and filter out tasks that have dependencies
     const tasks = await this.db
@@ -117,7 +119,9 @@ export class TaskService {
       .where(
         and(
           eq(schema.task.agentId, agentId),
-          eq(schema.task.status, 'pending'),
+          not(eq(schema.task.status, 'completed')),
+          not(eq(schema.task.status, 'failed')),
+          eq(schema.task.sessionId, sessionId),
           not(
             sql`${schema.task.taskId} IN (SELECT ${schema.taskDependency.dependencyTaskId} FROM ${schema.taskDependency})`,
           ),
@@ -140,7 +144,7 @@ export class TaskService {
   async start(taskId: string) {
     await this.db
       .update(schema.task)
-      .set({ status: 'in_progress', actualStart: new Date() })
+      .set({ status: 'started', actualStart: new Date() })
       .where(eq(schema.task.taskId, taskId));
   }
 

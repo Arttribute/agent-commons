@@ -245,10 +245,10 @@ export class AgentService implements OnModuleInit {
   }
 
   /* ─────────────────────────  SESSION BOOTSTRAP  ───────────────────────── */
-  private async createAgentSession(agentId: string) {
+  private async createAgentSession(agentId: string, sessionId: string) {
     const agent = await this.getAgent({ agentId });
     const currentTime = new Date();
-
+    console.log('sessiond id from createsession', sessionId);
     const messages: ChatCompletionMessageParam[] = [
       {
         role: 'system',
@@ -262,8 +262,10 @@ export class AgentService implements OnModuleInit {
           
 
           The current date and time is ${currentTime.toISOString()}.
+           **SESSION ID**: ${sessionId}
 
           STRICTLY ABIDE BY THE FOLLOWING:
+          • If a request is simple and does not require complex plannind give an immediate response.
           • If a request is complex and requires multiple steps, call createGoal which creates a goal and then get the goal id and use createTask to create tasks for the goal with the necessary details.
           • In the process of creating a goal, think very deeply and critically about it. Break it down and detail every single paart of it. Set a SMART(Specific, Measureble, Achievable, Relevant and Time-bound) goal with a clear description. Consider all factors and create a well thought out plan of action and include it in the goal description. This should now guide the tasks to be created. Include the tasks breakdown in the goal description as well.The tasks to be created should match the tasks breakdown in the goal description. If no exact timelines are provided for the goal set the goal deadline to the current time.
           • Similarly, when creating tasks, think very deeply and critically about it. Set a SMART(Specific, Measureble, Achievable, Relevant and Time-bound) task with a clear description. Consider all factors and create a well thought out plan of action and include it in the task description. Remember some tasks may be dependent on each other. Think about what tools might be needed to accomplish the task and include them in the task description and task tools.
@@ -332,17 +334,29 @@ export class AgentService implements OnModuleInit {
   /* ─────────────────────────  CRON TRIGGER  ───────────────────────── */
   async triggerAgent(props: { agentId: string; sessionId?: string }) {
     console.log('Triggering agent', props.agentId);
-    return this.runAgent({
-      agentId: props.agentId,
-      messages: [
-        {
-          role: 'user',
-          content: `⫷⫷AUTOMATED_USER_MESSAGE⫸⫸:
-          This is an automated trigger. Your goal is to carry out tasks assigned to you.`,
-        },
-      ],
-      sessionId: props.sessionId,
-    });
+    //get next executable goal
+    const nextGoal = await this.goals.getNextExecutableGoal(props.agentId);
+    if (!nextGoal) {
+      console.log('No executable goal found, pausing agent');
+      //actually pause the agent
+      return;
+    }
+    //get session from goal
+    const goalsessionId = nextGoal.sessionId;
+    if (goalsessionId) {
+      console.log('Goal session:', goalsessionId);
+      return this.runAgent({
+        agentId: props.agentId,
+        messages: [
+          {
+            role: 'user',
+            content: `⫷⫷AUTOMATED_USER_TRIGGER⫸⫸:
+              This is an automated trigger.Do not perform any action or update any task, unless the user specifically asks you to do so.`,
+          },
+        ],
+        sessionId: goalsessionId, //This will give the agent a rough idea on which task to execute. i.e - it will execute the tasks with the same sessionId
+      });
+    }
   }
 
   /* ─────────────────────────  MAIN RUN  ───────────────────────── */
@@ -487,7 +501,7 @@ export class AgentService implements OnModuleInit {
     let messages: Messages = [];
 
     if (!sessionId) {
-      const boot = await this.createAgentSession(agentId);
+      const boot = await this.createAgentSession(agentId, conversationId);
       messages.push(
         ...boot.messages.map((m) => ({
           ...m,
@@ -508,13 +522,17 @@ export class AgentService implements OnModuleInit {
     /* ---------- MAIN EXEC LOOP ---------- */
     let loop = 0;
     let lastllmMessage: String = '';
-    while (loop++ < 10) {
+    while (loop++ < 2) {
       /* inject next pending task (if any) */
       console.log('looping', loop);
-      const nextTask = await this.tasks.getNextExecutable(agentId);
+      const nextTask = await this.tasks.getNextExecutable(
+        agentId,
+        conversationId,
+      );
       console.log('next task', nextTask);
       if (nextTask) {
         console.log('Automated user call', loop);
+
         await this.tasks.start(nextTask.taskId);
 
         messages.push({
@@ -536,7 +554,10 @@ export class AgentService implements OnModuleInit {
       messages = result.messages;
 
       /* break if no more executable tasks */
-      const pending = await this.tasks.getNextExecutable(agentId);
+      const pending = await this.tasks.getNextExecutable(
+        agentId,
+        conversationId,
+      );
       if (!pending) break;
     }
 
@@ -577,7 +598,7 @@ export class AgentService implements OnModuleInit {
     };
   }
 
-  /* ─────────────────────────  updateAgent / getters (unchanged) ───────────────────────── */
+  /* ─────────────────────────  updateAgent / getters ───────────────────────── */
   async updateAgent(
     agentId: string,
     updateData: Partial<InferSelectModel<typeof schema.agent>>,

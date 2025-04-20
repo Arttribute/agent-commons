@@ -60,7 +60,7 @@ export const goal = pgTable('goal', {
   title: text('title').notNull(),
   description: text('description'),
 
-  status: text('status').default('pending').notNull(), // pending | in_progress | paused | completed | failed
+  status: text('status').default('pending').notNull(), // pending | started | paused | completed | failed
   priority: integer('priority').default(0).notNull(),
   deadline: timestamp('deadline', { withTimezone: true }),
   progress: real('progress').default(0),
@@ -83,11 +83,12 @@ export const task = pgTable('task', {
     .primaryKey(),
   agentId: text('agent_id').notNull(),
   goalId: uuid('goal_id').notNull(),
+  sessionId: text('session_id'),
 
   title: text('title').notNull(),
   description: text('description'),
 
-  status: text('status').default('pending').notNull(), // pending | in_progress | …
+  status: text('status').default('pending').notNull(), // pending | started | …
   priority: integer('priority').default(0).notNull(),
 
   scheduledStart: timestamp('scheduled_start', { withTimezone: true }),
