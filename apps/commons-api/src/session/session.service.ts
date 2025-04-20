@@ -6,6 +6,7 @@ import {
   Inject,
   Injectable,
   InternalServerErrorException,
+  NotFoundException,
 } from '@nestjs/common';
 import { eq, InferInsertModel, InferSelectModel } from 'drizzle-orm';
 import {
@@ -46,6 +47,72 @@ export class SessionService {
       where: (t) => eq(t.sessionId, id),
     });
     return sessionEntry;
+  }
+
+  public async getSessionsByAgentId(agentId: string) {
+    const sessions = await this.db.query.session.findMany({
+      where: (t) => eq(t.agentId, agentId),
+      orderBy: (t) => t.createdAt,
+    });
+    return sessions;
+  }
+
+  public async getSessionWithContent(props: { id: string }) {
+    const { id } = props;
+
+    const sessionEntry = await this.db.query.session.findFirst({
+      where: (t) => eq(t.sessionId, id),
+    });
+
+    if (!sessionEntry) {
+      throw new NotFoundException(`Session with ID ${id} not found`);
+    }
+
+    // Return history as is, without modifying the roles
+    return {
+      ...sessionEntry,
+      history: sessionEntry.history || [],
+      metrics: sessionEntry.metrics || {},
+      model: sessionEntry.model || {},
+      query: sessionEntry.query || {},
+    };
+  }
+
+  public async getSessionWithGoalsAndTasks(props: { id: string }) {
+    const { id } = props;
+
+    const sessionEntry = await this.db.query.session.findFirst({
+      where: (t) => eq(t.sessionId, id),
+    });
+
+    if (!sessionEntry) {
+      throw new NotFoundException(`Session with ID ${id} not found`);
+    }
+
+    // Get all goals for this session
+    const goals = await this.db.query.goal.findMany({
+      where: (g) => eq(g.sessionId, id),
+      orderBy: (g) => g.createdAt,
+    });
+
+    // Get all tasks for this session
+    const tasks = await this.db.query.task.findMany({
+      where: (t) => eq(t.sessionId, id),
+      orderBy: (t) => t.createdAt,
+    });
+
+    // Return history as is, without modifying the roles
+    return {
+      ...sessionEntry,
+      history: sessionEntry.history || [],
+      metrics: sessionEntry.metrics || {},
+      model: sessionEntry.model || {},
+      query: sessionEntry.query || {},
+      goals: goals.map((goal) => ({
+        ...goal,
+        tasks: tasks.filter((task) => task.goalId === goal.goalId),
+      })),
+    };
   }
 
   public async updateSession(props: {
