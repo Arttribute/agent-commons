@@ -326,7 +326,7 @@ export class AgentService implements OnModuleInit {
       ],
       tool_choice: 'auto',
       parallel_tool_calls: true,
-      model: 'gpt-4o-mini',
+      model: 'gpt-4o-mini-mini',
     };
     return completionBody;
   }
@@ -467,7 +467,7 @@ export class AgentService implements OnModuleInit {
     const toolNode = new ToolNode(toolRunners);
 
     const llm = new ChatOpenAI({
-      model: 'gpt-4o',
+      model: 'gpt-4o-mini',
       temperature: 0,
       supportsStrictToolCalling: true,
       apiKey: process.env.OPENAI_API_KEY,
