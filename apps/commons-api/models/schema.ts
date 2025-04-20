@@ -41,7 +41,7 @@ export const agent = pgTable('agent', {
 
   /* ▼ autonomous‑mode settings ▼ */
   autonomyEnabled: pgBoolean('autonomy_enabled').default(false).notNull(),
-  autonomousIntervalSec: integer('autonomous_interval_sec').default(0), // 0 = off
+  autonomousIntervalSec: integer('autonomous_interval_sec').default(0), // 0 = off
   cronJobName: text('cron_job_name'),
 
   createdAt: timestamp('created_at', { withTimezone: true })
@@ -55,7 +55,9 @@ export const goal = pgTable('goal', {
     .default(sql`uuid_generate_v4()`)
     .primaryKey(),
   agentId: text('agent_id').notNull(),
-  sessionId: text('session_id'),
+  sessionId: uuid('session_id').references(() => session.sessionId, {
+    onDelete: 'cascade',
+  }),
 
   title: text('title').notNull(),
   description: text('description'),
@@ -83,7 +85,9 @@ export const task = pgTable('task', {
     .primaryKey(),
   agentId: text('agent_id').notNull(),
   goalId: uuid('goal_id').notNull(),
-  sessionId: text('session_id'),
+  sessionId: uuid('session_id').references(() => session.sessionId, {
+    onDelete: 'cascade',
+  }),
 
   title: text('title').notNull(),
   description: text('description'),
@@ -137,7 +141,7 @@ export const tool = pgTable('tool', {
   name: text().notNull(),
 
   /**
-   * The schema is a JSON column, and we’ll store:
+   * The schema is a JSON column, and we'll store:
    * - The "function" shape (name, description, parameters)
    * - The "apiSpec" that describes how to call the external API
    */
@@ -180,11 +184,40 @@ export const session = pgTable('session', {
   sessionId: uuid('session_id')
     .default(sql`uuid_generate_v4()`)
     .primaryKey(),
-  model: jsonb(),
-  query: jsonb(),
-  history: jsonb(),
-
+  agentId: text('agent_id').notNull(),
+  status: text('status').default('active').notNull(), // active | completed | failed | terminated
+  model: jsonb('model').$type<{
+    name: string;
+    temperature?: number;
+    maxTokens?: number;
+    topP?: number;
+    presencePenalty?: number;
+    frequencyPenalty?: number;
+  }>(),
+  query: jsonb('query').$type<{
+    text: string;
+    timestamp: string;
+    metadata?: Record<string, any>;
+  }>(),
+  history: jsonb('history').$type<
+    Array<{
+      role: string;
+      content: string;
+      timestamp: string;
+      metadata?: Record<string, any>;
+    }>
+  >(),
+  metrics: jsonb('metrics').$type<{
+    totalTokens?: number;
+    responseTime?: number;
+    toolCalls?: number;
+    errorCount?: number;
+  }>(),
+  endedAt: timestamp('ended_at', { withTimezone: true }),
   createdAt: timestamp('created_at', { withTimezone: true })
+    .default(sql`timezone('utc', now())`)
+    .notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true })
     .default(sql`timezone('utc', now())`)
     .notNull(),
 });
@@ -195,7 +228,9 @@ export const agentLog = pgTable('agent_log', {
     .default(sql`uuid_generate_v4()`)
     .primaryKey(),
   agentId: text('agent_id').notNull(),
-  sessionId: text('session_id'),
+  sessionId: uuid('session_id').references(() => session.sessionId, {
+    onDelete: 'cascade',
+  }),
   action: text('action'),
   message: text('message'),
   status: text('status'),

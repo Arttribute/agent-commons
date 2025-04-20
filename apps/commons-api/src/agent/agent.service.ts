@@ -39,7 +39,7 @@ import {
 } from 'openai/resources/chat/completions';
 import { Except } from 'type-fest';
 import typia from 'typia';
-import { v4 as uuid } from 'uuid';
+import { v4 as uuidv4 } from 'uuid';
 import {
   createPublicClient,
   createWalletClient,
@@ -91,7 +91,7 @@ export class AgentService implements OnModuleInit {
     ).setup();
   }
 
-  /* ─────────────────────────  CREATE & GET AGENT (unchanged)  ───────────────────────── */
+  /* ─────────────────────────  CREATE & GET AGENT (unchanged)  ───────────────────────── */
   async createAgent(props: {
     value: Except<InferInsertModel<typeof schema.agent>, 'wallet' | 'agentId'>;
     commonsOwned?: boolean;
@@ -244,7 +244,7 @@ export class AgentService implements OnModuleInit {
     return { balance: commonsBalance.toNumber(), txHash: tx };
   }
 
-  /* ─────────────────────────  SESSION BOOTSTRAP  ───────────────────────── */
+  /* ─────────────────────────  SESSION BOOTSTRAP  ───────────────────────── */
   private async createAgentSession(agentId: string, sessionId: string) {
     const agent = await this.getAgent({ agentId });
     const currentTime = new Date();
@@ -380,16 +380,41 @@ export class AgentService implements OnModuleInit {
     if ((await wallet.getBalance(COMMON_TOKEN_ADDRESS)).lte(0))
       throw new BadRequestException('Agent has no tokens');
 
-    /* Build tool definitions (same as in createAgentSession) */
+    // Create or get existing session
+    let currentSessionId = sessionId;
+    if (!currentSessionId) {
+      const newSession = await this.session.createSession({
+        value: {
+          sessionId: uuidv4(),
+          agentId,
+          status: 'active',
+          model: {
+            name: 'gpt-4o',
+            temperature: agent.temperature || 0.7,
+            maxTokens: agent.maxTokens || 2000,
+            topP: agent.topP || 1,
+            presencePenalty: agent.presencePenalty || 0,
+            frequencyPenalty: agent.frequencyPenalty || 0,
+          },
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        },
+      });
+      currentSessionId = newSession.sessionId;
+    }
+
+    /* Build tool definitions */
     const storedTools = await this.toolService.getAllTools();
     const dynamicDefs = storedTools.map((dbTool) => ({
       type: 'function',
       function: { ...dbTool.schema, name: dbTool.name },
       endpoint: `http://localhost:${process.env.PORT}/v1/agents/tools`,
     }));
+
     const resTools = await this.db.query.resource.findMany({
       where: (r) => inArray(r.resourceId, agent.commonTools ?? []),
     });
+
     const resourceDefs = resTools
       .filter((r) => !!r.schema)
       .map((r) => ({
@@ -400,6 +425,7 @@ export class AgentService implements OnModuleInit {
         },
         endpoint: `http://localhost:${process.env.PORT}/v1/agents/tools`,
       }));
+
     const staticDefs = map(app.functions, (_) => ({
       type: 'function',
       function: {
@@ -503,16 +529,15 @@ export class AgentService implements OnModuleInit {
       });
 
     /* conversation bootstrap */
-    const conversationId = sessionId ?? uuid();
     let messages: Messages = [];
 
     if (!sessionId) {
-      const boot = await this.createAgentSession(agentId, conversationId);
+      const boot = await this.createAgentSession(agentId, currentSessionId);
       messages.push(
         ...boot.messages.map((m) => ({
           ...m,
           type: m.role,
-          content: m.content ?? '', // Ensure content is always defined
+          content: m.content ?? '',
         })),
       );
     }
@@ -521,14 +546,13 @@ export class AgentService implements OnModuleInit {
         ...props.messages.map((m) => ({
           ...m,
           type: m.role,
-          content: m.content ?? '', // Ensure content is always defined
+          content: m.content ?? '',
         })),
       );
 
     /* ---------- MAIN EXEC LOOP ---------- */
     let loop = 0;
     let max_recurssion = 4;
-    //if autonomy is enabled for the agent, then set the max recursion to 2
     if (agent.autonomyEnabled) {
       max_recurssion = 2;
     }
@@ -539,9 +563,8 @@ export class AgentService implements OnModuleInit {
       console.log('looping', loop);
       const nextTask = await this.tasks.getNextExecutable(
         agentId,
-        conversationId,
+        currentSessionId,
       );
-      console.log('next task', nextTask);
       if (nextTask) {
         console.log('Automated user call', loop);
 
@@ -561,14 +584,14 @@ export class AgentService implements OnModuleInit {
       /* run once */
       const result = await graph.invoke(
         { messages },
-        { configurable: { thread_id: conversationId } },
+        { configurable: { thread_id: currentSessionId } },
       );
       messages = result.messages;
 
       /* break if no more executable tasks */
       const pending = await this.tasks.getNextExecutable(
         agentId,
-        conversationId,
+        currentSessionId,
       );
       if (!pending) break;
     }
@@ -587,9 +610,47 @@ export class AgentService implements OnModuleInit {
             )
           : '';
 
+    const config: Parameters<typeof graph.invoke>[1] = {
+      configurable: { thread_id: currentSessionId },
+    };
+
+    const llmResponse = await graph.invoke({ messages }, config);
+
+    // Update session using SessionService
+    //filter out messages with m.toDict().type, ='system'
+    const messageHistories = llmResponse.messages.filter(
+      (m) => m.toDict().type !== 'system',
+    );
+    await this.session.updateSession({
+      id: currentSessionId,
+      delta: {
+        status: 'completed',
+        endedAt: new Date(),
+        metrics: {
+          totalTokens: toolUsage.reduce(
+            (acc, tool) => acc + (tool.duration || 0),
+            0,
+          ),
+          toolCalls: toolUsage.length,
+          errorCount: toolUsage.filter((t) => t.status === 'error').length,
+        },
+        history: messageHistories.map((m) => ({
+          role: m.toDict().type,
+          content:
+            typeof m.content === 'string'
+              ? m.content
+              : JSON.stringify(m.content),
+          timestamp: new Date().toISOString(),
+          metadata: {},
+        })),
+
+        updatedAt: new Date(),
+      },
+    });
+
     await this.logService.createLogEntry({
       agentId,
-      sessionId: conversationId,
+      sessionId: currentSessionId,
       action: 'run',
       message: finalText.slice(0, 512),
       status: 'success',
@@ -597,16 +658,9 @@ export class AgentService implements OnModuleInit {
       tools: toolUsage,
     });
 
-    const config: Parameters<typeof graph.invoke>[1] = {
-      configurable: { thread_id: conversationId },
-    };
-
-    const llmResponse = await graph.invoke({ messages }, config);
-
     return {
       ...llmResponse.messages.at(-1)?.toDict(),
-      sessionId: conversationId,
-      lastllmMessage,
+      sessionId: currentSessionId,
     };
   }
 
