@@ -527,7 +527,7 @@ export class AgentService implements OnModuleInit {
 
     /* ---------- MAIN EXEC LOOP ---------- */
     let loop = 0;
-    let max_recurssion = 10;
+    let max_recurssion = 3;
     //if autonomy is enabled for the agent, then set the max recursion to 2
     if (agent.autonomyEnabled) {
       max_recurssion = 2;
