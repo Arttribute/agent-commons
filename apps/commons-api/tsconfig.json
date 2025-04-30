@@ -1,38 +1,22 @@
 {
   "compilerOptions": {
-    "module": "NodeNext",
-    "strict": true,
-    "strictNullChecks": true,
-    "allowJs": true,
-    "declaration": true,
-    "removeComments": true,
-    "emitDecoratorMetadata": true,
-    "moduleResolution": "NodeNext",
-    "experimentalDecorators": true,
-    "allowSyntheticDefaultImports": true,
-    "esModuleInterop": true,
-    "resolveJsonModule": true,
-    "forceConsistentCasingInFileNames": true,
-    "noFallthroughCasesInSwitch": true,
     "target": "ESNext",
-    "sourceMap": true,
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "strict": true,
+    "verbatimModuleSyntax": true,
     "skipLibCheck": true,
-    "lib": ["ESNext"],
-    "outDir": "./dist/nest",
-    "baseUrl": "./",
-    "incremental": true,
-    "paths": {
-      "~/*": ["./src/*"],
-      "#/*": ["./*"]
-    },
-    "plugins": [
-      { "transform": "typia/lib/transform" },
-      {
-        "transform": "@nestia/core/lib/transform",
-        "validate": "validate",
-        "stringify": "assert"
-      }
-    ]
+    "types": ["node"],
+    "outDir": "./dist",
+    "jsx": "react-jsx",
+    "jsxImportSource": "hono/jsx",
+    "plugins": [{ "transform": "typia/lib/transform" }]
   },
-  "exclude": ["node_modules", "dist", "models", "drizzle.config.ts"]
+  "tsc-alias": {
+    "resolveFullPaths": true
+  }
+  // "ts-node": {
+  //   "swc": true,
+  //   "require": ["tsconfig-paths/register"]
+  // }
 }
