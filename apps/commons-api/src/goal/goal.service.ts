@@ -41,7 +41,7 @@ export class GoalService {
       .returning();
     return row;
   }
-  //get next execurable goal
+  //get next executable goal
   async getNextExecutableGoal(agentId: string) {
     const row = await this.db.query.goal.findFirst({
       where: (g) =>

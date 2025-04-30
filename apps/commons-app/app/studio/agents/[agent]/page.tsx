@@ -16,7 +16,7 @@ import KnowledgeBaseInput from "@/components/agents/KnowledgeBaseInput";
 import { InteractionInterface } from "@/components/agents/InteractionInterface";
 import { Presets } from "@/components/agents/presets";
 import { FundAgent } from "@/components/agents/FundAgent";
-import RandomPixelAvatar from "@/components/account/RandomPixelAvatar";
+import RandomAvatar from "@/components/account/random-avatar";
 
 // Hooks
 import { EIP1193Provider, useWallets } from "@privy-io/react-auth";
@@ -269,7 +269,7 @@ export default function AgentStudio({
                 <Avatar className="h-12 w-12 m-2">
                   <AvatarImage src={agent.avatar} />
                   <AvatarFallback>
-                    <RandomPixelAvatar username={id} size={48} />
+                    <RandomAvatar username={id} size={48} />
                   </AvatarFallback>
                 </Avatar>
                 <div className="flex flex-col justify-center">
