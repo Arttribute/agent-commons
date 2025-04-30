@@ -111,7 +111,7 @@ interface RandomPixelAvatarProps {
  * A circular avatar that uses a multi-color gradient as the background.
  * Displays the first two letters of the username in the center.
  */
-export default function RandomPixelAvatar({
+export default function RandomAvatar({
   username,
   size = 100,
 }: RandomPixelAvatarProps) {

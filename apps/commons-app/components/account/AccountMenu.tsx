@@ -10,7 +10,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import Link from "next/link";
 import { useAuth } from "@/context/AuthContext";
-import RandomPixelAvatar from "@/components/account/RandomPixelAvatar";
+import RandomPixelAvatar from "@/components/account/random-avatar";
 
 function AccountMenu() {
   const { authState, login, logout } = useAuth();
