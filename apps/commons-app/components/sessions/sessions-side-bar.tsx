@@ -5,7 +5,7 @@ import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { PanelLeft, BookOpen, PlusCircle, Sparkles, Earth } from "lucide-react";
-import { AgentTitle } from "@/components/agents/agent-title";
+import { AgentTitleCard } from "@/components/agents/agent-title-card";
 
 function NavItem({
   icon: Icon,
@@ -61,7 +61,7 @@ export function SessionsSideBar({ username }: { username: string }) {
       <div className="px-3 pt-4 flex items-center">
         {isOpen ? (
           <div className="flex items-center justify-between w-full">
-            <AgentTitle />
+            <AgentTitleCard />
 
             <button
               onClick={() => setIsOpen(false)}

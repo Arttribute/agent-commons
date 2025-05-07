@@ -8,6 +8,8 @@ import { useChat } from "@/hooks/sessions/use-chat";
 import { useGoals } from "@/hooks/sessions/use-goals";
 import { SessionsSideBar } from "./sessions-side-bar";
 import ChatInputBox from "./chat/chat-input-box";
+import UserMessage from "./chat/user-message";
+import { User } from "lucide-react";
 
 export default function SessionInterface() {
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -33,7 +35,8 @@ export default function SessionInterface() {
       {/* Sidebar */}
       <SessionsSideBar username="user" />
       <div className="flex-1 overflow-y-auto p-4">
-        <div className="lg:px-28">
+        <div className="container mx-auto max-w-2xl">
+          <UserMessage />
           <ChatInputBox />
         </div>
         {/* Floating Execution Widget */}
