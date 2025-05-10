@@ -33,28 +33,24 @@ export default function SessionInterface() {
   };
 
   return (
-    <div className="flex  h-screen bg-gray-50 dark:bg-gray-900">
-      {/* Sidebar */}
-      <SessionsSideBar username="user" />
-      <div className="flex-1 overflow-y-auto py-4">
-        <ScrollArea className="h-[78vh] overflow-y-auto" scrollHideDelay={100}>
-          <div className="container mx-auto max-w-2xl">
-            <InitiatorMessage />
-
-            <AgentOutput />
-          </div>
-        </ScrollArea>
+    <div className="flex-1 overflow-y-auto py-4">
+      <ScrollArea className="h-[78vh] overflow-y-auto" scrollHideDelay={100}>
         <div className="container mx-auto max-w-2xl">
-          <ChatInputBox />
+          <InitiatorMessage />
+
+          <AgentOutput />
         </div>
-        {/* Floating Execution Widget */}
-        <ExecutionWidget
-          goals={goals}
-          selectedGoal={selectedGoal}
-          selectedGoalId={selectedGoalId}
-          setSelectedGoalId={setSelectedGoalId}
-        />
+      </ScrollArea>
+      <div className="container mx-auto max-w-2xl">
+        <ChatInputBox />
       </div>
+      {/* Floating Execution Widget */}
+      <ExecutionWidget
+        goals={goals}
+        selectedGoal={selectedGoal}
+        selectedGoalId={selectedGoalId}
+        setSelectedGoalId={setSelectedGoalId}
+      />
     </div>
   );
 }

@@ -26,6 +26,7 @@ import { useAuth } from "@/context/AuthContext";
 
 // Types
 import { CommonAgent } from "@/types/agent";
+import { AgentFinances } from "@/components/finances/agent-finances";
 
 /** The model config shape you already use */
 interface ModelConfig {
@@ -67,6 +68,7 @@ export default function AgentStudio({
 }) {
   // 1) Basic Setup
   const agentid = use(params);
+  console.log("Agent ID:", agentid);
   const id = agentid.agent;
 
   const [agent, setAgent] = useState<CommonAgent | null>(null);
@@ -158,11 +160,11 @@ export default function AgentStudio({
 
   // 3) Fetch the agent's Common$ balance
   useEffect(() => {
-    if (!agent?.agentId) return;
+    if (!id) return;
     balanceOf(id as `0x${string}`).then(setAgentBalance);
-  }, [agent?.agentId, balanceOf]);
+  }, [id, balanceOf]);
 
-  const agentAddress = agent?.agentId || "";
+  const agentAddress = id || "";
   const formattedAddress =
     agentAddress.length > 20
       ? `${agentAddress.slice(0, 8)}...${agentAddress.slice(-7)}`
@@ -305,6 +307,7 @@ export default function AgentStudio({
                     </span>
                   </p>
                 </div>
+
                 <div className="col-span-3">
                   <FundAgent
                     agentAddress={id as `0x${string}`}
@@ -317,81 +320,7 @@ export default function AgentStudio({
                 </div>
               </div>
 
-              {/* Persona + Instructions */}
-              <div className="m-2 border rounded-lg p-2">
-                {/* Persona */}
-                <div className="mb-2">
-                  <Label htmlFor="persona">Persona</Label>
-                  {!isEditing ? (
-                    <Textarea
-                      id="persona"
-                      value={agent.persona || ""}
-                      readOnly
-                      placeholder="N/A"
-                      className="min-h-[80px]"
-                    />
-                  ) : (
-                    <Textarea
-                      id="persona"
-                      value={editForm.persona || ""}
-                      onChange={(e) =>
-                        setEditForm((prev) => ({
-                          ...prev,
-                          persona: e.target.value,
-                        }))
-                      }
-                      className="min-h-[80px]"
-                    />
-                  )}
-                </div>
-
-                {/* Instructions */}
-                <div>
-                  <Label htmlFor="instructions">Instructions</Label>
-                  {!isEditing ? (
-                    <Textarea
-                      id="instructions"
-                      value={agent.instructions || ""}
-                      readOnly
-                      placeholder="N/A"
-                      className="h-[80px]"
-                    />
-                  ) : (
-                    <Textarea
-                      id="instructions"
-                      value={editForm.instructions || ""}
-                      onChange={(e) =>
-                        setEditForm((prev) => ({
-                          ...prev,
-                          instructions: e.target.value,
-                        }))
-                      }
-                      className="h-[80px]"
-                    />
-                  )}
-                </div>
-              </div>
-
-              {/* KnowledgeBase */}
-              <div className="border p-2 rounded-lg m-2">
-                <Label htmlFor="knowledgebase">Knowledge Base</Label>
-                {!isEditing ? (
-                  <KnowledgeBaseInput
-                    value={agent.knowledgebase || ""}
-                    onChange={() => {}}
-                  />
-                ) : (
-                  <KnowledgeBaseInput
-                    value={editForm.knowledgebase || ""}
-                    onChange={(value) =>
-                      setEditForm((prev) => ({
-                        ...prev,
-                        knowledgebase: value,
-                      }))
-                    }
-                  />
-                )}
-              </div>
+              <AgentFinances />
 
               {/* Edit / Save Buttons */}
               <div className="m-2 flex gap-2">
