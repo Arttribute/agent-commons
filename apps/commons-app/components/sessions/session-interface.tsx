@@ -8,8 +8,10 @@ import { useChat } from "@/hooks/sessions/use-chat";
 import { useGoals } from "@/hooks/sessions/use-goals";
 import { SessionsSideBar } from "./sessions-side-bar";
 import ChatInputBox from "./chat/chat-input-box";
-import UserMessage from "./chat/user-message";
-import { User } from "lucide-react";
+import InitiatorMessage from "./chat/initiator-message";
+import AgentOutput from "./chat/agent-output";
+import { Scroll } from "lucide-react";
+import { ScrollArea } from "@/components/ui/scroll-area";
 
 export default function SessionInterface() {
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -34,9 +36,15 @@ export default function SessionInterface() {
     <div className="flex  h-screen bg-gray-50 dark:bg-gray-900">
       {/* Sidebar */}
       <SessionsSideBar username="user" />
-      <div className="flex-1 overflow-y-auto p-4">
+      <div className="flex-1 overflow-y-auto py-4">
+        <ScrollArea className="h-[78vh] overflow-y-auto" scrollHideDelay={100}>
+          <div className="container mx-auto max-w-2xl">
+            <InitiatorMessage />
+
+            <AgentOutput />
+          </div>
+        </ScrollArea>
         <div className="container mx-auto max-w-2xl">
-          <UserMessage />
           <ChatInputBox />
         </div>
         {/* Floating Execution Widget */}

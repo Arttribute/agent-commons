@@ -14,7 +14,7 @@ export function AgentTitleCard() {
   return (
     <Dialog>
       <DialogTrigger asChild>
-        <div className="flex items-center gap-3 cursor-pointer">
+        <div className="flex items-center gap-2 cursor-pointer">
           <RandomAvatar size={30} username={"agent"} />
           <div className="flex flex-col ">
             <h2 className="text-sm font-semibold">Agent name</h2>

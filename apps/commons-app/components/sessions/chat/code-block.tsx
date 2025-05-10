@@ -30,7 +30,7 @@ export default function CodeBlock({
   return (
     <div
       className={cn(
-        "relative rounded-md overflow-hidden bg-zinc-950 text-zinc-100",
+        "relative rounded-xl overflow-hidden bg-zinc-950 text-zinc-100",
         className
       )}
     >
