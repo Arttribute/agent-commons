@@ -134,7 +134,7 @@ const mockAllocations = [
   },
 ];
 
-export function AgentFinances() {
+export default function AgentFinances() {
   const totalBalance = mockTransactions.reduce(
     (acc, tx) => acc + (tx.type === "incoming" ? tx.amount : -tx.amount),
     0

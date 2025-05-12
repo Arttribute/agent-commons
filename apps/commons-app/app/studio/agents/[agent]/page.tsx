@@ -2,8 +2,6 @@
 
 import { useEffect, useState, useRef } from "react";
 import { use } from "react";
-import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -12,11 +10,12 @@ import { Loader2 } from "lucide-react";
 
 // Layout & local components
 import AppBar from "@/components/layout/app-bar";
-import KnowledgeBaseInput from "@/components/agents/KnowledgeBaseInput";
 import { InteractionInterface } from "@/components/agents/InteractionInterface";
 import { Presets } from "@/components/agents/presets";
 import { FundAgent } from "@/components/agents/FundAgent";
 import RandomAvatar from "@/components/account/random-avatar";
+import AgentFinances from "@/components/finances/agent-finances";
+import AgentTools from "@/components/tools/agent-tools";
 
 // Hooks
 import { EIP1193Provider, useWallets } from "@privy-io/react-auth";
@@ -26,7 +25,6 @@ import { useAuth } from "@/context/AuthContext";
 
 // Types
 import { CommonAgent } from "@/types/agent";
-import { AgentFinances } from "@/components/finances/agent-finances";
 
 /** The model config shape you already use */
 interface ModelConfig {
@@ -319,8 +317,11 @@ export default function AgentStudio({
                   />
                 </div>
               </div>
+              <div className="flex flex-col gap-2 p-3">
+                <AgentFinances />
 
-              <AgentFinances />
+                <AgentTools />
+              </div>
 
               {/* Edit / Save Buttons */}
               <div className="m-2 flex gap-2">
