@@ -2,23 +2,16 @@
 
 import { useEffect, useState, useRef } from "react";
 import { use } from "react";
-import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { ScrollArea } from "@/components/ui/scroll-area";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Loader2 } from "lucide-react";
 
 // Layout & local components
 import AppBar from "@/components/layout/app-bar";
-import { InteractionInterface } from "@/components/agents/InteractionInterface";
-import { Presets } from "@/components/agents/presets";
-import { FundAgent } from "@/components/agents/FundAgent";
-import RandomAvatar from "@/components/account/random-avatar";
 import AgentFinances from "@/components/finances/agent-finances";
 import AgentTools from "@/components/tools/agent-tools";
 import AgentIdentity from "@/components/agents/agent-identity";
 import SessionInterface from "@/components/sessions/session-interface";
-
+import { AgentMetrics } from "@/components/agents/agent-metrics";
 // Hooks
 import { EIP1193Provider, useWallets } from "@privy-io/react-auth";
 import { useChainClients } from "@/hooks/useChainClients";
@@ -266,59 +259,6 @@ export default function AgentStudio({
             </div>
           ) : agent ? (
             <>
-              {/* Agent Header */}
-              {/* <div className="flex items-center p-3 pb-0 gap-2">
-                <Avatar className="h-12 w-12 ">
-                  <AvatarImage src={agent.avatar} />
-                  <AvatarFallback>
-                    <RandomAvatar username={id} size={52} />
-                  </AvatarFallback>
-                </Avatar>
-                <div className="flex flex-col justify-center">
-                  {!isEditing ? (
-                    <h1 className="text-xl font-bold">
-                      {agent.name || "Unnamed Agent"}
-                    </h1>
-                  ) : (
-                    <Input
-                      value={editForm.name ?? ""}
-                      onChange={(e) =>
-                        setEditForm((prev) => ({
-                          ...prev,
-                          name: e.target.value,
-                        }))
-                      }
-                      className="text-xl font-bold"
-                    />
-                  )}
-                  <div className="flex items-center gap-2 bg-gray-100 p-1 rounded-3xl w-52">
-                    <p className="text-gray-500 text-xs">{formattedAddress}</p>
-                  </div>
-                </div>
-              </div> */}
-
-              {/* Agent balance + fund button */}
-              {/* <div className="grid grid-cols-7 gap-2 m-4 border p-2 rounded-lg">
-                <div className="col-span-4 flex flex-col justify-center">
-                  <p className="font-semibold text-gray-800 ml-2">
-                    Common$:{" "}
-                    <span className="text-blue-700">
-                      {(Number(agentBalance) / 1e18).toFixed(4)}
-                    </span>
-                  </p>
-                </div>
-
-                <div className="col-span-3">
-                  <FundAgent
-                    agentAddress={id as `0x${string}`}
-                    onFundSuccess={() => {
-                      if (agent?.agentId) {
-                        balanceOf(id as `0x${string}`).then(setAgentBalance);
-                      }
-                    }}
-                  />
-                </div>
-              </div> */}
               <div className="flex flex-col gap-2 p-3">
                 <AgentIdentity />
                 <AgentFinances />
@@ -365,34 +305,13 @@ export default function AgentStudio({
           )}
         </div>
 
-        {/* Interaction Panel */}
-        {/* <div className="col-span-6 my-2">
-          {agent ? (
-            <InteractionInterface agentId={id} />
-          ) : (
-            <div className="p-12 text-center">
-              {!loadingAgent && <p>No agent loaded.</p>}
-            </div>
-          )}
-        </div> */}
-        <div className="col-span-5 ">
+        <div className="col-span-5">
           <SessionInterface height={"72vh"} />
         </div>
 
-        {/* Right Panel (Presets, etc.) */}
-        {/* <div className="col-span-3">
-          <ScrollArea className="h-[90vh] border p-3 my-2 mr-2 rounded-lg">
-            <Presets
-              agent={editForm}
-              setAgent={setEditForm}
-              customTools={customTools}
-              setCustomTools={setCustomTools}
-              modelConfig={modelConfig}
-              setModelConfig={setModelConfig}
-              userAddress={userAddress}
-            />
-          </ScrollArea>
-        </div> */}
+        <div className="col-span-2 p-2">
+          <AgentMetrics agentId={id} />
+        </div>
       </div>
     </div>
   );

@@ -34,11 +34,11 @@ export default function AgentIdentity() {
   return (
     <Dialog>
       <DialogTrigger asChild>
-        <div className="flex flex-col cursor-pointer border rounded-xl p-3 hover:border-gray-400 transition-colors relative group">
+        <div className="flex flex-col cursor-pointer border border-gray-400 rounded-xl p-3 hover:border-gray-700 transition-colors relative group">
           <div className="flex items-center gap-2 mb-2">
-            <RandomAvatar size={52} username={"agent"} />
+            <RandomAvatar size={48} username={"agent"} />
             <div className="flex flex-col">
-              <h2 className="font-semibold">Agent name</h2>
+              <h2 className="ml-1 font-semibold">Agent name</h2>
               <div className="flex items-center gap-2 bg-gray-100 p-0.5 px-2 rounded-3xl w-fit max-w-52">
                 {/* Agent wallet address with copy button */}
                 <p className="text-gray-500 text-xs truncate">{agentAddress}</p>
@@ -94,25 +94,40 @@ export default function AgentIdentity() {
               </div>
             </label>
           </div>
-          <div className="flex flex-col w-full ml-2">
-            <Label className="mb-1">Agent Name</Label>
-            <Input placeholder="Enter agent name" />
+          <div className="flex flex-col w-full">
+            <div className="flex items-center gap-2 bg-gray-100 p-0.5 px-2 rounded-3xl w-fit max-w-96">
+              {/* Agent wallet address with copy button */}
+              <p className="text-gray-500 text-xs truncate">{agentAddress}</p>
+              <button
+                onClick={copyToClipboard}
+                className={cn(
+                  " ml-1 p-1 rounded-full hover:bg-gray-200 transition-colors",
+                  copied ? "text-green-500" : "text-gray-500"
+                )}
+                aria-label={copied ? "Copied" : "Copy address"}
+              >
+                {copied ? <Check size={14} /> : <Copy size={14} />}
+              </button>
+            </div>
+            <div className="flex flex-col w-full mt-1 ">
+              <Input placeholder="Enter agent name" />
+            </div>
           </div>
         </div>
 
-        <Label className="mt-1">Persona</Label>
+        <Label className="text-sm font-semibold">Persona</Label>
         <Textarea
           className="w-full h-20 -mt-2"
           placeholder="Share something about yourself"
         />
 
-        <Label className="mt-1">Instructions</Label>
+        <Label className="text-sm font-semibold">Instructions</Label>
         <Textarea
           className="w-full h-20 -mt-2"
           placeholder="Share something about yourself"
         />
 
-        <Label className="mt-1">Description</Label>
+        <Label className="text-sm font-semibold">Description</Label>
         <Textarea
           className="w-full h-20 -mt-2"
           placeholder="Share something about yourself"
