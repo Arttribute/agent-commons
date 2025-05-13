@@ -16,6 +16,8 @@ import { FundAgent } from "@/components/agents/FundAgent";
 import RandomAvatar from "@/components/account/random-avatar";
 import AgentFinances from "@/components/finances/agent-finances";
 import AgentTools from "@/components/tools/agent-tools";
+import AgentIdentity from "@/components/agents/agent-identity";
+import SessionInterface from "@/components/sessions/session-interface";
 
 // Hooks
 import { EIP1193Provider, useWallets } from "@privy-io/react-auth";
@@ -254,9 +256,9 @@ export default function AgentStudio({
     <div>
       <AppBar />
 
-      <div className="grid grid-cols-12 gap-2 mt-16">
+      <div className="grid grid-cols-9 gap-2 mt-12 bg-gray-50">
         {/* Left Panel */}
-        <div className="col-span-3">
+        <div className="col-span-2 bg-white border-r border-gray-400 ">
           {loadingAgent ? (
             <div className="flex items-center justify-center h-32 gap-2">
               <Loader2 className="h-5 w-5 animate-spin" />
@@ -265,11 +267,11 @@ export default function AgentStudio({
           ) : agent ? (
             <>
               {/* Agent Header */}
-              <div className="flex items-center">
-                <Avatar className="h-12 w-12 m-2">
+              {/* <div className="flex items-center p-3 pb-0 gap-2">
+                <Avatar className="h-12 w-12 ">
                   <AvatarImage src={agent.avatar} />
                   <AvatarFallback>
-                    <RandomAvatar username={id} size={48} />
+                    <RandomAvatar username={id} size={52} />
                   </AvatarFallback>
                 </Avatar>
                 <div className="flex flex-col justify-center">
@@ -293,10 +295,10 @@ export default function AgentStudio({
                     <p className="text-gray-500 text-xs">{formattedAddress}</p>
                   </div>
                 </div>
-              </div>
+              </div> */}
 
               {/* Agent balance + fund button */}
-              <div className="grid grid-cols-7 gap-2 m-4 border p-2 rounded-lg">
+              {/* <div className="grid grid-cols-7 gap-2 m-4 border p-2 rounded-lg">
                 <div className="col-span-4 flex flex-col justify-center">
                   <p className="font-semibold text-gray-800 ml-2">
                     Common$:{" "}
@@ -316,8 +318,9 @@ export default function AgentStudio({
                     }}
                   />
                 </div>
-              </div>
+              </div> */}
               <div className="flex flex-col gap-2 p-3">
+                <AgentIdentity />
                 <AgentFinances />
 
                 <AgentTools />
@@ -363,7 +366,7 @@ export default function AgentStudio({
         </div>
 
         {/* Interaction Panel */}
-        <div className="col-span-6 my-2">
+        {/* <div className="col-span-6 my-2">
           {agent ? (
             <InteractionInterface agentId={id} />
           ) : (
@@ -371,10 +374,13 @@ export default function AgentStudio({
               {!loadingAgent && <p>No agent loaded.</p>}
             </div>
           )}
+        </div> */}
+        <div className="col-span-5 ">
+          <SessionInterface height={"72vh"} />
         </div>
 
         {/* Right Panel (Presets, etc.) */}
-        <div className="col-span-3">
+        {/* <div className="col-span-3">
           <ScrollArea className="h-[90vh] border p-3 my-2 mr-2 rounded-lg">
             <Presets
               agent={editForm}
@@ -386,7 +392,7 @@ export default function AgentStudio({
               userAddress={userAddress}
             />
           </ScrollArea>
-        </div>
+        </div> */}
       </div>
     </div>
   );

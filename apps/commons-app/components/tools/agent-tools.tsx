@@ -710,7 +710,7 @@ export default function AgentTools() {
   return (
     <Dialog>
       <DialogTrigger asChild>
-        <div className="cursor-pointer border rounded-lg p-2 h-24">
+        <div className="cursor-pointer border rounded-lg p-2 h-24 hover:border-gray-400 transition-colors ">
           <div className="text-sm flex items-center gap-1 mb-1 ml-1">
             <span>Agent Tools</span>
             <Badge variant="secondary">{loadedTools.length}</Badge>

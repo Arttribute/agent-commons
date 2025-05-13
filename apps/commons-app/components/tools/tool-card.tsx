@@ -188,7 +188,7 @@ export function ToolCard({
 
       {/* Tool Details Dialog */}
       <Dialog open={detailsOpen} onOpenChange={setDetailsOpen}>
-        <DialogContent className="sm:max-w-[750px] h-[85vh] flex flex-col">
+        <DialogContent className="sm:max-w-[750px] h-[80vh] flex flex-col">
           <DialogHeader className="pb-2">
             <div className="flex items-center justify-between">
               <DialogTitle className="flex items-center gap-2">
