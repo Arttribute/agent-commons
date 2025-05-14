@@ -6,6 +6,8 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { PanelLeft, BookOpen, PlusCircle, Sparkles, Earth } from "lucide-react";
 import { AgentTitleCard } from "@/components/agents/agent-title-card";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import SessionsList from "@/components/sessions/sessions-list";
 
 function NavItem({
   icon: Icon,
@@ -111,24 +113,29 @@ export function SessionsSideBar({ username }: { username: string }) {
               Recent Sessions
             </h3>
             <ul className="space-y-1">
-              {recentChats.map((item) => {
-                const { session, lastInteraction } = item;
-                return (
-                  <li key={session._id}>
-                    <Link
-                      href={`/${username}/worlds/${session._id}/edit`}
-                      className="block text-sm py-1.5 px-2 rounded-md hover:bg-accent hover:text-accent-foreground transition-colors"
-                    >
-                      {session.name}
-                      {/* Optionally format lastInteraction date, e.g.: 
-                         <span className="ml-2 text-xs text-muted-foreground">
-                           {new Date(lastInteraction).toLocaleString()}
-                         </span> 
-                      */}
-                    </Link>
-                  </li>
-                );
-              })}
+              <ScrollArea className="h-[60vh] -mr-2">
+                <SessionsList
+                  sessions={[
+                    { title: "Session 1", id: "1" },
+                    { title: "Session 2", id: "2" },
+                    { title: "Session 3", id: "3" },
+                    { title: "Session 4", id: "4" },
+                    { title: "Session 5", id: "5" },
+                    { title: "Session 6", id: "6" },
+                    { title: "Session 7", id: "7" },
+                    { title: "Session 8", id: "8" },
+                    { title: "Session 9", id: "9" },
+                    { title: "Session 10", id: "10" },
+                    { title: "Session 11", id: "11" },
+                    { title: "Session 12", id: "12" },
+                    { title: "Session 11", id: "11" },
+                    { title: "Session 12", id: "12" },
+                    { title: "Session 11", id: "11" },
+                    { title: "Session 12", id: "12" },
+                  ]}
+                  agentId={"agentId"}
+                />
+              </ScrollArea>
             </ul>
           </div>
         </div>

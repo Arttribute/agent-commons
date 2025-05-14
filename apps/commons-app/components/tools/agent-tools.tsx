@@ -1,7 +1,14 @@
 "use client";
 
 import { useState } from "react";
-import { Search, Plus, X, CheckCircle2, AlertCircle } from "lucide-react";
+import {
+  Search,
+  Plus,
+  X,
+  CheckCircle2,
+  AlertCircle,
+  WrenchIcon,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -712,7 +719,10 @@ export default function AgentTools() {
       <DialogTrigger asChild>
         <div className="cursor-pointer border border-gray-400 rounded-lg p-2 h-24 hover:border-gray-700 transition-colors ">
           <div className="text-sm flex items-center gap-1 mb-1 ml-1">
-            <span>Agent Tools</span>
+            <div className="flex items-center gap-1">
+              <WrenchIcon className="h-4 w-4 " />
+              <h3 className="text-sm font-semibold">Agent Tools</h3>
+            </div>
             <Badge variant="secondary">{loadedTools.length}</Badge>
           </div>
           <div className="">

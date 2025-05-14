@@ -24,6 +24,7 @@ import { AgentTransactions } from "@/components/finances/agent-transactions";
 import { FundAllocations } from "@/components/finances/fund-allocations";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { AddToAgentBalance } from "@/components/finances/add-to-agent-balance";
+import { BadgeCentIcon } from "lucide-react";
 
 // Mock data for demonstration
 const mockTransactions = [
@@ -147,7 +148,22 @@ export default function AgentFinances() {
   return (
     <Drawer direction="left">
       <DrawerTrigger asChild>
-        <Button variant="outline">Agent Finances</Button>
+        <div className="cursor-pointer border border-gray-400 rounded-lg p-2 hover:border-gray-700 transition-colors ">
+          <div className="flex items-center gap-1">
+            <BadgeCentIcon className="h-4 w-4 " />
+            <h3 className="text-sm font-semibold">Common$</h3>
+          </div>
+          <div className="grid grid-cols-2 gap-1 mt-1">
+            <div className="col-span-1 border border-gray-300 py-1 px-2 rounded-lg">
+              <p className="text-xl font-semibold">500</p>
+              <p className="text-xs ">Balance</p>
+            </div>
+            <div className="col-span-1 border border-gray-300 py-1 px-2 rounded-lg">
+              <p className="text-xl font-semibold">2000</p>
+              <p className="text-xs ">Used</p>
+            </div>
+          </div>
+        </div>
       </DrawerTrigger>
       <DrawerContent className=" max-w-5xl">
         <div className="p-4 pb-0 ">

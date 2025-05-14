@@ -3,7 +3,7 @@
 import { useEffect, useState, useRef } from "react";
 import { use } from "react";
 import { Button } from "@/components/ui/button";
-import { Loader2 } from "lucide-react";
+import { Loader2, Scroll } from "lucide-react";
 
 // Layout & local components
 import AppBar from "@/components/layout/app-bar";
@@ -12,11 +12,14 @@ import AgentTools from "@/components/tools/agent-tools";
 import AgentIdentity from "@/components/agents/agent-identity";
 import SessionInterface from "@/components/sessions/session-interface";
 import { AgentMetrics } from "@/components/agents/agent-metrics";
+import { AgentKnowledgebase } from "@/components/agents/agent-knowledge-base";
+import SessionsList from "@/components/sessions/sessions-list";
 // Hooks
 import { EIP1193Provider, useWallets } from "@privy-io/react-auth";
 import { useChainClients } from "@/hooks/useChainClients";
 import { useCommonToken } from "@/hooks/useCommonToken";
 import { useAuth } from "@/context/AuthContext";
+import { ScrollArea } from "@/components/ui/scroll-area";
 
 // Types
 import { CommonAgent } from "@/types/agent";
@@ -264,6 +267,7 @@ export default function AgentStudio({
                 <AgentFinances />
 
                 <AgentTools />
+                <AgentKnowledgebase />
               </div>
 
               {/* Edit / Save Buttons */}
@@ -311,6 +315,27 @@ export default function AgentStudio({
 
         <div className="col-span-2 p-2">
           <AgentMetrics agentId={id} />
+
+          <div className="m-2 bg-white border border-gray-400 rounded-xl p-2">
+            <h3 className="text-sm font-semibold">Recent Sessions</h3>
+            <ScrollArea className="h-48 p-1">
+              <SessionsList
+                sessions={[
+                  { title: "Session 1", id: "1" },
+                  { title: "Session 2", id: "2" },
+                  { title: "Session 3", id: "3" },
+                  { title: "Session 4", id: "4" },
+                  { title: "Session 5", id: "5" },
+                  { title: "Session 6", id: "6" },
+                  { title: "Session 7", id: "7" },
+                  { title: "Session 8", id: "8" },
+                  { title: "Session 9", id: "9" },
+                  { title: "Session 10", id: "10" },
+                ]}
+                agentId={id}
+              />
+            </ScrollArea>
+          </div>
         </div>
       </div>
     </div>

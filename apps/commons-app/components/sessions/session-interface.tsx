@@ -6,11 +6,9 @@ import { useRef, useEffect } from "react";
 import ExecutionWidget from "@/components/sessions/chat/execution-widget";
 import { useChat } from "@/hooks/sessions/use-chat";
 import { useGoals } from "@/hooks/sessions/use-goals";
-import { SessionsSideBar } from "./sessions-side-bar";
 import ChatInputBox from "./chat/chat-input-box";
 import InitiatorMessage from "./chat/initiator-message";
 import AgentOutput from "./chat/agent-output";
-import { Scroll } from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 
 interface SessionInterfaceProps {

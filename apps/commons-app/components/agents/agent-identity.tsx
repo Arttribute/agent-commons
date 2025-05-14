@@ -59,19 +59,19 @@ export default function AgentIdentity() {
           <div className="m-1">
             <p className="text-xs font-semibold mb-0.5">Persona</p>
             <p className="text-xs text-muted-foreground">
-              Lorem ipsum dolor sit amet, consec...
+              Lorem ipsum dolor sit amet...
             </p>
           </div>
           <div className="m-1">
             <p className="text-xs font-semibold mb-0.5">Instructions</p>
             <p className="text-xs text-muted-foreground">
-              Lorem ipsum dolor sit amet, consec...
+              Lorem ipsum dolor sit amet...
             </p>
           </div>
           <div className="m-1 ,mb-2">
             <p className="text-xs font-semibold mb-0.5">Description</p>
             <p className="text-xs text-muted-foreground">
-              Lorem ipsum dolor sit amet, consec...
+              Lorem ipsum dolor sit amet...
             </p>
           </div>
         </div>
