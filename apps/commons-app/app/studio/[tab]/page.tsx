@@ -12,6 +12,7 @@ import { cn } from "@/lib/utils";
 import { Loader2 } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { supabase } from "@/lib/supabase"; // Import Supabase client
+import { DashboardSideBar } from "@/components/layout/dashboard-side-bar";
 
 const Profile: React.FC = () => (
   <div className="p-4">
@@ -138,25 +139,14 @@ const StudioPage: NextPage = () => {
       <AppBar />
 
       {/* Main layout */}
-      <div className="mt-16">
-        <div className="grid grid-cols-12 px-4 gap-4">
-          {/* Left Sidebar */}
-          <div className="col-span-3">
-            <div className="flex bg-white p-4 rounded-lg border border-gray-400 h-[88vh] z-10">
-              <DashboardBar activeTab={activeTab} />
-            </div>
-          </div>
+      <div className="mt-12">
+        <div className="flex">
+          <DashboardSideBar username={"userAddress"} />
 
-          {/* Main Content Area */}
-          <div className="col-span-9 relative h-[88vh]">{mainContent}</div>
+          <div className="w-full relative h-[88vh]">{mainContent}</div>
         </div>
 
         {/* Pattern in the background (for styling, optional) */}
-        <DotPattern
-          className={cn(
-            "[mask-image:radial-gradient(500px_circle_at_center,white,transparent)]"
-          )}
-        />
       </div>
     </div>
   );
