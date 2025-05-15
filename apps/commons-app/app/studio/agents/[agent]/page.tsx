@@ -14,6 +14,7 @@ import SessionInterface from "@/components/sessions/session-interface";
 import { AgentMetrics } from "@/components/agents/agent-metrics";
 import { AgentKnowledgebase } from "@/components/agents/agent-knowledge-base";
 import SessionsList from "@/components/sessions/sessions-list";
+import { PreferedAgentConnections } from "@/components/connections/prefered-agent-connections";
 // Hooks
 import { EIP1193Provider, useWallets } from "@privy-io/react-auth";
 import { useChainClients } from "@/hooks/useChainClients";
@@ -268,17 +269,18 @@ export default function AgentStudio({
 
                 <AgentTools />
                 <AgentKnowledgebase />
+                <PreferedAgentConnections />
               </div>
 
               {/* Edit / Save Buttons */}
-              <div className="m-2 flex gap-2">
+              {/* <div className="m-2 flex gap-2">
                 {!isEditing ? (
                   <Button variant="outline" onClick={() => setIsEditing(true)}>
                     Edit
                   </Button>
                 ) : (
                   <>
-                    {/* Manual Save (forces immediate update, ends editing) */}
+                   
                     <Button onClick={handleSaveChanges}>Save</Button>
                     <Button
                       variant="outline"
@@ -300,7 +302,7 @@ export default function AgentStudio({
                     </Button>
                   </>
                 )}
-              </div>
+              </div> */}
             </>
           ) : (
             <div className="m-4">
