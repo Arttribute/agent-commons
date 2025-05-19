@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Maximize2,
@@ -13,24 +13,42 @@ import {
   CircleAlert,
   X,
   CircleCheckBig,
+  CheckCircle2,
+  XCircle,
+  Loader2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import RightPanel from "./right-panel";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Card } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+
+interface Task {
+  taskId: string;
+  goalId: string;
+  title: string;
+  description: string;
+  status: "pending" | "in_progress" | "completed" | "failed";
+  progress: number;
+  priority: number;
+  result?: string;
+  error?: string;
+  createdAt: string;
+  updatedAt: string;
+}
 
 interface Goal {
   goalId: string;
   title: string;
   description: string;
   status: "pending" | "in_progress" | "completed" | "failed";
-  priority: number;
-  progress: number;
+  tasks: Task[];
   createdAt: string;
   updatedAt: string;
-  completedAt?: string | null;
-  tasks: any[];
 }
 
 interface ExecutionWidgetProps {
+  sessionId: string;
   goals: Goal[];
   selectedGoal: Goal | null;
   selectedGoalId: string;
@@ -38,6 +56,7 @@ interface ExecutionWidgetProps {
 }
 
 export default function ExecutionWidget({
+  sessionId,
   goals,
   selectedGoal,
   selectedGoalId,
@@ -45,6 +64,40 @@ export default function ExecutionWidget({
 }: ExecutionWidgetProps) {
   const [isExpanded, setIsExpanded] = useState(false);
   const [isMinimized, setIsMinimized] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  // Fetch tasks for the selected goal
+  useEffect(() => {
+    if (selectedGoalId) {
+      const fetchTasks = async () => {
+        setIsLoading(true);
+        setError(null);
+        try {
+          const res = await fetch(
+            `/api/goals/goal/tasks?goalId=${selectedGoalId}`
+          );
+          if (!res.ok) {
+            throw new Error("Failed to fetch tasks");
+          }
+          const data = await res.json();
+          // Update the goals state with the fetched tasks
+          const updatedGoals = goals.map((goal) =>
+            goal.goalId === selectedGoalId
+              ? { ...goal, tasks: data.tasks }
+              : goal
+          );
+          // You'll need to implement a way to update the goals state in the parent component
+        } catch (err) {
+          console.error("Error fetching tasks:", err);
+          setError("Failed to load tasks");
+        } finally {
+          setIsLoading(false);
+        }
+      };
+      fetchTasks();
+    }
+  }, [selectedGoalId, goals]);
 
   if (goals.length === 0) return null;
 
@@ -91,6 +144,48 @@ export default function ExecutionWidget({
   const selectedGoalPendingTasks = selectedGoalTasks.filter(
     (task) => task.status === "pending"
   );
+
+  const getStatusIcon = (status: string) => {
+    switch (status) {
+      case "completed":
+        return <CheckCircle2 className="h-4 w-4 text-green-500" />;
+      case "failed":
+        return <XCircle className="h-4 w-4 text-red-500" />;
+      case "in_progress":
+        return <Loader2 className="h-4 w-4 text-blue-500 animate-spin" />;
+      default:
+        return <Clock className="h-4 w-4 text-gray-500" />;
+    }
+  };
+
+  const getStatusColor = (status: string) => {
+    switch (status) {
+      case "completed":
+        return "bg-green-100 text-green-800";
+      case "failed":
+        return "bg-red-100 text-red-800";
+      case "in_progress":
+        return "bg-blue-100 text-blue-800";
+      default:
+        return "bg-gray-100 text-gray-800";
+    }
+  };
+
+  // Calculate overall progress based on task completion
+  const calculateOverallProgress = (goals: Goal[]) => {
+    if (goals.length === 0) return 0;
+
+    const totalTasks = goals.reduce((acc, goal) => acc + goal.tasks.length, 0);
+    if (totalTasks === 0) return 0;
+
+    const completedTasks = goals.reduce(
+      (acc, goal) =>
+        acc + goal.tasks.filter((task) => task.status === "completed").length,
+      0
+    );
+
+    return Math.round((completedTasks / totalTasks) * 100);
+  };
 
   return (
     <AnimatePresence>
@@ -156,9 +251,9 @@ export default function ExecutionWidget({
               </div>
             </button>
 
-            <div className=" max-h-[200px] overflow-auto ">
-              <div className="border border-gray-400  rounded-lg m-1 ">
-                <div className="mx-2 mt-1 space-y-1 ">
+            <div className="max-h-[200px] overflow-auto">
+              <div className="border border-gray-400 rounded-lg m-1">
+                <div className="mx-2 mt-1 space-y-1">
                   <div className="flex justify-between text-xs">
                     <span className="">Tasks:</span>
                     <span className="font-medium">{totalTasks}</span>
@@ -167,27 +262,21 @@ export default function ExecutionWidget({
                   <div className="space-y-1">
                     <div className="flex justify-between text-xs">
                       <span className="">Overall Progress:</span>
-                      <span>
-                        {Math.round(
-                          goals.reduce((acc, goal) => acc + goal.progress, 0) /
-                            goals.length
-                        )}
-                        %
-                      </span>
+                      <span>{calculateOverallProgress(goals)}%</span>
                     </div>
 
                     <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-1">
                       <div
                         className="bg-zinc-700 h-1 rounded-full"
                         style={{
-                          width: `${Math.round(goals.reduce((acc, goal) => acc + goal.progress, 0) / goals.length)}%`,
+                          width: `${calculateOverallProgress(goals)}%`,
                         }}
                       ></div>
                     </div>
                   </div>
 
                   <div className="grid grid-cols-4 gap-1 text-center text-xs mt-1">
-                    <div className="flex items-center  dark:bg-green-900/20 p-1 rounded gap-1">
+                    <div className="flex items-center dark:bg-green-900/20 p-1 rounded gap-1">
                       <CircleCheckBig className="h-3 w-3 text-green-500" />
                       <span className="font-medium text-green-600 dark:text-green-400">
                         {completedTasks}
@@ -224,7 +313,7 @@ export default function ExecutionWidget({
 
                 {selectedGoalInProgressTasks.length > 0 && (
                   <div className="border-t border-gray-400 pt-2 mt-2 mb-2">
-                    <div className="mx-2 space-y-1 ">
+                    <div className="mx-2 space-y-1">
                       <div className="flex items-center gap-1 text-xs">
                         <Clock className="h-3 w-3 text-blue-500" />
                         <span className="truncate">

@@ -1,81 +1,75 @@
-import { ArrowUp, Loader2 } from "lucide-react";
-import { ScrollArea } from "@/components/ui/scroll-area";
+import { useState } from "react";
+import { motion } from "framer-motion";
+import { Bot, ChevronDown, ChevronUp } from "lucide-react";
 import { cn } from "@/lib/utils";
-import InitiatorMessage from "./initiator-message";
+import { Card } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import AgentOutput from "./agent-output";
-import { AgentTitleCard } from "@/components/agents/agent-title-card";
-import CodeBlock from "./code-block";
 
-export default function AgentToAgent() {
+interface AgentToAgentProps {
+  agentId: string;
+  message: string;
+  response?: any;
+  sessionId?: string;
+}
+
+export default function AgentToAgent({
+  agentId,
+  message,
+  response,
+  sessionId,
+}: AgentToAgentProps) {
+  const [isExpanded, setIsExpanded] = useState(false);
+
   return (
-    <div className="border p-1 rounded-2xl bg-white my-2 mx-1">
-      <AgentTitleCard />
-      <ScrollArea className="h-72 overflow-y-auto p-3" scrollHideDelay={100}>
-        <div className="flex rounded-xl justify-end">
-          <div className="rounded-xl bg-teal-100 my-3 ml-4 ">
-            <p className="text-sm">
-              Some user message content goes here.This is a placeholder for the
-              actual user message. You can replace this with the actual content
-              that you want to display. This is a simple example of how to
-              create a.
-            </p>
-          </div>
+    <Card className="p-4 mb-4">
+      <div className="flex items-center gap-2 mb-2">
+        <div className="bg-purple-100 dark:bg-purple-900 p-0.5 rounded">
+          <Bot className="h-4 w-4 text-purple-500" />
         </div>
-        <div className="flex  justify-start">
-          <div className="rounded-xl bg-50 my-2 ">
-            <p className="text-sm">
-              Some AI message content goes here. This is a placeholder for the
-              actual user message. You can replace this with the actual content
-              that you want to display. This is a simple example of how to
-              create a. Some AI message content goes here. This is a placeholder
-              for the actual user message. You can replace this with the actual
-              content that you want to display. This is a simple example of how
-              to create a. Some AI message content goes here. This is a
-              placeholder for the actual user message. You can replace this with
-              the actual content that you want to display. This is a simple
-              example of how to create a.
-            </p>
-            <div className="m-1">
-              <CodeBlock
-                code={`const agent = new Agent({
-              name: "Agent",
-              description: "This is a test agent",
-              tools: [
-                {
-                  name: "Tool",
-                  description: "This is a test tool",
-                  parameters: {
-                    type: "object",
-                    properties: {
-                      input: {
-                        type: "string",
-                        description: "The input to the tool",
-                      },
-                    },
-                    required: ["input"],
-                  },
-                },
-              ],
-              memory: {
-                type: "memory",
-                memoryKey: "memory",  
-                memoryDescription: "This is a test memory",
-                memoryParameters: {
-                  type: "object",
-                  properties: {
-                    input: {
-                      type: "string",
-                      description: "The input to the memory",
-                    },
-                  },
-                  required: ["input"],
-                },
-              },`}
+        <Badge variant="outline">Agent {agentId.slice(0, 6)}...</Badge>
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={() => setIsExpanded(!isExpanded)}
+          className="p-1 hover:bg-gray-200 dark:hover:bg-gray-800 rounded"
+        >
+          {isExpanded ? (
+            <ChevronUp className="h-4 w-4 text-gray-500" />
+          ) : (
+            <ChevronDown className="h-4 w-4 text-gray-500" />
+          )}
+        </Button>
+      </div>
+
+      <div className="space-y-2">
+        <div>
+          <h4 className="text-sm font-medium">Message:</h4>
+          <p className="text-sm text-gray-600 dark:text-gray-400">{message}</p>
+        </div>
+
+        {isExpanded && response && (
+          <motion.div
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: "auto" }}
+            exit={{ opacity: 0, height: 0 }}
+            transition={{ duration: 0.2 }}
+          >
+            <div className="mt-4">
+              <h4 className="text-sm font-medium mb-2">Response:</h4>
+              <AgentOutput
+                content={
+                  typeof response === "string"
+                    ? response
+                    : JSON.stringify(response, null, 2)
+                }
+                metadata={response.metadata}
               />
             </div>
-          </div>
-        </div>
-      </ScrollArea>
-    </div>
+          </motion.div>
+        )}
+      </div>
+    </Card>
   );
 }

@@ -17,6 +17,9 @@ export class ToolService {
   async createTool(params: {
     name: string;
     schema: ChatCompletionTool; // The JSON function spec from OpenAI
+    tags?: string[];
+    rating?: number;
+    version?: string;
   }) {
     // Validate that name doesn't exist already
     const existing = await this.db.query.tool.findFirst({
@@ -31,6 +34,9 @@ export class ToolService {
       .values({
         name: params.name,
         schema: params.schema,
+        tags: params.tags,
+        rating: params.rating,
+        version: params.version,
       })
       .returning();
 
@@ -66,7 +72,7 @@ export class ToolService {
    */
   async getToolById(
     toolId: string,
-  ): Promise<InferSelectModel<typeof schema.tool>> {
+  ): Promise<Omit<InferSelectModel<typeof schema.tool>, 'secureKeyRef'>> {
     const tool = await this.db.query.tool.findFirst({
       where: (t) => eq(t.toolId, toolId),
     });
@@ -79,11 +85,20 @@ export class ToolService {
   /**
    * Update a tool by name or by id
    */
-  async updateToolByName(params: { name: string; schema: ChatCompletionTool }) {
+  async updateToolByName(params: {
+    name: string;
+    schema?: ChatCompletionTool;
+    tags?: string[];
+    rating?: number;
+    version?: string;
+  }) {
     const [updated] = await this.db
       .update(schema.tool)
       .set({
-        schema: params.schema,
+        ...(params.schema && { schema: params.schema }),
+        ...(params.tags && { tags: params.tags }),
+        ...(params.rating && { rating: params.rating }),
+        ...(params.version && { version: params.version }),
       })
       .where(eq(schema.tool.name, params.name))
       .returning();

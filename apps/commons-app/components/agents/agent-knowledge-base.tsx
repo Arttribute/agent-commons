@@ -49,8 +49,15 @@ type KnowledgebaseEntry = {
   createdAt: Date;
 };
 
-export function AgentKnowledgebase() {
-  const [knowledgebase, setKnowledgebase] = useState<KnowledgebaseEntry[]>([]);
+export function AgentKnowledgebase({
+  knowledgebase,
+  setKnowledgebase,
+  agentId,
+}: {
+  knowledgebase: any[];
+  setKnowledgebase: (kb: any[]) => void;
+  agentId: string;
+}) {
   const [title, setTitle] = useState("");
   const [comments, setComments] = useState("");
   const [textContent, setTextContent] = useState("");
@@ -62,7 +69,7 @@ export function AgentKnowledgebase() {
   );
   const [detailsOpen, setDetailsOpen] = useState(false);
 
-  const handleAddEntry = () => {
+  const handleAddEntry = async () => {
     if (!title) return;
 
     if (activeTab === "upload") {
@@ -78,7 +85,13 @@ export function AgentKnowledgebase() {
         createdAt: new Date(),
       };
 
-      setKnowledgebase([...knowledgebase, newEntry]);
+      const updatedKB = [...knowledgebase, newEntry];
+      setKnowledgebase(updatedKB);
+      await fetch(`/api/agents/${agentId}/knowledgebase`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ knowledgebase: updatedKB }),
+      });
     } else {
       if (!textContent) return;
 
@@ -91,7 +104,13 @@ export function AgentKnowledgebase() {
         createdAt: new Date(),
       };
 
-      setKnowledgebase([...knowledgebase, newEntry]);
+      const updatedKB = [...knowledgebase, newEntry];
+      setKnowledgebase(updatedKB);
+      await fetch(`/api/agents/${agentId}/knowledgebase`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ knowledgebase: updatedKB }),
+      });
     }
 
     resetForm();
@@ -104,8 +123,14 @@ export function AgentKnowledgebase() {
     setSelectedFile(null);
   };
 
-  const removeEntry = (id: string) => {
-    setKnowledgebase(knowledgebase.filter((entry) => entry.id !== id));
+  const removeEntry = async (id: string) => {
+    const updatedKB = knowledgebase.filter((entry) => entry.id !== id);
+    setKnowledgebase(updatedKB);
+    await fetch(`/api/agents/${agentId}/knowledgebase`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ knowledgebase: updatedKB }),
+    });
     if (selectedEntry?.id === id) {
       setDetailsOpen(false);
       setSelectedEntry(null);

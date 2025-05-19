@@ -31,7 +31,13 @@ function NavItem({
   );
 }
 
-export function SessionsSideBar({ username }: { username: string }) {
+export function SessionsSideBar({
+  username,
+  sessions,
+}: {
+  username: string;
+  sessions: any;
+}) {
   const [isOpen, setIsOpen] = useState(false);
   const [recentChats, setRecentChats] = useState<any[]>([]);
 
@@ -114,27 +120,7 @@ export function SessionsSideBar({ username }: { username: string }) {
             </h3>
             <ul className="space-y-1">
               <ScrollArea className="h-[60vh] -mr-2">
-                <SessionsList
-                  sessions={[
-                    { title: "Session 1", id: "1" },
-                    { title: "Session 2", id: "2" },
-                    { title: "Session 3", id: "3" },
-                    { title: "Session 4", id: "4" },
-                    { title: "Session 5", id: "5" },
-                    { title: "Session 6", id: "6" },
-                    { title: "Session 7", id: "7" },
-                    { title: "Session 8", id: "8" },
-                    { title: "Session 9", id: "9" },
-                    { title: "Session 10", id: "10" },
-                    { title: "Session 11", id: "11" },
-                    { title: "Session 12", id: "12" },
-                    { title: "Session 11", id: "11" },
-                    { title: "Session 12", id: "12" },
-                    { title: "Session 11", id: "11" },
-                    { title: "Session 12", id: "12" },
-                  ]}
-                  agentId={"agentId"}
-                />
+                <SessionsList sessions={sessions} />
               </ScrollArea>
             </ul>
           </div>

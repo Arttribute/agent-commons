@@ -13,8 +13,18 @@ export const baseSepolia = defineChain({
     decimals: 18,
   },
   rpcUrls: {
-    default: { http: [process.env.NEXT_PUBLIC_BASE_SEPOLIA_RPC_URL || ''] },
-    public: { http: [process.env.NEXT_PUBLIC_BASE_SEPOLIA_RPC_URL || ''] },
+    default: {
+      http: [
+        process.env.BASE_SEPOLIA_RPC_URL ||
+          'https://rpc.ankr.com/base_sepolia/84eb599a88e1a1b26ce621465c7cdb1569c4c1713130315d56bf93af88260c07',
+      ],
+    },
+    public: {
+      http: [
+        process.env.BASE_SEPOLIA_RPC_URL ||
+          'https://rpc.ankr.com/base_sepolia/84eb599a88e1a1b26ce621465c7cdb1569c4c1713130315d56bf93af88260c07',
+      ],
+    },
   },
   blockExplorers: {
     default: { name: 'BaseScan', url: 'https://sepolia.basescan.org' },

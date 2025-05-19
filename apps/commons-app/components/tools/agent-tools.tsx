@@ -50,47 +50,16 @@ const CURRENT_USER = {
   email: "john.doe@example.com",
 };
 
-export default function AgentTools() {
+export default function AgentTools({
+  agentTools,
+  setAgentTools,
+  agentId,
+}: {
+  agentTools: any[];
+  setAgentTools: (tools: any[]) => void;
+  agentId: string;
+}) {
   // Mock data - in a real app, this would come from props or API
-  const [loadedTools, setLoadedTools] = useState<Tool[]>([
-    {
-      id: "tool-1",
-      name: "Web Search",
-      description: "Search the web for information",
-      isLoaded: true,
-      creator: "Search Systems Inc.",
-      createdAt: "2023-05-15",
-      version: "2.1.0",
-      category: "Information Retrieval",
-      tags: ["search", "web", "information"],
-      rating: 4.8,
-    },
-    {
-      id: "tool-2",
-      name: "Calculator",
-      description: "Perform mathematical calculations",
-      isLoaded: true,
-      creator: "Math Tools LLC",
-      createdAt: "2023-03-10",
-      version: "1.5.2",
-      category: "Mathematics",
-      tags: ["math", "calculation", "arithmetic"],
-      rating: 4.5,
-    },
-    {
-      id: "my-tool-1",
-      name: "Personal Notes",
-      description: "Access and manage your personal notes",
-      isLoaded: true,
-      creator: CURRENT_USER.name,
-      createdAt: "2023-08-15",
-      version: "1.0.0",
-      category: "Productivity",
-      tags: ["notes", "personal", "productivity"],
-      rating: 4.9,
-    },
-  ]);
-
   const [commonTools, setCommonTools] = useState<Tool[]>([
     {
       id: "tool-1",
@@ -668,50 +637,44 @@ export default function AgentTools() {
 
     // Then sort by loaded status (loaded tools first)
     return filteredTools.sort((a, b) => {
-      const aLoaded = loadedTools.some((t) => t.id === a.id) ? 1 : 0;
-      const bLoaded = loadedTools.some((t) => t.id === b.id) ? 1 : 0;
+      const aLoaded = agentTools.some((t) => t.id === a.id) ? 1 : 0;
+      const bLoaded = agentTools.some((t) => t.id === b.id) ? 1 : 0;
       return bLoaded - aLoaded; // Descending order (loaded first)
     });
   };
 
   // Toggle tool loading status
-  const toggleTool = (
+  const toggleTool = async (
     tool: Tool,
     type: "common" | "external" | "my",
     e: React.MouseEvent
   ) => {
     e.stopPropagation(); // Prevent opening the details dialog when clicking the button
 
-    const isLoaded = loadedTools.some((t) => t.id === tool.id);
+    const isLoaded = agentTools.some((t) => t.id === tool.id);
 
     if (isLoaded) {
       // Remove from loaded tools
-      setLoadedTools(loadedTools.filter((t) => t.id !== tool.id));
+      await removeTool(tool.id);
     } else {
       // Add to loaded tools
-      setLoadedTools([...loadedTools, { ...tool, isLoaded: true }]);
+      await addTool(tool.id);
     }
+  };
 
-    // Update the tool in its respective list
-    if (type === "common") {
-      setCommonTools(
-        commonTools.map((t) =>
-          t.id === tool.id ? { ...t, isLoaded: !isLoaded } : t
-        )
-      );
-    } else if (type === "external") {
-      setExternalTools(
-        externalTools.map((t) =>
-          t.id === tool.id ? { ...t, isLoaded: !isLoaded } : t
-        )
-      );
-    } else if (type === "my") {
-      setMyTools(
-        myTools.map((t) =>
-          t.id === tool.id ? { ...t, isLoaded: !isLoaded } : t
-        )
-      );
-    }
+  const addTool = async (toolId: string, usageComments?: string) => {
+    const res = await fetch(`/api/agents/${agentId}/tools`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ toolId, usageComments }),
+    });
+    const json = await res.json();
+    setAgentTools([...agentTools, json.data]);
+  };
+
+  const removeTool = async (id: string) => {
+    await fetch(`/api/agents/tools/${id}`, { method: "DELETE" });
+    setAgentTools(agentTools.filter((t) => t.id !== id));
   };
 
   return (
@@ -723,13 +686,13 @@ export default function AgentTools() {
               <WrenchIcon className="h-4 w-4 " />
               <h3 className="text-sm font-semibold">Agent Tools</h3>
             </div>
-            <Badge variant="secondary">{loadedTools.length}</Badge>
+            <Badge variant="secondary">{agentTools.length}</Badge>
           </div>
           <div className="">
-            {loadedTools.length > 0 ? (
+            {agentTools.length > 0 ? (
               <div className="grid grid-cols-3 gap-1">
-                {loadedTools
-                  .slice(0, Math.min(5, loadedTools.length))
+                {agentTools
+                  .slice(0, Math.min(5, agentTools.length))
                   .map((tool) => (
                     <div className="col-span-1">
                       <div
@@ -742,9 +705,9 @@ export default function AgentTools() {
                       </div>
                     </div>
                   ))}
-                {loadedTools.length > 5 && (
+                {agentTools.length > 5 && (
                   <Badge variant="outline" className="text-xs max-w-[50px]">
-                    +{loadedTools.length - 5}
+                    +{agentTools.length - 5}
                   </Badge>
                 )}
               </div>
@@ -763,11 +726,11 @@ export default function AgentTools() {
         {/* Loaded Tools Section */}
         <div className="mb-4">
           <h3 className="text-sm font-medium mb-2">
-            Loaded Tools ({loadedTools.length})
+            Loaded Tools ({agentTools.length})
           </h3>
-          {loadedTools.length > 0 ? (
+          {agentTools.length > 0 ? (
             <div className="flex flex-wrap gap-2">
-              {loadedTools.map((tool) => (
+              {agentTools.map((tool) => (
                 <Badge
                   key={tool.id}
                   variant="secondary"
@@ -776,7 +739,7 @@ export default function AgentTools() {
                   {tool.name}
                   <X
                     className="h-3 w-3 cursor-pointer"
-                    onClick={() => {
+                    onClick={(e) => {
                       // Determine which list the tool belongs to
                       let toolType: "common" | "external" | "my" = "common";
                       if (myTools.some((t) => t.id === tool.id)) {
@@ -830,7 +793,7 @@ export default function AgentTools() {
                       <ToolCard
                         key={tool.id}
                         tool={tool}
-                        isLoaded={loadedTools.some((t) => t.id === tool.id)}
+                        isLoaded={agentTools.some((t) => t.id === tool.id)}
                         onToggle={(e) => toggleTool(tool, "my", e)}
                         toolType="my"
                       />
@@ -858,7 +821,7 @@ export default function AgentTools() {
                       <ToolCard
                         key={tool.id}
                         tool={tool}
-                        isLoaded={loadedTools.some((t) => t.id === tool.id)}
+                        isLoaded={agentTools.some((t) => t.id === tool.id)}
                         onToggle={(e) => toggleTool(tool, "common", e)}
                         toolType="common"
                       />
@@ -882,7 +845,7 @@ export default function AgentTools() {
                 <ToolCard
                   key={tool.id}
                   tool={tool}
-                  isLoaded={loadedTools.some((t) => t.id === tool.id)}
+                  isLoaded={agentTools.some((t) => t.id === tool.id)}
                   onToggle={(e) => toggleTool(tool, "my", e)}
                   toolType="my"
                 />
@@ -907,7 +870,7 @@ export default function AgentTools() {
                       <ToolCard
                         key={tool.id}
                         tool={tool}
-                        isLoaded={loadedTools.some((t) => t.id === tool.id)}
+                        isLoaded={agentTools.some((t) => t.id === tool.id)}
                         onToggle={(e) => toggleTool(tool, "external", e)}
                         toolType="external"
                       />

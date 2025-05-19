@@ -4,6 +4,7 @@ import { useEffect, useState, useRef } from "react";
 import { use } from "react";
 import { Button } from "@/components/ui/button";
 import { Loader2, Scroll } from "lucide-react";
+import type { Dispatch, SetStateAction } from "react";
 
 // Layout & local components
 import AppBar from "@/components/layout/app-bar";
@@ -117,6 +118,17 @@ export default function AgentStudio({
   const { publicClient, walletClient } = useChainClients(provider);
   const { balanceOf } = useCommonToken(publicClient, walletClient);
 
+  // Add state for new resources
+  const [knowledgebase, setKnowledgebase] = useState<any[]>([]);
+  const [preferredConnections, setPreferredConnections] = useState<any[]>([]);
+  const [agentTools, setAgentTools] = useState<any[]>([]);
+  const [sessions, setSessions] = useState<any[]>([]);
+
+  // Chat state for studio page
+  const [studioSession, setStudioSession] = useState<any>(null);
+  const [studioMessages, setStudioMessages] = useState<any[]>([]);
+  const [chatLoading, setChatLoading] = useState(false);
+
   // 2) Fetch agent data from your backend
   useEffect(() => {
     if (id) {
@@ -160,6 +172,88 @@ export default function AgentStudio({
     if (!id) return;
     balanceOf(id as `0x${string}`).then(setAgentBalance);
   }, [id, balanceOf]);
+
+  // Fetch new resources
+  useEffect(() => {
+    if (id) {
+      fetch(`/api/agents/${id}/knowledgebase`)
+        .then((res) => res.json())
+        .then((json) => setKnowledgebase(json.data || []));
+      fetch(`/api/agents/${id}/preferred-connections`)
+        .then((res) => res.json())
+        .then((json) => setPreferredConnections(json.data || []));
+      fetch(`/api/agents/${id}/tools`)
+        .then((res) => res.json())
+        .then((json) => setAgentTools(json.data || []));
+    }
+  }, [id]);
+
+  // Fetch sessions for this agent
+  useEffect(() => {
+    if (id) {
+      fetch(`/api/sessions?agentId=${id}`)
+        .then((res) => res.json())
+        .then((json) => setSessions(json.data || []));
+    }
+  }, [id]);
+
+  // Start a new session or fetch the latest session for this agent and user
+  useEffect(() => {
+    if (!id || !userAddress) return;
+    async function fetchOrCreateSession() {
+      setChatLoading(true);
+      // Try to find an existing session for this agent and user
+      const res = await fetch(
+        `/api/sessions?agentId=${id}&initiator=${userAddress}`
+      );
+      const json = await res.json();
+      let session = json.data && json.data.length > 0 ? json.data[0] : null;
+      if (!session) {
+        // Create a new session
+        const createRes = await fetch(`/api/sessions`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ agentId: id, initiator: userAddress }),
+        });
+        const createJson = await createRes.json();
+        session = createJson.data;
+      }
+      setStudioSession(session);
+      setStudioMessages(session.history || []);
+      setChatLoading(false);
+    }
+    fetchOrCreateSession();
+  }, [id, userAddress]);
+
+  // Send a message in the studio chat
+  async function handleStudioSendMessage(input: string) {
+    if (!studioSession) return;
+    setChatLoading(true);
+    setStudioMessages((prev) => [
+      ...prev,
+      { role: "human", content: input, timestamp: new Date().toISOString() },
+    ]);
+    // Send to backend
+    const res = await fetch(`/api/agents/run`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        agentId: id,
+        sessionId: studioSession.sessionId,
+        messages: [{ role: "user", content: input }],
+      }),
+    });
+    const json = await res.json();
+    setStudioMessages((prev) => [
+      ...prev,
+      {
+        role: "ai",
+        content: json.data.content,
+        timestamp: new Date().toISOString(),
+      },
+    ]);
+    setChatLoading(false);
+  }
 
   const agentAddress = id || "";
   const formattedAddress =
@@ -264,12 +358,32 @@ export default function AgentStudio({
           ) : agent ? (
             <>
               <div className="flex flex-col gap-2 p-3">
-                <AgentIdentity />
+                <AgentIdentity
+                  agent={agent}
+                  isOwner={userAddress === agent?.owner}
+                  onUpdate={async (data) => {
+                    setEditForm((prev) => ({ ...prev, ...data }));
+                    await updateAgentInDB();
+                    fetchAgent();
+                  }}
+                />
                 <AgentFinances />
 
-                <AgentTools />
-                <AgentKnowledgebase />
-                <PreferedAgentConnections />
+                <AgentTools
+                  agentTools={agentTools}
+                  setAgentTools={setAgentTools}
+                  agentId={id}
+                />
+                <AgentKnowledgebase
+                  knowledgebase={knowledgebase}
+                  setKnowledgebase={setKnowledgebase}
+                  agentId={id}
+                />
+                <PreferedAgentConnections
+                  preferredConnections={preferredConnections}
+                  setPreferredConnections={setPreferredConnections}
+                  agentId={id}
+                />
               </div>
 
               {/* Edit / Save Buttons */}
@@ -312,7 +426,22 @@ export default function AgentStudio({
         </div>
 
         <div className="col-span-5">
-          <SessionInterface height={"72vh"} />
+          <SessionInterface
+            agent={agent}
+            session={studioSession}
+            messages={studioMessages}
+            setMessages={setStudioMessages}
+            agentId={id}
+            sessionId={studioSession?.sessionId || ""}
+            userId={userAddress}
+            height="72vh"
+            onSessionCreated={(newSessionId) => {
+              // Fetch the new session and update state
+              fetch(`/api/sessions/session/full?sessionId=${newSessionId}`)
+                .then((res) => res.json())
+                .then((json) => setStudioSession(json.data));
+            }}
+          />
         </div>
 
         <div className="col-span-2 p-2">
@@ -321,21 +450,7 @@ export default function AgentStudio({
           <div className="m-2 bg-white border border-gray-400 rounded-xl p-2">
             <h3 className="text-sm font-semibold">Recent Sessions</h3>
             <ScrollArea className="h-48 p-1">
-              <SessionsList
-                sessions={[
-                  { title: "Session 1", id: "1" },
-                  { title: "Session 2", id: "2" },
-                  { title: "Session 3", id: "3" },
-                  { title: "Session 4", id: "4" },
-                  { title: "Session 5", id: "5" },
-                  { title: "Session 6", id: "6" },
-                  { title: "Session 7", id: "7" },
-                  { title: "Session 8", id: "8" },
-                  { title: "Session 9", id: "9" },
-                  { title: "Session 10", id: "10" },
-                ]}
-                agentId={id}
-              />
+              <SessionsList sessions={sessions} agentId={id} />
             </ScrollArea>
           </div>
         </div>

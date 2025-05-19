@@ -370,9 +370,11 @@ export class AgentService implements OnModuleInit {
     agentId: string;
     messages?: ChatCompletionMessageParam[];
     sessionId?: string;
+    initiator?: string;
+    parentSessionId?: string;
   }) {
     const tStart = performance.now();
-    const { agentId, sessionId } = props;
+    const { agentId, sessionId, initiator, parentSessionId } = props;
     const agent = await this.getAgent({ agentId });
 
     /* balance check */
@@ -387,7 +389,7 @@ export class AgentService implements OnModuleInit {
         value: {
           sessionId: uuidv4(),
           agentId,
-          status: 'active',
+          initiator: initiator || undefined,
           model: {
             name: 'gpt-4o',
             temperature: agent.temperature || 0.7,
@@ -399,8 +401,14 @@ export class AgentService implements OnModuleInit {
           createdAt: new Date(),
           updatedAt: new Date(),
         },
+        parentSessionId,
       });
       currentSessionId = newSession.sessionId;
+    }
+
+    // Ensure we have a valid session ID before proceeding
+    if (!currentSessionId) {
+      throw new BadRequestException('Failed to create or get session');
     }
 
     /* Build tool definitions */
@@ -444,12 +452,13 @@ export class AgentService implements OnModuleInit {
       status: string;
       duration?: number;
     }[] = [];
+    const executedCalls: any[] = [];
 
     /* build runners */
     const makeRunner = (def: ChatCompletionTool & { endpoint: string }) =>
       tool(
         async (args, config) => {
-          const fn = config.toolCall?.function?.name ?? 'unknown';
+          const fn = config.toolCall?.name ?? 'unknown';
           const t0 = performance.now();
           const data = await got
             .then((_) =>
@@ -477,6 +486,14 @@ export class AgentService implements OnModuleInit {
             status: 'success',
             duration: performance.now() - t0,
           });
+          executedCalls.push({
+            // >>> ADDED
+            name: fn,
+            status: 'success',
+            duration: performance.now() - t0,
+            args,
+            result: data,
+          });
           return { toolData: data };
         },
         {
@@ -491,6 +508,7 @@ export class AgentService implements OnModuleInit {
       makeRunner(def as ChatCompletionTool & { endpoint: string }),
     );
     const toolNode = new ToolNode(toolRunners);
+    const collectedToolCalls = executedCalls;
 
     const llm = new ChatOpenAI({
       model: 'gpt-4o', //4o is better in coding tasks so far compared to 4o-mini: however 4o-mini is cheaper for testing
@@ -557,7 +575,6 @@ export class AgentService implements OnModuleInit {
       max_recurssion = 2;
     }
 
-    let lastllmMessage: String = '';
     while (loop++ < max_recurssion) {
       /* inject next pending task (if any) */
       console.log('looping', loop);
@@ -616,15 +633,55 @@ export class AgentService implements OnModuleInit {
 
     const llmResponse = await graph.invoke({ messages }, config);
 
+    const toolCalls = collectedToolCalls.filter(
+      (call) => call.name !== 'interactWithAgent',
+    );
+    // Extract agent-to-agent calls (when the agent calls another agent)
+    const rawAgenCalls: any = collectedToolCalls.filter(
+      (call) => call.name === 'interactWithAgent',
+    );
+
+    // Extract tool calls and agent calls from the response
+
+    // Extract agent-to-agent calls (when the agent calls another agent)
+    const agentCalls = rawAgenCalls
+      .filter((call: any) => call.name === 'interactWithAgent' && call.args)
+      .map(async (call: any) => {
+        const args = call.args;
+        // Create a new session for the agent-to-agent call
+        const childSession = await this.runAgent({
+          agentId: args.agentId,
+          messages: args.messages,
+          initiator: agentId, // The calling agent becomes the initiator
+          parentSessionId: currentSessionId, // Set the current session as parent
+        });
+        return {
+          agentId: args.agentId,
+          message: args.messages?.[0]?.content || '',
+          response: childSession,
+          sessionId: childSession.sessionId,
+        };
+      });
+
+    // Wait for all agent calls to complete
+    const resolvedAgentCalls = await Promise.all(agentCalls);
+
     // Update session using SessionService
-    //filter out messages with m.toDict().type, ='system'
     const messageHistories = llmResponse.messages.filter(
       (m) => m.toDict().type !== 'system',
     );
+
+    // Get current session to preserve metadata
+    const currentSession = await this.session.getSession({
+      id: currentSessionId,
+    });
+    if (!currentSession) {
+      throw new BadRequestException('Session not found');
+    }
+
     await this.session.updateSession({
       id: currentSessionId,
       delta: {
-        status: 'completed',
         endedAt: new Date(),
         metrics: {
           totalTokens: toolUsage.reduce(
@@ -641,13 +698,17 @@ export class AgentService implements OnModuleInit {
               ? m.content
               : JSON.stringify(m.content),
           timestamp: new Date().toISOString(),
-          metadata: {},
+          metadata: {
+            toolCalls: m.toDict().type === 'assistant' ? toolCalls : undefined,
+            agentCalls:
+              m.toDict().type === 'assistant' ? resolvedAgentCalls : undefined,
+          },
         })),
-
         updatedAt: new Date(),
       },
     });
 
+    // Create log entry for the agent run
     await this.logService.createLogEntry({
       agentId,
       sessionId: currentSessionId,
@@ -658,9 +719,53 @@ export class AgentService implements OnModuleInit {
       tools: toolUsage,
     });
 
+    // Generate title if this is the first message
+    let sessionTitle = 'New Session';
+    if (messageHistories.length === 0) {
+      const titlePrompt = `Based on the following user message, generate a concise title (max 5 words) for this conversation session. Only respond with the title, nothing else.\n\nUser message: ${finalText}`;
+
+      const titleMessages = [
+        {
+          role: 'system',
+          content:
+            'You are a helpful assistant that generates concise, descriptive titles for conversations.',
+        },
+        {
+          role: 'user',
+          content: titlePrompt,
+        },
+      ];
+
+      const titleResponse = await llmWithTools.invoke(titleMessages);
+      const titleContent = titleResponse.content;
+      sessionTitle =
+        typeof titleContent === 'string' ? titleContent.trim() : 'New Session';
+
+      // Update session with new title
+      await this.session.updateSession({
+        id: currentSessionId,
+        delta: {
+          query: {
+            text: sessionTitle,
+            timestamp: new Date().toISOString(),
+            metadata: {
+              ...(currentSession.query?.metadata || {}),
+              title: sessionTitle,
+            },
+          },
+        },
+      });
+    }
+
+    const lastMessage = llmResponse.messages.at(-1)?.toDict();
     return {
-      ...llmResponse.messages.at(-1)?.toDict(),
+      ...lastMessage,
       sessionId: currentSessionId,
+      title: sessionTitle,
+      metadata: {
+        toolCalls,
+        agentCalls: resolvedAgentCalls,
+      },
     };
   }
 
@@ -696,5 +801,66 @@ export class AgentService implements OnModuleInit {
     const session = await this.session.getSession({ id: sessionId });
     if (!session) throw new BadRequestException('Session not found');
     return session;
+  }
+
+  // ──────────────── AGENT KNOWLEDGEBASE ────────────────
+  async getAgentKnowledgebase(agentId: string) {
+    const agent = await this.getAgent({ agentId });
+    return agent.knowledgebase || [];
+  }
+  async updateAgentKnowledgebase(agentId: string, knowledgebase: any[]) {
+    const [updated] = await this.db
+      .update(schema.agent)
+      .set({ knowledgebase })
+      .where(eq(schema.agent.agentId, agentId))
+      .returning();
+    return updated.knowledgebase;
+  }
+
+  // ──────────────── AGENT PREFERRED CONNECTIONS ────────────────
+  async getPreferredConnections(agentId: string) {
+    return this.db.query.agentPreferredConnection.findMany({
+      where: (t) => eq(t.agentId, agentId),
+    });
+  }
+  async addPreferredConnection(
+    agentId: string,
+    preferredAgentId: string,
+    usageComments?: string,
+  ) {
+    const [inserted] = await this.db
+      .insert(schema.agentPreferredConnection)
+      .values({ agentId, preferredAgentId, usageComments })
+      .returning();
+    return inserted;
+  }
+  async removePreferredConnection(id: string) {
+    await this.db
+      .delete(schema.agentPreferredConnection)
+      .where(eq(schema.agentPreferredConnection.id, id));
+    return { success: true };
+  }
+
+  // ──────────────── AGENT TOOLS ────────────────
+  async getAgentTools(agentId: string) {
+    return this.db.query.agentTool.findMany({
+      where: (t) => eq(t.agentId, agentId),
+    });
+  }
+  async addAgentTool(
+    agentId: string,
+    toolId: string,
+    usageComments?: string,
+    secureKeyRef?: string,
+  ) {
+    const [inserted] = await this.db
+      .insert(schema.agentTool)
+      .values({ agentId, toolId, usageComments, secureKeyRef })
+      .returning();
+    return inserted;
+  }
+  async removeAgentTool(id: string) {
+    await this.db.delete(schema.agentTool).where(eq(schema.agentTool.id, id));
+    return { success: true };
   }
 }

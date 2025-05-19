@@ -24,4 +24,16 @@ export class SessionController {
     });
     return { data: session };
   }
+
+  @Get('list/:agentId/:initiator/')
+  async getSessionsByAgentAndInitiator(
+    @Param('agentId') agentId: string,
+    @Param('initiator') initiator: string,
+  ) {
+    const sessions = await this.sessionService.getSessionsByAgentAndInitiator({
+      agentId,
+      initiator,
+    });
+    return { data: sessions };
+  }
 }

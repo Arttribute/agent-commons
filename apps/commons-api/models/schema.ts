@@ -22,7 +22,13 @@ export const agent = pgTable('agent', {
   persona: text(),
   owner: text(),
   name: text().notNull(),
-  knowledgebase: text(),
+  knowledgebase: jsonb('knowledgebase').$type<
+    Array<{
+      title: string;
+      content: string;
+      usageComments?: string;
+    }>
+  >(),
   externalTools: jsonb('external_tools').$type<string[]>(),
   commonTools: jsonb('common_tools').$type<string[]>(),
   temperature: real('temperature'),
@@ -158,6 +164,10 @@ export const tool = pgTable('tool', {
     }
   >(),
 
+  tags: jsonb('tags').$type<string[]>(),
+  rating: jsonb('ratings'),
+  version: text('version'),
+
   createdAt: timestamp('created_at', { withTimezone: true })
     .default(sql`timezone('utc', now())`)
     .notNull(),
@@ -185,7 +195,9 @@ export const session = pgTable('session', {
     .default(sql`uuid_generate_v4()`)
     .primaryKey(),
   agentId: text('agent_id').notNull(),
-  status: text('status').default('active').notNull(), // active | completed | failed | terminated
+  //status: text('status').default('active').notNull(), // active | completed | failed | terminated
+  title: text('title'),
+  initiator: text('initiator'), // wallet address of user or agent
   model: jsonb('model').$type<{
     name: string;
     temperature?: number;
@@ -214,6 +226,19 @@ export const session = pgTable('session', {
     errorCount?: number;
   }>(),
   endedAt: timestamp('ended_at', { withTimezone: true }),
+
+  parentSessionId: text('parent_session'),
+  childSessions: jsonb('child_sessions')
+    .$type<
+      Array<{
+        sessionId: string;
+        agentId: string;
+        createdAt: string;
+        title?: string;
+        status?: string;
+      }>
+    >()
+    .default([]),
   createdAt: timestamp('created_at', { withTimezone: true })
     .default(sql`timezone('utc', now())`)
     .notNull(),
@@ -244,6 +269,33 @@ export const agentLog = pgTable('agent_log', {
     }>
   >(),
 
+  createdAt: timestamp('created_at', { withTimezone: true })
+    .default(sql`timezone('utc', now())`)
+    .notNull(),
+});
+
+// 4. New table: agent_preferred_connections
+export const agentPreferredConnection = pgTable('agent_preferred_connection', {
+  id: uuid('id')
+    .default(sql`uuid_generate_v4()`)
+    .primaryKey(),
+  agentId: text('agent_id').notNull(),
+  preferredAgentId: text('preferred_agent_id').notNull(),
+  usageComments: text('usage_comments'),
+  createdAt: timestamp('created_at', { withTimezone: true })
+    .default(sql`timezone('utc', now())`)
+    .notNull(),
+});
+
+// 5. New table: agent_tools (agent-tool mapping with details)
+export const agentTool = pgTable('agent_tool', {
+  id: uuid('id')
+    .default(sql`uuid_generate_v4()`)
+    .primaryKey(),
+  agentId: text('agent_id').notNull(),
+  toolId: text('tool_id').notNull(),
+  usageComments: text('usage_comments'),
+  secureKeyRef: text('secure_key_ref'), // reference to encrypted key store
   createdAt: timestamp('created_at', { withTimezone: true })
     .default(sql`timezone('utc', now())`)
     .notNull(),

@@ -13,7 +13,16 @@ export class ToolController {
    * Create a tool definition
    */
   @Post()
-  async createTool(@Body() body: { name: string; schema: ChatCompletionTool }) {
+  async createTool(
+    @Body()
+    body: {
+      name: string;
+      schema: ChatCompletionTool;
+      tags?: string[];
+      rating?: number;
+      version?: string;
+    },
+  ) {
     const created = await this.toolService.createTool(body);
     return { data: created };
   }
@@ -45,11 +54,17 @@ export class ToolController {
   @Put(':name')
   async updateTool(
     @Param('name') name: string,
-    @Body() body: { schema: ChatCompletionTool },
+    @Body()
+    body: {
+      schema?: ChatCompletionTool;
+      tags?: string[];
+      rating?: number;
+      version?: string;
+    },
   ) {
     const updated = await this.toolService.updateToolByName({
       name,
-      schema: body.schema,
+      ...body,
     });
     return { data: updated };
   }

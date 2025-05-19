@@ -141,9 +141,15 @@ const mockInteractions: Record<string, Interaction[]> = {
   ],
 };
 
-export function PreferedAgentConnections() {
-  const [connectedAgents, setConnectedAgents] =
-    useState<ConnectedAgent[]>(mockConnectedAgents);
+export function PreferedAgentConnections({
+  preferredConnections,
+  setPreferredConnections,
+  agentId,
+}: {
+  preferredConnections: any[];
+  setPreferredConnections: (conns: any[]) => void;
+  agentId: string;
+}) {
   const [availableAgents, setAvailableAgents] =
     useState<Agent[]>(mockAvailableAgents);
   const [interactions, setInteractions] =
@@ -166,20 +172,19 @@ export function PreferedAgentConnections() {
   );
 
   // Add a connected agent
-  const addConnectedAgent = () => {
+  const addConnectedAgent = async () => {
     if (selectedAgent && instructions) {
-      const newConnectedAgent: ConnectedAgent = {
-        ...selectedAgent,
-        instructions,
-        dateAdded: new Date().toISOString().split("T")[0],
-      };
-
-      setConnectedAgents([...connectedAgents, newConnectedAgent]);
-      setInteractions({
-        ...interactions,
-        [selectedAgent.id]: [],
+      // Call backend to add preferred connection
+      const res = await fetch(`/api/agents/${agentId}/preferred-connections`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          preferredAgentId: selectedAgent.id,
+          usageComments: instructions,
+        }),
       });
-
+      const json = await res.json();
+      setPreferredConnections([...preferredConnections, json.data]);
       // Reset states
       setSelectedAgent(null);
       setInstructions("");
@@ -189,13 +194,24 @@ export function PreferedAgentConnections() {
   };
 
   // Remove a connected agent
-  const removeConnectedAgent = (agentId: string) => {
-    setConnectedAgents(connectedAgents.filter((agent) => agent.id !== agentId));
-
-    // If we're viewing the agent that's being removed, go back to the list
-    if (selectedConnectedAgent?.id === agentId) {
-      setSelectedConnectedAgent(null);
-      setView("list");
+  const removeConnectedAgent = async (agentIdToRemove: string) => {
+    // Find the connection id
+    const conn = preferredConnections.find(
+      (c) => c.preferredAgentId === agentIdToRemove
+    );
+    if (conn) {
+      await fetch(`/api/agents/preferred-connections/${conn.id}`, {
+        method: "DELETE",
+      });
+      setPreferredConnections(
+        preferredConnections.filter(
+          (c) => c.preferredAgentId !== agentIdToRemove
+        )
+      );
+      if (selectedConnectedAgent?.id === agentIdToRemove) {
+        setSelectedConnectedAgent(null);
+        setView("list");
+      }
     }
   };
 
@@ -223,14 +239,14 @@ export function PreferedAgentConnections() {
         </Button>
       </div>
 
-      {connectedAgents.length > 0 ? (
+      {preferredConnections.length > 0 ? (
         <ScrollArea className="h-[400px] pr-4">
           <div className="space-y-3">
-            {connectedAgents.map((agent) => (
+            {preferredConnections.map((agent) => (
               <div
                 key={agent.id}
                 className="flex items-start justify-between border rounded-lg p-3 hover:bg-accent cursor-pointer transition-colors"
-                onClick={() => viewAgentDetails(agent)}
+                onClick={() => viewAgentDetails(agent as ConnectedAgent)}
               >
                 <div className="flex items-start gap-3">
                   <Avatar>
@@ -261,7 +277,7 @@ export function PreferedAgentConnections() {
                     size="icon"
                     onClick={(e) => {
                       e.stopPropagation();
-                      removeConnectedAgent(agent.id);
+                      removeConnectedAgent(agent.preferredAgentId);
                     }}
                     aria-label={`Remove ${agent.name}`}
                   >
@@ -624,11 +640,11 @@ export function PreferedAgentConnections() {
                 <UsersIcon className="h-4 w-4 " />
                 <h3 className="text-sm font-semibold">Agent Connections</h3>
               </div>
-              <Badge variant="secondary">{connectedAgents.length}</Badge>
+              <Badge variant="secondary">{preferredConnections.length}</Badge>
             </div>
-            {connectedAgents.length > 0 ? (
+            {preferredConnections.length > 0 ? (
               <div className="flex flex-wrap gap-1">
-                {connectedAgents.map((agent) => (
+                {preferredConnections.map((agent) => (
                   <Badge
                     key={agent.id}
                     variant="secondary"

@@ -45,8 +45,8 @@ export interface CommonTool {
   /**
    * Get Agents available in the network
    */
-  getAgents(): any;
-  getAgentWithId(props: { id: string }): any;
+  //getAgents(): any;
+  //getAgentWithId(props: { id: string }): any;
 
   /**
    * Get Resources available in the network

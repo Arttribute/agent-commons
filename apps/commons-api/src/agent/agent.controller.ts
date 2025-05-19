@@ -2,11 +2,13 @@ import {
   BadRequestException,
   Body,
   Controller,
+  Delete,
   Get,
   Param,
   Post,
   Put,
   Query,
+  Headers,
 } from '@nestjs/common';
 import { AgentService } from './agent.service';
 import { TypedBody } from '@nestia/core';
@@ -35,8 +37,8 @@ export class AgentController {
   }
 
   @Post('run')
-  async runAgent(@Body() body: any) {
-    const response = await this.agent.runAgent(body);
+  async runAgent(@Body() body: any, @Headers('x-initiator') initiator: string) {
+    const response = await this.agent.runAgent({ ...body, initiator });
     return { data: response };
   }
 
@@ -97,5 +99,74 @@ export class AgentController {
       throw new BadRequestException('Unable to get chat');
     }
     return { data: chat };
+  }
+
+  // ──────────────── AGENT KNOWLEDGEBASE ────────────────
+  @Get(':agentId/knowledgebase')
+  async getAgentKnowledgebase(@Param('agentId') agentId: string) {
+    const kb = await this.agent.getAgentKnowledgebase(agentId);
+    return { data: kb };
+  }
+  @Put(':agentId/knowledgebase')
+  async updateAgentKnowledgebase(
+    @Param('agentId') agentId: string,
+    @Body() body: { knowledgebase: any[] },
+  ) {
+    const kb = await this.agent.updateAgentKnowledgebase(
+      agentId,
+      body.knowledgebase,
+    );
+    return { data: kb };
+  }
+
+  // ──────────────── AGENT PREFERRED CONNECTIONS ────────────────
+  @Get(':agentId/preferred-connections')
+  async getPreferredConnections(@Param('agentId') agentId: string) {
+    const connections = await this.agent.getPreferredConnections(agentId);
+    return { data: connections };
+  }
+  @Post(':agentId/preferred-connections')
+  async addPreferredConnection(
+    @Param('agentId') agentId: string,
+    @Body() body: { preferredAgentId: string; usageComments?: string },
+  ) {
+    const conn = await this.agent.addPreferredConnection(
+      agentId,
+      body.preferredAgentId,
+      body.usageComments,
+    );
+    return { data: conn };
+  }
+  @Delete('preferred-connections/:id')
+  async removePreferredConnection(@Param('id') id: string) {
+    await this.agent.removePreferredConnection(id);
+    return { success: true };
+  }
+
+  // ──────────────── AGENT TOOLS ────────────────
+  @Get(':agentId/tools')
+  async getAgentTools(@Param('agentId') agentId: string) {
+    const tools = await this.agent.getAgentTools(agentId);
+    // Do not expose secureKeyRef
+    return { data: tools.map(({ secureKeyRef, ...rest }) => rest) };
+  }
+  @Post(':agentId/tools')
+  async addAgentTool(
+    @Param('agentId') agentId: string,
+    @Body() body: { toolId: string; usageComments?: string },
+  ) {
+    const tool = await this.agent.addAgentTool(
+      agentId,
+      body.toolId,
+      body.usageComments,
+    );
+    // Do not expose secureKeyRef
+    const { secureKeyRef, ...rest } = tool;
+    return { data: rest };
+  }
+  @Delete('tools/:id')
+  async removeAgentTool(@Param('id') id: string) {
+    await this.agent.removeAgentTool(id);
+    return { success: true };
   }
 }
