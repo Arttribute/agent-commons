@@ -1,32 +1,17 @@
 "use client";
 
-import { useState } from "react";
-import { motion } from "framer-motion";
-import { Bot, User } from "lucide-react";
-import { cn } from "@/lib/utils";
-import { ScrollArea } from "@/components/ui/scroll-area";
+import type React from "react";
+
+import { useEffect, useRef, useState } from "react";
+import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
+import { atomDark } from "react-syntax-highlighter/dist/esm/styles/prism";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
-import { vscDarkPlus } from "react-syntax-highlighter/dist/esm/styles/prism";
+import rehypeRaw from "rehype-raw";
+import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Badge } from "@/components/ui/badge";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
-import {
-  ChevronDown,
-  ChevronUp,
-  Code,
-  MessageSquare,
-  Terminal,
-} from "lucide-react";
-import AgentToAgent from "./agent-to-agent";
+import { Copy, Check } from "lucide-react";
+import { Bot } from "lucide-react";
 
 interface ToolCall {
   name: string;
@@ -57,35 +42,13 @@ interface CodeProps {
   children?: React.ReactNode;
 }
 
-const CodeComponent: React.FC<CodeProps> = ({
-  node,
-  inline,
-  className,
-  children,
-  ...props
-}) => {
-  const match = /language-(\w+)/.exec(className || "");
-  return !inline && match ? (
-    <SyntaxHighlighter
-      style={vscDarkPlus}
-      language={match[1]}
-      PreTag="div"
-      {...props}
-    >
-      {String(children).replace(/\n$/, "")}
-    </SyntaxHighlighter>
-  ) : (
-    <code className={className} {...props}>
-      {children}
-    </code>
-  );
-};
-
 export default function AgentOutput({
   content,
   metadata,
   className,
 }: AgentOutputProps) {
+  const codeExecutorRef = useRef<HTMLDivElement>(null);
+
   const [isExpanded, setIsExpanded] = useState(false);
   const [activeTab, setActiveTab] = useState("message");
 
@@ -96,183 +59,203 @@ export default function AgentOutput({
   const hasAgentCalls =
     metadata && metadata?.agentCalls && metadata.agentCalls.length > 0;
 
-  // If there are no special features, just render the basic message
-  if (!hasCodeBlocks && !hasToolCalls && !hasAgentCalls) {
+  useEffect(() => {
+    // Initialize code executor if it exists
+    if (codeExecutorRef.current) {
+      // This would be where we'd initialize a code execution environment
+      // For now, this is just a placeholder
+    }
+  }, []);
+
+  if (!content) {
     return (
-      <div className="flex items-start gap-2">
-        <div className="bg-blue-100 dark:bg-blue-900 p-1 rounded">
-          <Bot className="h-4 w-4 text-blue-500" />
-        </div>
-        <div className="rounded-lg p-3 max-w-[80%] bg-blue-100 dark:bg-blue-900">
-          <p className="text-sm whitespace-pre-wrap">{content}</p>
-        </div>
-      </div>
+      <div
+        className={cn(
+          "post-content prose prose-sm md:prose-base lg:prose-lg dark:prose-invert",
+          className
+        )}
+      ></div>
     );
   }
 
   return (
-    <div className="flex items-start gap-2">
-      <div className="bg-blue-100 dark:bg-blue-900 p-1 rounded">
-        <Bot className="h-4 w-4 text-blue-500" />
+    <div className={cn("prose max-w-none", className)}>
+      <Bot className="h-4 w-4 text-indigo-500 inline mr-1 -mb-4" />
+
+      <ReactMarkdown
+        remarkPlugins={[remarkGfm]}
+        rehypePlugins={[rehypeRaw]}
+        components={{
+          h1: ({ node, ...props }) => (
+            <h1
+              className="text-2xl font-bold mt-4 mb-2 pb-1 border-b"
+              {...props}
+            />
+          ),
+          h2: ({ node, ...props }) => (
+            <h2 className="text-xl font-bold mt-3 mb-2" {...props} />
+          ),
+          h3: ({ node, ...props }) => (
+            <h3 className="text-lg font-bold mt-2 mb-1" {...props} />
+          ),
+          h4: ({ node, ...props }) => (
+            <h4 className=" font-bold mt-2 mb-1" {...props} />
+          ),
+          p: ({ node, ...props }) => (
+            <p className="text-sm my-2 leading-relaxed" {...props} />
+          ),
+          ul: ({ node, ...props }) => (
+            <ul className="text-sm my-2 ml-3 list-disc" {...props} />
+          ),
+          ol: ({ node, ...props }) => (
+            <ol className="text-sm my-2 ml-3 list-decimal" {...props} />
+          ),
+          li: ({ node, ...props }) => (
+            <li className="text-sm my-1" {...props} />
+          ),
+          blockquote: ({ node, ...props }) => (
+            <blockquote
+              className="text-sm border-l-4 border-muted pl-4 italic my-4"
+              {...props}
+            />
+          ),
+          code({
+            inline,
+            className,
+            children,
+            ...props
+          }: {
+            inline?: boolean;
+            className?: string;
+            children?: React.ReactNode;
+          }) {
+            const match = /language-(\w+)/.exec(className || "");
+            const language = match ? match[1] : "";
+            const isExecutable =
+              language === "js" ||
+              language === "javascript" ||
+              language === "typescript";
+
+            return !inline && match ? (
+              <CodeBlock
+                language={language}
+                code={String(children).replace(/\n$/, "")}
+              >
+                {isExecutable && (
+                  <div
+                    ref={codeExecutorRef}
+                    className="mt-2 p-4 bg-muted rounded-md font-mono text-sm"
+                    data-code-output="true"
+                  >
+                    <div className="text-muted-foreground">
+                      Output will appear here when you run the code
+                    </div>
+                  </div>
+                )}
+              </CodeBlock>
+            ) : (
+              <code className="rounded text-sm font-mono " {...props}>
+                {children}
+              </code>
+            );
+          },
+          img({ node, ...props }) {
+            return (
+              <img
+                className="rounded-md my-6 max-w-full h-auto"
+                {...props}
+                loading="lazy"
+              />
+            );
+          },
+          a({ node, ...props }) {
+            return (
+              <a
+                className="text-primary underline underline-offset-4 hover:text-primary/80 transition-colors"
+                target="_blank"
+                rel="noopener noreferrer"
+                {...props}
+              />
+            );
+          },
+          table({ node, ...props }) {
+            return (
+              <div className="my-6 overflow-x-auto">
+                <table className="border-collapse w-full" {...props} />
+              </div>
+            );
+          },
+          th({ node, ...props }) {
+            return (
+              <th
+                className="border border-border px-4 py-2 bg-muted font-bold text-left"
+                {...props}
+              />
+            );
+          },
+          td({ node, ...props }) {
+            return <td className="border border-border px-4 py-2" {...props} />;
+          },
+        }}
+      >
+        {content}
+      </ReactMarkdown>
+    </div>
+  );
+}
+
+interface CodeBlockProps {
+  language: string;
+  code: string;
+  children?: React.ReactNode;
+}
+
+function CodeBlock({ language, code, children }: CodeBlockProps) {
+  const [copied, setCopied] = useState(false);
+
+  const copyToClipboard = async () => {
+    try {
+      await navigator.clipboard.writeText(code);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch (err) {
+      console.error("Failed to copy code:", err);
+    }
+  };
+
+  return (
+    <div className="my-4 rounded-md overflow-hidden">
+      <div className="flex items-center justify-between bg-muted text-gray-700 px-4 py-2 text-xs font-mono">
+        <span>{language}</span>
+        <Button
+          variant="ghost"
+          size="sm"
+          className="h-6 px-2 text-xs"
+          onClick={copyToClipboard}
+        >
+          {copied ? (
+            <>
+              <Check className="h-3 w-3 mr-1" />
+              Copied
+            </>
+          ) : (
+            <>
+              <Copy className="h-3 w-3 mr-1" />
+              Copy
+            </>
+          )}
+        </Button>
       </div>
-      <Card className="w-[80%] overflow-hidden">
-        <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-          <div className="flex items-center justify-between p-2 border-b">
-            <TabsList>
-              <TabsTrigger value="message" className="flex items-center gap-1">
-                <MessageSquare className="h-4 w-4" />
-                Message
-              </TabsTrigger>
-              {hasCodeBlocks && (
-                <TabsTrigger value="code" className="flex items-center gap-1">
-                  <Code className="h-4 w-4" />
-                  Code
-                </TabsTrigger>
-              )}
-              {hasToolCalls && (
-                <TabsTrigger value="tools" className="flex items-center gap-1">
-                  <Terminal className="h-4 w-4" />
-                  Tools
-                  <Badge variant="secondary" className="ml-1">
-                    {metadata?.toolCalls?.length || 0}
-                  </Badge>
-                </TabsTrigger>
-              )}
-              {hasAgentCalls && (
-                <TabsTrigger value="agents" className="flex items-center gap-1">
-                  <Bot className="h-4 w-4" />
-                  Agents
-                  <Badge variant="secondary" className="ml-1">
-                    {metadata?.agentCalls?.length || 0}
-                  </Badge>
-                </TabsTrigger>
-              )}
-            </TabsList>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => setIsExpanded(!isExpanded)}
-              className="h-8 w-8 p-0"
-            >
-              {isExpanded ? (
-                <ChevronUp className="h-4 w-4" />
-              ) : (
-                <ChevronDown className="h-4 w-4" />
-              )}
-            </Button>
-          </div>
-
-          <TabsContent value="message" className="p-4">
-            <p className="text-sm whitespace-pre-wrap">{content}</p>
-          </TabsContent>
-
-          {hasCodeBlocks && (
-            <TabsContent value="code" className="p-0">
-              <ScrollArea className="h-[300px]">
-                {content.split("```").map((part, index) => {
-                  if (index % 2 === 0) {
-                    return (
-                      <p key={index} className="p-4 text-sm">
-                        {part}
-                      </p>
-                    );
-                  }
-                  const [language, ...codeParts] = part.split("\n");
-                  const code = codeParts.join("\n").trim();
-                  return (
-                    <div key={index} className="relative">
-                      <div className="absolute right-2 top-2">
-                        <TooltipProvider>
-                          <Tooltip>
-                            <TooltipTrigger asChild>
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                className="h-8 w-8 p-0"
-                                onClick={() => {
-                                  navigator.clipboard.writeText(code);
-                                }}
-                              >
-                                <Code className="h-4 w-4" />
-                              </Button>
-                            </TooltipTrigger>
-                            <TooltipContent>
-                              <p>Copy code</p>
-                            </TooltipContent>
-                          </Tooltip>
-                        </TooltipProvider>
-                      </div>
-                      <SyntaxHighlighter
-                        language={language || "typescript"}
-                        style={vscDarkPlus}
-                        customStyle={{
-                          margin: 0,
-                          borderRadius: 0,
-                          padding: "1rem",
-                        }}
-                      >
-                        {code}
-                      </SyntaxHighlighter>
-                    </div>
-                  );
-                })}
-              </ScrollArea>
-            </TabsContent>
-          )}
-
-          {hasToolCalls && metadata?.toolCalls && (
-            <TabsContent value="tools" className="p-0">
-              <ScrollArea className="h-[300px]">
-                {metadata.toolCalls.map((tool, index) => (
-                  <div key={index} className="p-4 border-b last:border-0">
-                    <div className="flex items-center gap-2 mb-2">
-                      <Terminal className="h-4 w-4 text-blue-500" />
-                      <h4 className="font-medium">{tool.name}</h4>
-                    </div>
-                    <div className="space-y-2">
-                      <div>
-                        <p className="text-sm text-gray-500 dark:text-gray-400">
-                          Arguments:
-                        </p>
-                        <pre className="text-sm bg-gray-100 dark:bg-gray-800 p-2 rounded">
-                          {JSON.stringify(tool.args, null, 2)}
-                        </pre>
-                      </div>
-                      {tool.result && (
-                        <div>
-                          <p className="text-sm text-gray-500 dark:text-gray-400">
-                            Result:
-                          </p>
-                          <pre className="text-sm bg-gray-100 dark:bg-gray-800 p-2 rounded">
-                            {JSON.stringify(tool.result, null, 2)}
-                          </pre>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                ))}
-              </ScrollArea>
-            </TabsContent>
-          )}
-
-          {hasAgentCalls && metadata?.agentCalls && (
-            <TabsContent value="agents" className="p-0">
-              <ScrollArea className="h-[300px]">
-                {metadata.agentCalls.map((call, index) => (
-                  <div key={index} className="p-4 border-b last:border-0">
-                    <AgentToAgent
-                      agentId={call.agentId}
-                      message={call.message}
-                      response={call.response}
-                      sessionId={call.sessionId}
-                    />
-                  </div>
-                ))}
-              </ScrollArea>
-            </TabsContent>
-          )}
-        </Tabs>
-      </Card>
+      <SyntaxHighlighter
+        style={atomDark}
+        language={language}
+        PreTag="div"
+        className="rounded-b-md"
+        showLineNumbers
+      >
+        {code}
+      </SyntaxHighlighter>
+      {children}
     </div>
   );
 }

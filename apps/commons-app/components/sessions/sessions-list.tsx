@@ -19,7 +19,9 @@ export default function SessionsList({ sessions }: SessionsListProps) {
             key={session._id}
             className="p-2  text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-md gap-1"
           >
-            <p className="text-sm ">{session.title || "New session"}</p>
+            <p className="text-sm truncate w-48">
+              {session.title || "New session"}
+            </p>
           </div>
         </Link>
       ))}

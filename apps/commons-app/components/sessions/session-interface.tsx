@@ -3,7 +3,8 @@
 import type React from "react";
 import type { Dispatch, SetStateAction } from "react";
 
-import { useRef, useEffect, useState } from "react";
+import { useRef, useEffect, useState, useMemo } from "react";
+import { ChevronDown } from "lucide-react";
 import ExecutionWidget from "@/components/sessions/chat/execution-widget";
 import { useChat } from "@/hooks/sessions/use-chat";
 import { useGoals } from "@/hooks/sessions/use-goals";
@@ -46,6 +47,48 @@ interface SessionInterfaceProps {
   onSessionCreated?: (sessionId: string) => void;
 }
 
+/**
+ * Collapsible card that summarises a group of tool‑call messages. Clicking the
+ * header toggles expansion so users can inspect individual tool‑calls.
+ */
+function ExpandableToolCard({ tools }: { tools: Message[] }) {
+  const [open, setOpen] = useState(false);
+
+  return (
+    <Card className="my-2">
+      <div
+        role="button"
+        tabIndex={0}
+        onClick={() => setOpen(!open)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") setOpen(!open);
+        }}
+        className="flex items-center justify-between p-4 cursor-pointer select-none"
+      >
+        <div className="text-sm text-muted-foreground font-medium">
+          {tools.length} tool call{tools.length > 1 ? "s" : ""}
+        </div>
+        <ChevronDown
+          className={`h-4 w-4 transition-transform ${open ? "rotate-180" : ""}`}
+        />
+      </div>
+
+      {open && (
+        <div className="border-t px-4 py-2 space-y-3">
+          {tools.map((tool, idx) => (
+            <pre
+              key={idx}
+              className="whitespace-pre-wrap break-words text-xs bg-muted rounded p-3 overflow-x-auto"
+            >
+              {tool.content}
+            </pre>
+          ))}
+        </div>
+      )}
+    </Card>
+  );
+}
+
 export default function SessionInterface({
   height,
   agent,
@@ -65,11 +108,41 @@ export default function SessionInterface({
   const [goals, setGoals] = useState<any[]>([]);
   const [selectedGoal, setSelectedGoal] = useState<any>(null);
 
+  // 👇🏼 Build a render‑friendly list where contiguous tool messages are grouped.
+  const groupedItems = useMemo(() => {
+    /**
+     * An item is either a regular chat message or a group of tool‑calls.
+     */
+    type Item =
+      | { type: "message"; message: Message }
+      | { type: "toolGroup"; tools: Message[] };
+
+    const items: Item[] = [];
+    for (let i = 0; i < messages.length; i += 1) {
+      const msg = messages[i];
+      if (msg.role === "tool") {
+        const tools: Message[] = [];
+        // Collect consecutive tool messages.
+        while (i < messages.length && messages[i].role === "tool") {
+          tools.push(messages[i]);
+          i += 1;
+        }
+        // Decrement i because the for‑loop will increment again.
+        i -= 1;
+        items.push({ type: "toolGroup", tools });
+      } else {
+        items.push({ type: "message", message: msg });
+      }
+    }
+    return items;
+  }, [messages]);
+
+  // Auto‑scroll when messages / tool‑cards grow
   useEffect(() => {
     if (scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
-  }, [messages]);
+  }, [groupedItems]);
 
   // Fetch session data including goals and tasks
   useEffect(() => {
@@ -85,17 +158,13 @@ export default function SessionInterface({
             throw new Error("Failed to fetch session data");
           }
           const data = await res.json();
-          console.log("Resut data", data);
           if (data.data?.history) {
             setMessages(data.data.history);
           }
-          if (data.data?.goals) {
-            console.log("Goals:", data.data.goals);
+          if (data.data?.goals && data.data.goals.length > 0) {
             setGoals(data.data.goals);
-            if (data.data?.goals && data.data.goals.length > 0) {
-              setSelectedGoal(data.data.goals[0]);
-              setSelectedGoalId(data.data.goals[0].goalId);
-            }
+            setSelectedGoal(data.data.goals[0]);
+            setSelectedGoalId(data.data.goals[0].goalId);
           }
         } catch (err) {
           console.error("Error fetching session:", err);
@@ -115,22 +184,35 @@ export default function SessionInterface({
         scrollHideDelay={100}
         style={{ height: height ?? "78vh" }}
       >
-        <div className="container mx-auto max-w-2xl">
-          {messages.map((message, index) => (
-            <div key={index}>
-              {message.role === "user" || message.role === "human" ? (
-                <InitiatorMessage
-                  message={message.content}
-                  timestamp={message.timestamp}
-                />
-              ) : (
-                <AgentOutput
-                  content={message.content}
-                  metadata={message.metadata}
-                />
-              )}
-            </div>
-          ))}
+        <div className="container mx-auto max-w-2xl" ref={scrollRef}>
+          {groupedItems.map((item, index) => {
+            if (item.type === "message") {
+              const { message } = item;
+              if (message.role === "user" || message.role === "human") {
+                return (
+                  <InitiatorMessage
+                    key={index}
+                    message={message.content}
+                    timestamp={message.timestamp}
+                  />
+                );
+              }
+              if (message.role === "ai") {
+                return (
+                  <AgentOutput
+                    key={index}
+                    content={message.content}
+                    metadata={message.metadata}
+                  />
+                );
+              }
+              // Fallback – should rarely be reached.
+              return null;
+            }
+
+            // Render grouped tool‑calls as a single expandable card.
+            //return <ExpandableToolCard key={index} tools={item.tools} />;
+          })}
         </div>
       </ScrollArea>
 
@@ -144,6 +226,7 @@ export default function SessionInterface({
           onSessionCreated={onSessionCreated}
         />
       </div>
+
       <ExecutionWidget
         sessionId={sessionId}
         goals={goals}
