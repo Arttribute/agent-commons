@@ -18,10 +18,12 @@ import {
   Loader2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import RightPanel from "./right-panel";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import TaskCarousel from "@/components/sessions/tasks/task-carousel";
+import MessagesView from "@/components/sessions/chat/messages-view";
 
 interface Task {
   taskId: string;
@@ -53,6 +55,11 @@ interface ExecutionWidgetProps {
   selectedGoal: Goal | null;
   selectedGoalId: string;
   setSelectedGoalId: (goalId: string) => void;
+  conversations;
+  totalInteractions;
+  activeAgents;
+  getAgentName;
+  childSessions: any[]; // Optional prop for child sessions
 }
 
 export default function ExecutionWidget({
@@ -61,6 +68,11 @@ export default function ExecutionWidget({
   selectedGoal,
   selectedGoalId,
   setSelectedGoalId,
+  conversations,
+  totalInteractions,
+  activeAgents,
+  getAgentName,
+  childSessions,
 }: ExecutionWidgetProps) {
   const [isExpanded, setIsExpanded] = useState(false);
   const [isMinimized, setIsMinimized] = useState(false);
@@ -99,7 +111,7 @@ export default function ExecutionWidget({
     }
   }, [selectedGoalId, goals]);
 
-  if (goals.length === 0) return null;
+  if (goals.length === 0 && childSessions.length === 0) return null;
 
   const toggleExpanded = () => {
     setIsExpanded(!isExpanded);
@@ -205,30 +217,52 @@ export default function ExecutionWidget({
             animate={{ opacity: 1, scale: 1 }}
             exit={{ opacity: 0, scale: 0.9 }}
           >
-            <div className="p-3 border-b border-gray-400 flex justify-between items-center">
-              <div className="flex items-center gap-1 font-semibold">
-                <div className="bg-purple-100 dark:bg-purple-900 p-0.5 rounded">
-                  <Layers className="h-4 w-4 text-purple-500" />
+            <Tabs defaultValue="tasks" className="w-full">
+              <div className="p-3 border-b border-gray-400 flex justify-between items-center">
+                <div className="flex items-center gap-1 font-semibold">
+                  <div className="bg-purple-100 dark:bg-purple-900 p-0.5 rounded">
+                    <Layers className="h-4 w-4 text-purple-500" />
+                  </div>
+                  <h3 className="font-semibold text-sm">Agent Execution</h3>
                 </div>
-                <h3 className="font-semibold text-sm">Agent Execution</h3>
-              </div>
-              <div className="flex gap-1">
-                <button
-                  onClick={toggleExpanded}
-                  className="p-1 hover:bg-gray-200 dark:hover:bg-gray-800 rounded"
-                >
-                  <Minimize2 className="h-4 w-4 text-gray-500 hover:text-gray-700 cursor-pointer" />
-                </button>
-              </div>
-            </div>
+                <div className="flex gap-1">
+                  <TabsList className="grid w-full grid-cols-2 gap-1 h-auto">
+                    <TabsTrigger value="tasks" className="h-6  text-sm">
+                      Tasks
+                    </TabsTrigger>
+                    <TabsTrigger value="messages" className="h-6 text-sm">
+                      Messages{" "}
+                    </TabsTrigger>
+                  </TabsList>
 
-            <RightPanel tasks={selectedGoalTasks} className="" />
+                  <button
+                    onClick={toggleExpanded}
+                    className="p-1 hover:bg-gray-200 dark:hover:bg-gray-800 rounded"
+                  >
+                    <Minimize2 className="h-4 w-4 text-gray-500 hover:text-gray-700 cursor-pointer" />
+                  </button>
+                </div>
+              </div>
+
+              <TabsContent value="tasks">
+                <div className="flex justify-between items-center ">
+                  <TaskCarousel tasks={selectedGoalTasks} />
+                </div>
+              </TabsContent>
+              <TabsContent value="messages">
+                <MessagesView
+                  conversations={childSessions}
+                  totalInteractions={totalInteractions || 0}
+                  activeAgents={activeAgents || 0}
+                  getAgentName={getAgentName || (() => "Unknown Agent")}
+                />
+              </TabsContent>
+            </Tabs>
           </motion.div>
         ) : (
           <motion.div
             className={cn(
-              "bg-white dark:bg-gray-950 rounded-lg shadow-xl border border-gray-400 overflow-hidden",
-              isMinimized ? "w-auto" : "w-[220px]"
+              "bg-white dark:bg-gray-950 rounded-lg shadow-xl border border-gray-400 overflow-hidden w-[220px]"
             )}
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}

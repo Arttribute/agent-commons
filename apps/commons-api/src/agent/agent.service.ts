@@ -263,6 +263,8 @@ export class AgentService implements OnModuleInit {
 
           The current date and time is ${currentTime.toISOString()}.
            **SESSION ID**: ${sessionId}
+          
+          Note that you can interact and engage with other agents using the interactWithAgent tool. Once you initiate a conversation with another agent, you can continue the conversation by calling the interactWithAgent tool again with the same sessionId. This will allow you to continue the conversation with the other agent. 
 
           STRICTLY ABIDE BY THE FOLLOWING:
           • If a request is simple and does not require complex plannind give an immediate response.

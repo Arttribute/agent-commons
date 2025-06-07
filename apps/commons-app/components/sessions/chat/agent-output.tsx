@@ -105,10 +105,10 @@ export default function AgentOutput({
             <p className="text-sm my-2 leading-relaxed" {...props} />
           ),
           ul: ({ node, ...props }) => (
-            <ul className="text-sm my-2 ml-3 list-disc" {...props} />
+            <ul className="text-sm my-2 ml-1 list-disc" {...props} />
           ),
           ol: ({ node, ...props }) => (
-            <ol className="text-sm my-2 ml-3 list-decimal" {...props} />
+            <ol className="text-sm my-2 ml-1 list-decimal" {...props} />
           ),
           li: ({ node, ...props }) => (
             <li className="text-sm my-1" {...props} />
@@ -141,7 +141,7 @@ export default function AgentOutput({
                 language={language}
                 code={String(children).replace(/\n$/, "")}
               >
-                {isExecutable && (
+                {/* {isExecutable && (
                   <div
                     ref={codeExecutorRef}
                     className="mt-2 p-4 bg-muted rounded-md font-mono text-sm"
@@ -151,7 +151,7 @@ export default function AgentOutput({
                       Output will appear here when you run the code
                     </div>
                   </div>
-                )}
+                )} */}
               </CodeBlock>
             ) : (
               <code className="rounded text-sm font-mono " {...props}>

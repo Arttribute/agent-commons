@@ -1,6 +1,5 @@
 "use client";
 
-import type React from "react";
 import type { Dispatch, SetStateAction } from "react";
 
 import { useRef, useEffect, useState, useMemo } from "react";
@@ -8,13 +7,18 @@ import { ChevronDown } from "lucide-react";
 import ExecutionWidget from "@/components/sessions/chat/execution-widget";
 import { useChat } from "@/hooks/sessions/use-chat";
 import { useGoals } from "@/hooks/sessions/use-goals";
-import ChatInputBox from "./chat/chat-input-box";
-import InitiatorMessage from "./chat/initiator-message";
-import AgentOutput from "./chat/agent-output";
+import ChatInputBox from "@/components/sessions/chat/chat-input-box";
+import InitiatorMessage from "@/components/sessions/chat/initiator-message";
+import AgentOutput from "@/components/sessions/chat/agent-output";
+
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { ArrowLeft, Send, Bot, User } from "lucide-react";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+
 import { CommonAgent } from "@/types/agent";
 import { Card } from "@/components/ui/card";
-import { useAgentInteractions } from "@/hooks/use-agent-interactions";
 
 interface Message {
   role: string;
@@ -35,82 +39,29 @@ interface Message {
   };
 }
 
-interface SessionInterfaceProps {
+interface AgentMessagingProps {
+  getAgentName: (agentId: string) => string;
+  onBack: () => void;
+  isEmbedded?: boolean;
   height?: string;
-  agent: CommonAgent | null;
-  session: any;
-  messages: Message[];
-  setMessages: Dispatch<SetStateAction<Message[]>>;
+  agent?: CommonAgent | null;
   agentId: string;
   sessionId: string;
-  userId?: string;
-  onFirstMessage?: (input: string) => void;
-  onSessionCreated?: (sessionId: string) => void;
 }
 
-/**
- * Collapsible card that summarises a group of tool‑call messages. Clicking the
- * header toggles expansion so users can inspect individual tool‑calls.
- */
-function ExpandableToolCard({ tools }: { tools: Message[] }) {
-  const [open, setOpen] = useState(false);
-
-  return (
-    <Card className="my-2">
-      <div
-        role="button"
-        tabIndex={0}
-        onClick={() => setOpen(!open)}
-        onKeyDown={(e) => {
-          if (e.key === "Enter" || e.key === " ") setOpen(!open);
-        }}
-        className="flex items-center justify-between p-4 cursor-pointer select-none"
-      >
-        <div className="text-sm text-muted-foreground font-medium">
-          {tools.length} tool call{tools.length > 1 ? "s" : ""}
-        </div>
-        <ChevronDown
-          className={`h-4 w-4 transition-transform ${open ? "rotate-180" : ""}`}
-        />
-      </div>
-
-      {open && (
-        <div className="border-t px-4 py-2 space-y-3">
-          {tools.map((tool, idx) => (
-            <pre
-              key={idx}
-              className="whitespace-pre-wrap break-words text-xs bg-muted rounded p-3 overflow-x-auto"
-            >
-              {tool.content}
-            </pre>
-          ))}
-        </div>
-      )}
-    </Card>
-  );
-}
-
-export default function SessionInterface({
-  height,
+export default function AgentMessaging({
+  onBack,
+  isEmbedded,
   agent,
-  session,
-  messages,
-  setMessages,
   agentId,
   sessionId,
-  userId,
-  onFirstMessage,
-  onSessionCreated,
-}: SessionInterfaceProps) {
-  const scrollRef = useRef<HTMLDivElement>(null);
+}: AgentMessagingProps) {
   const [selectedGoalId, setSelectedGoalId] = useState<string>("");
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [goals, setGoals] = useState<any[]>([]);
-  const [childSessions, setChildSessions] = useState<any[]>([]);
   const [selectedGoal, setSelectedGoal] = useState<any>(null);
-  const { conversations, totalInteractions, activeAgents, getAgentName } =
-    useAgentInteractions();
+  const [messages, setMessages] = useState<Message[]>([]);
 
   // 👇🏼 Build a render‑friendly list where contiguous tool messages are grouped.
   const groupedItems = useMemo(() => {
@@ -140,14 +91,6 @@ export default function SessionInterface({
     }
     return items;
   }, [messages]);
-
-  // Auto‑scroll when messages / tool‑cards grow
-  useEffect(() => {
-    if (scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-    }
-  }, [groupedItems]);
-
   // Fetch session data including goals and tasks
   useEffect(() => {
     if (sessionId) {
@@ -170,9 +113,6 @@ export default function SessionInterface({
             setSelectedGoal(data.data.goals[0]);
             setSelectedGoalId(data.data.goals[0].goalId);
           }
-          if (data.data?.childSessions && data.data.childSessions.length > 0) {
-            setChildSessions(data.data.childSessions);
-          }
         } catch (err) {
           console.error("Error fetching session:", err);
           setError("Failed to load session data");
@@ -183,15 +123,27 @@ export default function SessionInterface({
       fetchSessionData();
     }
   }, [sessionId, setMessages]);
-
   return (
-    <div className="flex-1 overflow-y-auto py-4">
-      <ScrollArea
-        className="overflow-y-auto"
-        scrollHideDelay={100}
-        style={{ height: height ?? "78vh" }}
-      >
-        <div className="container mx-auto max-w-2xl" ref={scrollRef}>
+    <div className="flex flex-col h-full">
+      {/* Header - only show if not embedded */}
+      {!isEmbedded && (
+        <div className="p-3 border-b flex items-center gap-3">
+          <Button variant="ghost" size="sm" onClick={onBack}>
+            <ArrowLeft className="h-4 w-4" />
+          </Button>
+          <div className="w-8 h-8 rounded-full bg-gradient-to-br from-purple-400 to-blue-500 flex items-center justify-center text-white text-sm font-medium">
+            A
+          </div>
+          <div className="flex-1">
+            <h3 className="font-medium text-sm">Agent Name</h3>
+            <p className="text-xs text-gray-500">{agentId}</p>
+          </div>
+        </div>
+      )}
+
+      {/* Messages */}
+      <ScrollArea className="p-4 h-[460px] bg-gray-50 rounded-b-xl">
+        <div className="container mx-auto max-w-2xl">
           {groupedItems.map((item, index) => {
             if (item.type === "message") {
               const { message } = item;
@@ -201,16 +153,19 @@ export default function SessionInterface({
                     key={index}
                     message={message.content}
                     timestamp={message.timestamp}
+                    color="blue-100"
                   />
                 );
               }
               if (message.role === "ai") {
                 return (
-                  <AgentOutput
-                    key={index}
-                    content={message.content}
-                    metadata={message.metadata}
-                  />
+                  <div className="bg-white rounded-xl p-2" key={index}>
+                    <AgentOutput
+                      key={index}
+                      content={message.content}
+                      metadata={message.metadata}
+                    />
+                  </div>
                 );
               }
               // Fallback – should rarely be reached.
@@ -222,30 +177,6 @@ export default function SessionInterface({
           })}
         </div>
       </ScrollArea>
-
-      <div className="container mx-auto max-w-2xl">
-        <ChatInputBox
-          agentId={agentId}
-          sessionId={sessionId}
-          userId={userId || ""}
-          setMessages={setMessages}
-          onFirstMessage={onFirstMessage}
-          onSessionCreated={onSessionCreated}
-        />
-      </div>
-
-      <ExecutionWidget
-        sessionId={sessionId}
-        goals={goals}
-        selectedGoal={selectedGoal}
-        selectedGoalId={selectedGoalId}
-        setSelectedGoalId={setSelectedGoalId}
-        conversations={conversations}
-        totalInteractions={totalInteractions}
-        activeAgents={activeAgents}
-        getAgentName={getAgentName}
-        childSessions={childSessions}
-      />
     </div>
   );
 }
