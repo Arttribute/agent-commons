@@ -4,15 +4,15 @@ import * as React from "react";
 
 import { Button } from "@/components/ui/button";
 import {
-  Drawer,
-  DrawerClose,
-  DrawerContent,
-  DrawerDescription,
-  DrawerFooter,
-  DrawerHeader,
-  DrawerTitle,
-  DrawerTrigger,
-} from "@/components/ui/drawer";
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
 import {
   Card,
   CardContent,
@@ -146,8 +146,8 @@ export default function AgentFinances() {
     0
   );
   return (
-    <Drawer direction="left">
-      <DrawerTrigger asChild>
+    <Dialog>
+      <DialogTrigger asChild>
         <div className="cursor-pointer border border-gray-400 rounded-lg p-2 hover:border-gray-700 transition-colors ">
           <div className="flex items-center gap-1">
             <BadgeCentIcon className="h-4 w-4 " />
@@ -164,8 +164,8 @@ export default function AgentFinances() {
             </div>
           </div>
         </div>
-      </DrawerTrigger>
-      <DrawerContent className=" max-w-5xl">
+      </DialogTrigger>
+      <DialogContent className=" max-w-5xl">
         <div className="p-4 pb-0 ">
           <div className="grid grid-cols-12 gap-2">
             <div className="col-span-8">
@@ -208,12 +208,7 @@ export default function AgentFinances() {
             </div>
           </div>
         </div>
-        <DrawerFooter>
-          <DrawerClose asChild>
-            <Button variant="outline">close</Button>
-          </DrawerClose>
-        </DrawerFooter>
-      </DrawerContent>
-    </Drawer>
+      </DialogContent>
+    </Dialog>
   );
 }

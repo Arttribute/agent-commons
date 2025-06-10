@@ -38,7 +38,7 @@ export function SessionsSideBar({
   username: string;
   sessions: any;
 }) {
-  const [isOpen, setIsOpen] = useState(false);
+  const [isOpen, setIsOpen] = useState(true);
   const [recentChats, setRecentChats] = useState<any[]>([]);
 
   useEffect(() => {

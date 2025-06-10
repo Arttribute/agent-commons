@@ -86,19 +86,19 @@ export default function AgentIdentity({
 
           <div className="m-1">
             <p className="text-xs font-semibold mb-0.5">Persona</p>
-            <p className="text-xs text-muted-foreground">
+            <p className="text-xs text-muted-foreground truncate">
               {agent?.persona || "No persona set."}
             </p>
           </div>
           <div className="m-1">
             <p className="text-xs font-semibold mb-0.5">Instructions</p>
-            <p className="text-xs text-muted-foreground">
+            <p className="text-xs text-muted-foreground truncate">
               {agent?.instructions || "No instructions set."}
             </p>
           </div>
           <div className="m-1 ,mb-2">
             <p className="text-xs font-semibold mb-0.5">Description</p>
-            <p className="text-xs text-muted-foreground">
+            <p className="text-xs text-muted-foreground truncate">
               {agent?.description || "No description set."}
             </p>
           </div>

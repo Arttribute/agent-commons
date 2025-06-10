@@ -46,31 +46,6 @@ export default function PublicAgentPage() {
     if (agentId) fetchAgent();
   }, [agentId, userAddress]);
 
-  // Handler for sending a message
-  async function handleSendMessage(input: string) {
-    if (!session) {
-      setCreatingSession(true);
-      // Create a new session
-      const res = await fetch(`/api/sessions`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ agentId, initiator: userAddress }),
-      });
-      const json = await res.json();
-      setSession(json.data);
-      setMessages([]);
-      setCreatingSession(false);
-      // Redirect to the new session page
-      router.push(`/agents/${agentId}/${json.data.sessionId}`);
-    } else {
-      // This should not happen here, but fallback: send message to session
-      setMessages((prev) => [
-        ...prev,
-        { role: "human", content: input, timestamp: new Date().toISOString() },
-      ]);
-    }
-  }
-
   if (loading)
     return (
       <div className="flex justify-center items-center h-64">
@@ -90,7 +65,9 @@ export default function PublicAgentPage() {
         agentId={agentId}
         userId={userAddress}
         sessionId={session?.sessionId || ""}
-        onFirstMessage={handleSendMessage}
+        onSessionCreated={async (newSessionId: string) => {
+          router.push(`/agents/${agentId}/${newSessionId}`);
+        }}
       />
     </div>
   );

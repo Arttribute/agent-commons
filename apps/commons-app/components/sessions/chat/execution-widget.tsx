@@ -6,21 +6,16 @@ import {
   Maximize2,
   Minimize2,
   Layers,
-  Cog,
   Clock,
   CircleDashed,
   CircleDot,
   CircleAlert,
-  X,
   CircleCheckBig,
   CheckCircle2,
   XCircle,
   Loader2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { ScrollArea } from "@/components/ui/scroll-area";
-import { Card } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import TaskCarousel from "@/components/sessions/tasks/task-carousel";
 import MessagesView from "@/components/sessions/chat/messages-view";
@@ -55,10 +50,6 @@ interface ExecutionWidgetProps {
   selectedGoal: Goal | null;
   selectedGoalId: string;
   setSelectedGoalId: (goalId: string) => void;
-  conversations;
-  totalInteractions;
-  activeAgents;
-  getAgentName;
   childSessions: any[]; // Optional prop for child sessions
 }
 
@@ -68,10 +59,6 @@ export default function ExecutionWidget({
   selectedGoal,
   selectedGoalId,
   setSelectedGoalId,
-  conversations,
-  totalInteractions,
-  activeAgents,
-  getAgentName,
   childSessions,
 }: ExecutionWidgetProps) {
   const [isExpanded, setIsExpanded] = useState(false);
@@ -157,32 +144,6 @@ export default function ExecutionWidget({
     (task) => task.status === "pending"
   );
 
-  const getStatusIcon = (status: string) => {
-    switch (status) {
-      case "completed":
-        return <CheckCircle2 className="h-4 w-4 text-green-500" />;
-      case "failed":
-        return <XCircle className="h-4 w-4 text-red-500" />;
-      case "in_progress":
-        return <Loader2 className="h-4 w-4 text-blue-500 animate-spin" />;
-      default:
-        return <Clock className="h-4 w-4 text-gray-500" />;
-    }
-  };
-
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case "completed":
-        return "bg-green-100 text-green-800";
-      case "failed":
-        return "bg-red-100 text-red-800";
-      case "in_progress":
-        return "bg-blue-100 text-blue-800";
-      default:
-        return "bg-gray-100 text-gray-800";
-    }
-  };
-
   // Calculate overall progress based on task completion
   const calculateOverallProgress = (goals: Goal[]) => {
     if (goals.length === 0) return 0;
@@ -231,7 +192,7 @@ export default function ExecutionWidget({
                       Tasks
                     </TabsTrigger>
                     <TabsTrigger value="messages" className="h-6 text-sm">
-                      Messages{" "}
+                      Interactions{" "}
                     </TabsTrigger>
                   </TabsList>
 
@@ -243,7 +204,6 @@ export default function ExecutionWidget({
                   </button>
                 </div>
               </div>
-
               <TabsContent value="tasks">
                 <div className="flex justify-between items-center ">
                   <TaskCarousel tasks={selectedGoalTasks} />
@@ -252,9 +212,7 @@ export default function ExecutionWidget({
               <TabsContent value="messages">
                 <MessagesView
                   conversations={childSessions}
-                  totalInteractions={totalInteractions || 0}
-                  activeAgents={activeAgents || 0}
-                  getAgentName={getAgentName || (() => "Unknown Agent")}
+                  totalInteractions={childSessions.length || 0}
                 />
               </TabsContent>
             </Tabs>

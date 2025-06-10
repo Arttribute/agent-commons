@@ -6,23 +6,48 @@ import UserLockedTokens from "@/components/agents/user-locked-tokens";
 import { ArrowUp, Loader2 } from "lucide-react";
 import type { Dispatch, SetStateAction } from "react";
 
+function extractMessagesFromAgentResponse(data: any): any[] {
+  const messages: any = [];
+
+  // AI message
+  if (data?.data?.content) {
+    messages.push({
+      role: "ai",
+      content: data.data.content,
+      metadata: {},
+      timestamp: new Date().toISOString(),
+    });
+  }
+
+  // Tool calls (if present)
+  if (Array.isArray(data.data.tool_calls) && data.data.tool_calls.length > 0) {
+    messages.push({
+      role: "tool",
+      content: JSON.stringify({ toolData: data }, null, 2),
+      metadata: {},
+      timestamp: new Date().toISOString(),
+    });
+  }
+  console.log("Extracted messages:", messages);
+  return messages;
+}
+
 export default function ChatInputBox({
   agentId,
   sessionId,
   setMessages,
-  onFirstMessage,
   userId,
   onSessionCreated,
 }: {
   agentId: string;
   sessionId: string;
   setMessages: Dispatch<SetStateAction<any[]>>;
-  onFirstMessage?: (input: string) => void;
   userId: string;
   onSessionCreated?: (sessionId: string) => void;
 }) {
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
+  const [currentSessionId, setCurrentSessionId] = useState(sessionId);
 
   const handleSend = async () => {
     if (!input.trim() || loading) return;
@@ -50,7 +75,7 @@ export default function ChatInputBox({
         },
         body: JSON.stringify({
           agentId,
-          sessionId,
+          sessionId: currentSessionId,
           messages: [{ role: "user", content: userMessage }],
         }),
       });
@@ -65,42 +90,14 @@ export default function ChatInputBox({
       console.log("Session Id:", data.sessionId);
       // If this is a new session, notify parent
       if (data.sessionId && data.sessionId !== sessionId) {
+        setCurrentSessionId(data.sessionId);
         onSessionCreated?.(data.sessionId);
       }
 
       // Add AI response to messages
-      setMessages((prev) => [
-        ...prev,
-        {
-          role: "ai",
-          content: data.content,
-          timestamp: new Date().toISOString(),
-        },
-      ]);
+      const newMessages = extractMessagesFromAgentResponse(data);
+      setMessages((prev) => [...prev, ...newMessages]);
       console.log("Session Id:", sessionId);
-      // Fetch full session details
-      const sessionRes = await fetch(
-        `/api/sessions/session/full?sessionId=${data.sessionId}`
-      );
-      if (sessionRes.ok) {
-        const sessionData = await sessionRes.json();
-        // Update messages with full session history
-        setMessages(sessionData.history || []);
-      } else {
-        // Fallback to just adding the agent's response
-        setMessages((prev) => [...prev, data]);
-      }
-    } catch (error) {
-      console.error("Error sending message:", error);
-      // Add error message to chat
-      setMessages((prev) => [
-        ...prev,
-        {
-          role: "system",
-          content: "Failed to send message. Please try again.",
-          timestamp: new Date().toISOString(),
-        },
-      ]);
     } finally {
       setLoading(false);
     }

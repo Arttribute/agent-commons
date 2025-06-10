@@ -48,7 +48,11 @@ export default function AgentSessionPage() {
         setMessages(sessionData.data.history || []);
         fetchSessions();
       } catch (err) {
-        // handle error
+        console.error("Error fetching agent or session data:", err);
+        setAgent(null);
+        setSession(null);
+        setMessages([]);
+        setSessions([]);
       } finally {
         setLoading(false);
       }

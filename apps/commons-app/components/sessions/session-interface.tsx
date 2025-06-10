@@ -6,15 +6,12 @@ import type { Dispatch, SetStateAction } from "react";
 import { useRef, useEffect, useState, useMemo } from "react";
 import { ChevronDown } from "lucide-react";
 import ExecutionWidget from "@/components/sessions/chat/execution-widget";
-import { useChat } from "@/hooks/sessions/use-chat";
-import { useGoals } from "@/hooks/sessions/use-goals";
 import ChatInputBox from "./chat/chat-input-box";
 import InitiatorMessage from "./chat/initiator-message";
 import AgentOutput from "./chat/agent-output";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { CommonAgent } from "@/types/agent";
 import { Card } from "@/components/ui/card";
-import { useAgentInteractions } from "@/hooks/use-agent-interactions";
 
 interface Message {
   role: string;
@@ -106,11 +103,13 @@ export default function SessionInterface({
   const [selectedGoalId, setSelectedGoalId] = useState<string>("");
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [goals, setGoals] = useState<any[]>([]);
-  const [childSessions, setChildSessions] = useState<any[]>([]);
-  const [selectedGoal, setSelectedGoal] = useState<any>(null);
-  const { conversations, totalInteractions, activeAgents, getAgentName } =
-    useAgentInteractions();
+  const [goals, setGoals] = useState<any[]>(session?.goals || []);
+  const [childSessions, setChildSessions] = useState<any[]>(
+    session?.childSessions || []
+  );
+  const [selectedGoal, setSelectedGoal] = useState<any>(
+    session?.goals?.[0] || null
+  );
 
   // 👇🏼 Build a render‑friendly list where contiguous tool messages are grouped.
   const groupedItems = useMemo(() => {
@@ -148,41 +147,15 @@ export default function SessionInterface({
     }
   }, [groupedItems]);
 
-  // Fetch session data including goals and tasks
+  //Get session data when sessionId changes
   useEffect(() => {
-    if (sessionId) {
-      const fetchSessionData = async () => {
-        setIsLoading(true);
-        setError(null);
-        try {
-          const res = await fetch(
-            `/api/sessions/session/full?sessionId=${sessionId}`
-          );
-          if (!res.ok) {
-            throw new Error("Failed to fetch session data");
-          }
-          const data = await res.json();
-          if (data.data?.history) {
-            setMessages(data.data.history);
-          }
-          if (data.data?.goals && data.data.goals.length > 0) {
-            setGoals(data.data.goals);
-            setSelectedGoal(data.data.goals[0]);
-            setSelectedGoalId(data.data.goals[0].goalId);
-          }
-          if (data.data?.childSessions && data.data.childSessions.length > 0) {
-            setChildSessions(data.data.childSessions);
-          }
-        } catch (err) {
-          console.error("Error fetching session:", err);
-          setError("Failed to load session data");
-        } finally {
-          setIsLoading(false);
-        }
-      };
-      fetchSessionData();
+    if (sessionId && session) {
+      setGoals(session.goals || []);
+      setChildSessions(session.childSessions || []);
+      setSelectedGoal(session.goals?.[0] || null);
+      setSelectedGoalId(session.goals?.[0]?.id || "");
     }
-  }, [sessionId, setMessages]);
+  }, [session, sessionId]);
 
   return (
     <div className="flex-1 overflow-y-auto py-4">
@@ -240,10 +213,6 @@ export default function SessionInterface({
         selectedGoal={selectedGoal}
         selectedGoalId={selectedGoalId}
         setSelectedGoalId={setSelectedGoalId}
-        conversations={conversations}
-        totalInteractions={totalInteractions}
-        activeAgents={activeAgents}
-        getAgentName={getAgentName}
         childSessions={childSessions}
       />
     </div>

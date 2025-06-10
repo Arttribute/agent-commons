@@ -40,7 +40,6 @@ interface Message {
 }
 
 interface AgentMessagingProps {
-  getAgentName: (agentId: string) => string;
   onBack: () => void;
   isEmbedded?: boolean;
   height?: string;
@@ -153,7 +152,7 @@ export default function AgentMessaging({
                     key={index}
                     message={message.content}
                     timestamp={message.timestamp}
-                    color="blue-100"
+                    bgColor="bg-blue-100"
                   />
                 );
               }
