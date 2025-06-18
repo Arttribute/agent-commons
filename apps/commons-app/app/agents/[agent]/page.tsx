@@ -1,37 +1,34 @@
 "use client";
+
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import SessionInterface from "@/components/sessions/session-interface";
-import AgentIdentity from "@/components/agents/agent-identity";
 import { Loader2 } from "lucide-react";
 import { SessionsSideBar } from "@/components/sessions/sessions-side-bar";
-import { supabase } from "@/lib/supabase";
+import { useAgentContext } from "@/context/AgentContext";
 
 export default function PublicAgentPage() {
   const params = useParams();
   const router = useRouter();
   const { agent: agentId } = params as { agent: string };
+
+  const { messages, setMessages } = useAgentContext();
+
   const [agent, setAgent] = useState<any>(null);
   const [session, setSession] = useState<any>(null);
-  const [messages, setMessages] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  const [creatingSession, setCreatingSession] = useState(false);
-
   const [sessions, setSessions] = useState<any[]>([]);
 
   const { authState } = useAuth();
   const userAddress = authState.walletAddress?.toLowerCase() || "";
 
   const fetchSessions = async () => {
-    const userSessions = await fetch(
+    const res = await fetch(
       `/api/sessions/list?agentId=${agentId}&initiatorId=${userAddress}`
     );
-    const userSessionsData = await userSessions.json();
-    if (userSessionsData.data) {
-      console.log("User sessions data", userSessionsData.data);
-      setSessions(userSessionsData.data);
-    }
+    const data = await res.json();
+    setSessions(data.data || []);
   };
 
   useEffect(() => {
@@ -43,6 +40,7 @@ export default function PublicAgentPage() {
       setLoading(false);
       fetchSessions();
     }
+
     if (agentId) fetchAgent();
   }, [agentId, userAddress]);
 
@@ -55,7 +53,7 @@ export default function PublicAgentPage() {
   if (!agent) return <div>Agent not found</div>;
 
   return (
-    <div className="flex  h-screen bg-gray-50 dark:bg-gray-900">
+    <div className="flex h-screen bg-gray-50 dark:bg-gray-900">
       <SessionsSideBar username={userAddress} sessions={sessions} />
       <SessionInterface
         agent={agent}
@@ -65,7 +63,7 @@ export default function PublicAgentPage() {
         agentId={agentId}
         userId={userAddress}
         sessionId={session?.sessionId || ""}
-        onSessionCreated={async (newSessionId: string) => {
+        onSessionCreated={(newSessionId) => {
           router.push(`/agents/${agentId}/${newSessionId}`);
         }}
       />

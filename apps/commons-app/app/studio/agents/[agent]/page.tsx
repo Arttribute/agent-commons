@@ -188,14 +188,24 @@ export default function AgentStudio({
     }
   }, [id]);
 
+  const fetchSessions = async () => {
+    const agentId = id;
+    console.log("User Address:", userAddress);
+    const res = await fetch(
+      `/api/sessions/list?agentId=${agentId}&initiatorId=${userAddress}`
+    );
+    const data = await res.json();
+    console.log("Fetched sessions: Data", data);
+    setSessions(data.data || []);
+    console.log("Fetched sessions:", data.data);
+  };
+
   // Fetch sessions for this agent
   useEffect(() => {
-    if (id) {
-      fetch(`/api/sessions?agentId=${id}`)
-        .then((res) => res.json())
-        .then((json) => setSessions(json.data || []));
+    if (id && userAddress) {
+      fetchSessions();
     }
-  }, [id]);
+  }, [id, userAddress]);
 
   // Start a new session or fetch the latest session for this agent and user
   useEffect(() => {
@@ -450,7 +460,7 @@ export default function AgentStudio({
           <div className="m-2 bg-white border border-gray-400 rounded-xl p-2">
             <h3 className="text-sm font-semibold">Recent Sessions</h3>
             <ScrollArea className="h-48 p-1">
-              <SessionsList sessions={sessions} agentId={id} />
+              <SessionsList sessions={sessions} />
             </ScrollArea>
           </div>
         </div>

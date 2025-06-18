@@ -41,7 +41,6 @@ interface SessionInterfaceProps {
   agentId: string;
   sessionId: string;
   userId?: string;
-  onFirstMessage?: (input: string) => void;
   onSessionCreated?: (sessionId: string) => void;
 }
 
@@ -96,7 +95,6 @@ export default function SessionInterface({
   agentId,
   sessionId,
   userId,
-  onFirstMessage,
   onSessionCreated,
 }: SessionInterfaceProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -202,7 +200,6 @@ export default function SessionInterface({
           sessionId={sessionId}
           userId={userId || ""}
           setMessages={setMessages}
-          onFirstMessage={onFirstMessage}
           onSessionCreated={onSessionCreated}
         />
       </div>

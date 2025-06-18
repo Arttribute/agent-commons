@@ -1,36 +1,34 @@
 "use client";
-import SessionInterface from "@/components/sessions/session-interface";
-import AppBar from "@/components/layout/app-bar";
-import { SessionsSideBar } from "@/components/sessions/sessions-side-bar";
+
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
-import { supabase } from "@/lib/supabase";
+import SessionInterface from "@/components/sessions/session-interface";
+import { SessionsSideBar } from "@/components/sessions/sessions-side-bar";
+import { useAgentContext } from "@/context/AgentContext";
 
 export default function AgentSessionPage() {
-  const params = useParams();
-  const { agent: agentId, session: sessionId } = params as {
+  const { agent: agentId, session: sessionId } = useParams() as {
     agent: string;
     session: string;
   };
-  const [agent, setAgent] = useState(null);
-  const [session, setSession] = useState(null);
-  const [messages, setMessages] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
+
+  const { messages, setMessages } = useAgentContext();
+
+  const [agent, setAgent] = useState<any>(null);
+  const [session, setSession] = useState<any>(null);
   const [sessions, setSessions] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
 
   const { authState } = useAuth();
   const userAddress = authState.walletAddress?.toLowerCase() || "";
 
   const fetchSessions = async () => {
-    const userSessions = await fetch(
+    const res = await fetch(
       `/api/sessions/list?agentId=${agentId}&initiatorId=${userAddress}`
     );
-    const userSessionsData = await userSessions.json();
-    if (userSessionsData.data) {
-      console.log("User sessions data", userSessionsData.data);
-      setSessions(userSessionsData.data);
-    }
+    const data = await res.json();
+    setSessions(data.data || []);
   };
 
   useEffect(() => {
@@ -43,20 +41,21 @@ export default function AgentSessionPage() {
         );
         const agentData = await agentRes.json();
         const sessionData = await sessionRes.json();
+
         setAgent(agentData.data);
         setSession(sessionData.data);
         setMessages(sessionData.data.history || []);
         fetchSessions();
       } catch (err) {
-        console.error("Error fetching agent or session data:", err);
+        console.error("Error fetching session:", err);
         setAgent(null);
         setSession(null);
         setMessages([]);
-        setSessions([]);
       } finally {
         setLoading(false);
       }
     }
+
     if (agentId && sessionId) fetchData();
   }, [agentId, sessionId, userAddress]);
 
