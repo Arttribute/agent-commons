@@ -33,6 +33,7 @@ interface AgentOutputProps {
     agentCalls?: AgentCall[];
   };
   className?: string;
+  isStreaming?: boolean; // Add isStreaming prop
 }
 
 interface CodeProps {
@@ -46,9 +47,9 @@ export default function AgentOutput({
   content,
   metadata,
   className,
+  isStreaming, // Destructure isStreaming prop
 }: AgentOutputProps) {
   const codeExecutorRef = useRef<HTMLDivElement>(null);
-
   const [isExpanded, setIsExpanded] = useState(false);
   const [activeTab, setActiveTab] = useState("message");
 
@@ -62,12 +63,12 @@ export default function AgentOutput({
   useEffect(() => {
     // Initialize code executor if it exists
     if (codeExecutorRef.current) {
-      // This would be where we'd initialize a code execution environment
+      // This would be where we\\\"d initialize a code execution environment
       // For now, this is just a placeholder
     }
   }, []);
 
-  if (!content) {
+  if (!content && !isStreaming) {
     return (
       <div
         className={cn(
@@ -82,6 +83,7 @@ export default function AgentOutput({
     <div className={cn("prose max-w-none", className)}>
       <Bot className="h-4 w-4 text-indigo-500 inline mr-1 -mb-4" />
 
+      {/* Always use ReactMarkdown, regardless of streaming status */}
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
         rehypePlugins={[rehypeRaw]}

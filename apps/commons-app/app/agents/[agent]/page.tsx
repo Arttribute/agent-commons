@@ -58,8 +58,6 @@ export default function PublicAgentPage() {
       <SessionInterface
         agent={agent}
         session={session}
-        messages={messages}
-        setMessages={setMessages}
         agentId={agentId}
         userId={userAddress}
         sessionId={session?.sessionId || ""}

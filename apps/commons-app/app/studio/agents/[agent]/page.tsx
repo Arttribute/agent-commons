@@ -439,8 +439,6 @@ export default function AgentStudio({
           <SessionInterface
             agent={agent}
             session={studioSession}
-            messages={studioMessages}
-            setMessages={setStudioMessages}
             agentId={id}
             sessionId={studioSession?.sessionId || ""}
             userId={userAddress}

@@ -68,8 +68,6 @@ export default function AgentSessionPage() {
       <SessionInterface
         agent={agent}
         session={session}
-        messages={messages}
-        setMessages={setMessages}
         agentId={agentId}
         userId={userAddress}
         sessionId={sessionId}

@@ -1,7 +1,4 @@
-"use client";
-
 import type React from "react";
-import type { Dispatch, SetStateAction } from "react";
 
 import { useRef, useEffect, useState, useMemo } from "react";
 import { ChevronDown } from "lucide-react";
@@ -12,6 +9,7 @@ import AgentOutput from "./chat/agent-output";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { CommonAgent } from "@/types/agent";
 import { Card } from "@/components/ui/card";
+import { useAgentContext } from "@/context/AgentContext"; // Import useAgentContext
 
 interface Message {
   role: string;
@@ -30,14 +28,15 @@ interface Message {
       sessionId?: string;
     }>;
   };
+  isStreaming?: boolean; // Add this line
 }
 
 interface SessionInterfaceProps {
   height?: string;
   agent: CommonAgent | null;
   session: any;
-  messages: Message[];
-  setMessages: Dispatch<SetStateAction<Message[]>>;
+  // messages: Message[]; // No longer passed as prop, retrieved from context
+  // setMessages: Dispatch<SetStateAction<Message[]>>; // No longer passed as prop, retrieved from context
   agentId: string;
   sessionId: string;
   userId?: string;
@@ -90,8 +89,8 @@ export default function SessionInterface({
   height,
   agent,
   session,
-  messages,
-  setMessages,
+  // messages, // No longer passed as prop
+  // setMessages, // No longer passed as prop
   agentId,
   sessionId,
   userId,
@@ -108,6 +107,8 @@ export default function SessionInterface({
   const [selectedGoal, setSelectedGoal] = useState<any>(
     session?.goals?.[0] || null
   );
+
+  const { messages } = useAgentContext(); // Retrieve messages from context
 
   // 👇🏼 Build a render‑friendly list where contiguous tool messages are grouped.
   const groupedItems = useMemo(() => {
@@ -143,7 +144,7 @@ export default function SessionInterface({
     if (scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
-  }, [groupedItems]);
+  }, [messages]); // Changed dependency to messages directly
 
   //Get session data when sessionId changes
   useEffect(() => {
@@ -176,11 +177,17 @@ export default function SessionInterface({
                 );
               }
               if (message.role === "ai") {
+                // Use a unique key for streaming messages to force re-render
+                // For non-streaming messages, use index as before
+                const key = message.isStreaming
+                  ? `ai-streaming-${index}`
+                  : index;
                 return (
                   <AgentOutput
-                    key={index}
+                    key={key}
                     content={message.content}
                     metadata={message.metadata}
+                    isStreaming={message.isStreaming} // Pass the isStreaming prop
                   />
                 );
               }
@@ -189,7 +196,7 @@ export default function SessionInterface({
             }
 
             // Render grouped tool‑calls as a single expandable card.
-            //return <ExpandableToolCard key={index} tools={item.tools} />;
+            return <ExpandableToolCard key={index} tools={item.tools} />;
           })}
         </div>
       </ScrollArea>
@@ -199,7 +206,6 @@ export default function SessionInterface({
           agentId={agentId}
           sessionId={sessionId}
           userId={userId || ""}
-          setMessages={setMessages}
           onSessionCreated={onSessionCreated}
         />
       </div>
