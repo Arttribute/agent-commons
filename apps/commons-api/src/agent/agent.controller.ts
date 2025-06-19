@@ -8,6 +8,7 @@ import {
   Post,
   Put,
   Query,
+  Sse,
   Headers,
 } from '@nestjs/common';
 import { AgentService } from './agent.service';
@@ -16,6 +17,41 @@ import * as schema from '#/models/schema';
 import { InferInsertModel } from 'drizzle-orm';
 import { Except } from 'type-fest';
 import { createParamDecorator, ExecutionContext } from '@nestjs/common';
+import { Observable } from 'rxjs';
+import { filter, map } from 'rxjs/operators';
+
+// Utility to convert Observable to AsyncIterable
+function observableToAsyncIterable<T>(
+  observable: Observable<T>,
+): AsyncIterable<T> {
+  const iterator = {
+    next: () =>
+      new Promise<{ value: T; done: boolean }>((resolve, reject) => {
+        const subscription = observable.subscribe({
+          next(value) {
+            resolve({ value, done: false });
+            subscription.unsubscribe();
+          },
+          error(err) {
+            reject(err);
+          },
+          complete() {
+            resolve({ value: undefined as any, done: true });
+          },
+        });
+      }),
+    [Symbol.asyncIterator]() {
+      return this;
+    },
+  };
+  return iterator as AsyncIterable<T>;
+}
+
+interface RunBody {
+  agentId: string;
+  messages: any[];
+  sessionId?: string;
+}
 
 @Controller({ version: '1', path: 'agents' })
 export class AgentController {
@@ -37,9 +73,25 @@ export class AgentController {
   }
 
   @Post('run')
-  async runAgent(@Body() body: any, @Headers('x-initiator') initiator: string) {
-    const response = await this.agent.runAgent({ ...body, initiator });
-    return { data: response };
+  async runAgentOnce(@Body() body: RunBody) {
+    // collect only the final message; use lastValueFrom
+    const { lastValueFrom } = await import('rxjs');
+    return lastValueFrom(
+      this.agent.runAgent(body).pipe(
+        // The final emission from runAgent will contain the full data
+        filter((chunk) => chunk.type === 'final'),
+        map((chunk) => chunk),
+      ),
+    );
+  }
+
+  @Post('run/stream') // <- POST instead of GET
+  @Sse('run/stream') // keep the SSE decorator
+  runAgentStream(@Body() body: RunBody) {
+    //set streaming to true
+    return this.agent
+      .runAgent({ ...body, stream: true })
+      .pipe(map((data) => ({ data })));
   }
 
   @Post(':agentId/trigger')

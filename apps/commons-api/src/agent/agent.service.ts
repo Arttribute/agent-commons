@@ -55,12 +55,14 @@ import { SessionService } from '~/session/session.service';
 import { ToolService } from '~/tool/tool.service';
 import { CommonTool } from '../tool/tools/common-tool.service';
 import { EthereumTool } from '../tool/tools/ethereum-tool.service';
-import { LangChainCallbackHandler } from '@posthog/ai';
+import { BaseCallbackHandler } from '@langchain/core/callbacks/base';
 import { IChatGptSchema } from '@samchon/openapi';
 import { getPosthog } from '~/helpers/posthog';
 import { LogService } from '~/log/log.service';
 import { GoalService } from '~/goal/goal.service';
 import { TaskService } from '~/task/task.service';
+import { Observable } from 'rxjs';
+
 const got = import('got');
 
 const app = typia.llm.application<EthereumTool & CommonTool, 'chatgpt'>();
@@ -368,407 +370,431 @@ export class AgentService implements OnModuleInit {
   }
 
   /* ─────────────────────────  MAIN RUN  ───────────────────────── */
-  async runAgent(props: {
+
+  public runAgent(props: {
     agentId: string;
     messages?: ChatCompletionMessageParam[];
     sessionId?: string;
     initiator?: string;
     parentSessionId?: string;
-  }) {
-    const tStart = performance.now();
-    const { agentId, sessionId, initiator, parentSessionId } = props;
-    const agent = await this.getAgent({ agentId });
-
-    /* balance check */
-    const wallet = await Wallet.import(agent.wallet);
-    if ((await wallet.getBalance(COMMON_TOKEN_ADDRESS)).lte(0))
-      throw new BadRequestException('Agent has no tokens');
-
-    // Create or get existing session
-    let currentSessionId = sessionId;
-    if (!currentSessionId) {
-      const newSession = await this.session.createSession({
-        value: {
-          sessionId: uuidv4(),
+    stream?: boolean; // ✅ stream flag
+  }): Observable<any> {
+    return new Observable<any>((subscriber) => {
+      const run = async () => {
+        const tStart = performance.now();
+        const {
           agentId,
-          initiator: initiator || undefined,
-          model: {
-            name: 'gpt-4o',
-            temperature: agent.temperature || 0.7,
-            maxTokens: agent.maxTokens || 2000,
-            topP: agent.topP || 1,
-            presencePenalty: agent.presencePenalty || 0,
-            frequencyPenalty: agent.frequencyPenalty || 0,
-          },
-          createdAt: new Date(),
-          updatedAt: new Date(),
-        },
-        parentSessionId,
-      });
-      currentSessionId = newSession.sessionId;
-    }
+          sessionId,
+          initiator,
+          parentSessionId,
+          stream = false, // default false
+        } = props;
 
-    // Ensure we have a valid session ID before proceeding
-    if (!currentSessionId) {
-      throw new BadRequestException('Failed to create or get session');
-    }
+        try {
+          const agent = await this.getAgent({ agentId });
 
-    /* Build tool definitions */
-    const storedTools = await this.toolService.getAllTools();
-    const dynamicDefs = storedTools.map((dbTool) => ({
-      type: 'function',
-      function: { ...dbTool.schema, name: dbTool.name },
-      endpoint: `http://localhost:${process.env.PORT}/v1/agents/tools`,
-    }));
+          const wallet = await Wallet.import(agent.wallet);
+          if ((await wallet.getBalance(COMMON_TOKEN_ADDRESS)).lte(0)) {
+            throw new BadRequestException('Agent has no tokens');
+          }
 
-    const resTools = await this.db.query.resource.findMany({
-      where: (r) => inArray(r.resourceId, agent.commonTools ?? []),
-    });
-
-    const resourceDefs = resTools
-      .filter((r) => !!r.schema)
-      .map((r) => ({
-        type: 'function',
-        function: {
-          ...(r.schema as any),
-          name: `resourceTool_${r.resourceId}`,
-        },
-        endpoint: `http://localhost:${process.env.PORT}/v1/agents/tools`,
-      }));
-
-    const staticDefs = map(app.functions, (_) => ({
-      type: 'function',
-      function: {
-        ..._,
-        parameters:
-          _?.parameters as unknown as ChatCompletionTool['function']['parameters'],
-      },
-      endpoint: `http://localhost:${process.env.PORT}/v1/agents/tools`,
-    })) as (ChatCompletionTool & { endpoint: string })[];
-
-    const toolDefs = [...dynamicDefs, ...resourceDefs, ...staticDefs];
-
-    /* toolUsage tracker */
-    const toolUsage: {
-      name: string;
-      status: string;
-      duration?: number;
-    }[] = [];
-    const executedCalls: any[] = [];
-
-    /* build runners */
-    const makeRunner = (def: ChatCompletionTool & { endpoint: string }) =>
-      tool(
-        async (args, config) => {
-          const fn = config.toolCall?.name ?? 'unknown';
-          const t0 = performance.now();
-          const data = await got
-            .then((_) =>
-              _.got
-                .post(`http://localhost:${process.env.PORT}/v1/agents/tools`, {
-                  json: {
-                    args,
-                    toolCall: config.toolCall,
-                    metadata: { agentId },
-                  },
-                  headers: { 'Content-Type': 'application/json' },
-                })
-                .json<any>(),
-            )
-            .catch((e: any) => {
-              toolUsage.push({
-                name: fn,
-                status: 'error',
-                duration: performance.now() - t0,
-              });
-              throw e;
+          let currentSessionId = sessionId;
+          if (!currentSessionId) {
+            const newSession = await this.session.createSession({
+              value: {
+                sessionId: uuidv4(),
+                agentId,
+                initiator: initiator || undefined,
+                model: {
+                  name: 'gpt-4o',
+                  temperature: agent.temperature || 0.7,
+                  maxTokens: agent.maxTokens || 2000,
+                  topP: agent.topP || 1,
+                  presencePenalty: agent.presencePenalty || 0,
+                  frequencyPenalty: agent.frequencyPenalty || 0,
+                },
+                createdAt: new Date(),
+                updatedAt: new Date(),
+              },
+              parentSessionId,
             });
-          toolUsage.push({
-            name: fn,
-            status: 'success',
-            duration: performance.now() - t0,
+            currentSessionId = newSession.sessionId;
+          }
+
+          const storedTools = await this.toolService.getAllTools();
+          const dynamicDefs = storedTools.map((dbTool) => ({
+            type: 'function',
+            function: { ...dbTool.schema, name: dbTool.name },
+            endpoint: `http://localhost:${process.env.PORT}/v1/agents/tools`,
+          }));
+
+          const resTools = await this.db.query.resource.findMany({
+            where: (r) => inArray(r.resourceId, agent.commonTools ?? []),
           });
-          executedCalls.push({
-            // >>> ADDED
-            name: fn,
-            status: 'success',
-            duration: performance.now() - t0,
-            args,
-            result: data,
-          });
-          return { toolData: data };
-        },
-        {
-          name: def.function.name,
-          description: def.function.description,
-          schema: def.function
-            .parameters as unknown as IChatGptSchema.IParameters,
-        },
-      );
 
-    const toolRunners = toolDefs.map((def) =>
-      makeRunner(def as ChatCompletionTool & { endpoint: string }),
-    );
-    const toolNode = new ToolNode(toolRunners);
-    const collectedToolCalls = executedCalls;
+          const resourceDefs = resTools
+            .filter((r) => !!r.schema)
+            .map((r) => ({
+              type: 'function',
+              function: {
+                ...(r.schema as any),
+                name: `resourceTool_${r.resourceId}`,
+              },
+              endpoint: `http://localhost:${process.env.PORT}/v1/agents/tools`,
+            }));
 
-    const llm = new ChatOpenAI({
-      model: 'gpt-4o', //4o is better in coding tasks so far compared to 4o-mini: however 4o-mini is cheaper for testing
-      temperature: 0,
-      supportsStrictToolCalling: true,
-      apiKey: process.env.OPENAI_API_KEY,
-    });
-    const llmWithTools = llm.bindTools(toolDefs, {
-      parallel_tool_calls: true,
-      strict: false,
-    });
-
-    /* LangGraph workflow */
-    const callModel = async (s: typeof MessagesAnnotation.State) => ({
-      messages: await llmWithTools.invoke(s.messages),
-    });
-    const shouldCont = (s: typeof MessagesAnnotation.State) => {
-      const last = s.messages.at(-1);
-      return last &&
-        'tool_calls' in last &&
-        Array.isArray(last.tool_calls) &&
-        last.tool_calls.length
-        ? 'tools'
-        : END;
-    };
-    const graph = new StateGraph(MessagesAnnotation)
-      .addNode('model', callModel)
-      .addNode('tools', toolNode)
-      .addEdge(START, 'model')
-      .addConditionalEdges('model', shouldCont, ['tools', END])
-      .addEdge('tools', 'model')
-      .compile({
-        checkpointer: PostgresSaver.fromConnString(
-          `postgresql://${process.env.POSTGRES_USER}:${process.env.POSTGRES_PASSWORD}@${process.env.POSTGRES_HOST}:${process.env.POSTGRES_PORT}/${process.env.POSTGRES_DATABASE}`,
-        ),
-      });
-
-    /* conversation bootstrap */
-    let messages: Messages = [];
-
-    if (!sessionId) {
-      const boot = await this.createAgentSession(agentId, currentSessionId);
-      messages.push(
-        ...boot.messages.map((m) => ({
-          ...m,
-          type: m.role,
-          content: m.content ?? '',
-        })),
-      );
-    }
-    if (props.messages?.length)
-      messages.push(
-        ...props.messages.map((m) => ({
-          ...m,
-          type: m.role,
-          content: m.content ?? '',
-        })),
-      );
-
-    /* ---------- MAIN EXEC LOOP ---------- */
-    let loop = 0;
-    let max_recurssion = 4;
-    if (agent.autonomyEnabled) {
-      max_recurssion = 2;
-    }
-
-    while (loop++ < max_recurssion) {
-      /* inject next pending task (if any) */
-      console.log('looping', loop);
-      const nextTask = await this.tasks.getNextExecutable(
-        agentId,
-        currentSessionId,
-      );
-      if (nextTask) {
-        console.log('Automated user call', loop);
-
-        await this.tasks.start(nextTask.taskId);
-
-        messages.push({
-          type: 'user',
-          role: 'user',
-          content: `
-              ##TASK_INSTRUCTION: ${nextTask.description}.
-              Complete the given task to the best of your ability. Ideally in one shot unless otherwise specified.
-              Use the tools provided to you if needed.
-          `,
-        } as any);
-      }
-
-      /* run once */
-      const result = await graph.invoke(
-        { messages },
-        { configurable: { thread_id: currentSessionId } },
-      );
-      messages = result.messages;
-
-      /* break if no more executable tasks */
-      const pending = await this.tasks.getNextExecutable(
-        agentId,
-        currentSessionId,
-      );
-      if (!pending) break;
-    }
-
-    /* Prepare final response */
-    const last = messages.at(-1)!;
-    const finalText =
-      typeof last === 'object' &&
-      last !== null &&
-      'content' in last &&
-      typeof last.content === 'string'
-        ? last.content
-        : typeof last === 'object' && 'content' in last
-          ? compact(map((last as any).content, (_) => get(_, 'text'))).join(
-              '\n',
-            )
-          : '';
-
-    const config: Parameters<typeof graph.invoke>[1] = {
-      configurable: { thread_id: currentSessionId },
-    };
-
-    const llmResponse = await graph.invoke({ messages }, config);
-
-    const toolCalls = collectedToolCalls.filter(
-      (call) => call.name !== 'interactWithAgent',
-    );
-    // Extract agent-to-agent calls (when the agent calls another agent)
-    const rawAgenCalls: any = collectedToolCalls.filter(
-      (call) => call.name === 'interactWithAgent',
-    );
-
-    // Extract tool calls and agent calls from the response
-
-    // Extract agent-to-agent calls (when the agent calls another agent)
-    const agentCalls = rawAgenCalls
-      .filter((call: any) => call.name === 'interactWithAgent' && call.args)
-      .map(async (call: any) => {
-        const args = call.args;
-        // Create a new session for the agent-to-agent call
-        const childSession = await this.runAgent({
-          agentId: args.agentId,
-          messages: args.messages,
-          initiator: agentId, // The calling agent becomes the initiator
-          parentSessionId: currentSessionId, // Set the current session as parent
-        });
-        return {
-          agentId: args.agentId,
-          message: args.messages?.[0]?.content || '',
-          response: childSession,
-          sessionId: childSession.sessionId,
-        };
-      });
-
-    // Wait for all agent calls to complete
-    const resolvedAgentCalls = await Promise.all(agentCalls);
-
-    // Update session using SessionService
-    const messageHistories = llmResponse.messages.filter(
-      (m) => m.toDict().type !== 'system',
-    );
-
-    // Get current session to preserve metadata
-    const currentSession = await this.session.getSession({
-      id: currentSessionId,
-    });
-    if (!currentSession) {
-      throw new BadRequestException('Session not found');
-    }
-
-    await this.session.updateSession({
-      id: currentSessionId,
-      delta: {
-        endedAt: new Date(),
-        metrics: {
-          totalTokens: toolUsage.reduce(
-            (acc, tool) => acc + (tool.duration || 0),
-            0,
-          ),
-          toolCalls: toolUsage.length,
-          errorCount: toolUsage.filter((t) => t.status === 'error').length,
-        },
-        history: messageHistories.map((m) => ({
-          role: m.toDict().type,
-          content:
-            typeof m.content === 'string'
-              ? m.content
-              : JSON.stringify(m.content),
-          timestamp: new Date().toISOString(),
-          metadata: {
-            toolCalls: m.toDict().type === 'assistant' ? toolCalls : undefined,
-            agentCalls:
-              m.toDict().type === 'assistant' ? resolvedAgentCalls : undefined,
-          },
-        })),
-        updatedAt: new Date(),
-      },
-    });
-
-    // Create log entry for the agent run
-    await this.logService.createLogEntry({
-      agentId,
-      sessionId: currentSessionId,
-      action: 'run',
-      message: finalText.slice(0, 512),
-      status: 'success',
-      responseTime: performance.now() - tStart,
-      tools: toolUsage,
-    });
-
-    // Generate title if this is the first message
-    let sessionTitle = 'New Session';
-    if (messageHistories.length === 0) {
-      const titlePrompt = `Based on the following user message, generate a concise title (max 5 words) for this conversation session. Only respond with the title, nothing else.\n\nUser message: ${finalText}`;
-
-      const titleMessages = [
-        {
-          role: 'system',
-          content:
-            'You are a helpful assistant that generates concise, descriptive titles for conversations.',
-        },
-        {
-          role: 'user',
-          content: titlePrompt,
-        },
-      ];
-
-      const titleResponse = await llmWithTools.invoke(titleMessages);
-      const titleContent = titleResponse.content;
-      sessionTitle =
-        typeof titleContent === 'string' ? titleContent.trim() : 'New Session';
-
-      // Update session with new title
-      await this.session.updateSession({
-        id: currentSessionId,
-        delta: {
-          query: {
-            text: sessionTitle,
-            timestamp: new Date().toISOString(),
-            metadata: {
-              ...(currentSession.query?.metadata || {}),
-              title: sessionTitle,
+          const staticDefs = map(app.functions, (_) => ({
+            type: 'function',
+            function: {
+              ..._,
+              parameters:
+                _?.parameters as unknown as ChatCompletionTool['function']['parameters'],
             },
-          },
-        },
-      });
-    }
+            endpoint: `http://localhost:${process.env.PORT}/v1/agents/tools`,
+          })) as (ChatCompletionTool & { endpoint: string })[];
 
-    const lastMessage = llmResponse.messages.at(-1)?.toDict();
-    return {
-      ...lastMessage,
-      sessionId: currentSessionId,
-      title: sessionTitle,
-      metadata: {
-        toolCalls,
-        agentCalls: resolvedAgentCalls,
-      },
-    };
+          const toolDefs = [...dynamicDefs, ...resourceDefs, ...staticDefs];
+
+          const toolUsage: {
+            name: string;
+            status: string;
+            duration?: number;
+          }[] = [];
+          const executedCalls: any[] = [];
+
+          const callbackHandler = BaseCallbackHandler.fromMethods({
+            handleLLMNewToken: async (token: string) => {
+              if (stream) {
+                subscriber.next({
+                  type: 'token',
+                  role: 'ai',
+                  content: token,
+                  timestamp: new Date().toISOString(),
+                });
+              }
+            },
+            handleToolStart: async (tool: any, input: string) => {
+              subscriber.next({
+                type: 'toolStart',
+                toolName: tool.name,
+                input,
+                timestamp: new Date().toISOString(),
+              });
+            },
+            handleToolEnd: async (output: any) => {
+              subscriber.next({
+                type: 'toolEnd',
+                output,
+                timestamp: new Date().toISOString(),
+              });
+            },
+          });
+
+          const llm = new ChatOpenAI({
+            model: 'gpt-4o',
+            temperature: 0,
+            supportsStrictToolCalling: true,
+            apiKey: process.env.OPENAI_API_KEY,
+            streaming: stream, // ✅ use flag
+            callbacks: [callbackHandler],
+          });
+
+          const llmWithTools = llm.bindTools(toolDefs, {
+            parallel_tool_calls: true,
+            strict: false,
+            callbacks: [callbackHandler],
+          });
+
+          const makeRunner = (def: ChatCompletionTool & { endpoint: string }) =>
+            tool(
+              async (args, config) => {
+                const fn = config.toolCall?.name ?? 'unknown';
+                const t0 = performance.now();
+                const got_ = await got;
+                const data = await got_.default
+                  .post(
+                    `http://localhost:${process.env.PORT}/v1/agents/tools`,
+                    {
+                      json: {
+                        args,
+                        toolCall: config.toolCall,
+                        metadata: { agentId },
+                      },
+                      headers: { 'Content-Type': 'application/json' },
+                    },
+                  )
+                  .json<any>()
+                  .catch((e: any) => {
+                    toolUsage.push({
+                      name: fn,
+                      status: 'error',
+                      duration: performance.now() - t0,
+                    });
+                    throw e;
+                  });
+
+                toolUsage.push({
+                  name: fn,
+                  status: 'success',
+                  duration: performance.now() - t0,
+                });
+
+                const callObj = {
+                  role: 'tool',
+                  name: fn,
+                  status: 'success',
+                  duration: performance.now() - t0,
+                  args,
+                  result: data,
+                  timestamp: new Date().toISOString(),
+                };
+
+                executedCalls.push(callObj);
+
+                subscriber.next({
+                  type: 'tool',
+                  ...callObj,
+                });
+
+                return { toolData: data };
+              },
+              {
+                name: def.function.name,
+                description: def.function.description,
+                schema: def.function
+                  .parameters as unknown as IChatGptSchema.IParameters,
+              },
+            );
+
+          const toolRunners = toolDefs.map((def) =>
+            makeRunner(def as ChatCompletionTool & { endpoint: string }),
+          );
+
+          const toolNode = new ToolNode(toolRunners);
+          const collectedToolCalls = executedCalls;
+
+          const callModel = async (s: typeof MessagesAnnotation.State) => ({
+            messages: await llmWithTools.invoke(s.messages),
+          });
+
+          const shouldCont = (s: typeof MessagesAnnotation.State) => {
+            const last = s.messages.at(-1);
+            return last &&
+              'tool_calls' in last &&
+              Array.isArray(last.tool_calls) &&
+              last.tool_calls.length
+              ? 'tools'
+              : END;
+          };
+
+          const graph = new StateGraph(MessagesAnnotation)
+            .addNode('model', callModel)
+            .addNode('tools', toolNode)
+            .addEdge(START, 'model')
+            .addConditionalEdges('model', shouldCont, ['tools', END])
+            .addEdge('tools', 'model')
+            .compile({
+              checkpointer: PostgresSaver.fromConnString(
+                `postgresql://${process.env.POSTGRES_USER}:${process.env.POSTGRES_PASSWORD}@${process.env.POSTGRES_HOST}:${process.env.POSTGRES_PORT}/${process.env.POSTGRES_DATABASE}`,
+              ),
+            });
+
+          let messages: Messages = [];
+
+          if (!sessionId) {
+            const boot = await this.createAgentSession(
+              agentId,
+              currentSessionId,
+            );
+            messages.push(
+              ...boot.messages.map((m) => ({
+                ...m,
+                type: m.role,
+                content: m.content ?? '',
+              })),
+            );
+          }
+
+          if (props.messages?.length) {
+            messages.push(
+              ...props.messages.map((m) => ({
+                ...m,
+                type: m.role,
+                content: m.content ?? '',
+              })),
+            );
+          }
+
+          let loop = 0;
+          let max_recurssion = agent.autonomyEnabled ? 2 : 4;
+          let finalResult = null;
+
+          while (loop++ < max_recurssion) {
+            const nextTask = await this.tasks.getNextExecutable(
+              agentId,
+              currentSessionId,
+            );
+            if (nextTask) {
+              await this.tasks.start(nextTask.taskId);
+              messages.push({
+                type: 'user',
+                role: 'user',
+                content: `##TASK_INSTRUCTION: ${nextTask.description}`,
+              } as any);
+            }
+
+            const result = await graph.invoke(
+              { messages },
+              { configurable: { thread_id: currentSessionId } },
+            );
+
+            messages = result.messages;
+            finalResult = result;
+
+            const pending = await this.tasks.getNextExecutable(
+              agentId,
+              currentSessionId,
+            );
+            if (!pending) break;
+          }
+
+          const toolCalls = collectedToolCalls.filter(
+            (call) => call.name !== 'interactWithAgent',
+          );
+
+          const rawAgenCalls: any = collectedToolCalls.filter(
+            (call) => call.name === 'interactWithAgent',
+          );
+
+          const agentCalls = rawAgenCalls
+            .filter(
+              (call: any) => call.name === 'interactWithAgent' && call.args,
+            )
+            .map(async (call: any) => {
+              const args = call.args;
+              const childSession$ = this.runAgent({
+                agentId: args.agentId,
+                messages: args.messages,
+                initiator: agentId,
+                parentSessionId: currentSessionId,
+                stream,
+              });
+
+              let lastData: any;
+              await new Promise<void>((resolve, reject) => {
+                childSession$.subscribe({
+                  next: (chunk) => {
+                    lastData = chunk;
+                  },
+                  error: reject,
+                  complete: resolve,
+                });
+              });
+
+              return {
+                agentId: args.agentId,
+                message: args.messages?.[0]?.content || '',
+                response: lastData,
+                sessionId: lastData?.sessionId,
+              };
+            });
+
+          const resolvedAgentCalls = await Promise.all(agentCalls);
+
+          const messageHistories =
+            finalResult?.messages?.filter(
+              (m) => m.toDict().type !== 'system',
+            ) || [];
+
+          const currentSession = await this.session.getSession({
+            id: currentSessionId,
+          });
+          if (!currentSession) {
+            throw new BadRequestException('Session not found');
+          }
+
+          await this.session.updateSession({
+            id: currentSessionId,
+            delta: {
+              endedAt: new Date(),
+              metrics: {
+                totalTokens: toolUsage.reduce(
+                  (acc, tool) => acc + (tool.duration || 0),
+                  0,
+                ),
+                toolCalls: toolUsage.length,
+                errorCount: toolUsage.filter((t) => t.status === 'error')
+                  .length,
+              },
+              history: messageHistories.map((m) => ({
+                role: m.toDict().type,
+                content:
+                  typeof m.content === 'string'
+                    ? m.content
+                    : JSON.stringify(m.content),
+                timestamp: new Date().toISOString(),
+                metadata: {
+                  toolCalls:
+                    m.toDict().type === 'assistant' ? toolCalls : undefined,
+                  agentCalls:
+                    m.toDict().type === 'assistant'
+                      ? resolvedAgentCalls
+                      : undefined,
+                },
+              })),
+              updatedAt: new Date(),
+            },
+          });
+
+          const last = messages.at(-1)!;
+          const finalText =
+            typeof last === 'object' &&
+            last !== null &&
+            'content' in last &&
+            typeof last.content === 'string'
+              ? last.content
+              : typeof last === 'object' && 'content' in last
+                ? compact(
+                    map((last as any).content, (_) => get(_, 'text')),
+                  ).join('\n')
+                : '';
+
+          await this.logService.createLogEntry({
+            agentId,
+            sessionId: currentSessionId,
+            action: 'run',
+            message: finalText.slice(0, 512),
+            status: 'success',
+            responseTime: performance.now() - tStart,
+            tools: toolUsage,
+          });
+
+          const sessionTitle =
+            currentSession.query?.metadata?.title || 'New Session';
+
+          const lastMessage = finalResult?.messages?.at(-1)?.toDict() ?? {};
+
+          subscriber.next({
+            type: 'final',
+            fullPayloadHere: {
+              ...lastMessage,
+              sessionId: currentSessionId,
+              title: sessionTitle,
+              metadata: {
+                toolCalls,
+                agentCalls: resolvedAgentCalls,
+              },
+            },
+          });
+
+          subscriber.complete();
+        } catch (err) {
+          subscriber.error(err);
+        }
+      };
+
+      run();
+    });
   }
 
   /* ─────────────────────────  updateAgent / getters ───────────────────────── */
