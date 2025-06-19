@@ -163,7 +163,7 @@ export default function SessionInterface({
         scrollHideDelay={100}
         style={{ height: height ?? "78vh" }}
       >
-        <div className="container mx-auto max-w-2xl" ref={scrollRef}>
+        <div className="container mx-auto max-w-2xl mb-20" ref={scrollRef}>
           {groupedItems.map((item, index) => {
             if (item.type === "message") {
               const { message } = item;

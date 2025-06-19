@@ -64,7 +64,11 @@ export default function AgentSessionPage() {
 
   return (
     <div className="flex h-screen bg-gray-50 dark:bg-gray-900">
-      <SessionsSideBar username={userAddress} sessions={sessions} />
+      <SessionsSideBar
+        username={userAddress}
+        sessions={sessions}
+        agentId={agentId}
+      />
       <SessionInterface
         agent={agent}
         session={session}

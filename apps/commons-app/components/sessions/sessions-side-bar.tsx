@@ -8,6 +8,7 @@ import { PanelLeft, BookOpen, PlusCircle, Sparkles, Earth } from "lucide-react";
 import { AgentTitleCard } from "@/components/agents/agent-title-card";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import SessionsList from "@/components/sessions/sessions-list";
+import { useRouter } from "next/navigation";
 
 function NavItem({
   icon: Icon,
@@ -34,12 +35,19 @@ function NavItem({
 export function SessionsSideBar({
   username,
   sessions,
+  agentId,
 }: {
   username: string;
   sessions: any;
+  agentId: string;
 }) {
   const [isOpen, setIsOpen] = useState(true);
   const [recentChats, setRecentChats] = useState<any[]>([]);
+  const router = useRouter();
+
+  const handleNewSession = () => {
+    router.push(`/agents/${agentId}`);
+  };
 
   useEffect(() => {
     async function fetchRecentChats() {
@@ -91,11 +99,12 @@ export function SessionsSideBar({
       </div>
 
       <div className="px-3 py-2 mt-1">
-        <Link href={`/worlds/create`}>
-          <Button className="w-full flex items-center justify-center gap-2 rounded-md py-2 font-medium text-sm">
-            {isOpen ? <>New Session</> : <PlusCircle className="h-5 w-5" />}
-          </Button>
-        </Link>
+        <Button
+          className="w-full flex items-center justify-center gap-2 rounded-md py-2 font-medium text-sm"
+          onClick={handleNewSession}
+        >
+          {isOpen ? <>New Session</> : <PlusCircle className="h-5 w-5" />}
+        </Button>
       </div>
 
       <nav className="mt-2 px-3">

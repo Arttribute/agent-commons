@@ -6,14 +6,11 @@ import { useAuth } from "@/context/AuthContext";
 import SessionInterface from "@/components/sessions/session-interface";
 import { Loader2 } from "lucide-react";
 import { SessionsSideBar } from "@/components/sessions/sessions-side-bar";
-import { useAgentContext } from "@/context/AgentContext";
 
 export default function PublicAgentPage() {
   const params = useParams();
   const router = useRouter();
   const { agent: agentId } = params as { agent: string };
-
-  const { messages, setMessages } = useAgentContext();
 
   const [agent, setAgent] = useState<any>(null);
   const [session, setSession] = useState<any>(null);
@@ -54,7 +51,11 @@ export default function PublicAgentPage() {
 
   return (
     <div className="flex h-screen bg-gray-50 dark:bg-gray-900">
-      <SessionsSideBar username={userAddress} sessions={sessions} />
+      <SessionsSideBar
+        username={userAddress}
+        sessions={sessions}
+        agentId={agentId}
+      />
       <SessionInterface
         agent={agent}
         session={session}
