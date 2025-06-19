@@ -496,7 +496,6 @@ export class AgentService implements OnModuleInit {
             supportsStrictToolCalling: true,
             apiKey: process.env.OPENAI_API_KEY,
             streaming: stream, // ✅ use flag
-            callbacks: [callbackHandler],
           });
 
           const llmWithTools = llm.bindTools(toolDefs, {
@@ -776,7 +775,7 @@ export class AgentService implements OnModuleInit {
 
           subscriber.next({
             type: 'final',
-            fullPayloadHere: {
+            payload: {
               ...lastMessage,
               sessionId: currentSessionId,
               title: sessionTitle,

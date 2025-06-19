@@ -80,7 +80,7 @@ export class AgentController {
       this.agent.runAgent(body).pipe(
         // The final emission from runAgent will contain the full data
         filter((chunk) => chunk.type === 'final'),
-        map((chunk) => chunk),
+        map((chunk) => chunk.payload),
       ),
     );
   }
