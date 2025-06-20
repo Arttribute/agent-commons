@@ -4,7 +4,6 @@ import { useEffect, useState, useRef } from "react";
 import { use } from "react";
 import { Button } from "@/components/ui/button";
 import { Loader2, Scroll } from "lucide-react";
-import type { Dispatch, SetStateAction } from "react";
 
 // Layout & local components
 import AppBar from "@/components/layout/app-bar";
@@ -16,6 +15,7 @@ import { AgentMetrics } from "@/components/agents/agent-metrics";
 import { AgentKnowledgebase } from "@/components/agents/agent-knowledge-base";
 import SessionsList from "@/components/sessions/sessions-list";
 import { PreferedAgentConnections } from "@/components/connections/prefered-agent-connections";
+import { useAgentContext } from "@/context/AgentContext";
 // Hooks
 import { EIP1193Provider, useWallets } from "@privy-io/react-auth";
 import { useChainClients } from "@/hooks/useChainClients";
@@ -67,6 +67,7 @@ export default function AgentStudio({
   // 1) Basic Setup
   const agentid = use(params);
   console.log("Agent ID:", agentid);
+  const { messages, setMessages } = useAgentContext();
   const id = agentid.agent;
 
   const [agent, setAgent] = useState<CommonAgent | null>(null);
