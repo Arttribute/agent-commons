@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
-import { Textarea } from "@/components/ui/textarea";
 import UserLockedTokens from "@/components/agents/user-locked-tokens";
 import { ArrowUp, Loader2 } from "lucide-react";
 import { useAgentContext } from "@/context/AgentContext"; // Import useAgentContext
@@ -100,7 +99,7 @@ export default function ChatInputBox({
         throw new Error("Failed to get reader from response body");
       }
 
-      let decoder = new TextDecoder();
+      const decoder = new TextDecoder();
       let accumulatedContent = "";
 
       // Add a temporary AI message to the state to be updated during streaming

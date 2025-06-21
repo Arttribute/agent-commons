@@ -345,9 +345,9 @@ export function PreferedAgentConnections({
 
           <Tabs defaultValue="your-agents" className="mt-4">
             <TabsList className="grid w-full grid-cols-2">
-              <TabsTrigger value="your-agents">Your Agents</TabsTrigger>
+              <TabsTrigger value="your-agents">{"Your Agents"}</TabsTrigger>
               <TabsTrigger value="other-agents">
-                Other Users' Agents
+                {"Other Users' Agents"}
               </TabsTrigger>
             </TabsList>
 
@@ -382,12 +382,12 @@ export function PreferedAgentConnections({
                           <div>
                             <div className="font-medium">{agent.name}</div>
                             <div className="text-sm text-muted-foreground">
-                              Owner: {agent.owner}
+                              {"Owner:"} {agent.owner}
                               <Badge
                                 variant="outline"
                                 className="ml-2 text-xs bg-primary/10"
                               >
-                                Your Agent
+                                {"Your Agent"}
                               </Badge>
                             </div>
                           </div>
@@ -398,7 +398,9 @@ export function PreferedAgentConnections({
                   {filteredAgents.filter((agent) => agent.isOwned).length ===
                     0 && (
                     <div className="flex h-[100px] items-center justify-center border rounded-lg">
-                      <p className="text-muted-foreground">No agents found</p>
+                      <p className="text-muted-foreground">
+                        {"No agents found"}
+                      </p>
                     </div>
                   )}
                 </div>
@@ -467,13 +469,13 @@ export function PreferedAgentConnections({
             <div>
               <div className="font-medium">{selectedAgent?.name}</div>
               <div className="text-sm text-muted-foreground">
-                Owner: {selectedAgent?.owner}
+                {"Owner: {selectedAgent?.owner}"}
                 {selectedAgent?.isOwned && (
                   <Badge
                     variant="outline"
                     className="ml-2 text-xs bg-primary/10"
                   >
-                    Your Agent
+                    {"Your Agent"}
                   </Badge>
                 )}
               </div>
@@ -482,7 +484,7 @@ export function PreferedAgentConnections({
 
           <div>
             <h4 className="text-sm font-medium mb-2">
-              When should your agent interact with this agent?
+              {"When should your agent interact with this agent?"}
             </h4>
             <Textarea
               placeholder="Add instructions for when your agent should interact with this agent..."
@@ -491,8 +493,9 @@ export function PreferedAgentConnections({
               className="min-h-[150px]"
             />
             <p className="text-xs text-muted-foreground mt-1">
-              These instructions will guide your agent on when to collaborate
-              with this agent.
+              {
+                "These instructions will guide your agent on when to collaborate with this agent."
+              }
             </p>
           </div>
 

@@ -694,7 +694,7 @@ export default function AgentTools({
                 {agentTools
                   .slice(0, Math.min(5, agentTools.length))
                   .map((tool) => (
-                    <div className="col-span-1">
+                    <div className="col-span-1" key={tool.id}>
                       <div
                         key={tool.id}
                         className="border rounded-full px-2 py-0.5 w-full"
