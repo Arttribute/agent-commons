@@ -31,33 +31,12 @@ export class SessionService {
   }) {
     const { value, parentSessionId } = props;
 
-    // If this is a child session, update the parent session
-    if (parentSessionId) {
-      const childSessionData = {
-        sessionId: value.sessionId,
-        agentId: value.agentId,
-        createdAt: new Date().toISOString(),
-        title: value.query?.text || 'New Session',
-        status: 'active',
-      };
-
-      await this.db
-        .update(schema.session)
-        .set({
-          childSessions: sql`jsonb_set(
-            COALESCE(child_sessions, '[]'::jsonb),
-            '{-1}',
-            ${JSON.stringify(childSessionData)}::jsonb
-          )`,
-        })
-        .where(eq(schema.session.sessionId, parentSessionId));
-    }
-
     const [session] = await this.db
       .insert(schema.session)
       .values({
         ...value,
         parentSessionId,
+        initiator: value.initiator?.toLowerCase(),
       })
       .returning();
 
@@ -70,26 +49,18 @@ export class SessionService {
     });
 
     if (!session) return null;
-    // If this session has child sessions, fetch them
-    if (session.childSessions && session.childSessions.length > 0) {
-      const childSessionIds = session.childSessions.map(
-        (cs: { sessionId: string }) => cs.sessionId,
-      );
-      const childSessions = await this.db.query.session.findMany({
-        where: (t) => inArray(t.sessionId, childSessionIds),
-      });
-      return {
-        ...session,
-        childSessions: childSessions.map((cs) => ({
-          ...cs,
-          ...session.childSessions?.find(
-            (c: { sessionId: string }) => c.sessionId === cs.sessionId,
-          ),
-        })),
-      };
-    }
+    //search for sessions where parentSessionId matches the sessionId and return them as child sessions
+    const childSessions = await this.db.query.session.findMany({
+      where: (t) => eq(t.parentSessionId, props.id),
+      orderBy: (t) => t.createdAt,
+    });
+    //return session with child sessions as an array
+    const sessionData = {
+      ...session,
+      childSessions: childSessions || [' No child sessions found'],
+    };
 
-    return session;
+    return sessionData;
   }
 
   public async getSessionsByAgentId(agentId: string) {
@@ -144,6 +115,12 @@ export class SessionService {
       orderBy: (t) => t.createdAt,
     });
 
+    //search for sessions where parentSessionId matches the sessionId and return them as child sessions
+    const childSessions = await this.db.query.session.findMany({
+      where: (t) => eq(t.parentSessionId, props.id),
+      orderBy: (t) => t.createdAt,
+    });
+
     // Return history as is, without modifying the roles
     return {
       ...sessionEntry,
@@ -155,6 +132,7 @@ export class SessionService {
         ...goal,
         tasks: tasks.filter((task) => task.goalId === goal.goalId),
       })),
+      childSessions: childSessions || [],
     };
   }
 

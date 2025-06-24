@@ -250,6 +250,15 @@ export class AgentService implements OnModuleInit {
   private async createAgentSession(agentId: string, sessionId: string) {
     const agent = await this.getAgent({ agentId });
     const currentTime = new Date();
+
+    // Get existing child sessions for this agent
+    const childSessions = await this.getChildSessions(sessionId);
+
+    const childSessionsInfo =
+      childSessions.length > 0
+        ? `\n\nEXISTING CHILD SESSIONS:\nYou have the following ongoing conversations with other agents. Use these sessionIds to continue existing conversations instead of starting new ones:\n${childSessions.map((cs) => `- Agent ${cs.childAgentId}: ${cs.title || 'Untitled conversation'} (sessionId=${cs.childSessionId}, started: ${cs.createdAt})`).join('\n')}`
+        : '';
+    console.log('childSessionsInfo:', childSessionsInfo);
     console.log('sessiond id from createsession', sessionId);
     const messages: ChatCompletionMessageParam[] = [
       {
@@ -266,7 +275,7 @@ export class AgentService implements OnModuleInit {
           The current date and time is ${currentTime.toISOString()}.
            **SESSION ID**: ${sessionId}
           
-          Note that you can interact and engage with other agents using the interactWithAgent tool. Once you initiate a conversation with another agent, you can continue the conversation by calling the interactWithAgent tool again with the same sessionId. This will allow you to continue the conversation with the other agent. 
+          Note that you can interact and engage with other agents using the interactWithAgent tool. Once you initiate a conversation with another agent, you can continue the conversation by calling the interactWithAgent tool again with the sessionId provided in the result of running the interactWithAgent tool. This will allow you to continue the conversation with the other agent.${childSessionsInfo}
 
           STRICTLY ABIDE BY THE FOLLOWING:
           • If a request is simple and does not require complex plannind give an immediate response.
@@ -335,6 +344,24 @@ export class AgentService implements OnModuleInit {
     return completionBody;
   }
 
+  /* ─────────────────────────  CHILD SESSION TRACKING  ───────────────────────── */
+  async getChildSessions(parentSessionId: string) {
+    const sessions = await this.db.query.session.findMany({
+      where: (s) => eq(s.parentSessionId, parentSessionId),
+    });
+    console.log(
+      `Found ${sessions.length} child sessions for parent ${parentSessionId}`,
+    );
+
+    return sessions.map((session) => ({
+      childSessionId: session.sessionId,
+      childAgentId: session.agentId,
+      title: session.title,
+      createdAt: session.createdAt,
+      updatedAt: session.updatedAt,
+    }));
+  }
+
   /* ─────────────────────────  CRON TRIGGER  ───────────────────────── */
   async triggerAgent(props: { agentId: string; sessionId?: string }) {
     console.log('Triggering agent', props.agentId);
@@ -365,6 +392,7 @@ export class AgentService implements OnModuleInit {
           },
         ],
         sessionId: goalsessionId, //This will give the agent a rough idea on which task to execute. i.e - it will execute the tasks with the same sessionId
+        initiator: agent.agentId,
       });
     }
   }
@@ -375,7 +403,7 @@ export class AgentService implements OnModuleInit {
     agentId: string;
     messages?: ChatCompletionMessageParam[];
     sessionId?: string;
-    initiator?: string;
+    initiator: string;
     parentSessionId?: string;
     stream?: boolean; // ✅ stream flag
   }): Observable<any> {
@@ -399,12 +427,13 @@ export class AgentService implements OnModuleInit {
           }
 
           let currentSessionId = sessionId;
+          let isNewSession = false;
           if (!currentSessionId) {
             const newSession = await this.session.createSession({
               value: {
                 sessionId: uuidv4(),
                 agentId,
-                initiator: initiator || undefined,
+                initiator: initiator,
                 model: {
                   name: 'gpt-4o',
                   temperature: agent.temperature || 0.7,
@@ -419,6 +448,7 @@ export class AgentService implements OnModuleInit {
               parentSessionId,
             });
             currentSessionId = newSession.sessionId;
+            isNewSession = true;
           }
 
           const storedTools = await this.toolService.getAllTools();
@@ -612,6 +642,32 @@ export class AgentService implements OnModuleInit {
                 content: m.content ?? '',
               })),
             );
+          } else {
+            // ✅ For existing sessions, inject updated system message with current child sessions
+            const currentTime = new Date();
+            const childSessions = await this.getChildSessions(currentSessionId);
+
+            const childSessionsInfo =
+              childSessions.length > 0
+                ? `\n\nEXISTING CHILD SESSIONS:\nYou have the following ongoing conversations with other agents. Use these sessionIds to continue existing conversations instead of starting new ones:\n${childSessions.map((cs) => `- Agent ${cs.childAgentId}: ${cs.title || 'Untitled conversation'} (sessionId=${cs.childSessionId}, started: ${cs.createdAt})`).join('\n')}`
+                : '';
+
+            console.log(
+              'Updated childSessionsInfo for existing session:',
+              childSessionsInfo,
+            );
+
+            // Add updated system message with current child session info
+            messages.push({
+              type: 'system',
+              role: 'system',
+              content: `
+              REMEMBER:
+              **SESSION ID**: ${currentSessionId}
+              **Current Time**: ${currentTime.toISOString()}
+              When using the interactWithAgent tool you can only use sessionIds from the following list when continuing conversations: ${childSessionsInfo}`,
+            } as any);
+            console.log('Child sessions after update:', childSessionsInfo);
           }
 
           if (props.messages?.length) {
@@ -671,12 +727,13 @@ export class AgentService implements OnModuleInit {
             )
             .map(async (call: any) => {
               const args = call.args;
+              const sessionIdToUse = args.sessionId || undefined;
               const childSession$ = this.runAgent({
                 agentId: args.agentId,
                 messages: args.messages,
+                sessionId: sessionIdToUse,
                 initiator: agentId,
                 parentSessionId: currentSessionId,
-                stream,
               });
 
               let lastData: any;
@@ -712,10 +769,25 @@ export class AgentService implements OnModuleInit {
             throw new BadRequestException('Session not found');
           }
 
+          let sessionTitle = 'New Session';
+          if (isNewSession && props.messages?.length) {
+            const firstUserMessage = props.messages.find(
+              (m) => m.role === 'user',
+            );
+            if (firstUserMessage?.content) {
+              sessionTitle = await this.generateSessionTitle(
+                firstUserMessage.content as string,
+              );
+            }
+          }
+
           await this.session.updateSession({
             id: currentSessionId,
             delta: {
               endedAt: new Date(),
+              title: isNewSession
+                ? sessionTitle
+                : currentSession.title || sessionTitle,
               metrics: {
                 totalTokens: toolUsage.reduce(
                   (acc, tool) => acc + (tool.duration || 0),
@@ -768,9 +840,6 @@ export class AgentService implements OnModuleInit {
             tools: toolUsage,
           });
 
-          const sessionTitle =
-            currentSession.query?.metadata?.title || 'New Session';
-
           const lastMessage = finalResult?.messages?.at(-1)?.toDict() ?? {};
 
           subscriber.next({
@@ -794,6 +863,44 @@ export class AgentService implements OnModuleInit {
 
       run();
     });
+  }
+
+  private async generateSessionTitle(userMessage: string): Promise<string> {
+    try {
+      // Truncate message if too long
+      const truncatedMessage =
+        userMessage.length > 200
+          ? userMessage.substring(0, 200) + '...'
+          : userMessage;
+
+      // Use LangChain ChatOpenAI for title generation
+      const titleLlm = new ChatOpenAI({
+        model: 'gpt-4o-mini',
+        temperature: 0.3,
+        maxTokens: 20,
+        apiKey: process.env.OPENAI_API_KEY,
+      });
+
+      const response = await titleLlm.invoke([
+        {
+          role: 'system',
+          content:
+            "Generate a short, descriptive title (max 6 words) for this conversation based on the user's message. Do not use quotes or special characters.",
+        },
+        {
+          role: 'user',
+          content: truncatedMessage,
+        },
+      ]);
+
+      const title = response.content?.toString()?.trim();
+      return title && title.length > 0 ? title : 'New Conversation';
+    } catch (error) {
+      console.error('Failed to generate session title:', error);
+      // Fallback: use first few words of user message
+      const words = userMessage.split(' ').slice(0, 4);
+      return words.join(' ') || 'New Conversation';
+    }
   }
 
   /* ─────────────────────────  updateAgent / getters ───────────────────────── */

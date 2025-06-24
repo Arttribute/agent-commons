@@ -228,17 +228,6 @@ export const session = pgTable('session', {
   endedAt: timestamp('ended_at', { withTimezone: true }),
 
   parentSessionId: text('parent_session'),
-  childSessions: jsonb('child_sessions')
-    .$type<
-      Array<{
-        sessionId: string;
-        agentId: string;
-        createdAt: string;
-        title?: string;
-        status?: string;
-      }>
-    >()
-    .default([]),
   createdAt: timestamp('created_at', { withTimezone: true })
     .default(sql`timezone('utc', now())`)
     .notNull(),

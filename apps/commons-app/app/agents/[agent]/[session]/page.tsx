@@ -24,6 +24,7 @@ export default function AgentSessionPage() {
   const userAddress = authState.walletAddress?.toLowerCase() || "";
 
   const fetchSessions = async () => {
+    if (!agentId || !userAddress) return;
     const res = await fetch(
       `/api/sessions/list?agentId=${agentId}&initiatorId=${userAddress}`
     );

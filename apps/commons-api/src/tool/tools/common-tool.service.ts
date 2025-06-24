@@ -116,6 +116,8 @@ export interface CommonTool {
   interactWithAgent(props: {
     agentId: string;
     messages?: ChatCompletionMessageParam[];
+    sessionId?: string;
+    initiator: string;
   }): any;
 
   /**
@@ -649,6 +651,8 @@ export class CommonToolService implements CommonTool {
   interactWithAgent(props: {
     agentId: string;
     messages?: ChatCompletionMessageParam[];
+    initiator: string;
+    sessionId?: string;
   }) {
     return this.agent.runAgent(props);
   }

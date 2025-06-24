@@ -73,11 +73,14 @@ export class AgentController {
   }
 
   @Post('run')
-  async runAgentOnce(@Body() body: RunBody) {
+  async runAgentOnce(
+    @Body() body: RunBody,
+    @Headers('x-initiator') initiator: string,
+  ) {
     // collect only the final message; use lastValueFrom
     const { lastValueFrom } = await import('rxjs');
     return lastValueFrom(
-      this.agent.runAgent(body).pipe(
+      this.agent.runAgent({ ...body, initiator }).pipe(
         // The final emission from runAgent will contain the full data
         filter((chunk) => chunk.type === 'final'),
         map((chunk) => chunk.payload),
@@ -87,10 +90,13 @@ export class AgentController {
 
   @Post('run/stream') // <- POST instead of GET
   @Sse('run/stream') // keep the SSE decorator
-  runAgentStream(@Body() body: RunBody) {
+  runAgentStream(
+    @Body() body: RunBody,
+    @Headers('x-initiator') initiator: string,
+  ) {
     //set streaming to true
     return this.agent
-      .runAgent({ ...body, stream: true })
+      .runAgent({ ...body, stream: true, initiator })
       .pipe(map((data) => ({ data })));
   }
 
