@@ -19,6 +19,7 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 
 import { CommonAgent } from "@/types/agent";
 import { Card } from "@/components/ui/card";
+import { Loader2 } from "lucide-react";
 
 interface Message {
   role: string;
@@ -137,6 +138,13 @@ export default function AgentMessaging({
             <h3 className="font-medium text-sm">Agent Name</h3>
             <p className="text-xs text-gray-500">{agentId}</p>
           </div>
+        </div>
+      )}
+
+      {/* Loading indicator when fetching session data */}
+      {isLoading && (
+        <div className="flex items-center justify-center h-16">
+          <Loader2 className="animate-spin h-6 w-6 text-gray-500" />
         </div>
       )}
 

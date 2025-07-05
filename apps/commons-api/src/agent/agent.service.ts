@@ -663,8 +663,7 @@ export class AgentService implements OnModuleInit {
               role: 'system',
               content: `
               REMEMBER:
-              **SESSION ID**: ${currentSessionId}
-              **Current Time**: ${currentTime.toISOString()}
+          
               When using the interactWithAgent tool you can only use sessionIds from the following list when continuing conversations: ${childSessionsInfo}`,
             } as any);
             console.log('Child sessions after update:', childSessionsInfo);
