@@ -15,6 +15,8 @@ import { ResourceService } from '~/resource/resource.service';
 import { OpenAIService } from '~/modules/openai/openai.service';
 import { PinataService } from '~/pinata/pinata.service';
 import { ToolSchema } from '~/tool/dto/tool.dto';
+import { SpaceConductor } from '~/space/space-conductor.service';
+import { Observable } from 'rxjs';
 
 const graphqlRequest = import('graphql-request');
 
@@ -185,6 +187,8 @@ export class CommonToolService implements CommonTool {
     private openAI: OpenAIService,
     @Inject(forwardRef(() => PinataService))
     private pinataService: PinataService,
+    @Inject(forwardRef(() => SpaceConductor))
+    private spaceConductor: SpaceConductor,
   ) {}
 
   async createGoal(props: CreateGoalDto) {
@@ -654,6 +658,62 @@ export class CommonToolService implements CommonTool {
     initiator: string;
     sessionId?: string;
   }) {
+    const { sessionId } = props;
+
+    if (sessionId) {
+      // Get the shared session context
+      const spaceContext = this.spaceConductor.getOrCreateContext(sessionId);
+
+      // Add the interaction message to the shared context
+      if (props.messages && props.messages.length > 0) {
+        spaceContext.bus.next({
+          type: 'message',
+          agentId: props.agentId,
+          payload: props.messages[0],
+          timestamp: Date.now(),
+        });
+      }
+
+      // Emit agent interaction event
+      spaceContext.bus.next({
+        type: 'agentCall',
+        agentId: props.agentId,
+        payload: {
+          initiator: props.initiator,
+          message: props.messages?.[0]?.content || '',
+          sessionId,
+          timestamp: Date.now(),
+        },
+        timestamp: Date.now(),
+      });
+
+      // Return the same observable format to maintain compatibility
+      return new Observable((subscriber) => {
+        // Listen for responses from the target agent
+        const subscription = spaceContext.bus.subscribe((event) => {
+          if (event.agentId === props.agentId && event.type === 'final') {
+            subscriber.next({
+              type: 'final',
+              payload: event.payload,
+            });
+            subscriber.complete();
+          }
+        });
+
+        // Timeout after 60 seconds if no response
+        const timeout = setTimeout(() => {
+          subscriber.error(new Error('Agent interaction timeout'));
+        }, 60000);
+
+        // Cleanup when observable completes or errors
+        return () => {
+          subscription.unsubscribe();
+          clearTimeout(timeout);
+        };
+      });
+    }
+
+    // Fallback: direct agent call if no session context (for backward compatibility)
     return this.agent.runAgent(props);
   }
   /**

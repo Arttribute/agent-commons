@@ -52,6 +52,7 @@ import { CoinbaseService } from '~/modules/coinbase/coinbase.service';
 import { DatabaseService } from '~/modules/database/database.service';
 import { OpenAIService } from '~/modules/openai/openai.service';
 import { SessionService } from '~/session/session.service';
+import { SpaceConductor } from '~/space/space-conductor.service';
 import { ToolService } from '~/tool/tool.service';
 import { CommonTool } from '../tool/tools/common-tool.service';
 import { EthereumTool } from '../tool/tools/ethereum-tool.service';
@@ -62,6 +63,7 @@ import { LogService } from '~/log/log.service';
 import { GoalService } from '~/goal/goal.service';
 import { TaskService } from '~/task/task.service';
 import { Observable } from 'rxjs';
+import { AgentEvent } from '~/space/space-context';
 
 const got = import('got');
 
@@ -79,6 +81,7 @@ export class AgentService implements OnModuleInit {
     private openAI: OpenAIService,
     private coinbase: CoinbaseService,
     private session: SessionService,
+    private readonly spaceConductor: SpaceConductor,
     private toolService: ToolService,
     private logService: LogService,
     /* NEW injections */
@@ -251,15 +254,7 @@ export class AgentService implements OnModuleInit {
     const agent = await this.getAgent({ agentId });
     const currentTime = new Date();
 
-    // Get existing child sessions for this agent
-    const childSessions = await this.getChildSessions(sessionId);
-
-    const childSessionsInfo =
-      childSessions.length > 0
-        ? `\n\nEXISTING CHILD SESSIONS:\nYou have the following ongoing conversations with other agents. Use these sessionIds to continue existing conversations instead of starting new ones:\n${childSessions.map((cs) => `- Agent ${cs.childAgentId}: ${cs.title || 'Untitled conversation'} (sessionId=${cs.childSessionId}, started: ${cs.createdAt})`).join('\n')}`
-        : '';
-    console.log('childSessionsInfo:', childSessionsInfo);
-    console.log('sessiond id from createsession', sessionId);
+    console.log('session id from createsession', sessionId);
     const messages: ChatCompletionMessageParam[] = [
       {
         role: 'system',
@@ -275,7 +270,7 @@ export class AgentService implements OnModuleInit {
           The current date and time is ${currentTime.toISOString()}.
            **SESSION ID**: ${sessionId}
           
-          Note that you can interact and engage with other agents using the interactWithAgent tool. Once you initiate a conversation with another agent, you can continue the conversation by calling the interactWithAgent tool again with the sessionId provided in the result of running the interactWithAgent tool. This will allow you to continue the conversation with the other agent.${childSessionsInfo}
+          Note that you can interact and engage with other agents using the interactWithAgent tool. All agent interactions will be handled within this shared session context.
 
           STRICTLY ABIDE BY THE FOLLOWING:
           • If a request is simple and does not require complex plannind give an immediate response.
@@ -404,7 +399,6 @@ export class AgentService implements OnModuleInit {
     messages?: ChatCompletionMessageParam[];
     sessionId?: string;
     initiator: string;
-    parentSessionId?: string;
     stream?: boolean; // ✅ stream flag
   }): Observable<any> {
     return new Observable<any>((subscriber) => {
@@ -414,7 +408,6 @@ export class AgentService implements OnModuleInit {
           agentId,
           sessionId,
           initiator,
-          parentSessionId,
           stream = false, // default false
         } = props;
 
@@ -445,11 +438,111 @@ export class AgentService implements OnModuleInit {
                 createdAt: new Date(),
                 updatedAt: new Date(),
               },
-              parentSessionId,
             });
             currentSessionId = newSession.sessionId;
             isNewSession = true;
           }
+
+          /**
+           * SHARED SESSION CONTEXT APPROACH:
+           * - All agents in a session share the same context (spaceContext)
+           * - No recursive child sessions are created
+           * - Agent interactions are handled via the shared event bus
+           * - All messages, tool calls, and agent interactions are tracked in one place
+           */
+
+          // Get or create the shared session context
+          const spaceContext =
+            this.spaceConductor.getOrCreateContext(currentSessionId);
+
+          // Set up auto-save for the session context
+          // this.autoSaveSharedContext(currentSessionId); // TODO: Autosave Shared Context - might be expensive for now
+
+          // Initialize the session context if it's a new session
+          if (isNewSession) {
+            // push initial message to the session context
+            const bootMsgs = await this.createAgentSession(
+              agentId,
+              currentSessionId,
+            );
+            bootMsgs.messages.forEach((msg) => {
+              spaceContext.bus.next({
+                type: 'message',
+                agentId,
+                payload: msg,
+                timestamp: Date.now(),
+              });
+            });
+          }
+
+          // Add the initial messages to the session context
+          if (props.messages) {
+            props.messages.forEach((msg) => {
+              spaceContext.bus.next({
+                type: 'message',
+                agentId,
+                payload: msg,
+                timestamp: Date.now(),
+              });
+            });
+          }
+
+          // Set up callbacks to handle events
+          let accumulatedContent = '';
+          const callbackHandler = BaseCallbackHandler.fromMethods({
+            handleLLMNewToken: async (token: string) => {
+              if (stream) {
+                accumulatedContent += token;
+                // Only emit the token to the subscriber for real-time display
+                // Don't add individual tokens to spaceContext
+                subscriber.next({
+                  type: 'token',
+                  timestamp: new Date().toISOString(),
+                  role: 'ai',
+                  content: token,
+                });
+              }
+            },
+            handleLLMEnd: async () => {
+              // Add the complete accumulated message to spaceContext when LLM finishes
+              if (stream && accumulatedContent) {
+                const event: AgentEvent = {
+                  type: 'message',
+                  agentId,
+                  payload: {
+                    role: 'ai',
+                    content: accumulatedContent,
+                  },
+                  timestamp: Date.now(),
+                };
+                spaceContext.bus.next(event);
+                accumulatedContent = ''; // Reset for next message
+              }
+            },
+            handleToolStart: async (tool: any, input: string) => {
+              spaceContext.bus.next({
+                type: 'tool',
+                agentId,
+                payload: {
+                  type: 'toolStart',
+                  toolName: tool.name,
+                  input,
+                },
+                timestamp: Date.now(),
+              });
+            },
+            handleToolEnd: async (output: any) => {
+              spaceContext.bus.next({
+                type: 'tool',
+                agentId,
+                payload: {
+                  type: 'toolEnd',
+                  output,
+                },
+                timestamp: Date.now(),
+              });
+            },
+          });
 
           const storedTools = await this.toolService.getAllTools();
           const dynamicDefs = storedTools.map((dbTool) => ({
@@ -491,34 +584,6 @@ export class AgentService implements OnModuleInit {
             duration?: number;
           }[] = [];
           const executedCalls: any[] = [];
-
-          const callbackHandler = BaseCallbackHandler.fromMethods({
-            handleLLMNewToken: async (token: string) => {
-              if (stream) {
-                subscriber.next({
-                  type: 'token',
-                  role: 'ai',
-                  content: token,
-                  timestamp: new Date().toISOString(),
-                });
-              }
-            },
-            handleToolStart: async (tool: any, input: string) => {
-              subscriber.next({
-                type: 'toolStart',
-                toolName: tool.name,
-                input,
-                timestamp: new Date().toISOString(),
-              });
-            },
-            handleToolEnd: async (output: any) => {
-              subscriber.next({
-                type: 'toolEnd',
-                output,
-                timestamp: new Date().toISOString(),
-              });
-            },
-          });
 
           const llm = new ChatOpenAI({
             model: 'gpt-4o',
@@ -580,6 +645,31 @@ export class AgentService implements OnModuleInit {
 
                 executedCalls.push(callObj);
 
+                // Emit different event types based on tool name
+                if (fn === 'interactWithAgent') {
+                  // For agent interactions, emit as agentCall event
+                  const agentArgs = args as any;
+                  spaceContext.bus.next({
+                    type: 'agentCall',
+                    agentId: agentArgs.agentId, // target agent ID
+                    payload: {
+                      initiator: agentId,
+                      message: agentArgs.messages?.[0]?.content || '',
+                      sessionId: currentSessionId,
+                      timestamp: Date.now(),
+                    },
+                    timestamp: Date.now(),
+                  });
+                } else {
+                  // For regular tools, emit as tool event
+                  spaceContext.bus.next({
+                    type: 'tool',
+                    agentId,
+                    payload: callObj,
+                    timestamp: Date.now(),
+                  });
+                }
+
                 subscriber.next({
                   type: 'tool',
                   ...callObj,
@@ -628,7 +718,12 @@ export class AgentService implements OnModuleInit {
               ),
             });
 
-          let messages: Messages = [];
+          // Use shared context messages instead of reconstructing from graph
+          let messages: Messages = spaceContext.getMessages().map((m) => ({
+            ...m,
+            type: m.role,
+            content: m.content ?? '',
+          }));
 
           if (!sessionId) {
             const boot = await this.createAgentSession(
@@ -642,31 +737,6 @@ export class AgentService implements OnModuleInit {
                 content: m.content ?? '',
               })),
             );
-          } else {
-            // ✅ For existing sessions, inject updated system message with current child sessions
-            const currentTime = new Date();
-            const childSessions = await this.getChildSessions(currentSessionId);
-
-            const childSessionsInfo =
-              childSessions.length > 0
-                ? `\n\nEXISTING CHILD SESSIONS:\nYou have the following ongoing conversations with other agents. Use these sessionIds to continue existing conversations instead of starting new ones:\n${childSessions.map((cs) => `- Agent ${cs.childAgentId}: ${cs.title || 'Untitled conversation'} (sessionId=${cs.childSessionId}, started: ${cs.createdAt})`).join('\n')}`
-                : '';
-
-            console.log(
-              'Updated childSessionsInfo for existing session:',
-              childSessionsInfo,
-            );
-
-            // Add updated system message with current child session info
-            messages.push({
-              type: 'system',
-              role: 'system',
-              content: `
-              REMEMBER:
-          
-              When using the interactWithAgent tool you can only use sessionIds from the following list when continuing conversations: ${childSessionsInfo}`,
-            } as any);
-            console.log('Child sessions after update:', childSessionsInfo);
           }
 
           if (props.messages?.length) {
@@ -705,6 +775,35 @@ export class AgentService implements OnModuleInit {
             messages = result.messages;
             finalResult = result;
 
+            // Extract the assistant's response and add it to spaceContext
+            // This handles both streaming and non-streaming cases
+            const lastMessage = result.messages?.at(-1);
+            if (
+              lastMessage &&
+              lastMessage.toDict().type === 'assistant' &&
+              !stream
+            ) {
+              // For non-streaming, add the complete assistant message to context
+              const messageContent =
+                typeof lastMessage.content === 'string'
+                  ? lastMessage.content
+                  : compact(
+                      map(lastMessage.content as any[], (_) => get(_, 'text')),
+                    ).join('\n');
+
+              if (messageContent) {
+                spaceContext.bus.next({
+                  type: 'message',
+                  agentId,
+                  payload: {
+                    role: 'assistant',
+                    content: messageContent,
+                  },
+                  timestamp: Date.now(),
+                });
+              }
+            }
+
             const pending = await this.tasks.getNextExecutable(
               agentId,
               currentSessionId,
@@ -716,45 +815,9 @@ export class AgentService implements OnModuleInit {
             (call) => call.name !== 'interactWithAgent',
           );
 
-          const rawAgenCalls: any = collectedToolCalls.filter(
+          const agentInteractions = collectedToolCalls.filter(
             (call) => call.name === 'interactWithAgent',
           );
-
-          const agentCalls = rawAgenCalls
-            .filter(
-              (call: any) => call.name === 'interactWithAgent' && call.args,
-            )
-            .map(async (call: any) => {
-              const args = call.args;
-              const sessionIdToUse = args.sessionId || undefined;
-              const childSession$ = this.runAgent({
-                agentId: args.agentId,
-                messages: args.messages,
-                sessionId: sessionIdToUse,
-                initiator: agentId,
-                parentSessionId: currentSessionId,
-              });
-
-              let lastData: any;
-              await new Promise<void>((resolve, reject) => {
-                childSession$.subscribe({
-                  next: (chunk) => {
-                    lastData = chunk;
-                  },
-                  error: reject,
-                  complete: resolve,
-                });
-              });
-
-              return {
-                agentId: args.agentId,
-                message: args.messages?.[0]?.content || '',
-                response: lastData,
-                sessionId: lastData?.sessionId,
-              };
-            });
-
-          const resolvedAgentCalls = await Promise.all(agentCalls);
 
           const messageHistories =
             finalResult?.messages?.filter(
@@ -808,7 +871,7 @@ export class AgentService implements OnModuleInit {
                     m.toDict().type === 'assistant' ? toolCalls : undefined,
                   agentCalls:
                     m.toDict().type === 'assistant'
-                      ? resolvedAgentCalls
+                      ? agentInteractions
                       : undefined,
                 },
               })),
@@ -841,17 +904,30 @@ export class AgentService implements OnModuleInit {
 
           const lastMessage = finalResult?.messages?.at(-1)?.toDict() ?? {};
 
+          // Emit final result to shared session context
+          const finalPayload = {
+            ...lastMessage,
+            sessionId: currentSessionId,
+            title: sessionTitle,
+            metadata: {
+              toolCalls,
+              agentCalls: agentInteractions,
+            },
+          };
+
+          spaceContext.bus.next({
+            type: 'final',
+            agentId,
+            payload: finalPayload,
+            timestamp: Date.now(),
+          });
+
+          // Save shared context to database
+          await this.spaceConductor.saveSharedContextToDB(currentSessionId);
+
           subscriber.next({
             type: 'final',
-            payload: {
-              ...lastMessage,
-              sessionId: currentSessionId,
-              title: sessionTitle,
-              metadata: {
-                toolCalls,
-                agentCalls: resolvedAgentCalls,
-              },
-            },
+            payload: finalPayload,
           });
 
           subscriber.complete();

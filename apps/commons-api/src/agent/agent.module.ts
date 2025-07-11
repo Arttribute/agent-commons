@@ -9,6 +9,7 @@ import { SessionModule } from '~/session';
 import { ResourceService } from '~/resource/resource.service';
 import { EmbeddingService } from '~/embedding/embedding.service';
 import { LogModule } from '~/log';
+import { SpaceModule } from '~/space/space.module';
 
 @Module({
   imports: [
@@ -17,6 +18,7 @@ import { LogModule } from '~/log';
     LogModule,
     GoalModule,
     TaskModule,
+    SpaceModule,
   ],
   controllers: [AgentController, AgentToolsController],
   providers: [AgentService, ResourceService, EmbeddingService],

@@ -20,22 +20,25 @@ import { DatabaseService } from '~/modules/database/database.service';
 import * as schema from '#/models/schema';
 import { first } from 'lodash';
 import { inArray } from 'drizzle-orm';
+import { SpaceConductor } from '~/space/space-conductor.service';
 
 @Injectable()
 export class SessionService {
-  constructor(private db: DatabaseService) {}
+  constructor(
+    private db: DatabaseService,
+    @Inject(forwardRef(() => SpaceConductor))
+    private spaceConductor: SpaceConductor,
+  ) {}
 
   public async createSession(props: {
     value: InferInsertModel<typeof schema.session>;
-    parentSessionId?: string;
   }) {
-    const { value, parentSessionId } = props;
-
+    const { value } = props;
+    // Note: parentSessionId is no longer needed in spaces, so we can omit it
     const [session] = await this.db
       .insert(schema.session)
       .values({
         ...value,
-        parentSessionId,
         initiator: value.initiator?.toLowerCase(),
       })
       .returning();
@@ -192,5 +195,42 @@ export class SessionService {
       orderBy: (s) => s.createdAt,
     });
     return sessions;
+  }
+
+  /** Export shared context data for backup or analysis */
+  public async exportSharedSession(sessionId: string) {
+    try {
+      const spaceContext = this.spaceConductor.getOrCreateContext(sessionId);
+      const session = await this.getSession({ id: sessionId });
+
+      const exportData = {
+        sessionId,
+        sessionInfo: {
+          agentId: session?.agentId,
+          title: session?.title,
+          initiator: session?.initiator,
+          createdAt: session?.createdAt,
+          updatedAt: session?.updatedAt,
+        },
+        sharedContext: {
+          messages: spaceContext.getMessages(),
+          toolCalls: spaceContext.getToolCalls(),
+          agentInteractions: spaceContext.getAgentInteractions(),
+          contributions: spaceContext.contributions,
+          finalResult: spaceContext.finalResult,
+        },
+        exportedAt: new Date().toISOString(),
+      };
+
+      console.log(`[SharedContext] Exported context for session: ${sessionId}`);
+
+      return exportData;
+    } catch (error) {
+      console.error(
+        `[SharedContext] Error exporting context for session ${sessionId}:`,
+        error,
+      );
+      throw error;
+    }
   }
 }
