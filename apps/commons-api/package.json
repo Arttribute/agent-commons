@@ -18,7 +18,9 @@
     "test:watch": "jest --watch",
     "test:cov": "jest --coverage",
     "test:debug": "node --inspect-brk -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest --runInBand",
-    "test:e2e": "jest --config ./test/jest-e2e.json"
+    "test:e2e": "jest --config ./test/jest-e2e.json",
+    "test:context": "jest --testPathPattern=session.*spec.ts",
+    "test:context:single": "jest --testPathPattern=session-single-context.spec.ts"
   },
   "dependencies": {
     "@coinbase/agentkit": "^0.1.2",
@@ -103,11 +105,19 @@
       "json",
       "ts"
     ],
-    "rootDir": "src",
+    "moduleNameMapper": {
+      "^~/(.*)$": "<rootDir>/../src/$1",
+      "^#/(.*)$": "<rootDir>/../$1",
+      "^lib/(.*)$": "<rootDir>/../lib/$1"
+    },
+    "rootDir": "test",
     "testRegex": ".*\\.spec\\.ts$",
     "transform": {
       "^.+\\.(t|j)s$": "ts-jest"
     },
+    "transformIgnorePatterns": [
+      "node_modules/(?!(got|graphql-request)/)"
+    ],
     "collectCoverageFrom": [
       "**/*.(t|j)s"
     ],
