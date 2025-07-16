@@ -28,6 +28,7 @@ import {
   InferSelectModel,
   inArray,
   sql,
+  desc,
 } from 'drizzle-orm';
 import { AGENT_REGISTRY_ABI } from 'lib/abis/AgentRegistryABI';
 import { AGENT_REGISTRY_ADDRESS, COMMON_TOKEN_ADDRESS } from 'lib/addresses';
@@ -62,6 +63,8 @@ import { LogService } from '~/log/log.service';
 import { GoalService } from '~/goal/goal.service';
 import { TaskService } from '~/task/task.service';
 import { Observable } from 'rxjs';
+import { SpaceService } from '~/space/space.service';
+import { SpaceBusService } from '~/space/space-bus.service';
 
 const got = import('got');
 
@@ -84,6 +87,8 @@ export class AgentService implements OnModuleInit {
     /* NEW injections */
     @Inject(forwardRef(() => GoalService)) private goals: GoalService,
     @Inject(forwardRef(() => TaskService)) private tasks: TaskService,
+    private spaceService: SpaceService,
+    private spaceBusService: SpaceBusService,
   ) {}
 
   /* ─────────────────────────  INIT  ───────────────────────── */
@@ -247,7 +252,13 @@ export class AgentService implements OnModuleInit {
   }
 
   /* ─────────────────────────  SESSION BOOTSTRAP  ───────────────────────── */
-  private async createAgentSession(agentId: string, sessionId: string) {
+  private async createAgentSession(
+    agentId: string,
+    sessionId: string,
+    useSharedSpace = false,
+    spaceId?: string,
+    collaboratorAgentIds: string[] = [],
+  ) {
     const agent = await this.getAgent({ agentId });
     const currentTime = new Date();
 
@@ -260,6 +271,24 @@ export class AgentService implements OnModuleInit {
         : '';
     console.log('childSessionsInfo:', childSessionsInfo);
     console.log('sessiond id from createsession', sessionId);
+
+    const spaceCollaborationInfo =
+      useSharedSpace && spaceId
+        ? `
+
+          **SHARED SPACE MODE**: You are collaborating in a shared space (${spaceId}) with other agents: ${collaboratorAgentIds.join(', ')}.
+          
+          In this mode:
+          • Use the sendBusMessage and subscribeToSpaceBus tools to communicate with other agents in the space
+          • Messages are shared in real-time with all agents in the space
+          • The system will automatically handle message routing and persistence
+          • You can send different types of messages: question, answer, update, request, response, notification
+          • This is a single collaborative session - complete your contribution then await human follow-up
+          • Focus on collaborative problem-solving and knowledge sharing
+          
+          `
+        : '';
+
     const messages: ChatCompletionMessageParam[] = [
       {
         role: 'system',
@@ -275,7 +304,7 @@ export class AgentService implements OnModuleInit {
           The current date and time is ${currentTime.toISOString()}.
            **SESSION ID**: ${sessionId}
           
-          Note that you can interact and engage with other agents using the interactWithAgent tool. Once you initiate a conversation with another agent, you can continue the conversation by calling the interactWithAgent tool again with the sessionId provided in the result of running the interactWithAgent tool. This will allow you to continue the conversation with the other agent.${childSessionsInfo}
+          ${useSharedSpace ? spaceCollaborationInfo : `Note that you can interact and engage with other agents using the interactWithAgent tool. Once you initiate a conversation with another agent, you can continue the conversation by calling the interactWithAgent tool again with the sessionId provided in the result of running the interactWithAgent tool. This will allow you to continue the conversation with the other agent.${childSessionsInfo}`}
 
           STRICTLY ABIDE BY THE FOLLOWING:
           • If a request is simple and does not require complex plannind give an immediate response.
@@ -339,7 +368,7 @@ export class AgentService implements OnModuleInit {
       ],
       tool_choice: 'auto',
       parallel_tool_calls: true,
-      model: 'gpt-4o',
+      model: 'gpt-4o-mini',
     };
     return completionBody;
   }
@@ -406,6 +435,10 @@ export class AgentService implements OnModuleInit {
     initiator: string;
     parentSessionId?: string;
     stream?: boolean; // ✅ stream flag
+    // Space configuration
+    spaceId?: string;
+    useSharedSpace?: boolean;
+    collaboratorAgentIds?: string[];
   }): Observable<any> {
     return new Observable<any>((subscriber) => {
       const run = async () => {
@@ -416,6 +449,9 @@ export class AgentService implements OnModuleInit {
           initiator,
           parentSessionId,
           stream = false, // default false
+          spaceId,
+          useSharedSpace = false,
+          collaboratorAgentIds = [],
         } = props;
 
         try {
@@ -435,7 +471,7 @@ export class AgentService implements OnModuleInit {
                 agentId,
                 initiator: initiator,
                 model: {
-                  name: 'gpt-4o',
+                  name: 'gpt-4o-mini',
                   temperature: agent.temperature || 0.7,
                   maxTokens: agent.maxTokens || 2000,
                   topP: agent.topP || 1,
@@ -449,6 +485,78 @@ export class AgentService implements OnModuleInit {
             });
             currentSessionId = newSession.sessionId;
             isNewSession = true;
+          }
+
+          // Handle space creation/joining when using shared space mode
+          if (useSharedSpace) {
+            let actualSpaceId = spaceId;
+
+            if (!actualSpaceId) {
+              // Create a new space if none provided
+              const newSpace = await this.spaceService.createSpace({
+                name: `Agent Collaboration Space - ${new Date().toISOString()}`,
+                description: `Shared space for agents: ${[agentId, ...collaboratorAgentIds].join(', ')}`,
+                createdBy: agentId,
+                createdByType: 'agent' as const,
+              });
+              actualSpaceId = newSpace.spaceId;
+
+              // Add collaborator agents to the space
+              for (const collaboratorId of collaboratorAgentIds) {
+                try {
+                  await this.spaceService.addMember({
+                    spaceId: actualSpaceId,
+                    memberId: collaboratorId,
+                    memberType: 'agent' as const,
+                    role: 'member',
+                  });
+                } catch (error) {
+                  // Ignore "Member already exists" errors - this is expected behavior
+                  if (
+                    error instanceof Error &&
+                    error.message !== 'Member already exists in this space'
+                  ) {
+                    throw error; // Re-throw other errors
+                  }
+                }
+              }
+            } else {
+              // Add current agent to existing space
+              try {
+                await this.spaceService.addMember({
+                  spaceId: actualSpaceId,
+                  memberId: agentId,
+                  memberType: 'agent' as const,
+                  role: 'member',
+                });
+              } catch (error) {
+                // Ignore "Member already exists" errors - this is expected behavior
+                if (
+                  error instanceof Error &&
+                  error.message !== 'Member already exists in this space'
+                ) {
+                  throw error; // Re-throw other errors
+                }
+              }
+            }
+
+            // Subscribe to space bus for real-time communication
+            this.spaceBusService.subscribeToSpace(
+              actualSpaceId,
+              (message: any) => {
+                if (stream) {
+                  subscriber.next({
+                    type: 'spaceMessage',
+                    spaceId: actualSpaceId,
+                    message,
+                    timestamp: new Date().toISOString(),
+                  });
+                }
+              },
+            );
+
+            // Update props with actual space ID
+            props.spaceId = actualSpaceId;
           }
 
           const storedTools = await this.toolService.getAllTools();
@@ -495,33 +603,105 @@ export class AgentService implements OnModuleInit {
           const callbackHandler = BaseCallbackHandler.fromMethods({
             handleLLMNewToken: async (token: string) => {
               if (stream) {
-                subscriber.next({
+                const tokenMessage = {
                   type: 'token',
                   role: 'ai',
                   content: token,
                   timestamp: new Date().toISOString(),
-                });
+                };
+
+                subscriber.next(tokenMessage);
+
+                // Send token to space bus if in shared space mode
+                if (useSharedSpace && spaceId) {
+                  try {
+                    await this.spaceBusService.sendMessage({
+                      spaceId,
+                      senderId: agentId,
+                      senderType: 'agent',
+                      content: token,
+                      messageType: 'text',
+                      targetType: 'broadcast',
+                      metadata: {
+                        type: 'token',
+                        sessionId: currentSessionId,
+                      },
+                    });
+                  } catch (error) {
+                    console.error('Failed to send token to space bus:', error);
+                  }
+                }
               }
             },
             handleToolStart: async (tool: any, input: string) => {
-              subscriber.next({
+              const toolStartMessage = {
                 type: 'toolStart',
                 toolName: tool.name,
                 input,
                 timestamp: new Date().toISOString(),
-              });
+              };
+
+              subscriber.next(toolStartMessage);
+
+              // Send tool start to space bus if in shared space mode
+              if (useSharedSpace && spaceId) {
+                try {
+                  await this.spaceBusService.sendMessage({
+                    spaceId,
+                    senderId: agentId,
+                    senderType: 'agent',
+                    content: `Starting tool: ${tool.name}`,
+                    messageType: 'command',
+                    targetType: 'broadcast',
+                    metadata: {
+                      type: 'toolStart',
+                      toolName: tool.name,
+                      input,
+                      sessionId: currentSessionId,
+                    },
+                  });
+                } catch (error) {
+                  console.error(
+                    'Failed to send tool start to space bus:',
+                    error,
+                  );
+                }
+              }
             },
             handleToolEnd: async (output: any) => {
-              subscriber.next({
+              const toolEndMessage = {
                 type: 'toolEnd',
                 output,
                 timestamp: new Date().toISOString(),
-              });
+              };
+
+              subscriber.next(toolEndMessage);
+
+              // Send tool end to space bus if in shared space mode
+              if (useSharedSpace && spaceId) {
+                try {
+                  await this.spaceBusService.sendMessage({
+                    spaceId,
+                    senderId: agentId,
+                    senderType: 'agent',
+                    content: `Tool completed with output: ${JSON.stringify(output).slice(0, 200)}`,
+                    messageType: 'response',
+                    targetType: 'broadcast',
+                    metadata: {
+                      type: 'toolEnd',
+                      output,
+                      sessionId: currentSessionId,
+                    },
+                  });
+                } catch (error) {
+                  console.error('Failed to send tool end to space bus:', error);
+                }
+              }
             },
           });
 
           const llm = new ChatOpenAI({
-            model: 'gpt-4o',
+            model: 'gpt-4o-mini',
             temperature: 0,
             supportsStrictToolCalling: true,
             apiKey: process.env.OPENAI_API_KEY,
@@ -547,7 +727,13 @@ export class AgentService implements OnModuleInit {
                       json: {
                         args,
                         toolCall: config.toolCall,
-                        metadata: { agentId },
+                        metadata: {
+                          agentId,
+                          sessionId: currentSessionId,
+                          spaceId: useSharedSpace ? props.spaceId : undefined,
+                          useSharedSpace,
+                          collaboratorAgentIds,
+                        },
                       },
                       headers: { 'Content-Type': 'application/json' },
                     },
@@ -634,6 +820,9 @@ export class AgentService implements OnModuleInit {
             const boot = await this.createAgentSession(
               agentId,
               currentSessionId,
+              useSharedSpace,
+              spaceId,
+              collaboratorAgentIds,
             );
             messages.push(
               ...boot.messages.map((m) => ({
@@ -643,30 +832,56 @@ export class AgentService implements OnModuleInit {
               })),
             );
           } else {
-            // ✅ For existing sessions, inject updated system message with current child sessions
+            // ✅ For existing sessions, inject updated system message
             const currentTime = new Date();
-            const childSessions = await this.getChildSessions(currentSessionId);
 
-            const childSessionsInfo =
-              childSessions.length > 0
-                ? `\n\nEXISTING CHILD SESSIONS:\nYou have the following ongoing conversations with other agents. Use these sessionIds to continue existing conversations instead of starting new ones:\n${childSessions.map((cs) => `- Agent ${cs.childAgentId}: ${cs.title || 'Untitled conversation'} (sessionId=${cs.childSessionId}, started: ${cs.createdAt})`).join('\n')}`
-                : '';
+            if (useSharedSpace) {
+              // For shared space mode, provide space collaboration context
+              const spaceCollaborationInfo = `
 
-            console.log(
-              'Updated childSessionsInfo for existing session:',
-              childSessionsInfo,
-            );
+          **SHARED SPACE MODE**: You are collaborating in a shared space (${props.spaceId}) with other agents: ${collaboratorAgentIds.join(', ')}
+          
+          In this mode:
+          • Use the sendBusMessage and subscribeToSpaceBus tools to communicate with other agents in the space
+          • Messages are shared in real-time with all agents in the space
+          • The system will automatically handle message routing and persistence
+          • You can send different types of messages: question, answer, update, request, response, notification
+          • This is a single collaborative session - complete your contribution then await human follow-up
+          • Focus on collaborative problem-solving and knowledge sharing
+          
+          `;
 
-            // Add updated system message with current child session info
-            messages.push({
-              type: 'system',
-              role: 'system',
-              content: `
+              messages.push({
+                type: 'system',
+                role: 'system',
+                content: spaceCollaborationInfo,
+              } as any);
+            } else {
+              // For P2P mode, provide child session context
+              const childSessions =
+                await this.getChildSessions(currentSessionId);
+
+              const childSessionsInfo =
+                childSessions.length > 0
+                  ? `\n\nEXISTING CHILD SESSIONS:\nYou have the following ongoing conversations with other agents. Use these sessionIds to continue existing conversations instead of starting new ones:\n${childSessions.map((cs) => `- Agent ${cs.childAgentId}: ${cs.title || 'Untitled conversation'} (sessionId=${cs.childSessionId}, started: ${cs.createdAt})`).join('\n')}`
+                  : '';
+
+              console.log(
+                'Updated childSessionsInfo for existing session:',
+                childSessionsInfo,
+              );
+
+              // Add updated system message with current child session info
+              messages.push({
+                type: 'system',
+                role: 'system',
+                content: `
               REMEMBER:
           
               When using the interactWithAgent tool you can only use sessionIds from the following list when continuing conversations: ${childSessionsInfo}`,
-            } as any);
-            console.log('Child sessions after update:', childSessionsInfo);
+              } as any);
+              console.log('Child sessions after update:', childSessionsInfo);
+            }
           }
 
           if (props.messages?.length) {
@@ -720,41 +935,118 @@ export class AgentService implements OnModuleInit {
             (call) => call.name === 'interactWithAgent',
           );
 
-          const agentCalls = rawAgenCalls
-            .filter(
-              (call: any) => call.name === 'interactWithAgent' && call.args,
-            )
-            .map(async (call: any) => {
-              const args = call.args;
-              const sessionIdToUse = args.sessionId || undefined;
-              const childSession$ = this.runAgent({
-                agentId: args.agentId,
-                messages: args.messages,
-                sessionId: sessionIdToUse,
-                initiator: agentId,
-                parentSessionId: currentSessionId,
-              });
+          // Process agent interactions - use shared space only if explicitly configured
+          let resolvedAgentCalls: any[] = [];
 
-              let lastData: any;
-              await new Promise<void>((resolve, reject) => {
-                childSession$.subscribe({
-                  next: (chunk) => {
-                    lastData = chunk;
-                  },
-                  error: reject,
-                  complete: resolve,
+          if (useSharedSpace && props.spaceId) {
+            // User explicitly chose shared space mode
+            const collaboratingAgentIds = rawAgenCalls
+              .filter(
+                (call: any) => call.name === 'interactWithAgent' && call.args,
+              )
+              .map((call: any) => call.args.agentId);
+
+            console.log(
+              `Using shared space collaboration with ${collaboratingAgentIds.length} agents:`,
+              collaboratingAgentIds,
+            );
+
+            // Start all agents in the existing shared space (concurrent)
+            const sharedSpaceSessions = collaboratingAgentIds.map(
+              (collaboratorId: string) => {
+                const relevantCall = rawAgenCalls.find(
+                  (call: any) => call.args?.agentId === collaboratorId,
+                );
+                const initialMessage =
+                  relevantCall?.args?.messages?.[0]?.content ||
+                  "Let's collaborate!";
+
+                return this.runAgent({
+                  agentId: collaboratorId,
+                  messages: [{ role: 'user', content: initialMessage }],
+                  initiator: agentId,
+                  useSharedSpace: true,
+                  spaceId: props.spaceId,
+                  collaboratorAgentIds: [
+                    agentId,
+                    ...collaboratingAgentIds.filter(
+                      (id: string) => id !== collaboratorId,
+                    ),
+                  ],
+                  stream: false,
                 });
+              },
+            );
+
+            // Wait for all shared space sessions to complete
+            resolvedAgentCalls = await Promise.all(
+              sharedSpaceSessions.map(async (session: any, index: number) => {
+                let lastData: any;
+                await new Promise<void>((resolve, reject) => {
+                  session.subscribe({
+                    next: (chunk: any) => {
+                      lastData = chunk;
+                    },
+                    error: reject,
+                    complete: resolve,
+                  });
+                });
+
+                return {
+                  agentId: collaboratingAgentIds[index],
+                  message:
+                    rawAgenCalls.find(
+                      (call: any) =>
+                        call.args?.agentId === collaboratingAgentIds[index],
+                    )?.args?.messages?.[0]?.content || '',
+                  response: lastData,
+                  sessionId: lastData?.sessionId,
+                  sharedSpaceId: props.spaceId,
+                };
+              }),
+            );
+
+            console.log(
+              `Shared space collaboration completed in space: ${props.spaceId}`,
+            );
+          } else {
+            // Default P2P behavior for agent interactions (sequential)
+            const agentCalls = rawAgenCalls
+              .filter(
+                (call: any) => call.name === 'interactWithAgent' && call.args,
+              )
+              .map(async (call: any) => {
+                const args = call.args;
+                const sessionIdToUse = args.sessionId || undefined;
+                const childSession$ = this.runAgent({
+                  agentId: args.agentId,
+                  messages: args.messages,
+                  sessionId: sessionIdToUse,
+                  initiator: agentId,
+                  parentSessionId: currentSessionId,
+                });
+
+                let lastData: any;
+                await new Promise<void>((resolve, reject) => {
+                  childSession$.subscribe({
+                    next: (chunk) => {
+                      lastData = chunk;
+                    },
+                    error: reject,
+                    complete: resolve,
+                  });
+                });
+
+                return {
+                  agentId: args.agentId,
+                  message: args.messages?.[0]?.content || '',
+                  response: lastData,
+                  sessionId: lastData?.sessionId,
+                };
               });
 
-              return {
-                agentId: args.agentId,
-                message: args.messages?.[0]?.content || '',
-                response: lastData,
-                sessionId: lastData?.sessionId,
-              };
-            });
-
-          const resolvedAgentCalls = await Promise.all(agentCalls);
+            resolvedAgentCalls = await Promise.all(agentCalls);
+          }
 
           const messageHistories =
             finalResult?.messages?.filter(
@@ -841,8 +1133,10 @@ export class AgentService implements OnModuleInit {
 
           const lastMessage = finalResult?.messages?.at(-1)?.toDict() ?? {};
 
-          subscriber.next({
+          // Explicitly mark the final message
+          const finalMessage = {
             type: 'final',
+            messageType: 'final', // Explicitly set final message type
             payload: {
               ...lastMessage,
               sessionId: currentSessionId,
@@ -852,7 +1146,31 @@ export class AgentService implements OnModuleInit {
                 agentCalls: resolvedAgentCalls,
               },
             },
-          });
+          };
+
+          subscriber.next(finalMessage);
+
+          // Send to space bus if in shared space mode
+          if (useSharedSpace && spaceId) {
+            try {
+              await this.spaceBusService.sendMessage({
+                spaceId,
+                senderId: agentId,
+                senderType: 'agent',
+                content: finalText,
+                messageType: 'final',
+                targetType: 'broadcast',
+                metadata: {
+                  sessionId: currentSessionId,
+                  title: sessionTitle,
+                  toolCalls,
+                  agentCalls: resolvedAgentCalls,
+                },
+              });
+            } catch (error) {
+              console.error('Failed to send message to space bus:', error);
+            }
+          }
 
           subscriber.complete();
         } catch (err) {
@@ -874,7 +1192,7 @@ export class AgentService implements OnModuleInit {
 
       // Use LangChain ChatOpenAI for title generation
       const titleLlm = new ChatOpenAI({
-        model: 'gpt-4o-mini',
+        model: 'gpt-4o-mini', // original
         temperature: 0.3,
         maxTokens: 20,
         apiKey: process.env.OPENAI_API_KEY,

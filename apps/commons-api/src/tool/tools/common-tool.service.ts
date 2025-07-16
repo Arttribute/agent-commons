@@ -11,6 +11,8 @@ import { GoalService, CreateGoalDto } from '~/goal/goal.service';
 import { TaskService, CreateTaskDto, TaskContext } from '~/task/task.service';
 import { AttributionService } from '~/attribution/attribution.service';
 import { ResourceService } from '~/resource/resource.service';
+import { SpaceService } from '~/space/space.service';
+import { SpaceBusService } from '~/space/space-bus.service';
 //import { TaskService } from '~/task/task.service';
 import { OpenAIService } from '~/modules/openai/openai.service';
 import { PinataService } from '~/pinata/pinata.service';
@@ -156,6 +158,81 @@ export interface CommonTool {
   }>;
 
   /**
+   * Create a new shared space for multi-agent communication
+   */
+  createSpace(props: {
+    name: string;
+    description?: string;
+    sessionId?: string;
+    isPublic?: boolean;
+    maxMembers?: number;
+    agentId: string;
+  }): any;
+
+  /**
+   * Join an existing space
+   */
+  joinSpace(props: { spaceId: string; agentId: string }): any;
+
+  /**
+   * Add an agent to a space
+   */
+  addAgentToSpace(props: {
+    spaceId: string;
+    targetAgentId: string;
+    agentId: string;
+  }): any;
+
+  /**
+   * Send a message to a space
+   */
+  sendMessageToSpace(props: {
+    spaceId: string;
+    content: string;
+    targetType?: 'broadcast' | 'direct' | 'group';
+    targetIds?: string[];
+    agentId: string;
+  }): any;
+
+  /**
+   * Get messages from a space
+   */
+  getSpaceMessages(props: {
+    spaceId: string;
+    limit?: number;
+    agentId: string;
+  }): any;
+
+  /**
+   * Get spaces where the agent is a member
+   */
+  getMySpaces(props: { agentId: string }): any;
+
+  /**
+   * Send a message to the in-memory space bus (real-time)
+   * The agent will automatically determine message type and completion
+   */
+  sendBusMessage(props: {
+    spaceId: string;
+    content: string;
+    messageType?: 'text' | 'command' | 'response' | 'final';
+    targetType?: 'broadcast' | 'direct' | 'group';
+    targetIds?: string[];
+    agentId: string;
+    context?: any;
+  }): any;
+
+  /**
+   * Subscribe to space bus messages (automatically subscribes when agent joins space)
+   */
+  subscribeToSpaceBus(props: { spaceId: string; agentId: string }): any;
+
+  /**
+   * Get recent messages from the in-memory bus
+   */
+  getBusMessages(props: { spaceId: string; limit?: number }): any;
+
+  /**
    * Equip a tool resource to an agent
    */
   // equipResourceTool(props: {
@@ -185,6 +262,9 @@ export class CommonToolService implements CommonTool {
     private openAI: OpenAIService,
     @Inject(forwardRef(() => PinataService))
     private pinataService: PinataService,
+    @Inject(forwardRef(() => SpaceService))
+    private space: SpaceService,
+    private spaceBus: SpaceBusService,
   ) {}
 
   async createGoal(props: CreateGoalDto) {
@@ -792,6 +872,492 @@ export class CommonToolService implements CommonTool {
     return {
       success: true,
       message: `Tool resource "${resourceId}" equipped successfully.`,
+    };
+  }
+
+  /* ─────────────────────────  SPACE METHODS  ───────────────────────── */
+
+  /**
+   * Create a new shared space for multi-agent communication
+   */
+  async createSpace(props: {
+    name: string;
+    description?: string;
+    sessionId?: string;
+    isPublic?: boolean;
+    maxMembers?: number;
+    agentId: string;
+  }) {
+    const { agentId, ...spaceProps } = props;
+
+    return await this.space.createSpace({
+      ...spaceProps,
+      createdBy: agentId,
+      createdByType: 'agent',
+    });
+  }
+
+  /**
+   * Join an existing space
+   */
+  async joinSpace(props: { spaceId: string; agentId: string }) {
+    const { spaceId, agentId } = props;
+
+    return await this.space.addMember({
+      spaceId,
+      memberId: agentId,
+      memberType: 'agent',
+    });
+  }
+
+  /**
+   * Add an agent to a space
+   */
+  async addAgentToSpace(props: {
+    spaceId: string;
+    targetAgentId: string;
+    agentId: string;
+  }) {
+    const { spaceId, targetAgentId, agentId } = props;
+
+    // Check if the requesting agent is a member and has permission to invite
+    const isMember = await this.space.isMember(spaceId, agentId, 'agent');
+    if (!isMember) {
+      throw new BadRequestException(
+        'You must be a member of the space to add other agents',
+      );
+    }
+
+    return await this.space.addMember({
+      spaceId,
+      memberId: targetAgentId,
+      memberType: 'agent',
+    });
+  }
+
+  /**
+   * Send a message to a space
+   */
+  async sendMessageToSpace(props: {
+    spaceId: string;
+    content: string;
+    targetType?: 'broadcast' | 'direct' | 'group';
+    targetIds?: string[];
+    agentId: string;
+  }) {
+    const { agentId, ...messageProps } = props;
+
+    return await this.space.sendMessage({
+      ...messageProps,
+      senderId: agentId,
+      senderType: 'agent',
+    });
+  }
+
+  /**
+   * Get messages from a space
+   */
+  async getSpaceMessages(props: {
+    spaceId: string;
+    limit?: number;
+    agentId: string;
+  }) {
+    const { spaceId, agentId, limit = 50 } = props;
+
+    // Check if the agent is a member
+    const isMember = await this.space.isMember(spaceId, agentId, 'agent');
+    if (!isMember) {
+      throw new BadRequestException(
+        'You must be a member of the space to read messages',
+      );
+    }
+
+    return await this.space.getMessagesForMember(spaceId, agentId, limit);
+  }
+
+  /**
+   * Get spaces where the agent is a member
+   */
+  async getMySpaces(props: { agentId: string }) {
+    const { agentId } = props;
+
+    return await this.space.getSpacesForMember(agentId, 'agent');
+  }
+
+  /**
+   * Send a message to the in-memory space bus (real-time)
+   * The agent will automatically determine message type and completion
+   */
+  async sendBusMessage(props: {
+    spaceId: string;
+    content: string;
+    messageType?: 'text' | 'command' | 'response' | 'final';
+    targetType?: 'broadcast' | 'direct' | 'group';
+    targetIds?: string[];
+    agentId: string;
+    context?: any;
+  }) {
+    const { agentId, context, ...messageProps } = props;
+
+    // Verify agent is member of space
+    const isMember = await this.space.isMember(props.spaceId, agentId, 'agent');
+    if (!isMember) {
+      throw new BadRequestException(
+        'You must be a member of the space to send messages',
+      );
+    }
+
+    // Auto-determine message type if not provided
+    let messageType = messageProps.messageType;
+    if (!messageType) {
+      messageType = this.determineMessageType(props.content, context);
+    }
+
+    // Auto-determine target type if not provided
+    const targetType = messageProps.targetType || 'broadcast';
+
+    // Send to in-memory bus (immediate delivery)
+    const busMessage = await this.spaceBus.sendMessage({
+      spaceId: props.spaceId,
+      content: props.content,
+      messageType,
+      targetType,
+      targetIds: props.targetIds,
+      senderId: agentId,
+      senderType: 'agent',
+      metadata: {
+        context,
+      },
+    });
+
+    // Also persist to database
+    await this.space.sendMessage({
+      spaceId: props.spaceId,
+      senderId: agentId,
+      senderType: 'agent',
+      content: props.content,
+      targetType,
+      targetIds: props.targetIds,
+      messageType,
+      metadata: {
+        context,
+        busMessageId: busMessage.messageId,
+      },
+    });
+
+    return {
+      success: true,
+      messageId: busMessage.messageId,
+      timestamp: busMessage.timestamp,
+      messageType,
+      persisted: true,
+    };
+  }
+
+  /**
+   * Determine message type based on content analysis
+   */
+  private determineMessageType(
+    content: string,
+    context?: any,
+  ): 'text' | 'command' | 'response' | 'final' {
+    const lowerContent = content.toLowerCase();
+
+    // Check for completion indicators
+    if (
+      lowerContent.includes('task completed') ||
+      lowerContent.includes('finished') ||
+      lowerContent.includes('done') ||
+      lowerContent.includes('complete') ||
+      lowerContent.includes('final result') ||
+      lowerContent.includes('summary') ||
+      lowerContent.includes('conclusion')
+    ) {
+      return 'final';
+    }
+
+    // Check for command indicators
+    if (
+      lowerContent.includes('please') ||
+      lowerContent.includes('can you') ||
+      lowerContent.includes('could you') ||
+      lowerContent.includes('need you to') ||
+      lowerContent.includes('help me') ||
+      lowerContent.startsWith('run') ||
+      lowerContent.startsWith('execute') ||
+      lowerContent.startsWith('perform')
+    ) {
+      return 'command';
+    }
+
+    // Check for response indicators
+    if (
+      lowerContent.includes('here is') ||
+      lowerContent.includes('here are') ||
+      lowerContent.includes('i found') ||
+      lowerContent.includes('result:') ||
+      lowerContent.includes('answer:') ||
+      lowerContent.includes('completed') ||
+      context?.isResponse
+    ) {
+      return 'response';
+    }
+
+    // Default to text
+    return 'text';
+  }
+
+  /**
+   * Subscribe to space bus messages (automatically subscribes when agent joins space)
+   */
+  async subscribeToSpaceBus(props: { spaceId: string; agentId: string }) {
+    const { spaceId, agentId } = props;
+
+    // Verify agent is member of space
+    const isMember = await this.space.isMember(spaceId, agentId, 'agent');
+    if (!isMember) {
+      throw new BadRequestException(
+        'You must be a member of the space to subscribe to messages',
+      );
+    }
+
+    // Subscribe to bus with autonomous message processing
+    const subscriptionId = this.spaceBus.subscribeToSpace(
+      spaceId,
+      (message) => {
+        // Filter messages for this agent if needed
+        if (
+          message.targetType === 'direct' &&
+          message.targetIds &&
+          !message.targetIds.includes(agentId)
+        ) {
+          return;
+        }
+
+        // Process message autonomously
+        this.processIncomingMessage(message, agentId);
+      },
+    );
+
+    return {
+      success: true,
+      subscriptionId,
+      spaceId,
+      message:
+        'Agent subscribed to space bus and will receive real-time messages',
+    };
+  }
+
+  /**
+   * Process incoming messages autonomously
+   */
+  private async processIncomingMessage(message: any, agentId: string) {
+    try {
+      // Log for agent context
+      console.log(`Agent ${agentId} received message:`, {
+        messageId: message.messageId,
+        senderId: message.senderId,
+        content: message.content,
+        messageType: message.messageType,
+        timestamp: new Date(message.timestamp),
+      });
+
+      // Determine if agent should respond
+      const shouldRespond = this.shouldAgentRespond(message, agentId);
+
+      if (shouldRespond.respond) {
+        // Auto-generate response based on message context
+        const response = await this.generateAutonomousResponse(
+          message,
+          agentId,
+        );
+
+        if (response) {
+          // Send response back to space
+          await this.sendBusMessage({
+            spaceId: message.spaceId,
+            content: response.content,
+            messageType: response.messageType,
+            targetType: response.targetType,
+            targetIds: response.targetIds,
+            agentId: agentId,
+            context: {
+              respondingTo: message.messageId,
+              autonomous: true,
+            },
+          });
+        }
+      }
+
+      // // Check if agent should take action
+      // const action = this.determineAgentAction(message, agentId);
+      // if (action) {
+      //   await this.executeAgentAction(action, agentId);
+      // }
+    } catch (error) {
+      console.error(`Error processing message for agent ${agentId}:`, error);
+    }
+  }
+
+  /**
+   * Determine if agent should respond to a message
+   */
+  private shouldAgentRespond(
+    message: any,
+    agentId: string,
+  ): { respond: boolean; reason?: string } {
+    // Don't respond to own messages
+    if (message.senderId === agentId) {
+      return { respond: false, reason: 'Own message' };
+    }
+
+    // Always respond to direct messages
+    if (
+      message.targetType === 'direct' &&
+      message.targetIds &&
+      message.targetIds.includes(agentId)
+    ) {
+      return { respond: true, reason: 'Direct message' };
+    }
+
+    // Respond to commands that might be relevant
+    if (message.messageType === 'command') {
+      const content = message.content.toLowerCase();
+      if (
+        content.includes('help') ||
+        content.includes('assist') ||
+        content.includes('collaborate')
+      ) {
+        return { respond: true, reason: 'Relevant command' };
+      }
+    }
+
+    // Respond to questions
+    if (message.content.includes('?')) {
+      return { respond: true, reason: 'Question detected' };
+    }
+
+    return { respond: false, reason: 'No response trigger' };
+  }
+
+  /**
+   * Generate autonomous response
+   */
+  private async generateAutonomousResponse(
+    message: any,
+    agentId: string,
+  ): Promise<{
+    content: string;
+    messageType: 'text' | 'command' | 'response' | 'final';
+    targetType: 'broadcast' | 'direct' | 'group';
+    targetIds?: string[];
+  } | null> {
+    // Simple autonomous response logic
+    // In a real implementation, this would use the agent's AI capabilities
+
+    const content = message.content.toLowerCase();
+
+    if (content.includes('help')) {
+      return {
+        content: `I'm ready to help with this task. What specific assistance do you need?`,
+        messageType: 'response',
+        targetType: 'direct',
+        targetIds: [message.senderId],
+      };
+    }
+
+    if (content.includes('status') || content.includes('progress')) {
+      return {
+        content: `I'm currently active and ready to collaborate on this space.`,
+        messageType: 'response',
+        targetType: 'broadcast',
+      };
+    }
+
+    if (content.includes('complete') || content.includes('done')) {
+      return {
+        content: `Acknowledged. I'll process this completion and wrap up my tasks.`,
+        messageType: 'final',
+        targetType: 'broadcast',
+      };
+    }
+
+    // Default response for direct messages
+    if (message.targetType === 'direct') {
+      return {
+        content: `I received your message and will process it accordingly.`,
+        messageType: 'response',
+        targetType: 'direct',
+        targetIds: [message.senderId],
+      };
+    }
+
+    return null;
+  }
+
+  /**
+   * Determine if agent should take action
+   */
+  // private determineAgentAction(message: any, agentId: string): string | null {
+  //   const content = message.content.toLowerCase();
+
+  //   if (content.includes('analyze') || content.includes('process')) {
+  //     return 'analyze_data';
+  //   }
+
+  //   if (content.includes('search') || content.includes('find')) {
+  //     return 'search_information';
+  //   }
+
+  //   if (content.includes('create') || content.includes('generate')) {
+  //     return 'create_content';
+  //   }
+
+  //   return null;
+  // }
+
+  /**
+   * Execute agent action
+   */
+  // private async executeAgentAction(action: string, agentId: string) {
+  //   // This would trigger the agent's specific capabilities
+  //   console.log(`Agent ${agentId} executing action: ${action}`);
+
+  //   // In a real implementation, this would call the agent's tools
+  //   // For now, just log the action
+  // }
+
+  /**
+   * Get recent messages from the in-memory bus
+   */
+  async getBusMessages(props: { spaceId: string; limit?: number }) {
+    const { spaceId, limit = 20 } = props;
+
+    const messages = this.spaceBus.getRecentMessages(spaceId, limit);
+
+    return {
+      messages: messages.map((msg) => ({
+        messageId: msg.messageId,
+        senderId: msg.senderId,
+        senderType: msg.senderType,
+        content: msg.content,
+        messageType: msg.messageType,
+        targetType: msg.targetType,
+        targetIds: msg.targetIds,
+        timestamp: new Date(msg.timestamp).toISOString(),
+      })),
+      count: messages.length,
+    };
+  }
+
+  /**
+   * Get bus statistics
+   */
+  async getBusStatistics() {
+    const stats = this.spaceBus.getStatistics();
+    return {
+      success: true,
+      statistics: stats,
     };
   }
 }

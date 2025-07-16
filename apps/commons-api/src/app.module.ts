@@ -12,6 +12,7 @@ import { CoinbaseModule } from './modules/coinbase';
 import { EmbeddingModule } from './embedding/embedding.module';
 import { LiaisonModule } from './liaison/liaison.module';
 import { AutonomyModule } from './autonomy/autonomy.module';
+import { SpaceModule } from './space/space.module';
 
 @Module({
   imports: [
@@ -30,6 +31,7 @@ import { AutonomyModule } from './autonomy/autonomy.module';
     ResourceModule,
     LiaisonModule,
     AutonomyModule,
+    SpaceModule,
   ],
 
   controllers: [AppController],

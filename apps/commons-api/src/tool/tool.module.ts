@@ -9,6 +9,7 @@ import { GoalModule } from '../goal';
 import { TaskModule } from '../task';
 import { AttributionModule } from '../attribution';
 import { PinataModule } from '~/pinata/pinata.module';
+import { SpaceModule } from '../space/space.module';
 
 @Module({
   imports: [
@@ -19,6 +20,7 @@ import { PinataModule } from '~/pinata/pinata.module';
     forwardRef(() => PinataModule),
     forwardRef(() => GoalModule),
     forwardRef(() => TaskModule),
+    forwardRef(() => SpaceModule),
   ],
   controllers: [ToolController],
   providers: [ToolService, EthereumToolService, CommonToolService, ToolService],
