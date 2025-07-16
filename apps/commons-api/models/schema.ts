@@ -289,3 +289,113 @@ export const agentTool = pgTable('agent_tool', {
     .default(sql`timezone('utc', now())`)
     .notNull(),
 });
+
+// Space table for shared communication bus
+export const space = pgTable('space', {
+  spaceId: uuid('space_id')
+    .default(sql`uuid_generate_v4()`)
+    .primaryKey(),
+  name: text('name').notNull(),
+  description: text('description'),
+  createdBy: text('created_by').notNull(), // agentId or userId
+  createdByType: text('created_by_type').notNull(), // 'agent' or 'human'
+
+  // Optional connection to a session
+  sessionId: uuid('session_id').references(() => session.sessionId, {
+    onDelete: 'set null',
+  }),
+
+  // Space metadata
+  isPublic: pgBoolean('is_public').default(false).notNull(),
+  maxMembers: integer('max_members').default(50), // null means unlimited
+
+  // Space settings
+  settings: jsonb('settings').$type<{
+    allowAgents?: boolean;
+    allowHumans?: boolean;
+    requireApproval?: boolean;
+    moderators?: string[];
+  }>(),
+
+  createdAt: timestamp('created_at', { withTimezone: true })
+    .default(sql`timezone('utc', now())`)
+    .notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true })
+    .default(sql`timezone('utc', now())`)
+    .notNull(),
+});
+
+// Space membership table
+export const spaceMember = pgTable('space_member', {
+  id: uuid('id')
+    .default(sql`uuid_generate_v4()`)
+    .primaryKey(),
+  spaceId: uuid('space_id')
+    .references(() => space.spaceId, { onDelete: 'cascade' })
+    .notNull(),
+  memberId: text('member_id').notNull(), // agentId or userId
+  memberType: text('member_type').notNull(), // 'agent' or 'human'
+  role: text('role').default('member'), // 'owner', 'moderator', 'member'
+
+  // Member status
+  status: text('status').default('active'), // 'active', 'muted', 'banned'
+  permissions: jsonb('permissions').$type<{
+    canWrite?: boolean;
+    canInvite?: boolean;
+    canModerate?: boolean;
+  }>(),
+
+  joinedAt: timestamp('joined_at', { withTimezone: true })
+    .default(sql`timezone('utc', now())`)
+    .notNull(),
+  lastActiveAt: timestamp('last_active_at', { withTimezone: true }),
+});
+
+// Space messages table
+export const spaceMessage = pgTable('space_message', {
+  messageId: uuid('message_id')
+    .default(sql`uuid_generate_v4()`)
+    .primaryKey(),
+  spaceId: uuid('space_id')
+    .references(() => space.spaceId, { onDelete: 'cascade' })
+    .notNull(),
+
+  // Message sender
+  senderId: text('sender_id').notNull(), // agentId or userId
+  senderType: text('sender_type').notNull(), // 'agent' or 'human'
+
+  // Message targeting
+  targetType: text('target_type').default('broadcast'), // 'broadcast', 'direct', 'group'
+  targetIds: jsonb('target_ids').$type<string[]>(), // For direct messages or group targeting
+
+  // Message content
+  content: text('content').notNull(),
+  messageType: text('message_type').default('text'), // 'text', 'image', 'file', 'system'
+
+  // Message metadata
+  metadata: jsonb('metadata').$type<{
+    toolCalls?: Array<{
+      name: string;
+      args: any;
+      result?: any;
+    }>;
+    attachments?: Array<{
+      type: string;
+      url: string;
+      name: string;
+    }>;
+    replyTo?: string; // messageId
+    mentions?: string[]; // member IDs
+  }>(),
+
+  // Message status
+  isEdited: pgBoolean('is_edited').default(false),
+  isDeleted: pgBoolean('is_deleted').default(false),
+
+  createdAt: timestamp('created_at', { withTimezone: true })
+    .default(sql`timezone('utc', now())`)
+    .notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true })
+    .default(sql`timezone('utc', now())`)
+    .notNull(),
+});
