@@ -251,6 +251,70 @@ export class AgentService implements OnModuleInit {
     return { balance: commonsBalance.toNumber(), txHash: tx };
   }
 
+  /* ─────────────────────────  SPACE UTILITIES  ───────────────────────── */
+
+  /**
+   * Setup agent for shared space collaboration
+   */
+  private async setupAgentForSharedSpace(
+    agentId: string,
+    spaceId?: string,
+    collaboratorAgentIds: string[] = [],
+  ): Promise<string> {
+    let actualSpaceId = spaceId;
+
+    if (!actualSpaceId) {
+      // Create a new space if none provided
+      const newSpace = await this.spaceService.createSpace({
+        name: `Agent Collaboration Space - ${new Date().toISOString()}`,
+        description: `Shared space for agents: ${[agentId, ...collaboratorAgentIds].join(', ')}`,
+        createdBy: agentId,
+        createdByType: 'agent' as const,
+      });
+      actualSpaceId = newSpace.spaceId;
+
+      // Add collaborator agents to the space
+      for (const collaboratorId of collaboratorAgentIds) {
+        try {
+          await this.spaceService.addMember({
+            spaceId: actualSpaceId,
+            memberId: collaboratorId,
+            memberType: 'agent' as const,
+            role: 'member',
+          });
+        } catch (error) {
+          // Ignore "Member already exists" errors - this is expected behavior
+          if (
+            error instanceof Error &&
+            error.message !== 'Member already exists in this space'
+          ) {
+            throw error; // Re-throw other errors
+          }
+        }
+      }
+    } else {
+      // Add current agent to existing space
+      try {
+        await this.spaceService.addMember({
+          spaceId: actualSpaceId,
+          memberId: agentId,
+          memberType: 'agent' as const,
+          role: 'member',
+        });
+      } catch (error) {
+        // Ignore "Member already exists" errors - this is expected behavior
+        if (
+          error instanceof Error &&
+          error.message !== 'Member already exists in this space'
+        ) {
+          throw error; // Re-throw other errors
+        }
+      }
+    }
+
+    return actualSpaceId;
+  }
+
   /* ─────────────────────────  SESSION BOOTSTRAP  ───────────────────────── */
   private async createAgentSession(
     agentId: string,
@@ -489,56 +553,11 @@ export class AgentService implements OnModuleInit {
 
           // Handle space creation/joining when using shared space mode
           if (useSharedSpace) {
-            let actualSpaceId = spaceId;
-
-            if (!actualSpaceId) {
-              // Create a new space if none provided
-              const newSpace = await this.spaceService.createSpace({
-                name: `Agent Collaboration Space - ${new Date().toISOString()}`,
-                description: `Shared space for agents: ${[agentId, ...collaboratorAgentIds].join(', ')}`,
-                createdBy: agentId,
-                createdByType: 'agent' as const,
-              });
-              actualSpaceId = newSpace.spaceId;
-
-              // Add collaborator agents to the space
-              for (const collaboratorId of collaboratorAgentIds) {
-                try {
-                  await this.spaceService.addMember({
-                    spaceId: actualSpaceId,
-                    memberId: collaboratorId,
-                    memberType: 'agent' as const,
-                    role: 'member',
-                  });
-                } catch (error) {
-                  // Ignore "Member already exists" errors - this is expected behavior
-                  if (
-                    error instanceof Error &&
-                    error.message !== 'Member already exists in this space'
-                  ) {
-                    throw error; // Re-throw other errors
-                  }
-                }
-              }
-            } else {
-              // Add current agent to existing space
-              try {
-                await this.spaceService.addMember({
-                  spaceId: actualSpaceId,
-                  memberId: agentId,
-                  memberType: 'agent' as const,
-                  role: 'member',
-                });
-              } catch (error) {
-                // Ignore "Member already exists" errors - this is expected behavior
-                if (
-                  error instanceof Error &&
-                  error.message !== 'Member already exists in this space'
-                ) {
-                  throw error; // Re-throw other errors
-                }
-              }
-            }
+            const actualSpaceId = await this.setupAgentForSharedSpace(
+              agentId,
+              spaceId,
+              collaboratorAgentIds,
+            );
 
             // Subscribe to space bus for real-time communication
             this.spaceBusService.subscribeToSpace(
@@ -600,6 +619,8 @@ export class AgentService implements OnModuleInit {
           }[] = [];
           const executedCalls: any[] = [];
 
+          let accumulatedTokens = ''; // Complete message sent at completion
+
           const callbackHandler = BaseCallbackHandler.fromMethods({
             handleLLMNewToken: async (token: string) => {
               if (stream) {
@@ -612,24 +633,35 @@ export class AgentService implements OnModuleInit {
 
                 subscriber.next(tokenMessage);
 
-                // Send token to space bus if in shared space mode
+                // Accumulate tokens for space bus
                 if (useSharedSpace && spaceId) {
-                  try {
-                    await this.spaceBusService.sendMessage({
-                      spaceId,
-                      senderId: agentId,
-                      senderType: 'agent',
-                      content: token,
-                      messageType: 'text',
-                      targetType: 'broadcast',
-                      metadata: {
-                        type: 'token',
-                        sessionId: currentSessionId,
-                      },
-                    });
-                  } catch (error) {
-                    console.error('Failed to send token to space bus:', error);
-                  }
+                  accumulatedTokens += token;
+                }
+              }
+            },
+            handleLLMEnd: async (output: any) => {
+              // Send complete accumulated message to space bus when LLM completes
+              if (useSharedSpace && spaceId && accumulatedTokens.trim()) {
+                try {
+                  await this.spaceBusService.sendMessage({
+                    spaceId,
+                    senderId: agentId,
+                    senderType: 'agent',
+                    content: accumulatedTokens,
+                    messageType: 'text',
+                    targetType: 'broadcast',
+                    metadata: {
+                      type: 'acc_tokens',
+                      sessionId: currentSessionId,
+                      isComplete: true,
+                    },
+                  });
+                  accumulatedTokens = ''; // Reset after sending
+                } catch (error) {
+                  console.error(
+                    'Failed to send complete message to space bus:',
+                    error,
+                  );
                 }
               }
             },
