@@ -71,8 +71,8 @@ export class SpaceService {
       with: {
         members: true,
         messages: {
-          limit: 50,
           orderBy: desc(schema.spaceMessage.createdAt),
+          limit: 50,
         },
       },
     });

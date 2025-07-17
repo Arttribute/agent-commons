@@ -1257,15 +1257,6 @@ export class CommonToolService implements CommonTool {
 
     const content = message.content.toLowerCase();
 
-    if (content.includes('help')) {
-      return {
-        content: `I'm ready to help with this task. What specific assistance do you need?`,
-        messageType: 'response',
-        targetType: 'direct',
-        targetIds: [message.senderId],
-      };
-    }
-
     if (content.includes('status') || content.includes('progress')) {
       return {
         content: `I'm currently active and ready to collaborate on this space.`,
