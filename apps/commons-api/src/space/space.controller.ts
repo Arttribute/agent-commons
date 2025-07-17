@@ -15,7 +15,8 @@ import { SpaceService } from './space.service';
 import { SpaceBusService } from './space-bus.service';
 import { TypedBody } from '@nestia/core';
 import { AddMemberDto, CreateSpaceDto, SendMessageDto } from './dto/space.dto';
-import { Observable } from 'rxjs';
+import { Observable, from, merge } from 'rxjs';
+import { map, switchMap } from 'rxjs/operators';
 
 // Utility to convert Observable to AsyncIterable
 function observableToAsyncIterable<T>(
@@ -289,29 +290,11 @@ export class SpaceController {
   /* ─────────────────────────  COLLABORATION  ───────────────────────── */
 
   /**
-   * Start shared bus collaboration
+   * Run agents in shared space with streaming
    */
-  @Post(':spaceId/collaboration/shared-bus')
-  async startSharedBusCollaboration(
-    @Param('spaceId') spaceId: string,
-    @Body()
-    props: {
-      taskDescription: string;
-      participantAgents: string[];
-      timeoutMs?: number;
-    },
-  ) {
-    return this.spaceBusService.startSharedBusCollaboration({
-      ...props,
-      spaceId,
-    });
-  }
-
-  /**
-   * Run agents in shared space
-   */
-  @Post(':spaceId/collaboration/agents')
-  async runAgentsInSharedSpace(
+  @Post(':spaceId/collaboration/agents/stream')
+  @Sse(':spaceId/collaboration/agents/stream')
+  runAgentsStreamingCollaboration(
     @Param('spaceId') spaceId: string,
     @Body()
     props: {
@@ -320,50 +303,40 @@ export class SpaceController {
       spaceName?: string;
     },
   ) {
-    return this.spaceBusService.runAgentsInSharedSpace({
-      ...props,
-      spaceId,
-    });
+    return from(
+      this.spaceBusService.runAgentsInSharedSpace({
+        ...props,
+        spaceId,
+        stream: true,
+      }),
+    ).pipe(
+      switchMap((result) => {
+        return merge(...(result.sessions || [])).pipe(
+          map((data) => ({ data })),
+        );
+      }),
+    );
   }
 
   /**
-   * Start shared space streaming collaboration
+   * Run agents in shared space (non-streaming)
    */
-  @Post(':spaceId/collaboration/stream')
-  async startSharedSpaceStreaming(
+  @Post(':spaceId/collaboration/agents')
+  async runAgentsCollaboration(
     @Param('spaceId') spaceId: string,
     @Body()
     props: {
       agentIds: string[];
       initialMessage: string;
+      spaceName?: string;
+      enableCollaborationSummary?: boolean;
+      timeoutMs?: number;
     },
   ) {
-    // Start the collaboration and return a session ID
-    const result = await this.spaceBusService.runAgentsInSharedSpace({
+    return this.spaceBusService.runAgentsInSharedSpace({
       ...props,
       spaceId,
+      stream: false,
     });
-
-    return {
-      success: true,
-      spaceId: result.spaceId,
-      sessionId: result.sessionId,
-      message:
-        'Collaboration started. Connect to the stream endpoint to receive updates.',
-    };
-  }
-
-  /**
-   * Stream shared space collaboration
-   */
-  @Get(':spaceId/collaboration/stream')
-  @Sse(':spaceId/collaboration/stream')
-  streamSharedSpaceCollaboration(
-    @Param('spaceId') spaceId: string,
-  ): AsyncIterable<MessageEvent> {
-    // Return real-time stream of all space messages
-    return observableToAsyncIterable(
-      this.spaceBusService.getMessageStream(spaceId),
-    );
   }
 }

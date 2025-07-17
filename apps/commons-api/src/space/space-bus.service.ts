@@ -267,133 +267,63 @@ export class SpaceBusService implements OnModuleInit, OnModuleDestroy {
     };
   }
 
-  /* ─────────────────────────  COLLABORATION METHODS  ───────────────────────── */
+  /* ─────────────────────────  PRIVATE UTILITY METHODS  ───────────────────────── */
 
   /**
-   * Core shared bus mechanism for multi-agent collaboration
+   * Extract common space setup logic
    */
-  async startSharedBusCollaboration(props: {
-    taskDescription: string;
-    participantAgents: string[];
-    spaceId?: string;
-    timeoutMs?: number;
-  }): Promise<{
-    spaceId: string;
-    results: Array<{
-      agentId: string;
-      messages: any[];
-      status: 'completed' | 'timeout' | 'error';
-      error?: string;
-    }>;
-    collaborationSummary: {
-      totalMessages: number;
-      duration: number;
-      outcome: 'success' | 'timeout' | 'partial_success';
-    };
-    finalCompilation: {
-      message: string;
-      synthesizedDeliverable: string;
-      agentContributions: Array<{
-        agentId: string;
-        status: string;
-        contribution: string;
-        messageCount: number;
-      }>;
-    };
-  }> {
-    const {
-      taskDescription,
-      participantAgents,
-      spaceId,
-      timeoutMs = 300000, // 5 minutes default
-    } = props;
-
-    console.log(
-      `Starting shared bus collaboration with ${participantAgents.length} agents`,
-    );
-
-    // Create or use existing space
+  private async setupCollaborationSpace(
+    spaceId: string | undefined,
+    agentIds: string[],
+    spaceName?: string,
+    spaceDescription?: string,
+  ): Promise<string> {
     let actualSpaceId = spaceId;
     if (!actualSpaceId) {
       const space = await this.spaceService.createSpace({
-        name: `Shared Bus Collaboration - ${new Date().toISOString()}`,
-        description: `Multi-agent collaboration for: ${taskDescription}`,
-        createdBy: participantAgents[0],
+        name: spaceName || `Agent Collaboration - ${new Date().toISOString()}`,
+        description:
+          spaceDescription || `Shared space for agents: ${agentIds.join(', ')}`,
+        createdBy: agentIds[0],
         createdByType: 'agent',
       });
       actualSpaceId = space.spaceId;
+    }
 
-      // Add all participants to the space (skip the creator who was already added)
-      for (const agentId of participantAgents.slice(1)) {
-        try {
-          await this.spaceService.addMember({
-            spaceId: actualSpaceId,
-            memberId: agentId,
-            memberType: 'agent',
-            role: 'member',
-          });
-        } catch (error) {
-          // Ignore "Member already exists" errors - this is expected behavior
-          if (
-            error instanceof Error &&
-            error.message !== 'Member already exists in this space'
-          ) {
-            throw error; // Re-throw other errors
-          }
-        }
-      }
-    } else {
-      // For existing spaces, ensure all participants are members
-      for (const agentId of participantAgents) {
-        try {
-          await this.spaceService.addMember({
-            spaceId: actualSpaceId,
-            memberId: agentId,
-            memberType: 'agent',
-            role: 'member',
-          });
-        } catch (error) {
-          // Ignore "Member already exists" errors - this is expected behavior
-          if (
-            error instanceof Error &&
-            error.message !== 'Member already exists in this space'
-          ) {
-            throw error; // Re-throw other errors
-          }
+    // Add all participants to the space (skip the creator who was already added if space was created)
+    const agentsToAdd =
+      actualSpaceId === spaceId ? agentIds : agentIds.slice(1);
+    for (const agentId of agentsToAdd) {
+      try {
+        await this.spaceService.addMember({
+          spaceId: actualSpaceId,
+          memberId: agentId,
+          memberType: 'agent',
+          role: 'member',
+        });
+      } catch (error) {
+        // Ignore "Member already exists" errors - this is expected behavior
+        if (
+          error instanceof Error &&
+          error.message !== 'Member already exists in this space'
+        ) {
+          throw error; // Re-throw other errors
         }
       }
     }
 
-    // Track collaboration state
-    const agentResults = new Map<
-      string,
-      {
-        agentId: string;
-        messages: any[];
-        status: 'running' | 'completed' | 'timeout' | 'error';
-        error?: string;
-      }
-    >();
+    return actualSpaceId;
+  }
 
-    // Initialize agent results
-    participantAgents.forEach((agentId) => {
-      agentResults.set(agentId, {
-        agentId,
-        messages: [],
-        status: 'running',
-      });
-    });
-
-    // Collaboration metrics
-    let totalMessages = 0;
-    const startTime = Date.now();
-
-    // Create a single shared session for the space
-    const sharedSession = await this.sessionService.createSession({
+  /**
+   * Extract shared session creation logic
+   */
+  private async createSharedSession(spaceId: string, agentIds: string[]) {
+    return await this.sessionService.createSession({
       value: {
         sessionId: uuidv4(),
-        agentId: `space-${actualSpaceId}`, // Use space ID as agent ID for shared session
-        initiator: participantAgents[0],
+        agentId: `space-${spaceId}`,
+        initiator: agentIds[0],
         model: {
           name: 'gpt-4o-mini',
           temperature: 0.7,
@@ -406,11 +336,132 @@ export class SpaceBusService implements OnModuleInit, OnModuleDestroy {
         updatedAt: new Date(),
       },
     });
+  }
 
-    // Simple completion tracking - just wait for all agents to complete
-    const collaborationPromise = new Promise<void>((resolve, reject) => {
+  /* ─────────────────────────  COLLABORATION METHODS  ───────────────────────── */
+
+  /**
+   * Unified method to run multiple agents in a shared space (supports both streaming and non-streaming)
+   * This method combines the capabilities of both previous collaboration methods
+   */
+  async runAgentsInSharedSpace(props: {
+    agentIds: string[];
+    initialMessage: string;
+    spaceId?: string;
+    spaceName?: string;
+    stream?: boolean;
+    timeoutMs?: number;
+    enableCollaborationSummary?: boolean;
+  }): Promise<{
+    spaceId: string;
+    sessionId: string;
+    sessions?: Observable<any>[];
+    results?: Array<{
+      agentId: string;
+      messages: any[];
+      status: 'completed' | 'timeout' | 'error';
+      error?: string;
+    }>;
+    collaborationSummary?: {
+      totalMessages: number;
+      duration: number;
+      outcome: 'success' | 'timeout' | 'partial_success';
+    };
+    finalCompilation?: {
+      message: string;
+      synthesizedDeliverable: string;
+      agentContributions: Array<{
+        agentId: string;
+        status: string;
+        contribution: string;
+        messageCount: number;
+      }>;
+    };
+  }> {
+    const {
+      agentIds,
+      initialMessage,
+      spaceId,
+      spaceName,
+      stream = true,
+      timeoutMs = 300000, // 5 minutes default
+      enableCollaborationSummary = false,
+    } = props;
+
+    console.log(
+      `Running ${agentIds.length} agents in shared space (streaming: ${stream}, summary: ${enableCollaborationSummary})`,
+    );
+
+    // Create or use existing space using shared utility
+    const actualSpaceId = await this.setupCollaborationSpace(
+      spaceId,
+      agentIds,
+      spaceName || `Agent Collaboration - ${new Date().toISOString()}`,
+      `Shared space for agents: ${agentIds.join(', ')}`,
+    );
+
+    // Create a single shared session for the space using shared utility
+    const sharedSession = await this.createSharedSession(
+      actualSpaceId,
+      agentIds,
+    );
+
+    const instructions =
+      'SHARED BUS COLLABORATION TASK:\n' +
+      initialMessage +
+      `\n\nYou are collaborating with other agents. \n\nUse sendBusMessage to communicate with them and subscribeToSpaceBus to receive their messages. Focus on collaborative problem-solving.\n\nThis is a single collaborative session. When you finish, send a final message with type 'final' to indicate completion.`;
+
+    // For streaming mode, return sessions immediately
+    if (stream && !enableCollaborationSummary) {
+      const sessions = agentIds.map((agentId) => {
+        return this.agentService.runAgent({
+          agentId,
+          messages: [{ role: 'user', content: instructions }],
+          sessionId: sharedSession.sessionId,
+          initiator: agentIds[0],
+          useSharedSpace: true,
+          spaceId: actualSpaceId,
+          collaboratorAgentIds: agentIds.filter((id) => id !== agentId),
+          stream,
+        });
+      });
+
+      return {
+        spaceId: actualSpaceId,
+        sessionId: sharedSession.sessionId,
+        sessions,
+      };
+    }
+
+    // For non-streaming mode or when collaboration summary is enabled,
+    // wait for completion and provide detailed results
+    const agentResults = new Map<
+      string,
+      {
+        agentId: string;
+        messages: any[];
+        status: 'running' | 'completed' | 'timeout' | 'error';
+        error?: string;
+      }
+    >();
+
+    // Initialize agent results
+    agentIds.forEach((agentId) => {
+      agentResults.set(agentId, {
+        agentId,
+        messages: [],
+        status: 'running',
+      });
+    });
+
+    // Collaboration metrics
+    let totalMessages = 0;
+    const startTime = Date.now();
+
+    // Completion tracking for non-streaming mode
+    const collaborationPromise = new Promise<void>((resolve) => {
       let isCompleted = false;
-      let finalMessageCount = 0; // Track explicit final messages
+      let finalMessageCount = 0;
 
       const checkCompletion = () => {
         const allCompleted = Array.from(agentResults.values()).every(
@@ -418,10 +469,8 @@ export class SpaceBusService implements OnModuleInit, OnModuleDestroy {
             result.status === 'completed' || result.status === 'error',
         );
 
-        const hasExplicitFinalMessages =
-          finalMessageCount >= participantAgents.length;
+        const hasExplicitFinalMessages = finalMessageCount >= agentIds.length;
 
-        // Complete when all agents have finished or all sent final messages
         if (allCompleted || hasExplicitFinalMessages) {
           if (!isCompleted) {
             isCompleted = true;
@@ -430,79 +479,75 @@ export class SpaceBusService implements OnModuleInit, OnModuleDestroy {
         }
       };
 
-      // Monitor space for messages
-      const subscription = this.subscribeToSpace(
-        actualSpaceId,
-        (message: any) => {
-          totalMessages++;
-          const agentResult = agentResults.get(message.senderId);
-          if (agentResult) {
-            agentResult.messages.push(message);
-          }
+      // Monitor space for messages if collaboration summary is enabled
+      if (enableCollaborationSummary) {
+        const subscription = this.subscribeToSpace(
+          actualSpaceId,
+          (message: any) => {
+            totalMessages++;
+            const agentResult = agentResults.get(message.senderId);
+            if (agentResult) {
+              agentResult.messages.push(message);
+            }
 
-          // Check for explicit final messages
-          if (message.messageType === 'final' && agentResult) {
-            finalMessageCount++;
-            agentResult.status = 'completed';
-          }
+            if (message.messageType === 'final' && agentResult) {
+              finalMessageCount++;
+              agentResult.status = 'completed';
+            }
 
-          // Check if collaboration should complete
-          checkCompletion();
-        },
-      );
+            checkCompletion();
+          },
+        );
+      }
 
-      // Auto-complete after timeout
       setTimeout(() => {
         checkCompletion();
       }, timeoutMs);
     });
 
     // Start all agents in the shared space using the same session
-    const agentPromises = participantAgents.map(async (agentId) => {
+    const agentPromises = agentIds.map(async (agentId) => {
       try {
         const session = this.agentService.runAgent({
           agentId,
-          messages: [
-            {
-              role: 'user',
-              content: `SHARED BUS COLLABORATION TASK:\n${taskDescription}\n\nYou are collaborating with these agents: ${participantAgents.filter((id) => id !== agentId).join(', ')}\n\nUse sendBusMessage to communicate with other agents and subscribeToSpaceBus to receive their messages. Focus on collaborative problem-solving.\n\nThis is a single collaborative session. When you have completed your contribution to this task, send a final message with messageType="final" to indicate completion.`,
-            },
-          ],
-          sessionId: sharedSession.sessionId, // Use the shared session
-          initiator: participantAgents[0],
+          messages: [{ role: 'user', content: instructions }],
+          sessionId: sharedSession.sessionId,
+          initiator: agentIds[0],
           useSharedSpace: true,
           spaceId: actualSpaceId,
-          collaboratorAgentIds: participantAgents.filter(
-            (id) => id !== agentId,
-          ),
-          stream: false,
+          collaboratorAgentIds: agentIds.filter((id) => id !== agentId),
+          stream,
         });
 
         const result = agentResults.get(agentId)!;
 
-        return new Promise<void>((resolve, reject) => {
-          session.subscribe({
-            next: (chunk) => {
-              result.messages.push(chunk);
-              // Check for explicit final message type
-              if (chunk.type === 'final' || chunk.messageType === 'final') {
-                result.status = 'completed';
-              }
-            },
-            error: (error) => {
-              result.status = 'error';
-              result.error = error.message;
-              reject(error);
-            },
-            complete: () => {
-              // Only mark as completed if we haven't seen an explicit final message
-              if (result.status === 'running') {
-                result.status = 'completed';
-              }
-              resolve();
-            },
+        if (stream) {
+          // For streaming mode, return the session observable
+          return session;
+        } else {
+          // For non-streaming mode, collect results
+          return new Promise<void>((resolve, reject) => {
+            session.subscribe({
+              next: (chunk) => {
+                result.messages.push(chunk);
+                if (chunk.type === 'final' || chunk.messageType === 'final') {
+                  result.status = 'completed';
+                }
+              },
+              error: (error) => {
+                result.status = 'error';
+                result.error = error.message;
+                reject(error);
+              },
+              complete: () => {
+                if (result.status === 'running') {
+                  result.status = 'completed';
+                }
+                resolve();
+              },
+            });
           });
-        });
+        }
       } catch (error) {
         const result = agentResults.get(agentId)!;
         result.status = 'error';
@@ -511,7 +556,17 @@ export class SpaceBusService implements OnModuleInit, OnModuleDestroy {
       }
     });
 
-    // Wait for either all agents to complete or timeout
+    // For streaming mode with summary enabled, return sessions
+    if (stream && enableCollaborationSummary) {
+      const sessions = (await Promise.all(agentPromises)) as Observable<any>[];
+      return {
+        spaceId: actualSpaceId,
+        sessionId: sharedSession.sessionId,
+        sessions,
+      };
+    }
+
+    // For non-streaming mode, wait for completion
     try {
       await Promise.race([
         Promise.all(agentPromises),
@@ -527,7 +582,7 @@ export class SpaceBusService implements OnModuleInit, OnModuleDestroy {
       console.log('Collaboration ended with error or timeout:', error);
     }
 
-    // Finalize results
+    // Prepare results for non-streaming mode
     const duration = Date.now() - startTime;
     const results = Array.from(agentResults.values()).map((result) => ({
       agentId: result.agentId,
@@ -535,49 +590,54 @@ export class SpaceBusService implements OnModuleInit, OnModuleDestroy {
       status: result.status === 'running' ? 'timeout' : result.status,
       error: result.error,
     }));
-    const completedCount = results.filter(
-      (r) => r.status === 'completed',
-    ).length;
 
-    const outcome =
-      completedCount === participantAgents.length
-        ? 'success'
-        : completedCount > 0
-          ? 'partial_success'
-          : 'timeout';
+    let collaborationSummary;
+    let finalCompilation;
 
-    // Create agent contributions summary
-    const agentContributions = results.map((result) => {
-      const agentFinalMessages = result.messages.filter(
-        (msg) => msg.type === 'final' || msg.messageType === 'final',
+    if (enableCollaborationSummary) {
+      const completedCount = results.filter(
+        (r) => r.status === 'completed',
+      ).length;
+
+      const outcome: 'success' | 'timeout' | 'partial_success' =
+        completedCount === agentIds.length
+          ? 'success'
+          : completedCount > 0
+            ? 'partial_success'
+            : 'timeout';
+
+      // Create agent contributions summary
+      const agentContributions = results.map((result) => {
+        const agentFinalMessages = result.messages.filter(
+          (msg) => msg.type === 'final' || msg.messageType === 'final',
+        );
+        return {
+          agentId: result.agentId,
+          status: result.status,
+          contribution:
+            agentFinalMessages.length > 0
+              ? agentFinalMessages[agentFinalMessages.length - 1].payload
+                  ?.content ||
+                agentFinalMessages[agentFinalMessages.length - 1].content ||
+                'No final message provided'
+              : 'No contribution provided',
+          messageCount: result.messages.length,
+        };
+      });
+
+      // Create intelligent synthesis of actual deliverables
+      const synthesizedDeliverable = await this.synthesizeCollaborationResults(
+        initialMessage,
+        agentResults,
+        actualSpaceId,
       );
-      return {
-        agentId: result.agentId,
-        status: result.status,
-        contribution:
-          agentFinalMessages.length > 0
-            ? agentFinalMessages[agentFinalMessages.length - 1].payload
-                ?.content ||
-              agentFinalMessages[agentFinalMessages.length - 1].content ||
-              'No final message provided'
-            : 'No contribution provided',
-        messageCount: result.messages.length,
-      };
-    });
 
-    // Create intelligent synthesis of actual deliverables
-    const synthesizedDeliverable = await this.synthesizeCollaborationResults(
-      taskDescription,
-      agentResults,
-      actualSpaceId,
-    );
-
-    // Create final compilation message with actual deliverable
-    const finalCompilationMessage = `
+      // Create final compilation message
+      const finalCompilationMessage = `
 # Final Collaboration Result
 
 ## Task
-${taskDescription}
+${initialMessage}
 
 ## Deliverable
 ${synthesizedDeliverable}
@@ -588,7 +648,7 @@ ${synthesizedDeliverable}
 - **Duration**: ${Math.round(duration / 1000)}s
 - **Outcome**: ${outcome}
 - **Total Messages**: ${totalMessages}
-- **Participants**: ${participantAgents.length}
+- **Participants**: ${agentIds.length}
 
 ## Agent Participation
 ${agentContributions
@@ -603,126 +663,46 @@ ${agentContributions
 *This result was automatically compiled by the system at the end of the collaboration.*
 `;
 
-    try {
-      await this.spaceService.sendMessage({
-        spaceId: actualSpaceId,
-        senderId: 'system',
-        senderType: 'agent',
-        content: finalCompilationMessage,
-        messageType: 'final_result',
-        metadata: {
-          isSystemMessage: true,
-          collaborationSummary: {
-            totalMessages,
-            duration,
-            outcome,
-            agentContributions,
+      try {
+        await this.spaceService.sendMessage({
+          spaceId: actualSpaceId,
+          senderId: 'system',
+          senderType: 'agent',
+          content: finalCompilationMessage,
+          messageType: 'final_result',
+          metadata: {
+            isSystemMessage: true,
+            collaborationSummary: {
+              totalMessages,
+              duration,
+              outcome,
+              agentContributions,
+            },
           },
-        },
-      });
-    } catch (error) {
-      console.error('Failed to send final compilation message:', error);
-    }
+        });
+      } catch (error) {
+        console.error('Failed to send final compilation message:', error);
+      }
 
-    return {
-      spaceId: actualSpaceId,
-      results,
-      collaborationSummary: {
+      collaborationSummary = {
         totalMessages,
         duration,
         outcome,
-      },
-      finalCompilation: {
+      };
+
+      finalCompilation = {
         message: finalCompilationMessage,
         synthesizedDeliverable,
         agentContributions,
-      },
-    };
-  }
-
-  /**
-   * Simplified method to run multiple agents in a shared space
-   */
-  async runAgentsInSharedSpace(props: {
-    agentIds: string[];
-    initialMessage: string;
-    spaceId?: string;
-    spaceName?: string;
-  }): Promise<{
-    spaceId: string;
-    sessionId: string;
-    sessions: Observable<any>[];
-  }> {
-    const { agentIds, initialMessage, spaceId, spaceName } = props;
-
-    let actualSpaceId = spaceId;
-    if (!actualSpaceId) {
-      const space = await this.spaceService.createSpace({
-        name: spaceName || `Agent Collaboration - ${new Date().toISOString()}`,
-        description: `Shared space for agents: ${agentIds.join(', ')}`,
-        createdBy: agentIds[0],
-        createdByType: 'agent',
-      });
-      actualSpaceId = space.spaceId;
-
-      // Add all other agents to the space
-      for (const agentId of agentIds.slice(1)) {
-        try {
-          await this.spaceService.addMember({
-            spaceId: actualSpaceId,
-            memberId: agentId,
-            memberType: 'agent',
-            role: 'member',
-          });
-        } catch (error) {
-          // Ignore "Member already exists" errors
-          if (
-            error instanceof Error &&
-            error.message !== 'Member already exists in this space'
-          ) {
-            throw error;
-          }
-        }
-      }
+      };
     }
-
-    // Create a single shared session for the space
-    const sharedSession = await this.sessionService.createSession({
-      value: {
-        sessionId: uuidv4(),
-        agentId: `space-${actualSpaceId}`, // Use space ID as agent ID for shared session
-        initiator: agentIds[0],
-        model: {
-          name: 'gpt-4o-mini',
-          temperature: 0.7,
-          maxTokens: 2000,
-          topP: 1,
-          presencePenalty: 0,
-          frequencyPenalty: 0,
-        },
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      },
-    });
-
-    // Start all agents in the shared space using the same session
-    const sessions = agentIds.map((agentId) => {
-      return this.agentService.runAgent({
-        agentId,
-        messages: [{ role: 'user', content: initialMessage }],
-        sessionId: sharedSession.sessionId, // Use the shared session
-        initiator: agentIds[0],
-        useSharedSpace: true,
-        spaceId: actualSpaceId,
-        collaboratorAgentIds: agentIds.filter((id) => id !== agentId),
-        stream: true,
-      });
-    });
 
     return {
       spaceId: actualSpaceId,
       sessionId: sharedSession.sessionId,
-      sessions,
+      results,
+      collaborationSummary,
+      finalCompilation,
     };
   }
 
