@@ -1,7 +1,6 @@
 "use client";
 import React from "react";
 import { PrivyProvider } from "@privy-io/react-auth";
-import { SpacesProvider } from "@/context/SpacesContext";
 
 type Props = {
   children: React.ReactNode;
@@ -29,7 +28,7 @@ export default function Providers({ children }: Props) {
         },
       }}
     >
-      <SpacesProvider>{children}</SpacesProvider>
+      {children}
     </PrivyProvider>
   );
 }
