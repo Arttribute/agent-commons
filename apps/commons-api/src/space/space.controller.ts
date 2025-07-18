@@ -292,8 +292,8 @@ export class SpaceController {
   /**
    * Run agents in shared space with streaming
    */
-  @Post(':spaceId/collaboration/agents/stream')
-  @Sse(':spaceId/collaboration/agents/stream')
+  @Post(':spaceId/run/stream')
+  @Sse(':spaceId/run/stream')
   runAgentsStreamingCollaboration(
     @Param('spaceId') spaceId: string,
     @Body()
@@ -321,7 +321,7 @@ export class SpaceController {
   /**
    * Run agents in shared space (non-streaming)
    */
-  @Post(':spaceId/collaboration/agents')
+  @Post(':spaceId/run')
   async runAgentsCollaboration(
     @Param('spaceId') spaceId: string,
     @Body()

@@ -1,4 +1,4 @@
-// This route for non-streaming collaboration with agents in a space
+// This route is for streaming collaboration with agents in a space
 import { NextRequest, NextResponse } from "next/server";
 
 export async function POST(
@@ -11,7 +11,7 @@ export async function POST(
       body;
     const { spaceId } = await params;
 
-    const backendUrl = `${process.env.NEXT_PUBLIC_NEST_API_BASE_URL}/v1/spaces/${spaceId}/collaboration/agents`;
+    const backendUrl = `${process.env.NEXT_PUBLIC_NEST_API_BASE_URL}/v1/spaces/${spaceId}/run/stream`;
 
     const headers: Record<string, string> = {
       "Content-Type": "application/json",
@@ -45,12 +45,44 @@ export async function POST(
       });
     }
 
-    const responseData = await backendResponse.json();
-    return NextResponse.json(responseData);
+    // Return a streaming response
+    const stream = new ReadableStream({
+      async start(controller) {
+        const reader = backendResponse.body?.getReader();
+        if (!reader) {
+          controller.close();
+          return;
+        }
+
+        try {
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) {
+              break;
+            }
+            controller.enqueue(value);
+          }
+        } catch (error) {
+          console.error("Stream reading error:", error);
+          controller.error(error);
+        } finally {
+          controller.close();
+        }
+      },
+    });
+
+    return new NextResponse(stream, {
+      status: 200,
+      headers: {
+        "Content-Type": "text/event-stream",
+        "Cache-Control": "no-cache, no-transform",
+        Connection: "keep-alive",
+      },
+    });
   } catch (error) {
-    console.error("Error in space collaboration API route:", error);
+    console.error("Error in space streaming API route:", error);
     return NextResponse.json(
-      { error: "Failed to start space collaboration" },
+      { error: "Failed to start space streaming collaboration" },
       { status: 500 }
     );
   }

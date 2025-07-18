@@ -243,9 +243,7 @@ export const SpacesProvider: React.FC<{ children: ReactNode }> = ({
       setConversations([]);
       setCollaborationResult(null);
 
-      const response = await fetch(
-        `/api/spaces/${spaceId}/collaboration/agents/stream`,
-        {
+      const response = await fetch(`/api/spaces/${spaceId}/stream`, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
@@ -254,8 +252,7 @@ export const SpacesProvider: React.FC<{ children: ReactNode }> = ({
             task,
             agentIds,
           }),
-        }
-      );
+      });
 
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`);
