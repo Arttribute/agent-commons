@@ -154,9 +154,7 @@ export const SpacesProvider: React.FC<{ children: ReactNode }> = ({
       setConversations([]);
       setCollaborationResult(null);
 
-      const response = await fetch(
-        `/api/spaces/${spaceId}/collaboration/agents`, // no streaming for now
-        {
+      const response = await fetch(`/api/spaces/${spaceId}`, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
@@ -167,8 +165,7 @@ export const SpacesProvider: React.FC<{ children: ReactNode }> = ({
             enableCollaborationSummary: true, // Enable to get detailed results
             timeoutMs: 300000, // 5 minutes timeout
           }),
-        }
-      );
+      });
 
       if (!response.ok) {
         throw new Error("Failed to start collaboration");
