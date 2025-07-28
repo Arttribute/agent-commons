@@ -387,7 +387,7 @@ export class SpaceBusService implements OnModuleInit, OnModuleDestroy {
           const instructions =
             'SHARED BUS COLLABORATION TASK:\n' +
             initialMessage +
-            `\n\nYou are collaborating with other agents. Use sendBusMessage to communicate with them and subscribeToSpaceBus to receive their messages. When you finish, send a final message with type 'final' to indicate completion.`;
+            `\n\nYou are collaborating with other agents. Use sendBusMessage to communicate with them and subscribeToSpaceBus to receive their messages. When you finish, send a final message with type 'final' to indicate completion. Depending on the prompt, either focus on general conversation and collaboration, or work towards a specific deliverable.`;
 
           // Send initial metadata
           subscriber.next({
@@ -575,6 +575,17 @@ export class SpaceBusService implements OnModuleInit, OnModuleDestroy {
         spaceId,
       );
 
+      // Get space messages for complete record
+      const spaceMessages = this.getRecentMessages(spaceId, 100);
+      const collaborationMessages = spaceMessages
+        .filter((msg) => msg.messageType !== 'final') // Exclude system messages
+        .map((msg) => ({
+          senderId: msg.senderId,
+          content: msg.content,
+          messageType: msg.messageType,
+          timestamp: new Date(msg.timestamp).toISOString(),
+        }));
+
       const summary = {
         type: 'collaboration_summary',
         spaceId,
@@ -584,6 +595,7 @@ export class SpaceBusService implements OnModuleInit, OnModuleDestroy {
           outcome: 'success',
           synthesizedDeliverable,
           participants: agentIds.length,
+          collaborationMessages, // Include actual message content
         },
         timestamp: new Date().toISOString(),
       };
