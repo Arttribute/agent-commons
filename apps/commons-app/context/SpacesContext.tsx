@@ -155,16 +155,16 @@ export const SpacesProvider: React.FC<{ children: ReactNode }> = ({
       setCollaborationResult(null);
 
       const response = await fetch(`/api/spaces/${spaceId}`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            task,
-            agentIds,
-            enableCollaborationSummary: true, // Enable to get detailed results
-            timeoutMs: 300000, // 5 minutes timeout
-          }),
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          agentIds,
+          initialMessage: task,
+          enableCollaborationSummary: true,
+          timeoutMs: 300000, // 5 minutes timeout
+        }),
       });
 
       if (!response.ok) {
@@ -174,49 +174,21 @@ export const SpacesProvider: React.FC<{ children: ReactNode }> = ({
       const result = await response.json();
       console.log("Backend collaboration result:", result);
 
-      // Map the backend response structure correctly
-      const collaborationSummary = result.collaborationSummary || {};
-      const finalCompilation = result.finalCompilation || {};
-
-      // Set the collaboration result
-      setCollaborationResult({
-        id: result.sessionId || `collab-${Date.now()}`,
-        spaceId: result.spaceId || spaceId,
-        task,
-        deliverable: finalCompilation.synthesizedDeliverable || "",
-        outcome: collaborationSummary.outcome || "success",
-        duration: collaborationSummary.duration || 0,
-        totalMessages: collaborationSummary.totalMessages || 0,
-        participants: agentIds.length,
-        agentContributions: finalCompilation.agentContributions || [],
-        finalResult:
-          finalCompilation.synthesizedDeliverable ||
-          finalCompilation.message ||
-          "",
-        timestamp: new Date().toISOString(),
-      });
-
-      // Convert results to conversations format if available
-      if (result.results) {
-        const conversations = result.results.map((agentResult: any) => ({
-          agentId: agentResult.agentId,
-          agentName: agentResult.agentId,
-          messages: agentResult.messages.map((msg: any) => ({
-            id: `${agentResult.agentId}-${Date.now()}-${Math.random()}`,
-            agentId: agentResult.agentId,
-            role: msg.role || "assistant",
-            content: msg.content || JSON.stringify(msg),
-            timestamp: msg.timestamp || new Date().toISOString(),
-            metadata: msg.metadata,
-          })),
-          status:
-            agentResult.status === "completed"
-              ? "completed"
-              : agentResult.status === "error"
-                ? "error"
-                : "active",
-        }));
-        setConversations(conversations);
+      // Handle the simplified response format
+      if (result.summary) {
+        setCollaborationResult({
+          id: result.spaceId || `collab-${Date.now()}`,
+          spaceId: result.spaceId || spaceId,
+          task,
+          deliverable: result.summary.synthesizedDeliverable || "",
+          outcome: result.summary.outcome || "success",
+          duration: result.summary.duration || 0,
+          totalMessages: result.summary.totalMessages || 0,
+          participants: result.summary.participants || agentIds.length,
+          agentContributions: result.summary.agentContributions || [],
+          finalResult: result.summary.synthesizedDeliverable || "",
+          timestamp: new Date().toISOString(),
+        });
       }
     } catch (error) {
       console.error("Error starting collaboration:", error);
@@ -241,14 +213,17 @@ export const SpacesProvider: React.FC<{ children: ReactNode }> = ({
       setCollaborationResult(null);
 
       const response = await fetch(`/api/spaces/${spaceId}/stream`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            task,
-            agentIds,
-          }),
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Accept: "text/event-stream",
+        },
+        body: JSON.stringify({
+          agentIds,
+          initialMessage: task,
+          enableCollaborationSummary: true,
+          timeoutMs: 300000,
+        }),
       });
 
       if (!response.ok) {
@@ -270,72 +245,53 @@ export const SpacesProvider: React.FC<{ children: ReactNode }> = ({
 
         buffer += decoder.decode(value, { stream: true });
         const lines = buffer.split("\n");
-
-        // Keep the last potentially incomplete line in the buffer
         buffer = lines.pop() || "";
 
         for (const line of lines) {
-          if (line.trim() === "") continue;
+          if (line.trim() === "" || !line.startsWith("data: ")) continue;
 
-          if (line.startsWith("data: ")) {
-            try {
-              const data = JSON.parse(line.slice(6));
+          try {
+            const data = JSON.parse(line.slice(6));
 
-              // Update conversations in real-time
-              if (data.type === "message") {
-                setConversations((prev) => {
-                  const agentId = data.agentId;
-                  const existing = prev.find(
-                    (conv) => conv.agentId === agentId
-                  );
+            // Handle different event types from the streamlined backend
+            switch (data.type) {
+              case "agent_chunk":
+                // Skip tokens and forward meaningful chunks
+                if (data.chunk?.type !== "token" && onMessage) {
+                  onMessage(data);
+                }
+                break;
 
-                  if (existing) {
-                    return prev.map((conv) =>
-                      conv.agentId === agentId
-                        ? {
-                            ...conv,
-                            messages: [...conv.messages, data.message],
-                          }
-                        : conv
-                    );
-                  } else {
-                    return [
-                      ...prev,
-                      {
-                        agentId,
-                        agentName: data.agentName || agentId,
-                        messages: [data.message],
-                        status: "active" as const,
-                      },
-                    ];
-                  }
-                });
-              }
+              case "agent_completed":
+                console.log(`Agent ${data.agentId} completed`);
+                if (onMessage) onMessage(data);
+                break;
 
-              // Update final collaboration result when complete
-              if (data.type === "result") {
+              case "collaboration_summary":
+                // Set final results
                 setCollaborationResult({
-                  id: data.id || `collab-${Date.now()}`,
-                  spaceId,
+                  id: data.spaceId || `collab-${Date.now()}`,
+                  spaceId: data.spaceId || spaceId,
                   task,
-                  deliverable: data.deliverable || "",
-                  outcome: data.outcome || "success",
-                  duration: data.duration || 0,
-                  totalMessages: data.totalMessages || 0,
-                  participants: data.participants || agentIds.length,
-                  agentContributions: data.agentContributions || [],
-                  finalResult: data.finalResult || data.deliverable || "",
+                  deliverable: data.summary?.synthesizedDeliverable || "",
+                  outcome: data.summary?.outcome || "success",
+                  duration: data.summary?.duration || 0,
+                  totalMessages: data.summary?.totalMessages || 0,
+                  participants: data.summary?.participants || agentIds.length,
+                  agentContributions: data.summary?.agentContributions || [],
+                  finalResult: data.summary?.synthesizedDeliverable || "",
                   timestamp: new Date().toISOString(),
                 });
-              }
+                if (onMessage) onMessage(data);
+                break;
 
-              // Call custom message handler if provided
-              if (onMessage) {
-                onMessage(data);
-              }
-            } catch (parseError) {
-              console.error("Error parsing SSE data:", parseError);
+              default:
+                // Forward other events
+                if (onMessage) onMessage(data);
+                break;
             }
+          } catch (parseError) {
+            console.error("Error parsing SSE data:", parseError);
           }
         }
       }

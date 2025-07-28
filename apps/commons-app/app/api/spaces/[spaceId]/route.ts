@@ -7,8 +7,13 @@ export async function POST(
 ) {
   try {
     const body = await request.json();
-    const { task, agentIds, spaceName, enableCollaborationSummary, timeoutMs } =
-      body;
+    const {
+      agentIds,
+      initialMessage,
+      spaceName,
+      enableCollaborationSummary,
+      timeoutMs,
+    } = body;
     const { spaceId } = await params;
 
     const backendUrl = `${process.env.NEXT_PUBLIC_NEST_API_BASE_URL}/v1/spaces/${spaceId}/run`;
@@ -27,7 +32,7 @@ export async function POST(
       headers,
       body: JSON.stringify({
         agentIds,
-        initialMessage: task,
+        initialMessage,
         spaceName,
         enableCollaborationSummary,
         timeoutMs,

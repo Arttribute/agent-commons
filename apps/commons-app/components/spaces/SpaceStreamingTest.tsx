@@ -15,12 +15,10 @@ export function SpaceStreamingTest() {
     collaborationError,
   } = useSpacesContext();
 
-  const [task, setTask] = useState(
-    "Analyze the current trends in AI development"
-  );
+  const [task, setTask] = useState("Tell a simple story with 3 parts");
   const [agentIds, setAgentIds] = useState("agent1,agent2");
   const [streamingMode, setStreamingMode] = useState(false);
-  const [streamMessages, setStreamMessages] = useState<any[]>([]);
+  const [accumulatedMessages, setAccumulatedMessages] = useState<any[]>([]); // For meaningful streaming messages only
 
   const handleCreateSpace = async () => {
     try {
@@ -43,14 +41,26 @@ export function SpaceStreamingTest() {
       .filter(Boolean);
 
     if (streamingMode) {
-      setStreamMessages([]);
+      setAccumulatedMessages([]);
       await startCollaborationStream(
         currentSpaceId,
         task,
         agentIdArray,
         (message) => {
-          console.log("Stream message:", message);
-          setStreamMessages((prev) => [...prev, message]);
+          console.log("Stream message received:", message);
+
+          // Filter out token messages and only collect meaningful events
+          const meaningfulTypes = [
+            "collaboration_started",
+            "agent_chunk",
+            "agent_completed",
+            "collaboration_summary",
+            "final",
+          ];
+
+          if (meaningfulTypes.includes(message.type)) {
+            setAccumulatedMessages((prev) => [...prev, message]);
+          }
         }
       );
     } else {
@@ -126,18 +136,56 @@ export function SpaceStreamingTest() {
       </div>
 
       {/* Streaming Messages */}
-      {streamingMode && streamMessages.length > 0 && (
+      {streamingMode && accumulatedMessages.length > 0 && (
         <div className="bg-gray-50 border border-gray-200 rounded p-4">
-          <h3 className="text-lg font-semibold mb-3">Live Stream Messages</h3>
+          <h3 className="text-lg font-semibold mb-3">
+            Live Stream Messages ({accumulatedMessages.length})
+          </h3>
           <div className="space-y-2 max-h-64 overflow-y-auto">
-            {streamMessages.map((message, index) => (
+            {accumulatedMessages.map((message, index) => (
               <div key={index} className="bg-white border rounded p-2 text-sm">
-                <div className="font-medium text-blue-600">
-                  Type: {message.type} | Agent: {message.agentId || "System"}
+                <div className="font-medium text-blue-600 mb-1">
+                  Type: {message.type || "unknown"}
+                  {message.agentId && ` | Agent: ${message.agentId}`}
+                  {message.timestamp &&
+                    ` | ${new Date(message.timestamp).toLocaleTimeString()}`}
                 </div>
-                <div className="text-gray-700">
-                  {JSON.stringify(message, null, 2)}
+                <div className="text-gray-700 mb-2">
+                  {message.type === "collaboration_started" && (
+                    <span className="text-green-600">
+                      ✅ Collaboration started with {message.agentIds?.length}{" "}
+                      agents
+                    </span>
+                  )}
+                  {message.type === "agent_chunk" &&
+                    message.chunk?.type !== "token" && (
+                      <span>🤖 Agent activity: {message.chunk?.type}</span>
+                    )}
+                  {message.type === "agent_completed" && (
+                    <span className="text-blue-600">
+                      ✅ Agent completed ({message.completedCount}/
+                      {message.totalAgents})
+                    </span>
+                  )}
+                  {message.type === "collaboration_summary" && (
+                    <div className="text-green-600">
+                      <strong>🎉 Collaboration Complete!</strong>
+                      <br />
+                      <span className="text-sm">
+                        Duration: {Math.round(message.summary?.duration / 1000)}
+                        s | Messages: {message.summary?.totalMessages}
+                      </span>
+                    </div>
+                  )}
                 </div>
+                <details className="mt-2">
+                  <summary className="cursor-pointer text-sm text-gray-500 hover:text-gray-700">
+                    Show raw message data
+                  </summary>
+                  <div className="text-gray-700 mt-2 text-xs bg-gray-100 p-2 rounded max-h-32 overflow-y-auto">
+                    <pre>{JSON.stringify(message, null, 2)}</pre>
+                  </div>
+                </details>
               </div>
             ))}
           </div>

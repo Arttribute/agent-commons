@@ -290,35 +290,6 @@ export class SpaceController {
   /* ─────────────────────────  COLLABORATION  ───────────────────────── */
 
   /**
-   * Run agents in shared space with streaming
-   */
-  @Post(':spaceId/run/stream')
-  @Sse(':spaceId/run/stream')
-  runAgentsStreamingCollaboration(
-    @Param('spaceId') spaceId: string,
-    @Body()
-    props: {
-      agentIds: string[];
-      initialMessage: string;
-      spaceName?: string;
-    },
-  ) {
-    return from(
-      this.spaceBusService.runAgentsInSharedSpace({
-        ...props,
-        spaceId,
-        stream: true,
-      }),
-    ).pipe(
-      switchMap((result) => {
-        return merge(...(result.sessions || [])).pipe(
-          map((data) => ({ data })),
-        );
-      }),
-    );
-  }
-
-  /**
    * Run agents in shared space (non-streaming)
    */
   @Post(':spaceId/run')
@@ -333,10 +304,58 @@ export class SpaceController {
       timeoutMs?: number;
     },
   ) {
-    return this.spaceBusService.runAgentsInSharedSpace({
-      ...props,
-      spaceId,
-      stream: false,
-    });
+    // Use lastValueFrom to get final result for non-streaming mode
+    const { lastValueFrom } = await import('rxjs');
+    const { filter, map } = await import('rxjs/operators');
+
+    return lastValueFrom(
+      this.spaceBusService
+        .runAgentsInSharedSpace({
+          ...props,
+          spaceId,
+          stream: false,
+        })
+        .pipe(
+          filter(
+            (chunk) =>
+              chunk.type === 'final' || chunk.type === 'collaboration_summary',
+          ),
+          map((chunk) => chunk.payload || chunk),
+        ),
+    );
+  }
+
+  /**
+   * Run agents in shared space with streaming (simplified like agent controller)
+   */
+  @Post(':spaceId/run/stream')
+  @Sse(':spaceId/run/stream')
+  runAgentsStreamingCollaboration(
+    @Param('spaceId') spaceId: string,
+    @Body()
+    props: {
+      agentIds: string[];
+      initialMessage: string;
+      spaceName?: string;
+      enableCollaborationSummary?: boolean;
+      timeoutMs?: number;
+    },
+  ) {
+    return this.spaceBusService
+      .runAgentsInSharedSpace({
+        ...props,
+        spaceId,
+        stream: true,
+      })
+      .pipe(map((data) => ({ data })));
+  }
+
+  /**
+   * Get space bus statistics
+   */
+  @Get('bus/stats')
+  getBusStats() {
+    const stats = this.spaceBusService.getStatistics();
+    return { data: stats };
   }
 }
