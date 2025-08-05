@@ -133,6 +133,7 @@ export class SessionService {
         tasks: tasks.filter((task) => task.goalId === goal.goalId),
       })),
       childSessions: childSessions || [],
+      spaces: sessionEntry.spaces || [],
     };
   }
 

@@ -226,7 +226,7 @@ export const session = pgTable('session', {
     errorCount?: number;
   }>(),
   endedAt: timestamp('ended_at', { withTimezone: true }),
-
+  spaces: jsonb('spaces').$type<{ spaceIds: string[] }>(), // array of space IDs
   parentSessionId: text('parent_session'),
   createdAt: timestamp('created_at', { withTimezone: true })
     .default(sql`timezone('utc', now())`)

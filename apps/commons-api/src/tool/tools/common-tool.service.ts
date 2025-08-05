@@ -209,6 +209,11 @@ export interface CommonTool {
   getMySpaces(props: { agentId: string }): any;
 
   /**
+   * Get space members by space ID
+   */
+  getSpaceMembers(props: { spaceId: string }): any;
+
+  /**
    * Send a message to the in-memory space bus (real-time)
    * The agent will automatically determine message type and completion
    */
@@ -938,19 +943,26 @@ export class CommonToolService implements CommonTool {
   /**
    * Send a message to a space
    */
-  async sendMessageToSpace(props: {
-    spaceId: string;
-    content: string;
-    targetType?: 'broadcast' | 'direct' | 'group';
-    targetIds?: string[];
-    agentId: string;
-  }) {
+  async sendMessageToSpace(
+    props: {
+      spaceId: string;
+      content: string;
+      targetType?: 'broadcast' | 'direct' | 'group';
+      targetIds?: string[];
+      agentId: string;
+    },
+    metadata: { sessionId: string; agentId: string } = {
+      sessionId: '',
+      agentId: '',
+    },
+  ) {
     const { agentId, ...messageProps } = props;
 
     return await this.space.sendMessage({
       ...messageProps,
       senderId: agentId,
       senderType: 'agent',
+      metadata,
     });
   }
 
@@ -982,6 +994,15 @@ export class CommonToolService implements CommonTool {
     const { agentId } = props;
 
     return await this.space.getSpacesForMember(agentId, 'agent');
+  }
+
+  /**
+   * Get space members by space ID
+   */
+  async getSpaceMembers(props: { spaceId: string }) {
+    const { spaceId } = props;
+
+    return await this.space.getSpaceMembers(spaceId);
   }
 
   /**

@@ -13,6 +13,7 @@ interface SendMessageDto {
   targetIds?: string[];
   messageType?: string;
   metadata?: any;
+  sessionId?: string; // Optional session ID for context
 }
 
 interface AddMemberDto {

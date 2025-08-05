@@ -393,6 +393,36 @@ export class SpaceService {
         ),
       );
 
+    // if space id does not exist in the sessions spaces array, add it. If it does, do nothing
+    const sessionIdToUse = metadata?.sessionId;
+    console.log(
+      `Adding space ID ${spaceId} to session spaces for session ID ${sessionIdToUse}`,
+    );
+    if (sessionIdToUse) {
+      // Get current session to update spaces array
+      const session = await this.db.query.session.findFirst({
+        where: eq(schema.session.sessionId, sessionIdToUse),
+      });
+
+      if (session) {
+        const currentSpaces = session.spaces || {};
+        const currentSpaceIds = (currentSpaces as any).spaceIds || [];
+
+        // Only add if not already present
+        if (!currentSpaceIds.includes(spaceId)) {
+          const updatedSpaces = {
+            ...currentSpaces,
+            spaceIds: [...currentSpaceIds, spaceId],
+          };
+
+          await this.db
+            .update(schema.session)
+            .set({ spaces: updatedSpaces as any })
+            .where(eq(schema.session.sessionId, sessionIdToUse));
+        }
+      }
+    }
+
     return message;
   }
 
