@@ -358,4 +358,13 @@ export class SpaceController {
     const stats = this.spaceBusService.getStatistics();
     return { data: stats };
   }
+
+  /**
+   * Get full space data
+   */
+  @Get(':spaceId/full')
+  async getFullSpaceData(@Param('spaceId') spaceId: string) {
+    const spaceData = await this.spaceService.getFullSpaceData(spaceId);
+    return { data: spaceData };
+  }
 }

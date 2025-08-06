@@ -1,17 +1,10 @@
+// src/space/space.service.ts
 import {
   Injectable,
   NotFoundException,
   BadRequestException,
 } from '@nestjs/common';
-import {
-  eq,
-  InferInsertModel,
-  InferSelectModel,
-  desc,
-  and,
-  or,
-  inArray,
-} from 'drizzle-orm';
+import { eq, InferInsertModel, desc, and, or } from 'drizzle-orm';
 import { DatabaseService } from '~/modules/database/database.service';
 import * as schema from '#/models/schema';
 
@@ -21,9 +14,6 @@ export class SpaceService {
 
   /* ─────────────────────────  SPACE MANAGEMENT  ───────────────────────── */
 
-  /**
-   * Create a new space
-   */
   async createSpace(props: {
     name: string;
     description?: string;
@@ -42,7 +32,7 @@ export class SpaceService {
         ...spaceData,
         createdBy,
         createdByType,
-        settings: props.settings || {
+        settings: props.settings ?? {
           allowAgents: true,
           allowHumans: true,
           requireApproval: false,
@@ -51,7 +41,6 @@ export class SpaceService {
       })
       .returning();
 
-    // Add creator as owner
     await this.addMember({
       spaceId: space.spaceId,
       memberId: createdBy,
@@ -62,9 +51,6 @@ export class SpaceService {
     return space;
   }
 
-  /**
-   * Get space by ID with members and recent messages
-   */
   async getSpace(spaceId: string) {
     const space = await this.db.query.space.findFirst({
       where: eq(schema.space.spaceId, spaceId),
@@ -76,17 +62,11 @@ export class SpaceService {
         },
       },
     });
-
-    if (!space) {
+    if (!space)
       throw new NotFoundException(`Space with ID ${spaceId} not found`);
-    }
-
     return space;
   }
 
-  /**
-   * Get spaces where a member is participating
-   */
   async getSpacesForMember(memberId: string, memberType: 'agent' | 'human') {
     const memberSpaces = await this.db.query.spaceMember.findMany({
       where: and(
@@ -95,33 +75,20 @@ export class SpaceService {
         eq(schema.spaceMember.status, 'active'),
       ),
       with: {
-        space: {
-          with: {
-            members: true,
-          },
-        },
+        space: { with: { members: true } },
       },
     });
-
     return memberSpaces.map((m) => m.space);
   }
 
-  /**
-   * Get public spaces
-   */
   async getPublicSpaces() {
     return this.db.query.space.findMany({
       where: eq(schema.space.isPublic, true),
-      with: {
-        members: true,
-      },
+      with: { members: true },
       orderBy: desc(schema.space.createdAt),
     });
   }
 
-  /**
-   * Update space settings
-   */
   async updateSpace(
     spaceId: string,
     updates: Partial<InferInsertModel<typeof schema.space>>,
@@ -131,35 +98,23 @@ export class SpaceService {
       .set({ ...updates, updatedAt: new Date() })
       .where(eq(schema.space.spaceId, spaceId))
       .returning();
-
-    if (!updatedSpace) {
+    if (!updatedSpace)
       throw new NotFoundException(`Space with ID ${spaceId} not found`);
-    }
-
     return updatedSpace;
   }
 
-  /**
-   * Delete space
-   */
   async deleteSpace(spaceId: string) {
     const deleted = await this.db
       .delete(schema.space)
       .where(eq(schema.space.spaceId, spaceId))
       .returning();
-
-    if (!deleted.length) {
+    if (!deleted.length)
       throw new NotFoundException(`Space with ID ${spaceId} not found`);
-    }
-
     return { success: true };
   }
 
   /* ─────────────────────────  MEMBER MANAGEMENT  ───────────────────────── */
 
-  /**
-   * Add member to space
-   */
   async addMember(props: {
     spaceId: string;
     memberId: string;
@@ -175,38 +130,30 @@ export class SpaceService {
       permissions,
     } = props;
 
-    // Check if space exists
     const space = await this.db.query.space.findFirst({
       where: eq(schema.space.spaceId, spaceId),
     });
-
-    if (!space) {
+    if (!space)
       throw new NotFoundException(`Space with ID ${spaceId} not found`);
-    }
 
-    // Check if member already exists
-    const existingMember = await this.db.query.spaceMember.findFirst({
+    const existing = await this.db.query.spaceMember.findFirst({
       where: and(
         eq(schema.spaceMember.spaceId, spaceId),
         eq(schema.spaceMember.memberId, memberId),
         eq(schema.spaceMember.memberType, memberType),
       ),
     });
-
-    if (existingMember) {
+    if (existing)
       throw new BadRequestException('Member already exists in this space');
-    }
 
-    // Check space capacity
     if (space.maxMembers) {
-      const memberCount = await this.db.query.spaceMember.findMany({
+      const count = await this.db.query.spaceMember.findMany({
         where: and(
           eq(schema.spaceMember.spaceId, spaceId),
           eq(schema.spaceMember.status, 'active'),
         ),
       });
-
-      if (memberCount.length >= space.maxMembers) {
+      if (count.length >= space.maxMembers) {
         throw new BadRequestException(
           'Space has reached maximum member capacity',
         );
@@ -220,7 +167,7 @@ export class SpaceService {
         memberId,
         memberType,
         role,
-        permissions: permissions || {
+        permissions: permissions ?? {
           canWrite: true,
           canInvite: role === 'owner' || role === 'moderator',
           canModerate: role === 'owner' || role === 'moderator',
@@ -231,9 +178,6 @@ export class SpaceService {
     return member;
   }
 
-  /**
-   * Remove member from space
-   */
   async removeMember(
     spaceId: string,
     memberId: string,
@@ -249,17 +193,11 @@ export class SpaceService {
         ),
       )
       .returning();
-
-    if (!deleted.length) {
+    if (!deleted.length)
       throw new NotFoundException('Member not found in this space');
-    }
-
     return { success: true };
   }
 
-  /**
-   * Update member role or permissions
-   */
   async updateMember(
     spaceId: string,
     memberId: string,
@@ -277,17 +215,11 @@ export class SpaceService {
         ),
       )
       .returning();
-
-    if (!updatedMember) {
+    if (!updatedMember)
       throw new NotFoundException('Member not found in this space');
-    }
-
     return updatedMember;
   }
 
-  /**
-   * Get space members
-   */
   async getSpaceMembers(spaceId: string) {
     return this.db.query.spaceMember.findMany({
       where: eq(schema.spaceMember.spaceId, spaceId),
@@ -295,9 +227,6 @@ export class SpaceService {
     });
   }
 
-  /**
-   * Check if member exists in space
-   */
   async isMember(
     spaceId: string,
     memberId: string,
@@ -311,15 +240,11 @@ export class SpaceService {
         eq(schema.spaceMember.status, 'active'),
       ),
     });
-
     return !!member;
   }
 
   /* ─────────────────────────  MESSAGE MANAGEMENT  ───────────────────────── */
 
-  /**
-   * Send message to space
-   */
   async sendMessage(props: {
     spaceId: string;
     senderId: string;
@@ -341,25 +266,20 @@ export class SpaceService {
       metadata,
     } = props;
 
-    // Check if sender is a member (skip for system messages)
     if (senderId !== 'system') {
       const isMember = await this.isMember(spaceId, senderId, senderType);
-      if (!isMember) {
+      if (!isMember)
         throw new BadRequestException('Only space members can send messages');
-      }
     }
 
-    // Check if sender has write permissions (skip for system messages)
-    let member = null;
     if (senderId !== 'system') {
-      member = await this.db.query.spaceMember.findFirst({
+      const member = await this.db.query.spaceMember.findFirst({
         where: and(
           eq(schema.spaceMember.spaceId, spaceId),
           eq(schema.spaceMember.memberId, senderId),
           eq(schema.spaceMember.memberType, senderType),
         ),
       });
-
       if (!member?.permissions?.canWrite) {
         throw new BadRequestException(
           'You do not have permission to send messages in this space',
@@ -381,40 +301,32 @@ export class SpaceService {
       })
       .returning();
 
-    // Update member's last active time
-    await this.db
-      .update(schema.spaceMember)
-      .set({ lastActiveAt: new Date() })
-      .where(
-        and(
-          eq(schema.spaceMember.spaceId, spaceId),
-          eq(schema.spaceMember.memberId, senderId),
-          eq(schema.spaceMember.memberType, senderType),
-        ),
-      );
+    if (senderId !== 'system') {
+      await this.db
+        .update(schema.spaceMember)
+        .set({ lastActiveAt: new Date() })
+        .where(
+          and(
+            eq(schema.spaceMember.spaceId, spaceId),
+            eq(schema.spaceMember.memberId, senderId),
+            eq(schema.spaceMember.memberType, senderType),
+          ),
+        );
+    }
 
-    // if space id does not exist in the sessions spaces array, add it. If it does, do nothing
     const sessionIdToUse = metadata?.sessionId;
-    console.log(
-      `Adding space ID ${spaceId} to session spaces for session ID ${sessionIdToUse}`,
-    );
     if (sessionIdToUse) {
-      // Get current session to update spaces array
       const session = await this.db.query.session.findFirst({
         where: eq(schema.session.sessionId, sessionIdToUse),
       });
-
       if (session) {
         const currentSpaces = session.spaces || {};
         const currentSpaceIds = (currentSpaces as any).spaceIds || [];
-
-        // Only add if not already present
         if (!currentSpaceIds.includes(spaceId)) {
           const updatedSpaces = {
             ...currentSpaces,
             spaceIds: [...currentSpaceIds, spaceId],
           };
-
           await this.db
             .update(schema.session)
             .set({ spaces: updatedSpaces as any })
@@ -426,9 +338,6 @@ export class SpaceService {
     return message;
   }
 
-  /**
-   * Get messages from space
-   */
   async getMessages(spaceId: string, limit = 50, offset = 0) {
     return this.db.query.spaceMessage.findMany({
       where: and(
@@ -441,9 +350,6 @@ export class SpaceService {
     });
   }
 
-  /**
-   * Get messages for a specific member (including direct messages)
-   */
   async getMessagesForMember(
     spaceId: string,
     memberId: string,
@@ -458,10 +364,9 @@ export class SpaceService {
           eq(schema.spaceMessage.targetType, 'broadcast'),
           and(
             eq(schema.spaceMessage.targetType, 'direct'),
-            // Check if member is in targetIds or is the sender
             or(
               eq(schema.spaceMessage.senderId, memberId),
-              // Note: This is a simplified check - in production you'd want to use jsonb operators
+              // For production, prefer JSONB operators
               eq(schema.spaceMessage.targetIds, [memberId] as any),
             ),
           ),
@@ -473,9 +378,6 @@ export class SpaceService {
     });
   }
 
-  /**
-   * Update message
-   */
   async updateMessage(
     messageId: string,
     updates: Partial<InferInsertModel<typeof schema.spaceMessage>>,
@@ -485,28 +387,39 @@ export class SpaceService {
       .set({ ...updates, updatedAt: new Date(), isEdited: true })
       .where(eq(schema.spaceMessage.messageId, messageId))
       .returning();
-
-    if (!updatedMessage) {
+    if (!updatedMessage)
       throw new NotFoundException(`Message with ID ${messageId} not found`);
-    }
-
     return updatedMessage;
   }
 
-  /**
-   * Delete message
-   */
   async deleteMessage(messageId: string) {
     const [deletedMessage] = await this.db
       .update(schema.spaceMessage)
       .set({ isDeleted: true, updatedAt: new Date() })
       .where(eq(schema.spaceMessage.messageId, messageId))
       .returning();
-
-    if (!deletedMessage) {
+    if (!deletedMessage)
       throw new NotFoundException(`Message with ID ${messageId} not found`);
-    }
-
     return { success: true };
+  }
+
+  async getFullSpaceData(spaceId: string) {
+    const space = await this.db.query.space.findFirst({
+      where: eq(schema.space.spaceId, spaceId),
+    });
+    if (!space)
+      throw new NotFoundException(`Space with ID ${spaceId} not found`);
+
+    const members = await this.db.query.spaceMember.findMany({
+      where: eq(schema.spaceMember.spaceId, spaceId),
+      orderBy: desc(schema.spaceMember.joinedAt),
+    });
+
+    const messages = await this.db.query.spaceMessage.findMany({
+      where: eq(schema.spaceMessage.spaceId, spaceId),
+      orderBy: desc(schema.spaceMessage.createdAt),
+    });
+
+    return { ...space, members, messages };
   }
 }
