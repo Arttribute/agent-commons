@@ -61,7 +61,7 @@ import { getPosthog } from '~/helpers/posthog';
 import { LogService } from '~/log/log.service';
 import { GoalService } from '~/goal/goal.service';
 import { TaskService } from '~/task/task.service';
-import { Observable } from 'rxjs';
+import { Observable, of } from 'rxjs';
 
 const got = import('got');
 
@@ -253,6 +253,10 @@ export class AgentService implements OnModuleInit {
 
     // Get existing child sessions for this agent
     const childSessions = await this.getChildSessions(sessionId);
+    // agent spaces
+    //const spaces = await this.getSpacesForAgent(agentId);
+    // get spaces from session
+    //const sessionSpaces = await this.getSpacesFromSession(sessionId);
 
     const childSessionsInfo =
       childSessions.length > 0
@@ -260,6 +264,15 @@ export class AgentService implements OnModuleInit {
         : '';
     console.log('childSessionsInfo:', childSessionsInfo);
     console.log('sessiond id from createsession', sessionId);
+    // const agentSpacesInfo =
+    //   spaces.length > 0
+    //     ? `\n\nTOTAL EXISTING  SPACES:\nYou are currently in the following spaces in general:\n${spaces.map((s) => `- Space ${s.spaceId}: ${s.name || 'Untitled space'} (created: ${s.createdAt})`).join('\n')}`
+    //     : '';
+    // const sessionSpacesInfo =
+    //   sessionSpaces.length > 0
+    //     ? `\n\nEXISTING SESSION SPACES:\nYou are currently in the following spaces for this session:\n${sessionSpaces.map((s) => `- Space ${s.spaceId}: ${s.name || 'Untitled space'} (created: ${s.createdAt})`).join('\n')}`
+    //     : '';
+    // console.log('spacesInfo:', { agentSpacesInfo, sessionSpacesInfo });
     const messages: ChatCompletionMessageParam[] = [
       {
         role: 'system',
@@ -274,11 +287,14 @@ export class AgentService implements OnModuleInit {
 
           The current date and time is ${currentTime.toISOString()}.
            **SESSION ID**: ${sessionId}
-          
-          Note that you can interact and engage with other agents using the interactWithAgent tool. Once you initiate a conversation with another agent, you can continue the conversation by calling the interactWithAgent tool again with the sessionId provided in the result of running the interactWithAgent tool. This will allow you to continue the conversation with the other agent.${childSessionsInfo}
+
+          Note that you can interact and engage with other agents using the interactWithAgent tool. This tool allows you to interact with other agents one at a time. Once you initiate a conversation with another agent, you can continue the conversation by calling the interactWithAgent tool again with the sessionId provided in the result of running the interactWithAgent tool. This will allow you to continue the conversation with the other agent.${childSessionsInfo}
+          It is also possible to interact with a group of agents in spaces. You can use the createSpace tool to create a new space and can add other agents to the space using addAgentToSpace tool. Once in a space, you can send meassages to the space using the sendMessageToSpace tool. To get the context of the interactions on space, you can use the getSpaceMessages tool before sending messagesto the space. You can also join spaces created by other entities using the joinSpace tool.
+          To unsubscribe from a space, you can use the unsubscribeFromSpace tool. To subscribe to a space, you can use the subscribeToSpace tool.
+
 
           STRICTLY ABIDE BY THE FOLLOWING:
-          • If a request is simple and does not require complex plannind give an immediate response.
+          • If a request is simple and does not require complex planning give an immediate response.
           • If a request is complex and requires multiple steps, call createGoal which creates a goal and then get the goal id and use createTask to create tasks for the goal with the necessary details.
           • In the process of creating a goal, think very deeply and critically about it. Break it down and detail every single paart of it. Set a SMART(Specific, Measureble, Achievable, Relevant and Time-bound) goal with a clear description. Consider all factors and create a well thought out plan of action and include it in the goal description. This should now guide the tasks to be created. Include the tasks breakdown in the goal description as well.The tasks to be created should match the tasks breakdown in the goal description. If no exact timelines are provided for the goal set the goal deadline to the current time.
           • Similarly, when creating tasks, think very deeply and critically about it. Set a SMART(Specific, Measureble, Achievable, Relevant and Time-bound) task with a clear description. Consider all factors and create a well thought out plan of action and include it in the task description. Remember some tasks may be dependent on each other. Think about what tools might be needed to accomplish the task and include them in the task description and task tools.
@@ -362,6 +378,75 @@ export class AgentService implements OnModuleInit {
     }));
   }
 
+  /* ─────────────────────────  SPACES TRACKING  ───────────────────────── */
+  // //get spaces for agent first
+  // async getSpacesForAgent(agentId: string) {
+  //   const agent = await this.getAgent({ agentId });
+  //   if (!agent) {
+  //     throw new BadRequestException('Agent not found');
+  //   }
+
+  //   try {
+  //     // First, try to get spaces with members relation
+  //     const spaces = await this.db.query.space.findMany({
+  //       with: {
+  //         members: {
+  //           where: (member: any) => eq(member.agentId, agentId),
+  //         },
+  //       },
+  //     });
+
+  //     // Filter to only return spaces where the agent is actually a member
+  //     return spaces.filter(
+  //       (space: any) =>
+  //         space.members &&
+  //         Array.isArray(space.members) &&
+  //         space.members.length > 0,
+  //     );
+  //   } catch (error) {
+  //     // Fallback: Query space_member table directly and join with spaces
+  //     console.warn(
+  //       'Space relation query failed, falling back to direct query:',
+  //       error,
+  //     );
+
+  //     const spaceMembers =
+  //       (await this.db.query.spaceMember?.findMany({
+  //         where: (member: any) => eq(member.agentId, agentId),
+  //         with: {
+  //           space: true,
+  //         },
+  //       })) || [];
+
+  //     return spaceMembers.map((member: any) => member.space).filter(Boolean);
+  //   }
+  // }
+  // //get spaces from session
+  // async getSpacesFromSession(sessionId: string) {
+  //   const session = await this.db.query.session.findFirst({
+  //     where: (s) => eq(s.sessionId, sessionId),
+  //   });
+  //   if (!session) {
+  //     throw new BadRequestException('Session not found');
+  //   }
+  //   //get space ids and get the space details
+  //   const spaceIds = Array.isArray(session.spaces)
+  //     ? (session.spaces as string[])
+  //     : [];
+  //   if (spaceIds.length === 0) {
+  //     return [];
+  //   }
+  //   //filter spaces gotten from getSpacesForAgent
+  //   const spacesfromSession = await this.getSpacesForAgent(session.agentId);
+  //   const spaces = spacesfromSession.filter((s) =>
+  //     spaceIds.includes(s.spaceId),
+  //   );
+  //   if (spaces.length === 0) {
+  //     throw new BadRequestException('No spaces found for this session');
+  //   }
+  //   return spaces;
+  // }
+
   /* ─────────────────────────  CRON TRIGGER  ───────────────────────── */
   async triggerAgent(props: { agentId: string; sessionId?: string }) {
     console.log('Triggering agent', props.agentId);
@@ -403,9 +488,12 @@ export class AgentService implements OnModuleInit {
     agentId: string;
     messages?: ChatCompletionMessageParam[];
     sessionId?: string;
+    spaceId?: string;
     initiator: string;
     parentSessionId?: string;
     stream?: boolean; // ✅ stream flag
+    turnCount?: number;
+    maxTurns?: number;
   }): Observable<any> {
     return new Observable<any>((subscriber) => {
       const run = async () => {
@@ -413,10 +501,31 @@ export class AgentService implements OnModuleInit {
         const {
           agentId,
           sessionId,
+          spaceId,
           initiator,
           parentSessionId,
           stream = false, // default false
+          turnCount = 0, // default 0
+          maxTurns = 3, // default 3
         } = props;
+
+        console.log('Running agent', agentId, {
+          sessionId: sessionId,
+          spaceId: spaceId,
+          initiator: initiator,
+        });
+        if (turnCount >= maxTurns) {
+          console.log(
+            `Max turns (${maxTurns}) reached for agent ${agentId}, stopping execution.`,
+          );
+          return of({
+            type: 'final',
+            payload: {
+              sessionId,
+              info: `Max turns (${maxTurns}) reached – no further replies.`,
+            },
+          });
+        }
 
         try {
           const agent = await this.getAgent({ agentId });
@@ -429,26 +538,31 @@ export class AgentService implements OnModuleInit {
           let currentSessionId = sessionId;
           let isNewSession = false;
           if (!currentSessionId) {
-            const newSession = await this.session.createSession({
-              value: {
-                sessionId: uuidv4(),
-                agentId,
-                initiator: initiator,
-                model: {
-                  name: 'gpt-4o',
-                  temperature: agent.temperature || 0.7,
-                  maxTokens: agent.maxTokens || 2000,
-                  topP: agent.topP || 1,
-                  presencePenalty: agent.presencePenalty || 0,
-                  frequencyPenalty: agent.frequencyPenalty || 0,
+            if (!spaceId) {
+              const newSession = await this.session.createSession({
+                value: {
+                  sessionId: uuidv4(),
+                  agentId,
+                  initiator: initiator,
+                  model: {
+                    name: 'gpt-4o',
+                    temperature: agent.temperature || 0.7,
+                    maxTokens: agent.maxTokens || 2000,
+                    topP: agent.topP || 1,
+                    presencePenalty: agent.presencePenalty || 0,
+                    frequencyPenalty: agent.frequencyPenalty || 0,
+                  },
+                  createdAt: new Date(),
+                  updatedAt: new Date(),
                 },
-                createdAt: new Date(),
-                updatedAt: new Date(),
-              },
-              parentSessionId,
-            });
-            currentSessionId = newSession.sessionId;
-            isNewSession = true;
+                parentSessionId,
+              });
+              currentSessionId = newSession.sessionId;
+              isNewSession = true;
+            } else {
+              //space run: provide spaceId as currentSessionId
+              currentSessionId = uuidv4();
+            }
           }
 
           const storedTools = await this.toolService.getAllTools();
@@ -629,8 +743,8 @@ export class AgentService implements OnModuleInit {
             });
 
           let messages: Messages = [];
-
           if (!sessionId) {
+            console.log('Creating new session for agent:', agentId);
             const boot = await this.createAgentSession(
               agentId,
               currentSessionId,
@@ -667,6 +781,34 @@ export class AgentService implements OnModuleInit {
               When using the interactWithAgent tool you can only use sessionIds from the following list when continuing conversations: ${childSessionsInfo}`,
             } as any);
             console.log('Child sessions after update:', childSessionsInfo);
+          }
+
+          if (spaceId) {
+            console.log('Running in space mode:', spaceId);
+            // ✅ For space-based runs, inject system message with space info
+            const space = await this.db.query.space.findFirst({
+              where: (s) => eq(s.spaceId, spaceId),
+            });
+            if (!space) {
+              throw new BadRequestException('Space not found');
+            }
+            messages.push({
+              type: 'system',
+              role: 'system',
+              content: `
+              You are currently in the following space:
+              - Space ${space.spaceId}: ${space.name || 'Untitled space'} (created: ${space.createdAt})
+
+              You are receiving this message because you are subscribed to this space.
+              
+              You can interact with other agents in this space using the sendMessageToSpace tool.
+              Use the getSpaceMessages tool before sending messages to the space.
+
+              If you wish not to respond to the messages you can ignore and do not send a response.
+              
+              If you want to unsubscribe from this space, you can use the unsubscribeFromSpace tool.
+              `,
+            } as any);
           }
 
           if (props.messages?.length) {
@@ -756,65 +898,67 @@ export class AgentService implements OnModuleInit {
 
           const resolvedAgentCalls = await Promise.all(agentCalls);
 
-          const messageHistories =
-            finalResult?.messages?.filter(
-              (m) => m.toDict().type !== 'system',
-            ) || [];
-
-          const currentSession = await this.session.getSession({
-            id: currentSessionId,
-          });
-          if (!currentSession) {
-            throw new BadRequestException('Session not found');
-          }
-
           let sessionTitle = 'New Session';
-          if (isNewSession && props.messages?.length) {
-            const firstUserMessage = props.messages.find(
-              (m) => m.role === 'user',
-            );
-            if (firstUserMessage?.content) {
-              sessionTitle = await this.generateSessionTitle(
-                firstUserMessage.content as string,
-              );
-            }
-          }
+          if (!spaceId && currentSessionId) {
+            const messageHistories =
+              finalResult?.messages?.filter(
+                (m) => m.toDict().type !== 'system',
+              ) || [];
 
-          await this.session.updateSession({
-            id: currentSessionId,
-            delta: {
-              endedAt: new Date(),
-              title: isNewSession
-                ? sessionTitle
-                : currentSession.title || sessionTitle,
-              metrics: {
-                totalTokens: toolUsage.reduce(
-                  (acc, tool) => acc + (tool.duration || 0),
-                  0,
-                ),
-                toolCalls: toolUsage.length,
-                errorCount: toolUsage.filter((t) => t.status === 'error')
-                  .length,
-              },
-              history: messageHistories.map((m) => ({
-                role: m.toDict().type,
-                content:
-                  typeof m.content === 'string'
-                    ? m.content
-                    : JSON.stringify(m.content),
-                timestamp: new Date().toISOString(),
-                metadata: {
-                  toolCalls:
-                    m.toDict().type === 'assistant' ? toolCalls : undefined,
-                  agentCalls:
-                    m.toDict().type === 'assistant'
-                      ? resolvedAgentCalls
-                      : undefined,
+            const currentSession = await this.session.getSession({
+              id: currentSessionId,
+            });
+            if (!currentSession) {
+              throw new BadRequestException('Session not found');
+            }
+
+            if (isNewSession && props.messages?.length) {
+              const firstUserMessage = props.messages.find(
+                (m) => m.role === 'user',
+              );
+              if (firstUserMessage?.content) {
+                sessionTitle = await this.generateSessionTitle(
+                  firstUserMessage.content as string,
+                );
+              }
+            }
+
+            await this.session.updateSession({
+              id: currentSessionId,
+              delta: {
+                endedAt: new Date(),
+                title: isNewSession
+                  ? sessionTitle
+                  : currentSession.title || sessionTitle,
+                metrics: {
+                  totalTokens: toolUsage.reduce(
+                    (acc, tool) => acc + (tool.duration || 0),
+                    0,
+                  ),
+                  toolCalls: toolUsage.length,
+                  errorCount: toolUsage.filter((t) => t.status === 'error')
+                    .length,
                 },
-              })),
-              updatedAt: new Date(),
-            },
-          });
+                history: messageHistories.map((m) => ({
+                  role: m.toDict().type,
+                  content:
+                    typeof m.content === 'string'
+                      ? m.content
+                      : JSON.stringify(m.content),
+                  timestamp: new Date().toISOString(),
+                  metadata: {
+                    toolCalls:
+                      m.toDict().type === 'assistant' ? toolCalls : undefined,
+                    agentCalls:
+                      m.toDict().type === 'assistant'
+                        ? resolvedAgentCalls
+                        : undefined,
+                  },
+                })),
+                updatedAt: new Date(),
+              },
+            });
+          }
 
           const last = messages.at(-1)!;
           const finalText =
@@ -846,7 +990,7 @@ export class AgentService implements OnModuleInit {
             payload: {
               ...lastMessage,
               sessionId: currentSessionId,
-              title: sessionTitle,
+              title: sessionTitle ?? 'New Session',
               metadata: {
                 toolCalls,
                 agentCalls: resolvedAgentCalls,

@@ -11,6 +11,7 @@ import { GoalService, CreateGoalDto } from '~/goal/goal.service';
 import { TaskService, CreateTaskDto, TaskContext } from '~/task/task.service';
 import { AttributionService } from '~/attribution/attribution.service';
 import { ResourceService } from '~/resource/resource.service';
+import { SpaceService } from '~/space/space.service';
 //import { TaskService } from '~/task/task.service';
 import { OpenAIService } from '~/modules/openai/openai.service';
 import { PinataService } from '~/pinata/pinata.service';
@@ -156,6 +157,75 @@ export interface CommonTool {
   }>;
 
   /**
+   * Create a new shared space for multi-agent communication
+   */
+  createSpace(props: {
+    name: string;
+    description?: string;
+    sessionId?: string;
+    isPublic?: boolean;
+    maxMembers?: number;
+    agentId: string;
+  }): any;
+
+  /**
+   * Join an existing space
+   */
+  joinSpace(props: { spaceId: string; agentId: string }): any;
+
+  /**
+   * Add an agent to a space
+   */
+  addAgentToSpace(props: {
+    spaceId: string;
+    targetAgentId: string;
+    agentId: string;
+  }): any;
+
+  /**
+   * Send a message to a space
+   */
+  sendMessageToSpace(props: {
+    spaceId: string;
+    content: string;
+    targetType?: 'broadcast' | 'direct' | 'group';
+    targetIds?: string[];
+    agentId: string;
+  }): any;
+
+  /**
+   * Get messages from a space
+   */
+  getSpaceMessages(props: {
+    spaceId: string;
+    limit?: number;
+    agentId: string;
+  }): any;
+
+  /**
+   * Get spaces where the agent is a member
+   */
+  getMySpaces(props: { agentId: string }): any;
+
+  /**
+   * Get space members by space ID
+   */
+  getSpaceMembers(props: { spaceId: string }): any;
+
+  /**
+   * Subscribe to space messages (automatically subscribes when agent joins space)
+   */
+  subscribeToSpace(props: { spaceId: string; agentId: string }): any;
+  /**
+   * Unsubscribe to space messages (automatically unsubscribes when agent leaves space)
+   */
+  unsubscribeFromSpace(props: { spaceId: string; agentId: string }): any;
+  /**
+   * Get recent messages from the in-memory bus
+   */
+  getBusMessages(props: { spaceId: string; limit?: number }): any;
+
+  /**
    * Equip a tool resource to an agent
    */
   // equipResourceTool(props: {
@@ -185,6 +255,8 @@ export class CommonToolService implements CommonTool {
     private openAI: OpenAIService,
     @Inject(forwardRef(() => PinataService))
     private pinataService: PinataService,
+    @Inject(forwardRef(() => SpaceService))
+    private space: SpaceService,
   ) {}
 
   async createGoal(props: CreateGoalDto) {
@@ -793,5 +865,147 @@ export class CommonToolService implements CommonTool {
       success: true,
       message: `Tool resource "${resourceId}" equipped successfully.`,
     };
+  }
+
+  /* ─────────────────────────  SPACE METHODS  ───────────────────────── */
+
+  /**
+   * Create a new shared space for multi-agent communication
+   */
+  async createSpace(props: {
+    name: string;
+    description?: string;
+    sessionId?: string;
+    isPublic?: boolean;
+    maxMembers?: number;
+    agentId: string;
+  }) {
+    const { agentId, ...spaceProps } = props;
+
+    return await this.space.createSpace({
+      ...spaceProps,
+      createdBy: agentId,
+      createdByType: 'agent',
+    });
+  }
+
+  /**
+   * Join an existing space
+   */
+  async joinSpace(props: { spaceId: string; agentId: string }) {
+    const { spaceId, agentId } = props;
+
+    return await this.space.addMember({
+      spaceId,
+      memberId: agentId,
+      memberType: 'agent',
+    });
+  }
+
+  /**
+   * Add an agent to a space
+   */
+  async addAgentToSpace(props: {
+    spaceId: string;
+    targetAgentId: string;
+    agentId: string;
+  }) {
+    const { spaceId, targetAgentId, agentId } = props;
+
+    // Check if the requesting agent is a member and has permission to invite
+    const isMember = await this.space.isMember(spaceId, agentId, 'agent');
+    if (!isMember) {
+      throw new BadRequestException(
+        'You must be a member of the space to add other agents',
+      );
+    }
+
+    return await this.space.addMember({
+      spaceId,
+      memberId: targetAgentId,
+      memberType: 'agent',
+    });
+  }
+
+  /**
+   * Send a message to a space
+   */
+  async sendMessageToSpace(
+    props: {
+      spaceId: string;
+      content: string;
+      targetType?: 'broadcast' | 'direct' | 'group';
+      targetIds?: string[];
+      agentId: string;
+    },
+    metadata: { sessionId: string; agentId: string } = {
+      sessionId: '',
+      agentId: '',
+    },
+  ) {
+    const { agentId, ...messageProps } = props;
+
+    return await this.space.sendMessage({
+      ...messageProps,
+      senderId: agentId,
+      senderType: 'agent',
+      metadata,
+    });
+  }
+
+  /**
+   * Get messages from a space
+   */
+  async getSpaceMessages(props: {
+    spaceId: string;
+    limit?: number;
+    agentId: string;
+  }) {
+    const { spaceId, agentId, limit = 50 } = props;
+
+    // Check if the agent is a member
+    const isMember = await this.space.isMember(spaceId, agentId, 'agent');
+    if (!isMember) {
+      throw new BadRequestException(
+        'You must be a member of the space to read messages',
+      );
+    }
+
+    return await this.space.getMessagesForMember(spaceId, agentId, limit);
+  }
+
+  /**
+   * Get spaces where the agent is a member
+   */
+  async getMySpaces(props: { agentId: string }) {
+    const { agentId } = props;
+
+    return await this.space.getSpacesForMember(agentId, 'agent');
+  }
+
+  /**
+   * Get space members by space ID
+   */
+  async getSpaceMembers(props: { spaceId: string }) {
+    const { spaceId } = props;
+
+    return await this.space.getSpaceMembers(spaceId);
+  }
+
+  /**
+   * Subscribe to space messages (automatically subscribes when agent joins space)
+   */
+  async subscribeToSpace(props: { spaceId: string; agentId: string }) {
+    const { spaceId, agentId } = props;
+
+    return await this.space.subscribeAgentToSpace(agentId, spaceId);
+  }
+  /**
+   * Unsubscribe to space messages (automatically unsubscribes when agent leaves space)
+   */
+  async unsubscribeFromSpace(props: { spaceId: string; agentId: string }) {
+    const { spaceId, agentId } = props;
+
+    return await this.space.unsubscribeAgentFromSpace(agentId, spaceId);
   }
 }
