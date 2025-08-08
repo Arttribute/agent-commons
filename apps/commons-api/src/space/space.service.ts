@@ -134,7 +134,9 @@ export class SpaceService {
       role = 'member',
       permissions,
     } = props;
-
+    console.log(
+      `Adding member ${memberId} of type ${memberType} to space ${spaceId}`,
+    );
     const space = await this.db.query.space.findFirst({
       where: eq(schema.space.spaceId, spaceId),
     });
@@ -241,10 +243,14 @@ export class SpaceService {
       where: and(
         eq(schema.spaceMember.spaceId, spaceId),
         eq(schema.spaceMember.memberId, memberId),
-        eq(schema.spaceMember.memberType, memberType),
+        eq(schema.spaceMember.memberType, memberType), //reconsider haviing this...messages my fail if an agent in correctly adds a human as an ai agent
         eq(schema.spaceMember.status, 'active'),
       ),
     });
+    console.log(
+      `Checking membership for ${memberType} ${memberId} in space ${spaceId}:`,
+      member ? 'Member found' : 'Member not found',
+    );
     return !!member;
   }
 
@@ -272,127 +278,135 @@ export class SpaceService {
       metadata,
     } = props;
 
-    if (senderId !== 'system') {
-      const isMember = await this.isMember(spaceId, senderId, senderType);
-      if (!isMember)
-        throw new BadRequestException('Only space members can send messages');
-    }
-
-    if (senderId !== 'system') {
-      const member = await this.db.query.spaceMember.findFirst({
-        where: and(
-          eq(schema.spaceMember.spaceId, spaceId),
-          eq(schema.spaceMember.memberId, senderId),
-          eq(schema.spaceMember.memberType, senderType),
-        ),
-      });
-      if (!member?.permissions?.canWrite) {
-        throw new BadRequestException(
-          'You do not have permission to send messages in this space',
-        );
+    try {
+      console.log(
+        `Sending message in space ${spaceId} from ${senderType} ${senderId}`,
+      );
+      if (senderId !== 'system') {
+        const isMember = await this.isMember(spaceId, senderId, senderType);
+        if (!isMember)
+          throw new BadRequestException('Only space members can send messages');
       }
-    }
 
-    const [message] = await this.db
-      .insert(schema.spaceMessage)
-      .values({
-        spaceId,
-        senderId,
-        senderType,
-        content,
-        targetType,
-        targetIds,
-        messageType,
-        metadata,
-      })
-      .returning();
-
-    if (senderId !== 'system') {
-      await this.db
-        .update(schema.spaceMember)
-        .set({ lastActiveAt: new Date() })
-        .where(
-          and(
+      if (senderId !== 'system') {
+        const member = await this.db.query.spaceMember.findFirst({
+          where: and(
             eq(schema.spaceMember.spaceId, spaceId),
             eq(schema.spaceMember.memberId, senderId),
             eq(schema.spaceMember.memberType, senderType),
           ),
-        );
-    }
-
-    const sessionIdToUse = metadata?.sessionId || props.sessionId;
-    console.log(`Session ID to use: when calling ${sessionIdToUse}`);
-    if (sessionIdToUse) {
-      const session = await this.db.query.session.findFirst({
-        where: eq(schema.session.sessionId, sessionIdToUse),
-      });
-      if (session) {
-        console.log(`Adding space data to session ${sessionIdToUse}`);
-        // Add the spaceId to the session
-        const currentSpaces = session.spaces || {};
-        console.log(
-          `Current spaces in session: ${JSON.stringify(currentSpaces)}`,
-        );
-
-        const currentSpaceIds = (currentSpaces as any).spaceIds || [];
-        if (!currentSpaceIds.includes(spaceId)) {
-          const updatedSpaces = {
-            ...currentSpaces,
-            spaceIds: [...currentSpaceIds, spaceId],
-          };
-          await this.db
-            .update(schema.session)
-            .set({ spaces: updatedSpaces as any })
-            .where(eq(schema.session.sessionId, sessionIdToUse));
+        });
+        if (!member?.permissions?.canWrite) {
+          throw new BadRequestException(
+            'You do not have permission to send messages in this space',
+          );
         }
       }
+
+      const [message] = await this.db
+        .insert(schema.spaceMessage)
+        .values({
+          spaceId,
+          senderId,
+          senderType,
+          content,
+          targetType,
+          targetIds,
+          messageType,
+          metadata,
+        })
+        .returning();
+
+      if (senderId !== 'system') {
+        await this.db
+          .update(schema.spaceMember)
+          .set({ lastActiveAt: new Date() })
+          .where(
+            and(
+              eq(schema.spaceMember.spaceId, spaceId),
+              eq(schema.spaceMember.memberId, senderId),
+              eq(schema.spaceMember.memberType, senderType),
+            ),
+          );
+      }
+
+      const sessionIdToUse = metadata?.sessionId || props.sessionId;
+      console.log(`Session ID to use: when calling ${sessionIdToUse}`);
+      if (sessionIdToUse) {
+        const session = await this.db.query.session.findFirst({
+          where: eq(schema.session.sessionId, sessionIdToUse),
+        });
+        if (session) {
+          console.log(`Adding space data to session ${sessionIdToUse}`);
+          // Add the spaceId to the session
+          const currentSpaces = session.spaces || {};
+          console.log(
+            `Current spaces in session: ${JSON.stringify(currentSpaces)}`,
+          );
+
+          const currentSpaceIds = (currentSpaces as any).spaceIds || [];
+          if (!currentSpaceIds.includes(spaceId)) {
+            const updatedSpaces = {
+              ...currentSpaces,
+              spaceIds: [...currentSpaceIds, spaceId],
+            };
+            await this.db
+              .update(schema.session)
+              .set({ spaces: updatedSpaces as any })
+              .where(eq(schema.session.sessionId, sessionIdToUse));
+          }
+        }
+      }
+      // Trigger subsribed agents to run
+      const currentTurn = metadata.turnCount ?? 0;
+      const maxTurnsParam = metadata.maxTurns ?? 1;
+
+      const subscribedAgents = await this.db.query.spaceMember.findMany({
+        where: and(
+          eq(schema.spaceMember.spaceId, spaceId),
+          eq(schema.spaceMember.memberType, 'agent'),
+          eq(schema.spaceMember.isSubscribed, true),
+        ),
+      });
+
+      // const triggerRunAgent = async (agentId: string) => {
+      //   await lastValueFrom(
+      //     this.agentService
+      //       .runAgent({
+      //         agentId,
+      //         messages: [{ role: 'user', content }],
+      //         spaceId,
+      //         initiator: senderId,
+      //         turnCount: currentTurn + 1,
+      //         maxTurns: maxTurnsParam,
+      //       })
+      //       .pipe(filter((chunk) => chunk.type === 'final')),
+      //   ).catch((err) =>
+      //     console.error(
+      //       `runAgent failed for agent ${agentId} in space ${spaceId}:`,
+      //       err,
+      //     ),
+      //   );
+      // };
+
+      // if (targetType === 'broadcast') {
+      //   for (const agent of subscribedAgents) {
+      //     // avoid echoing back to the sender if the sender was an agent
+      //     if (agent.memberId === senderId && senderType === 'agent') continue;
+      //     await triggerRunAgent(agent.memberId);
+      //   }
+      // } else if (targetType === 'direct' && targetIds) {
+      //   for (const id of targetIds) {
+      //     const isSubscribed = subscribedAgents.some((a) => a.memberId === id);
+      //     if (isSubscribed) await triggerRunAgent(id);
+      //   }
+      // }
+
+      return message;
+    } catch (error) {
+      console.error('Error in sendMessage:', error);
+      throw error;
     }
-    // Trigger subsribed agents to run
-    const currentTurn = metadata.turnCount ?? 0;
-    const maxTurnsParam = metadata.maxTurns ?? 1;
-
-    const subscribedAgents = await this.db.query.spaceMember.findMany({
-      where: and(
-        eq(schema.spaceMember.spaceId, spaceId),
-        eq(schema.spaceMember.memberType, 'agent'),
-        eq(schema.spaceMember.isSubscribed, true),
-      ),
-    });
-
-    // const triggerRunAgent = async (agentId: string) => {
-    //   await lastValueFrom(
-    //     this.agentService
-    //       .runAgent({
-    //         agentId,
-    //         messages: [{ role: 'user', content }],
-    //         spaceId,
-    //         initiator: senderId,
-    //         turnCount: currentTurn + 1,
-    //         maxTurns: maxTurnsParam,
-    //       })
-    //       .pipe(filter((chunk) => chunk.type === 'final')),
-    //   ).catch((err) =>
-    //     console.error(
-    //       `runAgent failed for agent ${agentId} in space ${spaceId}:`,
-    //       err,
-    //     ),
-    //   );
-    // };
-
-    // if (targetType === 'broadcast') {
-    //   for (const agent of subscribedAgents) {
-    //     // avoid echoing back to the sender if the sender was an agent
-    //     if (agent.memberId === senderId && senderType === 'agent') continue;
-    //     await triggerRunAgent(agent.memberId);
-    //   }
-    // } else if (targetType === 'direct' && targetIds) {
-    //   for (const id of targetIds) {
-    //     const isSubscribed = subscribedAgents.some((a) => a.memberId === id);
-    //     if (isSubscribed) await triggerRunAgent(id);
-    //   }
-    // }
-
-    return message;
   }
 
   async getMessages(spaceId: string, limit = 50, offset = 0) {
@@ -550,7 +564,7 @@ export class SpaceService {
 
     const messages = await this.db.query.spaceMessage.findMany({
       where: eq(schema.spaceMessage.spaceId, spaceId),
-      orderBy: desc(schema.spaceMessage.createdAt),
+      orderBy: schema.spaceMessage.createdAt,
     });
 
     return { ...space, members, messages };

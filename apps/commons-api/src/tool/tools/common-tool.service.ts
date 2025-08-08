@@ -181,6 +181,31 @@ export interface CommonTool {
     targetAgentId: string;
     agentId: string;
   }): any;
+  /**
+   * Add a human to a space
+   */
+  addHumanToSpace(props: {
+    spaceId: string;
+    targetHumanId: string;
+    agentId: string;
+  }): any;
+
+  /**
+   * Remove an agent from a space
+   */
+  removeAgentFromSpace(props: {
+    spaceId: string;
+    targetAgentId: string;
+    agentId: string;
+  }): any;
+  /**
+   * remove a human from a space
+   */
+  removeHumanFromSpace(props: {
+    spaceId: string;
+    targetHumanId: string;
+    agentId: string;
+  }): any;
 
   /**
    * Send a message to a space
@@ -926,6 +951,72 @@ export class CommonToolService implements CommonTool {
       memberId: targetAgentId,
       memberType: 'agent',
     });
+  }
+  /**
+   * Add human to a space
+   * This is a special case where we allow human users to be added to spaces.
+   */
+  async addHumanToSpace(props: {
+    spaceId: string;
+    targetHumanId: string;
+    agentId: string;
+  }) {
+    const { spaceId, targetHumanId, agentId } = props;
+
+    // Check if the requesting agent is a member and has permission to invite
+    const isMember = await this.space.isMember(spaceId, agentId, 'agent');
+    if (!isMember) {
+      throw new BadRequestException(
+        'You must be a member of the space to add other humans',
+      );
+    }
+
+    return await this.space.addMember({
+      spaceId,
+      memberId: targetHumanId,
+      memberType: 'human',
+    });
+  }
+  /**
+   * Remove an agent from a space
+   */
+  async removeAgentFromSpace(props: {
+    spaceId: string;
+    targetAgentId: string;
+    agentId: string;
+  }) {
+    const { spaceId, targetAgentId, agentId } = props;
+
+    // Check if the requesting agent is a member and has permission to remove
+    const isMember = await this.space.isMember(spaceId, agentId, 'agent');
+    if (!isMember) {
+      throw new BadRequestException(
+        'You must be a member of the space to remove other agents',
+      );
+    }
+
+    return await this.space.removeMember(spaceId, targetAgentId, 'agent');
+  }
+  /**
+   * Remove human from a space
+   * This is a special case where we allow human users to be removed from spaces.
+   */
+  async removeHumanFromSpace(props: {
+    spaceId: string;
+    targetHumanId: string;
+    agentId: string;
+  }) {
+    const { spaceId, targetHumanId, agentId } = props;
+
+    // Check if the requesting agent is a member and has permission to remove
+    const isMember = await this.space.isMember(spaceId, agentId, 'agent');
+    if (!isMember) {
+      throw new BadRequestException(
+        'You must be a member of the space to remove other humans',
+      );
+    }
+
+    return await this.space.removeMember(spaceId, targetHumanId, 'human');
   }
 
   /**

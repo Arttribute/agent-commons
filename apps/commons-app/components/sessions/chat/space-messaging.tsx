@@ -6,6 +6,8 @@ import { Button } from "@/components/ui/button";
 import { ArrowLeft, Loader2, Maximize2, Minimize2, Info } from "lucide-react";
 import SpaceInfoDialog from "@/components/sessions/chat/space-info-dialog";
 import SpaceMessage from "@/components/sessions/chat/space-message";
+import SpaceMessageInput from "@/components/sessions/chat/space-message-input";
+import { useAuth } from "@/context/AuthContext";
 
 interface SpaceMessage {
   messageId: string;
@@ -67,8 +69,26 @@ export default function SpaceMessaging({
   const [messages, setMessages] = useState<Message[]>([]);
   const [isFullScreen, setIsFullScreen] = useState(false);
 
+  const { authState } = useAuth();
+  const userAddress = authState.walletAddress?.toLowerCase() || "";
+  const currentUserId = userAddress;
+
   const toggleFullScreen = () => {
     setIsFullScreen(!isFullScreen);
+  };
+
+  const handleMessageSubmitted = (content: string) => {
+    //append user message to messages
+    setMessages((prev) => [
+      ...prev,
+      {
+        role: "human",
+        content: content,
+        timestamp: new Date().toISOString(),
+        senderId: currentUserId,
+        senderType: "human",
+      },
+    ]);
   };
 
   // Fetch space details including messages
@@ -173,7 +193,7 @@ export default function SpaceMessaging({
             )}
 
             {/* Messages - Full screen */}
-            <ScrollArea className="h-full bg-gray-50">
+            <ScrollArea className="h-[80vh] bg-gray-50">
               <div className="container mx-auto max-w-4xl p-6">
                 {messages.map((message, index) => (
                   <SpaceMessage
@@ -187,6 +207,14 @@ export default function SpaceMessaging({
                 ))}
               </div>
             </ScrollArea>
+            {spaceDetails && (
+              <SpaceMessageInput
+                spaceId={spaceId}
+                members={spaceDetails.members || []}
+                currentUserId={currentUserId}
+                onMessageSubmitted={handleMessageSubmitted}
+              />
+            )}
           </div>
         </div>
       )}
@@ -240,7 +268,7 @@ export default function SpaceMessaging({
           )}
 
           {/* Messages - Embedded view */}
-          <ScrollArea className="p-4 h-[460px] bg-gray-50 rounded-b-xl">
+          <ScrollArea className="p-4 h-[380px] bg-gray-50 rounded-b-xl">
             <div className="container mx-auto max-w-2xl">
               {messages.map((message, index) => (
                 <SpaceMessage
@@ -254,6 +282,16 @@ export default function SpaceMessaging({
               ))}
             </div>
           </ScrollArea>
+          {spaceDetails && (
+            <div className="rounded-b-xl p-1">
+              <SpaceMessageInput
+                spaceId={spaceId}
+                members={spaceDetails.members || []}
+                currentUserId={currentUserId}
+                onMessageSubmitted={handleMessageSubmitted}
+              />
+            </div>
+          )}
         </div>
       )}
     </>

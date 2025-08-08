@@ -227,13 +227,6 @@ export default function SpaceMessage({
         >
           {content}
         </ReactMarkdown>
-
-        {metadata?.agentCalls && metadata.agentCalls.length > 0 && (
-          <div className="mt-2 text-xs text-gray-500 bg-gray-100 rounded p-2">
-            <span className="font-medium">Agent interactions:</span>{" "}
-            {metadata.agentCalls.length}
-          </div>
-        )}
       </div>
     </div>
   );
