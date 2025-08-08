@@ -83,7 +83,7 @@ export default function MessagesView({
         <div className="flex items-center justify-between rounded-t-lg items-start border-b border-gray-400 p-2 bg-zinc-100 rounded-t-xl ">
           <h2 className="text-xs font-semibold">Agent to Agent Interactions</h2>
         </div>
-        <ScrollArea className="h-[480px] p-1">
+        <ScrollArea className="h-[470px] p-1">
           {conversations.map((conversation) => (
             <button
               key={conversation.agentId}

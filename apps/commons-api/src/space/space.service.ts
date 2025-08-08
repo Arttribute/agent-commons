@@ -255,6 +255,7 @@ export class SpaceService {
     senderId: string;
     senderType: 'agent' | 'human';
     content: string;
+    sessionId?: string; // optional session ID for context
     targetType?: 'broadcast' | 'direct' | 'group';
     targetIds?: string[];
     messageType?: string;
@@ -319,13 +320,20 @@ export class SpaceService {
         );
     }
 
-    const sessionIdToUse = metadata?.sessionId;
+    const sessionIdToUse = metadata?.sessionId || props.sessionId;
+    console.log(`Session ID to use: when calling ${sessionIdToUse}`);
     if (sessionIdToUse) {
       const session = await this.db.query.session.findFirst({
         where: eq(schema.session.sessionId, sessionIdToUse),
       });
       if (session) {
+        console.log(`Adding space data to session ${sessionIdToUse}`);
+        // Add the spaceId to the session
         const currentSpaces = session.spaces || {};
+        console.log(
+          `Current spaces in session: ${JSON.stringify(currentSpaces)}`,
+        );
+
         const currentSpaceIds = (currentSpaces as any).spaceIds || [];
         if (!currentSpaceIds.includes(spaceId)) {
           const updatedSpaces = {
@@ -341,7 +349,7 @@ export class SpaceService {
     }
     // Trigger subsribed agents to run
     const currentTurn = metadata.turnCount ?? 0;
-    const maxTurnsParam = metadata.maxTurns ?? 3;
+    const maxTurnsParam = metadata.maxTurns ?? 1;
 
     const subscribedAgents = await this.db.query.spaceMember.findMany({
       where: and(
@@ -351,38 +359,38 @@ export class SpaceService {
       ),
     });
 
-    const triggerRunAgent = async (agentId: string) => {
-      await lastValueFrom(
-        this.agentService
-          .runAgent({
-            agentId,
-            messages: [{ role: 'user', content }],
-            spaceId,
-            initiator: senderId,
-            turnCount: currentTurn + 1,
-            maxTurns: maxTurnsParam,
-          })
-          .pipe(filter((chunk) => chunk.type === 'final')),
-      ).catch((err) =>
-        console.error(
-          `runAgent failed for agent ${agentId} in space ${spaceId}:`,
-          err,
-        ),
-      );
-    };
+    // const triggerRunAgent = async (agentId: string) => {
+    //   await lastValueFrom(
+    //     this.agentService
+    //       .runAgent({
+    //         agentId,
+    //         messages: [{ role: 'user', content }],
+    //         spaceId,
+    //         initiator: senderId,
+    //         turnCount: currentTurn + 1,
+    //         maxTurns: maxTurnsParam,
+    //       })
+    //       .pipe(filter((chunk) => chunk.type === 'final')),
+    //   ).catch((err) =>
+    //     console.error(
+    //       `runAgent failed for agent ${agentId} in space ${spaceId}:`,
+    //       err,
+    //     ),
+    //   );
+    // };
 
-    if (targetType === 'broadcast') {
-      for (const agent of subscribedAgents) {
-        // avoid echoing back to the sender if the sender was an agent
-        if (agent.memberId === senderId && senderType === 'agent') continue;
-        await triggerRunAgent(agent.memberId);
-      }
-    } else if (targetType === 'direct' && targetIds) {
-      for (const id of targetIds) {
-        const isSubscribed = subscribedAgents.some((a) => a.memberId === id);
-        if (isSubscribed) await triggerRunAgent(id);
-      }
-    }
+    // if (targetType === 'broadcast') {
+    //   for (const agent of subscribedAgents) {
+    //     // avoid echoing back to the sender if the sender was an agent
+    //     if (agent.memberId === senderId && senderType === 'agent') continue;
+    //     await triggerRunAgent(agent.memberId);
+    //   }
+    // } else if (targetType === 'direct' && targetIds) {
+    //   for (const id of targetIds) {
+    //     const isSubscribed = subscribedAgents.some((a) => a.memberId === id);
+    //     if (isSubscribed) await triggerRunAgent(id);
+    //   }
+    // }
 
     return message;
   }

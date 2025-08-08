@@ -121,6 +121,19 @@ export class SessionService {
       orderBy: (t) => t.createdAt,
     });
 
+    // Get space details if spaces column contains space IDs
+    let spaceDetails: any = [];
+    if (sessionEntry.spaces && sessionEntry.spaces.spaceIds.length > 0) {
+      console.log(
+        `Fetching spaces for session ${id} with space IDs:`,
+        sessionEntry.spaces.spaceIds,
+      );
+      spaceDetails = await this.db.query.space.findMany({
+        where: (s) => inArray(s.spaceId, sessionEntry.spaces!.spaceIds),
+      });
+    }
+    console.log('Space details:', spaceDetails);
+
     // Return history as is, without modifying the roles
     return {
       ...sessionEntry,
@@ -133,6 +146,7 @@ export class SessionService {
         tasks: tasks.filter((task) => task.goalId === goal.goalId),
       })),
       childSessions: childSessions || [],
+      spaces: spaceDetails || [],
     };
   }
 

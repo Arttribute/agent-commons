@@ -191,6 +191,7 @@ export interface CommonTool {
     targetType?: 'broadcast' | 'direct' | 'group';
     targetIds?: string[];
     agentId: string;
+    sessionId?: string; // optional session ID for context
   }): any;
 
   /**
@@ -937,6 +938,7 @@ export class CommonToolService implements CommonTool {
       targetType?: 'broadcast' | 'direct' | 'group';
       targetIds?: string[];
       agentId: string;
+      sessionId?: string; // optional session ID for context
     },
     metadata: { sessionId: string; agentId: string } = {
       sessionId: '',

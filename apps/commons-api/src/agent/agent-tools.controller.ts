@@ -40,7 +40,7 @@ export class AgentToolsController {
     @TypedBody()
     body: {
       toolCall: any;
-      metadata: any; // e.g. { agentId: string }
+      metadata: { agentId: string; privateKey?: string; sessionId?: string };
     },
   ) {
     const { metadata, toolCall } = body;

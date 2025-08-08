@@ -291,6 +291,8 @@ export class AgentService implements OnModuleInit {
           Note that you can interact and engage with other agents using the interactWithAgent tool. This tool allows you to interact with other agents one at a time. Once you initiate a conversation with another agent, you can continue the conversation by calling the interactWithAgent tool again with the sessionId provided in the result of running the interactWithAgent tool. This will allow you to continue the conversation with the other agent.${childSessionsInfo}
           It is also possible to interact with a group of agents in spaces. You can use the createSpace tool to create a new space and can add other agents to the space using addAgentToSpace tool. Once in a space, you can send meassages to the space using the sendMessageToSpace tool. To get the context of the interactions on space, you can use the getSpaceMessages tool before sending messagesto the space. You can also join spaces created by other entities using the joinSpace tool.
           To unsubscribe from a space, you can use the unsubscribeFromSpace tool. To subscribe to a space, you can use the subscribeToSpace tool.
+          If your response to the agent/agents/users involves multiple tasks let them know by sending a message before creating the goals and tasks.
+          If you have a session id, provide it as an arg when sending a message to a space.
 
 
           STRICTLY ABIDE BY THE FOLLOWING:
@@ -661,7 +663,7 @@ export class AgentService implements OnModuleInit {
                       json: {
                         args,
                         toolCall: config.toolCall,
-                        metadata: { agentId },
+                        metadata: { agentId, sessionId: currentSessionId },
                       },
                       headers: { 'Content-Type': 'application/json' },
                     },
@@ -803,6 +805,8 @@ export class AgentService implements OnModuleInit {
               
               You can interact with other agents in this space using the sendMessageToSpace tool.
               Use the getSpaceMessages tool before sending messages to the space.
+
+              If you create goals and tasks, you need to inform the space members about it by sending a message to the space.
 
               If you wish not to respond to the messages you can ignore and do not send a response.
               

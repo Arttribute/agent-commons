@@ -19,6 +19,7 @@ import { cn } from "@/lib/utils";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import TaskCarousel from "@/components/sessions/tasks/task-carousel";
 import MessagesView from "@/components/sessions/chat/messages-view";
+import SpacesView from "@/components/sessions/chat/spaces-view";
 
 interface Task {
   taskId: string;
@@ -30,6 +31,25 @@ interface Task {
   priority: number;
   result?: string;
   error?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+interface Space {
+  spaceId: string;
+  name: string;
+  description: string;
+  createdBy: string;
+  createdByType: "agent" | "human";
+  sessionId: string;
+  isPublic: boolean;
+  maxMembers: number;
+  settings: {
+    moderators: string[];
+    allowAgents: boolean;
+    allowHumans: boolean;
+    requireApproval: boolean;
+  };
   createdAt: string;
   updatedAt: string;
 }
@@ -51,6 +71,7 @@ interface ExecutionWidgetProps {
   selectedGoalId: string;
   setSelectedGoalId: (goalId: string) => void;
   childSessions: any[]; // Optional prop for child sessions
+  spaces?: Space[]; // Optional prop for spaces
 }
 
 export default function ExecutionWidget({
@@ -60,6 +81,7 @@ export default function ExecutionWidget({
   selectedGoalId,
   setSelectedGoalId,
   childSessions,
+  spaces = [],
 }: ExecutionWidgetProps) {
   const [isExpanded, setIsExpanded] = useState(false);
   const [isMinimized, setIsMinimized] = useState(false);
@@ -187,12 +209,15 @@ export default function ExecutionWidget({
                   <h3 className="font-semibold text-sm">Agent Execution</h3>
                 </div>
                 <div className="flex gap-1">
-                  <TabsList className="grid w-full grid-cols-2 gap-1 h-auto">
+                  <TabsList className="grid w-full grid-cols-3 gap-1 h-auto">
                     <TabsTrigger value="tasks" className="h-6  text-sm">
                       Tasks
                     </TabsTrigger>
                     <TabsTrigger value="messages" className="h-6 text-sm">
                       Interactions{" "}
+                    </TabsTrigger>
+                    <TabsTrigger value="spaces" className="h-6 text-sm">
+                      Spaces
                     </TabsTrigger>
                   </TabsList>
 
@@ -214,6 +239,9 @@ export default function ExecutionWidget({
                   conversations={childSessions}
                   totalInteractions={childSessions.length || 0}
                 />
+              </TabsContent>
+              <TabsContent value="spaces">
+                <SpacesView spaces={spaces} />
               </TabsContent>
             </Tabs>
           </motion.div>

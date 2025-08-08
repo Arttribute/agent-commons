@@ -108,6 +108,8 @@ export default function SessionInterface({
     session?.goals?.[0] || null
   );
 
+  const [spaces, setSpaces] = useState<any[]>(session?.spaces || []);
+
   const { messages } = useAgentContext(); // Retrieve messages from context
 
   // 👇🏼 Build a render‑friendly list where contiguous tool messages are grouped.
@@ -153,6 +155,7 @@ export default function SessionInterface({
       setChildSessions(session.childSessions || []);
       setSelectedGoal(session.goals?.[0] || null);
       setSelectedGoalId(session.goals?.[0]?.id || "");
+      setSpaces(session.spaces || []); // Set spaces from session
     }
   }, [session, sessionId]);
 
@@ -217,6 +220,7 @@ export default function SessionInterface({
         selectedGoalId={selectedGoalId}
         setSelectedGoalId={setSelectedGoalId}
         childSessions={childSessions}
+        spaces={spaces} // Pass spaces from session
       />
     </div>
   );
