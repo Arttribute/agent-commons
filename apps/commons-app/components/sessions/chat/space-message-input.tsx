@@ -255,7 +255,7 @@ export default function SpaceMessageInput({
       <div className="p-4 border-t bg-white">
         <div className="flex items-center justify-center p-4 bg-gray-50 rounded-lg">
           <p className="text-sm text-gray-600">
-            You don't have permission to send messages in this space
+            {"You don't have permission to send messages in this space"}
           </p>
         </div>
       </div>
