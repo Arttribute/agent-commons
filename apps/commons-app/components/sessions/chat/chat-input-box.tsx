@@ -43,11 +43,13 @@ export default function ChatInputBox({
   agentId,
   sessionId,
   userId,
+  disabled,
   onSessionCreated,
 }: {
   agentId: string;
   sessionId: string;
   userId: string;
+  disabled?: boolean;
   onSessionCreated?: (sessionId: string) => void;
 }) {
   const [input, setInput] = useState("");
@@ -57,6 +59,14 @@ export default function ChatInputBox({
 
   const { addMessage, updateStreamingMessage } = useAgentContext(); // Use addMessage and updateStreamingMessage from context
 
+  useEffect(() => {
+    // set to lading if disabled is true
+    if (disabled) {
+      setLoading(true);
+    } else {
+      setLoading(false);
+    }
+  }, [disabled]);
   useEffect(() => {
     setCurrentSessionId(sessionId);
   }, [sessionId]);

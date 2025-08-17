@@ -1,6 +1,14 @@
 "use client";
 
-import { createContext, useContext, useState, useCallback } from "react";
+import type React from "react";
+
+import {
+  createContext,
+  useContext,
+  useState,
+  useCallback,
+  type ReactNode,
+} from "react";
 
 type Message = {
   role: string;
@@ -15,15 +23,20 @@ interface AgentContextType {
   setMessages: React.Dispatch<React.SetStateAction<Message[]>>;
   addMessage: (newMessage: Message) => void;
   updateStreamingMessage: (content: string) => void;
+  clearMessages: () => void;
 }
 
 const AgentContext = createContext<AgentContextType | undefined>(undefined);
 
-export const AgentProvider = ({ children }: { children: React.ReactNode }) => {
+export const AgentProvider = ({ children }: { children: ReactNode }) => {
   const [messages, setMessages] = useState<Message[]>([]);
 
   const addMessage = useCallback((newMessage: Message) => {
     setMessages((prevMessages) => [...prevMessages, newMessage]);
+  }, []);
+
+  const clearMessages = useCallback(() => {
+    setMessages([]);
   }, []);
 
   const updateStreamingMessage = useCallback((content: string) => {
@@ -35,7 +48,6 @@ export const AgentProvider = ({ children }: { children: React.ReactNode }) => {
           { ...lastMessage, content: content },
         ];
       } else {
-        // This case should ideally not be reached if a temporary streaming message is added initially
         return [
           ...prevMessages,
           {
@@ -52,7 +64,13 @@ export const AgentProvider = ({ children }: { children: React.ReactNode }) => {
 
   return (
     <AgentContext.Provider
-      value={{ messages, setMessages, addMessage, updateStreamingMessage }}
+      value={{
+        messages,
+        setMessages,
+        addMessage,
+        updateStreamingMessage,
+        clearMessages,
+      }}
     >
       {children}
     </AgentContext.Provider>

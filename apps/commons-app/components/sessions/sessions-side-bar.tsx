@@ -1,10 +1,10 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import { PanelLeft, BookOpen, PlusCircle, Sparkles, Earth } from "lucide-react";
+import { PanelLeft, PlusCircle, Earth, Loader2 } from "lucide-react";
 import { AgentTitleCard } from "@/components/agents/agent-title-card";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import SessionsList from "@/components/sessions/sessions-list";
@@ -36,36 +36,19 @@ export function SessionsSideBar({
   username,
   sessions,
   agentId,
+  isLoadingSessions = false,
 }: {
   username: string;
   sessions: any;
   agentId: string;
+  isLoadingSessions?: boolean;
 }) {
   const [isOpen, setIsOpen] = useState(true);
-  const [recentChats, setRecentChats] = useState<any[]>([]);
   const router = useRouter();
 
   const handleNewSession = () => {
     router.push(`/agents/${agentId}`);
   };
-
-  useEffect(() => {
-    async function fetchRecentChats() {
-      try {
-        const res = await fetch(`/api/users/user?username=${username}`);
-        if (!res.ok) {
-          throw new Error("Failed to fetch user data");
-        }
-        const data = await res.json();
-        // data.sessionsByLastInteraction is already sorted newest -> oldest
-        setRecentChats(data.sessionsByLastInteraction || []);
-      } catch (error) {
-        console.error(error);
-      }
-    }
-
-    fetchRecentChats();
-  }, [username]);
 
   return (
     <div
@@ -78,7 +61,6 @@ export function SessionsSideBar({
         {isOpen ? (
           <div className="flex items-center justify-between w-full">
             <AgentTitleCard />
-
             <button
               onClick={() => setIsOpen(false)}
               className="text-muted-foreground hover:text-foreground ml-auto"
@@ -124,12 +106,30 @@ export function SessionsSideBar({
       {isOpen && (
         <div className="mt-6 flex-1 overflow-y-auto">
           <div className="px-3">
-            <h3 className="text-xs font-medium text-muted-foreground mb-2">
-              Recent Sessions
-            </h3>
+            <div className="flex items-center justify-between mb-2">
+              <h3 className="text-xs font-medium text-muted-foreground">
+                Recent Sessions
+              </h3>
+              {isLoadingSessions && (
+                <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />
+              )}
+            </div>
             <ul className="space-y-1">
               <ScrollArea className="h-[60vh] -mr-2">
-                <SessionsList sessions={sessions} />
+                {isLoadingSessions ? (
+                  <div className="space-y-2">
+                    {[...Array(3)].map((_, i) => (
+                      <div
+                        key={i}
+                        className="p-2 rounded-md bg-gray-100 animate-pulse"
+                      >
+                        <div className="h-4 bg-gray-200 rounded w-3/4"></div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <SessionsList sessions={sessions} />
+                )}
               </ScrollArea>
             </ul>
           </div>

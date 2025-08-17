@@ -1,10 +1,9 @@
 "use client";
 
-import type React from "react";
 import Link from "next/link";
 
 interface SessionsListProps {
-  sessions: any[]; // Replace with actual type
+  sessions: any[];
 }
 
 export default function SessionsList({ sessions }: SessionsListProps) {
@@ -17,7 +16,7 @@ export default function SessionsList({ sessions }: SessionsListProps) {
         >
           <div
             key={session._id}
-            className="p-2  text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-md gap-1"
+            className="p-2 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-md gap-1"
           >
             <p className="text-sm truncate w-48">
               {session.title || "New session"}

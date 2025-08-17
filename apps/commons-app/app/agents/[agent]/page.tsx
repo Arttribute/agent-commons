@@ -6,11 +6,13 @@ import { useAuth } from "@/context/AuthContext";
 import SessionInterface from "@/components/sessions/session-interface";
 import { Loader2 } from "lucide-react";
 import { SessionsSideBar } from "@/components/sessions/sessions-side-bar";
+import { useAgentContext } from "@/context/AgentContext";
 
 export default function PublicAgentPage() {
   const params = useParams();
   const router = useRouter();
   const { agent: agentId } = params as { agent: string };
+  const { messages, setMessages, clearMessages } = useAgentContext();
 
   const [agent, setAgent] = useState<any>(null);
   const [session, setSession] = useState<any>(null);
@@ -36,11 +38,12 @@ export default function PublicAgentPage() {
       const json = await res.json();
       setAgent(json.data);
       setLoading(false);
+      clearMessages();
       fetchSessions();
     }
 
     if (agentId) fetchAgent();
-  }, [agentId, userAddress]);
+  }, [agentId, userAddress, clearMessages]);
 
   if (loading)
     return (

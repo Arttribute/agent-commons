@@ -1,15 +1,15 @@
-import type React from "react";
+"use client";
 
 import { useRef, useEffect, useState, useMemo } from "react";
-import { ChevronDown } from "lucide-react";
+import { ChevronDown, Loader2 } from "lucide-react";
 import ExecutionWidget from "@/components/sessions/chat/execution-widget";
 import ChatInputBox from "./chat/chat-input-box";
 import InitiatorMessage from "./chat/initiator-message";
 import AgentOutput from "./chat/agent-output";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { CommonAgent } from "@/types/agent";
+import type { CommonAgent } from "@/types/agent";
 import { Card } from "@/components/ui/card";
-import { useAgentContext } from "@/context/AgentContext"; // Import useAgentContext
+import { useAgentContext } from "@/context/AgentContext";
 
 interface Message {
   role: string;
@@ -28,25 +28,21 @@ interface Message {
       sessionId?: string;
     }>;
   };
-  isStreaming?: boolean; // Add this line
+  isStreaming?: boolean;
 }
 
-interface SessionInterfaceProps {
+interface SessionInterfaceImprovedProps {
   height?: string;
   agent: CommonAgent | null;
   session: any;
-  // messages: Message[]; // No longer passed as prop, retrieved from context
-  // setMessages: Dispatch<SetStateAction<Message[]>>; // No longer passed as prop, retrieved from context
   agentId: string;
   sessionId: string;
   userId?: string;
   onSessionCreated?: (sessionId: string) => void;
+  isLoadingSession?: boolean;
+  isRedirecting?: boolean;
 }
 
-/**
- * Collapsible card that summarises a group of tool‑call messages. Clicking the
- * header toggles expansion so users can inspect individual tool‑calls.
- */
 function ExpandableToolCard({ tools }: { tools: Message[] }) {
   const [open, setOpen] = useState(false);
 
@@ -85,17 +81,28 @@ function ExpandableToolCard({ tools }: { tools: Message[] }) {
   );
 }
 
-export default function SessionInterface({
+function ChatLoadingIndicator() {
+  return (
+    <div className="flex items-center justify-center py-8">
+      <div className="flex items-center gap-2 text-muted-foreground">
+        <Loader2 className="h-4 w-4 animate-spin" />
+        <span className="text-sm">Loading conversation...</span>
+      </div>
+    </div>
+  );
+}
+
+export default function SessionInterfaceImproved({
   height,
   agent,
   session,
-  // messages, // No longer passed as prop
-  // setMessages, // No longer passed as prop
   agentId,
   sessionId,
   userId,
   onSessionCreated,
-}: SessionInterfaceProps) {
+  isLoadingSession = false,
+  isRedirecting = false,
+}: SessionInterfaceImprovedProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const [selectedGoalId, setSelectedGoalId] = useState<string>("");
   const [isLoading, setIsLoading] = useState(false);
@@ -107,16 +114,11 @@ export default function SessionInterface({
   const [selectedGoal, setSelectedGoal] = useState<any>(
     session?.goals?.[0] || null
   );
-
   const [spaces, setSpaces] = useState<any[]>(session?.spaces || []);
 
-  const { messages } = useAgentContext(); // Retrieve messages from context
+  const { messages } = useAgentContext();
 
-  // 👇🏼 Build a render‑friendly list where contiguous tool messages are grouped.
   const groupedItems = useMemo(() => {
-    /**
-     * An item is either a regular chat message or a group of tool‑calls.
-     */
     type Item =
       | { type: "message"; message: Message }
       | { type: "toolGroup"; tools: Message[] };
@@ -126,12 +128,10 @@ export default function SessionInterface({
       const msg = messages[i];
       if (msg.role === "tool") {
         const tools: Message[] = [];
-        // Collect consecutive tool messages.
         while (i < messages.length && messages[i].role === "tool") {
           tools.push(messages[i]);
           i += 1;
         }
-        // Decrement i because the for‑loop will increment again.
         i -= 1;
         items.push({ type: "toolGroup", tools });
       } else {
@@ -141,21 +141,19 @@ export default function SessionInterface({
     return items;
   }, [messages]);
 
-  // Auto‑scroll when messages / tool‑cards grow
   useEffect(() => {
     if (scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
-  }, [messages]); // Changed dependency to messages directly
+  }, [messages]);
 
-  //Get session data when sessionId changes
   useEffect(() => {
     if (sessionId && session) {
       setGoals(session.goals || []);
       setChildSessions(session.childSessions || []);
       setSelectedGoal(session.goals?.[0] || null);
       setSelectedGoalId(session.goals?.[0]?.id || "");
-      setSpaces(session.spaces || []); // Set spaces from session
+      setSpaces(session.spaces || []);
     }
   }, [session, sessionId]);
 
@@ -167,40 +165,40 @@ export default function SessionInterface({
         style={{ height: height ?? "78vh" }}
       >
         <div className="container mx-auto max-w-2xl mb-20" ref={scrollRef}>
-          {groupedItems.map((item, index) => {
-            if (item.type === "message") {
-              const { message } = item;
-              if (message.role === "user" || message.role === "human") {
-                return (
-                  <InitiatorMessage
-                    key={index}
-                    message={message.content}
-                    timestamp={message.timestamp}
-                  />
-                );
+          {isLoadingSession && messages.length === 0 ? (
+            <ChatLoadingIndicator />
+          ) : (
+            groupedItems.map((item, index) => {
+              if (item.type === "message") {
+                const { message } = item;
+                if (message.role === "user" || message.role === "human") {
+                  return (
+                    <InitiatorMessage
+                      key={index}
+                      message={message.content}
+                      timestamp={message.timestamp}
+                    />
+                  );
+                }
+                if (message.role === "ai") {
+                  const key = message.isStreaming
+                    ? `ai-streaming-${index}`
+                    : index;
+                  return (
+                    <AgentOutput
+                      key={key}
+                      content={message.content}
+                      metadata={message.metadata}
+                      isStreaming={message.isStreaming}
+                    />
+                  );
+                }
+                return null;
               }
-              if (message.role === "ai") {
-                // Use a unique key for streaming messages to force re-render
-                // For non-streaming messages, use index as before
-                const key = message.isStreaming
-                  ? `ai-streaming-${index}`
-                  : index;
-                return (
-                  <AgentOutput
-                    key={key}
-                    content={message.content}
-                    metadata={message.metadata}
-                    isStreaming={message.isStreaming} // Pass the isStreaming prop
-                  />
-                );
-              }
-              // Fallback – should rarely be reached.
-              return null;
-            }
 
-            // Render grouped tool‑calls as a single expandable card.
-            return <ExpandableToolCard key={index} tools={item.tools} />;
-          })}
+              return <ExpandableToolCard key={index} tools={item.tools} />;
+            })
+          )}
         </div>
       </ScrollArea>
 
@@ -210,6 +208,7 @@ export default function SessionInterface({
           sessionId={sessionId}
           userId={userId || ""}
           onSessionCreated={onSessionCreated}
+          disabled={isRedirecting || isLoadingSession}
         />
       </div>
 
@@ -220,7 +219,7 @@ export default function SessionInterface({
         selectedGoalId={selectedGoalId}
         setSelectedGoalId={setSelectedGoalId}
         childSessions={childSessions}
-        spaces={spaces} // Pass spaces from session
+        spaces={spaces}
       />
     </div>
   );
