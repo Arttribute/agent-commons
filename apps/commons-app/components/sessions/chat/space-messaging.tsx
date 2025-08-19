@@ -1,15 +1,26 @@
 "use client";
 
-import { useEffect, useState, useMemo } from "react";
+import { useEffect, useState } from "react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Button } from "@/components/ui/button";
-import { ArrowLeft, Loader2, Maximize2, Minimize2, Info } from "lucide-react";
+import {
+  ArrowLeft,
+  Loader2,
+  Maximize2,
+  Minimize2,
+  Info,
+  Radio,
+  X,
+} from "lucide-react";
 import SpaceInfoDialog from "@/components/sessions/chat/space-info-dialog";
 import SpaceMessage from "@/components/sessions/chat/space-message";
 import SpaceMessageInput from "@/components/sessions/chat/space-message-input";
 import { useAuth } from "@/context/AuthContext";
+import SpaceMediaPanel from "@/components/sessions/chat/space-media-panel";
 
-interface SpaceMessage {
+const WS_BASE = process.env.NEXT_PUBLIC_NEST_API_BASE_URL || "";
+
+interface SpaceMessageData {
   messageId: string;
   spaceId: string;
   senderId: string;
@@ -68,6 +79,8 @@ export default function SpaceMessaging({
   const [spaceDetails, setSpaceDetails] = useState<any>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [isFullScreen, setIsFullScreen] = useState(false);
+  const [showMediaPanel, setShowMediaPanel] = useState(true);
+  const [isMediaExpanded, setIsMediaExpanded] = useState(false);
 
   const { authState } = useAuth();
   const userAddress = authState.walletAddress?.toLowerCase() || "";
@@ -78,7 +91,6 @@ export default function SpaceMessaging({
   };
 
   const handleMessageSubmitted = (content: string) => {
-    //append user message to messages
     setMessages((prev) => [
       ...prev,
       {
@@ -91,57 +103,59 @@ export default function SpaceMessaging({
     ]);
   };
 
-  // Fetch space details including messages
-  useEffect(() => {
-    if (spaceId) {
-      const fetchSpaceDetails = async () => {
-        setIsLoading(true);
-        setError(null);
-        try {
-          const res = await fetch(`/api/spaces/full?spaceId=${spaceId}`);
-          if (!res.ok) {
-            throw new Error("Failed to fetch space details");
-          }
-          const data = await res.json();
+  const handleToggleMediaExpanded = () => {
+    setIsMediaExpanded(!isMediaExpanded);
+  };
 
-          if (data.data) {
-            setSpaceDetails(data.data);
+  const fetchSpaceDetails = async () => {
+    if (!spaceId) return;
 
-            // Convert space messages to the Message format with sender info
-            const convertedMessages: Message[] = data.data.messages.map(
-              (msg: SpaceMessage) => ({
-                role: msg.senderType === "agent" ? "ai" : "human",
-                content: msg.content,
-                timestamp: msg.createdAt,
-                senderId: msg.senderId,
-                senderType: msg.senderType,
-                metadata: {
-                  agentCalls: msg.metadata.agentId
-                    ? [
-                        {
-                          agentId: msg.metadata.agentId,
-                          message: msg.content,
-                          sessionId: msg.metadata.sessionId,
-                        },
-                      ]
-                    : [],
-                },
-              })
-            );
+    setIsLoading(true);
+    setError(null);
+    try {
+      const res = await fetch(`/api/spaces/full?spaceId=${spaceId}`);
+      if (!res.ok) {
+        throw new Error("Failed to fetch space details");
+      }
+      const data = await res.json();
 
-            setMessages(convertedMessages);
-          }
-        } catch (err) {
-          console.error("Error fetching space details:", err);
-          setError("Failed to load space details");
-        } finally {
-          setIsLoading(false);
-        }
-      };
-      fetchSpaceDetails();
+      if (data.data) {
+        setSpaceDetails(data.data);
+
+        const convertedMessages: Message[] = data.data.messages.map(
+          (msg: SpaceMessageData) => ({
+            role: msg.senderType === "agent" ? "ai" : "human",
+            content: msg.content,
+            timestamp: msg.createdAt,
+            senderId: msg.senderId,
+            senderType: msg.senderType,
+            metadata: {
+              agentCalls: msg.metadata.agentId
+                ? [
+                    {
+                      agentId: msg.metadata.agentId,
+                      message: msg.content,
+                      sessionId: msg.metadata.sessionId,
+                    },
+                  ]
+                : [],
+            },
+          })
+        );
+
+        setMessages(convertedMessages);
+      }
+    } catch (err) {
+      console.error("Error fetching space details:", err);
+      setError("Failed to load space details");
+    } finally {
+      setIsLoading(false);
     }
-  }, [spaceId]);
+  };
 
+  useEffect(() => {
+    fetchSpaceDetails();
+  }, [spaceId]);
   return (
     <>
       {/* Full-screen overlay */}
@@ -160,6 +174,14 @@ export default function SpaceMessaging({
               <p className="text-xs text-gray-500">{spaceId.slice(0, 12)}...</p>
             </div>
             <div className="flex gap-1">
+              <Button
+                variant={showMediaPanel ? "default" : "outline"}
+                size="sm"
+                onClick={() => setShowMediaPanel(!showMediaPanel)}
+              >
+                <Radio className="h-4 w-4 mr-1" />
+                Media
+              </Button>
               {spaceDetails && (
                 <SpaceInfoDialog
                   spaceDetails={spaceDetails}
@@ -171,49 +193,98 @@ export default function SpaceMessaging({
                 />
               )}
               <Button variant="ghost" size="sm" onClick={toggleFullScreen}>
-                <Maximize2 className="h-4 w-4" />
+                <Minimize2 className="h-4 w-4" />
               </Button>
             </div>
           </div>
 
           {/* Full-screen content */}
-          <div className="flex-1 overflow-hidden">
-            {/* Loading indicator when fetching space data */}
-            {isLoading && (
-              <div className="flex items-center justify-center h-32">
-                <Loader2 className="animate-spin h-8 w-8 text-gray-500" />
-              </div>
-            )}
+          <div className="flex-1 flex overflow-hidden relative">
+            {/* Messages Section */}
+            <div
+              className={`flex flex-col transition-all duration-300 ${
+                showMediaPanel
+                  ? isMediaExpanded
+                    ? "w-0 opacity-0"
+                    : "flex-1"
+                  : "w-full"
+              }`}
+            >
+              {!isMediaExpanded && (
+                <>
+                  {isLoading && (
+                    <div className="flex items-center justify-center h-32">
+                      <Loader2 className="animate-spin h-8 w-8 text-gray-500" />
+                    </div>
+                  )}
 
-            {/* Error state */}
-            {error && (
-              <div className="flex items-center justify-center h-32 text-red-500">
-                {error}
-              </div>
-            )}
+                  {error && (
+                    <div className="flex items-center justify-center h-32 text-red-500">
+                      {error}
+                    </div>
+                  )}
 
-            {/* Messages - Full screen */}
-            <ScrollArea className="h-[80vh] bg-gray-50">
-              <div className="container mx-auto max-w-4xl p-6">
-                {messages.map((message, index) => (
-                  <SpaceMessage
-                    key={index}
-                    senderId={message.senderId || "unknown"}
-                    senderType={message.senderType || "agent"}
-                    content={message.content}
-                    timestamp={message.timestamp}
-                    metadata={message.metadata}
+                  <ScrollArea className="flex-1 bg-gray-50">
+                    <div className="container mx-auto max-w-4xl p-6">
+                      {messages.map((message, index) => (
+                        <SpaceMessage
+                          key={index}
+                          senderId={message.senderId || "unknown"}
+                          senderType={message.senderType || "agent"}
+                          content={message.content}
+                          timestamp={message.timestamp}
+                          metadata={message.metadata}
+                        />
+                      ))}
+                    </div>
+                  </ScrollArea>
+                </>
+              )}
+
+              {/* Message Input - Always visible at bottom */}
+              {spaceDetails && (
+                <div
+                  className={`border-t bg-white transition-all duration-300 ${
+                    isMediaExpanded
+                      ? "absolute bottom-0 left-0 right-0 z-20"
+                      : ""
+                  }`}
+                >
+                  <SpaceMessageInput
+                    spaceId={spaceId}
+                    members={spaceDetails.members || []}
+                    currentUserId={currentUserId}
+                    onMessageSubmitted={handleMessageSubmitted}
                   />
-                ))}
+                </div>
+              )}
+            </div>
+
+            {/* Media Panel */}
+            {showMediaPanel && (
+              <div
+                className={`transition-all duration-300 ${isMediaExpanded ? "w-full absolute inset-0 z-10" : "w-80"}`}
+              >
+                {isMediaExpanded && (
+                  <div className="absolute top-3 right-3 z-20">
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      onClick={() => setIsMediaExpanded(false)}
+                    >
+                      <X className="h-4 w-4" />
+                    </Button>
+                  </div>
+                )}
+                <SpaceMediaPanel
+                  spaceId={spaceId}
+                  selfId={currentUserId}
+                  role="human"
+                  wsUrl={WS_BASE}
+                  isExpanded={isMediaExpanded}
+                  onToggleExpanded={handleToggleMediaExpanded}
+                />
               </div>
-            </ScrollArea>
-            {spaceDetails && (
-              <SpaceMessageInput
-                spaceId={spaceId}
-                members={spaceDetails.members || []}
-                currentUserId={currentUserId}
-                onMessageSubmitted={handleMessageSubmitted}
-              />
             )}
           </div>
         </div>

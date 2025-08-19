@@ -1,3 +1,4 @@
+// apps/commons-api/src/models/schema.ts
 import {
   jsonb,
   pgTable,
@@ -9,14 +10,17 @@ import {
   boolean as pgBoolean,
 } from 'drizzle-orm/pg-core';
 import { sql } from 'drizzle-orm';
-import { ChatCompletionTool } from 'openai/resources/chat/completions';
+import { relations } from 'drizzle-orm';
+import { ChatCompletionTool } from 'openai/resources';
 import { WalletData } from '@coinbase/coinbase-sdk';
 
-// agent table
+/* ─────────────────────────  AGENT  ───────────────────────── */
+
 export const agent = pgTable('agent', {
   agentId: text('agent_id')
     .default(sql`uuid_generate_v4()`)
     .primaryKey(),
+
   wallet: jsonb().notNull().$type<WalletData>(),
   instructions: text(),
   persona: text(),
@@ -31,6 +35,7 @@ export const agent = pgTable('agent', {
   >(),
   externalTools: jsonb('external_tools').$type<string[]>(),
   commonTools: jsonb('common_tools').$type<string[]>(),
+
   temperature: real('temperature'),
   maxTokens: integer('max_tokens'),
   topP: real('top_p'),
@@ -45,7 +50,7 @@ export const agent = pgTable('agent', {
   externalUrl: text('external_url'),
   externalEndpoint: text('external_endpoint'),
 
-  /* ▼ autonomous‑mode settings ▼ */
+  /* ▼ autonomous-mode settings ▼ */
   autonomyEnabled: pgBoolean('autonomy_enabled').default(false).notNull(),
   autonomousIntervalSec: integer('autonomous_interval_sec').default(0), // 0 = off
   cronJobName: text('cron_job_name'),
@@ -55,12 +60,76 @@ export const agent = pgTable('agent', {
     .notNull(),
 });
 
-//agent goal table
+/* ─────────────────────────  SESSION  ───────────────────────── */
+
+export const session = pgTable('session', {
+  sessionId: uuid('session_id')
+    .default(sql`uuid_generate_v4()`)
+    .primaryKey(),
+
+  agentId: text('agent_id').notNull(),
+
+  title: text('title'),
+  initiator: text('initiator'), // wallet address of user or agent
+
+  model: jsonb('model').$type<{
+    name: string;
+    temperature?: number;
+    maxTokens?: number;
+    topP?: number;
+    presencePenalty?: number;
+    frequencyPenalty?: number;
+  }>(),
+
+  query: jsonb('query').$type<{
+    text: string;
+    timestamp: string;
+    metadata?: Record<string, any>;
+  }>(),
+
+  history: jsonb('history').$type<
+    Array<{
+      role: string;
+      content: string;
+      timestamp: string;
+      metadata?: Record<string, any>;
+    }>
+  >(),
+
+  metrics: jsonb('metrics').$type<{
+    totalTokens?: number;
+    responseTime?: number;
+    toolCalls?: number;
+    errorCount?: number;
+  }>(),
+
+  endedAt: timestamp('ended_at', { withTimezone: true }),
+
+  // Keep as JSON list of space IDs for now (not relational)
+  spaces: jsonb('spaces').$type<{ spaceIds: string[] }>(),
+
+  // Make this a UUID so we can reference session.sessionId
+  parentSessionId: uuid('parent_session'),
+
+  createdAt: timestamp('created_at', { withTimezone: true })
+    .default(sql`timezone('utc', now())`)
+    .notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true })
+    .default(sql`timezone('utc', now())`)
+    .notNull(),
+});
+
+/* ─────────────────────────  GOAL  ───────────────────────── */
+
 export const goal = pgTable('goal', {
   goalId: uuid('goal_id')
     .default(sql`uuid_generate_v4()`)
     .primaryKey(),
-  agentId: text('agent_id').notNull(),
+
+  agentId: text('agent_id')
+    .notNull()
+    .references(() => agent.agentId, { onDelete: 'cascade' }),
+
   sessionId: uuid('session_id').references(() => session.sessionId, {
     onDelete: 'cascade',
   }),
@@ -84,13 +153,21 @@ export const goal = pgTable('goal', {
   completedAt: timestamp('completed_at', { withTimezone: true }),
 });
 
-// agent task table
+/* ─────────────────────────  TASK  ───────────────────────── */
+
 export const task = pgTable('task', {
   taskId: uuid('task_id')
     .default(sql`uuid_generate_v4()`)
     .primaryKey(),
-  agentId: text('agent_id').notNull(),
-  goalId: uuid('goal_id').notNull(),
+
+  agentId: text('agent_id')
+    .notNull()
+    .references(() => agent.agentId, { onDelete: 'cascade' }),
+
+  goalId: uuid('goal_id')
+    .notNull()
+    .references(() => goal.goalId, { onDelete: 'cascade' }),
+
   sessionId: uuid('session_id').references(() => session.sessionId, {
     onDelete: 'cascade',
   }),
@@ -124,33 +201,37 @@ export const task = pgTable('task', {
     .notNull(),
 });
 
-// agent task dependency table
+/* ─────────────────────────  TASK DEPENDENCY  ───────────────────────── */
+
 export const taskDependency = pgTable('task_dependency', {
   id: uuid('id')
     .default(sql`uuid_generate_v4()`)
     .primaryKey(),
-  dependentTaskId: uuid('dependent_task_id').notNull(),
-  dependencyTaskId: uuid('dependency_task_id').notNull(),
+
+  dependentTaskId: uuid('dependent_task_id')
+    .notNull()
+    .references(() => task.taskId, { onDelete: 'cascade' }),
+
+  dependencyTaskId: uuid('dependency_task_id')
+    .notNull()
+    .references(() => task.taskId, { onDelete: 'cascade' }),
+
   dependencyType: text('dependency_type').default('finish_to_start'),
+
   createdAt: timestamp('created_at', { withTimezone: true })
     .default(sql`timezone('utc', now())`)
     .notNull(),
 });
 
-// agent tool table
+/* ─────────────────────────  TOOL  ───────────────────────── */
+
 export const tool = pgTable('tool', {
   toolId: uuid('tool_id')
     .default(sql`uuid_generate_v4()`)
     .primaryKey(),
 
-  // The "name" must match the function's "name" field
   name: text().notNull(),
 
-  /**
-   * The schema is a JSON column, and we'll store:
-   * - The "function" shape (name, description, parameters)
-   * - The "apiSpec" that describes how to call the external API
-   */
   schema: jsonb().notNull().$type<
     ChatCompletionTool & {
       apiSpec?: {
@@ -173,6 +254,8 @@ export const tool = pgTable('tool', {
     .notNull(),
 });
 
+/* ─────────────────────────  RESOURCE  ───────────────────────── */
+
 export const resource = pgTable('resource', {
   resourceId: text('resource_id')
     .default(sql`uuid_generate_v4()`)
@@ -189,62 +272,21 @@ export const resource = pgTable('resource', {
     .notNull(),
 });
 
-//session table
-export const session = pgTable('session', {
-  sessionId: uuid('session_id')
-    .default(sql`uuid_generate_v4()`)
-    .primaryKey(),
-  agentId: text('agent_id').notNull(),
-  //status: text('status').default('active').notNull(), // active | completed | failed | terminated
-  title: text('title'),
-  initiator: text('initiator'), // wallet address of user or agent
-  model: jsonb('model').$type<{
-    name: string;
-    temperature?: number;
-    maxTokens?: number;
-    topP?: number;
-    presencePenalty?: number;
-    frequencyPenalty?: number;
-  }>(),
-  query: jsonb('query').$type<{
-    text: string;
-    timestamp: string;
-    metadata?: Record<string, any>;
-  }>(),
-  history: jsonb('history').$type<
-    Array<{
-      role: string;
-      content: string;
-      timestamp: string;
-      metadata?: Record<string, any>;
-    }>
-  >(),
-  metrics: jsonb('metrics').$type<{
-    totalTokens?: number;
-    responseTime?: number;
-    toolCalls?: number;
-    errorCount?: number;
-  }>(),
-  endedAt: timestamp('ended_at', { withTimezone: true }),
-  spaces: jsonb('spaces').$type<{ spaceIds: string[] }>(), // array of space IDs
-  parentSessionId: text('parent_session'),
-  createdAt: timestamp('created_at', { withTimezone: true })
-    .default(sql`timezone('utc', now())`)
-    .notNull(),
-  updatedAt: timestamp('updated_at', { withTimezone: true })
-    .default(sql`timezone('utc', now())`)
-    .notNull(),
-});
+/* ─────────────────────────  AGENT LOG  ───────────────────────── */
 
-// agent log table
 export const agentLog = pgTable('agent_log', {
   logId: uuid('log_id')
     .default(sql`uuid_generate_v4()`)
     .primaryKey(),
-  agentId: text('agent_id').notNull(),
+
+  agentId: text('agent_id')
+    .notNull()
+    .references(() => agent.agentId, { onDelete: 'cascade' }),
+
   sessionId: uuid('session_id').references(() => session.sessionId, {
     onDelete: 'cascade',
   }),
+
   action: text('action'),
   message: text('message'),
   status: text('status'),
@@ -263,40 +305,61 @@ export const agentLog = pgTable('agent_log', {
     .notNull(),
 });
 
-// 4. New table: agent_preferred_connections
+/* ─────────────────────────  AGENT PREFERRED CONNECTION  ───────────────────────── */
+
 export const agentPreferredConnection = pgTable('agent_preferred_connection', {
   id: uuid('id')
     .default(sql`uuid_generate_v4()`)
     .primaryKey(),
-  agentId: text('agent_id').notNull(),
-  preferredAgentId: text('preferred_agent_id').notNull(),
+
+  agentId: text('agent_id')
+    .notNull()
+    .references(() => agent.agentId, { onDelete: 'cascade' }),
+
+  preferredAgentId: text('preferred_agent_id')
+    .notNull()
+    .references(() => agent.agentId, { onDelete: 'cascade' }),
+
   usageComments: text('usage_comments'),
+
   createdAt: timestamp('created_at', { withTimezone: true })
     .default(sql`timezone('utc', now())`)
     .notNull(),
 });
 
-// 5. New table: agent_tools (agent-tool mapping with details)
+/* ─────────────────────────  AGENT TOOL (mapping)  ───────────────────────── */
+
 export const agentTool = pgTable('agent_tool', {
   id: uuid('id')
     .default(sql`uuid_generate_v4()`)
     .primaryKey(),
-  agentId: text('agent_id').notNull(),
-  toolId: text('tool_id').notNull(),
+
+  agentId: text('agent_id')
+    .notNull()
+    .references(() => agent.agentId, { onDelete: 'cascade' }),
+
+  toolId: uuid('tool_id')
+    .notNull()
+    .references(() => tool.toolId, { onDelete: 'cascade' }),
+
   usageComments: text('usage_comments'),
   secureKeyRef: text('secure_key_ref'), // reference to encrypted key store
+
   createdAt: timestamp('created_at', { withTimezone: true })
     .default(sql`timezone('utc', now())`)
     .notNull(),
 });
 
-// Space table for shared communication bus
+/* ─────────────────────────  SPACE  ───────────────────────── */
+
 export const space = pgTable('space', {
   spaceId: uuid('space_id')
     .default(sql`uuid_generate_v4()`)
     .primaryKey(),
+
   name: text('name').notNull(),
   description: text('description'),
+
   createdBy: text('created_by').notNull(), // agentId or userId
   createdByType: text('created_by_type').notNull(), // 'agent' or 'human'
 
@@ -305,11 +368,9 @@ export const space = pgTable('space', {
     onDelete: 'set null',
   }),
 
-  // Space metadata
   isPublic: pgBoolean('is_public').default(false).notNull(),
-  maxMembers: integer('max_members').default(50), // null means unlimited
+  maxMembers: integer('max_members').default(50),
 
-  // Space settings
   settings: jsonb('settings').$type<{
     allowAgents?: boolean;
     allowHumans?: boolean;
@@ -325,20 +386,22 @@ export const space = pgTable('space', {
     .notNull(),
 });
 
-// Space membership table
+/* ─────────────────────────  SPACE MEMBER  ───────────────────────── */
+
 export const spaceMember = pgTable('space_member', {
   id: uuid('id')
     .default(sql`uuid_generate_v4()`)
     .primaryKey(),
+
   spaceId: uuid('space_id')
-    .references(() => space.spaceId, { onDelete: 'cascade' })
-    .notNull(),
+    .notNull()
+    .references(() => space.spaceId, { onDelete: 'cascade' }),
+
   memberId: text('member_id').notNull(), // agentId or userId
   memberType: text('member_type').notNull(), // 'agent' or 'human'
-  role: text('role').default('member'), // 'owner', 'moderator', 'member'
+  role: text('role').default('member'),
 
-  // Member status
-  status: text('status').default('active'), // 'active', 'muted', 'banned'
+  status: text('status').default('active'),
   permissions: jsonb('permissions').$type<{
     canWrite?: boolean;
     canInvite?: boolean;
@@ -352,28 +415,26 @@ export const spaceMember = pgTable('space_member', {
   isSubscribed: pgBoolean('is_subscribed').default(false).notNull(),
 });
 
-// Space messages table
+/* ─────────────────────────  SPACE MESSAGE  ───────────────────────── */
+
 export const spaceMessage = pgTable('space_message', {
   messageId: uuid('message_id')
     .default(sql`uuid_generate_v4()`)
     .primaryKey(),
-  spaceId: uuid('space_id')
-    .references(() => space.spaceId, { onDelete: 'cascade' })
-    .notNull(),
 
-  // Message sender
+  spaceId: uuid('space_id')
+    .notNull()
+    .references(() => space.spaceId, { onDelete: 'cascade' }),
+
   senderId: text('sender_id').notNull(), // agentId or userId
   senderType: text('sender_type').notNull(), // 'agent' or 'human'
 
-  // Message targeting
   targetType: text('target_type').default('broadcast'), // 'broadcast', 'direct', 'group'
-  targetIds: jsonb('target_ids').$type<string[]>(), // For direct messages or group targeting
+  targetIds: jsonb('target_ids').$type<string[]>(),
 
-  // Message content
   content: text('content').notNull(),
   messageType: text('message_type').default('text'), // 'text', 'image', 'file', 'system'
 
-  // Message metadata
   metadata: jsonb('metadata').$type<{
     toolCalls?: Array<{
       name: string;
@@ -387,9 +448,13 @@ export const spaceMessage = pgTable('space_message', {
     }>;
     replyTo?: string; // messageId
     mentions?: string[]; // member IDs
+
+    // used by your SpaceService to embed agent/session context
+    agentId?: string;
+    sessionId?: string;
+    privateKey?: string;
   }>(),
 
-  // Message status
   isEdited: pgBoolean('is_edited').default(false),
   isDeleted: pgBoolean('is_deleted').default(false),
 
@@ -400,3 +465,111 @@ export const spaceMessage = pgTable('space_message', {
     .default(sql`timezone('utc', now())`)
     .notNull(),
 });
+
+/* ─────────────────────────  RELATIONS  ───────────────────────── */
+
+// session
+export const sessionRelations = relations(session, ({ one, many }) => ({
+  goals: many(goal),
+  tasks: many(task),
+  logs: many(agentLog),
+
+  // parent-child (self reference)
+  parent: one(session, {
+    fields: [session.parentSessionId],
+    references: [session.sessionId],
+  }),
+}));
+
+// goal
+export const goalRelations = relations(goal, ({ one, many }) => ({
+  session: one(session, {
+    fields: [goal.sessionId],
+    references: [session.sessionId],
+  }),
+  agent: one(agent, {
+    fields: [goal.agentId],
+    references: [agent.agentId],
+  }),
+  tasks: many(task),
+}));
+
+// task
+export const taskRelations = relations(task, ({ one }) => ({
+  session: one(session, {
+    fields: [task.sessionId],
+    references: [session.sessionId],
+  }),
+  goal: one(goal, {
+    fields: [task.goalId],
+    references: [goal.goalId],
+  }),
+  agent: one(agent, {
+    fields: [task.agentId],
+    references: [agent.agentId],
+  }),
+}));
+
+// agentLog
+export const agentLogRelations = relations(agentLog, ({ one }) => ({
+  session: one(session, {
+    fields: [agentLog.sessionId],
+    references: [session.sessionId],
+  }),
+  agent: one(agent, {
+    fields: [agentLog.agentId],
+    references: [agent.agentId],
+  }),
+}));
+
+// space
+export const spaceRelations = relations(space, ({ one, many }) => ({
+  session: one(session, {
+    fields: [space.sessionId],
+    references: [session.sessionId],
+  }),
+  members: many(spaceMember),
+  messages: many(spaceMessage),
+}));
+
+// spaceMember
+export const spaceMemberRelations = relations(spaceMember, ({ one }) => ({
+  space: one(space, {
+    fields: [spaceMember.spaceId],
+    references: [space.spaceId],
+  }),
+}));
+
+// spaceMessage
+export const spaceMessageRelations = relations(spaceMessage, ({ one }) => ({
+  space: one(space, {
+    fields: [spaceMessage.spaceId],
+    references: [space.spaceId],
+  }),
+}));
+
+// tool mappings
+export const agentToolRelations = relations(agentTool, ({ one }) => ({
+  agent: one(agent, {
+    fields: [agentTool.agentId],
+    references: [agent.agentId],
+  }),
+  tool: one(tool, {
+    fields: [agentTool.toolId],
+    references: [tool.toolId],
+  }),
+}));
+
+export const agentPreferredConnectionRelations = relations(
+  agentPreferredConnection,
+  ({ one }) => ({
+    agent: one(agent, {
+      fields: [agentPreferredConnection.agentId],
+      references: [agent.agentId],
+    }),
+    preferredAgent: one(agent, {
+      fields: [agentPreferredConnection.preferredAgentId],
+      references: [agent.agentId],
+    }),
+  }),
+);
