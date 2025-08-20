@@ -74,6 +74,7 @@
     "sharp": "0.33.5",
     "slug": "^10.0.0",
     "socket.io": "^4.8.1",
+    "socket.io-client": "^4.8.1",
     "type-fest": "^4.39.1",
     "typia": "^9.1.0",
     "uuid": "^11.1.0",

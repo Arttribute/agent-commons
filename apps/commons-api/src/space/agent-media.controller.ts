@@ -5,6 +5,7 @@ import {
   Body,
   Delete,
   BadRequestException,
+  Get,
 } from '@nestjs/common';
 import { AiMediaBridgeService } from './ai-media-bridge.service';
 
@@ -77,5 +78,46 @@ export class AgentMediaController {
   ) {
     await this.bridge.stopPublishingVideo(spaceId, agentId);
     return { ok: true };
+  }
+
+  @Post(':spaceId/agents/:agentId/media/monitor/start')
+  async startStreamMonitoring(
+    @Param('spaceId') spaceId: string,
+    @Param('agentId') agentId: string,
+    @Body() body: { targetParticipantId?: string },
+  ) {
+    await this.bridge.startStreamMonitoring(
+      spaceId,
+      agentId,
+      body.targetParticipantId,
+    );
+    return { ok: true };
+  }
+
+  @Post(':spaceId/agents/:agentId/media/monitor/stop')
+  async stopStreamMonitoring(
+    @Param('spaceId') spaceId: string,
+    @Param('agentId') agentId: string,
+  ) {
+    await this.bridge.stopStreamMonitoring(spaceId, agentId);
+    return { ok: true };
+  }
+
+  @Get(':spaceId/streams/active')
+  async getActiveStreams(@Param('spaceId') spaceId: string) {
+    const streams = await this.bridge.getActiveStreams(spaceId);
+    return { data: streams };
+  }
+
+  @Get(':spaceId/streams/monitored')
+  async getMonitoredStreams(@Param('spaceId') spaceId: string) {
+    const streams = await this.bridge.getMonitoredStreams(spaceId);
+    return { data: streams };
+  }
+
+  @Get(':spaceId/participants')
+  async getSpaceParticipants(@Param('spaceId') spaceId: string) {
+    const participants = await this.bridge.getSpaceParticipants(spaceId);
+    return { data: participants };
   }
 }

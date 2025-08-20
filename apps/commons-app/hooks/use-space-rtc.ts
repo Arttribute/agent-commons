@@ -24,6 +24,13 @@ interface UseSpaceRTCProps {
   wsUrl: string;
 }
 
+interface PeerConnection {
+  pc: RTCPeerConnection;
+  isNegotiating: boolean;
+  makingOffer: boolean;
+  ignoreOffer: boolean;
+}
+
 export function useSpaceRTC({
   spaceId,
   selfId,
@@ -42,13 +49,12 @@ export function useSpaceRTC({
   const urlContextRef = useRef<CanvasRenderingContext2D | null>(null);
   const currentUrlSessionRef = useRef<string | null>(null);
 
-  const peerConnectionsRef = useRef<Map<string, RTCPeerConnection>>(new Map());
-  const screenPeerConnectionsRef = useRef<Map<string, RTCPeerConnection>>(
+  // Use separate connection maps with proper state tracking
+  const peerConnectionsRef = useRef<Map<string, PeerConnection>>(new Map());
+  const screenPeerConnectionsRef = useRef<Map<string, PeerConnection>>(
     new Map()
   );
-  const urlPeerConnectionsRef = useRef<Map<string, RTCPeerConnection>>(
-    new Map()
-  );
+  const urlPeerConnectionsRef = useRef<Map<string, PeerConnection>>(new Map());
 
   const iceServers = [{ urls: ["stun:stun.l.google.com:19302"] }];
 
@@ -65,13 +71,13 @@ export function useSpaceRTC({
 
   // Clean up function
   const cleanup = useCallback(() => {
-    peerConnectionsRef.current.forEach((pc) => pc.close());
+    peerConnectionsRef.current.forEach(({ pc }) => pc.close());
     peerConnectionsRef.current.clear();
 
-    screenPeerConnectionsRef.current.forEach((pc) => pc.close());
+    screenPeerConnectionsRef.current.forEach(({ pc }) => pc.close());
     screenPeerConnectionsRef.current.clear();
 
-    urlPeerConnectionsRef.current.forEach((pc) => pc.close());
+    urlPeerConnectionsRef.current.forEach(({ pc }) => pc.close());
     urlPeerConnectionsRef.current.clear();
 
     if (localStreamRef.current) {
@@ -92,6 +98,259 @@ export function useSpaceRTC({
     setRemotePeers([]);
     setJoined(false);
   }, []);
+
+  // Create peer connection with proper state management
+  const createPeerConnection = useCallback(
+    (
+      peerId: string,
+      connectionMap: React.MutableRefObject<Map<string, PeerConnection>>,
+      streamType: string,
+      localStream?: MediaStream
+    ): PeerConnection => {
+      const key = streamType === "camera" ? peerId : `${peerId}-${streamType}`;
+
+      if (connectionMap.current.has(key)) {
+        return connectionMap.current.get(key)!;
+      }
+
+      console.log(`[RTC] Creating ${streamType} peer connection for ${peerId}`);
+
+      const pc = new RTCPeerConnection({ iceServers });
+      const peerConnection: PeerConnection = {
+        pc,
+        isNegotiating: false,
+        makingOffer: false,
+        ignoreOffer: false,
+      };
+
+      // Handle negotiation state
+      pc.onnegotiationneeded = async () => {
+        if (peerConnection.isNegotiating) {
+          console.log(`[RTC] Already negotiating for ${key}, skipping`);
+          return;
+        }
+
+        try {
+          peerConnection.isNegotiating = true;
+          peerConnection.makingOffer = true;
+
+          const offer = await pc.createOffer();
+          await pc.setLocalDescription(offer);
+
+          socketRef.current?.emit("signal", {
+            type: "offer",
+            spaceId,
+            fromId: selfId,
+            targetId: peerId,
+            data: offer,
+            // Always tag streamType explicitly
+            streamType,
+          });
+        } catch (error) {
+          console.error(`[RTC] Create offer failed for ${key}:`, error);
+        } finally {
+          peerConnection.makingOffer = false;
+        }
+      };
+
+      pc.onicecandidate = (event) => {
+        if (event.candidate) {
+          socketRef.current?.emit("signal", {
+            type: "candidate",
+            spaceId,
+            fromId: selfId,
+            targetId: peerId,
+            data: event.candidate,
+            streamType,
+          });
+        }
+      };
+
+      pc.ontrack = (event) => {
+        console.log(`[RTC] Remote ${streamType} track received from`, peerId);
+        const [remoteStream] = event.streams;
+
+        setRemotePeers((prev) =>
+          prev.map((p) => {
+            if (p.id === peerId) {
+              switch (streamType) {
+                case "screen":
+                  return {
+                    ...p,
+                    screenStream: remoteStream,
+                    screenSharing: true,
+                  };
+                case "url":
+                  return { ...p, urlStream: remoteStream };
+                default:
+                  return { ...p, stream: remoteStream };
+              }
+            }
+            return p;
+          })
+        );
+      };
+
+      pc.oniceconnectionstatechange = () => {
+        console.log(
+          `[RTC] ICE connection state for ${key}:`,
+          pc.iceConnectionState
+        );
+        if (pc.iceConnectionState === "failed") {
+          console.log(`[RTC] ICE connection failed for ${key}, restarting ICE`);
+          pc.restartIce();
+        }
+      };
+
+      pc.onsignalingstatechange = () => {
+        if (pc.signalingState === "stable") {
+          peerConnection.isNegotiating = false;
+        }
+      };
+
+      // Add local stream if provided
+      if (localStream) {
+        localStream.getTracks().forEach((track) => {
+          pc.addTrack(track, localStream);
+        });
+      }
+
+      connectionMap.current.set(key, peerConnection);
+      return peerConnection;
+    },
+    [spaceId, selfId]
+  );
+
+  // Handle offers with proper state management
+  const handleOffer = useCallback(
+    async (
+      peerId: string,
+      offer: RTCSessionDescriptionInit,
+      streamType?: string
+    ) => {
+      const connectionMap =
+        streamType === "url"
+          ? urlPeerConnectionsRef
+          : streamType === "screen"
+            ? screenPeerConnectionsRef
+            : peerConnectionsRef;
+
+      const localStream =
+        streamType === "url"
+          ? localUrlStreamRef.current
+          : streamType === "screen"
+            ? localScreenStreamRef.current
+            : localStreamRef.current;
+
+      const peerConnection = createPeerConnection(
+        peerId,
+        connectionMap,
+        streamType || "camera",
+        localStream || undefined
+      );
+
+      const { pc } = peerConnection;
+
+      try {
+        // Handle perfect negotiation
+        const offerCollision =
+          peerConnection.makingOffer || pc.signalingState !== "stable";
+        peerConnection.ignoreOffer = !offerCollision && selfId < peerId;
+
+        if (peerConnection.ignoreOffer) {
+          console.log(`[RTC] Ignoring offer from ${peerId} due to collision`);
+          return;
+        }
+
+        await pc.setRemoteDescription(offer);
+        const answer = await pc.createAnswer();
+        await pc.setLocalDescription(answer);
+
+        socketRef.current?.emit("signal", {
+          type: "answer",
+          spaceId,
+          fromId: selfId,
+          targetId: peerId,
+          data: answer,
+          streamType,
+        });
+      } catch (error) {
+        console.error(`[RTC] Handle offer failed for ${peerId}:`, error);
+      }
+    },
+    [createPeerConnection, spaceId, selfId]
+  );
+
+  const handleAnswer = useCallback(
+    async (
+      peerId: string,
+      answer: RTCSessionDescriptionInit,
+      streamType?: string
+    ) => {
+      const connectionMap =
+        streamType === "url"
+          ? urlPeerConnectionsRef
+          : streamType === "screen"
+            ? screenPeerConnectionsRef
+            : peerConnectionsRef;
+
+      const key =
+        streamType === "camera" || !streamType
+          ? peerId
+          : `${peerId}-${streamType}`;
+      const peerConnection = connectionMap.current.get(key);
+
+      if (!peerConnection) {
+        console.warn(
+          `[RTC] No peer connection found for answer from ${peerId}`
+        );
+        return;
+      }
+
+      try {
+        await peerConnection.pc.setRemoteDescription(answer);
+        peerConnection.isNegotiating = false;
+      } catch (error) {
+        console.error(`[RTC] Handle answer failed for ${peerId}:`, error);
+      }
+    },
+    []
+  );
+
+  const handleCandidate = useCallback(
+    async (
+      peerId: string,
+      candidate: RTCIceCandidateInit,
+      streamType?: string
+    ) => {
+      const connectionMap =
+        streamType === "url"
+          ? urlPeerConnectionsRef
+          : streamType === "screen"
+            ? screenPeerConnectionsRef
+            : peerConnectionsRef;
+
+      const key =
+        streamType === "camera" || !streamType
+          ? peerId
+          : `${peerId}-${streamType}`;
+      const peerConnection = connectionMap.current.get(key);
+
+      if (!peerConnection) {
+        console.warn(
+          `[RTC] No peer connection found for candidate from ${peerId}`
+        );
+        return;
+      }
+
+      try {
+        await peerConnection.pc.addIceCandidate(candidate);
+      } catch (error) {
+        console.error(`[RTC] Add candidate failed for ${peerId}:`, error);
+      }
+    },
+    []
+  );
 
   // Initialize socket connection
   useEffect(() => {
@@ -124,7 +383,7 @@ export function useSpaceRTC({
       console.log("[RTC] Joined space:", data);
       setJoined(true);
 
-      // Initialize peers
+      // Initialize peers from participants
       const initialPeers: RemotePeer[] = data.participants.map((peer: any) => ({
         id: peer.id,
         role: peer.role,
@@ -135,11 +394,20 @@ export function useSpaceRTC({
 
       setRemotePeers(initialPeers);
 
-      // Create peer connections
+      // Create peer connections for each participant
       data.participants.forEach((peer: any) => {
-        createPeerConnection(peer.id, true);
-        createScreenPeerConnection(peer.id, true);
-        createUrlPeerConnection(peer.id, true);
+        // Create camera connection
+        createPeerConnection(peer.id, peerConnectionsRef, "camera");
+
+        // Create screen connection if they're screen sharing
+        if (peer.screenSharing) {
+          createPeerConnection(peer.id, screenPeerConnectionsRef, "screen");
+        }
+
+        // Create URL connection if they're sharing URL
+        if (peer.urlSharing?.active) {
+          createPeerConnection(peer.id, urlPeerConnectionsRef, "url");
+        }
       });
     });
 
@@ -176,19 +444,29 @@ export function useSpaceRTC({
           break;
 
         case "offer":
-          await handleOffer(message.fromId, message.data, message.streamType);
+          if (message.targetId === selfId) {
+            await handleOffer(message.fromId, message.data, message.streamType);
+          }
           break;
 
         case "answer":
-          await handleAnswer(message.fromId, message.data, message.streamType);
+          if (message.targetId === selfId) {
+            await handleAnswer(
+              message.fromId,
+              message.data,
+              message.streamType
+            );
+          }
           break;
 
         case "candidate":
-          await handleCandidate(
-            message.fromId,
-            message.data,
-            message.streamType
-          );
+          if (message.targetId === selfId) {
+            await handleCandidate(
+              message.fromId,
+              message.data,
+              message.streamType
+            );
+          }
           break;
 
         case "publishState":
@@ -209,7 +487,17 @@ export function useSpaceRTC({
       cleanup();
       socket.disconnect();
     };
-  }, [spaceId, selfId, role, wsUrl, cleanup]);
+  }, [
+    spaceId,
+    selfId,
+    role,
+    wsUrl,
+    cleanup,
+    createPeerConnection,
+    handleOffer,
+    handleAnswer,
+    handleCandidate,
+  ]);
 
   const handleWebFrame = useCallback(
     (data: {
@@ -266,267 +554,292 @@ export function useSpaceRTC({
     [selfId, initializeUrlCanvas]
   );
 
-  const addRemotePeer = (id: string, peerRole: Role) => {
-    setRemotePeers((prev) => {
-      if (prev.find((p) => p.id === id)) return prev;
-      return [
-        ...prev,
-        {
+  const addRemotePeer = useCallback(
+    (id: string, peerRole: Role) => {
+      setRemotePeers((prev) => {
+        if (prev.find((p) => p.id === id)) return prev;
+
+        const newPeer: RemotePeer = {
           id,
           role: peerRole,
           publishing: { audio: false, video: false },
           screenSharing: false,
           urlSharing: { active: false },
-        },
-      ];
-    });
-  };
+        };
 
-  const removeRemotePeer = (id: string) => {
+        // Create peer connections for new peer
+        createPeerConnection(id, peerConnectionsRef, "camera");
+
+        return [...prev, newPeer];
+      });
+    },
+    [createPeerConnection]
+  );
+
+  const removeRemotePeer = useCallback((id: string) => {
     setRemotePeers((prev) => prev.filter((p) => p.id !== id));
-  };
+  }, []);
 
-  const updatePeerPublishing = (
-    id: string,
-    publishing?: { audio: boolean; video: boolean },
-    streamType?: string,
-    url?: string,
-    sessionId?: string
-  ) => {
-    setRemotePeers((prev) =>
-      prev.map((p) => {
-        if (p.id === id) {
-          if (streamType === "url") {
-            return {
-              ...p,
-              urlSharing: {
+  const removePeerConnection = useCallback((peerId: string) => {
+    // Remove regular connection
+    const pc = peerConnectionsRef.current.get(peerId);
+    if (pc) {
+      pc.pc.close();
+      peerConnectionsRef.current.delete(peerId);
+    }
+
+    // Remove screen connection
+    const screenKey = `${peerId}-screen`;
+    const screenPc = screenPeerConnectionsRef.current.get(screenKey);
+    if (screenPc) {
+      screenPc.pc.close();
+      screenPeerConnectionsRef.current.delete(screenKey);
+    }
+
+    // Remove URL connection
+    const urlKey = `${peerId}-url`;
+    const urlPc = urlPeerConnectionsRef.current.get(urlKey);
+    if (urlPc) {
+      urlPc.pc.close();
+      urlPeerConnectionsRef.current.delete(urlKey);
+    }
+  }, []);
+
+  const updatePeerPublishing = useCallback(
+    (
+      id: string,
+      publishing?: { audio: boolean; video: boolean },
+      streamType?: string,
+      url?: string,
+      sessionId?: string
+    ) => {
+      setRemotePeers((prev) =>
+        prev.map((p) => {
+          if (p.id === id) {
+            if (streamType === "url") {
+              const newUrlSharing = {
                 active: !!url,
                 url: url || undefined,
                 sessionId: sessionId || undefined,
-              },
-            };
-          } else if (streamType === "screen") {
-            return { ...p, screenSharing: !!publishing?.video };
-          } else if (publishing) {
-            return { ...p, publishing };
+              };
+
+              // Create URL peer connection if URL sharing is starting
+              if (
+                newUrlSharing.active &&
+                !urlPeerConnectionsRef.current.has(`${id}-url`)
+              ) {
+                createPeerConnection(id, urlPeerConnectionsRef, "url");
+              }
+
+              return { ...p, urlSharing: newUrlSharing };
+            } else if (streamType === "screen") {
+              const isSharing = !!publishing?.video;
+
+              // Create screen peer connection if screen sharing is starting
+              if (
+                isSharing &&
+                !screenPeerConnectionsRef.current.has(`${id}-screen`)
+              ) {
+                createPeerConnection(id, screenPeerConnectionsRef, "screen");
+              }
+
+              return { ...p, screenSharing: isSharing };
+            } else if (publishing) {
+              return { ...p, publishing };
+            }
           }
-        }
-        return p;
-      })
-    );
-  };
-
-  // Create URL peer connection
-  const createUrlPeerConnection = (
-    peerId: string,
-    shouldCreateOffer: boolean
-  ) => {
-    const urlKey = `${peerId}-url`;
-    if (urlPeerConnectionsRef.current.has(urlKey)) return;
-
-    console.log(
-      `[RTC] Creating URL peer connection for ${peerId}, shouldCreateOffer: ${shouldCreateOffer}`
-    );
-    const pc = new RTCPeerConnection({ iceServers });
-
-    pc.onicecandidate = (event) => {
-      if (event.candidate) {
-        socketRef.current?.emit("signal", {
-          type: "candidate",
-          spaceId,
-          fromId: selfId,
-          targetId: peerId,
-          data: event.candidate,
-          streamType: "url",
-        });
-      }
-    };
-
-    pc.ontrack = (event) => {
-      console.log("[RTC] Remote URL track received from", peerId);
-      const [remoteStream] = event.streams;
-      setRemotePeers((prev) =>
-        prev.map((p) =>
-          p.id === peerId ? { ...p, urlStream: remoteStream } : p
-        )
+          return p;
+        })
       );
-    };
+    },
+    [createPeerConnection]
+  );
 
-    if (localUrlStreamRef.current) {
-      localUrlStreamRef.current.getTracks().forEach((track) => {
-        pc.addTrack(track, localUrlStreamRef.current!);
-      });
-    }
+  // Start publishing functions
+  const startPublishing = useCallback(
+    async ({ audio = true, video = true }) => {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          audio,
+          video,
+        });
+        localStreamRef.current = stream;
 
-    urlPeerConnectionsRef.current.set(urlKey, pc);
-
-    if (shouldCreateOffer) {
-      createUrlOffer(peerId);
-    }
-  };
-
-  const createUrlOffer = async (peerId: string) => {
-    const urlKey = `${peerId}-url`;
-    const pc = urlPeerConnectionsRef.current.get(urlKey);
-    if (!pc) return;
-
-    try {
-      const offer = await pc.createOffer();
-      await pc.setLocalDescription(offer);
-
-      socketRef.current?.emit("signal", {
-        type: "offer",
-        spaceId,
-        fromId: selfId,
-        targetId: peerId,
-        data: offer,
-        streamType: "url",
-      });
-    } catch (error) {
-      console.error("[RTC] Create URL offer failed:", error);
-    }
-  };
-
-  // Handle offers with stream type
-  const handleOffer = async (
-    peerId: string,
-    offer: RTCSessionDescriptionInit,
-    streamType?: string
-  ) => {
-    let pc: RTCPeerConnection;
-
-    if (streamType === "url") {
-      const urlKey = `${peerId}-url`;
-      if (!urlPeerConnectionsRef.current.has(urlKey)) {
-        createUrlPeerConnection(peerId, false);
-      }
-      pc = urlPeerConnectionsRef.current.get(urlKey)!;
-    } else if (streamType === "screen") {
-      const screenKey = `${peerId}-screen`;
-      if (!screenPeerConnectionsRef.current.has(screenKey)) {
-        createScreenPeerConnection(peerId, false);
-      }
-      pc = screenPeerConnectionsRef.current.get(screenKey)!;
-    } else {
-      if (!peerConnectionsRef.current.has(peerId)) {
-        createPeerConnection(peerId, false);
-      }
-      pc = peerConnectionsRef.current.get(peerId)!;
-    }
-
-    try {
-      await pc.setRemoteDescription(offer);
-      const answer = await pc.createAnswer();
-      await pc.setLocalDescription(answer);
-
-      socketRef.current?.emit("signal", {
-        type: "answer",
-        spaceId,
-        fromId: selfId,
-        targetId: peerId,
-        data: answer,
-        streamType,
-      });
-    } catch (error) {
-      console.error("[RTC] Handle offer failed:", error);
-    }
-  };
-
-  const handleAnswer = async (
-    peerId: string,
-    answer: RTCSessionDescriptionInit,
-    streamType?: string
-  ) => {
-    let pc: RTCPeerConnection | undefined;
-
-    if (streamType === "url") {
-      const urlKey = `${peerId}-url`;
-      pc = urlPeerConnectionsRef.current.get(urlKey);
-    } else if (streamType === "screen") {
-      const screenKey = `${peerId}-screen`;
-      pc = screenPeerConnectionsRef.current.get(screenKey);
-    } else {
-      pc = peerConnectionsRef.current.get(peerId);
-    }
-
-    if (!pc) return;
-
-    try {
-      await pc.setRemoteDescription(answer);
-    } catch (error) {
-      console.error("[RTC] Handle answer failed:", error);
-    }
-  };
-
-  const handleCandidate = async (
-    peerId: string,
-    candidate: RTCIceCandidateInit,
-    streamType?: string
-  ) => {
-    let pc: RTCPeerConnection | undefined;
-
-    if (streamType === "url") {
-      const urlKey = `${peerId}-url`;
-      pc = urlPeerConnectionsRef.current.get(urlKey);
-    } else if (streamType === "screen") {
-      const screenKey = `${peerId}-screen`;
-      pc = screenPeerConnectionsRef.current.get(screenKey);
-    } else {
-      pc = peerConnectionsRef.current.get(peerId);
-    }
-
-    if (!pc) return;
-
-    try {
-      await pc.addIceCandidate(candidate);
-    } catch (error) {
-      console.error("[RTC] Add candidate failed:", error);
-    }
-  };
-
-  // Start URL streaming
-  const startUrlShare = async (url: string) => {
-    try {
-      const sessionId = `url-${selfId}-${Date.now()}`;
-      currentUrlSessionRef.current = sessionId;
-
-      // Initialize canvas if not done
-      initializeUrlCanvas();
-
-      // Request server to start web capture
-      socketRef.current?.emit("startWebCapture", {
-        type: "startWebCapture",
-        spaceId,
-        fromId: selfId,
-        url,
-        sessionId,
-      });
-
-      // Create stream from canvas
-      if (urlCanvasRef.current) {
-        const stream = urlCanvasRef.current.captureStream(15); // 15 FPS
-        localUrlStreamRef.current = stream;
-
-        // Add tracks to URL peer connections
-        urlPeerConnectionsRef.current.forEach(async (pc, key) => {
+        // Add tracks to existing peer connections
+        peerConnectionsRef.current.forEach(({ pc }) => {
           stream.getTracks().forEach((track) => {
             pc.addTrack(track, stream);
           });
-          const peerId = key.replace("-url", "");
-          await createUrlOffer(peerId);
+        });
+
+        // Notify others about publishing state
+        socketRef.current?.emit("signal", {
+          type: "publishState",
+          spaceId,
+          fromId: selfId,
+          publish: { audio, video },
+          streamType: "camera",
         });
 
         return stream;
+      } catch (error) {
+        console.error("[RTC] Start publishing failed:", error);
+        throw error;
       }
+    },
+    [spaceId, selfId]
+  );
 
-      throw new Error("Failed to create canvas stream");
+  const startScreenShare = useCallback(async () => {
+    try {
+      const stream = await navigator.mediaDevices.getDisplayMedia({
+        video: true,
+        audio: true,
+      });
+      localScreenStreamRef.current = stream;
+
+      // Add tracks to existing screen peer connections
+      screenPeerConnectionsRef.current.forEach(({ pc }) => {
+        stream.getTracks().forEach((track) => {
+          pc.addTrack(track, stream);
+        });
+      });
+
+      // Create screen connections for all existing peers
+      remotePeers.forEach((peer) => {
+        if (!screenPeerConnectionsRef.current.has(`${peer.id}-screen`)) {
+          createPeerConnection(
+            peer.id,
+            screenPeerConnectionsRef,
+            "screen",
+            stream
+          );
+        }
+      });
+
+      socketRef.current?.emit("signal", {
+        type: "publishState",
+        spaceId,
+        fromId: selfId,
+        publish: { audio: false, video: true },
+        streamType: "screen",
+      });
+
+      stream.getVideoTracks()[0].onended = () => {
+        stopScreenShare();
+      };
+
+      return stream;
     } catch (error) {
-      console.error("[RTC] Start URL share failed:", error);
+      console.error("[RTC] Start screen share failed:", error);
       throw error;
     }
-  };
+  }, [spaceId, selfId, remotePeers, createPeerConnection]);
 
-  const stopUrlShare = () => {
+  const startUrlShare = useCallback(
+    async (url: string) => {
+      try {
+        const sessionId = `url-${selfId}-${Date.now()}`;
+        currentUrlSessionRef.current = sessionId;
+
+        // Initialize canvas if not done
+        initializeUrlCanvas();
+
+        // Request server to start web capture
+        socketRef.current?.emit("startWebCapture", {
+          type: "startWebCapture",
+          spaceId,
+          fromId: selfId,
+          url,
+          sessionId,
+        });
+
+        // Create stream from canvas
+        if (urlCanvasRef.current) {
+          const stream = urlCanvasRef.current.captureStream(15); // 15 FPS
+          localUrlStreamRef.current = stream;
+
+          // Add tracks to URL peer connections
+          urlPeerConnectionsRef.current.forEach(({ pc }) => {
+            stream.getTracks().forEach((track) => {
+              pc.addTrack(track, stream);
+            });
+          });
+
+          // Create URL connections for all existing peers
+          remotePeers.forEach((peer) => {
+            if (!urlPeerConnectionsRef.current.has(`${peer.id}-url`)) {
+              createPeerConnection(
+                peer.id,
+                urlPeerConnectionsRef,
+                "url",
+                stream
+              );
+            }
+          });
+
+          return stream;
+        }
+
+        throw new Error("Failed to create canvas stream");
+      } catch (error) {
+        console.error("[RTC] Start URL share failed:", error);
+        throw error;
+      }
+    },
+    [spaceId, selfId, remotePeers, createPeerConnection, initializeUrlCanvas]
+  );
+
+  const stopPublishing = useCallback(() => {
+    if (localStreamRef.current) {
+      localStreamRef.current.getTracks().forEach((track) => track.stop());
+      localStreamRef.current = null;
+    }
+
+    // Remove tracks from peer connections
+    peerConnectionsRef.current.forEach(({ pc }) => {
+      const senders = pc.getSenders();
+      senders.forEach((sender) => {
+        if (sender.track) {
+          pc.removeTrack(sender);
+        }
+      });
+    });
+
+    socketRef.current?.emit("signal", {
+      type: "publishState",
+      spaceId,
+      fromId: selfId,
+      publish: { audio: false, video: false },
+      streamType: "camera",
+    });
+  }, [spaceId, selfId]);
+
+  const stopScreenShare = useCallback(() => {
+    if (localScreenStreamRef.current) {
+      localScreenStreamRef.current.getTracks().forEach((track) => track.stop());
+      localScreenStreamRef.current = null;
+    }
+
+    // Remove tracks from screen peer connections
+    screenPeerConnectionsRef.current.forEach(({ pc }) => {
+      const senders = pc.getSenders();
+      senders.forEach((sender) => {
+        if (sender.track) {
+          pc.removeTrack(sender);
+        }
+      });
+    });
+
+    socketRef.current?.emit("signal", {
+      type: "publishState",
+      spaceId,
+      fromId: selfId,
+      streamType: "screen",
+    });
+  }, [spaceId, selfId]);
+
+  const stopUrlShare = useCallback(() => {
     if (currentUrlSessionRef.current) {
       socketRef.current?.emit("stopWebCapture", {
         type: "stopWebCapture",
@@ -542,291 +855,9 @@ export function useSpaceRTC({
       localUrlStreamRef.current.getTracks().forEach((track) => track.stop());
       localUrlStreamRef.current = null;
     }
-  };
+  }, [spaceId, selfId]);
 
-  // Keep existing functions for regular camera and screen sharing...
-  const createPeerConnection = (peerId: string, shouldCreateOffer: boolean) => {
-    if (peerConnectionsRef.current.has(peerId)) return;
-
-    console.log(
-      `[RTC] Creating peer connection for ${peerId}, shouldCreateOffer: ${shouldCreateOffer}`
-    );
-    const pc = new RTCPeerConnection({ iceServers });
-
-    pc.onicecandidate = (event) => {
-      if (event.candidate) {
-        socketRef.current?.emit("signal", {
-          type: "candidate",
-          spaceId,
-          fromId: selfId,
-          targetId: peerId,
-          data: event.candidate,
-          streamType: "camera",
-        });
-      }
-    };
-
-    pc.ontrack = (event) => {
-      console.log("[RTC] Remote track received from", peerId);
-      const [remoteStream] = event.streams;
-      setRemotePeers((prev) =>
-        prev.map((p) => (p.id === peerId ? { ...p, stream: remoteStream } : p))
-      );
-    };
-
-    if (localStreamRef.current) {
-      localStreamRef.current.getTracks().forEach((track) => {
-        pc.addTrack(track, localStreamRef.current!);
-      });
-    }
-
-    peerConnectionsRef.current.set(peerId, pc);
-
-    if (shouldCreateOffer) {
-      createOffer(peerId);
-    }
-  };
-
-  const createScreenPeerConnection = (
-    peerId: string,
-    shouldCreateOffer: boolean
-  ) => {
-    const screenKey = `${peerId}-screen`;
-    if (screenPeerConnectionsRef.current.has(screenKey)) return;
-
-    console.log(
-      `[RTC] Creating screen peer connection for ${peerId}, shouldCreateOffer: ${shouldCreateOffer}`
-    );
-    const pc = new RTCPeerConnection({ iceServers });
-
-    pc.onicecandidate = (event) => {
-      if (event.candidate) {
-        socketRef.current?.emit("signal", {
-          type: "candidate",
-          spaceId,
-          fromId: selfId,
-          targetId: peerId,
-          data: event.candidate,
-          streamType: "screen",
-        });
-      }
-    };
-
-    pc.ontrack = (event) => {
-      console.log("[RTC] Remote screen track received from", peerId);
-      const [remoteScreenStream] = event.streams;
-      setRemotePeers((prev) =>
-        prev.map((p) =>
-          p.id === peerId
-            ? { ...p, screenStream: remoteScreenStream, screenSharing: true }
-            : p
-        )
-      );
-    };
-
-    if (localScreenStreamRef.current) {
-      localScreenStreamRef.current.getTracks().forEach((track) => {
-        pc.addTrack(track, localScreenStreamRef.current!);
-      });
-    }
-
-    screenPeerConnectionsRef.current.set(screenKey, pc);
-
-    if (shouldCreateOffer) {
-      createScreenOffer(peerId);
-    }
-  };
-
-  const removePeerConnection = (peerId: string) => {
-    // Remove regular connection
-    const pc = peerConnectionsRef.current.get(peerId);
-    if (pc) {
-      pc.close();
-      peerConnectionsRef.current.delete(peerId);
-    }
-
-    // Remove screen connection
-    const screenKey = `${peerId}-screen`;
-    const screenPc = screenPeerConnectionsRef.current.get(screenKey);
-    if (screenPc) {
-      screenPc.close();
-      screenPeerConnectionsRef.current.delete(screenKey);
-    }
-
-    // Remove URL connection
-    const urlKey = `${peerId}-url`;
-    const urlPc = urlPeerConnectionsRef.current.get(urlKey);
-    if (urlPc) {
-      urlPc.close();
-      urlPeerConnectionsRef.current.delete(urlKey);
-    }
-  };
-
-  const startPublishing = async ({ audio = true, video = true }) => {
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        audio,
-        video,
-      });
-      localStreamRef.current = stream;
-
-      peerConnectionsRef.current.forEach(async (pc, peerId) => {
-        stream.getTracks().forEach((track) => {
-          pc.addTrack(track, stream);
-        });
-        await createOffer(peerId);
-      });
-
-      socketRef.current?.emit("signal", {
-        type: "publishState",
-        spaceId,
-        fromId: selfId,
-        publish: { audio, video },
-        streamType: "camera",
-      });
-
-      return stream;
-    } catch (error) {
-      console.error("[RTC] Start publishing failed:", error);
-      throw error;
-    }
-  };
-
-  const startScreenShare = async () => {
-    try {
-      const stream = await navigator.mediaDevices.getDisplayMedia({
-        video: true,
-        audio: true,
-      });
-      localScreenStreamRef.current = stream;
-
-      screenPeerConnectionsRef.current.forEach(async (pc, key) => {
-        stream.getTracks().forEach((track) => {
-          pc.addTrack(track, stream);
-        });
-        const peerId = key.replace("-screen", "");
-        await createScreenOffer(peerId);
-      });
-
-      peerConnectionsRef.current.forEach(async (_, peerId) => {
-        const screenKey = `${peerId}-screen`;
-        if (!screenPeerConnectionsRef.current.has(screenKey)) {
-          createScreenPeerConnection(peerId, true);
-        }
-      });
-
-      socketRef.current?.emit("signal", {
-        type: "publishState",
-        spaceId,
-        fromId: selfId,
-        streamType: "screen",
-      });
-
-      stream.getVideoTracks()[0].onended = () => {
-        stopScreenShare();
-      };
-
-      return stream;
-    } catch (error) {
-      console.error("[RTC] Start screen share failed:", error);
-      throw error;
-    }
-  };
-
-  const createOffer = async (peerId: string) => {
-    const pc = peerConnectionsRef.current.get(peerId);
-    if (!pc) return;
-
-    try {
-      const offer = await pc.createOffer();
-      await pc.setLocalDescription(offer);
-
-      socketRef.current?.emit("signal", {
-        type: "offer",
-        spaceId,
-        fromId: selfId,
-        targetId: peerId,
-        data: offer,
-        streamType: "camera",
-      });
-    } catch (error) {
-      console.error("[RTC] Create offer failed:", error);
-    }
-  };
-
-  const createScreenOffer = async (peerId: string) => {
-    const screenKey = `${peerId}-screen`;
-    const pc = screenPeerConnectionsRef.current.get(screenKey);
-    if (!pc) return;
-
-    try {
-      const offer = await pc.createOffer();
-      await pc.setLocalDescription(offer);
-
-      socketRef.current?.emit("signal", {
-        type: "offer",
-        spaceId,
-        fromId: selfId,
-        targetId: peerId,
-        data: offer,
-        streamType: "screen",
-      });
-    } catch (error) {
-      console.error("[RTC] Create screen offer failed:", error);
-    }
-  };
-
-  const stopPublishing = () => {
-    if (localStreamRef.current) {
-      localStreamRef.current.getTracks().forEach((track) => track.stop());
-      localStreamRef.current = null;
-    }
-
-    peerConnectionsRef.current.forEach(async (pc, peerId) => {
-      const senders = pc.getSenders();
-      senders.forEach((sender) => {
-        if (sender.track) {
-          pc.removeTrack(sender);
-        }
-      });
-      await createOffer(peerId);
-    });
-
-    socketRef.current?.emit("signal", {
-      type: "publishState",
-      spaceId,
-      fromId: selfId,
-      publish: { audio: false, video: false },
-      streamType: "camera",
-    });
-  };
-
-  const stopScreenShare = () => {
-    if (localScreenStreamRef.current) {
-      localScreenStreamRef.current.getTracks().forEach((track) => track.stop());
-      localScreenStreamRef.current = null;
-    }
-
-    screenPeerConnectionsRef.current.forEach(async (pc, key) => {
-      const senders = pc.getSenders();
-      senders.forEach((sender) => {
-        if (sender.track) {
-          pc.removeTrack(sender);
-        }
-      });
-      const peerId = key.replace("-screen", "");
-      await createScreenOffer(peerId);
-    });
-
-    socketRef.current?.emit("signal", {
-      type: "publishState",
-      spaceId,
-      fromId: selfId,
-      streamType: "screen",
-    });
-  };
-
-  const leave = () => {
+  const leave = useCallback(() => {
     socketRef.current?.emit("leave", {
       type: "leave",
       spaceId,
@@ -834,7 +865,7 @@ export function useSpaceRTC({
     });
 
     cleanup();
-  };
+  }, [spaceId, selfId, cleanup]);
 
   return {
     connected,

@@ -8,6 +8,7 @@ export type SignalMsg =
       fromId: string;
       role: Role;
       publish: { audio: boolean; video: boolean };
+      streamType?: "camera" | "screen" | "url";
     }
   | {
       type: "offer" | "answer";
@@ -16,6 +17,7 @@ export type SignalMsg =
       role: Role;
       targetId: string;
       sdp: any;
+      streamType?: "camera" | "screen" | "url";
     }
   | {
       type: "candidate";
@@ -24,6 +26,15 @@ export type SignalMsg =
       role: Role;
       targetId: string;
       candidate: any;
+      streamType?: "camera" | "screen" | "url";
+    }
+  | {
+      type: "requestPublishState";
+      spaceId: string;
+      fromId: string;
+      role: Role;
+      targetId: string;
+      streamType?: "camera" | "screen";
     }
   | { type: "leave"; spaceId: string; fromId: string; role: Role }
   | {

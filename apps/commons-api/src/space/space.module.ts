@@ -10,6 +10,8 @@ import { SpaceRTCGateway } from './space-rtc.gateway';
 import { AiMediaBridgeService } from './ai-media-bridge.service';
 import { AgentMediaController } from './agent-media.controller';
 import { WebCaptureService } from './web-capture.service';
+import { StreamMonitorService } from './stream-monitor.service';
+import { TranscriptionDeliveryService } from './transcription-delivery.service';
 
 @Module({
   imports: [DatabaseModule, forwardRef(() => AgentModule), SessionModule],
@@ -24,12 +26,16 @@ import { WebCaptureService } from './web-capture.service';
     SpaceRTCGateway,
     AiMediaBridgeService,
     WebCaptureService,
+    StreamMonitorService,
+    TranscriptionDeliveryService,
   ],
   exports: [
     SpaceService,
     SpaceRTCService,
     AiMediaBridgeService,
     WebCaptureService,
+    StreamMonitorService,
+    TranscriptionDeliveryService,
   ],
 })
 export class SpaceModule {}

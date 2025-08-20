@@ -16,6 +16,7 @@ import { SpaceService } from '~/space/space.service';
 import { OpenAIService } from '~/modules/openai/openai.service';
 import { PinataService } from '~/pinata/pinata.service';
 import { ToolSchema } from '~/tool/dto/tool.dto';
+import { AiMediaBridgeService } from '~/space/ai-media-bridge.service';
 
 const graphqlRequest = import('graphql-request');
 
@@ -252,6 +253,25 @@ export interface CommonTool {
   getBusMessages(props: { spaceId: string; limit?: number }): any;
 
   /**
+   * Start monitoring a stream in a space to receive transcriptions
+   */
+  startStreamMonitoring(props: {
+    spaceId: string;
+    agentId: string;
+    targetParticipantId?: string; // if specified, monitor specific participant; otherwise monitor general space audio
+  }): any;
+
+  /**
+   * Stop monitoring streams in a space
+   */
+  stopStreamMonitoring(props: { spaceId: string; agentId: string }): any;
+
+  /**
+   * Get active streams being monitored in a space
+   */
+  getActiveStreams(props: { spaceId: string }): any;
+
+  /**
    * Equip a tool resource to an agent
    */
   // equipResourceTool(props: {
@@ -283,6 +303,8 @@ export class CommonToolService implements CommonTool {
     private pinataService: PinataService,
     @Inject(forwardRef(() => SpaceService))
     private space: SpaceService,
+    @Inject(forwardRef(() => AiMediaBridgeService))
+    private aiMediaBridge: AiMediaBridgeService,
   ) {}
 
   async createGoal(props: CreateGoalDto) {
@@ -1100,5 +1122,82 @@ export class CommonToolService implements CommonTool {
     const { spaceId, agentId } = props;
 
     return await this.space.unsubscribeAgentFromSpace(agentId, spaceId);
+  }
+
+  /**
+   * Start monitoring a stream in a space to receive transcriptions
+   */
+  async startStreamMonitoring(props: {
+    spaceId: string;
+    agentId: string;
+    targetParticipantId?: string;
+  }) {
+    const { spaceId, agentId, targetParticipantId } = props;
+
+    // Verify agent is a member of the space
+    const isMember = await this.space.isMember(spaceId, agentId, 'agent');
+    if (!isMember) {
+      throw new BadRequestException(
+        'Agent must be a member of the space to monitor streams',
+      );
+    }
+
+    const sessionId = await this.aiMediaBridge.startStreamMonitoring(
+      spaceId,
+      agentId,
+      targetParticipantId,
+    );
+
+    // Get current streams to provide context
+    const activeStreams = this.aiMediaBridge.getActiveStreams(spaceId);
+    const participants = this.aiMediaBridge.getSpaceParticipants(spaceId);
+
+    return {
+      success: true,
+      sessionId,
+      message: targetParticipantId
+        ? `Started monitoring ${targetParticipantId}'s stream. You will now receive real-time transcriptions of their audio and visual content.`
+        : `Started monitoring general space audio. You will now receive real-time transcriptions from all active participants.`,
+      context: {
+        activeStreams: activeStreams.length,
+        participants: participants.length,
+        monitoringTarget: targetParticipantId || 'all participants',
+      },
+    };
+  }
+
+  /**
+   * Stop monitoring streams in a space
+   */
+  async stopStreamMonitoring(props: { spaceId: string; agentId: string }) {
+    const { spaceId, agentId } = props;
+
+    await this.aiMediaBridge.stopStreamMonitoring(spaceId, agentId);
+
+    return {
+      success: true,
+      message:
+        'Stopped monitoring streams. You will no longer receive transcriptions.',
+    };
+  }
+
+  /**
+   * Get active streams being monitored in a space
+   */
+  async getActiveStreams(props: { spaceId: string }) {
+    const { spaceId } = props;
+
+    const streams = this.aiMediaBridge.getActiveStreams(spaceId);
+    const monitoredStreams = this.aiMediaBridge.getMonitoredStreams(spaceId);
+
+    return {
+      success: true,
+      streams,
+      monitoring: {
+        totalSessions: monitoredStreams.length,
+        sessions: monitoredStreams,
+      },
+      summary: `Found ${streams.length} active streams, ${monitoredStreams.length} being monitored`,
+    };
   }
 }
