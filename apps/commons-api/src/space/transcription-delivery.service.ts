@@ -34,25 +34,24 @@ export class TranscriptionDeliveryService extends EventEmitter {
     transcription: TranscriptionEvent,
   ): Promise<void> {
     try {
-      this.logger.log(
-        `Delivering transcription to ${agentId}: ${transcription.transcript}`,
-      );
+      this.logger.log(`Delivering transcription to ${agentId}`);
 
       const response$ = this.agentService.runAgent({
         agentId,
         messages: [
           {
-            role: 'user',
+            role: 'system',
             content: `STREAM_TRANSCRIPTION_UPDATE:
-Space: ${transcription.spaceId}
-Participant: ${transcription.participantId}
-Timestamp: ${new Date(transcription.timestamp).toISOString()}
-Confidence: ${transcription.confidence}
-Kind: ${transcription.type ?? 'audio'}
+              Space: ${transcription.spaceId}
+              Participant: ${transcription.participantId}
+              Timestamp: ${new Date(transcription.timestamp).toISOString()}
+              Confidence: ${transcription.confidence}
+              Kind: ${transcription.type ?? 'audio'}
 
-Transcription: "${transcription.transcript}"
+              Transcription: "${transcription.transcript}"
 
-You are receiving this because you are monitoring this stream. Consider whether to act on this info (e.g., summarize, trigger a tool) or continue silently.`,
+              You are receiving this because you are monitoring this stream. Consider whether to act on this info (e.g., summarize, trigger a tool) or continue silently.
+            `,
           },
         ],
         initiator: 'stream-monitor',

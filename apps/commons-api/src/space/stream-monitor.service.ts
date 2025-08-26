@@ -6,6 +6,8 @@ import OpenAI from 'openai';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
+import WebSocket from 'ws';
+import { WaveFile } from 'wavefile';
 
 // Only import canvas lazily when needed (faster cold start)
 let createCanvas: any;
@@ -44,6 +46,13 @@ interface MonitoringSession {
 
   // Backoff + rate-limit state
   consecutiveErrors: number;
+
+  // Realtime (audio) session state
+  rtSocket?: WebSocket; // OpenAI Realtime WebSocket
+  rtReady?: boolean; // handshake done
+  rtConnecting?: boolean; // avoid duplicate connects
+  rtPendingText?: string; // accumulating partial transcript
+  rtLastCommitAt?: number; // last time we committed buffer
 }
 
 @Injectable()
@@ -54,10 +63,18 @@ export class StreamMonitorService extends EventEmitter {
 
   private openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
+  // Realtime config
+  private REALTIME_MODEL =
+    process.env.REALTIME_MODEL || 'gpt-4o-realtime-preview-2024-12-17';
+  private USE_REALTIME =
+    (process.env.USE_REALTIME || 'true').toLowerCase() !== 'false';
+  private REALTIME_TRANSCRIBE_INSTRUCTIONS =
+    'Transcribe the newly received audio. Return only the verbatim transcript (no timestamps, speaker tags, punctuation only where obvious).';
+
   // Tuning knobs
   private AUDIO_FLUSH_MS = 1000; // try flush every ~1s
   private AUDIO_MAX_CHUNK_BYTES = 1_000_000; // 1 MB safety
-  private DEFAULT_VISION_INTERVAL_MS = 4000; // analyze ~every 4s
+  private DEFAULT_VISION_INTERVAL_MS = 1000; // analyze ~every 2s
   private MAX_PARALLEL_VISION = 1;
 
   constructor(
@@ -99,6 +116,8 @@ export class StreamMonitorService extends EventEmitter {
     this.logger.log(
       `Agent ${agentId} started monitoring ${session.participantId} in ${spaceId} (session: ${sessionId})`,
     );
+
+    // Initialize realtime socket lazily only when first audio chunk arrives to save resources.
     return sessionId;
   }
 
@@ -146,9 +165,15 @@ export class StreamMonitorService extends EventEmitter {
       const payload = Buffer.concat(session.audioBuffer);
       session.audioBuffer = [];
       session.lastAudioFlushAt = now;
-      this.transcribeChunk(session, payload).catch((e) =>
-        this.logger.error('transcribeChunk error', e),
-      );
+      if (this.USE_REALTIME) {
+        this.streamAudioToRealtime(session, payload).catch((e) =>
+          this.logger.error('streamAudioToRealtime error', e),
+        );
+      } else {
+        this.transcribeChunk(session, payload).catch((e) =>
+          this.logger.error('transcribeChunk error', e),
+        );
+      }
     }
   }
 
@@ -204,6 +229,191 @@ export class StreamMonitorService extends EventEmitter {
         `Transcription failed x${session.consecutiveErrors} for ${session.sessionId}`,
         err as any,
       );
+    }
+  }
+
+  /** Initialize an OpenAI Realtime WebSocket for the session (idempotent). */
+  private initRealtime(session: MonitoringSession) {
+    if (session.rtSocket || session.rtConnecting) return;
+    session.rtConnecting = true;
+
+    const apiKey = process.env.OPENAI_API_KEY;
+    if (!apiKey) {
+      this.logger.warn('OPENAI_API_KEY missing; cannot init realtime');
+      return;
+    }
+
+    const url = `wss://api.openai.com/v1/realtime?model=${encodeURIComponent(this.REALTIME_MODEL)}`;
+    const headers = {
+      Authorization: `Bearer ${apiKey}`,
+      'OpenAI-Beta': 'realtime=v1',
+    } as any;
+
+    const ws = new WebSocket(url, { headers });
+    session.rtSocket = ws;
+
+    ws.on('open', () => {
+      session.rtReady = true;
+      session.rtConnecting = false;
+      this.logger.log(`Realtime socket open for session ${session.sessionId}`);
+    });
+
+    ws.on('message', (raw: WebSocket.RawData) => {
+      try {
+        const msg = JSON.parse(raw.toString());
+        this.handleRealtimeMessage(session, msg);
+      } catch (e) {
+        this.logger.warn('Failed parsing realtime message', e as any);
+      }
+    });
+
+    ws.on('close', (code, reason) => {
+      this.logger.log(
+        `Realtime socket closed for ${session.sessionId} code=${code} reason=${reason.toString()}`,
+      );
+      session.rtSocket = undefined;
+      session.rtReady = false;
+      session.rtConnecting = false;
+    });
+
+    ws.on('error', (err) => {
+      this.logger.error(`Realtime socket error (${session.sessionId})`, err);
+      session.rtSocket = undefined;
+      session.rtReady = false;
+      session.rtConnecting = false;
+    });
+  }
+
+  /** Stream an audio buffer to realtime: convert to 16k PCM16, append, commit, request transcription. */
+  private async streamAudioToRealtime(
+    session: MonitoringSession,
+    audio: Buffer,
+  ) {
+    if (audio.length === 0) return;
+    this.initRealtime(session);
+    const ws = session.rtSocket;
+    if (!ws || ws.readyState !== WebSocket.OPEN) return; // will retry on next chunk
+
+    try {
+      // Decode WAV (or other) into PCM16 16k mono
+      let pcm16: Int16Array | null = null;
+      if (session.audioFormat === 'wav') {
+        const wav = new WaveFile(audio);
+        // WaveFile typings are loose; use any to access internals
+        const wavAny: any = wav as any;
+        let samplesRaw = wavAny.getSamples(false) as any; // could be Int16Array | Float32Array | number[]
+        const sampleRate: number = wavAny.fmt?.sampleRate || 16000;
+        // Normalize to Int16Array
+        let samples: Int16Array;
+        if (samplesRaw instanceof Int16Array) {
+          samples = samplesRaw;
+        } else if (samplesRaw instanceof Float32Array) {
+          samples = new Int16Array(samplesRaw.length);
+          for (let i = 0; i < samplesRaw.length; i++) {
+            const v = Math.max(-1, Math.min(1, samplesRaw[i]));
+            samples[i] = v < 0 ? v * 0x8000 : v * 0x7fff;
+          }
+        } else if (Array.isArray(samplesRaw)) {
+          samples = new Int16Array(samplesRaw.length);
+          for (let i = 0; i < samplesRaw.length; i++)
+            samples[i] = samplesRaw[i];
+        } else {
+          // Fallback: treat underlying buffer as Int16
+          // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
+          samples = new Int16Array(samplesRaw.buffer || audio.buffer);
+        }
+        if (sampleRate !== 16000) {
+          const ratio = sampleRate / 16000;
+          const outLen = Math.floor(samples.length / ratio);
+          const out = new Int16Array(outLen);
+          for (let i = 0; i < outLen; i++)
+            out[i] = samples[Math.floor(i * ratio)];
+          pcm16 = out;
+        } else {
+          pcm16 = samples;
+        }
+      } else {
+        // For non-wav formats, fall back to raw bytes (hope already PCM16 16k) - or skip
+        pcm16 = new Int16Array(
+          audio.buffer,
+          audio.byteOffset,
+          Math.floor(audio.length / 2),
+        );
+      }
+
+      if (!pcm16 || pcm16.length === 0) return;
+      const buf = Buffer.from(pcm16.buffer, pcm16.byteOffset, pcm16.byteLength);
+      const b64 = buf.toString('base64');
+
+      ws.send(
+        JSON.stringify({ type: 'input_audio_buffer.append', audio: b64 }),
+      );
+      ws.send(JSON.stringify({ type: 'input_audio_buffer.commit' }));
+      ws.send(
+        JSON.stringify({
+          type: 'response.create',
+          response: {
+            instructions: this.REALTIME_TRANSCRIBE_INSTRUCTIONS,
+            modalities: ['text'],
+          },
+        }),
+      );
+    } catch (err) {
+      session.consecutiveErrors++;
+      this.logger.warn(
+        `streamAudioToRealtime failed x${session.consecutiveErrors} for ${session.sessionId}`,
+        err as any,
+      );
+    }
+  }
+
+  private handleRealtimeMessage(session: MonitoringSession, msg: any) {
+    // Examples of event types (subject to OpenAI realtime spec evolution):
+    // response.output_text.delta, response.output_text.done, response.completed
+    const t = msg.type;
+    if (!t) return;
+    switch (t) {
+      case 'response.output_text.delta': {
+        const d = msg.delta || msg.text || msg.content || '';
+        if (!session.rtPendingText) session.rtPendingText = '';
+        session.rtPendingText += d;
+        break;
+      }
+      case 'response.output_text.done':
+      case 'response.completed': {
+        const finalText = (session.rtPendingText || '').trim();
+        if (finalText) {
+          const transcription: StreamTranscription = {
+            sessionId: session.sessionId,
+            spaceId: session.spaceId,
+            participantId: session.participantId,
+            transcript: `[AUDIO] ${finalText}`,
+            timestamp: Date.now(),
+            confidence: 1.0,
+            isFinal: true,
+            type: 'audio',
+          };
+          this.delivery.broadcastTranscriptionToSpace(
+            session.spaceId,
+            transcription,
+            Array.from(session.monitoringAgents),
+          );
+        }
+        session.rtPendingText = '';
+        session.lastActivity = new Date();
+        session.consecutiveErrors = 0;
+        break;
+      }
+      case 'error': {
+        session.consecutiveErrors++;
+        this.logger.warn(
+          `Realtime error for ${session.sessionId}: ${msg.error?.message || msg}`,
+        );
+        break;
+      }
+      default:
+        // Silently ignore other event types for now
+        break;
     }
   }
 
@@ -322,8 +532,12 @@ export class StreamMonitorService extends EventEmitter {
     const model = process.env.VISION_MODEL || 'gpt-4o-mini';
 
     // Customize prompt based on stream type
-    let systemPrompt =
-      'You are an AI stream monitor. Describe what is happening in the image briefly but clearly.';
+    let systemPrompt = `You are an AI stream monitor - You are acting as the eyes for an AI agent. 
+        Describe what is happening in the stream in detail and in a clear as a matter of fact manner. 
+        Take note of different objects and their proximity to other objects and especially take note of moving objects and the direction to and from other objects. 
+        Specificity and details here are crucial. Do not leave out any detail. The idea is that you are not opinionated but represent things exactly how they are and in full detail.
+        Arrange the view in order of proximity such that the objects that seem the closest are described first and the ones that appear furthest away being described last.
+      `;
     let prefix = '[VISUAL]';
 
     switch (streamType) {
@@ -355,18 +569,18 @@ export class StreamMonitorService extends EventEmitter {
         {
           role: 'user',
           content: [
-            { type: 'text', text: 'Analyze this frame.' },
+            { type: 'text', text: 'Analyze this frame in detail.' },
             {
               type: 'image_url',
               image_url: {
                 url: imageDataUrl,
-                detail: session.imageDetail ?? 'low',
+                detail: 'high', //session.imageDetail ??
               },
             },
           ],
         },
       ],
-      max_tokens: 180,
+      max_tokens: 16384, //maxpossible tokens,
       temperature: 0.2,
     });
 
