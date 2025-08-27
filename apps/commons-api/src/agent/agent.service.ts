@@ -62,6 +62,7 @@ import { LogService } from '~/log/log.service';
 import { GoalService } from '~/goal/goal.service';
 import { TaskService } from '~/task/task.service';
 import { Observable, of } from 'rxjs';
+import { SpaceToolsService } from '~/space/space-tools.service';
 
 const got = import('got');
 
@@ -84,6 +85,8 @@ export class AgentService implements OnModuleInit {
     /* NEW injections */
     @Inject(forwardRef(() => GoalService)) private goals: GoalService,
     @Inject(forwardRef(() => TaskService)) private tasks: TaskService,
+    @Inject(forwardRef(() => SpaceToolsService))
+    private spaceTools: SpaceToolsService,
   ) {}
 
   /* ─────────────────────────  INIT  ───────────────────────── */
@@ -294,6 +297,7 @@ export class AgentService implements OnModuleInit {
           If your response to the agent/agents/users involves multiple tasks let them know by sending a message before creating the goals and tasks.
           If you have a session id, provide it as an arg when sending a message to a space.
           Spaces have streams you can monitor. You can use the monitorStream tool to start monitoring a stream in a space. You will receive real-time transcriptions of the stream in the space. You can also stop monitoring a stream using the stopMonitoringStream tool.
+          While monitoring  webcast streams you can interact with the webcast stream using the given space tools for that specific stream.
 
 
           STRICTLY ABIDE BY THE FOLLOWING:
@@ -601,6 +605,27 @@ export class AgentService implements OnModuleInit {
           })) as (ChatCompletionTool & { endpoint: string })[];
 
           const toolDefs = [...dynamicDefs, ...resourceDefs, ...staticDefs];
+          // If running inside a space, merge space tool specs (spacetools)
+          if (spaceId) {
+            const spaceToolSpecs = this.spaceTools.getToolsForSpace(spaceId);
+            if (spaceToolSpecs.length) {
+              const spaceDefs = spaceToolSpecs.map((spec) => ({
+                type: 'function',
+                function: {
+                  name: spec.name,
+                  description: spec.description || 'Space provided tool',
+                  parameters: spec.parameters || {
+                    type: 'object',
+                    properties: {},
+                  },
+                  // Pass through apiSpec so controller can pick dynamic invocation path
+                  apiSpec: spec.apiSpec,
+                },
+                endpoint: `http://localhost:${process.env.PORT}/v1/agents/tools`,
+              }));
+              toolDefs.push(...(spaceDefs as any));
+            }
+          }
 
           const toolUsage: {
             name: string;
@@ -664,7 +689,11 @@ export class AgentService implements OnModuleInit {
                       json: {
                         args,
                         toolCall: config.toolCall,
-                        metadata: { agentId, sessionId: currentSessionId },
+                        metadata: {
+                          agentId,
+                          sessionId: currentSessionId,
+                          spaceId,
+                        },
                       },
                       headers: { 'Content-Type': 'application/json' },
                     },

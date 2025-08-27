@@ -2,6 +2,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import puppeteer, { Browser, Page } from 'puppeteer';
 import { EventEmitter } from 'events';
+import { SpaceToolsService, SpaceToolSpec } from './space-tools.service';
 
 interface CaptureSession {
   id: string;
@@ -20,6 +21,10 @@ export class WebCaptureService extends EventEmitter {
   private readonly logger = new Logger(WebCaptureService.name);
   private sessions = new Map<string, CaptureSession>();
   private browser: Browser | null = null;
+
+  constructor(private spaceTools: SpaceToolsService) {
+    super();
+  }
 
   async onModuleInit() {
     await this.initBrowserWithRetry();
@@ -339,6 +344,47 @@ export class WebCaptureService extends EventEmitter {
               ? navigationError.message
               : String(navigationError)
           }`,
+        );
+      }
+
+      // Attempt to discover space tools at {pageUrl}/common-agent-tools/
+      try {
+        const toolsEndpoint = new URL(validUrl);
+        // ensure trailing slash before appending path segment if needed
+        const baseOrigin = `${toolsEndpoint.origin}`;
+        const basePath = toolsEndpoint.pathname.endsWith('/')
+          ? toolsEndpoint.pathname.slice(0, -1)
+          : toolsEndpoint.pathname;
+        const discoverUrl = `${baseOrigin}${basePath}/common-agent-tools/`;
+        this.logger.log(`Attempting space tools discovery at ${discoverUrl}`);
+        const resp = await fetch(discoverUrl, { method: 'GET' });
+        if (resp.ok) {
+          const json = await resp.json();
+          // Accept single tool object or array
+          const specs: SpaceToolSpec[] = Array.isArray(json) ? json : [json];
+          const validSpecs = specs.filter((t) => t && t.name && t.apiSpec);
+          if (validSpecs.length) {
+            this.spaceTools.upsertTools(
+              params.spaceId,
+              discoverUrl,
+              validSpecs,
+            );
+            this.logger.log(
+              `Discovered ${validSpecs.length} tool spec(s) for space ${params.spaceId}`,
+            );
+          } else {
+            this.logger.log(
+              `No valid tool specs found at discovery endpoint for space ${params.spaceId}.`,
+            );
+          }
+        } else {
+          this.logger.debug(
+            `Space tools discovery endpoint returned status ${resp.status} for ${discoverUrl}`,
+          );
+        }
+      } catch (discErr) {
+        this.logger.debug(
+          `Space tools discovery failed: ${discErr instanceof Error ? discErr.message : String(discErr)}`,
         );
       }
 

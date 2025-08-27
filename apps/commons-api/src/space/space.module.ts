@@ -12,6 +12,7 @@ import { AgentMediaController } from './agent-media.controller';
 import { WebCaptureService } from './web-capture.service';
 import { StreamMonitorService } from './stream-monitor.service';
 import { TranscriptionDeliveryService } from './transcription-delivery.service';
+import { SpaceToolsService } from './space-tools.service';
 
 @Module({
   imports: [DatabaseModule, forwardRef(() => AgentModule), SessionModule],
@@ -28,6 +29,7 @@ import { TranscriptionDeliveryService } from './transcription-delivery.service';
     WebCaptureService,
     StreamMonitorService,
     TranscriptionDeliveryService,
+    SpaceToolsService,
   ],
   exports: [
     SpaceService,
@@ -36,6 +38,7 @@ import { TranscriptionDeliveryService } from './transcription-delivery.service';
     WebCaptureService,
     StreamMonitorService,
     TranscriptionDeliveryService,
+    SpaceToolsService,
   ],
 })
 export class SpaceModule {}
