@@ -2,3 +2,5 @@ node_modules
 .turbo
 .env
 .env.local
+
+dist

@@ -1,21 +1,22 @@
 {
-  "name": "agent-commons",
-  "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
-  "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
-  },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
-  "devDependencies": {
-    "concurrently": "^9.1.2"
-  },
-  "pnpm": {
-    "overrides": {
-      "@xenova/transformers>sharp": "0.33.5"
-    }
-  },
-  "packageManager": "pnpm@10.4.1"
+	"name": "agent-commons",
+	"version": "1.0.0",
+	"description": "",
+	"main": "index.js",
+	"scripts": {
+		"test": "echo \"Error: no test specified\" && exit 1"
+	},
+	"keywords": [],
+	"author": "",
+	"license": "ISC",
+	"devDependencies": {
+		"@biomejs/biome": "2.2.0",
+		"concurrently": "^9.1.2"
+	},
+	"pnpm": {
+		"overrides": {
+			"@xenova/transformers>sharp": "0.33.5"
+		}
+	},
+	"packageManager": "pnpm@10.15.1"
 }
