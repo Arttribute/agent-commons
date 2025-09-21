@@ -1,13 +1,20 @@
 import { Coinbase, Wallet } from "@coinbase/coinbase-sdk";
+import { container } from "tsyringe";
 import { createPublicClient, http } from "viem";
 import { baseSepolia } from "../lib/baseSepolia.js";
 
 export const coinbase = Coinbase.configure({
-  apiKeyName: process.env.COINBASE_API_KEY_NAME!,
-  privateKey: process.env.COINBASE_API_KEY_SECRET!.replace(/\\n/g, "\n"),
+	apiKeyName: process.env.COINBASE_API_KEY_NAME!,
+	privateKey: process.env.COINBASE_API_KEY_SECRET!.replace(/\\n/g, "\n"),
 });
 
 export const publicClient = createPublicClient({
-  chain: baseSepolia,
-  transport: http(),
+	chain: baseSepolia,
+	transport: http(),
 });
+
+container.register(Coinbase, { useValue: coinbase });
+
+export function getOpenAI() {
+	return container.resolve(Coinbase) as typeof coinbase;
+}

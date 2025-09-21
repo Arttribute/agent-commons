@@ -5,6 +5,8 @@
     "moduleResolution": "Bundler",
     "strict": true,
     "verbatimModuleSyntax": true,
+    "experimentalDecorators": true,
+    "emitDecoratorMetadata": true,
     "skipLibCheck": true,
     "types": ["node"],
     "outDir": "./dist",

@@ -1,5 +1,5 @@
 import { PinataSDK } from "pinata-web3";
-import { Buffer } from "buffer";
+import { Buffer } from "node:buffer";
 import fs from "fs";
 import path from "path";
 
@@ -26,7 +26,7 @@ export class PinataService {
   ): Promise<any> {
     try {
       // Create a Blob from the file buffer (Node 18+).
-      const blob = new Blob([fileBuffer]);
+      const blob = new Blob([fileBuffer.buffer as ArrayBuffer]);
       // Create a File from the blob.
       const file = new File([blob], fileName, { type: mimeType });
       const result = await this.pinata.upload.file(file);
