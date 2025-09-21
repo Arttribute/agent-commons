@@ -44,42 +44,6 @@ export class AgentMediaController {
     return { ok: true };
   }
 
-  @Post(':spaceId/agents/:agentId/media/publish/audio/start')
-  async startAudio(
-    @Param('spaceId') spaceId: string,
-    @Param('agentId') agentId: string,
-  ) {
-    await this.bridge.startPublishingAudio(spaceId, agentId);
-    return { ok: true };
-  }
-
-  @Post(':spaceId/agents/:agentId/media/publish/audio/stop')
-  async stopAudio(
-    @Param('spaceId') spaceId: string,
-    @Param('agentId') agentId: string,
-  ) {
-    await this.bridge.stopPublishingAudio(spaceId, agentId);
-    return { ok: true };
-  }
-
-  @Post(':spaceId/agents/:agentId/media/publish/video/start')
-  async startVideo(
-    @Param('spaceId') spaceId: string,
-    @Param('agentId') agentId: string,
-  ) {
-    await this.bridge.startPublishingVideo(spaceId, agentId);
-    return { ok: true };
-  }
-
-  @Post(':spaceId/agents/:agentId/media/publish/video/stop')
-  async stopVideo(
-    @Param('spaceId') spaceId: string,
-    @Param('agentId') agentId: string,
-  ) {
-    await this.bridge.stopPublishingVideo(spaceId, agentId);
-    return { ok: true };
-  }
-
   @Post(':spaceId/agents/:agentId/media/monitor/start')
   async startStreamMonitoring(
     @Param('spaceId') spaceId: string,

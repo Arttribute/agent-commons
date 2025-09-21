@@ -385,75 +385,6 @@ export class AgentService implements OnModuleInit {
     }));
   }
 
-  /* ─────────────────────────  SPACES TRACKING  ───────────────────────── */
-  // //get spaces for agent first
-  // async getSpacesForAgent(agentId: string) {
-  //   const agent = await this.getAgent({ agentId });
-  //   if (!agent) {
-  //     throw new BadRequestException('Agent not found');
-  //   }
-
-  //   try {
-  //     // First, try to get spaces with members relation
-  //     const spaces = await this.db.query.space.findMany({
-  //       with: {
-  //         members: {
-  //           where: (member: any) => eq(member.agentId, agentId),
-  //         },
-  //       },
-  //     });
-
-  //     // Filter to only return spaces where the agent is actually a member
-  //     return spaces.filter(
-  //       (space: any) =>
-  //         space.members &&
-  //         Array.isArray(space.members) &&
-  //         space.members.length > 0,
-  //     );
-  //   } catch (error) {
-  //     // Fallback: Query space_member table directly and join with spaces
-  //     console.warn(
-  //       'Space relation query failed, falling back to direct query:',
-  //       error,
-  //     );
-
-  //     const spaceMembers =
-  //       (await this.db.query.spaceMember?.findMany({
-  //         where: (member: any) => eq(member.agentId, agentId),
-  //         with: {
-  //           space: true,
-  //         },
-  //       })) || [];
-
-  //     return spaceMembers.map((member: any) => member.space).filter(Boolean);
-  //   }
-  // }
-  // //get spaces from session
-  // async getSpacesFromSession(sessionId: string) {
-  //   const session = await this.db.query.session.findFirst({
-  //     where: (s) => eq(s.sessionId, sessionId),
-  //   });
-  //   if (!session) {
-  //     throw new BadRequestException('Session not found');
-  //   }
-  //   //get space ids and get the space details
-  //   const spaceIds = Array.isArray(session.spaces)
-  //     ? (session.spaces as string[])
-  //     : [];
-  //   if (spaceIds.length === 0) {
-  //     return [];
-  //   }
-  //   //filter spaces gotten from getSpacesForAgent
-  //   const spacesfromSession = await this.getSpacesForAgent(session.agentId);
-  //   const spaces = spacesfromSession.filter((s) =>
-  //     spaceIds.includes(s.spaceId),
-  //   );
-  //   if (spaces.length === 0) {
-  //     throw new BadRequestException('No spaces found for this session');
-  //   }
-  //   return spaces;
-  // }
-
   /* ─────────────────────────  CRON TRIGGER  ───────────────────────── */
   async triggerAgent(props: { agentId: string; sessionId?: string }) {
     console.log('Triggering agent', props.agentId);
@@ -834,7 +765,7 @@ export class AgentService implements OnModuleInit {
               You are receiving this message because you are subscribed to this space.
               
               You can interact with other agents in this space using the sendMessageToSpace tool.
-              Use the getSpaceMessages tool before sending messages to the space.
+              You can use the getSpaceMessages to get older messages to get more context about the space.
 
               If you create goals and tasks, you need to inform the space members about it by sending a message to the space.
 

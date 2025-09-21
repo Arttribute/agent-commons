@@ -8,6 +8,7 @@ import * as os from 'os';
 import * as path from 'path';
 import WebSocket from 'ws';
 import { WaveFile } from 'wavefile';
+import { SpaceAgentTriggerService } from './space-agent-trigger.service';
 
 // Only import canvas lazily when needed (faster cold start)
 let createCanvas: any;
@@ -53,6 +54,10 @@ interface MonitoringSession {
   rtConnecting?: boolean; // avoid duplicate connects
   rtPendingText?: string; // accumulating partial transcript
   rtLastCommitAt?: number; // last time we committed buffer
+
+  // Latest captured visual frame for downstream triggers
+  lastFrameDataUrl?: string;
+  lastFrameTimestamp?: number; // epoch ms
 }
 
 @Injectable()
@@ -76,10 +81,16 @@ export class StreamMonitorService extends EventEmitter {
   private AUDIO_MAX_CHUNK_BYTES = 1_000_000; // 1 MB safety
   private DEFAULT_VISION_INTERVAL_MS = 1000; // analyze ~every 2s
   private MAX_PARALLEL_VISION = 1;
+  // Global override config (can be tuned at runtime)
+  private visionConfig = {
+    defaultIntervalMs: 1000,
+    imageDetail: 'low' as 'low' | 'high' | 'auto',
+  };
 
   constructor(
     @Inject(forwardRef(() => TranscriptionDeliveryService))
     private readonly delivery: TranscriptionDeliveryService,
+    private readonly triggerService: SpaceAgentTriggerService,
   ) {
     super();
     if (!process.env.OPENAI_API_KEY) {
@@ -106,7 +117,7 @@ export class StreamMonitorService extends EventEmitter {
       audioBuffer: [],
       audioFormat: 'wav',
       visionIntervalMs: this.DEFAULT_VISION_INTERVAL_MS,
-      imageDetail: 'low',
+      imageDetail: this.visionConfig.imageDetail,
       consecutiveErrors: 0,
     };
 
@@ -232,65 +243,13 @@ export class StreamMonitorService extends EventEmitter {
     }
   }
 
-  /** Initialize an OpenAI Realtime WebSocket for the session (idempotent). */
-  private initRealtime(session: MonitoringSession) {
-    if (session.rtSocket || session.rtConnecting) return;
-    session.rtConnecting = true;
-
-    const apiKey = process.env.OPENAI_API_KEY;
-    if (!apiKey) {
-      this.logger.warn('OPENAI_API_KEY missing; cannot init realtime');
-      return;
-    }
-
-    const url = `wss://api.openai.com/v1/realtime?model=${encodeURIComponent(this.REALTIME_MODEL)}`;
-    const headers = {
-      Authorization: `Bearer ${apiKey}`,
-      'OpenAI-Beta': 'realtime=v1',
-    } as any;
-
-    const ws = new WebSocket(url, { headers });
-    session.rtSocket = ws;
-
-    ws.on('open', () => {
-      session.rtReady = true;
-      session.rtConnecting = false;
-      this.logger.log(`Realtime socket open for session ${session.sessionId}`);
-    });
-
-    ws.on('message', (raw: WebSocket.RawData) => {
-      try {
-        const msg = JSON.parse(raw.toString());
-        this.handleRealtimeMessage(session, msg);
-      } catch (e) {
-        this.logger.warn('Failed parsing realtime message', e as any);
-      }
-    });
-
-    ws.on('close', (code, reason) => {
-      this.logger.log(
-        `Realtime socket closed for ${session.sessionId} code=${code} reason=${reason.toString()}`,
-      );
-      session.rtSocket = undefined;
-      session.rtReady = false;
-      session.rtConnecting = false;
-    });
-
-    ws.on('error', (err) => {
-      this.logger.error(`Realtime socket error (${session.sessionId})`, err);
-      session.rtSocket = undefined;
-      session.rtReady = false;
-      session.rtConnecting = false;
-    });
-  }
-
   /** Stream an audio buffer to realtime: convert to 16k PCM16, append, commit, request transcription. */
   private async streamAudioToRealtime(
     session: MonitoringSession,
     audio: Buffer,
   ) {
     if (audio.length === 0) return;
-    this.initRealtime(session);
+
     const ws = session.rtSocket;
     if (!ws || ws.readyState !== WebSocket.OPEN) return; // will retry on next chunk
 
@@ -446,14 +405,31 @@ export class StreamMonitorService extends EventEmitter {
       return;
     }
 
+    // Log receipt of frame for debugging
+    this.logger.debug(
+      `Received video frame for session=${sessionId}, participant=${frame.participantId}, ` +
+        `type=${frame.streamType || 'camera'}, size=${frame.width}x${frame.height}, dataLength=${frame.data.length}`,
+    );
+
     const now = Date.now();
     // sample every N ms and avoid overlap
-    if (session.pendingVision) return;
+    if (session.pendingVision) {
+      this.logger.debug(
+        `Skipping frame (pendingVision) for session=${sessionId}, participant=${frame.participantId}`,
+      );
+      return;
+    }
+    const effectiveInterval =
+      session.visionIntervalMs ?? this.visionConfig.defaultIntervalMs;
     if (
       session.lastVideoFrameAt &&
-      now - session.lastVideoFrameAt < session.visionIntervalMs
-    )
+      now - session.lastVideoFrameAt < effectiveInterval
+    ) {
+      this.logger.debug(
+        `Throttling frame for session=${sessionId} (interval ${effectiveInterval}ms), delta=${now - session.lastVideoFrameAt}ms`,
+      );
       return;
+    }
 
     session.lastVideoFrameAt = now;
     session.pendingVision = true;
@@ -491,26 +467,14 @@ export class StreamMonitorService extends EventEmitter {
       const b64 = jpeg.toString('base64');
       const dataUrl = `data:image/jpeg;base64,${b64}`;
 
-      // Include stream type in analysis
-      const text = await this.analyzeImage(session, dataUrl, frame.streamType);
+      // Persist latest frame for later trigger usage
+      session.lastFrameDataUrl = dataUrl;
+      session.lastFrameTimestamp = Date.now();
 
-      if (text) {
-        const transcription: StreamTranscription = {
-          sessionId,
-          spaceId: session.spaceId,
-          participantId: session.participantId,
-          transcript: text,
-          timestamp: Date.now(),
-          confidence: 0.8,
-          isFinal: true,
-          type: 'video',
-        };
+      this.logger.debug(
+        `Processed video frame to JPEG for session=${sessionId}, output=${w}x${h}, bytes=${jpeg.length}`,
+      );
 
-        // Deliver to monitoring agents
-        session.monitoringAgents.forEach((agentId) => {
-          this.delivery.deliverTranscriptionToAgent(agentId, transcription);
-        });
-      }
       session.consecutiveErrors = 0;
     } catch (err) {
       session.consecutiveErrors++;
@@ -521,74 +485,6 @@ export class StreamMonitorService extends EventEmitter {
     } finally {
       session.pendingVision = false;
     }
-  }
-
-  /** Use Chat Completions with image input for lightweight vision. */
-  private async analyzeImage(
-    session: MonitoringSession,
-    imageDataUrl: string,
-    streamType?: 'camera' | 'screen' | 'url',
-  ): Promise<string | null> {
-    const model = process.env.VISION_MODEL || 'gpt-4o-mini';
-
-    // Customize prompt based on stream type
-    let systemPrompt = `You are an AI stream monitor - You are acting as the eyes for an AI agent. 
-        Describe what is happening in the stream in detail and in a clear as a matter of fact manner. 
-        Take note of different objects and their proximity to other objects and especially take note of moving objects and the direction to and from other objects. 
-        Specificity and details here are crucial. Do not leave out any detail. The idea is that you are not opinionated but represent things exactly how they are and in full detail.
-        Arrange the view in order of proximity such that the objects that seem the closest are described first and the ones that appear furthest away being described last.
-      `;
-    let prefix = '[VISUAL]';
-
-    switch (streamType) {
-      case 'screen':
-        systemPrompt +=
-          ' This is a screen share. Focus on applications, documents, code, presentations, and any shared content.';
-        prefix = '[SCREEN]';
-        break;
-      case 'url':
-        systemPrompt +=
-          ' This is a web page capture. Focus on web content, articles, videos, forms, and user interactions with the page.';
-        prefix = '[WEB]';
-        break;
-      case 'camera':
-      default:
-        systemPrompt +=
-          ' This is a camera feed. Focus on people, actions, gestures, and any visible text or objects.';
-        prefix = '[CAMERA]';
-        break;
-    }
-
-    const completion = await this.openai.chat.completions.create({
-      model,
-      messages: [
-        {
-          role: 'system',
-          content: `${systemPrompt} Prefix your answer with ${prefix}.`,
-        },
-        {
-          role: 'user',
-          content: [
-            { type: 'text', text: 'Analyze this frame in detail.' },
-            {
-              type: 'image_url',
-              image_url: {
-                url: imageDataUrl,
-                detail: 'high', //session.imageDetail ??
-              },
-            },
-          ],
-        },
-      ],
-      max_tokens: 16384, //maxpossible tokens,
-      temperature: 0.2,
-    });
-
-    const out = completion.choices[0]?.message?.content;
-    this.logger.log(
-      `Transcript for session ${session.sessionId} (${streamType || 'camera'}): ${out}`,
-    );
-    return typeof out === 'string' ? out.trim() : null;
   }
 
   getMonitoringStatus() {
@@ -615,6 +511,31 @@ export class StreamMonitorService extends EventEmitter {
       });
     });
     return s;
+  }
+
+  /** Retrieve the most recent captured frame (data URL) for any active monitoring session in a space. */
+  getLatestFrameDataForSpace(spaceId: string): {
+    latestFrameUrl: string | undefined;
+    sessionId: string | undefined;
+  } {
+    let latest: { ts: number; url: string; sessionId: string } | undefined;
+    this.sessions.forEach((session) => {
+      if (
+        session.spaceId === spaceId &&
+        session.isActive &&
+        session.lastFrameDataUrl &&
+        session.lastFrameTimestamp
+      ) {
+        if (!latest || session.lastFrameTimestamp > latest.ts) {
+          latest = {
+            ts: session.lastFrameTimestamp,
+            url: session.lastFrameDataUrl,
+            sessionId: session.sessionId,
+          };
+        }
+      }
+    });
+    return { latestFrameUrl: latest?.url, sessionId: latest?.sessionId };
   }
 
   getActiveStreams(spaceId: string): any[] {

@@ -30,6 +30,7 @@ interface StreamCardProps {
     id: string;
     role: "human" | "agent";
     stream?: MediaStream;
+    audioStream?: MediaStream;
     publish: { audio: boolean; video: boolean };
     isScreenShare?: boolean;
     isUrlShare?: boolean;
@@ -55,6 +56,7 @@ function StreamCard({
   className = "",
 }: StreamCardProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
+  const audioRef = useRef<HTMLAudioElement>(null);
   const [isHovered, setIsHovered] = useState(false);
 
   useEffect(() => {
@@ -62,6 +64,12 @@ function StreamCard({
       videoRef.current.srcObject = peer.stream;
     }
   }, [peer.stream]);
+
+  useEffect(() => {
+    if (audioRef.current && peer.audioStream) {
+      audioRef.current.srcObject = peer.audioStream as any;
+    }
+  }, [peer.audioStream]);
 
   const getAvatarColor = (id: string) => {
     const colors = [
@@ -111,6 +119,16 @@ function StreamCard({
             {peer.role === "agent" ? "A" : "H"}
           </div>
         </div>
+      )}
+
+      {/* Hidden audio element to play separate audio-only streams */}
+      {peer.audioStream && (
+        <audio
+          ref={audioRef}
+          autoPlay
+          muted={isLocal || isMuted}
+          className="hidden"
+        />
       )}
 
       {/* Overlay */}
@@ -358,6 +376,7 @@ export default function SpaceMediaPanel({
     id: string;
     role: "human" | "agent";
     stream?: MediaStream | null;
+    audioStream?: MediaStream | null;
     publish: { audio: boolean; video: boolean };
     isLocal: boolean;
     isScreenShare: boolean;
@@ -373,6 +392,7 @@ export default function SpaceMediaPanel({
       id: selfId,
       role,
       stream: localStream.current,
+      audioStream: undefined,
       publish: { audio: pubAudio, video: pubVideo },
       isLocal: true,
       isScreenShare: false,
@@ -386,6 +406,7 @@ export default function SpaceMediaPanel({
       id: `${selfId}-screen`,
       role,
       stream: localScreenStream.current,
+      audioStream: undefined,
       publish: { audio: false, video: true },
       isLocal: true,
       isScreenShare: true,
@@ -399,6 +420,7 @@ export default function SpaceMediaPanel({
       id: `${selfId}-url`,
       role,
       stream: localUrlStream.current,
+      audioStream: undefined,
       publish: { audio: false, video: true },
       isLocal: true,
       isScreenShare: false,
@@ -410,11 +432,12 @@ export default function SpaceMediaPanel({
   // Add remote streams
   remotePeers.forEach((peer) => {
     // Add regular stream
-    if (peer.stream) {
+    if (peer.stream || peer.audioStream || peer.publishing.audio) {
       allStreams.push({
         id: peer.id,
         role: peer.role,
         stream: peer.stream,
+        audioStream: peer.audioStream || null,
         publish: peer.publishing,
         isLocal: false,
         isScreenShare: false,
@@ -428,6 +451,7 @@ export default function SpaceMediaPanel({
         id: `${peer.id}-screen`,
         role: peer.role,
         stream: peer.screenStream,
+        audioStream: undefined,
         publish: { audio: false, video: true },
         isLocal: false,
         isScreenShare: true,
@@ -441,6 +465,7 @@ export default function SpaceMediaPanel({
         id: `${peer.id}-url`,
         role: peer.role,
         stream: peer.urlStream,
+        audioStream: undefined,
         publish: { audio: false, video: true },
         isLocal: false,
         isScreenShare: false,
@@ -612,6 +637,7 @@ export default function SpaceMediaPanel({
                       id: focusedStream.id,
                       role: focusedStream.role,
                       stream: focusedStream.stream || undefined,
+                      audioStream: focusedStream.audioStream || undefined,
                       publish: focusedStream.publish,
                       isScreenShare: focusedStream.isScreenShare,
                       isUrlShare: focusedStream.isUrlShare,
@@ -647,6 +673,7 @@ export default function SpaceMediaPanel({
                             id: stream.id,
                             role: stream.role,
                             stream: stream.stream || undefined,
+                            audioStream: stream.audioStream || undefined,
                             publish: stream.publish,
                             isScreenShare: stream.isScreenShare,
                             isUrlShare: stream.isUrlShare,
@@ -683,6 +710,7 @@ export default function SpaceMediaPanel({
                     id: stream.id,
                     role: stream.role,
                     stream: stream.stream || undefined,
+                    audioStream: stream.audioStream || undefined,
                     publish: stream.publish,
                     isScreenShare: stream.isScreenShare,
                     isUrlShare: stream.isUrlShare,

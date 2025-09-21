@@ -27,9 +27,11 @@ interface SignalMessage {
   fromId: string;
   role: 'human' | 'agent';
   targetId?: string;
-  data?: any;
+  data?: any; // Prefer { publishing: boolean } for per-stream
+  // Back-compat: combined publish object
   publish?: { audio: boolean; video: boolean };
-  streamType?: 'camera' | 'screen' | 'url';
+  // Standardized stream type across system
+  streamType?: 'audio' | 'camera' | 'screen' | 'url';
   url?: string;
   sessionId?: string;
 }
@@ -38,7 +40,11 @@ interface ParticipantState {
   id: string;
   role: string;
   socketId: string;
+  // Back-compat combined state
   publishing: { audio: boolean; video: boolean };
+  // New per-stream state
+  publishingAudio: boolean;
+  publishingCamera: boolean;
   screenSharing: boolean;
   urlSharing: { active: boolean; url?: string; sessionId?: string };
 }
@@ -116,6 +122,8 @@ export class SpaceRTCGateway
       role,
       socketId: client.id,
       publishing: { audio: false, video: false },
+      publishingAudio: false,
+      publishingCamera: false,
       screenSharing: false,
       urlSharing: { active: false },
     };
@@ -202,20 +210,52 @@ export class SpaceRTCGateway
               participant.urlSharing,
             );
           } else if (streamType === 'screen') {
-            participant.screenSharing = !!message.publish?.video;
+            const screenOn =
+              typeof message.data?.publishing === 'boolean'
+                ? message.data.publishing
+                : !!message.publish?.video;
+            participant.screenSharing = !!screenOn;
             // Update RTC service
             this.spaceRTCService.updateScreenSharingState(
               spaceId,
               clientInfo.participantId,
               participant.screenSharing,
             );
-          } else if (streamType === 'camera' && message.publish) {
-            participant.publishing = message.publish;
-            // Update RTC service
+          } else if (streamType === 'camera') {
+            const isOn =
+              typeof message.data?.publishing === 'boolean'
+                ? message.data.publishing
+                : message.publish
+                  ? !!message.publish.video || !!message.publish.audio
+                  : false;
+            participant.publishingCamera = !!isOn;
+            // Keep combined state in sync (video reflects camera stream)
+            participant.publishing.video = !!isOn;
+            // Update RTC service with combined state
             this.spaceRTCService.updatePublishState(
               spaceId,
               clientInfo.participantId,
-              message.publish,
+              {
+                audio: participant.publishing.audio,
+                video: participant.publishing.video,
+              },
+            );
+          } else if (streamType === 'audio') {
+            const isOn =
+              typeof message.data?.publishing === 'boolean'
+                ? message.data.publishing
+                : message.publish
+                  ? !!message.publish.audio && !message.publish.video
+                  : false;
+            participant.publishingAudio = !!isOn;
+            participant.publishing.audio = !!isOn;
+            this.spaceRTCService.updatePublishState(
+              spaceId,
+              clientInfo.participantId,
+              {
+                audio: participant.publishing.audio,
+                video: participant.publishing.video,
+              },
             );
           }
 
@@ -225,7 +265,9 @@ export class SpaceRTCGateway
                 ? participant.urlSharing
                 : streamType === 'screen'
                   ? participant.screenSharing
-                  : participant.publishing,
+                  : streamType === 'audio'
+                    ? participant.publishing.audio
+                    : participant.publishing.video,
             )}`,
           );
         }
@@ -406,23 +448,35 @@ export class SpaceRTCGateway
 
       if (targetParticipant) {
         if (streamType === 'camera') {
-          // Send current camera publish state to requesting agent
           client.emit('signal', {
             type: 'publishState',
             spaceId,
             fromId: targetId,
             role: targetParticipant.role,
+            // New schema
+            data: { publishing: !!targetParticipant.publishingCamera },
+            // Back-compat
             publish: targetParticipant.publishing,
             streamType: 'camera',
           });
-        } else if (streamType === 'screen' && targetParticipant.screenSharing) {
-          // Send screen sharing state
+        } else if (streamType === 'audio') {
           client.emit('signal', {
             type: 'publishState',
             spaceId,
             fromId: targetId,
             role: targetParticipant.role,
-            publish: { audio: false, video: true },
+            data: { publishing: !!targetParticipant.publishingAudio },
+            publish: targetParticipant.publishing,
+            streamType: 'audio',
+          });
+        } else if (streamType === 'screen') {
+          client.emit('signal', {
+            type: 'publishState',
+            spaceId,
+            fromId: targetId,
+            role: targetParticipant.role,
+            data: { publishing: !!targetParticipant.screenSharing },
+            publish: { audio: false, video: !!targetParticipant.screenSharing },
             streamType: 'screen',
           });
         }

@@ -4,17 +4,17 @@ import {
   NotFoundException,
   BadRequestException,
 } from '@nestjs/common';
+import { EventEmitter } from 'events';
 import { eq, InferInsertModel, desc, and, or } from 'drizzle-orm';
 import { DatabaseService } from '~/modules/database/database.service';
 import { AgentService } from '~/agent/agent.service';
 import * as schema from '#/models/schema';
-import { lastValueFrom, filter } from 'rxjs';
-
 @Injectable()
 export class SpaceService {
   constructor(
     private db: DatabaseService,
     private agentService: AgentService,
+    private readonly emitter: EventEmitter,
   ) {}
 
   /* ─────────────────────────  SPACE MANAGEMENT  ───────────────────────── */
@@ -317,6 +317,14 @@ export class SpaceService {
         })
         .returning();
 
+      // Emit real-time event for new message
+      try {
+        this.emitter.emit('space.message.created', {
+          spaceId,
+          message,
+        });
+      } catch {}
+
       if (senderId !== 'system') {
         await this.db
           .update(schema.spaceMember)
@@ -357,51 +365,6 @@ export class SpaceService {
           }
         }
       }
-      // Trigger subsribed agents to run
-      const currentTurn = metadata.turnCount ?? 0;
-      const maxTurnsParam = metadata.maxTurns ?? 1;
-
-      const subscribedAgents = await this.db.query.spaceMember.findMany({
-        where: and(
-          eq(schema.spaceMember.spaceId, spaceId),
-          eq(schema.spaceMember.memberType, 'agent'),
-          eq(schema.spaceMember.isSubscribed, true),
-        ),
-      });
-
-      // const triggerRunAgent = async (agentId: string) => {
-      //   await lastValueFrom(
-      //     this.agentService
-      //       .runAgent({
-      //         agentId,
-      //         messages: [{ role: 'user', content }],
-      //         spaceId,
-      //         initiator: senderId,
-      //         turnCount: currentTurn + 1,
-      //         maxTurns: maxTurnsParam,
-      //       })
-      //       .pipe(filter((chunk) => chunk.type === 'final')),
-      //   ).catch((err) =>
-      //     console.error(
-      //       `runAgent failed for agent ${agentId} in space ${spaceId}:`,
-      //       err,
-      //     ),
-      //   );
-      // };
-
-      // if (targetType === 'broadcast') {
-      //   for (const agent of subscribedAgents) {
-      //     // avoid echoing back to the sender if the sender was an agent
-      //     if (agent.memberId === senderId && senderType === 'agent') continue;
-      //     await triggerRunAgent(agent.memberId);
-      //   }
-      // } else if (targetType === 'direct' && targetIds) {
-      //   for (const id of targetIds) {
-      //     const isSubscribed = subscribedAgents.some((a) => a.memberId === id);
-      //     if (isSubscribed) await triggerRunAgent(id);
-      //   }
-      // }
-
       return message;
     } catch (error) {
       console.error('Error in sendMessage:', error);
@@ -460,6 +423,14 @@ export class SpaceService {
       .returning();
     if (!updatedMessage)
       throw new NotFoundException(`Message with ID ${messageId} not found`);
+
+    // Emit real-time event for message update
+    try {
+      this.emitter.emit('space.message.updated', {
+        spaceId: updatedMessage.spaceId,
+        message: updatedMessage,
+      });
+    } catch {}
     return updatedMessage;
   }
 
@@ -471,6 +442,13 @@ export class SpaceService {
       .returning();
     if (!deletedMessage)
       throw new NotFoundException(`Message with ID ${messageId} not found`);
+    // Emit real-time event for message deletion
+    try {
+      this.emitter.emit('space.message.deleted', {
+        spaceId: deletedMessage.spaceId,
+        message: deletedMessage,
+      });
+    } catch {}
     return { success: true };
   }
 

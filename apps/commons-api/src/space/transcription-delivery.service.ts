@@ -91,4 +91,3 @@ export class TranscriptionDeliveryService extends EventEmitter {
     );
   }
 }
-8;

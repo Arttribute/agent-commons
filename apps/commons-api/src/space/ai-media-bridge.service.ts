@@ -12,16 +12,18 @@ interface SignalMessage {
   spaceId: string;
   fromId: string;
   role: Role;
-  data?: any;
+  data?: any; // For publishState, prefer { publishing: boolean } going forward
   targetId?: string;
+  // Back-compat: some clients may still send combined publish object
   publish?: { audio: boolean; video: boolean };
-  streamType?: string;
+  // Standardize stream type across the system
+  streamType?: 'audio' | 'camera' | 'screen' | 'url';
 }
 
 interface PeerConnection {
   pc: any;
   targetId: string;
-  streamType: 'camera' | 'screen' | 'url';
+  streamType: 'audio' | 'camera' | 'screen' | 'url';
   isMonitoring: boolean;
   audioSink?: any;
   videoSink?: any;
@@ -185,12 +187,20 @@ export class AiMediaBridgeService {
 
           case 'publishState':
             if (message.fromId !== context.agentId) {
+              // Prefer new schema: message.data?.publishing boolean
+              const publishing: boolean | undefined =
+                typeof message.data?.publishing === 'boolean'
+                  ? message.data.publishing
+                  : undefined;
+
               await this.handlePublishState(
                 context,
                 message.fromId,
-                message.publish,
-                message.streamType || 'camera',
+                publishing,
+                (message.streamType as any) || 'camera',
                 iceServers,
+                // Pass along legacy publish object for back-compat decisions
+                message.publish,
               );
             }
             break;
@@ -241,18 +251,26 @@ export class AiMediaBridgeService {
   private async handlePublishState(
     context: AgentContext,
     peerId: string,
-    publish: { audio: boolean; video: boolean } | undefined,
-    streamType: string,
+    publishing: boolean | undefined,
+    streamType: 'audio' | 'camera' | 'screen' | 'url',
     iceServers?: any[],
+    legacyPublish?: { audio: boolean; video: boolean },
   ) {
     const connectionKey = `${peerId}-${streamType}`;
 
     // Handle different stream types
-    if (streamType === 'camera' && publish) {
-      const isPublishing = publish.audio || publish.video;
+    if (streamType === 'camera') {
+      // New schema: single boolean for camera publishing
+      // Legacy: derive from combined publish object
+      const isPublishing =
+        typeof publishing === 'boolean'
+          ? publishing
+          : legacyPublish
+            ? !!legacyPublish.video || !!legacyPublish.audio
+            : false;
 
       this.logger.log(
-        `Peer ${peerId} camera publish state: audio=${publish.audio}, video=${publish.video}`,
+        `Peer ${peerId} camera publish state: ${isPublishing} (legacy: ${legacyPublish ? `a=${legacyPublish.audio}, v=${legacyPublish.video}` : 'n/a'})`,
       );
 
       if (isPublishing && !context.peers.has(connectionKey)) {
@@ -281,6 +299,30 @@ export class AiMediaBridgeService {
           false,
         );
       }
+    } else if (streamType === 'audio') {
+      // Allow audio-only connections if clients split streams
+      const isPublishing =
+        typeof publishing === 'boolean'
+          ? publishing
+          : legacyPublish
+            ? !!legacyPublish.audio && !legacyPublish.video
+            : false;
+
+      this.logger.log(
+        `Peer ${peerId} audio publish state: ${isPublishing} (legacy: ${legacyPublish ? `a=${legacyPublish.audio}, v=${legacyPublish.video}` : 'n/a'})`,
+      );
+
+      if (isPublishing && !context.peers.has(connectionKey)) {
+        await this.createPeerConnection(
+          context,
+          peerId,
+          'audio',
+          iceServers,
+          false,
+        );
+      } else if (!isPublishing && context.peers.has(connectionKey)) {
+        this.removePeerConnection(context, connectionKey);
+      }
     }
   }
 
@@ -290,7 +332,7 @@ export class AiMediaBridgeService {
   private async createPeerConnection(
     context: AgentContext,
     peerId: string,
-    streamType: 'camera' | 'screen' | 'url',
+    streamType: 'audio' | 'camera' | 'screen' | 'url',
     iceServers?: any[],
     shouldCreateOffer = true,
   ) {
@@ -328,19 +370,32 @@ export class AiMediaBridgeService {
       }
     };
 
-    // Set up track handling for monitoring
+    // Set up track handling for monitoring (modality-aware)
     pc.ontrack = (event: any) => {
       this.logger.log(
-        `Received ${event.track.kind} track from ${peerId} (${streamType})`,
+        `Received ${event.track?.kind || 'unknown'} track from ${peerId} (${streamType})`,
       );
 
-      // Validate track
-      if (!event.track || !event.streams || event.streams.length === 0) {
-        this.logger.warn(`Invalid track received from ${peerId}`);
+      // Validate track presence only; wrtc may not populate event.streams
+      if (!event.track) {
+        this.logger.warn(`ontrack without a track from ${peerId}`);
         return;
       }
 
-      this.setupTrackMonitoring(context, peer, event.track);
+      // Enforce expected kind for this connection's streamType
+      const expectedKind = streamType === 'audio' ? 'audio' : 'video';
+      if (event.track.kind !== expectedKind) {
+        this.logger.warn(
+          `Ignoring unexpected ${event.track.kind} on ${streamType} connection for ${peerId}`,
+        );
+        return;
+      }
+
+      if (expectedKind === 'audio') {
+        this.setupAudioTrackMonitoring(context, peer, event.track);
+      } else {
+        this.setupVideoTrackMonitoring(context, peer, event.track);
+      }
     };
 
     // Add connection state logging
@@ -367,15 +422,27 @@ export class AiMediaBridgeService {
       );
     };
 
+    // Make receive intent explicit per modality to avoid coupling video to audio
+    try {
+      if (streamType === 'audio') {
+        pc.addTransceiver('audio', { direction: 'recvonly' as any });
+      } else if (streamType === 'camera' || streamType === 'screen') {
+        pc.addTransceiver('video', { direction: 'recvonly' as any });
+      }
+    } catch (e) {
+      this.logger.debug(`Transceiver add failed for ${connectionKey}: ${e}`);
+    }
+
     context.peers.set(connectionKey, peer);
 
     // Only create offer if we should initiate
     if (shouldCreateOffer) {
       try {
         const offer = await pc.createOffer({
-          offerToReceiveAudio: true,
-          offerToReceiveVideo: true,
-        });
+          offerToReceiveAudio: streamType === 'audio',
+          offerToReceiveVideo:
+            streamType === 'camera' || streamType === 'screen',
+        } as any);
         await pc.setLocalDescription(offer);
 
         context.socket.emit('signal', {
@@ -406,7 +473,7 @@ export class AiMediaBridgeService {
    * Handle signaling messages - improved error handling
    */
   private async handleOffer(context: AgentContext, message: SignalMessage) {
-    const streamType = message.streamType || 'camera';
+    const streamType = (message.streamType as any) || 'camera';
     const connectionKey = `${message.fromId}-${streamType}`;
     let peer = context.peers.get(connectionKey);
 
@@ -464,7 +531,7 @@ export class AiMediaBridgeService {
   }
 
   private async handleAnswer(context: AgentContext, message: SignalMessage) {
-    const streamType = message.streamType || 'camera';
+    const streamType = (message.streamType as any) || 'camera';
     const connectionKey = `${message.fromId}-${streamType}`;
     const peer = context.peers.get(connectionKey);
 
@@ -483,7 +550,7 @@ export class AiMediaBridgeService {
   }
 
   private async handleCandidate(context: AgentContext, message: SignalMessage) {
-    const streamType = message.streamType || 'camera';
+    const streamType = (message.streamType as any) || 'camera';
     const connectionKey = `${message.fromId}-${streamType}`;
     const peer = context.peers.get(connectionKey);
 
@@ -519,117 +586,149 @@ export class AiMediaBridgeService {
   /**
    * Set up track monitoring for received media tracks - improved
    */
-  private setupTrackMonitoring(
+  private setupAudioTrackMonitoring(
     context: AgentContext,
     peer: PeerConnection,
     track: any,
   ) {
     this.logger.log(
-      `Setting up ${track.kind} track monitoring for ${peer.targetId} (${peer.streamType})`,
+      `Setting up audio track monitoring for ${peer.targetId} (${peer.streamType})`,
     );
 
-    // Mark peer as monitoring
     peer.isMonitoring = true;
 
-    // Set up track handlers based on type
-    if (track.kind === 'audio') {
-      try {
-        const audioSink = new wrtc.nonstandard.RTCAudioSink(track);
-        peer.audioSink = audioSink;
+    try {
+      const audioSink = new (wrtc as any).nonstandard.RTCAudioSink(track);
+      peer.audioSink = audioSink;
 
-        // Use setImmediate to avoid blocking the main thread
-        audioSink.ondata = (data: any) => {
-          setImmediate(() => {
-            try {
-              // Validate audio data
-              if (!data || !data.samples || data.samples.length === 0) {
-                return;
-              }
-
-              // Forward to all monitoring sessions for this agent
-              context.monitoringSessions.forEach((sessionId) => {
-                const wavBuffer = this.convertPCMToWAV(
-                  data.samples,
-                  data.sampleRate,
-                );
-                this.streamMonitor.pushAudioData(sessionId, wavBuffer, {
-                  format: 'wav',
-                });
+      audioSink.ondata = (data: any) => {
+        setImmediate(() => {
+          try {
+            if (!data || !data.samples || data.samples.length === 0) return;
+            context.monitoringSessions.forEach((sessionId) => {
+              const wavBuffer = this.convertPCMToWAV(
+                data.samples,
+                data.sampleRate,
+              );
+              this.streamMonitor.pushAudioData(sessionId, wavBuffer, {
+                format: 'wav',
               });
-            } catch (error) {
-              this.logger.error(`Audio processing error: ${error}`);
+            });
+          } catch (error) {
+            this.logger.error(`Audio processing error: ${error}`);
+          }
+        });
+      };
+
+      this.logger.log(
+        `Audio monitoring setup for peer ${peer.targetId} (${peer.streamType})`,
+      );
+    } catch (error) {
+      this.logger.error(
+        `Audio sink setup failed for ${peer.targetId} (${peer.streamType}): ${error}`,
+      );
+    }
+  }
+
+  private setupVideoTrackMonitoring(
+    context: AgentContext,
+    peer: PeerConnection,
+    track: any,
+  ) {
+    this.logger.log(
+      `Setting up video track monitoring for ${peer.targetId} (${peer.streamType})`,
+    );
+
+    peer.isMonitoring = true;
+
+    try {
+      const videoSink = new (wrtc as any).nonstandard.RTCVideoSink(track);
+      peer.videoSink = videoSink;
+
+      videoSink.onframe = (frame: any) => {
+        setImmediate(() => {
+          try {
+            if (!frame) {
+              this.logger.debug(
+                `Received null/undefined frame from ${peer.targetId} (${peer.streamType})`,
+              );
+              return;
             }
-          });
-        };
 
-        this.logger.log(
-          `Audio monitoring setup for peer ${peer.targetId} (${peer.streamType})`,
-        );
-      } catch (error) {
-        this.logger.error(
-          `Audio sink setup failed for ${peer.targetId} (${peer.streamType}): ${error}`,
-        );
-      }
-    } else if (track.kind === 'video') {
-      try {
-        const videoSink = new wrtc.nonstandard.RTCVideoSink(track);
-        peer.videoSink = videoSink;
-
-        videoSink.onframe = (frame: any) => {
-          setImmediate(() => {
-            try {
-              // Improved frame validation
-              if (
-                !frame ||
-                typeof frame.width !== 'number' ||
-                typeof frame.height !== 'number' ||
-                frame.width <= 0 ||
-                frame.height <= 0 ||
-                !frame.data ||
-                !(frame.data instanceof Uint8ClampedArray) ||
-                frame.data.length === 0
-              ) {
-                this.logger.debug(
-                  `Skipping invalid video frame from ${peer.targetId} (${peer.streamType}): width=${frame?.width}, height=${frame?.height}, dataLength=${frame?.data?.length || 0}, dataType=${typeof frame?.data}`,
-                );
-                return;
-              }
-
-              // Validate expected data length (RGBA = width * height * 4)
-              const expectedLength = frame.width * frame.height * 4;
-              if (frame.data.length !== expectedLength) {
-                this.logger.debug(
-                  `Frame data length mismatch from ${peer.targetId} (${peer.streamType}): expected ${expectedLength}, got ${frame.data.length}`,
-                );
-                return;
-              }
-
-              // Forward to all monitoring sessions for this agent
-              context.monitoringSessions.forEach((sessionId) => {
-                this.streamMonitor.pushVideoFrame(sessionId, {
-                  width: frame.width,
-                  height: frame.height,
-                  data: frame.data,
-                  rotation: frame.rotation || 0,
-                  timestamp: Date.now(),
-                  participantId: peer.targetId,
-                  streamType: peer.streamType,
-                });
-              });
-            } catch (error) {
-              this.logger.error(`Video processing error: ${error}`);
+            if (frame.frame && !frame.data) {
+              frame = frame.frame;
             }
-          });
-        };
 
-        this.logger.log(
-          `Video monitoring setup for peer ${peer.targetId} (${peer.streamType})`,
-        );
-      } catch (error) {
-        this.logger.error(
-          `Video sink setup failed for ${peer.targetId} (${peer.streamType}): ${error}`,
-        );
-      }
+            if (
+              typeof frame.width !== 'number' ||
+              typeof frame.height !== 'number' ||
+              frame.width <= 0 ||
+              frame.height <= 0 ||
+              !frame.data
+            ) {
+              this.logger.debug(
+                `Skipping invalid video frame from ${peer.targetId} (${peer.streamType}): ` +
+                  `width=${frame.width}, height=${frame.height}, ` +
+                  `hasData=${!!frame.data}, frameKeys=[${Object.keys(frame).join(',')}]`,
+              );
+              return;
+            }
+
+            const bytesPerPixel =
+              frame.data.length / (frame.width * frame.height);
+            const expectedRGBALength = frame.width * frame.height * 4;
+
+            if (frame.data.length !== expectedRGBALength) {
+              const ratio = frame.data.length / expectedRGBALength;
+
+              this.logger.debug(
+                `Frame format adaptation: ${peer.targetId} (${peer.streamType}): ${bytesPerPixel.toFixed(2)} bytes/pixel, ` +
+                  `size ratio: ${ratio.toFixed(3)}, ` +
+                  `dimensions: ${frame.width}x${frame.height}, ` +
+                  `received: ${frame.data.length} bytes, expected: ${expectedRGBALength} bytes, ` +
+                  `frame format: ${frame.format || 'unknown'}`,
+              );
+            }
+
+            const frameData = this.convertFrameFormat(frame, 'rgba');
+
+            if (!frameData) {
+              this.logger.debug(
+                `Unable to convert frame data from ${peer.targetId} (${peer.streamType})`,
+              );
+              return;
+            }
+
+            this.logger.debug(
+              `Forwarding video frame to StreamMonitor from ${peer.targetId} (${peer.streamType}) ` +
+                `size=${frame.width}x${frame.height}, dataLength=${frameData.length}, sessions=${context.monitoringSessions.size}`,
+            );
+
+            context.monitoringSessions.forEach((sessionId) => {
+              this.streamMonitor.pushVideoFrame(sessionId, {
+                width: frame.width,
+                height: frame.height,
+                data: frameData,
+                rotation: frame.rotation || 0,
+                timestamp: Date.now(),
+                participantId: peer.targetId,
+                streamType:
+                  peer.streamType === 'audio' ? undefined : peer.streamType,
+              } as any);
+            });
+          } catch (error) {
+            this.logger.error(`Video processing error: ${error}`);
+          }
+        });
+      };
+
+      this.logger.log(
+        `Video monitoring setup for peer ${peer.targetId} (${peer.streamType})`,
+      );
+    } catch (error) {
+      this.logger.error(
+        `Video sink setup failed for ${peer.targetId} (${peer.streamType}): ${error}`,
+      );
     }
   }
 
@@ -654,7 +753,6 @@ export class AiMediaBridgeService {
         const shouldMonitor = this.shouldMonitorParticipant(
           context,
           participantId,
-          streamType,
         );
 
         if (shouldMonitor) {
@@ -676,7 +774,6 @@ export class AiMediaBridgeService {
   private shouldMonitorParticipant(
     context: AgentContext,
     participantId: string,
-    streamType: 'screen' | 'url',
   ): boolean {
     // Don't monitor self
     if (participantId === context.agentId) return false;
@@ -698,7 +795,7 @@ export class AiMediaBridgeService {
       participantId: string;
       frameData: Buffer;
       timestamp: number;
-      streamType: 'screen' | 'url';
+      streamType: 'camera' | 'screen' | 'url';
     },
   ) {
     try {
@@ -782,7 +879,6 @@ export class AiMediaBridgeService {
 
     const activeStreams = streams.filter(
       (s) =>
-        s.isActive &&
         s.participant?.id !== context.agentId &&
         (!targetParticipantId || s.participant?.id === targetParticipantId),
     );
@@ -822,6 +918,125 @@ export class AiMediaBridgeService {
   // Add loadImage property
   private loadImage: any;
   private createCanvas: any;
+
+  /**
+   * Helper function to convert between video frame formats
+   * This will be useful for handling different frame formats from various clients
+   */
+  private convertFrameFormat(
+    frame: {
+      width: number;
+      height: number;
+      data: Uint8Array | Buffer | Uint8ClampedArray;
+      format?: string;
+    },
+    targetFormat = 'rgba',
+  ): Uint8ClampedArray | null {
+    const { width, height, data } = frame;
+
+    // Calculate bytes per pixel to help determine the source format
+    const bytesPerPixel = data.length / (width * height);
+
+    try {
+      // RGBA is the target format we want (4 bytes per pixel)
+      if (targetFormat === 'rgba') {
+        const targetSize = width * height * 4;
+        const output = new Uint8ClampedArray(targetSize);
+
+        // Handle common formats
+        if (Math.abs(bytesPerPixel - 4) < 0.1) {
+          // Already RGBA format
+          return new Uint8ClampedArray(
+            data.buffer,
+            data.byteOffset,
+            data.byteLength,
+          );
+        } else if (Math.abs(bytesPerPixel - 3) < 0.1) {
+          // RGB format (3 bytes per pixel)
+          for (let i = 0; i < width * height; i++) {
+            output[i * 4] = data[i * 3]; // R
+            output[i * 4 + 1] = data[i * 3 + 1]; // G
+            output[i * 4 + 2] = data[i * 3 + 2]; // B
+            output[i * 4 + 3] = 255; // Alpha (fully opaque)
+          }
+          return output;
+        } else if (Math.abs(bytesPerPixel - 1.5) < 0.1) {
+          // YUV420/I420 format (1.5 bytes per pixel): Y plane, then U plane, then V plane
+          this.logger.debug(
+            `Converting I420 → RGBA for frame ${width}x${height}`,
+          );
+
+          const ySize = width * height;
+          const uvWidth = width >> 1;
+          const uvHeight = height >> 1;
+          const uvSize = uvWidth * uvHeight;
+
+          const buf = new Uint8Array(
+            data.buffer,
+            data.byteOffset,
+            data.byteLength,
+          );
+          const yPlane = buf.subarray(0, ySize);
+          const uPlane = buf.subarray(ySize, ySize + uvSize);
+          const vPlane = buf.subarray(ySize + uvSize, ySize + uvSize + uvSize);
+
+          let dst = 0;
+          for (let y = 0; y < height; y++) {
+            const yRow = y * width;
+            const uvRow = (y >> 1) * uvWidth;
+            for (let x = 0; x < width; x++) {
+              const Y = yPlane[yRow + x];
+              const uvIdx = uvRow + (x >> 1);
+              const U = uPlane[uvIdx];
+              const V = vPlane[uvIdx];
+
+              // BT.601 full range conversion
+              const C = Y - 16;
+              const D = U - 128;
+              const E = V - 128;
+
+              let R = (298 * C + 409 * E + 128) >> 8;
+              let G = (298 * C - 100 * D - 208 * E + 128) >> 8;
+              let B = (298 * C + 516 * D + 128) >> 8;
+
+              if (R < 0) R = 0;
+              else if (R > 255) R = 255;
+              if (G < 0) G = 0;
+              else if (G > 255) G = 255;
+              if (B < 0) B = 0;
+              else if (B > 255) B = 255;
+
+              output[dst++] = R;
+              output[dst++] = G;
+              output[dst++] = B;
+              output[dst++] = 255;
+            }
+          }
+          return output;
+        } else if (Math.abs(bytesPerPixel - 1) < 0.1) {
+          // Grayscale (1 byte per pixel)
+          for (let i = 0; i < width * height; i++) {
+            output[i * 4] = data[i]; // R
+            output[i * 4 + 1] = data[i]; // G
+            output[i * 4 + 2] = data[i]; // B
+            output[i * 4 + 3] = 255; // Alpha
+          }
+          return output;
+        } else {
+          // Unknown format - create placeholder by using available data
+          const copySize = Math.min(data.length, output.length);
+          output.set(new Uint8Array(data.buffer, data.byteOffset, copySize));
+          return output;
+        }
+      }
+
+      // Add other target formats if needed in the future
+      return null;
+    } catch (error) {
+      this.logger.error(`Frame format conversion error: ${error}`);
+      return null;
+    }
+  }
 
   /**
    * Cleanup utilities

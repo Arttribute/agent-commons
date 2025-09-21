@@ -17,6 +17,7 @@ import { OpenAIService } from '~/modules/openai/openai.service';
 import { PinataService } from '~/pinata/pinata.service';
 import { ToolSchema } from '~/tool/dto/tool.dto';
 import { AiMediaBridgeService } from '~/space/ai-media-bridge.service';
+import { SpaceRTCService } from '~/space/space-rtc.service';
 
 const graphqlRequest = import('graphql-request');
 
@@ -279,6 +280,21 @@ export interface CommonTool {
   //   agentId: string;
   //   privateKey: string;
   // }): any;
+
+  /** Start (or ensure) a call session in a space. Returns sessionId and current call info. */
+  startCall(props: {
+    spaceId: string;
+    agentId: string;
+    metadata?: Record<string, any>;
+  }): any;
+  /** Join an existing call (auto-start if none). */
+  joinCall(props: { spaceId: string; agentId: string }): any;
+  /** Leave the active call in a space (no-op if not in call). */
+  leaveCall(props: { spaceId: string; agentId: string }): any;
+  /** Advance speaker turn (round-robin). */
+  advanceTurn(props: { spaceId: string; agentId: string }): any;
+  /** Get current call session state. */
+  getCallState(props: { spaceId: string; agentId: string }): any;
 }
 
 @Injectable()
@@ -305,6 +321,8 @@ export class CommonToolService implements CommonTool {
     private space: SpaceService,
     @Inject(forwardRef(() => AiMediaBridgeService))
     private aiMediaBridge: AiMediaBridgeService,
+    @Inject(forwardRef(() => SpaceRTCService))
+    private spaceRTC: SpaceRTCService,
   ) {}
 
   async createGoal(props: CreateGoalDto) {

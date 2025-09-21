@@ -13,6 +13,7 @@ import { WebCaptureService } from './web-capture.service';
 import { StreamMonitorService } from './stream-monitor.service';
 import { TranscriptionDeliveryService } from './transcription-delivery.service';
 import { SpaceToolsService } from './space-tools.service';
+import { SpaceAgentTriggerService } from './space-agent-trigger.service';
 
 @Module({
   imports: [DatabaseModule, forwardRef(() => AgentModule), SessionModule],
@@ -30,6 +31,7 @@ import { SpaceToolsService } from './space-tools.service';
     StreamMonitorService,
     TranscriptionDeliveryService,
     SpaceToolsService,
+    SpaceAgentTriggerService,
   ],
   exports: [
     SpaceService,
@@ -39,6 +41,7 @@ import { SpaceToolsService } from './space-tools.service';
     StreamMonitorService,
     TranscriptionDeliveryService,
     SpaceToolsService,
+    SpaceAgentTriggerService,
   ],
 })
 export class SpaceModule {}

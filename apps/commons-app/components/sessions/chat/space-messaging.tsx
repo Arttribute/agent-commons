@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { io, Socket } from "socket.io-client";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Button } from "@/components/ui/button";
 import {
@@ -156,6 +157,100 @@ export default function SpaceMessaging({
   useEffect(() => {
     fetchSpaceDetails();
   }, [spaceId]);
+
+  // Realtime message subscription over existing /rtc namespace
+  useEffect(() => {
+    if (!spaceId) return;
+    const wsUrl = WS_BASE;
+    const socket: Socket = io(`${wsUrl}/rtc`, {
+      transports: ["websocket"],
+      autoConnect: true,
+    });
+
+    let joined = false;
+    socket.on("connect", () => {
+      socket.emit("join", {
+        type: "join",
+        spaceId,
+        fromId:
+          currentUserId || `viewer-${Math.random().toString(36).slice(2)}`,
+        role: "human",
+      });
+    });
+
+    socket.on("joined", () => {
+      joined = true;
+    });
+
+    // Deduplicate by messageId
+    const seen = new Set<string>();
+    // Seed seen with existing messages
+    messages.forEach((m: any) => {
+      if ((m as any).messageId) seen.add((m as any).messageId);
+    });
+
+    socket.on("spaceMessage", (evt: any) => {
+      if (!evt || evt.spaceId !== spaceId || !evt.message) return;
+      const msg = evt.message as any;
+      const id = msg.messageId;
+
+      setMessages((prev) => {
+        // Convert shape for UI
+        const toUi = (mm: any) => ({
+          role: mm.senderType === "agent" ? "ai" : "human",
+          content: mm.content,
+          timestamp: mm.createdAt,
+          senderId: mm.senderId,
+          senderType: mm.senderType,
+          metadata: mm.metadata || undefined,
+          messageId: mm.messageId,
+          isDeleted: mm.isDeleted,
+        });
+
+        const existingIdx = prev.findIndex(
+          (p: any) => (p as any).messageId === id
+        );
+        if (evt.type === "deleted") {
+          // Remove or mark deleted
+          if (existingIdx >= 0) {
+            const copy = prev.slice();
+            copy.splice(existingIdx, 1);
+            return copy;
+          }
+          return prev;
+        }
+
+        if (evt.type === "updated") {
+          if (existingIdx >= 0) {
+            const copy = prev.slice();
+            copy[existingIdx] = toUi(msg);
+            return copy;
+          }
+          // If we somehow missed create, append
+          return [...prev, toUi(msg)];
+        }
+
+        // created
+        if (existingIdx === -1) {
+          return [...prev, toUi(msg)];
+        }
+        return prev;
+      });
+    });
+
+    return () => {
+      try {
+        if (joined) {
+          socket.emit("leave", {
+            type: "leave",
+            spaceId,
+            fromId: currentUserId,
+          });
+        }
+        socket.disconnect();
+      } catch {}
+    };
+  }, [spaceId, currentUserId, messages.length]);
   return (
     <>
       {/* Full-screen overlay */}

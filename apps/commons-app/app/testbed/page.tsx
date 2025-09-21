@@ -11,6 +11,8 @@ import { useCommonResource } from "@/hooks/useCommonResource";
 import { useAttribution } from "@/hooks/useAttribution";
 import { useTaskManager } from "@/hooks/useTaskManager";
 import { Button } from "@/components/ui/button";
+import { useSpaceRTC } from "@/hooks/use-space-rtc";
+import { CallControls } from "@/components/rtc/CallControls";
 
 export default function HomePage() {
   // Example: get EIP-1193 from Privy

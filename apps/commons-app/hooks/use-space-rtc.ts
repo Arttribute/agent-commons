@@ -9,7 +9,8 @@ type Role = "human" | "agent";
 interface RemotePeer {
   id: string;
   role: Role;
-  stream?: MediaStream;
+  stream?: MediaStream; // camera/video stream
+  audioStream?: MediaStream; // separate audio-only stream
   screenStream?: MediaStream;
   urlStream?: MediaStream;
   publishing: { audio: boolean; video: boolean };
@@ -43,6 +44,7 @@ export function useSpaceRTC({
 
   const socketRef = useRef<Socket | null>(null);
   const localStreamRef = useRef<MediaStream | null>(null);
+  const localAudioStreamRef = useRef<MediaStream | null>(null);
   const localScreenStreamRef = useRef<MediaStream | null>(null);
   const localUrlStreamRef = useRef<MediaStream | null>(null);
   const urlCanvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -51,6 +53,9 @@ export function useSpaceRTC({
 
   // Use separate connection maps with proper state tracking
   const peerConnectionsRef = useRef<Map<string, PeerConnection>>(new Map());
+  const audioPeerConnectionsRef = useRef<Map<string, PeerConnection>>(
+    new Map()
+  );
   const screenPeerConnectionsRef = useRef<Map<string, PeerConnection>>(
     new Map()
   );
@@ -83,6 +88,11 @@ export function useSpaceRTC({
     if (localStreamRef.current) {
       localStreamRef.current.getTracks().forEach((track) => track.stop());
       localStreamRef.current = null;
+    }
+
+    if (localAudioStreamRef.current) {
+      localAudioStreamRef.current.getTracks().forEach((track) => track.stop());
+      localAudioStreamRef.current = null;
     }
 
     if (localScreenStreamRef.current) {
@@ -174,6 +184,12 @@ export function useSpaceRTC({
           prev.map((p) => {
             if (p.id === peerId) {
               switch (streamType) {
+                case "audio":
+                  return {
+                    ...p,
+                    audioStream: remoteStream,
+                    publishing: { ...p.publishing, audio: true },
+                  };
                 case "screen":
                   return {
                     ...p,
@@ -233,14 +249,18 @@ export function useSpaceRTC({
           ? urlPeerConnectionsRef
           : streamType === "screen"
             ? screenPeerConnectionsRef
-            : peerConnectionsRef;
+            : streamType === "audio"
+              ? audioPeerConnectionsRef
+              : peerConnectionsRef;
 
       const localStream =
         streamType === "url"
           ? localUrlStreamRef.current
           : streamType === "screen"
             ? localScreenStreamRef.current
-            : localStreamRef.current;
+            : streamType === "audio"
+              ? localAudioStreamRef.current
+              : localStreamRef.current;
 
       const peerConnection = createPeerConnection(
         peerId,
@@ -292,7 +312,9 @@ export function useSpaceRTC({
           ? urlPeerConnectionsRef
           : streamType === "screen"
             ? screenPeerConnectionsRef
-            : peerConnectionsRef;
+            : streamType === "audio"
+              ? audioPeerConnectionsRef
+              : peerConnectionsRef;
 
       const key =
         streamType === "camera" || !streamType
@@ -328,7 +350,9 @@ export function useSpaceRTC({
           ? urlPeerConnectionsRef
           : streamType === "screen"
             ? screenPeerConnectionsRef
-            : peerConnectionsRef;
+            : streamType === "audio"
+              ? audioPeerConnectionsRef
+              : peerConnectionsRef;
 
       const key =
         streamType === "camera" || !streamType
@@ -396,8 +420,21 @@ export function useSpaceRTC({
 
       // Create peer connections for each participant
       data.participants.forEach((peer: any) => {
-        // Create camera connection
-        createPeerConnection(peer.id, peerConnectionsRef, "camera");
+        // Create camera connection; attach local camera stream if present
+        createPeerConnection(
+          peer.id,
+          peerConnectionsRef,
+          "camera",
+          localStreamRef.current || undefined
+        );
+
+        // Create audio connection; attach local audio stream if present
+        createPeerConnection(
+          peer.id,
+          audioPeerConnectionsRef,
+          "audio",
+          localAudioStreamRef.current || undefined
+        );
 
         // Create screen connection if they're screen sharing
         if (peer.screenSharing) {
@@ -472,7 +509,8 @@ export function useSpaceRTC({
         case "publishState":
           updatePeerPublishing(
             message.fromId,
-            message.publish,
+            // Prefer new schema first
+            message.data ?? message.publish,
             message.streamType,
             message.url,
             message.sessionId
@@ -567,8 +605,37 @@ export function useSpaceRTC({
           urlSharing: { active: false },
         };
 
-        // Create peer connections for new peer
-        createPeerConnection(id, peerConnectionsRef, "camera");
+        // Create peer connections for new peer and attach any existing local streams
+        createPeerConnection(
+          id,
+          peerConnectionsRef,
+          "camera",
+          localStreamRef.current || undefined
+        );
+        createPeerConnection(
+          id,
+          audioPeerConnectionsRef,
+          "audio",
+          localAudioStreamRef.current || undefined
+        );
+
+        // If we are already sharing screen or URL locally, attach those too
+        if (localScreenStreamRef.current) {
+          createPeerConnection(
+            id,
+            screenPeerConnectionsRef,
+            "screen",
+            localScreenStreamRef.current
+          );
+        }
+        if (localUrlStreamRef.current) {
+          createPeerConnection(
+            id,
+            urlPeerConnectionsRef,
+            "url",
+            localUrlStreamRef.current
+          );
+        }
 
         return [...prev, newPeer];
       });
@@ -594,6 +661,14 @@ export function useSpaceRTC({
     if (screenPc) {
       screenPc.pc.close();
       screenPeerConnectionsRef.current.delete(screenKey);
+    }
+
+    // Remove audio connection
+    const audioKey = `${peerId}-audio`;
+    const audioPc = audioPeerConnectionsRef.current.get(audioKey);
+    if (audioPc) {
+      audioPc.pc.close();
+      audioPeerConnectionsRef.current.delete(audioKey);
     }
 
     // Remove URL connection
@@ -633,7 +708,10 @@ export function useSpaceRTC({
 
               return { ...p, urlSharing: newUrlSharing };
             } else if (streamType === "screen") {
-              const isSharing = !!publishing?.video;
+              const isSharing =
+                typeof (publishing as any)?.publishing === "boolean"
+                  ? (publishing as any).publishing
+                  : !!publishing?.video;
 
               // Create screen peer connection if screen sharing is starting
               if (
@@ -644,8 +722,25 @@ export function useSpaceRTC({
               }
 
               return { ...p, screenSharing: isSharing };
-            } else if (publishing) {
-              return { ...p, publishing };
+            } else if (streamType === "audio") {
+              const audioOn =
+                typeof (publishing as any)?.publishing === "boolean"
+                  ? (publishing as any).publishing
+                  : !!publishing?.audio;
+              // Ensure audio connection exists when audio starts
+              if (
+                audioOn &&
+                !audioPeerConnectionsRef.current.has(`${id}-audio`)
+              ) {
+                createPeerConnection(id, audioPeerConnectionsRef, "audio");
+              }
+              return { ...p, publishing: { ...p.publishing, audio: audioOn } };
+            } else if (streamType === "camera") {
+              const videoOn =
+                typeof (publishing as any)?.publishing === "boolean"
+                  ? (publishing as any).publishing
+                  : !!publishing?.video || !!publishing?.audio;
+              return { ...p, publishing: { ...p.publishing, video: videoOn } };
             }
           }
           return p;
@@ -659,29 +754,77 @@ export function useSpaceRTC({
   const startPublishing = useCallback(
     async ({ audio = true, video = true }) => {
       try {
-        const stream = await navigator.mediaDevices.getUserMedia({
-          audio,
-          video,
-        });
-        localStreamRef.current = stream;
+        let cameraStream: MediaStream | null = null;
+        let audioStream: MediaStream | null = null;
 
-        // Add tracks to existing peer connections
-        peerConnectionsRef.current.forEach(({ pc }) => {
-          stream.getTracks().forEach((track) => {
-            pc.addTrack(track, stream);
+        if (video) {
+          cameraStream = await navigator.mediaDevices.getUserMedia({
+            video: {
+              width: { ideal: 640 },
+              height: { ideal: 480 },
+              frameRate: { ideal: 15, max: 24 },
+              facingMode: "user",
+            },
+            audio: false,
           });
-        });
+          localStreamRef.current = cameraStream;
+          peerConnectionsRef.current.forEach(({ pc }) => {
+            cameraStream!.getTracks().forEach((track) => {
+              pc.addTrack(track, cameraStream!);
+            });
+          });
+          socketRef.current?.emit("signal", {
+            type: "publishState",
+            spaceId,
+            fromId: selfId,
+            data: { publishing: true },
+            publish: { audio: !!audio, video: true }, // back-compat
+            streamType: "camera",
+          });
+        } else {
+          // If turning off camera
+          socketRef.current?.emit("signal", {
+            type: "publishState",
+            spaceId,
+            fromId: selfId,
+            data: { publishing: false },
+            publish: { audio: !!audio, video: false },
+            streamType: "camera",
+          });
+        }
 
-        // Notify others about publishing state
-        socketRef.current?.emit("signal", {
-          type: "publishState",
-          spaceId,
-          fromId: selfId,
-          publish: { audio, video },
-          streamType: "camera",
-        });
+        if (audio) {
+          audioStream = await navigator.mediaDevices.getUserMedia({
+            audio: true,
+            video: false,
+          });
+          localAudioStreamRef.current = audioStream;
+          audioPeerConnectionsRef.current.forEach(({ pc }) => {
+            audioStream!.getTracks().forEach((track) => {
+              pc.addTrack(track, audioStream!);
+            });
+          });
+          socketRef.current?.emit("signal", {
+            type: "publishState",
+            spaceId,
+            fromId: selfId,
+            data: { publishing: true },
+            publish: { audio: true, video: !!video },
+            streamType: "audio",
+          });
+        } else {
+          socketRef.current?.emit("signal", {
+            type: "publishState",
+            spaceId,
+            fromId: selfId,
+            data: { publishing: false },
+            publish: { audio: false, video: !!video },
+            streamType: "audio",
+          });
+        }
 
-        return stream;
+        // Return combined info for convenience
+        return cameraStream || audioStream || null;
       } catch (error) {
         console.error("[RTC] Start publishing failed:", error);
         throw error;
@@ -693,7 +836,9 @@ export function useSpaceRTC({
   const startScreenShare = useCallback(async () => {
     try {
       const stream = await navigator.mediaDevices.getDisplayMedia({
-        video: true,
+        video: {
+          frameRate: { ideal: 10, max: 15 },
+        },
         audio: true,
       });
       localScreenStreamRef.current = stream;
@@ -794,25 +939,44 @@ export function useSpaceRTC({
     if (localStreamRef.current) {
       localStreamRef.current.getTracks().forEach((track) => track.stop());
       localStreamRef.current = null;
+      // Remove camera tracks from PCs
+      peerConnectionsRef.current.forEach(({ pc }) => {
+        pc.getSenders().forEach((sender) => {
+          if (sender.track && sender.track.kind === "video") {
+            pc.removeTrack(sender);
+          }
+        });
+      });
+      socketRef.current?.emit("signal", {
+        type: "publishState",
+        spaceId,
+        fromId: selfId,
+        data: { publishing: false },
+        publish: { audio: !!localAudioStreamRef.current, video: false },
+        streamType: "camera",
+      });
     }
 
-    // Remove tracks from peer connections
-    peerConnectionsRef.current.forEach(({ pc }) => {
-      const senders = pc.getSenders();
-      senders.forEach((sender) => {
-        if (sender.track) {
-          pc.removeTrack(sender);
-        }
+    if (localAudioStreamRef.current) {
+      localAudioStreamRef.current.getTracks().forEach((track) => track.stop());
+      localAudioStreamRef.current = null;
+      // Remove audio tracks from audio PCs
+      audioPeerConnectionsRef.current.forEach(({ pc }) => {
+        pc.getSenders().forEach((sender) => {
+          if (sender.track && sender.track.kind === "audio") {
+            pc.removeTrack(sender);
+          }
+        });
       });
-    });
-
-    socketRef.current?.emit("signal", {
-      type: "publishState",
-      spaceId,
-      fromId: selfId,
-      publish: { audio: false, video: false },
-      streamType: "camera",
-    });
+      socketRef.current?.emit("signal", {
+        type: "publishState",
+        spaceId,
+        fromId: selfId,
+        data: { publishing: false },
+        publish: { audio: false, video: !!localStreamRef.current },
+        streamType: "audio",
+      });
+    }
   }, [spaceId, selfId]);
 
   const stopScreenShare = useCallback(() => {
