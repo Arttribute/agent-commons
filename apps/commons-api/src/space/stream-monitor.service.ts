@@ -535,6 +535,9 @@ export class StreamMonitorService extends EventEmitter {
         }
       }
     });
+    this.logger.debug(
+      `getLatestFrameDataForSpace(${spaceId}) returning sessionId=${latest?.sessionId}, urlLength=${latest?.url?.length || 0}`,
+    );
     return { latestFrameUrl: latest?.url, sessionId: latest?.sessionId };
   }
 
