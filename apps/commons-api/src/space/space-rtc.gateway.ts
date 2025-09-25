@@ -1,6 +1,7 @@
 import {
   WebSocketGateway,
   WebSocketServer,
+  OnGatewayInit,
   OnGatewayConnection,
   OnGatewayDisconnect,
   SubscribeMessage,
@@ -9,500 +10,318 @@ import {
 } from '@nestjs/websockets';
 import { Logger } from '@nestjs/common';
 import { Server, Socket } from 'socket.io';
+import { EventEmitter } from 'events';
+import { StreamMonitorService, StreamKind } from './stream-monitor.service';
 import { WebCaptureService } from './web-capture.service';
-import { SpaceRTCService } from './space-rtc.service';
 
-interface SignalMessage {
-  type:
-    | 'join'
-    | 'leave'
-    | 'offer'
-    | 'answer'
-    | 'candidate'
-    | 'publishState'
-    | 'startWebCapture'
-    | 'stopWebCapture'
-    | 'requestPublishState';
+interface SocketContext {
   spaceId: string;
-  fromId: string;
-  role: 'human' | 'agent';
-  targetId?: string;
-  data?: any; // Prefer { publishing: boolean } for per-stream
-  // Back-compat: combined publish object
-  publish?: { audio: boolean; video: boolean };
-  // Standardized stream type across system
-  streamType?: 'audio' | 'camera' | 'screen' | 'url';
-  url?: string;
-  sessionId?: string;
+  participantId: string;
+  participantType: 'agent' | 'human';
 }
 
-interface ParticipantState {
-  id: string;
-  role: string;
-  socketId: string;
-  // Back-compat combined state
-  publishing: { audio: boolean; video: boolean };
-  // New per-stream state
-  publishingAudio: boolean;
-  publishingCamera: boolean;
-  screenSharing: boolean;
-  urlSharing: { active: boolean; url?: string; sessionId?: string };
-}
-
-@WebSocketGateway({
-  cors: { origin: '*' },
-  namespace: '/rtc',
-  transports: ['websocket'],
-})
-export class SpaceRTCGateway
-  implements OnGatewayConnection, OnGatewayDisconnect
+@WebSocketGateway({ namespace: '/space-rtc', cors: { origin: '*' } })
+export class SpaceRtcGateway
+  implements OnGatewayInit, OnGatewayConnection, OnGatewayDisconnect
 {
   @WebSocketServer() server!: Server;
-  private readonly logger = new Logger(SpaceRTCGateway.name);
-
-  private spaces = new Map<string, Map<string, ParticipantState>>();
-  private clients = new Map<
-    string,
-    { spaceId: string; participantId: string; role: string }
-  >();
+  private readonly logger = new Logger(SpaceRtcGateway.name);
+  private readonly clientCtx = new Map<string, SocketContext>();
 
   constructor(
-    private readonly webCaptureService: WebCaptureService,
-    private readonly spaceRTCService: SpaceRTCService,
+    private readonly monitor: StreamMonitorService,
+    private readonly emitter: EventEmitter,
+    private readonly webCapture: WebCaptureService,
   ) {
-    // Listen for frame data from web capture service
-    this.webCaptureService.on('frame', (frameData) => {
-      this.handleWebFrame(frameData);
-
-      // Also emit to RTC service for AI monitoring
-      this.spaceRTCService.emitWebCaptureFrame(
-        frameData.spaceId,
-        frameData.participantId,
-        frameData.frameData,
-        frameData.timestamp,
-        frameData.sessionId,
-      );
+    // Relay composite frame events
+    this.emitter.on('stream.monitor.composite', (evt: any) => {
+      this.server.to(evt.spaceId).emit('composite_frame', evt);
     });
+    // Relay audio state events
+    this.emitter.on('stream.monitor.audio_state', (evt: any) => {
+      this.server.to(evt.spaceId).emit('audio_state', evt);
+    });
+
+    // Bridge web capture frames into monitor + broadcast incremental web frames
+    this.webCapture.on('frame', (evt: any) => {
+      try {
+        if (!evt?.spaceId || !evt?.participantId || !evt?.frameData) return;
+        // Update monitor state (kind = 'web')
+        const b64 = Buffer.isBuffer(evt.frameData)
+          ? evt.frameData.toString('base64')
+          : (evt.frameData as string);
+        this.monitor.addOrUpdateVideoFrame({
+          spaceId: evt.spaceId,
+          participantId: evt.participantId,
+          participantType: 'human', // server capture attributed to initiating human by default
+          kind: 'web',
+          frameBase64: `data:image/jpeg;base64,${b64}`,
+        });
+        // Emit raw frame to clients for immediate view (optional; composite still generated separately)
+        this.server.to(evt.spaceId).emit('web_capture_frame', {
+          participantId: evt.participantId,
+          frame: `data:image/jpeg;base64,${b64}`,
+          ts: evt.timestamp || Date.now(),
+        });
+      } catch (e) {
+        this.logger.debug(`web capture frame bridge error: ${String(e)}`);
+      }
+    });
+  }
+
+  afterInit() {
+    this.logger.log('SpaceRtcGateway initialized');
   }
 
   handleConnection(client: Socket) {
-    this.logger.log(`Client connected: ${client.id}`);
+    this.logger.debug(`Client connected ${client.id}`);
   }
 
   handleDisconnect(client: Socket) {
-    this.logger.log(`Client disconnected: ${client.id}`);
-    const clientInfo = this.clients.get(client.id);
-    if (clientInfo) {
-      this.handleLeave(client, {
-        type: 'leave',
-        spaceId: clientInfo.spaceId,
-        fromId: clientInfo.participantId,
-        role: clientInfo.role as any,
+    const ctx = this.clientCtx.get(client.id);
+    if (ctx) {
+      this.monitor.removeParticipant(ctx.spaceId, ctx.participantId);
+      this.server.to(ctx.spaceId).emit('participant_left', {
+        participantId: ctx.participantId,
       });
+      this.clientCtx.delete(client.id);
     }
+    this.logger.debug(`Client disconnected ${client.id}`);
   }
 
-  @SubscribeMessage('join')
+  /* ─────────────────────────  EVENTS  ───────────────────────── */
+
+  @SubscribeMessage('join_space')
   handleJoin(
     @ConnectedSocket() client: Socket,
-    @MessageBody() message: SignalMessage,
+    @MessageBody()
+    body: {
+      spaceId: string;
+      participantId: string;
+      participantType?: 'agent' | 'human';
+    },
   ) {
-    const { spaceId, fromId, role } = message;
-
-    this.clients.set(client.id, { spaceId, participantId: fromId, role });
-
-    if (!this.spaces.has(spaceId)) {
-      this.spaces.set(spaceId, new Map());
-    }
-
-    const space = this.spaces.get(spaceId)!;
-
-    const newParticipant: ParticipantState = {
-      id: fromId,
-      role,
-      socketId: client.id,
-      publishing: { audio: false, video: false },
-      publishingAudio: false,
-      publishingCamera: false,
-      screenSharing: false,
-      urlSharing: { active: false },
-    };
-
-    space.set(fromId, newParticipant);
-
-    // Register with SpaceRTCService for unified tracking
-    const mockWs = {
-      close: () => client.disconnect(),
-      readyState: 1, // OPEN
-    } as any;
-
-    try {
-      this.spaceRTCService.registerClient({
-        client: mockWs,
-        spaceId,
-        participantId: fromId,
-        role: role as any,
-      });
-    } catch (error) {
-      this.logger.warn(`Failed to register with RTC service: ${error}`);
-    }
-
-    client.join(spaceId);
-
-    // Get existing participants with their current states
-    const participants: any[] = [];
-    space.forEach((participant, participantId) => {
-      if (participantId !== fromId) {
-        participants.push({
-          id: participant.id,
-          role: participant.role,
-          publishing: participant.publishing,
-          screenSharing: participant.screenSharing,
-          urlSharing: participant.urlSharing,
-        });
-      }
+    if (!body.spaceId || !body.participantId)
+      return { error: 'spaceId and participantId required' };
+    const participantType = body.participantType || 'human';
+    client.join(body.spaceId);
+    this.clientCtx.set(client.id, {
+      spaceId: body.spaceId,
+      participantId: body.participantId,
+      participantType,
     });
-
-    // Send join response with current participants
-    client.emit('joined', {
-      spaceId,
-      participants,
-      yourId: fromId,
+    // Ensure space exists
+    this.monitor.ensureSpace(body.spaceId);
+    this.server.to(body.spaceId).emit('participant_joined', {
+      participantId: body.participantId,
+      participantType,
     });
-
-    // Notify other participants about new peer
-    client.to(spaceId).emit('signal', {
-      type: 'peer-joined',
-      spaceId,
-      fromId,
-      role,
-    });
-
-    this.logger.log(
-      `${fromId} (${role}) joined space ${spaceId}. Active participants: ${space.size}`,
-    );
+    return { success: true };
   }
 
-  @SubscribeMessage('signal')
-  handleSignal(
+  @SubscribeMessage('leave_space')
+  handleLeave(
     @ConnectedSocket() client: Socket,
-    @MessageBody() message: SignalMessage,
+    @MessageBody() body: { spaceId?: string },
   ) {
-    const { spaceId, targetId, type, streamType } = message;
-
-    // Update participant state for publishState messages
-    if (type === 'publishState') {
-      const clientInfo = this.clients.get(client.id);
-      if (clientInfo && this.spaces.has(spaceId)) {
-        const space = this.spaces.get(spaceId)!;
-        const participant = space.get(clientInfo.participantId);
-        if (participant) {
-          if (streamType === 'url') {
-            participant.urlSharing = {
-              active: !!message.url,
-              url: message.url,
-              sessionId: message.sessionId,
-            };
-            // Update RTC service
-            this.spaceRTCService.updateUrlSharingState(
-              spaceId,
-              clientInfo.participantId,
-              participant.urlSharing,
-            );
-          } else if (streamType === 'screen') {
-            const screenOn =
-              typeof message.data?.publishing === 'boolean'
-                ? message.data.publishing
-                : !!message.publish?.video;
-            participant.screenSharing = !!screenOn;
-            // Update RTC service
-            this.spaceRTCService.updateScreenSharingState(
-              spaceId,
-              clientInfo.participantId,
-              participant.screenSharing,
-            );
-          } else if (streamType === 'camera') {
-            const isOn =
-              typeof message.data?.publishing === 'boolean'
-                ? message.data.publishing
-                : message.publish
-                  ? !!message.publish.video || !!message.publish.audio
-                  : false;
-            participant.publishingCamera = !!isOn;
-            // Keep combined state in sync (video reflects camera stream)
-            participant.publishing.video = !!isOn;
-            // Update RTC service with combined state
-            this.spaceRTCService.updatePublishState(
-              spaceId,
-              clientInfo.participantId,
-              {
-                audio: participant.publishing.audio,
-                video: participant.publishing.video,
-              },
-            );
-          } else if (streamType === 'audio') {
-            const isOn =
-              typeof message.data?.publishing === 'boolean'
-                ? message.data.publishing
-                : message.publish
-                  ? !!message.publish.audio && !message.publish.video
-                  : false;
-            participant.publishingAudio = !!isOn;
-            participant.publishing.audio = !!isOn;
-            this.spaceRTCService.updatePublishState(
-              spaceId,
-              clientInfo.participantId,
-              {
-                audio: participant.publishing.audio,
-                video: participant.publishing.video,
-              },
-            );
-          }
-
-          this.logger.log(
-            `Updated ${clientInfo.participantId} state: ${streamType} - ${JSON.stringify(
-              streamType === 'url'
-                ? participant.urlSharing
-                : streamType === 'screen'
-                  ? participant.screenSharing
-                  : streamType === 'audio'
-                    ? participant.publishing.audio
-                    : participant.publishing.video,
-            )}`,
-          );
-        }
-      }
-    }
-
-    // Forward signal to appropriate target(s)
-    if (targetId) {
-      // Direct message to specific peer
-      this.server.to(spaceId).emit('signal', message);
-    } else {
-      // Broadcast to all peers in space except sender
-      client.to(spaceId).emit('signal', message);
-    }
+    const ctx = this.clientCtx.get(client.id);
+    if (!ctx) return { error: 'not joined' };
+    client.leave(ctx.spaceId);
+    this.monitor.removeParticipant(ctx.spaceId, ctx.participantId);
+    this.server.to(ctx.spaceId).emit('participant_left', {
+      participantId: ctx.participantId,
+    });
+    this.clientCtx.delete(client.id);
+    return { success: true };
   }
 
-  @SubscribeMessage('startWebCapture')
+  @SubscribeMessage('video_frame')
+  handleVideoFrame(
+    @ConnectedSocket() client: Socket,
+    @MessageBody()
+    body: {
+      spaceId?: string;
+      participantId?: string;
+      participantType?: 'agent' | 'human';
+      kind: StreamKind;
+      frame: string; // base64 (may include data URL)
+      width?: number;
+      height?: number;
+    },
+  ) {
+    const ctx = this.ensureCtx(client, body);
+    if (!ctx) return { error: 'join first' };
+    if (!body.kind || !body.frame) return { error: 'missing kind/frame' };
+    this.monitor.addOrUpdateVideoFrame({
+      spaceId: ctx.spaceId,
+      participantId: ctx.participantId,
+      participantType: ctx.participantType,
+      kind: body.kind,
+      frameBase64: body.frame,
+      width: body.width,
+      height: body.height,
+    });
+    return { success: true };
+  }
+
+  @SubscribeMessage('audio_chunk')
+  handleAudioChunk(
+    @ConnectedSocket() client: Socket,
+    @MessageBody()
+    body: {
+      spaceId?: string;
+      participantId?: string;
+      participantType?: 'agent' | 'human';
+      audio: string; // base64 PCM16LE mono
+      sampleRate?: number;
+      channels?: number;
+    },
+  ) {
+    const ctx = this.ensureCtx(client, body);
+    if (!ctx) return { error: 'join first' };
+    if (!body.audio) return { error: 'missing audio' };
+    this.monitor.addOrUpdateAudioChunk({
+      spaceId: ctx.spaceId,
+      participantId: ctx.participantId,
+      participantType: ctx.participantType,
+      audioBase64: body.audio,
+      sampleRate: body.sampleRate,
+      channels: body.channels,
+    });
+    return { success: true };
+  }
+
+  @SubscribeMessage('request_composite')
+  async handleRequestComposite(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() body: { spaceId?: string },
+  ) {
+    const ctx = this.ensureCtx(client, body);
+    if (!ctx) return { error: 'join first' };
+    await this.monitor.forceComposite(ctx.spaceId);
+    const latest = this.monitor.getLatestFrameDataForSpace(ctx.spaceId);
+    return { success: true, ...latest };
+  }
+
+  // Agent-side publication from server (optional mirror for tooling)
+  @SubscribeMessage('agent_publish_frame')
+  agentPublishFrame(
+    @MessageBody()
+    body: {
+      spaceId: string;
+      agentId: string;
+      kind: StreamKind;
+      frame: string;
+    },
+  ) {
+    this.monitor.publishAgentFrame({
+      spaceId: body.spaceId,
+      agentId: body.agentId,
+      kind: body.kind,
+      frameBase64: body.frame,
+    });
+    return { success: true };
+  }
+
+  @SubscribeMessage('agent_publish_audio')
+  agentPublishAudio(
+    @MessageBody()
+    body: {
+      spaceId: string;
+      agentId: string;
+      audio: string;
+    },
+  ) {
+    this.monitor.publishAgentAudio({
+      spaceId: body.spaceId,
+      agentId: body.agentId,
+      audioBase64: body.audio,
+    });
+    return { success: true };
+  }
+
+  @SubscribeMessage('ping')
+  handlePing(@ConnectedSocket() client: Socket) {
+    client.emit('pong');
+  }
+
+  /* ────────────────  WEB CAPTURE CONTROL  ──────────────── */
+  @SubscribeMessage('start_web_capture')
   async handleStartWebCapture(
     @ConnectedSocket() client: Socket,
-    @MessageBody() message: SignalMessage,
+    @MessageBody()
+    body: { spaceId?: string; participantId?: string; url?: string },
   ) {
-    const { spaceId, fromId, url, sessionId } = message;
-
-    if (!url || !sessionId) {
-      client.emit('webCaptureError', { error: 'Missing URL or session ID' });
-      return;
-    }
-
-    try {
-      const result = await this.webCaptureService.startCapture({
-        sessionId,
-        spaceId,
-        url,
-        participantId: fromId,
-      });
-
-      if (result.success) {
-        // Update participant state
-        const clientInfo = this.clients.get(client.id);
-        if (clientInfo && this.spaces.has(spaceId)) {
-          const space = this.spaces.get(spaceId)!;
-          const participant = space.get(fromId);
-          if (participant) {
-            participant.urlSharing = {
-              active: true,
-              url,
-              sessionId,
-            };
-            // Update RTC service
-            this.spaceRTCService.updateUrlSharingState(
-              spaceId,
-              fromId,
-              participant.urlSharing,
-            );
-          }
-        }
-
-        // Notify all clients in space about the new URL stream
-        this.server.to(spaceId).emit('signal', {
-          type: 'publishState',
-          spaceId,
-          fromId,
-          streamType: 'url',
-          url,
-          sessionId,
-        });
-
-        client.emit('webCaptureStarted', { sessionId, url });
-        this.logger.log(`Web capture started for ${fromId}: ${url}`);
-      } else {
-        client.emit('webCaptureError', { error: result.error });
-      }
-    } catch (error) {
-      this.logger.error('Web capture start error:', error);
-      client.emit('webCaptureError', { error: 'Failed to start web capture' });
-    }
+    const ctx = this.ensureCtx(client, body);
+    if (!ctx) return { error: 'join first' };
+    if (!body.url) return { error: 'url required' };
+    const sessionId = `${ctx.spaceId}-${ctx.participantId}`; // deterministic single session per participant
+    const resp = await this.webCapture.startCapture({
+      sessionId,
+      spaceId: ctx.spaceId,
+      url: body.url,
+      participantId: ctx.participantId,
+    });
+    if (!resp.success) return { error: resp.error || 'failed to start' };
+    this.server.to(ctx.spaceId).emit('web_capture_started', {
+      participantId: ctx.participantId,
+      url: body.url,
+    });
+    return { success: true };
   }
 
-  @SubscribeMessage('stopWebCapture')
+  @SubscribeMessage('stop_web_capture')
   async handleStopWebCapture(
     @ConnectedSocket() client: Socket,
-    @MessageBody() message: SignalMessage,
+    @MessageBody() body: { spaceId?: string; participantId?: string },
   ) {
-    const { spaceId, fromId, sessionId } = message;
+    const ctx = this.ensureCtx(client, body);
+    if (!ctx) return { error: 'join first' };
+    const sessionId = `${ctx.spaceId}-${ctx.participantId}`;
+    await this.webCapture.stopCapture(sessionId);
+    this.server.to(ctx.spaceId).emit('web_capture_stopped', {
+      participantId: ctx.participantId,
+    });
+    return { success: true };
+  }
 
-    if (!sessionId) {
-      return;
-    }
-
-    try {
-      await this.webCaptureService.stopCapture(sessionId);
-
-      // Update participant state
-      const clientInfo = this.clients.get(client.id);
-      if (clientInfo && this.spaces.has(spaceId)) {
-        const space = this.spaces.get(spaceId)!;
-        const participant = space.get(fromId);
-        if (participant) {
-          participant.urlSharing = { active: false };
-          // Update RTC service
-          this.spaceRTCService.updateUrlSharingState(
-            spaceId,
-            fromId,
-            participant.urlSharing,
-          );
-        }
-      }
-
-      // Notify all clients in space
-      this.server.to(spaceId).emit('signal', {
-        type: 'publishState',
-        spaceId,
-        fromId,
-        streamType: 'url',
-        url: null,
-        sessionId: null,
+  // Graceful end: announce ending, allow clients to transition UI, then stop.
+  @SubscribeMessage('end_web_capture')
+  async handleEndWebCapture(
+    @ConnectedSocket() client: Socket,
+    @MessageBody()
+    body: { spaceId?: string; participantId?: string; delayMs?: number },
+  ) {
+    const ctx = this.ensureCtx(client, body);
+    if (!ctx) return { error: 'join first' };
+    const sessionId = `${ctx.spaceId}-${ctx.participantId}`;
+    const delay = Math.min(Math.max(body.delayMs ?? 1500, 300), 5000); // clamp 300-5000ms
+    this.server.to(ctx.spaceId).emit('web_capture_ending', {
+      participantId: ctx.participantId,
+      in: delay,
+    });
+    setTimeout(async () => {
+      await this.webCapture.stopCapture(sessionId);
+      this.server.to(ctx.spaceId).emit('web_capture_stopped', {
+        participantId: ctx.participantId,
       });
-
-      client.emit('webCaptureStopped', { sessionId });
-      this.logger.log(`Web capture stopped for ${fromId}: ${sessionId}`);
-    } catch (error) {
-      this.logger.error('Web capture stop error:', error);
-    }
+    }, delay);
+    return { success: true, delay };
   }
 
-  @SubscribeMessage('leave')
-  async handleLeave(
-    @ConnectedSocket() client: Socket,
-    @MessageBody() message: SignalMessage,
-  ) {
-    const { spaceId, fromId } = message;
-
-    // Stop any active web captures for this participant
-    const space = this.spaces.get(spaceId);
-    if (space) {
-      const participant = space.get(fromId);
-      if (participant?.urlSharing.sessionId) {
-        await this.webCaptureService.stopCapture(
-          participant.urlSharing.sessionId,
-        );
-      }
+  /* ─────────────────────────  HELPERS  ───────────────────────── */
+  private ensureCtx(client: Socket, body: any) {
+    let ctx = this.clientCtx.get(client.id);
+    if (!ctx && body?.spaceId && body?.participantId) {
+      // allow context via payload if direct events before explicit join (fallback)
+      ctx = {
+        spaceId: body.spaceId,
+        participantId: body.participantId,
+        participantType: body.participantType || 'human',
+      };
+      this.clientCtx.set(client.id, ctx);
+      client.join(ctx.spaceId);
     }
-
-    // Unregister from RTC service
-    this.spaceRTCService.unregisterByIdentity(spaceId, fromId);
-
-    this.clients.delete(client.id);
-    if (this.spaces.has(spaceId)) {
-      const space = this.spaces.get(spaceId)!;
-      space.delete(fromId);
-      if (space.size === 0) {
-        this.spaces.delete(spaceId);
-      }
-    }
-
-    client.leave(spaceId);
-
-    // Notify other participants
-    client.to(spaceId).emit('signal', {
-      type: 'peer-left',
-      spaceId,
-      fromId,
-    });
-
-    this.logger.log(`${fromId} left space ${spaceId}`);
-  }
-
-  @SubscribeMessage('requestPublishState')
-  handleRequestPublishState(
-    @ConnectedSocket() client: Socket,
-    @MessageBody() message: SignalMessage,
-  ) {
-    const { spaceId, targetId, streamType = 'camera' } = message;
-
-    if (targetId && this.spaces.has(spaceId)) {
-      const space = this.spaces.get(spaceId)!;
-      const targetParticipant = space.get(targetId);
-
-      if (targetParticipant) {
-        if (streamType === 'camera') {
-          client.emit('signal', {
-            type: 'publishState',
-            spaceId,
-            fromId: targetId,
-            role: targetParticipant.role,
-            // New schema
-            data: { publishing: !!targetParticipant.publishingCamera },
-            // Back-compat
-            publish: targetParticipant.publishing,
-            streamType: 'camera',
-          });
-        } else if (streamType === 'audio') {
-          client.emit('signal', {
-            type: 'publishState',
-            spaceId,
-            fromId: targetId,
-            role: targetParticipant.role,
-            data: { publishing: !!targetParticipant.publishingAudio },
-            publish: targetParticipant.publishing,
-            streamType: 'audio',
-          });
-        } else if (streamType === 'screen') {
-          client.emit('signal', {
-            type: 'publishState',
-            spaceId,
-            fromId: targetId,
-            role: targetParticipant.role,
-            data: { publishing: !!targetParticipant.screenSharing },
-            publish: { audio: false, video: !!targetParticipant.screenSharing },
-            streamType: 'screen',
-          });
-        }
-
-        this.logger.log(
-          `Sent ${streamType} publish state for ${targetId} to requesting agent`,
-        );
-      }
-    }
-  }
-
-  private handleWebFrame(frameData: {
-    sessionId: string;
-    spaceId: string;
-    participantId: string;
-    frameData: Buffer;
-    timestamp: number;
-  }) {
-    // Convert frame to base64 and send to all clients in the space
-    const base64Frame = frameData.frameData.toString('base64');
-
-    this.server.to(frameData.spaceId).emit('webFrame', {
-      sessionId: frameData.sessionId,
-      participantId: frameData.participantId,
-      frame: base64Frame,
-      timestamp: frameData.timestamp,
-    });
+    return ctx;
   }
 }

@@ -22,6 +22,7 @@ import {
   GlobeLock,
   Plus,
   X,
+  Image as ImageIcon,
 } from "lucide-react";
 import { useSpaceRTC } from "@/hooks/use-space-rtc";
 
@@ -35,6 +36,9 @@ interface StreamCardProps {
     isScreenShare?: boolean;
     isUrlShare?: boolean;
     url?: string;
+    webFrameUrl?: string; // latest server web capture frame
+    ending?: boolean;
+    endsAt?: number;
   };
   isLocal?: boolean;
   isFocused?: boolean;
@@ -99,8 +103,14 @@ function StreamCard({
       onMouseLeave={() => setIsHovered(false)}
       onClick={onFocus}
     >
-      {peer.stream &&
-      (peer.publish.video || peer.isScreenShare || peer.isUrlShare) ? (
+      {peer.isUrlShare && peer.webFrameUrl ? (
+        <img
+          src={peer.webFrameUrl}
+          alt={peer.url || "web"}
+          className="w-full h-full object-cover"
+          draggable={false}
+        />
+      ) : peer.stream && (peer.publish.video || peer.isScreenShare) ? (
         <video
           ref={videoRef}
           autoPlay
@@ -118,6 +128,15 @@ function StreamCard({
           >
             {peer.role === "agent" ? "A" : "H"}
           </div>
+        </div>
+      )}
+
+      {/* Ending fade overlay for graceful shutdown */}
+      {peer.isUrlShare && peer.ending && (
+        <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/50 animate-pulse">
+          <span className="text-white text-sm font-medium">
+            Ending web share…
+          </span>
         </div>
       )}
 
@@ -252,28 +271,26 @@ export default function SpaceMediaPanel({
   onToggleExpanded?: () => void;
 }) {
   const {
-    joined,
-    remotePeers,
-    localStream,
+    localStream: localStream,
     localScreenStream,
-    localUrlStream,
-    startPublishing,
-    stopPublishing,
-    startScreenShare,
-    stopScreenShare,
-    startUrlShare,
-    stopUrlShare,
+    localWebUrl,
+    remotePeers,
+    joined,
+    pubState,
+    togglePublish: hookTogglePublish,
+    compositeFrameUrl,
+    endWebCapture,
   } = useSpaceRTC({
     spaceId,
     selfId,
     role,
-    wsUrl,
+    wsBase: wsUrl,
   });
 
-  const [pubAudio, setPubAudio] = useState<boolean>(false);
-  const [pubVideo, setPubVideo] = useState<boolean>(false);
-  const [pubScreen, setPubScreen] = useState<boolean>(false);
-  const [pubUrl, setPubUrl] = useState<boolean>(false);
+  const pubAudio = pubState.audio;
+  const pubVideo = pubState.video;
+  const pubScreen = pubState.screen;
+  const pubUrl = pubState.url;
   const [currentUrl, setCurrentUrl] = useState<string>("");
   const [showUrlInput, setShowUrlInput] = useState<boolean>(false);
   const [urlInputValue, setUrlInputValue] = useState<string>("");
@@ -281,72 +298,33 @@ export default function SpaceMediaPanel({
   const [mutedPeers, setMutedPeers] = useState<Set<string>>(new Set());
 
   async function togglePublish(kind: "audio" | "video" | "screen" | "url") {
-    if (kind === "screen") {
-      if (!pubScreen) {
-        try {
-          await startScreenShare();
-          setPubScreen(true);
-        } catch (err) {
-          console.error("Screen sharing failed:", err);
-        }
-      } else {
-        stopScreenShare();
-        setPubScreen(false);
-      }
-      return;
-    }
-
     if (kind === "url") {
       if (!pubUrl) {
+        // open input dialog
         setShowUrlInput(true);
-      } else {
-        stopUrlShare();
-        setPubUrl(false);
-        setCurrentUrl("");
+        return;
       }
+      // turning off
+      await hookTogglePublish("url");
+      setCurrentUrl("");
       return;
     }
-
-    if (!pubAudio && !pubVideo) {
-      const next = {
-        audio: kind === "audio" ? true : pubAudio,
-        video: kind === "video" ? true : pubVideo,
-      };
-      await startPublishing(next);
-      setPubAudio(next.audio);
-      setPubVideo(next.video);
-      return;
-    }
-
-    const next = {
-      audio: kind === "audio" ? !pubAudio : pubAudio,
-      video: kind === "video" ? !pubVideo : pubVideo,
-    };
-    stopPublishing();
-    if (next.audio || next.video) {
-      await startPublishing(next);
-    }
-    setPubAudio(next.audio);
-    setPubVideo(next.video);
+    await hookTogglePublish(kind);
   }
+
+  const handleEndWebGracefully = () => {
+    endWebCapture?.(1500); // default 1.5s grace
+  };
 
   const handleUrlSubmit = async () => {
     if (!urlInputValue.trim()) return;
-
-    let url = urlInputValue.trim();
-    if (!url.startsWith("http://") && !url.startsWith("https://")) {
-      url = "https://" + url;
-    }
-
-    try {
-      await startUrlShare(url);
-      setPubUrl(true);
-      setCurrentUrl(url);
-      setShowUrlInput(false);
-      setUrlInputValue("");
-    } catch (err) {
-      console.error("URL sharing failed:", err);
-    }
+    const normalized = urlInputValue.startsWith("http")
+      ? urlInputValue.trim()
+      : `https://${urlInputValue.trim()}`;
+    setCurrentUrl(normalized);
+    setShowUrlInput(false);
+    setUrlInputValue("");
+    await hookTogglePublish("url", normalized);
   };
 
   const handleCancelUrl = () => {
@@ -375,13 +353,16 @@ export default function SpaceMediaPanel({
   type StreamItem = {
     id: string;
     role: "human" | "agent";
-    stream?: MediaStream | null;
-    audioStream?: MediaStream | null;
+    stream: MediaStream | null | undefined;
+    audioStream: MediaStream | null | undefined;
     publish: { audio: boolean; video: boolean };
     isLocal: boolean;
     isScreenShare: boolean;
     isUrlShare: boolean;
     url?: string;
+    webFrameUrl?: string;
+    ending?: boolean;
+    endsAt?: number;
   };
 
   const allStreams: StreamItem[] = [];
@@ -415,19 +396,7 @@ export default function SpaceMediaPanel({
   }
 
   // Add local URL share
-  if (pubUrl && localUrlStream.current) {
-    allStreams.push({
-      id: `${selfId}-url`,
-      role,
-      stream: localUrlStream.current,
-      audioStream: undefined,
-      publish: { audio: false, video: true },
-      isLocal: true,
-      isScreenShare: false,
-      isUrlShare: true,
-      url: currentUrl,
-    });
-  }
+  // Do not push a local placeholder for web capture; rely on server frames (including self) via remotePeers
 
   // Add remote streams
   remotePeers.forEach((peer) => {
@@ -439,7 +408,7 @@ export default function SpaceMediaPanel({
         stream: peer.stream,
         audioStream: peer.audioStream || null,
         publish: peer.publishing,
-        isLocal: false,
+        isLocal: peer.id === selfId,
         isScreenShare: false,
         isUrlShare: false,
       });
@@ -460,24 +429,26 @@ export default function SpaceMediaPanel({
     }
 
     // Add URL share stream
-    if (peer.urlStream) {
+    if (peer.urlSharing?.active) {
       allStreams.push({
         id: `${peer.id}-url`,
         role: peer.role,
-        stream: peer.urlStream,
+        stream: undefined,
         audioStream: undefined,
         publish: { audio: false, video: true },
-        isLocal: false,
+        isLocal: peer.id === selfId,
         isScreenShare: false,
         isUrlShare: true,
-        url: peer.urlSharing.url,
+        url: peer.urlSharing?.url,
+        webFrameUrl: peer.webFrameUrl,
+        ending: peer.urlSharing?.ending,
+        endsAt: peer.urlSharing?.endsAt,
       });
     }
   });
 
   const totalActiveStreams = allStreams.length;
   const shouldShowPanel = totalActiveStreams > 0 || joined;
-
   const getColumns = () => {
     if (isExpanded) {
       if (totalActiveStreams <= 4) return 2;
@@ -508,6 +479,16 @@ export default function SpaceMediaPanel({
             <p className="text-xs text-gray-400">
               Start streaming to see participants
             </p>
+            {compositeFrameUrl && (
+              <div className="mt-4">
+                <ImageIcon className="h-4 w-4 mx-auto mb-1 text-gray-400" />
+                <img
+                  src={compositeFrameUrl}
+                  alt="Composite"
+                  className="max-w-[160px] mx-auto rounded border"
+                />
+              </div>
+            )}
           </div>
         </div>
         <div className="p-3 border-t bg-white">
@@ -595,6 +576,13 @@ export default function SpaceMediaPanel({
               Live ({totalActiveStreams})
             </span>
             {!joined && <Badge variant="outline">Connecting...</Badge>}
+            {compositeFrameUrl && (
+              <img
+                src={compositeFrameUrl}
+                alt="Composite"
+                className="h-8 w-12 object-cover rounded border ml-2"
+              />
+            )}
           </div>
           <div className="flex items-center gap-1">
             {focusedPeer && (
@@ -642,6 +630,9 @@ export default function SpaceMediaPanel({
                       isScreenShare: focusedStream.isScreenShare,
                       isUrlShare: focusedStream.isUrlShare,
                       url: focusedStream.url,
+                      webFrameUrl: focusedStream.webFrameUrl,
+                      ending: focusedStream.ending,
+                      endsAt: focusedStream.endsAt,
                     }}
                     isLocal={focusedStream.isLocal}
                     isFocused={true}
@@ -678,6 +669,9 @@ export default function SpaceMediaPanel({
                             isScreenShare: stream.isScreenShare,
                             isUrlShare: stream.isUrlShare,
                             url: stream.url,
+                            webFrameUrl: stream.webFrameUrl,
+                            ending: stream.ending,
+                            endsAt: stream.endsAt,
                           }}
                           isLocal={stream.isLocal}
                           isMinimized={true}
@@ -697,34 +691,115 @@ export default function SpaceMediaPanel({
         ) : (
           // Grid view
           <ScrollArea className="h-full">
-            <div
-              className={`p-3 grid gap-3`}
-              style={{
-                gridTemplateColumns: `repeat(${columns}, 1fr)`,
-              }}
-            >
-              {allStreams.map((stream) => (
-                <StreamCard
-                  key={stream.id}
-                  peer={{
-                    id: stream.id,
-                    role: stream.role,
-                    stream: stream.stream || undefined,
-                    audioStream: stream.audioStream || undefined,
-                    publish: stream.publish,
-                    isScreenShare: stream.isScreenShare,
-                    isUrlShare: stream.isUrlShare,
-                    url: stream.url,
-                  }}
-                  isLocal={stream.isLocal}
-                  onFocus={() => handleStreamFocus(stream.id)}
-                  onMute={
-                    stream.isLocal ? undefined : () => toggleMutePeer(stream.id)
-                  }
-                  isMuted={mutedPeers.has(stream.id)}
-                />
-              ))}
-            </div>
+            {(() => {
+              // Determine primary stream: any url share first, else any screen share
+              const primary =
+                allStreams.find((s) => s.isUrlShare) ||
+                allStreams.find((s) => s.isScreenShare);
+              if (!primary) {
+                // fallback original grid
+                return (
+                  <div
+                    className={`p-3 grid gap-3`}
+                    style={{ gridTemplateColumns: `repeat(${columns}, 1fr)` }}
+                  >
+                    {allStreams.map((stream) => (
+                      <StreamCard
+                        key={stream.id}
+                        peer={{
+                          id: stream.id,
+                          role: stream.role,
+                          stream: stream.stream || undefined,
+                          audioStream: stream.audioStream || undefined,
+                          publish: stream.publish,
+                          isScreenShare: stream.isScreenShare,
+                          isUrlShare: stream.isUrlShare,
+                          url: stream.url,
+                          webFrameUrl: stream.webFrameUrl,
+                          ending: stream.ending,
+                          endsAt: stream.endsAt,
+                        }}
+                        isLocal={stream.isLocal}
+                        onFocus={() => handleStreamFocus(stream.id)}
+                        onMute={
+                          stream.isLocal
+                            ? undefined
+                            : () => toggleMutePeer(stream.id)
+                        }
+                        isMuted={mutedPeers.has(stream.id)}
+                      />
+                    ))}
+                  </div>
+                );
+              }
+              const others = allStreams.filter((s) => s.id !== primary.id);
+              return (
+                <div className="p-3 flex flex-col gap-3">
+                  <div className="w-full aspect-video">
+                    <StreamCard
+                      peer={{
+                        id: primary.id,
+                        role: primary.role,
+                        stream: primary.stream || undefined,
+                        audioStream: primary.audioStream || undefined,
+                        publish: primary.publish,
+                        isScreenShare: primary.isScreenShare,
+                        isUrlShare: primary.isUrlShare,
+                        url: primary.url,
+                        webFrameUrl: primary.webFrameUrl,
+                        ending: primary.ending,
+                        endsAt: primary.endsAt,
+                      }}
+                      isLocal={primary.isLocal}
+                      onFocus={() => handleStreamFocus(primary.id)}
+                      onMute={
+                        primary.isLocal
+                          ? undefined
+                          : () => toggleMutePeer(primary.id)
+                      }
+                      isMuted={mutedPeers.has(primary.id)}
+                      className="h-full"
+                    />
+                  </div>
+                  {others.length > 0 && (
+                    <div
+                      className="grid gap-3"
+                      style={{
+                        gridTemplateColumns: `repeat(${Math.min(4, Math.ceil(Math.sqrt(others.length)))}, 1fr)`,
+                      }}
+                    >
+                      {others.map((stream) => (
+                        <StreamCard
+                          key={stream.id}
+                          peer={{
+                            id: stream.id,
+                            role: stream.role,
+                            stream: stream.stream || undefined,
+                            audioStream: stream.audioStream || undefined,
+                            publish: stream.publish,
+                            isScreenShare: stream.isScreenShare,
+                            isUrlShare: stream.isUrlShare,
+                            url: stream.url,
+                            webFrameUrl: stream.webFrameUrl,
+                            ending: stream.ending,
+                            endsAt: stream.endsAt,
+                          }}
+                          isLocal={stream.isLocal}
+                          onFocus={() => handleStreamFocus(stream.id)}
+                          onMute={
+                            stream.isLocal
+                              ? undefined
+                              : () => toggleMutePeer(stream.id)
+                          }
+                          isMuted={mutedPeers.has(stream.id)}
+                          className="aspect-video"
+                        />
+                      ))}
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
           </ScrollArea>
         )}
       </div>
@@ -795,6 +870,15 @@ export default function SpaceMediaPanel({
                 <GlobeLock className="h-4 w-4" />
               )}
             </Button>
+            {pubUrl && (
+              <Button
+                size="sm"
+                variant="destructive"
+                onClick={handleEndWebGracefully}
+              >
+                End Web
+              </Button>
+            )}
           </div>
         )}
       </div>

@@ -1,587 +1,477 @@
-// apps/commons-api/src/space/stream-monitor.service.ts
-import { Injectable, Logger, Inject, forwardRef } from '@nestjs/common';
+import { Injectable, Logger, OnModuleDestroy } from '@nestjs/common';
 import { EventEmitter } from 'events';
-import { TranscriptionDeliveryService } from './transcription-delivery.service';
-import OpenAI from 'openai';
-import * as fs from 'fs';
-import * as os from 'os';
-import * as path from 'path';
-import WebSocket from 'ws';
-import { WaveFile } from 'wavefile';
-import { SpaceAgentTriggerService } from './space-agent-trigger.service';
+import { createCanvas, loadImage } from 'canvas';
 
-// Only import canvas lazily when needed (faster cold start)
-let createCanvas: any;
+export type StreamKind = 'camera' | 'screen' | 'web';
 
-type AudioFormat = 'wav' | 'mp3' | 'ogg' | 'webm' | 'm4a'; // keep flexible; API accepts many
-
-interface StreamTranscription {
-  sessionId: string;
-  spaceId: string;
-  participantId: string;
-  transcript: string;
-  timestamp: number;
-  confidence: number;
-  isFinal: boolean;
-  audioLevel?: number;
-  type?: 'audio' | 'video' | 'speech_event';
+interface VideoStreamState {
+  lastFrame?: Buffer; // raw image bytes (PNG/JPEG)
+  width?: number;
+  height?: number;
+  updatedAt: number;
+  kind: StreamKind;
 }
 
-interface MonitoringSession {
-  sessionId: string;
-  spaceId: string;
+interface AudioState {
+  lastAudioLevel: number; // 0..1
+  isSpeaking: boolean;
+  updatedAt: number;
+}
+
+interface ParticipantStreamState {
   participantId: string;
-  monitoringAgents: Set<string>;
-  isActive: boolean;
-  lastActivity: Date;
+  participantType: 'agent' | 'human';
+  streams: Partial<Record<StreamKind, VideoStreamState>>;
+  audio: AudioState;
+}
 
-  // Simplified buffering for “near-realtime”:
-  audioBuffer: Buffer[]; // rolling buffer of small audio chunks
-  lastAudioFlushAt?: number; // ms
-  audioFormat: AudioFormat; // what upstream sends us (prefer wav/webm)
+interface CompositeFrameData {
+  buffer: Buffer; // PNG
+  dataUrl: string;
+  generatedAt: number;
+}
 
-  lastVideoFrameAt?: number; // ms
-  pendingVision?: boolean; // avoid overlapping vision calls
-  visionIntervalMs: number; // e.g. 3000–5000
-  imageDetail: 'low' | 'high' | 'auto';
-
-  // Backoff + rate-limit state
-  consecutiveErrors: number;
-
-  // Realtime (audio) session state
-  rtSocket?: WebSocket; // OpenAI Realtime WebSocket
-  rtReady?: boolean; // handshake done
-  rtConnecting?: boolean; // avoid duplicate connects
-  rtPendingText?: string; // accumulating partial transcript
-  rtLastCommitAt?: number; // last time we committed buffer
-
-  // Latest captured visual frame for downstream triggers
-  lastFrameDataUrl?: string;
-  lastFrameTimestamp?: number; // epoch ms
+interface SpaceMonitorState {
+  spaceId: string;
+  participants: Map<string, ParticipantStreamState>;
+  lastComposite?: CompositeFrameData;
+  compositeInterval?: NodeJS.Timeout;
 }
 
 @Injectable()
-export class StreamMonitorService extends EventEmitter {
+export class StreamMonitorService implements OnModuleDestroy {
   private readonly logger = new Logger(StreamMonitorService.name);
-  private sessions = new Map<string, MonitoringSession>();
-  private agentToSession = new Map<string, string>();
+  private readonly spaces = new Map<string, SpaceMonitorState>();
+  private compositeMs = 2000; // composite generation interval
+  private speakingHoldMs = 1500; // keep speaking flag for a while after last loud chunk
+  private speakingThreshold = 0.03; // RMS threshold
 
-  private openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+  constructor(private readonly emitter: EventEmitter) {}
 
-  // Realtime config
-  private REALTIME_MODEL =
-    process.env.REALTIME_MODEL || 'gpt-4o-realtime-preview-2024-12-17';
-  private USE_REALTIME =
-    (process.env.USE_REALTIME || 'true').toLowerCase() !== 'false';
-  private REALTIME_TRANSCRIBE_INSTRUCTIONS =
-    'Transcribe the newly received audio. Return only the verbatim transcript (no timestamps, speaker tags, punctuation only where obvious).';
-
-  // Tuning knobs
-  private AUDIO_FLUSH_MS = 1000; // try flush every ~1s
-  private AUDIO_MAX_CHUNK_BYTES = 1_000_000; // 1 MB safety
-  private DEFAULT_VISION_INTERVAL_MS = 1000; // analyze ~every 2s
-  private MAX_PARALLEL_VISION = 1;
-  // Global override config (can be tuned at runtime)
-  private visionConfig = {
-    defaultIntervalMs: 1000,
-    imageDetail: 'low' as 'low' | 'high' | 'auto',
-  };
-
-  constructor(
-    @Inject(forwardRef(() => TranscriptionDeliveryService))
-    private readonly delivery: TranscriptionDeliveryService,
-    private readonly triggerService: SpaceAgentTriggerService,
-  ) {
-    super();
-    if (!process.env.OPENAI_API_KEY) {
-      this.logger.warn('OPENAI_API_KEY not set.');
-    }
-  }
-
-  /** Start monitoring a stream (no realtime socket; just queues). */
-  async startMonitoring(
-    spaceId: string,
-    agentId: string,
-    targetParticipantId?: string,
-  ): Promise<string> {
-    // Create a unique session ID for this monitoring request
-    const sessionId = `${spaceId}:${agentId}:${targetParticipantId || 'general'}:${Date.now()}`;
-
-    const session: MonitoringSession = {
-      sessionId,
-      spaceId,
-      participantId: targetParticipantId || 'general',
-      monitoringAgents: new Set([agentId]),
-      isActive: true,
-      lastActivity: new Date(),
-      audioBuffer: [],
-      audioFormat: 'wav',
-      visionIntervalMs: this.DEFAULT_VISION_INTERVAL_MS,
-      imageDetail: this.visionConfig.imageDetail,
-      consecutiveErrors: 0,
-    };
-
-    this.sessions.set(sessionId, session);
-    this.agentToSession.set(agentId, sessionId);
-
-    this.logger.log(
-      `Agent ${agentId} started monitoring ${session.participantId} in ${spaceId} (session: ${sessionId})`,
-    );
-
-    // Initialize realtime socket lazily only when first audio chunk arrives to save resources.
-    return sessionId;
-  }
-
-  async stopMonitoring(spaceId: string, agentId: string): Promise<void> {
-    const sessionKey = this.agentToSession.get(agentId);
-    if (!sessionKey) return;
-    const session = this.sessions.get(sessionKey);
-    if (!session) return;
-
-    session.monitoringAgents.delete(agentId);
-    this.agentToSession.delete(agentId);
-
-    if (session.monitoringAgents.size === 0) {
-      this.sessions.delete(sessionKey);
-      this.logger.log(
-        `Stopped session ${sessionKey} (no more monitoring agents).`,
-      );
-    } else {
-      this.logger.log(
-        `Agent ${agentId} left; ${session.monitoringAgents.size} remain for ${sessionKey}.`,
-      );
-    }
-  }
-
-  /** Receive small audio chunks (WAV/WEBM/etc). We buffer and flush roughly every second. */
-  pushAudioData(
-    sessionId: string,
-    audioChunk: Buffer,
-    opts?: { format?: AudioFormat },
-  ) {
-    const session = this.sessions.get(sessionId);
-    if (!session || !session.isActive) return;
-
-    if (opts?.format) session.audioFormat = opts.format;
-    session.audioBuffer.push(audioChunk);
-
-    const now = Date.now();
-    const bytes = session.audioBuffer.reduce((n, b) => n + b.length, 0);
-    const shouldFlushByTime =
-      !session.lastAudioFlushAt ||
-      now - session.lastAudioFlushAt >= this.AUDIO_FLUSH_MS;
-    const shouldFlushBySize = bytes >= this.AUDIO_MAX_CHUNK_BYTES;
-
-    if (shouldFlushByTime || shouldFlushBySize) {
-      const payload = Buffer.concat(session.audioBuffer);
-      session.audioBuffer = [];
-      session.lastAudioFlushAt = now;
-      if (this.USE_REALTIME) {
-        this.streamAudioToRealtime(session, payload).catch((e) =>
-          this.logger.error('streamAudioToRealtime error', e),
-        );
-      } else {
-        this.transcribeChunk(session, payload).catch((e) =>
-          this.logger.error('transcribeChunk error', e),
-        );
-      }
-    }
-  }
-
-  /** Transcribe a buffered audio chunk via Audio Transcriptions API. */
-  private async transcribeChunk(session: MonitoringSession, audio: Buffer) {
-    if (audio.length === 0) return;
-
-    try {
-      // Write to a temp file (the Node SDK’s transcriptions API accepts file-like streams or toFile)
-      const tmpPath = path.join(
-        os.tmpdir(),
-        `mon-${session.sessionId}-${Date.now()}.${session.audioFormat || 'wav'}`,
-      );
-      fs.writeFileSync(tmpPath, audio);
-
-      // Choose your STT model: gpt-4o-mini-transcribe (fast) or whisper-1 (robust, larger)
-      const sttModel = process.env.STT_MODEL || 'gpt-4o-mini-transcribe';
-
-      const res = await this.openai.audio.transcriptions.create({
-        file: fs.createReadStream(tmpPath) as any,
-        model: sttModel,
-        // You can pass language if known: language: "en",
-        // temperature: 0,
-      });
-
-      fs.unlink(tmpPath, () => {});
-
-      const text = (res as any)?.text?.trim();
-      if (text) {
-        const transcription: StreamTranscription = {
-          sessionId: session.sessionId,
-          spaceId: session.spaceId,
-          participantId: session.participantId,
-          transcript: `[AUDIO] ${text}`,
-          timestamp: Date.now(),
-          confidence: 1.0, // API doesn’t return a confidence score; keep 1.0 or estimate
-          isFinal: true,
-          type: 'audio',
-        };
-
-        await this.delivery.broadcastTranscriptionToSpace(
-          session.spaceId,
-          transcription,
-          Array.from(session.monitoringAgents),
-        );
-
-        session.lastActivity = new Date();
-        session.consecutiveErrors = 0;
-      }
-    } catch (err) {
-      session.consecutiveErrors++;
-      this.logger.warn(
-        `Transcription failed x${session.consecutiveErrors} for ${session.sessionId}`,
-        err as any,
-      );
-    }
-  }
-
-  /** Stream an audio buffer to realtime: convert to 16k PCM16, append, commit, request transcription. */
-  private async streamAudioToRealtime(
-    session: MonitoringSession,
-    audio: Buffer,
-  ) {
-    if (audio.length === 0) return;
-
-    const ws = session.rtSocket;
-    if (!ws || ws.readyState !== WebSocket.OPEN) return; // will retry on next chunk
-
-    try {
-      // Decode WAV (or other) into PCM16 16k mono
-      let pcm16: Int16Array | null = null;
-      if (session.audioFormat === 'wav') {
-        const wav = new WaveFile(audio);
-        // WaveFile typings are loose; use any to access internals
-        const wavAny: any = wav as any;
-        let samplesRaw = wavAny.getSamples(false) as any; // could be Int16Array | Float32Array | number[]
-        const sampleRate: number = wavAny.fmt?.sampleRate || 16000;
-        // Normalize to Int16Array
-        let samples: Int16Array;
-        if (samplesRaw instanceof Int16Array) {
-          samples = samplesRaw;
-        } else if (samplesRaw instanceof Float32Array) {
-          samples = new Int16Array(samplesRaw.length);
-          for (let i = 0; i < samplesRaw.length; i++) {
-            const v = Math.max(-1, Math.min(1, samplesRaw[i]));
-            samples[i] = v < 0 ? v * 0x8000 : v * 0x7fff;
-          }
-        } else if (Array.isArray(samplesRaw)) {
-          samples = new Int16Array(samplesRaw.length);
-          for (let i = 0; i < samplesRaw.length; i++)
-            samples[i] = samplesRaw[i];
-        } else {
-          // Fallback: treat underlying buffer as Int16
-          // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
-          samples = new Int16Array(samplesRaw.buffer || audio.buffer);
-        }
-        if (sampleRate !== 16000) {
-          const ratio = sampleRate / 16000;
-          const outLen = Math.floor(samples.length / ratio);
-          const out = new Int16Array(outLen);
-          for (let i = 0; i < outLen; i++)
-            out[i] = samples[Math.floor(i * ratio)];
-          pcm16 = out;
-        } else {
-          pcm16 = samples;
-        }
-      } else {
-        // For non-wav formats, fall back to raw bytes (hope already PCM16 16k) - or skip
-        pcm16 = new Int16Array(
-          audio.buffer,
-          audio.byteOffset,
-          Math.floor(audio.length / 2),
-        );
-      }
-
-      if (!pcm16 || pcm16.length === 0) return;
-      const buf = Buffer.from(pcm16.buffer, pcm16.byteOffset, pcm16.byteLength);
-      const b64 = buf.toString('base64');
-
-      ws.send(
-        JSON.stringify({ type: 'input_audio_buffer.append', audio: b64 }),
-      );
-      ws.send(JSON.stringify({ type: 'input_audio_buffer.commit' }));
-      ws.send(
-        JSON.stringify({
-          type: 'response.create',
-          response: {
-            instructions: this.REALTIME_TRANSCRIBE_INSTRUCTIONS,
-            modalities: ['text'],
-          },
-        }),
-      );
-    } catch (err) {
-      session.consecutiveErrors++;
-      this.logger.warn(
-        `streamAudioToRealtime failed x${session.consecutiveErrors} for ${session.sessionId}`,
-        err as any,
-      );
-    }
-  }
-
-  private handleRealtimeMessage(session: MonitoringSession, msg: any) {
-    // Examples of event types (subject to OpenAI realtime spec evolution):
-    // response.output_text.delta, response.output_text.done, response.completed
-    const t = msg.type;
-    if (!t) return;
-    switch (t) {
-      case 'response.output_text.delta': {
-        const d = msg.delta || msg.text || msg.content || '';
-        if (!session.rtPendingText) session.rtPendingText = '';
-        session.rtPendingText += d;
-        break;
-      }
-      case 'response.output_text.done':
-      case 'response.completed': {
-        const finalText = (session.rtPendingText || '').trim();
-        if (finalText) {
-          const transcription: StreamTranscription = {
-            sessionId: session.sessionId,
-            spaceId: session.spaceId,
-            participantId: session.participantId,
-            transcript: `[AUDIO] ${finalText}`,
-            timestamp: Date.now(),
-            confidence: 1.0,
-            isFinal: true,
-            type: 'audio',
-          };
-          this.delivery.broadcastTranscriptionToSpace(
-            session.spaceId,
-            transcription,
-            Array.from(session.monitoringAgents),
-          );
-        }
-        session.rtPendingText = '';
-        session.lastActivity = new Date();
-        session.consecutiveErrors = 0;
-        break;
-      }
-      case 'error': {
-        session.consecutiveErrors++;
-        this.logger.warn(
-          `Realtime error for ${session.sessionId}: ${msg.error?.message || msg}`,
-        );
-        break;
-      }
-      default:
-        // Silently ignore other event types for now
-        break;
-    }
-  }
-
-  /** Push a decoded video frame (RGBA) to be sampled → JPEG → vision prompt. */
-  async pushVideoFrame(
-    sessionId: string,
-    frame: {
-      width: number;
-      height: number;
-      data: Uint8ClampedArray;
-      rotation?: number;
-      timestamp: number;
-      participantId: string;
-      streamType?: 'camera' | 'screen' | 'url'; // Add stream type
-    },
-  ) {
-    const session = this.sessions.get(sessionId);
-    if (!session || !session.isActive) return;
-
-    // Validate frame data
-    if (
-      !frame.data ||
-      frame.data.length === 0 ||
-      frame.width <= 0 ||
-      frame.height <= 0
-    ) {
-      this.logger.debug(
-        `Skipping invalid video frame: width=${frame.width}, height=${frame.height}, dataLength=${frame.data?.length || 0}`,
-      );
-      return;
-    }
-
-    // Log receipt of frame for debugging
-    this.logger.debug(
-      `Received video frame for session=${sessionId}, participant=${frame.participantId}, ` +
-        `type=${frame.streamType || 'camera'}, size=${frame.width}x${frame.height}, dataLength=${frame.data.length}`,
-    );
-
-    const now = Date.now();
-    // sample every N ms and avoid overlap
-    if (session.pendingVision) {
-      this.logger.debug(
-        `Skipping frame (pendingVision) for session=${sessionId}, participant=${frame.participantId}`,
-      );
-      return;
-    }
-    const effectiveInterval =
-      session.visionIntervalMs ?? this.visionConfig.defaultIntervalMs;
-    if (
-      session.lastVideoFrameAt &&
-      now - session.lastVideoFrameAt < effectiveInterval
-    ) {
-      this.logger.debug(
-        `Throttling frame for session=${sessionId} (interval ${effectiveInterval}ms), delta=${now - session.lastVideoFrameAt}ms`,
-      );
-      return;
-    }
-
-    session.lastVideoFrameAt = now;
-    session.pendingVision = true;
-
-    try {
-      // Lazy load canvas
-      if (!createCanvas) {
-        const canvas = await import('canvas');
-        createCanvas = canvas.createCanvas;
-      }
-
-      // Convert RGBA → JPEG (downscale for cost if desired)
-      const maxShortSide = 768;
-      const scale = Math.min(
-        1,
-        frame.width < frame.height
-          ? maxShortSide / frame.width
-          : maxShortSide / frame.height,
-      );
-      const w = Math.round(frame.width * scale);
-      const h = Math.round(frame.height * scale);
-
-      const canvas = createCanvas(w, h);
-      const ctx = canvas.getContext('2d');
-
-      // Draw original RGBA into a temporary canvas first if scaling
-      const srcCanvas = createCanvas(frame.width, frame.height);
-      const srcCtx = srcCanvas.getContext('2d');
-      const imgData = srcCtx.createImageData(frame.width, frame.height);
-      imgData.data.set(frame.data);
-      srcCtx.putImageData(imgData, 0, 0);
-      ctx.drawImage(srcCanvas, 0, 0, w, h);
-
-      const jpeg = canvas.toBuffer('image/jpeg', { quality: 0.7 });
-      const b64 = jpeg.toString('base64');
-      const dataUrl = `data:image/jpeg;base64,${b64}`;
-
-      // Persist latest frame for later trigger usage
-      session.lastFrameDataUrl = dataUrl;
-      session.lastFrameTimestamp = Date.now();
-
-      this.logger.debug(
-        `Processed video frame to JPEG for session=${sessionId}, output=${w}x${h}, bytes=${jpeg.length}`,
-      );
-
-      session.consecutiveErrors = 0;
-    } catch (err) {
-      session.consecutiveErrors++;
-      this.logger.warn(
-        `Vision analyze failed x${session.consecutiveErrors} for ${session.sessionId}`,
-        err as any,
-      );
-    } finally {
-      session.pendingVision = false;
-    }
-  }
-
-  getMonitoringStatus() {
-    const s: any = {
-      totalSessions: this.sessions.size,
-      activeSessions: 0,
-      totalMonitoringAgents: 0,
-      sessions: [] as any[],
-    };
-    this.sessions.forEach((session) => {
-      if (session.isActive) s.activeSessions++;
-      s.totalMonitoringAgents += session.monitoringAgents.size;
-      s.sessions.push({
-        sessionId: session.sessionId,
-        spaceId: session.spaceId,
-        participantId: session.participantId,
-        isActive: session.isActive,
-        monitoringAgentCount: session.monitoringAgents.size,
-        lastActivity: session.lastActivity,
-        hasAudioData: !!session.lastAudioFlushAt,
-        lastAudioFlushAt: session.lastAudioFlushAt,
-        lastVideoFrameAt: session.lastVideoFrameAt,
-        pendingVision: session.pendingVision,
-      });
+  /* ─────────────────────────  LIFECYCLE  ───────────────────────── */
+  onModuleDestroy() {
+    this.spaces.forEach((s) => {
+      if (s.compositeInterval) clearInterval(s.compositeInterval);
     });
-    return s;
   }
 
-  /** Retrieve the most recent captured frame (data URL) for any active monitoring session in a space. */
-  getLatestFrameDataForSpace(spaceId: string): {
-    latestFrameUrl: string | undefined;
-    sessionId: string | undefined;
-  } {
-    let latest: { ts: number; url: string; sessionId: string } | undefined;
-    this.sessions.forEach((session) => {
-      if (
-        session.spaceId === spaceId &&
-        session.isActive &&
-        session.lastFrameDataUrl &&
-        session.lastFrameTimestamp
-      ) {
-        if (!latest || session.lastFrameTimestamp > latest.ts) {
-          latest = {
-            ts: session.lastFrameTimestamp,
-            url: session.lastFrameDataUrl,
-            sessionId: session.sessionId,
-          };
+  /* ─────────────────────────  PUBLIC API  ───────────────────────── */
+
+  configure(opts: {
+    compositeMs?: number;
+    speakingHoldMs?: number;
+    speakingThreshold?: number;
+  }) {
+    if (opts.compositeMs !== undefined) this.compositeMs = opts.compositeMs;
+    if (opts.speakingHoldMs !== undefined)
+      this.speakingHoldMs = opts.speakingHoldMs;
+    if (opts.speakingThreshold !== undefined)
+      this.speakingThreshold = opts.speakingThreshold;
+  }
+
+  ensureSpace(spaceId: string) {
+    let state = this.spaces.get(spaceId);
+    if (!state) {
+      state = {
+        spaceId,
+        participants: new Map(),
+      };
+      this.spaces.set(spaceId, state);
+      this.startCompositeLoop(spaceId);
+    }
+    return state;
+  }
+
+  removeParticipant(spaceId: string, participantId: string) {
+    const space = this.spaces.get(spaceId);
+    if (!space) return;
+    space.participants.delete(participantId);
+  }
+
+  addOrUpdateVideoFrame(props: {
+    spaceId: string;
+    participantId: string;
+    participantType: 'agent' | 'human';
+    kind: StreamKind;
+    frameBase64: string; // may include data URL prefix
+    width?: number;
+    height?: number;
+  }) {
+    const { spaceId, participantId, participantType, kind } = props;
+    const space = this.ensureSpace(spaceId);
+    const participant = this.ensureParticipant(
+      space,
+      participantId,
+      participantType,
+    );
+    try {
+      const raw = this.stripDataUrl(props.frameBase64);
+      participant.streams[kind] = {
+        lastFrame: Buffer.from(raw, 'base64'),
+        width: props.width,
+        height: props.height,
+        updatedAt: Date.now(),
+        kind,
+      };
+    } catch (e) {
+      this.logger.warn(
+        `Failed to process frame for ${participantId}: ${String(e)}`,
+      );
+    }
+  }
+
+  addOrUpdateAudioChunk(props: {
+    spaceId: string;
+    participantId: string;
+    participantType: 'agent' | 'human';
+    audioBase64: string; // PCM16LE mono (preferred) else treat as bytes
+    sampleRate?: number;
+    channels?: number;
+  }) {
+    const { spaceId, participantId, participantType } = props;
+    const space = this.ensureSpace(spaceId);
+    const participant = this.ensureParticipant(
+      space,
+      participantId,
+      participantType,
+    );
+    try {
+      const raw = Buffer.from(this.stripDataUrl(props.audioBase64), 'base64');
+      const rms = this.computeRmsPcm16(raw);
+      const now = Date.now();
+      const wasSpeaking = participant.audio.isSpeaking;
+      let isSpeaking = rms > this.speakingThreshold;
+      // hold logic
+      if (!isSpeaking && wasSpeaking) {
+        // if within hold window, keep speaking
+        if (now - participant.audio.updatedAt < this.speakingHoldMs) {
+          isSpeaking = true;
         }
       }
+      participant.audio = {
+        lastAudioLevel: rms,
+        isSpeaking,
+        updatedAt: now,
+      };
+      this.emitAudioState(spaceId);
+    } catch (e) {
+      this.logger.warn(
+        `Failed to process audio for ${participantId}: ${String(e)}`,
+      );
+    }
+  }
+
+  publishAgentFrame(props: {
+    spaceId: string;
+    agentId: string;
+    kind: StreamKind;
+    frameBase64: string;
+  }) {
+    this.addOrUpdateVideoFrame({
+      spaceId: props.spaceId,
+      participantId: props.agentId,
+      participantType: 'agent',
+      kind: props.kind,
+      frameBase64: props.frameBase64,
     });
-    this.logger.debug(
-      `getLatestFrameDataForSpace(${spaceId}) returning sessionId=${latest?.sessionId}, urlLength=${latest?.url?.length || 0}`,
-    );
-    return { latestFrameUrl: latest?.url, sessionId: latest?.sessionId };
   }
 
-  getActiveStreams(spaceId: string): any[] {
-    const rows: any[] = [];
-    this.sessions.forEach((session) => {
-      if (session.spaceId === spaceId && session.isActive) {
-        rows.push({
-          sessionId: session.sessionId,
-          participantId: session.participantId,
-          monitoringAgents: Array.from(session.monitoringAgents),
-          lastActivity: session.lastActivity,
-          isTranscribing: !!session.lastAudioFlushAt,
-        });
-      }
+  publishAgentAudio(props: {
+    spaceId: string;
+    agentId: string;
+    audioBase64: string;
+  }) {
+    this.addOrUpdateAudioChunk({
+      spaceId: props.spaceId,
+      participantId: props.agentId,
+      participantType: 'agent',
+      audioBase64: props.audioBase64,
     });
-    return rows;
   }
 
-  getMonitoringAgents(sessionId: string): string[] {
-    const session = this.sessions.get(sessionId);
-    return session ? Array.from(session.monitoringAgents) : [];
-  }
-
-  isAgentMonitoring(agentId: string): boolean {
-    return this.agentToSession.has(agentId);
-  }
-
-  getSessionDetails(sessionId: string) {
-    const session = this.sessions.get(sessionId);
-    if (!session) return { error: 'Session not found' };
+  getLatestFrameDataForSpace(spaceId: string) {
+    const space = this.spaces.get(spaceId);
+    if (!space?.lastComposite) return { latestFrameUrl: undefined } as any;
     return {
-      sessionId: session.sessionId,
-      spaceId: session.spaceId,
-      participantId: session.participantId,
-      isActive: session.isActive,
-      monitoringAgents: Array.from(session.monitoringAgents),
-      lastActivity: session.lastActivity,
-      lastAudioFlushAt: session.lastAudioFlushAt,
-      lastVideoFrameAt: session.lastVideoFrameAt,
-      pendingVision: session.pendingVision,
-      audioFormat: session.audioFormat,
-      visionIntervalMs: session.visionIntervalMs,
-      imageDetail: session.imageDetail,
+      latestFrameUrl: space.lastComposite.dataUrl,
+      generatedAt: space.lastComposite.generatedAt,
     };
+  }
+
+  getParticipantAudioStates(spaceId: string) {
+    const space = this.spaces.get(spaceId);
+    if (!space) return [];
+    return Array.from(space.participants.values()).map((p) => ({
+      participantId: p.participantId,
+      participantType: p.participantType,
+      audioLevel: p.audio.lastAudioLevel,
+      isSpeaking: p.audio.isSpeaking,
+      updatedAt: p.audio.updatedAt,
+    }));
+  }
+
+  forceComposite(spaceId: string) {
+    return this.generateComposite(spaceId).catch((e) => {
+      this.logger.warn(`forceComposite failed: ${String(e)}`);
+      return undefined;
+    });
+  }
+
+  /* ─────────────────────────  INTERNAL  ───────────────────────── */
+
+  private ensureParticipant(
+    space: SpaceMonitorState,
+    participantId: string,
+    participantType: 'agent' | 'human',
+  ) {
+    let participant = space.participants.get(participantId);
+    if (!participant) {
+      participant = {
+        participantId,
+        participantType,
+        streams: {},
+        audio: {
+          lastAudioLevel: 0,
+          isSpeaking: false,
+          updatedAt: Date.now(),
+        },
+      };
+      space.participants.set(participantId, participant);
+    }
+    return participant;
+  }
+
+  private startCompositeLoop(spaceId: string) {
+    const state = this.ensureSpace(spaceId);
+    if (state.compositeInterval) return;
+    state.compositeInterval = setInterval(() => {
+      this.generateComposite(spaceId).catch((e) =>
+        this.logger.debug(
+          `Composite generation error (space ${spaceId}): ${e}`,
+        ),
+      );
+    }, this.compositeMs);
+  }
+
+  private async generateComposite(spaceId: string) {
+    const state = this.spaces.get(spaceId);
+    if (!state) return;
+    const participants = Array.from(state.participants.values());
+    if (!participants.length) return;
+
+    // Layout strategy:
+    // If any screen stream present, make it large (1280x720), others as small thumbnails along bottom.
+    // Else grid layout (max 4x4) 1280 width scaled.
+
+    const width = 1280;
+    const height = 720;
+    const canvas = createCanvas(width, height);
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = '#111';
+    ctx.fillRect(0, 0, width, height);
+
+    const screenEntries: {
+      participant: ParticipantStreamState;
+      stream: VideoStreamState;
+    }[] = [];
+    const webEntries: {
+      participant: ParticipantStreamState;
+      stream: VideoStreamState;
+    }[] = [];
+    const cameraEntries: {
+      participant: ParticipantStreamState;
+      stream: VideoStreamState;
+    }[] = [];
+
+    for (const p of participants) {
+      const scr = p.streams.screen;
+      if (scr?.lastFrame) screenEntries.push({ participant: p, stream: scr });
+      const web = p.streams.web;
+      if (web?.lastFrame) webEntries.push({ participant: p, stream: web });
+      const cam = p.streams.camera;
+      if (cam?.lastFrame) cameraEntries.push({ participant: p, stream: cam });
+    }
+
+    let yOffsetForThumbs = height;
+
+    const drawThumbnails = async (
+      thumbs: {
+        participant: ParticipantStreamState;
+        stream: VideoStreamState;
+      }[],
+    ) => {
+      const thumbH = 160;
+      const thumbW = 160 * (16 / 9);
+      yOffsetForThumbs = height - thumbH - 10;
+      let x = 10;
+      const sorted = thumbs.sort(
+        (a, b) => b.stream.updatedAt - a.stream.updatedAt,
+      );
+      for (const t of sorted) {
+        if (x + thumbW > width - 10) break;
+        await this.drawFrame(
+          ctx,
+          t.stream.lastFrame!,
+          x,
+          yOffsetForThumbs,
+          thumbW,
+          thumbH,
+        );
+        this.drawSpeakingBadge(
+          ctx,
+          x,
+          yOffsetForThumbs,
+          thumbW,
+          thumbH,
+          t.participant,
+        );
+        x += thumbW + 10;
+      }
+    };
+
+    if (webEntries.length) {
+      // Web capture has highest priority
+      webEntries.sort((a, b) => b.stream.updatedAt - a.stream.updatedAt);
+      const main = webEntries[0];
+      await this.drawFrame(ctx, main.stream.lastFrame!, 0, 0, width, height);
+      // Build thumbnails from (remaining webs + all screens + all cameras) excluding main
+      const thumbs: {
+        participant: ParticipantStreamState;
+        stream: VideoStreamState;
+      }[] = [];
+      for (let i = 1; i < webEntries.length; i++) thumbs.push(webEntries[i]);
+      thumbs.push(...screenEntries);
+      thumbs.push(...cameraEntries);
+      await drawThumbnails(thumbs);
+    } else if (screenEntries.length) {
+      // Screen share next priority
+      screenEntries.sort((a, b) => b.stream.updatedAt - a.stream.updatedAt);
+      const main = screenEntries[0];
+      await this.drawFrame(ctx, main.stream.lastFrame!, 0, 0, width, height);
+      const thumbs: {
+        participant: ParticipantStreamState;
+        stream: VideoStreamState;
+      }[] = [];
+      for (let i = 1; i < screenEntries.length; i++)
+        thumbs.push(screenEntries[i]);
+      thumbs.push(...cameraEntries);
+      await drawThumbnails(thumbs);
+    } else {
+      // No web or screen: grid of cameras (and any other stray kinds)
+      const videoEntries = [...cameraEntries];
+      if (!videoEntries.length) return;
+      const n = videoEntries.length;
+      const cols = Math.ceil(Math.sqrt(n));
+      const rows = Math.ceil(n / cols);
+      const cellW = Math.floor(width / cols);
+      const cellH = Math.floor(height / rows);
+      for (let i = 0; i < n; i++) {
+        const col = i % cols;
+        const row = Math.floor(i / cols);
+        const x = col * cellW;
+        const y = row * cellH;
+        const entry = videoEntries[i];
+        await this.drawFrame(ctx, entry.stream.lastFrame!, x, y, cellW, cellH);
+        this.drawSpeakingBadge(ctx, x, y, cellW, cellH, entry.participant);
+      }
+    }
+
+    // Timestamp overlay
+    ctx.fillStyle = 'rgba(0,0,0,0.5)';
+    ctx.fillRect(0, 0, 260, 36);
+    ctx.fillStyle = '#fff';
+    ctx.font = '16px sans-serif';
+    ctx.fillText(`Space: ${spaceId}`, 10, 18);
+    ctx.fillText(new Date().toLocaleTimeString(), 10, 34);
+
+    const buffer = canvas.toBuffer('image/png');
+    const dataUrl = `data:image/png;base64,${buffer.toString('base64')}`;
+    state.lastComposite = { buffer, dataUrl, generatedAt: Date.now() };
+    // Emit event
+    try {
+      this.emitter.emit('stream.monitor.composite', {
+        spaceId,
+        dataUrl,
+        generatedAt: state.lastComposite.generatedAt,
+      });
+    } catch {}
+  }
+
+  private async drawFrame(
+    ctx: any,
+    buffer: Buffer,
+    x: number,
+    y: number,
+    w: number,
+    h: number,
+  ) {
+    try {
+      const img = await loadImage(buffer);
+      // cover fit
+      const ratio = Math.max(w / img.width, h / img.height);
+      const drawW = img.width * ratio;
+      const drawH = img.height * ratio;
+      const dx = x + (w - drawW) / 2;
+      const dy = y + (h - drawH) / 2;
+      (ctx as any).drawImage(img, dx, dy, drawW, drawH);
+    } catch (e) {
+      ctx.fillStyle = '#333';
+      ctx.fillRect(x, y, w, h);
+    }
+  }
+
+  private drawSpeakingBadge(
+    ctx: any,
+    x: number,
+    y: number,
+    w: number,
+    h: number,
+    participant: ParticipantStreamState,
+  ) {
+    const { isSpeaking, lastAudioLevel } = participant.audio;
+    const badgeW = 120;
+    const badgeH = 30;
+    ctx.fillStyle = isSpeaking ? 'rgba(0,200,0,0.6)' : 'rgba(0,0,0,0.5)';
+    ctx.fillRect(x + 6, y + 6, badgeW, badgeH);
+    ctx.fillStyle = '#fff';
+    ctx.font = '14px sans-serif';
+    ctx.fillText(
+      `${participant.participantId.slice(0, 10)}${
+        participant.participantId.length > 10 ? '…' : ''
+      }`,
+      x + 10,
+      y + 24,
+    );
+    // audio bar
+    const barW = Math.min(1, lastAudioLevel * 4) * (w - 20);
+    ctx.fillStyle = isSpeaking ? '#0f0' : '#888';
+    ctx.fillRect(x + 10, y + h - 14, barW, 8);
+  }
+
+  private computeRmsPcm16(buf: Buffer) {
+    if (buf.length < 4) return 0;
+    const samples = buf.length / 2;
+    let sumSq = 0;
+    for (let i = 0; i < buf.length; i += 2) {
+      const sample = buf.readInt16LE(i) / 32768; // -1..1
+      sumSq += sample * sample;
+    }
+    return Math.sqrt(sumSq / samples);
+  }
+
+  private emitAudioState(spaceId: string) {
+    const participants = this.getParticipantAudioStates(spaceId);
+    try {
+      this.emitter.emit('stream.monitor.audio_state', {
+        spaceId,
+        participants,
+      });
+    } catch {}
+  }
+
+  private stripDataUrl(data: string) {
+    const idx = data.indexOf('base64,');
+    if (idx !== -1) return data.substring(idx + 7);
+    return data; // assume pure base64
   }
 }
