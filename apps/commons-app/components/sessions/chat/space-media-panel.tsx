@@ -32,6 +32,7 @@ interface StreamCardProps {
     role: "human" | "agent";
     stream?: MediaStream;
     audioStream?: MediaStream;
+    audioSrc?: string;
     publish: { audio: boolean; video: boolean };
     isScreenShare?: boolean;
     isUrlShare?: boolean;
@@ -74,6 +75,51 @@ function StreamCard({
       audioRef.current.srcObject = peer.audioStream as any;
     }
   }, [peer.audioStream]);
+
+  // Fallback: if no MediaStream provided but an audioSrc is available, bind it
+  useEffect(() => {
+    if (!audioRef.current) return;
+    if (peer.audioStream) return; // already using stream
+    if (peer.audioSrc) {
+      try {
+        audioRef.current.srcObject = null;
+      } catch {}
+      // Force rebind even if same string
+      const el = audioRef.current;
+      try {
+        el.pause();
+      } catch {}
+      el.src = "";
+      // yield to event loop to ensure detach
+      setTimeout(() => {
+        try {
+          el.src = peer.audioSrc as string;
+          if (process.env.NEXT_PUBLIC_TTS_DEBUG === "true") {
+            console.debug("[TTS] bind audio element", {
+              id: peer.id,
+              srcLen: (peer.audioSrc as string).length,
+            });
+            el.onplay = () => console.debug("[TTS] onplay", peer.id);
+            el.onpause = () => console.debug("[TTS] onpause", peer.id);
+            el.onended = () => console.debug("[TTS] onended", peer.id);
+            el.onloadedmetadata = () =>
+              console.debug("[TTS] onloadedmetadata", peer.id, el.duration);
+            el.onerror = (e) => console.debug("[TTS] onerror", peer.id, e);
+          }
+          el.load();
+          // Attempt playback (may be blocked until user gesture; best effort)
+          el.play().catch(() => {});
+        } catch {}
+      }, 0);
+    } else {
+      try {
+        const el = audioRef.current;
+        el.pause?.();
+        el.src = "";
+        el.srcObject = null;
+      } catch {}
+    }
+  }, [peer.audioSrc, peer.audioStream]);
 
   const getAvatarColor = (id: string) => {
     const colors = [
@@ -141,7 +187,7 @@ function StreamCard({
       )}
 
       {/* Hidden audio element to play separate audio-only streams */}
-      {peer.audioStream && (
+      {(peer.audioStream || peer.audioSrc) && (
         <audio
           ref={audioRef}
           autoPlay
@@ -355,6 +401,7 @@ export default function SpaceMediaPanel({
     role: "human" | "agent";
     stream: MediaStream | null | undefined;
     audioStream: MediaStream | null | undefined;
+    audioSrc?: string;
     publish: { audio: boolean; video: boolean };
     isLocal: boolean;
     isScreenShare: boolean;
@@ -401,13 +448,21 @@ export default function SpaceMediaPanel({
   // Add remote streams
   remotePeers.forEach((peer) => {
     // Add regular stream
-    if (peer.stream || peer.audioStream || peer.publishing.audio) {
+    const hasAudioPub = !!(peer as any)?.publishing?.audio;
+    if (
+      peer.stream ||
+      peer.audioStream ||
+      (peer as any).audioSrc ||
+      hasAudioPub ||
+      peer.role === "agent"
+    ) {
       allStreams.push({
         id: peer.id,
         role: peer.role,
         stream: peer.stream,
         audioStream: peer.audioStream || null,
-        publish: peer.publishing,
+        audioSrc: (peer as any).audioSrc,
+        publish: (peer as any).publishing ?? { audio: false, video: false },
         isLocal: peer.id === selfId,
         isScreenShare: false,
         isUrlShare: false,
@@ -626,6 +681,7 @@ export default function SpaceMediaPanel({
                       role: focusedStream.role,
                       stream: focusedStream.stream || undefined,
                       audioStream: focusedStream.audioStream || undefined,
+                      audioSrc: focusedStream.audioSrc,
                       publish: focusedStream.publish,
                       isScreenShare: focusedStream.isScreenShare,
                       isUrlShare: focusedStream.isUrlShare,
@@ -665,6 +721,7 @@ export default function SpaceMediaPanel({
                             role: stream.role,
                             stream: stream.stream || undefined,
                             audioStream: stream.audioStream || undefined,
+                            audioSrc: stream.audioSrc,
                             publish: stream.publish,
                             isScreenShare: stream.isScreenShare,
                             isUrlShare: stream.isUrlShare,
@@ -742,6 +799,7 @@ export default function SpaceMediaPanel({
                         role: primary.role,
                         stream: primary.stream || undefined,
                         audioStream: primary.audioStream || undefined,
+                        audioSrc: primary.audioSrc,
                         publish: primary.publish,
                         isScreenShare: primary.isScreenShare,
                         isUrlShare: primary.isUrlShare,
@@ -776,6 +834,7 @@ export default function SpaceMediaPanel({
                             role: stream.role,
                             stream: stream.stream || undefined,
                             audioStream: stream.audioStream || undefined,
+                            audioSrc: stream.audioSrc,
                             publish: stream.publish,
                             isScreenShare: stream.isScreenShare,
                             isUrlShare: stream.isUrlShare,

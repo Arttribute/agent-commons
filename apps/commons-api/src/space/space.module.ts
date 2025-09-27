@@ -13,6 +13,7 @@ import { TranscriptionDeliveryService } from './transcription-delivery.service';
 import { SpaceToolsService } from './space-tools.service';
 import { SpaceAgentTriggerService } from './space-agent-trigger.service';
 import { SpaceSpeechService } from './space-speech.service';
+import { SpaceTtsService } from './space-tts.service';
 
 @Module({
   imports: [DatabaseModule, forwardRef(() => AgentModule), SessionModule],
@@ -30,6 +31,7 @@ import { SpaceSpeechService } from './space-speech.service';
     SpaceToolsService,
     SpaceAgentTriggerService,
     SpaceSpeechService,
+    SpaceTtsService,
   ],
   exports: [
     SpaceService,
@@ -39,6 +41,7 @@ import { SpaceSpeechService } from './space-speech.service';
     SpaceToolsService,
     SpaceAgentTriggerService,
     SpaceSpeechService,
+    SpaceTtsService,
   ],
 })
 export class SpaceModule {}

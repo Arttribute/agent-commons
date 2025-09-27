@@ -57,7 +57,7 @@ export class TranscriptionDeliveryService extends EventEmitter {
         agentId,
         messages: [
           {
-            role: 'user',
+            role: 'system',
             content: `STREAM_TRANSCRIPTION_UPDATE:
 Space: ${transcription.spaceId}
 Participant: ${transcription.participantId}
@@ -65,7 +65,7 @@ Timestamp: ${new Date(transcription.timestamp).toISOString()}
 Confidence: ${transcription.confidence}
 Kind: ${transcription.type ?? 'audio'}
 
-You are receiving this because you are subscribed to this space's audio stream. Use the content to decide whether to respond or act.`,
+You are receiving this because you are listening to a live ${transcription.type ?? 'audio'} stream. Use the content to decide whether to respond or act. Typically you are expected to respond in voice using the speakInSpace tool.`,
           },
           {
             role: 'user',

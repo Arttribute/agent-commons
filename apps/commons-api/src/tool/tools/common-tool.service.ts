@@ -16,11 +16,19 @@ import { SpaceService } from '~/space/space.service';
 import { OpenAIService } from '~/modules/openai/openai.service';
 import { PinataService } from '~/pinata/pinata.service';
 import { ToolSchema } from '~/tool/dto/tool.dto';
+import { SpaceTtsService } from '~/space/space-tts.service';
 
 const graphqlRequest = import('graphql-request');
 
 export interface CommonTool {
   createGoal(props: CreateGoalDto): Promise<any>;
+  /** Text-to-speech for an agent inside a space */
+  speakInSpace(props: {
+    spaceId: string;
+    agentId: string;
+    text: string;
+    instructions?: string;
+  }): Promise<{ success: boolean; mime: string; bytes: number }>;
   updateGoalProgress(props: {
     goalId: string;
     progress: number;
@@ -317,6 +325,8 @@ export class CommonToolService implements CommonTool {
     private pinataService: PinataService,
     @Inject(forwardRef(() => SpaceService))
     private space: SpaceService,
+    @Inject(forwardRef(() => SpaceTtsService))
+    private spaceTts: SpaceTtsService,
   ) {}
 
   async createGoal(props: CreateGoalDto) {
@@ -338,6 +348,15 @@ export class CommonToolService implements CommonTool {
   async recomputeGoalProgress(props: { goalId: string }) {
     await this.goals.recomputeProgress(props.goalId);
     return { success: true };
+  }
+
+  async speakInSpace(props: {
+    spaceId: string;
+    agentId: string;
+    text: string;
+    instructions?: string;
+  }) {
+    return this.spaceTts.speak(props);
   }
 
   async createTask(props: CreateTaskDto) {

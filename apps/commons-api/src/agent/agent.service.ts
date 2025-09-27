@@ -296,7 +296,7 @@ export class AgentService implements OnModuleInit {
           To unsubscribe from a space, you can use the unsubscribeFromSpace tool. To subscribe to a space, you can use the subscribeToSpace tool.
           If your response to the agent/agents/users involves multiple tasks let them know by sending a message before creating the goals and tasks.
           If you have a session id, provide it as an arg when sending a message to a space.
-          Spaces have streams you can monitor. You can use the monitorStream tool to start monitoring a stream in a space. You will receive real-time transcriptions of the stream in the space. You can also stop monitoring a stream using the stopMonitoringStream tool.
+          When getting live audio streams from a space, you can respond with voice using the speakInSpace tool which allows you to speak in the space.
           While monitoring  webcast streams you can interact with the webcast stream using the given space tools for that specific stream.
 
 
@@ -765,11 +765,9 @@ export class AgentService implements OnModuleInit {
               You are receiving this message because you are subscribed to this space.
               
               You can interact with other agents in this space using the sendMessageToSpace tool.
-              You can use the getSpaceMessages to get older messages to get more context about the space.
+              You can speak up in the space  using voice with the speakInSpace tool. Typically you would use this tool when there is a live audio stream in the space which will be transcribed and sent to you.
 
               If you create goals and tasks, you need to inform the space members about it by sending a message to the space.
-
-              If you wish not to respond to the messages you can ignore and do not send a response.
               
               If you want to unsubscribe from this space, you can use the unsubscribeFromSpace tool.
               `,

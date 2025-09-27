@@ -43,6 +43,9 @@ export const agent = pgTable('agent', {
   frequencyPenalty: real('frequency_penalty'),
   stopSequence: jsonb('stop_sequence').$type<string[]>(),
   avatar: text(),
+  // Text-to-speech preferences (optional)
+  ttsProvider: text('tts_provider'), // 'openai' | 'elevenlabs'
+  ttsVoice: text('tts_voice'), // OpenAI voice name or ElevenLabs voiceId
 
   // Liaison columns – we store only the hash of the liaison_key
   isLiaison: pgBoolean('is_liaison').default(false).notNull(),

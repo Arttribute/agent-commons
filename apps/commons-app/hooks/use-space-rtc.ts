@@ -10,6 +10,7 @@ export interface RemotePeer {
   publishing: { audio: boolean; video: boolean };
   stream?: MediaStream | null;
   audioStream?: MediaStream | null;
+  audioSrc?: string | null; // fallback source for audio element when no MediaStream is available
   screenStream?: MediaStream | null;
   // For server-side web capture we just keep last frame as data URL
   webFrameUrl?: string; // last received frame
@@ -68,6 +69,7 @@ export function useSpaceRTC(options: UseSpaceRTCOptions) {
   const frameTimerRef = useRef<number | null>(null);
   const audioTimerRef = useRef<number | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  // We use audioSrc on peers for TTS playback; no off-DOM audio elements needed
 
   const [connected, setConnected] = useState(false);
   const [joined, setJoined] = useState(false);
@@ -128,6 +130,16 @@ export function useSpaceRTC(options: UseSpaceRTCOptions) {
       const map: Record<string, { level: number; speaking: boolean }> = {};
       evt.participants.forEach((p: any) => {
         map[p.participantId] = { level: p.audioLevel, speaking: p.isSpeaking };
+        // Ensure peer exists
+        addOrUpdatePeer(p.participantId, {
+          role: (p.participantType as any) || "human",
+          publishing:
+            p.participantType === "agent"
+              ? { audio: !!p.isSpeaking, video: false }
+              : undefined,
+          isSpeaking: p.isSpeaking,
+          audioLevel: p.audioLevel,
+        });
       });
       setSpeakingMap(map);
       setRemotePeers((prev) =>
@@ -137,10 +149,63 @@ export function useSpaceRTC(options: UseSpaceRTCOptions) {
                 ...rp,
                 isSpeaking: map[rp.id].speaking,
                 audioLevel: map[rp.id].level,
+                publishing:
+                  rp.role === "agent"
+                    ? { ...rp.publishing, audio: map[rp.id].speaking }
+                    : rp.publishing,
               }
             : rp
         )
       );
+    });
+
+    // TTS audio from server for agent participants
+    socket.on("tts_audio", async (evt: any) => {
+      try {
+        const pid: string | undefined = evt?.participantId;
+        const audio: string | undefined = evt?.audio; // data URL
+        if (!pid || !audio) return;
+
+        if (process.env.NEXT_PUBLIC_TTS_DEBUG === 'true') {
+          try {
+            console.debug('[TTS] recv', {
+              pid,
+              size: audio.length,
+              mime: evt?.mime,
+              provider: evt?.provider,
+              at: evt?.at,
+            });
+            // Optionally download the audio for inspection
+            const a = document.createElement('a');
+            a.href = audio;
+            a.download = `tts_${pid}_${Date.now()}.audio`;
+            a.style.display = 'none';
+            document.body.appendChild(a);
+            // comment out next line to avoid auto-download; keep logs only
+            // a.click();
+            document.body.removeChild(a);
+          } catch (e) {
+            console.debug('[TTS] debug log/download error', e);
+          }
+        }
+
+        // Ensure peer exists and mark as publishing audio
+        addOrUpdatePeer(pid, {
+          role: (evt.participantType as any) || "agent",
+          publishing: { audio: true, video: false },
+          isSpeaking: true,
+        });
+
+        // Clear previous audio attachments so UI can bind the new one deterministically
+        addOrUpdatePeer(pid, { audioStream: null, audioSrc: null });
+
+        // Set audioSrc directly; StreamCard will bind and play
+        addOrUpdatePeer(pid, {
+          audioSrc: audio,
+          publishing: { audio: true, video: false },
+          audioStream: null,
+        });
+      } catch {}
     });
 
     // Web capture lifecycle
@@ -189,7 +254,16 @@ export function useSpaceRTC(options: UseSpaceRTCOptions) {
         const existing = prev.find((p) => p.id === id);
         if (existing) {
           return prev.map((p) =>
-            p.id === id ? { ...p, ...patch, lastUpdate: Date.now() } : p
+            p.id === id
+              ? {
+                  ...p,
+                  ...patch,
+                  publishing: patch.publishing
+                    ? patch.publishing
+                    : (p.publishing ?? { audio: false, video: false }),
+                  lastUpdate: Date.now(),
+                }
+              : p
           );
         }
         return [
@@ -200,6 +274,7 @@ export function useSpaceRTC(options: UseSpaceRTCOptions) {
             publishing: patch.publishing || { audio: false, video: false },
             stream: patch.stream ?? null,
             audioStream: patch.audioStream ?? null,
+            audioSrc: (patch as any)?.audioSrc,
             screenStream: patch.screenStream ?? null,
             webFrameUrl: patch.webFrameUrl,
             urlSharing: patch.urlSharing ?? { active: false },

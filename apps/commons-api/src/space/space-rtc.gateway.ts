@@ -79,6 +79,45 @@ export class SpaceRtcGateway
         this.logger.debug(`transcription relay error: ${String(e)}`);
       }
     });
+
+    // Relay TTS audio events to clients in the same space
+    this.emitter.on('space.tts.audio', (evt: any) => {
+      try {
+        if (!evt?.spaceId) return;
+        this.logger.debug(
+          `Relaying TTS -> space=${evt.spaceId} agent=${evt.participantId} mime=${evt.mime} bytes=${evt.bytes ?? 'n/a'}`,
+        );
+        this.server.to(evt.spaceId).emit('tts_audio', evt);
+        // Also reflect speaking state in monitor so UIs can highlight the agent participant.
+        if (evt?.participantId) {
+          // Estimate duration from bytes if available; else use 2s default
+          let approxMs = 2000;
+          try {
+            if (evt?.audio) {
+              const raw = this.stripDataUrl(evt.audio);
+              const bytes = Buffer.from(raw, 'base64').length;
+              // crude bitrate guess: 48kbps -> 6KB/s
+              approxMs = Math.max(
+                800,
+                Math.min(120000, Math.round((bytes / 6000) * 1000)),
+              );
+              this.logger.debug(
+                `TTS estimated duration ~${approxMs}ms from ${bytes} bytes (agent=${evt.participantId})`,
+              );
+            }
+          } catch {}
+          this.monitor.markAgentSpeakingFor({
+            spaceId: evt.spaceId,
+            participantId: evt.participantId,
+            participantType: evt.participantType || 'agent',
+            durationMs: approxMs,
+            level: 0.3,
+          });
+        }
+      } catch (e) {
+        this.logger.debug(`tts relay error: ${String(e)}`);
+      }
+    });
   }
 
   afterInit() {
@@ -374,5 +413,11 @@ export class SpaceRtcGateway
       client.join(ctx.spaceId);
     }
     return ctx;
+  }
+
+  private stripDataUrl(data: string) {
+    const idx = data.indexOf('base64,');
+    if (idx !== -1) return data.substring(idx + 7);
+    return data; // assume pure base64
   }
 }

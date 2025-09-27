@@ -45,6 +45,8 @@ export class StreamMonitorService implements OnModuleDestroy {
   private compositeMs = 2000; // composite generation interval
   private speakingHoldMs = 1500; // keep speaking flag for a while after last loud chunk
   private speakingThreshold = 0.03; // RMS threshold
+  // Timers to flip off speaking state when we simulate speech (e.g., TTS playback on clients)
+  private speakingTimers = new Map<string, NodeJS.Timeout>();
 
   constructor(private readonly emitter: EventEmitter) {}
 
@@ -187,6 +189,64 @@ export class StreamMonitorService implements OnModuleDestroy {
       participantType: 'agent',
       audioBase64: props.audioBase64,
     });
+  }
+
+  /**
+   * Mark an agent as speaking for a given duration (best-effort for synthetic audio like TTS).
+   * This updates the audio_state feed so UIs can highlight the participant even if
+   * we didn't ingest PCM chunks for RMS analysis on the server.
+   */
+  markAgentSpeakingFor(props: {
+    spaceId: string;
+    participantId: string;
+    participantType?: 'agent' | 'human';
+    durationMs: number;
+    level?: number; // approximate level 0..1
+  }) {
+    const { spaceId, participantId } = props;
+    const participantType = props.participantType || 'agent';
+    const space = this.ensureSpace(spaceId);
+    const participant = this.ensureParticipant(
+      space,
+      participantId,
+      participantType,
+    );
+
+    const key = `${spaceId}:${participantId}`;
+    const now = Date.now();
+    const level = Math.max(0, Math.min(1, props.level ?? 0.2));
+
+    // Set speaking on immediately
+    participant.audio = {
+      lastAudioLevel: level,
+      isSpeaking: true,
+      updatedAt: now,
+    };
+    this.emitAudioState(spaceId);
+
+    // Clear any existing timer
+    const existing = this.speakingTimers.get(key);
+    if (existing) clearTimeout(existing);
+
+    // Schedule speaking off
+    const dur = Math.max(500, Math.min(props.durationMs, 120000)); // clamp 0.5s .. 120s
+    const t = setTimeout(() => {
+      try {
+        const sp = this.spaces.get(spaceId);
+        if (!sp) return;
+        const p = sp.participants.get(participantId);
+        if (!p) return;
+        p.audio = {
+          lastAudioLevel: 0,
+          isSpeaking: false,
+          updatedAt: Date.now(),
+        };
+        this.emitAudioState(spaceId);
+      } finally {
+        this.speakingTimers.delete(key);
+      }
+    }, dur);
+    this.speakingTimers.set(key, t);
   }
 
   getLatestFrameDataForSpace(spaceId: string) {
