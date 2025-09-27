@@ -12,6 +12,7 @@ import { SpaceRtcGateway } from './space-rtc.gateway';
 import { TranscriptionDeliveryService } from './transcription-delivery.service';
 import { SpaceToolsService } from './space-tools.service';
 import { SpaceAgentTriggerService } from './space-agent-trigger.service';
+import { SpaceSpeechService } from './space-speech.service';
 
 @Module({
   imports: [DatabaseModule, forwardRef(() => AgentModule), SessionModule],
@@ -28,6 +29,7 @@ import { SpaceAgentTriggerService } from './space-agent-trigger.service';
     TranscriptionDeliveryService,
     SpaceToolsService,
     SpaceAgentTriggerService,
+    SpaceSpeechService,
   ],
   exports: [
     SpaceService,
@@ -36,6 +38,7 @@ import { SpaceAgentTriggerService } from './space-agent-trigger.service';
     TranscriptionDeliveryService,
     SpaceToolsService,
     SpaceAgentTriggerService,
+    SpaceSpeechService,
   ],
 })
 export class SpaceModule {}

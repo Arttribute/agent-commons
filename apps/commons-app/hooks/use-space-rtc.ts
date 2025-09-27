@@ -62,6 +62,9 @@ export function useSpaceRTC(options: UseSpaceRTCOptions) {
   // Local URL share is now server-driven via puppeteer capture; we keep just current URL
   const localWebUrlRef = useRef<string | null>(null);
   const audioWorkRef = useRef<AudioWorkState | null>(null);
+  const recorderRef = useRef<MediaRecorder | null>(null);
+  const utteranceChunksRef = useRef<Blob[]>([]);
+  const utteranceModeRef = useRef<boolean>(true); // prefer full-utterance path
   const frameTimerRef = useRef<number | null>(null);
   const audioTimerRef = useRef<number | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -243,6 +246,37 @@ export function useSpaceRTC(options: UseSpaceRTCOptions) {
       localStreamRef.current = ms;
     }
     setupAudioProcessing(ms);
+    // Start full-utterance recording if enabled
+    try {
+      if (utteranceModeRef.current) {
+        const rec = new MediaRecorder(ms, {
+          mimeType: "audio/webm;codecs=opus",
+        });
+        utteranceChunksRef.current = [];
+        rec.ondataavailable = (e) => {
+          if (e.data && e.data.size > 0)
+            utteranceChunksRef.current.push(e.data);
+        };
+        rec.onstop = async () => {
+          try {
+            const blob = new Blob(utteranceChunksRef.current, {
+              type: rec.mimeType,
+            });
+            const base64 = await blobToBase64(blob);
+            const socket = socketRef.current;
+            if (socket && joinedRef.current) {
+              socket.emit("audio_utterance", {
+                audio: base64,
+                mime: rec.mimeType,
+                fileName: "utterance.webm",
+              });
+            }
+          } catch {}
+        };
+        rec.start();
+        recorderRef.current = rec;
+      }
+    } catch {}
     return audioTrackRef.current;
   }, []);
 
@@ -259,6 +293,14 @@ export function useSpaceRTC(options: UseSpaceRTCOptions) {
     }
   };
   const stopMicrophone = () => {
+    // Stop full-utterance recorder first to finalize and send
+    if (recorderRef.current) {
+      try {
+        if (recorderRef.current.state !== "inactive")
+          recorderRef.current.stop();
+      } catch {}
+      recorderRef.current = null;
+    }
     if (audioTrackRef.current) {
       audioTrackRef.current.stop();
       audioTrackRef.current = null;
@@ -376,6 +418,7 @@ export function useSpaceRTC(options: UseSpaceRTCOptions) {
     const socket = socketRef.current;
     if (!socket || !joinedRef.current) return;
     if (!audioTrackRef.current) return;
+    if (utteranceModeRef.current) return; // in utterance mode, skip small chunks
 
     // Capture small chunk by using a MediaRecorder over a short period
     const ms = new MediaStream([audioTrackRef.current]);
@@ -434,6 +477,7 @@ export function useSpaceRTC(options: UseSpaceRTCOptions) {
         audioTimerRef.current = null;
       }
     } else if (!audioTimerRef.current) {
+      if (utteranceModeRef.current) return; // do not set interval in utterance mode
       audioTimerRef.current = window.setInterval(() => {
         sendAudioChunk();
       }, audioAnalysisIntervalMs);
@@ -445,6 +489,24 @@ export function useSpaceRTC(options: UseSpaceRTCOptions) {
       }
     };
   }, [joined, pubState.audio, sendAudioChunk, audioAnalysisIntervalMs]);
+
+  // Helper: convert Blob to base64 without data URL prefix
+  const blobToBase64 = (blob: Blob): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        try {
+          const dataUrl = reader.result as string;
+          const idx = dataUrl.indexOf(",");
+          resolve(idx !== -1 ? dataUrl.substring(idx + 1) : dataUrl);
+        } catch (e) {
+          reject(e);
+        }
+      };
+      reader.onerror = reject;
+      reader.readAsDataURL(blob);
+    });
+  };
 
   /* ─────────────────────────  PUBLISH TOGGLES  ───────────────────────── */
   const togglePublish = useCallback(

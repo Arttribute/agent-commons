@@ -12,6 +12,7 @@ import { Logger } from '@nestjs/common';
 import { Server, Socket } from 'socket.io';
 import { EventEmitter } from 'events';
 import { StreamMonitorService, StreamKind } from './stream-monitor.service';
+import { SpaceSpeechService } from './space-speech.service';
 import { WebCaptureService } from './web-capture.service';
 
 interface SocketContext {
@@ -32,6 +33,7 @@ export class SpaceRtcGateway
     private readonly monitor: StreamMonitorService,
     private readonly emitter: EventEmitter,
     private readonly webCapture: WebCaptureService,
+    private readonly speech: SpaceSpeechService,
   ) {
     // Relay composite frame events
     this.emitter.on('stream.monitor.composite', (evt: any) => {
@@ -65,6 +67,16 @@ export class SpaceRtcGateway
         });
       } catch (e) {
         this.logger.debug(`web capture frame bridge error: ${String(e)}`);
+      }
+    });
+
+    // Relay transcriptions to clients in the same space
+    this.emitter.on('space.transcription.created', (evt: any) => {
+      try {
+        if (!evt?.spaceId) return;
+        this.server.to(evt.spaceId).emit('transcription', evt);
+      } catch (e) {
+        this.logger.debug(`transcription relay error: ${String(e)}`);
       }
     });
   }
@@ -187,6 +199,45 @@ export class SpaceRtcGateway
       audioBase64: body.audio,
       sampleRate: body.sampleRate,
       channels: body.channels,
+    });
+    // Also feed speech segmentation/transcription
+    this.speech
+      .ingestAudioChunk({
+        spaceId: ctx.spaceId,
+        participantId: ctx.participantId,
+        participantType: ctx.participantType,
+        audioBase64: body.audio,
+        sampleRate: body.sampleRate,
+        channels: body.channels,
+      })
+      .catch((e) => this.logger.debug(`speech ingest error: ${String(e)}`));
+    return { success: true };
+  }
+
+  // Accept a full utterance as base64 audio for higher quality transcription
+  @SubscribeMessage('audio_utterance')
+  async handleAudioUtterance(
+    @ConnectedSocket() client: Socket,
+    @MessageBody()
+    body: {
+      spaceId?: string;
+      participantId?: string;
+      audio: string; // base64, may include data URL
+      mime?: string; // e.g., 'audio/wav' | 'audio/webm'
+      fileName?: string;
+      model?: string;
+    },
+  ) {
+    const ctx = this.ensureCtx(client, body);
+    if (!ctx) return { error: 'join first' };
+    if (!body.audio) return { error: 'missing audio' };
+    await this.speech.transcribeUtteranceFromBase64({
+      spaceId: ctx.spaceId,
+      participantId: ctx.participantId,
+      base64Audio: body.audio,
+      mime: body.mime,
+      fileName: body.fileName,
+      model: body.model as any,
     });
     return { success: true };
   }
