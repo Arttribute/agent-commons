@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { io, Socket } from "socket.io-client";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Button } from "@/components/ui/button";
 import {
@@ -79,8 +80,9 @@ export default function SpaceMessaging({
   const [spaceDetails, setSpaceDetails] = useState<any>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [isFullScreen, setIsFullScreen] = useState(false);
-  const [showMediaPanel, setShowMediaPanel] = useState(true);
-  const [isMediaExpanded, setIsMediaExpanded] = useState(false);
+  // Fullscreen layout toggles: media is primary; chat is collapsible
+  const [showChatPanel, setShowChatPanel] = useState(true);
+  const [isChatExpanded, setIsChatExpanded] = useState(false);
 
   const { authState } = useAuth();
   const userAddress = authState.walletAddress?.toLowerCase() || "";
@@ -103,8 +105,8 @@ export default function SpaceMessaging({
     ]);
   };
 
-  const handleToggleMediaExpanded = () => {
-    setIsMediaExpanded(!isMediaExpanded);
+  const handleToggleChatExpanded = () => {
+    setIsChatExpanded(!isChatExpanded);
   };
 
   const fetchSpaceDetails = async () => {
@@ -156,6 +158,121 @@ export default function SpaceMessaging({
   useEffect(() => {
     fetchSpaceDetails();
   }, [spaceId]);
+
+  // Realtime message subscription over existing /rtc namespace
+  useEffect(() => {
+    if (!spaceId) return;
+    const wsUrl = WS_BASE;
+    const socket: Socket = io(`${wsUrl}/rtc`, {
+      transports: ["websocket"],
+      autoConnect: true,
+    });
+
+    let joined = false;
+    socket.on("connect", () => {
+      socket.emit("join", {
+        type: "join",
+        spaceId,
+        fromId:
+          currentUserId || `viewer-${Math.random().toString(36).slice(2)}`,
+        role: "human",
+      });
+    });
+
+    socket.on("joined", () => {
+      joined = true;
+    });
+
+    // Deduplicate by messageId across the session
+    const seen = new Set<string>();
+    // Seed seen with existing messages
+    try {
+      messages.forEach((m: any) => {
+        if ((m as any).messageId) seen.add((m as any).messageId);
+      });
+    } catch {}
+
+    socket.on("spaceMessage", (evt: any) => {
+      if (!evt || evt.spaceId !== spaceId || !evt.message) return;
+      const msg = evt.message as any;
+      const id = msg.messageId;
+
+      setMessages((prev) => {
+        // Convert shape for UI
+        const toUi = (mm: any) => ({
+          role: mm.senderType === "agent" ? "ai" : "human",
+          content: mm.content,
+          timestamp: mm.createdAt,
+          senderId: mm.senderId,
+          senderType: mm.senderType,
+          metadata: mm.metadata || undefined,
+          messageId: mm.messageId,
+          isDeleted: mm.isDeleted,
+        });
+
+        const existingIdx = prev.findIndex(
+          (p: any) => (p as any).messageId === id
+        );
+        if (evt.type === "deleted") {
+          // Remove or mark deleted
+          if (existingIdx >= 0) {
+            const copy = prev.slice();
+            copy.splice(existingIdx, 1);
+            return copy;
+          }
+          return prev;
+        }
+
+        if (evt.type === "updated") {
+          if (existingIdx >= 0) {
+            const copy = prev.slice();
+            copy[existingIdx] = toUi(msg);
+            return copy;
+          }
+          // If we somehow missed create, append
+          return [...prev, toUi(msg)];
+        }
+
+        // created
+        if (existingIdx === -1) {
+          return [...prev, toUi(msg)];
+        }
+        return prev;
+      });
+    });
+
+    return () => {
+      try {
+        if (joined) {
+          socket.emit("leave", {
+            type: "leave",
+            spaceId,
+            fromId: currentUserId,
+          });
+        }
+        socket.disconnect();
+      } catch {}
+    };
+  }, [spaceId, currentUserId]);
+
+  // Build expected peers list for MediaPanel (ensures agent tiles are always present)
+  const expectedPeers = useMemo(() => {
+    const list: Array<{ id: string; role: "human" | "agent" }> = [];
+    if (spaceDetails?.members) {
+      for (const m of spaceDetails.members as any[]) {
+        list.push({ id: m.memberId, role: m.memberType });
+      }
+    }
+    // Always include self as human
+    if (currentUserId) list.push({ id: currentUserId, role: "human" });
+    // Dedup
+    const seen = new Set<string>();
+    return list.filter((p) => {
+      if (seen.has(p.id)) return false;
+      seen.add(p.id);
+      return true;
+    });
+  }, [spaceDetails?.members, currentUserId]);
   return (
     <>
       {/* Full-screen overlay */}
@@ -175,12 +292,12 @@ export default function SpaceMessaging({
             </div>
             <div className="flex gap-1">
               <Button
-                variant={showMediaPanel ? "default" : "outline"}
+                variant={showChatPanel ? "default" : "outline"}
                 size="sm"
-                onClick={() => setShowMediaPanel(!showMediaPanel)}
+                onClick={() => setShowChatPanel(!showChatPanel)}
               >
                 <Radio className="h-4 w-4 mr-1" />
-                Media
+                Chat
               </Button>
               {spaceDetails && (
                 <SpaceInfoDialog
@@ -198,34 +315,51 @@ export default function SpaceMessaging({
             </div>
           </div>
 
-          {/* Full-screen content */}
+          {/* Full-screen content: Media primary, Chat collapsible */}
           <div className="flex-1 flex overflow-hidden relative">
-            {/* Messages Section */}
-            <div
-              className={`flex flex-col transition-all duration-300 ${
-                showMediaPanel
-                  ? isMediaExpanded
-                    ? "w-0 opacity-0"
-                    : "flex-1"
-                  : "w-full"
-              }`}
-            >
-              {!isMediaExpanded && (
-                <>
+            {/* Media Panel (primary) */}
+            <div className="flex-1 min-w-0">
+              <SpaceMediaPanel
+                spaceId={spaceId}
+                selfId={currentUserId}
+                role="human"
+                wsUrl={WS_BASE}
+                expectedPeers={expectedPeers}
+                isExpanded={true}
+              />
+            </div>
+
+            {/* Chat Panel (collapsible sidebar) */}
+            {showChatPanel && (
+              <div
+                className={`border-l bg-white transition-all duration-300 ${
+                  isChatExpanded ? "w-full absolute inset-0 z-10" : "w-96"
+                }`}
+              >
+                {isChatExpanded && (
+                  <div className="absolute top-3 right-3 z-20">
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      onClick={() => setIsChatExpanded(false)}
+                    >
+                      <X className="h-4 w-4" />
+                    </Button>
+                  </div>
+                )}
+                <div className="flex flex-col h-full">
                   {isLoading && (
-                    <div className="flex items-center justify-center h-32">
-                      <Loader2 className="animate-spin h-8 w-8 text-gray-500" />
+                    <div className="flex items-center justify-center h-16">
+                      <Loader2 className="animate-spin h-6 w-6 text-gray-500" />
                     </div>
                   )}
-
                   {error && (
-                    <div className="flex items-center justify-center h-32 text-red-500">
+                    <div className="flex items-center justify-center h-16 text-red-500 text-sm">
                       {error}
                     </div>
                   )}
-
                   <ScrollArea className="flex-1 bg-gray-50">
-                    <div className="container mx-auto max-w-4xl p-6">
+                    <div className="p-4">
                       {messages.map((message, index) => (
                         <SpaceMessage
                           key={index}
@@ -238,52 +372,17 @@ export default function SpaceMessaging({
                       ))}
                     </div>
                   </ScrollArea>
-                </>
-              )}
-
-              {/* Message Input - Always visible at bottom */}
-              {spaceDetails && (
-                <div
-                  className={`border-t bg-white transition-all duration-300 ${
-                    isMediaExpanded
-                      ? "absolute bottom-0 left-0 right-0 z-20"
-                      : ""
-                  }`}
-                >
-                  <SpaceMessageInput
-                    spaceId={spaceId}
-                    members={spaceDetails.members || []}
-                    currentUserId={currentUserId}
-                    onMessageSubmitted={handleMessageSubmitted}
-                  />
+                  {spaceDetails && (
+                    <div className="border-t bg-white">
+                      <SpaceMessageInput
+                        spaceId={spaceId}
+                        members={spaceDetails.members || []}
+                        currentUserId={currentUserId}
+                        onMessageSubmitted={handleMessageSubmitted}
+                      />
+                    </div>
+                  )}
                 </div>
-              )}
-            </div>
-
-            {/* Media Panel */}
-            {showMediaPanel && (
-              <div
-                className={`transition-all duration-300 ${isMediaExpanded ? "w-full absolute inset-0 z-10" : "w-80"}`}
-              >
-                {isMediaExpanded && (
-                  <div className="absolute top-3 right-3 z-20">
-                    <Button
-                      variant="secondary"
-                      size="sm"
-                      onClick={() => setIsMediaExpanded(false)}
-                    >
-                      <X className="h-4 w-4" />
-                    </Button>
-                  </div>
-                )}
-                <SpaceMediaPanel
-                  spaceId={spaceId}
-                  selfId={currentUserId}
-                  role="human"
-                  wsUrl={WS_BASE}
-                  isExpanded={isMediaExpanded}
-                  onToggleExpanded={handleToggleMediaExpanded}
-                />
               </div>
             )}
           </div>

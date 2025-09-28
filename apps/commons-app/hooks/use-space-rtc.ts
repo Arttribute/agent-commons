@@ -4,882 +4,731 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import { io, Socket } from "socket.io-client";
 
-type Role = "human" | "agent";
-
-interface RemotePeer {
+export interface RemotePeer {
   id: string;
-  role: Role;
-  stream?: MediaStream;
-  screenStream?: MediaStream;
-  urlStream?: MediaStream;
+  role: "human" | "agent";
   publishing: { audio: boolean; video: boolean };
-  screenSharing: boolean;
-  urlSharing: { active: boolean; url?: string; sessionId?: string };
+  stream?: MediaStream | null;
+  audioStream?: MediaStream | null;
+  audioSrc?: string | null; // fallback source for audio element when no MediaStream is available
+  screenStream?: MediaStream | null;
+  // For server-side web capture we just keep last frame as data URL
+  webFrameUrl?: string; // last received frame
+  cameraFrameUrl?: string | null; // last received camera frame (data URL)
+  screenFrameUrl?: string | null; // last received screen frame (data URL)
+  urlSharing?: {
+    active: boolean;
+    url?: string;
+    ending?: boolean;
+    endsAt?: number;
+  };
+  lastUpdate: number;
+  isSpeaking?: boolean;
+  audioLevel?: number;
 }
 
-interface UseSpaceRTCProps {
+export interface UseSpaceRTCOptions {
   spaceId: string;
   selfId: string;
-  role: Role;
-  wsUrl: string;
+  role: "human" | "agent";
+  wsBase: string; // base http(s) URL of nest server
+  autoConnect?: boolean;
+  frameIntervalMs?: number; // how often to send video frames
+  audioAnalysisIntervalMs?: number; // how often to compute audio chunk RMS
+  maxVideoWidth?: number; // downscale frames before sending
 }
 
-interface PeerConnection {
-  pc: RTCPeerConnection;
-  isNegotiating: boolean;
-  makingOffer: boolean;
-  ignoreOffer: boolean;
+interface AudioWorkState {
+  context: AudioContext;
+  processor: ScriptProcessorNode;
+  source: MediaStreamAudioSourceNode;
 }
 
-export function useSpaceRTC({
-  spaceId,
-  selfId,
-  role,
-  wsUrl,
-}: UseSpaceRTCProps) {
+export function useSpaceRTC(options: UseSpaceRTCOptions) {
+  const {
+    spaceId,
+    selfId,
+    role,
+    wsBase,
+    autoConnect = true,
+    frameIntervalMs = 700,
+    audioAnalysisIntervalMs = 400,
+    maxVideoWidth = 640,
+  } = options;
+
+  const socketRef = useRef<Socket | null>(null);
+  const joinedRef = useRef(false);
+  const videoTrackRef = useRef<MediaStreamTrack | null>(null);
+  const audioTrackRef = useRef<MediaStreamTrack | null>(null);
+  const localStreamRef = useRef<MediaStream | null>(null);
+  const screenStreamRef = useRef<MediaStream | null>(null);
+  // Local URL share is now server-driven via puppeteer capture; we keep just current URL
+  const localWebUrlRef = useRef<string | null>(null);
+  const audioWorkRef = useRef<AudioWorkState | null>(null);
+  const recorderRef = useRef<MediaRecorder | null>(null);
+  const utteranceChunksRef = useRef<Blob[]>([]);
+  const utteranceModeRef = useRef<boolean>(true); // prefer full-utterance path
+  const frameTimerRef = useRef<number | null>(null);
+  const audioTimerRef = useRef<number | null>(null);
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  // We use audioSrc on peers for TTS playback; no off-DOM audio elements needed
+
   const [connected, setConnected] = useState(false);
   const [joined, setJoined] = useState(false);
   const [remotePeers, setRemotePeers] = useState<RemotePeer[]>([]);
+  const [compositeFrameUrl, setCompositeFrameUrl] = useState<
+    string | undefined
+  >();
+  const [speakingMap, setSpeakingMap] = useState<
+    Record<string, { level: number; speaking: boolean }>
+  >({});
+  const [pubState, setPubState] = useState({
+    audio: false,
+    video: false,
+    screen: false,
+    url: false,
+  });
 
-  const socketRef = useRef<Socket | null>(null);
-  const localStreamRef = useRef<MediaStream | null>(null);
-  const localScreenStreamRef = useRef<MediaStream | null>(null);
-  const localUrlStreamRef = useRef<MediaStream | null>(null);
-  const urlCanvasRef = useRef<HTMLCanvasElement | null>(null);
-  const urlContextRef = useRef<CanvasRenderingContext2D | null>(null);
-  const currentUrlSessionRef = useRef<string | null>(null);
-
-  // Use separate connection maps with proper state tracking
-  const peerConnectionsRef = useRef<Map<string, PeerConnection>>(new Map());
-  const screenPeerConnectionsRef = useRef<Map<string, PeerConnection>>(
-    new Map()
-  );
-  const urlPeerConnectionsRef = useRef<Map<string, PeerConnection>>(new Map());
-
-  const iceServers = [{ urls: ["stun:stun.l.google.com:19302"] }];
-
-  // Create canvas for web capture frames
-  const initializeUrlCanvas = useCallback(() => {
-    if (!urlCanvasRef.current) {
-      const canvas = document.createElement("canvas");
-      canvas.width = 1280;
-      canvas.height = 720;
-      urlCanvasRef.current = canvas;
-      urlContextRef.current = canvas.getContext("2d");
-    }
-  }, []);
-
-  // Clean up function
-  const cleanup = useCallback(() => {
-    peerConnectionsRef.current.forEach(({ pc }) => pc.close());
-    peerConnectionsRef.current.clear();
-
-    screenPeerConnectionsRef.current.forEach(({ pc }) => pc.close());
-    screenPeerConnectionsRef.current.clear();
-
-    urlPeerConnectionsRef.current.forEach(({ pc }) => pc.close());
-    urlPeerConnectionsRef.current.clear();
-
-    if (localStreamRef.current) {
-      localStreamRef.current.getTracks().forEach((track) => track.stop());
-      localStreamRef.current = null;
-    }
-
-    if (localScreenStreamRef.current) {
-      localScreenStreamRef.current.getTracks().forEach((track) => track.stop());
-      localScreenStreamRef.current = null;
-    }
-
-    if (localUrlStreamRef.current) {
-      localUrlStreamRef.current.getTracks().forEach((track) => track.stop());
-      localUrlStreamRef.current = null;
-    }
-
-    setRemotePeers([]);
-    setJoined(false);
-  }, []);
-
-  // Create peer connection with proper state management
-  const createPeerConnection = useCallback(
-    (
-      peerId: string,
-      connectionMap: React.MutableRefObject<Map<string, PeerConnection>>,
-      streamType: string,
-      localStream?: MediaStream
-    ): PeerConnection => {
-      const key = streamType === "camera" ? peerId : `${peerId}-${streamType}`;
-
-      if (connectionMap.current.has(key)) {
-        return connectionMap.current.get(key)!;
-      }
-
-      console.log(`[RTC] Creating ${streamType} peer connection for ${peerId}`);
-
-      const pc = new RTCPeerConnection({ iceServers });
-      const peerConnection: PeerConnection = {
-        pc,
-        isNegotiating: false,
-        makingOffer: false,
-        ignoreOffer: false,
-      };
-
-      // Handle negotiation state
-      pc.onnegotiationneeded = async () => {
-        if (peerConnection.isNegotiating) {
-          console.log(`[RTC] Already negotiating for ${key}, skipping`);
-          return;
-        }
-
-        try {
-          peerConnection.isNegotiating = true;
-          peerConnection.makingOffer = true;
-
-          const offer = await pc.createOffer();
-          await pc.setLocalDescription(offer);
-
-          socketRef.current?.emit("signal", {
-            type: "offer",
-            spaceId,
-            fromId: selfId,
-            targetId: peerId,
-            data: offer,
-            // Always tag streamType explicitly
-            streamType,
-          });
-        } catch (error) {
-          console.error(`[RTC] Create offer failed for ${key}:`, error);
-        } finally {
-          peerConnection.makingOffer = false;
-        }
-      };
-
-      pc.onicecandidate = (event) => {
-        if (event.candidate) {
-          socketRef.current?.emit("signal", {
-            type: "candidate",
-            spaceId,
-            fromId: selfId,
-            targetId: peerId,
-            data: event.candidate,
-            streamType,
-          });
-        }
-      };
-
-      pc.ontrack = (event) => {
-        console.log(`[RTC] Remote ${streamType} track received from`, peerId);
-        const [remoteStream] = event.streams;
-
-        setRemotePeers((prev) =>
-          prev.map((p) => {
-            if (p.id === peerId) {
-              switch (streamType) {
-                case "screen":
-                  return {
-                    ...p,
-                    screenStream: remoteStream,
-                    screenSharing: true,
-                  };
-                case "url":
-                  return { ...p, urlStream: remoteStream };
-                default:
-                  return { ...p, stream: remoteStream };
-              }
-            }
-            return p;
-          })
-        );
-      };
-
-      pc.oniceconnectionstatechange = () => {
-        console.log(
-          `[RTC] ICE connection state for ${key}:`,
-          pc.iceConnectionState
-        );
-        if (pc.iceConnectionState === "failed") {
-          console.log(`[RTC] ICE connection failed for ${key}, restarting ICE`);
-          pc.restartIce();
-        }
-      };
-
-      pc.onsignalingstatechange = () => {
-        if (pc.signalingState === "stable") {
-          peerConnection.isNegotiating = false;
-        }
-      };
-
-      // Add local stream if provided
-      if (localStream) {
-        localStream.getTracks().forEach((track) => {
-          pc.addTrack(track, localStream);
-        });
-      }
-
-      connectionMap.current.set(key, peerConnection);
-      return peerConnection;
-    },
-    [spaceId, selfId]
-  );
-
-  // Handle offers with proper state management
-  const handleOffer = useCallback(
-    async (
-      peerId: string,
-      offer: RTCSessionDescriptionInit,
-      streamType?: string
-    ) => {
-      const connectionMap =
-        streamType === "url"
-          ? urlPeerConnectionsRef
-          : streamType === "screen"
-            ? screenPeerConnectionsRef
-            : peerConnectionsRef;
-
-      const localStream =
-        streamType === "url"
-          ? localUrlStreamRef.current
-          : streamType === "screen"
-            ? localScreenStreamRef.current
-            : localStreamRef.current;
-
-      const peerConnection = createPeerConnection(
-        peerId,
-        connectionMap,
-        streamType || "camera",
-        localStream || undefined
-      );
-
-      const { pc } = peerConnection;
-
-      try {
-        // Handle perfect negotiation
-        const offerCollision =
-          peerConnection.makingOffer || pc.signalingState !== "stable";
-        peerConnection.ignoreOffer = !offerCollision && selfId < peerId;
-
-        if (peerConnection.ignoreOffer) {
-          console.log(`[RTC] Ignoring offer from ${peerId} due to collision`);
-          return;
-        }
-
-        await pc.setRemoteDescription(offer);
-        const answer = await pc.createAnswer();
-        await pc.setLocalDescription(answer);
-
-        socketRef.current?.emit("signal", {
-          type: "answer",
-          spaceId,
-          fromId: selfId,
-          targetId: peerId,
-          data: answer,
-          streamType,
-        });
-      } catch (error) {
-        console.error(`[RTC] Handle offer failed for ${peerId}:`, error);
-      }
-    },
-    [createPeerConnection, spaceId, selfId]
-  );
-
-  const handleAnswer = useCallback(
-    async (
-      peerId: string,
-      answer: RTCSessionDescriptionInit,
-      streamType?: string
-    ) => {
-      const connectionMap =
-        streamType === "url"
-          ? urlPeerConnectionsRef
-          : streamType === "screen"
-            ? screenPeerConnectionsRef
-            : peerConnectionsRef;
-
-      const key =
-        streamType === "camera" || !streamType
-          ? peerId
-          : `${peerId}-${streamType}`;
-      const peerConnection = connectionMap.current.get(key);
-
-      if (!peerConnection) {
-        console.warn(
-          `[RTC] No peer connection found for answer from ${peerId}`
-        );
-        return;
-      }
-
-      try {
-        await peerConnection.pc.setRemoteDescription(answer);
-        peerConnection.isNegotiating = false;
-      } catch (error) {
-        console.error(`[RTC] Handle answer failed for ${peerId}:`, error);
-      }
-    },
-    []
-  );
-
-  const handleCandidate = useCallback(
-    async (
-      peerId: string,
-      candidate: RTCIceCandidateInit,
-      streamType?: string
-    ) => {
-      const connectionMap =
-        streamType === "url"
-          ? urlPeerConnectionsRef
-          : streamType === "screen"
-            ? screenPeerConnectionsRef
-            : peerConnectionsRef;
-
-      const key =
-        streamType === "camera" || !streamType
-          ? peerId
-          : `${peerId}-${streamType}`;
-      const peerConnection = connectionMap.current.get(key);
-
-      if (!peerConnection) {
-        console.warn(
-          `[RTC] No peer connection found for candidate from ${peerId}`
-        );
-        return;
-      }
-
-      try {
-        await peerConnection.pc.addIceCandidate(candidate);
-      } catch (error) {
-        console.error(`[RTC] Add candidate failed for ${peerId}:`, error);
-      }
-    },
-    []
-  );
-
-  // Initialize socket connection
+  /* ─────────────────────────  SOCKET SETUP  ───────────────────────── */
   useEffect(() => {
-    console.log(`[RTC] Connecting to ${wsUrl}/rtc`);
-
-    const socket = io(`${wsUrl}/rtc`, {
+    if (!autoConnect || !spaceId || !selfId) return;
+    const url = wsBase.endsWith("/") ? wsBase.slice(0, -1) : wsBase;
+    const socket = io(`${url}/space-rtc`, {
       transports: ["websocket"],
       autoConnect: true,
     });
+    socketRef.current = socket;
 
     socket.on("connect", () => {
-      console.log("[RTC] Socket connected");
       setConnected(true);
-
-      socket.emit("join", {
-        type: "join",
+      socket.emit("join_space", {
         spaceId,
-        fromId: selfId,
-        role,
+        participantId: selfId,
+        participantType: role,
       });
     });
 
     socket.on("disconnect", () => {
-      console.log("[RTC] Socket disconnected");
       setConnected(false);
       setJoined(false);
+      joinedRef.current = false;
     });
 
-    socket.on("joined", (data) => {
-      console.log("[RTC] Joined space:", data);
+    socket.on("participant_joined", (evt: any) => {
       setJoined(true);
-
-      // Initialize peers from participants
-      const initialPeers: RemotePeer[] = data.participants.map((peer: any) => ({
-        id: peer.id,
-        role: peer.role,
-        publishing: peer.publishing || { audio: false, video: false },
-        screenSharing: peer.screenSharing || false,
-        urlSharing: peer.urlSharing || { active: false },
-      }));
-
-      setRemotePeers(initialPeers);
-
-      // Create peer connections for each participant
-      data.participants.forEach((peer: any) => {
-        // Create camera connection
-        createPeerConnection(peer.id, peerConnectionsRef, "camera");
-
-        // Create screen connection if they're screen sharing
-        if (peer.screenSharing) {
-          createPeerConnection(peer.id, screenPeerConnectionsRef, "screen");
-        }
-
-        // Create URL connection if they're sharing URL
-        if (peer.urlSharing?.active) {
-          createPeerConnection(peer.id, urlPeerConnectionsRef, "url");
-        }
+      joinedRef.current = true;
+      addOrUpdatePeer(evt.participantId, {
+        role: (evt.participantType as any) || "human",
       });
     });
-
-    // Handle web capture frames
-    socket.on("webFrame", (data) => {
-      handleWebFrame(data);
-    });
-
-    socket.on("webCaptureStarted", (data) => {
-      console.log("[RTC] Web capture started:", data);
-    });
-
-    socket.on("webCaptureError", (data) => {
-      console.error("[RTC] Web capture error:", data.error);
-    });
-
-    socket.on("webCaptureStopped", (data) => {
-      console.log("[RTC] Web capture stopped:", data);
-    });
-
-    socket.on("signal", async (message) => {
-      console.log("[RTC] Signal received:", message.type, message);
-
-      switch (message.type) {
-        case "peer-joined":
-          if (message.fromId !== selfId) {
-            addRemotePeer(message.fromId, message.role);
-          }
-          break;
-
-        case "peer-left":
-          removePeerConnection(message.fromId);
-          removeRemotePeer(message.fromId);
-          break;
-
-        case "offer":
-          if (message.targetId === selfId) {
-            await handleOffer(message.fromId, message.data, message.streamType);
-          }
-          break;
-
-        case "answer":
-          if (message.targetId === selfId) {
-            await handleAnswer(
-              message.fromId,
-              message.data,
-              message.streamType
-            );
-          }
-          break;
-
-        case "candidate":
-          if (message.targetId === selfId) {
-            await handleCandidate(
-              message.fromId,
-              message.data,
-              message.streamType
-            );
-          }
-          break;
-
-        case "publishState":
-          updatePeerPublishing(
-            message.fromId,
-            message.publish,
-            message.streamType,
-            message.url,
-            message.sessionId
-          );
-          break;
-      }
-    });
-
-    socketRef.current = socket;
-
-    return () => {
-      cleanup();
-      socket.disconnect();
-    };
-  }, [
-    spaceId,
-    selfId,
-    role,
-    wsUrl,
-    cleanup,
-    createPeerConnection,
-    handleOffer,
-    handleAnswer,
-    handleCandidate,
-  ]);
-
-  const handleWebFrame = useCallback(
-    (data: {
-      sessionId: string;
-      participantId: string;
-      frame: string;
-      timestamp: number;
-    }) => {
-      if (!urlCanvasRef.current || !urlContextRef.current) {
-        initializeUrlCanvas();
-      }
-
-      // Create image from base64 frame
-      const img = new Image();
-      img.onload = () => {
-        if (urlContextRef.current && urlCanvasRef.current) {
-          // Clear canvas and draw new frame
-          urlContextRef.current.clearRect(
-            0,
-            0,
-            urlCanvasRef.current.width,
-            urlCanvasRef.current.height
-          );
-          urlContextRef.current.drawImage(
-            img,
-            0,
-            0,
-            urlCanvasRef.current.width,
-            urlCanvasRef.current.height
-          );
-        }
-      };
-      img.src = `data:image/jpeg;base64,${data.frame}`;
-
-      // Update peer's URL stream if this is from a remote peer
-      if (data.participantId !== selfId) {
-        setRemotePeers((prev) =>
-          prev.map((p) => {
-            if (
-              p.id === data.participantId &&
-              p.urlSharing.sessionId === data.sessionId
-            ) {
-              if (!p.urlStream && urlCanvasRef.current) {
-                // Create stream from canvas
-                const stream = urlCanvasRef.current.captureStream(15); // 15 FPS
-                return { ...p, urlStream: stream };
-              }
-            }
-            return p;
+    socket.on("participants_snapshot", (evt: any) => {
+      try {
+        const list = (evt?.participants as any[]) || [];
+        list.forEach((p) =>
+          addOrUpdatePeer(p.participantId, {
+            role: (p.participantType as any) || "human",
           })
         );
-      }
-    },
-    [selfId, initializeUrlCanvas]
-  );
-
-  const addRemotePeer = useCallback(
-    (id: string, peerRole: Role) => {
-      setRemotePeers((prev) => {
-        if (prev.find((p) => p.id === id)) return prev;
-
-        const newPeer: RemotePeer = {
-          id,
-          role: peerRole,
-          publishing: { audio: false, video: false },
-          screenSharing: false,
-          urlSharing: { active: false },
-        };
-
-        // Create peer connections for new peer
-        createPeerConnection(id, peerConnectionsRef, "camera");
-
-        return [...prev, newPeer];
-      });
-    },
-    [createPeerConnection]
-  );
-
-  const removeRemotePeer = useCallback((id: string) => {
-    setRemotePeers((prev) => prev.filter((p) => p.id !== id));
-  }, []);
-
-  const removePeerConnection = useCallback((peerId: string) => {
-    // Remove regular connection
-    const pc = peerConnectionsRef.current.get(peerId);
-    if (pc) {
-      pc.pc.close();
-      peerConnectionsRef.current.delete(peerId);
-    }
-
-    // Remove screen connection
-    const screenKey = `${peerId}-screen`;
-    const screenPc = screenPeerConnectionsRef.current.get(screenKey);
-    if (screenPc) {
-      screenPc.pc.close();
-      screenPeerConnectionsRef.current.delete(screenKey);
-    }
-
-    // Remove URL connection
-    const urlKey = `${peerId}-url`;
-    const urlPc = urlPeerConnectionsRef.current.get(urlKey);
-    if (urlPc) {
-      urlPc.pc.close();
-      urlPeerConnectionsRef.current.delete(urlKey);
-    }
-  }, []);
-
-  const updatePeerPublishing = useCallback(
-    (
-      id: string,
-      publishing?: { audio: boolean; video: boolean },
-      streamType?: string,
-      url?: string,
-      sessionId?: string
-    ) => {
-      setRemotePeers((prev) =>
-        prev.map((p) => {
-          if (p.id === id) {
-            if (streamType === "url") {
-              const newUrlSharing = {
-                active: !!url,
-                url: url || undefined,
-                sessionId: sessionId || undefined,
-              };
-
-              // Create URL peer connection if URL sharing is starting
-              if (
-                newUrlSharing.active &&
-                !urlPeerConnectionsRef.current.has(`${id}-url`)
-              ) {
-                createPeerConnection(id, urlPeerConnectionsRef, "url");
-              }
-
-              return { ...p, urlSharing: newUrlSharing };
-            } else if (streamType === "screen") {
-              const isSharing = !!publishing?.video;
-
-              // Create screen peer connection if screen sharing is starting
-              if (
-                isSharing &&
-                !screenPeerConnectionsRef.current.has(`${id}-screen`)
-              ) {
-                createPeerConnection(id, screenPeerConnectionsRef, "screen");
-              }
-
-              return { ...p, screenSharing: isSharing };
-            } else if (publishing) {
-              return { ...p, publishing };
-            }
-          }
-          return p;
-        })
-      );
-    },
-    [createPeerConnection]
-  );
-
-  // Start publishing functions
-  const startPublishing = useCallback(
-    async ({ audio = true, video = true }) => {
+      } catch {}
+    });
+    socket.on("participant_left", (evt: any) => {
+      setRemotePeers((prev) => prev.filter((p) => p.id !== evt.participantId));
+    });
+    socket.on("composite_frame", (evt: any) => {
+      if (evt?.dataUrl) setCompositeFrameUrl(evt.dataUrl);
+    });
+    // Per-participant video frames (camera/screen/web) so UIs can render all peers concurrently
+    socket.on("participant_frame", (evt: any) => {
       try {
-        const stream = await navigator.mediaDevices.getUserMedia({
-          audio,
-          video,
-        });
-        localStreamRef.current = stream;
-
-        // Add tracks to existing peer connections
-        peerConnectionsRef.current.forEach(({ pc }) => {
-          stream.getTracks().forEach((track) => {
-            pc.addTrack(track, stream);
+        if (!evt?.participantId || !evt?.kind || !evt?.frame) return;
+        const id = evt.participantId as string;
+        const kind = evt.kind as "camera" | "screen" | "web";
+        const frame = evt.frame as string; // data URL
+        const role = (evt.participantType as any) || "human";
+        if (kind === "web") {
+          addOrUpdatePeer(id, {
+            webFrameUrl: frame,
+            urlSharing: { active: true },
+            role,
           });
-        });
-
-        // Notify others about publishing state
-        socketRef.current?.emit("signal", {
-          type: "publishState",
-          spaceId,
-          fromId: selfId,
-          publish: { audio, video },
-          streamType: "camera",
-        });
-
-        return stream;
-      } catch (error) {
-        console.error("[RTC] Start publishing failed:", error);
-        throw error;
-      }
-    },
-    [spaceId, selfId]
-  );
-
-  const startScreenShare = useCallback(async () => {
-    try {
-      const stream = await navigator.mediaDevices.getDisplayMedia({
-        video: true,
-        audio: true,
-      });
-      localScreenStreamRef.current = stream;
-
-      // Add tracks to existing screen peer connections
-      screenPeerConnectionsRef.current.forEach(({ pc }) => {
-        stream.getTracks().forEach((track) => {
-          pc.addTrack(track, stream);
+        } else if (kind === "screen") {
+          addOrUpdatePeer(id, {
+            screenFrameUrl: frame,
+            publishing: { audio: false, video: true },
+            role,
+          });
+        } else if (kind === "camera") {
+          addOrUpdatePeer(id, {
+            cameraFrameUrl: frame,
+            publishing: { audio: false, video: true },
+            role,
+          });
+        }
+      } catch {}
+    });
+    socket.on("audio_state", (evt: any) => {
+      if (!evt?.participants) return;
+      const map: Record<string, { level: number; speaking: boolean }> = {};
+      evt.participants.forEach((p: any) => {
+        map[p.participantId] = { level: p.audioLevel, speaking: p.isSpeaking };
+        // Ensure peer exists
+        addOrUpdatePeer(p.participantId, {
+          role: (p.participantType as any) || "human",
+          publishing:
+            p.participantType === "agent"
+              ? { audio: !!p.isSpeaking, video: false }
+              : undefined,
+          isSpeaking: p.isSpeaking,
+          audioLevel: p.audioLevel,
         });
       });
+      setSpeakingMap(map);
+      setRemotePeers((prev) =>
+        prev.map((rp) =>
+          map[rp.id]
+            ? {
+                ...rp,
+                isSpeaking: map[rp.id].speaking,
+                audioLevel: map[rp.id].level,
+                publishing:
+                  rp.role === "agent"
+                    ? { ...rp.publishing, audio: map[rp.id].speaking }
+                    : rp.publishing,
+              }
+            : rp
+        )
+      );
+    });
 
-      // Create screen connections for all existing peers
-      remotePeers.forEach((peer) => {
-        if (!screenPeerConnectionsRef.current.has(`${peer.id}-screen`)) {
-          createPeerConnection(
-            peer.id,
-            screenPeerConnectionsRef,
-            "screen",
-            stream
+    // TTS audio from server for agent participants
+    socket.on("tts_audio", async (evt: any) => {
+      try {
+        const pid: string | undefined = evt?.participantId;
+        const audio: string | undefined = evt?.audio; // data URL
+        if (!pid || !audio) return;
+
+        if (process.env.NEXT_PUBLIC_TTS_DEBUG === "true") {
+          try {
+            console.debug("[TTS] recv", {
+              pid,
+              size: audio.length,
+              mime: evt?.mime,
+              provider: evt?.provider,
+              at: evt?.at,
+            });
+            // Optionally download the audio for inspection
+            const a = document.createElement("a");
+            a.href = audio;
+            a.download = `tts_${pid}_${Date.now()}.audio`;
+            a.style.display = "none";
+            document.body.appendChild(a);
+            // comment out next line to avoid auto-download; keep logs only
+            // a.click();
+            document.body.removeChild(a);
+          } catch (e) {
+            console.debug("[TTS] debug log/download error", e);
+          }
+        }
+
+        // Ensure peer exists and mark as publishing audio
+        addOrUpdatePeer(pid, {
+          role: (evt.participantType as any) || "agent",
+          publishing: { audio: true, video: false },
+          isSpeaking: true,
+        });
+
+        // Clear previous audio attachments so UI can bind the new one deterministically
+        addOrUpdatePeer(pid, { audioStream: null, audioSrc: null });
+
+        // Set audioSrc directly; StreamCard will bind and play
+        addOrUpdatePeer(pid, {
+          audioSrc: audio,
+          publishing: { audio: true, video: false },
+          audioStream: null,
+        });
+      } catch {}
+    });
+
+    // Web capture lifecycle
+    socket.on("web_capture_started", (evt: any) => {
+      if (!evt?.participantId) return;
+      addOrUpdatePeer(evt.participantId, {
+        urlSharing: { active: true, url: evt.url },
+      });
+    });
+    socket.on("web_capture_ending", (evt: any) => {
+      if (!evt?.participantId) return;
+      const eta = Date.now() + (evt.in || 0);
+      addOrUpdatePeer(evt.participantId, {
+        urlSharing: { active: true, url: evt.url, ending: true, endsAt: eta },
+      });
+    });
+    socket.on("web_capture_stopped", (evt: any) => {
+      if (!evt?.participantId) return;
+      addOrUpdatePeer(evt.participantId, {
+        urlSharing: { active: false },
+        webFrameUrl: undefined,
+      });
+    });
+    socket.on("web_capture_frame", (evt: any) => {
+      if (!evt?.participantId || !evt?.frame) return;
+      addOrUpdatePeer(evt.participantId, {
+        webFrameUrl: evt.frame,
+        urlSharing: { active: true },
+      });
+    });
+
+    return () => {
+      try {
+        if (joinedRef.current) socket.emit("leave_space", { spaceId });
+        socket.disconnect();
+      } catch {}
+      stopAllPublishing();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [spaceId, selfId, role, wsBase, autoConnect]);
+
+  /* ─────────────────────────  PEER MGMT  ───────────────────────── */
+  const addOrUpdatePeer = useCallback(
+    (id: string, patch: Partial<RemotePeer>) => {
+      setRemotePeers((prev) => {
+        const existing = prev.find((p) => p.id === id);
+        if (existing) {
+          return prev.map((p) =>
+            p.id === id
+              ? {
+                  ...p,
+                  ...patch,
+                  publishing: patch.publishing
+                    ? patch.publishing
+                    : (p.publishing ?? { audio: false, video: false }),
+                  lastUpdate: Date.now(),
+                }
+              : p
           );
         }
+        return [
+          ...prev,
+          {
+            id,
+            role: (patch.role as any) || "human",
+            publishing: patch.publishing || { audio: false, video: false },
+            stream: patch.stream ?? null,
+            audioStream: patch.audioStream ?? null,
+            audioSrc: (patch as any)?.audioSrc,
+            screenStream: patch.screenStream ?? null,
+            webFrameUrl: patch.webFrameUrl,
+            cameraFrameUrl: (patch as any)?.cameraFrameUrl ?? null,
+            screenFrameUrl: (patch as any)?.screenFrameUrl ?? null,
+            urlSharing: patch.urlSharing ?? { active: false },
+            lastUpdate: Date.now(),
+            isSpeaking: patch.isSpeaking,
+            audioLevel: patch.audioLevel,
+          },
+        ];
       });
-
-      socketRef.current?.emit("signal", {
-        type: "publishState",
-        spaceId,
-        fromId: selfId,
-        publish: { audio: false, video: true },
-        streamType: "screen",
-      });
-
-      stream.getVideoTracks()[0].onended = () => {
-        stopScreenShare();
-      };
-
-      return stream;
-    } catch (error) {
-      console.error("[RTC] Start screen share failed:", error);
-      throw error;
-    }
-  }, [spaceId, selfId, remotePeers, createPeerConnection]);
-
-  const startUrlShare = useCallback(
-    async (url: string) => {
-      try {
-        const sessionId = `url-${selfId}-${Date.now()}`;
-        currentUrlSessionRef.current = sessionId;
-
-        // Initialize canvas if not done
-        initializeUrlCanvas();
-
-        // Request server to start web capture
-        socketRef.current?.emit("startWebCapture", {
-          type: "startWebCapture",
-          spaceId,
-          fromId: selfId,
-          url,
-          sessionId,
-        });
-
-        // Create stream from canvas
-        if (urlCanvasRef.current) {
-          const stream = urlCanvasRef.current.captureStream(15); // 15 FPS
-          localUrlStreamRef.current = stream;
-
-          // Add tracks to URL peer connections
-          urlPeerConnectionsRef.current.forEach(({ pc }) => {
-            stream.getTracks().forEach((track) => {
-              pc.addTrack(track, stream);
-            });
-          });
-
-          // Create URL connections for all existing peers
-          remotePeers.forEach((peer) => {
-            if (!urlPeerConnectionsRef.current.has(`${peer.id}-url`)) {
-              createPeerConnection(
-                peer.id,
-                urlPeerConnectionsRef,
-                "url",
-                stream
-              );
-            }
-          });
-
-          return stream;
-        }
-
-        throw new Error("Failed to create canvas stream");
-      } catch (error) {
-        console.error("[RTC] Start URL share failed:", error);
-        throw error;
-      }
     },
-    [spaceId, selfId, remotePeers, createPeerConnection, initializeUrlCanvas]
+    []
   );
 
-  const stopPublishing = useCallback(() => {
+  /* ─────────────────────────  LOCAL MEDIA  ───────────────────────── */
+  const getCanvas = () => {
+    if (!canvasRef.current) {
+      canvasRef.current = document.createElement("canvas");
+    }
+    return canvasRef.current;
+  };
+
+  const startCamera = useCallback(async () => {
+    // Always acquire a fresh camera track to avoid ended tracks causing black video
+    const ms = await navigator.mediaDevices.getUserMedia({
+      video: true,
+      audio: false,
+    });
+    const newVideoTrack = ms.getVideoTracks()[0] || null;
+    videoTrackRef.current = newVideoTrack;
+    // Merge with existing audio tracks if any
+    const audioTracks = localStreamRef.current?.getAudioTracks() || [];
+    const merged = new MediaStream([
+      ...(newVideoTrack ? [newVideoTrack] : []),
+      ...audioTracks,
+    ]);
+    // Stop old video tracks
+    localStreamRef.current?.getVideoTracks().forEach((t) => {
+      try {
+        t.stop();
+      } catch {}
+    });
+    localStreamRef.current = merged;
+    return ms;
+  }, []);
+
+  const startMicrophone = useCallback(async () => {
+    if (audioTrackRef.current) return audioTrackRef.current;
+    const ms = await navigator.mediaDevices.getUserMedia({
+      audio: true,
+      video: false,
+    });
+    audioTrackRef.current = ms.getAudioTracks()[0] || null;
+    // merge audio into localStreamRef for rendering if video present
     if (localStreamRef.current) {
-      localStreamRef.current.getTracks().forEach((track) => track.stop());
-      localStreamRef.current = null;
+      ms.getAudioTracks().forEach((t) => localStreamRef.current!.addTrack(t));
+    } else {
+      localStreamRef.current = ms;
     }
+    setupAudioProcessing(ms);
+    // Start full-utterance recording if enabled
+    try {
+      if (utteranceModeRef.current) {
+        const rec = new MediaRecorder(ms, {
+          mimeType: "audio/webm;codecs=opus",
+        });
+        utteranceChunksRef.current = [];
+        rec.ondataavailable = (e) => {
+          if (e.data && e.data.size > 0)
+            utteranceChunksRef.current.push(e.data);
+        };
+        rec.onstop = async () => {
+          try {
+            const blob = new Blob(utteranceChunksRef.current, {
+              type: rec.mimeType,
+            });
+            const base64 = await blobToBase64(blob);
+            const socket = socketRef.current;
+            if (socket && joinedRef.current) {
+              socket.emit("audio_utterance", {
+                audio: base64,
+                mime: rec.mimeType,
+                fileName: "utterance.webm",
+              });
+            }
+          } catch {}
+        };
+        rec.start();
+        recorderRef.current = rec;
+      }
+    } catch {}
+    return audioTrackRef.current;
+  }, []);
 
-    // Remove tracks from peer connections
-    peerConnectionsRef.current.forEach(({ pc }) => {
-      const senders = pc.getSenders();
-      senders.forEach((sender) => {
-        if (sender.track) {
-          pc.removeTrack(sender);
+  const stopCamera = () => {
+    try {
+      if (videoTrackRef.current) {
+        videoTrackRef.current.stop();
+        videoTrackRef.current = null;
+      }
+      if (localStreamRef.current) {
+        // Remove video tracks, keep audio tracks if any
+        localStreamRef.current.getVideoTracks().forEach((t) => t.stop());
+        const aud = localStreamRef.current.getAudioTracks();
+        localStreamRef.current = new MediaStream(aud);
+      }
+    } catch {}
+  };
+  const stopMicrophone = () => {
+    // Stop full-utterance recorder first to finalize and send
+    if (recorderRef.current) {
+      try {
+        if (recorderRef.current.state !== "inactive")
+          recorderRef.current.stop();
+      } catch {}
+      recorderRef.current = null;
+    }
+    if (audioTrackRef.current) {
+      audioTrackRef.current.stop();
+      audioTrackRef.current = null;
+    }
+    if (localStreamRef.current) {
+      localStreamRef.current.getAudioTracks().forEach((t) => t.stop());
+      localStreamRef.current = new MediaStream(
+        localStreamRef.current.getVideoTracks()
+      );
+    }
+    teardownAudioProcessing();
+  };
+
+  const startScreen = useCallback(async () => {
+    // Always request a fresh screen stream; previous may be ended
+    const ms = await (navigator.mediaDevices as any).getDisplayMedia({
+      video: true,
+      audio: false,
+    });
+    screenStreamRef.current = ms;
+    ms.getVideoTracks()[0]?.addEventListener("ended", () => {
+      setPubState((s) => ({ ...s, screen: false }));
+      screenStreamRef.current = null;
+    });
+    return ms;
+  }, []);
+
+  const stopScreen = () => {
+    if (screenStreamRef.current) {
+      screenStreamRef.current.getTracks().forEach((t) => t.stop());
+      screenStreamRef.current = null;
+    }
+  };
+
+  // Initiate / stop server web capture via socket events
+  const startUrlShare = async (url: string) => {
+    if (!socketRef.current || !joinedRef.current) return;
+    localWebUrlRef.current = url;
+    socketRef.current.emit("start_web_capture", { url });
+  };
+  const stopUrlShare = () => {
+    if (!socketRef.current || !joinedRef.current) return;
+    socketRef.current.emit("stop_web_capture", {});
+    localWebUrlRef.current = null;
+  };
+  const endUrlShareGracefully = (delayMs = 1500) => {
+    if (!socketRef.current || !joinedRef.current) return;
+    socketRef.current.emit("end_web_capture", { delayMs });
+  };
+
+  /* ─────────────────────────  AUDIO PROCESSING  ───────────────────────── */
+  const setupAudioProcessing = (ms: MediaStream) => {
+    if (audioWorkRef.current) return;
+    try {
+      const context = new AudioContext();
+      const source = context.createMediaStreamSource(ms);
+      const processor = context.createScriptProcessor(2048, 1, 1);
+      source.connect(processor);
+      processor.connect(context.destination);
+      processor.onaudioprocess = (e) => {
+        // basic RMS -> speaking detection done server-side. Here we can optionally update a local UI.
+        // We'll periodically send audio chunks (raw PCM16) below in timer.
+      };
+      audioWorkRef.current = { context, processor, source };
+    } catch (e) {
+      // ignore
+    }
+  };
+  const teardownAudioProcessing = () => {
+    if (audioWorkRef.current) {
+      audioWorkRef.current.processor.disconnect();
+      audioWorkRef.current.source.disconnect();
+      audioWorkRef.current.context.close();
+      audioWorkRef.current = null;
+    }
+  };
+
+  /* ─────────────────────────  ENCODING HELPERS  ───────────────────────── */
+  const captureAndSendVideoFrame = useCallback(
+    (kind: "camera" | "screen") => {
+      const socket = socketRef.current;
+      if (!socket || !joinedRef.current) return;
+      let mediaStream: MediaStream | null = null;
+      if (kind === "camera" && localStreamRef.current)
+        mediaStream = localStreamRef.current;
+      if (kind === "screen" && screenStreamRef.current)
+        mediaStream = screenStreamRef.current;
+      if (!mediaStream) return;
+
+      const videoEl = document.createElement("video");
+      videoEl.muted = true;
+      videoEl.srcObject = mediaStream;
+      const tryCapture = () => {
+        try {
+          const track = mediaStream!.getVideoTracks()[0];
+          if (!track) return;
+          const settings = track.getSettings();
+          const w = settings?.width || videoEl.videoWidth || 640;
+          const h = settings?.height || videoEl.videoHeight || 360;
+          if (!w || !h) {
+            // wait a bit
+            setTimeout(tryCapture, 50);
+            return;
+          }
+          const canvas = getCanvas();
+          const scale = Math.min(1, maxVideoWidth / w);
+          canvas.width = Math.round(w * scale);
+          canvas.height = Math.round(h * scale);
+          const ctx = canvas.getContext("2d")!;
+          ctx.drawImage(videoEl, 0, 0, canvas.width, canvas.height);
+          const dataUrl = canvas.toDataURL("image/jpeg", 0.6);
+          socket.emit("video_frame", {
+            kind,
+            frame: dataUrl,
+            width: canvas.width,
+            height: canvas.height,
+          });
+        } catch {}
+      };
+      videoEl.onloadedmetadata = () => {
+        videoEl.play().catch(() => {});
+        tryCapture();
+      };
+      // Fallback if onloadedmetadata doesn't fire
+      setTimeout(() => {
+        if ((videoEl as any).readyState >= 2) tryCapture();
+      }, 120);
+    },
+    [maxVideoWidth]
+  );
+
+  const sendAudioChunk = useCallback(() => {
+    const socket = socketRef.current;
+    if (!socket || !joinedRef.current) return;
+    if (!audioTrackRef.current) return;
+    if (utteranceModeRef.current) return; // in utterance mode, skip small chunks
+
+    // Capture small chunk by using a MediaRecorder over a short period
+    const ms = new MediaStream([audioTrackRef.current]);
+    try {
+      const rec = new MediaRecorder(ms, { mimeType: "audio/webm;codecs=opus" });
+      const chunks: Blob[] = [];
+      rec.ondataavailable = (e) => {
+        if (e.data.size > 0) chunks.push(e.data);
+      };
+      rec.onstop = () => {
+        const blob = new Blob(chunks, { type: "audio/webm" });
+        blob.arrayBuffer().then((ab) => {
+          const b64 = btoa(String.fromCharCode(...new Uint8Array(ab)));
+          socket.emit("audio_chunk", { audio: b64 });
+        });
+      };
+      rec.start();
+      setTimeout(() => rec.stop(), 150); // ~150ms chunk
+    } catch (e) {
+      // ignore
+    }
+  }, []);
+
+  /* ─────────────────────────  TIMERS  ───────────────────────── */
+  useEffect(() => {
+    if (!joined || (!pubState.video && !pubState.screen)) {
+      if (frameTimerRef.current) {
+        clearInterval(frameTimerRef.current);
+        frameTimerRef.current = null;
+      }
+    } else if (!frameTimerRef.current) {
+      frameTimerRef.current = window.setInterval(() => {
+        if (pubState.video) captureAndSendVideoFrame("camera");
+        if (pubState.screen) captureAndSendVideoFrame("screen");
+      }, frameIntervalMs);
+    }
+    return () => {
+      if (frameTimerRef.current) {
+        clearInterval(frameTimerRef.current);
+        frameTimerRef.current = null;
+      }
+    };
+  }, [
+    joined,
+    pubState.video,
+    pubState.screen,
+    pubState.url,
+    captureAndSendVideoFrame,
+    frameIntervalMs,
+  ]);
+
+  useEffect(() => {
+    if (!joined || !pubState.audio) {
+      if (audioTimerRef.current) {
+        clearInterval(audioTimerRef.current);
+        audioTimerRef.current = null;
+      }
+    } else if (!audioTimerRef.current) {
+      if (utteranceModeRef.current) return; // do not set interval in utterance mode
+      audioTimerRef.current = window.setInterval(() => {
+        sendAudioChunk();
+      }, audioAnalysisIntervalMs);
+    }
+    return () => {
+      if (audioTimerRef.current) {
+        clearInterval(audioTimerRef.current);
+        audioTimerRef.current = null;
+      }
+    };
+  }, [joined, pubState.audio, sendAudioChunk, audioAnalysisIntervalMs]);
+
+  // Helper: convert Blob to base64 without data URL prefix
+  const blobToBase64 = (blob: Blob): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        try {
+          const dataUrl = reader.result as string;
+          const idx = dataUrl.indexOf(",");
+          resolve(idx !== -1 ? dataUrl.substring(idx + 1) : dataUrl);
+        } catch (e) {
+          reject(e);
         }
-      });
+      };
+      reader.onerror = reject;
+      reader.readAsDataURL(blob);
     });
+  };
 
-    socketRef.current?.emit("signal", {
-      type: "publishState",
-      spaceId,
-      fromId: selfId,
-      publish: { audio: false, video: false },
-      streamType: "camera",
-    });
-  }, [spaceId, selfId]);
-
-  const stopScreenShare = useCallback(() => {
-    if (localScreenStreamRef.current) {
-      localScreenStreamRef.current.getTracks().forEach((track) => track.stop());
-      localScreenStreamRef.current = null;
-    }
-
-    // Remove tracks from screen peer connections
-    screenPeerConnectionsRef.current.forEach(({ pc }) => {
-      const senders = pc.getSenders();
-      senders.forEach((sender) => {
-        if (sender.track) {
-          pc.removeTrack(sender);
+  /* ─────────────────────────  PUBLISH TOGGLES  ───────────────────────── */
+  const togglePublish = useCallback(
+    async (
+      kind: "audio" | "video" | "screen" | "url",
+      urlForShare?: string
+    ) => {
+      if (!socketRef.current) return;
+      if (!joinedRef.current) return;
+      if (kind === "audio") {
+        if (pubState.audio) {
+          stopMicrophone();
+          setPubState((s) => ({ ...s, audio: false }));
+        } else {
+          await startMicrophone();
+          setPubState((s) => ({ ...s, audio: true }));
         }
-      });
-    });
+      } else if (kind === "video") {
+        if (pubState.video) {
+          stopCamera();
+          setPubState((s) => ({ ...s, video: false }));
+        } else {
+          await startCamera();
+          setPubState((s) => ({ ...s, video: true }));
+        }
+      } else if (kind === "screen") {
+        if (pubState.screen) {
+          stopScreen();
+          setPubState((s) => ({ ...s, screen: false }));
+        } else {
+          await startScreen();
+          setPubState((s) => ({ ...s, screen: true }));
+        }
+      } else if (kind === "url") {
+        if (pubState.url) {
+          stopUrlShare();
+          setPubState((s) => ({ ...s, url: false }));
+        } else if (urlForShare) {
+          await startUrlShare(urlForShare);
+          setPubState((s) => ({ ...s, url: true }));
+        }
+      }
+    },
+    [pubState, startCamera, startMicrophone, startScreen]
+  );
 
-    socketRef.current?.emit("signal", {
-      type: "publishState",
-      spaceId,
-      fromId: selfId,
-      streamType: "screen",
-    });
-  }, [spaceId, selfId]);
+  const stopAllPublishing = () => {
+    stopCamera();
+    stopMicrophone();
+    stopScreen();
+    stopUrlShare();
+    setPubState({ audio: false, video: false, screen: false, url: false });
+  };
 
-  const stopUrlShare = useCallback(() => {
-    if (currentUrlSessionRef.current) {
-      socketRef.current?.emit("stopWebCapture", {
-        type: "stopWebCapture",
-        spaceId,
-        fromId: selfId,
-        sessionId: currentUrlSessionRef.current,
-      });
-
-      currentUrlSessionRef.current = null;
-    }
-
-    if (localUrlStreamRef.current) {
-      localUrlStreamRef.current.getTracks().forEach((track) => track.stop());
-      localUrlStreamRef.current = null;
-    }
-  }, [spaceId, selfId]);
-
-  const leave = useCallback(() => {
-    socketRef.current?.emit("leave", {
-      type: "leave",
-      spaceId,
-      fromId: selfId,
-    });
-
-    cleanup();
-  }, [spaceId, selfId, cleanup]);
-
+  /* ─────────────────────────  RETURN API  ───────────────────────── */
   return {
+    // connection
+    socket: socketRef.current,
     connected,
     joined,
-    remotePeers,
+    // local media
     localStream: localStreamRef,
-    localScreenStream: localScreenStreamRef,
-    localUrlStream: localUrlStreamRef,
-    startPublishing,
-    stopPublishing,
-    startScreenShare,
-    stopScreenShare,
-    startUrlShare,
-    stopUrlShare,
-    leave,
+    localScreenStream: screenStreamRef,
+    localWebUrl: localWebUrlRef.current,
+    pubState,
+    togglePublish,
+    stopAllPublishing,
+    endWebCapture: endUrlShareGracefully,
+    // remote
+    remotePeers,
+    speakingMap,
+    compositeFrameUrl,
   };
 }

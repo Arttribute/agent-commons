@@ -280,7 +280,9 @@ export default function SpaceInfoDialog({
                     <div className="flex justify-between">
                       <span>Session ID:</span>
                       <code className="bg-gray-100 px-1 rounded">
-                        {spaceDetails.sessionId.slice(0, 8)}...
+                        {spaceDetails?.sessionId &&
+                          spaceDetails.sessionId.slice(0, 8)}
+                        ...
                       </code>
                     </div>
                   </div>

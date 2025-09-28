@@ -62,6 +62,7 @@ import { LogService } from '~/log/log.service';
 import { GoalService } from '~/goal/goal.service';
 import { TaskService } from '~/task/task.service';
 import { Observable, of } from 'rxjs';
+import { SpaceToolsService } from '~/space/space-tools.service';
 
 const got = import('got');
 
@@ -84,6 +85,8 @@ export class AgentService implements OnModuleInit {
     /* NEW injections */
     @Inject(forwardRef(() => GoalService)) private goals: GoalService,
     @Inject(forwardRef(() => TaskService)) private tasks: TaskService,
+    @Inject(forwardRef(() => SpaceToolsService))
+    private spaceTools: SpaceToolsService,
   ) {}
 
   /* ─────────────────────────  INIT  ───────────────────────── */
@@ -293,7 +296,8 @@ export class AgentService implements OnModuleInit {
           To unsubscribe from a space, you can use the unsubscribeFromSpace tool. To subscribe to a space, you can use the subscribeToSpace tool.
           If your response to the agent/agents/users involves multiple tasks let them know by sending a message before creating the goals and tasks.
           If you have a session id, provide it as an arg when sending a message to a space.
-          Spaces have streams you can monitor. You can use the monitorStream tool to start monitoring a stream in a space. You will receive real-time transcriptions of the stream in the space. You can also stop monitoring a stream using the stopMonitoringStream tool.
+          When getting live audio streams from a space, you can respond with voice using the speakInSpace tool which allows you to speak in the space.
+          While monitoring  webcast streams you can interact with the webcast stream using the given space tools for that specific stream.
 
 
           STRICTLY ABIDE BY THE FOLLOWING:
@@ -380,75 +384,6 @@ export class AgentService implements OnModuleInit {
       updatedAt: session.updatedAt,
     }));
   }
-
-  /* ─────────────────────────  SPACES TRACKING  ───────────────────────── */
-  // //get spaces for agent first
-  // async getSpacesForAgent(agentId: string) {
-  //   const agent = await this.getAgent({ agentId });
-  //   if (!agent) {
-  //     throw new BadRequestException('Agent not found');
-  //   }
-
-  //   try {
-  //     // First, try to get spaces with members relation
-  //     const spaces = await this.db.query.space.findMany({
-  //       with: {
-  //         members: {
-  //           where: (member: any) => eq(member.agentId, agentId),
-  //         },
-  //       },
-  //     });
-
-  //     // Filter to only return spaces where the agent is actually a member
-  //     return spaces.filter(
-  //       (space: any) =>
-  //         space.members &&
-  //         Array.isArray(space.members) &&
-  //         space.members.length > 0,
-  //     );
-  //   } catch (error) {
-  //     // Fallback: Query space_member table directly and join with spaces
-  //     console.warn(
-  //       'Space relation query failed, falling back to direct query:',
-  //       error,
-  //     );
-
-  //     const spaceMembers =
-  //       (await this.db.query.spaceMember?.findMany({
-  //         where: (member: any) => eq(member.agentId, agentId),
-  //         with: {
-  //           space: true,
-  //         },
-  //       })) || [];
-
-  //     return spaceMembers.map((member: any) => member.space).filter(Boolean);
-  //   }
-  // }
-  // //get spaces from session
-  // async getSpacesFromSession(sessionId: string) {
-  //   const session = await this.db.query.session.findFirst({
-  //     where: (s) => eq(s.sessionId, sessionId),
-  //   });
-  //   if (!session) {
-  //     throw new BadRequestException('Session not found');
-  //   }
-  //   //get space ids and get the space details
-  //   const spaceIds = Array.isArray(session.spaces)
-  //     ? (session.spaces as string[])
-  //     : [];
-  //   if (spaceIds.length === 0) {
-  //     return [];
-  //   }
-  //   //filter spaces gotten from getSpacesForAgent
-  //   const spacesfromSession = await this.getSpacesForAgent(session.agentId);
-  //   const spaces = spacesfromSession.filter((s) =>
-  //     spaceIds.includes(s.spaceId),
-  //   );
-  //   if (spaces.length === 0) {
-  //     throw new BadRequestException('No spaces found for this session');
-  //   }
-  //   return spaces;
-  // }
 
   /* ─────────────────────────  CRON TRIGGER  ───────────────────────── */
   async triggerAgent(props: { agentId: string; sessionId?: string }) {
@@ -601,6 +536,27 @@ export class AgentService implements OnModuleInit {
           })) as (ChatCompletionTool & { endpoint: string })[];
 
           const toolDefs = [...dynamicDefs, ...resourceDefs, ...staticDefs];
+          // If running inside a space, merge space tool specs (spacetools)
+          if (spaceId) {
+            const spaceToolSpecs = this.spaceTools.getToolsForSpace(spaceId);
+            if (spaceToolSpecs.length) {
+              const spaceDefs = spaceToolSpecs.map((spec) => ({
+                type: 'function',
+                function: {
+                  name: spec.name,
+                  description: spec.description || 'Space provided tool',
+                  parameters: spec.parameters || {
+                    type: 'object',
+                    properties: {},
+                  },
+                  // Pass through apiSpec so controller can pick dynamic invocation path
+                  apiSpec: spec.apiSpec,
+                },
+                endpoint: `http://localhost:${process.env.PORT}/v1/agents/tools`,
+              }));
+              toolDefs.push(...(spaceDefs as any));
+            }
+          }
 
           const toolUsage: {
             name: string;
@@ -664,7 +620,11 @@ export class AgentService implements OnModuleInit {
                       json: {
                         args,
                         toolCall: config.toolCall,
-                        metadata: { agentId, sessionId: currentSessionId },
+                        metadata: {
+                          agentId,
+                          sessionId: currentSessionId,
+                          spaceId,
+                        },
                       },
                       headers: { 'Content-Type': 'application/json' },
                     },
@@ -805,11 +765,9 @@ export class AgentService implements OnModuleInit {
               You are receiving this message because you are subscribed to this space.
               
               You can interact with other agents in this space using the sendMessageToSpace tool.
-              Use the getSpaceMessages tool before sending messages to the space.
+              You can speak up in the space  using voice with the speakInSpace tool. Typically you would use this tool when there is a live audio stream in the space which will be transcribed and sent to you.
 
               If you create goals and tasks, you need to inform the space members about it by sending a message to the space.
-
-              If you wish not to respond to the messages you can ignore and do not send a response.
               
               If you want to unsubscribe from this space, you can use the unsubscribeFromSpace tool.
               `,

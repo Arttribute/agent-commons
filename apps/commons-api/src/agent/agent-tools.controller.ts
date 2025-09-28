@@ -15,6 +15,7 @@ import { CommonToolService } from '~/tool/tools/common-tool.service';
 import { EthereumToolService } from '~/tool/tools/ethereum-tool.service';
 import { ToolService } from '~/tool/tool.service';
 import { ResourceService } from '~/resource/resource.service';
+import { SpaceToolsService } from '~/space/space-tools.service';
 
 @Controller({ version: '1', path: 'agents' })
 export class AgentToolsController {
@@ -33,6 +34,7 @@ export class AgentToolsController {
 
     // The DB-based tool service for dynamic "apiSpec" calls
     private readonly toolService: ToolService,
+    private readonly spaceTools: SpaceToolsService,
   ) {}
 
   @Post('tools')
@@ -40,13 +42,18 @@ export class AgentToolsController {
     @TypedBody()
     body: {
       toolCall: any;
-      metadata: { agentId: string; privateKey?: string; sessionId?: string };
+      metadata: {
+        agentId: string;
+        privateKey?: string;
+        sessionId?: string;
+        spaceId?: string;
+      };
     },
   ) {
     const { metadata, toolCall } = body;
     const args = toolCall.args;
     const functionName = toolCall.name;
-    const { agentId } = metadata;
+    const { agentId, spaceId } = metadata;
 
     // 1) Verify agent
     const agent = await this.agent.getAgent({ agentId });
@@ -60,6 +67,16 @@ export class AgentToolsController {
     merge(metadata, { privateKey });
 
     console.log('Tool Call', { functionName, args, metadata });
+
+    // ------------------------------------------------------------------------------------
+    // 3b) SPACE tools (discovered from web capture) take precedence over other dynamic tools
+    // ------------------------------------------------------------------------------------
+    const spaceToolMatch = spaceId
+      ? this.spaceTools.findToolByName(functionName, spaceId)
+      : this.spaceTools.findToolByName(functionName);
+    if (spaceToolMatch) {
+      return await this.invokeDynamicTool(spaceToolMatch.tool.apiSpec, args);
+    }
 
     // ------------------------------------------------------------------------------------
     // 3) First check: a DB-based "tool" from the tool table
@@ -182,10 +199,16 @@ export class AgentToolsController {
     }
     finalUrl = url.toString();
 
-    // 2) Build request body if not GET
-    let requestBody: any;
-    if (method.toUpperCase() !== 'GET' && bodyTemplate) {
-      requestBody = this.buildBodyFromTemplate(bodyTemplate, parsedArgs);
+    // 2) Build request body for non-GET
+    let requestBody: any = undefined;
+    const methodUpper = method.toUpperCase();
+    if (['POST', 'PUT', 'PATCH'].includes(methodUpper)) {
+      if (bodyTemplate) {
+        requestBody = this.buildBodyFromTemplate(bodyTemplate, parsedArgs);
+      } else if (parsedArgs && Object.keys(parsedArgs).length > 0) {
+        // If no template, but args exist, send args as JSON body
+        requestBody = parsedArgs;
+      }
     }
 
     // 3) Execute fetch
