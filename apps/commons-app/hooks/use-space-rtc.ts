@@ -340,13 +340,26 @@ export function useSpaceRTC(options: UseSpaceRTCOptions) {
   };
 
   const startCamera = useCallback(async () => {
-    if (localStreamRef.current) return localStreamRef.current;
+    // Always acquire a fresh camera track to avoid ended tracks causing black video
     const ms = await navigator.mediaDevices.getUserMedia({
       video: true,
       audio: false,
     });
-    localStreamRef.current = ms;
-    videoTrackRef.current = ms.getVideoTracks()[0] || null;
+    const newVideoTrack = ms.getVideoTracks()[0] || null;
+    videoTrackRef.current = newVideoTrack;
+    // Merge with existing audio tracks if any
+    const audioTracks = localStreamRef.current?.getAudioTracks() || [];
+    const merged = new MediaStream([
+      ...(newVideoTrack ? [newVideoTrack] : []),
+      ...audioTracks,
+    ]);
+    // Stop old video tracks
+    localStreamRef.current?.getVideoTracks().forEach((t) => {
+      try {
+        t.stop();
+      } catch {}
+    });
+    localStreamRef.current = merged;
     return ms;
   }, []);
 
@@ -399,16 +412,18 @@ export function useSpaceRTC(options: UseSpaceRTCOptions) {
   }, []);
 
   const stopCamera = () => {
-    if (videoTrackRef.current) {
-      videoTrackRef.current.stop();
-      videoTrackRef.current = null;
-    }
-    if (localStreamRef.current) {
-      localStreamRef.current.getVideoTracks().forEach((t) => t.stop());
-      localStreamRef.current = new MediaStream(
-        localStreamRef.current.getAudioTracks()
-      );
-    }
+    try {
+      if (videoTrackRef.current) {
+        videoTrackRef.current.stop();
+        videoTrackRef.current = null;
+      }
+      if (localStreamRef.current) {
+        // Remove video tracks, keep audio tracks if any
+        localStreamRef.current.getVideoTracks().forEach((t) => t.stop());
+        const aud = localStreamRef.current.getAudioTracks();
+        localStreamRef.current = new MediaStream(aud);
+      }
+    } catch {}
   };
   const stopMicrophone = () => {
     // Stop full-utterance recorder first to finalize and send
@@ -433,7 +448,7 @@ export function useSpaceRTC(options: UseSpaceRTCOptions) {
   };
 
   const startScreen = useCallback(async () => {
-    if (screenStreamRef.current) return screenStreamRef.current;
+    // Always request a fresh screen stream; previous may be ended
     const ms = await (navigator.mediaDevices as any).getDisplayMedia({
       video: true,
       audio: false,
@@ -511,23 +526,41 @@ export function useSpaceRTC(options: UseSpaceRTCOptions) {
       const videoEl = document.createElement("video");
       videoEl.muted = true;
       videoEl.srcObject = mediaStream;
-      videoEl.play().catch(() => {});
-      // allow frame to be ready
-      setTimeout(() => {
+      const tryCapture = () => {
         try {
-          const trackSettings = mediaStream!.getVideoTracks()[0]?.getSettings();
-          const w = trackSettings?.width || 640;
-          const h = trackSettings?.height || 360;
+          const track = mediaStream!.getVideoTracks()[0];
+          if (!track) return;
+          const settings = track.getSettings();
+          const w = settings?.width || videoEl.videoWidth || 640;
+          const h = settings?.height || videoEl.videoHeight || 360;
+          if (!w || !h) {
+            // wait a bit
+            setTimeout(tryCapture, 50);
+            return;
+          }
           const canvas = getCanvas();
           const scale = Math.min(1, maxVideoWidth / w);
           canvas.width = Math.round(w * scale);
           canvas.height = Math.round(h * scale);
           const ctx = canvas.getContext("2d")!;
           ctx.drawImage(videoEl, 0, 0, canvas.width, canvas.height);
-          const dataUrl = canvas.toDataURL("image/jpeg", 0.5);
-          socket.emit("video_frame", { kind, frame: dataUrl });
+          const dataUrl = canvas.toDataURL("image/jpeg", 0.6);
+          socket.emit("video_frame", {
+            kind,
+            frame: dataUrl,
+            width: canvas.width,
+            height: canvas.height,
+          });
         } catch {}
-      }, 50);
+      };
+      videoEl.onloadedmetadata = () => {
+        videoEl.play().catch(() => {});
+        tryCapture();
+      };
+      // Fallback if onloadedmetadata doesn't fire
+      setTimeout(() => {
+        if ((videoEl as any).readyState >= 2) tryCapture();
+      }, 120);
     },
     [maxVideoWidth]
   );

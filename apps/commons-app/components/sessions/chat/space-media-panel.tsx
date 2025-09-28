@@ -315,6 +315,7 @@ export default function SpaceMediaPanel({
   selfId,
   role,
   wsUrl,
+  expectedPeers,
   isExpanded = false,
   onToggleExpanded,
 }: {
@@ -322,6 +323,7 @@ export default function SpaceMediaPanel({
   selfId: string;
   role: "human" | "agent";
   wsUrl: string;
+  expectedPeers?: Array<{ id: string; role: "human" | "agent" }>;
   isExpanded?: boolean;
   onToggleExpanded?: () => void;
 }) {
@@ -424,19 +426,22 @@ export default function SpaceMediaPanel({
 
   const allStreams: StreamItem[] = [];
 
-  // Add local camera/mic stream
-  if ((pubAudio || pubVideo) && localStream.current) {
-    allStreams.push({
-      id: selfId,
-      role,
-      stream: localStream.current,
-      audioStream: undefined,
-      publish: { audio: pubAudio, video: pubVideo },
-      isLocal: true,
-      isScreenShare: false,
-      isUrlShare: false,
-    });
-  }
+  // Always add a self tile even if not publishing (placeholder)
+  allStreams.push({
+    id: selfId,
+    role,
+    stream:
+      (pubAudio || pubVideo) && localStream.current
+        ? localStream.current
+        : null,
+    audioStream: undefined,
+    publish: { audio: pubAudio, video: pubVideo },
+    isLocal: true,
+    isScreenShare: false,
+    isUrlShare: false,
+  });
+
+  // Note: self tile already added above
 
   // Add local screen share
   if (pubScreen && localScreenStream.current) {
@@ -470,7 +475,7 @@ export default function SpaceMediaPanel({
           audio: false,
           video: !!(peer as any).cameraFrameUrl,
         },
-        isLocal: peer.id === selfId,
+        isLocal: false,
         isScreenShare: false,
         isUrlShare: false,
       });
@@ -510,6 +515,25 @@ export default function SpaceMediaPanel({
       });
     }
   });
+
+  // Ensure expectedPeers are present as placeholders
+  if (expectedPeers && expectedPeers.length) {
+    const present = new Set(allStreams.map((s) => s.id));
+    for (const p of expectedPeers) {
+      if (!present.has(p.id)) {
+        allStreams.push({
+          id: p.id,
+          role: p.role,
+          stream: null,
+          audioStream: null,
+          publish: { audio: false, video: false },
+          isLocal: p.id === selfId,
+          isScreenShare: false,
+          isUrlShare: false,
+        });
+      }
+    }
+  }
 
   const totalActiveStreams = allStreams.length;
   const shouldShowPanel = totalActiveStreams > 0 || joined;
