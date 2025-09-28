@@ -1,17 +1,20 @@
 FROM public.ecr.aws/docker/library/node:22.11.0-bookworm-slim AS base
 
-# Builder stage to compile NestJS
+# Builder stage to compile NestJS (build context is apps/commons-api)
 FROM base AS builder
 WORKDIR /app
 
 RUN npm install -g corepack@latest && corepack enable pnpm
 
-# Copy workspace root manifests if needed; fallback to app-level
+# Copy only files needed for install and build
 COPY package.json pnpm-lock.yaml ./
-COPY ./ .
+COPY tsconfig*.json ./
+COPY nest-cli.json ./
+COPY src ./src
 
-# Install deps and build
-RUN pnpm install --frozen-lockfile && pnpm --filter commons-api build
+# Install dependencies (allow puppeteer to download Chromium) and build
+RUN pnpm install --frozen-lockfile \
+ && pnpm build
 
 # Runtime stage with Chromium dependencies for Puppeteer
 FROM public.ecr.aws/docker/library/node:22.11.0-bookworm-slim AS runner
@@ -54,7 +57,7 @@ ENV NODE_ENV=production \
 
 # Copy built app and node_modules from builder
 COPY --from=builder /app/node_modules ./node_modules
-COPY --from=builder /app/apps/commons-api/dist ./dist
+COPY --from=builder /app/dist ./dist
 
 EXPOSE 8080
 
