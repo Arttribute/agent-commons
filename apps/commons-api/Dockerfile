@@ -1,64 +1,19 @@
-FROM public.ecr.aws/docker/library/node:22.11.0-bookworm-slim AS base
+FROM public.ecr.aws/docker/library/node:22.11.0 AS base
 
-# Builder stage to compile NestJS (build context is apps/commons-api)
+
 FROM base AS builder
-WORKDIR /app
 
-RUN npm install -g corepack@latest && corepack enable pnpm
+WORKDIR /
 
-# Copy only files needed for install and build
-COPY package.json pnpm-lock.yaml ./
+RUN npm install -g corepack@latest
+RUN corepack enable pnpm
+
+COPY package*.json ./
 COPY tsconfig*.json ./
-COPY nest-cli.json ./
-COPY src ./src
+COPY ./dist ./dist/
 
-# Install dependencies (allow puppeteer to download Chromium) and build
-RUN pnpm install --frozen-lockfile \
- && pnpm build
-
-# Runtime stage with Chromium dependencies for Puppeteer
-FROM public.ecr.aws/docker/library/node:22.11.0-bookworm-slim AS runner
-WORKDIR /app
-
-# Install system libraries required by Chromium
-RUN apt-get update && apt-get install -y --no-install-recommends \
-		ca-certificates \
-		fonts-liberation \
-		libasound2 \
-		libatk-bridge2.0-0 \
-		libatk1.0-0 \
-		libc6 \
-		libcairo2 \
-		libcups2 \
-		libdbus-1-3 \
-		libdrm2 \
-		libexpat1 \
-		libgbm1 \
-		libgcc1 \
-		libglib2.0-0 \
-		libgtk-3-0 \
-		libnspr4 \
-		libnss3 \
-		libpango-1.0-0 \
-		libx11-6 \
-		libx11-xcb1 \
-		libxcb1 \
-		libxcomposite1 \
-		libxdamage1 \
-		libxext6 \
-		libxfixes3 \
-		libxrandr2 \
-		libxshmfence1 \
-		wget \
-	&& rm -rf /var/lib/apt/lists/*
-
-ENV NODE_ENV=production \
-		PORT=8080
-
-# Copy built app and node_modules from builder
-COPY --from=builder /app/node_modules ./node_modules
-COPY --from=builder /app/dist ./dist
+RUN pnpm install --prod --no-frozen-lockfile --ignore-scripts
 
 EXPOSE 8080
 
-CMD ["node", "dist/main.js"]
+CMD ["node", "dist/nest/src/main.js"]
