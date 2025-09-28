@@ -14,8 +14,10 @@ async function bootstrap() {
   const app = await NestFactory.create(AppModule);
   app.enableVersioning();
 
-  const port = process.env.PORT ?? 3001;
-  console.log(`Listening on port: ${port}`);
+  const port = Number(process.env.PORT ?? 3001);
   await app.listen(port);
+
+  const address = await app.getUrl();
+  console.log(`Listening on: ${address}`);
 }
 bootstrap();

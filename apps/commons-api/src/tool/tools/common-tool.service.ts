@@ -7,36 +7,71 @@ import {
 import { ChatCompletionMessageParam } from 'openai/resources/chat/completions.mjs';
 import { EmbeddingType, ResourceType } from '~/embedding/dto/embedding.dto';
 import { AgentService } from '~/agent/agent.service';
+import { GoalService, CreateGoalDto } from '~/goal/goal.service';
+import { TaskService, CreateTaskDto, TaskContext } from '~/task/task.service';
 import { AttributionService } from '~/attribution/attribution.service';
 import { ResourceService } from '~/resource/resource.service';
-import { TaskService } from '~/task/task.service';
+import { SpaceService } from '~/space/space.service';
+//import { TaskService } from '~/task/task.service';
 import { OpenAIService } from '~/modules/openai/openai.service';
 import { PinataService } from '~/pinata/pinata.service';
 import { ToolSchema } from '~/tool/dto/tool.dto';
+import { SpaceTtsService } from '~/space/space-tts.service';
 
 const graphqlRequest = import('graphql-request');
 
 export interface CommonTool {
+  createGoal(props: CreateGoalDto): Promise<any>;
+  /** Text-to-speech for an agent inside a space */
+  speakInSpace(props: {
+    spaceId: string;
+    agentId: string;
+    text: string;
+    instructions?: string;
+  }): Promise<{ success: boolean; mime: string; bytes: number }>;
+  updateGoalProgress(props: {
+    goalId: string;
+    progress: number;
+    status: 'pending' | 'started' | 'completed' | 'failed';
+  }): Promise<any>;
+  recomputeGoalProgress(props: {
+    goalId: string;
+  }): Promise<{ success: boolean }>;
+
+  createTask(props: CreateTaskDto): Promise<any>;
+  updateTaskProgress(props: {
+    taskId: string;
+    progress: number;
+    status: 'pending' | 'started' | 'completed' | 'failed';
+    resultContent: string;
+    summary: string;
+    context: Record<string, any>;
+    scheduledEnd?: Date;
+    estimatedDuration?: number;
+    metadata?: Record<string, any>;
+  }): Promise<any>;
+
   /**
    * Get Agents available in the network
    */
-  getAgents(): any;
-  getAgentWithId(props: { id: string }): any;
+  //getAgents(): any;
+  //getAgentWithId(props: { id: string }): any;
 
   /**
-   * Get Resources available in the network, you may filter by creator or get by id
+   * Get Resources available in the network
    */
   getResources(): any;
   getResourcesWithFilter(props: { where: { creator?: string } }): any;
   getResourceWithId(props: { id: string }): any;
+
   /**
    * Find Resources available in the network, you may filter by query and resource type
    * The query is a string that will be used to search for resources
    */
-  findResources(props: { query: string; embeddingType: EmbeddingType }): any;
+  findResources(props: { query: string; resourceType: ResourceType }): any;
 
   /**
-   * Create a new Resource in the network
+   * Create a new Resource in the network if the resource is not a tool, set schema to undefined
    */
   createResource(props: {
     name: string;
@@ -44,8 +79,8 @@ export interface CommonTool {
     thumbnail: string;
     resourceFile: string;
     resourceType: string;
-    embeddigType: string;
-    schema: ToolSchema;
+    embeddingType: string;
+    schema?: ToolSchema;
     tags: string[];
     requiredReputation: number;
     usageCost: number;
@@ -53,26 +88,18 @@ export interface CommonTool {
     shares: number[];
   }): any;
 
-  /**
-   * Get Tasks available in the network, you may filter by status,
-   */
-  getTasks(): any;
-  getTasksWithFilter(props: { where: { status?: 'open' | 'closed' } }): any;
-
-  /**
-   * Create a new Task in the network
-   * Place the task description in the metadata field
-   * The reward should not be more than the current COMMON token balance of the agent
-   */
-  createTask(props: {
-    description: string;
-    reward: number;
-    resourceBased: boolean;
-    parentTaskId?: number;
-    maxParticipants: number;
-  }): any;
-  joinTask(props: { taskId: number }): any;
-  completeTask(props: { taskId: number; resultantFile: string }): any;
+  // Previously for onchain tasks
+  // getTasks(): any;
+  // getTasksWithFilter(props: { where: { status?: 'open' | 'closed' } }): any;
+  // createTask(props: {
+  //   description: string;
+  //   reward: number;
+  //   resourceBased: boolean;
+  //   parentTaskId?: number;
+  //   maxParticipants: number;
+  // }): any;
+  // joinTask(props: { taskId: number }): any;
+  // completeTask(props: { taskId: number; resultantFile: string }): any;
 
   /**
    * Get Attributions available in the network, you may get by id
@@ -98,6 +125,8 @@ export interface CommonTool {
   interactWithAgent(props: {
     agentId: string;
     messages?: ChatCompletionMessageParam[];
+    sessionId?: string;
+    initiator: string;
   }): any;
 
   /**
@@ -136,13 +165,142 @@ export interface CommonTool {
   }>;
 
   /**
+   * Create a new shared space for multi-agent communication
+   */
+  createSpace(props: {
+    name: string;
+    description?: string;
+    sessionId?: string;
+    isPublic?: boolean;
+    maxMembers?: number;
+    agentId: string;
+  }): any;
+
+  /**
+   * Join an existing space
+   */
+  joinSpace(props: { spaceId: string; agentId: string }): any;
+
+  /**
+   * Add an agent to a space
+   */
+  addAgentToSpace(props: {
+    spaceId: string;
+    targetAgentId: string;
+    agentId: string;
+  }): any;
+  /**
+   * Add a human to a space
+   */
+  addHumanToSpace(props: {
+    spaceId: string;
+    targetHumanId: string;
+    agentId: string;
+  }): any;
+
+  /**
+   * Remove an agent from a space
+   */
+  removeAgentFromSpace(props: {
+    spaceId: string;
+    targetAgentId: string;
+    agentId: string;
+  }): any;
+  /**
+   * remove a human from a space
+   */
+  removeHumanFromSpace(props: {
+    spaceId: string;
+    targetHumanId: string;
+    agentId: string;
+  }): any;
+
+  /**
+   * Send a message to a space
+   */
+  sendMessageToSpace(props: {
+    spaceId: string;
+    content: string;
+    targetType?: 'broadcast' | 'direct' | 'group';
+    targetIds?: string[];
+    agentId: string;
+    sessionId?: string; // optional session ID for context
+  }): any;
+
+  /**
+   * Get messages from a space
+   */
+  getSpaceMessages(props: {
+    spaceId: string;
+    limit?: number;
+    agentId: string;
+  }): any;
+
+  /**
+   * Get spaces where the agent is a member
+   */
+  getMySpaces(props: { agentId: string }): any;
+
+  /**
+   * Get space members by space ID
+   */
+  getSpaceMembers(props: { spaceId: string }): any;
+
+  /**
+   * Subscribe to space messages (automatically subscribes when agent joins space)
+   */
+  subscribeToSpace(props: { spaceId: string; agentId: string }): any;
+  /**
+   * Unsubscribe to space messages (automatically unsubscribes when agent leaves space)
+   */
+  unsubscribeFromSpace(props: { spaceId: string; agentId: string }): any;
+  /**
+   * Get recent messages from the in-memory bus
+   */
+  getBusMessages(props: { spaceId: string; limit?: number }): any;
+
+  /**
+   * Start monitoring a stream in a space to receive transcriptions
+   */
+  startStreamMonitoring(props: {
+    spaceId: string;
+    agentId: string;
+    targetParticipantId?: string; // if specified, monitor specific participant; otherwise monitor general space audio
+  }): any;
+
+  /**
+   * Stop monitoring streams in a space
+   */
+  stopStreamMonitoring(props: { spaceId: string; agentId: string }): any;
+
+  /**
+   * Get active streams being monitored in a space
+   */
+  getActiveStreams(props: { spaceId: string }): any;
+
+  /**
    * Equip a tool resource to an agent
    */
-  equipResourceTool(props: {
-    resourceId: string;
+  // equipResourceTool(props: {
+  //   resourceId: string;
+  //   agentId: string;
+  //   privateKey: string;
+  // }): any;
+
+  /** Start (or ensure) a call session in a space. Returns sessionId and current call info. */
+  startCall(props: {
+    spaceId: string;
     agentId: string;
-    privateKey: string;
+    metadata?: Record<string, any>;
   }): any;
+  /** Join an existing call (auto-start if none). */
+  joinCall(props: { spaceId: string; agentId: string }): any;
+  /** Leave the active call in a space (no-op if not in call). */
+  leaveCall(props: { spaceId: string; agentId: string }): any;
+  /** Advance speaker turn (round-robin). */
+  advanceTurn(props: { spaceId: string; agentId: string }): any;
+  /** Get current call session state. */
+  getCallState(props: { spaceId: string; agentId: string }): any;
 }
 
 @Injectable()
@@ -151,17 +309,83 @@ export class CommonToolService implements CommonTool {
   graphAPI = `https://api.studio.thegraph.com/query/102152/agentcommons-testnet/version/latest`;
   constructor(
     @Inject(forwardRef(() => AgentService)) private agent: AgentService,
+    @Inject(forwardRef(() => GoalService))
+    private goals: GoalService,
+    @Inject(forwardRef(() => TaskService))
+    private tasks: TaskService,
     @Inject(forwardRef(() => ResourceService))
     private resource: ResourceService,
-    @Inject(forwardRef(() => TaskService))
-    private task: TaskService,
+    //@Inject(forwardRef(() => TaskService)) previous for onchain tasks
+    //private task: TaskService,
     @Inject(forwardRef(() => AttributionService))
     private attribution: AttributionService,
     @Inject(forwardRef(() => OpenAIService))
     private openAI: OpenAIService,
     @Inject(forwardRef(() => PinataService))
     private pinataService: PinataService,
+    @Inject(forwardRef(() => SpaceService))
+    private space: SpaceService,
+    @Inject(forwardRef(() => SpaceTtsService))
+    private spaceTts: SpaceTtsService,
   ) {}
+
+  async createGoal(props: CreateGoalDto) {
+    return await this.goals.create(props);
+  }
+
+  async updateGoalProgress(props: {
+    goalId: string;
+    progress: number;
+    status: 'pending' | 'started' | 'completed' | 'failed';
+  }) {
+    return await this.goals.updateProgress(
+      props.goalId,
+      props.progress,
+      props.status,
+    );
+  }
+
+  async recomputeGoalProgress(props: { goalId: string }) {
+    await this.goals.recomputeProgress(props.goalId);
+    return { success: true };
+  }
+
+  async speakInSpace(props: {
+    spaceId: string;
+    agentId: string;
+    text: string;
+    instructions?: string;
+  }) {
+    return this.spaceTts.speak(props);
+  }
+
+  async createTask(props: CreateTaskDto) {
+    return await this.tasks.create(props);
+  }
+
+  async updateTaskProgress(props: {
+    taskId: string;
+    progress: number;
+    status: 'pending' | 'started' | 'completed' | 'failed';
+    resultContent: string;
+    summary: string;
+    context: TaskContext;
+    scheduledEnd?: Date;
+    estimatedDuration?: number;
+    metadata?: Record<string, any>;
+  }) {
+    return await this.tasks.updateProgress(
+      props.taskId,
+      props.progress,
+      props.status,
+      props.resultContent,
+      props.summary,
+      props.context,
+      props.scheduledEnd,
+      props.estimatedDuration,
+      props.metadata,
+    );
+  }
 
   getAgents(props?: { id?: string }) {
     const graphAPIKey = process.env.GRAPH_API_KEY;
@@ -294,7 +518,7 @@ export class CommonToolService implements CommonTool {
     });
   }
 
-  findResources(props: { query: string; embeddingType: EmbeddingType }) {
+  findResources(props: { query: string; resourceType: ResourceType }) {
     return this.resource.findResources(props);
   }
 
@@ -306,7 +530,7 @@ export class CommonToolService implements CommonTool {
       thumbnail: string;
       resourceFile: string;
       resourceType: string;
-      embeddigType: string;
+      embeddingType: string;
       schema: ToolSchema;
       tags: string[];
       requiredReputation: bigint;
@@ -330,11 +554,11 @@ export class CommonToolService implements CommonTool {
     //get ipfs file url
     const cid = metadataFile.IpfsHash;
     const resourceMetadata = `https://${process.env.GATEWAY_URL ?? 'gateway.pinata.cloud'}/ipfs/${cid}`;
-    //dynamic type based on embeddigType
+    //dynamic type based on embeddingType
     const etype =
-      props.embeddigType === 'image'
+      props.embeddingType === 'image'
         ? EmbeddingType.image
-        : props.embeddigType === 'audio'
+        : props.embeddingType === 'audio'
           ? EmbeddingType.audio
           : EmbeddingType.text;
     const rType =
@@ -363,140 +587,140 @@ export class CommonToolService implements CommonTool {
 
     return resource;
   }
+  //Previously for onchain tasks
+  // getTasks(props?: { where?: { status?: string } }) {
+  //   const graphAPIKey = process.env.GRAPH_API_KEY;
+  //   const data = graphqlRequest.then(async (_) => {
+  //     const tasksDocument = _.gql`
+  //   	{
+  //   		tasks {
+  //   			id
+  // 			taskId
+  // 			creator
+  // 			metadata
+  // 			reward
+  // 			resourceBased
+  // 			status
+  // 			rewardsDistributed
+  // 			parentTaskId
+  // 			maxParticipants
+  // 			currentParticipants
+  // 			contributions {
+  // 			contributor
+  // 			value
+  // 			}
+  // 			subtasks
+  //   		}
+  //   	}
+  //   	`;
+  //     const tasksWithFilterDocument = _.gql`
+  //   	{
+  //   		tasks(where: ${props?.where}) {
+  //   			id
+  // 			taskId
+  // 			creator
+  // 			metadata
+  // 			reward
+  // 			resourceBased
+  // 			status
+  // 			rewardsDistributed
+  // 			parentTaskId
+  // 			maxParticipants
+  // 			currentParticipants
+  // 			contributions {
+  // 			contributor
+  // 			value
+  // 			}
+  // 			subtasks
+  //   		}
+  //   	}
+  //   	`;
 
-  getTasks(props?: { where?: { status?: string } }) {
-    const graphAPIKey = process.env.GRAPH_API_KEY;
-    const data = graphqlRequest.then(async (_) => {
-      const tasksDocument = _.gql`
-    	{
-    		tasks {
-    			id
-				taskId
-				creator
-				metadata
-				reward
-				resourceBased
-				status
-				rewardsDistributed
-				parentTaskId
-				maxParticipants
-				currentParticipants
-				contributions {
-				contributor
-				value
-				}
-				subtasks
-    		}
-    	}
-    	`;
-      const tasksWithFilterDocument = _.gql`
-    	{
-    		tasks(where: ${props?.where}) {
-    			id
-				taskId
-				creator
-				metadata
-				reward
-				resourceBased
-				status
-				rewardsDistributed
-				parentTaskId
-				maxParticipants
-				currentParticipants
-				contributions {
-				contributor
-				value
-				}
-				subtasks
-    		}
-    	}
-    	`;
+  //     return await _.request(
+  //       this.graphAPI,
+  //       props?.where ? tasksWithFilterDocument : tasksDocument,
+  //     );
+  //   });
+  //   return data;
+  // }
+  // getTasksWithFilter(props: { where: { status?: string } }) {
+  //   return this.getTasks({
+  //     where: props.where,
+  //   });
+  // }
 
-      return await _.request(
-        this.graphAPI,
-        props?.where ? tasksWithFilterDocument : tasksDocument,
-      );
-    });
-    return data;
-  }
-  getTasksWithFilter(props: { where: { status?: string } }) {
-    return this.getTasks({
-      where: props.where,
-    });
-  }
+  // // @ts-expect-error
+  // async createTask(
+  //   props: {
+  //     name: string;
+  //     description: string;
+  //     thumbnail: string;
+  //     reward: number;
+  //     resourceBased: boolean;
+  //     parentTaskId?: number;
+  //     maxParticipants: number;
+  //   },
+  //   metadata: { agentId: string; privateKey: string },
+  // ) {
+  //   const taskMetadataJSON = {
+  //     name: props.name,
+  //     description: props.description,
+  //     image: props.thumbnail,
+  //     attributes: [],
+  //   };
+  //   //upload metadata to IPFS
+  //   const metadataFile = await this.pinataService.uploadJsonFile(
+  //     taskMetadataJSON,
+  //     'metadata.json',
+  //   );
+  //   //get ipfs file url
+  //   const cid = metadataFile.IpfsHash;
+  //   const taskMetadata = `https://${process.env.GATEWAY_URL ?? 'gateway.pinata.cloud'}/ipfs/${cid}`;
 
-  // @ts-expect-error
-  async createTask(
-    props: {
-      name: string;
-      description: string;
-      thumbnail: string;
-      reward: number;
-      resourceBased: boolean;
-      parentTaskId?: number;
-      maxParticipants: number;
-    },
-    metadata: { agentId: string; privateKey: string },
-  ) {
-    const taskMetadataJSON = {
-      name: props.name,
-      description: props.description,
-      image: props.thumbnail,
-      attributes: [],
-    };
-    //upload metadata to IPFS
-    const metadataFile = await this.pinataService.uploadJsonFile(
-      taskMetadataJSON,
-      'metadata.json',
-    );
-    //get ipfs file url
-    const cid = metadataFile.IpfsHash;
-    const taskMetadata = `https://${process.env.GATEWAY_URL ?? 'gateway.pinata.cloud'}/ipfs/${cid}`;
+  //   const task = await this.task.createTask({
+  //     ...props,
+  //     metadata: taskMetadata,
+  //     reward: BigInt(props.reward),
+  //     parentTaskId: BigInt(props.parentTaskId || 0),
+  //     maxParticipants: BigInt(props.maxParticipants),
+  //     agentId: metadata.agentId,
+  //   });
 
-    const task = await this.task.createTask({
-      ...props,
-      metadata: taskMetadata,
-      reward: BigInt(props.reward),
-      parentTaskId: BigInt(props.parentTaskId || 0),
-      maxParticipants: BigInt(props.maxParticipants),
-      agentId: metadata.agentId,
-    });
+  //   return task;
+  // }
 
-    return task;
-  }
+  // // @ts-expect-error
+  // async joinTask(
+  //   props: {
+  //     taskId: number;
+  //   },
+  //   metadata: { agentId: string; privateKey: string },
+  // ) {
+  //   const task = await this.task.joinTask({
+  //     ...props,
+  //     taskId: BigInt(props.taskId),
+  //     agentId: metadata.agentId,
+  //   });
 
-  // @ts-expect-error
-  async joinTask(
-    props: {
-      taskId: number;
-    },
-    metadata: { agentId: string; privateKey: string },
-  ) {
-    const task = await this.task.joinTask({
-      ...props,
-      taskId: BigInt(props.taskId),
-      agentId: metadata.agentId,
-    });
+  //   return task;
+  // }
 
-    return task;
-  }
+  // // @ts-expect-error
+  // async completeTask(
+  //   props: {
+  //     taskId: number;
+  //     resultantFile: string;
+  //   },
+  //   metadata: { agentId: string; privateKey: string },
+  // ) {
+  //   const task = await this.task.completeTask({
+  //     ...props,
+  //     taskId: BigInt(props.taskId),
+  //     agentId: metadata.agentId,
+  //   });
 
-  // @ts-expect-error
-  async completeTask(
-    props: {
-      taskId: number;
-      resultantFile: string;
-    },
-    metadata: { agentId: string; privateKey: string },
-  ) {
-    const task = await this.task.completeTask({
-      ...props,
-      taskId: BigInt(props.taskId),
-      agentId: metadata.agentId,
-    });
-
-    return task;
-  }
+  //   return task;
+  // }
 
   getAttributions(props?: { id?: string }) {
     const graphAPIKey = process.env.GRAPH_API_KEY;
@@ -578,6 +802,8 @@ export class CommonToolService implements CommonTool {
   interactWithAgent(props: {
     agentId: string;
     messages?: ChatCompletionMessageParam[];
+    initiator: string;
+    sessionId?: string;
   }) {
     return this.agent.runAgent(props);
   }
@@ -718,5 +944,214 @@ export class CommonToolService implements CommonTool {
       success: true,
       message: `Tool resource "${resourceId}" equipped successfully.`,
     };
+  }
+
+  /* ─────────────────────────  SPACE METHODS  ───────────────────────── */
+
+  /**
+   * Create a new shared space for multi-agent communication
+   */
+  async createSpace(props: {
+    name: string;
+    description?: string;
+    sessionId?: string;
+    isPublic?: boolean;
+    maxMembers?: number;
+    agentId: string;
+  }) {
+    const { agentId, ...spaceProps } = props;
+
+    return await this.space.createSpace({
+      ...spaceProps,
+      createdBy: agentId,
+      createdByType: 'agent',
+    });
+  }
+
+  /**
+   * Join an existing space
+   */
+  async joinSpace(props: { spaceId: string; agentId: string }) {
+    const { spaceId, agentId } = props;
+
+    return await this.space.addMember({
+      spaceId,
+      memberId: agentId,
+      memberType: 'agent',
+    });
+  }
+
+  /**
+   * Add an agent to a space
+   */
+  async addAgentToSpace(props: {
+    spaceId: string;
+    targetAgentId: string;
+    agentId: string;
+  }) {
+    const { spaceId, targetAgentId, agentId } = props;
+
+    // Check if the requesting agent is a member and has permission to invite
+    const isMember = await this.space.isMember(spaceId, agentId, 'agent');
+    if (!isMember) {
+      throw new BadRequestException(
+        'You must be a member of the space to add other agents',
+      );
+    }
+
+    return await this.space.addMember({
+      spaceId,
+      memberId: targetAgentId,
+      memberType: 'agent',
+    });
+  }
+  /**
+   * Add human to a space
+   * This is a special case where we allow human users to be added to spaces.
+   */
+  async addHumanToSpace(props: {
+    spaceId: string;
+    targetHumanId: string;
+    agentId: string;
+  }) {
+    const { spaceId, targetHumanId, agentId } = props;
+
+    // Check if the requesting agent is a member and has permission to invite
+    const isMember = await this.space.isMember(spaceId, agentId, 'agent');
+    if (!isMember) {
+      throw new BadRequestException(
+        'You must be a member of the space to add other humans',
+      );
+    }
+
+    return await this.space.addMember({
+      spaceId,
+      memberId: targetHumanId,
+      memberType: 'human',
+    });
+  }
+  /**
+   * Remove an agent from a space
+   */
+  async removeAgentFromSpace(props: {
+    spaceId: string;
+    targetAgentId: string;
+    agentId: string;
+  }) {
+    const { spaceId, targetAgentId, agentId } = props;
+
+    // Check if the requesting agent is a member and has permission to remove
+    const isMember = await this.space.isMember(spaceId, agentId, 'agent');
+    if (!isMember) {
+      throw new BadRequestException(
+        'You must be a member of the space to remove other agents',
+      );
+    }
+
+    return await this.space.removeMember(spaceId, targetAgentId, 'agent');
+  }
+  /**
+   * Remove human from a space
+   * This is a special case where we allow human users to be removed from spaces.
+   */
+  async removeHumanFromSpace(props: {
+    spaceId: string;
+    targetHumanId: string;
+    agentId: string;
+  }) {
+    const { spaceId, targetHumanId, agentId } = props;
+
+    // Check if the requesting agent is a member and has permission to remove
+    const isMember = await this.space.isMember(spaceId, agentId, 'agent');
+    if (!isMember) {
+      throw new BadRequestException(
+        'You must be a member of the space to remove other humans',
+      );
+    }
+
+    return await this.space.removeMember(spaceId, targetHumanId, 'human');
+  }
+
+  /**
+   * Send a message to a space
+   */
+  async sendMessageToSpace(
+    props: {
+      spaceId: string;
+      content: string;
+      targetType?: 'broadcast' | 'direct' | 'group';
+      targetIds?: string[];
+      agentId: string;
+      sessionId?: string; // optional session ID for context
+    },
+    metadata: { sessionId: string; agentId: string } = {
+      sessionId: '',
+      agentId: '',
+    },
+  ) {
+    const { agentId, ...messageProps } = props;
+
+    return await this.space.sendMessage({
+      ...messageProps,
+      senderId: agentId,
+      senderType: 'agent',
+      metadata,
+    });
+  }
+
+  /**
+   * Get messages from a space
+   */
+  async getSpaceMessages(props: {
+    spaceId: string;
+    limit?: number;
+    agentId: string;
+  }) {
+    const { spaceId, agentId, limit = 50 } = props;
+
+    // Check if the agent is a member
+    const isMember = await this.space.isMember(spaceId, agentId, 'agent');
+    if (!isMember) {
+      throw new BadRequestException(
+        'You must be a member of the space to read messages',
+      );
+    }
+
+    return await this.space.getMessagesForMember(spaceId, agentId, limit);
+  }
+
+  /**
+   * Get spaces where the agent is a member
+   */
+  async getMySpaces(props: { agentId: string }) {
+    const { agentId } = props;
+
+    return await this.space.getSpacesForMember(agentId, 'agent');
+  }
+
+  /**
+   * Get space members by space ID
+   */
+  async getSpaceMembers(props: { spaceId: string }) {
+    const { spaceId } = props;
+
+    return await this.space.getSpaceMembers(spaceId);
+  }
+
+  /**
+   * Subscribe to space messages (automatically subscribes when agent joins space)
+   */
+  async subscribeToSpace(props: { spaceId: string; agentId: string }) {
+    const { spaceId, agentId } = props;
+
+    return await this.space.subscribeAgentToSpace(agentId, spaceId);
+  }
+  /**
+   * Unsubscribe to space messages (automatically unsubscribes when agent leaves space)
+   */
+  async unsubscribeFromSpace(props: { spaceId: string; agentId: string }) {
+    const { spaceId, agentId } = props;
+
+    return await this.space.unsubscribeAgentFromSpace(agentId, spaceId);
   }
 }

@@ -1,14 +1,13 @@
 "use client";
 
-import { Dispatch, SetStateAction } from "react";
+import { Dispatch, SetStateAction, useState } from "react";
 import { Label } from "@/components/ui/label";
 import { Slider } from "@/components/ui/slider";
-import { JsonEditor } from "./JsonEditor";
-import { TagInput } from "./TagInput";
-import ToolSelector from "@/components/tools/ToolSelector";
+import { JsonEditor } from "./json-editor";
+import { TagInput } from "./tag-input";
+import ToolSelector from "@/components/tools/tool-selector";
 import type { CommonAgent } from "@/types/agent";
 
-// Example interface for your model config
 interface ModelConfig {
   temperature: number;
   maxTokens: number;
@@ -25,6 +24,17 @@ interface PresetsProps {
   setCustomTools: Dispatch<SetStateAction<{ [key: string]: string }>>;
   modelConfig: ModelConfig;
   setModelConfig: Dispatch<SetStateAction<ModelConfig>>;
+  /**
+   * You may pass the user's address if you want the Presets
+   * to know who "owns" external tools. If you're using
+   * agent.owner, you can omit this. Shown here for clarity.
+   */
+  userAddress?: string;
+}
+
+interface SelectedTool {
+  id: string;
+  name: string;
 }
 
 export function Presets({
@@ -34,13 +44,69 @@ export function Presets({
   setCustomTools,
   modelConfig,
   setModelConfig,
+  userAddress,
 }: PresetsProps) {
+  // Local arrays to store the selected tool objects (id + name)
+  const [commonToolsList, setCommonToolsList] = useState<SelectedTool[]>([]);
+  const [externalToolsList, setExternalToolsList] = useState<SelectedTool[]>(
+    []
+  );
+
+  // Handler for adding a "common" tool
+  const handleSelectCommonTool = (tool: SelectedTool) => {
+    // 1. Add the tool’s ID to agent.common_tools
+    if (!agent.common_tools?.includes(tool.id)) {
+      setAgent((prev) => ({
+        ...prev,
+        common_tools: [...(prev.common_tools || []), tool.id],
+      }));
+    }
+    // 2. Keep an object with { id, name } for display
+    setCommonToolsList((prev) => {
+      // If we already have this ID, skip adding again
+      if (prev.find((t) => t.id === tool.id)) return prev;
+      return [...prev, tool];
+    });
+  };
+
+  // Handler for adding an "external" tool
+  const handleSelectExternalTool = (tool: SelectedTool) => {
+    if (!agent.external_tools?.includes(tool.id)) {
+      setAgent((prev) => ({
+        ...prev,
+        external_tools: [...(prev.external_tools || []), tool.id],
+      }));
+    }
+    setExternalToolsList((prev) => {
+      if (prev.find((t) => t.id === tool.id)) return prev;
+      return [...prev, tool];
+    });
+  };
+
+  // Display the selected "common" tool names
+  // by matching the IDs in agent.common_tools
+  const selectedCommonTools = (agent.common_tools || []).map((toolId) => {
+    const found = commonToolsList.find((t) => t.id === toolId);
+    return found
+      ? found
+      : { id: toolId, name: `Tool #${toolId.slice(0, 6)}...` }; // fallback if not in local list
+  });
+
+  // Display the selected "external" tool names
+  const selectedExternalTools = (agent.external_tools || []).map((toolId) => {
+    const found = externalToolsList.find((t) => t.id === toolId);
+    return found
+      ? found
+      : { id: toolId, name: `Tool #${toolId.slice(0, 6)}...` };
+  });
+
   return (
     <div className="space-y-6 w-full">
       <div className="grid gap-6">
         {/* Tools Section */}
         <div className="space-y-4">
           <h3 className="text-lg font-medium">Tools</h3>
+
           <div className="p-4 border rounded-lg">
             <div className="p-4 bg-muted rounded-lg">
               <h4 className="font-medium mb-2">Core Tools</h4>
@@ -48,22 +114,23 @@ export function Presets({
                 These might be automatically added by your system.
               </p>
             </div>
+
+            {/* Common Tools */}
             <div className="space-y-4 mt-4">
               <Label>Common Tools</Label>
               <div className="space-y-2">
-                {agent.common_tools?.map((toolId) => (
-                  <div key={toolId} className="p-2 bg-muted rounded-lg">
-                    Tool ID: {toolId}
+                {selectedCommonTools.map((tool) => (
+                  <div key={tool.id} className="p-2 bg-muted rounded-lg">
+                    {tool.name} (ID: {tool.id})
                   </div>
                 ))}
                 <ToolSelector
                   type="common"
-                  onToolSelect={(toolId) =>
-                    setAgent((prev) => ({
-                      ...prev,
-                      common_tools: [...(prev.common_tools || []), toolId],
-                    }))
-                  }
+                  // pass only the IDs to highlight which are selected
+                  selectedTools={agent.common_tools || []}
+                  // when user selects a tool from the modal
+                  onToolSelect={handleSelectCommonTool}
+                  // custom tool JSON
                   onCustomToolAdd={(toolJson) =>
                     setCustomTools((prev) => ({
                       ...prev,
@@ -72,8 +139,9 @@ export function Presets({
                         : toolJson,
                     }))
                   }
-                  selectedTools={agent.common_tools || []}
                 />
+
+                {/* If user has added custom JSON for "common" */}
                 {customTools.common && (
                   <div className="mt-2">
                     <Label>Custom Common Tools JSON</Label>
@@ -89,22 +157,21 @@ export function Presets({
               </div>
             </div>
 
+            {/* External Tools */}
             <div className="space-y-4 mt-4">
               <Label>External Tools</Label>
               <div className="space-y-2">
-                {agent.external_tools?.map((toolId) => (
-                  <div key={toolId} className="p-2 bg-muted rounded-lg">
-                    Tool ID: {toolId}
+                {selectedExternalTools.map((tool) => (
+                  <div key={tool.id} className="p-2 bg-muted rounded-lg">
+                    {tool.name} (ID: {tool.id})
                   </div>
                 ))}
                 <ToolSelector
                   type="external"
-                  onToolSelect={(toolId) =>
-                    setAgent((prev) => ({
-                      ...prev,
-                      external_tools: [...(prev.external_tools || []), toolId],
-                    }))
-                  }
+                  // your user wallet might come via agent.owner or a prop
+                  owner={userAddress || ""}
+                  selectedTools={agent.external_tools || []}
+                  onToolSelect={handleSelectExternalTool}
                   onCustomToolAdd={(toolJson) =>
                     setCustomTools((prev) => ({
                       ...prev,
@@ -113,8 +180,8 @@ export function Presets({
                         : toolJson,
                     }))
                   }
-                  selectedTools={agent.external_tools || []}
                 />
+
                 {customTools.external && (
                   <div className="mt-2">
                     <Label>Custom External Tools JSON</Label>
@@ -139,6 +206,7 @@ export function Presets({
         <div className="space-y-4">
           <h3 className="text-lg font-medium">Model Configuration</h3>
           <div className="p-4 border rounded-lg">
+            {/* Temperature */}
             <div className="space-y-2">
               <Label htmlFor="temperature">Temperature</Label>
               <Slider
@@ -156,6 +224,7 @@ export function Presets({
               </div>
             </div>
 
+            {/* Max Tokens */}
             <div className="space-y-2">
               <Label htmlFor="maxTokens">Max Tokens</Label>
               <Slider
@@ -173,6 +242,7 @@ export function Presets({
               </div>
             </div>
 
+            {/* Stop Sequences */}
             <div className="space-y-2 mb-4">
               <Label htmlFor="stopSequences">Stop Sequences</Label>
               <TagInput
@@ -184,6 +254,7 @@ export function Presets({
               />
             </div>
 
+            {/* TopP preset */}
             <div className="space-y-2">
               <Label htmlFor="topP">Top P</Label>
               <Slider
@@ -201,6 +272,7 @@ export function Presets({
               </div>
             </div>
 
+            {/* Frequency Penalty */}
             <div className="space-y-2">
               <Label htmlFor="frequencyPenalty">Frequency Penalty</Label>
               <Slider
@@ -221,6 +293,7 @@ export function Presets({
               </div>
             </div>
 
+            {/* Presence Penalty */}
             <div className="space-y-2">
               <Label htmlFor="presencePenalty">Presence Penalty</Label>
               <Slider

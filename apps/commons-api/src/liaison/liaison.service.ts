@@ -164,6 +164,8 @@ export class LiaisonService {
     const result = await this.agentService.runAgent({
       agentId,
       messages: message ? [{ role: 'user', content: message }] : [],
+      stream: false, // Set to true if you want streaming responses
+      initiator: 'liaison', //change to actual initiator
     });
     return result;
   }

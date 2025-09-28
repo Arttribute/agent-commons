@@ -2,7 +2,7 @@
 import React from "react";
 import { RetroGrid } from "@/components/magicui/retro-grid";
 import { Button } from "@/components/ui/button";
-import AppBar from "@/components/layout/AppBar";
+import AppBar from "@/components/layout/app-bar";
 import Link from "next/link";
 import { Bot, DollarSign, Network, Package, Search, Users } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";

@@ -1,5 +1,5 @@
 import ExternalAgentForm from "@/components/agents/ExternalAgentForm";
-import AppBar from "@/components/layout/AppBar";
+import AppBar from "@/components/layout/app-bar";
 
 export default function ExternalAgentPage() {
   return (

@@ -15,6 +15,7 @@ import { CommonToolService } from '~/tool/tools/common-tool.service';
 import { EthereumToolService } from '~/tool/tools/ethereum-tool.service';
 import { ToolService } from '~/tool/tool.service';
 import { ResourceService } from '~/resource/resource.service';
+import { SpaceToolsService } from '~/space/space-tools.service';
 
 @Controller({ version: '1', path: 'agents' })
 export class AgentToolsController {
@@ -33,24 +34,31 @@ export class AgentToolsController {
 
     // The DB-based tool service for dynamic "apiSpec" calls
     private readonly toolService: ToolService,
+    private readonly spaceTools: SpaceToolsService,
   ) {}
 
   @Post('tools')
   async makeAgentToolCall(
     @TypedBody()
     body: {
-      toolCall: ChatCompletionMessageToolCall;
-      metadata: any; // e.g. { agentId: string }
+      toolCall: any;
+      metadata: {
+        agentId: string;
+        privateKey?: string;
+        sessionId?: string;
+        spaceId?: string;
+      };
     },
   ) {
     const { metadata, toolCall } = body;
-    const args = JSON.parse(toolCall.function.arguments);
-    const functionName = toolCall.function.name;
-    const { agentId } = metadata;
+    const args = toolCall.args;
+    const functionName = toolCall.name;
+    const { agentId, spaceId } = metadata;
 
     // 1) Verify agent
     const agent = await this.agent.getAgent({ agentId });
     if (!agent) {
+      console.log('Agent not found:', agentId);
       throw new BadRequestException(`Agent "${agentId}" not found`);
     }
 
@@ -59,6 +67,16 @@ export class AgentToolsController {
     merge(metadata, { privateKey });
 
     console.log('Tool Call', { functionName, args, metadata });
+
+    // ------------------------------------------------------------------------------------
+    // 3b) SPACE tools (discovered from web capture) take precedence over other dynamic tools
+    // ------------------------------------------------------------------------------------
+    const spaceToolMatch = spaceId
+      ? this.spaceTools.findToolByName(functionName, spaceId)
+      : this.spaceTools.findToolByName(functionName);
+    if (spaceToolMatch) {
+      return await this.invokeDynamicTool(spaceToolMatch.tool.apiSpec, args);
+    }
 
     // ------------------------------------------------------------------------------------
     // 3) First check: a DB-based "tool" from the tool table
@@ -78,6 +96,7 @@ export class AgentToolsController {
     } else if (dbTool) {
       // If a DB-based tool is found but no apiSpec, you might do a code-based approach or error out
       // For now, let's just error or handle a partial scenario:
+      console.log('Tool found in DB, but no apiSpec:', dbTool);
       throw new BadRequestException(
         `Tool "${functionName}" found in DB, but has no apiSpec or static method.`,
       );
@@ -113,6 +132,7 @@ export class AgentToolsController {
       // Try to fetch that resource
       const resource = await this.resourceService.getResourceById(resourceId);
       if (!resource) {
+        console.log('Resource-based tool not found:', resourceId);
         throw new BadRequestException(
           `Resource-based tool not found for ID "${resourceId}"`,
         );
@@ -124,6 +144,7 @@ export class AgentToolsController {
       }
       // Otherwise, if it points to a static method name, you'd do that approach
       // Or throw an error if no approach:
+      console.log('Resource-based tool has no apiSpec:', resource);
       throw new BadRequestException(
         `Resource-based tool #${resourceId} has no "apiSpec" or static fallback`,
       );
@@ -136,6 +157,7 @@ export class AgentToolsController {
     // if (resource && resource.schema?.tool?.apiSpec) { ... }
 
     // For now, let's just throw an error if we got here
+    console.log('No tool found for:', functionName);
     throw new BadRequestException(
       `No static, dynamic, or resource-based tool found for "${functionName}"`,
     );
@@ -177,10 +199,16 @@ export class AgentToolsController {
     }
     finalUrl = url.toString();
 
-    // 2) Build request body if not GET
-    let requestBody: any;
-    if (method.toUpperCase() !== 'GET' && bodyTemplate) {
-      requestBody = this.buildBodyFromTemplate(bodyTemplate, parsedArgs);
+    // 2) Build request body for non-GET
+    let requestBody: any = undefined;
+    const methodUpper = method.toUpperCase();
+    if (['POST', 'PUT', 'PATCH'].includes(methodUpper)) {
+      if (bodyTemplate) {
+        requestBody = this.buildBodyFromTemplate(bodyTemplate, parsedArgs);
+      } else if (parsedArgs && Object.keys(parsedArgs).length > 0) {
+        // If no template, but args exist, send args as JSON body
+        requestBody = parsedArgs;
+      }
     }
 
     // 3) Execute fetch

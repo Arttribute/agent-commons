@@ -19,9 +19,10 @@ import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import type { AgentMode, CommonAgent } from "@/types/agent";
 import { Bot, Brain, Cog } from "lucide-react";
+
 import ImageUploader from "./ImageUploader";
 import KnowledgeBaseInput from "./KnowledgeBaseInput";
-import { Presets } from "./Presets";
+import { Presets } from "./presets"; // import your updated Presets
 import { useAgentRegistry } from "@/hooks/useAgentRegistry";
 import { EIP1193Provider, useWallets } from "@privy-io/react-auth";
 import { useAuth } from "@/context/AuthContext";
@@ -36,18 +37,22 @@ interface ModelConfig {
   presencePenalty: number;
 }
 
-export function AgentForm() {
+export function CreateAgentForm() {
   const router = useRouter();
   const { authState } = useAuth();
   const { walletAddress } = authState;
-  //const isAuthenticated = !!idToken;
+
   const [agent, setAgent] = useState<Partial<CommonAgent>>({
     mode: "userDriven",
+    common_tools: [],
+    external_tools: [],
   });
+
   const [customTools, setCustomTools] = useState<{ [key: string]: string }>({
     common: "",
     external: "",
   });
+
   const [modelConfig, setModelConfig] = useState<ModelConfig>({
     temperature: 1,
     maxTokens: 2048,
@@ -56,14 +61,14 @@ export function AgentForm() {
     frequencyPenalty: 0,
     presencePenalty: 0,
   });
+
   const { wallets } = useWallets();
   const [provider, setProvider] = useState<EIP1193Provider | null>(null);
   const [loadingCreate, setLoadingCreate] = useState(false);
 
-  // Grab the user's wallet address if available
+  // The wallet address in lowercase
   const userAddress = walletAddress?.toLowerCase();
 
-  // For demonstration of chain clients (if you do on-chain tasks)
   const { publicClient, walletClient } = useChainClients(provider);
   const { registerAgent } = useAgentRegistry(publicClient, walletClient);
 
@@ -93,31 +98,38 @@ export function AgentForm() {
       return;
     }
 
-    // Construct final data to send to the Nest API
+    // Merging any custom JSON from user input
+    // The custom JSON might contain an array of tool IDs
+    const finalCommonTools = [
+      ...(agent.common_tools || []),
+      ...((customTools.common
+        ? JSON.parse(`[${customTools.common}]`)
+        : []) as string[]),
+    ];
+
+    const finalExternalTools = [
+      ...(agent.external_tools || []),
+      ...((customTools.external
+        ? JSON.parse(`[${customTools.external}]`)
+        : []) as string[]),
+    ];
+
+    // Build the final agent payload
     const finalAgent = {
       ...agent,
-      owner: userAddress, // important for "owned" filtering
-      common_tools: [
-        ...(agent.common_tools || []),
-        ...JSON.parse(`[${customTools.common || ""}]`),
-      ],
-      external_tools: [
-        ...(agent.external_tools || []),
-        ...JSON.parse(`[${customTools.external || ""}]`),
-      ],
-      // Map your "Presets" model config onto the top-level fields
+      owner: userAddress,
+      common_tools: finalCommonTools,
+      external_tools: finalExternalTools,
       temperature: modelConfig.temperature,
       maxTokens: modelConfig.maxTokens,
       stopSequence: modelConfig.stopSequences,
       topP: modelConfig.topP,
       frequencyPenalty: modelConfig.frequencyPenalty,
       presencePenalty: modelConfig.presencePenalty,
-      instructions: agent.instructions,
-      persona: agent.persona,
-      // etc. Add more if your DB schema includes them
     };
 
     try {
+      // POST to /api/agents (create a new agent)
       const res = await fetch("/api/agents", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -131,14 +143,14 @@ export function AgentForm() {
       } else {
         console.log("Agent created:", json.data);
 
+        // If you do any on-chain registration
         await registerAgent(
-          json.data.agentId,
+          json.data.agent_id, // or .agentId, depending on how your DB returns it
           "https://someurl-metadata...",
           false
         );
 
         alert("Agent created successfully!");
-        // Redirect user to see their new agent
         router.push("/studio/agents");
       }
     } catch (error) {
@@ -146,7 +158,7 @@ export function AgentForm() {
       alert("Exception when creating agent.");
     }
 
-    // Reset form for demonstration
+    // Reset everything
     setCustomTools({ common: "", external: "" });
     setModelConfig({
       temperature: 1,
@@ -155,6 +167,11 @@ export function AgentForm() {
       topP: 1,
       frequencyPenalty: 0,
       presencePenalty: 0,
+    });
+    setAgent({
+      mode: "userDriven",
+      common_tools: [],
+      external_tools: [],
     });
     setLoadingCreate(false);
   };
@@ -185,13 +202,13 @@ export function AgentForm() {
 
             <ScrollArea className="overflow-y-auto h-[360px] px-2 w-full overflow-hidden">
               <div className="m-1">
+                {/* BASIC */}
                 <TabsContent value="basic" className="space-y-4">
                   <div className="grid gap-4">
                     <div className="flex items-center gap-2">
-                      {/* Avatar */}
                       <ImageUploader
                         onImageChange={(imageUrl) =>
-                          setAgent({ ...agent, avatar: imageUrl })
+                          setAgent((prev) => ({ ...prev, avatar: imageUrl }))
                         }
                         defaultImage={agent.avatar}
                       />
@@ -201,21 +218,26 @@ export function AgentForm() {
                           id="name"
                           value={agent.name || ""}
                           onChange={(e) =>
-                            setAgent({ ...agent, name: e.target.value })
+                            setAgent((prev) => ({
+                              ...prev,
+                              name: e.target.value,
+                            }))
                           }
                           placeholder="My Awesome Agent"
                           className="w-full"
                         />
                       </div>
                     </div>
-
                     <div className="grid gap-2">
                       <Label htmlFor="persona">Persona</Label>
                       <Textarea
                         id="persona"
                         value={agent.persona || ""}
                         onChange={(e) =>
-                          setAgent({ ...agent, persona: e.target.value })
+                          setAgent((prev) => ({
+                            ...prev,
+                            persona: e.target.value,
+                          }))
                         }
                         placeholder="Describe your agent's personality..."
                         className="min-h-[150px]"
@@ -224,6 +246,7 @@ export function AgentForm() {
                   </div>
                 </TabsContent>
 
+                {/* BEHAVIOR */}
                 <TabsContent value="behavior" className="space-y-4">
                   <div className="grid gap-4">
                     <div className="grid gap-2">
@@ -232,9 +255,12 @@ export function AgentForm() {
                         id="instruction"
                         value={agent.instructions || ""}
                         onChange={(e) =>
-                          setAgent({ ...agent, instructions: e.target.value })
+                          setAgent((prev) => ({
+                            ...prev,
+                            instructions: e.target.value,
+                          }))
                         }
-                        placeholder="Provide the main instructions your agent should follow..."
+                        placeholder="Main instructions for your agent..."
                         className="h-[80px]"
                       />
                     </div>
@@ -244,7 +270,7 @@ export function AgentForm() {
                       <Select
                         value={agent.mode}
                         onValueChange={(value: AgentMode) =>
-                          setAgent({ ...agent, mode: value })
+                          setAgent((prev) => ({ ...prev, mode: value }))
                         }
                       >
                         <SelectTrigger>
@@ -269,10 +295,10 @@ export function AgentForm() {
                           type="number"
                           value={agent.autoInterval || ""}
                           onChange={(e) =>
-                            setAgent({
-                              ...agent,
+                            setAgent((prev) => ({
+                              ...prev,
                               autoInterval: Number(e.target.value),
-                            })
+                            }))
                           }
                           placeholder="5000"
                         />
@@ -284,13 +310,17 @@ export function AgentForm() {
                       <KnowledgeBaseInput
                         value={agent.knowledgebase || ""}
                         onChange={(value) =>
-                          setAgent({ ...agent, knowledgebase: value })
+                          setAgent((prev) => ({
+                            ...prev,
+                            knowledgebase: value,
+                          }))
                         }
                       />
                     </div>
                   </div>
                 </TabsContent>
 
+                {/* ADVANCED */}
                 <TabsContent value="advanced" className="space-y-6">
                   <Presets
                     agent={agent}
@@ -299,6 +329,7 @@ export function AgentForm() {
                     setCustomTools={setCustomTools}
                     modelConfig={modelConfig}
                     setModelConfig={setModelConfig}
+                    userAddress={userAddress || ""}
                   />
                 </TabsContent>
               </div>

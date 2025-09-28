@@ -9,7 +9,7 @@ import {
   HoverCardContent,
   HoverCardTrigger,
 } from "@/components/ui/hover-card";
-import RandomPixelAvatar from "@/components/account/RandomPixelAvatar";
+import RandomPixelAvatar from "@/components/account/random-avatar";
 
 interface Agent {
   agentId: string;

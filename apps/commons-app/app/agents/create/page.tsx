@@ -1,6 +1,6 @@
 "use client";
-import { AgentForm } from "@/components/agents/CreateAgentForm";
-import AppBar from "@/components/layout/AppBar";
+import { CreateAgentForm } from "@/components/agents/create-agent-form";
+import AppBar from "@/components/layout/app-bar";
 
 export default function Page() {
   return (
@@ -8,7 +8,7 @@ export default function Page() {
       <AppBar />
       <div className="min-h-screen  mt-16">
         {/* <h1 className="text-3xl font-bold text-center mb-8">Agent Creator</h1> */}
-        <AgentForm />
+        <CreateAgentForm />
       </div>
     </>
   );
