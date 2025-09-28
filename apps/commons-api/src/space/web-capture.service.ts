@@ -27,7 +27,22 @@ export class WebCaptureService extends EventEmitter {
   }
 
   async onModuleInit() {
-    await this.initBrowserWithRetry();
+    if (process.env.DISABLE_WEB_CAPTURE === 'true') {
+      this.logger.log(
+        'WebCaptureService disabled by DISABLE_WEB_CAPTURE=true; skipping browser init',
+      );
+      return;
+    }
+
+    try {
+      await this.initBrowserWithRetry();
+    } catch (err) {
+      this.logger.warn(
+        `WebCaptureService: browser init skipped (will try lazily on first use): ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      );
+    }
   }
 
   async onModuleDestroy() {
@@ -89,8 +104,6 @@ export class WebCaptureService extends EventEmitter {
     const launchOptions: any = {
       headless: true,
       args: [
-        '--no-sandbox',
-        '--disable-setuid-sandbox',
         '--disable-dev-shm-usage',
         '--disable-web-security',
         '--disable-extensions',
@@ -104,7 +117,6 @@ export class WebCaptureService extends EventEmitter {
         '--use-mock-keychain',
         '--autoplay-policy=no-user-gesture-required',
         '--allow-running-insecure-content',
-        '--enable-features=NetworkService',
         '--force-device-scale-factor=1',
         '--enable-webgl',
         '--use-gl=swiftshader',
@@ -124,7 +136,6 @@ export class WebCaptureService extends EventEmitter {
         '--disable-translate',
         '--disable-domain-reliability',
         '--no-crash-upload',
-        '--single-process', // Can help with stability but use carefully
       ],
       defaultViewport: { width: 1280, height: 720 },
       timeout: 60000, // Increase timeout
@@ -133,6 +144,29 @@ export class WebCaptureService extends EventEmitter {
       handleSIGHUP: false,
       ignoreHTTPSErrors: true, // Add this for better compatibility
     };
+
+    // Ensure proper flags for Cloud Run/rootless environments
+    const isCloudRun = Boolean(process.env.K_SERVICE);
+    if (isCloudRun) {
+      // Prepend sandbox flags if not present
+      const needNoSandbox = !launchOptions.args.includes('--no-sandbox');
+      const needDisableSetuid = !launchOptions.args.includes(
+        '--disable-setuid-sandbox',
+      );
+      if (needDisableSetuid) launchOptions.args.unshift('--disable-setuid-sandbox');
+      if (needNoSandbox) launchOptions.args.unshift('--no-sandbox');
+
+      // Remove single-process if present; it often hurts stability on Cloud Run
+      launchOptions.args = launchOptions.args.filter(
+        (a: string) => a !== '--single-process',
+      );
+    } else {
+      // In non-Cloud Run envs, still prefer no-sandbox for broader compatibility
+      if (!launchOptions.args.includes('--disable-setuid-sandbox'))
+        launchOptions.args.unshift('--disable-setuid-sandbox');
+      if (!launchOptions.args.includes('--no-sandbox'))
+        launchOptions.args.unshift('--no-sandbox');
+    }
 
     if (executablePath) {
       launchOptions.executablePath = executablePath;
@@ -187,6 +221,19 @@ export class WebCaptureService extends EventEmitter {
     return true;
   }
 
+  private async ensureBrowser(): Promise<void> {
+    if (this.browser) return;
+    try {
+      await this.initBrowserWithRetry();
+    } catch (err) {
+      throw new Error(
+        `Web capture is unavailable in this environment: ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      );
+    }
+  }
+
   async startCapture(params: {
     sessionId: string;
     spaceId: string;
@@ -194,7 +241,8 @@ export class WebCaptureService extends EventEmitter {
     participantId: string;
   }): Promise<{ success: boolean; error?: string }> {
     try {
-      // Ensure browser is connected before proceeding
+      // Ensure browser exists (lazy start) and is connected before proceeding
+      await this.ensureBrowser();
       const browserReady = await this.ensureBrowserConnection();
       if (!browserReady) {
         throw new Error('Browser failed to initialize or connect');
