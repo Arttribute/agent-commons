@@ -14,6 +14,8 @@ export interface RemotePeer {
   screenStream?: MediaStream | null;
   // For server-side web capture we just keep last frame as data URL
   webFrameUrl?: string; // last received frame
+  cameraFrameUrl?: string | null; // last received camera frame (data URL)
+  screenFrameUrl?: string | null; // last received screen frame (data URL)
   urlSharing?: {
     active: boolean;
     url?: string;
@@ -119,11 +121,50 @@ export function useSpaceRTC(options: UseSpaceRTCOptions) {
         role: (evt.participantType as any) || "human",
       });
     });
+    socket.on("participants_snapshot", (evt: any) => {
+      try {
+        const list = (evt?.participants as any[]) || [];
+        list.forEach((p) =>
+          addOrUpdatePeer(p.participantId, {
+            role: (p.participantType as any) || "human",
+          })
+        );
+      } catch {}
+    });
     socket.on("participant_left", (evt: any) => {
       setRemotePeers((prev) => prev.filter((p) => p.id !== evt.participantId));
     });
     socket.on("composite_frame", (evt: any) => {
       if (evt?.dataUrl) setCompositeFrameUrl(evt.dataUrl);
+    });
+    // Per-participant video frames (camera/screen/web) so UIs can render all peers concurrently
+    socket.on("participant_frame", (evt: any) => {
+      try {
+        if (!evt?.participantId || !evt?.kind || !evt?.frame) return;
+        const id = evt.participantId as string;
+        const kind = evt.kind as "camera" | "screen" | "web";
+        const frame = evt.frame as string; // data URL
+        const role = (evt.participantType as any) || "human";
+        if (kind === "web") {
+          addOrUpdatePeer(id, {
+            webFrameUrl: frame,
+            urlSharing: { active: true },
+            role,
+          });
+        } else if (kind === "screen") {
+          addOrUpdatePeer(id, {
+            screenFrameUrl: frame,
+            publishing: { audio: false, video: true },
+            role,
+          });
+        } else if (kind === "camera") {
+          addOrUpdatePeer(id, {
+            cameraFrameUrl: frame,
+            publishing: { audio: false, video: true },
+            role,
+          });
+        }
+      } catch {}
     });
     socket.on("audio_state", (evt: any) => {
       if (!evt?.participants) return;
@@ -166,9 +207,9 @@ export function useSpaceRTC(options: UseSpaceRTCOptions) {
         const audio: string | undefined = evt?.audio; // data URL
         if (!pid || !audio) return;
 
-        if (process.env.NEXT_PUBLIC_TTS_DEBUG === 'true') {
+        if (process.env.NEXT_PUBLIC_TTS_DEBUG === "true") {
           try {
-            console.debug('[TTS] recv', {
+            console.debug("[TTS] recv", {
               pid,
               size: audio.length,
               mime: evt?.mime,
@@ -176,16 +217,16 @@ export function useSpaceRTC(options: UseSpaceRTCOptions) {
               at: evt?.at,
             });
             // Optionally download the audio for inspection
-            const a = document.createElement('a');
+            const a = document.createElement("a");
             a.href = audio;
             a.download = `tts_${pid}_${Date.now()}.audio`;
-            a.style.display = 'none';
+            a.style.display = "none";
             document.body.appendChild(a);
             // comment out next line to avoid auto-download; keep logs only
             // a.click();
             document.body.removeChild(a);
           } catch (e) {
-            console.debug('[TTS] debug log/download error', e);
+            console.debug("[TTS] debug log/download error", e);
           }
         }
 
@@ -277,6 +318,8 @@ export function useSpaceRTC(options: UseSpaceRTCOptions) {
             audioSrc: (patch as any)?.audioSrc,
             screenStream: patch.screenStream ?? null,
             webFrameUrl: patch.webFrameUrl,
+            cameraFrameUrl: (patch as any)?.cameraFrameUrl ?? null,
+            screenFrameUrl: (patch as any)?.screenFrameUrl ?? null,
             urlSharing: patch.urlSharing ?? { active: false },
             lastUpdate: Date.now(),
             isSpeaking: patch.isSpeaking,

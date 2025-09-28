@@ -167,6 +167,17 @@ export class SpaceRtcGateway
       participantId: body.participantId,
       participantType,
     });
+    // Send snapshot of existing participants to the newly joined client
+    try {
+      const roster = this.monitor
+        .getParticipantAudioStates(body.spaceId)
+        .filter((p) => p.participantId !== body.participantId)
+        .map((p) => ({
+          participantId: p.participantId,
+          participantType: (p as any).participantType || 'human',
+        }));
+      client.emit('participants_snapshot', { participants: roster });
+    } catch {}
     return { success: true };
   }
 
@@ -212,6 +223,18 @@ export class SpaceRtcGateway
       width: body.width,
       height: body.height,
     });
+    // Also broadcast this participant's frame to all peers in the space so clients can render per-participant tiles
+    try {
+      this.server.to(ctx.spaceId).emit('participant_frame', {
+        participantId: ctx.participantId,
+        participantType: ctx.participantType,
+        kind: body.kind,
+        frame: body.frame,
+        width: body.width,
+        height: body.height,
+        ts: Date.now(),
+      });
+    } catch {}
     return { success: true };
   }
 

@@ -33,6 +33,7 @@ interface StreamCardProps {
     stream?: MediaStream;
     audioStream?: MediaStream;
     audioSrc?: string;
+    frameUrl?: string;
     publish: { audio: boolean; video: boolean };
     isScreenShare?: boolean;
     isUrlShare?: boolean;
@@ -149,9 +150,9 @@ function StreamCard({
       onMouseLeave={() => setIsHovered(false)}
       onClick={onFocus}
     >
-      {peer.isUrlShare && peer.webFrameUrl ? (
+      {peer.isUrlShare && (peer.webFrameUrl || peer.frameUrl) ? (
         <img
-          src={peer.webFrameUrl}
+          src={peer.webFrameUrl || (peer.frameUrl as string)}
           alt={peer.url || "web"}
           className="w-full h-full object-cover"
           draggable={false}
@@ -163,6 +164,13 @@ function StreamCard({
           muted={isLocal}
           playsInline
           className="w-full h-full object-cover"
+        />
+      ) : peer.frameUrl && (peer.publish.video || peer.isScreenShare) ? (
+        <img
+          src={peer.frameUrl}
+          alt={peer.isScreenShare ? "screen" : "camera"}
+          className="w-full h-full object-cover"
+          draggable={false}
         />
       ) : (
         <div
@@ -403,6 +411,7 @@ export default function SpaceMediaPanel({
     stream: MediaStream | null | undefined;
     audioStream: MediaStream | null | undefined;
     audioSrc?: string;
+    frameUrl?: string; // data URL for camera/screen/web when no MediaStream available
     publish: { audio: boolean; video: boolean };
     isLocal: boolean;
     isScreenShare: boolean;
@@ -448,22 +457,19 @@ export default function SpaceMediaPanel({
 
   // Add remote streams
   remotePeers.forEach((peer) => {
-    // Add regular stream
-    const hasAudioPub = !!(peer as any)?.publishing?.audio;
-    if (
-      peer.stream ||
-      peer.audioStream ||
-      (peer as any).audioSrc ||
-      hasAudioPub ||
-      peer.role === "agent"
-    ) {
+    // Add regular participant tile for all non-self peers so they always appear
+    if (peer.id !== selfId) {
       allStreams.push({
         id: peer.id,
         role: peer.role,
         stream: peer.stream,
         audioStream: peer.audioStream || null,
         audioSrc: (peer as any).audioSrc,
-        publish: (peer as any).publishing ?? { audio: false, video: false },
+        frameUrl: (peer as any).cameraFrameUrl,
+        publish: (peer as any).publishing ?? {
+          audio: false,
+          video: !!(peer as any).cameraFrameUrl,
+        },
         isLocal: peer.id === selfId,
         isScreenShare: false,
         isUrlShare: false,
@@ -471,12 +477,13 @@ export default function SpaceMediaPanel({
     }
 
     // Add screen share stream
-    if (peer.screenStream) {
+    if (peer.screenStream || (peer as any).screenFrameUrl) {
       allStreams.push({
         id: `${peer.id}-screen`,
         role: peer.role,
         stream: peer.screenStream,
         audioStream: undefined,
+        frameUrl: (peer as any).screenFrameUrl,
         publish: { audio: false, video: true },
         isLocal: false,
         isScreenShare: true,
@@ -485,12 +492,13 @@ export default function SpaceMediaPanel({
     }
 
     // Add URL share stream
-    if (peer.urlSharing?.active) {
+    if (peer.urlSharing?.active || peer.webFrameUrl) {
       allStreams.push({
         id: `${peer.id}-url`,
         role: peer.role,
         stream: undefined,
         audioStream: undefined,
+        frameUrl: peer.webFrameUrl,
         publish: { audio: false, video: true },
         isLocal: peer.id === selfId,
         isScreenShare: false,
