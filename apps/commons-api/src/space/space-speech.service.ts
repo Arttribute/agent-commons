@@ -161,7 +161,7 @@ export class SpaceSpeechService implements OnModuleDestroy {
       const res = await this.openai.audio.transcriptions.create({
         file: file as any,
         model: (args.model as any) || 'whisper-1',
-        language: 'en',
+        //language: 'en',
       } as any);
       const text = (res as any)?.text || '';
       if (!text.trim()) return;
