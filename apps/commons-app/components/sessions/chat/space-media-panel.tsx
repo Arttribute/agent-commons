@@ -192,6 +192,7 @@ function StreamCard({
           ref={audioRef}
           autoPlay
           muted={isLocal || isMuted}
+          key={peer.audioSrc ? peer.audioSrc.slice(-16) : "nosrc"}
           className="hidden"
         />
       )}
@@ -768,6 +769,7 @@ export default function SpaceMediaPanel({
                           role: stream.role,
                           stream: stream.stream || undefined,
                           audioStream: stream.audioStream || undefined,
+                          audioSrc: stream.audioSrc,
                           publish: stream.publish,
                           isScreenShare: stream.isScreenShare,
                           isUrlShare: stream.isUrlShare,
