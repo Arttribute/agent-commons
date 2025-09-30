@@ -1,0 +1,734 @@
+// apps/commons-app/hooks/use-space-rtc.ts
+"use client";
+
+import { useEffect, useRef, useState, useCallback } from "react";
+import { io, Socket } from "socket.io-client";
+
+export interface RemotePeer {
+  id: string;
+  role: "human" | "agent";
+  publishing: { audio: boolean; video: boolean };
+  stream?: MediaStream | null;
+  audioStream?: MediaStream | null;
+  audioSrc?: string | null; // fallback source for audio element when no MediaStream is available
+  screenStream?: MediaStream | null;
+  // For server-side web capture we just keep last frame as data URL
+  webFrameUrl?: string; // last received frame
+  cameraFrameUrl?: string | null; // last received camera frame (data URL)
+  screenFrameUrl?: string | null; // last received screen frame (data URL)
+  urlSharing?: {
+    active: boolean;
+    url?: string;
+    ending?: boolean;
+    endsAt?: number;
+  };
+  lastUpdate: number;
+  isSpeaking?: boolean;
+  audioLevel?: number;
+}
+
+export interface UseSpaceRTCOptions {
+  spaceId: string;
+  selfId: string;
+  role: "human" | "agent";
+  wsBase: string; // base http(s) URL of nest server
+  autoConnect?: boolean;
+  frameIntervalMs?: number; // how often to send video frames
+  audioAnalysisIntervalMs?: number; // how often to compute audio chunk RMS
+  maxVideoWidth?: number; // downscale frames before sending
+}
+
+interface AudioWorkState {
+  context: AudioContext;
+  processor: ScriptProcessorNode;
+  source: MediaStreamAudioSourceNode;
+}
+
+export function useSpaceRTC(options: UseSpaceRTCOptions) {
+  const {
+    spaceId,
+    selfId,
+    role,
+    wsBase,
+    autoConnect = true,
+    frameIntervalMs = 700,
+    audioAnalysisIntervalMs = 400,
+    maxVideoWidth = 640,
+  } = options;
+
+  const socketRef = useRef<Socket | null>(null);
+  const joinedRef = useRef(false);
+  const videoTrackRef = useRef<MediaStreamTrack | null>(null);
+  const audioTrackRef = useRef<MediaStreamTrack | null>(null);
+  const localStreamRef = useRef<MediaStream | null>(null);
+  const screenStreamRef = useRef<MediaStream | null>(null);
+  // Local URL share is now server-driven via puppeteer capture; we keep just current URL
+  const localWebUrlRef = useRef<string | null>(null);
+  const audioWorkRef = useRef<AudioWorkState | null>(null);
+  const recorderRef = useRef<MediaRecorder | null>(null);
+  const utteranceChunksRef = useRef<Blob[]>([]);
+  const utteranceModeRef = useRef<boolean>(true); // prefer full-utterance path
+  const frameTimerRef = useRef<number | null>(null);
+  const audioTimerRef = useRef<number | null>(null);
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  // We use audioSrc on peers for TTS playback; no off-DOM audio elements needed
+
+  const [connected, setConnected] = useState(false);
+  const [joined, setJoined] = useState(false);
+  const [remotePeers, setRemotePeers] = useState<RemotePeer[]>([]);
+  const [compositeFrameUrl, setCompositeFrameUrl] = useState<
+    string | undefined
+  >();
+  const [speakingMap, setSpeakingMap] = useState<
+    Record<string, { level: number; speaking: boolean }>
+  >({});
+  const [pubState, setPubState] = useState({
+    audio: false,
+    video: false,
+    screen: false,
+    url: false,
+  });
+
+  /* ─────────────────────────  SOCKET SETUP  ───────────────────────── */
+  useEffect(() => {
+    if (!autoConnect || !spaceId || !selfId) return;
+    const url = wsBase.endsWith("/") ? wsBase.slice(0, -1) : wsBase;
+    const socket = io(`${url}/space-rtc`, {
+      transports: ["websocket"],
+      autoConnect: true,
+    });
+    socketRef.current = socket;
+
+    socket.on("connect", () => {
+      setConnected(true);
+      socket.emit("join_space", {
+        spaceId,
+        participantId: selfId,
+        participantType: role,
+      });
+    });
+
+    socket.on("disconnect", () => {
+      setConnected(false);
+      setJoined(false);
+      joinedRef.current = false;
+    });
+
+    socket.on("participant_joined", (evt: any) => {
+      setJoined(true);
+      joinedRef.current = true;
+      addOrUpdatePeer(evt.participantId, {
+        role: (evt.participantType as any) || "human",
+      });
+    });
+    socket.on("participants_snapshot", (evt: any) => {
+      try {
+        const list = (evt?.participants as any[]) || [];
+        list.forEach((p) =>
+          addOrUpdatePeer(p.participantId, {
+            role: (p.participantType as any) || "human",
+          })
+        );
+      } catch {}
+    });
+    socket.on("participant_left", (evt: any) => {
+      setRemotePeers((prev) => prev.filter((p) => p.id !== evt.participantId));
+    });
+    socket.on("composite_frame", (evt: any) => {
+      if (evt?.dataUrl) setCompositeFrameUrl(evt.dataUrl);
+    });
+    // Per-participant video frames (camera/screen/web) so UIs can render all peers concurrently
+    socket.on("participant_frame", (evt: any) => {
+      try {
+        if (!evt?.participantId || !evt?.kind || !evt?.frame) return;
+        const id = evt.participantId as string;
+        const kind = evt.kind as "camera" | "screen" | "web";
+        const frame = evt.frame as string; // data URL
+        const role = (evt.participantType as any) || "human";
+        if (kind === "web") {
+          addOrUpdatePeer(id, {
+            webFrameUrl: frame,
+            urlSharing: { active: true },
+            role,
+          });
+        } else if (kind === "screen") {
+          addOrUpdatePeer(id, {
+            screenFrameUrl: frame,
+            publishing: { audio: false, video: true },
+            role,
+          });
+        } else if (kind === "camera") {
+          addOrUpdatePeer(id, {
+            cameraFrameUrl: frame,
+            publishing: { audio: false, video: true },
+            role,
+          });
+        }
+      } catch {}
+    });
+    socket.on("audio_state", (evt: any) => {
+      if (!evt?.participants) return;
+      const map: Record<string, { level: number; speaking: boolean }> = {};
+      evt.participants.forEach((p: any) => {
+        map[p.participantId] = { level: p.audioLevel, speaking: p.isSpeaking };
+        // Ensure peer exists
+        addOrUpdatePeer(p.participantId, {
+          role: (p.participantType as any) || "human",
+          publishing:
+            p.participantType === "agent"
+              ? { audio: !!p.isSpeaking, video: false }
+              : undefined,
+          isSpeaking: p.isSpeaking,
+          audioLevel: p.audioLevel,
+        });
+      });
+      setSpeakingMap(map);
+      setRemotePeers((prev) =>
+        prev.map((rp) =>
+          map[rp.id]
+            ? {
+                ...rp,
+                isSpeaking: map[rp.id].speaking,
+                audioLevel: map[rp.id].level,
+                publishing:
+                  rp.role === "agent"
+                    ? { ...rp.publishing, audio: map[rp.id].speaking }
+                    : rp.publishing,
+              }
+            : rp
+        )
+      );
+    });
+
+    // TTS audio from server for agent participants
+    socket.on("tts_audio", async (evt: any) => {
+      try {
+        const pid: string | undefined = evt?.participantId;
+        const audio: string | undefined = evt?.audio; // data URL
+        if (!pid || !audio) return;
+
+        if (process.env.NEXT_PUBLIC_TTS_DEBUG === "true") {
+          try {
+            console.debug("[TTS] recv", {
+              pid,
+              size: audio.length,
+              mime: evt?.mime,
+              provider: evt?.provider,
+              at: evt?.at,
+            });
+            // Optionally download the audio for inspection
+            const a = document.createElement("a");
+            a.href = audio;
+            a.download = `tts_${pid}_${Date.now()}.audio`;
+            a.style.display = "none";
+            document.body.appendChild(a);
+            // comment out next line to avoid auto-download; keep logs only
+            // a.click();
+            document.body.removeChild(a);
+          } catch (e) {
+            console.debug("[TTS] debug log/download error", e);
+          }
+        }
+
+        // Ensure peer exists and mark as publishing audio
+        addOrUpdatePeer(pid, {
+          role: (evt.participantType as any) || "agent",
+          publishing: { audio: true, video: false },
+          isSpeaking: true,
+        });
+
+        // Clear previous audio attachments so UI can bind the new one deterministically
+        addOrUpdatePeer(pid, { audioStream: null, audioSrc: null });
+
+        // Set audioSrc directly; StreamCard will bind and play
+        addOrUpdatePeer(pid, {
+          audioSrc: audio,
+          publishing: { audio: true, video: false },
+          audioStream: null,
+        });
+      } catch {}
+    });
+
+    // Web capture lifecycle
+    socket.on("web_capture_started", (evt: any) => {
+      if (!evt?.participantId) return;
+      addOrUpdatePeer(evt.participantId, {
+        urlSharing: { active: true, url: evt.url },
+      });
+    });
+    socket.on("web_capture_ending", (evt: any) => {
+      if (!evt?.participantId) return;
+      const eta = Date.now() + (evt.in || 0);
+      addOrUpdatePeer(evt.participantId, {
+        urlSharing: { active: true, url: evt.url, ending: true, endsAt: eta },
+      });
+    });
+    socket.on("web_capture_stopped", (evt: any) => {
+      if (!evt?.participantId) return;
+      addOrUpdatePeer(evt.participantId, {
+        urlSharing: { active: false },
+        webFrameUrl: undefined,
+      });
+    });
+    socket.on("web_capture_frame", (evt: any) => {
+      if (!evt?.participantId || !evt?.frame) return;
+      addOrUpdatePeer(evt.participantId, {
+        webFrameUrl: evt.frame,
+        urlSharing: { active: true },
+      });
+    });
+
+    return () => {
+      try {
+        if (joinedRef.current) socket.emit("leave_space", { spaceId });
+        socket.disconnect();
+      } catch {}
+      stopAllPublishing();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [spaceId, selfId, role, wsBase, autoConnect]);
+
+  /* ─────────────────────────  PEER MGMT  ───────────────────────── */
+  const addOrUpdatePeer = useCallback(
+    (id: string, patch: Partial<RemotePeer>) => {
+      setRemotePeers((prev) => {
+        const existing = prev.find((p) => p.id === id);
+        if (existing) {
+          return prev.map((p) =>
+            p.id === id
+              ? {
+                  ...p,
+                  ...patch,
+                  publishing: patch.publishing
+                    ? patch.publishing
+                    : (p.publishing ?? { audio: false, video: false }),
+                  lastUpdate: Date.now(),
+                }
+              : p
+          );
+        }
+        return [
+          ...prev,
+          {
+            id,
+            role: (patch.role as any) || "human",
+            publishing: patch.publishing || { audio: false, video: false },
+            stream: patch.stream ?? null,
+            audioStream: patch.audioStream ?? null,
+            audioSrc: (patch as any)?.audioSrc,
+            screenStream: patch.screenStream ?? null,
+            webFrameUrl: patch.webFrameUrl,
+            cameraFrameUrl: (patch as any)?.cameraFrameUrl ?? null,
+            screenFrameUrl: (patch as any)?.screenFrameUrl ?? null,
+            urlSharing: patch.urlSharing ?? { active: false },
+            lastUpdate: Date.now(),
+            isSpeaking: patch.isSpeaking,
+            audioLevel: patch.audioLevel,
+          },
+        ];
+      });
+    },
+    []
+  );
+
+  /* ─────────────────────────  LOCAL MEDIA  ───────────────────────── */
+  const getCanvas = () => {
+    if (!canvasRef.current) {
+      canvasRef.current = document.createElement("canvas");
+    }
+    return canvasRef.current;
+  };
+
+  const startCamera = useCallback(async () => {
+    // Always acquire a fresh camera track to avoid ended tracks causing black video
+    const ms = await navigator.mediaDevices.getUserMedia({
+      video: true,
+      audio: false,
+    });
+    const newVideoTrack = ms.getVideoTracks()[0] || null;
+    videoTrackRef.current = newVideoTrack;
+    // Merge with existing audio tracks if any
+    const audioTracks = localStreamRef.current?.getAudioTracks() || [];
+    const merged = new MediaStream([
+      ...(newVideoTrack ? [newVideoTrack] : []),
+      ...audioTracks,
+    ]);
+    // Stop old video tracks
+    localStreamRef.current?.getVideoTracks().forEach((t) => {
+      try {
+        t.stop();
+      } catch {}
+    });
+    localStreamRef.current = merged;
+    return ms;
+  }, []);
+
+  const startMicrophone = useCallback(async () => {
+    if (audioTrackRef.current) return audioTrackRef.current;
+    const ms = await navigator.mediaDevices.getUserMedia({
+      audio: true,
+      video: false,
+    });
+    audioTrackRef.current = ms.getAudioTracks()[0] || null;
+    // merge audio into localStreamRef for rendering if video present
+    if (localStreamRef.current) {
+      ms.getAudioTracks().forEach((t) => localStreamRef.current!.addTrack(t));
+    } else {
+      localStreamRef.current = ms;
+    }
+    setupAudioProcessing(ms);
+    // Start full-utterance recording if enabled
+    try {
+      if (utteranceModeRef.current) {
+        const rec = new MediaRecorder(ms, {
+          mimeType: "audio/webm;codecs=opus",
+        });
+        utteranceChunksRef.current = [];
+        rec.ondataavailable = (e) => {
+          if (e.data && e.data.size > 0)
+            utteranceChunksRef.current.push(e.data);
+        };
+        rec.onstop = async () => {
+          try {
+            const blob = new Blob(utteranceChunksRef.current, {
+              type: rec.mimeType,
+            });
+            const base64 = await blobToBase64(blob);
+            const socket = socketRef.current;
+            if (socket && joinedRef.current) {
+              socket.emit("audio_utterance", {
+                audio: base64,
+                mime: rec.mimeType,
+                fileName: "utterance.webm",
+              });
+            }
+          } catch {}
+        };
+        rec.start();
+        recorderRef.current = rec;
+      }
+    } catch {}
+    return audioTrackRef.current;
+  }, []);
+
+  const stopCamera = () => {
+    try {
+      if (videoTrackRef.current) {
+        videoTrackRef.current.stop();
+        videoTrackRef.current = null;
+      }
+      if (localStreamRef.current) {
+        // Remove video tracks, keep audio tracks if any
+        localStreamRef.current.getVideoTracks().forEach((t) => t.stop());
+        const aud = localStreamRef.current.getAudioTracks();
+        localStreamRef.current = new MediaStream(aud);
+      }
+    } catch {}
+  };
+  const stopMicrophone = () => {
+    // Stop full-utterance recorder first to finalize and send
+    if (recorderRef.current) {
+      try {
+        if (recorderRef.current.state !== "inactive")
+          recorderRef.current.stop();
+      } catch {}
+      recorderRef.current = null;
+    }
+    if (audioTrackRef.current) {
+      audioTrackRef.current.stop();
+      audioTrackRef.current = null;
+    }
+    if (localStreamRef.current) {
+      localStreamRef.current.getAudioTracks().forEach((t) => t.stop());
+      localStreamRef.current = new MediaStream(
+        localStreamRef.current.getVideoTracks()
+      );
+    }
+    teardownAudioProcessing();
+  };
+
+  const startScreen = useCallback(async () => {
+    // Always request a fresh screen stream; previous may be ended
+    const ms = await (navigator.mediaDevices as any).getDisplayMedia({
+      video: true,
+      audio: false,
+    });
+    screenStreamRef.current = ms;
+    ms.getVideoTracks()[0]?.addEventListener("ended", () => {
+      setPubState((s) => ({ ...s, screen: false }));
+      screenStreamRef.current = null;
+    });
+    return ms;
+  }, []);
+
+  const stopScreen = () => {
+    if (screenStreamRef.current) {
+      screenStreamRef.current.getTracks().forEach((t) => t.stop());
+      screenStreamRef.current = null;
+    }
+  };
+
+  // Initiate / stop server web capture via socket events
+  const startUrlShare = async (url: string) => {
+    if (!socketRef.current || !joinedRef.current) return;
+    localWebUrlRef.current = url;
+    socketRef.current.emit("start_web_capture", { url });
+  };
+  const stopUrlShare = () => {
+    if (!socketRef.current || !joinedRef.current) return;
+    socketRef.current.emit("stop_web_capture", {});
+    localWebUrlRef.current = null;
+  };
+  const endUrlShareGracefully = (delayMs = 1500) => {
+    if (!socketRef.current || !joinedRef.current) return;
+    socketRef.current.emit("end_web_capture", { delayMs });
+  };
+
+  /* ─────────────────────────  AUDIO PROCESSING  ───────────────────────── */
+  const setupAudioProcessing = (ms: MediaStream) => {
+    if (audioWorkRef.current) return;
+    try {
+      const context = new AudioContext();
+      const source = context.createMediaStreamSource(ms);
+      const processor = context.createScriptProcessor(2048, 1, 1);
+      source.connect(processor);
+      processor.connect(context.destination);
+      processor.onaudioprocess = (e) => {
+        // basic RMS -> speaking detection done server-side. Here we can optionally update a local UI.
+        // We'll periodically send audio chunks (raw PCM16) below in timer.
+      };
+      audioWorkRef.current = { context, processor, source };
+    } catch (e) {
+      // ignore
+    }
+  };
+  const teardownAudioProcessing = () => {
+    if (audioWorkRef.current) {
+      audioWorkRef.current.processor.disconnect();
+      audioWorkRef.current.source.disconnect();
+      audioWorkRef.current.context.close();
+      audioWorkRef.current = null;
+    }
+  };
+
+  /* ─────────────────────────  ENCODING HELPERS  ───────────────────────── */
+  const captureAndSendVideoFrame = useCallback(
+    (kind: "camera" | "screen") => {
+      const socket = socketRef.current;
+      if (!socket || !joinedRef.current) return;
+      let mediaStream: MediaStream | null = null;
+      if (kind === "camera" && localStreamRef.current)
+        mediaStream = localStreamRef.current;
+      if (kind === "screen" && screenStreamRef.current)
+        mediaStream = screenStreamRef.current;
+      if (!mediaStream) return;
+
+      const videoEl = document.createElement("video");
+      videoEl.muted = true;
+      videoEl.srcObject = mediaStream;
+      const tryCapture = () => {
+        try {
+          const track = mediaStream!.getVideoTracks()[0];
+          if (!track) return;
+          const settings = track.getSettings();
+          const w = settings?.width || videoEl.videoWidth || 640;
+          const h = settings?.height || videoEl.videoHeight || 360;
+          if (!w || !h) {
+            // wait a bit
+            setTimeout(tryCapture, 50);
+            return;
+          }
+          const canvas = getCanvas();
+          const scale = Math.min(1, maxVideoWidth / w);
+          canvas.width = Math.round(w * scale);
+          canvas.height = Math.round(h * scale);
+          const ctx = canvas.getContext("2d")!;
+          ctx.drawImage(videoEl, 0, 0, canvas.width, canvas.height);
+          const dataUrl = canvas.toDataURL("image/jpeg", 0.6);
+          socket.emit("video_frame", {
+            kind,
+            frame: dataUrl,
+            width: canvas.width,
+            height: canvas.height,
+          });
+        } catch {}
+      };
+      videoEl.onloadedmetadata = () => {
+        videoEl.play().catch(() => {});
+        tryCapture();
+      };
+      // Fallback if onloadedmetadata doesn't fire
+      setTimeout(() => {
+        if ((videoEl as any).readyState >= 2) tryCapture();
+      }, 120);
+    },
+    [maxVideoWidth]
+  );
+
+  const sendAudioChunk = useCallback(() => {
+    const socket = socketRef.current;
+    if (!socket || !joinedRef.current) return;
+    if (!audioTrackRef.current) return;
+    if (utteranceModeRef.current) return; // in utterance mode, skip small chunks
+
+    // Capture small chunk by using a MediaRecorder over a short period
+    const ms = new MediaStream([audioTrackRef.current]);
+    try {
+      const rec = new MediaRecorder(ms, { mimeType: "audio/webm;codecs=opus" });
+      const chunks: Blob[] = [];
+      rec.ondataavailable = (e) => {
+        if (e.data.size > 0) chunks.push(e.data);
+      };
+      rec.onstop = () => {
+        const blob = new Blob(chunks, { type: "audio/webm" });
+        blob.arrayBuffer().then((ab) => {
+          const b64 = btoa(String.fromCharCode(...new Uint8Array(ab)));
+          socket.emit("audio_chunk", { audio: b64 });
+        });
+      };
+      rec.start();
+      setTimeout(() => rec.stop(), 150); // ~150ms chunk
+    } catch (e) {
+      // ignore
+    }
+  }, []);
+
+  /* ─────────────────────────  TIMERS  ───────────────────────── */
+  useEffect(() => {
+    if (!joined || (!pubState.video && !pubState.screen)) {
+      if (frameTimerRef.current) {
+        clearInterval(frameTimerRef.current);
+        frameTimerRef.current = null;
+      }
+    } else if (!frameTimerRef.current) {
+      frameTimerRef.current = window.setInterval(() => {
+        if (pubState.video) captureAndSendVideoFrame("camera");
+        if (pubState.screen) captureAndSendVideoFrame("screen");
+      }, frameIntervalMs);
+    }
+    return () => {
+      if (frameTimerRef.current) {
+        clearInterval(frameTimerRef.current);
+        frameTimerRef.current = null;
+      }
+    };
+  }, [
+    joined,
+    pubState.video,
+    pubState.screen,
+    pubState.url,
+    captureAndSendVideoFrame,
+    frameIntervalMs,
+  ]);
+
+  useEffect(() => {
+    if (!joined || !pubState.audio) {
+      if (audioTimerRef.current) {
+        clearInterval(audioTimerRef.current);
+        audioTimerRef.current = null;
+      }
+    } else if (!audioTimerRef.current) {
+      if (utteranceModeRef.current) return; // do not set interval in utterance mode
+      audioTimerRef.current = window.setInterval(() => {
+        sendAudioChunk();
+      }, audioAnalysisIntervalMs);
+    }
+    return () => {
+      if (audioTimerRef.current) {
+        clearInterval(audioTimerRef.current);
+        audioTimerRef.current = null;
+      }
+    };
+  }, [joined, pubState.audio, sendAudioChunk, audioAnalysisIntervalMs]);
+
+  // Helper: convert Blob to base64 without data URL prefix
+  const blobToBase64 = (blob: Blob): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        try {
+          const dataUrl = reader.result as string;
+          const idx = dataUrl.indexOf(",");
+          resolve(idx !== -1 ? dataUrl.substring(idx + 1) : dataUrl);
+        } catch (e) {
+          reject(e);
+        }
+      };
+      reader.onerror = reject;
+      reader.readAsDataURL(blob);
+    });
+  };
+
+  /* ─────────────────────────  PUBLISH TOGGLES  ───────────────────────── */
+  const togglePublish = useCallback(
+    async (
+      kind: "audio" | "video" | "screen" | "url",
+      urlForShare?: string
+    ) => {
+      if (!socketRef.current) return;
+      if (!joinedRef.current) return;
+      if (kind === "audio") {
+        if (pubState.audio) {
+          stopMicrophone();
+          setPubState((s) => ({ ...s, audio: false }));
+        } else {
+          await startMicrophone();
+          setPubState((s) => ({ ...s, audio: true }));
+        }
+      } else if (kind === "video") {
+        if (pubState.video) {
+          stopCamera();
+          setPubState((s) => ({ ...s, video: false }));
+        } else {
+          await startCamera();
+          setPubState((s) => ({ ...s, video: true }));
+        }
+      } else if (kind === "screen") {
+        if (pubState.screen) {
+          stopScreen();
+          setPubState((s) => ({ ...s, screen: false }));
+        } else {
+          await startScreen();
+          setPubState((s) => ({ ...s, screen: true }));
+        }
+      } else if (kind === "url") {
+        if (pubState.url) {
+          stopUrlShare();
+          setPubState((s) => ({ ...s, url: false }));
+        } else if (urlForShare) {
+          await startUrlShare(urlForShare);
+          setPubState((s) => ({ ...s, url: true }));
+        }
+      }
+    },
+    [pubState, startCamera, startMicrophone, startScreen]
+  );
+
+  const stopAllPublishing = () => {
+    stopCamera();
+    stopMicrophone();
+    stopScreen();
+    stopUrlShare();
+    setPubState({ audio: false, video: false, screen: false, url: false });
+  };
+
+  /* ─────────────────────────  RETURN API  ───────────────────────── */
+  return {
+    // connection
+    socket: socketRef.current,
+    connected,
+    joined,
+    // local media
+    localStream: localStreamRef,
+    localScreenStream: screenStreamRef,
+    localWebUrl: localWebUrlRef.current,
+    pubState,
+    togglePublish,
+    stopAllPublishing,
+    endWebCapture: endUrlShareGracefully,
+    // remote
+    remotePeers,
+    speakingMap,
+    compositeFrameUrl,
+  };
+}

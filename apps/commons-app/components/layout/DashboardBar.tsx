@@ -92,7 +92,7 @@ export const DashboardBar: FC<DashboardBarProps> = ({ activeTab }) => {
 
             <CommandSeparator />
 
-            <CommandGroup heading="Agent Activity">
+            <CommandGroup heading="Your Profile">
               <CommandItem
                 onSelect={() => handleNavigation("profile")}
                 className={
@@ -103,18 +103,6 @@ export const DashboardBar: FC<DashboardBarProps> = ({ activeTab }) => {
               >
                 <User />
                 <span>Profile</span>
-              </CommandItem>
-
-              <CommandItem
-                onSelect={() => handleNavigation("balances")}
-                className={
-                  activeTab === "balances"
-                    ? "bg-accent text-accent-foreground"
-                    : ""
-                }
-              >
-                <CreditCard />
-                <span>Balances</span>
               </CommandItem>
             </CommandGroup>
           </CommandList>

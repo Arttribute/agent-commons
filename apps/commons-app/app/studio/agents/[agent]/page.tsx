@@ -2,27 +2,26 @@
 
 import { useEffect, useState, useRef } from "react";
 import { use } from "react";
-import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
-import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { ScrollArea } from "@/components/ui/scroll-area";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { Loader2 } from "lucide-react";
+import { Loader2, Scroll } from "lucide-react";
 
 // Layout & local components
 import AppBar from "@/components/layout/app-bar";
-import KnowledgeBaseInput from "@/components/agents/KnowledgeBaseInput";
-import { InteractionInterface } from "@/components/agents/InteractionInterface";
-import { Presets } from "@/components/agents/presets";
-import { FundAgent } from "@/components/agents/FundAgent";
-import RandomAvatar from "@/components/account/random-avatar";
-
+import AgentFinances from "@/components/finances/agent-finances";
+import AgentTools from "@/components/tools/agent-tools";
+import AgentIdentity from "@/components/agents/agent-identity";
+import SessionInterface from "@/components/sessions/session-interface";
+import { AgentMetrics } from "@/components/agents/agent-metrics";
+import { AgentKnowledgebase } from "@/components/agents/agent-knowledge-base";
+import SessionsList from "@/components/sessions/sessions-list";
+import { PreferedAgentConnections } from "@/components/connections/prefered-agent-connections";
+import { useAgentContext } from "@/context/AgentContext";
 // Hooks
 import { EIP1193Provider, useWallets } from "@privy-io/react-auth";
 import { useChainClients } from "@/hooks/useChainClients";
 import { useCommonToken } from "@/hooks/useCommonToken";
 import { useAuth } from "@/context/AuthContext";
+import { ScrollArea } from "@/components/ui/scroll-area";
 
 // Types
 import { CommonAgent } from "@/types/agent";
@@ -67,6 +66,8 @@ export default function AgentStudio({
 }) {
   // 1) Basic Setup
   const agentid = use(params);
+  console.log("Agent ID:", agentid);
+  const { messages, setMessages } = useAgentContext();
   const id = agentid.agent;
 
   const [agent, setAgent] = useState<CommonAgent | null>(null);
@@ -118,6 +119,17 @@ export default function AgentStudio({
   const { publicClient, walletClient } = useChainClients(provider);
   const { balanceOf } = useCommonToken(publicClient, walletClient);
 
+  // Add state for new resources
+  const [knowledgebase, setKnowledgebase] = useState<any[]>([]);
+  const [preferredConnections, setPreferredConnections] = useState<any[]>([]);
+  const [agentTools, setAgentTools] = useState<any[]>([]);
+  const [sessions, setSessions] = useState<any[]>([]);
+
+  // Chat state for studio page
+  const [studioSession, setStudioSession] = useState<any>(null);
+  const [studioMessages, setStudioMessages] = useState<any[]>([]);
+  const [chatLoading, setChatLoading] = useState(false);
+
   // 2) Fetch agent data from your backend
   useEffect(() => {
     if (id) {
@@ -158,11 +170,103 @@ export default function AgentStudio({
 
   // 3) Fetch the agent's Common$ balance
   useEffect(() => {
-    if (!agent?.agentId) return;
+    if (!id) return;
     balanceOf(id as `0x${string}`).then(setAgentBalance);
-  }, [agent?.agentId, balanceOf]);
+  }, [id, balanceOf]);
 
-  const agentAddress = agent?.agentId || "";
+  // Fetch new resources
+  useEffect(() => {
+    if (id) {
+      fetch(`/api/agents/${id}/knowledgebase`)
+        .then((res) => res.json())
+        .then((json) => setKnowledgebase(json.data || []));
+      fetch(`/api/agents/${id}/preferred-connections`)
+        .then((res) => res.json())
+        .then((json) => setPreferredConnections(json.data || []));
+      fetch(`/api/agents/${id}/tools`)
+        .then((res) => res.json())
+        .then((json) => setAgentTools(json.data || []));
+    }
+  }, [id]);
+
+  const fetchSessions = async () => {
+    const agentId = id;
+    console.log("User Address:", userAddress);
+    const res = await fetch(
+      `/api/sessions/list?agentId=${agentId}&initiatorId=${userAddress}`
+    );
+    const data = await res.json();
+    console.log("Fetched sessions: Data", data);
+    setSessions(data.data || []);
+    console.log("Fetched sessions:", data.data);
+  };
+
+  // Fetch sessions for this agent
+  useEffect(() => {
+    if (id && userAddress) {
+      fetchSessions();
+    }
+  }, [id, userAddress]);
+
+  // Start a new session or fetch the latest session for this agent and user
+  useEffect(() => {
+    if (!id || !userAddress) return;
+    async function fetchOrCreateSession() {
+      setChatLoading(true);
+      // Try to find an existing session for this agent and user
+      const res = await fetch(
+        `/api/sessions?agentId=${id}&initiator=${userAddress}`
+      );
+      const json = await res.json();
+      let session = json.data && json.data.length > 0 ? json.data[0] : null;
+      if (!session) {
+        // Create a new session
+        const createRes = await fetch(`/api/sessions`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ agentId: id, initiator: userAddress }),
+        });
+        const createJson = await createRes.json();
+        session = createJson.data;
+      }
+      setStudioSession(session);
+      setStudioMessages(session.history || []);
+      setChatLoading(false);
+    }
+    fetchOrCreateSession();
+  }, [id, userAddress]);
+
+  // Send a message in the studio chat
+  async function handleStudioSendMessage(input: string) {
+    if (!studioSession) return;
+    setChatLoading(true);
+    setStudioMessages((prev) => [
+      ...prev,
+      { role: "human", content: input, timestamp: new Date().toISOString() },
+    ]);
+    // Send to backend
+    const res = await fetch(`/api/agents/run`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        agentId: id,
+        sessionId: studioSession.sessionId,
+        messages: [{ role: "user", content: input }],
+      }),
+    });
+    const json = await res.json();
+    setStudioMessages((prev) => [
+      ...prev,
+      {
+        role: "ai",
+        content: json.data.content,
+        timestamp: new Date().toISOString(),
+      },
+    ]);
+    setChatLoading(false);
+  }
+
+  const agentAddress = id || "";
   const formattedAddress =
     agentAddress.length > 20
       ? `${agentAddress.slice(0, 8)}...${agentAddress.slice(-7)}`
@@ -254,9 +358,9 @@ export default function AgentStudio({
     <div>
       <AppBar />
 
-      <div className="grid grid-cols-12 gap-2 mt-16">
+      <div className="grid grid-cols-9 gap-2 mt-12 bg-gray-50">
         {/* Left Panel */}
-        <div className="col-span-3">
+        <div className="col-span-2 bg-white border-r border-gray-400 ">
           {loadingAgent ? (
             <div className="flex items-center justify-center h-32 gap-2">
               <Loader2 className="h-5 w-5 animate-spin" />
@@ -264,144 +368,44 @@ export default function AgentStudio({
             </div>
           ) : agent ? (
             <>
-              {/* Agent Header */}
-              <div className="flex items-center">
-                <Avatar className="h-12 w-12 m-2">
-                  <AvatarImage src={agent.avatar} />
-                  <AvatarFallback>
-                    <RandomAvatar username={id} size={48} />
-                  </AvatarFallback>
-                </Avatar>
-                <div className="flex flex-col justify-center">
-                  {!isEditing ? (
-                    <h1 className="text-xl font-bold">
-                      {agent.name || "Unnamed Agent"}
-                    </h1>
-                  ) : (
-                    <Input
-                      value={editForm.name ?? ""}
-                      onChange={(e) =>
-                        setEditForm((prev) => ({
-                          ...prev,
-                          name: e.target.value,
-                        }))
-                      }
-                      className="text-xl font-bold"
-                    />
-                  )}
-                  <div className="flex items-center gap-2 bg-gray-100 p-1 rounded-3xl w-52">
-                    <p className="text-gray-500 text-xs">{formattedAddress}</p>
-                  </div>
-                </div>
-              </div>
+              <div className="flex flex-col gap-2 p-3">
+                <AgentIdentity
+                  agent={agent}
+                  isOwner={userAddress === agent?.owner}
+                  onUpdate={async (data) => {
+                    setEditForm((prev) => ({ ...prev, ...data }));
+                    await updateAgentInDB();
+                    fetchAgent();
+                  }}
+                />
+                <AgentFinances />
 
-              {/* Agent balance + fund button */}
-              <div className="grid grid-cols-7 gap-2 m-4 border p-2 rounded-lg">
-                <div className="col-span-4 flex flex-col justify-center">
-                  <p className="font-semibold text-gray-800 ml-2">
-                    Common$:{" "}
-                    <span className="text-blue-700">
-                      {(Number(agentBalance) / 1e18).toFixed(4)}
-                    </span>
-                  </p>
-                </div>
-                <div className="col-span-3">
-                  <FundAgent
-                    agentAddress={id as `0x${string}`}
-                    onFundSuccess={() => {
-                      if (agent?.agentId) {
-                        balanceOf(id as `0x${string}`).then(setAgentBalance);
-                      }
-                    }}
-                  />
-                </div>
-              </div>
-
-              {/* Persona + Instructions */}
-              <div className="m-2 border rounded-lg p-2">
-                {/* Persona */}
-                <div className="mb-2">
-                  <Label htmlFor="persona">Persona</Label>
-                  {!isEditing ? (
-                    <Textarea
-                      id="persona"
-                      value={agent.persona || ""}
-                      readOnly
-                      placeholder="N/A"
-                      className="min-h-[80px]"
-                    />
-                  ) : (
-                    <Textarea
-                      id="persona"
-                      value={editForm.persona || ""}
-                      onChange={(e) =>
-                        setEditForm((prev) => ({
-                          ...prev,
-                          persona: e.target.value,
-                        }))
-                      }
-                      className="min-h-[80px]"
-                    />
-                  )}
-                </div>
-
-                {/* Instructions */}
-                <div>
-                  <Label htmlFor="instructions">Instructions</Label>
-                  {!isEditing ? (
-                    <Textarea
-                      id="instructions"
-                      value={agent.instructions || ""}
-                      readOnly
-                      placeholder="N/A"
-                      className="h-[80px]"
-                    />
-                  ) : (
-                    <Textarea
-                      id="instructions"
-                      value={editForm.instructions || ""}
-                      onChange={(e) =>
-                        setEditForm((prev) => ({
-                          ...prev,
-                          instructions: e.target.value,
-                        }))
-                      }
-                      className="h-[80px]"
-                    />
-                  )}
-                </div>
-              </div>
-
-              {/* KnowledgeBase */}
-              <div className="border p-2 rounded-lg m-2">
-                <Label htmlFor="knowledgebase">Knowledge Base</Label>
-                {!isEditing ? (
-                  <KnowledgeBaseInput
-                    value={agent.knowledgebase || ""}
-                    onChange={() => {}}
-                  />
-                ) : (
-                  <KnowledgeBaseInput
-                    value={editForm.knowledgebase || ""}
-                    onChange={(value) =>
-                      setEditForm((prev) => ({
-                        ...prev,
-                        knowledgebase: value,
-                      }))
-                    }
-                  />
-                )}
+                <AgentTools
+                  agentTools={agentTools}
+                  setAgentTools={setAgentTools}
+                  agentId={id}
+                />
+                <AgentKnowledgebase
+                  knowledgebase={knowledgebase}
+                  setKnowledgebase={setKnowledgebase}
+                  agentId={id}
+                />
+                <PreferedAgentConnections
+                  preferredConnections={preferredConnections}
+                  setPreferredConnections={setPreferredConnections}
+                  agentId={id}
+                />
               </div>
 
               {/* Edit / Save Buttons */}
-              <div className="m-2 flex gap-2">
+              {/* <div className="m-2 flex gap-2">
                 {!isEditing ? (
                   <Button variant="outline" onClick={() => setIsEditing(true)}>
                     Edit
                   </Button>
                 ) : (
                   <>
-                    {/* Manual Save (forces immediate update, ends editing) */}
+                   
                     <Button onClick={handleSaveChanges}>Save</Button>
                     <Button
                       variant="outline"
@@ -423,7 +427,7 @@ export default function AgentStudio({
                     </Button>
                   </>
                 )}
-              </div>
+              </div> */}
             </>
           ) : (
             <div className="m-4">
@@ -432,30 +436,32 @@ export default function AgentStudio({
           )}
         </div>
 
-        {/* Interaction Panel */}
-        <div className="col-span-6 my-2">
-          {agent ? (
-            <InteractionInterface agentId={id} />
-          ) : (
-            <div className="p-12 text-center">
-              {!loadingAgent && <p>No agent loaded.</p>}
-            </div>
-          )}
+        <div className="col-span-5">
+          <SessionInterface
+            agent={agent}
+            session={studioSession}
+            agentId={id}
+            sessionId={studioSession?.sessionId || ""}
+            userId={userAddress}
+            height="72vh"
+            onSessionCreated={(newSessionId) => {
+              // Fetch the new session and update state
+              fetch(`/api/sessions/session/full?sessionId=${newSessionId}`)
+                .then((res) => res.json())
+                .then((json) => setStudioSession(json.data));
+            }}
+          />
         </div>
 
-        {/* Right Panel (Presets, etc.) */}
-        <div className="col-span-3">
-          <ScrollArea className="h-[90vh] border p-3 my-2 mr-2 rounded-lg">
-            <Presets
-              agent={editForm}
-              setAgent={setEditForm}
-              customTools={customTools}
-              setCustomTools={setCustomTools}
-              modelConfig={modelConfig}
-              setModelConfig={setModelConfig}
-              userAddress={userAddress}
-            />
-          </ScrollArea>
+        <div className="col-span-2 p-2">
+          <AgentMetrics agentId={id} />
+
+          <div className="m-2 bg-white border border-gray-400 rounded-xl p-2">
+            <h3 className="text-sm font-semibold">Recent Sessions</h3>
+            <ScrollArea className="h-48 p-1">
+              <SessionsList sessions={sessions} />
+            </ScrollArea>
+          </div>
         </div>
       </div>
     </div>
