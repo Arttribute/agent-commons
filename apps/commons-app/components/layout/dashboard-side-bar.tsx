@@ -8,6 +8,8 @@ import { PanelLeft, BookOpen, PlusCircle, Sparkles, Earth } from "lucide-react";
 import { AgentTitleCard } from "@/components/agents/agent-title-card";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { DashboardBar } from "./DashboardBar";
+import SessionsList from "../sessions/sessions-list";
+import { useAuth } from "@/context/AuthContext";
 
 function NavItem({
   icon: Icon,
@@ -34,23 +36,21 @@ function NavItem({
 export function DashboardSideBar({ username }: { username: string }) {
   const [isOpen, setIsOpen] = useState(false);
   const [recentChats, setRecentChats] = useState<any[]>([]);
+  const { authState } = useAuth();
+  const { walletAddress } = authState;
 
+  const userAddress = walletAddress?.toLowerCase();
   useEffect(() => {
-    async function fetchRecentChats() {
-      try {
-        const res = await fetch(`/api/users/user?username=${username}`);
-        if (!res.ok) {
-          throw new Error("Failed to fetch user data");
-        }
-        const data = await res.json();
-        // data.sessionsByLastInteraction is already sorted newest -> oldest
-        setRecentChats(data.sessionsByLastInteraction || []);
-      } catch (error) {
-        console.error(error);
-      }
-    }
+    const fetchSessions = async () => {
+      if (!username) return;
+      const res = await fetch(
+        `/api/sessions/list?agentId=${"0x385e15a9d5e94c3df8090dc024473b6002f03c03"}&initiatorId=${userAddress}`
+      );
+      const data = await res.json();
+      setRecentChats(data.data || []);
+    };
 
-    fetchRecentChats();
+    fetchSessions();
   }, [username]);
 
   return (
@@ -62,8 +62,11 @@ export function DashboardSideBar({ username }: { username: string }) {
     >
       <div className="px-3 pt-4 flex items-center">
         {isOpen ? (
-          <div className="flex items-center justify-between w-full">
-            <DashboardBar activeTab="agents" />
+          <div>
+            <div className="flex items-center justify-between w-full">
+              <DashboardBar activeTab="agents" />
+            </div>
+            <SessionsList sessions={recentChats} />
           </div>
         ) : (
           <div className="px-2">
