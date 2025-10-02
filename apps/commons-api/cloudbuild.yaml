@@ -25,7 +25,7 @@ steps:
         ".",
       ]
 
-  - name: "bash"
+  - name: "gcr.io/cloud-builders/docker"
     entrypoint: bash
     args:
       - -c
@@ -43,14 +43,15 @@ steps:
       ]
 
   - name: "gcr.io/cloud-builders/gcloud"
-    entrypoint: gcloud
+    entrypoint: bash
     args:
-      - run
-      - deploy
-      - arttribute-commons-api-$([ "$BRANCH_NAME" = "main" ] && echo "prod" || echo "$BRANCH_NAME")
-      - --region=europe-west1
-      - --platform=managed
-      - --image=europe-west1-docker.pkg.dev/$PROJECT_ID/commons/commons-api:$([ "$BRANCH_NAME" = "main" ] && echo "prod" || echo "$BRANCH_NAME")
+      - -c
+      - |
+        DEPLOY_TAG=$([ "$BRANCH_NAME" = "main" ] && echo "prod" || echo "$BRANCH_NAME")
+        gcloud run deploy arttribute-commons-api-$DEPLOY_TAG \
+          --region=europe-west1 \
+          --platform=managed \
+          --image=europe-west1-docker.pkg.dev/$PROJECT_ID/commons/commons-api:$DEPLOY_TAG
 
     timeout: 1800s
 # options:
