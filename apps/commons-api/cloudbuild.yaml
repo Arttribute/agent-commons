@@ -1,7 +1,3 @@
-substitutions:
-  _TAG: "default"
-  _DEPLOY_TAG: ${BRANCH_NAME}
-
 steps:
   - name: node
     dir: "./apps/commons-api"
