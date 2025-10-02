@@ -1,4 +1,5 @@
 substitutions:
+  _TAG: "default"
   _DEPLOY_TAG: ${BRANCH_NAME}
 
 steps:
@@ -11,6 +12,7 @@ steps:
         npm install -g pnpm
         pnpm install
         pnpm build
+
   - name: "gcr.io/cloud-builders/docker"
     dir: "./apps/commons-api"
     args:
@@ -41,9 +43,7 @@ steps:
       ]
 
   - name: "gcr.io/cloud-builders/gcloud"
-
     entrypoint: gcloud
-
     args:
       - run
       - deploy
