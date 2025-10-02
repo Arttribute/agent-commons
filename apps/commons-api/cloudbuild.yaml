@@ -26,9 +26,9 @@ steps:
     args:
       - -c
       - |
-        TAG=$([ "$BRANCH_NAME" = "main" ] && echo "prod" || echo "$BRANCH_NAME")
+        **tag**=$([ "$BRANCH_NAME" = "main" ] && echo "prod" || echo "$BRANCH_NAME")
         docker tag europe-west1-docker.pkg.dev/$PROJECT_ID/commons/commons-api:$SHORT_SHA \
-                   europe-west1-docker.pkg.dev/$PROJECT_ID/commons/commons-api:$TAG
+                   europe-west1-docker.pkg.dev/$PROJECT_ID/commons/commons-api:**$tag**
 
   - name: "gcr.io/cloud-builders/docker"
     args:
@@ -43,11 +43,11 @@ steps:
     args:
       - -c
       - |
-        DEPLOY_TAG=$([ "$BRANCH_NAME" = "main" ] && echo "prod" || echo "$BRANCH_NAME")
-        gcloud run deploy arttribute-commons-api-$DEPLOY_TAG \
+        **deploy_tag**=$([ "$BRANCH_NAME" = "main" ] && echo "prod" || echo "$BRANCH_NAME")
+        gcloud run deploy arttribute-commons-api-**$deploy_tag** \
           --region=europe-west1 \
           --platform=managed \
-          --image=europe-west1-docker.pkg.dev/$PROJECT_ID/commons/commons-api:$DEPLOY_TAG
+          --image=europe-west1-docker.pkg.dev/$PROJECT_ID/commons/commons-api:**$deploy_tag**
 
     timeout: 1800s
 # options:
