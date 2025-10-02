@@ -1,5 +1,5 @@
 steps:
-  - name: node
+  - name: gcr.io/cloud-builders/node:22
     dir: "./apps/commons-api"
     entrypoint: "bash"
     args:
