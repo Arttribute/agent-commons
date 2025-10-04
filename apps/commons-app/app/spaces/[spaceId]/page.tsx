@@ -13,8 +13,7 @@ interface FullSpace {
 }
 
 export default function SpaceDetailPage() {
-  const params = useParams() as { spaceId: string };
-  const { spaceId } = params;
+  const { spaceId } = useParams() as { spaceId: string };
   const { authState } = useAuth();
   const { walletAddress } = authState;
   const [space, setSpace] = useState<FullSpace | null>(null);
