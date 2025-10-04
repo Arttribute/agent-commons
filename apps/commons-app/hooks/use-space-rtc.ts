@@ -57,6 +57,20 @@ export function useSpaceRTC(options: UseSpaceRTCOptions) {
   } = options;
 
   const socketRef = useRef<Socket | null>(null);
+  // Always use WebRTC for participant audio/video/screen (no env gating). Minimal STUN list.
+  const iceServers: RTCIceServer[] = [
+    { urls: "stun:stun.l.google.com:19302" },
+    { urls: "stun:stun1.l.google.com:19302" },
+  ];
+
+  // PeerConnection management
+  const pcMapRef = useRef<Map<string, RTCPeerConnection>>(new Map());
+  const makingOfferRef = useRef<Map<string, boolean>>(new Map());
+  const ignoreOfferRef = useRef<Map<string, boolean>>(new Map());
+  const pendingCandidatesRef = useRef<Map<string, RTCIceCandidateInit[]>>(
+    new Map()
+  );
+  const remoteStreamMapRef = useRef<Map<string, MediaStream>>(new Map());
   const joinedRef = useRef(false);
   const videoTrackRef = useRef<MediaStreamTrack | null>(null);
   const audioTrackRef = useRef<MediaStreamTrack | null>(null);
@@ -76,6 +90,11 @@ export function useSpaceRTC(options: UseSpaceRTCOptions) {
   const [connected, setConnected] = useState(false);
   const [joined, setJoined] = useState(false);
   const [remotePeers, setRemotePeers] = useState<RemotePeer[]>([]);
+  // Keep a ref of remotePeers for merging publishing flags safely inside event handlers
+  const remotePeersRef = useRef<RemotePeer[]>([]);
+  useEffect(() => {
+    remotePeersRef.current = remotePeers;
+  }, [remotePeers]);
   const [compositeFrameUrl, setCompositeFrameUrl] = useState<
     string | undefined
   >();
@@ -112,6 +131,8 @@ export function useSpaceRTC(options: UseSpaceRTCOptions) {
       setConnected(false);
       setJoined(false);
       joinedRef.current = false;
+      // Clear remote peers to avoid stale TTS replays when reconnecting
+      setRemotePeers([]);
     });
 
     socket.on("participant_joined", (evt: any) => {
@@ -120,50 +141,55 @@ export function useSpaceRTC(options: UseSpaceRTCOptions) {
       addOrUpdatePeer(evt.participantId, {
         role: (evt.participantType as any) || "human",
       });
+      if (evt.participantId !== selfId) ensurePeerConnection(evt.participantId);
     });
     socket.on("participants_snapshot", (evt: any) => {
       try {
         const list = (evt?.participants as any[]) || [];
-        list.forEach((p) =>
+        list.forEach((p) => {
           addOrUpdatePeer(p.participantId, {
             role: (p.participantType as any) || "human",
-          })
-        );
+          });
+          if (p.participantId !== selfId) ensurePeerConnection(p.participantId);
+        });
       } catch {}
     });
     socket.on("participant_left", (evt: any) => {
       setRemotePeers((prev) => prev.filter((p) => p.id !== evt.participantId));
+      closePeerConnection(evt.participantId);
     });
     socket.on("composite_frame", (evt: any) => {
       if (evt?.dataUrl) setCompositeFrameUrl(evt.dataUrl);
     });
-    // Per-participant video frames (camera/screen/web) so UIs can render all peers concurrently
+    // Per-participant video frames (camera/screen/web) so UIs can render all peers concurrently (frames mode only)
     socket.on("participant_frame", (evt: any) => {
+      // Retain only for web/url capture frames (kind === 'web')
       try {
         if (!evt?.participantId || !evt?.kind || !evt?.frame) return;
         const id = evt.participantId as string;
         const kind = evt.kind as "camera" | "screen" | "web";
         const frame = evt.frame as string; // data URL
         const role = (evt.participantType as any) || "human";
+        // Preserve existing publishing audio flag (mic) if we update video flag here
+        const existing = remotePeersRef.current.find((p) => p.id === id);
+        const basePatch: any = { role };
         if (kind === "web") {
-          addOrUpdatePeer(id, {
-            webFrameUrl: frame,
-            urlSharing: { active: true },
-            role,
-          });
+          basePatch.webFrameUrl = frame;
+          basePatch.urlSharing = { active: true };
         } else if (kind === "screen") {
-          addOrUpdatePeer(id, {
-            screenFrameUrl: frame,
-            publishing: { audio: false, video: true },
-            role,
-          });
+          basePatch.screenFrameUrl = frame;
+          basePatch.publishing = {
+            audio: existing?.publishing?.audio || false,
+            video: true,
+          };
         } else if (kind === "camera") {
-          addOrUpdatePeer(id, {
-            cameraFrameUrl: frame,
-            publishing: { audio: false, video: true },
-            role,
-          });
+          basePatch.cameraFrameUrl = frame;
+          basePatch.publishing = {
+            audio: existing?.publishing?.audio || false,
+            video: true,
+          };
         }
+        addOrUpdatePeer(id, basePatch);
       } catch {}
     });
     socket.on("audio_state", (evt: any) => {
@@ -171,13 +197,9 @@ export function useSpaceRTC(options: UseSpaceRTCOptions) {
       const map: Record<string, { level: number; speaking: boolean }> = {};
       evt.participants.forEach((p: any) => {
         map[p.participantId] = { level: p.audioLevel, speaking: p.isSpeaking };
-        // Ensure peer exists
+        // Update speaking info; defer publishing merge to setRemotePeers so we preserve existing video flag
         addOrUpdatePeer(p.participantId, {
           role: (p.participantType as any) || "human",
-          publishing:
-            p.participantType === "agent"
-              ? { audio: !!p.isSpeaking, video: false }
-              : undefined,
           isSpeaking: p.isSpeaking,
           audioLevel: p.audioLevel,
         });
@@ -190,10 +212,10 @@ export function useSpaceRTC(options: UseSpaceRTCOptions) {
                 ...rp,
                 isSpeaking: map[rp.id].speaking,
                 audioLevel: map[rp.id].level,
-                publishing:
-                  rp.role === "agent"
-                    ? { ...rp.publishing, audio: map[rp.id].speaking }
-                    : rp.publishing,
+                publishing: {
+                  audio: map[rp.id].speaking,
+                  video: rp.publishing?.video || false,
+                },
               }
             : rp
         )
@@ -240,9 +262,10 @@ export function useSpaceRTC(options: UseSpaceRTCOptions) {
         // Clear previous audio attachments so UI can bind the new one deterministically
         addOrUpdatePeer(pid, { audioStream: null, audioSrc: null });
 
-        // Set audioSrc directly; StreamCard will bind and play
+        // Set audioSrc directly; StreamCard will bind and play.
+        // Attach synthetic unique suffix to break cache if same data repeats.
         addOrUpdatePeer(pid, {
-          audioSrc: audio,
+          audioSrc: audio + `#t=${Date.now()}`,
           publishing: { audio: true, video: false },
           audioStream: null,
         });
@@ -278,12 +301,88 @@ export function useSpaceRTC(options: UseSpaceRTCOptions) {
       });
     });
 
+    // Signaling: WebRTC
+    {
+      socket.on("rtc_offer", async (evt: any) => {
+        try {
+          const from: string = evt?.from;
+          const to: string = evt?.to;
+          const description: RTCSessionDescriptionInit | undefined =
+            evt?.description;
+          if (!from || !to || !description) return;
+          if (from === selfId) return; // ignore self
+          if (to !== selfId) return; // not for us
+          const pc = ensurePeerConnection(from);
+          const isPolite = selfId > from; // simple lexical tie-breaker
+          const makingOffer = makingOfferRef.current.get(from) || false;
+          const offerCollision =
+            description.type === "offer" &&
+            (makingOffer || pc.signalingState !== "stable");
+          if (offerCollision && !isPolite) {
+            // Ignore the offer, mark so we roll back if needed
+            ignoreOfferRef.current.set(from, true);
+            return;
+          }
+          ignoreOfferRef.current.set(from, false);
+          await pc.setRemoteDescription(description);
+          // Apply any queued ICE candidates
+          flushQueuedCandidates(from);
+          if (description.type === "offer") {
+            const answer = await pc.createAnswer();
+            await pc.setLocalDescription(answer);
+            socket.emit("rtc_answer", {
+              to: from,
+              description: pc.localDescription,
+            });
+          }
+        } catch (e) {
+          // failed negotiation attempt; rollback if needed
+        }
+      });
+      socket.on("rtc_answer", async (evt: any) => {
+        try {
+          const from: string = evt?.from;
+          const to: string = evt?.to;
+          const description: RTCSessionDescriptionInit | undefined =
+            evt?.description;
+          if (!from || !to || !description) return;
+          if (to !== selfId) return; // not for us
+          const pc = pcMapRef.current.get(from);
+          if (!pc) return;
+          await pc.setRemoteDescription(description);
+          flushQueuedCandidates(from);
+        } catch {}
+      });
+      socket.on("rtc_ice_candidate", async (evt: any) => {
+        try {
+          const from: string = evt?.from;
+          const to: string = evt?.to;
+          const candidate: RTCIceCandidateInit = evt?.candidate;
+          if (!from || !to || !candidate) return;
+          if (to !== selfId) return; // not for us
+          const pc = pcMapRef.current.get(from);
+          if (!pc) return; // might race with join; drop or queue
+          if (pc.remoteDescription) {
+            try {
+              await pc.addIceCandidate(candidate);
+            } catch {}
+          } else {
+            // queue until remote description applied
+            const list = pendingCandidatesRef.current.get(from) || [];
+            list.push(candidate);
+            pendingCandidatesRef.current.set(from, list);
+          }
+        } catch {}
+      });
+    }
+
     return () => {
       try {
         if (joinedRef.current) socket.emit("leave_space", { spaceId });
         socket.disconnect();
       } catch {}
       stopAllPublishing();
+      Array.from(pcMapRef.current.keys()).forEach(closePeerConnection);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [spaceId, selfId, role, wsBase, autoConnect]);
@@ -523,44 +622,91 @@ export function useSpaceRTC(options: UseSpaceRTCOptions) {
         mediaStream = screenStreamRef.current;
       if (!mediaStream) return;
 
-      const videoEl = document.createElement("video");
-      videoEl.muted = true;
-      videoEl.srcObject = mediaStream;
-      const tryCapture = () => {
+      const track = mediaStream.getVideoTracks()[0];
+      if (!track) return;
+
+      // Prefer ImageCapture API for direct frame grabbing (more reliable, no <video> readiness race)
+      // @ts-ignore
+      if (
+        typeof window !== "undefined" &&
+        window.ImageCapture &&
+        track.readyState === "live"
+      ) {
         try {
-          const track = mediaStream!.getVideoTracks()[0];
-          if (!track) return;
-          const settings = track.getSettings();
-          const w = settings?.width || videoEl.videoWidth || 640;
-          const h = settings?.height || videoEl.videoHeight || 360;
-          if (!w || !h) {
-            // wait a bit
-            setTimeout(tryCapture, 50);
-            return;
+          // @ts-ignore
+          const ic: any = new (window as any).ImageCapture(track);
+          if (ic && typeof ic.grabFrame === "function") {
+            ic.grabFrame()
+              .then((bitmap: ImageBitmap) => {
+                const canvas = getCanvas();
+                const w = bitmap.width || 640;
+                const h = bitmap.height || 360;
+                const scale = Math.min(1, maxVideoWidth / w);
+                canvas.width = Math.round(w * scale);
+                canvas.height = Math.round(h * scale);
+                const ctx = canvas.getContext("2d");
+                if (!ctx) return;
+                ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+                const dataUrl = canvas.toDataURL("image/jpeg", 0.6);
+                socket.emit("video_frame", {
+                  kind,
+                  frame: dataUrl,
+                  width: canvas.width,
+                  height: canvas.height,
+                });
+                bitmap.close && bitmap.close();
+              })
+              .catch(() => {
+                // Fallback to video element path below
+                fallbackElementCapture();
+              });
+            return; // Attempting ImageCapture path
           }
-          const canvas = getCanvas();
-          const scale = Math.min(1, maxVideoWidth / w);
-          canvas.width = Math.round(w * scale);
-          canvas.height = Math.round(h * scale);
-          const ctx = canvas.getContext("2d")!;
-          ctx.drawImage(videoEl, 0, 0, canvas.width, canvas.height);
-          const dataUrl = canvas.toDataURL("image/jpeg", 0.6);
-          socket.emit("video_frame", {
-            kind,
-            frame: dataUrl,
-            width: canvas.width,
-            height: canvas.height,
-          });
-        } catch {}
+        } catch {
+          // ignore and fallback
+        }
+      }
+
+      const fallbackElementCapture = () => {
+        const videoEl = document.createElement("video");
+        videoEl.muted = true;
+        videoEl.playsInline = true;
+        videoEl.srcObject = mediaStream;
+        const tryCapture = () => {
+          try {
+            const settings = track.getSettings();
+            const w = settings?.width || videoEl.videoWidth || 640;
+            const h = settings?.height || videoEl.videoHeight || 360;
+            if (!w || !h) {
+              setTimeout(tryCapture, 60);
+              return;
+            }
+            const canvas = getCanvas();
+            const scale = Math.min(1, maxVideoWidth / w);
+            canvas.width = Math.round(w * scale);
+            canvas.height = Math.round(h * scale);
+            const ctx = canvas.getContext("2d");
+            if (!ctx) return;
+            ctx.drawImage(videoEl, 0, 0, canvas.width, canvas.height);
+            const dataUrl = canvas.toDataURL("image/jpeg", 0.6);
+            socket.emit("video_frame", {
+              kind,
+              frame: dataUrl,
+              width: canvas.width,
+              height: canvas.height,
+            });
+          } catch {}
+        };
+        videoEl.onloadedmetadata = () => {
+          videoEl.play().catch(() => {});
+          tryCapture();
+        };
+        setTimeout(() => {
+          if ((videoEl as any).readyState >= 2) tryCapture();
+        }, 140);
       };
-      videoEl.onloadedmetadata = () => {
-        videoEl.play().catch(() => {});
-        tryCapture();
-      };
-      // Fallback if onloadedmetadata doesn't fire
-      setTimeout(() => {
-        if ((videoEl as any).readyState >= 2) tryCapture();
-      }, 120);
+
+      fallbackElementCapture();
     },
     [maxVideoWidth]
   );
@@ -671,25 +817,31 @@ export function useSpaceRTC(options: UseSpaceRTCOptions) {
         if (pubState.audio) {
           stopMicrophone();
           setPubState((s) => ({ ...s, audio: false }));
+          updateOutgoingTracks();
         } else {
           await startMicrophone();
           setPubState((s) => ({ ...s, audio: true }));
+          updateOutgoingTracks();
         }
       } else if (kind === "video") {
         if (pubState.video) {
           stopCamera();
           setPubState((s) => ({ ...s, video: false }));
+          updateOutgoingTracks();
         } else {
           await startCamera();
           setPubState((s) => ({ ...s, video: true }));
+          updateOutgoingTracks();
         }
       } else if (kind === "screen") {
         if (pubState.screen) {
           stopScreen();
           setPubState((s) => ({ ...s, screen: false }));
+          updateOutgoingTracks();
         } else {
           await startScreen();
           setPubState((s) => ({ ...s, screen: true }));
+          updateOutgoingTracks();
         }
       } else if (kind === "url") {
         if (pubState.url) {
@@ -701,7 +853,13 @@ export function useSpaceRTC(options: UseSpaceRTCOptions) {
         }
       }
     },
-    [pubState, startCamera, startMicrophone, startScreen]
+    [
+      pubState,
+      startCamera,
+      startMicrophone,
+      startScreen,
+      captureAndSendVideoFrame,
+    ]
   );
 
   const stopAllPublishing = () => {
@@ -710,7 +868,354 @@ export function useSpaceRTC(options: UseSpaceRTCOptions) {
     stopScreen();
     stopUrlShare();
     setPubState({ audio: false, video: false, screen: false, url: false });
+    // Also mark self peer (if present) as not publishing so remote clients reflect state quickly on reconnection
+    addOrUpdatePeer(selfId, { publishing: { audio: false, video: false } });
+    updateOutgoingTracks();
   };
+
+  /* ─────────────────────────  WEBRTC HELPERS  ───────────────────────── */
+  const ensurePeerConnection = (peerId: string): RTCPeerConnection => {
+    let pc = pcMapRef.current.get(peerId);
+    if (pc) return pc;
+    pc = new RTCPeerConnection({ iceServers });
+    pcMapRef.current.set(peerId, pc);
+    makingOfferRef.current.set(peerId, false);
+    ignoreOfferRef.current.set(peerId, false);
+    pendingCandidatesRef.current.set(peerId, []);
+
+    pc.onicecandidate = (e) => {
+      if (e.candidate && socketRef.current) {
+        socketRef.current.emit("rtc_ice_candidate", {
+          to: peerId,
+          candidate: e.candidate.toJSON(),
+        });
+      }
+    };
+    pc.onconnectionstatechange = () => {
+      if (pc?.connectionState === "failed") {
+        // Attempt graceful restart by renegotiation
+        tryRenegotiate(peerId);
+      }
+      if (
+        pc?.connectionState === "closed" ||
+        pc?.connectionState === "disconnected"
+      ) {
+        // We'll let participant_left handle cleanup — but if remote side vanished silently, we can still retain tracks for a bit.
+      }
+    };
+    pc.ontrack = (e) => {
+      console.log(
+        `[RTC] Track received from ${peerId}:`,
+        e.track.kind,
+        e.track.label,
+        e.track.id
+      );
+
+      // Detect if this is a screen share track
+      const isScreenTrack =
+        e.track.kind === "video" &&
+        (e.track.label.toLowerCase().includes("screen") ||
+          e.track.label.toLowerCase().includes("window") ||
+          e.track.label.toLowerCase().includes("display"));
+
+      if (isScreenTrack) {
+        // Handle screen share separately
+        let screenStream = remoteStreamMapRef.current.get(`${peerId}-screen`);
+        if (!screenStream) {
+          screenStream = new MediaStream();
+          remoteStreamMapRef.current.set(`${peerId}-screen`, screenStream);
+        }
+        const existing = screenStream
+          .getTracks()
+          .find((t) => t.id === e.track.id);
+        if (!existing) {
+          screenStream.addTrack(e.track);
+          console.log(`[RTC] Added screen track for ${peerId}`);
+          // Listen for track end to clean up
+          e.track.onended = () => {
+            console.log(`[RTC] Screen track ended for ${peerId}`);
+            screenStream?.removeTrack(e.track);
+            if (screenStream?.getTracks().length === 0) {
+              remoteStreamMapRef.current.delete(`${peerId}-screen`);
+              addOrUpdatePeer(peerId, { screenStream: null });
+            } else {
+              // Create new stream reference to trigger React update
+              const newScreenStream = new MediaStream(screenStream.getTracks());
+              remoteStreamMapRef.current.set(
+                `${peerId}-screen`,
+                newScreenStream
+              );
+              addOrUpdatePeer(peerId, { screenStream: newScreenStream });
+            }
+          };
+        }
+        addOrUpdatePeer(peerId, { screenStream });
+      } else {
+        // Handle regular camera/audio tracks
+        const stream = attachRemoteTrack(peerId, e.track);
+        console.log(`[RTC] Added ${e.track.kind} track for ${peerId}`);
+
+        // Listen for track end to update publishing state
+        e.track.onended = () => {
+          console.log(`[RTC] ${e.track.kind} track ended for ${peerId}`);
+          const currentStream = remoteStreamMapRef.current.get(peerId);
+          if (currentStream) {
+            currentStream.removeTrack(e.track);
+            // Force a new stream reference if no video tracks remain
+            const hasVideo = currentStream.getVideoTracks().length > 0;
+            const hasAudio = currentStream.getAudioTracks().length > 0;
+
+            // Create a new MediaStream to trigger React update
+            const newStream = new MediaStream(currentStream.getTracks());
+            remoteStreamMapRef.current.set(peerId, newStream);
+
+            addOrUpdatePeer(peerId, {
+              stream: newStream,
+              publishing: {
+                audio: hasAudio,
+                video: hasVideo,
+              },
+            });
+          }
+        };
+
+        addOrUpdatePeer(peerId, {
+          stream,
+          publishing: {
+            audio: stream.getAudioTracks().length > 0,
+            video: stream.getVideoTracks().length > 0,
+          },
+        });
+      }
+    };
+    pc.onnegotiationneeded = async () => {
+      tryRenegotiate(peerId);
+    };
+
+    // Monitor track states to detect when tracks become inactive
+    const trackMonitorInterval = setInterval(() => {
+      const stream = remoteStreamMapRef.current.get(peerId);
+      const screenStream = remoteStreamMapRef.current.get(`${peerId}-screen`);
+
+      if (stream) {
+        const videoTracks = stream.getVideoTracks();
+        const audioTracks = stream.getAudioTracks();
+        const hasLiveVideo = videoTracks.some(
+          (t) => t.readyState === "live" && t.enabled
+        );
+        const hasLiveAudio = audioTracks.some(
+          (t) => t.readyState === "live" && t.enabled
+        );
+
+        // Update publishing state if tracks are no longer live
+        const currentPeer = remotePeersRef.current.find((p) => p.id === peerId);
+        if (currentPeer) {
+          const needsUpdate =
+            currentPeer.publishing.video !== hasLiveVideo ||
+            currentPeer.publishing.audio !== hasLiveAudio;
+
+          if (needsUpdate) {
+            console.log(
+              `[RTC] Track state changed for ${peerId}: video=${hasLiveVideo}, audio=${hasLiveAudio}`
+            );
+            // Create new stream to trigger React update
+            const newStream = new MediaStream([
+              ...videoTracks.filter((t) => t.readyState === "live"),
+              ...audioTracks.filter((t) => t.readyState === "live"),
+            ]);
+            remoteStreamMapRef.current.set(peerId, newStream);
+            addOrUpdatePeer(peerId, {
+              stream: newStream,
+              publishing: {
+                video: hasLiveVideo,
+                audio: hasLiveAudio,
+              },
+            });
+          }
+        }
+      }
+
+      if (screenStream) {
+        const screenTracks = screenStream.getVideoTracks();
+        const hasLiveScreen = screenTracks.some(
+          (t) => t.readyState === "live" && t.enabled
+        );
+        if (!hasLiveScreen && screenTracks.length > 0) {
+          console.log(`[RTC] Screen track inactive for ${peerId}`);
+          remoteStreamMapRef.current.delete(`${peerId}-screen`);
+          addOrUpdatePeer(peerId, { screenStream: null });
+        }
+      }
+    }, 1000); // Check every second
+
+    // Store interval ID for cleanup
+    if (!pcMapRef.current.has(peerId)) {
+      (pc as any)._trackMonitorInterval = trackMonitorInterval;
+    }
+
+    // Immediately add any existing local tracks if present
+    updateOutgoingTracksForPeer(peerId, pc);
+    return pc;
+  };
+
+  const attachRemoteTrack = (peerId: string, track: MediaStreamTrack) => {
+    let stream = remoteStreamMapRef.current.get(peerId);
+    if (!stream) {
+      stream = new MediaStream();
+      remoteStreamMapRef.current.set(peerId, stream);
+    }
+    // Remove any existing tracks of the same kind (replace old with new)
+    if (track.kind === "video") {
+      stream.getVideoTracks().forEach((t) => stream!.removeTrack(t));
+    } else if (track.kind === "audio") {
+      stream.getAudioTracks().forEach((t) => stream!.removeTrack(t));
+    }
+    // Add the new track
+    stream.addTrack(track);
+    return stream;
+  };
+
+  const tryRenegotiate = async (peerId: string) => {
+    const pc = pcMapRef.current.get(peerId);
+    const socket = socketRef.current;
+    if (!pc || !socket) return;
+    if (pc.signalingState === "closed") return;
+    try {
+      makingOfferRef.current.set(peerId, true);
+      const offer = await pc.createOffer();
+      if (pc.signalingState !== "stable") return; // abort if became unstable
+      await pc.setLocalDescription(offer);
+      socket.emit("rtc_offer", {
+        to: peerId,
+        description: pc.localDescription,
+      });
+    } catch (e) {
+      // ignore
+    } finally {
+      makingOfferRef.current.set(peerId, false);
+    }
+  };
+
+  const flushQueuedCandidates = async (peerId: string) => {
+    const pc = pcMapRef.current.get(peerId);
+    if (!pc) return;
+    const list = pendingCandidatesRef.current.get(peerId) || [];
+    for (const c of list) {
+      try {
+        await pc.addIceCandidate(c);
+      } catch {}
+    }
+    pendingCandidatesRef.current.set(peerId, []);
+  };
+
+  const updateOutgoingTracks = () => {
+    pcMapRef.current.forEach((pc, peerId) => {
+      updateOutgoingTracksForPeer(peerId, pc);
+    });
+  };
+
+  const updateOutgoingTracksForPeer = (
+    peerId: string,
+    pc: RTCPeerConnection
+  ) => {
+    const localMedia = localStreamRef.current; // camera + mic merged
+    const screenMedia = screenStreamRef.current;
+
+    // Build map of desired tracks by kind and label
+    const desiredByKind: Map<string, MediaStreamTrack> = new Map();
+
+    if (pubState.video && localMedia) {
+      const vt = localMedia.getVideoTracks()[0];
+      if (vt) desiredByKind.set("video-camera", vt);
+    }
+    if (pubState.audio && localMedia) {
+      const at = localMedia.getAudioTracks()[0];
+      if (at) desiredByKind.set("audio", at);
+    }
+    if (pubState.screen && screenMedia) {
+      const st = screenMedia.getVideoTracks()[0];
+      if (st) desiredByKind.set("video-screen", st);
+    }
+
+    // Process existing senders
+    const senders = pc.getSenders();
+    const processedKinds = new Set<string>();
+
+    for (const sender of senders) {
+      if (!sender.track) continue;
+
+      const isScreen =
+        sender.track.label.includes("screen") ||
+        sender.track.label.includes("window");
+      const key =
+        sender.track.kind === "video"
+          ? isScreen
+            ? "video-screen"
+            : "video-camera"
+          : "audio";
+
+      const desiredTrack = desiredByKind.get(key);
+
+      if (!desiredTrack) {
+        // No longer needed, remove it
+        try {
+          pc.removeTrack(sender);
+        } catch {}
+      } else if (desiredTrack.id !== sender.track.id) {
+        // Track changed, replace it
+        try {
+          sender.replaceTrack(desiredTrack).catch(() => {
+            // If replace fails, remove and re-add
+            pc.removeTrack(sender);
+            pc.addTrack(desiredTrack);
+          });
+        } catch {}
+        processedKinds.add(key);
+      } else {
+        // Same track, mark as processed
+        processedKinds.add(key);
+      }
+    }
+
+    // Add tracks that weren't processed (new tracks)
+    desiredByKind.forEach((track, key) => {
+      if (!processedKinds.has(key)) {
+        try {
+          pc.addTrack(track);
+        } catch {}
+      }
+    });
+  };
+
+  const closePeerConnection = (peerId: string) => {
+    const pc = pcMapRef.current.get(peerId);
+    if (pc) {
+      // Clear track monitor interval
+      if ((pc as any)._trackMonitorInterval) {
+        clearInterval((pc as any)._trackMonitorInterval);
+      }
+      try {
+        pc.ontrack = null;
+      } catch {}
+      try {
+        pc.close();
+      } catch {}
+    }
+    pcMapRef.current.delete(peerId);
+    makingOfferRef.current.delete(peerId);
+    ignoreOfferRef.current.delete(peerId);
+    pendingCandidatesRef.current.delete(peerId);
+    remoteStreamMapRef.current.delete(peerId);
+    remoteStreamMapRef.current.delete(`${peerId}-screen`);
+  };
+
+  // Initial self join track advertisement (if user enables before peers join)
+  useEffect(() => {
+    if (!joined) return;
+    updateOutgoingTracks();
+  }, [joined, pubState.audio, pubState.video, pubState.screen]);
+
+  // In perfect negotiation pattern, we might need to ignore offers if glare & impolite; currently handled inline.
 
   /* ─────────────────────────  RETURN API  ───────────────────────── */
   return {

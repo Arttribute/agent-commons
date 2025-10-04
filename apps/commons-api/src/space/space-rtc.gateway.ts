@@ -358,6 +358,61 @@ export class SpaceRtcGateway
     client.emit('pong');
   }
 
+  /* ────────────────  WEBRTC SIGNALING  ──────────────── */
+  @SubscribeMessage('rtc_offer')
+  handleRtcOffer(
+    @ConnectedSocket() client: Socket,
+    @MessageBody()
+    body: { spaceId?: string; to?: string; description?: any },
+  ) {
+    const ctx = this.ensureCtx(client, body);
+    if (!ctx) return { error: 'join first' };
+    if (!body?.to || !body?.description)
+      return { error: 'missing to/description' };
+    // Send directly to target peer via room broadcast (all clients filter by their ID)
+    this.server.to(ctx.spaceId).emit('rtc_offer', {
+      from: ctx.participantId,
+      to: body.to,
+      description: body.description,
+    });
+    return { success: true };
+  }
+
+  @SubscribeMessage('rtc_answer')
+  handleRtcAnswer(
+    @ConnectedSocket() client: Socket,
+    @MessageBody()
+    body: { spaceId?: string; to?: string; description?: any },
+  ) {
+    const ctx = this.ensureCtx(client, body);
+    if (!ctx) return { error: 'join first' };
+    if (!body?.to || !body?.description)
+      return { error: 'missing to/description' };
+    this.server.to(ctx.spaceId).emit('rtc_answer', {
+      from: ctx.participantId,
+      to: body.to,
+      description: body.description,
+    });
+    return { success: true };
+  }
+
+  @SubscribeMessage('rtc_ice_candidate')
+  handleRtcIceCandidate(
+    @ConnectedSocket() client: Socket,
+    @MessageBody()
+    body: { spaceId?: string; to?: string; candidate?: any },
+  ) {
+    const ctx = this.ensureCtx(client, body);
+    if (!ctx) return { error: 'join first' };
+    if (!body?.to || !body?.candidate) return { error: 'missing to/candidate' };
+    this.server.to(ctx.spaceId).emit('rtc_ice_candidate', {
+      from: ctx.participantId,
+      to: body.to,
+      candidate: body.candidate,
+    });
+    return { success: true };
+  }
+
   /* ────────────────  WEB CAPTURE CONTROL  ──────────────── */
   @SubscribeMessage('start_web_capture')
   async handleStartWebCapture(
