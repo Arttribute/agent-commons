@@ -18,8 +18,9 @@ export default function FilesPage() {
               Coming soon: files and folders connected to your account.
             </p>
             <div className="rounded-md border p-6 text-sm text-muted-foreground">
-              Placeholder content. We'll show your connected storage providers
-              and file browser here.
+              {
+                " Placeholder content. We'll show your connected storage providers and file browser here."
+              }
             </div>
           </div>
         </div>
