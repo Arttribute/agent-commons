@@ -2,31 +2,19 @@
 
 import { useParams } from "next/navigation";
 import type { NextPage } from "next";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import AppBar from "@/components/layout/app-bar";
 import AgentsShowcase from "@/components/agents/AgentsShowcase";
 import ToolsList from "@/components/tools/ToolsList";
-import { DashboardBar } from "@/components/layout/DashboardBar";
-import { DotPattern } from "@/components/magicui/dot-pattern";
-import { cn } from "@/lib/utils";
 import { Loader2 } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { supabase } from "@/lib/supabase"; // Import Supabase client
 import { DashboardSideBar } from "@/components/layout/dashboard-side-bar";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Button } from "@/components/ui/button";
+import { useRouter } from "next/navigation";
 
-const Profile: React.FC = () => (
-  <div className="p-4">
-    <h2 className="text-xl font-semibold">Profile</h2>
-    <p>Here you can manage your user profile.</p>
-  </div>
-);
-
-const Balances: React.FC = () => (
-  <div className="p-4">
-    <h2 className="text-xl font-semibold">Balances</h2>
-    <p>Here you can view your balances or payment methods.</p>
-  </div>
-);
+// Removed legacy Profile/Balances sections per new layout
 
 const ToolsArea: React.FC = () => {
   const [tools, setTools] = useState<any[]>([]);
@@ -64,11 +52,12 @@ const ToolsArea: React.FC = () => {
 
 const StudioPage: NextPage = () => {
   const { tab } = useParams() as { tab: string };
+  const router = useRouter();
   const { authState } = useAuth();
   const { walletAddress } = authState;
   const [agents, setAgents] = useState<any[]>([]);
   const [loadingAgents, setLoadingAgents] = useState(true);
-  const activeTab = tab || "agents";
+  const activeTab = (tab as string) || "agents";
 
   const userAddress = walletAddress?.toLowerCase();
 
@@ -104,34 +93,57 @@ const StudioPage: NextPage = () => {
     fetchAgents();
   }, [activeTab, userAddress]);
 
-  let mainContent;
-  switch (activeTab) {
-    case "tools":
-      mainContent = <ToolsArea />;
-      break;
-    case "profile":
-      mainContent = <Profile />;
-      break;
-    case "balances":
-      mainContent = <Balances />;
-      break;
-    case "agents":
-    default:
-      mainContent = (
-        <div className="p-4">
-          <h2 className="text-xl font-semibold">My Agents</h2>
-          <p className="text-gray-500 text-sm mb-2">Manage your agents</p>
-          {loadingAgents ? (
-            <div className="flex items-center justify-center h-32">
-              <Loader2 className="h-5 w-5 animate-spin" />
-            </div>
-          ) : (
-            <AgentsShowcase agents={agents} />
-          )}
-        </div>
-      );
-      break;
-  }
+  const mainContent = useMemo(() => {
+    switch (activeTab) {
+      case "tools":
+        return <ToolsArea />;
+      case "tasks":
+        return (
+          <div className="p-4">
+            <h2 className="text-xl font-semibold">Tasks</h2>
+            <p className="text-gray-500 text-sm mb-2">Manage your tasks</p>
+            <div className="text-sm text-muted-foreground">Coming soon.</div>
+          </div>
+        );
+      case "workflows":
+        return (
+          <div className="p-4">
+            <h2 className="text-xl font-semibold">Workflows</h2>
+            <p className="text-gray-500 text-sm mb-2">Manage your workflows</p>
+            <div className="text-sm text-muted-foreground">Coming soon.</div>
+          </div>
+        );
+      case "agents":
+      default:
+        return (
+          <div className="p-4">
+            <h2 className="text-xl font-semibold">My Agents</h2>
+            <p className="text-gray-500 text-sm mb-2">Manage your agents</p>
+            {loadingAgents ? (
+              <div className="flex items-center justify-center h-32">
+                <Loader2 className="h-5 w-5 animate-spin" />
+              </div>
+            ) : (
+              <AgentsShowcase agents={agents} />
+            )}
+          </div>
+        );
+    }
+  }, [activeTab, loadingAgents, agents]);
+
+  const createRoute = useMemo(() => {
+    switch (activeTab) {
+      case "tools":
+        return { href: "/tools/create", label: "Create Tool" };
+      case "tasks":
+        return { href: "/tasks/create", label: "Create Task" };
+      case "workflows":
+        return { href: "/workflows/create", label: "Create Workflow" };
+      case "agents":
+      default:
+        return { href: "/agents/create", label: "Create Agent" };
+    }
+  }, [activeTab]);
 
   return (
     <div>
@@ -143,7 +155,31 @@ const StudioPage: NextPage = () => {
         <div className="flex">
           <DashboardSideBar username={"userAddress"} />
 
-          <div className="w-full relative h-[88vh]">{mainContent}</div>
+          <div className="w-full relative h-[88vh]">
+            <div className="flex items-center justify-between px-4 pt-4">
+              <Tabs
+                value={activeTab || "agents"}
+                onValueChange={(v) => router.push(`/studio/${v}`)}
+              >
+                <TabsList>
+                  <TabsTrigger value="agents">Agents</TabsTrigger>
+                  <TabsTrigger value="tools">Tools</TabsTrigger>
+                  <TabsTrigger value="tasks">Tasks</TabsTrigger>
+                  <TabsTrigger value="workflows">Workflows</TabsTrigger>
+                </TabsList>
+              </Tabs>
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-8 border border-gray-800 font-semibold"
+                onClick={() => router.push(createRoute.href)}
+              >
+                {createRoute.label}
+              </Button>
+            </div>
+
+            <div className="mt-2">{mainContent}</div>
+          </div>
         </div>
 
         {/* Pattern in the background (for styling, optional) */}

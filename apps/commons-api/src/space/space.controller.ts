@@ -51,6 +51,53 @@ export class SpaceController {
   /* ─────────────────────────  SPACE MANAGEMENT  ───────────────────────── */
 
   /**
+   * List spaces with flexible filtering.
+   * Query params:
+   *  - memberId & memberType: spaces a specific member belongs to
+   *  - agentIds: comma separated list of agent IDs; spaces containing ANY of them (combined with member filters by intersection)
+   *  - publicOnly=true: only public spaces
+   *  - search: substring match on name/description
+   *  - includeMembers=true: include members array
+   *  - limit / offset: pagination
+   */
+  @Get()
+  async listSpaces(
+    @Query('memberId') memberId?: string,
+    @Query('memberType') memberType?: 'agent' | 'human',
+    @Query('agentIds') agentIdsStr?: string,
+    @Query('agentId') singleAgentIds?: string | string[],
+    @Query('publicOnly') publicOnly?: string,
+    @Query('search') search?: string,
+    @Query('includeMembers') includeMembers?: string,
+    @Query('limit') limit?: string,
+    @Query('offset') offset?: string,
+  ) {
+    // Accept either agentIds=comma,separated or repeated agentId params (&agentId=0x..&agentId=0x..)
+    let agentIds: string[] | undefined;
+    if (singleAgentIds) {
+      agentIds = Array.isArray(singleAgentIds)
+        ? singleAgentIds.filter(Boolean)
+        : [singleAgentIds].filter(Boolean);
+    } else if (agentIdsStr) {
+      agentIds = agentIdsStr
+        .split(',')
+        .map((a) => a.trim())
+        .filter(Boolean);
+    }
+    const result = await this.spaceService.querySpaces({
+      memberId,
+      memberType,
+      agentIds,
+      publicOnly: publicOnly === 'true',
+      search,
+      includeMembers: includeMembers === 'true',
+      limit: limit ? parseInt(limit) : undefined,
+      offset: offset ? parseInt(offset) : undefined,
+    });
+    return result; // already { data, total, limit, offset }
+  }
+
+  /**
    * Create a new space
    */
   @Post()

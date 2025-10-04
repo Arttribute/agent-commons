@@ -66,10 +66,22 @@ function StreamCard({
   const [isHovered, setIsHovered] = useState(false);
 
   useEffect(() => {
-    if (videoRef.current && peer.stream) {
-      videoRef.current.srcObject = peer.stream;
+    if (videoRef.current) {
+      if (peer.stream && peer.stream.getTracks().length > 0) {
+        // Only set stream if it has active tracks
+        const hasActiveVideo = peer.stream
+          .getVideoTracks()
+          .some((t) => t.readyState === "live" && t.enabled);
+        if (hasActiveVideo) {
+          videoRef.current.srcObject = peer.stream;
+        } else {
+          videoRef.current.srcObject = null;
+        }
+      } else {
+        videoRef.current.srcObject = null;
+      }
     }
-  }, [peer.stream]);
+  }, [peer.stream, peer.publish?.video]);
 
   useEffect(() => {
     if (audioRef.current && peer.audioStream) {
@@ -107,6 +119,16 @@ function StreamCard({
               console.debug("[TTS] onloadedmetadata", peer.id, el.duration);
             el.onerror = (e) => console.debug("[TTS] onerror", peer.id, e);
           }
+          // Ensure single-use playback: after end, clear src to avoid looping or replay on state diff
+          const handleEnded = () => {
+            try {
+              el.onended = null;
+              el.pause();
+              // Clear source to prevent accidental replays by React rerenders
+              el.src = "";
+            } catch {}
+          };
+          el.onended = handleEnded;
           el.load();
           // Attempt playback (may be blocked until user gesture; best effort)
           el.play().catch(() => {});
@@ -157,7 +179,12 @@ function StreamCard({
           className="w-full h-full object-cover"
           draggable={false}
         />
-      ) : peer.stream && (peer.publish.video || peer.isScreenShare) ? (
+      ) : peer.stream &&
+        peer.stream.getVideoTracks().length > 0 &&
+        peer.stream
+          .getVideoTracks()
+          .some((t) => t.readyState === "live" && t.enabled) &&
+        peer.publish.video ? (
         <video
           ref={videoRef}
           autoPlay
@@ -165,7 +192,7 @@ function StreamCard({
           playsInline
           className="w-full h-full object-cover"
         />
-      ) : peer.frameUrl && (peer.publish.video || peer.isScreenShare) ? (
+      ) : peer.frameUrl && peer.publish.video ? (
         <img
           src={peer.frameUrl}
           alt={peer.isScreenShare ? "screen" : "camera"}

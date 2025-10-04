@@ -102,7 +102,8 @@ export class WebCaptureService extends EventEmitter {
     const executablePath = this.findChromiumExecutable();
 
     const launchOptions: any = {
-      headless: true,
+      // Use modern headless for newer Chromium; fall back to boolean for older versions
+      headless: (process.env.PUPPETEER_HEADLESS_MODE as any) || 'new',
       args: [
         '--disable-dev-shm-usage',
         '--disable-web-security',
@@ -138,7 +139,7 @@ export class WebCaptureService extends EventEmitter {
         '--no-crash-upload',
       ],
       defaultViewport: { width: 1280, height: 720 },
-      timeout: 60000, // Increase timeout
+      timeout: Number(process.env.PUPPETEER_LAUNCH_TIMEOUT || 60000), // configurable launch timeout
       handleSIGINT: false,
       handleSIGTERM: false,
       handleSIGHUP: false,
@@ -153,7 +154,8 @@ export class WebCaptureService extends EventEmitter {
       const needDisableSetuid = !launchOptions.args.includes(
         '--disable-setuid-sandbox',
       );
-      if (needDisableSetuid) launchOptions.args.unshift('--disable-setuid-sandbox');
+      if (needDisableSetuid)
+        launchOptions.args.unshift('--disable-setuid-sandbox');
       if (needNoSandbox) launchOptions.args.unshift('--no-sandbox');
 
       // Remove single-process if present; it often hurts stability on Cloud Run
@@ -256,7 +258,15 @@ export class WebCaptureService extends EventEmitter {
         throw new Error('Browser connection lost before page creation');
       }
 
-      const page = await this.browser.newPage();
+      // Reuse an existing blank page if possible to reduce cold-start
+      let page: Page | undefined;
+      try {
+        const existing = await this.browser.pages();
+        page = existing.find(
+          (p) => (p as any)._target._targetInfo?.url === 'about:blank',
+        );
+      } catch {}
+      if (!page) page = await this.browser.newPage();
 
       // Add better error handling for page events
       page.on('error', (error) => {
@@ -377,23 +387,43 @@ export class WebCaptureService extends EventEmitter {
       const context = this.browser.defaultBrowserContext();
       await context.overridePermissions(validUrl, ['camera', 'microphone']);
 
-      // Navigate
+      // Navigate with staged fallbacks for faster first paint in constrained envs
+      const navStart = Date.now();
+      const primaryTimeout = Number(
+        process.env.WEB_CAPTURE_NAV_TIMEOUT_PRIMARY || 12000,
+      );
+      const fallbackTimeout = Number(
+        process.env.WEB_CAPTURE_NAV_TIMEOUT_FALLBACK || 20000,
+      );
+      let navigated = false;
       try {
-        this.logger.log(`Navigating to: ${validUrl}`);
-        await page.goto(validUrl, {
-          waitUntil: 'networkidle2',
-          timeout: 25000,
-        });
-        this.logger.log(`Successfully navigated to: ${validUrl}`);
-      } catch (navigationError) {
-        this.logger.warn(
-          `Navigation timeout/error, continuing with current state: ${
-            navigationError instanceof Error
-              ? navigationError.message
-              : String(navigationError)
-          }`,
+        this.logger.log(
+          `Navigating (primary) to: ${validUrl} timeout=${primaryTimeout}`,
         );
+        await page.goto(validUrl, {
+          waitUntil: 'domcontentloaded',
+          timeout: primaryTimeout,
+        });
+        navigated = true;
+      } catch (primaryErr) {
+        this.logger.warn(
+          `Primary navigation incomplete (${(primaryErr as Error)?.message}); attempting fallback networkidle2...`,
+        );
+        try {
+          await page.goto(validUrl, {
+            waitUntil: 'networkidle2',
+            timeout: fallbackTimeout,
+          });
+          navigated = true;
+        } catch (fallbackErr) {
+          this.logger.warn(
+            `Fallback navigation failed, continuing anyway: ${(fallbackErr as Error)?.message}`,
+          );
+        }
       }
+      this.logger.log(
+        `Navigation result for ${validUrl}: navigated=${navigated} elapsed=${Date.now() - navStart}ms`,
+      );
 
       // Attempt to discover space tools at {pageUrl}/common-agent-tools/
       try {
@@ -471,7 +501,8 @@ export class WebCaptureService extends EventEmitter {
 
       this.sessions.set(params.sessionId, session);
 
-      // Start frame capture with better error handling
+      // Start frame capture quickly (first attempt almost immediately for faster UX)
+      const initialDelay = navigated ? 300 : 800;
       setTimeout(() => {
         if (session.isActive && this.browser?.isConnected()) {
           this.startFrameCapture(session);
@@ -480,7 +511,7 @@ export class WebCaptureService extends EventEmitter {
             `Session ${params.sessionId} inactive or browser disconnected, not starting frame capture`,
           );
         }
-      }, 1000);
+      }, initialDelay);
 
       this.logger.log(
         `Started web capture for ${validUrl} in space ${params.spaceId}`,
