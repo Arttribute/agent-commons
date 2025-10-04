@@ -2,7 +2,8 @@ import { Controller, Get, Param, Res, NotFoundException } from '@nestjs/common';
 import { Response } from 'express';
 import { StreamMonitorService } from './stream-monitor.service';
 
-@Controller({ version: '1', path: 'spaces' })
+// Use a distinct path to avoid conflicting with the primary SpaceController 'spaces' root path.
+@Controller({ version: '1', path: 'spaces-stream' })
 export class SpaceStreamController {
   constructor(private readonly monitor: StreamMonitorService) {}
 

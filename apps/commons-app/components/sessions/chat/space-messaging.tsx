@@ -67,6 +67,7 @@ interface SpaceMessagingProps {
   isEmbedded?: boolean;
   spaceId: string;
   spaceName: string;
+  forceFullScreen?: boolean; // when true, always render fullscreen layout and hide maximize/minimize/back toggles
 }
 
 export default function SpaceMessaging({
@@ -74,12 +75,13 @@ export default function SpaceMessaging({
   isEmbedded,
   spaceId,
   spaceName,
+  forceFullScreen = false,
 }: SpaceMessagingProps) {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [spaceDetails, setSpaceDetails] = useState<any>(null);
   const [messages, setMessages] = useState<Message[]>([]);
-  const [isFullScreen, setIsFullScreen] = useState(false);
+  const [isFullScreen, setIsFullScreen] = useState(forceFullScreen);
   // Fullscreen layout toggles: media is primary; chat is collapsible
   const [showChatPanel, setShowChatPanel] = useState(true);
   const [isChatExpanded, setIsChatExpanded] = useState(false);
@@ -89,6 +91,7 @@ export default function SpaceMessaging({
   const currentUserId = userAddress;
 
   const toggleFullScreen = () => {
+    if (forceFullScreen) return; // disable toggling when forced
     setIsFullScreen(!isFullScreen);
   };
 
@@ -280,9 +283,11 @@ export default function SpaceMessaging({
         <div className="fixed inset-0 z-[100] bg-white flex flex-col">
           {/* Full-screen header */}
           <div className="p-3 border-b flex items-center gap-3">
-            <Button variant="ghost" size="sm" onClick={onBack}>
-              <ArrowLeft className="h-4 w-4" />
-            </Button>
+            {!forceFullScreen && (
+              <Button variant="ghost" size="sm" onClick={onBack}>
+                <ArrowLeft className="h-4 w-4" />
+              </Button>
+            )}
             <div className="w-8 h-8 rounded-full bg-gradient-to-br from-green-400 to-teal-500 flex items-center justify-center text-white text-sm font-medium">
               {spaceName.charAt(0)}
             </div>
@@ -309,9 +314,11 @@ export default function SpaceMessaging({
                   }
                 />
               )}
-              <Button variant="ghost" size="sm" onClick={toggleFullScreen}>
-                <Minimize2 className="h-4 w-4" />
-              </Button>
+              {!forceFullScreen && (
+                <Button variant="ghost" size="sm" onClick={toggleFullScreen}>
+                  <Minimize2 className="h-4 w-4" />
+                </Button>
+              )}
             </div>
           </div>
 
@@ -390,7 +397,7 @@ export default function SpaceMessaging({
       )}
 
       {/* Regular embedded view */}
-      {!isFullScreen && (
+      {!isFullScreen && !forceFullScreen && (
         <div className="flex flex-col h-full">
           {/* Header - only show if not embedded */}
 
@@ -417,9 +424,11 @@ export default function SpaceMessaging({
                   }
                 />
               )}
-              <Button variant="ghost" size="sm" onClick={toggleFullScreen}>
-                <Maximize2 className="h-4 w-4" />
-              </Button>
+              {!forceFullScreen && (
+                <Button variant="ghost" size="sm" onClick={toggleFullScreen}>
+                  <Maximize2 className="h-4 w-4" />
+                </Button>
+              )}
             </div>
           </div>
 

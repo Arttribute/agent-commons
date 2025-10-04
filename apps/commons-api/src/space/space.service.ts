@@ -5,7 +5,7 @@ import {
   BadRequestException,
 } from '@nestjs/common';
 import { EventEmitter } from 'events';
-import { eq, InferInsertModel, desc, and, or } from 'drizzle-orm';
+import { eq, InferInsertModel, desc, and, or, inArray } from 'drizzle-orm';
 import { DatabaseService } from '~/modules/database/database.service';
 import { AgentService } from '~/agent/agent.service';
 import * as schema from '#/models/schema';
@@ -92,6 +92,106 @@ export class SpaceService {
       with: { members: true },
       orderBy: desc(schema.space.createdAt),
     });
+  }
+
+  /**
+   * Generic space query with lightweight filtering for list views.
+   * Supports filtering by:
+   *  - memberId/memberType (spaces a given member belongs to)
+   *  - agentIds (any of the agentIds is a member)
+   *  - publicOnly (only public spaces)
+   *  - search (partial case-insensitive match on name or description)
+   *  - paging (limit/offset)
+   *  - includeMembers (attach members array when true)
+   */
+  async querySpaces(filters: {
+    memberId?: string;
+    memberType?: 'agent' | 'human';
+    agentIds?: string[]; // any of these agents is a member
+    publicOnly?: boolean;
+    search?: string;
+    limit?: number;
+    offset?: number;
+    includeMembers?: boolean;
+  }) {
+    const {
+      memberId,
+      memberType,
+      agentIds,
+      publicOnly,
+      search,
+      limit = 25,
+      offset = 0,
+      includeMembers = false,
+    } = filters;
+
+    // Build dynamic where clauses manually using drizzle since we already have simple helpers imported.
+    const whereClauses: any[] = [];
+    if (publicOnly) whereClauses.push(eq(schema.space.isPublic, true));
+
+    // We'll fetch candidate spaceIds first if member-related filters are supplied to keep main query simple.
+    let candidateSpaceIds: string[] | null = null;
+    if (memberId && memberType) {
+      const rows = await this.db.query.spaceMember.findMany({
+        where: and(
+          eq(schema.spaceMember.memberId, memberId),
+          eq(schema.spaceMember.memberType, memberType),
+          eq(schema.spaceMember.status, 'active'),
+        ),
+      });
+      candidateSpaceIds = rows.map((r) => r.spaceId);
+    }
+    if (agentIds && agentIds.length) {
+      // DB-side filter for agent memberships
+      const rows = await this.db.query.spaceMember.findMany({
+        where: and(
+          eq(schema.spaceMember.memberType, 'agent'),
+          eq(schema.spaceMember.status, 'active'),
+          inArray(schema.spaceMember.memberId, agentIds),
+        ),
+      });
+      const agentSpaceIds = rows.map((r) => r.spaceId);
+      candidateSpaceIds = candidateSpaceIds
+        ? candidateSpaceIds.filter((id) => agentSpaceIds.includes(id))
+        : agentSpaceIds;
+    }
+
+    if (candidateSpaceIds) {
+      if (!candidateSpaceIds.length) return []; // early exit
+      // Simple post-filter: We'll fetch then filter since again we avoid pulling in extra helpers.
+    }
+
+    // Build base where conditions for main space query
+    const spaceWhere: any[] = [];
+    if (publicOnly) spaceWhere.push(eq(schema.space.isPublic, true));
+    if (candidateSpaceIds) {
+      if (!candidateSpaceIds.length)
+        return { data: [], total: 0, limit, offset };
+      spaceWhere.push(inArray(schema.space.spaceId, candidateSpaceIds));
+    }
+
+    let spaces = await this.db.query.space.findMany({
+      where: spaceWhere.length
+        ? spaceWhere.length === 1
+          ? spaceWhere[0]
+          : and(...spaceWhere)
+        : undefined,
+      with: includeMembers ? { members: true } : undefined,
+      orderBy: desc(schema.space.createdAt),
+    });
+
+    if (search) {
+      const q = search.toLowerCase();
+      spaces = spaces.filter(
+        (s) =>
+          s.name.toLowerCase().includes(q) ||
+          (s.description || '').toLowerCase().includes(q),
+      );
+    }
+
+    const total = spaces.length;
+    const paged = spaces.slice(offset, offset + limit);
+    return { data: paged, total, limit, offset }; // uniform response shape
   }
 
   async updateSpace(
