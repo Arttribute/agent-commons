@@ -2,8 +2,7 @@
 import { useEffect, useState } from "react";
 import { useAuth } from "@/context/AuthContext";
 import SpaceMessaging from "@/components/sessions/chat/space-messaging";
-import { Button } from "@/components/ui/button";
-import Link from "next/link";
+import { useParams } from "next/navigation";
 
 interface FullSpace {
   spaceId: string;
@@ -13,11 +12,8 @@ interface FullSpace {
   messages: any[];
 }
 
-export default function SpaceDetailPage({
-  params,
-}: {
-  params: { spaceId: string };
-}) {
+export default function SpaceDetailPage() {
+  const params = useParams() as { spaceId: string };
   const { spaceId } = params;
   const { authState } = useAuth();
   const { walletAddress } = authState;
