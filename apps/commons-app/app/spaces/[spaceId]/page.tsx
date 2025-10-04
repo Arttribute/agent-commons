@@ -31,9 +31,12 @@ export default function SpaceDetailPage({
       setLoading(true);
       setError(null);
       try {
-        const res = await fetch(`/api/spaces/${spaceId}?full=true`, {
-          cache: "no-store",
-        });
+        const res = await fetch(
+          `/api/spaces/space?spaceId=${spaceId}&full=true`,
+          {
+            cache: "no-store",
+          }
+        );
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || "Failed to load space");
         if (!cancelled) setSpace(data.data || data);

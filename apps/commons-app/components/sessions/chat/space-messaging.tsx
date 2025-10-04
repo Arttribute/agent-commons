@@ -118,7 +118,7 @@ export default function SpaceMessaging({
     setIsLoading(true);
     setError(null);
     try {
-      const res = await fetch(`/api/spaces/full?spaceId=${spaceId}`);
+      const res = await fetch(`/api/spaces/space?spaceId=${spaceId}&full=true`);
       if (!res.ok) {
         throw new Error("Failed to fetch space details");
       }

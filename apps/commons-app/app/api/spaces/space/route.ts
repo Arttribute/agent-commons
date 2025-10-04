@@ -7,13 +7,19 @@ function spaceUrl(id: string) {
   return `${baseUrl}/v1/spaces/${id}`;
 }
 
-export async function GET(
-  request: NextRequest,
-  { params }: { params: { spaceId: string } }
-) {
-  const { spaceId } = params;
-  const full = new URL(request.url).searchParams.get("full");
+export async function GET(request: NextRequest) {
+  const spaceId = request.nextUrl.searchParams.get("spaceId");
+
+  if (!spaceId) {
+    return NextResponse.json(
+      { error: "spaceId query parameter is required" },
+      { status: 400 }
+    );
+  }
+
+  const full = request.nextUrl.searchParams.get("full");
   const url = full === "true" ? `${spaceUrl(spaceId)}/full` : spaceUrl(spaceId);
+
   try {
     const res = await fetch(url, { cache: "no-store" });
     const data = await res.json();
@@ -24,11 +30,16 @@ export async function GET(
   }
 }
 
-export async function PATCH(
-  request: NextRequest,
-  { params }: { params: { spaceId: string } }
-) {
-  const { spaceId } = params;
+export async function PATCH(request: NextRequest) {
+  const spaceId = request.nextUrl.searchParams.get("spaceId");
+
+  if (!spaceId) {
+    return NextResponse.json(
+      { error: "spaceId query parameter is required" },
+      { status: 400 }
+    );
+  }
+
   try {
     const body = await request.json();
     const res = await fetch(spaceUrl(spaceId), {
@@ -44,11 +55,16 @@ export async function PATCH(
   }
 }
 
-export async function DELETE(
-  _request: NextRequest,
-  { params }: { params: { spaceId: string } }
-) {
-  const { spaceId } = params;
+export async function DELETE(request: NextRequest) {
+  const spaceId = request.nextUrl.searchParams.get("spaceId");
+
+  if (!spaceId) {
+    return NextResponse.json(
+      { error: "spaceId query parameter is required" },
+      { status: 400 }
+    );
+  }
+
   try {
     const res = await fetch(spaceUrl(spaceId), { method: "DELETE" });
     const data = await res.json();
