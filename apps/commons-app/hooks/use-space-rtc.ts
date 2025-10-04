@@ -626,14 +626,12 @@ export function useSpaceRTC(options: UseSpaceRTCOptions) {
       if (!track) return;
 
       // Prefer ImageCapture API for direct frame grabbing (more reliable, no <video> readiness race)
-      // @ts-ignore
       if (
         typeof window !== "undefined" &&
-        window.ImageCapture &&
+        "ImageCapture" in window &&
         track.readyState === "live"
       ) {
         try {
-          // @ts-ignore
           const ic: any = new (window as any).ImageCapture(track);
           if (ic && typeof ic.grabFrame === "function") {
             ic.grabFrame()
