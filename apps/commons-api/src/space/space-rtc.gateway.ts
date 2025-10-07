@@ -118,6 +118,45 @@ export class SpaceRtcGateway
         this.logger.debug(`tts relay error: ${String(e)}`);
       }
     });
+
+    // ───── Relay space message CRUD events to clients (chat live updates) ─────
+    this.emitter.on('space.message.created', (evt: any) => {
+      try {
+        if (!evt?.spaceId || !evt?.message) return;
+        this.server.to(evt.spaceId).emit('spaceMessage', {
+          type: 'created',
+          spaceId: evt.spaceId,
+            // Provide consistent shape for frontend
+          message: evt.message,
+        });
+      } catch (e) {
+        this.logger.debug(`space.message.created relay error: ${String(e)}`);
+      }
+    });
+    this.emitter.on('space.message.updated', (evt: any) => {
+      try {
+        if (!evt?.spaceId || !evt?.message) return;
+        this.server.to(evt.spaceId).emit('spaceMessage', {
+          type: 'updated',
+          spaceId: evt.spaceId,
+          message: evt.message,
+        });
+      } catch (e) {
+        this.logger.debug(`space.message.updated relay error: ${String(e)}`);
+      }
+    });
+    this.emitter.on('space.message.deleted', (evt: any) => {
+      try {
+        if (!evt?.spaceId || !evt?.message) return;
+        this.server.to(evt.spaceId).emit('spaceMessage', {
+          type: 'deleted',
+          spaceId: evt.spaceId,
+          message: evt.message,
+        });
+      } catch (e) {
+        this.logger.debug(`space.message.deleted relay error: ${String(e)}`);
+      }
+    });
   }
 
   afterInit() {

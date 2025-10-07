@@ -47,6 +47,9 @@ interface Message {
   timestamp: string;
   senderId?: string;
   senderType?: "agent" | "human";
+  messageId?: string; // server-assigned id
+  isDeleted?: boolean;
+  pending?: boolean; // optimistic flag until server echo
   metadata?: {
     toolCalls?: Array<{
       name: string;
@@ -81,6 +84,8 @@ export default function SpaceMessaging({
   const [error, setError] = useState<string | null>(null);
   const [spaceDetails, setSpaceDetails] = useState<any>(null);
   const [messages, setMessages] = useState<Message[]>([]);
+  // Track seen ids to avoid duplicates
+  const seenIdsRef = useRef<Set<string>>(new Set());
   const [isFullScreen, setIsFullScreen] = useState(forceFullScreen);
   // Fullscreen layout toggles: media is primary; chat is collapsible
   const [showChatPanel, setShowChatPanel] = useState(true);
@@ -96,6 +101,7 @@ export default function SpaceMessaging({
   };
 
   const handleMessageSubmitted = (content: string) => {
+    const tempId = `temp-${Date.now()}-${Math.random().toString(36).slice(2)}`;
     setMessages((prev) => [
       ...prev,
       {
@@ -104,6 +110,8 @@ export default function SpaceMessaging({
         timestamp: new Date().toISOString(),
         senderId: currentUserId,
         senderType: "human",
+        messageId: tempId,
+        pending: true,
       },
     ]);
   };
@@ -127,26 +135,36 @@ export default function SpaceMessaging({
       if (data.data) {
         setSpaceDetails(data.data);
 
-        const convertedMessages: Message[] = data.data.messages.map(
-          (msg: SpaceMessageData) => ({
-            role: msg.senderType === "agent" ? "ai" : "human",
-            content: msg.content,
-            timestamp: msg.createdAt,
-            senderId: msg.senderId,
-            senderType: msg.senderType,
-            metadata: {
-              agentCalls: msg.metadata.agentId
-                ? [
-                    {
-                      agentId: msg.metadata.agentId,
-                      message: msg.content,
-                      sessionId: msg.metadata.sessionId,
-                    },
-                  ]
-                : [],
-            },
-          })
-        );
+        // Oldest first for natural chat scroll
+        const convertedMessages: Message[] = data.data.messages
+          .slice()
+          .sort(
+            (a: SpaceMessageData, b: SpaceMessageData) =>
+              new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+          )
+          .map((msg: SpaceMessageData) => {
+            seenIdsRef.current.add(msg.messageId);
+            return {
+              role: msg.senderType === "agent" ? "ai" : "human",
+              content: msg.content,
+              timestamp: msg.createdAt,
+              senderId: msg.senderId,
+              senderType: msg.senderType,
+              messageId: msg.messageId,
+              isDeleted: msg.isDeleted,
+              metadata: {
+                agentCalls: msg.metadata.agentId
+                  ? [
+                      {
+                        agentId: msg.metadata.agentId,
+                        message: msg.content,
+                        sessionId: msg.metadata.sessionId,
+                      },
+                    ]
+                  : [],
+              },
+            } as Message;
+          });
 
         setMessages(convertedMessages);
       }
@@ -162,28 +180,39 @@ export default function SpaceMessaging({
     fetchSpaceDetails();
   }, [spaceId]);
 
-  // Realtime message subscription over existing /rtc namespace
+  // Realtime message subscription over /space-rtc namespace (same as media)
   useEffect(() => {
     if (!spaceId) return;
     const wsUrl = WS_BASE;
-    const socket: Socket = io(`${wsUrl}/rtc`, {
+    const socket: Socket = io(`${wsUrl}/space-rtc`, {
       transports: ["websocket"],
       autoConnect: true,
     });
 
     let joined = false;
     socket.on("connect", () => {
-      socket.emit("join", {
-        type: "join",
+      const participantId =
+        currentUserId || `viewer-${Math.random().toString(36).slice(2)}`;
+      console.debug("[space-messaging] socket connected, joining space", {
         spaceId,
-        fromId:
-          currentUserId || `viewer-${Math.random().toString(36).slice(2)}`,
-        role: "human",
+        participantId,
       });
-    });
-
-    socket.on("joined", () => {
-      joined = true;
+      socket.emit(
+        "join_space",
+        {
+          spaceId,
+          participantId,
+          participantType: "human",
+        },
+        (ack: any) => {
+          if (ack?.success) {
+            joined = true;
+            console.debug("[space-messaging] joined space room", spaceId);
+          } else {
+            console.warn("[space-messaging] failed to join space", ack);
+          }
+        }
+      );
     });
 
     // Deduplicate by messageId across the session
@@ -199,28 +228,38 @@ export default function SpaceMessaging({
       if (!evt || evt.spaceId !== spaceId || !evt.message) return;
       const msg = evt.message as any;
       const id = msg.messageId;
+      if (!id) return;
+      console.debug("[space-messaging] received spaceMessage", evt.type, id);
 
       setMessages((prev) => {
-        // Convert shape for UI
-        const toUi = (mm: any) => ({
+        const toUi = (mm: any): Message => ({
           role: mm.senderType === "agent" ? "ai" : "human",
           content: mm.content,
           timestamp: mm.createdAt,
           senderId: mm.senderId,
           senderType: mm.senderType,
-          metadata: mm.metadata || undefined,
           messageId: mm.messageId,
           isDeleted: mm.isDeleted,
+          metadata: mm.metadata || undefined,
         });
 
-        const existingIdx = prev.findIndex(
-          (p: any) => (p as any).messageId === id
-        );
+        const existingIdx = prev.findIndex((p) => p.messageId === id);
+        // Also locate any pending optimistic entry that matches content & sender without messageId
+        const pendingIdx =
+          existingIdx === -1
+            ? prev.findIndex(
+                (p) =>
+                  p.pending &&
+                  p.senderId === msg.senderId &&
+                  p.content === msg.content
+              )
+            : -1;
+
         if (evt.type === "deleted") {
-          // Remove or mark deleted
           if (existingIdx >= 0) {
             const copy = prev.slice();
             copy.splice(existingIdx, 1);
+            console.debug("[space-messaging] removed message", id);
             return copy;
           }
           return prev;
@@ -229,15 +268,35 @@ export default function SpaceMessaging({
         if (evt.type === "updated") {
           if (existingIdx >= 0) {
             const copy = prev.slice();
-            copy[existingIdx] = toUi(msg);
+            copy[existingIdx] = { ...toUi(msg) };
+            console.debug("[space-messaging] updated message", id);
             return copy;
           }
-          // If we somehow missed create, append
+          if (pendingIdx >= 0) {
+            const copy = prev.slice();
+            copy[pendingIdx] = { ...toUi(msg) };
+            console.debug(
+              "[space-messaging] replaced pending with updated",
+              id
+            );
+            return copy;
+          }
           return [...prev, toUi(msg)];
         }
 
         // created
-        if (existingIdx === -1) {
+        if (existingIdx === -1 && !seenIdsRef.current.has(id)) {
+          seenIdsRef.current.add(id);
+          if (pendingIdx >= 0) {
+            const copy = prev.slice();
+            copy[pendingIdx] = { ...toUi(msg) };
+            console.debug(
+              "[space-messaging] replaced pending with created",
+              id
+            );
+            return copy;
+          }
+          console.debug("[space-messaging] appended new message", id);
           return [...prev, toUi(msg)];
         }
         return prev;
@@ -247,11 +306,8 @@ export default function SpaceMessaging({
     return () => {
       try {
         if (joined) {
-          socket.emit("leave", {
-            type: "leave",
-            spaceId,
-            fromId: currentUserId,
-          });
+          console.debug("[space-messaging] leaving space", spaceId);
+          socket.emit("leave_space", { spaceId });
         }
         socket.disconnect();
       } catch {}
@@ -276,6 +332,20 @@ export default function SpaceMessaging({
       return true;
     });
   }, [spaceDetails?.members, currentUserId]);
+
+  // ─────────────────────────  AUTO-SCROLL  ─────────────────────────
+  const bottomRefFull = useRef<HTMLDivElement | null>(null);
+  const bottomRefEmbedded = useRef<HTMLDivElement | null>(null);
+  const scrollToBottom = () => {
+    requestAnimationFrame(() => {
+      bottomRefFull.current?.scrollIntoView({ behavior: "smooth" });
+      bottomRefEmbedded.current?.scrollIntoView({ behavior: "smooth" });
+    });
+  };
+  useEffect(() => {
+    scrollToBottom();
+  }, [messages.length]);
+
   return (
     <>
       {/* Full-screen overlay */}
@@ -369,7 +439,7 @@ export default function SpaceMessaging({
                     <div className="p-4">
                       {messages.map((message, index) => (
                         <SpaceMessage
-                          key={index}
+                          key={message.messageId || index}
                           senderId={message.senderId || "unknown"}
                           senderType={message.senderType || "agent"}
                           content={message.content}
@@ -377,6 +447,7 @@ export default function SpaceMessaging({
                           metadata={message.metadata}
                         />
                       ))}
+                      <div ref={bottomRefFull} />
                     </div>
                   </ScrollArea>
                   {spaceDetails && (
@@ -451,7 +522,7 @@ export default function SpaceMessaging({
             <div className="container mx-auto max-w-2xl">
               {messages.map((message, index) => (
                 <SpaceMessage
-                  key={index}
+                  key={message.messageId || index}
                   senderId={message.senderId || "unknown"}
                   senderType={message.senderType || "agent"}
                   content={message.content}
@@ -459,6 +530,7 @@ export default function SpaceMessaging({
                   metadata={message.metadata}
                 />
               ))}
+              <div ref={bottomRefEmbedded} />
             </div>
           </ScrollArea>
           {spaceDetails && (
