@@ -115,11 +115,6 @@ export default function SpaceMessaging({
       },
     ]);
   };
-
-  const handleToggleChatExpanded = () => {
-    setIsChatExpanded(!isChatExpanded);
-  };
-
   const fetchSpaceDetails = async () => {
     if (!spaceId) return;
 
@@ -336,14 +331,24 @@ export default function SpaceMessaging({
   // ─────────────────────────  AUTO-SCROLL  ─────────────────────────
   const bottomRefFull = useRef<HTMLDivElement | null>(null);
   const bottomRefEmbedded = useRef<HTMLDivElement | null>(null);
-  const scrollToBottom = () => {
+  const initialScrollDoneRef = useRef(false);
+  const scrollToBottom = (smooth: boolean) => {
     requestAnimationFrame(() => {
-      bottomRefFull.current?.scrollIntoView({ behavior: "smooth" });
-      bottomRefEmbedded.current?.scrollIntoView({ behavior: "smooth" });
+      const behavior: ScrollBehavior = smooth ? "smooth" : "auto"; // 'instant' not standard in all browsers
+      bottomRefFull.current?.scrollIntoView({ behavior });
+      bottomRefEmbedded.current?.scrollIntoView({ behavior });
     });
   };
   useEffect(() => {
-    scrollToBottom();
+    if (!messages.length) return;
+    if (!initialScrollDoneRef.current) {
+      // First time we have messages -> jump instantly
+      scrollToBottom(false);
+      initialScrollDoneRef.current = true;
+    } else {
+      // Subsequent additions -> smooth scroll
+      scrollToBottom(true);
+    }
   }, [messages.length]);
 
   return (
