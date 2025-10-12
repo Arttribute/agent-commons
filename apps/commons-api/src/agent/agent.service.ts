@@ -547,8 +547,24 @@ export class AgentService implements OnModuleInit {
               currentSessionId = newSession.sessionId;
               isNewSession = true;
             } else {
-              //space run: provide spaceId as currentSessionId
-              currentSessionId = uuidv4();
+              // In a space: reuse or create a single agent-space session
+              const { session: spSession, created } =
+                await this.session.getOrCreateAgentSpaceSession({
+                  agentId,
+                  spaceId,
+                  initiator,
+                  parentSessionId: parentSessionId ?? undefined,
+                  model: {
+                    name: 'gpt-4o',
+                    temperature: agent.temperature || 0.7,
+                    maxTokens: agent.maxTokens || 2000,
+                    topP: agent.topP || 1,
+                    presencePenalty: agent.presencePenalty || 0,
+                    frequencyPenalty: agent.frequencyPenalty || 0,
+                  },
+                });
+              currentSessionId = spSession.sessionId;
+              isNewSession = created;
             }
           }
 
@@ -755,7 +771,7 @@ export class AgentService implements OnModuleInit {
             });
 
           let messages: Messages = [];
-          if (!sessionId) {
+          if (isNewSession) {
             console.log('Creating new session for agent:', agentId);
             const boot = await this.createAgentSession(
               agentId,
@@ -911,7 +927,7 @@ export class AgentService implements OnModuleInit {
           const resolvedAgentCalls = await Promise.all(agentCalls);
 
           let sessionTitle = 'New Session';
-          if (!spaceId && currentSessionId) {
+          if (currentSessionId) {
             const messageHistories =
               finalResult?.messages?.filter(
                 (m) => m.toDict().type !== 'system',
@@ -940,8 +956,11 @@ export class AgentService implements OnModuleInit {
               delta: {
                 endedAt: new Date(),
                 title: isNewSession
-                  ? sessionTitle
-                  : currentSession.title || sessionTitle,
+                  ? spaceId
+                    ? currentSession.title || `Space: ${spaceId}`
+                    : sessionTitle
+                  : currentSession.title ||
+                    (spaceId ? `Space: ${spaceId}` : sessionTitle),
                 metrics: {
                   totalTokens: toolUsage.reduce(
                     (acc, tool) => acc + (tool.duration || 0),
@@ -967,6 +986,19 @@ export class AgentService implements OnModuleInit {
                         : undefined,
                   },
                 })),
+                // Ensure spaces list includes this space
+                ...(spaceId
+                  ? {
+                      spaces: currentSession.spaces?.spaceIds?.includes(spaceId)
+                        ? currentSession.spaces
+                        : {
+                            spaceIds: [
+                              ...(currentSession.spaces?.spaceIds || []),
+                              spaceId,
+                            ],
+                          },
+                    }
+                  : {}),
                 updatedAt: new Date(),
               },
             });

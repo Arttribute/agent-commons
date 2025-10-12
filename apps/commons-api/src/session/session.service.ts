@@ -8,7 +8,7 @@ import {
   InternalServerErrorException,
   NotFoundException,
 } from '@nestjs/common';
-import { eq, InferInsertModel, InferSelectModel, sql } from 'drizzle-orm';
+import { and, eq, InferInsertModel, InferSelectModel, sql } from 'drizzle-orm';
 import {
   createPublicClient,
   createWalletClient,
@@ -41,6 +41,54 @@ export class SessionService {
       .returning();
 
     return session;
+  }
+
+  /**
+   * Fetch an existing session for this agent and space, or create one.
+   * We key by (agentId, spaceId) only — initiator may vary across messages in a space.
+   */
+  public async getOrCreateAgentSpaceSession(props: {
+    agentId: string;
+    spaceId: string;
+    // Optional initial values for new session
+    model?: InferInsertModel<typeof schema.session>['model'];
+    initiator?: string | null;
+    parentSessionId?: string | null;
+    title?: string | null;
+  }): Promise<{
+    session: InferSelectModel<typeof schema.session>;
+    created: boolean;
+  }> {
+    const { agentId, spaceId, model, initiator, parentSessionId, title } =
+      props;
+
+    // Find first session for this agent that already contains the spaceId in spaces.spaceIds
+    // Use Postgres JSONB containment (spaces @> { spaceIds: [spaceId] })
+    const existing = await this.db.query.session.findFirst({
+      where: (t) =>
+        and(
+          eq(t.agentId, agentId),
+          sql`coalesce(${t.spaces}::jsonb, '{}'::jsonb) @> ${JSON.stringify({ spaceIds: [spaceId] })}::jsonb`,
+        ),
+      orderBy: (t) => t.createdAt,
+    });
+    if (existing) return { session: existing, created: false };
+
+    const [created] = await this.db
+      .insert(schema.session)
+      .values({
+        agentId,
+        initiator: initiator ?? `space:${spaceId}`,
+        model: model ?? ({ name: 'gpt-4o' } as any),
+        spaces: { spaceIds: [spaceId] },
+        parentSessionId: parentSessionId ?? undefined,
+        title: title ?? null,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      })
+      .returning();
+
+    return { session: created, created: true };
   }
 
   public async getSession(props: { id: string }) {
