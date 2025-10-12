@@ -166,6 +166,55 @@ export class AgentService implements OnModuleInit {
     );
   }
 
+  /* ─────────────────────────  TTS VOICES  ───────────────────────── */
+  async getTtsVoices(args: {
+    provider: 'openai' | 'elevenlabs';
+    q?: string;
+  }): Promise<Array<{ id: string; name: string; provider: string }>> {
+    const { provider, q } = args;
+    if (provider === 'elevenlabs') {
+      const apiKey = process.env.ELEVENLABS_API_KEY;
+      if (!apiKey) return [];
+      try {
+        const gotMod = await import('got');
+        const httpc: any = (gotMod as any).default || gotMod;
+        // Prefer search endpoint when query provided; otherwise list voices
+        const url = q
+          ? `https://api.elevenlabs.io/v1/voices/search?query=${encodeURIComponent(q)}`
+          : `https://api.elevenlabs.io/v1/voices`;
+        const res = await httpc.get(url, {
+          headers: { 'xi-api-key': apiKey },
+          responseType: 'json',
+        });
+        const body: any = res.body;
+        const voices: any[] = body?.voices || body || [];
+        return voices
+          .filter((v) => v && (v.voice_id || v.voiceId) && v.name)
+          .map((v) => ({
+            id: String(v.voice_id || v.voiceId),
+            name: String(v.name),
+            provider: 'elevenlabs',
+          }));
+      } catch (e) {
+        console.warn('Failed to fetch ElevenLabs voices:', e);
+        return [];
+      }
+    }
+
+    // OpenAI: no official list API yet; allow env override or fallback to a curated set from docs
+    const envList = (process.env.OPENAI_TTS_VOICES || '')
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean);
+    const defaultVoices = envList.length
+      ? envList
+      : ['alloy', 'coral', 'verse'];
+    const filtered = q
+      ? defaultVoices.filter((v) => v.toLowerCase().includes(q.toLowerCase()))
+      : defaultVoices;
+    return filtered.map((v) => ({ id: v, name: v, provider: 'openai' }));
+  }
+
   /* purchaseCommons / checkCommonsBalance / transferTokensToWallet (unchanged) */
 
   async purchaseCommons(props: { agentId: string; amountInCommon: string }) {

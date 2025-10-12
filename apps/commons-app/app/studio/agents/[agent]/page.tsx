@@ -276,16 +276,18 @@ export default function AgentStudio({
    * 4) The function that actually sends changes to the server.
    * We'll call it from "auto-save" or from "Save" button.
    */
-  async function updateAgentInDB() {
+  async function updateAgentInDB(override?: Partial<AgentData>) {
     if (!agent) return; // no agent loaded
     try {
       // Build the final updated data
-      const updated: Partial<AgentData> = {
-        ...editForm,
+      const updatedSource = override ? { ...editForm, ...override } : editForm;
+      const updated: Partial<AgentData> & { stopSequence?: string[] } = {
+        ...updatedSource,
         // Merge your modelConfig into the agent if desired
         temperature: modelConfig.temperature,
         maxTokens: modelConfig.maxTokens,
-        stopSequences: modelConfig.stopSequences,
+        // Backend expects `stopSequence` (singular)
+        stopSequence: modelConfig.stopSequences,
         topP: modelConfig.topP,
         frequencyPenalty: modelConfig.frequencyPenalty,
         presencePenalty: modelConfig.presencePenalty,
@@ -373,9 +375,10 @@ export default function AgentStudio({
                   agent={agent}
                   isOwner={userAddress === agent?.owner}
                   onUpdate={async (data) => {
-                    setEditForm((prev) => ({ ...prev, ...data }));
-                    await updateAgentInDB();
-                    fetchAgent();
+                    const merged = { ...editForm, ...data };
+                    setEditForm(merged);
+                    await updateAgentInDB(merged);
+                    await fetchAgent();
                   }}
                 />
                 <AgentFinances />

@@ -227,4 +227,18 @@ export class AgentController {
     await this.agent.removeAgentTool(id);
     return { success: true };
   }
+
+  // ──────────────── TTS VOICES ────────────────
+  /**
+   * GET /v1/agents/voices?provider=openai|elevenlabs&q=search
+   * Returns a list of voices from the selected TTS provider.
+   */
+  @Get('tts/voices')
+  async listVoices(
+    @Query('provider') provider: 'openai' | 'elevenlabs' = 'openai',
+    @Query('q') q?: string,
+  ) {
+    const data = await this.agent.getTtsVoices({ provider, q });
+    return { data };
+  }
 }

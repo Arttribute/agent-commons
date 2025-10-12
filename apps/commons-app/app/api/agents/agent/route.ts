@@ -1,6 +1,5 @@
 // File: app/api/agents/agent/route.ts
 import { NextResponse } from "next/server";
-import { supabase } from "@/lib/supabase";
 
 const baseUrl = process.env.NEXT_PUBLIC_NEST_API_BASE_URL;
 export const maxDuration = 45;
@@ -18,18 +17,11 @@ export async function GET(request: Request) {
   }
 
   try {
-    const { data, error } = await supabase
-      .from("agent")
-      .select("*")
-      .eq("agent_id", agentId)
-      .single();
-
-    if (error) throw error;
-    if (!data) {
-      return NextResponse.json({ error: "Agent not found" }, { status: 404 });
-    }
-
-    return NextResponse.json({ success: true, data });
+    const res = await fetch(`${baseUrl}/v1/agents/${agentId}`, {
+      cache: "no-store",
+    });
+    const data = await res.json();
+    return NextResponse.json(data, { status: res.status });
   } catch (err: any) {
     console.error("Error fetching agent:", err);
     return NextResponse.json({ error: err.message }, { status: 500 });
@@ -78,47 +70,13 @@ export async function PUT(request: Request) {
 
   try {
     const updates = await request.json();
-    const {
-      name,
-      persona,
-      instructions,
-      knowledgebase,
-      avatar,
-      common_tools,
-      external_tools,
-      temperature,
-      maxTokens,
-      stopSequence,
-      topP,
-      frequencyPenalty,
-      presencePenalty,
-    } = updates;
-
-    // Update the agent with the new data
-    const { data, error } = await supabase
-      .from("agent")
-      .update({
-        name,
-        persona,
-        instructions,
-        knowledgebase,
-        avatar,
-        common_tools,
-        external_tools,
-        temperature,
-        max_tokens: maxTokens,
-        stop_sequence: stopSequence,
-        top_p: topP,
-        frequency_penalty: frequencyPenalty,
-        presence_penalty: presencePenalty,
-      })
-      .eq("agent_id", agentId)
-      .select("*")
-      .single();
-
-    if (error) throw error;
-
-    return NextResponse.json({ success: true, data });
+    const res = await fetch(`${baseUrl}/v1/agents/${agentId}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(updates),
+    });
+    const data = await res.json();
+    return NextResponse.json(data, { status: res.status });
   } catch (err: any) {
     console.error("Error updating agent:", err);
     return NextResponse.json({ error: err.message }, { status: 500 });
