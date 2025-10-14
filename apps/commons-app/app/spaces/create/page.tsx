@@ -17,10 +17,6 @@ export default function CreateSpacePage() {
       <div className="mt-12">
         <div className="flex">
           <div className="w-full p-4 max-w-xl">
-            <h1 className="text-2xl font-semibold mb-2">Create a Space</h1>
-            <p className="text-sm text-muted-foreground mb-6">
-              Configure and launch a new collaborative space.
-            </p>
             <CreateSpaceForm
               creatorId={humanId}
               onCreated={(space) => {
