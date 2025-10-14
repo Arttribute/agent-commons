@@ -1,11 +1,11 @@
 "use client";
-
 import { useCallback, useEffect, useState } from "react";
 
 export interface SpaceListItem {
   spaceId: string;
   name: string;
   description?: string;
+  image?: string;
   createdBy: string;
   createdByType: "agent" | "human";
   isPublic: boolean;
@@ -16,11 +16,12 @@ export interface SpaceListItem {
 }
 
 interface UseSpacesOptions {
-  memberId?: string; // human wallet
-  agentIds?: string[]; // agent ids owned by user
+  memberId?: string;
+  agentIds?: string[];
   includeMembers?: boolean;
   search?: string;
   auto?: boolean;
+  publicOnly?: boolean;
 }
 
 export function useSpaces(opts: UseSpacesOptions) {
@@ -30,13 +31,15 @@ export function useSpaces(opts: UseSpacesOptions) {
     includeMembers = false,
     search,
     auto = true,
+    publicOnly,
   } = opts;
+
   const [spaces, setSpaces] = useState<SpaceListItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const refetch = useCallback(async () => {
-    if (!memberId && (!agentIds || !agentIds.length)) return;
+  const fetchSpaces = useCallback(async () => {
+    if (!memberId && (!agentIds || !agentIds.length) && !publicOnly) return;
     setLoading(true);
     setError(null);
     try {
@@ -45,19 +48,16 @@ export function useSpaces(opts: UseSpacesOptions) {
         params.set("memberId", memberId);
         params.set("memberType", "human");
       }
-      if (agentIds && agentIds.length) {
-        // Use repeated agentId params for clarity & backend support
+      if (agentIds && agentIds.length)
         agentIds.forEach((aid) => params.append("agentId", aid));
-      }
       if (includeMembers) params.set("includeMembers", "true");
       if (search) params.set("search", search);
+      if (publicOnly) params.set("publicOnly", "true");
       const res = await fetch(`/api/spaces?${params.toString()}`, {
         cache: "no-store",
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Failed to load spaces");
-      // Expected backend shape: { data, total, limit, offset }
-      // Fallback if not present: treat entire object as array or empty
+      if (!res.ok) throw new Error(data?.error || "Failed to load spaces");
       const list = Array.isArray(data)
         ? data
         : Array.isArray(data.data)
@@ -69,11 +69,11 @@ export function useSpaces(opts: UseSpacesOptions) {
     } finally {
       setLoading(false);
     }
-  }, [memberId, agentIds, includeMembers, search]);
+  }, [memberId, agentIds, includeMembers, search, publicOnly]);
 
   useEffect(() => {
-    if (auto) refetch();
-  }, [refetch, auto]);
+    if (auto) fetchSpaces();
+  }, [auto, fetchSpaces]);
 
-  return { spaces, loading, error, refetch };
+  return { spaces, loading, error, refetch: fetchSpaces };
 }

@@ -4,6 +4,7 @@ import { AgentService } from '~/agent/agent.service';
 import { SpaceService } from './space.service';
 import { StreamMonitorService } from './stream-monitor.service';
 import { DatabaseService } from '~/modules/database/database.service';
+import { SessionService } from '~/session/session.service';
 import * as schema from '#/models/schema';
 import { and, eq } from 'drizzle-orm';
 
@@ -28,6 +29,9 @@ export class SpaceAgentTriggerService {
     private readonly agentService: AgentService,
     private readonly db: DatabaseService,
     private readonly space: SpaceService,
+    // SessionService needed to fetch/create per-space sessions
+    @Inject(forwardRef(() => SessionService))
+    private readonly session: SessionService,
     @Inject(forwardRef(() => StreamMonitorService))
     private readonly streamMonitor: StreamMonitorService,
   ) {
@@ -152,6 +156,14 @@ export class SpaceAgentTriggerService {
           `Full trigger content for space ${spaceId}: ${JSON.stringify(fullTriggercontent)}`,
         );
 
+        // Ensure there's a dedicated session for this agent in this space
+        const { session: spaceSession } =
+          await this.session.getOrCreateAgentSpaceSession({
+            agentId: agentMember.memberId,
+            spaceId,
+            initiator: trigger.senderId,
+          });
+
         this.agentService
           .runAgent({
             agentId: agentMember.memberId,
@@ -163,6 +175,7 @@ export class SpaceAgentTriggerService {
               },
             ],
             spaceId,
+            sessionId: spaceSession.sessionId,
             initiator: trigger.senderId,
             turnCount: 0,
             maxTurns: 1,

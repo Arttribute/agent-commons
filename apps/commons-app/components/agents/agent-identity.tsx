@@ -2,7 +2,7 @@
 
 import type React from "react";
 
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -19,6 +19,13 @@ import { Textarea } from "@/components/ui/textarea";
 import { Check, Copy, PencilIcon } from "lucide-react";
 import RandomAvatar from "@/components/account/random-avatar";
 import { cn } from "@/lib/utils";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
 export default function AgentIdentity({
   agent,
@@ -36,8 +43,15 @@ export default function AgentIdentity({
     instructions: agent?.instructions || "",
     description: agent?.description || "",
     avatar: agent?.avatar || "",
+    ttsProvider:
+      (agent?.ttsProvider as "openai" | "elevenlabs") ||
+      (agent?.tts_provider as "openai" | "elevenlabs") ||
+      "openai",
+    ttsVoice: (agent?.ttsVoice as string) || (agent?.tts_voice as string) || "",
   });
   const [saving, setSaving] = useState(false);
+  const [voices, setVoices] = useState<Array<{ id: string; name: string }>>([]);
+  const [voicesLoading, setVoicesLoading] = useState(false);
 
   const agentAddress = agent?.agentId || "";
 
@@ -57,6 +71,81 @@ export default function AgentIdentity({
     await onUpdate(editData);
     setSaving(false);
   };
+
+  // Keep local state in sync when agent prop changes
+  useEffect(() => {
+    setEditData((prev) => ({
+      ...prev,
+      name: agent?.name || "",
+      persona: agent?.persona || "",
+      instructions: agent?.instructions || "",
+      description: agent?.description || "",
+      avatar: agent?.avatar || "",
+      ttsProvider:
+        (agent?.ttsProvider as "openai" | "elevenlabs") ||
+        (agent?.tts_provider as "openai" | "elevenlabs") ||
+        prev.ttsProvider ||
+        "openai",
+      ttsVoice:
+        (agent?.ttsVoice as string) ||
+        (agent?.tts_voice as string) ||
+        prev.ttsVoice ||
+        "",
+    }));
+  }, [agent]);
+
+  // Fetch voices when provider changes or on open
+  const loadVoices = async (provider: "openai" | "elevenlabs") => {
+    try {
+      setVoicesLoading(true);
+      if (provider === "openai") {
+        // Do not fetch; use a broader default list and allow client env override
+        const env = (process.env.NEXT_PUBLIC_OPENAI_TTS_VOICES || "")
+          .split(",")
+          .map((s) => s.trim())
+          .filter(Boolean);
+        const fallbacks = [
+          "alloy",
+          "ash",
+          "ballad",
+          "verse",
+          "aria",
+          "coral",
+          "sage",
+          "ember",
+          "vibe",
+        ];
+        const list = (env.length ? env : fallbacks).map((v) => ({
+          id: v,
+          name: v.charAt(0).toUpperCase() + v.slice(1),
+        }));
+        const local = list;
+        setVoices(local);
+        if (!local.find((v) => v.id === editData.ttsVoice)) {
+          setEditData((p) => ({ ...p, ttsVoice: local[0]?.id || "" }));
+        }
+      } else {
+        const res = await fetch(`/api/tts/voices?provider=${provider}`);
+        const json = await res.json();
+        const list: Array<{ id: string; name: string; provider: string }> =
+          json.data || [];
+        setVoices(list.map((v) => ({ id: v.id, name: v.name })));
+        if (!list.find((v: any) => v.id === editData.ttsVoice)) {
+          setEditData((p) => ({ ...p, ttsVoice: list[0]?.id || "" }));
+        }
+      }
+    } catch (e) {
+      console.error("Failed to load voices", e);
+      setVoices([]);
+    } finally {
+      setVoicesLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadVoices(editData.ttsProvider);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editData.ttsProvider]);
 
   return (
     <Dialog>
@@ -163,6 +252,79 @@ export default function AgentIdentity({
             value={editData.instructions}
             onChange={(e) => handleChange("instructions", e.target.value)}
           />
+
+          {/* Voice Settings */}
+          <div className="grid grid-cols-2 gap-2">
+            <div className="col-span-1">
+              <Label className="text-sm font-semibold">TTS Provider</Label>
+              <Select
+                value={editData.ttsProvider}
+                onValueChange={(val) =>
+                  setEditData((p) => ({
+                    ...p,
+                    ttsProvider: val as "openai" | "elevenlabs",
+                  }))
+                }
+              >
+                <SelectTrigger className="w-full mt-1">
+                  <SelectValue placeholder="Select provider" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="openai">OpenAI</SelectItem>
+                  <SelectItem value="elevenlabs">ElevenLabs</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="col-span-1">
+              <Label className="text-sm font-semibold">Voice</Label>
+              <Select
+                value={editData.ttsVoice}
+                onOpenChange={(open) => {
+                  if (open && voices.length === 0) {
+                    loadVoices(editData.ttsProvider);
+                  }
+                }}
+                onValueChange={(val) =>
+                  setEditData((p) => ({ ...p, ttsVoice: val }))
+                }
+              >
+                <SelectTrigger className="w-full mt-1">
+                  <SelectValue
+                    placeholder={
+                      voicesLoading ? "Loading voices..." : "Select voice"
+                    }
+                  />
+                </SelectTrigger>
+                <SelectContent>
+                  {voices.map((v) => (
+                    <SelectItem key={v.id} value={v.id}>
+                      {v.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground mt-1">
+                {editData.ttsProvider === "openai"
+                  ? "OpenAI example voices: alloy, coral, verse"
+                  : "Requires ELEVENLABS_API_KEY in the server env"}
+              </p>
+              {editData.ttsProvider === "elevenlabs" && (
+                <div className="mt-2">
+                  <Label className="text-xs">
+                    Or paste an ElevenLabs Voice ID
+                  </Label>
+                  <Input
+                    className="mt-1"
+                    placeholder="e.g. 21m00Tcm4TlvDq8ikWAM"
+                    value={editData.ttsVoice}
+                    onChange={(e) =>
+                      setEditData((p) => ({ ...p, ttsVoice: e.target.value }))
+                    }
+                  />
+                </div>
+              )}
+            </div>
+          </div>
 
           <Label className="text-sm font-semibold">Description</Label>
           <Textarea

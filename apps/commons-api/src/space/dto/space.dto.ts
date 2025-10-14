@@ -4,6 +4,7 @@ interface CreateSpaceDto {
   sessionId?: string;
   isPublic?: boolean;
   maxMembers?: number;
+  image?: string;
   settings?: any;
 }
 
