@@ -44,7 +44,13 @@ export class TranscriptionDeliveryService extends EventEmitter {
         transcription.spaceId,
       );
       const userContent: any[] = [
-        { type: 'text', text: transcription.transcript },
+        {
+          type: 'text',
+          text: ` 
+            Participant: ${transcription.participantId}
+            Timestamp: ${new Date(transcription.timestamp).toISOString()}
+            MessageContent: ${transcription.transcript}`,
+        },
       ];
       if (latestFrameUrl) {
         userContent.push({
@@ -58,14 +64,16 @@ export class TranscriptionDeliveryService extends EventEmitter {
         messages: [
           {
             role: 'system',
-            content: `STREAM_TRANSCRIPTION_UPDATE:
-Space: ${transcription.spaceId}
-Participant: ${transcription.participantId}
-Timestamp: ${new Date(transcription.timestamp).toISOString()}
-Confidence: ${transcription.confidence}
-Kind: ${transcription.type ?? 'audio'}
+            content: `
+              STREAM_TRANSCRIPTION_UPDATE:
+              Space: ${transcription.spaceId}
+              Participant: ${transcription.participantId}
+              Timestamp: ${new Date(transcription.timestamp).toISOString()}
+              Confidence: ${transcription.confidence}
+              Kind: ${transcription.type ?? 'audio'}
 
-You are receiving this because you are listening to a live ${transcription.type ?? 'audio'} stream. Use the content to decide whether to respond or act. Typically you are expected to respond in voice using the speakInSpace tool.`,
+              You are receiving this because you are listening to a live ${transcription.type ?? 'audio'} stream. Use the MessageContent to decide whether to respond or act. Typically you are expected to respond in voice using the speakInSpace tool.
+            `,
           },
           {
             role: 'user',
