@@ -25,7 +25,14 @@ interface UseSpacesOptions {
 }
 
 export function useSpaces(opts: UseSpacesOptions) {
-  const { memberId, agentIds, includeMembers = false, search, auto = true, publicOnly } = opts;
+  const {
+    memberId,
+    agentIds,
+    includeMembers = false,
+    search,
+    auto = true,
+    publicOnly,
+  } = opts;
 
   const [spaces, setSpaces] = useState<SpaceListItem[]>([]);
   const [loading, setLoading] = useState(false);
@@ -41,14 +48,21 @@ export function useSpaces(opts: UseSpacesOptions) {
         params.set("memberId", memberId);
         params.set("memberType", "human");
       }
-      if (agentIds && agentIds.length) agentIds.forEach((aid) => params.append("agentId", aid));
+      if (agentIds && agentIds.length)
+        agentIds.forEach((aid) => params.append("agentId", aid));
       if (includeMembers) params.set("includeMembers", "true");
       if (search) params.set("search", search);
       if (publicOnly) params.set("publicOnly", "true");
-      const res = await fetch(`/api/spaces?${params.toString()}`, { cache: "no-store" });
+      const res = await fetch(`/api/spaces?${params.toString()}`, {
+        cache: "no-store",
+      });
       const data = await res.json();
       if (!res.ok) throw new Error(data?.error || "Failed to load spaces");
-      const list = Array.isArray(data) ? data : Array.isArray(data.data) ? data.data : [];
+      const list = Array.isArray(data)
+        ? data
+        : Array.isArray(data.data)
+          ? data.data
+          : [];
       setSpaces(list);
     } catch (e: any) {
       setError(e.message);

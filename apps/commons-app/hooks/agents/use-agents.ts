@@ -23,10 +23,16 @@ export function useAgents(owner?: string, auto: boolean = true) {
     try {
       const qs = new URLSearchParams();
       if (owner) qs.set("owner", owner);
-      const res = await fetch(`/api/agents?${qs.toString()}`, { cache: "no-store" });
+      const res = await fetch(`/api/agents?${qs.toString()}`, {
+        cache: "no-store",
+      });
       const data = await res.json();
       if (!res.ok) throw new Error(data?.error || "Failed to load agents");
-      const list = Array.isArray(data) ? data : Array.isArray(data.data) ? data.data : [];
+      const list = Array.isArray(data)
+        ? data
+        : Array.isArray(data.data)
+          ? data.data
+          : [];
       setAgents(
         list.map((a: any) => ({
           ...a,
