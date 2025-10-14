@@ -362,6 +362,7 @@ export const space = pgTable('space', {
 
   name: text('name').notNull(),
   description: text('description'),
+  image: text('image'),
 
   createdBy: text('created_by').notNull(), // agentId or userId
   createdByType: text('created_by_type').notNull(), // 'agent' or 'human'

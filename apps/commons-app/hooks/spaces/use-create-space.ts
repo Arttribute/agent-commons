@@ -6,6 +6,7 @@ export interface CreateSpaceInput {
   description?: string;
   isPublic?: boolean;
   maxMembers?: number;
+  image?: string;
 }
 
 export function useCreateSpace(
