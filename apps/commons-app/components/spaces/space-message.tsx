@@ -5,7 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeRaw from "rehype-raw";
-import CodeBlock from "./code-block";
+import CodeBlock from "@/components/sessions/chat/code-block";
 
 interface SpaceMessageProps {
   senderId: string;

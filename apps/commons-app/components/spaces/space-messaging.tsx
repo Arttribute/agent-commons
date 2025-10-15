@@ -13,11 +13,11 @@ import {
   Radio,
   X,
 } from "lucide-react";
-import SpaceInfoDialog from "@/components/sessions/chat/space-info-dialog";
-import SpaceMessage from "@/components/sessions/chat/space-message";
-import SpaceMessageInput from "@/components/sessions/chat/space-message-input";
+import SpaceInfoDialog from "@/components/spaces/space-info-dialog";
+import SpaceMessage from "@/components/spaces/space-message";
+import SpaceMessageInput from "@/components/spaces/space-message-input";
 import { useAuth } from "@/context/AuthContext";
-import SpaceMediaPanel from "@/components/sessions/chat/space-media-panel";
+import SpaceMediaPanel from "@/components/spaces/space-media-panel";
 
 const WS_BASE = process.env.NEXT_PUBLIC_NEST_API_BASE_URL || "";
 
