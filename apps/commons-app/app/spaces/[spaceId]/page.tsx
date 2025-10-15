@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import { useAuth } from "@/context/AuthContext";
-import SpaceMessaging from "@/components/sessions/chat/space-messaging";
+import SpaceMessaging from "@/components/spaces/space-messaging";
 import { useParams } from "next/navigation";
 
 interface FullSpace {

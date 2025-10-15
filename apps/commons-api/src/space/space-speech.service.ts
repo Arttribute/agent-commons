@@ -33,11 +33,25 @@ export class SpaceSpeechService implements OnModuleDestroy {
   private readonly openai?: OpenAI;
 
   // Segmentation is primarily time-based; VAD only for metadata/heuristics
-  private readonly threshold = 0.03; // RMS threshold (optional metadata)
-  private readonly targetChunkMs = 4000; // aim to flush around this duration
-  private readonly maxSegmentMs = 10000; // hard cut regardless of speaking
-  private readonly idleFlushMs = 900; // flush if no chunks arrive for this long
-  private readonly minSegmentMs = 400; // avoid finalizing ultra-short blips
+  private readonly threshold = parseFloat(
+    process.env.SPEECH_RMS_THRESHOLD || '0.03',
+  ); // RMS threshold (optional metadata)
+  private readonly targetChunkMs = parseInt(
+    process.env.SPEECH_TARGET_CHUNK_MS || '2200',
+    10,
+  ); // aim to flush around this duration
+  private readonly maxSegmentMs = parseInt(
+    process.env.SPEECH_MAX_SEGMENT_MS || '8000',
+    10,
+  ); // hard cut regardless of speaking
+  private readonly idleFlushMs = parseInt(
+    process.env.SPEECH_IDLE_FLUSH_MS || '700',
+    10,
+  ); // flush if no chunks arrive for this long
+  private readonly minSegmentMs = parseInt(
+    process.env.SPEECH_MIN_SEGMENT_MS || '350',
+    10,
+  ); // avoid finalizing ultra-short blips
   private tickInterval?: NodeJS.Timeout;
 
   constructor(

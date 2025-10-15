@@ -119,6 +119,18 @@ export class SpaceRtcGateway
       }
     });
 
+    // Relay TTS playback complete signals from server-side (e.g., tool or service) to clients
+    this.emitter.on('space.tts.playback_complete', (evt: any) => {
+      try {
+        if (!evt?.spaceId || !evt?.participantId) return;
+        this.server.to(evt.spaceId).emit('tts_playback_complete', evt);
+      } catch (e) {
+        this.logger.debug(`tts complete relay error: ${String(e)}`);
+      }
+    });
+
+    // Space agent speech append is handled inside SpaceTtsService.
+
     // ───── Relay space message CRUD events to clients (chat live updates) ─────
     this.emitter.on('space.message.created', (evt: any) => {
       try {
@@ -126,7 +138,7 @@ export class SpaceRtcGateway
         this.server.to(evt.spaceId).emit('spaceMessage', {
           type: 'created',
           spaceId: evt.spaceId,
-            // Provide consistent shape for frontend
+          // Provide consistent shape for frontend
           message: evt.message,
         });
       } catch (e) {

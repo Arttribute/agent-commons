@@ -86,6 +86,43 @@ export function useSpaceRTC(options: UseSpaceRTCOptions) {
   const audioTimerRef = useRef<number | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   // We use audioSrc on peers for TTS playback; no off-DOM audio elements needed
+  // Soft queue to serialize TTS playback across agents in the space
+  const ttsQueueRef = useRef<Array<{ pid: string; src: string; id: string }>>(
+    []
+  );
+  const ttsPlayingRef = useRef<boolean>(false);
+  const ttsAudioRef = useRef<HTMLAudioElement | null>(null);
+  const ensureTtsAudio = () => {
+    if (!ttsAudioRef.current) {
+      const a = new Audio();
+      a.autoplay = false; // we'll call play()
+      a.preload = "auto";
+      a.onended = () => {
+        ttsPlayingRef.current = false;
+        drainTtsQueue();
+      };
+      ttsAudioRef.current = a;
+    }
+    return ttsAudioRef.current;
+  };
+  const drainTtsQueue = () => {
+    if (ttsPlayingRef.current) return;
+    const next = ttsQueueRef.current.shift();
+    if (!next) return;
+    const a = ensureTtsAudio();
+    try {
+      a.src = next.src;
+      ttsPlayingRef.current = true;
+      a.currentTime = 0;
+      a.play().catch(() => {
+        // Fallback: attach to peer so UI element can play
+        addOrUpdatePeer(next.pid, { audioSrc: next.src });
+        ttsPlayingRef.current = false;
+      });
+    } catch {
+      ttsPlayingRef.current = false;
+    }
+  };
 
   const [connected, setConnected] = useState(false);
   const [joined, setJoined] = useState(false);
@@ -227,6 +264,7 @@ export function useSpaceRTC(options: UseSpaceRTCOptions) {
       try {
         const pid: string | undefined = evt?.participantId;
         const audio: string | undefined = evt?.audio; // data URL
+        const playbackId: string | undefined = evt?.playbackId;
         if (!pid || !audio) return;
 
         if (process.env.NEXT_PUBLIC_TTS_DEBUG === "true") {
@@ -252,24 +290,26 @@ export function useSpaceRTC(options: UseSpaceRTCOptions) {
           }
         }
 
-        // Ensure peer exists and mark as publishing audio
+        // Queue for serialized playback across the room
+        const id = playbackId || `${pid}:${Date.now()}`;
+        const src = audio + `#t=${Date.now()}`;
+        ttsQueueRef.current.push({ pid, src, id });
+        // Ensure peer exists and mark as speaking; UI can also show who is about to speak
         addOrUpdatePeer(pid, {
           role: (evt.participantType as any) || "agent",
           publishing: { audio: true, video: false },
           isSpeaking: true,
-        });
-
-        // Clear previous audio attachments so UI can bind the new one deterministically
-        addOrUpdatePeer(pid, { audioStream: null, audioSrc: null });
-
-        // Set audioSrc directly; StreamCard will bind and play.
-        // Attach synthetic unique suffix to break cache if same data repeats.
-        addOrUpdatePeer(pid, {
-          audioSrc: audio + `#t=${Date.now()}`,
-          publishing: { audio: true, video: false },
           audioStream: null,
+          audioSrc: null,
         });
+        // Start drain if idle
+        drainTtsQueue();
       } catch {}
+    });
+
+    socket.on("tts_playback_complete", (evt: any) => {
+      // Optional server hint; we already chain via onended
+      // Could be used to update UI instantly if needed
     });
 
     // Web capture lifecycle

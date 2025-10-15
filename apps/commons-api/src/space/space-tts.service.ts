@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Inject, forwardRef } from '@nestjs/common';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
@@ -6,6 +6,8 @@ import { EventEmitter } from 'events';
 import { DatabaseService } from '~/modules/database/database.service';
 import { eq } from 'drizzle-orm';
 import { OpenAIService } from '~/modules/openai/openai.service';
+import * as schema from '#/models/schema';
+import { SessionService } from '~/session/session.service';
 
 export type TtsProvider = 'openai' | 'elevenlabs';
 
@@ -33,6 +35,8 @@ export class SpaceTtsService {
     private readonly db: DatabaseService,
     private readonly emitter: EventEmitter,
     private readonly openai: OpenAIService,
+    @Inject(forwardRef(() => SessionService))
+    private readonly session: SessionService,
   ) {}
 
   /**
@@ -100,14 +104,75 @@ export class SpaceTtsService {
           voice,
           at: Date.now(),
           bytes: buffer.length,
+          // Optional ordering hint so clients may schedule sequential playback per space
+          playbackId: `${spaceId}:${agentId}:${Date.now()}:${Math.random().toString(36).slice(2, 7)}`,
         });
       } catch {}
+
+      // Append this speech content into other agents' sessions as a user message (no runAgent trigger)
+      await this.appendSpeechToOtherAgentSessions({
+        spaceId,
+        fromAgentId: agentId,
+        text,
+      }).catch((e) =>
+        this.logger.debug(
+          `appendSpeechToOtherAgentSessions error: ${String(e)}`,
+        ),
+      );
 
       return { success: true, mime, bytes: buffer.length };
     } catch (e) {
       this.logger.warn(`speak failed (${provider}): ${String(e)}`);
       return { success: false, mime: 'application/octet-stream', bytes: 0 };
     }
+  }
+
+  private async appendSpeechToOtherAgentSessions(args: {
+    spaceId: string;
+    fromAgentId: string;
+    text: string;
+  }) {
+    const { spaceId, fromAgentId, text } = args;
+    const members = await this.db.query.spaceMember.findMany({
+      where: (t) =>
+        eq(t.spaceId, spaceId) &&
+        eq(t.memberType, 'agent') &&
+        eq(t.status, 'active') &&
+        eq(t.isSubscribed, true),
+    });
+    const targets: string[] = (members || [])
+      .map((m) => (m as any).memberId)
+      .filter((id) => id !== fromAgentId);
+    if (!targets.length) return;
+    const atIso = new Date().toISOString();
+    await Promise.all(
+      targets.map(async (agentId) => {
+        const { session } = await this.session.getOrCreateAgentSpaceSession({
+          agentId,
+          spaceId,
+          initiator: fromAgentId,
+        });
+        // Fetch existing history (may be null)
+        const current = await this.db.query.session.findFirst({
+          where: (t) => eq(t.sessionId, session.sessionId),
+        });
+        const history = (current?.history as any[]) || [];
+        const entry = {
+          role: 'user',
+          content: text,
+          timestamp: atIso,
+          metadata: {
+            participantId: fromAgentId,
+            spaceId,
+            source: 'agent_speech',
+          },
+        };
+        await this.db
+          .update(schema.session)
+          .set({ history: [...history, entry] } as any)
+          .where(eq(schema.session.sessionId, session.sessionId));
+      }),
+    );
   }
 
   private defaultVoiceFor(provider: TtsProvider) {

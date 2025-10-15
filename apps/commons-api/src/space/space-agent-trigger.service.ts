@@ -52,19 +52,34 @@ export class SpaceAgentTriggerService {
       if (message.senderType !== 'human') return;
       if (!message.content || !message.content.trim()) return;
 
-      // Push (replace older from same space if within debounce window)
-      const now = Date.now();
-      this.queue.push({
-        spaceId,
-        messageId: message.messageId,
-        content: message.content,
-        senderId: message.senderId,
-        scheduledAt: now + this.debounceMs,
-      });
-      this.logger.debug(
-        `Queued trigger for space ${spaceId} message ${message.messageId}`,
-      );
-      this.process();
+      // Immediate parallel trigger mode (default). Use queue only if explicitly enabled.
+      const useQueue = process.env.SPACE_TRIGGER_USE_QUEUE === '1';
+      if (useQueue) {
+        const now = Date.now();
+        this.queue.push({
+          spaceId,
+          messageId: message.messageId,
+          content: message.content,
+          senderId: message.senderId,
+          scheduledAt: now + this.debounceMs,
+        });
+        this.logger.debug(
+          `Queued trigger for space ${spaceId} message ${message.messageId}`,
+        );
+        this.process();
+      } else {
+        this.logger.debug(
+          `Immediate trigger for space ${spaceId} message ${message.messageId}`,
+        );
+        // Fire-and-forget parallel runs for all agents in space
+        await this.triggerAgentsForSpace(spaceId, {
+          spaceId,
+          messageId: message.messageId,
+          content: message.content,
+          senderId: message.senderId,
+          scheduledAt: Date.now(),
+        });
+      }
     } catch (e) {
       this.logger.warn(`handleNewMessage error: ${String(e)}`);
     }

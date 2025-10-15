@@ -19,7 +19,7 @@ import { cn } from "@/lib/utils";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import TaskCarousel from "@/components/sessions/tasks/task-carousel";
 import MessagesView from "@/components/sessions/chat/messages-view";
-import SpacesView from "@/components/sessions/chat/spaces-view";
+import SpacesView from "@/components/spaces/spaces-view";
 
 interface Task {
   taskId: string;
