@@ -119,13 +119,15 @@ const StudioPage: NextPage = () => {
           <div className="p-4">
             <h2 className="text-xl font-semibold">My Agents</h2>
             <p className="text-gray-500 text-sm mb-2">Manage your agents</p>
-            {loadingAgents ? (
-              <div className="flex items-center justify-center h-32">
-                <Loader2 className="h-5 w-5 animate-spin" />
-              </div>
-            ) : (
-              <AgentsShowcase agents={agents} />
-            )}
+            <div className="h-[64vh]">
+              {loadingAgents ? (
+                <div className="flex items-center justify-center h-32">
+                  <Loader2 className="h-5 w-5 animate-spin" />
+                </div>
+              ) : (
+                <AgentsShowcase agents={agents} />
+              )}
+            </div>
           </div>
         );
     }
@@ -157,6 +159,11 @@ const StudioPage: NextPage = () => {
 
           <div className="w-full relative h-[88vh]">
             <div className="flex items-center justify-between px-4 pt-4">
+              <div className="">
+                <div className="bg-cyan-200 w-20 h-8 -mb-8 rounded-lg"></div>
+                <h2 className="text-2xl font-semibold"> Studio</h2>
+              </div>
+
               <Tabs
                 value={activeTab || "agents"}
                 onValueChange={(v) => router.push(`/studio/${v}`)}
@@ -171,7 +178,7 @@ const StudioPage: NextPage = () => {
               <Button
                 size="sm"
                 variant="outline"
-                className="h-8 border border-gray-800 font-semibold"
+                className="border border-gray-800 font-semibold px-6"
                 onClick={() => router.push(createRoute.href)}
               >
                 {createRoute.label}

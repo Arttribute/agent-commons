@@ -97,7 +97,7 @@ export default function AgentsShowcase({ agents = [] }: { agents: Agent[] }) {
   }
 
   return (
-    <div className="overflow-hidden">
+    <div className="overflow-hidden w-full h-full relative rounded-lg">
       {agentsWithPositions.map((agent, idx) => (
         <div
           key={agent.agentId || idx}
@@ -121,7 +121,7 @@ export default function AgentsShowcase({ agents = [] }: { agents: Agent[] }) {
               <HoverCardTrigger asChild>
                 <Link href={`/studio/agents/${agent.agentId}`}>
                   <button
-                    className="w-20 h-20 rounded-full overflow-hidden shadow-md hover:shadow-xl transition p-0.5 border border-gray-400"
+                    className="w-16 h-16 rounded-full overflow-hidden shadow-md hover:shadow-xl transition p-0.5 border border-gray-400 z-10"
                     aria-label={agent.name}
                   >
                     {agent.profileImage ? (
@@ -133,12 +133,12 @@ export default function AgentsShowcase({ agents = [] }: { agents: Agent[] }) {
                         className="object-cover rounded-full w-full h-full"
                       />
                     ) : (
-                      <RandomPixelAvatar username={agent.agentId} size={72} />
+                      <RandomPixelAvatar username={agent.agentId} size={58} />
                     )}
                   </button>
                 </Link>
               </HoverCardTrigger>
-              <HoverCardContent className="w-80 bg-white p-4 rounded-lg shadow-lg z-20">
+              <HoverCardContent className="w-80 bg-white p-4 rounded-lg shadow-lg z-40">
                 <h3 className="mb-2 text-lg font-bold">{agent.name}</h3>
 
                 <p className="text-sm text-gray-700">

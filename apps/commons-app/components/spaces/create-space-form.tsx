@@ -8,13 +8,9 @@ import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import Link from "next/link";
 import RandomAvatar from "@/components/account/random-avatar";
-import {
-  HoverCard,
-  HoverCardContent,
-  HoverCardTrigger,
-} from "@/components/ui/hover-card";
+// Hover details removed for a simpler UI
 import { useAgents } from "@/hooks/agents/use-agents";
-import { Checkbox } from "../ui/checkbox";
+// Using a native checkbox for simpler controlled behavior
 import { cn } from "@/lib/utils";
 import { Globe, Lock, Plus } from "lucide-react";
 import { Textarea } from "@/components/ui/textarea";
@@ -85,7 +81,8 @@ export function CreateSpaceForm({ creatorId, onCreated }: Props) {
   return (
     <form
       onSubmit={handleSubmit}
-      className="space-y-4 p-6 border border-gray-400 rounded-2xl bg-white  hover:shadow-xl transition-shadow duration-200"
+      className="space-y-4 p-6 border border-gray-400 rounded-lg
+       bg-white"
     >
       <div className="">
         <div className="bg-teal-200 w-48 h-8 -mb-8 rounded-lg"></div>
@@ -112,7 +109,7 @@ export function CreateSpaceForm({ creatorId, onCreated }: Props) {
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-3">
                       {isPublic ? (
-                        <Globe className="w-4 h-4 text-blue-600" />
+                        <Globe className="w-4 h-4 text-gray-600" />
                       ) : (
                         <Lock className="w-4 h-4 text-gray-600" />
                       )}
@@ -192,53 +189,32 @@ export function CreateSpaceForm({ creatorId, onCreated }: Props) {
             {agents.map((a) => {
               const checked = selectedAgentIds.includes(a.agentId);
               return (
-                <HoverCard key={a.agentId}>
-                  <HoverCardTrigger asChild>
-                    <div
-                      className={cn(
-                        "flex items-center gap-3 p-3 cursor-pointer transition-all duration-150",
-                        checked
-                          ? "bg-gradient-to-r from-blue-50 to-purple-50"
-                          : "hover:bg-gray-50"
-                      )}
-                      onClick={() => toggleAgent(a.agentId)}
-                    >
-                      <Checkbox
-                        checked={checked}
-                        // Prevent row onClick from also toggling
-                        onClick={(e) => e.stopPropagation()}
-                        onCheckedChange={(v) => toggleAgent(a.agentId, !!v)}
-                      />
-                      <RandomAvatar username={a.agentId} size={32} />
-                      <div className="flex flex-col flex-1 min-w-0">
-                        <span className="text-sm font-medium text-gray-900 truncate">
-                          {a.name}
-                        </span>
-                        <span className="text-xs text-gray-500 truncate">
-                          {a.agentId}
-                        </span>
-                      </div>
-                    </div>
-                  </HoverCardTrigger>
-                  <HoverCardContent className="w-80 bg-white p-4 rounded-xl shadow-xl border border-gray-200 z-20">
-                    <div className="flex items-center gap-3 mb-3">
-                      <RandomAvatar username={a.agentId} size={48} />
-                      <div className="flex-1 min-w-0">
-                        <div className="text-sm font-semibold text-gray-900 truncate">
-                          {a.name}
-                        </div>
-                        <div className="text-xs text-gray-500 truncate">
-                          {a.agentId}
-                        </div>
-                      </div>
-                    </div>
-                    <p className="text-xs text-gray-700 leading-relaxed">
-                      {a.persona ||
-                        a.description ||
-                        "No description available."}
-                    </p>
-                  </HoverCardContent>
-                </HoverCard>
+                <div
+                  key={a.agentId}
+                  className={cn(
+                    "flex items-center gap-3 p-3 transition-all duration-150",
+                    checked
+                      ? "bg-gradient-to-r from-blue-50 to-purple-50"
+                      : "hover:bg-gray-50"
+                  )}
+                >
+                  <input
+                    type="checkbox"
+                    className="w-4 h-3.5 shrink-0 rounded-[8px] border border-gray-300 bg-white accent-black transition-colors focus:outline-none "
+                    checked={checked}
+                    onChange={(e) => toggleAgent(a.agentId, e.target.checked)}
+                    aria-label={`Select ${a.name}`}
+                  />
+                  <RandomAvatar username={a.agentId} size={32} />
+                  <div className="flex flex-col flex-1 min-w-0">
+                    <span className="text-sm font-medium text-gray-900 truncate">
+                      {a.name}
+                    </span>
+                    <span className="text-xs text-gray-500 truncate">
+                      {a.agentId}
+                    </span>
+                  </div>
+                </div>
               );
             })}
           </ScrollArea>

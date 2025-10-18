@@ -5,7 +5,7 @@ export default function ExternalAgentPage() {
   return (
     <>
       <AppBar />
-      <div className="min-h-screen  mt-16">
+      <div className="min-h-screen  mt-20">
         <ExternalAgentForm />
       </div>
     </>
