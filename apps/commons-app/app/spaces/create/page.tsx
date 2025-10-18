@@ -5,6 +5,7 @@ import { DashboardSideBar } from "@/components/layout/dashboard-side-bar";
 import { useAuth } from "@/context/AuthContext";
 import { CreateSpaceForm } from "@/components/spaces/create-space-form";
 import { useRouter } from "next/navigation";
+import Image from "next/image";
 
 export default function CreateSpacePage() {
   const { authState } = useAuth();

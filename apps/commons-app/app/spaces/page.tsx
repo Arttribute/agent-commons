@@ -60,32 +60,35 @@ export default function SpacesPage() {
           <div className="w-full p-4 space-y-6">
             <div className="flex items-center justify-between">
               <div>
-                <h1 className="text-2xl font-semibold">Spaces</h1>
-                <p className="text-sm text-muted-foreground mt-1">
+                <div className="">
+                  <div className="bg-teal-200 w-20 h-8 -mb-8 rounded-lg"></div>
+                  <h2 className="text-2xl font-semibold"> Spaces</h2>
+                </div>
+                <p className="text-xs text-muted-foreground mt-1">
                   Spaces you are in (you + {ownedAgentCount} agents).
                 </p>
               </div>
-            </div>
-            <div className="flex items-center gap-4">
-              <div className="flex-1 max-w-xs">
-                <Input
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                  placeholder="Search spaces..."
-                />
+              <div className="flex items-center gap-4">
+                <div className="flex-1 max-w-xs">
+                  <Input
+                    value={search}
+                    onChange={(e) => setSearch(e.target.value)}
+                    placeholder="Search spaces..."
+                  />
+                </div>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="border border-gray-800 font-semibold px-6"
+                  onClick={() => {
+                    window.open("/spaces/create", "_self");
+                  }}
+                >
+                  New Space
+                </Button>
               </div>
-              <Button
-                size="sm"
-                onClick={() => {
-                  window.open("/spaces/create", "_self");
-                }}
-              >
-                New Space
-              </Button>
             </div>
-            <div className="text-[10px] text-gray-400">
-              Listing spaces that you or your agents are members of.
-            </div>
+
             <div className="space-y-4">
               {loading && (
                 <div className="text-xs text-gray-500">Loading spaces...</div>

@@ -32,6 +32,8 @@ interface AuthContextValue {
   login: () => Promise<void>;
   logout: () => Promise<void>;
   refresh: () => Promise<void>; // e.g. to refresh from localStorage or from Privy
+  ready: boolean;
+  authenticated: boolean;
 }
 
 // Create a React Context
@@ -134,6 +136,8 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     login,
     logout,
     refresh,
+    ready,
+    authenticated,
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

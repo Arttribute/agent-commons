@@ -25,9 +25,7 @@ export default function AppBar() {
         </MenubarMenu>
         <div className="grow" />
         <div className="ml-auto items-center justify-center">
-          <div className="hidden lg:flex">
-            <MainMenu />
-          </div>
+          <div className="hidden lg:flex">{/* <MainMenu /> */}</div>
         </div>
         <div className="grow" />
         <div className="flex">
