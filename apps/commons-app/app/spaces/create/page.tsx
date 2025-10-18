@@ -13,23 +13,22 @@ export default function CreateSpacePage() {
   const router = useRouter();
 
   return (
-    <div>
-      <div className="mt-12">
-        <div className="flex">
-          <div className="w-full p-4 max-w-xl">
-            <CreateSpaceForm
-              creatorId={humanId}
-              onCreated={(space) => {
-                if (space?.spaceId) {
-                  router.push(`/spaces/${space.spaceId}`);
-                } else {
-                  router.push("/spaces");
-                }
-              }}
-            />
-          </div>
+    <>
+      <AppBar />
+      <div className="flex justify-center min-h-screen  mt-16">
+        <div className="w-full max-w-xl">
+          <CreateSpaceForm
+            creatorId={humanId}
+            onCreated={(space) => {
+              if (space?.spaceId) {
+                router.push(`/spaces/${space.spaceId}`);
+              } else {
+                router.push("/spaces");
+              }
+            }}
+          />
         </div>
       </div>
-    </div>
+    </>
   );
 }
