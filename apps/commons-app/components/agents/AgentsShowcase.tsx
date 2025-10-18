@@ -10,6 +10,8 @@ import {
   HoverCardTrigger,
 } from "@/components/ui/hover-card";
 import RandomPixelAvatar from "@/components/account/random-avatar";
+import { DotPattern } from "@/components/magicui/dot-pattern";
+import { cn } from "@/lib/utils";
 
 interface Agent {
   agentId: string;
@@ -97,31 +99,40 @@ export default function AgentsShowcase({ agents = [] }: { agents: Agent[] }) {
   }
 
   return (
-    <div className="overflow-hidden w-full h-full relative rounded-lg">
+    <div className="relative w-full h-full rounded-lg">
+      {/* Background pattern at the very bottom */}
+      <div className="pointer-events-none absolute inset-0 -z-10 overflow-hidden rounded-lg">
+        <DotPattern
+          className={cn(
+            "[mask-image:radial-gradient(400px_circle_at_center,white,transparent)] "
+          )}
+        />
+      </div>
+
       {agentsWithPositions.map((agent, idx) => (
         <div
           key={agent.agentId || idx}
-          className="absolute"
+          className="absolute z-10"
           style={{
             top: agent.position.top,
             left: agent.position.left,
             transform: "translate(-50%, -50%)",
           }}
         >
-          <motion.div
-            animate={{ y: [0, -5, 0] }}
-            transition={{
-              duration: 3,
-              repeat: Infinity,
-              ease: "easeInOut",
-              delay: (idx % 5) * 0.2,
-            }}
-          >
-            <HoverCard>
-              <HoverCardTrigger asChild>
+          <HoverCard>
+            <HoverCardTrigger asChild>
+              <motion.div
+                animate={{ y: [0, -5, 0] }}
+                transition={{
+                  duration: 3,
+                  repeat: Infinity,
+                  ease: "easeInOut",
+                  delay: (idx % 5) * 0.2,
+                }}
+              >
                 <Link href={`/studio/agents/${agent.agentId}`}>
                   <button
-                    className="w-16 h-16 rounded-full overflow-hidden shadow-md hover:shadow-xl transition p-0.5 border border-gray-400 z-10"
+                    className="w-16 h-16 rounded-full overflow-hidden shadow-md hover:shadow-xl transition p-0.5 border border-gray-400 z-20"
                     aria-label={agent.name}
                   >
                     {agent.profileImage ? (
@@ -137,16 +148,16 @@ export default function AgentsShowcase({ agents = [] }: { agents: Agent[] }) {
                     )}
                   </button>
                 </Link>
-              </HoverCardTrigger>
-              <HoverCardContent className="w-80 bg-white p-4 rounded-lg shadow-lg z-40">
-                <h3 className="mb-2 text-lg font-bold">{agent.name}</h3>
+              </motion.div>
+            </HoverCardTrigger>
+            <HoverCardContent className="z-[1000] w-60  bg-white px-3 py-2 rounded-lg shadow-lg border border-gray-400">
+              <h3 className="text-sm font-semibold truncate">{agent.name}</h3>
 
-                <p className="text-sm text-gray-700">
-                  {agent.persona || agent.description || "No description."}
-                </p>
-              </HoverCardContent>
-            </HoverCard>
-          </motion.div>
+              <p className="text-xs text-gray-500 truncate w-full">
+                {agent.persona || agent.description || "No description."}
+              </p>
+            </HoverCardContent>
+          </HoverCard>
         </div>
       ))}
     </div>

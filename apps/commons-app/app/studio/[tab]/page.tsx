@@ -155,7 +155,7 @@ const StudioPage: NextPage = () => {
       {/* Main layout */}
       <div className="mt-12">
         <div className="flex">
-          <DashboardSideBar username={"userAddress"} />
+          <DashboardSideBar username={userAddress || ""} />
 
           <div className="w-full relative h-[88vh]">
             <div className="flex items-center justify-between px-4 pt-4">

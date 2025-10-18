@@ -27,7 +27,10 @@ export function CreateSpaceForm({ creatorId, onCreated }: Props) {
   const [description, setDescription] = useState("");
   const [isPublic, setIsPublic] = useState(true);
   const [maxMembers, setMaxMembers] = useState<number | "">("");
-  const { agents } = useAgents(creatorId);
+  const { agents, loading: agentsLoading } = useAgents(creatorId);
+  // If there's no creatorId yet, treat agents as loading to avoid showing
+  // "No agents yet" while the owner/human id is resolving in the parent.
+  const showAgentsLoading = agentsLoading || !creatorId;
   const [selectedAgentIds, setSelectedAgentIds] = useState<string[]>([]);
   const [image, setImage] = useState<string | undefined>(undefined);
 
@@ -161,7 +164,23 @@ export function CreateSpaceForm({ creatorId, onCreated }: Props) {
             New agent
           </Link>
         </div>
-        {!agents || agents.length === 0 ? (
+  {showAgentsLoading ? (
+          <div className="p-4 bg-gradient-to-br from-blue-50 to-purple-50 border border-blue-200 rounded-xl">
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex-1">
+                <p className="text-sm font-medium text-gray-900 mb-1">
+                  Loading agents…
+                </p>
+                <p className="text-xs text-gray-600">
+                  Fetching your agents — this should be quick.
+                </p>
+              </div>
+                    <div className="flex items-center gap-2">
+                <div className="w-4 h-4 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
+              </div>
+            </div>
+          </div>
+        ) : !agents || agents.length === 0 ? (
           <div className="p-4 bg-gradient-to-br from-blue-50 to-purple-50 border border-blue-200 rounded-xl">
             <div className="flex items-center justify-between gap-3">
               <div className="flex-1">
@@ -204,6 +223,7 @@ export function CreateSpaceForm({ creatorId, onCreated }: Props) {
                     checked={checked}
                     onChange={(e) => toggleAgent(a.agentId, e.target.checked)}
                     aria-label={`Select ${a.name}`}
+                    disabled={showAgentsLoading}
                   />
                   <RandomAvatar username={a.agentId} size={32} />
                   <div className="flex flex-col flex-1 min-w-0">

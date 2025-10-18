@@ -5,7 +5,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { PanelLeft, PanelRight, Sparkles, Earth, Folder } from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { DashboardBar } from "./DashboardBar";
+import { DashboardBar } from "./dashboard-bar";
 import SessionsList from "../sessions/sessions-list";
 import { useAuth } from "@/context/AuthContext";
 import { useSidebar } from "@/context/SidebarContext";
@@ -45,7 +45,7 @@ export function DashboardSideBar({ username }: { username: string }) {
   return (
     <div
       className={cn(
-        "h-screen bg-background border-r border-border border-gray-400 flex flex-col transition-all duration-300",
+        "h-[calc(100vh-50px)] bg-background border-r border-border border-gray-400 flex flex-col transition-all duration-300",
         isOpen ? "w-[260px] min-w-[260px]" : "w-[60px] min-w-[60px]"
       )}
     >
@@ -69,7 +69,7 @@ export function DashboardSideBar({ username }: { username: string }) {
             <h3 className="text-xs font-medium text-muted-foreground mb-2">
               Recent sessions
             </h3>
-            <ScrollArea className="h-[calc(80vh-200px)] px-1">
+            <ScrollArea className="h-[60vh] px-1">
               <SessionsList sessions={recentChats} />
             </ScrollArea>
           </div>
