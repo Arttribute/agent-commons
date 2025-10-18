@@ -15,8 +15,8 @@ export default function CreateSpacePage() {
   return (
     <>
       <AppBar />
-      <div className="flex justify-center min-h-screen  mt-16">
-        <div className="w-full max-w-xl">
+      <div className="flex justify-center  mt-20">
+        <div className="w-full max-w-lg">
           <CreateSpaceForm
             creatorId={humanId}
             onCreated={(space) => {

@@ -85,7 +85,7 @@ export function CreateSpaceForm({ creatorId, onCreated }: Props) {
   return (
     <form
       onSubmit={handleSubmit}
-      className="space-y-4 p-6 border border-gray-400 rounded-2xl bg-white  hover:shadow-xl transition-shadow duration-200"
+      className="space-y-4 p-6 border border-gray-400 rounded-lg bg-white"
     >
       <div className="">
         <div className="bg-teal-200 w-48 h-8 -mb-8 rounded-lg"></div>
@@ -112,7 +112,7 @@ export function CreateSpaceForm({ creatorId, onCreated }: Props) {
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-3">
                       {isPublic ? (
-                        <Globe className="w-4 h-4 text-blue-600" />
+                        <Globe className="w-4 h-4 text-gray-600" />
                       ) : (
                         <Lock className="w-4 h-4 text-gray-600" />
                       )}
@@ -205,9 +205,10 @@ export function CreateSpaceForm({ creatorId, onCreated }: Props) {
                     >
                       <Checkbox
                         checked={checked}
-                        // Prevent row onClick from also toggling
-                        onClick={(e) => e.stopPropagation()}
-                        onCheckedChange={(v) => toggleAgent(a.agentId, !!v)}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          toggleAgent(a.agentId, !checked);
+                        }}
                       />
                       <RandomAvatar username={a.agentId} size={32} />
                       <div className="flex flex-col flex-1 min-w-0">
