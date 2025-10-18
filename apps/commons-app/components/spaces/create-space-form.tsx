@@ -16,9 +16,10 @@ import {
 import { useAgents } from "@/hooks/agents/use-agents";
 import { Checkbox } from "../ui/checkbox";
 import { cn } from "@/lib/utils";
-import { Globe, Lock, Users, Sparkles, Plus } from "lucide-react";
+import { Globe, Lock, Plus } from "lucide-react";
+import { Textarea } from "@/components/ui/textarea";
 import ImageUploader from "@/components/agents/ImageUploader";
-
+import { ScrollArea } from "@/components/ui/scroll-area";
 interface Props {
   creatorId?: string;
   onCreated?: (space: any) => void;
@@ -84,90 +85,76 @@ export function CreateSpaceForm({ creatorId, onCreated }: Props) {
   return (
     <form
       onSubmit={handleSubmit}
-      className="space-y-6 p-6 border border-gray-200 rounded-2xl bg-white shadow-lg hover:shadow-xl transition-shadow duration-200"
+      className="space-y-4 p-6 border border-gray-400 rounded-2xl bg-white  hover:shadow-xl transition-shadow duration-200"
     >
-      <div className="flex items-center gap-3 pb-4 border-b border-gray-100">
-        <div className="p-2 bg-gradient-to-br from-blue-500 to-purple-600 rounded-lg">
-          <Sparkles className="w-5 h-5 text-white" />
-        </div>
-        <div>
-          <h3 className="text-lg font-semibold text-gray-900">
-            Create New Space
-          </h3>
-          <p className="text-xs text-gray-500">
-            Set up your collaborative environment
-          </p>
-        </div>
+      <div className="">
+        <div className="bg-teal-200 w-48 h-8 -mb-8 rounded-lg"></div>
+        <h2 className="text-2xl font-semibold">Create New Space</h2>
       </div>
 
       <div className="space-y-1.5">
-        <label className="block text-sm font-semibold text-gray-700">
-          Space Name
-        </label>
         <div className="flex items-center gap-4">
           <ImageUploader onImageChange={setImage} defaultImage={image} />
-          <Input
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            placeholder="e.g., Product Team, Design Squad"
-            required
-            className="h-11 bg-gray-50 border-gray-200 focus:bg-white transition-colors"
-          />
+          <div className="flex flex-col gap-2 w-full">
+            <div>
+              <label className="block text-sm text-gray-700">Space name</label>
+              <Input
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder="e.g., Product Team, Design Squad"
+                required
+                className="h-11 bg-gray-50 border-gray-200 focus:bg-white transition-colors"
+              />
+            </div>
+            <div className="grid grid-cols-3 gap-4">
+              <div className="col-span-3">
+                <div className=" px-4 py-2 bg-gradient-to-br from-gray-50 to-white rounded-xl border border-gray-200">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      {isPublic ? (
+                        <Globe className="w-4 h-4 text-blue-600" />
+                      ) : (
+                        <Lock className="w-4 h-4 text-gray-600" />
+                      )}
+                      <div>
+                        <label
+                          htmlFor="public-switch"
+                          className="text-sm text-gray-700 cursor-pointer"
+                        >
+                          {isPublic ? "Public Space" : "Private Space"}
+                        </label>
+                      </div>
+                    </div>
+                    <Switch
+                      checked={isPublic}
+                      onCheckedChange={(v) => setIsPublic(v)}
+                      id="public-switch"
+                    />
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
 
       <div className="space-y-1.5">
-        <label className="block text-sm font-semibold text-gray-700">
-          Description
-        </label>
-        <Input
+        <label className="block text-sm text-gray-700">Description</label>
+        <Textarea
           value={description}
           onChange={(e) => setDescription(e.target.value)}
           placeholder="What's this space about?"
-          className="h-11 bg-gray-50 border-gray-200 focus:bg-white transition-colors"
+          className="min-h-20"
         />
         <p className="text-xs text-gray-500">
           Optional - help others understand your space
         </p>
       </div>
 
-      <div className="p-4 bg-gradient-to-br from-gray-50 to-white rounded-xl border border-gray-200">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            {isPublic ? (
-              <Globe className="w-5 h-5 text-blue-600" />
-            ) : (
-              <Lock className="w-5 h-5 text-gray-600" />
-            )}
-            <div>
-              <label
-                htmlFor="public-switch"
-                className="text-sm font-semibold text-gray-700 cursor-pointer"
-              >
-                {isPublic ? "Public Space" : "Private Space"}
-              </label>
-              <p className="text-xs text-gray-500">
-                {isPublic
-                  ? "Anyone can discover and join"
-                  : "Invite-only access"}
-              </p>
-            </div>
-          </div>
-          <Switch
-            checked={isPublic}
-            onCheckedChange={(v) => setIsPublic(v)}
-            id="public-switch"
-          />
-        </div>
-      </div>
-
       <div className="space-y-3">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <Users className="w-4 h-4 text-gray-600" />
-            <label className="text-sm font-semibold text-gray-700">
-              Add Agents
-            </label>
+            <label className="text-sm text-gray-700">Add Agents</label>
           </div>
           <Link
             href="/agents/create"
@@ -201,7 +188,7 @@ export function CreateSpaceForm({ creatorId, onCreated }: Props) {
             </div>
           </div>
         ) : (
-          <div className="max-h-48 overflow-auto border border-gray-200 rounded-xl divide-y divide-gray-100 bg-white shadow-sm">
+          <ScrollArea className="h-36 border border-gray-200 rounded-xl divide-y divide-gray-100 bg-white shadow-sm">
             {agents.map((a) => {
               const checked = selectedAgentIds.includes(a.agentId);
               return (
@@ -254,27 +241,8 @@ export function CreateSpaceForm({ creatorId, onCreated }: Props) {
                 </HoverCard>
               );
             })}
-          </div>
+          </ScrollArea>
         )}
-      </div>
-
-      <div className="space-y-1.5">
-        <label className="block text-sm font-semibold text-gray-700">
-          Max Members
-        </label>
-        <Input
-          type="number"
-          min={1}
-          value={maxMembers}
-          onChange={(e) =>
-            setMaxMembers(e.target.value ? Number(e.target.value) : "")
-          }
-          placeholder="Unlimited"
-          className="h-11 bg-gray-50 border-gray-200 focus:bg-white transition-colors"
-        />
-        <p className="text-xs text-gray-500">
-          Leave empty for unlimited members
-        </p>
       </div>
 
       {error && (
@@ -283,22 +251,14 @@ export function CreateSpaceForm({ creatorId, onCreated }: Props) {
         </div>
       )}
 
-      <Button
-        type="submit"
-        size="lg"
-        disabled={loading || !creatorId}
-        className="w-full bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white shadow-lg hover:shadow-xl transition-all duration-200 h-12 text-base font-semibold"
-      >
+      <Button type="submit" disabled={loading || !creatorId} className="w-full">
         {loading ? (
           <span className="flex items-center gap-2">
             <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
             Creating...
           </span>
         ) : (
-          <span className="flex items-center gap-2">
-            <Sparkles className="w-4 h-4" />
-            Create Space
-          </span>
+          <span className="flex items-center gap-2">Create Space</span>
         )}
       </Button>
     </form>

@@ -21,6 +21,7 @@ import {
 } from 'viem';
 import { baseSepolia } from '#/lib/baseSepolia';
 import { privateKeyToAccount } from 'viem/accounts';
+import { isObservable, lastValueFrom } from 'rxjs';
 
 const API_SECRET_HASH_KEY =
   process.env.API_SECRET_HASH_KEY || 'default_api_secret_hash_key';
@@ -37,6 +38,21 @@ export class LiaisonService {
     private coinbase: CoinbaseService,
     private agentService: AgentService,
   ) {}
+
+  /**
+   * Helper to convert a value that might be a Promise or an RxJS Observable
+   * into a resolved value. This ensures callers get a concrete result instead
+   * of an Observable object.
+   */
+  private async resolveMaybeObservable<T>(
+    input: T | Promise<T> | any,
+  ): Promise<T> {
+    const awaited: any = await input;
+    if (isObservable(awaited)) {
+      return await lastValueFrom(awaited as any);
+    }
+    return awaited as T;
+  }
 
   /**
    * Creates a new liaison agent.
@@ -161,12 +177,18 @@ export class LiaisonService {
     message?: string,
   ) {
     await this.verifyLiaisonKey(agentId, providedKey);
-    const result = await this.agentService.runAgent({
-      agentId,
-      messages: message ? [{ role: 'user', content: message }] : [],
-      stream: false, // Set to true if you want streaming responses
-      initiator: 'liaison', //change to actual initiator
-    });
+    console.log('Liaison key verified successfully.');
+    console.log('Message:', message);
+    // runAgent may return an Observable (for streaming). Since we set stream:false,
+    // unwrap any Observable to return a concrete value to the caller.
+    const result = await this.resolveMaybeObservable(
+      this.agentService.runAgent({
+        agentId,
+        messages: message ? [{ role: 'user', content: message }] : [],
+        stream: false, // non-streaming: expect a single result
+        initiator: 'liaison',
+      }),
+    );
     return result;
   }
 }
