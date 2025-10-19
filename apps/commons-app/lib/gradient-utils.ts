@@ -1,12 +1,9 @@
-import React from "react";
-
 /**
- * A list of single or multi-color gradient classes.
- * Make sure these classes are valid in your Tailwind config!
+ * Shared gradient utilities for deterministic, multi-color backgrounds.
  */
 
-//no gradients past 300
-const multiColorGradients = [
+// Keep shades <= 300 for avatars, but allow more intense gradients for space cards
+export const multiColorGradients = [
   "bg-gradient-to-r from-red-200 via-yellow-200 to-green-200",
   "bg-gradient-to-r from-blue-200 via-purple-200 to-pink-200",
   "bg-gradient-to-r from-indigo-200 via-fuchsia-200 to-orange-200",
@@ -81,10 +78,27 @@ const multiColorGradients = [
   "bg-gradient-to-b from-amber-300 via-yellow-300 to-lime-300",
 ];
 
-/**
- * Simple hashing function to produce a consistent numeric hash for strings.
- */
-function hashCode(str: string): number {
+// More intense gradients for space cards using CSS colors
+export const intenseGradients = [
+  { from: "#f87171", via: "#f97316", to: "#fbbf24" }, // red-orange-yellow
+  { from: "#3b82f6", via: "#a855f7", to: "#ec4899" }, // blue-purple-pink
+  { from: "#6366f1", via: "#c026d3", to: "#f97316" }, // indigo-fuchsia-orange
+  { from: "#14b8a6", via: "#34d399", to: "#84cc16" }, // teal-emerald-lime
+  { from: "#f43f5e", via: "#f472b6", to: "#a855f7" }, // rose-pink-purple
+  { from: "#06b6d4", via: "#38bdf8", to: "#3b82f6" }, // cyan-sky-blue
+  { from: "#8b5cf6", via: "#a855f7", to: "#c026d3" }, // violet-purple-fuchsia
+  { from: "#10b981", via: "#22c55e", to: "#14b8a6" }, // emerald-green-teal
+  { from: "#f59e0b", via: "#fbbf24", to: "#f97316" }, // amber-yellow-orange
+  { from: "#ef4444", via: "#ec4899", to: "#a855f7" }, // red-pink-purple
+  { from: "#60a5fa", via: "#6366f1", to: "#8b5cf6" }, // blue-indigo-violet
+  { from: "#22c55e", via: "#14b8a6", to: "#06b6d4" }, // green-teal-cyan
+  { from: "#c026d3", via: "#a855f7", to: "#6366f1" }, // fuchsia-purple-indigo
+  { from: "#f97316", via: "#ef4444", to: "#ec4899" }, // orange-red-pink
+  { from: "#84cc16", via: "#22c55e", to: "#10b981" }, // lime-green-emerald
+  { from: "#0ea5e9", via: "#3b82f6", to: "#6366f1" }, // sky-blue-indigo
+];
+
+export function hashCode(str: string): number {
   let hash = 0;
   for (let i = 0; i < str.length; i++) {
     hash = (hash << 5) - hash + str.charCodeAt(i);
@@ -93,55 +107,46 @@ function hashCode(str: string): number {
   return Math.abs(hash);
 }
 
-/**
- * Given a username, return a single gradient class name.
- */
-function getGradientForUsername(username: string): string {
-  const baseHash = hashCode(username || "default");
-  const index = baseHash % multiColorGradients.length;
-  return multiColorGradients[index];
+export function getGradientForKey(key: string): string {
+  const idx = hashCode(key || "default") % multiColorGradients.length;
+  return multiColorGradients[idx];
 }
 
-interface RandomPixelAvatarProps {
-  username: string;
-  size?: number;
-  hideInitials?: boolean;
+export function getIntenseGradientForKey(key: string) {
+  const idx = hashCode(key || "default") % intenseGradients.length;
+  return intenseGradients[idx];
 }
 
 /**
- * A circular avatar that uses a multi-color gradient as the background.
- * Displays the first two letters of the username in the center.
+ * Generate deterministic geometric shapes for a given key
  */
-export default function RandomAvatar({
-  username,
-  size = 100,
-  hideInitials,
-}: RandomPixelAvatarProps) {
-  // Generate a single gradient for the entire avatar.
-  const gradientClass = getGradientForUsername(username);
+export interface GeometricShape {
+  type: "circle" | "square" | "triangle";
+  size: number;
+  x: number;
+  y: number;
+  rotation: number;
+  opacity: number;
+}
 
-  // Get first two letters (or one if the username is short).
-  const initials = username.slice(0, 3).toLowerCase();
+export function getShapesForKey(key: string, count: number = 3): GeometricShape[] {
+  const hash = hashCode(key || "default");
+  const shapes: GeometricShape[] = [];
 
-  // Calculate font size based on avatar size
-  const fontSize = Math.max(size * 0.3, 8); // 30% of size, minimum 8px
+  // Use different parts of the hash for different properties
+  for (let i = 0; i < count; i++) {
+    const seed = hash + i * 1000;
+    const shapeTypes: Array<"circle" | "square" | "triangle"> = ["circle", "square", "triangle"];
 
-  return (
-    <div
-      className={`relative overflow-hidden rounded-full ${gradientClass}`}
-      style={{ width: size, height: size }}
-    >
-      {/* Overlay initials in the center */}
-      {!hideInitials && (
-        <div className="absolute inset-0 flex items-center justify-center">
-          <span
-            className="text-black font-semibold drop-shadow-sm"
-            style={{ fontSize: `${fontSize}px` }}
-          >
-            {initials}
-          </span>
-        </div>
-      )}
-    </div>
-  );
+    shapes.push({
+      type: shapeTypes[seed % 3],
+      size: 20 + (seed % 40), // 20-60px
+      x: (seed * 7) % 100, // 0-100%
+      y: (seed * 13) % 100, // 0-100%
+      rotation: (seed * 17) % 360, // 0-360deg
+      opacity: 0.15 + ((seed % 10) / 100), // 0.15-0.25
+    });
+  }
+
+  return shapes;
 }

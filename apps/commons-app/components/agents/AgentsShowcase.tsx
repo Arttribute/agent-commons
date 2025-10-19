@@ -104,7 +104,7 @@ export default function AgentsShowcase({ agents = [] }: { agents: Agent[] }) {
       <div className="pointer-events-none absolute inset-0 -z-10 overflow-hidden rounded-lg">
         <DotPattern
           className={cn(
-            "[mask-image:radial-gradient(400px_circle_at_center,white,transparent)] "
+            "[mask-image:radial-gradient(600px_circle_at_center,white,transparent)] "
           )}
         />
       </div>

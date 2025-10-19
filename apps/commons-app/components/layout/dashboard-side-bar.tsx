@@ -66,10 +66,10 @@ export function DashboardSideBar({ username }: { username: string }) {
                 }
               />
             </div>
-            <h3 className="text-xs font-medium text-muted-foreground mb-2">
-              Recent sessions
+            <h3 className="text-sm font-medium text-muted-foreground mt-8 mb-2  px-2">
+              Sessions
             </h3>
-            <ScrollArea className="h-[60vh] px-1">
+            <ScrollArea className="h-[58vh]">
               <SessionsList sessions={recentChats} />
             </ScrollArea>
           </div>

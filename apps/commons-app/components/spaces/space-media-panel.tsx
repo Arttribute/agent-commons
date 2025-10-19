@@ -25,6 +25,11 @@ import {
   Image as ImageIcon,
 } from "lucide-react";
 import { useSpaceRTC } from "@/hooks/use-space-rtc";
+import { useAudioLevel } from "@/hooks/use-audio-level";
+import { useActiveSpeaker } from "@/hooks/use-active-speaker";
+import { useLocalAudioLevel } from "@/hooks/use-local-audio-level";
+import { AudioVisualizer } from "./audio-visualizer";
+import { getGradientForKey } from "@/lib/gradient-utils";
 
 interface StreamCardProps {
   peer: {
@@ -49,6 +54,8 @@ interface StreamCardProps {
   onMute?: () => void;
   isMuted?: boolean;
   className?: string;
+  isActiveSpeaker?: boolean;
+  activeSpeakerId?: string | null;
 }
 
 function StreamCard({
@@ -60,10 +67,23 @@ function StreamCard({
   onMute,
   isMuted = false,
   className = "",
+  isActiveSpeaker = false,
+  activeSpeakerId = null,
 }: StreamCardProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const audioRef = useRef<HTMLAudioElement>(null);
   const [isHovered, setIsHovered] = useState(false);
+
+  // Track audio levels for visualization
+  const { audioLevel, isSpeaking: isLocalSpeaking } = useAudioLevel({
+    stream: peer.audioStream || peer.stream,
+    audioElement: audioRef.current,
+    speakingThreshold: 0.02,
+  });
+
+  // Determine if this participant is listening (someone else is active speaker)
+  const isListening =
+    !isActiveSpeaker && activeSpeakerId !== null && activeSpeakerId !== peer.id;
 
   useEffect(() => {
     if (videoRef.current) {
@@ -163,11 +183,25 @@ function StreamCard({
       ? "aspect-video"
       : "aspect-video";
 
+  // Get color for agent avatar/visualizer
+  const getAgentColor = (id: string): string => {
+    const colors = [
+      "#8B5CF6", // purple-500
+      "#10B981", // green-500
+      "#F97316", // orange-500
+      "#EC4899", // pink-500
+      "#6366F1", // indigo-500
+      "#14B8A6", // teal-500
+    ];
+    const hash = id.split("").reduce((a, b) => a + b.charCodeAt(0), 0);
+    return colors[hash % colors.length];
+  };
+
   return (
     <div
       className={`relative rounded-lg overflow-hidden bg-gray-900 ${aspectRatio} ${
-        isFocused ? "ring-2 ring-blue-500" : ""
-      } ${onFocus ? "cursor-pointer" : ""} ${className}`}
+        isActiveSpeaker ? "ring-4 ring-blue-400 shadow-lg shadow-blue-400/50" : isFocused ? "ring-2 ring-blue-500" : ""
+      } ${onFocus ? "cursor-pointer" : ""} ${className} transition-all duration-200`}
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
       onClick={onFocus}
@@ -203,12 +237,23 @@ function StreamCard({
         <div
           className={`w-full h-full flex items-center justify-center ${getAvatarColor(peer.id)}`}
         >
-          <div
-            className="text-white font-bold"
-            style={{ fontSize: isMinimized ? "12px" : "24px" }}
-          >
-            {peer.role === "agent" ? "A" : "H"}
-          </div>
+          {peer.role === "agent" && !peer.isScreenShare && !peer.isUrlShare ? (
+            // Audio visualizer for agents
+            <AudioVisualizer
+              audioLevel={audioLevel}
+              isSpeaking={isLocalSpeaking || (peer.publish?.audio && audioLevel > 0.02)}
+              isListening={isListening}
+              size={isMinimized ? 40 : 120}
+              baseColor={getAgentColor(peer.id)}
+            />
+          ) : (
+            <div
+              className="text-white font-bold"
+              style={{ fontSize: isMinimized ? "12px" : "24px" }}
+            >
+              {peer.role === "agent" ? "A" : "H"}
+            </div>
+          )}
         </div>
       )}
 
@@ -381,6 +426,32 @@ export default function SpaceMediaPanel({
   const [focusedPeer, setFocusedPeer] = useState<string | null>(null);
   const [mutedPeers, setMutedPeers] = useState<Set<string>>(new Set());
 
+  // Track local user's audio level
+  const localAudioLevel = useLocalAudioLevel({
+    localStream: localStream,
+    isPublishingAudio: pubAudio,
+  });
+
+  // Track active speaker across all participants
+  const allParticipants = [
+    {
+      id: selfId,
+      audioLevel: localAudioLevel.audioLevel,
+      isSpeaking: localAudioLevel.isSpeaking && pubAudio,
+    },
+    ...remotePeers.map((peer) => ({
+      id: peer.id,
+      audioLevel: peer.audioLevel || 0,
+      isSpeaking: peer.isSpeaking || false,
+    })),
+  ];
+
+  const activeSpeakerId = useActiveSpeaker({
+    participants: allParticipants,
+    activationDelay: 300,
+    deactivationDelay: 800,
+  });
+
   async function togglePublish(kind: "audio" | "video" | "screen" | "url") {
     if (kind === "url") {
       if (!pubUrl) {
@@ -452,9 +523,18 @@ export default function SpaceMediaPanel({
   };
 
   const allStreams: StreamItem[] = [];
+  const addedIds = new Set<string>(); // Track added IDs to prevent duplicates
+
+  // Helper to safely add stream
+  const addStream = (stream: StreamItem) => {
+    if (!addedIds.has(stream.id)) {
+      allStreams.push(stream);
+      addedIds.add(stream.id);
+    }
+  };
 
   // Always add a self tile even if not publishing (placeholder)
-  allStreams.push({
+  addStream({
     id: selfId,
     role,
     stream:
@@ -472,7 +552,7 @@ export default function SpaceMediaPanel({
 
   // Add local screen share
   if (pubScreen && localScreenStream.current) {
-    allStreams.push({
+    addStream({
       id: `${selfId}-screen`,
       role,
       stream: localScreenStream.current,
@@ -489,28 +569,31 @@ export default function SpaceMediaPanel({
 
   // Add remote streams
   remotePeers.forEach((peer) => {
-    // Add regular participant tile for all non-self peers so they always appear
-    if (peer.id !== selfId) {
-      allStreams.push({
-        id: peer.id,
-        role: peer.role,
-        stream: peer.stream,
-        audioStream: peer.audioStream || null,
-        audioSrc: (peer as any).audioSrc,
-        frameUrl: (peer as any).cameraFrameUrl,
-        publish: (peer as any).publishing ?? {
-          audio: false,
-          video: !!(peer as any).cameraFrameUrl,
-        },
-        isLocal: false,
-        isScreenShare: false,
-        isUrlShare: false,
-      });
+    // Skip if this is actually the self participant (sometimes comes through remotePeers)
+    if (peer.id === selfId) {
+      return; // Already added as local
     }
 
-    // Add screen share stream
-    if (peer.screenStream || (peer as any).screenFrameUrl) {
-      allStreams.push({
+    // Add regular participant tile for all non-self peers so they always appear
+    addStream({
+      id: peer.id,
+      role: peer.role,
+      stream: peer.stream,
+      audioStream: peer.audioStream || null,
+      audioSrc: (peer as any).audioSrc,
+      frameUrl: (peer as any).cameraFrameUrl,
+      publish: (peer as any).publishing ?? {
+        audio: false,
+        video: !!(peer as any).cameraFrameUrl,
+      },
+      isLocal: false,
+      isScreenShare: false,
+      isUrlShare: false,
+    });
+
+    // Add screen share stream (skip if it's from self - already added locally)
+    if ((peer.screenStream || (peer as any).screenFrameUrl) && peer.id !== selfId) {
+      addStream({
         id: `${peer.id}-screen`,
         role: peer.role,
         stream: peer.screenStream,
@@ -523,9 +606,9 @@ export default function SpaceMediaPanel({
       });
     }
 
-    // Add URL share stream
+    // Add URL share stream (can include self since we don't add it locally above)
     if (peer.urlSharing?.active || peer.webFrameUrl) {
-      allStreams.push({
+      addStream({
         id: `${peer.id}-url`,
         role: peer.role,
         stream: undefined,
@@ -545,10 +628,9 @@ export default function SpaceMediaPanel({
 
   // Ensure expectedPeers are present as placeholders
   if (expectedPeers && expectedPeers.length) {
-    const present = new Set(allStreams.map((s) => s.id));
     for (const p of expectedPeers) {
-      if (!present.has(p.id)) {
-        allStreams.push({
+      if (!addedIds.has(p.id)) {
+        addStream({
           id: p.id,
           role: p.role,
           stream: null,
@@ -758,6 +840,8 @@ export default function SpaceMediaPanel({
                         : () => toggleMutePeer(focusedStream.id)
                     }
                     isMuted={mutedPeers.has(focusedStream.id)}
+                    isActiveSpeaker={activeSpeakerId === focusedStream.id}
+                    activeSpeakerId={activeSpeakerId}
                     className="h-[500px]"
                   />
                 );
@@ -798,6 +882,8 @@ export default function SpaceMediaPanel({
                               : () => toggleMutePeer(stream.id)
                           }
                           isMuted={mutedPeers.has(stream.id)}
+                          isActiveSpeaker={activeSpeakerId === stream.id}
+                          activeSpeakerId={activeSpeakerId}
                         />
                       </div>
                     ))}
@@ -845,6 +931,8 @@ export default function SpaceMediaPanel({
                             : () => toggleMutePeer(stream.id)
                         }
                         isMuted={mutedPeers.has(stream.id)}
+                        isActiveSpeaker={activeSpeakerId === stream.id}
+                        activeSpeakerId={activeSpeakerId}
                       />
                     ))}
                   </div>
@@ -877,6 +965,8 @@ export default function SpaceMediaPanel({
                           : () => toggleMutePeer(primary.id)
                       }
                       isMuted={mutedPeers.has(primary.id)}
+                      isActiveSpeaker={activeSpeakerId === primary.id}
+                      activeSpeakerId={activeSpeakerId}
                       className="h-full"
                     />
                   </div>
@@ -912,6 +1002,8 @@ export default function SpaceMediaPanel({
                               : () => toggleMutePeer(stream.id)
                           }
                           isMuted={mutedPeers.has(stream.id)}
+                          isActiveSpeaker={activeSpeakerId === stream.id}
+                          activeSpeakerId={activeSpeakerId}
                           className="aspect-video"
                         />
                       ))}

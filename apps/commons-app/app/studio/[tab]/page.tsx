@@ -157,7 +157,7 @@ const StudioPage: NextPage = () => {
         <div className="flex">
           <DashboardSideBar username={userAddress || ""} />
 
-          <div className="w-full relative h-[88vh]">
+          <div className="w-full relative h-[88vh] p-3">
             <div className="flex items-center justify-between px-4 pt-4">
               <div className="">
                 <div className="bg-cyan-200 w-20 h-8 -mb-8 rounded-lg"></div>
@@ -167,6 +167,7 @@ const StudioPage: NextPage = () => {
               <Tabs
                 value={activeTab || "agents"}
                 onValueChange={(v) => router.push(`/studio/${v}`)}
+                className="border border-gray-400 rounded-md bg-gray-200"
               >
                 <TabsList>
                   <TabsTrigger value="agents">Agents</TabsTrigger>

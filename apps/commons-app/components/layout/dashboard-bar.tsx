@@ -3,7 +3,7 @@ import { FC, ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { Sparkles, Earth, Folder } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
-
+import Image from "next/image";
 import { Button } from "@/components/ui/button";
 
 interface DashboardBarProps {
@@ -39,22 +39,24 @@ export const DashboardBar: FC<DashboardBarProps> = ({
 
   return (
     <div className="w-full ">
-      <div className="flex justify-between items-center mb-2">
-        <div className="rounded-lg">
-          <h2 className="text-xl font-semibold">Commons</h2>
+      <div className="flex justify-between items-center mb-2 px-1">
+        <div className="rounded-full border border-gray-500 p-[1px] bg-white">
+          <div className="rounded-full border ">
+            <Image
+              src="/ac-icon.svg"
+              alt="Agent Commons Logo"
+              width={20}
+              height={20}
+              className="object-cover rounded-full"
+            />
+          </div>
         </div>
-        {rightSlot
-          ? rightSlot
-          : !isAuthenticated && (
-              <Button size="sm" onClick={login}>
-                Login
-              </Button>
-            )}
+        <div>{rightSlot}</div>
       </div>
       <div className="flex flex-col gap-1">
         <Button
           variant="ghost"
-          className={`justify-start gap-2 w-full ${
+          className={`justify-start px-2 w-full ${
             activeTab === "studio" ? "bg-accent text-accent-foreground" : ""
           }`}
           onClick={() => handleNavigation("studio")}
@@ -64,7 +66,7 @@ export const DashboardBar: FC<DashboardBarProps> = ({
         </Button>
         <Button
           variant="ghost"
-          className={`justify-start gap-2 w-full ${
+          className={`justify-start px-2 w-full ${
             activeTab === "spaces" ? "bg-accent text-accent-foreground" : ""
           }`}
           onClick={() => handleNavigation("spaces")}
@@ -74,7 +76,7 @@ export const DashboardBar: FC<DashboardBarProps> = ({
         </Button>
         <Button
           variant="ghost"
-          className={`justify-start gap-2 w-full ${
+          className={`justify-start px-2 w-full ${
             activeTab === "files" ? "bg-accent text-accent-foreground" : ""
           }`}
           onClick={() => handleNavigation("files")}
