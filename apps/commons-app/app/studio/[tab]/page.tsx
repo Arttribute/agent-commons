@@ -154,13 +154,13 @@ const StudioPage: NextPage = () => {
 
       {/* Main layout */}
       <div className="mt-12">
-        <div className="flex">
+        <div className="flex bg-slate-50">
           <DashboardSideBar username={userAddress || ""} />
 
           <div className="w-full relative h-[88vh] p-3">
             <div className="flex items-center justify-between px-4 pt-4">
               <div className="">
-                <div className="bg-cyan-200 w-20 h-8 -mb-8 rounded-lg"></div>
+                <div className="bg-teal-200 w-20 h-8 -mb-8 rounded-lg"></div>
                 <h2 className="text-2xl font-semibold"> Studio</h2>
               </div>
 

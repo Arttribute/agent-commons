@@ -55,7 +55,7 @@ export default function SpacesPage() {
     <div>
       <AppBar />
       <div className="mt-12">
-        <div className="flex">
+        <div className="flex bg-slate-50">
           <DashboardSideBar username={humanId || "wallet"} />
           <div className="w-full p-4 space-y-6">
             <div className="flex items-center justify-between px-4 pt-4">
