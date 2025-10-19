@@ -263,13 +263,17 @@ export default function SpaceMessageInput({
   }
 
   return (
-    <div className="p-4 border-t bg-white">
+    <div className="p-4 bg-white">
       {/* Show selected mentions */}
       {selectedMentions.length > 0 && (
-        <div className="mb-2 flex flex-wrap gap-1">
-          <span className="text-xs text-gray-500">Mentioning:</span>
+        <div className="mb-3 flex flex-wrap gap-1.5">
+          <span className="text-xs font-medium text-gray-500">To:</span>
           {selectedMentions.map((mentionId) => (
-            <Badge key={mentionId} variant="secondary" className="text-xs">
+            <Badge
+              key={mentionId}
+              variant="secondary"
+              className="text-xs rounded-full px-2.5 py-1"
+            >
               @{mentionId.slice(0, 8)}
               <button
                 onClick={() =>
@@ -277,7 +281,7 @@ export default function SpaceMessageInput({
                     prev.filter((id) => id !== mentionId)
                   )
                 }
-                className="ml-1 hover:text-red-500"
+                className="ml-1.5 hover:text-red-500 transition-colors"
               >
                 ×
               </button>
@@ -286,69 +290,70 @@ export default function SpaceMessageInput({
         </div>
       )}
 
-      <div className="flex gap-2 relative">
-        <div className="flex-1 relative">
+      <div className="relative">
+        <div className="flex items-center gap-2 px-1  border border-gray-300 rounded-lg focus-within:ring-1 focus-within:ring-gray-500 transition-all">
           <Input
             ref={inputRef}
             value={message}
             onChange={handleInputChange}
-            onKeyPress={handleKeyPress}
+            onKeyDown={handleKeyPress}
             placeholder="Type a message... Use @ to mention agents"
             disabled={isSending}
-            className="pr-12"
+            className="flex-1 border-0 focus-visible:ring-0 focus-visible:ring-offset-0 px-2 py-2 text-sm"
           />
 
-          {/* Mention suggestions popover */}
-          {showMentions && filteredMembers.length > 0 && (
-            <div
-              className="absolute z-50 w-64 bg-white border rounded-lg shadow-lg max-h-48 overflow-y-auto"
-              style={{
-                bottom: "100%",
-                left: 0,
-                marginBottom: "4px",
-              }}
-            >
-              <div className="p-2">
-                <div className="text-xs text-gray-500 mb-2">
-                  Select an agent to mention:
-                </div>
-                {filteredMembers.map((member) => (
-                  <button
-                    key={member.id}
-                    onClick={() => handleMentionSelect(member)}
-                    className="w-full flex items-center gap-2 p-2 hover:bg-gray-100 rounded text-left"
-                  >
-                    <Avatar className="h-6 w-6">
-                      <AvatarFallback className="bg-purple-500 text-white text-xs">
-                        {member.memberId.charAt(0).toUpperCase()}
-                      </AvatarFallback>
-                    </Avatar>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium truncate">
-                        {member.memberId.slice(0, 12)}...
-                      </p>
-                      <p className="text-xs text-gray-500">
-                        {member.role} • {member.status}
-                      </p>
-                    </div>
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
+          <Button
+            onClick={handleSendMessage}
+            disabled={!message.trim() || isSending}
+            size="sm"
+            className="h-8 w-8 p-0 rounded-lg shrink-0"
+          >
+            {isSending ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Send className="h-4 w-4" />
+            )}
+          </Button>
         </div>
 
-        <Button
-          onClick={handleSendMessage}
-          disabled={!message.trim() || isSending}
-          size="sm"
-        >
-          {isSending ? (
-            <Loader2 className="h-4 w-4 animate-spin" />
-          ) : (
-            <Send className="h-4 w-4" />
-          )}
-        </Button>
+        {/* Mention suggestions popover */}
+        {showMentions && filteredMembers.length > 0 && (
+          <div
+            className="absolute z-50 w-72 bg-white border border-gray-200 rounded-xl shadow-2xl max-h-64 overflow-y-auto"
+            style={{
+              bottom: "100%",
+              left: 0,
+              marginBottom: "8px",
+            }}
+          >
+            <div className="p-2">
+              <div className="text-xs font-semibold text-gray-600 mb-2 px-2">
+                Mention an agent
+              </div>
+              {filteredMembers.map((member) => (
+                <button
+                  key={member.id}
+                  onClick={() => handleMentionSelect(member)}
+                  className="w-full flex items-center gap-3 p-2.5 hover:bg-gray-50 rounded-lg text-left transition-colors"
+                >
+                  <Avatar className="h-8 w-8 ring-2 ring-white shadow-sm">
+                    <AvatarFallback className="bg-purple-500 text-white text-xs font-semibold">
+                      {member.memberId.charAt(0).toUpperCase()}
+                    </AvatarFallback>
+                  </Avatar>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-semibold text-gray-900 truncate">
+                      {member.memberId.slice(0, 12)}...
+                    </p>
+                    <p className="text-xs text-gray-500">
+                      {member.role} • {member.status}
+                    </p>
+                  </div>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

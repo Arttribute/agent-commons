@@ -10,8 +10,9 @@ import {
   Maximize2,
   Minimize2,
   Info,
-  Radio,
+  MessageSquare,
   X,
+  LogOut,
 } from "lucide-react";
 import SpaceInfoDialog from "@/components/spaces/space-info-dialog";
 import SpaceMessage from "@/components/spaces/space-message";
@@ -355,49 +356,63 @@ export default function SpaceMessaging({
     <>
       {/* Full-screen overlay */}
       {isFullScreen && (
-        <div className="fixed inset-0 z-[100] bg-white flex flex-col">
-          {/* Full-screen header */}
-          <div className="p-3 border-b flex items-center gap-3">
+        <div className="fixed inset-0 z-[100] bg-slate-50 flex flex-col">
+          {/* Header */}
+          <div className="px-4 py-3 flex items-center gap-3">
             {!forceFullScreen && (
-              <Button variant="ghost" size="sm" onClick={onBack}>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={onBack}
+                className="rounded-full"
+              >
                 <ArrowLeft className="h-4 w-4" />
               </Button>
             )}
-            <div className="w-8 h-8 rounded-full bg-gradient-to-br from-green-400 to-teal-500 flex items-center justify-center text-white text-sm font-medium">
-              {spaceName.charAt(0)}
+            <div className="w-10 h-10 rounded-full bg-gradient-to-br from-green-400 via-teal-500 to-blue-500 flex items-center justify-center text-white text-sm font-bold shadow-md">
+              {spaceName.charAt(0).toUpperCase()}
             </div>
             <div className="flex-1">
-              <h3 className="font-medium text-sm">{spaceName}</h3>
-              <p className="text-xs text-gray-500">{spaceId.slice(0, 12)}...</p>
+              <h3 className="font-semibold text-base text-gray-900">
+                {spaceName}
+              </h3>
+              <p className="text-xs text-gray-500 font-mono">
+                {spaceId.slice(0, 12)}...
+              </p>
             </div>
-            <div className="flex gap-1">
+            <div className="flex gap-2">
               <Button
-                variant={showChatPanel ? "default" : "outline"}
+                variant={showChatPanel ? "default" : "ghost"}
                 size="sm"
                 onClick={() => setShowChatPanel(!showChatPanel)}
+                className="rounded-full"
               >
-                <Radio className="h-4 w-4 mr-1" />
-                Chat
+                <MessageSquare className="h-4 w-4" />
               </Button>
               {spaceDetails && (
                 <SpaceInfoDialog
                   spaceDetails={spaceDetails}
                   trigger={
-                    <Button variant="ghost" size="sm">
+                    <Button variant="ghost" size="sm" className="rounded-full">
                       <Info className="h-4 w-4" />
                     </Button>
                   }
                 />
               )}
               {!forceFullScreen && (
-                <Button variant="ghost" size="sm" onClick={toggleFullScreen}>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={toggleFullScreen}
+                  className="rounded-full"
+                >
                   <Minimize2 className="h-4 w-4" />
                 </Button>
               )}
             </div>
           </div>
 
-          {/* Full-screen content: Media primary, Chat collapsible */}
+          {/* Full-screen content: Media primary, Chat collapsible - Both aligned */}
           <div className="flex-1 flex overflow-hidden relative">
             {/* Media Panel (primary) */}
             <div className="flex-1 min-w-0">
@@ -408,28 +423,39 @@ export default function SpaceMessaging({
                 wsUrl={WS_BASE}
                 expectedPeers={expectedPeers}
                 isExpanded={true}
+                onLeaveSpace={onBack}
               />
             </div>
 
-            {/* Chat Panel (collapsible sidebar) */}
+            {/* Chat Panel (collapsible sidebar) - Modern Discord-inspired design */}
             {showChatPanel && (
               <div
-                className={`border-l bg-white transition-all duration-300 ${
-                  isChatExpanded ? "w-full absolute inset-0 z-10" : "w-96"
+                className={`border border-gray-400 m-2 rounded-xl bg-white transition-all duration-300 shadow-2xl ${
+                  isChatExpanded
+                    ? "w-full h-full absolute inset-0 z-10"
+                    : "w-96 h-full flex-shrink-0"
                 }`}
               >
                 {isChatExpanded && (
-                  <div className="absolute top-3 right-3 z-20">
+                  <div className="absolute top-4 right-4 z-20">
                     <Button
                       variant="secondary"
                       size="sm"
                       onClick={() => setIsChatExpanded(false)}
+                      className="rounded-full shadow-lg"
                     >
                       <X className="h-4 w-4" />
                     </Button>
                   </div>
                 )}
-                <div className="flex flex-col h-full">
+                <div className="flex flex-col h-full rounded-xl">
+                  {/* Chat header */}
+                  <div className="px-4 py-3 border-b rounded-t-xl">
+                    <h4 className="font-semibold text-sm text-gray-900">
+                      Chat
+                    </h4>
+                  </div>
+
                   {isLoading && (
                     <div className="flex items-center justify-center h-16">
                       <Loader2 className="animate-spin h-6 w-6 text-gray-500" />
@@ -440,8 +466,10 @@ export default function SpaceMessaging({
                       {error}
                     </div>
                   )}
-                  <ScrollArea className="flex-1 bg-gray-50">
-                    <div className="p-4">
+
+                  {/* Messages area with improved styling */}
+                  <ScrollArea className="flex-1 bg-gradient-to-b from-white to-gray-50">
+                    <div className="p-4 space-y-1">
                       {messages.map((message, index) => (
                         <SpaceMessage
                           key={message.messageId || index}
@@ -455,8 +483,10 @@ export default function SpaceMessaging({
                       <div ref={bottomRefFull} />
                     </div>
                   </ScrollArea>
+
+                  {/* Input area */}
                   {spaceDetails && (
-                    <div className="border-t bg-white">
+                    <div className="rounded-b-xl">
                       <SpaceMessageInput
                         spaceId={spaceId}
                         members={spaceDetails.members || []}
@@ -477,31 +507,45 @@ export default function SpaceMessaging({
         <div className="flex flex-col h-full">
           {/* Header - only show if not embedded */}
 
-          {/* Embedded header with buttons */}
-          <div className="p-3 border-b flex items-center gap-3">
-            <Button variant="ghost" size="sm" onClick={onBack}>
+          {/* Embedded header with buttons - Modern design */}
+          <div className="px-4 py-3 border-b bg-gradient-to-r from-gray-50 to-white flex items-center gap-3 shadow-sm">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={onBack}
+              className="rounded-full"
+            >
               <ArrowLeft className="h-4 w-4" />
             </Button>
-            <div className="w-8 h-8 rounded-full bg-gradient-to-br from-green-400 to-teal-500 flex items-center justify-center text-white text-sm font-medium">
-              {spaceName.charAt(0)}
+            <div className="w-9 h-9 rounded-full bg-gradient-to-br from-green-400 via-teal-500 to-blue-500 flex items-center justify-center text-white text-sm font-bold shadow-md">
+              {spaceName.charAt(0).toUpperCase()}
             </div>
             <div className="flex-1">
-              <h3 className="font-medium text-sm">{spaceName}</h3>
-              <p className="text-xs text-gray-500">{spaceId.slice(0, 12)}...</p>
+              <h3 className="font-semibold text-sm text-gray-900">
+                {spaceName}
+              </h3>
+              <p className="text-xs text-gray-500 font-mono">
+                {spaceId.slice(0, 12)}...
+              </p>
             </div>
-            <div className="flex gap-1">
+            <div className="flex gap-2">
               {spaceDetails && (
                 <SpaceInfoDialog
                   spaceDetails={spaceDetails}
                   trigger={
-                    <Button variant="ghost" size="sm">
+                    <Button variant="ghost" size="sm" className="rounded-full">
                       <Info className="h-4 w-4" />
                     </Button>
                   }
                 />
               )}
               {!forceFullScreen && (
-                <Button variant="ghost" size="sm" onClick={toggleFullScreen}>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={toggleFullScreen}
+                  className="rounded-full"
+                >
                   <Maximize2 className="h-4 w-4" />
                 </Button>
               )}
@@ -539,7 +583,7 @@ export default function SpaceMessaging({
             </div>
           </ScrollArea>
           {spaceDetails && (
-            <div className="rounded-b-xl p-1">
+            <div className="rounded-b-xl">
               <SpaceMessageInput
                 spaceId={spaceId}
                 members={spaceDetails.members || []}

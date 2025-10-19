@@ -80,31 +80,22 @@ export default function SpaceMessage({
   };
 
   return (
-    <div className="flex gap-3 mb-4 hover:bg-gray-50 p-2 rounded-lg transition-colors">
-      <Avatar className="h-10 w-10 flex-shrink-0">
+    <div className="flex gap-3 mb-3 hover:bg-gray-50/50 p-2.5 rounded-lg transition-all duration-200 hover:shadow-sm">
+      <Avatar className="h-10 w-10 flex-shrink-0 ring-2 ring-white shadow-sm">
         <AvatarFallback
-          className={`${getAvatarColor(senderId, senderType)} text-white font-medium`}
+          className={`${getAvatarColor(senderId, senderType)} text-white font-semibold`}
         >
           {getInitials(senderId, senderType)}
         </AvatarFallback>
       </Avatar>
 
       <div className="flex-1 min-w-0">
-        <div className="flex items-baseline gap-2 mb-1">
+        <div className="flex items-center gap-2 mb-1.5">
           <span className="font-semibold text-gray-900 text-sm">
             {getDisplayName(senderId, senderType)}
           </span>
-          <span className="text-xs text-gray-500">{formatTime(timestamp)}</span>
-          <Badge
-            variant="outline"
-            className={`text-xs ${
-              senderType === "agent"
-                ? "bg-purple-50 text-purple-700 border-purple-200"
-                : "bg-blue-50 text-blue-700 border-blue-200"
-            }`}
-          >
-            {senderType}
-          </Badge>
+
+          <span className="text-xs text-gray-400">{formatTime(timestamp)}</span>
         </div>
 
         <ReactMarkdown
