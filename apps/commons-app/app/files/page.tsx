@@ -7,7 +7,7 @@ export default function FilesPage() {
   return (
     <div>
       <AppBar />
-      <div className="mt-12">
+      <div className="mt-12 bg-slate-50">
         <div className="flex">
           <DashboardSideBar username={"userAddress"} />
           <div className="w-full p-4">
