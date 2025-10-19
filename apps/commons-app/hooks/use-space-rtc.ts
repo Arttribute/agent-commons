@@ -192,8 +192,36 @@ export function useSpaceRTC(options: UseSpaceRTCOptions) {
       } catch {}
     });
     socket.on("participant_left", (evt: any) => {
-      setRemotePeers((prev) => prev.filter((p) => p.id !== evt.participantId));
-      closePeerConnection(evt.participantId);
+      const participantId = evt.participantId;
+      console.debug("[space-rtc] Participant left:", participantId);
+
+      // Gracefully clean up streams for this participant
+      const stream = remoteStreamMapRef.current.get(participantId);
+      if (stream) {
+        stream.getTracks().forEach((track) => {
+          try {
+            track.stop();
+          } catch {}
+        });
+        remoteStreamMapRef.current.delete(participantId);
+      }
+
+      // Also clean up screen share stream if present
+      const screenStream = remoteStreamMapRef.current.get(`${participantId}-screen`);
+      if (screenStream) {
+        screenStream.getTracks().forEach((track) => {
+          try {
+            track.stop();
+          } catch {}
+        });
+        remoteStreamMapRef.current.delete(`${participantId}-screen`);
+      }
+
+      // Remove from peers list
+      setRemotePeers((prev) => prev.filter((p) => p.id !== participantId));
+
+      // Close peer connection
+      closePeerConnection(participantId);
     });
     socket.on("composite_frame", (evt: any) => {
       if (evt?.dataUrl) setCompositeFrameUrl(evt.dataUrl);

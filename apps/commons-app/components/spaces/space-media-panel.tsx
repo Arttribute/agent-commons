@@ -4,383 +4,19 @@ import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Input } from "@/components/ui/input";
-import {
-  Camera,
-  Mic,
-  MicOff,
-  CameraOff,
-  Monitor,
-  MonitorOff,
-  Maximize2,
-  Minimize2,
-  Volume2,
-  VolumeX,
-  Grid3X3,
-  Users,
-  Globe,
-  GlobeLock,
-  Plus,
-  X,
-  Image as ImageIcon,
-} from "lucide-react";
+import { Maximize2, Minimize2, Grid3X3, Users, Video } from "lucide-react";
 import { useSpaceRTC } from "@/hooks/use-space-rtc";
-import { useAudioLevel } from "@/hooks/use-audio-level";
 import { useActiveSpeaker } from "@/hooks/use-active-speaker";
 import { useLocalAudioLevel } from "@/hooks/use-local-audio-level";
-import { AudioVisualizer } from "./audio-visualizer";
-import { getGradientForKey } from "@/lib/gradient-utils";
+import { StreamCard } from "./stream-card";
+import {
+  calculateGridLayout,
+  sortStreamsByPriority,
+  getGridStyle,
+} from "@/lib/space-layout-utils";
+import { SpaceMediaControls } from "./space-media-controls";
 
-interface StreamCardProps {
-  peer: {
-    id: string;
-    role: "human" | "agent";
-    stream?: MediaStream;
-    audioStream?: MediaStream;
-    audioSrc?: string;
-    frameUrl?: string;
-    publish: { audio: boolean; video: boolean };
-    isScreenShare?: boolean;
-    isUrlShare?: boolean;
-    url?: string;
-    webFrameUrl?: string; // latest server web capture frame
-    ending?: boolean;
-    endsAt?: number;
-  };
-  isLocal?: boolean;
-  isFocused?: boolean;
-  isMinimized?: boolean;
-  onFocus?: () => void;
-  onMute?: () => void;
-  isMuted?: boolean;
-  className?: string;
-  isActiveSpeaker?: boolean;
-  activeSpeakerId?: string | null;
-}
-
-function StreamCard({
-  peer,
-  isLocal = false,
-  isFocused = false,
-  isMinimized = false,
-  onFocus,
-  onMute,
-  isMuted = false,
-  className = "",
-  isActiveSpeaker = false,
-  activeSpeakerId = null,
-}: StreamCardProps) {
-  const videoRef = useRef<HTMLVideoElement>(null);
-  const audioRef = useRef<HTMLAudioElement>(null);
-  const [isHovered, setIsHovered] = useState(false);
-
-  // Track audio levels for visualization
-  const { audioLevel, isSpeaking: isLocalSpeaking } = useAudioLevel({
-    stream: peer.audioStream || peer.stream,
-    audioElement: audioRef.current,
-    speakingThreshold: 0.02,
-  });
-
-  // Determine if this participant is listening (someone else is active speaker)
-  const isListening =
-    !isActiveSpeaker && activeSpeakerId !== null && activeSpeakerId !== peer.id;
-
-  useEffect(() => {
-    if (videoRef.current) {
-      if (peer.stream && peer.stream.getTracks().length > 0) {
-        // Only set stream if it has active tracks
-        const hasActiveVideo = peer.stream
-          .getVideoTracks()
-          .some((t) => t.readyState === "live" && t.enabled);
-        if (hasActiveVideo) {
-          videoRef.current.srcObject = peer.stream;
-        } else {
-          videoRef.current.srcObject = null;
-        }
-      } else {
-        videoRef.current.srcObject = null;
-      }
-    }
-  }, [peer.stream, peer.publish?.video]);
-
-  useEffect(() => {
-    if (audioRef.current && peer.audioStream) {
-      audioRef.current.srcObject = peer.audioStream as any;
-    }
-  }, [peer.audioStream]);
-
-  // Fallback: if no MediaStream provided but an audioSrc is available, bind it
-  useEffect(() => {
-    if (!audioRef.current) return;
-    if (peer.audioStream) return; // already using stream
-    if (peer.audioSrc) {
-      try {
-        audioRef.current.srcObject = null;
-      } catch {}
-      // Force rebind even if same string
-      const el = audioRef.current;
-      try {
-        el.pause();
-      } catch {}
-      el.src = "";
-      // yield to event loop to ensure detach
-      setTimeout(() => {
-        try {
-          el.src = peer.audioSrc as string;
-          if (process.env.NEXT_PUBLIC_TTS_DEBUG === "true") {
-            console.debug("[TTS] bind audio element", {
-              id: peer.id,
-              srcLen: (peer.audioSrc as string).length,
-            });
-            el.onplay = () => console.debug("[TTS] onplay", peer.id);
-            el.onpause = () => console.debug("[TTS] onpause", peer.id);
-            el.onended = () => console.debug("[TTS] onended", peer.id);
-            el.onloadedmetadata = () =>
-              console.debug("[TTS] onloadedmetadata", peer.id, el.duration);
-            el.onerror = (e) => console.debug("[TTS] onerror", peer.id, e);
-          }
-          // Ensure single-use playback: after end, clear src to avoid looping or replay on state diff
-          const handleEnded = () => {
-            try {
-              el.onended = null;
-              el.pause();
-              // Clear source to prevent accidental replays by React rerenders
-              el.src = "";
-            } catch {}
-          };
-          el.onended = handleEnded;
-          el.load();
-          // Attempt playback (may be blocked until user gesture; best effort)
-          el.play().catch(() => {});
-        } catch {}
-      }, 0);
-    } else {
-      try {
-        const el = audioRef.current;
-        el.pause?.();
-        el.src = "";
-        el.srcObject = null;
-      } catch {}
-    }
-  }, [peer.audioSrc, peer.audioStream]);
-
-  const getAvatarColor = (id: string) => {
-    const colors = [
-      "bg-purple-500",
-      "bg-green-500",
-      "bg-orange-500",
-      "bg-pink-500",
-      "bg-indigo-500",
-      "bg-teal-500",
-    ];
-    const hash = id.split("").reduce((a, b) => a + b.charCodeAt(0), 0);
-    return colors[hash % colors.length];
-  };
-
-  const aspectRatio = isMinimized
-    ? "aspect-video"
-    : isFocused
-      ? "aspect-video"
-      : "aspect-video";
-
-  // Get color for agent avatar/visualizer
-  const getAgentColor = (id: string): string => {
-    const colors = [
-      "#8B5CF6", // purple-500
-      "#10B981", // green-500
-      "#F97316", // orange-500
-      "#EC4899", // pink-500
-      "#6366F1", // indigo-500
-      "#14B8A6", // teal-500
-    ];
-    const hash = id.split("").reduce((a, b) => a + b.charCodeAt(0), 0);
-    return colors[hash % colors.length];
-  };
-
-  return (
-    <div
-      className={`relative rounded-lg overflow-hidden bg-gray-900 ${aspectRatio} ${
-        isActiveSpeaker ? "ring-4 ring-blue-400 shadow-lg shadow-blue-400/50" : isFocused ? "ring-2 ring-blue-500" : ""
-      } ${onFocus ? "cursor-pointer" : ""} ${className} transition-all duration-200`}
-      onMouseEnter={() => setIsHovered(true)}
-      onMouseLeave={() => setIsHovered(false)}
-      onClick={onFocus}
-    >
-      {peer.isUrlShare && (peer.webFrameUrl || peer.frameUrl) ? (
-        <img
-          src={peer.webFrameUrl || (peer.frameUrl as string)}
-          alt={peer.url || "web"}
-          className="w-full h-full object-cover"
-          draggable={false}
-        />
-      ) : peer.stream &&
-        peer.stream.getVideoTracks().length > 0 &&
-        peer.stream
-          .getVideoTracks()
-          .some((t) => t.readyState === "live" && t.enabled) &&
-        peer.publish.video ? (
-        <video
-          ref={videoRef}
-          autoPlay
-          muted={isLocal}
-          playsInline
-          className="w-full h-full object-cover"
-        />
-      ) : peer.frameUrl && peer.publish.video ? (
-        <img
-          src={peer.frameUrl}
-          alt={peer.isScreenShare ? "screen" : "camera"}
-          className="w-full h-full object-cover"
-          draggable={false}
-        />
-      ) : (
-        <div
-          className={`w-full h-full flex items-center justify-center ${getAvatarColor(peer.id)}`}
-        >
-          {peer.role === "agent" && !peer.isScreenShare && !peer.isUrlShare ? (
-            // Audio visualizer for agents
-            <AudioVisualizer
-              audioLevel={audioLevel}
-              isSpeaking={isLocalSpeaking || (peer.publish?.audio && audioLevel > 0.02)}
-              isListening={isListening}
-              size={isMinimized ? 40 : 120}
-              baseColor={getAgentColor(peer.id)}
-            />
-          ) : (
-            <div
-              className="text-white font-bold"
-              style={{ fontSize: isMinimized ? "12px" : "24px" }}
-            >
-              {peer.role === "agent" ? "A" : "H"}
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* Ending fade overlay for graceful shutdown */}
-      {peer.isUrlShare && peer.ending && (
-        <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/50 animate-pulse">
-          <span className="text-white text-sm font-medium">
-            Ending web share…
-          </span>
-        </div>
-      )}
-
-      {/* Hidden audio element to play separate audio-only streams */}
-      {(peer.audioStream || peer.audioSrc) && (
-        <audio
-          ref={audioRef}
-          autoPlay
-          muted={isLocal || isMuted}
-          key={peer.audioSrc ? peer.audioSrc.slice(-16) : "nosrc"}
-          className="hidden"
-        />
-      )}
-
-      {/* Overlay */}
-      <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent">
-        {/* Bottom info */}
-        <div className="absolute bottom-1 left-1 flex items-center gap-1">
-          {!isMinimized && (
-            <>
-              <Badge
-                variant={peer.role === "agent" ? "default" : "secondary"}
-                className="text-xs"
-              >
-                {peer.role}
-              </Badge>
-              {peer.isScreenShare && (
-                <Badge
-                  variant="outline"
-                  className="text-xs bg-blue-500 text-white border-blue-500"
-                >
-                  <Monitor className="h-3 w-3 mr-1" />
-                  Screen
-                </Badge>
-              )}
-              {peer.isUrlShare && (
-                <Badge
-                  variant="outline"
-                  className="text-xs bg-green-500 text-white border-green-500"
-                >
-                  <Globe className="h-3 w-3 mr-1" />
-                  Web
-                </Badge>
-              )}
-              <span className="text-white text-xs font-medium">
-                {isLocal ? "You" : `${peer.role}-${peer.id.slice(0, 4)}`}
-              </span>
-            </>
-          )}
-        </div>
-
-        {/* URL info */}
-        {peer.isUrlShare && peer.url && !isMinimized && (
-          <div className="absolute top-1 left-1 bg-black/70 rounded px-2 py-1">
-            <span className="text-white text-xs">
-              {peer.url.length > 30 ? `${peer.url.slice(0, 30)}...` : peer.url}
-            </span>
-          </div>
-        )}
-
-        {/* Status indicators */}
-        <div className="absolute bottom-1 right-1 flex items-center gap-1">
-          {!peer.isScreenShare && !peer.isUrlShare && (
-            <>
-              {peer.publish.audio ? (
-                <Mic
-                  className={`text-green-400 ${isMinimized ? "h-3 w-3" : "h-4 w-4"}`}
-                />
-              ) : (
-                <MicOff
-                  className={`text-red-400 ${isMinimized ? "h-3 w-3" : "h-4 w-4"}`}
-                />
-              )}
-              {!peer.publish.video && (
-                <CameraOff
-                  className={`text-red-400 ${isMinimized ? "h-3 w-3" : "h-4 w-4"}`}
-                />
-              )}
-            </>
-          )}
-          {peer.isScreenShare && (
-            <Monitor
-              className={`text-blue-400 ${isMinimized ? "h-3 w-3" : "h-4 w-4"}`}
-            />
-          )}
-          {peer.isUrlShare && (
-            <Globe
-              className={`text-green-400 ${isMinimized ? "h-3 w-3" : "h-4 w-4"}`}
-            />
-          )}
-        </div>
-
-        {/* Hover controls */}
-        {isHovered && !isLocal && !isMinimized && (
-          <div className="absolute top-1 right-1 flex gap-1">
-            {onMute && !peer.isScreenShare && !peer.isUrlShare && (
-              <Button
-                size="sm"
-                variant="secondary"
-                className="h-6 w-6 p-0 bg-black/50 hover:bg-black/70"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onMute();
-                }}
-              >
-                {isMuted ? (
-                  <VolumeX className="h-3 w-3" />
-                ) : (
-                  <Volume2 className="h-3 w-3" />
-                )}
-              </Button>
-            )}
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
+// StreamCard component is now imported from ./stream-card.tsx
 
 export default function SpaceMediaPanel({
   spaceId,
@@ -390,6 +26,7 @@ export default function SpaceMediaPanel({
   expectedPeers,
   isExpanded = false,
   onToggleExpanded,
+  onLeaveSpace,
 }: {
   spaceId: string;
   selfId: string;
@@ -398,6 +35,7 @@ export default function SpaceMediaPanel({
   expectedPeers?: Array<{ id: string; role: "human" | "agent" }>;
   isExpanded?: boolean;
   onToggleExpanded?: () => void;
+  onLeaveSpace?: () => void;
 }) {
   const {
     localStream: localStream,
@@ -420,6 +58,9 @@ export default function SpaceMediaPanel({
   const pubVideo = pubState.video;
   const pubScreen = pubState.screen;
   const pubUrl = pubState.url;
+
+  // Log publish state for debugging
+  console.log("Publish state:", { pubAudio, pubVideo, pubScreen, pubUrl });
   const [currentUrl, setCurrentUrl] = useState<string>("");
   const [showUrlInput, setShowUrlInput] = useState<boolean>(false);
   const [urlInputValue, setUrlInputValue] = useState<string>("");
@@ -467,15 +108,35 @@ export default function SpaceMediaPanel({
     await hookTogglePublish(kind);
   }
 
-  const handleEndWebGracefully = () => {
+  const handleEndWebGracefully = async () => {
+    console.log(
+      "handleEndWebGracefully called, endWebCapture:",
+      endWebCapture,
+      "pubUrl:",
+      pubUrl
+    );
+
+    // Signal graceful shutdown to backend (shows ending overlay)
     endWebCapture?.(1500); // default 1.5s grace
+
+    // Wait for grace period, then actually stop the URL share
+    setTimeout(async () => {
+      console.log("Grace period ended, stopping URL share");
+      setCurrentUrl(""); // Clear the current URL
+      await togglePublish("url");
+    }, 1500);
   };
 
-  const handleUrlSubmit = async () => {
-    if (!urlInputValue.trim()) return;
-    const normalized = urlInputValue.startsWith("http")
-      ? urlInputValue.trim()
-      : `https://${urlInputValue.trim()}`;
+  const handleUrlSubmit = async (url?: string) => {
+    // If URL is passed directly (from dialog), use it; otherwise use urlInputValue
+    const inputUrl = url || urlInputValue.trim();
+    if (!inputUrl) return;
+
+    const normalized = inputUrl.startsWith("http")
+      ? inputUrl.trim()
+      : `https://${inputUrl.trim()}`;
+
+    console.log("handleUrlSubmit called with:", { url, inputUrl, normalized });
     setCurrentUrl(normalized);
     setShowUrlInput(false);
     setUrlInputValue("");
@@ -525,6 +186,21 @@ export default function SpaceMediaPanel({
   const allStreams: StreamItem[] = [];
   const addedIds = new Set<string>(); // Track added IDs to prevent duplicates
 
+  // Log remote peers data for debugging
+  console.log(
+    "Remote peers data:",
+    remotePeers.map((p) => ({
+      id: p.id,
+      urlSharing: p.urlSharing,
+      webFrameUrl: p.webFrameUrl,
+      allFrameData: {
+        cameraFrameUrl: (p as any).cameraFrameUrl,
+        screenFrameUrl: (p as any).screenFrameUrl,
+        webFrameUrl: p.webFrameUrl,
+      },
+    }))
+  );
+
   // Helper to safely add stream
   const addStream = (stream: StreamItem) => {
     if (!addedIds.has(stream.id)) {
@@ -565,7 +241,31 @@ export default function SpaceMediaPanel({
   }
 
   // Add local URL share
-  // Do not push a local placeholder for web capture; rely on server frames (including self) via remotePeers
+  // First check if we have a webFrameUrl from remotePeers (server sends our own frames back)
+  const selfPeer = remotePeers.find((p) => p.id === selfId);
+  const localWebFrameUrl = selfPeer?.webFrameUrl;
+
+  if (pubUrl && (localWebUrl || localWebFrameUrl)) {
+    console.log("Adding local URL share stream:", {
+      localWebUrl,
+      localWebFrameUrl,
+      compositeFrameUrl,
+      pubUrl,
+    });
+    addStream({
+      id: `${selfId}-url`,
+      role,
+      stream: undefined,
+      audioStream: undefined,
+      frameUrl: localWebFrameUrl, // Use specific web frame, not composite
+      publish: { audio: false, video: true },
+      isLocal: true,
+      isScreenShare: false,
+      isUrlShare: true,
+      url: localWebUrl || undefined,
+      webFrameUrl: localWebFrameUrl, // Use specific web frame, not composite
+    });
+  }
 
   // Add remote streams
   remotePeers.forEach((peer) => {
@@ -592,7 +292,10 @@ export default function SpaceMediaPanel({
     });
 
     // Add screen share stream (skip if it's from self - already added locally)
-    if ((peer.screenStream || (peer as any).screenFrameUrl) && peer.id !== selfId) {
+    if (
+      (peer.screenStream || (peer as any).screenFrameUrl) &&
+      peer.id !== selfId
+    ) {
       addStream({
         id: `${peer.id}-screen`,
         role: peer.role,
@@ -608,6 +311,11 @@ export default function SpaceMediaPanel({
 
     // Add URL share stream (can include self since we don't add it locally above)
     if (peer.urlSharing?.active || peer.webFrameUrl) {
+      console.log("Adding URL share stream:", {
+        peerId: peer.id,
+        urlSharing: peer.urlSharing,
+        webFrameUrl: peer.webFrameUrl,
+      });
       addStream({
         id: `${peer.id}-url`,
         role: peer.role,
@@ -646,170 +354,126 @@ export default function SpaceMediaPanel({
 
   const totalActiveStreams = allStreams.length;
   const shouldShowPanel = totalActiveStreams > 0 || joined;
-  const getColumns = () => {
-    if (isExpanded) {
-      if (totalActiveStreams <= 4) return 2;
-      if (totalActiveStreams <= 9) return 3;
-      return 4;
-    }
-    return 1;
-  };
 
-  const columns = getColumns();
+  // Use improved layout calculation
+  const gridLayout = calculateGridLayout(totalActiveStreams, isExpanded);
+  const sortedStreams = sortStreamsByPriority(allStreams);
 
   if (!shouldShowPanel) {
     return (
-      <div className="flex flex-col h-full border-l bg-gray-50">
-        <div className="p-3 border-b bg-white">
+      <div className="flex flex-col h-full border-l bg-gradient-to-b from-gray-50 to-white">
+        <div className="px-4 py-3 border-b bg-gradient-to-r from-gray-50 to-white shadow-sm">
           <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-3">
               <Users className="h-4 w-4 text-gray-400" />
-              <span className="text-sm font-medium text-gray-600">Media</span>
-              {!joined && <Badge variant="outline">Connecting...</Badge>}
+              <span className="text-sm font-semibold text-gray-600">Media</span>
+              {!joined && (
+                <Badge variant="outline" className="animate-pulse">
+                  Connecting...
+                </Badge>
+              )}
             </div>
           </div>
         </div>
-        <div className="flex-1 flex items-center justify-center p-6">
-          <div className="text-center text-gray-500">
-            <Camera className="h-8 w-8 mx-auto mb-2 opacity-50" />
-            <p className="text-sm">No active streams</p>
-            <p className="text-xs text-gray-400">
-              Start streaming to see participants
+        <div className="flex-1 flex items-center justify-center p-8">
+          <div className="text-center text-gray-500 max-w-xs">
+            <div className="w-16 h-16 rounded-full bg-gray-100 flex items-center justify-center mx-auto mb-4">
+              <Video className="h-8 w-8 text-gray-400" />
+            </div>
+            <p className="text-sm font-medium text-gray-700 mb-1">
+              No active streams
+            </p>
+            <p className="text-xs text-gray-500">
+              Start your camera, mic, or screen share to begin
             </p>
             {compositeFrameUrl && (
-              <div className="mt-4">
-                <ImageIcon className="h-4 w-4 mx-auto mb-1 text-gray-400" />
+              <div className="mt-6">
                 <img
                   src={compositeFrameUrl}
                   alt="Composite"
-                  className="max-w-[160px] mx-auto rounded border"
+                  className="max-w-[180px] mx-auto rounded-lg border shadow-sm"
                 />
               </div>
             )}
           </div>
         </div>
-        <div className="p-3 border-t bg-white">
-          {showUrlInput ? (
-            <div className="space-y-2">
-              <div className="flex gap-2">
-                <Input
-                  placeholder="Enter website URL (e.g., example.com)"
-                  value={urlInputValue}
-                  onChange={(e) => setUrlInputValue(e.target.value)}
-                  onKeyPress={(e) => e.key === "Enter" && handleUrlSubmit()}
-                  className="text-sm"
-                />
-                <Button size="sm" onClick={handleUrlSubmit}>
-                  <Plus className="h-4 w-4" />
-                </Button>
-                <Button size="sm" variant="outline" onClick={handleCancelUrl}>
-                  <X className="h-4 w-4" />
-                </Button>
-              </div>
-            </div>
-          ) : (
-            <div className="flex justify-center gap-2">
-              <Button
-                size="sm"
-                variant={pubAudio ? "default" : "outline"}
-                onClick={() => togglePublish("audio")}
-              >
-                {pubAudio ? (
-                  <Mic className="h-4 w-4" />
-                ) : (
-                  <MicOff className="h-4 w-4" />
-                )}
-              </Button>
-              <Button
-                size="sm"
-                variant={pubVideo ? "default" : "outline"}
-                onClick={() => togglePublish("video")}
-              >
-                {pubVideo ? (
-                  <Camera className="h-4 w-4" />
-                ) : (
-                  <CameraOff className="h-4 w-4" />
-                )}
-              </Button>
-              <Button
-                size="sm"
-                variant={pubScreen ? "default" : "outline"}
-                onClick={() => togglePublish("screen")}
-              >
-                {pubScreen ? (
-                  <Monitor className="h-4 w-4" />
-                ) : (
-                  <MonitorOff className="h-4 w-4" />
-                )}
-              </Button>
-              <Button
-                size="sm"
-                variant={pubUrl ? "default" : "outline"}
-                onClick={() => togglePublish("url")}
-              >
-                {pubUrl ? (
-                  <Globe className="h-4 w-4" />
-                ) : (
-                  <GlobeLock className="h-4 w-4" />
-                )}
-              </Button>
-            </div>
-          )}
-        </div>
+        <SpaceMediaControls
+          pubAudio={pubAudio}
+          pubVideo={pubVideo}
+          pubScreen={pubScreen}
+          pubUrl={pubUrl}
+          onTogglePublish={togglePublish}
+          onUrlSubmit={handleUrlSubmit}
+          onEndWebGracefully={handleEndWebGracefully}
+          onLeaveSpace={onLeaveSpace}
+        />
       </div>
     );
   }
 
   return (
     <div
-      className={`flex flex-col h-full border-l bg-white ${isExpanded ? "w-full" : ""}`}
+      className={`flex flex-col h-full border-l bg-slate-50 ${isExpanded ? "w-full" : ""}`}
     >
-      {/* Header */}
-      <div className="p-3 border-b bg-white">
+      {/* Header - Modern design */}
+      {/* <div className="">
         <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <Users className="h-4 w-4 text-green-500" />
-            <span className="text-sm font-medium">
-              Live ({totalActiveStreams})
-            </span>
-            {!joined && <Badge variant="outline">Connecting...</Badge>}
+         <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2 bg-green-50 px-3 py-1.5 rounded-full">
+              <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
+              <Users className="h-4 w-4 text-green-600" />
+              <span className="text-sm font-semibold text-green-700">
+                {totalActiveStreams}
+              </span>
+            </div>
+            {!joined && (
+              <Badge variant="outline" className="animate-pulse">
+                Connecting...
+              </Badge>
+            )}
             {compositeFrameUrl && (
               <img
                 src={compositeFrameUrl}
                 alt="Composite"
-                className="h-8 w-12 object-cover rounded border ml-2"
+                className="h-8 w-12 object-cover rounded-md border shadow-sm"
               />
             )}
-          </div>
-          <div className="flex items-center gap-1">
-            {focusedPeer && (
-              <Button
-                size="sm"
-                variant="ghost"
-                onClick={() => setFocusedPeer(null)}
-              >
-                <Grid3X3 className="h-4 w-4" />
-              </Button>
-            )}
-            {onToggleExpanded && (
-              <Button size="sm" variant="ghost" onClick={onToggleExpanded}>
-                {isExpanded ? (
-                  <Minimize2 className="h-4 w-4" />
-                ) : (
-                  <Maximize2 className="h-4 w-4" />
-                )}
-              </Button>
-            )}
-          </div>
+          </div> 
+
+          {focusedPeer && (
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => setFocusedPeer(null)}
+              className="rounded-full"
+            >
+              <Grid3X3 className="h-4 w-4" />
+            </Button>
+          )}
+          {onToggleExpanded && (
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={onToggleExpanded}
+              className="rounded-full"
+            >
+              {isExpanded ? (
+                <Minimize2 className="h-4 w-4" />
+              ) : (
+                <Maximize2 className="h-4 w-4" />
+              )}
+            </Button>
+          )}
         </div>
-      </div>
+      </div> */}
 
       {/* Streams */}
-      <div className="flex-1 overflow-hidden">
+      <div className="flex-1 overflow-hidden flex items-center justify-center">
         {focusedPeer ? (
-          // Focused view
-          <div className="h-full flex flex-col">
-            <div className="flex-1 p-3">
+          // Focused view - Google Meet / Discord Huddle style
+          <div className="h-full w-full flex flex-col p-4 gap-3">
+            {/* Main focused stream - takes most space, properly sized */}
+            <div className="flex-1 flex items-center justify-center min-h-0">
               {(() => {
                 const focusedStream = allStreams.find(
                   (s) => s.id === focusedPeer
@@ -817,96 +481,190 @@ export default function SpaceMediaPanel({
                 if (!focusedStream) return null;
 
                 return (
-                  <StreamCard
-                    peer={{
-                      id: focusedStream.id,
-                      role: focusedStream.role,
-                      stream: focusedStream.stream || undefined,
-                      audioStream: focusedStream.audioStream || undefined,
-                      audioSrc: focusedStream.audioSrc,
-                      publish: focusedStream.publish,
-                      isScreenShare: focusedStream.isScreenShare,
-                      isUrlShare: focusedStream.isUrlShare,
-                      url: focusedStream.url,
-                      webFrameUrl: focusedStream.webFrameUrl,
-                      ending: focusedStream.ending,
-                      endsAt: focusedStream.endsAt,
-                    }}
-                    isLocal={focusedStream.isLocal}
-                    isFocused={true}
-                    onMute={
-                      focusedStream.isLocal
-                        ? undefined
-                        : () => toggleMutePeer(focusedStream.id)
-                    }
-                    isMuted={mutedPeers.has(focusedStream.id)}
-                    isActiveSpeaker={activeSpeakerId === focusedStream.id}
-                    activeSpeakerId={activeSpeakerId}
-                    className="h-[500px]"
-                  />
+                  <div className="w-full h-full max-w-7xl flex items-center justify-center">
+                    <div className="w-full h-full max-h-full">
+                      <StreamCard
+                        peer={{
+                          id: focusedStream.id,
+                          role: focusedStream.role,
+                          stream: focusedStream.stream || undefined,
+                          audioStream: focusedStream.audioStream || undefined,
+                          audioSrc: focusedStream.audioSrc,
+                          publish: focusedStream.publish,
+                          isScreenShare: focusedStream.isScreenShare,
+                          isUrlShare: focusedStream.isUrlShare,
+                          url: focusedStream.url,
+                          webFrameUrl: focusedStream.webFrameUrl,
+                          ending: focusedStream.ending,
+                          endsAt: focusedStream.endsAt,
+                        }}
+                        isLocal={focusedStream.isLocal}
+                        isFocused={true}
+                        onMute={
+                          focusedStream.isLocal
+                            ? undefined
+                            : () => toggleMutePeer(focusedStream.id)
+                        }
+                        isMuted={mutedPeers.has(focusedStream.id)}
+                        isActiveSpeaker={activeSpeakerId === focusedStream.id}
+                        activeSpeakerId={activeSpeakerId}
+                        className="w-full h-full"
+                      />
+                    </div>
+                  </div>
                 );
               })()}
             </div>
-            {/* Thumbnails */}
-            <div className="p-2 border-t bg-gray-50">
-              <ScrollArea className="w-full">
-                <div className="flex gap-2">
-                  {allStreams
-                    .filter((s) => s.id !== focusedPeer)
-                    .map((stream) => (
-                      <div
-                        key={stream.id}
-                        className="flex-shrink-0 w-16 cursor-pointer"
-                        onClick={() => setFocusedPeer(stream.id)}
-                      >
-                        <StreamCard
-                          peer={{
-                            id: stream.id,
-                            role: stream.role,
-                            stream: stream.stream || undefined,
-                            audioStream: stream.audioStream || undefined,
-                            audioSrc: stream.audioSrc,
-                            publish: stream.publish,
-                            isScreenShare: stream.isScreenShare,
-                            isUrlShare: stream.isUrlShare,
-                            url: stream.url,
-                            webFrameUrl: stream.webFrameUrl,
-                            ending: stream.ending,
-                            endsAt: stream.endsAt,
-                          }}
-                          isLocal={stream.isLocal}
-                          isMinimized={true}
-                          onMute={
-                            stream.isLocal
-                              ? undefined
-                              : () => toggleMutePeer(stream.id)
-                          }
-                          isMuted={mutedPeers.has(stream.id)}
-                          isActiveSpeaker={activeSpeakerId === stream.id}
-                          activeSpeakerId={activeSpeakerId}
-                        />
-                      </div>
-                    ))}
-                </div>
-              </ScrollArea>
-            </div>
+
+            {/* Thumbnails - compact row at bottom, no border */}
+            {sortedStreams.filter((s) => s.id !== focusedPeer).length > 0 && (
+              <div className="flex-shrink-0">
+                <ScrollArea className="w-full">
+                  <div className="flex gap-2 justify-center pb-1">
+                    {sortedStreams
+                      .filter((s) => s.id !== focusedPeer)
+                      .map((stream) => (
+                        <div
+                          key={stream.id}
+                          className="flex-shrink-0 w-28 cursor-pointer hover:scale-105 transition-transform"
+                          onClick={() => setFocusedPeer(stream.id)}
+                        >
+                          <StreamCard
+                            peer={{
+                              id: stream.id,
+                              role: stream.role,
+                              stream: stream.stream || undefined,
+                              audioStream: stream.audioStream || undefined,
+                              audioSrc: stream.audioSrc,
+                              publish: stream.publish,
+                              isScreenShare: stream.isScreenShare,
+                              isUrlShare: stream.isUrlShare,
+                              url: stream.url,
+                              webFrameUrl: stream.webFrameUrl,
+                              ending: stream.ending,
+                              endsAt: stream.endsAt,
+                            }}
+                            isLocal={stream.isLocal}
+                            isMinimized={true}
+                            onMute={
+                              stream.isLocal
+                                ? undefined
+                                : () => toggleMutePeer(stream.id)
+                            }
+                            isMuted={mutedPeers.has(stream.id)}
+                            isActiveSpeaker={activeSpeakerId === stream.id}
+                            activeSpeakerId={activeSpeakerId}
+                          />
+                        </div>
+                      ))}
+                  </div>
+                </ScrollArea>
+              </div>
+            )}
           </div>
         ) : (
-          // Grid view
-          <ScrollArea className="h-full">
+          // Grid view - Google Meet style with flexible card dimensions
+          <div className="h-full w-full p-4">
             {(() => {
-              // Determine primary stream: any url share first, else any screen share
-              const primary =
-                allStreams.find((s) => s.isUrlShare) ||
-                allStreams.find((s) => s.isScreenShare);
-              if (!primary) {
-                // fallback original grid
+              // Check if there's a primary stream that should be spotlighted
+              const primary = sortedStreams.find(
+                (s) => s.isUrlShare || s.isScreenShare
+              );
+
+              if (primary) {
+                // Spotlight layout: primary stream takes most space, others in bottom bar (Google Meet style)
+                const others = sortedStreams.filter((s) => s.id !== primary.id);
+
                 return (
+                  <div className="h-full flex flex-col gap-3">
+                    {/* Primary spotlighted stream - takes majority of space */}
+                    <div className="flex-1 flex items-center justify-center min-h-0">
+                      <StreamCard
+                        peer={{
+                          id: primary.id,
+                          role: primary.role,
+                          stream: primary.stream || undefined,
+                          audioStream: primary.audioStream || undefined,
+                          audioSrc: primary.audioSrc,
+                          publish: primary.publish,
+                          isScreenShare: primary.isScreenShare,
+                          isUrlShare: primary.isUrlShare,
+                          url: primary.url,
+                          webFrameUrl: primary.webFrameUrl,
+                          ending: primary.ending,
+                          endsAt: primary.endsAt,
+                        }}
+                        isLocal={primary.isLocal}
+                        isFocused={true}
+                        onFocus={() => setFocusedPeer(primary.id)}
+                        onMute={
+                          primary.isLocal
+                            ? undefined
+                            : () => toggleMutePeer(primary.id)
+                        }
+                        isMuted={mutedPeers.has(primary.id)}
+                        isActiveSpeaker={activeSpeakerId === primary.id}
+                        activeSpeakerId={activeSpeakerId}
+                        className="w-full h-full max-w-7xl"
+                      />
+                    </div>
+
+                    {/* Other participants - bottom bar (Google Meet style) */}
+                    {others.length > 0 && (
+                      <div className="flex-shrink-0">
+                        <div className="flex gap-2 justify-center overflow-x-auto pb-1">
+                          {others.map((stream) => (
+                            <div
+                              key={stream.id}
+                              className="flex-shrink-0 w-32 cursor-pointer hover:scale-105 transition-transform"
+                              onClick={() => handleStreamFocus(stream.id)}
+                            >
+                              <StreamCard
+                                peer={{
+                                  id: stream.id,
+                                  role: stream.role,
+                                  stream: stream.stream || undefined,
+                                  audioStream: stream.audioStream || undefined,
+                                  audioSrc: stream.audioSrc,
+                                  publish: stream.publish,
+                                  isScreenShare: stream.isScreenShare,
+                                  isUrlShare: stream.isUrlShare,
+                                  url: stream.url,
+                                  webFrameUrl: stream.webFrameUrl,
+                                  ending: stream.ending,
+                                  endsAt: stream.endsAt,
+                                }}
+                                isLocal={stream.isLocal}
+                                isMinimized={true}
+                                onMute={
+                                  stream.isLocal
+                                    ? undefined
+                                    : () => toggleMutePeer(stream.id)
+                                }
+                                isMuted={mutedPeers.has(stream.id)}
+                                isActiveSpeaker={activeSpeakerId === stream.id}
+                                activeSpeakerId={activeSpeakerId}
+                              />
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                );
+              }
+
+              // Equal grid layout - fills entire space
+              return (
+                <div className="h-full flex items-center justify-center">
                   <div
-                    className={`p-3 grid gap-3`}
-                    style={{ gridTemplateColumns: `repeat(${columns}, 1fr)` }}
+                    className="grid gap-3 w-full h-full"
+                    style={{
+                      ...getGridStyle(gridLayout.columns),
+                      gridAutoRows: "1fr", // Make rows equal height
+                    }}
                   >
-                    {allStreams.map((stream) => (
+                    {sortedStreams.map((stream) => (
                       <StreamCard
                         key={stream.id}
                         peer={{
@@ -933,167 +691,28 @@ export default function SpaceMediaPanel({
                         isMuted={mutedPeers.has(stream.id)}
                         isActiveSpeaker={activeSpeakerId === stream.id}
                         activeSpeakerId={activeSpeakerId}
+                        className="w-full h-full min-h-0"
                       />
                     ))}
                   </div>
-                );
-              }
-              const others = allStreams.filter((s) => s.id !== primary.id);
-              return (
-                <div className="p-3 flex flex-col gap-3">
-                  <div className="w-full aspect-video">
-                    <StreamCard
-                      peer={{
-                        id: primary.id,
-                        role: primary.role,
-                        stream: primary.stream || undefined,
-                        audioStream: primary.audioStream || undefined,
-                        audioSrc: primary.audioSrc,
-                        publish: primary.publish,
-                        isScreenShare: primary.isScreenShare,
-                        isUrlShare: primary.isUrlShare,
-                        url: primary.url,
-                        webFrameUrl: primary.webFrameUrl,
-                        ending: primary.ending,
-                        endsAt: primary.endsAt,
-                      }}
-                      isLocal={primary.isLocal}
-                      onFocus={() => handleStreamFocus(primary.id)}
-                      onMute={
-                        primary.isLocal
-                          ? undefined
-                          : () => toggleMutePeer(primary.id)
-                      }
-                      isMuted={mutedPeers.has(primary.id)}
-                      isActiveSpeaker={activeSpeakerId === primary.id}
-                      activeSpeakerId={activeSpeakerId}
-                      className="h-full"
-                    />
-                  </div>
-                  {others.length > 0 && (
-                    <div
-                      className="grid gap-3"
-                      style={{
-                        gridTemplateColumns: `repeat(${Math.min(4, Math.ceil(Math.sqrt(others.length)))}, 1fr)`,
-                      }}
-                    >
-                      {others.map((stream) => (
-                        <StreamCard
-                          key={stream.id}
-                          peer={{
-                            id: stream.id,
-                            role: stream.role,
-                            stream: stream.stream || undefined,
-                            audioStream: stream.audioStream || undefined,
-                            audioSrc: stream.audioSrc,
-                            publish: stream.publish,
-                            isScreenShare: stream.isScreenShare,
-                            isUrlShare: stream.isUrlShare,
-                            url: stream.url,
-                            webFrameUrl: stream.webFrameUrl,
-                            ending: stream.ending,
-                            endsAt: stream.endsAt,
-                          }}
-                          isLocal={stream.isLocal}
-                          onFocus={() => handleStreamFocus(stream.id)}
-                          onMute={
-                            stream.isLocal
-                              ? undefined
-                              : () => toggleMutePeer(stream.id)
-                          }
-                          isMuted={mutedPeers.has(stream.id)}
-                          isActiveSpeaker={activeSpeakerId === stream.id}
-                          activeSpeakerId={activeSpeakerId}
-                          className="aspect-video"
-                        />
-                      ))}
-                    </div>
-                  )}
                 </div>
               );
             })()}
-          </ScrollArea>
+          </div>
         )}
       </div>
 
       {/* Controls */}
-      <div className="p-3 border-t bg-white">
-        {showUrlInput ? (
-          <div className="space-y-2">
-            <div className="flex gap-2">
-              <Input
-                placeholder="Enter website URL (e.g., example.com)"
-                value={urlInputValue}
-                onChange={(e) => setUrlInputValue(e.target.value)}
-                onKeyPress={(e) => e.key === "Enter" && handleUrlSubmit()}
-                className="text-sm"
-              />
-              <Button size="sm" onClick={handleUrlSubmit}>
-                <Plus className="h-4 w-4" />
-              </Button>
-              <Button size="sm" variant="outline" onClick={handleCancelUrl}>
-                <X className="h-4 w-4" />
-              </Button>
-            </div>
-          </div>
-        ) : (
-          <div className="flex justify-center gap-2">
-            <Button
-              size="sm"
-              variant={pubAudio ? "default" : "outline"}
-              onClick={() => togglePublish("audio")}
-            >
-              {pubAudio ? (
-                <Mic className="h-4 w-4" />
-              ) : (
-                <MicOff className="h-4 w-4" />
-              )}
-            </Button>
-            <Button
-              size="sm"
-              variant={pubVideo ? "default" : "outline"}
-              onClick={() => togglePublish("video")}
-            >
-              {pubVideo ? (
-                <Camera className="h-4 w-4" />
-              ) : (
-                <CameraOff className="h-4 w-4" />
-              )}
-            </Button>
-            <Button
-              size="sm"
-              variant={pubScreen ? "default" : "outline"}
-              onClick={() => togglePublish("screen")}
-            >
-              {pubScreen ? (
-                <Monitor className="h-4 w-4" />
-              ) : (
-                <MonitorOff className="h-4 w-4" />
-              )}
-            </Button>
-            <Button
-              size="sm"
-              variant={pubUrl ? "default" : "outline"}
-              onClick={() => togglePublish("url")}
-            >
-              {pubUrl ? (
-                <Globe className="h-4 w-4" />
-              ) : (
-                <GlobeLock className="h-4 w-4" />
-              )}
-            </Button>
-            {pubUrl && (
-              <Button
-                size="sm"
-                variant="destructive"
-                onClick={handleEndWebGracefully}
-              >
-                End Web
-              </Button>
-            )}
-          </div>
-        )}
-      </div>
+      <SpaceMediaControls
+        pubAudio={pubAudio}
+        pubVideo={pubVideo}
+        pubScreen={pubScreen}
+        pubUrl={pubUrl}
+        onTogglePublish={togglePublish}
+        onUrlSubmit={handleUrlSubmit}
+        onEndWebGracefully={handleEndWebGracefully}
+        onLeaveSpace={onLeaveSpace}
+      />
     </div>
   );
 }
