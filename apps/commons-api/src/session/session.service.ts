@@ -20,6 +20,7 @@ import { DatabaseService } from '~/modules/database/database.service';
 import * as schema from '#/models/schema';
 import { first } from 'lodash';
 import { inArray } from 'drizzle-orm';
+import { v4 as uuidv4 } from 'uuid';
 
 @Injectable()
 export class SessionService {
@@ -77,6 +78,7 @@ export class SessionService {
     const [created] = await this.db
       .insert(schema.session)
       .values({
+        sessionId: uuidv4(),
         agentId,
         initiator: initiator ?? `space:${spaceId}`,
         model: model ?? ({ name: 'gpt-4o' } as any),

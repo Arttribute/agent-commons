@@ -4,6 +4,7 @@ import { EventEmitter } from 'events';
 import { AgentService } from '~/agent/agent.service';
 import { SpaceService } from '~/space/space.service';
 import { StreamMonitorService } from './stream-monitor.service';
+import { SessionService } from '~/session/session.service';
 
 interface TranscriptionEvent {
   sessionId: string;
@@ -28,6 +29,8 @@ export class TranscriptionDeliveryService extends EventEmitter {
     private readonly spaceService: SpaceService,
     @Inject(forwardRef(() => StreamMonitorService))
     private readonly streamMonitor: StreamMonitorService,
+    @Inject(forwardRef(() => SessionService))
+    private readonly sessionService: SessionService,
   ) {
     super();
   }
@@ -46,7 +49,7 @@ export class TranscriptionDeliveryService extends EventEmitter {
       const userContent: any[] = [
         {
           type: 'text',
-          text: ` 
+          text: `
             Participant: ${transcription.participantId}
             Timestamp: ${new Date(transcription.timestamp).toISOString()}
             MessageContent: ${transcription.transcript}`,
@@ -58,6 +61,23 @@ export class TranscriptionDeliveryService extends EventEmitter {
           image_url: { url: latestFrameUrl },
         });
       }
+
+      // Ensure there's a dedicated session for this agent in this space
+      const { session: spaceSession, created } =
+        await this.sessionService.getOrCreateAgentSpaceSession({
+          agentId,
+          spaceId: transcription.spaceId,
+          initiator: transcription.participantId,
+        });
+
+      this.logger.log(
+        `Delivering transcription to agent ${agentId} ${created ? 'with new session' : 'with existing session'} ${spaceSession.sessionId}`,
+        {
+          sessionId: spaceSession.sessionId,
+          spaceId: transcription.spaceId,
+          initiator: transcription.participantId,
+        },
+      );
 
       const response$ = this.agentService.runAgent({
         agentId,
@@ -80,6 +100,7 @@ export class TranscriptionDeliveryService extends EventEmitter {
             content: userContent,
           },
         ],
+        sessionId: spaceSession.sessionId,
         initiator: transcription.participantId,
         spaceId: transcription.spaceId,
         turnCount: 0,
