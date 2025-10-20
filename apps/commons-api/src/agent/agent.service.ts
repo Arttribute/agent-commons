@@ -826,6 +826,7 @@ export class AgentService implements OnModuleInit {
               content: `
               You are currently in the following space:
               - Space ${space.spaceId}: ${space.name || 'Untitled space'} (created: ${space.createdAt})
+              Remember your agent Id is : ${agentId}
 
               You are receiving this message because you are subscribed to this space.
               

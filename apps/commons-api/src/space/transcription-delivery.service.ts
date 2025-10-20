@@ -92,6 +92,8 @@ export class TranscriptionDeliveryService extends EventEmitter {
               Confidence: ${transcription.confidence}
               Kind: ${transcription.type ?? 'audio'}
 
+              Remember your agent Id is : ${agentId}
+
               You are receiving this because you are listening to a live ${transcription.type ?? 'audio'} stream. Use the MessageContent to decide whether to respond or act. Typically you are expected to respond in voice using the speakInSpace tool.
             `,
           },

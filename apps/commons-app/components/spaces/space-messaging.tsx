@@ -330,16 +330,25 @@ export default function SpaceMessaging({
   }, [spaceDetails?.members, currentUserId]);
 
   // ─────────────────────────  AUTO-SCROLL  ─────────────────────────
-  const bottomRefFull = useRef<HTMLDivElement | null>(null);
-  const bottomRefEmbedded = useRef<HTMLDivElement | null>(null);
+  const scrollAreaRefFull = useRef<HTMLDivElement | null>(null);
+  const scrollAreaRefEmbedded = useRef<HTMLDivElement | null>(null);
   const initialScrollDoneRef = useRef(false);
+
   const scrollToBottom = (smooth: boolean) => {
     requestAnimationFrame(() => {
-      const behavior: ScrollBehavior = smooth ? "smooth" : "auto"; // 'instant' not standard in all browsers
-      bottomRefFull.current?.scrollIntoView({ behavior });
-      bottomRefEmbedded.current?.scrollIntoView({ behavior });
+      // Only scroll the currently active view to prevent flickering
+      const activeRef = isFullScreen ? scrollAreaRefFull : scrollAreaRefEmbedded;
+      const scrollContainer = activeRef.current?.querySelector('[data-radix-scroll-area-viewport]');
+
+      if (scrollContainer) {
+        scrollContainer.scrollTo({
+          top: scrollContainer.scrollHeight,
+          behavior: smooth ? 'smooth' : 'auto',
+        });
+      }
     });
   };
+
   useEffect(() => {
     if (!messages.length) return;
     if (!initialScrollDoneRef.current) {
@@ -350,7 +359,7 @@ export default function SpaceMessaging({
       // Subsequent additions -> smooth scroll
       scrollToBottom(true);
     }
-  }, [messages.length]);
+  }, [messages.length, isFullScreen]);
 
   return (
     <>
@@ -468,7 +477,7 @@ export default function SpaceMessaging({
                   )}
 
                   {/* Messages area with improved styling */}
-                  <ScrollArea className="flex-1 bg-gradient-to-b from-white to-gray-50">
+                  <ScrollArea ref={scrollAreaRefFull} className="flex-1 bg-gradient-to-b from-white to-gray-50">
                     <div className="p-4 space-y-1">
                       {messages.map((message, index) => (
                         <SpaceMessage
@@ -480,7 +489,6 @@ export default function SpaceMessaging({
                           metadata={message.metadata}
                         />
                       ))}
-                      <div ref={bottomRefFull} />
                     </div>
                   </ScrollArea>
 
@@ -567,7 +575,7 @@ export default function SpaceMessaging({
           )}
 
           {/* Messages - Embedded view */}
-          <ScrollArea className="p-4 h-[380px] bg-gray-50 rounded-b-xl">
+          <ScrollArea ref={scrollAreaRefEmbedded} className="p-4 h-[380px] bg-gray-50 rounded-b-xl">
             <div className="container mx-auto max-w-2xl">
               {messages.map((message, index) => (
                 <SpaceMessage
@@ -579,7 +587,6 @@ export default function SpaceMessaging({
                   metadata={message.metadata}
                 />
               ))}
-              <div ref={bottomRefEmbedded} />
             </div>
           </ScrollArea>
           {spaceDetails && (
