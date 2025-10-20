@@ -785,8 +785,43 @@ export class AgentService implements OnModuleInit {
               })),
             );
           } else {
-            // ✅ For existing sessions, inject updated system message with current child sessions
-            const currentTime = new Date();
+            // ✅ For existing sessions, load the full history including agent_speech entries
+            const currentSession = await this.session.getSession({
+              id: currentSessionId,
+            });
+
+            if (
+              currentSession?.history &&
+              Array.isArray(currentSession.history)
+            ) {
+              console.log(
+                `Loading ${currentSession.history.length} messages from session history`,
+              );
+
+              // Filter and load only user and assistant messages (exclude tool messages that cause coercion errors)
+              const validHistoryMessages = currentSession.history.filter(
+                (entry: any) =>
+                  entry.role === 'user' ||
+                  entry.role === 'assistant' ||
+                  entry.role === 'system',
+              );
+
+              console.log(
+                `Filtered to ${validHistoryMessages.length} valid messages (user/assistant/system only)`,
+              );
+
+              // Load existing history into messages array so agent can see it
+              messages.push(
+                ...validHistoryMessages.map((historyEntry: any) => ({
+                  type: historyEntry.role,
+                  role: historyEntry.role,
+                  content: historyEntry.content ?? '',
+                  // Don't include timestamp and metadata in the message object to avoid coercion issues
+                })),
+              );
+            }
+
+            // ✅ Inject updated system message with current child sessions
             const childSessions = await this.getChildSessions(currentSessionId);
 
             const childSessionsInfo =
@@ -805,7 +840,7 @@ export class AgentService implements OnModuleInit {
               role: 'system',
               content: `
               REMEMBER:
-          
+
               When using the interactWithAgent tool you can only use sessionIds from the following list when continuing conversations: ${childSessionsInfo}`,
             } as any);
             console.log('Child sessions after update:', childSessionsInfo);
@@ -952,6 +987,42 @@ export class AgentService implements OnModuleInit {
               }
             }
 
+            // Get existing history to preserve agent_speech entries added by other agents
+            const existingHistory = (currentSession.history as any[]) || [];
+
+            // Extract agent_speech entries that should be preserved
+            const agentSpeechEntries = existingHistory.filter(
+              (entry: any) => entry.metadata?.source === 'agent_speech',
+            );
+
+            // Create new history entries from the current agent run
+            const newHistoryEntries = messageHistories.map((m) => ({
+              role: m.toDict().type,
+              content:
+                typeof m.content === 'string'
+                  ? m.content
+                  : JSON.stringify(m.content),
+              timestamp: new Date().toISOString(),
+              metadata: {
+                toolCalls:
+                  m.toDict().type === 'assistant' ? toolCalls : undefined,
+                agentCalls:
+                  m.toDict().type === 'assistant'
+                    ? resolvedAgentCalls
+                    : undefined,
+              },
+            }));
+
+            // Merge and sort by timestamp to maintain chronological order
+            const mergedHistory = [
+              ...agentSpeechEntries,
+              ...newHistoryEntries,
+            ].sort((a, b) => {
+              const timeA = new Date(a.timestamp).getTime();
+              const timeB = new Date(b.timestamp).getTime();
+              return timeA - timeB;
+            });
+
             await this.session.updateSession({
               id: currentSessionId,
               delta: {
@@ -971,22 +1042,7 @@ export class AgentService implements OnModuleInit {
                   errorCount: toolUsage.filter((t) => t.status === 'error')
                     .length,
                 },
-                history: messageHistories.map((m) => ({
-                  role: m.toDict().type,
-                  content:
-                    typeof m.content === 'string'
-                      ? m.content
-                      : JSON.stringify(m.content),
-                  timestamp: new Date().toISOString(),
-                  metadata: {
-                    toolCalls:
-                      m.toDict().type === 'assistant' ? toolCalls : undefined,
-                    agentCalls:
-                      m.toDict().type === 'assistant'
-                        ? resolvedAgentCalls
-                        : undefined,
-                  },
-                })),
+                history: mergedHistory,
                 // Ensure spaces list includes this space
                 ...(spaceId
                   ? {

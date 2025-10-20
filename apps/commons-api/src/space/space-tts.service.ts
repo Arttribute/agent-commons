@@ -152,14 +152,15 @@ export class SpaceTtsService {
           spaceId,
           initiator: fromAgentId,
         });
-        // Fetch existing history (may be null)
-        const current = await this.db.query.session.findFirst({
-          where: (t) => eq(t.sessionId, session.sessionId),
-        });
-        const history = (current?.history as any[]) || [];
+
+        // Use existing history from session object
+        const history = (session.history as any[]) || [];
+
         const entry = {
           role: 'user',
-          content: text,
+          content: ` Participant: ${fromAgentId}
+            Timestamp: ${new Date().toISOString()}
+            MessageContent:${text}`,
           timestamp: atIso,
           metadata: {
             participantId: fromAgentId,
@@ -167,10 +168,17 @@ export class SpaceTtsService {
             source: 'agent_speech',
           },
         };
-        await this.db
-          .update(schema.session)
-          .set({ history: [...history, entry] } as any)
-          .where(eq(schema.session.sessionId, session.sessionId));
+
+        const updatedHistory = [...history, entry];
+
+        // Use session service updateSession method to ensure proper persistence
+        const result = await this.session.updateSession({
+          id: session.sessionId,
+          delta: {
+            history: updatedHistory,
+            updatedAt: new Date(),
+          },
+        });
       }),
     );
   }
