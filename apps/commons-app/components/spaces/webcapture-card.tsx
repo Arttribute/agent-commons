@@ -34,9 +34,9 @@ export function WebcaptureCard({
       <button
         onClick={handleClick}
         type="button"
-        className="group relative flex flex-col items-center gap-2 p-3 rounded-xl hover:bg-gray-100 transition-all duration-200"
+        className="group relative flex flex-col items-center gap-1.5 shrink-0"
       >
-        <div className="w-16 h-16 rounded-xl overflow-hidden bg-gray-100 flex items-center justify-center relative border border-gray-200">
+        <div className="w-12 h-12 rounded-lg overflow-hidden bg-white flex items-center justify-center relative border border-gray-400 hover:shadow-md transition-shadow duration-200">
           {app.imageUrl ? (
             <img
               src={app.imageUrl}
@@ -44,12 +44,9 @@ export function WebcaptureCard({
               className="w-full h-full object-cover"
             />
           ) : (
-            <Globe className="h-8 w-8 text-gray-400" />
+            <Globe className="h-6 w-6 text-gray-400" />
           )}
         </div>
-        <span className="text-xs font-medium text-gray-700 text-center line-clamp-2 max-w-[80px]">
-          {app.name}
-        </span>
       </button>
     );
   }
@@ -58,15 +55,15 @@ export function WebcaptureCard({
     <button
       onClick={handleClick}
       type="button"
-      className="group relative flex items-start gap-4 p-4 rounded-xl bg-gray-50 hover:bg-gray-100 transition-all duration-200 border border-gray-200 hover:border-gray-300 w-full text-left"
+      className="group relative flex flex-col rounded-lg overflow-hidden bg-white hover:bg-gray-50 transition-all duration-200 border border-gray-400 hover:border-gray-500 w-full text-left"
     >
       {/* Image/Thumbnail */}
-      <div className="w-24 h-24 rounded-xl overflow-hidden bg-gradient-to-br from-gray-100 to-gray-200 flex-shrink-0 relative">
+      <div className="w-full aspect-[16/10] overflow-hidden bg-gradient-to-br from-gray-100 to-gray-200 flex-shrink-0 relative">
         {app.imageUrl ? (
           <img
             src={app.imageUrl}
             alt={app.name}
-            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-200"
+            className="w-full h-full object-cover"
           />
         ) : (
           <div className="w-full h-full flex items-center justify-center">
@@ -76,42 +73,16 @@ export function WebcaptureCard({
       </div>
 
       {/* Content */}
-      <div className="flex-1 min-w-0">
-        <div className="flex items-start justify-between gap-2 mb-1">
-          <div className="flex items-center gap-2">
-            {app.favicon && (
-              <img src={app.favicon} alt="" className="w-5 h-5 rounded" />
-            )}
-            <h3 className="font-semibold text-gray-900 text-base group-hover:text-blue-600 transition-colors line-clamp-1">
-              {app.name}
-            </h3>
-          </div>
+      <div className="p-3">
+        <div className="flex items-start gap-2 mb-1">
+          {app.favicon && (
+            <img src={app.favicon} alt="" className="w-4 h-4 rounded mt-0.5" />
+          )}
+          <h3 className=" text-gray-900 text-xs leading-tight line-clamp-1">
+            {app.name}
+          </h3>
         </div>
-
-        <p className="text-sm text-gray-600 line-clamp-2 mb-2">
-          {app.description}
-        </p>
-
-        {/* Metadata */}
-        <div className="flex items-center gap-3 text-xs text-gray-500">
-          {app.rating && (
-            <div className="flex items-center gap-1">
-              <Star className="h-3 w-3 fill-yellow-500 text-yellow-500" />
-              <span>{app.rating.toFixed(1)}</span>
-            </div>
-          )}
-          {app.activeUsers && (
-            <div className="flex items-center gap-1">
-              <Users className="h-3 w-3" />
-              <span>{app.activeUsers.toLocaleString()}</span>
-            </div>
-          )}
-          {app.category && (
-            <span className="px-2 py-0.5 bg-gray-200 rounded-full text-gray-700">
-              {app.category}
-            </span>
-          )}
-        </div>
+        <p className="text-[10px] text-gray-600 truncate">{app.description}</p>
       </div>
     </button>
   );

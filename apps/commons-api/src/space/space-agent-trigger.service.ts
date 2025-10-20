@@ -172,12 +172,21 @@ export class SpaceAgentTriggerService {
         );
 
         // Ensure there's a dedicated session for this agent in this space
-        const { session: spaceSession } =
+        const { session: spaceSession, created } =
           await this.session.getOrCreateAgentSpaceSession({
             agentId: agentMember.memberId,
             spaceId,
             initiator: trigger.senderId,
           });
+
+        this.logger.log(
+          `Running agent ${agentMember.memberId} ${created ? 'with new session' : 'with existing session'} ${spaceSession.sessionId}`,
+          {
+            sessionId: spaceSession.sessionId,
+            spaceId,
+            initiator: trigger.senderId,
+          },
+        );
 
         this.agentService
           .runAgent({
