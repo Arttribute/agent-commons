@@ -9,6 +9,7 @@ import { useSpaces } from "@/hooks/spaces/use-spaces";
 import { SpacesList } from "@/components/spaces/spaces-list";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { ScrollArea } from "@/components/ui/scroll-area";
 
 export default function SpacesPage() {
   const { authState } = useAuth();
@@ -89,7 +90,7 @@ export default function SpacesPage() {
               </div>
             </div>
 
-            <div className="space-y-4 p-4">
+            <ScrollArea className="space-y-4 p-4 h-[72vh]">
               {loading && (
                 <div className="text-xs text-gray-500">Loading spaces...</div>
               )}
@@ -98,7 +99,7 @@ export default function SpacesPage() {
                 spaces={spaces}
                 emptyMessage={loading ? "" : "No spaces yet"}
               />
-            </div>
+            </ScrollArea>
           </div>
         </div>
       </div>
