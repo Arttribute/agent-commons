@@ -790,6 +790,59 @@ export class AgentService implements OnModuleInit {
               id: currentSessionId,
             });
 
+            // ✅ CRITICAL FIX: Fetch agent and inject persona/instructions for existing sessions
+            const agent = await this.getAgent({ agentId });
+            const currentTime = new Date();
+            const childSessions = await this.getChildSessions(currentSessionId);
+
+            const childSessionsInfo =
+              childSessions.length > 0
+                ? `\n\nEXISTING CHILD SESSIONS:\nYou have the following ongoing conversations with other agents. Use these sessionIds to continue existing conversations instead of starting new ones:\n${childSessions.map((cs) => `- Agent ${cs.childAgentId}: ${cs.title || 'Untitled conversation'} (sessionId=${cs.childSessionId}, started: ${cs.createdAt})`).join('\n')}`
+                : '';
+
+            // ✅ Inject the agent's persona and instructions at the beginning
+            messages.push({
+              type: 'system',
+              role: 'system',
+              content: dedent`You are the following agent:
+                ${JSON.stringify(omit(agent, ['instructions', 'persona', 'wallet']))}
+                    Persona:
+                ${agent.persona}
+
+                Instructions:
+                ${agent.instructions}
+
+
+                The current date and time is ${currentTime.toISOString()}.
+                 **SESSION ID**: ${currentSessionId}
+
+                Note that you can interact and engage with other agents using the interactWithAgent tool. This tool allows you to interact with other agents one at a time. Once you initiate a conversation with another agent, you can continue the conversation by calling the interactWithAgent tool again with the sessionId provided in the result of running the interactWithAgent tool. This will allow you to continue the conversation with the other agent.${childSessionsInfo}
+                It is also possible to interact with a group of agents in spaces. You can use the createSpace tool to create a new space and can add other agents to the space using addAgentToSpace tool. Once in a space, you can send meassages to the space using the sendMessageToSpace tool. To get the context of the interactions on space, you can use the getSpaceMessages tool before sending messagesto the space. You can also join spaces created by other entities using the joinSpace tool.
+                To unsubscribe from a space, you can use the unsubscribeFromSpace tool. To subscribe to a space, you can use the subscribeToSpace tool.
+                If your response to the agent/agents/users involves multiple tasks let them know by sending a message before creating the goals and tasks.
+                If you have a session id, provide it as an arg when sending a message to a space.
+                When getting live audio streams from a space, you can respond with voice using the speakInSpace tool which allows you to speak in the space.
+                While monitoring  webcast streams you can interact with the webcast stream using the given space tools for that specific stream.
+
+
+                STRICTLY ABIDE BY THE FOLLOWING:
+                • If a request is simple and does not require complex planning give an immediate response.
+                • If a request is complex and requires multiple steps, call createGoal which creates a goal and then get the goal id and use createTask to create tasks for the goal with the necessary details.
+                • In the process of creating a goal, think very deeply and critically about it. Break it down and detail every single paart of it. Set a SMART(Specific, Measureble, Achievable, Relevant and Time-bound) goal with a clear description. Consider all factors and create a well thought out plan of action and include it in the goal description. This should now guide the tasks to be created. Include the tasks breakdown in the goal description as well.The tasks to be created should match the tasks breakdown in the goal description. If no exact timelines are provided for the goal set the goal deadline to the current time.
+                • Similarly, when creating tasks, think very deeply and critically about it. Set a SMART(Specific, Measureble, Achievable, Relevant and Time-bound) task with a clear description. Consider all factors and create a well thought out plan of action and include it in the task description. Remember some tasks may be dependent on each other. Think about what tools might be needed to accomplish the task and include them in the task description and task tools.
+                • For every task specify the context of the task. The context should contain all the necessary information that are either needed or would be beneficial for the task.
+                • Before starting the execution make sure that the goal and all its tasks are fully created .
+                • STRCTLY DO NOT start execution of a task or update any task using updateTaskProgress until the user specifically asks you to do so.
+                ## ONLY DO THESE ONCE THE GOAL AND TASKS ARE FULLY CREATED AND THE USER ASKS YOU TO DO SO:
+                • As you execute tasks, update tasks progress accordingly with all the necessary information, call the updateTaskProgress  with the necessary details.Provide the actual result content of the task and the summary of the task.
+                • If tasks require the use of tools, include the needed tools in the task and use the tools to execute the tasks.
+                • For each task, perform the task and produce the content expected for the task given by the expectedOutputType in the task context. The result content should be the actual conent produced. For example if the task was to generate code, the result content should contain the code generated. If the task was to fetch data, the result content should contain the data fetched. If the task was to generate a report, the result content should contain the report generated. If the task was to generate an image, the result content should contain the image generated. If the task was to generate a video, the result content should contain the video generated. If the task was to generate a text, the result content should contain the text generated. If the task was to generate a pdf, the result content should contain the pdf generated.
+                • Unless given specific completion deadlines and schedules, all goals and tasks should be completed immediately.
+                • In case of any new information that is relevant to the task, update the task and task context with the new information.
+                • If you are unable to complete a task, call the updateTaskProgress with the necessary details and provide a summary of the failure.
+              `,
+            } as any);
+
             if (
               currentSession?.history &&
               Array.isArray(currentSession.history)
@@ -798,16 +851,15 @@ export class AgentService implements OnModuleInit {
                 `Loading ${currentSession.history.length} messages from session history`,
               );
 
-              // Filter and load only user and assistant messages (exclude tool messages that cause coercion errors)
+              // Filter and load only user and assistant messages
+              // IMPORTANT: Skip system messages from history since we're injecting fresh persona above
               const validHistoryMessages = currentSession.history.filter(
                 (entry: any) =>
-                  entry.role === 'user' ||
-                  entry.role === 'assistant' ||
-                  entry.role === 'system',
+                  entry.role === 'user' || entry.role === 'assistant',
               );
 
               console.log(
-                `Filtered to ${validHistoryMessages.length} valid messages (user/assistant/system only)`,
+                `Filtered to ${validHistoryMessages.length} valid messages (user/assistant only, excluding system to prevent persona conflicts)`,
               );
 
               // Load existing history into messages array so agent can see it
@@ -821,28 +873,10 @@ export class AgentService implements OnModuleInit {
               );
             }
 
-            // ✅ Inject updated system message with current child sessions
-            const childSessions = await this.getChildSessions(currentSessionId);
-
-            const childSessionsInfo =
-              childSessions.length > 0
-                ? `\n\nEXISTING CHILD SESSIONS:\nYou have the following ongoing conversations with other agents. Use these sessionIds to continue existing conversations instead of starting new ones:\n${childSessions.map((cs) => `- Agent ${cs.childAgentId}: ${cs.title || 'Untitled conversation'} (sessionId=${cs.childSessionId}, started: ${cs.createdAt})`).join('\n')}`
-                : '';
-
             console.log(
               'Updated childSessionsInfo for existing session:',
               childSessionsInfo,
             );
-
-            // Add updated system message with current child session info
-            messages.push({
-              type: 'system',
-              role: 'system',
-              content: `
-              REMEMBER:
-
-              When using the interactWithAgent tool you can only use sessionIds from the following list when continuing conversations: ${childSessionsInfo}`,
-            } as any);
             console.log('Child sessions after update:', childSessionsInfo);
           }
 
@@ -871,6 +905,8 @@ export class AgentService implements OnModuleInit {
               If you create goals and tasks, you need to inform the space members about it by sending a message to the space.
               
               If you want to unsubscribe from this space, you can use the unsubscribeFromSpace tool.
+
+              In your responses, make sure to consider the context of the space and any recent messages or activities that have taken place within the space session. Read every single message and take note of who said what including yourself(messages may have ids of the speakers including messages with your id ) and contribute meaningfully without unnecessarily repeating what has already been said and try to add valuable information.
               `,
             } as any);
           }
