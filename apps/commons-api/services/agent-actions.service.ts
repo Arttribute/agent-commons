@@ -2,6 +2,7 @@ import type { StreamEvent } from '@langchain/core/tracers/log_stream'
 import type { IterableReadableStream } from '@langchain/core/utils/stream'
 import type { IChatGptSchema } from '@samchon/openapi'
 import type { ChatCompletionFunctionTool } from 'openai/resources'
+import type { RequireAtLeastOne } from 'type-fest'
 import {
   HumanMessage,
   type MessageContentText,
@@ -21,19 +22,23 @@ import { ToolNode } from '@langchain/langgraph/prebuilt'
 import { ChatOpenAI } from '@langchain/openai'
 import { LangChainCallbackHandler } from '@posthog/ai'
 import dedent from 'dedent'
-import got, { HTTPError } from 'got'
+import got, { type HTTPError } from 'got'
 import { find, map, merge, omit } from 'lodash-es'
 import { inject, injectable } from 'tsyringe'
 import typia from 'typia'
-import { v4 } from 'uuid'
 
 import type { CommonTool } from './common-tool.service.js'
 import type { EthereumTool } from './ethereum-tool.service.js'
+import type { Memory } from './memory.service.js'
 import { postgresCheckpointer } from '../helpers/langchain.js'
 import { AgentService } from './agent.service.js'
 import { getPostHogClient } from './posthog.service.js'
+import { SessionService } from './session.service.js'
 
-const app = typia.llm.application<EthereumTool & CommonTool, 'chatgpt'>()
+const app = typia.llm.application<
+  EthereumTool & CommonTool & Memory,
+  'chatgpt'
+>()
 
 type StringWithAutocomplete<T> = T | (string & Record<never, never>)
 
@@ -51,8 +56,8 @@ export const AgentsAnnotation = Annotation.Root({
 @injectable()
 export class AgentActionsService {
   private llm = new ChatOpenAI({
-    model: 'gpt-5-mini', //4o is better in coding tasks so far compared to 4o-mini: however 4o-mini is cheaper for testing
-    temperature: DEFAULT_TEMPERATURE,
+    model: 'gpt-4o-mini', //4o is better in coding tasks so far compared to 4o-mini: however 4o-mini is cheaper for testing
+    temperature: DEFAULT_TEMPERATURE, // Not supported
     topP: DEFAULT_TOP_P,
     // TODO: not sure about the implications of supportsStrictToolCalling: true
     // supportsStrictToolCalling: true,
@@ -60,13 +65,16 @@ export class AgentActionsService {
   })
 
   private titleLlm = new ChatOpenAI({
-    model: 'gpt-5-nano',
+    model: 'gpt-4o-mini',
     temperature: 0.3,
     maxTokens: 20,
     apiKey: process.env.OPENAI_API_KEY,
   })
 
-  constructor(@inject(AgentService) private $agent: AgentService) {}
+  constructor(
+    @inject(AgentService) private $agent: AgentService,
+    @inject(SessionService) private $session: SessionService,
+  ) {}
 
   async createSystemMessage(props: { agentId: string; sessionId: string }) {
     const { agentId, sessionId } = props
@@ -120,34 +128,61 @@ export class AgentActionsService {
   }
 
   async runAgent(
-    props: {
-      agentId: string
-      sessionId?: string
-      messages: Messages
-      config?: { temperature?: number; topP?: number }
-    },
+    props: RequireAtLeastOne<
+      {
+        agentId: string
+        userId?: string
+        spaceId?: string
+        sessionId?: string
+        messages: Messages
+        config?: { temperature?: number; topP?: number }
+      },
+      'userId' | 'spaceId'
+    >,
     options: { stream: true },
   ): Promise<{ state: IterableReadableStream<StreamEvent>; sessionId: string }>
   async runAgent(
-    props: {
-      agentId: string
-      sessionId?: string
-      messages: Messages
-      config?: { temperature?: number; topP?: number }
-    },
+    props: RequireAtLeastOne<
+      {
+        agentId: string
+        userId?: string
+        spaceId?: string
+        sessionId?: string
+        messages: Messages
+        config?: { temperature?: number; topP?: number }
+      },
+      'userId' | 'spaceId'
+    >,
     options?: { stream?: boolean },
   ): Promise<{ state: typeof AgentsAnnotation.State; sessionId: string }>
   async runAgent(
-    props: {
-      agentId: string
-      sessionId?: string
-      messages: Messages
-      config?: { temperature?: number; topP?: number }
-    },
+    props: RequireAtLeastOne<
+      {
+        agentId: string
+        userId?: string
+        spaceId?: string
+        sessionId?: string
+        messages: Messages
+        config?: { temperature?: number; topP?: number }
+      },
+      'userId' | 'spaceId'
+    >,
     options?: { stream?: boolean },
   ) {
-    const { agentId, sessionId = v4(), messages } = props
+    let { agentId, sessionId, spaceId, userId, messages } = props
     const { stream } = options || {}
+
+    sessionId = await (async () => {
+      if (props.sessionId) {
+        return (await this.$session.getSession({ id: sessionId! }))?.sessionId
+      } else {
+        return (
+          await this.$session.createSession({
+            value: { agentId, userId, spaceId },
+          })
+        ).sessionId
+      }
+    })()
 
     const staticTools = map(app.functions, (_) => ({
       type: 'function',
@@ -177,7 +212,7 @@ export class AgentActionsService {
               json: {
                 args,
                 toolCall: config.toolCall,
-                metadata: { agentId, sessionId },
+                metadata: { agentId, sessionId, userId },
               },
               headers: { 'Content-Type': 'application/json' },
             })
@@ -352,7 +387,7 @@ export class AgentActionsService {
     }
 
     const message = await llm.invoke(state.messages, {
-      callbacks: [posthogCallback],
+      // callbacks: [posthogCallback],
     })
 
     return {

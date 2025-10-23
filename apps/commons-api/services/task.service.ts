@@ -42,11 +42,44 @@ export interface CreateTaskDto {
 	metadata?: Record<string, any>;
 }
 
+interface NewTask {
+	id: string;
+	sessionId: string;
+
+	title: string;
+	description: string;
+
+	instructions: string; // Create an Image
+	context: string; // The conversation was around dogs
+
+	trigger: { type: "immediate" | "scheduled" | "event-based", cronName?: string };
+	
+	createdAt: Date;
+	updatedAt: Date;
+}
+
+// Cron would call say runTask with taskId
+
+interface RunEntry {
+	id: string;
+	taskId: string;
+
+	startedAt: Date;
+	endedAt: Date;
+
+	status: "completed" | "failed";
+	resultContent: string;
+	logs: string;
+
+	createdAt: Date;
+	updatedAt: Date;
+}
+
 @injectable()
 export class TaskService {
-	constructor(@inject(DatabaseService)private readonly $db: DatabaseService) {}
+	constructor(@inject(DatabaseService) private readonly $db: DatabaseService) {}
 
-	async create(dto: CreateTaskDto) {
+	async createTask(dto: CreateTaskDto) {
 		const taskId = uuid();
 		await this.$db.insert(schema.task).values({
 			taskId,
@@ -81,6 +114,52 @@ export class TaskService {
 		}
 		return this.get(taskId);
 	}
+
+	async getTask(props: {id: string}) {
+		const { id } = props;
+
+		const taskEntry = await this.$db.query.task.findFirst({
+			where: (t) => eq(t.taskId, id),
+		});
+		if (!taskEntry) {
+			throw new HTTPException(404, { message: "Task not found" });
+		}
+		return taskEntry;
+	}
+
+	async getTasks(props: {sessionId?:string}) {
+		const { sessionId } = props;
+		if(!sessionId) {
+			return this.$db.query.task.findMany({orderBy: [schema.task.createdAt]});
+		}
+		return this.$db.query.task.findMany({where: (t) => eq(t.sessionId, sessionId)});
+	}
+
+	async updateTaskContext(props: { id: string; delta: Partial<CreateTaskDto> }) {
+		const { id, delta } = props;
+				// 1) Ensure task exists
+				const existingTask = await this.$db.query.task.findFirst({
+					where: (t) => eq(t.taskId, id),
+				});
+				if (!existingTask) {
+					throw new HTTPException(400, { message: "Task not found" });
+				}
+		
+				// 2) Update record
+				// Omit fields that are not allowed to be updated or are sensitive
+				const [updated] = await this.$db
+					.update(schema.task)
+					.set(delta)
+					.where(eq(schema.task.taskId, id))
+					.returning();
+				return updated;
+	}
+
+	async deleteTask(props:{id: string}) {
+		const { id } = props;
+		return await this.$db.delete(schema.task).where(eq(schema.task.taskId, id));
+	}
+
 
 	async get(taskId: string) {
 		const row = await this.$db.query.task.findFirst({

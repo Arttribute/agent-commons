@@ -209,7 +209,7 @@ export class CommonToolService implements CommonTool {
 	}
 
 	async createTask(props: CreateTaskDto) {
-		return await this.tasks.create(props);
+		return await this.tasks.createTask(props);
 	}
 
 	async updateTaskProgress(props: {

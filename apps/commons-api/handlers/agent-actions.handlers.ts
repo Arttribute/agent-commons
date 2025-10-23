@@ -18,6 +18,7 @@ const runAgent = factory.createHandlers(
 		"json",
 		typia.createValidate<{
 			// agentId: string
+			userId: string;
 			sessionId?: string;
 			messages: Messages;
 			config?: { temperature?: number; topP?: number };
@@ -27,12 +28,13 @@ const runAgent = factory.createHandlers(
 		const { agentId } = await c.req.valid("param");
 		const body = await c.req.valid("json");
 
-		const { sessionId } = body;
+		const { sessionId, userId } = body;
 
 		const $agentActions = container.resolve(AgentActionsService);
 
 		const state = await $agentActions.runAgent({
 			agentId,
+			userId,
 			sessionId,
 			messages: body.messages,
 			config: body.config,
@@ -206,13 +208,19 @@ const runAgentStream = factory.createHandlers(
 		const body = c.req.valid("json");
 		const accept = c.req.header()["accept"] || "text/event-stream";
 
-		const { sessionId } = body;
+		const { sessionId, userId } = body;
 
 		const $agentActions = container.resolve(AgentActionsService);
 
 		const { state: stateStream, sessionId: newSessionId } =
 			await $agentActions.runAgent(
-				{ agentId, sessionId, messages: body.messages, config: body.config },
+				{
+					agentId,
+					sessionId,
+					userId,
+					messages: body.messages,
+					config: body.config,
+				},
 				{ stream: true },
 			);
 

@@ -48,6 +48,17 @@ export const agent = pgTable("agent", {
 		.notNull(),
 });
 
+export const memory = pgTable("memory", {
+	memoryId: uuid("memory_id").default(sql`uuid_generate_v4()`).primaryKey(),
+	agentId: text("agent_id"),
+	userId: text("user_id"),
+	sessionId: uuid("session_id"),
+	content: text("content").notNull(),
+	createdAt: timestamp("created_at", { withTimezone: true })
+		.default(sql`timezone('utc', now())`)
+		.notNull(),
+});
+
 //agent goal table
 export const goal = pgTable("goal", {
 	goalId: uuid("goal_id").default(sql`uuid_generate_v4()`).primaryKey(),
@@ -252,6 +263,8 @@ export const resource = pgTable("resource", {
 export const session = pgTable("session", {
 	sessionId: uuid("session_id").default(sql`uuid_generate_v4()`).primaryKey(),
 	agentId: text("agent_id").notNull(),
+	userId: text("user_id"),
+	spaceId: text("space_id"),
 	//status: text('status').default('active').notNull(), // active | completed | failed | terminated
 	title: text("title"),
 	initiator: text("initiator"), // wallet address of user or agent

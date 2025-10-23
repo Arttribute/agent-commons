@@ -28,6 +28,7 @@ import type { Agent, CreateAgent, UpdateAgent } from "../types/agent.type.js";
 import { publicClient } from "./coinbase.service.js";
 import type { CommonTool } from "./common-tool.service.js";
 import type { EthereumTool } from "./ethereum-tool.service.js";
+import type { Memory } from "./memory.service.js";
 import { TaskService } from "./task.service.js";
 import { ToolService } from "./tool.service.js";
 
@@ -35,7 +36,10 @@ function hashKey(key: string): string {
 	return crypto.createHash("sha256").update(key).digest("hex");
 }
 
-const app = typia.llm.application<EthereumTool & CommonTool, "chatgpt">();
+const app = typia.llm.application<
+	EthereumTool & CommonTool & Memory,
+	"chatgpt"
+>();
 
 @injectable()
 export class AgentService {
@@ -120,13 +124,13 @@ export class AgentService {
 	public async getAgent(props: { id: string }) {
 		const { id } = props;
 
-		const row = await this.$db.query.agent.findFirst({
+		const agentEntry = await this.$db.query.agent.findFirst({
 			where: (t) => eq(t.agentId, id),
 		});
-		if (!row) {
+		if (!agentEntry) {
 			throw new HTTPException(404, { message: "Agent not found" });
 		}
-		return row;
+		return agentEntry;
 	}
 
 	public async getAgents() {

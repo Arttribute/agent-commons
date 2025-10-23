@@ -34,6 +34,7 @@ import { postgresCheckpointer } from "../helpers/langchain.js";
 import { AgentService } from "../services/agent.service.js";
 import { CommonToolService } from "../services/common-tool.service.js";
 import { EthereumToolService } from "../services/ethereum-tool.service.js";
+import { MemoryService } from "../services/memory.service.js";
 import { getPostHogClient } from "../services/posthog.service.js";
 import { ResourceService } from "../services/resource.service.js";
 import { ToolService } from "../services/tool.service.js";
@@ -102,7 +103,8 @@ const makeAgentToolCall = factory.createHandlers(
 
 		const $commonTool = container.resolve(CommonToolService);
 		const $ethereumTool = container.resolve(EthereumToolService);
-		const staticService = [$commonTool, $ethereumTool].find(
+		const $memory = container.resolve(MemoryService);
+		const staticService = [$commonTool, $ethereumTool, $memory].find(
 			(service) => typeof (service as any)[functionName] === "function",
 		);
 

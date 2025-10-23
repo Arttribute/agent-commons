@@ -158,6 +158,7 @@ export class SpaceActionsService {
             },
             spaceId,
           },
+          spaceId
         },
         config,
       )
@@ -292,6 +293,7 @@ export class SpaceActionsService {
     // Get the agent and session for the agent the run the agent
     // @ts-expect-error
     const agentId = state.messages.at(-1)['agentId']
+    const spaceId = state.spaceId || state.metadata["spaceId"]
 
     // Get the session for the agent
     const sessionId = state.sessions[agentId]
@@ -301,6 +303,7 @@ export class SpaceActionsService {
       const $agentActions = container.resolve(AgentActionsService)
       const response = await $agentActions.runAgent({
         agentId,
+        spaceId,
         sessionId,
         messages: state.messages,
       })
