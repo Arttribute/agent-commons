@@ -10,13 +10,13 @@
 	"author": "",
 	"license": "ISC",
 	"devDependencies": {
-		"@biomejs/biome": "2.2.0",
-		"concurrently": "^9.1.2"
+		"@biomejs/biome": "2.2.5",
+		"concurrently": "^9.2.1"
 	},
 	"pnpm": {
 		"overrides": {
 			"@xenova/transformers>sharp": "0.33.5"
 		}
 	},
-	"packageManager": "pnpm@10.15.1"
+	"packageManager": "pnpm@10.18.1"
 }
