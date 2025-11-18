@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useEffect, useState, useMemo } from "react";
+import { useRef, useEffect, useState, useMemo, useCallback } from "react";
 import { ChevronDown, Loader2 } from "lucide-react";
 import ExecutionWidget from "@/components/sessions/chat/execution-widget";
 import ChatInputBox from "./chat/chat-input-box";
@@ -104,6 +104,7 @@ export default function SessionInterfaceImproved({
   isRedirecting = false,
 }: SessionInterfaceImprovedProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
+  const bottomRef = useRef<HTMLDivElement>(null);
   const [selectedGoalId, setSelectedGoalId] = useState<string>("");
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -141,11 +142,34 @@ export default function SessionInterfaceImproved({
     return items;
   }, [messages]);
 
-  useEffect(() => {
-    if (scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+  // Get the last message content for tracking streaming updates
+  const lastMessageContent = messages[messages.length - 1]?.content;
+  const isStreaming = messages[messages.length - 1]?.isStreaming;
+
+  // Smooth scroll to bottom using bottom marker
+  const scrollToBottom = useCallback((smooth = true) => {
+    if (bottomRef.current) {
+      bottomRef.current.scrollIntoView({
+        behavior: smooth ? "smooth" : "auto",
+        block: "end"
+      });
     }
-  }, [messages]);
+  }, []);
+
+  // Scroll on new messages
+  useEffect(() => {
+    scrollToBottom(true);
+  }, [messages.length, scrollToBottom]);
+
+  // Scroll during streaming with throttling
+  useEffect(() => {
+    if (isStreaming && lastMessageContent) {
+      const timeoutId = setTimeout(() => {
+        scrollToBottom(true);
+      }, 100); // Throttle to every 100ms during streaming
+      return () => clearTimeout(timeoutId);
+    }
+  }, [lastMessageContent, isStreaming, scrollToBottom]);
 
   useEffect(() => {
     if (sessionId && session) {
@@ -168,36 +192,40 @@ export default function SessionInterfaceImproved({
           {isLoadingSession && messages.length === 0 ? (
             <ChatLoadingIndicator />
           ) : (
-            groupedItems.map((item, index) => {
-              if (item.type === "message") {
-                const { message } = item;
-                if (message.role === "user" || message.role === "human") {
-                  return (
-                    <InitiatorMessage
-                      key={index}
-                      message={message.content}
-                      timestamp={message.timestamp}
-                    />
-                  );
+            <>
+              {groupedItems.map((item, index) => {
+                if (item.type === "message") {
+                  const { message } = item;
+                  if (message.role === "user" || message.role === "human") {
+                    return (
+                      <InitiatorMessage
+                        key={index}
+                        message={message.content}
+                        timestamp={message.timestamp}
+                      />
+                    );
+                  }
+                  if (message.role === "ai") {
+                    const key = message.isStreaming
+                      ? `ai-streaming-${index}`
+                      : index;
+                    return (
+                      <AgentOutput
+                        key={key}
+                        content={message.content}
+                        metadata={message.metadata}
+                        isStreaming={message.isStreaming}
+                      />
+                    );
+                  }
+                  return null;
                 }
-                if (message.role === "ai") {
-                  const key = message.isStreaming
-                    ? `ai-streaming-${index}`
-                    : index;
-                  return (
-                    <AgentOutput
-                      key={key}
-                      content={message.content}
-                      metadata={message.metadata}
-                      isStreaming={message.isStreaming}
-                    />
-                  );
-                }
-                return null;
-              }
 
-              return <ExpandableToolCard key={index} tools={item.tools} />;
-            })
+                return <ExpandableToolCard key={index} tools={item.tools} />;
+              })}
+              {/* Bottom marker for auto-scroll */}
+              <div ref={bottomRef} />
+            </>
           )}
         </div>
       </ScrollArea>

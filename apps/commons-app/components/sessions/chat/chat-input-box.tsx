@@ -52,12 +52,15 @@ export default function ChatInputBox({
   disabled?: boolean;
   onSessionCreated?: (sessionId: string) => void;
 }) {
-  const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [currentSessionId, setCurrentSessionId] = useState(sessionId);
   const currentAIMessageRef = useRef<string>("");
 
-  const { addMessage, updateStreamingMessage } = useAgentContext(); // Use addMessage and updateStreamingMessage from context
+  const { addMessage, updateStreamingMessage, finalizeStreamingMessage, inputText, setInputText } = useAgentContext();
+
+  // Use context input text for persistence across navigation
+  const input = inputText;
+  const setInput = setInputText;
 
   useEffect(() => {
     // set to lading if disabled is true
@@ -142,16 +145,23 @@ export default function ChatInputBox({
                 const finalMessages = extractMessagesFromAgentResponse(
                   parsedData.payload
                 );
-                // Replace the temporary AI message with the final one, or add if not present
-                // This is now handled by the updateStreamingMessage and addMessage in AgentContext
-                // We need to ensure the final message replaces the streaming one correctly.
-                updateStreamingMessage(finalMessages[0].content); // Update with final content
+                // Finalize the streaming message with the final content and metadata
+                if (finalMessages[0]) {
+                  finalizeStreamingMessage(
+                    finalMessages[0].content,
+                    finalMessages[0].metadata
+                  );
+                }
+
+                // Stop loading immediately when message is complete
+                setLoading(false);
 
                 if (
                   parsedData.payload.sessionId &&
                   parsedData.payload.sessionId !== sessionId
                 ) {
                   setCurrentSessionId(parsedData.payload.sessionId);
+                  // Navigate immediately to the session page
                   onSessionCreated?.(parsedData.payload.sessionId);
                 }
               } else if (parsedData.type === "tool") {
@@ -162,8 +172,8 @@ export default function ChatInputBox({
                   metadata: {},
                   timestamp: new Date().toISOString(),
                 });
-              } else if (parsedData.type === "text") {
-                // Handle streaming text
+              } else if (parsedData.type === "token") {
+                // Handle streaming text tokens
                 accumulatedContent += parsedData.content;
                 updateStreamingMessage(accumulatedContent);
               }

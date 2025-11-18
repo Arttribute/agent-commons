@@ -13,11 +13,10 @@ export default function AgentSessionPage() {
     session: string;
   };
 
-  const { messages, setMessages } = useAgentContext();
+  const { messages, setMessages, sessions, setSessions } = useAgentContext();
 
   const [agent, setAgent] = useState<any>(null);
   const [session, setSession] = useState<any>(null);
-  const [sessions, setSessions] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
   const { authState } = useAuth();
@@ -45,13 +44,22 @@ export default function AgentSessionPage() {
 
         setAgent(agentData.data);
         setSession(sessionData.data);
-        setMessages(sessionData.data.history || []);
-        fetchSessions();
+
+        // Only load messages from DB if context is empty (preserves streamed messages during navigation)
+        if (messages.length === 0) {
+          setMessages(sessionData.data.history || []);
+        }
+        // Only fetch sessions if not already loaded (prevents sidebar flicker on navigation)
+        if (sessions.length === 0) {
+          fetchSessions();
+        }
       } catch (err) {
         console.error("Error fetching session:", err);
         setAgent(null);
         setSession(null);
-        setMessages([]);
+        if (messages.length === 0) {
+          setMessages([]);
+        }
       } finally {
         setLoading(false);
       }
@@ -60,8 +68,10 @@ export default function AgentSessionPage() {
     if (agentId && sessionId) fetchData();
   }, [agentId, sessionId, userAddress]);
 
-  if (loading) return <div>Loading...</div>;
-  if (!agent || !session) return <div>Not found</div>;
+  // Show loading only if we don't have messages (fresh page load vs navigation with streamed content)
+  if (loading && messages.length === 0) return <div>Loading...</div>;
+  // Only show not found if not loading and data is missing
+  if (!loading && (!agent || !session)) return <div>Not found</div>;
 
   return (
     <div className="flex h-screen bg-gray-50 dark:bg-gray-900">
@@ -76,6 +86,7 @@ export default function AgentSessionPage() {
         agentId={agentId}
         userId={userAddress}
         sessionId={sessionId}
+        isLoadingSession={loading}
       />
     </div>
   );

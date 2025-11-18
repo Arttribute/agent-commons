@@ -12,12 +12,12 @@ export default function PublicAgentPage() {
   const params = useParams();
   const router = useRouter();
   const { agent: agentId } = params as { agent: string };
-  const { messages, setMessages, clearMessages } = useAgentContext();
+  const { messages, setMessages, clearMessages, sessions, setSessions } = useAgentContext();
 
   const [agent, setAgent] = useState<any>(null);
   const [session, setSession] = useState<any>(null);
   const [loading, setLoading] = useState(true);
-  const [sessions, setSessions] = useState<any[]>([]);
+  const [isRedirecting, setIsRedirecting] = useState(false);
 
   const { authState } = useAuth();
   const userAddress = authState.walletAddress?.toLowerCase() || "";
@@ -66,8 +66,11 @@ export default function PublicAgentPage() {
         agentId={agentId}
         userId={userAddress}
         sessionId={session?.sessionId || ""}
+        isRedirecting={isRedirecting}
         onSessionCreated={(newSessionId) => {
-          router.push(`/agents/${agentId}/${newSessionId}`);
+          setIsRedirecting(true);
+          // Use replace for seamless URL update without page reload feel
+          router.replace(`/agents/${agentId}/${newSessionId}`);
         }}
       />
     </div>
