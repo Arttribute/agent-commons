@@ -1,8 +1,8 @@
 // src/tool/tool.service.ts
 
-import { Injectable, BadRequestException } from '@nestjs/common';
+import { Injectable, BadRequestException, NotFoundException } from '@nestjs/common';
 import { DatabaseService } from '~/modules/database/database.service';
-import { eq } from 'drizzle-orm';
+import { eq, and } from 'drizzle-orm';
 import * as schema from '#/models/schema';
 import { InferSelectModel } from 'drizzle-orm';
 import { ChatCompletionTool } from 'openai/resources/chat/completions.mjs';
@@ -17,6 +17,9 @@ export class ToolService {
   async createTool(params: {
     name: string;
     schema: ChatCompletionTool; // The JSON function spec from OpenAI
+    owner?: string;
+    ownerType?: 'user' | 'agent' | 'platform';
+    visibility?: 'public' | 'private' | 'platform';
     tags?: string[];
     rating?: number;
     version?: string;
@@ -34,6 +37,9 @@ export class ToolService {
       .values({
         name: params.name,
         schema: params.schema,
+        owner: params.owner,
+        ownerType: params.ownerType,
+        visibility: params.visibility || 'private',
         tags: params.tags,
         rating: params.rating,
         version: params.version,
@@ -61,10 +67,35 @@ export class ToolService {
   }
 
   /**
-   * Return all tools
+   * Return all tools (with optional filters)
    */
-  async getAllTools(): Promise<InferSelectModel<typeof schema.tool>[]> {
-    return this.db.query.tool.findMany();
+  async getAllTools(filters?: {
+    owner?: string;
+    ownerType?: 'user' | 'agent' | 'platform';
+    visibility?: 'public' | 'private' | 'platform';
+  }): Promise<InferSelectModel<typeof schema.tool>[]> {
+    if (!filters || (!filters.owner && !filters.visibility)) {
+      return this.db.query.tool.findMany();
+    }
+
+    const conditions = [];
+
+    if (filters.owner && filters.ownerType) {
+      conditions.push(eq(schema.tool.owner, filters.owner));
+      conditions.push(eq(schema.tool.ownerType, filters.ownerType));
+    }
+
+    if (filters.visibility) {
+      conditions.push(eq(schema.tool.visibility, filters.visibility));
+    }
+
+    if (conditions.length === 0) {
+      return this.db.query.tool.findMany();
+    }
+
+    return this.db.query.tool.findMany({
+      where: and(...conditions),
+    });
   }
 
   /**
@@ -88,6 +119,7 @@ export class ToolService {
   async updateToolByName(params: {
     name: string;
     schema?: ChatCompletionTool;
+    visibility?: 'public' | 'private' | 'platform';
     tags?: string[];
     rating?: number;
     version?: string;
@@ -96,6 +128,7 @@ export class ToolService {
       .update(schema.tool)
       .set({
         ...(params.schema && { schema: params.schema }),
+        ...(params.visibility && { visibility: params.visibility }),
         ...(params.tags && { tags: params.tags }),
         ...(params.rating && { rating: params.rating }),
         ...(params.version && { version: params.version }),
@@ -108,5 +141,21 @@ export class ToolService {
     }
 
     return updated;
+  }
+
+  /**
+   * Delete a tool by name
+   */
+  async deleteToolByName(name: string) {
+    const [deleted] = await this.db
+      .delete(schema.tool)
+      .where(eq(schema.tool.name, name))
+      .returning();
+
+    if (!deleted) {
+      throw new NotFoundException(`Tool "${name}" not found`);
+    }
+
+    return deleted;
   }
 }

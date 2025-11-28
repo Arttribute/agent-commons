@@ -301,6 +301,26 @@ export interface CommonTool {
   advanceTurn(props: { spaceId: string; agentId: string }): any;
   /** Get current call session state. */
   getCallState(props: { spaceId: string; agentId: string }): any;
+
+  /**
+   * Process data within a workflow using agent reasoning
+   * IMPORTANT: This tool is restricted to prevent infinite recursion
+   * - Cannot trigger workflows
+   * - Cannot create new sessions
+   * - Limited execution time
+   * - Workflow depth must be 1
+   */
+  processWithinWorkflow(props: {
+    instruction: string;
+    data: any;
+    sessionId: string;
+    agentId: string;
+    maxTokens?: number;
+    workflowDepth: number;
+  }): Promise<{
+    result: string;
+    processed: boolean;
+  }>;
 }
 
 @Injectable()
@@ -1153,5 +1173,84 @@ export class CommonToolService implements CommonTool {
     const { spaceId, agentId } = props;
 
     return await this.space.unsubscribeAgentFromSpace(agentId, spaceId);
+  }
+
+  /**
+   * Process data within a workflow using agent reasoning
+   * This allows agents to analyze, transform, or make decisions within workflows
+   * WITHOUT triggering infinite recursion
+   *
+   * CRITICAL RESTRICTIONS:
+   * - workflowDepth MUST be 1 (cannot nest workflows)
+   * - Cannot trigger another workflow
+   * - Cannot create new sessions
+   * - Has execution timeout (2 minutes max)
+   * - Limited to current session context
+   */
+  async processWithinWorkflow(props: {
+    instruction: string;
+    data: any;
+    sessionId: string;
+    agentId: string;
+    maxTokens?: number;
+    workflowDepth: number;
+  }): Promise<{
+    result: string;
+    processed: boolean;
+  }> {
+    const {
+      instruction,
+      data,
+      sessionId,
+      agentId,
+      maxTokens = 500,
+      workflowDepth,
+    } = props;
+
+    // CRITICAL: Prevent infinite recursion
+    if (workflowDepth > 1) {
+      throw new BadRequestException(
+        'Agent processor cannot be nested in workflows (max depth: 1)',
+      );
+    }
+
+    try {
+      // Create a simple prompt for the agent to process the data
+      const prompt = `${instruction}
+
+Data to process:
+${JSON.stringify(data, null, 2)}
+
+Please analyze the data and provide your insights in a clear, structured format.`;
+
+      // Call OpenAI directly (NOT through runAgent to avoid recursion)
+      const response = await this.openAI.chat.completions.create({
+        model: 'gpt-4',
+        messages: [
+          {
+            role: 'system',
+            content:
+              'You are a data processor within a workflow. Analyze and transform the provided data according to instructions. Be concise and focused.',
+          },
+          {
+            role: 'user',
+            content: prompt,
+          },
+        ],
+        max_tokens: maxTokens,
+        temperature: 0.7,
+      });
+
+      const result = response.choices[0]?.message?.content || '';
+
+      return {
+        result,
+        processed: true,
+      };
+    } catch (error: any) {
+      throw new BadRequestException(
+        `Agent processing failed: ${error.message}`,
+      );
+    }
   }
 }

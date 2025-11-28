@@ -5,47 +5,23 @@ import type { NextPage } from "next";
 import { useEffect, useMemo, useState } from "react";
 import AppBar from "@/components/layout/app-bar";
 import AgentsShowcase from "@/components/agents/AgentsShowcase";
-import ToolsList from "@/components/tools/ToolsList";
+import { ToolsManagementView } from "@/components/tools/management/tools-management-view";
 import { Loader2 } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
-import { supabase } from "@/lib/supabase"; // Import Supabase client
+import { supabase } from "@/lib/supabase";
 import { DashboardSideBar } from "@/components/layout/dashboard-side-bar";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { useRouter } from "next/navigation";
 
-// Removed legacy Profile/Balances sections per new layout
-
-const ToolsArea: React.FC = () => {
-  const [tools, setTools] = useState<any[]>([]);
-  const { authState } = useAuth();
-  const { walletAddress } = authState;
-
-  const userAddress = walletAddress?.toLowerCase();
-
-  useEffect(() => {
-    async function fetchTools() {
-      try {
-        const { data, error } = await supabase
-          .from("tool")
-          .select("*")
-          .eq("owner", userAddress);
-        if (error) throw error;
-        setTools(data || []);
-      } catch (err) {
-        console.error("Error fetching tools:", err);
-      }
-    }
-    fetchTools();
-  }, []);
-
+const ToolsArea: React.FC<{ userAddress: string }> = ({ userAddress }) => {
   return (
     <div className="p-4">
       <h2 className="text-xl font-semibold">Tools</h2>
       <p className="text-gray-500 text-sm mb-2">
-        Here you can view and manage tools.
+        Create and manage your tools, API keys, and access permissions
       </p>
-      <ToolsList tools={tools} />
+      <ToolsManagementView userAddress={userAddress} />
     </div>
   );
 };
@@ -96,7 +72,7 @@ const StudioPage: NextPage = () => {
   const mainContent = useMemo(() => {
     switch (activeTab) {
       case "tools":
-        return <ToolsArea />;
+        return <ToolsArea userAddress={userAddress || ""} />;
       case "tasks":
         return (
           <div className="p-4">
@@ -131,7 +107,7 @@ const StudioPage: NextPage = () => {
           </div>
         );
     }
-  }, [activeTab, loadingAgents, agents]);
+  }, [activeTab, loadingAgents, agents, userAddress]);
 
   const createRoute = useMemo(() => {
     switch (activeTab) {

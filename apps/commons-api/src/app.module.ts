@@ -9,19 +9,18 @@ import { ResourceModule } from './resource';
 import { DatabaseModule } from './modules/database';
 import { OpenAIModule } from './modules/openai';
 import { CoinbaseModule } from './modules/coinbase';
+import { EncryptionModule } from './modules/encryption';
 import { EmbeddingModule } from './embedding/embedding.module';
 import { LiaisonModule } from './liaison/liaison.module';
-import { AutonomyModule } from './autonomy/autonomy.module';
 import { SpaceModule } from './space/space.module';
 
 @Module({
   imports: [
     // Global modules
-    OpenAIModule,
     DatabaseModule,
-    PinataModule,
+    OpenAIModule,
     CoinbaseModule,
-
+    EncryptionModule,
     PinataModule,
     EmbeddingModule,
 
@@ -30,7 +29,6 @@ import { SpaceModule } from './space/space.module';
     ToolModule,
     ResourceModule,
     LiaisonModule,
-    AutonomyModule,
     SpaceModule,
   ],
 

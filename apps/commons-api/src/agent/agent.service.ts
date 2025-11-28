@@ -61,6 +61,8 @@ import { getPosthog } from '~/helpers/posthog';
 import { LogService } from '~/log/log.service';
 import { GoalService } from '~/goal/goal.service';
 import { TaskService } from '~/task/task.service';
+import { TaskExecutionService } from '~/task/task-execution.service';
+import { ToolLoaderService } from '~/tool/tool-loader.service';
 import { Observable, of } from 'rxjs';
 import { SpaceToolsService } from '~/space/space-tools.service';
 
@@ -85,6 +87,10 @@ export class AgentService implements OnModuleInit {
     /* NEW injections */
     @Inject(forwardRef(() => GoalService)) private goals: GoalService,
     @Inject(forwardRef(() => TaskService)) private tasks: TaskService,
+    @Inject(forwardRef(() => TaskExecutionService))
+    private taskExecution: TaskExecutionService,
+    @Inject(forwardRef(() => ToolLoaderService))
+    private toolLoader: ToolLoaderService,
     @Inject(forwardRef(() => SpaceToolsService))
     private spaceTools: SpaceToolsService,
   ) {}
@@ -568,28 +574,7 @@ export class AgentService implements OnModuleInit {
             }
           }
 
-          const storedTools = await this.toolService.getAllTools();
-          const dynamicDefs = storedTools.map((dbTool) => ({
-            type: 'function',
-            function: { ...dbTool.schema, name: dbTool.name },
-            endpoint: `http://localhost:${process.env.PORT}/v1/agents/tools`,
-          }));
-
-          const resTools = await this.db.query.resource.findMany({
-            where: (r) => inArray(r.resourceId, agent.commonTools ?? []),
-          });
-
-          const resourceDefs = resTools
-            .filter((r) => !!r.schema)
-            .map((r) => ({
-              type: 'function',
-              function: {
-                ...(r.schema as any),
-                name: `resourceTool_${r.resourceId}`,
-              },
-              endpoint: `http://localhost:${process.env.PORT}/v1/agents/tools`,
-            }));
-
+          // ✅ Load tools using centralized ToolLoaderService
           const staticDefs = map(app.functions, (_) => ({
             type: 'function',
             function: {
@@ -597,31 +582,33 @@ export class AgentService implements OnModuleInit {
               parameters:
                 _?.parameters as unknown as ChatCompletionTool['function']['parameters'],
             },
-            endpoint: `http://localhost:${process.env.PORT}/v1/agents/tools`,
-          })) as (ChatCompletionTool & { endpoint: string })[];
+          })) as ChatCompletionTool[];
 
-          const toolDefs = [...dynamicDefs, ...resourceDefs, ...staticDefs];
-          // If running inside a space, merge space tool specs (spacetools)
+          // Load space-specific tools if in a space
+          let spaceToolDefs: ChatCompletionTool[] = [];
           if (spaceId) {
             const spaceToolSpecs = this.spaceTools.getToolsForSpace(spaceId);
-            if (spaceToolSpecs.length) {
-              const spaceDefs = spaceToolSpecs.map((spec) => ({
-                type: 'function',
-                function: {
-                  name: spec.name,
-                  description: spec.description || 'Space provided tool',
-                  parameters: spec.parameters || {
-                    type: 'object',
-                    properties: {},
-                  },
-                  // Pass through apiSpec so controller can pick dynamic invocation path
-                  apiSpec: spec.apiSpec,
+            spaceToolDefs = spaceToolSpecs.map((spec) => ({
+              type: 'function',
+              function: {
+                name: spec.name,
+                description: spec.description || 'Space provided tool',
+                parameters: spec.parameters || {
+                  type: 'object',
+                  properties: {},
                 },
-                endpoint: `http://localhost:${process.env.PORT}/v1/agents/tools`,
-              }));
-              toolDefs.push(...(spaceDefs as any));
-            }
+              },
+            })) as ChatCompletionTool[];
           }
+
+          const toolDefs = await this.toolLoader.loadToolsForAgent({
+            agentId,
+            userId: agent.owner ?? undefined,
+            spaceId,
+            staticToolDefs: staticDefs,
+            spaceToolDefs: spaceToolDefs,
+            endpoint: `http://localhost:${process.env.PORT}/v1/agents/tools`,
+          });
 
           const toolUsage: {
             name: string;
@@ -926,12 +913,36 @@ export class AgentService implements OnModuleInit {
           let finalResult = null;
 
           while (loop++ < max_recurssion) {
-            const nextTask = await this.tasks.getNextExecutable(
+            // ✅ Check for next executable task using new TaskExecutionService
+            const nextTask = await this.taskExecution.getNextExecutableTask(
               agentId,
               currentSessionId,
             );
+
             if (nextTask) {
-              await this.tasks.start(nextTask.taskId);
+              // ✅ Handle workflow tasks immediately
+              if (nextTask.executionMode === 'workflow' && nextTask.workflowId) {
+                console.log(
+                  `Executing workflow task ${nextTask.taskId} with workflow ${nextTask.workflowId}`,
+                );
+
+                // Execute workflow task fully
+                await this.taskExecution.executeTask(nextTask.taskId);
+
+                // Continue to check for next task
+                continue;
+              }
+
+              // ✅ For single/sequential tasks, mark as running and inject instruction
+              await this.db
+                .update(schema.task)
+                .set({
+                  status: 'running',
+                  actualStart: new Date(),
+                })
+                .where(eq(schema.task.taskId, nextTask.taskId));
+
+              // Inject task instruction into messages
               messages.push({
                 type: 'user',
                 role: 'user',
@@ -947,7 +958,8 @@ export class AgentService implements OnModuleInit {
             messages = result.messages;
             finalResult = result;
 
-            const pending = await this.tasks.getNextExecutable(
+            // Check for more pending tasks
+            const pending = await this.taskExecution.getNextExecutableTask(
               agentId,
               currentSessionId,
             );
@@ -1265,11 +1277,10 @@ export class AgentService implements OnModuleInit {
     agentId: string,
     toolId: string,
     usageComments?: string,
-    secureKeyRef?: string,
   ) {
     const [inserted] = await this.db
       .insert(schema.agentTool)
-      .values({ agentId, toolId, usageComments, secureKeyRef })
+      .values({ agentId, toolId, usageComments })
       .returning();
     return inserted;
   }

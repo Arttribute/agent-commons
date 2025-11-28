@@ -90,9 +90,9 @@ export class AgentToolsController {
       dbTool = null;
     }
 
-    if (dbTool && dbTool.schema?.apiSpec) {
+    if (dbTool && dbTool.apiSpec) {
       // => dynamic approach (API fetch)
-      return await this.invokeDynamicTool(dbTool.schema.apiSpec, args);
+      return await this.invokeDynamicTool(dbTool.apiSpec, args);
     } else if (dbTool) {
       // If a DB-based tool is found but no apiSpec, you might do a code-based approach or error out
       // For now, let's just error or handle a partial scenario:

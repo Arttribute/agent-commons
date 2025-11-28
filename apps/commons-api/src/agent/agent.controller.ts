@@ -205,8 +205,7 @@ export class AgentController {
   @Get(':agentId/tools')
   async getAgentTools(@Param('agentId') agentId: string) {
     const tools = await this.agent.getAgentTools(agentId);
-    // Do not expose secureKeyRef
-    return { data: tools.map(({ secureKeyRef, ...rest }) => rest) };
+    return { data: tools };
   }
   @Post(':agentId/tools')
   async addAgentTool(
@@ -218,9 +217,7 @@ export class AgentController {
       body.toolId,
       body.usageComments,
     );
-    // Do not expose secureKeyRef
-    const { secureKeyRef, ...rest } = tool;
-    return { data: rest };
+    return { data: tool };
   }
   @Delete('tools/:id')
   async removeAgentTool(@Param('id') id: string) {

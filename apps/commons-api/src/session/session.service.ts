@@ -154,9 +154,10 @@ export class SessionService {
     }
 
     // Get all goals for this session
+    // @ts-expect-error - goal table is deprecated but kept for backward compatibility
     const goals = await this.db.query.goal.findMany({
-      where: (g) => eq(g.sessionId, id),
-      orderBy: (g) => g.createdAt,
+      where: (g: any) => eq(g.sessionId, id),
+      orderBy: (g: any) => g.createdAt,
     });
 
     // Get all tasks for this session
@@ -191,8 +192,9 @@ export class SessionService {
       metrics: sessionEntry.metrics || {},
       model: sessionEntry.model || {},
       query: sessionEntry.query || {},
-      goals: goals.map((goal) => ({
+      goals: goals.map((goal: any) => ({
         ...goal,
+        // @ts-expect-error - goalId field is deprecated
         tasks: tasks.filter((task) => task.goalId === goal.goalId),
       })),
       childSessions: childSessions || [],

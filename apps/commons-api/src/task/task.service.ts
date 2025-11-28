@@ -26,15 +26,13 @@ export interface TaskContext {
 
 export interface CreateTaskDto {
   agentId: string;
-  goalId: string;
   sessionId: string;
   title: string;
   description: string;
   context: TaskContext;
   tools: string[];
   priority?: number;
-  scheduledStart?: Date;
-  scheduledEnd?: Date;
+  scheduledFor?: Date;
   estimatedDuration?: number;
   dependencyTaskIds?: string[];
   isRecurring?: boolean;
@@ -50,40 +48,28 @@ export class TaskService {
     await this.db.insert(schema.task).values({
       taskId,
       agentId: dto.agentId,
-      goalId: dto.goalId,
       sessionId: dto.sessionId,
       title: dto.title,
       description: dto.description,
       context: dto.context,
       priority: dto.priority ?? 0,
       estimatedDuration: dto.estimatedDuration,
-      scheduledStart: dto.scheduledStart
-        ? new Date(dto.scheduledStart)
-        : new Date(),
-      scheduledEnd: dto.scheduledEnd
-        ? new Date(dto.scheduledEnd)
-        : new Date(Date.now() + (dto.estimatedDuration || 0) * 1000),
+      scheduledFor: dto.scheduledFor ? new Date(dto.scheduledFor) : undefined,
       status: 'pending',
       progress: 0,
       isRecurring: dto.isRecurring,
       tools: dto.tools,
       metadata: dto.metadata,
+      dependsOn: dto.dependencyTaskIds,
+      createdBy: dto.agentId,
+      createdByType: 'agent',
     });
-
-    if (dto.dependencyTaskIds?.length) {
-      await this.db.insert(schema.taskDependency).values(
-        dto.dependencyTaskIds.map((depId) => ({
-          dependentTaskId: taskId,
-          dependencyTaskId: depId,
-        })),
-      );
-    }
     return this.get(taskId);
   }
 
   async get(taskId: string) {
     const row = await this.db.query.task.findFirst({
-      where: (t) => eq(t.taskId, taskId),
+      where: (t: any) => eq(t.taskId, taskId),
     });
     if (!row) throw new NotFoundException('Task not found');
     return row;
@@ -92,53 +78,37 @@ export class TaskService {
   /** Next task whose dependencies are all completed */
   async getNextExecutable(agentId: string, sessionId: string) {
     console.log('getNextExecutable', agentId);
-    //from the candidate tasks order by priority and filter out tasks that have dependencies
-    const tasks = await this.db
-      .select({
-        taskId: schema.task.taskId,
-        title: schema.task.title,
-        description: schema.task.description,
-        status: schema.task.status,
-        priority: schema.task.priority,
-        scheduledStart: schema.task.scheduledStart,
-        scheduledEnd: schema.task.scheduledEnd,
-        actualStart: schema.task.actualStart,
-        actualEnd: schema.task.actualEnd,
-        estimatedDuration: schema.task.estimatedDuration,
-        progress: schema.task.progress,
-        isRecurring: schema.task.isRecurring,
-        context: schema.task.context,
-        tools: schema.task.tools,
-        metadata: schema.task.metadata,
-        summary: schema.task.summary,
-        resultContent: schema.task.resultContent,
-        createdAt: schema.task.createdAt,
-        updatedAt: schema.task.updatedAt,
-      })
-      .from(schema.task)
-      .where(
+    // Get all tasks for this agent/session that are not completed/failed
+    const tasks = await this.db.query.task.findMany({
+      where: (t: any) =>
         and(
-          eq(schema.task.agentId, agentId),
-          not(eq(schema.task.status, 'completed')),
-          not(eq(schema.task.status, 'failed')),
-          eq(schema.task.sessionId, sessionId),
-          not(
-            sql`${schema.task.taskId} IN (SELECT ${schema.taskDependency.dependencyTaskId} FROM ${schema.taskDependency})`,
-          ),
+          eq(t.agentId, agentId),
+          eq(t.sessionId, sessionId),
+          not(eq(t.status, 'completed')),
+          not(eq(t.status, 'failed')),
         ),
-      )
-      .orderBy((t) => [t.priority])
-      .limit(1);
-
-    const task = Array.isArray(tasks) && tasks.length > 0 ? tasks[0] : null;
-    if (!task) return null;
-    const dependencies = await this.db.query.taskDependency.findMany({
-      where: (td) => eq(td.dependentTaskId, task.taskId),
+      orderBy: (t: any, { desc }: any) => [desc(t.priority), t.createdAt],
     });
-    return {
-      ...task,
-      dependencies: dependencies.map((d) => d.dependencyTaskId),
-    };
+
+    // Filter to tasks with no dependencies or all dependencies completed
+    for (const task of tasks) {
+      if (!task.dependsOn || task.dependsOn.length === 0) {
+        return task; // No dependencies
+      }
+
+      // Check if all dependencies are completed
+      const depTasks = await this.db.query.task.findMany({
+        where: (t: any) =>
+          sql`${t.taskId} = ANY(${task.dependsOn})`,
+      });
+
+      const allCompleted = depTasks.every((dep) => dep.status === 'completed');
+      if (allCompleted) {
+        return task;
+      }
+    }
+
+    return null;
   }
 
   async start(taskId: string) {
@@ -156,12 +126,12 @@ export class TaskService {
     resultContent: string,
     summary: string,
     context: TaskContext,
-    scheduledEnd?: Date,
+    scheduledEnd?: Date, // Deprecated parameter, kept for backward compatibility
     estimatedDuration?: number,
     metadata?: Record<string, any>,
   ) {
     const currentContext = await this.db.query.task.findFirst({
-      where: (t) => eq(t.taskId, taskId),
+      where: (t: any) => eq(t.taskId, taskId),
       columns: { context: true },
     });
     if (!currentContext) throw new NotFoundException('Task not found');
@@ -191,7 +161,6 @@ export class TaskService {
       .set({
         progress,
         status,
-        scheduledEnd,
         resultContent,
         summary,
         context: newContext,

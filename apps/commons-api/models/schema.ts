@@ -122,8 +122,12 @@ export const session = pgTable('session', {
     .notNull(),
 });
 
-/* ─────────────────────────  GOAL  ───────────────────────── */
+/* ─────────────────────────  GOAL (DEPRECATED - TO BE REMOVED)  ───────────────────────── */
+// DEPRECATED: Goals abstraction is being removed. Tasks now handle everything directly.
+// This table will be dropped in the next migration.
+// DO NOT USE THIS TABLE IN NEW CODE.
 
+/*
 export const goal = pgTable('goal', {
   goalId: uuid('goal_id')
     .default(sql`uuid_generate_v4()`)
@@ -155,6 +159,7 @@ export const goal = pgTable('goal', {
     .notNull(),
   completedAt: timestamp('completed_at', { withTimezone: true }),
 });
+*/
 
 /* ─────────────────────────  TASK  ───────────────────────── */
 
@@ -163,38 +168,63 @@ export const task = pgTable('task', {
     .default(sql`uuid_generate_v4()`)
     .primaryKey(),
 
+  // Agent and session (required)
   agentId: text('agent_id')
     .notNull()
     .references(() => agent.agentId, { onDelete: 'cascade' }),
 
-  goalId: uuid('goal_id')
+  sessionId: uuid('session_id')
     .notNull()
-    .references(() => goal.goalId, { onDelete: 'cascade' }),
+    .references(() => session.sessionId, { onDelete: 'cascade' }),
 
-  sessionId: uuid('session_id').references(() => session.sessionId, {
-    onDelete: 'cascade',
-  }),
-
+  // Basic info
   title: text('title').notNull(),
   description: text('description'),
 
-  status: text('status').default('pending').notNull(), // pending | started | …
+  // Status and execution
+  status: text('status').default('pending').notNull(), // 'pending' | 'running' | 'completed' | 'failed' | 'cancelled'
   priority: integer('priority').default(0).notNull(),
 
-  scheduledStart: timestamp('scheduled_start', { withTimezone: true }),
-  scheduledEnd: timestamp('scheduled_end', { withTimezone: true }),
+  // Execution mode
+  executionMode: text('execution_mode').default('single').notNull(), // 'single' | 'workflow' | 'sequential'
+
+  // Workflow integration (optional)
+  workflowId: uuid('workflow_id').references(() => workflow.workflowId, {
+    onDelete: 'set null',
+  }),
+  workflowInputs: jsonb('workflow_inputs').$type<Record<string, any>>(), // Inputs to pass to workflow
+
+  // Scheduling
+  cronExpression: text('cron_expression'), // e.g., '*/5 * * * *' (every 5 mins)
+  scheduledFor: timestamp('scheduled_for', { withTimezone: true }), // One-time scheduled execution
+  isRecurring: pgBoolean('is_recurring').default(false),
+  nextRunAt: timestamp('next_run_at', { withTimezone: true }), // Next scheduled run
+  lastRunAt: timestamp('last_run_at', { withTimezone: true }), // Last execution time
+
+  // Execution tracking
   actualStart: timestamp('actual_start', { withTimezone: true }),
   actualEnd: timestamp('actual_end', { withTimezone: true }),
-
-  estimatedDuration: integer('estimated_duration'),
+  estimatedDuration: integer('estimated_duration'), // milliseconds
   progress: real('progress').default(0),
 
-  isRecurring: pgBoolean('is_recurring').default(false),
-  context: jsonb('context').$type<Record<string, any>>(),
-  tools: jsonb('tools').$type<string[]>(),
+  // Dependencies
+  dependsOn: jsonb('depends_on').$type<string[]>(), // Array of taskIds this task depends on
+
+  // Task-specific tools (optional - overrides agent's default tools)
+  tools: jsonb('tools').$type<string[]>(), // Tool names/IDs to use
+
+  // Context and metadata
+  context: jsonb('context').$type<Record<string, any>>(), // Additional context for execution
   metadata: jsonb('metadata').$type<Record<string, any>>(),
-  summary: text('summary'),
+
+  // Results
   resultContent: jsonb('result_content').$type<any>(),
+  summary: text('summary'),
+  errorMessage: text('error_message'),
+
+  // Creation tracking
+  createdBy: text('created_by').notNull(), // userId or agentId
+  createdByType: text('created_by_type').notNull(), // 'user' | 'agent'
 
   createdAt: timestamp('created_at', { withTimezone: true })
     .default(sql`timezone('utc', now())`)
@@ -202,10 +232,16 @@ export const task = pgTable('task', {
   updatedAt: timestamp('updated_at', { withTimezone: true })
     .default(sql`timezone('utc', now())`)
     .notNull(),
+  completedAt: timestamp('completed_at', { withTimezone: true }),
 });
 
-/* ─────────────────────────  TASK DEPENDENCY  ───────────────────────── */
+/* ─────────────────────────  TASK DEPENDENCY (DEPRECATED - TO BE REMOVED)  ───────────────────────── */
+// DEPRECATED: Task dependencies are now managed via the dependsOn array in the task table.
+// This provides simpler dependency management without a separate join table.
+// This table will be dropped in the next migration.
+// DO NOT USE THIS TABLE IN NEW CODE.
 
+/*
 export const taskDependency = pgTable('task_dependency', {
   id: uuid('id')
     .default(sql`uuid_generate_v4()`)
@@ -225,6 +261,7 @@ export const taskDependency = pgTable('task_dependency', {
     .default(sql`timezone('utc', now())`)
     .notNull(),
 });
+*/
 
 /* ─────────────────────────  TOOL  ───────────────────────── */
 
@@ -233,26 +270,73 @@ export const tool = pgTable('tool', {
     .default(sql`uuid_generate_v4()`)
     .primaryKey(),
 
-  name: text().notNull(),
+  name: text('name').notNull().unique(),
+  displayName: text('display_name'),
+  description: text('description'),
 
-  schema: jsonb().notNull().$type<
-    ChatCompletionTool & {
-      apiSpec?: {
-        baseUrl: string;
-        path: string;
-        method: string; // GET, POST, PUT, ...
-        headers?: Record<string, string>;
-        queryParams?: Record<string, string>;
-        bodyTemplate?: any;
-      };
-    }
-  >(),
+  // Tool specification (OpenAI ChatCompletionTool format)
+  schema: jsonb('schema').notNull().$type<ChatCompletionTool>(),
 
+  // API specification for dynamic tools
+  apiSpec: jsonb('api_spec').$type<{
+    baseUrl: string;
+    path: string;
+    method: string; // GET, POST, PUT, PATCH, DELETE
+    headers?: Record<string, string>;
+    queryParams?: Record<string, string>;
+    bodyTemplate?: any;
+    authType?: 'none' | 'bearer' | 'api-key' | 'basic' | 'oauth2';
+    authKeyName?: string; // Name of the key required (e.g., 'OPENAI_API_KEY')
+  }>(),
+
+  // Input/Output mapping for workflows
+  inputSchema: jsonb('input_schema').$type<{
+    type: 'object';
+    properties: Record<
+      string,
+      {
+        type: string;
+        description?: string;
+        required?: boolean;
+        default?: any;
+      }
+    >;
+    required?: string[];
+  }>(),
+
+  outputSchema: jsonb('output_schema').$type<{
+    type: string;
+    description?: string;
+    properties?: Record<string, any>;
+  }>(),
+
+  // Access control
+  visibility: text('visibility').default('private').notNull(), // 'public' | 'private' | 'platform'
+  owner: text('owner'), // User/agent wallet address who created the tool
+  ownerType: text('owner_type'), // 'user' | 'agent' | 'platform'
+
+  // Metadata
+  category: text('category'), // 'communication', 'data', 'ai', 'blockchain', etc.
   tags: jsonb('tags').$type<string[]>(),
+  icon: text('icon'),
+  version: text('version').default('1.0.0'),
+  isDeprecated: pgBoolean('is_deprecated').default(false),
+
+  // Usage tracking
+  executionCount: integer('execution_count').default(0),
+  lastExecutedAt: timestamp('last_executed_at', { withTimezone: true }),
+
+  // Rate limiting
+  rateLimitPerMinute: integer('rate_limit_per_minute'),
+  rateLimitPerHour: integer('rate_limit_per_hour'),
+
+  // Legacy fields (for backwards compatibility)
   rating: jsonb('ratings'),
-  version: text('version'),
 
   createdAt: timestamp('created_at', { withTimezone: true })
+    .default(sql`timezone('utc', now())`)
+    .notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true })
     .default(sql`timezone('utc', now())`)
     .notNull(),
 });
@@ -345,8 +429,308 @@ export const agentTool = pgTable('agent_tool', {
     .notNull()
     .references(() => tool.toolId, { onDelete: 'cascade' }),
 
+  // Configuration
   usageComments: text('usage_comments'),
-  secureKeyRef: text('secure_key_ref'), // reference to encrypted key store
+  isEnabled: pgBoolean('is_enabled').default(true),
+
+  // Custom configuration per agent
+  config: jsonb('config').$type<{
+    customParams?: Record<string, any>;
+    overrideDefaults?: Record<string, any>;
+  }>(),
+
+  createdAt: timestamp('created_at', { withTimezone: true })
+    .default(sql`timezone('utc', now())`)
+    .notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true })
+    .default(sql`timezone('utc', now())`)
+    .notNull(),
+});
+
+/* ─────────────────────────  TOOL PERMISSION  ───────────────────────── */
+
+export const toolPermission = pgTable('tool_permission', {
+  id: uuid('id')
+    .default(sql`uuid_generate_v4()`)
+    .primaryKey(),
+
+  toolId: uuid('tool_id')
+    .notNull()
+    .references(() => tool.toolId, { onDelete: 'cascade' }),
+
+  // Who has permission
+  subjectId: text('subject_id').notNull(), // userId or agentId
+  subjectType: text('subject_type').notNull(), // 'user' | 'agent'
+
+  // Permission level
+  permission: text('permission').notNull(), // 'read' | 'execute' | 'admin'
+
+  // Optional: Grant source (for tracking)
+  grantedBy: text('granted_by'), // userId who granted this permission
+
+  createdAt: timestamp('created_at', { withTimezone: true })
+    .default(sql`timezone('utc', now())`)
+    .notNull(),
+  expiresAt: timestamp('expires_at', { withTimezone: true }), // Optional expiration
+});
+
+/* ─────────────────────────  TOOL KEY  ───────────────────────── */
+
+export const toolKey = pgTable('tool_key', {
+  keyId: uuid('key_id')
+    .default(sql`uuid_generate_v4()`)
+    .primaryKey(),
+
+  // Key identification
+  keyName: text('key_name').notNull(), // e.g., 'OPENAI_API_KEY', 'STRIPE_SECRET_KEY'
+  displayName: text('display_name'), // User-friendly name
+  description: text('description'),
+
+  // Encrypted value (AES-256-GCM)
+  encryptedValue: text('encrypted_value').notNull(),
+  encryptionIV: text('encryption_iv').notNull(), // Initialization vector
+  encryptionTag: text('encryption_tag').notNull(), // Authentication tag
+
+  // Ownership (keys can be user-level or agent-level)
+  ownerId: text('owner_id').notNull(), // userId or agentId
+  ownerType: text('owner_type').notNull(), // 'user' | 'agent'
+
+  // Optional tool association (if key is specific to a tool)
+  toolId: uuid('tool_id').references(() => tool.toolId, {
+    onDelete: 'cascade',
+  }),
+
+  // Metadata
+  keyType: text('key_type'), // 'api-key' | 'bearer-token' | 'oauth-token' | 'secret'
+  isActive: pgBoolean('is_active').default(true).notNull(),
+  lastUsedAt: timestamp('last_used_at', { withTimezone: true }),
+  usageCount: integer('usage_count').default(0),
+
+  // Masking for display (shows last 4 chars)
+  maskedValue: text('masked_value'), // e.g., '****abc123'
+
+  createdAt: timestamp('created_at', { withTimezone: true })
+    .default(sql`timezone('utc', now())`)
+    .notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true })
+    .default(sql`timezone('utc', now())`)
+    .notNull(),
+  expiresAt: timestamp('expires_at', { withTimezone: true }), // For tokens that expire
+});
+
+/* ─────────────────────────  TOOL KEY MAPPING  ───────────────────────── */
+
+export const toolKeyMapping = pgTable('tool_key_mapping', {
+  id: uuid('id')
+    .default(sql`uuid_generate_v4()`)
+    .primaryKey(),
+
+  toolId: uuid('tool_id')
+    .notNull()
+    .references(() => tool.toolId, { onDelete: 'cascade' }),
+
+  keyId: uuid('key_id')
+    .notNull()
+    .references(() => toolKey.keyId, { onDelete: 'cascade' }),
+
+  // Context where this mapping applies
+  contextId: text('context_id'), // userId or agentId
+  contextType: text('context_type'), // 'user' | 'agent' | 'global'
+
+  // Priority when multiple keys exist
+  priority: integer('priority').default(0),
+
+  createdAt: timestamp('created_at', { withTimezone: true })
+    .default(sql`timezone('utc', now())`)
+    .notNull(),
+});
+
+/* ─────────────────────────  TOOL EXECUTION LOG  ───────────────────────── */
+
+export const toolExecutionLog = pgTable('tool_execution_log', {
+  logId: uuid('log_id')
+    .default(sql`uuid_generate_v4()`)
+    .primaryKey(),
+
+  toolId: uuid('tool_id')
+    .notNull()
+    .references(() => tool.toolId, { onDelete: 'cascade' }),
+
+  // Execution context
+  agentId: text('agent_id').references(() => agent.agentId, {
+    onDelete: 'cascade',
+  }),
+  sessionId: uuid('session_id').references(() => session.sessionId, {
+    onDelete: 'cascade',
+  }),
+  userId: text('user_id'), // If executed by/for a user
+
+  // Execution details
+  status: text('status').notNull(), // 'success' | 'error' | 'timeout' | 'unauthorized'
+  startedAt: timestamp('started_at', { withTimezone: true }).notNull(),
+  completedAt: timestamp('completed_at', { withTimezone: true }),
+  duration: integer('duration'), // milliseconds
+
+  // Input/Output (sanitized - no sensitive data)
+  inputArgs: jsonb('input_args').$type<Record<string, any>>(),
+  outputData: jsonb('output_data').$type<any>(),
+  errorMessage: text('error_message'),
+  errorStack: text('error_stack'),
+
+  // Key usage tracking (without exposing key value)
+  keyId: uuid('key_id').references(() => toolKey.keyId, {
+    onDelete: 'set null',
+  }),
+
+  // Rate limiting tracking
+  rateLimitHit: pgBoolean('rate_limit_hit').default(false),
+
+  createdAt: timestamp('created_at', { withTimezone: true })
+    .default(sql`timezone('utc', now())`)
+    .notNull(),
+});
+
+/* ─────────────────────────  WORKFLOW  ───────────────────────── */
+
+export const workflow = pgTable('workflow', {
+  workflowId: uuid('workflow_id')
+    .default(sql`uuid_generate_v4()`)
+    .primaryKey(),
+
+  name: text('name').notNull(),
+  description: text('description'),
+
+  // Ownership
+  ownerId: text('owner_id').notNull(), // userId or agentId
+  ownerType: text('owner_type').notNull(), // 'user' | 'agent'
+
+  // Workflow definition (graph structure)
+  definition: jsonb('definition').notNull().$type<{
+    startNodeId: string; // Explicit start node
+    endNodeId: string; // Explicit end node
+    nodes: Array<{
+      id: string;
+      type: 'tool' | 'agent_processor' | 'input' | 'output'; // Node types
+      toolId?: string; // For tool nodes
+      toolName?: string; // Tool name (for reference)
+      position: { x: number; y: number };
+      config?: Record<string, any>;
+      label?: string; // Display label
+    }>;
+    edges: Array<{
+      id: string;
+      source: string;
+      target: string;
+      sourceHandle?: string; // Output field name
+      targetHandle?: string; // Input field name
+      mapping?: Record<string, string>; // source field -> target field
+      label?: string; // Display label for edge
+    }>;
+  }>(),
+
+  // Input/Output schemas for the entire workflow
+  inputSchema: jsonb('input_schema').$type<{
+    type: 'object';
+    properties: Record<
+      string,
+      {
+        type: string;
+        description?: string;
+        required?: boolean;
+        default?: any;
+      }
+    >;
+    required?: string[];
+  }>(),
+
+  outputSchema: jsonb('output_schema').$type<{
+    type: string;
+    description?: string;
+    properties?: Record<string, any>;
+  }>(),
+
+  // Actual output captured from first successful run (for validation)
+  actualOutputSchema: jsonb('actual_output_schema').$type<any>(),
+  schemaLocked: pgBoolean('schema_locked').default(false), // Lock schema after validation
+
+  // Metadata
+  version: text('version').default('1.0.0'),
+  isTemplate: pgBoolean('is_template').default(false),
+  isPublic: pgBoolean('is_public').default(false), // Public workflows can be discovered/remixed
+  category: text('category'), // e.g., 'research', 'content', 'automation'
+  tags: jsonb('tags').$type<string[]>(),
+
+  // Trigger configuration
+  triggerType: text('trigger_type').default('manual'), // 'manual' | 'scheduled' | 'webhook'
+  triggerConfig: jsonb('trigger_config').$type<{
+    cronExpression?: string; // For scheduled triggers
+    webhookUrl?: string; // For webhook triggers
+    eventType?: string; // For event-based triggers
+  }>(),
+
+  // Usage tracking
+  executionCount: integer('execution_count').default(0),
+  successCount: integer('success_count').default(0),
+  failureCount: integer('failure_count').default(0),
+  lastExecutedAt: timestamp('last_executed_at', { withTimezone: true }),
+
+  createdAt: timestamp('created_at', { withTimezone: true })
+    .default(sql`timezone('utc', now())`)
+    .notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true })
+    .default(sql`timezone('utc', now())`)
+    .notNull(),
+});
+
+/* ─────────────────────────  WORKFLOW EXECUTION  ───────────────────────── */
+
+export const workflowExecution = pgTable('workflow_execution', {
+  executionId: uuid('execution_id')
+    .default(sql`uuid_generate_v4()`)
+    .primaryKey(),
+
+  workflowId: uuid('workflow_id')
+    .notNull()
+    .references(() => workflow.workflowId, { onDelete: 'cascade' }),
+
+  // Execution context
+  agentId: text('agent_id').references(() => agent.agentId, {
+    onDelete: 'cascade',
+  }),
+  sessionId: uuid('session_id').references(() => session.sessionId, {
+    onDelete: 'cascade',
+  }),
+  taskId: uuid('task_id').references(() => task.taskId, {
+    onDelete: 'cascade',
+  }),
+
+  // Status
+  status: text('status').notNull(), // 'pending' | 'running' | 'completed' | 'failed' | 'cancelled'
+  currentNode: text('current_node'), // ID of node currently executing
+
+  // Timing
+  startedAt: timestamp('started_at', { withTimezone: true }),
+  completedAt: timestamp('completed_at', { withTimezone: true }),
+
+  // Input/Output
+  inputData: jsonb('input_data').$type<Record<string, any>>(),
+  outputData: jsonb('output_data').$type<any>(),
+
+  // Node execution results
+  nodeResults: jsonb('node_results').$type<
+    Record<
+      string,
+      {
+        status: 'success' | 'error' | 'skipped';
+        output?: any;
+        error?: string;
+        duration?: number;
+      }
+    >
+  >(),
+
+  // Error tracking
+  errorMessage: text('error_message'),
 
   createdAt: timestamp('created_at', { withTimezone: true })
     .default(sql`timezone('utc', now())`)
@@ -474,9 +858,9 @@ export const spaceMessage = pgTable('space_message', {
 
 // session
 export const sessionRelations = relations(session, ({ one, many }) => ({
-  goals: many(goal),
   tasks: many(task),
   logs: many(agentLog),
+  workflowExecutions: many(workflowExecution),
 
   // parent-child (self reference)
   parent: one(session, {
@@ -485,32 +869,19 @@ export const sessionRelations = relations(session, ({ one, many }) => ({
   }),
 }));
 
-// goal
-export const goalRelations = relations(goal, ({ one, many }) => ({
-  session: one(session, {
-    fields: [goal.sessionId],
-    references: [session.sessionId],
-  }),
-  agent: one(agent, {
-    fields: [goal.agentId],
-    references: [agent.agentId],
-  }),
-  tasks: many(task),
-}));
-
 // task
 export const taskRelations = relations(task, ({ one }) => ({
   session: one(session, {
     fields: [task.sessionId],
     references: [session.sessionId],
   }),
-  goal: one(goal, {
-    fields: [task.goalId],
-    references: [goal.goalId],
-  }),
   agent: one(agent, {
     fields: [task.agentId],
     references: [agent.agentId],
+  }),
+  workflow: one(workflow, {
+    fields: [task.workflowId],
+    references: [workflow.workflowId],
   }),
 }));
 
@@ -574,6 +945,96 @@ export const agentPreferredConnectionRelations = relations(
     preferredAgent: one(agent, {
       fields: [agentPreferredConnection.preferredAgentId],
       references: [agent.agentId],
+    }),
+  }),
+);
+
+// tool
+export const toolRelations = relations(tool, ({ many }) => ({
+  permissions: many(toolPermission),
+  keys: many(toolKey),
+  keyMappings: many(toolKeyMapping),
+  executionLogs: many(toolExecutionLog),
+  agentTools: many(agentTool),
+}));
+
+// toolPermission
+export const toolPermissionRelations = relations(toolPermission, ({ one }) => ({
+  tool: one(tool, {
+    fields: [toolPermission.toolId],
+    references: [tool.toolId],
+  }),
+}));
+
+// toolKey
+export const toolKeyRelations = relations(toolKey, ({ one, many }) => ({
+  tool: one(tool, {
+    fields: [toolKey.toolId],
+    references: [tool.toolId],
+  }),
+  keyMappings: many(toolKeyMapping),
+  executionLogs: many(toolExecutionLog),
+}));
+
+// toolKeyMapping
+export const toolKeyMappingRelations = relations(toolKeyMapping, ({ one }) => ({
+  tool: one(tool, {
+    fields: [toolKeyMapping.toolId],
+    references: [tool.toolId],
+  }),
+  key: one(toolKey, {
+    fields: [toolKeyMapping.keyId],
+    references: [toolKey.keyId],
+  }),
+}));
+
+// toolExecutionLog
+export const toolExecutionLogRelations = relations(
+  toolExecutionLog,
+  ({ one }) => ({
+    tool: one(tool, {
+      fields: [toolExecutionLog.toolId],
+      references: [tool.toolId],
+    }),
+    agent: one(agent, {
+      fields: [toolExecutionLog.agentId],
+      references: [agent.agentId],
+    }),
+    session: one(session, {
+      fields: [toolExecutionLog.sessionId],
+      references: [session.sessionId],
+    }),
+    key: one(toolKey, {
+      fields: [toolExecutionLog.keyId],
+      references: [toolKey.keyId],
+    }),
+  }),
+);
+
+// workflow
+export const workflowRelations = relations(workflow, ({ many }) => ({
+  executions: many(workflowExecution),
+}));
+
+// workflowExecution
+export const workflowExecutionRelations = relations(
+  workflowExecution,
+  ({ one }) => ({
+    workflow: one(workflow, {
+      fields: [workflowExecution.workflowId],
+      references: [workflow.workflowId],
+    }),
+    agent: one(agent, {
+      fields: [workflowExecution.agentId],
+      references: [agent.agentId],
+    }),
+    session: one(session, {
+      fields: [workflowExecution.sessionId],
+      references: [session.sessionId],
+    }),
+    task: one(task, {
+      fields: [workflowExecution.taskId],
+      references: [task.taskId],
     }),
   }),
 );

@@ -8,6 +8,13 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
 export function CreateToolForm() {
   const router = useRouter();
@@ -18,8 +25,10 @@ export function CreateToolForm() {
   // Local state
   const [toolData, setToolData] = useState({
     name: "",
+    displayName: "",
     description: "",
     customJson: "",
+    visibility: "private" as "private" | "public" | "platform",
   });
 
   const [loadingCreate, setLoadingCreate] = useState(false);
@@ -34,33 +43,48 @@ export function CreateToolForm() {
     setLoadingCreate(true);
 
     try {
+      // Parse the custom JSON to get the schema
+      let schema;
+      try {
+        schema = JSON.parse(toolData.customJson);
+      } catch (e) {
+        throw new Error("Invalid JSON format in Custom Tool JSON field");
+      }
+
       const res = await fetch("/api/tools", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           name: toolData.name,
-          description: toolData.description,
-          customJson: toolData.customJson,
-          userAddress, // pass the wallet as "owner"
+          displayName: toolData.displayName || toolData.name,
+          schema: schema,
+          owner: userAddress,
+          ownerType: "user",
+          visibility: toolData.visibility,
         }),
       });
 
       if (!res.ok) {
-        throw new Error("Failed to create tool");
+        const errorData = await res.json();
+        throw new Error(errorData.message || "Failed to create tool");
       }
 
       const data = await res.json();
 
-      if (data.success) {
+      if (data.data) {
         setSuccess("Tool created successfully!");
         // Reset form
-        setToolData({ name: "", description: "", customJson: "" });
-        // Optionally navigate somewhere:
-        // router.push("/some-other-page");
-        //redirect to /studio/tools
+        setToolData({
+          name: "",
+          displayName: "",
+          description: "",
+          customJson: "",
+          visibility: "private",
+        });
+        // Redirect to /studio/tools
         router.push("/studio/tools");
       } else {
-        throw new Error(data.error || "Unknown error");
+        throw new Error("Unknown error");
       }
     } catch (err: any) {
       setError(err.message);
@@ -81,29 +105,49 @@ export function CreateToolForm() {
           {success && <p className="text-green-500 text-sm mb-2">{success}</p>}
 
           <div className="w-full mb-2">
-            <Label htmlFor="name">Tool Name</Label>
+            <Label htmlFor="name">Tool Name (unique identifier)</Label>
             <Input
               id="name"
               value={toolData.name}
               onChange={(e) =>
                 setToolData({ ...toolData, name: e.target.value })
               }
+              placeholder="my_awesome_tool"
+              className="w-full"
+              required
+            />
+          </div>
+
+          <div className="w-full mb-2">
+            <Label htmlFor="displayName">Display Name</Label>
+            <Input
+              id="displayName"
+              value={toolData.displayName}
+              onChange={(e) =>
+                setToolData({ ...toolData, displayName: e.target.value })
+              }
               placeholder="My Awesome Tool"
               className="w-full"
             />
           </div>
 
-          <div className="grid gap-2 mb-2">
-            <Label htmlFor="description">Description</Label>
-            <Textarea
-              id="description"
-              value={toolData.description}
-              onChange={(e) =>
-                setToolData({ ...toolData, description: e.target.value })
+          <div className="w-full mb-2">
+            <Label htmlFor="visibility">Visibility</Label>
+            <Select
+              value={toolData.visibility}
+              onValueChange={(value: "private" | "public" | "platform") =>
+                setToolData({ ...toolData, visibility: value })
               }
-              placeholder="Describe your tool's functionality and purpose..."
-              className="min-h-[50px]"
-            />
+            >
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="private">Private (only you)</SelectItem>
+                <SelectItem value="public">Public (all users)</SelectItem>
+                <SelectItem value="platform">Platform (system-wide)</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
           <div>
             <Label htmlFor="custom-json">Custom Tool JSON</Label>

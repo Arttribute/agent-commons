@@ -54,6 +54,7 @@
     "@xenova/transformers": "^2.17.2",
     "class-transformer": "^0.5.1",
     "class-validator": "^0.14.2",
+    "cron": "^4.3.4",
     "dedent": "^1.5.3",
     "dotenv": "^16.4.7",
     "drizzle-kit": "^0.30.6",
@@ -128,7 +129,11 @@
       "**/*.(t|j)s"
     ],
     "coverageDirectory": "../coverage",
-    "testEnvironment": "node"
+    "testEnvironment": "node",
+    "moduleNameMapper": {
+      "^~/(.*)$": "<rootDir>/$1",
+      "^#/(.*)$": "<rootDir>/../$1"
+    }
   },
   "pnpm": {
     "overrides": {

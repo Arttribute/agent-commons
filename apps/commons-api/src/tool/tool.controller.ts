@@ -1,6 +1,15 @@
 // src/tool/tool.controller.ts
 
-import { Controller, Post, Get, Body, Param, Put } from '@nestjs/common';
+import {
+  Controller,
+  Post,
+  Get,
+  Body,
+  Param,
+  Put,
+  Delete,
+  Query,
+} from '@nestjs/common';
 import { ToolService } from './tool.service';
 import { ChatCompletionTool } from 'openai/resources/chat/completions.mjs';
 
@@ -18,6 +27,9 @@ export class ToolController {
     body: {
       name: string;
       schema: ChatCompletionTool;
+      owner?: string;
+      ownerType?: 'user' | 'agent' | 'platform';
+      visibility?: 'public' | 'private' | 'platform';
       tags?: string[];
       rating?: number;
       version?: string;
@@ -29,11 +41,19 @@ export class ToolController {
 
   /**
    * GET /v1/tools
-   * Retrieve all tools
+   * Retrieve all tools (with optional owner filter)
    */
   @Get()
-  async getAllTools() {
-    const tools = await this.toolService.getAllTools();
+  async getAllTools(
+    @Query('owner') owner?: string,
+    @Query('ownerType') ownerType?: 'user' | 'agent' | 'platform',
+    @Query('visibility') visibility?: 'public' | 'private' | 'platform',
+  ) {
+    const tools = await this.toolService.getAllTools({
+      owner,
+      ownerType,
+      visibility,
+    });
     return { data: tools };
   }
 
@@ -57,6 +77,7 @@ export class ToolController {
     @Body()
     body: {
       schema?: ChatCompletionTool;
+      visibility?: 'public' | 'private' | 'platform';
       tags?: string[];
       rating?: number;
       version?: string;
@@ -67,5 +88,15 @@ export class ToolController {
       ...body,
     });
     return { data: updated };
+  }
+
+  /**
+   * DELETE /v1/tools/:name
+   * Delete a tool by name
+   */
+  @Delete(':name')
+  async deleteTool(@Param('name') name: string) {
+    const result = await this.toolService.deleteToolByName(name);
+    return { success: true, data: result };
   }
 }
