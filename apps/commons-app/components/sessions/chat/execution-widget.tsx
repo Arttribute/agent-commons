@@ -66,61 +66,21 @@ interface Goal {
 
 interface ExecutionWidgetProps {
   sessionId: string;
-  goals: Goal[];
-  selectedGoal: Goal | null;
-  selectedGoalId: string;
-  setSelectedGoalId: (goalId: string) => void;
-  childSessions: any[]; // Optional prop for child sessions
-  spaces?: Space[]; // Optional prop for spaces
+  tasks: Task[];
+  childSessions: any[];
+  spaces?: Space[];
 }
 
 export default function ExecutionWidget({
   sessionId,
-  goals,
-  selectedGoal,
-  selectedGoalId,
-  setSelectedGoalId,
+  tasks,
   childSessions,
   spaces = [],
 }: ExecutionWidgetProps) {
   const [isExpanded, setIsExpanded] = useState(false);
   const [isMinimized, setIsMinimized] = useState(false);
-  const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
 
-  // Fetch tasks for the selected goal
-  useEffect(() => {
-    if (selectedGoalId) {
-      const fetchTasks = async () => {
-        setIsLoading(true);
-        setError(null);
-        try {
-          const res = await fetch(
-            `/api/goals/goal/tasks?goalId=${selectedGoalId}`
-          );
-          if (!res.ok) {
-            throw new Error("Failed to fetch tasks");
-          }
-          const data = await res.json();
-          // Update the goals state with the fetched tasks
-          const updatedGoals = goals.map((goal) =>
-            goal.goalId === selectedGoalId
-              ? { ...goal, tasks: data.tasks }
-              : goal
-          );
-          // You'll need to implement a way to update the goals state in the parent component
-        } catch (err) {
-          console.error("Error fetching tasks:", err);
-          setError("Failed to load tasks");
-        } finally {
-          setIsLoading(false);
-        }
-      };
-      fetchTasks();
-    }
-  }, [selectedGoalId, goals]);
-
-  if (goals.length === 0 && childSessions.length === 0) return null;
+  if (tasks.length === 0 && childSessions.length === 0) return null;
 
   const toggleExpanded = () => {
     setIsExpanded(!isExpanded);
@@ -136,49 +96,16 @@ export default function ExecutionWidget({
     }
   };
 
-  // Calculate stats for all goals
-  const totalTasks = goals.reduce((acc, goal) => acc + goal.tasks.length, 0);
-  const completedTasks = goals.reduce(
-    (acc, goal) =>
-      acc + goal.tasks.filter((task) => task.status === "completed").length,
-    0
-  );
-  const inProgressTasks = goals.reduce(
-    (acc, goal) =>
-      acc + goal.tasks.filter((task) => task.status === "in_progress").length,
-    0
-  );
-  const pendingTasks = goals.reduce(
-    (acc, goal) =>
-      acc + goal.tasks.filter((task) => task.status === "pending").length,
-    0
-  );
-
-  // Stats for selected goal
-  const selectedGoalTasks = selectedGoal?.tasks || [];
-  const selectedGoalCompletedTasks = selectedGoalTasks.filter(
-    (task) => task.status === "completed"
-  );
-  const selectedGoalInProgressTasks = selectedGoalTasks.filter(
-    (task) => task.status === "in_progress"
-  );
-  const selectedGoalPendingTasks = selectedGoalTasks.filter(
-    (task) => task.status === "pending"
-  );
+  // Calculate stats for all tasks
+  const totalTasks = tasks.length;
+  const completedTasks = tasks.filter((task) => task.status === "completed").length;
+  const inProgressTasks = tasks.filter((task) => task.status === "in_progress").length;
+  const pendingTasks = tasks.filter((task) => task.status === "pending").length;
+  const failedTasks = tasks.filter((task) => task.status === "failed").length;
 
   // Calculate overall progress based on task completion
-  const calculateOverallProgress = (goals: Goal[]) => {
-    if (goals.length === 0) return 0;
-
-    const totalTasks = goals.reduce((acc, goal) => acc + goal.tasks.length, 0);
+  const calculateOverallProgress = () => {
     if (totalTasks === 0) return 0;
-
-    const completedTasks = goals.reduce(
-      (acc, goal) =>
-        acc + goal.tasks.filter((task) => task.status === "completed").length,
-      0
-    );
-
     return Math.round((completedTasks / totalTasks) * 100);
   };
 
@@ -231,7 +158,7 @@ export default function ExecutionWidget({
               </div>
               <TabsContent value="tasks">
                 <div className="flex justify-between items-center ">
-                  <TaskCarousel tasks={selectedGoalTasks} />
+                  <TaskCarousel tasks={tasks} />
                 </div>
               </TabsContent>
               <TabsContent value="messages">
@@ -282,14 +209,14 @@ export default function ExecutionWidget({
                   <div className="space-y-1">
                     <div className="flex justify-between text-xs">
                       <span className="">Overall Progress:</span>
-                      <span>{calculateOverallProgress(goals)}%</span>
+                      <span>{calculateOverallProgress()}%</span>
                     </div>
 
                     <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-1">
                       <div
                         className="bg-zinc-700 h-1 rounded-full"
                         style={{
-                          width: `${calculateOverallProgress(goals)}%`,
+                          width: `${calculateOverallProgress()}%`,
                         }}
                       ></div>
                     </div>
@@ -318,26 +245,19 @@ export default function ExecutionWidget({
                     <div className="flex items-center dark:bg-red-900/20 p-1 rounded gap-1">
                       <CircleAlert className="h-3 w-3 text-red-500" />
                       <span className="font-medium text-red-600 dark:text-red-400">
-                        {goals.reduce(
-                          (acc, goal) =>
-                            acc +
-                            goal.tasks.filter(
-                              (task) => task.status === "failed"
-                            ).length,
-                          0
-                        )}
+                        {failedTasks}
                       </span>
                     </div>
                   </div>
                 </div>
 
-                {selectedGoalInProgressTasks.length > 0 && (
+                {inProgressTasks > 0 && tasks.find((t) => t.status === "in_progress") && (
                   <div className="border-t border-gray-400 pt-2 mt-2 mb-2">
                     <div className="mx-2 space-y-1">
                       <div className="flex items-center gap-1 text-xs">
                         <Clock className="h-3 w-3 text-blue-500" />
                         <span className="truncate">
-                          {selectedGoalInProgressTasks[0].title}
+                          {tasks.find((t) => t.status === "in_progress")?.title}
                         </span>
                       </div>
                     </div>

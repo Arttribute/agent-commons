@@ -153,14 +153,7 @@ export class SessionService {
       throw new NotFoundException(`Session with ID ${id} not found`);
     }
 
-    // Get all goals for this session
-    // @ts-expect-error - goal table is deprecated but kept for backward compatibility
-    const goals = await this.db.query.goal.findMany({
-      where: (g: any) => eq(g.sessionId, id),
-      orderBy: (g: any) => g.createdAt,
-    });
-
-    // Get all tasks for this session
+    // Get all tasks for this session (goals are deprecated)
     const tasks = await this.db.query.task.findMany({
       where: (t) => eq(t.sessionId, id),
       orderBy: (t) => t.createdAt,
@@ -192,11 +185,7 @@ export class SessionService {
       metrics: sessionEntry.metrics || {},
       model: sessionEntry.model || {},
       query: sessionEntry.query || {},
-      goals: goals.map((goal: any) => ({
-        ...goal,
-        // @ts-expect-error - goalId field is deprecated
-        tasks: tasks.filter((task) => task.goalId === goal.goalId),
-      })),
+      tasks: tasks || [], // Return tasks as flat array (goals are deprecated)
       childSessions: childSessions || [],
       spaces: spaceDetails || [],
     };

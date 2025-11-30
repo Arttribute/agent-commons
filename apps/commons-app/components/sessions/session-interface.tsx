@@ -105,15 +105,11 @@ export default function SessionInterfaceImproved({
 }: SessionInterfaceImprovedProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
-  const [selectedGoalId, setSelectedGoalId] = useState<string>("");
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [goals, setGoals] = useState<any[]>(session?.goals || []);
+  const [tasks, setTasks] = useState<any[]>(session?.tasks || []);
   const [childSessions, setChildSessions] = useState<any[]>(
     session?.childSessions || []
-  );
-  const [selectedGoal, setSelectedGoal] = useState<any>(
-    session?.goals?.[0] || null
   );
   const [spaces, setSpaces] = useState<any[]>(session?.spaces || []);
 
@@ -173,10 +169,8 @@ export default function SessionInterfaceImproved({
 
   useEffect(() => {
     if (sessionId && session) {
-      setGoals(session.goals || []);
+      setTasks(session.tasks || []);
       setChildSessions(session.childSessions || []);
-      setSelectedGoal(session.goals?.[0] || null);
-      setSelectedGoalId(session.goals?.[0]?.id || "");
       setSpaces(session.spaces || []);
     }
   }, [session, sessionId]);
@@ -242,10 +236,7 @@ export default function SessionInterfaceImproved({
 
       <ExecutionWidget
         sessionId={sessionId}
-        goals={goals}
-        selectedGoal={selectedGoal}
-        selectedGoalId={selectedGoalId}
-        setSelectedGoalId={setSelectedGoalId}
+        tasks={tasks}
         childSessions={childSessions}
         spaces={spaces}
       />
