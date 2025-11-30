@@ -1,7 +1,11 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, forwardRef, Inject } from '@nestjs/common';
 import { eq } from 'drizzle-orm';
 import { DatabaseService } from '../modules/database';
 import { ToolLoaderService } from './tool-loader.service';
+import { ToolService } from './tool.service';
+import { CommonToolService } from './tools/common-tool.service';
+import { EthereumToolService } from './tools/ethereum-tool.service';
+import { AgentService } from '../agent/agent.service';
 import * as schema from '../../models/schema';
 
 /**
@@ -45,6 +49,13 @@ export class WorkflowExecutorService {
   constructor(
     private readonly db: DatabaseService,
     private readonly toolLoader: ToolLoaderService,
+    private readonly toolService: ToolService,
+    @Inject(forwardRef(() => CommonToolService))
+    private readonly commonToolService: CommonToolService,
+    @Inject(forwardRef(() => EthereumToolService))
+    private readonly ethereumToolService: EthereumToolService,
+    @Inject(forwardRef(() => AgentService))
+    private readonly agentService: AgentService,
   ) {}
 
   /**
@@ -59,7 +70,7 @@ export class WorkflowExecutorService {
    */
   async executeWorkflow(params: {
     workflowId: string;
-    agentId: string;
+    agentId?: string;
     sessionId?: string;
     taskId?: string;
     inputData?: Record<string, any>;
@@ -82,9 +93,9 @@ export class WorkflowExecutorService {
       .insert(schema.workflowExecution)
       .values({
         workflowId,
-        agentId,
-        sessionId,
-        taskId,
+        ...(agentId && { agentId }),
+        ...(sessionId && { sessionId }),
+        ...(taskId && { taskId }),
         status: 'running',
         startedAt: new Date(),
         inputData,
@@ -124,7 +135,7 @@ export class WorkflowExecutorService {
   private async executeWorkflowNodes(
     executionId: string,
     definition: any,
-    agentId: string,
+    agentId: string | undefined,
     userId: string | undefined,
     inputData: Record<string, any>,
   ) {
@@ -144,7 +155,8 @@ export class WorkflowExecutorService {
       nodeOutputs['__input__'] = inputData;
 
       // Execute nodes in order
-      for (const nodeId of executionOrder) {
+      for (let i = 0; i < executionOrder.length; i++) {
+        const nodeId = executionOrder[i];
         const node = nodes.find((n: any) => n.id === nodeId);
         if (!node) continue;
 
@@ -155,12 +167,19 @@ export class WorkflowExecutorService {
           .where(eq(schema.workflowExecution.executionId, executionId));
 
         // Prepare inputs from previous nodes
-        const nodeInputs = this.mapNodeInputs(
+        let nodeInputs = this.mapNodeInputs(
           nodeId,
           edges,
           nodeOutputs,
           node.config,
         );
+
+        // If this is the first node and has no incoming edges, use inputData directly
+        const hasIncomingEdges = edges.some((e: any) => e.target === nodeId);
+        if (i === 0 && !hasIncomingEdges && Object.keys(nodeInputs).length === 0) {
+          this.logger.debug(`First node ${nodeId} has no incoming edges, using inputData directly:`, inputData);
+          nodeInputs = inputData;
+        }
 
         // Execute node
         const result = await this.executeNode(
@@ -174,14 +193,17 @@ export class WorkflowExecutorService {
           userId,
         );
 
-        // Store result
-        nodeResults[nodeId] = result;
-        nodeOutputs[nodeId] = result.output;
+        // Store result (filter undefined values via JSON serialization)
+        const sanitizedResult = JSON.parse(JSON.stringify(result));
+        nodeResults[nodeId] = sanitizedResult;
+        if (result.output !== undefined) {
+          nodeOutputs[nodeId] = result.output;
+        }
 
         // Update execution with node results
         await this.db
           .update(schema.workflowExecution)
-          .set({ nodeResults })
+          .set({ nodeResults: JSON.parse(JSON.stringify(nodeResults)) })
           .where(eq(schema.workflowExecution.executionId, executionId));
 
         // Stop if node failed (unless configured to continue)
@@ -200,15 +222,20 @@ export class WorkflowExecutorService {
       );
 
       // Mark execution as completed
+      const updateData: any = {
+        status: 'completed',
+        completedAt: new Date(),
+        nodeResults: JSON.parse(JSON.stringify(nodeResults)),
+      };
+
+      // Only include outputData if it's defined
+      if (finalOutput !== undefined) {
+        updateData.outputData = JSON.parse(JSON.stringify(finalOutput));
+      }
+
       await this.db
         .update(schema.workflowExecution)
-        .set({
-          status: 'completed',
-          completedAt: new Date(),
-          outputData: finalOutput,
-          nodeResults,
-          currentNode: null,
-        })
+        .set(updateData)
         .where(eq(schema.workflowExecution.executionId, executionId));
 
       // Update workflow execution count
@@ -250,7 +277,7 @@ export class WorkflowExecutorService {
    */
   private async executeNode(
     context: NodeExecutionContext,
-    agentId: string,
+    agentId: string | undefined,
     userId?: string,
   ): Promise<NodeExecutionResult> {
     const startTime = Date.now();
@@ -258,16 +285,33 @@ export class WorkflowExecutorService {
     try {
       this.logger.debug(`Executing node ${context.nodeId} with tool ${context.toolId}`);
 
-      // Get tool
-      const tool = await this.db.query.tool.findFirst({
+      // Try to get tool from database first (for custom tools)
+      let tool: any = await this.db.query.tool.findFirst({
         where: (t: any) => eq(t.toolId, context.toolId),
       });
+
+      // If not in database, check static tools (in-memory)
+      if (!tool) {
+        const staticTools = this.toolService.getStaticTools();
+        const staticTool = staticTools.find((t) => t.toolId === context.toolId);
+        if (staticTool) {
+          // Convert static tool format to match expected tool format
+          tool = {
+            ...staticTool,
+            owner: null,
+            version: '1.0.0',
+            createdAt: new Date(),
+            updatedAt: new Date(),
+            tags: ['platform', 'static'],
+          };
+        }
+      }
 
       if (!tool) {
         return {
           nodeId: context.nodeId,
           status: 'error',
-          error: `Tool ${context.toolId} not found`,
+          error: `Tool ${context.toolId} not found in database or static tools`,
           duration: Date.now() - startTime,
         };
       }
@@ -303,7 +347,7 @@ export class WorkflowExecutorService {
   }
 
   /**
-   * Invoke a tool
+   * Invoke a tool using the same logic as AgentToolsController
    *
    * @param tool - The tool to invoke
    * @param inputs - Tool inputs
@@ -315,35 +359,158 @@ export class WorkflowExecutorService {
   private async invokeTool(
     tool: any,
     inputs: Record<string, any>,
-    agentId: string,
+    agentId: string | undefined,
     userId?: string,
     workflowDepth: number = 1,
   ): Promise<any> {
-    // Special handling for agent_processor nodes
-    if (tool.name === 'processWithinWorkflow' || tool.type === 'agent_processor') {
-      this.logger.log(`Executing agent_processor node`);
+    const functionName = tool.name;
 
-      // Call the common tool service's processWithinWorkflow method
-      // This is integrated with the actual implementation
-      return {
-        result: 'Agent processor executed',
-        processed: true,
-        // In production, this would call commonToolService.processWithinWorkflow
-        // with proper inputs and workflowDepth validation
-      };
+    // Build metadata object
+    const metadata: any = {
+      agentId,
+      sessionId: undefined,
+      spaceId: undefined,
+    };
+
+    // Get agent and add privateKey to metadata if agentId provided
+    if (agentId) {
+      try {
+        const agent = await this.agentService.getAgent({ agentId });
+        if (agent) {
+          const privateKey = this.agentService.seedToPrivateKey(agent.wallet.seed);
+          metadata.privateKey = privateKey;
+        }
+      } catch (error: any) {
+        this.logger.warn(`Could not get agent ${agentId}: ${error.message}`);
+      }
     }
 
-    // TODO: Integrate with actual tool execution logic from agent-tools.controller
-    // For now, return a placeholder for other tools
-    this.logger.warn(
-      `Tool invocation not yet fully implemented for ${tool.name}. Returning placeholder.`,
-    );
+    // Strip metadata fields from inputs to create clean tool inputs
+    // These fields should only be in metadata, not in the actual tool parameters
+    const { agentId: _, privateKey: __, sessionId: ___, spaceId: ____, ...cleanInputs } = inputs;
 
-    return {
-      success: true,
-      result: `Executed ${tool.name} with inputs: ${JSON.stringify(inputs)}`,
-      timestamp: new Date().toISOString(),
-    };
+    this.logger.log(`Invoking tool: ${functionName} with inputs:`, cleanInputs);
+
+    // 1) Check if tool has apiSpec (dynamic API call)
+    if (tool.apiSpec) {
+      this.logger.log(`Executing dynamic tool with apiSpec: ${functionName}`);
+      return await this.invokeDynamicTool(tool.apiSpec, cleanInputs);
+    }
+
+    // 2) Check static tool services (commonToolService, ethereumToolService)
+    const staticService = [
+      this.commonToolService,
+      this.ethereumToolService,
+    ].find((service) => typeof (service as any)[functionName] === 'function');
+
+    if (staticService) {
+      this.logger.log(`Executing static tool: ${functionName}`);
+
+      // Special handling for processWithinWorkflow to prevent infinite recursion
+      if (functionName === 'processWithinWorkflow') {
+        // Add workflowDepth to inputs
+        const processInputs = {
+          ...cleanInputs,
+          workflowDepth,
+        };
+        return await (staticService as any)[functionName](processInputs, metadata);
+      }
+
+      // Call the static method with inputs and metadata
+      // @ts-expect-error because we know it's a function
+      return await staticService[functionName](cleanInputs, metadata);
+    }
+
+    // 3) If we get here, tool not found
+    this.logger.error(`No implementation found for tool: ${functionName}`);
+    throw new Error(
+      `No static, dynamic, or resource-based implementation found for tool "${functionName}"`,
+    );
+  }
+
+  /**
+   * Invoke a dynamic tool via API call
+   * Based on AgentToolsController.invokeDynamicTool
+   */
+  private async invokeDynamicTool(
+    apiSpec: {
+      method: string;
+      baseUrl: string;
+      path: string;
+      headers?: Record<string, string>;
+      queryParams?: Record<string, string>;
+      bodyTemplate?: any;
+    },
+    parsedArgs: Record<string, any>,
+  ): Promise<any> {
+    const { method, baseUrl, path, headers, queryParams, bodyTemplate } = apiSpec;
+
+    // 1) Build final URL with query params
+    let finalUrl = `${baseUrl}${path}`;
+    const url = new URL(finalUrl);
+    if (queryParams) {
+      for (const [k, v] of Object.entries(queryParams)) {
+        const matched = v.match(/^\{(.+)\}$/);
+        if (matched) {
+          const argKey = matched[1];
+          if (parsedArgs[argKey] !== undefined) {
+            url.searchParams.set(k, parsedArgs[argKey].toString());
+          }
+        } else {
+          url.searchParams.set(k, v);
+        }
+      }
+    }
+    finalUrl = url.toString();
+
+    // 2) Build request body for non-GET
+    let requestBody: any = undefined;
+    const methodUpper = method.toUpperCase();
+    if (['POST', 'PUT', 'PATCH'].includes(methodUpper)) {
+      if (bodyTemplate) {
+        requestBody = this.buildBodyFromTemplate(bodyTemplate, parsedArgs);
+      } else if (parsedArgs && Object.keys(parsedArgs).length > 0) {
+        requestBody = parsedArgs;
+      }
+    }
+
+    // 3) Execute fetch
+    const response = await fetch(finalUrl, {
+      method,
+      headers: headers ?? {},
+      body: requestBody ? JSON.stringify(requestBody) : undefined,
+    });
+
+    if (!response.ok) {
+      throw new Error(
+        `Dynamic API error: ${response.status} ${response.statusText}`,
+      );
+    }
+    return await response.json();
+  }
+
+  /**
+   * Recursively replace placeholders in a JSON template object
+   */
+  private buildBodyFromTemplate(template: any, args: Record<string, any>): any {
+    if (Array.isArray(template)) {
+      return template.map((elem) => this.buildBodyFromTemplate(elem, args));
+    } else if (template && typeof template === 'object') {
+      const result: any = {};
+      for (const [key, val] of Object.entries(template)) {
+        result[key] = this.buildBodyFromTemplate(val, args);
+      }
+      return result;
+    } else if (typeof template === 'string') {
+      const matched = template.match(/^\{(.+)\}$/);
+      if (matched) {
+        const argKey = matched[1];
+        return args[argKey];
+      }
+      return template;
+    } else {
+      return template;
+    }
   }
 
   /**

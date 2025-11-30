@@ -66,6 +66,16 @@ export class WorkflowService {
     private readonly workflowExecutor: WorkflowExecutorService,
   ) {}
 
+  // Lazy-loaded ToolService to avoid circular dependency
+  private toolService: any;
+  private getToolService() {
+    if (!this.toolService) {
+      const { ToolService } = require('./tool.service');
+      this.toolService = new ToolService(this.db);
+    }
+    return this.toolService;
+  }
+
   /**
    * Create a new workflow
    *
@@ -124,14 +134,19 @@ export class WorkflowService {
   ): Promise<void> {
     const { nodes, edges, startNodeId, endNodeId } = definition;
 
-    // 1. Check that start and end nodes exist
-    if (!nodes.find((n) => n.id === startNodeId)) {
+    // Allow empty workflows (for initial creation)
+    if (nodes.length === 0) {
+      return;
+    }
+
+    // 1. Check that start and end nodes exist (only if specified)
+    if (startNodeId && !nodes.find((n) => n.id === startNodeId)) {
       throw new BadRequestException(
         `Start node ${startNodeId} not found in workflow`,
       );
     }
 
-    if (!nodes.find((n) => n.id === endNodeId)) {
+    if (endNodeId && !nodes.find((n) => n.id === endNodeId)) {
       throw new BadRequestException(
         `End node ${endNodeId} not found in workflow`,
       );
@@ -147,13 +162,26 @@ export class WorkflowService {
     // 3. Validate that all tool nodes reference valid tools
     for (const node of nodes) {
       if (node.type === 'tool' && node.toolId) {
-        const tool = await this.db.query.tool.findFirst({
+        // Check database first (for custom tools)
+        let tool = await this.db.query.tool.findFirst({
           where: (t) => eq(t.toolId, node.toolId!),
         });
 
+        // If not in database, check static tools (in-memory)
+        if (!tool) {
+          const toolService = this.getToolService();
+          const staticTools = toolService.getStaticTools();
+          const staticTool = staticTools.find((t: any) => t.toolId === node.toolId);
+          if (staticTool) {
+            // Found in static tools - use that name
+            node.toolName = staticTool.name;
+            continue;
+          }
+        }
+
         if (!tool) {
           throw new BadRequestException(
-            `Tool ${node.toolId} not found for node ${node.id}`,
+            `Tool ${node.toolId} not found in database or static tools for node ${node.id}`,
           );
         }
 
@@ -162,8 +190,8 @@ export class WorkflowService {
       }
     }
 
-    // 4. Validate that end node is reachable from start node
-    if (!this.isReachable(nodes, edges, startNodeId, endNodeId)) {
+    // 4. Validate that end node is reachable from start node (only if both specified)
+    if (startNodeId && endNodeId && !this.isReachable(nodes, edges, startNodeId, endNodeId)) {
       throw new BadRequestException(
         `End node ${endNodeId} is not reachable from start node ${startNodeId}`,
       );

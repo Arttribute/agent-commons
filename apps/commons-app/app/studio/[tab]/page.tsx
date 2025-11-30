@@ -6,6 +6,8 @@ import { useEffect, useMemo, useState } from "react";
 import AppBar from "@/components/layout/app-bar";
 import AgentsShowcase from "@/components/agents/AgentsShowcase";
 import { ToolsManagementView } from "@/components/tools/management/tools-management-view";
+import { WorkflowsListView } from "@/components/workflows/workflows-list-view";
+import { CreateWorkflowDialog } from "@/components/workflows/create-workflow-dialog";
 import { Loader2 } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { supabase } from "@/lib/supabase";
@@ -33,6 +35,7 @@ const StudioPage: NextPage = () => {
   const { walletAddress } = authState;
   const [agents, setAgents] = useState<any[]>([]);
   const [loadingAgents, setLoadingAgents] = useState(true);
+  const [showCreateWorkflowDialog, setShowCreateWorkflowDialog] = useState(false);
   const activeTab = (tab as string) || "agents";
 
   const userAddress = walletAddress?.toLowerCase();
@@ -85,8 +88,10 @@ const StudioPage: NextPage = () => {
         return (
           <div className="p-4">
             <h2 className="text-xl font-semibold">Workflows</h2>
-            <p className="text-gray-500 text-sm mb-2">Manage your workflows</p>
-            <div className="text-sm text-muted-foreground">Coming soon.</div>
+            <p className="text-gray-500 text-sm mb-2">
+              Create and manage visual workflows using your tools
+            </p>
+            <WorkflowsListView userAddress={userAddress || ""} />
           </div>
         );
       case "agents":
@@ -116,12 +121,20 @@ const StudioPage: NextPage = () => {
       case "tasks":
         return { href: "/tasks/create", label: "Create Task" };
       case "workflows":
-        return { href: "/workflows/create", label: "Create Workflow" };
+        return { href: null, label: "Create Workflow" };
       case "agents":
       default:
         return { href: "/agents/create", label: "Create Agent" };
     }
   }, [activeTab]);
+
+  const handleCreateClick = () => {
+    if (activeTab === "workflows") {
+      setShowCreateWorkflowDialog(true);
+    } else if (createRoute.href) {
+      router.push(createRoute.href);
+    }
+  };
 
   return (
     <div>
@@ -156,7 +169,7 @@ const StudioPage: NextPage = () => {
                 size="sm"
                 variant="outline"
                 className="border border-gray-800 font-semibold px-6"
-                onClick={() => router.push(createRoute.href)}
+                onClick={handleCreateClick}
               >
                 {createRoute.label}
               </Button>
@@ -168,6 +181,13 @@ const StudioPage: NextPage = () => {
 
         {/* Pattern in the background (for styling, optional) */}
       </div>
+
+      {/* Create Workflow Dialog */}
+      <CreateWorkflowDialog
+        open={showCreateWorkflowDialog}
+        onClose={() => setShowCreateWorkflowDialog(false)}
+        userAddress={userAddress || ""}
+      />
     </div>
   );
 };

@@ -40,6 +40,16 @@ export class ToolController {
   }
 
   /**
+   * GET /v1/tools/static
+   * Retrieve static/common tools available to all agents
+   */
+  @Get('static')
+  async getStaticTools() {
+    const tools = this.toolService.getStaticTools();
+    return { data: tools };
+  }
+
+  /**
    * GET /v1/tools
    * Retrieve all tools (with optional owner filter)
    */

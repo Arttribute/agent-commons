@@ -156,10 +156,11 @@ export class WorkflowController {
     @Param('id') workflowId: string,
     @Body()
     body: {
-      agentId: string;
+      agentId?: string;
       sessionId?: string;
       taskId?: string;
       inputData?: Record<string, any>;
+      inputs?: Record<string, any>; // Accept both inputData and inputs
       userId?: string;
     },
   ) {
@@ -168,14 +169,22 @@ export class WorkflowController {
       agentId: body.agentId,
       sessionId: body.sessionId,
       taskId: body.taskId,
-      inputData: body.inputData || {},
+      inputData: body.inputData || body.inputs || {},
       userId: body.userId,
     });
 
+    // Fetch and return the execution details
+    const execution = await this.workflowExecutor.getExecutionStatus(executionId);
+
     return {
-      executionId,
-      status: 'started',
-      message: 'Workflow execution started',
+      executionId: execution.executionId,
+      workflowId: execution.workflowId,
+      status: execution.status,
+      startedAt: execution.startedAt,
+      completedAt: execution.completedAt,
+      result: execution.outputData,
+      error: execution.errorMessage,
+      stepResults: execution.nodeResults,
     };
   }
 
@@ -188,7 +197,18 @@ export class WorkflowController {
     @Param('id') workflowId: string,
     @Param('executionId') executionId: string,
   ) {
-    return this.workflowExecutor.getExecutionStatus(executionId);
+    const execution = await this.workflowExecutor.getExecutionStatus(executionId);
+
+    return {
+      executionId: execution.executionId,
+      workflowId: execution.workflowId,
+      status: execution.status,
+      startedAt: execution.startedAt,
+      completedAt: execution.completedAt,
+      result: execution.outputData,
+      error: execution.errorMessage,
+      stepResults: execution.nodeResults,
+    };
   }
 
   /**

@@ -56,4 +56,6 @@ import { SpaceModule } from '../space/space.module';
     WorkflowExecutorService,
   ],
 })
-export class ToolModule {}
+export class ToolModule {
+  // Static tools are kept in memory only, not synced to database
+}
