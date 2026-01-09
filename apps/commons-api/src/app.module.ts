@@ -13,6 +13,8 @@ import { EncryptionModule } from './modules/encryption';
 import { EmbeddingModule } from './embedding/embedding.module';
 import { LiaisonModule } from './liaison/liaison.module';
 import { SpaceModule } from './space/space.module';
+import { OAuthModule } from './oauth/oauth.module';
+import { McpModule } from './mcp/mcp.module';
 
 @Module({
   imports: [
@@ -30,6 +32,8 @@ import { SpaceModule } from './space/space.module';
     ResourceModule,
     LiaisonModule,
     SpaceModule,
+    OAuthModule,
+    McpModule,
   ],
 
   controllers: [AppController],

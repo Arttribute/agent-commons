@@ -18,6 +18,7 @@ import { TaskModule } from '../task';
 import { AttributionModule } from '../attribution';
 import { PinataModule } from '~/pinata/pinata.module';
 import { SpaceModule } from '../space/space.module';
+import { McpModule } from '../mcp/mcp.module';
 
 @Module({
   imports: [
@@ -28,6 +29,7 @@ import { SpaceModule } from '../space/space.module';
     forwardRef(() => GoalModule),
     forwardRef(() => TaskModule),
     forwardRef(() => SpaceModule),
+    McpModule,
   ],
   controllers: [
     ToolController,

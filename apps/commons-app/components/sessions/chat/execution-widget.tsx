@@ -23,12 +23,17 @@ import SpacesView from "@/components/spaces/spaces-view";
 
 interface Task {
   taskId: string;
-  goalId: string;
   title: string;
   description: string;
-  status: "pending" | "in_progress" | "completed" | "failed";
+  status: "pending" | "running" | "completed" | "failed" | "cancelled";
   progress: number;
   priority: number;
+  agentId: string;
+  sessionId: string;
+  executionMode?: "single" | "workflow" | "sequential";
+  isRecurring?: boolean;
+  tools?: string[];
+  toolConstraintType?: "hard" | "soft" | "none";
   result?: string;
   error?: string;
   createdAt: string;
@@ -99,7 +104,7 @@ export default function ExecutionWidget({
   // Calculate stats for all tasks
   const totalTasks = tasks.length;
   const completedTasks = tasks.filter((task) => task.status === "completed").length;
-  const inProgressTasks = tasks.filter((task) => task.status === "in_progress").length;
+  const inProgressTasks = tasks.filter((task) => task.status === "running").length;
   const pendingTasks = tasks.filter((task) => task.status === "pending").length;
   const failedTasks = tasks.filter((task) => task.status === "failed").length;
 

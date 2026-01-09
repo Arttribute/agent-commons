@@ -107,17 +107,45 @@ export class WorkflowExecutorService {
       `Started workflow execution ${execution.executionId} for workflow ${workflowId}`,
     );
 
-    // Execute in background (don't await)
-    this.executeWorkflowNodes(
+    // Get timeout from workflow definition (default: 5 minutes)
+    const timeoutMs = workflow.timeoutMs || 300000;
+
+    // Execute in background with timeout (don't await)
+    const executionPromise = this.executeWorkflowNodes(
       execution.executionId,
       workflow.definition,
       agentId,
       userId,
       inputData || {},
-    ).catch((error) => {
+    );
+
+    const timeoutPromise = new Promise<never>((_, reject) => {
+      setTimeout(() => {
+        reject(new Error(`Workflow execution timeout after ${timeoutMs}ms`));
+      }, timeoutMs);
+    });
+
+    // Race execution against timeout
+    Promise.race([executionPromise, timeoutPromise]).catch(async (error) => {
       this.logger.error(
         `Workflow execution ${execution.executionId} failed: ${error.message}`,
       );
+
+      // If timeout, mark execution as failed
+      if (error.message.includes('timeout')) {
+        try {
+          await this.db
+            .update(schema.workflowExecution)
+            .set({
+              status: 'failed',
+              errorMessage: error.message,
+              completedAt: new Date(),
+            })
+            .where(eq(schema.workflowExecution.executionId, execution.executionId));
+        } catch (updateError) {
+          this.logger.error('Failed to update timeout status:', updateError);
+        }
+      }
     });
 
     return execution.executionId;

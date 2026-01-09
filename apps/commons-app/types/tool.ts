@@ -13,6 +13,15 @@ export interface Tool {
   tags?: string[];
   rating?: number;
   version?: string;
+  category?: string;
+  icon?: string;
+  executionCount?: number;
+  lastExecutedAt?: string;
+  inputSchema?: any;
+  outputSchema?: any;
+  rateLimitPerMinute?: number;
+  rateLimitPerHour?: number;
+  isDeprecated?: boolean;
   createdAt?: string;
   updatedAt?: string;
 }
@@ -26,6 +35,13 @@ export interface ToolApiSpec {
   bodyTemplate?: any;
   authType?: 'none' | 'bearer' | 'api-key' | 'basic' | 'oauth2';
   authKeyName?: string;
+
+  // OAuth 2.0 configuration
+  oauthProviderKey?: string;      // 'google_workspace', 'github', etc.
+  oauthScopes?: string[];         // Required scopes for this tool
+  oauthTokenLocation?: 'header' | 'query' | 'body';  // Default: 'header'
+  oauthTokenKey?: string;         // Default: 'Authorization'
+  oauthTokenPrefix?: string;      // Default: 'Bearer '
 }
 
 export interface ToolKey {

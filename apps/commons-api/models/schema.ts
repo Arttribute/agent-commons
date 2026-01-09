@@ -213,6 +213,13 @@ export const task = pgTable('task', {
   // Task-specific tools (optional - overrides agent's default tools)
   tools: jsonb('tools').$type<string[]>(), // Tool names/IDs to use
 
+  // Tool constraint configuration
+  toolConstraintType: text('tool_constraint_type').default('none').notNull(), // 'hard' | 'soft' | 'none'
+  toolInstructions: text('tool_instructions'), // Instructions for agent on how to use tools (e.g., "If you encounter X, use tool Y")
+
+  // Recurring task session management
+  recurringSessionMode: text('recurring_session_mode').default('same').notNull(), // 'same' | 'new' - whether recurring tasks run in same or new session
+
   // Context and metadata
   context: jsonb('context').$type<Record<string, any>>(), // Additional context for execution
   metadata: jsonb('metadata').$type<Record<string, any>>(),
@@ -668,6 +675,9 @@ export const workflow = pgTable('workflow', {
     eventType?: string; // For event-based triggers
   }>(),
 
+  // Execution configuration
+  timeoutMs: integer('timeout_ms').default(300000), // 5 minutes default timeout
+
   // Usage tracking
   executionCount: integer('execution_count').default(0),
   successCount: integer('success_count').default(0),
@@ -1038,3 +1048,302 @@ export const workflowExecutionRelations = relations(
     }),
   }),
 );
+
+/* ─────────────────────────  OAUTH PROVIDER  ───────────────────────── */
+
+/**
+ * OAuth Provider Configuration
+ * Stores OAuth 2.0 provider settings (Google, GitHub, Slack, etc.)
+ */
+export const oauthProvider = pgTable(
+  'oauth_provider',
+  {
+    providerId: uuid('provider_id')
+      .default(sql`uuid_generate_v4()`)
+      .primaryKey(),
+
+    // Identity
+    providerKey: text('provider_key').notNull().unique(),
+    displayName: text('display_name').notNull(),
+    description: text('description'),
+    logoUrl: text('logo_url'),
+
+    // OAuth Configuration URLs
+    authUrl: text('auth_url').notNull(),
+    tokenUrl: text('token_url').notNull(),
+    revokeUrl: text('revoke_url'),
+    userInfoUrl: text('user_info_url'),
+
+    // Encrypted Client Credentials
+    clientId: text('client_id').notNull(),
+    encryptedClientSecret: text('encrypted_client_secret').notNull(),
+    secretIv: text('secret_iv').notNull(),
+    secretTag: text('secret_tag').notNull(),
+
+    // Configuration
+    scopes: jsonb('scopes')
+      .notNull()
+      .default(sql`'{}'`),
+    authorizationParams: jsonb('authorization_params').default(sql`'{}'`),
+    tokenParams: jsonb('token_params').default(sql`'{}'`),
+
+    // Metadata
+    isActive: pgBoolean('is_active').default(true),
+    isPlatform: pgBoolean('is_platform').default(true),
+    ownerId: text('owner_id'),
+    ownerType: text('owner_type'),
+
+    // Timestamps
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .default(sql`timezone('utc', now())`)
+      .notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true })
+      .default(sql`timezone('utc', now())`)
+      .notNull(),
+  },
+);
+
+/* ─────────────────────────  OAUTH CONNECTION  ───────────────────────── */
+
+/**
+ * OAuth Connection
+ * Stores user OAuth connections with encrypted tokens
+ */
+export const oauthConnection = pgTable(
+  'oauth_connection',
+  {
+    connectionId: uuid('connection_id')
+      .default(sql`uuid_generate_v4()`)
+      .primaryKey(),
+
+    // Ownership
+    ownerId: text('owner_id').notNull(),
+    ownerType: text('owner_type').notNull(),
+
+    // Provider Reference
+    providerId: uuid('provider_id')
+      .notNull()
+      .references(() => oauthProvider.providerId, { onDelete: 'cascade' }),
+
+    // Encrypted Access Token
+    encryptedAccessToken: text('encrypted_access_token').notNull(),
+    accessTokenIv: text('access_token_iv').notNull(),
+    accessTokenTag: text('access_token_tag').notNull(),
+    accessTokenExpiresAt: timestamp('access_token_expires_at', {
+      withTimezone: true,
+    }),
+
+    // Encrypted Refresh Token
+    encryptedRefreshToken: text('encrypted_refresh_token').notNull(),
+    refreshTokenIv: text('refresh_token_iv').notNull(),
+    refreshTokenTag: text('refresh_token_tag').notNull(),
+
+    // Optional ID Token
+    encryptedIdToken: text('encrypted_id_token'),
+    idTokenIv: text('id_token_iv'),
+    idTokenTag: text('id_token_tag'),
+
+    // Scopes
+    scopes: text('scopes')
+      .array()
+      .notNull()
+      .default(sql`ARRAY[]::text[]`),
+
+    // Provider User Info
+    providerUserId: text('provider_user_id'),
+    providerUserEmail: text('provider_user_email'),
+    providerUserName: text('provider_user_name'),
+    providerMetadata: jsonb('provider_metadata').default(sql`'{}'`),
+
+    // Status & Tracking
+    status: text('status').default('active'),
+    lastRefreshedAt: timestamp('last_refreshed_at', { withTimezone: true }),
+    lastUsedAt: timestamp('last_used_at', { withTimezone: true }),
+    usageCount: integer('usage_count').default(0),
+    lastError: text('last_error'),
+    lastErrorAt: timestamp('last_error_at', { withTimezone: true }),
+
+    // User Labels
+    displayName: text('display_name'),
+    description: text('description'),
+
+    // Timestamps
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .default(sql`timezone('utc', now())`)
+      .notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true })
+      .default(sql`timezone('utc', now())`)
+      .notNull(),
+  },
+);
+
+/* ─────────────────────────  OAUTH STATE  ───────────────────────── */
+
+/**
+ * OAuth State
+ * Temporary CSRF protection tokens (short-lived)
+ */
+export const oauthState = pgTable(
+  'oauth_state',
+  {
+    stateId: text('state_id').primaryKey(),
+
+    // Context
+    ownerId: text('owner_id').notNull(),
+    providerId: uuid('provider_id')
+      .notNull()
+      .references(() => oauthProvider.providerId, { onDelete: 'cascade' }),
+
+    // PKCE
+    codeVerifier: text('code_verifier'),
+
+    // Redirect Context
+    redirectUri: text('redirect_uri').notNull(),
+    requestedScopes: text('requested_scopes')
+      .array()
+      .notNull()
+      .default(sql`ARRAY[]::text[]`),
+
+    // Security
+    userAgent: text('user_agent'),
+    ipAddress: text('ip_address'),
+
+    // Expiry
+    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .default(sql`timezone('utc', now())`)
+      .notNull(),
+  },
+);
+
+/* ─────────────────────────  OAUTH RELATIONS  ───────────────────────── */
+
+export const oauthProviderRelations = relations(oauthProvider, ({ many }) => ({
+  connections: many(oauthConnection),
+  states: many(oauthState),
+}));
+
+export const oauthConnectionRelations = relations(
+  oauthConnection,
+  ({ one }) => ({
+    provider: one(oauthProvider, {
+      fields: [oauthConnection.providerId],
+      references: [oauthProvider.providerId],
+    }),
+  }),
+);
+
+export const oauthStateRelations = relations(oauthState, ({ one }) => ({
+  provider: one(oauthProvider, {
+    fields: [oauthState.providerId],
+    references: [oauthProvider.providerId],
+  }),
+}));
+
+/* ─────────────────────────  MCP SERVER  ───────────────────────── */
+
+/**
+ * MCP Server Configuration
+ * Stores Model Context Protocol server connections for external tool integration
+ */
+export const mcpServer = pgTable('mcp_server', {
+  serverId: uuid('server_id')
+    .default(sql`uuid_generate_v4()`)
+    .primaryKey(),
+
+  // Identity
+  name: text('name').notNull(),
+  description: text('description'),
+
+  // Ownership
+  ownerId: text('owner_id').notNull(),
+  ownerType: text('owner_type').notNull(), // 'user' | 'agent'
+
+  // Connection configuration
+  connectionType: text('connection_type').notNull(), // 'stdio' | 'sse'
+  connectionConfig: jsonb('connection_config').notNull().$type<{
+    command?: string; // For stdio: executable command
+    args?: string[]; // For stdio: command arguments
+    env?: Record<string, string>; // For stdio: environment variables
+    url?: string; // For SSE: server URL
+  }>(),
+
+  // Connection status
+  status: text('status').default('disconnected'), // 'connected' | 'disconnected' | 'error'
+  lastError: text('last_error'),
+  lastConnectedAt: timestamp('last_connected_at', { withTimezone: true }),
+
+  // Discovery cache
+  capabilities: jsonb('capabilities').$type<{
+    tools?: boolean;
+    resources?: boolean;
+    prompts?: boolean;
+  }>(),
+  toolsDiscovered: jsonb('tools_discovered').$type<any[]>(),
+  lastSyncedAt: timestamp('last_synced_at', { withTimezone: true }),
+
+  // Metadata
+  isPublic: pgBoolean('is_public').default(false),
+  tags: jsonb('tags').$type<string[]>(),
+
+  createdAt: timestamp('created_at', { withTimezone: true })
+    .default(sql`timezone('utc', now())`)
+    .notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true })
+    .default(sql`timezone('utc', now())`)
+    .notNull(),
+});
+
+/* ─────────────────────────  MCP TOOL  ───────────────────────── */
+
+/**
+ * MCP Tool (denormalized for performance)
+ * Cached tools discovered from MCP servers
+ */
+export const mcpTool = pgTable('mcp_tool', {
+  mcpToolId: uuid('mcp_tool_id')
+    .default(sql`uuid_generate_v4()`)
+    .primaryKey(),
+
+  // Server reference
+  serverId: uuid('server_id')
+    .notNull()
+    .references(() => mcpServer.serverId, { onDelete: 'cascade' }),
+
+  // Tool identity
+  toolName: text('tool_name').notNull(),
+  displayName: text('display_name'),
+  description: text('description'),
+
+  // Schema (MCP format, compatible with OpenAI ChatCompletionTool)
+  inputSchema: jsonb('input_schema').notNull().$type<{
+    type: 'object';
+    properties?: Record<string, any>;
+    required?: string[];
+  }>(),
+
+  // Metadata
+  isActive: pgBoolean('is_active').default(true),
+  lastUsedAt: timestamp('last_used_at', { withTimezone: true }),
+  usageCount: integer('usage_count').default(0),
+
+  createdAt: timestamp('created_at', { withTimezone: true })
+    .default(sql`timezone('utc', now())`)
+    .notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true })
+    .default(sql`timezone('utc', now())`)
+    .notNull(),
+});
+
+/* ─────────────────────────  MCP RELATIONS  ───────────────────────── */
+
+export const mcpServerRelations = relations(mcpServer, ({ many }) => ({
+  tools: many(mcpTool),
+}));
+
+export const mcpToolRelations = relations(mcpTool, ({ one }) => ({
+  server: one(mcpServer, {
+    fields: [mcpTool.serverId],
+    references: [mcpServer.serverId],
+  }),
+}));

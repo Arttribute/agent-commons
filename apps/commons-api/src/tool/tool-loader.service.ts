@@ -3,6 +3,7 @@ import { eq } from 'drizzle-orm';
 import { DatabaseService } from '../modules/database';
 import { ToolAccessService } from './tool-access.service';
 import { ToolKeyService } from './tool-key.service';
+import { McpToolDiscoveryService } from '../mcp/mcp-tool-discovery.service';
 import type { ChatCompletionTool } from 'openai/resources';
 import * as schema from '../../models/schema';
 
@@ -38,6 +39,7 @@ export class ToolLoaderService {
     private readonly db: DatabaseService,
     private readonly toolAccess: ToolAccessService,
     private readonly toolKey: ToolKeyService,
+    private readonly mcpToolDiscovery: McpToolDiscoveryService,
   ) {}
 
   /**
@@ -92,7 +94,13 @@ export class ToolLoaderService {
 
     this.logger.debug(`Loaded ${agentSpecificDefs.length} agent-specific tools`);
 
-    // 4. Add space-specific tools if in a space
+    // 4. Load MCP tools (from MCP servers)
+    const mcpDefs = await this.loadMcpTools(agentId, userId, endpoint);
+    toolDefs.push(...mcpDefs);
+
+    this.logger.debug(`Loaded ${mcpDefs.length} MCP tools`);
+
+    // 5. Add space-specific tools if in a space
     if (spaceId && spaceToolDefs?.length) {
       const spaceDefs = spaceToolDefs.map((tool) => ({
         ...tool,
@@ -104,7 +112,7 @@ export class ToolLoaderService {
       this.logger.debug(`Loaded ${spaceDefs.length} space tools`);
     }
 
-    // 5. Resolve keys and mark tools that require/have keys
+    // 6. Resolve keys and mark tools that require/have keys
     await this.resolveToolKeys(toolDefs, agentId, userId);
 
     this.logger.log(
@@ -112,6 +120,46 @@ export class ToolLoaderService {
     );
 
     return toolDefs;
+  }
+
+  /**
+   * Load MCP tools from connected MCP servers
+   *
+   * @param agentId - The agent ID
+   * @param userId - The user ID (for user-owned servers)
+   * @param endpoint - Tool execution endpoint
+   * @returns List of MCP tools
+   */
+  private async loadMcpTools(
+    agentId: string,
+    userId: string | undefined,
+    endpoint: string,
+  ): Promise<ToolDefinition[]> {
+    try {
+      // Get MCP tools for the owner (user or agent)
+      const mcpTools = await this.mcpToolDiscovery.getToolsByOwner({
+        ownerId: userId || agentId,
+        ownerType: userId ? 'user' : 'agent',
+      });
+
+      // Convert MCP tools to ToolDefinition format
+      return mcpTools.map((mcpTool) => ({
+        type: 'function' as const,
+        function: {
+          name: mcpTool.toolName,
+          description: mcpTool.description || '',
+          parameters: mcpTool.inputSchema,
+        },
+        endpoint,
+        toolId: mcpTool.mcpToolId,
+        category: 'mcp',
+        requiresKey: false, // MCP tools don't use our key system
+        hasKey: true, // MCP servers handle their own auth
+      }));
+    } catch (error: any) {
+      this.logger.error(`Failed to load MCP tools: ${error.message}`);
+      return [];
+    }
   }
 
   /**

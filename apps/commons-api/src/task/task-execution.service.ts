@@ -7,6 +7,7 @@ import {
 import { eq, and, or, isNull, lte } from 'drizzle-orm';
 import { DatabaseService } from '../modules/database';
 import { WorkflowService } from '../tool/workflow.service';
+import { SessionService } from '../session/session.service';
 import * as schema from '../../models/schema';
 import { CronJob } from 'cron';
 
@@ -40,6 +41,7 @@ export class TaskExecutionService {
   constructor(
     private readonly db: DatabaseService,
     private readonly workflowService: WorkflowService,
+    private readonly sessionService: SessionService,
   ) {
     // Initialize: Load and schedule all active cron tasks
     this.initializeScheduledTasks();
@@ -86,6 +88,9 @@ export class TaskExecutionService {
     isRecurring?: boolean;
     dependsOn?: string[];
     tools?: string[];
+    toolConstraintType?: 'hard' | 'soft' | 'none';
+    toolInstructions?: string;
+    recurringSessionMode?: 'same' | 'new';
     context?: Record<string, any>;
     priority?: number;
     createdBy: string;
@@ -134,6 +139,9 @@ export class TaskExecutionService {
         nextRunAt,
         dependsOn: params.dependsOn,
         tools: params.tools,
+        toolConstraintType: params.toolConstraintType || 'none',
+        toolInstructions: params.toolInstructions,
+        recurringSessionMode: params.recurringSessionMode || 'same',
         context: params.context,
         priority: params.priority || 0,
         createdBy: params.createdBy,
@@ -319,13 +327,34 @@ export class TaskExecutionService {
       // Update next run time for recurring tasks
       if (task.isRecurring && task.cronExpression) {
         const nextRun = this.getNextCronTime(task.cronExpression);
+        let updateData: any = {
+          lastRunAt: new Date(),
+          nextRunAt: nextRun,
+          status: 'pending', // Reset to pending for next run
+        };
+
+        // Handle recurring session mode
+        if (task.recurringSessionMode === 'new') {
+          // Create a new session for the next run
+          const newSession = await this.sessionService.createSession({
+            value: {
+              agentId: task.agentId,
+              initiator: task.createdBy,
+              title: `Recurring: ${task.title}`,
+              model: { name: 'gpt-4o' } as any,
+            },
+          });
+
+          updateData.sessionId = newSession.sessionId;
+          this.logger.log(
+            `Created new session ${newSession.sessionId} for recurring task ${taskId}`,
+          );
+        }
+        // else: recurringSessionMode === 'same', keep existing sessionId
+
         await this.db
           .update(schema.task)
-          .set({
-            lastRunAt: new Date(),
-            nextRunAt: nextRun,
-            status: 'pending', // Reset to pending for next run
-          })
+          .set(updateData)
           .where(eq(schema.task.taskId, taskId));
       }
 
@@ -494,6 +523,34 @@ export class TaskExecutionService {
   async listSessionTasks(sessionId: string) {
     return this.db.query.task.findMany({
       where: (t: any) => eq(t.sessionId, sessionId),
+      orderBy: (t: any, { desc }: any) => [desc(t.createdAt)],
+    });
+  }
+
+  /**
+   * List all tasks for an agent
+   *
+   * @param agentId - The agent ID
+   * @returns List of tasks
+   */
+  async listAgentTasks(agentId: string) {
+    return this.db.query.task.findMany({
+      where: (t: any) => eq(t.agentId, agentId),
+      orderBy: (t: any, { desc }: any) => [desc(t.createdAt)],
+    });
+  }
+
+  /**
+   * List tasks by owner (user or agent)
+   *
+   * @param ownerId - The owner ID (user wallet or agent ID)
+   * @param ownerType - 'user' or 'agent'
+   * @returns List of tasks
+   */
+  async listTasksByOwner(ownerId: string, ownerType: 'user' | 'agent') {
+    return this.db.query.task.findMany({
+      where: (t: any) =>
+        and(eq(t.createdBy, ownerId), eq(t.createdByType, ownerType)),
       orderBy: (t: any, { desc }: any) => [desc(t.createdAt)],
     });
   }

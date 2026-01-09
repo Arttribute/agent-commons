@@ -349,27 +349,30 @@ export class AgentService implements OnModuleInit {
           Note that you can interact and engage with other agents using the interactWithAgent tool. This tool allows you to interact with other agents one at a time. Once you initiate a conversation with another agent, you can continue the conversation by calling the interactWithAgent tool again with the sessionId provided in the result of running the interactWithAgent tool. This will allow you to continue the conversation with the other agent.${childSessionsInfo}
           It is also possible to interact with a group of agents in spaces. You can use the createSpace tool to create a new space and can add other agents to the space using addAgentToSpace tool. Once in a space, you can send meassages to the space using the sendMessageToSpace tool. To get the context of the interactions on space, you can use the getSpaceMessages tool before sending messagesto the space. You can also join spaces created by other entities using the joinSpace tool.
           To unsubscribe from a space, you can use the unsubscribeFromSpace tool. To subscribe to a space, you can use the subscribeToSpace tool.
-          If your response to the agent/agents/users involves multiple tasks let them know by sending a message before creating the goals and tasks.
+          If your response involves multiple tasks, let them know by sending a message before creating the tasks.
           If you have a session id, provide it as an arg when sending a message to a space.
           When getting live audio streams from a space, you can respond with voice using the speakInSpace tool which allows you to speak in the space.
-          While monitoring  webcast streams you can interact with the webcast stream using the given space tools for that specific stream.
+          While monitoring webcast streams you can interact with the webcast stream using the given space tools for that specific stream.
 
 
           STRICTLY ABIDE BY THE FOLLOWING:
-          • If a request is simple and does not require complex planning give an immediate response.
-          • If a request is complex and requires multiple steps, call createGoal which creates a goal and then get the goal id and use createTask to create tasks for the goal with the necessary details.
-          • In the process of creating a goal, think very deeply and critically about it. Break it down and detail every single paart of it. Set a SMART(Specific, Measureble, Achievable, Relevant and Time-bound) goal with a clear description. Consider all factors and create a well thought out plan of action and include it in the goal description. This should now guide the tasks to be created. Include the tasks breakdown in the goal description as well.The tasks to be created should match the tasks breakdown in the goal description. If no exact timelines are provided for the goal set the goal deadline to the current time.
-          • Similarly, when creating tasks, think very deeply and critically about it. Set a SMART(Specific, Measureble, Achievable, Relevant and Time-bound) task with a clear description. Consider all factors and create a well thought out plan of action and include it in the task description. Remember some tasks may be dependent on each other. Think about what tools might be needed to accomplish the task and include them in the task description and task tools.
-          • For every task specify the context of the task. The context should contain all the necessary information that are either needed or would be beneficial for the task.
-          • Before starting the execution make sure that the goal and all its tasks are fully created .
-          • STRCTLY DO NOT start execution of a task or update any task using updateTaskProgress until the user specifically asks you to do so.
-          ## ONLY DO THESE ONCE THE GOAL AND TASKS ARE FULLY CREATED AND THE USER ASKS YOU TO DO SO:
-          • As you execute tasks, update tasks progress accordingly with all the necessary information, call the updateTaskProgress  with the necessary details.Provide the actual result content of the task and the summary of the task.
-          • If tasks require the use of tools, include the needed tools in the task and use the tools to execute the tasks.
-          • For each task, perform the task and produce the content expected for the task given by the expectedOutputType in the task context. The result content should be the actual conent produced. For example if the task was to generate code, the result content should contain the code generated. If the task was to fetch data, the result content should contain the data fetched. If the task was to generate a report, the result content should contain the report generated. If the task was to generate an image, the result content should contain the image generated. If the task was to generate a video, the result content should contain the video generated. If the task was to generate a text, the result content should contain the text generated. If the task was to generate a pdf, the result content should contain the pdf generated.
-          • Unless given specific completion deadlines and schedules, all goals and tasks should be completed immediately.
-          • In case of any new information that is relevant to the task, update the task and task context with the new information. 
-          • If you are unable to complete a task, call the updateTaskProgress with the necessary details and provide a summary of the failure.
+          • If a request is simple and does not require complex planning, give an immediate response.
+          • If a request is complex and requires multiple steps, use createTask to create tasks with clear descriptions and dependencies.
+          • When creating tasks, think very deeply and critically. Set a SMART (Specific, Measurable, Achievable, Relevant, and Time-bound) task with a clear description. Consider all factors and create a well thought-out plan of action in the task description.
+          • For tasks with dependencies, use the dependsOn parameter to specify which tasks must complete first.
+          • For every task, specify the context which should contain all necessary information that are either needed or beneficial for the task.
+          • Specify the tools needed for each task in the tools parameter. If specific tools are required, set toolConstraintType to 'hard' to restrict the task to only those tools. Use 'soft' for recommendations.
+          • You can add toolInstructions to provide guidance like "If you encounter X, use tool Y" to help task execution.
+          • For recurring tasks, use the isRecurring and cronExpression parameters. Set recurringSessionMode to 'same' to keep tasks in the current session, or 'new' to create a new session for each recurrence.
+          • For workflow-based tasks, set executionMode to 'workflow' and provide the workflowId and workflowInputs.
+          • STRICTLY DO NOT start execution of a task or update any task using updateTaskProgress until the user specifically asks you to do so.
+          ## ONLY DO THESE ONCE THE TASKS ARE FULLY CREATED AND THE USER ASKS YOU TO DO SO:
+          • As you execute tasks, update task progress accordingly with all the necessary information using updateTaskProgress with the necessary details. Provide the actual result content of the task and the summary.
+          • If tasks require the use of tools, use the specified tools to execute the tasks. Follow any toolInstructions provided.
+          • For each task, perform the task and produce the content expected. The result content should be the actual content produced (code, data, reports, images, videos, text, PDFs, etc.).
+          • Unless given specific completion deadlines and schedules, all tasks should be completed immediately.
+          • If you encounter new information relevant to a task, update the task and task context with the new information.
+          • If you are unable to complete a task, call updateTaskProgress with the necessary details and provide a summary of the failure.
         `,
       },
     ];
@@ -443,33 +446,40 @@ export class AgentService implements OnModuleInit {
   /* ─────────────────────────  CRON TRIGGER  ───────────────────────── */
   async triggerAgent(props: { agentId: string; sessionId?: string }) {
     console.log('Triggering agent', props.agentId);
-    //if autonomous mode is not enabled then do not trigger the agent
+    // If autonomous mode is not enabled then do not trigger the agent
     const agent = await this.getAgent({ agentId: props.agentId });
     if (!agent.autonomyEnabled) {
       console.log('Agent is not autonomous, skipping trigger');
       return;
     }
-    //get next executable goal
-    const nextGoal = await this.goals.getNextExecutableGoal(props.agentId);
-    if (!nextGoal) {
-      console.log('No executable goal found, pausing agent');
-      //actually pause the agent
+
+    // Get all pending tasks for this agent
+    const pendingTasks = await this.taskExecution.listAgentTasks(props.agentId);
+    const tasksToExecute = pendingTasks.filter((t) => t.status === 'pending');
+
+    if (!tasksToExecute || tasksToExecute.length === 0) {
+      console.log('No pending tasks found, pausing agent');
       return;
     }
-    //get session from goal
-    const goalsessionId = nextGoal.sessionId;
-    if (goalsessionId) {
-      console.log('Goal session:', goalsessionId);
+
+    // Get the session from the highest priority pending task
+    const nextTask = tasksToExecute.sort(
+      (a, b) => (b.priority || 0) - (a.priority || 0),
+    )[0];
+    const taskSessionId = nextTask.sessionId;
+
+    if (taskSessionId) {
+      console.log('Task session:', taskSessionId, 'Task:', nextTask.title);
       return this.runAgent({
         agentId: props.agentId,
         messages: [
           {
             role: 'user',
             content: `⫷⫷AUTOMATED_USER_TRIGGER⫸⫸:
-              This is an automated trigger.Do not perform any action or update any task, unless the user specifically asks you to do so.`,
+              This is an automated trigger. Execute pending tasks as needed.`,
           },
         ],
-        sessionId: goalsessionId, //This will give the agent a rough idea on which task to execute. i.e - it will execute the tasks with the same sessionId
+        sessionId: taskSessionId,
         initiator: agent.agentId,
       });
     }
@@ -806,27 +816,30 @@ export class AgentService implements OnModuleInit {
                 Note that you can interact and engage with other agents using the interactWithAgent tool. This tool allows you to interact with other agents one at a time. Once you initiate a conversation with another agent, you can continue the conversation by calling the interactWithAgent tool again with the sessionId provided in the result of running the interactWithAgent tool. This will allow you to continue the conversation with the other agent.${childSessionsInfo}
                 It is also possible to interact with a group of agents in spaces. You can use the createSpace tool to create a new space and can add other agents to the space using addAgentToSpace tool. Once in a space, you can send meassages to the space using the sendMessageToSpace tool. To get the context of the interactions on space, you can use the getSpaceMessages tool before sending messagesto the space. You can also join spaces created by other entities using the joinSpace tool.
                 To unsubscribe from a space, you can use the unsubscribeFromSpace tool. To subscribe to a space, you can use the subscribeToSpace tool.
-                If your response to the agent/agents/users involves multiple tasks let them know by sending a message before creating the goals and tasks.
+                If your response involves multiple tasks, let them know by sending a message before creating the tasks.
                 If you have a session id, provide it as an arg when sending a message to a space.
                 When getting live audio streams from a space, you can respond with voice using the speakInSpace tool which allows you to speak in the space.
-                While monitoring  webcast streams you can interact with the webcast stream using the given space tools for that specific stream.
+                While monitoring webcast streams you can interact with the webcast stream using the given space tools for that specific stream.
 
 
                 STRICTLY ABIDE BY THE FOLLOWING:
-                • If a request is simple and does not require complex planning give an immediate response.
-                • If a request is complex and requires multiple steps, call createGoal which creates a goal and then get the goal id and use createTask to create tasks for the goal with the necessary details.
-                • In the process of creating a goal, think very deeply and critically about it. Break it down and detail every single paart of it. Set a SMART(Specific, Measureble, Achievable, Relevant and Time-bound) goal with a clear description. Consider all factors and create a well thought out plan of action and include it in the goal description. This should now guide the tasks to be created. Include the tasks breakdown in the goal description as well.The tasks to be created should match the tasks breakdown in the goal description. If no exact timelines are provided for the goal set the goal deadline to the current time.
-                • Similarly, when creating tasks, think very deeply and critically about it. Set a SMART(Specific, Measureble, Achievable, Relevant and Time-bound) task with a clear description. Consider all factors and create a well thought out plan of action and include it in the task description. Remember some tasks may be dependent on each other. Think about what tools might be needed to accomplish the task and include them in the task description and task tools.
-                • For every task specify the context of the task. The context should contain all the necessary information that are either needed or would be beneficial for the task.
-                • Before starting the execution make sure that the goal and all its tasks are fully created .
-                • STRCTLY DO NOT start execution of a task or update any task using updateTaskProgress until the user specifically asks you to do so.
-                ## ONLY DO THESE ONCE THE GOAL AND TASKS ARE FULLY CREATED AND THE USER ASKS YOU TO DO SO:
-                • As you execute tasks, update tasks progress accordingly with all the necessary information, call the updateTaskProgress  with the necessary details.Provide the actual result content of the task and the summary of the task.
-                • If tasks require the use of tools, include the needed tools in the task and use the tools to execute the tasks.
-                • For each task, perform the task and produce the content expected for the task given by the expectedOutputType in the task context. The result content should be the actual conent produced. For example if the task was to generate code, the result content should contain the code generated. If the task was to fetch data, the result content should contain the data fetched. If the task was to generate a report, the result content should contain the report generated. If the task was to generate an image, the result content should contain the image generated. If the task was to generate a video, the result content should contain the video generated. If the task was to generate a text, the result content should contain the text generated. If the task was to generate a pdf, the result content should contain the pdf generated.
-                • Unless given specific completion deadlines and schedules, all goals and tasks should be completed immediately.
-                • In case of any new information that is relevant to the task, update the task and task context with the new information.
-                • If you are unable to complete a task, call the updateTaskProgress with the necessary details and provide a summary of the failure.
+                • If a request is simple and does not require complex planning, give an immediate response.
+                • If a request is complex and requires multiple steps, use createTask to create tasks with clear descriptions and dependencies.
+                • When creating tasks, think very deeply and critically. Set a SMART (Specific, Measurable, Achievable, Relevant, and Time-bound) task with a clear description. Consider all factors and create a well thought-out plan of action in the task description.
+                • For tasks with dependencies, use the dependsOn parameter to specify which tasks must complete first.
+                • For every task, specify the context which should contain all necessary information that are either needed or beneficial for the task.
+                • Specify the tools needed for each task in the tools parameter. If specific tools are required, set toolConstraintType to 'hard' to restrict the task to only those tools. Use 'soft' for recommendations.
+                • You can add toolInstructions to provide guidance like "If you encounter X, use tool Y" to help task execution.
+                • For recurring tasks, use the isRecurring and cronExpression parameters. Set recurringSessionMode to 'same' to keep tasks in the current session, or 'new' to create a new session for each recurrence.
+                • For workflow-based tasks, set executionMode to 'workflow' and provide the workflowId and workflowInputs.
+                • STRICTLY DO NOT start execution of a task or update any task using updateTaskProgress until the user specifically asks you to do so.
+                ## ONLY DO THESE ONCE THE TASKS ARE FULLY CREATED AND THE USER ASKS YOU TO DO SO:
+                • As you execute tasks, update task progress accordingly with all the necessary information using updateTaskProgress with the necessary details. Provide the actual result content of the task and the summary.
+                • If tasks require the use of tools, use the specified tools to execute the tasks. Follow any toolInstructions provided.
+                • For each task, perform the task and produce the content expected. The result content should be the actual content produced (code, data, reports, images, videos, text, PDFs, etc.).
+                • Unless given specific completion deadlines and schedules, all tasks should be completed immediately.
+                • If you encounter new information relevant to a task, update the task and task context with the new information.
+                • If you are unable to complete a task, call updateTaskProgress with the necessary details and provide a summary of the failure.
               `,
             } as any);
 
@@ -889,7 +902,7 @@ export class AgentService implements OnModuleInit {
               You can interact with other agents in this space using the sendMessageToSpace tool.
               You can speak up in the space  using voice with the speakInSpace tool. Typically you would use this tool when there is a live audio stream in the space which will be transcribed and sent to you.
 
-              If you create goals and tasks, you need to inform the space members about it by sending a message to the space.
+              If you create tasks, you need to inform the space members about it by sending a message to the space.
               
               If you want to unsubscribe from this space, you can use the unsubscribeFromSpace tool.
 

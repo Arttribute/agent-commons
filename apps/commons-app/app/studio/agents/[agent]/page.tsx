@@ -3,7 +3,7 @@
 import { useEffect, useState, useRef } from "react";
 import { use } from "react";
 import { Button } from "@/components/ui/button";
-import { Loader2, Scroll } from "lucide-react";
+import { Loader2, Scroll, Calendar } from "lucide-react";
 
 // Layout & local components
 import AppBar from "@/components/layout/app-bar";
@@ -16,6 +16,7 @@ import { AgentKnowledgebase } from "@/components/agents/agent-knowledge-base";
 import SessionsList from "@/components/sessions/sessions-list";
 import { PreferedAgentConnections } from "@/components/connections/prefered-agent-connections";
 import { useAgentContext } from "@/context/AgentContext";
+import { CreateTaskDialog } from "@/components/tasks/create-task-dialog";
 // Hooks
 import { EIP1193Provider, useWallets } from "@privy-io/react-auth";
 import { useChainClients } from "@/hooks/useChainClients";
@@ -129,6 +130,9 @@ export default function AgentStudio({
   const [studioSession, setStudioSession] = useState<any>(null);
   const [studioMessages, setStudioMessages] = useState<any[]>([]);
   const [chatLoading, setChatLoading] = useState(false);
+
+  // Task creation dialog
+  const [showCreateTaskDialog, setShowCreateTaskDialog] = useState(false);
 
   // 2) Fetch agent data from your backend
   useEffect(() => {
@@ -381,6 +385,18 @@ export default function AgentStudio({
                     await fetchAgent();
                   }}
                 />
+
+                {/* Create Task Button */}
+                <Button
+                  onClick={() => setShowCreateTaskDialog(true)}
+                  variant="outline"
+                  className="w-full gap-2"
+                  size="sm"
+                >
+                  <Calendar className="h-4 w-4" />
+                  Create Task
+                </Button>
+
                 <AgentFinances />
 
                 <AgentTools
@@ -467,6 +483,18 @@ export default function AgentStudio({
           </div>
         </div>
       </div>
+
+      {/* Create Task Dialog */}
+      <CreateTaskDialog
+        open={showCreateTaskDialog}
+        onClose={() => setShowCreateTaskDialog(false)}
+        userAddress={userAddress}
+        preSelectedAgentId={id}
+        onTaskCreated={() => {
+          // Optionally refresh tasks or show success message
+          console.log("Task created for agent:", id);
+        }}
+      />
     </div>
   );
 }

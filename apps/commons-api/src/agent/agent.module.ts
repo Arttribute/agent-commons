@@ -10,6 +10,8 @@ import { ResourceService } from '~/resource/resource.service';
 import { EmbeddingService } from '~/embedding/embedding.service';
 import { LogModule } from '~/log';
 import { SpaceModule } from '~/space/space.module';
+import { OAuthModule } from '~/oauth/oauth.module';
+import { McpModule } from '~/mcp/mcp.module';
 
 @Module({
   imports: [
@@ -19,6 +21,8 @@ import { SpaceModule } from '~/space/space.module';
     GoalModule,
     TaskModule,
     forwardRef(() => SpaceModule),
+    OAuthModule,
+    McpModule,
   ],
   controllers: [AgentController, AgentToolsController],
   providers: [AgentService, ResourceService, EmbeddingService],

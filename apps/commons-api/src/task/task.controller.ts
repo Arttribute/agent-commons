@@ -20,7 +20,7 @@ export class TaskController {
   ) {}
 
   /**
-   * Create a new task (with workflow support)
+   * Create a new task (with enhanced features and workflow support)
    * POST /v1/tasks
    */
   @Post()
@@ -39,34 +39,54 @@ export class TaskController {
       isRecurring?: boolean;
       dependsOn?: string[];
       tools?: string[];
+      toolConstraintType?: 'hard' | 'soft' | 'none';
+      toolInstructions?: string;
+      recurringSessionMode?: 'same' | 'new';
       context?: Record<string, any>;
       priority?: number;
       createdBy: string;
       createdByType: 'user' | 'agent';
     },
   ) {
-    // If this is a workflow-based task, use TaskExecutionService
-    if (body.executionMode === 'workflow' || body.workflowId) {
-      const task = await this.taskExecution.createTask(body);
-      return { data: task };
-    }
-
-    // Otherwise, use the old TaskService for backward compatibility
-    return { data: await this.tasks.create(body as any) };
+    // Always use TaskExecutionService for new task creation
+    const task = await this.taskExecution.createTask(body);
+    return { data: task };
   }
 
   /**
-   * List tasks by session
+   * List tasks by session, agent, or owner
    * GET /v1/tasks?sessionId=xxx
+   * GET /v1/tasks?agentId=xxx
+   * GET /v1/tasks?ownerId=xxx&ownerType=user
    */
   @Get()
-  async listTasks(@Query('sessionId') sessionId?: string) {
-    if (!sessionId) {
-      throw new BadRequestException('sessionId is required');
+  async listTasks(
+    @Query('sessionId') sessionId?: string,
+    @Query('agentId') agentId?: string,
+    @Query('ownerId') ownerId?: string,
+    @Query('ownerType') ownerType?: 'user' | 'agent',
+  ) {
+    if (sessionId) {
+      const tasks = await this.taskExecution.listSessionTasks(sessionId);
+      return { data: tasks };
     }
 
-    const tasks = await this.taskExecution.listSessionTasks(sessionId);
-    return { data: tasks };
+    if (agentId) {
+      const tasks = await this.taskExecution.listAgentTasks(agentId);
+      return { data: tasks };
+    }
+
+    if (ownerId && ownerType) {
+      const tasks = await this.taskExecution.listTasksByOwner(
+        ownerId,
+        ownerType,
+      );
+      return { data: tasks };
+    }
+
+    throw new BadRequestException(
+      'Either sessionId, agentId, or ownerId+ownerType is required',
+    );
   }
 
   /**

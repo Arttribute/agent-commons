@@ -9,6 +9,7 @@ import { EmbeddingType, ResourceType } from '~/embedding/dto/embedding.dto';
 import { AgentService } from '~/agent/agent.service';
 import { GoalService, CreateGoalDto } from '~/goal/goal.service';
 import { TaskService, CreateTaskDto, TaskContext } from '~/task/task.service';
+import { TaskExecutionService } from '~/task/task-execution.service';
 import { AttributionService } from '~/attribution/attribution.service';
 import { ResourceService } from '~/resource/resource.service';
 import { SpaceService } from '~/space/space.service';
@@ -38,7 +39,25 @@ export interface CommonTool {
     goalId: string;
   }): Promise<{ success: boolean }>;
 
-  createTask(props: CreateTaskDto): Promise<any>;
+  createTask(props: {
+    agentId: string;
+    sessionId: string;
+    title: string;
+    description?: string;
+    executionMode?: 'single' | 'workflow' | 'sequential';
+    workflowId?: string;
+    workflowInputs?: Record<string, any>;
+    cronExpression?: string;
+    scheduledFor?: Date;
+    isRecurring?: boolean;
+    dependsOn?: string[];
+    tools?: string[];
+    toolConstraintType?: 'hard' | 'soft' | 'none';
+    toolInstructions?: string;
+    recurringSessionMode?: 'same' | 'new';
+    context?: Record<string, any>;
+    priority?: number;
+  }): Promise<any>;
   updateTaskProgress(props: {
     taskId: string;
     progress: number;
@@ -333,6 +352,8 @@ export class CommonToolService implements CommonTool {
     private goals: GoalService,
     @Inject(forwardRef(() => TaskService))
     private tasks: TaskService,
+    @Inject(forwardRef(() => TaskExecutionService))
+    private taskExecution: TaskExecutionService,
     @Inject(forwardRef(() => ResourceService))
     private resource: ResourceService,
     //@Inject(forwardRef(() => TaskService)) previous for onchain tasks
@@ -379,8 +400,36 @@ export class CommonToolService implements CommonTool {
     return this.spaceTts.speak(props);
   }
 
-  async createTask(props: CreateTaskDto) {
-    return await this.tasks.create(props);
+  async createTask(
+    props: {
+      agentId: string;
+      sessionId: string;
+      title: string;
+      description?: string;
+      executionMode?: 'single' | 'workflow' | 'sequential';
+      workflowId?: string;
+      workflowInputs?: Record<string, any>;
+      cronExpression?: string;
+      scheduledFor?: Date;
+      isRecurring?: boolean;
+      dependsOn?: string[];
+      tools?: string[];
+      toolConstraintType?: 'hard' | 'soft' | 'none';
+      toolInstructions?: string;
+      recurringSessionMode?: 'same' | 'new';
+      context?: Record<string, any>;
+      priority?: number;
+    },
+    metadata?: { agentId: string },
+  ) {
+    // Agent-created tasks use the agent's ID as createdBy
+    const createdBy = metadata?.agentId || props.agentId;
+
+    return await this.taskExecution.createTask({
+      ...props,
+      createdBy,
+      createdByType: 'agent',
+    });
   }
 
   async updateTaskProgress(props: {

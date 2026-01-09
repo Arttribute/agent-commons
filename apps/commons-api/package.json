@@ -23,6 +23,7 @@
   "dependencies": {
     "@coinbase/agentkit": "^0.1.2",
     "@coinbase/coinbase-sdk": "^0.17.0",
+    "zod": "^3.25.0",
     "@img/sharp-libvips-linux-x64": "1.0.6",
     "@img/sharp-linux-x64": "0.33.5",
     "@koush/wrtc": "^0.5.3",
@@ -32,6 +33,7 @@
     "@langchain/langgraph": "^0.2.63",
     "@langchain/langgraph-checkpoint-postgres": "^0.0.4",
     "@langchain/openai": "^0.5.5",
+    "@modelcontextprotocol/sdk": "^1.25.1",
     "@napi-rs/canvas": "^0.1.80",
     "@nestia/core": "^6.0.1",
     "@nestjs/cli": "^11.0.6",

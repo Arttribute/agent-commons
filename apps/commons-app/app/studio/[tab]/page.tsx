@@ -8,6 +8,8 @@ import AgentsShowcase from "@/components/agents/AgentsShowcase";
 import { ToolsManagementView } from "@/components/tools/management/tools-management-view";
 import { WorkflowsListView } from "@/components/workflows/workflows-list-view";
 import { CreateWorkflowDialog } from "@/components/workflows/create-workflow-dialog";
+import { TaskManagementView } from "@/components/tasks/task-management-view";
+import { CreateTaskDialog } from "@/components/tasks/create-task-dialog";
 import { Loader2 } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { supabase } from "@/lib/supabase";
@@ -36,6 +38,7 @@ const StudioPage: NextPage = () => {
   const [agents, setAgents] = useState<any[]>([]);
   const [loadingAgents, setLoadingAgents] = useState(true);
   const [showCreateWorkflowDialog, setShowCreateWorkflowDialog] = useState(false);
+  const [showCreateTaskDialog, setShowCreateTaskDialog] = useState(false);
   const activeTab = (tab as string) || "agents";
 
   const userAddress = walletAddress?.toLowerCase();
@@ -80,8 +83,10 @@ const StudioPage: NextPage = () => {
         return (
           <div className="p-4">
             <h2 className="text-xl font-semibold">Tasks</h2>
-            <p className="text-gray-500 text-sm mb-2">Manage your tasks</p>
-            <div className="text-sm text-muted-foreground">Coming soon.</div>
+            <p className="text-gray-500 text-sm mb-2">
+              Create and manage tasks for your agents
+            </p>
+            <TaskManagementView userAddress={userAddress || ""} />
           </div>
         );
       case "workflows":
@@ -119,7 +124,7 @@ const StudioPage: NextPage = () => {
       case "tools":
         return { href: "/tools/create", label: "Create Tool" };
       case "tasks":
-        return { href: "/tasks/create", label: "Create Task" };
+        return { href: null, label: "Create Task" };
       case "workflows":
         return { href: null, label: "Create Workflow" };
       case "agents":
@@ -131,6 +136,8 @@ const StudioPage: NextPage = () => {
   const handleCreateClick = () => {
     if (activeTab === "workflows") {
       setShowCreateWorkflowDialog(true);
+    } else if (activeTab === "tasks") {
+      setShowCreateTaskDialog(true);
     } else if (createRoute.href) {
       router.push(createRoute.href);
     }
@@ -186,6 +193,13 @@ const StudioPage: NextPage = () => {
       <CreateWorkflowDialog
         open={showCreateWorkflowDialog}
         onClose={() => setShowCreateWorkflowDialog(false)}
+        userAddress={userAddress || ""}
+      />
+
+      {/* Create Task Dialog */}
+      <CreateTaskDialog
+        open={showCreateTaskDialog}
+        onClose={() => setShowCreateTaskDialog(false)}
         userAddress={userAddress || ""}
       />
     </div>
