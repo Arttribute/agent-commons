@@ -217,7 +217,7 @@ export function McpServersView({ ownerId, ownerType }: McpServersViewProps) {
           <AlertDialogHeader>
             <AlertDialogTitle>Delete MCP Server</AlertDialogTitle>
             <AlertDialogDescription>
-              Are you sure you want to delete "{deleteServerState?.name}"? This will also
+              Are you sure you want to delete &quot;{deleteServerState?.name}&quot;? This will also
               remove all discovered tools from this server. This action cannot be undone.
             </AlertDialogDescription>
           </AlertDialogHeader>

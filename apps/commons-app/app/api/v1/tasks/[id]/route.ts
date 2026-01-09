@@ -4,10 +4,11 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const response = await fetch(`${API_URL}/v1/tasks/${params.id}`, {
+    const resolvedParams = await params;
+    const response = await fetch(`${API_URL}/v1/tasks/${resolvedParams.id}`, {
       method: "GET",
       headers: {
         "Content-Type": "application/json",
@@ -35,10 +36,11 @@ export async function GET(
 
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const response = await fetch(`${API_URL}/v1/tasks/${params.id}`, {
+    const resolvedParams = await params;
+    const response = await fetch(`${API_URL}/v1/tasks/${resolvedParams.id}`, {
       method: "DELETE",
       headers: {
         "Content-Type": "application/json",

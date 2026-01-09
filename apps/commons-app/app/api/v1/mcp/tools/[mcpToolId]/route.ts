@@ -8,10 +8,11 @@ const baseUrl = process.env.NEXT_PUBLIC_NEST_API_BASE_URL;
  */
 export async function GET(
   request: Request,
-  { params }: { params: { mcpToolId: string } }
+  { params }: { params: Promise<{ mcpToolId: string }> }
 ) {
   try {
-    const { mcpToolId } = params;
+    const resolvedParams = await params;
+    const { mcpToolId } = resolvedParams;
 
     const res = await fetch(`${baseUrl}/v1/mcp/tools/${mcpToolId}`, {
       cache: "no-store",

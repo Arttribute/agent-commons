@@ -7,13 +7,14 @@ const baseUrl = process.env.NEXT_PUBLIC_NEST_API_BASE_URL;
  */
 export async function POST(
   request: Request,
-  { params }: { params: { workflowId: string } }
+  { params }: { params: Promise<{ workflowId: string }> }
 ) {
   try {
+    const resolvedParams = await params;
     const body = await request.json();
 
     const res = await fetch(
-      `${baseUrl}/v1/workflows/${params.workflowId}/execute`,
+      `${baseUrl}/v1/workflows/${resolvedParams.workflowId}/execute`,
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },

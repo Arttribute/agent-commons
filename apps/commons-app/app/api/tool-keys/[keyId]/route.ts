@@ -8,10 +8,11 @@ const baseUrl = process.env.NEXT_PUBLIC_NEST_API_BASE_URL;
  */
 export async function DELETE(
   request: Request,
-  { params }: { params: { keyId: string } }
+  { params }: { params: Promise<{ keyId: string }> }
 ) {
   try {
-    const res = await fetch(`${baseUrl}/v1/tool-keys/${params.keyId}`, {
+    const resolvedParams = await params;
+    const res = await fetch(`${baseUrl}/v1/tool-keys/${resolvedParams.keyId}`, {
       method: "DELETE",
     });
 

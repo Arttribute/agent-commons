@@ -301,8 +301,8 @@ export function ToolsManagementView({ userAddress }: ToolsManagementViewProps) {
             <AlertDialogHeader>
               <AlertDialogTitle>Delete Tool</AlertDialogTitle>
               <AlertDialogDescription>
-                Are you sure you want to delete "
-                {deleteTool?.displayName || deleteTool?.name}"? This action cannot
+                Are you sure you want to delete &quot;
+                {deleteTool?.displayName || deleteTool?.name}&quot;? This action cannot
                 be undone.
               </AlertDialogDescription>
             </AlertDialogHeader>

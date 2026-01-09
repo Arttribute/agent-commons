@@ -4,10 +4,11 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
 
 export async function POST(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const response = await fetch(`${API_URL}/v1/tasks/${params.id}/execute`, {
+    const resolvedParams = await params;
+    const response = await fetch(`${API_URL}/v1/tasks/${resolvedParams.id}/execute`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",

@@ -40,7 +40,7 @@ export function ApiConfigStep({ data, onChange }: ApiConfigStepProps) {
             </h3>
             <p className="text-sm text-purple-700">
               If your tool calls an external API, configure the endpoint and
-              authentication here. Skip this step if you're creating a
+              authentication here. Skip this step if you&apos;re creating a
               code-based tool or using custom logic.
             </p>
           </div>
@@ -66,7 +66,7 @@ export function ApiConfigStep({ data, onChange }: ApiConfigStepProps) {
       {hasApiSpec && data.apiSpec && (
         <ApiSpecBuilder
           value={data.apiSpec}
-          onChange={(apiSpec) => onChange({ apiSpec })}
+          onChange={(apiSpec) => onChange({ apiSpec: apiSpec as typeof data.apiSpec })}
         />
       )}
 

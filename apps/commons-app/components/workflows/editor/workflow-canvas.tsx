@@ -49,7 +49,7 @@ export function WorkflowCanvas() {
 
   const onNodesChange = useCallback(
     (changes: NodeChange[]) => {
-      const updatedNodes = applyNodeChanges(changes, nodes);
+      const updatedNodes = applyNodeChanges(changes, nodes) as typeof nodes;
       setNodes(updatedNodes);
     },
     [nodes, setNodes]
@@ -57,7 +57,7 @@ export function WorkflowCanvas() {
 
   const onEdgesChange = useCallback(
     (changes: EdgeChange[]) => {
-      const updatedEdges = applyEdgeChanges(changes, edges);
+      const updatedEdges = applyEdgeChanges(changes, edges) as typeof edges;
       setEdges(updatedEdges);
     },
     [edges, setEdges]
@@ -127,7 +127,7 @@ export function WorkflowCanvas() {
         },
       };
 
-      setEdges(addEdge(newEdge, edges));
+      setEdges(addEdge(newEdge, edges) as typeof edges);
     },
     [nodes, edges, setEdges, toast]
   );

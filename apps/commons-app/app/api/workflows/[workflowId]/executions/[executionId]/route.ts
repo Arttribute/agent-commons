@@ -4,10 +4,11 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: { workflowId: string; executionId: string } }
+  { params }: { params: Promise<{ workflowId: string; executionId: string }> }
 ) {
   try {
-    const { workflowId, executionId } = params;
+    const resolvedParams = await params;
+    const { workflowId, executionId } = resolvedParams;
 
     const res = await fetch(
       `${API_URL}/v1/workflows/${workflowId}/executions/${executionId}`,

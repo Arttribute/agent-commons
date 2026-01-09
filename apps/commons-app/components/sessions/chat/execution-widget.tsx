@@ -25,7 +25,7 @@ interface Task {
   taskId: string;
   title: string;
   description: string;
-  status: "pending" | "running" | "completed" | "failed" | "cancelled";
+  status: "pending" | "in_progress" | "completed" | "failed";
   progress: number;
   priority: number;
   agentId: string;
@@ -104,7 +104,7 @@ export default function ExecutionWidget({
   // Calculate stats for all tasks
   const totalTasks = tasks.length;
   const completedTasks = tasks.filter((task) => task.status === "completed").length;
-  const inProgressTasks = tasks.filter((task) => task.status === "running").length;
+  const inProgressTasks = tasks.filter((task) => task.status === "in_progress").length;
   const pendingTasks = tasks.filter((task) => task.status === "pending").length;
   const failedTasks = tasks.filter((task) => task.status === "failed").length;
 

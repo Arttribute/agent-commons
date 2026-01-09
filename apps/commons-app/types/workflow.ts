@@ -1,3 +1,5 @@
+import { WorkflowDataType } from "@/lib/workflows/type-mapping";
+
 export interface Workflow {
   workflowId: string;
   name: string;
@@ -50,9 +52,10 @@ export interface ReactFlowNode {
   position: { x: number; y: number };
   data: {
     label: string;
+    toolId?: string;
     toolName?: string;
-    inputs?: Array<{ name: string; type: string; required?: boolean }>;
-    outputs?: Array<{ name: string; type: string }>;
+    inputs?: Array<{ name: string; type: WorkflowDataType; required?: boolean }>;
+    outputs?: Array<{ name: string; type: WorkflowDataType }>;
     nodeType?: "tool" | "agent_processor" | "input" | "output";
     config?: Record<string, any>;
   };

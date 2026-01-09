@@ -8,10 +8,11 @@ const baseUrl = process.env.NEXT_PUBLIC_NEST_API_BASE_URL;
  */
 export async function POST(
   request: Request,
-  { params }: { params: { serverId: string } }
+  { params }: { params: Promise<{ serverId: string }> }
 ) {
   try {
-    const { serverId } = params;
+    const resolvedParams = await params;
+    const { serverId } = resolvedParams;
 
     const res = await fetch(`${baseUrl}/v1/mcp/servers/${serverId}/disconnect`, {
       method: "POST",

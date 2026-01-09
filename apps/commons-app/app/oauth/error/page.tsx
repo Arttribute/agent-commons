@@ -1,9 +1,10 @@
 'use client';
 
+import { Suspense } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { XCircle, AlertTriangle } from 'lucide-react';
 
-export default function OAuthErrorPage() {
+function OAuthErrorContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
 
@@ -98,5 +99,13 @@ export default function OAuthErrorPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+export default function OAuthErrorPage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-900">Loading...</div>}>
+      <OAuthErrorContent />
+    </Suspense>
   );
 }

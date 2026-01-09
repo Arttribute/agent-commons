@@ -20,10 +20,11 @@ const baseUrl = process.env.NEXT_PUBLIC_NEST_API_BASE_URL;
  */
 export async function GET(
   request: Request,
-  { params }: { params: { path: string[] } }
+  { params }: { params: Promise<{ path: string[] }> }
 ) {
   try {
-    const path = params.path.join('/');
+    const { path: pathArray } = await params;
+    const path = pathArray.join('/');
     const { searchParams } = new URL(request.url);
 
     // Build query string
@@ -73,10 +74,11 @@ export async function GET(
  */
 export async function POST(
   request: Request,
-  { params }: { params: { path: string[] } }
+  { params }: { params: Promise<{ path: string[] }> }
 ) {
   try {
-    const path = params.path.join('/');
+    const { path: pathArray } = await params;
+    const path = pathArray.join('/');
     const body = await request.json();
 
     const url = `${baseUrl}/v1/oauth/${path}`;
@@ -118,10 +120,11 @@ export async function POST(
  */
 export async function PUT(
   request: Request,
-  { params }: { params: { path: string[] } }
+  { params }: { params: Promise<{ path: string[] }> }
 ) {
   try {
-    const path = params.path.join('/');
+    const { path: pathArray } = await params;
+    const path = pathArray.join('/');
     const body = await request.json();
 
     const url = `${baseUrl}/v1/oauth/${path}`;
@@ -163,10 +166,11 @@ export async function PUT(
  */
 export async function DELETE(
   request: Request,
-  { params }: { params: { path: string[] } }
+  { params }: { params: Promise<{ path: string[] }> }
 ) {
   try {
-    const path = params.path.join('/');
+    const { path: pathArray } = await params;
+    const path = pathArray.join('/');
 
     const url = `${baseUrl}/v1/oauth/${path}`;
 

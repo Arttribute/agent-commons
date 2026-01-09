@@ -23,7 +23,7 @@ export function extractWorkflowInputSchema(workflowDefinition: {
   }
 
   // Find the start node
-  let startNode = startNodeId
+  const startNode = startNodeId
     ? nodes.find((n) => n.id === startNodeId)
     : nodes.find((n) => n.type === "input") || nodes[0];
 

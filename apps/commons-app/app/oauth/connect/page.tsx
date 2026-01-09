@@ -1,11 +1,11 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { Suspense, useState, useEffect } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { OAuthProvider } from '@/types/oauth';
 import { useToast } from '@/hooks/use-toast';
 
-export default function OAuthConnectPage() {
+function OAuthConnectContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const { toast } = useToast();
@@ -182,5 +182,20 @@ export default function OAuthConnectPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+export default function OAuthConnectPage() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-900">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-gray-900 dark:border-white mx-auto"></div>
+          <p className="mt-4 text-gray-600 dark:text-gray-400">Loading...</p>
+        </div>
+      </div>
+    }>
+      <OAuthConnectContent />
+    </Suspense>
   );
 }

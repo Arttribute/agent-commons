@@ -8,10 +8,11 @@ const baseUrl = process.env.NEXT_PUBLIC_NEST_API_BASE_URL;
  */
 export async function GET(
   request: Request,
-  { params }: { params: { serverId: string } }
+  { params }: { params: Promise<{ serverId: string }> }
 ) {
   try {
-    const { serverId } = params;
+    const resolvedParams = await params;
+    const { serverId } = resolvedParams;
 
     const res = await fetch(`${baseUrl}/v1/mcp/servers/${serverId}`, {
       cache: "no-store",
@@ -30,10 +31,11 @@ export async function GET(
  */
 export async function PUT(
   request: Request,
-  { params }: { params: { serverId: string } }
+  { params }: { params: Promise<{ serverId: string }> }
 ) {
   try {
-    const { serverId } = params;
+    const resolvedParams = await params;
+    const { serverId } = resolvedParams;
     const body = await request.json();
 
     const res = await fetch(`${baseUrl}/v1/mcp/servers/${serverId}`, {
@@ -60,10 +62,11 @@ export async function PUT(
  */
 export async function DELETE(
   request: Request,
-  { params }: { params: { serverId: string } }
+  { params }: { params: Promise<{ serverId: string }> }
 ) {
   try {
-    const { serverId } = params;
+    const resolvedParams = await params;
+    const { serverId } = resolvedParams;
 
     const res = await fetch(`${baseUrl}/v1/mcp/servers/${serverId}`, {
       method: "DELETE",

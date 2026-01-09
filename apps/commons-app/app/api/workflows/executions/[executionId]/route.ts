@@ -7,11 +7,12 @@ const baseUrl = process.env.NEXT_PUBLIC_NEST_API_BASE_URL;
  */
 export async function GET(
   request: Request,
-  { params }: { params: { executionId: string } }
+  { params }: { params: Promise<{ executionId: string }> }
 ) {
   try {
+    const resolvedParams = await params;
     const res = await fetch(
-      `${baseUrl}/v1/workflows/executions/${params.executionId}`,
+      `${baseUrl}/v1/workflows/executions/${resolvedParams.executionId}`,
       {
         method: "GET",
       }

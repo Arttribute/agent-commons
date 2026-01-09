@@ -4,13 +4,13 @@ import { memo } from "react";
 import { Handle, Position, NodeProps } from "reactflow";
 import { getHandleStyle } from "@/lib/workflows/type-colors";
 import { Badge } from "@/components/ui/badge";
-import { formatType, getTypeColor } from "@/lib/workflows/type-mapping";
+import { formatType, getTypeColor, WorkflowDataType } from "@/lib/workflows/type-mapping";
 
 export interface ToolNodeData {
   label: string;
   toolName?: string;
-  inputs?: Array<{ name: string; type: string; required?: boolean }>;
-  outputs?: Array<{ name: string; type: string }>;
+  inputs?: Array<{ name: string; type: WorkflowDataType; required?: boolean }>;
+  outputs?: Array<{ name: string; type: WorkflowDataType }>;
 }
 
 export const ToolNode = memo(({ data }: NodeProps<ToolNodeData>) => {

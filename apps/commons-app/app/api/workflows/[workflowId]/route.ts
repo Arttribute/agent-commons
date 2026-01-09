@@ -7,10 +7,11 @@ const baseUrl = process.env.NEXT_PUBLIC_NEST_API_BASE_URL;
  */
 export async function GET(
   request: Request,
-  { params }: { params: { workflowId: string } }
+  { params }: { params: Promise<{ workflowId: string }> }
 ) {
   try {
-    const res = await fetch(`${baseUrl}/v1/workflows/${params.workflowId}`, {
+    const resolvedParams = await params;
+    const res = await fetch(`${baseUrl}/v1/workflows/${resolvedParams.workflowId}`, {
       method: "GET",
     });
 
@@ -33,12 +34,13 @@ export async function GET(
  */
 export async function PUT(
   request: Request,
-  { params }: { params: { workflowId: string } }
+  { params }: { params: Promise<{ workflowId: string }> }
 ) {
   try {
+    const resolvedParams = await params;
     const body = await request.json();
 
-    const res = await fetch(`${baseUrl}/v1/workflows/${params.workflowId}`, {
+    const res = await fetch(`${baseUrl}/v1/workflows/${resolvedParams.workflowId}`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
@@ -63,10 +65,11 @@ export async function PUT(
  */
 export async function DELETE(
   request: Request,
-  { params }: { params: { workflowId: string } }
+  { params }: { params: Promise<{ workflowId: string }> }
 ) {
   try {
-    const res = await fetch(`${baseUrl}/v1/workflows/${params.workflowId}`, {
+    const resolvedParams = await params;
+    const res = await fetch(`${baseUrl}/v1/workflows/${resolvedParams.workflowId}`, {
       method: "DELETE",
     });
 

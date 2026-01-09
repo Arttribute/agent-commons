@@ -164,7 +164,7 @@ export function CreateMcpServerDialog({
                         required={connectionType === "stdio"}
                       />
                       <p className="text-xs text-muted-foreground mt-1">
-                        The command to execute (e.g., "npx", "node", "python")
+                        The command to execute (e.g., &quot;npx&quot;, &quot;node&quot;, &quot;python&quot;)
                       </p>
                     </div>
 
