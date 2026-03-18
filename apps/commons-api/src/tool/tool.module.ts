@@ -57,6 +57,7 @@ import { EthereumToolService } from './tools/ethereum-tool.service';
     ToolLoaderService,
     WorkflowService,
     WorkflowExecutorService,
+    EthereumToolService,
   ],
 })
 export class ToolModule {
