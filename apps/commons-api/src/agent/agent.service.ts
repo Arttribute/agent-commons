@@ -675,11 +675,11 @@ export class AgentService implements OnModuleInit {
               firstUserText,
             );
             messages.push(
-              ...boot.messages.map((m) => ({
+              ...(boot.messages.map((m) => ({
                 ...m,
                 type: m.role,
                 content: m.content ?? '',
-              })),
+              })) as any[]),
             );
           } else {
             // ✅ For existing sessions, load the full history including agent_speech entries
@@ -759,11 +759,11 @@ export class AgentService implements OnModuleInit {
 
           if (props.messages?.length) {
             messages.push(
-              ...props.messages.map((m) => ({
+              ...(props.messages.map((m) => ({
                 ...m,
                 type: m.role,
                 content: m.content ?? '',
-              })),
+              })) as any[]),
             );
           }
 
