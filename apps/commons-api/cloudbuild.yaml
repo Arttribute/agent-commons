@@ -50,8 +50,7 @@ steps:
       - --image=europe-west1-docker.pkg.dev/$PROJECT_ID/commons/commons-api:prod
       - --memory=2Gi
       - --cpu=2
-      - --timeout=300
-      - --startup-cpu-boost
+      - --timeout=300s
       - --port=8080
     timeout: 1800s
 # options:
