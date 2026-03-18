@@ -3,6 +3,8 @@ import {
   Injectable,
   NotFoundException,
   BadRequestException,
+  Inject,
+  forwardRef,
 } from '@nestjs/common';
 import { EventEmitter } from 'events';
 import { eq, InferInsertModel, desc, and, or, inArray } from 'drizzle-orm';
@@ -13,6 +15,7 @@ import * as schema from '#/models/schema';
 export class SpaceService {
   constructor(
     private db: DatabaseService,
+    @Inject(forwardRef(() => AgentService))
     private agentService: AgentService,
     private readonly emitter: EventEmitter,
   ) {}

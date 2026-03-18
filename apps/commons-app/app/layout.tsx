@@ -36,8 +36,8 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en">
-      <body className={space_mono.className}>
+    <html lang="en" suppressHydrationWarning>
+      <body className={space_mono.className} suppressHydrationWarning>
         <Providers>
           <AuthProvider>
             <SidebarProvider>

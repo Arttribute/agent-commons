@@ -2,9 +2,9 @@ import { Skeleton } from "@/components/ui/skeleton";
 
 export function ChatSkeleton() {
   return (
-    <div className="flex h-screen bg-gray-50 dark:bg-gray-900">
+    <div className="flex h-screen bg-muted/50 dark:bg-muted">
       {/* Sidebar Skeleton */}
-      <div className="w-[260px] min-w-[260px] h-screen bg-background border-r border-border border-gray-400 flex flex-col">
+      <div className="w-[260px] min-w-[260px] h-screen bg-background border-r border-border border-border flex flex-col">
         {/* Header */}
         <div className="px-3 pt-4 flex items-center justify-between">
           <div className="flex items-center gap-3">

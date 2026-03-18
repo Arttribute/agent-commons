@@ -29,9 +29,9 @@ export function SpaceCard({ space }: SpaceCardProps) {
     <Link
       href={`/spaces/${space.spaceId}`}
       rel="noopener noreferrer"
-      className="block border border-gray-400 rounded-lg bg-white hover:shadow-sm transition-colors overflow-hidden"
+      className="block border border-border rounded-lg bg-white hover:shadow-sm transition-colors overflow-hidden"
     >
-      <div className="relative w-full h-16 bg-gray-50 overflow-hidden">
+      <div className="relative w-full h-16 bg-muted/50 overflow-hidden">
         {space.image ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img
@@ -111,25 +111,25 @@ export function SpaceCard({ space }: SpaceCardProps) {
               {(space.members || []).slice(0, 3).map((m, idx) => (
                 <div
                   key={`${m.memberType}-${m.memberId}-${idx}`}
-                  className="inline-flex items-center justify-center rounded-full shadow-sm transition-transform hover:scale-110 hover:z-10 border border-gray-400 bg-white p-0.5"
+                  className="inline-flex items-center justify-center rounded-full shadow-sm transition-transform hover:scale-110 hover:z-10 border border-border bg-white p-0.5"
                   style={{ width: 26, height: 26, zIndex: 3 - idx }}
                 >
                   <RandomAvatar username={m.memberId} size={20} />
                 </div>
               ))}
             </div>
-            <span className="text-xs font-medium text-gray-600 min-w-[1.5ch] text-right">
+            <span className="text-xs font-medium text-muted-foreground min-w-[1.5ch] text-right">
               {memberCount}
             </span>
           </div>
         )}
       </div>
       {space.description && (
-        <p className="px-3 text-xs text-gray-500 line-clamp-2">
+        <p className="px-3 text-xs text-muted-foreground line-clamp-2">
           {space.description}
         </p>
       )}
-      <div className="px-3 pb-3 mt-2 flex items-center gap-2 text-[10px] text-gray-400">
+      <div className="px-3 pb-3 mt-2 flex items-center gap-2 text-[10px] text-muted-foreground">
         <span>{space.isPublic ? "Public" : "Private"}</span>
         {space.maxMembers && <span>• max {space.maxMembers}</span>}
       </div>

@@ -10,42 +10,17 @@ import {
   Query,
   Sse,
   Headers,
+  UseGuards,
 } from '@nestjs/common';
 import { AgentService } from './agent.service';
 import { TypedBody } from '@nestia/core';
 import * as schema from '#/models/schema';
 import { InferInsertModel } from 'drizzle-orm';
 import { Except } from 'type-fest';
-import { createParamDecorator, ExecutionContext } from '@nestjs/common';
 import { Observable } from 'rxjs';
 import { filter, map } from 'rxjs/operators';
-
-// Utility to convert Observable to AsyncIterable
-function observableToAsyncIterable<T>(
-  observable: Observable<T>,
-): AsyncIterable<T> {
-  const iterator = {
-    next: () =>
-      new Promise<{ value: T; done: boolean }>((resolve, reject) => {
-        const subscription = observable.subscribe({
-          next(value) {
-            resolve({ value, done: false });
-            subscription.unsubscribe();
-          },
-          error(err) {
-            reject(err);
-          },
-          complete() {
-            resolve({ value: undefined as any, done: true });
-          },
-        });
-      }),
-    [Symbol.asyncIterator]() {
-      return this;
-    },
-  };
-  return iterator as AsyncIterable<T>;
-}
+import { omit } from 'lodash';
+import { OwnerGuard, OwnerOnly } from '~/modules/auth';
 
 interface RunBody {
   agentId: string;
@@ -69,7 +44,7 @@ export class AgentController {
       value: body as InferInsertModel<typeof schema.agent>,
       commonsOwned: body.commonsOwned,
     });
-    return { data: agent };
+    return { data: omit(agent, ['wallet', 'modelApiKey']) };
   }
 
   @Post('run')
@@ -88,8 +63,8 @@ export class AgentController {
     );
   }
 
-  @Post('run/stream') // <- POST instead of GET
-  @Sse('run/stream') // keep the SSE decorator
+  @Post('run/stream')
+  @Sse('run/stream')
   runAgentStream(
     @Body() body: RunBody,
     @Headers('x-initiator') initiator: string,
@@ -109,28 +84,21 @@ export class AgentController {
     };
   }
 
-  async pauseAgent(@Param('agentId') agentId: string) {
-    //
-  }
-
   @Get(':agentId')
   async getAgent(@Param('agentId') agentId: string) {
     const agent = await this.agent.getAgent({ agentId });
     if (!agent) {
       throw new BadRequestException('Agent not found');
     }
-    return { data: agent };
+    return { data: omit(agent, ['wallet', 'modelApiKey']) };
   }
 
   @Get()
   async getAgents(@Query('owner') owner?: string) {
-    if (owner) {
-      const ownedAgents = await this.agent.getAgentsByOwner(owner);
-      return { data: ownedAgents };
-    } else {
-      const agents = await this.agent.getAgents();
-      return { data: agents };
-    }
+    const agents = owner
+      ? await this.agent.getAgentsByOwner(owner)
+      : await this.agent.getAgents();
+    return { data: agents.map((a) => omit(a, ['wallet', 'modelApiKey'])) };
   }
 
   /**
@@ -138,12 +106,14 @@ export class AgentController {
    * Update an agent's data in the DB
    */
   @Put(':agentId')
+  @UseGuards(OwnerGuard)
+  @OwnerOnly({ table: 'agent' })
   async updateAgent(@Param('agentId') agentId: string, @Body() body: any) {
     const updated = await this.agent.updateAgent(agentId, body);
     if (!updated) {
       throw new BadRequestException('Unable to update agent');
     }
-    return { data: updated };
+    return { data: omit(updated, ['wallet', 'modelApiKey']) };
   }
 
   //get agent session full chat by sessionId
@@ -166,6 +136,8 @@ export class AgentController {
     return { data: kb };
   }
   @Put(':agentId/knowledgebase')
+  @UseGuards(OwnerGuard)
+  @OwnerOnly({ table: 'agent' })
   async updateAgentKnowledgebase(
     @Param('agentId') agentId: string,
     @Body() body: { knowledgebase: any[] },
@@ -184,6 +156,8 @@ export class AgentController {
     return { data: connections };
   }
   @Post(':agentId/preferred-connections')
+  @UseGuards(OwnerGuard)
+  @OwnerOnly({ table: 'agent' })
   async addPreferredConnection(
     @Param('agentId') agentId: string,
     @Body() body: { preferredAgentId: string; usageComments?: string },
@@ -205,10 +179,11 @@ export class AgentController {
   @Get(':agentId/tools')
   async getAgentTools(@Param('agentId') agentId: string) {
     const tools = await this.agent.getAgentTools(agentId);
-    // Do not expose secureKeyRef
-    return { data: tools.map(({ secureKeyRef, ...rest }) => rest) };
+    return { data: tools };
   }
   @Post(':agentId/tools')
+  @UseGuards(OwnerGuard)
+  @OwnerOnly({ table: 'agent' })
   async addAgentTool(
     @Param('agentId') agentId: string,
     @Body() body: { toolId: string; usageComments?: string },
@@ -218,9 +193,7 @@ export class AgentController {
       body.toolId,
       body.usageComments,
     );
-    // Do not expose secureKeyRef
-    const { secureKeyRef, ...rest } = tool;
-    return { data: rest };
+    return { data: tool };
   }
   @Delete('tools/:id')
   async removeAgentTool(@Param('id') id: string) {

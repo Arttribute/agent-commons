@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { commons } from "@/lib/commons";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -64,28 +65,23 @@ export default function ToolSelector({
   const [customJson, setCustomJson] = useState("");
   const [jsonError, setJsonError] = useState<string | null>(null);
 
-  // Fetch tools from our API endpoint
   useEffect(() => {
-    // Build query: ?type=common or ?type=external
-    // For external, we add &owner=walletAddress
-    const params = new URLSearchParams({ type });
-    if (type === "external" && owner) {
-      params.set("owner", owner);
-    }
-
     const fetchTools = async () => {
       try {
-        const res = await fetch(`/api/tools/available?${params.toString()}`);
-        if (!res.ok) {
-          throw new Error("Failed to fetch tools");
+        let raw: any[] = [];
+        if (type === "common") {
+          const res = await commons.tools.listStatic();
+          raw = res.data ?? [];
+        } else if (type === "external" && owner) {
+          const res = await commons.tools.list({ owner, ownerType: "user" });
+          raw = res.data ?? [];
         }
-        const data = await res.json(); // array of { id, name }
-        setTools(data);
+        // Normalise to { id, name } shape expected by callers
+        setTools(raw.map((t) => ({ id: t.toolId ?? t.id, name: t.name })));
       } catch (err) {
         console.error(err);
       }
     };
-
     fetchTools();
   }, [type, owner]);
 

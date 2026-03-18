@@ -31,12 +31,12 @@ export function AgentTitleCard() {
               <RandomAvatar size={52} username={"agent"} />
               <div className="flex flex-col ">
                 <h2 className="">Agent name</h2>
-                <div className="flex items-center mt-1 py-1 px-2 rounded-xl border border-gray-400 w-40">
+                <div className="flex items-center mt-1 py-1 px-2 rounded-xl border border-border w-40">
                   <p className="text-xs text-muted-foreground">
                     0x6d51af...cb54eb6
                   </p>
-                  <button className="ml-auto p-0.5 hover:bg-gray-200 dark:hover:bg-gray-800 rounded">
-                    <CopyIcon className="h-3 w-3 text-gray-500 hover:text-gray-700 " />
+                  <button className="ml-auto p-0.5 hover:bg-muted dark:hover:bg-muted rounded">
+                    <CopyIcon className="h-3 w-3 text-muted-foreground hover:text-muted-foreground " />
                   </button>
                 </div>
               </div>

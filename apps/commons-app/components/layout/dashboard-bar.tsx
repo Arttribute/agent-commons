@@ -40,7 +40,7 @@ export const DashboardBar: FC<DashboardBarProps> = ({
   return (
     <div className="w-full ">
       <div className="flex justify-between items-center mb-2 px-1">
-        <div className="rounded-full border border-gray-500 p-[1px] bg-white">
+        <div className="rounded-full border border-border p-[1px] bg-background">
           <div className="rounded-full border ">
             <Image
               src="/ac-icon.svg"

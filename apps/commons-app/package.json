@@ -9,8 +9,11 @@
     "lint": "next lint"
   },
   "dependencies": {
+    "@agent-commons/sdk": "workspace:*",
     "@hookform/resolvers": "^3.10.0",
     "@privy-io/react-auth": "^2.2.1",
+    "@radix-ui/react-accordion": "^1.2.12",
+    "@radix-ui/react-alert-dialog": "^1.1.15",
     "@radix-ui/react-avatar": "^1.1.2",
     "@radix-ui/react-checkbox": "^1.3.3",
     "@radix-ui/react-collapsible": "^1.1.2",
@@ -26,7 +29,7 @@
     "@radix-ui/react-select": "^2.1.5",
     "@radix-ui/react-separator": "^1.1.2",
     "@radix-ui/react-slider": "^1.2.2",
-    "@radix-ui/react-slot": "^1.1.1",
+    "@radix-ui/react-slot": "^1.1.2",
     "@radix-ui/react-switch": "^1.1.2",
     "@radix-ui/react-tabs": "^1.1.2",
     "@radix-ui/react-toast": "^1.2.6",
@@ -42,12 +45,13 @@
     "framer-motion": "^12.0.11",
     "lucide-react": "^0.474.0",
     "motion": "^12.4.1",
-    "next": "15.1.6",
+    "next": "15.1.11",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "react-hook-form": "^7.54.2",
     "react-markdown": "^10.1.0",
     "react-syntax-highlighter": "^15.6.1",
+    "reactflow": "^11.11.4",
     "recharts": "^2.15.3",
     "rehype-raw": "^7.0.0",
     "remark-gfm": "^4.0.1",
@@ -58,7 +62,8 @@
     "vaul": "^1.1.2",
     "viem": "^2.22.17",
     "with-selector.js": "link:use-sync-external-store/shim/with-selector.js",
-    "zod": "^3.24.1"
+    "zod": "^3.24.1",
+    "zustand": "^5.0.8"
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3",

@@ -636,7 +636,7 @@ export function PreferedAgentConnections({
   return (
     <Dialog>
       <DialogTrigger asChild>
-        <div className="cursor-pointer border border-gray-400 rounded-lg p-2 h-24 hover:border-gray-700 transition-colors ">
+        <div className="cursor-pointer border border-border rounded-lg p-2 h-24 hover:border-border transition-colors ">
           <div className="flex flex-col gap-2">
             <div className="text-sm flex items-center gap-1 mb-1 ml-1">
               <div className="flex items-center gap-1">

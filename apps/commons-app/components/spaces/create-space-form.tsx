@@ -84,7 +84,7 @@ export function CreateSpaceForm({ creatorId, onCreated }: Props) {
   return (
     <form
       onSubmit={handleSubmit}
-      className="space-y-4 p-6 border border-gray-400 rounded-lg
+      className="space-y-4 p-6 border border-border rounded-lg
        bg-white"
     >
       <div className="">
@@ -97,29 +97,29 @@ export function CreateSpaceForm({ creatorId, onCreated }: Props) {
           <ImageUploader onImageChange={setImage} defaultImage={image} />
           <div className="flex flex-col gap-2 w-full">
             <div>
-              <label className="block text-sm text-gray-700">Space name</label>
+              <label className="block text-sm text-muted-foreground">Space name</label>
               <Input
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 placeholder="e.g., Product Team, Design Squad"
                 required
-                className="h-11 bg-gray-50 border-gray-200 focus:bg-white transition-colors"
+                className="h-11 bg-muted/50 border-border focus:bg-white transition-colors"
               />
             </div>
             <div className="grid grid-cols-3 gap-4">
               <div className="col-span-3">
-                <div className=" px-4 py-2 bg-gradient-to-br from-gray-50 to-white rounded-xl border border-gray-200">
+                <div className=" px-4 py-2 bg-gradient-to-br from-gray-50 to-white rounded-xl border border-border">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-3">
                       {isPublic ? (
-                        <Globe className="w-4 h-4 text-gray-600" />
+                        <Globe className="w-4 h-4 text-muted-foreground" />
                       ) : (
-                        <Lock className="w-4 h-4 text-gray-600" />
+                        <Lock className="w-4 h-4 text-muted-foreground" />
                       )}
                       <div>
                         <label
                           htmlFor="public-switch"
-                          className="text-sm text-gray-700 cursor-pointer"
+                          className="text-sm text-muted-foreground cursor-pointer"
                         >
                           {isPublic ? "Public Space" : "Private Space"}
                         </label>
@@ -139,14 +139,14 @@ export function CreateSpaceForm({ creatorId, onCreated }: Props) {
       </div>
 
       <div className="space-y-1.5">
-        <label className="block text-sm text-gray-700">Description</label>
+        <label className="block text-sm text-muted-foreground">Description</label>
         <Textarea
           value={description}
           onChange={(e) => setDescription(e.target.value)}
           placeholder="What's this space about?"
           className="min-h-20"
         />
-        <p className="text-xs text-gray-500">
+        <p className="text-xs text-muted-foreground">
           Optional - help others understand your space
         </p>
       </div>
@@ -154,7 +154,7 @@ export function CreateSpaceForm({ creatorId, onCreated }: Props) {
       <div className="space-y-3">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <label className="text-sm text-gray-700">Add Agents</label>
+            <label className="text-sm text-muted-foreground">Add Agents</label>
           </div>
           <Link
             href="/agents/create"
@@ -168,10 +168,10 @@ export function CreateSpaceForm({ creatorId, onCreated }: Props) {
           <div className="p-4 bg-gradient-to-br from-blue-50 to-purple-50 border border-blue-200 rounded-xl">
             <div className="flex items-center justify-between gap-3">
               <div className="flex-1">
-                <p className="text-sm font-medium text-gray-900 mb-1">
+                <p className="text-sm font-medium text-muted-foreground mb-1">
                   Loading agents…
                 </p>
-                <p className="text-xs text-gray-600">
+                <p className="text-xs text-muted-foreground">
                   Fetching your agents — this should be quick.
                 </p>
               </div>
@@ -184,10 +184,10 @@ export function CreateSpaceForm({ creatorId, onCreated }: Props) {
           <div className="p-4 bg-gradient-to-br from-blue-50 to-purple-50 border border-blue-200 rounded-xl">
             <div className="flex items-center justify-between gap-3">
               <div className="flex-1">
-                <p className="text-sm font-medium text-gray-900 mb-1">
+                <p className="text-sm font-medium text-muted-foreground mb-1">
                   No agents yet
                 </p>
-                <p className="text-xs text-gray-600">
+                <p className="text-xs text-muted-foreground">
                   Create an agent to add as a member
                 </p>
               </div>
@@ -204,7 +204,7 @@ export function CreateSpaceForm({ creatorId, onCreated }: Props) {
             </div>
           </div>
         ) : (
-          <ScrollArea className="h-36 border border-gray-200 rounded-xl divide-y divide-gray-100 bg-white shadow-sm">
+          <ScrollArea className="h-36 border border-border rounded-xl divide-y divide-gray-100 bg-white shadow-sm">
             {agents.map((a) => {
               const checked = selectedAgentIds.includes(a.agentId);
               return (
@@ -214,12 +214,12 @@ export function CreateSpaceForm({ creatorId, onCreated }: Props) {
                     "flex items-center gap-3 p-3 transition-all duration-150",
                     checked
                       ? "bg-gradient-to-r from-blue-50 to-purple-50"
-                      : "hover:bg-gray-50"
+                      : "hover:bg-muted/50"
                   )}
                 >
                   <input
                     type="checkbox"
-                    className="w-4 h-3.5 shrink-0 rounded-[8px] border border-gray-300 bg-white accent-black transition-colors focus:outline-none "
+                    className="w-4 h-3.5 shrink-0 rounded-[8px] border border-border bg-white accent-black transition-colors focus:outline-none "
                     checked={checked}
                     onChange={(e) => toggleAgent(a.agentId, e.target.checked)}
                     aria-label={`Select ${a.name}`}
@@ -227,10 +227,10 @@ export function CreateSpaceForm({ creatorId, onCreated }: Props) {
                   />
                   <RandomAvatar username={a.agentId} size={32} />
                   <div className="flex flex-col flex-1 min-w-0">
-                    <span className="text-sm font-medium text-gray-900 truncate">
+                    <span className="text-sm font-medium text-muted-foreground truncate">
                       {a.name}
                     </span>
-                    <span className="text-xs text-gray-500 truncate">
+                    <span className="text-xs text-muted-foreground truncate">
                       {a.agentId}
                     </span>
                   </div>

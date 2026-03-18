@@ -7,6 +7,7 @@ import SessionInterface from "@/components/sessions/session-interface";
 import { Loader2 } from "lucide-react";
 import { SessionsSideBar } from "@/components/sessions/sessions-side-bar";
 import { useAgentContext } from "@/context/AgentContext";
+import { commons } from "@/lib/commons";
 
 export default function PublicAgentPage() {
   const params = useParams();
@@ -24,19 +25,15 @@ export default function PublicAgentPage() {
 
   const fetchSessions = async () => {
     if (!agentId || !userAddress) return;
-    const res = await fetch(
-      `/api/sessions/list?agentId=${agentId}&initiatorId=${userAddress}`
-    );
-    const data = await res.json();
-    setSessions(data.data || []);
+    const res = await commons.sessions.list(agentId, userAddress).catch(() => null);
+    setSessions(res?.data || []);
   };
 
   useEffect(() => {
     async function fetchAgent() {
       setLoading(true);
-      const res = await fetch(`/api/agents/agent?agentId=${agentId}`);
-      const json = await res.json();
-      setAgent(json.data);
+      const res = await commons.agents.get(agentId).catch(() => null);
+      setAgent(res?.data || null);
       setLoading(false);
       clearMessages();
       fetchSessions();
@@ -54,7 +51,7 @@ export default function PublicAgentPage() {
   if (!agent) return <div>Agent not found</div>;
 
   return (
-    <div className="flex h-screen bg-gray-50 dark:bg-gray-900">
+    <div className="flex h-screen bg-background">
       <SessionsSideBar
         username={userAddress}
         sessions={sessions}

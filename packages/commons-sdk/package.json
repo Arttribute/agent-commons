@@ -1,0 +1,33 @@
+{
+  "name": "@agent-commons/sdk",
+  "version": "0.1.0",
+  "description": "Typed client SDK for the Agent Commons API",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.mjs",
+  "types": "./dist/index.d.ts",
+  "files": ["dist"],
+  "sideEffects": false,
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.mjs",
+      "require": "./dist/index.cjs"
+    }
+  },
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "test": "jest --passWithNoTests"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "tsup": "^8.0.0",
+    "typescript": "^5.0.0",
+    "jest": "^29.0.0",
+    "ts-jest": "^29.0.0",
+    "@types/jest": "^29.0.0"
+  }
+}

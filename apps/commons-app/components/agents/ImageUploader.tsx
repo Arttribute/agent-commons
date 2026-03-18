@@ -54,7 +54,7 @@ export default function ImageUploader({
         />
         <label htmlFor="file" className="cursor-pointer w-full">
           <Avatar className="w-20 h-20 ">
-            <div className="border border-dashed border-gray-500 rounded-full p-1 w-full">
+            <div className="border border-dashed border-border rounded-full p-1 w-full">
               <AvatarImage
                 src={preview}
                 className="border rounded-full object-cover aspect-[1/1]"

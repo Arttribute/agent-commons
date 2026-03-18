@@ -1,6 +1,4 @@
-import { baseSepolia } from '#/lib/baseSepolia';
 import * as schema from '#/models/schema';
-import { Wallet } from '@coinbase/coinbase-sdk';
 import { tool } from '@langchain/core/tools';
 import {
   END,
@@ -11,7 +9,6 @@ import {
 } from '@langchain/langgraph';
 import { PostgresSaver } from '@langchain/langgraph-checkpoint-postgres';
 import { ToolNode } from '@langchain/langgraph/prebuilt';
-import { ChatOpenAI } from '@langchain/openai';
 import {
   BadRequestException,
   Injectable,
@@ -19,7 +16,7 @@ import {
   forwardRef,
   Inject,
 } from '@nestjs/common';
-import { HDKey } from '@scure/bip32';
+import { ModelProviderFactory } from '~/modules/model-provider';
 import crypto from 'crypto';
 import dedent from 'dedent';
 import {
@@ -29,8 +26,6 @@ import {
   inArray,
   sql,
 } from 'drizzle-orm';
-import { AGENT_REGISTRY_ABI } from 'lib/abis/AgentRegistryABI';
-import { AGENT_REGISTRY_ADDRESS, COMMON_TOKEN_ADDRESS } from 'lib/addresses';
 import { compact, first, get, map, omit } from 'lodash';
 import {
   ChatCompletionCreateParams,
@@ -40,51 +35,46 @@ import {
 import { Except } from 'type-fest';
 import typia from 'typia';
 import { v4 as uuidv4 } from 'uuid';
-import {
-  createPublicClient,
-  createWalletClient,
-  getContract,
-  http,
-  parseUnits,
-} from 'viem';
-import { privateKeyToAccount } from 'viem/accounts';
-import { CoinbaseService } from '~/modules/coinbase/coinbase.service';
 import { DatabaseService } from '~/modules/database/database.service';
-import { OpenAIService } from '~/modules/openai/openai.service';
+import { EncryptionService } from '~/modules/encryption';
 import { SessionService } from '~/session/session.service';
 import { ToolService } from '~/tool/tool.service';
 import { CommonTool } from '../tool/tools/common-tool.service';
-import { EthereumTool } from '../tool/tools/ethereum-tool.service';
 import { BaseCallbackHandler } from '@langchain/core/callbacks/base';
 import { IChatGptSchema } from '@samchon/openapi';
 import { getPosthog } from '~/helpers/posthog';
 import { LogService } from '~/log/log.service';
-import { GoalService } from '~/goal/goal.service';
 import { TaskService } from '~/task/task.service';
+import { TaskExecutionService } from '~/task/task-execution.service';
+import { ToolLoaderService } from '~/tool/tool-loader.service';
 import { Observable, of } from 'rxjs';
 import { SpaceToolsService } from '~/space/space-tools.service';
+import { UsageService } from '~/modules/usage/usage.service';
+import { calculateCost } from '~/modules/model-provider/model-registry';
+import { MemoryService } from '~/memory/memory.service';
+import { WalletService } from '~/wallet/wallet.service';
 
 const got = import('got');
 
-const app = typia.llm.application<EthereumTool & CommonTool, 'chatgpt'>();
+const app = typia.llm.application<CommonTool, 'chatgpt'>();
 
 @Injectable()
 export class AgentService implements OnModuleInit {
-  private publicClient = createPublicClient({
-    chain: baseSepolia,
-    transport: http(),
-  });
-
   constructor(
     private db: DatabaseService,
-    private openAI: OpenAIService,
-    private coinbase: CoinbaseService,
     private session: SessionService,
     private toolService: ToolService,
     private logService: LogService,
-    /* NEW injections */
-    @Inject(forwardRef(() => GoalService)) private goals: GoalService,
+    private modelProviderFactory: ModelProviderFactory,
+    private encryption: EncryptionService,
+    private usageService: UsageService,
+    private memoryService: MemoryService,
+    private walletService: WalletService,
     @Inject(forwardRef(() => TaskService)) private tasks: TaskService,
+    @Inject(forwardRef(() => TaskExecutionService))
+    private taskExecution: TaskExecutionService,
+    @Inject(forwardRef(() => ToolLoaderService))
+    private toolLoader: ToolLoaderService,
     @Inject(forwardRef(() => SpaceToolsService))
     private spaceTools: SpaceToolsService,
   ) {}
@@ -96,56 +86,39 @@ export class AgentService implements OnModuleInit {
     ).setup();
   }
 
-  /* ─────────────────────────  CREATE & GET AGENT (unchanged)  ───────────────────────── */
+  /* ─────────────────────────  CREATE & GET AGENT  ───────────────────────── */
   async createAgent(props: {
-    value: Except<InferInsertModel<typeof schema.agent>, 'wallet' | 'agentId'>;
+    value: Except<InferInsertModel<typeof schema.agent>, 'agentId'>;
     commonsOwned?: boolean;
   }) {
-    const wallet = await this.coinbase.createDeveloperManagedWallet();
-    await (await wallet.faucet()).wait();
-
-    const agentId = (await wallet.getDefaultAddress())?.getId().toLowerCase();
-    let agentOwner = props.commonsOwned
+    const agentId = uuidv4();
+    const agentOwner = props.commonsOwned
       ? '0xD9303DFc71728f209EF64DD1AD97F5a557AE0Fab'
       : (props.value.owner as string);
+
+    const insertValue = { ...props.value };
+    if (insertValue.modelApiKey) {
+      insertValue.modelApiKey = this.encryptApiKey(insertValue.modelApiKey);
+    }
 
     const [agentEntry] = await this.db
       .insert(schema.agent)
       .values({
-        ...props.value,
+        ...insertValue,
         agentId,
         owner: agentOwner,
-        wallet: wallet.export(),
         isLiaison: false,
       })
       .returning();
 
-    if (props.commonsOwned) {
-      const commonsWallet = createWalletClient({
-        account: privateKeyToAccount(
-          process.env.WALLET_PRIVATE_KEY! as `0x${string}`,
-        ),
-        chain: baseSepolia,
-        transport: http(),
-      });
-      const contract = getContract({
-        abi: AGENT_REGISTRY_ABI,
-        address: AGENT_REGISTRY_ADDRESS,
-        client: commonsWallet,
-      });
-      await this.publicClient.waitForTransactionReceipt({
-        hash: await contract.write.registerAgent([
-          agentId,
-          'ipfs://placeholder',
-          true,
-        ]),
-      });
-    }
-
-    /* default 10‑min cron */
-    //await this.db.execute(
-    //  sql`SELECT cron.schedule(FORMAT('agent:%s:schedule', ${agentId}),'*/10 * * * *', FORMAT('SELECT trigger_agent(%L)', ${agentId}))`,
-    //);
+    // Auto-provision a primary EOA wallet for every new agent
+    await this.walletService.createWallet({
+      agentId,
+      walletType: 'eoa',
+      label: 'Primary',
+    }).catch((err) =>
+      console.error(`[AgentService] Failed to create wallet for agent ${agentId}:`, err),
+    );
 
     return agentEntry;
   }
@@ -156,14 +129,6 @@ export class AgentService implements OnModuleInit {
     });
     if (!agent) throw new BadRequestException('Agent not found');
     return agent;
-  }
-
-  /* ─────────────────────────  UTIL  ───────────────────────── */
-  public seedToPrivateKey(seed: string) {
-    const node = HDKey.fromMasterSeed(Buffer.from(seed, 'hex'));
-    return Buffer.from(node.derive("m/44'/60'/0'/0/0").privateKey!).toString(
-      'hex',
-    );
   }
 
   /* ─────────────────────────  TTS VOICES  ───────────────────────── */
@@ -215,156 +180,84 @@ export class AgentService implements OnModuleInit {
     return filtered.map((v) => ({ id: v, name: v, provider: 'openai' }));
   }
 
-  /* purchaseCommons / checkCommonsBalance / transferTokensToWallet (unchanged) */
-
-  async purchaseCommons(props: { agentId: string; amountInCommon: string }) {
-    const { agentId, amountInCommon } = props;
-    const agent = await this.db.query.agent.findFirst({
-      where: (t) => eq(t.agentId, agentId),
-    });
-
-    if (!agent) {
-      throw new BadRequestException('Agent not found');
-    }
-
-    const amountInWei = BigInt(parseUnits(amountInCommon, 18)) / 100000n;
-
-    // Hack to get transaction to work
-    // Since transaction on CDP had limited gas, transaction was always failing
-    // Needed to use another provider to send the transaction
-
-    const privateKey = this.seedToPrivateKey(agent.wallet.seed);
-
-    const wallet = createWalletClient({
-      account: privateKeyToAccount(`0x${privateKey}` as `0x${string}`),
-      chain: baseSepolia,
-      transport: http(),
-    });
-    const txHash = await wallet.sendTransaction({
-      to: COMMON_TOKEN_ADDRESS.toLowerCase() as `0x${string}`,
-      value: amountInWei,
-      chain: undefined,
-    });
-
-    await this.publicClient.waitForTransactionReceipt({ hash: txHash });
+  /* ─────────────────────────  ENCRYPTION HELPERS  ───────────────────────── */
+  private encryptApiKey(plaintext: string): string {
+    const { encryptedValue, iv, tag } = this.encryption.encrypt(plaintext);
+    return `enc:${iv}:${tag}:${encryptedValue}`;
   }
 
-  async checkCommonsBalance(props: { agentId: string }) {
-    const { agentId } = props;
-
-    const agent = await this.db.query.agent.findFirst({
-      where: (t) => eq(t.agentId, agentId),
-    });
-
-    if (!agent) {
-      throw new BadRequestException('Agent not found');
-    }
-
-    const wallet = await Wallet.import(agent.wallet);
-    const commonsBalance = await wallet.getBalance(COMMON_TOKEN_ADDRESS);
-
-    return commonsBalance.toNumber();
+  private decryptApiKey(stored: string): string {
+    if (!stored.startsWith('enc:')) return stored; // plaintext (legacy)
+    const [, iv, tag, encryptedValue] = stored.split(':');
+    return this.encryption.decrypt(encryptedValue, iv, tag);
   }
 
-  async transferTokensToWallet(props: {
-    agentId: string;
-    address: string;
-    amount: number;
-  }) {
-    const { agentId, address, amount } = props;
+  /* ─────────────────────────  SYSTEM PROMPT  ───────────────────────── */
+  private buildSystemPrompt(
+    agent: { agentId: string; persona?: string | null; instructions?: string | null; [key: string]: any },
+    sessionId: string,
+    childSessionsInfo: string,
+    memoryBlock = '',
+  ): string {
+    const currentTime = new Date();
+    return dedent`You are the following agent:
+      ${JSON.stringify(omit(agent, ['instructions', 'persona', 'wallet', 'modelApiKey']))}
+      Persona:
+      ${agent.persona}
 
-    const agent = await this.db.query.agent.findFirst({
-      where: (t) => eq(t.agentId, agentId),
-    });
+      Instructions:
+      ${agent.instructions}
 
-    if (!agent) {
-      throw new BadRequestException('Agent not found');
-    }
+      The current date and time is ${currentTime.toISOString()}.
+      **SESSION ID**: ${sessionId}
 
-    const wallet = await Wallet.import(agent.wallet).catch((e) => {
-      console.log(e);
-      throw e;
-    });
+      ${memoryBlock}Note that you can interact and engage with other agents using the interactWithAgent tool. This tool allows you to interact with other agents one at a time. Once you initiate a conversation with another agent, you can continue the conversation by calling the interactWithAgent tool again with the sessionId provided in the result of running the interactWithAgent tool. This will allow you to continue the conversation with the other agent.${childSessionsInfo}
+      It is also possible to interact with a group of agents in spaces. You can use the createSpace tool to create a new space and can add other agents to the space using addAgentToSpace tool. Once in a space, you can send meassages to the space using the sendMessageToSpace tool. To get the context of the interactions on space, you can use the getSpaceMessages tool before sending messagesto the space. You can also join spaces created by other entities using the joinSpace tool.
+      To unsubscribe from a space, you can use the unsubscribeFromSpace tool. To subscribe to a space, you can use the subscribeToSpace tool.
+      If your response involves multiple tasks, let them know by sending a message before creating the tasks.
+      If you have a session id, provide it as an arg when sending a message to a space.
+      When getting live audio streams from a space, you can respond with voice using the speakInSpace tool which allows you to speak in the space.
+      While monitoring webcast streams you can interact with the webcast stream using the given space tools for that specific stream.
 
-    const tx = await wallet.createTransfer({
-      amount,
-      assetId: COMMON_TOKEN_ADDRESS,
-      destination: address,
-    });
-
-    await tx.wait();
-    const commonsBalance = await wallet.getBalance(COMMON_TOKEN_ADDRESS);
-
-    return { balance: commonsBalance.toNumber(), txHash: tx };
+      STRICTLY ABIDE BY THE FOLLOWING:
+      • If a request is simple and does not require complex planning, give an immediate response.
+      • If a request is complex and requires multiple steps, use createTask to create tasks with clear descriptions and dependencies.
+      • When creating tasks, think very deeply and critically. Set a SMART (Specific, Measurable, Achievable, Relevant, and Time-bound) task with a clear description. Consider all factors and create a well thought-out plan of action in the task description.
+      • For tasks with dependencies, use the dependsOn parameter to specify which tasks must complete first.
+      • For every task, specify the context which should contain all necessary information that are either needed or beneficial for the task.
+      • Specify the tools needed for each task in the tools parameter. If specific tools are required, set toolConstraintType to 'hard' to restrict the task to only those tools. Use 'soft' for recommendations.
+      • You can add toolInstructions to provide guidance like "If you encounter X, use tool Y" to help task execution.
+      • For recurring tasks, use the isRecurring and cronExpression parameters. Set recurringSessionMode to 'same' to keep tasks in the current session, or 'new' to create a new session for each recurrence.
+      • For workflow-based tasks, set executionMode to 'workflow' and provide the workflowId and workflowInputs.
+      • STRICTLY DO NOT start execution of a task or update any task using updateTaskProgress until the user specifically asks you to do so.
+      ## ONLY DO THESE ONCE THE TASKS ARE FULLY CREATED AND THE USER ASKS YOU TO DO SO:
+      • As you execute tasks, update task progress accordingly with all the necessary information using updateTaskProgress with the necessary details. Provide the actual result content of the task and the summary.
+      • If tasks require the use of tools, use the specified tools to execute the tasks. Follow any toolInstructions provided.
+      • For each task, perform the task and produce the content expected. The result content should be the actual content produced (code, data, reports, images, videos, text, PDFs, etc.).
+      • Unless given specific completion deadlines and schedules, all tasks should be completed immediately.
+      • If you encounter new information relevant to a task, update the task and task context with the new information.
+      • If you are unable to complete a task, call updateTaskProgress with the necessary details and provide a summary of the failure.
+    `;
   }
 
   /* ─────────────────────────  SESSION BOOTSTRAP  ───────────────────────── */
-  private async createAgentSession(agentId: string, sessionId: string) {
-    const agent = await this.getAgent({ agentId });
-    const currentTime = new Date();
-
-    // Get existing child sessions for this agent
-    const childSessions = await this.getChildSessions(sessionId);
-    // agent spaces
-    //const spaces = await this.getSpacesForAgent(agentId);
-    // get spaces from session
-    //const sessionSpaces = await this.getSpacesFromSession(sessionId);
-
+  private async createAgentSession(agentId: string, sessionId: string, firstUserMessage = '') {
+    const [agent, childSessions, memoryBlock] = await Promise.all([
+      this.getAgent({ agentId }),
+      this.getChildSessions(sessionId),
+      firstUserMessage
+        ? this.memoryService.buildMemoryBlock(agentId, firstUserMessage).catch(() => '')
+        : Promise.resolve(''),
+    ]);
     const childSessionsInfo =
       childSessions.length > 0
         ? `\n\nEXISTING CHILD SESSIONS:\nYou have the following ongoing conversations with other agents. Use these sessionIds to continue existing conversations instead of starting new ones:\n${childSessions.map((cs) => `- Agent ${cs.childAgentId}: ${cs.title || 'Untitled conversation'} (sessionId=${cs.childSessionId}, started: ${cs.createdAt})`).join('\n')}`
         : '';
-    console.log('childSessionsInfo:', childSessionsInfo);
-    console.log('sessiond id from createsession', sessionId);
-    // const agentSpacesInfo =
-    //   spaces.length > 0
-    //     ? `\n\nTOTAL EXISTING  SPACES:\nYou are currently in the following spaces in general:\n${spaces.map((s) => `- Space ${s.spaceId}: ${s.name || 'Untitled space'} (created: ${s.createdAt})`).join('\n')}`
-    //     : '';
-    // const sessionSpacesInfo =
-    //   sessionSpaces.length > 0
-    //     ? `\n\nEXISTING SESSION SPACES:\nYou are currently in the following spaces for this session:\n${sessionSpaces.map((s) => `- Space ${s.spaceId}: ${s.name || 'Untitled space'} (created: ${s.createdAt})`).join('\n')}`
-    //     : '';
-    // console.log('spacesInfo:', { agentSpacesInfo, sessionSpacesInfo });
+
     const messages: ChatCompletionMessageParam[] = [
       {
         role: 'system',
-        content: dedent`You are the following agent:
-          ${JSON.stringify(omit(agent, ['instructions', 'persona', 'wallet']))}
-              Persona:
-          ${agent.persona}
-
-          Instructions:
-          ${agent.instructions}
-          
-
-          The current date and time is ${currentTime.toISOString()}.
-           **SESSION ID**: ${sessionId}
-
-          Note that you can interact and engage with other agents using the interactWithAgent tool. This tool allows you to interact with other agents one at a time. Once you initiate a conversation with another agent, you can continue the conversation by calling the interactWithAgent tool again with the sessionId provided in the result of running the interactWithAgent tool. This will allow you to continue the conversation with the other agent.${childSessionsInfo}
-          It is also possible to interact with a group of agents in spaces. You can use the createSpace tool to create a new space and can add other agents to the space using addAgentToSpace tool. Once in a space, you can send meassages to the space using the sendMessageToSpace tool. To get the context of the interactions on space, you can use the getSpaceMessages tool before sending messagesto the space. You can also join spaces created by other entities using the joinSpace tool.
-          To unsubscribe from a space, you can use the unsubscribeFromSpace tool. To subscribe to a space, you can use the subscribeToSpace tool.
-          If your response to the agent/agents/users involves multiple tasks let them know by sending a message before creating the goals and tasks.
-          If you have a session id, provide it as an arg when sending a message to a space.
-          When getting live audio streams from a space, you can respond with voice using the speakInSpace tool which allows you to speak in the space.
-          While monitoring  webcast streams you can interact with the webcast stream using the given space tools for that specific stream.
-
-
-          STRICTLY ABIDE BY THE FOLLOWING:
-          • If a request is simple and does not require complex planning give an immediate response.
-          • If a request is complex and requires multiple steps, call createGoal which creates a goal and then get the goal id and use createTask to create tasks for the goal with the necessary details.
-          • In the process of creating a goal, think very deeply and critically about it. Break it down and detail every single paart of it. Set a SMART(Specific, Measureble, Achievable, Relevant and Time-bound) goal with a clear description. Consider all factors and create a well thought out plan of action and include it in the goal description. This should now guide the tasks to be created. Include the tasks breakdown in the goal description as well.The tasks to be created should match the tasks breakdown in the goal description. If no exact timelines are provided for the goal set the goal deadline to the current time.
-          • Similarly, when creating tasks, think very deeply and critically about it. Set a SMART(Specific, Measureble, Achievable, Relevant and Time-bound) task with a clear description. Consider all factors and create a well thought out plan of action and include it in the task description. Remember some tasks may be dependent on each other. Think about what tools might be needed to accomplish the task and include them in the task description and task tools.
-          • For every task specify the context of the task. The context should contain all the necessary information that are either needed or would be beneficial for the task.
-          • Before starting the execution make sure that the goal and all its tasks are fully created .
-          • STRCTLY DO NOT start execution of a task or update any task using updateTaskProgress until the user specifically asks you to do so.
-          ## ONLY DO THESE ONCE THE GOAL AND TASKS ARE FULLY CREATED AND THE USER ASKS YOU TO DO SO:
-          • As you execute tasks, update tasks progress accordingly with all the necessary information, call the updateTaskProgress  with the necessary details.Provide the actual result content of the task and the summary of the task.
-          • If tasks require the use of tools, include the needed tools in the task and use the tools to execute the tasks.
-          • For each task, perform the task and produce the content expected for the task given by the expectedOutputType in the task context. The result content should be the actual conent produced. For example if the task was to generate code, the result content should contain the code generated. If the task was to fetch data, the result content should contain the data fetched. If the task was to generate a report, the result content should contain the report generated. If the task was to generate an image, the result content should contain the image generated. If the task was to generate a video, the result content should contain the video generated. If the task was to generate a text, the result content should contain the text generated. If the task was to generate a pdf, the result content should contain the pdf generated.
-          • Unless given specific completion deadlines and schedules, all goals and tasks should be completed immediately.
-          • In case of any new information that is relevant to the task, update the task and task context with the new information. 
-          • If you are unable to complete a task, call the updateTaskProgress with the necessary details and provide a summary of the failure.
-        `,
+        content: this.buildSystemPrompt(agent, sessionId, childSessionsInfo, memoryBlock),
       },
     ];
 
@@ -421,10 +314,6 @@ export class AgentService implements OnModuleInit {
     const sessions = await this.db.query.session.findMany({
       where: (s) => eq(s.parentSessionId, parentSessionId),
     });
-    console.log(
-      `Found ${sessions.length} child sessions for parent ${parentSessionId}`,
-    );
-
     return sessions.map((session) => ({
       childSessionId: session.sessionId,
       childAgentId: session.agentId,
@@ -436,34 +325,30 @@ export class AgentService implements OnModuleInit {
 
   /* ─────────────────────────  CRON TRIGGER  ───────────────────────── */
   async triggerAgent(props: { agentId: string; sessionId?: string }) {
-    console.log('Triggering agent', props.agentId);
-    //if autonomous mode is not enabled then do not trigger the agent
     const agent = await this.getAgent({ agentId: props.agentId });
-    if (!agent.autonomyEnabled) {
-      console.log('Agent is not autonomous, skipping trigger');
-      return;
-    }
-    //get next executable goal
-    const nextGoal = await this.goals.getNextExecutableGoal(props.agentId);
-    if (!nextGoal) {
-      console.log('No executable goal found, pausing agent');
-      //actually pause the agent
-      return;
-    }
-    //get session from goal
-    const goalsessionId = nextGoal.sessionId;
-    if (goalsessionId) {
-      console.log('Goal session:', goalsessionId);
+    if (!agent.autonomyEnabled) return;
+
+    const pendingTasks = await this.taskExecution.listAgentTasks(props.agentId);
+    const tasksToExecute = pendingTasks.filter((t) => t.status === 'pending');
+
+    if (!tasksToExecute || tasksToExecute.length === 0) return;
+
+    const nextTask = tasksToExecute.sort(
+      (a, b) => (b.priority || 0) - (a.priority || 0),
+    )[0];
+    const taskSessionId = nextTask.sessionId;
+
+    if (taskSessionId) {
       return this.runAgent({
         agentId: props.agentId,
         messages: [
           {
             role: 'user',
             content: `⫷⫷AUTOMATED_USER_TRIGGER⫸⫸:
-              This is an automated trigger.Do not perform any action or update any task, unless the user specifically asks you to do so.`,
+              This is an automated trigger. Execute pending tasks as needed.`,
           },
         ],
-        sessionId: goalsessionId, //This will give the agent a rough idea on which task to execute. i.e - it will execute the tasks with the same sessionId
+        sessionId: taskSessionId,
         initiator: agent.agentId,
       });
     }
@@ -483,8 +368,15 @@ export class AgentService implements OnModuleInit {
     maxTurns?: number;
   }): Observable<any> {
     return new Observable<any>((subscriber) => {
+      // Keep SSE connection alive through proxies
+      const heartbeat = setInterval(() => subscriber.next({ type: 'heartbeat' }), 15_000);
+
       const run = async () => {
         const tStart = performance.now();
+        /** Trace ID — one UUID per top-level runAgent() invocation. Links all
+         *  LLM calls (including tool sub-calls) in a single run. Passed to
+         *  usageService.record() and emitted in the `final` SSE event. */
+        const traceId = uuidv4();
         const {
           agentId,
           sessionId,
@@ -496,15 +388,7 @@ export class AgentService implements OnModuleInit {
           maxTurns = 3, // default 3
         } = props;
 
-        console.log('Running agent', agentId, {
-          sessionId: sessionId,
-          spaceId: spaceId,
-          initiator: initiator,
-        });
         if (turnCount >= maxTurns) {
-          console.log(
-            `Max turns (${maxTurns}) reached for agent ${agentId}, stopping execution.`,
-          );
           return of({
             type: 'final',
             payload: {
@@ -517,11 +401,6 @@ export class AgentService implements OnModuleInit {
         try {
           const agent = await this.getAgent({ agentId });
 
-          const wallet = await Wallet.import(agent.wallet);
-          if ((await wallet.getBalance(COMMON_TOKEN_ADDRESS)).lte(0)) {
-            throw new BadRequestException('Agent has no tokens');
-          }
-
           let currentSessionId = sessionId;
           let isNewSession = false;
           if (!currentSessionId) {
@@ -532,7 +411,9 @@ export class AgentService implements OnModuleInit {
                   agentId,
                   initiator: initiator,
                   model: {
-                    name: 'gpt-4o',
+                    name: agent.modelId ?? 'gpt-4o',          // legacy compat
+                    provider: agent.modelProvider ?? 'openai',
+                    modelId: agent.modelId ?? 'gpt-4o',
                     temperature: agent.temperature || 0.7,
                     maxTokens: agent.maxTokens || 2000,
                     topP: agent.topP || 1,
@@ -555,7 +436,9 @@ export class AgentService implements OnModuleInit {
                   initiator,
                   parentSessionId: parentSessionId ?? undefined,
                   model: {
-                    name: 'gpt-4o',
+                    name: agent.modelId ?? 'gpt-4o',
+                    provider: agent.modelProvider ?? 'openai',
+                    modelId: agent.modelId ?? 'gpt-4o',
                     temperature: agent.temperature || 0.7,
                     maxTokens: agent.maxTokens || 2000,
                     topP: agent.topP || 1,
@@ -568,28 +451,7 @@ export class AgentService implements OnModuleInit {
             }
           }
 
-          const storedTools = await this.toolService.getAllTools();
-          const dynamicDefs = storedTools.map((dbTool) => ({
-            type: 'function',
-            function: { ...dbTool.schema, name: dbTool.name },
-            endpoint: `http://localhost:${process.env.PORT}/v1/agents/tools`,
-          }));
-
-          const resTools = await this.db.query.resource.findMany({
-            where: (r) => inArray(r.resourceId, agent.commonTools ?? []),
-          });
-
-          const resourceDefs = resTools
-            .filter((r) => !!r.schema)
-            .map((r) => ({
-              type: 'function',
-              function: {
-                ...(r.schema as any),
-                name: `resourceTool_${r.resourceId}`,
-              },
-              endpoint: `http://localhost:${process.env.PORT}/v1/agents/tools`,
-            }));
-
+          // ✅ Load tools using centralized ToolLoaderService
           const staticDefs = map(app.functions, (_) => ({
             type: 'function',
             function: {
@@ -597,31 +459,33 @@ export class AgentService implements OnModuleInit {
               parameters:
                 _?.parameters as unknown as ChatCompletionTool['function']['parameters'],
             },
-            endpoint: `http://localhost:${process.env.PORT}/v1/agents/tools`,
-          })) as (ChatCompletionTool & { endpoint: string })[];
+          })) as ChatCompletionTool[];
 
-          const toolDefs = [...dynamicDefs, ...resourceDefs, ...staticDefs];
-          // If running inside a space, merge space tool specs (spacetools)
+          // Load space-specific tools if in a space
+          let spaceToolDefs: ChatCompletionTool[] = [];
           if (spaceId) {
             const spaceToolSpecs = this.spaceTools.getToolsForSpace(spaceId);
-            if (spaceToolSpecs.length) {
-              const spaceDefs = spaceToolSpecs.map((spec) => ({
-                type: 'function',
-                function: {
-                  name: spec.name,
-                  description: spec.description || 'Space provided tool',
-                  parameters: spec.parameters || {
-                    type: 'object',
-                    properties: {},
-                  },
-                  // Pass through apiSpec so controller can pick dynamic invocation path
-                  apiSpec: spec.apiSpec,
+            spaceToolDefs = spaceToolSpecs.map((spec) => ({
+              type: 'function',
+              function: {
+                name: spec.name,
+                description: spec.description || 'Space provided tool',
+                parameters: spec.parameters || {
+                  type: 'object',
+                  properties: {},
                 },
-                endpoint: `http://localhost:${process.env.PORT}/v1/agents/tools`,
-              }));
-              toolDefs.push(...(spaceDefs as any));
-            }
+              },
+            })) as ChatCompletionTool[];
           }
+
+          const toolDefs = await this.toolLoader.loadToolsForAgent({
+            agentId,
+            userId: agent.owner ?? undefined,
+            spaceId,
+            staticToolDefs: staticDefs,
+            spaceToolDefs: spaceToolDefs,
+            endpoint: `http://localhost:${process.env.PORT}/v1/agents/tools`,
+          });
 
           const toolUsage: {
             name: string;
@@ -656,17 +520,48 @@ export class AgentService implements OnModuleInit {
                 timestamp: new Date().toISOString(),
               });
             },
+            /** Structured trace log — parseable by log aggregators (CloudWatch, Datadog, etc.) */
+            handleLLMEnd: async (result: any, runId: string) => {
+              const usage = result?.llmOutput?.tokenUsage ?? result?.llmOutput?.usage ?? {};
+              console.log(JSON.stringify({
+                level: 'info',
+                event: 'llm_call',
+                traceId,
+                langchainRunId: runId,
+                agentId,
+                sessionId: currentSessionId,
+                inputTokens:  usage.prompt_tokens    ?? usage.input_tokens  ?? 0,
+                outputTokens: usage.completion_tokens ?? usage.output_tokens ?? 0,
+                ts: new Date().toISOString(),
+              }));
+            },
           });
 
-          const llm = new ChatOpenAI({
-            model: 'gpt-4o',
-            temperature: 0,
-            supportsStrictToolCalling: true,
-            apiKey: process.env.OPENAI_API_KEY,
-            streaming: stream, // ✅ use flag
-          });
+          // ── Build LLM from agent/session model config (provider-agnostic) ──
+          const sessionRecord = await this.session.getSession({ id: currentSessionId });
+          const decryptedApiKey = agent.modelApiKey
+            ? this.decryptApiKey(agent.modelApiKey)
+            : undefined;
+          const sessionModel = SessionService.decryptModelApiKey(
+            sessionRecord?.model as any,
+            this.encryption,
+          );
+          const llm = this.modelProviderFactory.buildFromSessionModel(
+            sessionModel,
+            {
+              provider: (agent.modelProvider as any) ?? 'openai',
+              modelId: agent.modelId ?? 'gpt-4o',
+              apiKey: decryptedApiKey,
+              baseUrl: agent.modelBaseUrl ?? undefined,
+              temperature: agent.temperature ?? 0,
+              maxTokens: agent.maxTokens ?? undefined,
+              topP: agent.topP ?? undefined,
+              presencePenalty: agent.presencePenalty ?? undefined,
+              frequencyPenalty: agent.frequencyPenalty ?? undefined,
+            },
+          );
 
-          const llmWithTools = llm.bindTools(toolDefs, {
+          const llmWithTools = (llm as any).bindTools(toolDefs as any, {
             parallel_tool_calls: true,
             strict: false,
             callbacks: [callbackHandler],
@@ -772,10 +667,12 @@ export class AgentService implements OnModuleInit {
 
           let messages: Messages = [];
           if (isNewSession) {
-            console.log('Creating new session for agent:', agentId);
+            const firstMsg = props.messages?.find((m) => m.role === 'user');
+            const firstUserText = typeof firstMsg?.content === 'string' ? firstMsg.content : '';
             const boot = await this.createAgentSession(
               agentId,
               currentSessionId,
+              firstUserText,
             );
             messages.push(
               ...boot.messages.map((m) => ({
@@ -790,98 +687,47 @@ export class AgentService implements OnModuleInit {
               id: currentSessionId,
             });
 
-            // ✅ CRITICAL FIX: Fetch agent and inject persona/instructions for existing sessions
-            const agent = await this.getAgent({ agentId });
-            const currentTime = new Date();
-            const childSessions = await this.getChildSessions(currentSessionId);
-
+            // Fetch agent and inject fresh persona/instructions for existing sessions
+            const firstMsg = props.messages?.find((m) => m.role === 'user');
+            const firstUserText = typeof firstMsg?.content === 'string' ? firstMsg.content : '';
+            const [agent, childSessions, memoryBlock] = await Promise.all([
+              this.getAgent({ agentId }),
+              this.getChildSessions(currentSessionId),
+              firstUserText
+                ? this.memoryService.buildMemoryBlock(agentId, firstUserText).catch(() => '')
+                : Promise.resolve(''),
+            ]);
             const childSessionsInfo =
               childSessions.length > 0
                 ? `\n\nEXISTING CHILD SESSIONS:\nYou have the following ongoing conversations with other agents. Use these sessionIds to continue existing conversations instead of starting new ones:\n${childSessions.map((cs) => `- Agent ${cs.childAgentId}: ${cs.title || 'Untitled conversation'} (sessionId=${cs.childSessionId}, started: ${cs.createdAt})`).join('\n')}`
                 : '';
 
-            // ✅ Inject the agent's persona and instructions at the beginning
             messages.push({
               type: 'system',
               role: 'system',
-              content: dedent`You are the following agent:
-                ${JSON.stringify(omit(agent, ['instructions', 'persona', 'wallet']))}
-                    Persona:
-                ${agent.persona}
-
-                Instructions:
-                ${agent.instructions}
-
-
-                The current date and time is ${currentTime.toISOString()}.
-                 **SESSION ID**: ${currentSessionId}
-
-                Note that you can interact and engage with other agents using the interactWithAgent tool. This tool allows you to interact with other agents one at a time. Once you initiate a conversation with another agent, you can continue the conversation by calling the interactWithAgent tool again with the sessionId provided in the result of running the interactWithAgent tool. This will allow you to continue the conversation with the other agent.${childSessionsInfo}
-                It is also possible to interact with a group of agents in spaces. You can use the createSpace tool to create a new space and can add other agents to the space using addAgentToSpace tool. Once in a space, you can send meassages to the space using the sendMessageToSpace tool. To get the context of the interactions on space, you can use the getSpaceMessages tool before sending messagesto the space. You can also join spaces created by other entities using the joinSpace tool.
-                To unsubscribe from a space, you can use the unsubscribeFromSpace tool. To subscribe to a space, you can use the subscribeToSpace tool.
-                If your response to the agent/agents/users involves multiple tasks let them know by sending a message before creating the goals and tasks.
-                If you have a session id, provide it as an arg when sending a message to a space.
-                When getting live audio streams from a space, you can respond with voice using the speakInSpace tool which allows you to speak in the space.
-                While monitoring  webcast streams you can interact with the webcast stream using the given space tools for that specific stream.
-
-
-                STRICTLY ABIDE BY THE FOLLOWING:
-                • If a request is simple and does not require complex planning give an immediate response.
-                • If a request is complex and requires multiple steps, call createGoal which creates a goal and then get the goal id and use createTask to create tasks for the goal with the necessary details.
-                • In the process of creating a goal, think very deeply and critically about it. Break it down and detail every single paart of it. Set a SMART(Specific, Measureble, Achievable, Relevant and Time-bound) goal with a clear description. Consider all factors and create a well thought out plan of action and include it in the goal description. This should now guide the tasks to be created. Include the tasks breakdown in the goal description as well.The tasks to be created should match the tasks breakdown in the goal description. If no exact timelines are provided for the goal set the goal deadline to the current time.
-                • Similarly, when creating tasks, think very deeply and critically about it. Set a SMART(Specific, Measureble, Achievable, Relevant and Time-bound) task with a clear description. Consider all factors and create a well thought out plan of action and include it in the task description. Remember some tasks may be dependent on each other. Think about what tools might be needed to accomplish the task and include them in the task description and task tools.
-                • For every task specify the context of the task. The context should contain all the necessary information that are either needed or would be beneficial for the task.
-                • Before starting the execution make sure that the goal and all its tasks are fully created .
-                • STRCTLY DO NOT start execution of a task or update any task using updateTaskProgress until the user specifically asks you to do so.
-                ## ONLY DO THESE ONCE THE GOAL AND TASKS ARE FULLY CREATED AND THE USER ASKS YOU TO DO SO:
-                • As you execute tasks, update tasks progress accordingly with all the necessary information, call the updateTaskProgress  with the necessary details.Provide the actual result content of the task and the summary of the task.
-                • If tasks require the use of tools, include the needed tools in the task and use the tools to execute the tasks.
-                • For each task, perform the task and produce the content expected for the task given by the expectedOutputType in the task context. The result content should be the actual conent produced. For example if the task was to generate code, the result content should contain the code generated. If the task was to fetch data, the result content should contain the data fetched. If the task was to generate a report, the result content should contain the report generated. If the task was to generate an image, the result content should contain the image generated. If the task was to generate a video, the result content should contain the video generated. If the task was to generate a text, the result content should contain the text generated. If the task was to generate a pdf, the result content should contain the pdf generated.
-                • Unless given specific completion deadlines and schedules, all goals and tasks should be completed immediately.
-                • In case of any new information that is relevant to the task, update the task and task context with the new information.
-                • If you are unable to complete a task, call the updateTaskProgress with the necessary details and provide a summary of the failure.
-              `,
+              content: this.buildSystemPrompt(agent, currentSessionId, childSessionsInfo, memoryBlock),
             } as any);
 
             if (
               currentSession?.history &&
               Array.isArray(currentSession.history)
             ) {
-              console.log(
-                `Loading ${currentSession.history.length} messages from session history`,
-              );
-
-              // Filter and load only user and assistant messages
-              // IMPORTANT: Skip system messages from history since we're injecting fresh persona above
+              // Load user and assistant messages only — skip system messages since we inject fresh persona above
               const validHistoryMessages = currentSession.history.filter(
                 (entry: any) =>
                   entry.role === 'user' || entry.role === 'assistant',
               );
-
-              console.log(
-                `Filtered to ${validHistoryMessages.length} valid messages (user/assistant only, excluding system to prevent persona conflicts)`,
-              );
-
-              // Load existing history into messages array so agent can see it
               messages.push(
                 ...validHistoryMessages.map((historyEntry: any) => ({
                   type: historyEntry.role,
                   role: historyEntry.role,
                   content: historyEntry.content ?? '',
-                  // Don't include timestamp and metadata in the message object to avoid coercion issues
                 })),
               );
             }
-
-            console.log(
-              'Updated childSessionsInfo for existing session:',
-              childSessionsInfo,
-            );
-            console.log('Child sessions after update:', childSessionsInfo);
           }
 
           if (spaceId) {
-            console.log('Running in space mode:', spaceId);
             // ✅ For space-based runs, inject system message with space info
             const space = await this.db.query.space.findFirst({
               where: (s) => eq(s.spaceId, spaceId),
@@ -902,7 +748,7 @@ export class AgentService implements OnModuleInit {
               You can interact with other agents in this space using the sendMessageToSpace tool.
               You can speak up in the space  using voice with the speakInSpace tool. Typically you would use this tool when there is a live audio stream in the space which will be transcribed and sent to you.
 
-              If you create goals and tasks, you need to inform the space members about it by sending a message to the space.
+              If you create tasks, you need to inform the space members about it by sending a message to the space.
               
               If you want to unsubscribe from this space, you can use the unsubscribeFromSpace tool.
 
@@ -921,17 +767,74 @@ export class AgentService implements OnModuleInit {
             );
           }
 
+          // ── Inject relevant memories into the system prompt ───────────────
+          const latestUserMsg =
+            props.messages?.findLast((m) => m.role === 'user')?.content as string | undefined;
+          const memoryBlock = await this.memoryService.buildMemoryBlock(
+            agentId,
+            latestUserMsg ?? '',
+          ).catch(() => '');
+
+          if (memoryBlock) {
+            // Append to the existing system message, or push a new one
+            const sysIdx = messages.findIndex(
+              (m: any) => m.role === 'system' || m.type === 'system',
+            );
+            if (sysIdx >= 0) {
+              const sys = messages[sysIdx] as any;
+              messages[sysIdx] = {
+                ...sys,
+                content: `${sys.content}${memoryBlock}`,
+              };
+            } else {
+              messages.push({
+                type: 'system',
+                role: 'system',
+                content: memoryBlock,
+              } as any);
+            }
+          }
+
+          // Resolve effective provider/model for cost tracking
+          const effectiveProvider = (agent.modelProvider ?? 'openai') as any;
+          const effectiveModelId  = agent.modelId ?? 'gpt-4o';
+          const isByok = !!agent.modelApiKey;
+
+          // Accumulate token counts across all invoke() loops
+          let totalInputTokens  = 0;
+          let totalOutputTokens = 0;
+          let totalCachedTokens = 0;
+
           let loop = 0;
           let max_recurssion = agent.autonomyEnabled ? 2 : 4;
           let finalResult = null;
 
           while (loop++ < max_recurssion) {
-            const nextTask = await this.tasks.getNextExecutable(
+            // ✅ Check for next executable task using new TaskExecutionService
+            const nextTask = await this.taskExecution.getNextExecutableTask(
               agentId,
               currentSessionId,
             );
+
             if (nextTask) {
-              await this.tasks.start(nextTask.taskId);
+              if (nextTask.executionMode === 'workflow' && nextTask.workflowId) {
+                // Execute workflow task fully
+                await this.taskExecution.executeTask(nextTask.taskId);
+
+                // Continue to check for next task
+                continue;
+              }
+
+              // ✅ For single/sequential tasks, mark as running and inject instruction
+              await this.db
+                .update(schema.task)
+                .set({
+                  status: 'running',
+                  actualStart: new Date(),
+                })
+                .where(eq(schema.task.taskId, nextTask.taskId));
+
+              // Inject task instruction into messages
               messages.push({
                 type: 'user',
                 role: 'user',
@@ -939,15 +842,77 @@ export class AgentService implements OnModuleInit {
               } as any);
             }
 
+            const tInvoke = performance.now();
             const result = await graph.invoke(
               { messages },
               { configurable: { thread_id: currentSessionId } },
             );
+            const invokeDurationMs = Math.round(performance.now() - tInvoke);
 
             messages = result.messages;
             finalResult = result;
 
-            const pending = await this.tasks.getNextExecutable(
+            // ── Extract token usage from the last AI message ──────────────
+            const lastAiMsg = [...(result.messages as any[])]
+              .reverse()
+              .find((m: any) => m.getType?.() === 'ai' || m._getType?.() === 'ai');
+
+            let inputTokens  = 0;
+            let outputTokens = 0;
+            let cachedTokens = 0;
+
+            if (lastAiMsg) {
+              // LangChain standardised usage_metadata (LangChain >= 0.2)
+              const um = lastAiMsg.usage_metadata;
+              if (um) {
+                inputTokens  = um.input_tokens  ?? 0;
+                outputTokens = um.output_tokens ?? 0;
+                cachedTokens = um.input_token_details?.cache_read ?? 0;
+              } else {
+                // Fallback: provider-specific response_metadata
+                const rm = lastAiMsg.response_metadata ?? {};
+                // OpenAI shape
+                const usage = rm.usage ?? rm.token_usage ?? {};
+                inputTokens  = usage.prompt_tokens     ?? usage.input_tokens  ?? 0;
+                outputTokens = usage.completion_tokens ?? usage.output_tokens ?? 0;
+              }
+            }
+
+            const iterTotalTokens = inputTokens + outputTokens;
+            totalInputTokens  += inputTokens;
+            totalOutputTokens += outputTokens;
+            totalCachedTokens += cachedTokens;
+
+            // ── Persist usage_event row (fire-and-forget — don't block) ──
+            if (iterTotalTokens > 0) {
+              const costUsd = calculateCost(
+                effectiveProvider,
+                effectiveModelId,
+                inputTokens,
+                outputTokens,
+              );
+              this.usageService
+                .record({
+                  agentId:   agentId,
+                  sessionId: currentSessionId as any,
+                  provider:  effectiveProvider,
+                  modelId:   effectiveModelId,
+                  inputTokens,
+                  outputTokens,
+                  cachedTokens,
+                  totalTokens: iterTotalTokens,
+                  costUsd,
+                  isByok,
+                  durationMs: invokeDurationMs,
+                  traceId,
+                })
+                .catch((err) =>
+                  console.error('[UsageService] Failed to record event:', err),
+                );
+            }
+
+            // Check for more pending tasks
+            const pending = await this.taskExecution.getNextExecutableTask(
               agentId,
               currentSessionId,
             );
@@ -1070,10 +1035,7 @@ export class AgentService implements OnModuleInit {
                   : currentSession.title ||
                     (spaceId ? `Space: ${spaceId}` : sessionTitle),
                 metrics: {
-                  totalTokens: toolUsage.reduce(
-                    (acc, tool) => acc + (tool.duration || 0),
-                    0,
-                  ),
+                  totalTokens: totalInputTokens + totalOutputTokens,
                   toolCalls: toolUsage.length,
                   errorCount: toolUsage.filter((t) => t.status === 'error')
                     .length,
@@ -1122,12 +1084,27 @@ export class AgentService implements OnModuleInit {
 
           const lastMessage = finalResult?.messages?.at(-1)?.toDict() ?? {};
 
+          const totalCostUsd = calculateCost(
+            effectiveProvider,
+            effectiveModelId,
+            totalInputTokens,
+            totalOutputTokens,
+          );
+
           subscriber.next({
             type: 'final',
             payload: {
               ...lastMessage,
               sessionId: currentSessionId,
               title: sessionTitle ?? 'New Session',
+              traceId,
+              usage: {
+                inputTokens:  totalInputTokens,
+                outputTokens: totalOutputTokens,
+                cachedTokens: totalCachedTokens,
+                totalTokens:  totalInputTokens + totalOutputTokens,
+                costUsd:      totalCostUsd,
+              },
               metadata: {
                 toolCalls,
                 agentCalls: resolvedAgentCalls,
@@ -1135,30 +1112,59 @@ export class AgentService implements OnModuleInit {
             },
           });
 
+          clearInterval(heartbeat);
           subscriber.complete();
+
+          // ── Memory consolidation (fire-and-forget after stream closes) ──
+          // Only consolidate non-space, non-child sessions to avoid noise
+          if (currentSessionId && !spaceId && !parentSessionId) {
+            const historyForConsolidation = (
+              finalResult?.messages as any[] ?? []
+            )
+              .filter((m: any) => {
+                const t = m.getType?.() ?? m.type;
+                return t === 'human' || t === 'ai';
+              })
+              .map((m: any) => ({
+                role: m.getType?.() === 'human' || m.type === 'human' ? 'user' : 'assistant',
+                content:
+                  typeof m.content === 'string'
+                    ? m.content
+                    : JSON.stringify(m.content),
+              }));
+
+            if (historyForConsolidation.length >= 2) {
+              this.memoryService
+                .consolidateSession(agentId, currentSessionId, historyForConsolidation)
+                .catch((err) =>
+                  console.error('[MemoryService] Consolidation failed:', err),
+                );
+            }
+          }
         } catch (err) {
+          clearInterval(heartbeat);
           subscriber.error(err);
         }
       };
 
       run();
+      return () => clearInterval(heartbeat);
     });
   }
 
   private async generateSessionTitle(userMessage: string): Promise<string> {
     try {
-      // Truncate message if too long
       const truncatedMessage =
         userMessage.length > 200
           ? userMessage.substring(0, 200) + '...'
           : userMessage;
 
-      // Use LangChain ChatOpenAI for title generation
-      const titleLlm = new ChatOpenAI({
-        model: 'gpt-4o-mini',
+      // Use a fast model for title generation — always use platform OpenAI key
+      const titleLlm = this.modelProviderFactory.build({
+        provider: 'openai',
+        modelId: 'gpt-4o-mini',
         temperature: 0.3,
         maxTokens: 20,
-        apiKey: process.env.OPENAI_API_KEY,
       });
 
       const response = await titleLlm.invoke([
@@ -1188,9 +1194,13 @@ export class AgentService implements OnModuleInit {
     agentId: string,
     updateData: Partial<InferSelectModel<typeof schema.agent>>,
   ) {
+    const data = omit(updateData, ['wallet', 'agentId', 'createdAt']) as any;
+    if (data.modelApiKey) {
+      data.modelApiKey = this.encryptApiKey(data.modelApiKey);
+    }
     const [updated] = await this.db
       .update(schema.agent)
-      .set(omit(updateData, ['wallet', 'agentId', 'createdAt']))
+      .set(data)
       .where(eq(schema.agent.agentId, agentId))
       .returning();
     return updated;
@@ -1265,11 +1275,10 @@ export class AgentService implements OnModuleInit {
     agentId: string,
     toolId: string,
     usageComments?: string,
-    secureKeyRef?: string,
   ) {
     const [inserted] = await this.db
       .insert(schema.agentTool)
-      .values({ agentId, toolId, usageComments, secureKeyRef })
+      .values({ agentId, toolId, usageComments })
       .returning();
     return inserted;
   }

@@ -35,7 +35,7 @@ export function TopLoadingBar({
 
   return (
     <div
-      className={`fixed top-0 left-0 right-0 z-50 h-1 bg-gray-200 ${className}`}
+      className={`fixed top-0 left-0 right-0 z-50 h-1 bg-muted ${className}`}
     >
       <div
         className="h-full bg-blue-500 transition-all duration-300 ease-out"

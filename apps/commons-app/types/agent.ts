@@ -25,6 +25,7 @@ export interface CommonAgent {
   avatar?: string;
   persona: string;
   instructions: string;
+  description?: string;
   address: string;
   mode: AgentMode;
   autoInterval?: number;
@@ -34,10 +35,18 @@ export interface CommonAgent {
   knowledgebase: string;
   memory: string;
   owner: string;
+  // LLM model config
+  modelProvider?: string;
+  modelId?: string;
+  modelApiKey?: string;
+  modelBaseUrl?: string;
   temperature: number;
   maxTokens: number;
   stopSequences: string[];
   topP: number;
   frequencyPenalty: number;
   presencePenalty: number;
+  // TTS
+  ttsProvider?: string;
+  ttsVoice?: string;
 }

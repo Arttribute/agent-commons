@@ -1,24 +1,16 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { PanelLeft, PanelRight, Sparkles, Earth, Folder } from "lucide-react";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import { DashboardBar } from "./dashboard-bar";
-import SessionsList from "../sessions/sessions-list";
-import { useAuth } from "@/context/AuthContext";
 import { useSidebar } from "@/context/SidebarContext";
 
 export function DashboardSideBar({ username }: { username: string }) {
   const { isOpen, setIsOpen } = useSidebar();
-  const [recentChats, setRecentChats] = useState<any[]>([]);
-  const { authState } = useAuth();
-  const { walletAddress } = authState;
   const pathname = usePathname();
   const router = useRouter();
-
-  // Persistence is handled in SidebarProvider
 
   const activeSection = useMemo(() => {
     if (!pathname) return "studio";
@@ -28,50 +20,28 @@ export function DashboardSideBar({ username }: { username: string }) {
     return "studio";
   }, [pathname]);
 
-  const userAddress = walletAddress?.toLowerCase();
-  useEffect(() => {
-    const fetchSessions = async () => {
-      if (!username) return;
-      const res = await fetch(
-        `/api/sessions/list?agentId=${"0x385e15a9d5e94c3df8090dc024473b6002f03c03"}&initiatorId=${userAddress}`
-      );
-      const data = await res.json();
-      setRecentChats(data.data || []);
-    };
-
-    fetchSessions();
-  }, [username]);
-
   return (
     <div
       className={cn(
-        "h-[calc(100vh-50px)] bg-background border-r border-border border-gray-400 flex flex-col transition-all duration-300",
+        "h-[calc(100vh-50px)] bg-background border-r border-border flex flex-col transition-all duration-300",
         isOpen ? "w-[260px] min-w-[260px]" : "w-[60px] min-w-[60px]"
       )}
     >
       <div className="px-3 pt-4">
         {isOpen ? (
           <div>
-            <div className="flex items-center justify-between w-full">
-              <DashboardBar
-                activeTab={activeSection}
-                rightSlot={
-                  <button
-                    aria-label="Collapse sidebar"
-                    className="ml-2 text-muted-foreground hover:text-foreground"
-                    onClick={() => setIsOpen(false)}
-                  >
-                    <PanelRight className="h-5 w-5" />
-                  </button>
-                }
-              />
-            </div>
-            <h3 className="text-sm font-medium text-muted-foreground mt-8 mb-2  px-2">
-              Sessions
-            </h3>
-            <ScrollArea className="h-[58vh]">
-              <SessionsList sessions={recentChats} />
-            </ScrollArea>
+            <DashboardBar
+              activeTab={activeSection}
+              rightSlot={
+                <button
+                  aria-label="Collapse sidebar"
+                  className="ml-2 text-muted-foreground hover:text-foreground"
+                  onClick={() => setIsOpen(false)}
+                >
+                  <PanelRight className="h-5 w-5" />
+                </button>
+              }
+            />
           </div>
         ) : (
           <div className="px-2 flex flex-col gap-4 items-center">

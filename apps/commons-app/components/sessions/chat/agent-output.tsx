@@ -2,7 +2,7 @@
 
 import type React from "react";
 
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { atomDark } from "react-syntax-highlighter/dist/esm/styles/prism";
 import ReactMarkdown from "react-markdown";
@@ -33,40 +33,15 @@ interface AgentOutputProps {
     agentCalls?: AgentCall[];
   };
   className?: string;
-  isStreaming?: boolean; // Add isStreaming prop
-}
-
-interface CodeProps {
-  node?: any;
-  inline?: boolean;
-  className?: string;
-  children?: React.ReactNode;
+  isStreaming?: boolean;
 }
 
 export default function AgentOutput({
   content,
   metadata,
   className,
-  isStreaming, // Destructure isStreaming prop
+  isStreaming,
 }: AgentOutputProps) {
-  const codeExecutorRef = useRef<HTMLDivElement>(null);
-  const [isExpanded, setIsExpanded] = useState(false);
-  const [activeTab, setActiveTab] = useState("message");
-
-  // Check if there are any code blocks in the content
-  const hasCodeBlocks = content && content.includes("```");
-  const hasToolCalls =
-    metadata && metadata?.toolCalls && metadata.toolCalls.length > 0;
-  const hasAgentCalls =
-    metadata && metadata?.agentCalls && metadata.agentCalls.length > 0;
-
-  useEffect(() => {
-    // Initialize code executor if it exists
-    if (codeExecutorRef.current) {
-      // This would be where we\\\"d initialize a code execution environment
-      // For now, this is just a placeholder
-    }
-  }, []);
 
   if (!content && !isStreaming) {
     return (
@@ -80,10 +55,12 @@ export default function AgentOutput({
   }
 
   return (
-    <div className={cn("prose max-w-none", className)}>
-      <Bot className="h-4 w-4 text-indigo-500 inline mr-1 -mb-4" />
-
-      {/* Always use ReactMarkdown, regardless of streaming status */}
+    <div className={cn("prose max-w-none my-3", className)}>
+      <div className="flex items-start gap-2">
+        <div className="mt-0.5 shrink-0 h-6 w-6 rounded-full bg-indigo-50 flex items-center justify-center">
+          <Bot className="h-3.5 w-3.5 text-indigo-500" />
+        </div>
+        <div className="flex-1 min-w-0">
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
         rehypePlugins={[rehypeRaw]}
@@ -202,6 +179,11 @@ export default function AgentOutput({
       >
         {content}
       </ReactMarkdown>
+      {isStreaming && (
+        <span className="inline-block w-1.5 h-4 bg-indigo-400 rounded-sm animate-pulse ml-0.5 align-middle" />
+      )}
+        </div>
+      </div>
     </div>
   );
 }
@@ -227,7 +209,7 @@ function CodeBlock({ language, code, children }: CodeBlockProps) {
 
   return (
     <div className="my-4 rounded-md overflow-hidden">
-      <div className="flex items-center justify-between bg-muted text-gray-700 px-4 py-2 text-xs font-mono">
+      <div className="flex items-center justify-between bg-muted text-muted-foreground px-4 py-2 text-xs font-mono">
         <span>{language}</span>
         <Button
           variant="ghost"

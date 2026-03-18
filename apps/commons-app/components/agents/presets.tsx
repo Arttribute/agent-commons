@@ -3,10 +3,30 @@
 import { Dispatch, SetStateAction, useState } from "react";
 import { Label } from "@/components/ui/label";
 import { Slider } from "@/components/ui/slider";
+import { Input } from "@/components/ui/input";
 import { JsonEditor } from "./json-editor";
 import { TagInput } from "./tag-input";
 import ToolSelector from "@/components/tools/tool-selector";
 import type { CommonAgent } from "@/types/agent";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Eye, EyeOff } from "lucide-react";
+
+const MODEL_PROVIDERS = ["openai", "anthropic", "google", "groq", "ollama"] as const;
+type ModelProvider = typeof MODEL_PROVIDERS[number];
+
+const MODEL_PLACEHOLDERS: Record<ModelProvider, string> = {
+  openai: "gpt-4o",
+  anthropic: "claude-sonnet-4-6",
+  google: "gemini-2.0-flash",
+  groq: "llama-3.3-70b-versatile",
+  ollama: "llama3",
+};
 
 interface ModelConfig {
   temperature: number;
@@ -46,6 +66,7 @@ export function Presets({
   setModelConfig,
   userAddress,
 }: PresetsProps) {
+  const [showApiKey, setShowApiKey] = useState(false);
   // Local arrays to store the selected tool objects (id + name)
   const [commonToolsList, setCommonToolsList] = useState<SelectedTool[]>([]);
   const [externalToolsList, setExternalToolsList] = useState<SelectedTool[]>(
@@ -205,7 +226,72 @@ export function Presets({
         {/* Model Configuration Section */}
         <div className="space-y-4">
           <h3 className="text-lg font-medium">Model Configuration</h3>
-          <div className="p-4 border rounded-lg">
+          <div className="p-4 border rounded-lg space-y-4">
+            {/* Provider + Model ID */}
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <Label>Provider</Label>
+                <Select
+                  value={(agent.modelProvider as ModelProvider) || "openai"}
+                  onValueChange={(v) => setAgent((prev) => ({ ...prev, modelProvider: v }))}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select provider" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {MODEL_PROVIDERS.map((p) => (
+                      <SelectItem key={p} value={p}>
+                        {p.charAt(0).toUpperCase() + p.slice(1)}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1">
+                <Label>Model ID</Label>
+                <Input
+                  value={agent.modelId || ""}
+                  onChange={(e) => setAgent((prev) => ({ ...prev, modelId: e.target.value }))}
+                  placeholder={MODEL_PLACEHOLDERS[(agent.modelProvider as ModelProvider) || "openai"]}
+                />
+              </div>
+            </div>
+
+            {/* API Key (not for ollama) */}
+            {agent.modelProvider !== "ollama" && (
+              <div className="space-y-1">
+                <Label>API Key</Label>
+                <div className="relative">
+                  <Input
+                    type={showApiKey ? "text" : "password"}
+                    value={agent.modelApiKey || ""}
+                    onChange={(e) => setAgent((prev) => ({ ...prev, modelApiKey: e.target.value }))}
+                    placeholder="sk-..."
+                    className="pr-9"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowApiKey((s) => !s)}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                  >
+                    {showApiKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Base URL (ollama only) */}
+            {agent.modelProvider === "ollama" && (
+              <div className="space-y-1">
+                <Label>Base URL</Label>
+                <Input
+                  value={agent.modelBaseUrl || ""}
+                  onChange={(e) => setAgent((prev) => ({ ...prev, modelBaseUrl: e.target.value }))}
+                  placeholder="http://localhost:11434"
+                />
+              </div>
+            )}
+
             {/* Temperature */}
             <div className="space-y-2">
               <Label htmlFor="temperature">Temperature</Label>

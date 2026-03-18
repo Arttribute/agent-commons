@@ -9,7 +9,7 @@ import { Resource } from "@/types/resource";
 export default function ResourceCard({ resource }: { resource: Resource }) {
   return (
     <div
-      className="relative cursor-pointer border border-gray-400 shadow-md rounded-xl overflow-hidden "
+      className="relative cursor-pointer border border-border shadow-md rounded-xl overflow-hidden "
       style={{
         backgroundImage: `url(${"https://res.cloudinary.com/arttribute/image/upload/v1723823036/m25z496he3yykfk3elsz.jpg"})`,
         backgroundSize: "cover",
