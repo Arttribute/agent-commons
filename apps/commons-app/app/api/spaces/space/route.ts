@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { backendAuthHeaders } from "@/lib/api-headers";
 
 const baseUrl = process.env.NEXT_PUBLIC_NEST_API_BASE_URL;
 
@@ -21,7 +22,7 @@ export async function GET(request: NextRequest) {
   const url = full === "true" ? `${spaceUrl(spaceId)}/full` : spaceUrl(spaceId);
 
   try {
-    const res = await fetch(url, { cache: "no-store" });
+    const res = await fetch(url, { cache: "no-store", headers: backendAuthHeaders() });
     const data = await res.json();
     return NextResponse.json(data, { status: res.status });
   } catch (e: any) {
@@ -43,8 +44,8 @@ export async function PATCH(request: NextRequest) {
   try {
     const body = await request.json();
     const res = await fetch(spaceUrl(spaceId), {
-      method: "PUT", // backend uses PUT for update
-      headers: { "Content-Type": "application/json" },
+      method: "PUT",
+      headers: { "Content-Type": "application/json", ...backendAuthHeaders() },
       body: JSON.stringify(body),
     });
     const data = await res.json();
@@ -66,7 +67,7 @@ export async function DELETE(request: NextRequest) {
   }
 
   try {
-    const res = await fetch(spaceUrl(spaceId), { method: "DELETE" });
+    const res = await fetch(spaceUrl(spaceId), { method: "DELETE", headers: backendAuthHeaders() });
     const data = await res.json();
     return NextResponse.json(data, { status: res.status });
   } catch (e: any) {

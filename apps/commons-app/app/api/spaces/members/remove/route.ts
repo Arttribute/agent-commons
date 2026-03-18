@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { backendAuthHeaders } from "@/lib/api-headers";
 
 const baseUrl = process.env.NEXT_PUBLIC_NEST_API_BASE_URL;
 
@@ -14,7 +15,7 @@ export async function POST(request: NextRequest) {
       );
     }
     const url = `${baseUrl}/v1/spaces/${spaceId}/members/${memberId}?memberType=${memberType}`;
-    const res = await fetch(url, { method: "DELETE" });
+    const res = await fetch(url, { method: "DELETE", headers: backendAuthHeaders() });
     const data = await res.json();
     return NextResponse.json(data, { status: res.status });
   } catch (e: any) {

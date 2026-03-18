@@ -1,16 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
+import { backendAuthHeaders } from "@/lib/api-headers";
 
 export async function POST(req: NextRequest) {
   const body = await req.json(); // Parse JSON body
   const backendUrl = `${process.env.NEXT_PUBLIC_NEST_API_BASE_URL}/v1/spaces/${body.spaceId}/messages`; // Use the streaming endpoint
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
-    "x-sender-id": body.senderId || body.currentUserId, // fallback to currentUserId if senderId not present
+    "x-sender-id": body.senderId || body.currentUserId,
     "x-sender-type": body.senderType || "human",
+    ...backendAuthHeaders(),
   };
-  if (req.headers.get("authorization")) {
-    headers["authorization"] = req.headers.get("authorization")!;
-  }
 
   try {
     const response = await fetch(backendUrl, {

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { backendAuthHeaders } from "@/lib/api-headers";
 
 const baseUrl = process.env.NEXT_PUBLIC_NEST_API_BASE_URL;
 
@@ -29,7 +30,7 @@ export async function GET(request: NextRequest) {
   const querySuffix = params.toString() ? `?${params.toString()}` : "";
   const url = `${baseUrl}/v1/spaces${querySuffix}`;
   try {
-    const res = await fetch(url, { cache: "no-store" });
+    const res = await fetch(url, { cache: "no-store", headers: backendAuthHeaders() });
     const data = await res.json().catch(() => ({ error: "Bad JSON" }));
     return NextResponse.json(data, { status: res.status });
   } catch (e: any) {
@@ -59,6 +60,7 @@ export async function POST(request: NextRequest) {
         "Content-Type": "application/json",
         "x-creator-id": creatorId,
         "x-creator-type": creatorType,
+        ...backendAuthHeaders(),
       },
       body: JSON.stringify(body),
     });
