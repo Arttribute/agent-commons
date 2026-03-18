@@ -1,4 +1,4 @@
-FROM public.ecr.aws/docker/library/node:22.11.0 AS base
+FROM node:22.11.0-bookworm-slim AS base
 
 # Install Chromium and dependencies for Puppeteer
 RUN apt-get update && apt-get install -y \

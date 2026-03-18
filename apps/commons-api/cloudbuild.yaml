@@ -13,6 +13,8 @@ steps:
     args:
       [
         'build',
+        '--cache-from',
+        'europe-west1-docker.pkg.dev/$PROJECT_ID/commons/commons-api:prod',
         '-t',
         'europe-west1-docker.pkg.dev/$PROJECT_ID/commons/commons-api:$SHORT_SHA',
         '-f',
