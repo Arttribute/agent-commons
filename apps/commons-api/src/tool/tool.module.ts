@@ -19,6 +19,7 @@ import { SpaceModule } from '../space/space.module';
 import { McpModule } from '../mcp/mcp.module';
 import { SkillModule } from '../skill/skill.module';
 import { OwnerGuard } from '~/modules/auth';
+import { EthereumToolService } from './tools/ethereum-tool.service';
 
 @Module({
   imports: [
@@ -45,6 +46,7 @@ import { OwnerGuard } from '~/modules/auth';
     ToolLoaderService,
     WorkflowService,
     WorkflowExecutorService,
+    EthereumToolService,
     OwnerGuard,
   ],
   exports: [
