@@ -51,7 +51,7 @@ jobs:
           fi
 
           # Skip if a changeset was already written manually
-          EXISTING=$(ls .changeset/*.md 2>/dev/null | grep -v README | wc -l)
+          EXISTING=$(find .changeset -maxdepth 1 -name '*.md' ! -name 'README.md' | wc -l)
           if [ "$EXISTING" -gt "0" ]; then
             echo "Manual changeset found — skipping auto-patch."
             exit 0
@@ -59,7 +59,7 @@ jobs:
 
           # Check if any packages/ files changed since the last git tag
           LAST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || git rev-list --max-parents=0 HEAD)
-          CHANGED=$(git diff --name-only "$LAST_TAG" HEAD -- packages/ | grep -v 'node_modules' | head -1)
+          CHANGED=$(git diff --name-only "$LAST_TAG" HEAD -- packages/ ':(exclude)**/node_modules/**' | head -1)
 
           if [ -z "$CHANGED" ]; then
             echo "No package changes since $LAST_TAG — skipping auto-patch."

@@ -40,9 +40,7 @@ steps:
       ]
 
   - name: 'gcr.io/cloud-builders/gcloud'
-
     entrypoint: gcloud
-
     args:
       - run
       - deploy
@@ -50,7 +48,11 @@ steps:
       - --region=europe-west1
       - --platform=managed
       - --image=europe-west1-docker.pkg.dev/$PROJECT_ID/commons/commons-api:prod
-
+      - --memory=2Gi
+      - --cpu=2
+      - --timeout=300
+      - --startup-cpu-boost
+      - --port=8080
     timeout: 1800s
 # options:
 #   machineType: "E2_MEDIUM"
