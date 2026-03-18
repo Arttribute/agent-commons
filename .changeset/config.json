@@ -9,6 +9,7 @@
   "updateInternalDependencies": "patch",
   "ignore": [
     "commons-api",
-    "commons-app"
+    "commons-app",
+    "onchain"
   ]
 }
