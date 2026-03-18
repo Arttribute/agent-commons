@@ -160,7 +160,7 @@ export function SpaceMediaControls({
   return (
     <div className="p-4 flex justify-center items-center gap-3">
       {/* Group 1: Mic & Camera */}
-      <div className="flex items-center gap-1 bg-white rounded-2xl p-1 shadow-lg border border-gray-400">
+      <div className="flex items-center gap-1 bg-white rounded-2xl p-1 shadow-lg border border-border">
         {/* Mic button */}
         <Button
           size="sm"
@@ -169,7 +169,7 @@ export function SpaceMediaControls({
           onClick={() => onTogglePublish("audio")}
           className={`rounded-xl transition-all ${
             pubAudio
-              ? "bg-gray-700 text-white hover:bg-gray-600"
+              ? "bg-muted text-white hover:bg-muted"
               : "bg-red-600 text-white hover:bg-red-700"
           }`}
         >
@@ -187,13 +187,13 @@ export function SpaceMediaControls({
               size="sm"
               variant="ghost"
               type="button"
-              className="rounded-md w-5 transition-all hover:bg-gray-300"
+              className="rounded-md w-5 transition-all hover:bg-muted"
             >
               <ChevronUp className="h-4 w-4" />
             </Button>
           </PopoverTrigger>
           <PopoverContent
-            className="z-[1000] w-80 bg-gray-900 border-gray-700 text-white p-0 mb-2"
+            className="z-[1000] w-80 bg-muted border-border text-white p-0 mb-2"
             align="center"
             side="top"
           >
@@ -201,12 +201,12 @@ export function SpaceMediaControls({
               {/* Input Device */}
               <div>
                 <div className="flex items-center justify-between mb-2">
-                  <label className="text-xs font-semibold text-gray-300 uppercase tracking-wide">
+                  <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
                     Input Device
                   </label>
                   <button
                     type="button"
-                    className="text-xs text-gray-400 hover:text-white transition-colors"
+                    className="text-xs text-muted-foreground hover:text-white transition-colors"
                   >
                     Custom
                   </button>
@@ -217,9 +217,9 @@ export function SpaceMediaControls({
                       key={device.id}
                       type="button"
                       onClick={() => setSelectedInputDevice(device.id)}
-                      className="w-full flex items-center justify-between p-2 rounded-md hover:bg-gray-800 transition-colors text-sm"
+                      className="w-full flex items-center justify-between p-2 rounded-md hover:bg-muted transition-colors text-sm"
                     >
-                      <span className="text-gray-200 text-left flex-1 truncate">
+                      <span className="text-muted-foreground text-left flex-1 truncate">
                         {device.label}
                       </span>
                       {selectedInputDevice === device.id && (
@@ -232,7 +232,7 @@ export function SpaceMediaControls({
 
               {/* Input Volume */}
               <div>
-                <label className="text-xs font-semibold text-gray-300 uppercase tracking-wide mb-2 block">
+                <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2 block">
                   Input Volume
                 </label>
                 <Slider
@@ -249,18 +249,18 @@ export function SpaceMediaControls({
                       className={`h-1.5 flex-1 rounded-sm ${
                         i < (inputVolume[0] / 100) * 40
                           ? "bg-green-500"
-                          : "bg-gray-700"
+                          : "bg-muted"
                       }`}
                     />
                   ))}
                 </div>
               </div>
 
-              <Separator className="bg-gray-700" />
+              <Separator className="bg-muted" />
 
               {/* Output Device */}
               <div>
-                <label className="text-xs font-semibold text-gray-300 uppercase tracking-wide mb-2 block">
+                <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2 block">
                   Output Device
                 </label>
                 <div className="space-y-1">
@@ -269,9 +269,9 @@ export function SpaceMediaControls({
                       key={device.id}
                       type="button"
                       onClick={() => setSelectedOutputDevice(device.id)}
-                      className="w-full flex items-center justify-between p-2 rounded-md hover:bg-gray-800 transition-colors text-sm"
+                      className="w-full flex items-center justify-between p-2 rounded-md hover:bg-muted transition-colors text-sm"
                     >
-                      <span className="text-gray-200 text-left flex-1 truncate">
+                      <span className="text-muted-foreground text-left flex-1 truncate">
                         {device.label}
                       </span>
                       {selectedOutputDevice === device.id && (
@@ -284,7 +284,7 @@ export function SpaceMediaControls({
 
               {/* Output Volume */}
               <div>
-                <label className="text-xs font-semibold text-gray-300 uppercase tracking-wide mb-2 block">
+                <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2 block">
                   Output Volume
                 </label>
                 <Slider
@@ -299,7 +299,7 @@ export function SpaceMediaControls({
           </PopoverContent>
         </Popover>
 
-        <div className="w-px h-6 bg-gray-700 mx-1" />
+        <div className="w-px h-6 bg-muted mx-1" />
 
         {/* Camera button */}
         <Button
@@ -309,7 +309,7 @@ export function SpaceMediaControls({
           onClick={() => onTogglePublish("video")}
           className={`rounded-xl transition-all ${
             pubVideo
-              ? "bg-gray-700 text-white hover:bg-gray-600"
+              ? "bg-muted text-white hover:bg-muted"
               : "bg-red-600 text-white hover:bg-red-700"
           }`}
         >
@@ -322,7 +322,7 @@ export function SpaceMediaControls({
       </div>
 
       {/* Group 2: Screen & Webcapture */}
-      <div className="flex items-center gap-1 bg-white rounded-2xl  p-1 shadow-2xl border border-gray-400">
+      <div className="flex items-center gap-1 bg-white rounded-2xl  p-1 shadow-2xl border border-border">
         <Button
           size="sm"
           variant="ghost"
@@ -331,7 +331,7 @@ export function SpaceMediaControls({
           className={`rounded-xl transition-all ${
             pubScreen
               ? "bg-green-600 hover:bg-green-700"
-              : "bg-transparent text-gray-600 hover:bg-gray-300"
+              : "bg-transparent text-muted-foreground hover:bg-muted"
           }`}
         >
           {pubScreen ? (
@@ -349,7 +349,7 @@ export function SpaceMediaControls({
           className={`rounded-xl transition-all ${
             pubUrl
               ? "bg-teal-600 hover:bg-teal-700"
-              : "bg-transparent text-gray-600 hover:bg-gray-300"
+              : "bg-transparent text-muted-foreground hover:bg-muted"
           }`}
           disabled={pubUrl}
         >

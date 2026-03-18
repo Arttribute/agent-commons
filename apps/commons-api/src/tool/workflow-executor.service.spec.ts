@@ -1,576 +1,223 @@
+/**
+ * WorkflowExecutorService unit tests
+ *
+ * Covers the public surface: executeWorkflow, approveExecution, rejectExecution
+ * and the graph-walker internals via the propagateSkip helper.
+ *
+ * The private executeGraphWalker is tested indirectly; direct unit tests
+ * for node-type execution live in the integration suite.
+ */
 import { Test, TestingModule } from '@nestjs/testing';
 import { WorkflowExecutorService } from './workflow-executor.service';
 import { DatabaseService } from '~/modules/database/database.service';
 import { ToolLoaderService } from './tool-loader.service';
+import { ToolService } from './tool.service';
+import { CommonToolService } from './tools/common-tool.service';
+import { EthereumToolService } from './tools/ethereum-tool.service';
+import { AgentService } from '~/agent/agent.service';
 import { Logger } from '@nestjs/common';
+
+/* ─── Minimal workflow definitions ─────────────────────────────────────── */
+
+function linearDef() {
+  return {
+    nodes: [
+      { id: 'n-in',  type: 'input',  data: {} },
+      { id: 'n-t',   type: 'tool',   data: { toolId: 'tool-1' } },
+      { id: 'n-out', type: 'output', data: {} },
+    ],
+    edges: [
+      { id: 'e1', source: 'n-in', target: 'n-t' },
+      { id: 'e2', source: 'n-t',  target: 'n-out' },
+    ],
+  };
+}
+
+function makeDb(workflowRow?: any) {
+  const insertReturning = jest.fn().mockResolvedValue([{ executionId: 'exec-1', status: 'running' }]);
+  const insertValues    = jest.fn().mockReturnValue({ returning: insertReturning });
+  const insert          = jest.fn().mockReturnValue({ values: insertValues });
+
+  const updateWhere = jest.fn().mockResolvedValue(undefined);
+  const updateSet   = jest.fn().mockReturnValue({ where: updateWhere });
+  const update      = jest.fn().mockReturnValue({ set: updateSet });
+
+  const query = {
+    workflow:          { findFirst: jest.fn().mockResolvedValue(workflowRow ?? { workflowId: 'wf-1', definition: linearDef(), timeoutMs: 30_000 }) },
+    workflowExecution: { findFirst: jest.fn().mockResolvedValue(null) },
+  };
+
+  return { insert, update, query, _insertValues: insertValues, _updateSet: updateSet };
+}
 
 describe('WorkflowExecutorService', () => {
   let service: WorkflowExecutorService;
-  let mockDb: any;
-  let mockToolLoader: any;
-
-  const mockWorkflow = {
-    workflowId: 'workflow-123',
-    name: 'Test Workflow',
-    definition: {
-      nodes: [
-        {
-          id: 'node1',
-          type: 'tool_call',
-          toolId: 'tool-1',
-          config: {},
-        },
-        {
-          id: 'node2',
-          type: 'tool_call',
-          toolId: 'tool-2',
-          config: {},
-        },
-      ],
-      edges: [
-        {
-          source: 'node1',
-          target: 'node2',
-          mapping: { result: 'input' },
-        },
-      ],
-    },
-  };
-
-  const mockExecution = {
-    executionId: 'exec-123',
-    workflowId: 'workflow-123',
-    agentId: 'agent-123',
-    status: 'running',
-    startedAt: new Date(),
-    nodeResults: {},
-  };
+  let db: ReturnType<typeof makeDb>;
 
   beforeEach(async () => {
-    mockDb = {
-      insert: jest.fn().mockReturnThis(),
-      values: jest.fn().mockReturnThis(),
-      returning: jest.fn().mockResolvedValue([mockExecution]),
-      update: jest.fn().mockReturnThis(),
-      set: jest.fn().mockReturnThis(),
-      where: jest.fn().mockReturnThis(),
-      delete: jest.fn().mockReturnThis(),
-      query: {
-        workflow: {
-          findFirst: jest.fn().mockResolvedValue(mockWorkflow),
-        },
-        workflowExecution: {
-          findFirst: jest.fn(),
-          findMany: jest.fn(),
-        },
-        tool: {
-          findFirst: jest.fn(),
-        },
-      },
-    };
-
-    mockToolLoader = {
-      loadToolsForAgent: jest.fn(),
-    };
+    db = makeDb();
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         WorkflowExecutorService,
-        {
-          provide: DatabaseService,
-          useValue: mockDb,
-        },
-        {
-          provide: ToolLoaderService,
-          useValue: mockToolLoader,
-        },
+        { provide: DatabaseService,     useValue: db },
+        { provide: ToolLoaderService,   useValue: { loadTool: jest.fn().mockResolvedValue(null) } },
+        { provide: ToolService,         useValue: { getTool: jest.fn().mockResolvedValue(null) } },
+        { provide: CommonToolService,   useValue: {} },
+        { provide: EthereumToolService, useValue: {} },
+        { provide: AgentService,        useValue: { runAgent: jest.fn() } },
       ],
     }).compile();
 
-    service = module.get<WorkflowExecutorService>(WorkflowExecutorService);
+    service = module.get(WorkflowExecutorService);
 
-    // Suppress logger during tests
     jest.spyOn(Logger.prototype, 'log').mockImplementation();
     jest.spyOn(Logger.prototype, 'error').mockImplementation();
-    jest.spyOn(Logger.prototype, 'debug').mockImplementation();
     jest.spyOn(Logger.prototype, 'warn').mockImplementation();
+    jest.spyOn(Logger.prototype, 'debug').mockImplementation();
   });
 
   it('should be defined', () => {
     expect(service).toBeDefined();
   });
 
-  describe('executeWorkflow', () => {
-    it('should start workflow execution', async () => {
-      const params = {
-        workflowId: 'workflow-123',
-        agentId: 'agent-123',
-        sessionId: 'session-123',
-        inputData: { test: 'data' },
-      };
-
-      const executionId = await service.executeWorkflow(params);
-
-      expect(executionId).toBe('exec-123');
-      expect(mockDb.insert).toHaveBeenCalled();
-      expect(mockDb.query.workflow.findFirst).toHaveBeenCalled();
-    });
-
-    it('should throw error when workflow not found', async () => {
-      mockDb.query.workflow.findFirst.mockResolvedValue(null);
-
-      const params = {
-        workflowId: 'nonexistent',
-        agentId: 'agent-123',
-      };
-
-      await expect(service.executeWorkflow(params)).rejects.toThrow(
-        'Workflow nonexistent not found',
+  /* ── executeWorkflow ──────────────────────────────────────────────────── */
+  describe('executeWorkflow()', () => {
+    it('creates an execution row and returns its ID', async () => {
+      const id = await service.executeWorkflow({ workflowId: 'wf-1', agentId: 'agent-1', inputData: { k: 'v' } });
+      expect(id).toBe('exec-1');
+      expect(db._insertValues).toHaveBeenCalledWith(
+        expect.objectContaining({ workflowId: 'wf-1', status: 'running', inputData: { k: 'v' } }),
       );
     });
 
-    it('should create execution record with correct status', async () => {
-      const params = {
-        workflowId: 'workflow-123',
-        agentId: 'agent-123',
-        inputData: { test: 'data' },
-      };
+    it('throws when workflow is not found', async () => {
+      db.query.workflow.findFirst = jest.fn().mockResolvedValue(null);
+      await expect(service.executeWorkflow({ workflowId: 'missing' }))
+        .rejects.toThrow('Workflow missing not found');
+    });
 
-      await service.executeWorkflow(params);
+    it('returns immediately (async graph walker runs in background)', async () => {
+      jest.spyOn(service as any, 'executeGraphWalker').mockResolvedValue(undefined);
+      const id = await service.executeWorkflow({ workflowId: 'wf-1' });
+      expect(typeof id).toBe('string');
+    });
+  });
 
-      expect(mockDb.insert).toHaveBeenCalled();
-      expect(mockDb.values).toHaveBeenCalledWith(
-        expect.objectContaining({
-          workflowId: 'workflow-123',
-          agentId: 'agent-123',
-          status: 'running',
-          inputData: { test: 'data' },
+  /* ── approveExecution ────────────────────────────────────────────────── */
+  describe('approveExecution()', () => {
+    const pausedExecution = () => ({
+      executionId:      'exec-1',
+      status:           'awaiting_approval',
+      approvalToken:    'tok-ok',
+      pausedAtNode:     'n-approval',
+      pausedNodeOutputs: { 'n-prev': { out: 1 } },
+      inputData:        {},
+      agentId:          'agent-1',
+      workflow:         { definition: linearDef() },
+    });
+
+    it('throws when execution not found', async () => {
+      db.query.workflowExecution.findFirst = jest.fn().mockResolvedValue(null);
+      await expect(service.approveExecution('x', 'tok')).rejects.toThrow('not found');
+    });
+
+    it('throws when not in awaiting_approval state', async () => {
+      db.query.workflowExecution.findFirst = jest.fn().mockResolvedValue({ ...pausedExecution(), status: 'running' });
+      await expect(service.approveExecution('exec-1', 'tok-ok')).rejects.toThrow('not awaiting approval');
+    });
+
+    it('throws on token mismatch', async () => {
+      db.query.workflowExecution.findFirst = jest.fn().mockResolvedValue(pausedExecution());
+      await expect(service.approveExecution('exec-1', 'wrong-token')).rejects.toThrow('Invalid approval token');
+    });
+
+    it('sets status back to "running" on valid approval', async () => {
+      db.query.workflowExecution.findFirst = jest.fn().mockResolvedValue(pausedExecution());
+      jest.spyOn(service as any, 'executeGraphWalker').mockResolvedValue(undefined);
+
+      const statusSeen: string[] = [];
+      db.update = jest.fn().mockReturnValue({
+        set: jest.fn().mockImplementation((v: any) => {
+          if (v.status) statusSeen.push(v.status);
+          return { where: jest.fn().mockResolvedValue(undefined) };
         }),
-      );
-    });
-  });
-
-  describe('topologicalSort', () => {
-    it('should correctly order linear workflow', () => {
-      const nodes = [
-        { id: 'node1', type: 'tool_call', toolId: 'tool-1' },
-        { id: 'node2', type: 'tool_call', toolId: 'tool-2' },
-        { id: 'node3', type: 'tool_call', toolId: 'tool-3' },
-      ];
-
-      const edges = [
-        { source: 'node1', target: 'node2' },
-        { source: 'node2', target: 'node3' },
-      ];
-
-      const result = (service as any).topologicalSort(nodes, edges);
-
-      expect(result).toEqual(['node1', 'node2', 'node3']);
-    });
-
-    it('should handle parallel nodes', () => {
-      const nodes = [
-        { id: 'node1', type: 'tool_call', toolId: 'tool-1' },
-        { id: 'node2', type: 'tool_call', toolId: 'tool-2' },
-        { id: 'node3', type: 'tool_call', toolId: 'tool-3' },
-        { id: 'node4', type: 'tool_call', toolId: 'tool-4' },
-      ];
-
-      const edges = [
-        { source: 'node1', target: 'node2' },
-        { source: 'node1', target: 'node3' },
-        { source: 'node2', target: 'node4' },
-        { source: 'node3', target: 'node4' },
-      ];
-
-      const result = (service as any).topologicalSort(nodes, edges);
-
-      // node1 must come first, node4 must come last
-      expect(result[0]).toBe('node1');
-      expect(result[3]).toBe('node4');
-      // node2 and node3 can be in any order
-      expect(result.slice(1, 3)).toContain('node2');
-      expect(result.slice(1, 3)).toContain('node3');
-    });
-
-    it('should throw error on cyclic workflow', () => {
-      const nodes = [
-        { id: 'node1', type: 'tool_call', toolId: 'tool-1' },
-        { id: 'node2', type: 'tool_call', toolId: 'tool-2' },
-        { id: 'node3', type: 'tool_call', toolId: 'tool-3' },
-      ];
-
-      const edges = [
-        { source: 'node1', target: 'node2' },
-        { source: 'node2', target: 'node3' },
-        { source: 'node3', target: 'node1' }, // Creates cycle
-      ];
-
-      expect(() => (service as any).topologicalSort(nodes, edges)).toThrow(
-        'Workflow contains cycles',
-      );
-    });
-
-    it('should handle single node workflow', () => {
-      const nodes = [{ id: 'node1', type: 'tool_call', toolId: 'tool-1' }];
-      const edges: any[] = [];
-
-      const result = (service as any).topologicalSort(nodes, edges);
-
-      expect(result).toEqual(['node1']);
-    });
-  });
-
-  describe('mapNodeInputs', () => {
-    it('should map inputs from single predecessor', () => {
-      const edges = [
-        {
-          source: 'node1',
-          target: 'node2',
-          mapping: { result: 'input' },
-        },
-      ];
-
-      const nodeOutputs = {
-        node1: { result: 'test value', extra: 'ignored' },
-      };
-
-      const result = (service as any).mapNodeInputs(
-        'node2',
-        edges,
-        nodeOutputs,
-      );
-
-      expect(result).toEqual({ input: 'test value' });
-    });
-
-    it('should map inputs from multiple predecessors', () => {
-      const edges = [
-        {
-          source: 'node1',
-          target: 'node3',
-          mapping: { result: 'input1' },
-        },
-        {
-          source: 'node2',
-          target: 'node3',
-          mapping: { data: 'input2' },
-        },
-      ];
-
-      const nodeOutputs = {
-        node1: { result: 'value1' },
-        node2: { data: 'value2' },
-      };
-
-      const result = (service as any).mapNodeInputs(
-        'node3',
-        edges,
-        nodeOutputs,
-      );
-
-      expect(result).toEqual({ input1: 'value1', input2: 'value2' });
-    });
-
-    it('should handle nested field mapping', () => {
-      const edges = [
-        {
-          source: 'node1',
-          target: 'node2',
-          mapping: { 'data.user.name': 'userName' },
-        },
-      ];
-
-      const nodeOutputs = {
-        node1: {
-          data: {
-            user: { name: 'John Doe', age: 30 },
-          },
-        },
-      };
-
-      const result = (service as any).mapNodeInputs(
-        'node2',
-        edges,
-        nodeOutputs,
-      );
-
-      expect(result).toEqual({ userName: 'John Doe' });
-    });
-
-    it('should pass entire output when no mapping specified', () => {
-      const edges = [
-        {
-          source: 'node1',
-          target: 'node2',
-        },
-      ];
-
-      const nodeOutputs = {
-        node1: { result: 'value', data: 'more data' },
-      };
-
-      const result = (service as any).mapNodeInputs(
-        'node2',
-        edges,
-        nodeOutputs,
-      );
-
-      expect(result).toEqual({
-        node1: { result: 'value', data: 'more data' },
       });
+
+      await service.approveExecution('exec-1', 'tok-ok', { note: 'looks good' });
+      expect(statusSeen).toContain('running');
     });
+  });
 
-    it('should merge config overrides', () => {
-      const edges = [
-        {
-          source: 'node1',
-          target: 'node2',
-          mapping: { result: 'input' },
-        },
-      ];
-
-      const nodeOutputs = {
-        node1: { result: 'value' },
-      };
-
-      const config = { param1: 'override', param2: 'extra' };
-
-      const result = (service as any).mapNodeInputs(
-        'node2',
-        edges,
-        nodeOutputs,
-        config,
-      );
-
-      expect(result).toEqual({
-        input: 'value',
-        param1: 'override',
-        param2: 'extra',
+  /* ── rejectExecution ─────────────────────────────────────────────────── */
+  describe('rejectExecution()', () => {
+    it('throws on token mismatch', async () => {
+      db.query.workflowExecution.findFirst = jest.fn().mockResolvedValue({
+        executionId: 'exec-1', status: 'awaiting_approval', approvalToken: 'correct',
       });
+      await expect(service.rejectExecution('exec-1', 'wrong')).rejects.toThrow('Invalid approval token');
     });
 
-    it('should handle sourceHandle and targetHandle', () => {
-      const edges = [
-        {
-          source: 'node1',
-          target: 'node2',
-          sourceHandle: 'output1',
-          targetHandle: 'input1',
-        },
-      ];
-
-      const nodeOutputs = {
-        node1: { output1: 'value1', output2: 'value2' },
-      };
-
-      const result = (service as any).mapNodeInputs(
-        'node2',
-        edges,
-        nodeOutputs,
-      );
-
-      expect(result).toEqual({ input1: 'value1' });
-    });
-  });
-
-  describe('getNestedValue', () => {
-    it('should get top-level value', () => {
-      const obj = { name: 'John', age: 30 };
-      const result = (service as any).getNestedValue(obj, 'name');
-      expect(result).toBe('John');
-    });
-
-    it('should get nested value', () => {
-      const obj = {
-        user: {
-          profile: {
-            name: 'John Doe',
-          },
-        },
-      };
-      const result = (service as any).getNestedValue(obj, 'user.profile.name');
-      expect(result).toBe('John Doe');
-    });
-
-    it('should return undefined for invalid path', () => {
-      const obj = { user: { name: 'John' } };
-      const result = (service as any).getNestedValue(
-        obj,
-        'user.profile.name',
-      );
-      expect(result).toBeUndefined();
-    });
-
-    it('should handle array indices', () => {
-      const obj = {
-        users: [
-          { name: 'John' },
-          { name: 'Jane' },
-        ],
-      };
-      const result = (service as any).getNestedValue(obj, 'users.1.name');
-      expect(result).toBe('Jane');
-    });
-  });
-
-  describe('getFinalOutput', () => {
-    it('should return last node output when no outputMapping', () => {
-      const executionOrder = ['node1', 'node2', 'node3'];
-      const nodeOutputs = {
-        node1: { result: 'value1' },
-        node2: { result: 'value2' },
-        node3: { result: 'value3' },
-      };
-      const definition = {};
-
-      const result = (service as any).getFinalOutput(
-        executionOrder,
-        nodeOutputs,
-        definition,
-      );
-
-      expect(result).toEqual({ result: 'value3' });
-    });
-
-    it('should use outputMapping when specified', () => {
-      const executionOrder = ['node1', 'node2'];
-      const nodeOutputs = {
-        node1: { data: 'value1' },
-        node2: { data: 'value2' },
-      };
-      const definition = {
-        outputMapping: {
-          firstResult: 'node1.data',
-          secondResult: 'node2.data',
-        },
-      };
-
-      const result = (service as any).getFinalOutput(
-        executionOrder,
-        nodeOutputs,
-        definition,
-      );
-
-      expect(result).toEqual({
-        firstResult: 'value1',
-        secondResult: 'value2',
+    it('marks execution as "failed" with reason', async () => {
+      db.query.workflowExecution.findFirst = jest.fn().mockResolvedValue({
+        executionId: 'exec-1', status: 'awaiting_approval', approvalToken: 'tok',
       });
-    });
 
-    it('should handle nested field extraction in outputMapping', () => {
-      const executionOrder = ['node1'];
-      const nodeOutputs = {
-        node1: {
-          user: {
-            profile: { name: 'John' },
-          },
-        },
-      };
-      const definition = {
-        outputMapping: {
-          userName: 'node1.user.profile.name',
-        },
-      };
-
-      const result = (service as any).getFinalOutput(
-        executionOrder,
-        nodeOutputs,
-        definition,
-      );
-
-      expect(result).toEqual({ userName: 'John' });
-    });
-  });
-
-  describe('getExecutionStatus', () => {
-    it('should return execution details', async () => {
-      const executionDetails = {
-        ...mockExecution,
-        workflow: mockWorkflow,
-        agent: { agentId: 'agent-123' },
-      };
-
-      mockDb.query.workflowExecution.findFirst.mockResolvedValue(
-        executionDetails,
-      );
-
-      const result = await service.getExecutionStatus('exec-123');
-
-      expect(result).toBeDefined();
-      expect(result.executionId).toBe('exec-123');
-      expect(result.workflow).toBeDefined();
-    });
-
-    it('should throw error when execution not found', async () => {
-      mockDb.query.workflowExecution.findFirst.mockResolvedValue(null);
-
-      await expect(
-        service.getExecutionStatus('nonexistent'),
-      ).rejects.toThrow('Execution nonexistent not found');
-    });
-  });
-
-  describe('cancelExecution', () => {
-    it('should cancel running execution', async () => {
-      const cancelledExecution = {
-        ...mockExecution,
-        status: 'cancelled',
-        completedAt: new Date(),
-      };
-
-      mockDb.returning.mockResolvedValue([cancelledExecution]);
-
-      const result = await service.cancelExecution('exec-123');
-
-      expect(result).toEqual({ success: true });
-      expect(mockDb.update).toHaveBeenCalled();
-      expect(mockDb.set).toHaveBeenCalledWith(
-        expect.objectContaining({
-          status: 'cancelled',
+      const errorMessages: string[] = [];
+      db.update = jest.fn().mockReturnValue({
+        set: jest.fn().mockImplementation((v: any) => {
+          if (v.errorMessage) errorMessages.push(v.errorMessage);
+          return { where: jest.fn().mockResolvedValue(undefined) };
         }),
-      );
+      });
+
+      await service.rejectExecution('exec-1', 'tok', 'Not today');
+      expect(errorMessages).toContain('Not today');
     });
 
-    it('should throw error when execution not found', async () => {
-      mockDb.returning.mockResolvedValue([]);
+    it('uses a default reason when none provided', async () => {
+      db.query.workflowExecution.findFirst = jest.fn().mockResolvedValue({
+        executionId: 'exec-1', status: 'awaiting_approval', approvalToken: 'tok',
+      });
 
-      await expect(service.cancelExecution('nonexistent')).rejects.toThrow(
-        'Execution nonexistent not found',
-      );
+      let capturedMsg = '';
+      db.update = jest.fn().mockReturnValue({
+        set: jest.fn().mockImplementation((v: any) => {
+          if (v.errorMessage) capturedMsg = v.errorMessage;
+          return { where: jest.fn().mockResolvedValue(undefined) };
+        }),
+      });
+
+      await service.rejectExecution('exec-1', 'tok');
+      expect(capturedMsg.length).toBeGreaterThan(0);
     });
   });
 
-  describe('listExecutions', () => {
-    it('should list executions for a workflow', async () => {
-      const executions = [mockExecution, { ...mockExecution, executionId: 'exec-456' }];
-      mockDb.query.workflowExecution.findMany.mockResolvedValue(executions);
+  /* ── graph walker: frontier & dead-edge propagation ─────────────────── */
+  describe('graph walker internals', () => {
+    it('propagateSkip marks a node and its descendants as skipped', () => {
+      const nodes = [
+        { id: 'A' }, { id: 'B' }, { id: 'C' },
+      ];
+      const outgoing = new Map([
+        ['A', [{ edgeId: 'e1', target: 'B' }]],
+        ['B', [{ edgeId: 'e2', target: 'C' }]],
+        ['C', []],
+      ]);
+      const incomingCount = new Map([
+        ['A', { live: 0, dead: 0, total: 0 }],
+        ['B', { live: 1, dead: 0, total: 1 }],
+        ['C', { live: 1, dead: 0, total: 1 }],
+      ]);
+      const deadEdges   = new Set<string>();
+      const skippedNodes = new Set<string>();
 
-      const result = await service.listExecutions('workflow-123');
+      (service as any).propagateSkip('A', nodes, outgoing, incomingCount, deadEdges, skippedNodes);
 
-      expect(result).toBeDefined();
-      expect(Array.isArray(result)).toBe(true);
-      expect(result.length).toBe(2);
-    });
-
-    it('should respect limit parameter', async () => {
-      mockDb.query.workflowExecution.findMany.mockResolvedValue([mockExecution]);
-
-      await service.listExecutions('workflow-123', 10);
-
-      expect(mockDb.query.workflowExecution.findMany).toHaveBeenCalledWith(
-        expect.objectContaining({ limit: 10 }),
-      );
-    });
-
-    it('should use default limit of 50', async () => {
-      mockDb.query.workflowExecution.findMany.mockResolvedValue([]);
-
-      await service.listExecutions('workflow-123');
-
-      expect(mockDb.query.workflowExecution.findMany).toHaveBeenCalledWith(
-        expect.objectContaining({ limit: 50 }),
-      );
+      expect(skippedNodes.has('A')).toBe(true);
+      expect(deadEdges.has('e1')).toBe(true);
+      // B should have its live in-degree decremented and be added to skipped
+      expect(incomingCount.get('B')!.live).toBe(0);
     });
   });
 });

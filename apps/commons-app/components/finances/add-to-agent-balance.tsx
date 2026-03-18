@@ -1,145 +1,84 @@
 "use client";
-import { useState, useEffect } from "react";
+import { useState } from "react";
+import { Copy, CheckCheck, ExternalLink, Wallet } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
-import { useChainClients } from "@/hooks/useChainClients"; // or however you get your viem clients
-import { useCommonToken } from "@/hooks/useCommonToken";
-import { EIP1193Provider, useWallets } from "@privy-io/react-auth"; // or your method of obtaining a provider
+import { Badge } from "@/components/ui/badge";
+import { useAgentWallet } from "@/hooks/use-wallet";
 
 interface AddToAgentBalanceProps {
-  agentAddress: `0x${string}`;
-  onFundSuccess?: () => void; // callback to refresh parent UI
+  agentId: string;
+  onFundSuccess?: () => void;
 }
 
 /**
- * Dialog that lets the current logged-in user fund an agent with Common$.
+ * Shows the agent's primary wallet address so the user can send USDC to it.
+ * Phase 10: Replaced CommonToken funding with USDC wallet display.
  */
-export function AddToAgentBalance({
-  agentAddress,
-  onFundSuccess,
-}: AddToAgentBalanceProps) {
-  const [open, setOpen] = useState(false);
-  const [commonsAmount, setCommonsAmount] = useState("1");
-  const [provider, setProvider] = useState<EIP1193Provider | null>(null);
-  const { wallets } = useWallets();
-  useEffect(() => {
-    if (!wallets || wallets.length === 0) {
-      console.log("No wallets available. User may not be signed in.");
-      return;
-    }
-    wallets[0]
-      .getEthereumProvider()
-      .then((prov) => {
-        console.log("Obtained provider:", prov);
-        setProvider(prov);
-      })
-      .catch((err) => {
-        console.error("Error getting Ethereum provider:", err);
-      });
-  }, [wallets]);
+export function AddToAgentBalance({ agentId, onFundSuccess }: AddToAgentBalanceProps) {
+  const { wallet, balance, loading, balanceLoading, createWallet } = useAgentWallet(agentId);
+  const [copied, setCopied] = useState(false);
 
-  // chain clients
-  const { publicClient, walletClient } = useChainClients(provider);
-
-  const { balanceOf, transfer, buyCommonToken, loading, error } =
-    useCommonToken(publicClient, walletClient);
-
-  const [userAddress, setUserAddress] = useState<`0x${string}` | null>(null);
-  const [userBalance, setUserBalance] = useState<bigint>(0n);
-
-  // On mount, get user address and check user Common$ balance
-  useEffect(() => {
-    async function init() {
-      if (!walletClient) return;
-      const addresses = await walletClient.getAddresses();
-      if (!addresses || addresses.length === 0) return;
-      setUserAddress(addresses[0]);
-    }
-    init();
-  }, [walletClient]);
-
-  // Whenever userAddress changes, refresh Common$ balance
-  useEffect(() => {
-    if (!userAddress) return;
-    balanceOf(userAddress).then((bal) => setUserBalance(bal));
-  }, [userAddress, balanceOf]);
-
-  async function handleAddToAgentBalance() {
-    if (!commonsAmount || !agentAddress) return;
-    // Convert e.g. "5" to 5n (with decimals if your token has 18 decimals)
-    const amountWei = BigInt(Number(commonsAmount) * 1e18);
-    await transfer(agentAddress, amountWei);
-    setOpen(false);
-    setCommonsAmount("1");
-    onFundSuccess?.(); // refresh parent UI
+  async function copy(text: string) {
+    await navigator.clipboard.writeText(text);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+    onFundSuccess?.();
   }
 
-  async function handleBuy() {
-    if (!commonsAmount) return;
-    // In this example, buyCommonToken expects the number of tokens (string).
-    // If your contract logic differs, you may need to handle the rate differently.
-    await buyCommonToken(commonsAmount);
-    // refresh userBalance
-    if (userAddress) {
-      const updatedBal = await balanceOf(userAddress);
-      setUserBalance(updatedBal);
-    }
+  if (loading) {
+    return <p className="text-sm text-muted-foreground">Loading wallet…</p>;
   }
+
+  if (!wallet) {
+    return (
+      <div className="space-y-2">
+        <p className="text-sm text-muted-foreground">No wallet provisioned yet.</p>
+        <Button size="sm" onClick={createWallet}>Create Wallet</Button>
+      </div>
+    );
+  }
+
+  const shortAddr = `${wallet.address.slice(0, 6)}…${wallet.address.slice(-4)}`;
 
   return (
-    <div>
-      {/* Show any errors from the hook */}
-      {error && <p className="text-red-500 mb-2">{error}</p>}
-
-      <div className="space-y-4">
-        {/* If user has 0 tokens, show a "Buy" button */}
-        {userBalance === 0n ? (
-          <div className="rounded p-2">
-            <p className="text-sm text-gray-500 mb-2">
-              You currently have <strong>0 Common$</strong>.
-            </p>
-            <label className="block text-sm font-medium">Buy Amount</label>
-            <Input
-              type="number"
-              value={commonsAmount}
-              min="1"
-              onChange={(e) => setCommonsAmount(e.target.value)}
-              className="mt-1"
-            />
-            <Button
-              onClick={handleBuy}
-              disabled={loading}
-              className="w-full mt-2"
-            >
-              {loading ? "Processing..." : "Buy Common$"}
-            </Button>
-          </div>
-        ) : (
-          <>
-            <div>
-              <label className="block text-sm font-medium">
-                Amount in Common$
-              </label>
-              <Input
-                type="number"
-                value={commonsAmount}
-                min="1"
-                onChange={(e) => setCommonsAmount(e.target.value)}
-                className="mt-1"
-              />
-            </div>
-          </>
-        )}
+    <div className="space-y-3">
+      {/* Balance row */}
+      <div className="flex items-center gap-2 flex-wrap">
+        <Badge variant="outline" className="font-mono text-xs">
+          {balanceLoading ? "…" : `${balance?.usdc ?? "0"} USDC`}
+        </Badge>
+        <span className="text-xs text-muted-foreground">
+          {balanceLoading ? "" : `${balance?.native ?? "0"} ETH`}
+        </span>
       </div>
+
+      {/* Address row */}
+      <div className="flex items-center gap-2 bg-muted rounded-md px-3 py-2">
+        <Wallet className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+        <span className="font-mono text-xs text-foreground flex-1 truncate">{wallet.address}</span>
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-6 w-6 shrink-0"
+          onClick={() => copy(wallet.address)}
+        >
+          {copied ? <CheckCheck className="h-3 w-3 text-green-500" /> : <Copy className="h-3 w-3" />}
+        </Button>
+      </div>
+
+      <p className="text-xs text-muted-foreground">
+        Send USDC to this address on{" "}
+        <span className="font-medium">Base Sepolia</span> to fund the agent.
+      </p>
+
+      <a
+        href={`https://sepolia.basescan.org/address/${wallet.address}`}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
+      >
+        View on BaseScan <ExternalLink className="h-3 w-3" />
+      </a>
     </div>
   );
 }

@@ -42,7 +42,7 @@ export function McpToolsDialog({ server, open, onClose }: McpToolsDialogProps) {
         <ScrollArea className="h-[500px] pr-4">
           {loading ? (
             <div className="flex items-center justify-center h-64">
-              <Loader2 className="h-8 w-8 animate-spin text-gray-400" />
+              <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
             </div>
           ) : tools.length === 0 ? (
             <div className="text-center py-12 text-muted-foreground">

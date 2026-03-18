@@ -4,6 +4,7 @@ import { memo } from "react";
 import { Handle, Position, NodeProps } from "reactflow";
 import { getHandleStyle } from "@/lib/workflows/type-colors";
 import { Badge } from "@/components/ui/badge";
+import { Wrench } from "lucide-react";
 import { formatType, getTypeColor, WorkflowDataType } from "@/lib/workflows/type-mapping";
 
 export interface ToolNodeData {
@@ -13,42 +14,47 @@ export interface ToolNodeData {
   outputs?: Array<{ name: string; type: WorkflowDataType }>;
 }
 
-export const ToolNode = memo(({ data }: NodeProps<ToolNodeData>) => {
+export const ToolNode = memo(({ data, selected }: NodeProps<ToolNodeData>) => {
   const inputs = data.inputs || [];
   const outputs = data.outputs || [];
 
   return (
-    <div className="bg-white border-2 border-gray-300 rounded-lg shadow-md min-w-[200px] hover:shadow-lg transition-shadow">
+    <div
+      className={`bg-background rounded-xl shadow-md min-w-[200px] border transition-all duration-150 ${
+        selected ? "border-primary ring-2 ring-primary/20 shadow-lg" : "border-border hover:shadow-lg hover:border-border/80"
+      }`}
+    >
       {/* Header */}
-      <div className="bg-gradient-to-r from-blue-500 to-blue-600 px-3 py-2 rounded-t-lg">
-        <p className="font-medium text-sm text-white truncate">{data.label}</p>
+      <div className="flex items-center gap-2 px-3 py-2 border-b border-border">
+        <div className="h-6 w-6 rounded-md bg-blue-100 flex items-center justify-center shrink-0">
+          <Wrench className="h-3.5 w-3.5 text-blue-600" />
+        </div>
+        <p className="font-medium text-xs text-foreground truncate flex-1">{data.label}</p>
       </div>
 
       {/* Input handles */}
       {inputs.length > 0 && (
-        <div className="p-2 border-b">
+        <div className="px-3 py-2 border-b border-border/60 space-y-1.5">
           {inputs.map((input, idx) => (
-            <div
-              key={`input-${idx}`}
-              className="flex items-center gap-2 mb-1 relative"
-            >
+            <div key={`input-${idx}`} className="flex items-center gap-2 relative">
               <Handle
                 type="target"
                 position={Position.Left}
                 id={input.name}
                 style={getHandleStyle(input.type)}
-                className="!left-[-6px]"
+                className="!left-[-7px] !w-3 !h-3"
               />
-              <span className="text-xs text-gray-700 ml-2 flex-1">
+              <span className="text-[11px] text-muted-foreground ml-1 flex-1 min-w-0 truncate">
                 {input.name}
-                {input.required && <span className="text-red-500 ml-1">*</span>}
+                {input.required && <span className="text-destructive ml-0.5">*</span>}
               </span>
               <Badge
                 variant="outline"
-                className="text-xs px-1 py-0"
+                className="text-[10px] px-1 py-0 h-4 shrink-0"
                 style={{
-                  backgroundColor: getTypeColor(input.type) + "20",
-                  borderColor: getTypeColor(input.type),
+                  backgroundColor: getTypeColor(input.type) + "18",
+                  borderColor: getTypeColor(input.type) + "60",
+                  color: getTypeColor(input.type),
                 }}
               >
                 {formatType(input.type)}
@@ -60,23 +66,21 @@ export const ToolNode = memo(({ data }: NodeProps<ToolNodeData>) => {
 
       {/* Output handles */}
       {outputs.length > 0 && (
-        <div className="p-2">
+        <div className="px-3 py-2 space-y-1.5">
           {outputs.map((output, idx) => (
-            <div
-              key={`output-${idx}`}
-              className="flex items-center justify-end gap-2 mb-1 relative"
-            >
+            <div key={`output-${idx}`} className="flex items-center justify-end gap-2 relative">
               <Badge
                 variant="outline"
-                className="text-xs px-1 py-0"
+                className="text-[10px] px-1 py-0 h-4 shrink-0"
                 style={{
-                  backgroundColor: getTypeColor(output.type) + "20",
-                  borderColor: getTypeColor(output.type),
+                  backgroundColor: getTypeColor(output.type) + "18",
+                  borderColor: getTypeColor(output.type) + "60",
+                  color: getTypeColor(output.type),
                 }}
               >
                 {formatType(output.type)}
               </Badge>
-              <span className="text-xs text-gray-700 mr-2 flex-1 text-right">
+              <span className="text-[11px] text-muted-foreground mr-1 flex-1 text-right min-w-0 truncate">
                 {output.name}
               </span>
               <Handle
@@ -84,7 +88,7 @@ export const ToolNode = memo(({ data }: NodeProps<ToolNodeData>) => {
                 position={Position.Right}
                 id={output.name}
                 style={getHandleStyle(output.type)}
-                className="!right-[-6px]"
+                className="!right-[-7px] !w-3 !h-3"
               />
             </div>
           ))}

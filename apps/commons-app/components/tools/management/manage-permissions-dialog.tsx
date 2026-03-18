@@ -22,6 +22,7 @@ import {
 } from "@/components/ui/select";
 import { Plus, Trash2, User, Bot } from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { commons } from "@/lib/commons";
 
 interface ManagePermissionsDialogProps {
   tool: Tool | null;
@@ -53,23 +54,18 @@ export function ManagePermissionsDialog({
 
   const loadPermissions = async () => {
     if (!tool) return;
-    try {
-      const res = await fetch(`/api/tool-permissions?toolId=${tool.toolId}`);
-      const data = await res.json();
-      if (data.success) {
-        setPermissions(
-          data.data.map((p: any) => ({
-            id: p.id,
-            walletAddress: p.subjectId,
-            type: p.subjectType,
-            permission: p.permission,
-            grantedAt: p.createdAt,
-            expiresAt: p.expiresAt,
-          }))
-        );
-      }
-    } catch (error) {
-      console.error("Failed to load permissions:", error);
+    const res = await commons.toolPermissions.list(tool.toolId).catch(() => null);
+    if (res?.success) {
+      setPermissions(
+        res.data.map((p: any) => ({
+          id: p.id,
+          walletAddress: p.subjectId,
+          type: p.subjectType,
+          permission: p.permission,
+          grantedAt: p.createdAt,
+          expiresAt: p.expiresAt,
+        }))
+      );
     }
   };
 
@@ -77,46 +73,26 @@ export function ManagePermissionsDialog({
     if (!tool) return;
     setLoading(true);
     try {
-      const res = await fetch("/api/tool-permissions/grant", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          toolId: tool.toolId,
-          subjectId: newAccess.walletAddress,
-          subjectType: newAccess.type,
-          permission: newAccess.permission,
-          grantedBy: currentUserId,
-        }),
+      const res = await commons.toolPermissions.grant({
+        toolId: tool.toolId,
+        subjectId: newAccess.walletAddress,
+        subjectType: newAccess.type,
+        permission: newAccess.permission,
+        grantedBy: currentUserId,
       });
-
-      const data = await res.json();
-      if (data.success) {
+      if (res.success) {
         await loadPermissions();
         setShowAddForm(false);
-        setNewAccess({
-          walletAddress: "",
-          type: "user",
-          permission: "execute",
-        });
+        setNewAccess({ walletAddress: "", type: "user", permission: "execute" });
       }
-    } catch (error) {
-      console.error("Failed to grant access:", error);
     } finally {
       setLoading(false);
     }
   };
 
   const handleRevokeAccess = async (permissionId: string) => {
-    try {
-      const res = await fetch(`/api/tool-permissions/revoke/${permissionId}`, {
-        method: "DELETE",
-      });
-      if (res.ok) {
-        await loadPermissions();
-      }
-    } catch (error) {
-      console.error("Failed to revoke access:", error);
-    }
+    const res = await commons.toolPermissions.revoke(permissionId).catch(() => null);
+    if (res?.success) await loadPermissions();
   };
 
   const permissionColors = {
@@ -138,7 +114,7 @@ export function ManagePermissionsDialog({
         <div className="space-y-4">
           <ScrollArea className="h-[400px] pr-4">
             {permissions.length === 0 ? (
-              <div className="text-center py-8 text-gray-500">
+              <div className="text-center py-8 text-muted-foreground">
                 <p>No permissions configured</p>
                 <p className="text-sm">This tool is only accessible to you</p>
               </div>
@@ -150,18 +126,18 @@ export function ManagePermissionsDialog({
                     className="border rounded-lg p-3 flex items-center justify-between"
                   >
                     <div className="flex items-center gap-3">
-                      <div className="p-2 bg-gray-100 rounded">
+                      <div className="p-2 bg-muted rounded">
                         {access.type === "user" ? (
-                          <User className="h-4 w-4 text-gray-600" />
+                          <User className="h-4 w-4 text-muted-foreground" />
                         ) : (
-                          <Bot className="h-4 w-4 text-gray-600" />
+                          <Bot className="h-4 w-4 text-muted-foreground" />
                         )}
                       </div>
                       <div>
                         <p className="font-mono text-sm">
                           {access.walletAddress}
                         </p>
-                        <p className="text-xs text-gray-500 capitalize">
+                        <p className="text-xs text-muted-foreground capitalize">
                           {access.type}
                         </p>
                       </div>
@@ -188,7 +164,7 @@ export function ManagePermissionsDialog({
           </ScrollArea>
 
           {showAddForm ? (
-            <div className="border rounded-lg p-4 space-y-3 bg-gray-50">
+            <div className="border rounded-lg p-4 space-y-3 bg-muted/50">
               <div>
                 <Label htmlFor="walletAddress" className="text-xs">
                   Wallet Address *
@@ -205,7 +181,7 @@ export function ManagePermissionsDialog({
                   placeholder="0x..."
                   className="h-8 text-sm font-mono"
                 />
-                <p className="text-xs text-gray-500 mt-1">
+                <p className="text-xs text-muted-foreground mt-1">
                   User or agent wallet address
                 </p>
               </div>

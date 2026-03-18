@@ -3,6 +3,8 @@
 import { useState, useEffect } from "react";
 import { useWorkflowStore } from "@/lib/workflows/workflow-store";
 import { WorkflowExecution } from "@/types/workflow";
+import { useWorkflowExecutionStream } from "@/hooks/use-workflows";
+import { commons } from "@/lib/commons";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -17,13 +19,13 @@ import {
   AccordionTrigger,
 } from "@/components/ui/accordion";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import { Play, Loader2, CheckCircle, XCircle, AlertCircle } from "lucide-react";
+  Play,
+  Loader2,
+  CheckCircle2,
+  XCircle,
+  AlertCircle,
+  FlaskConical,
+} from "lucide-react";
 import {
   extractWorkflowInputSchema,
   WorkflowInputSchema,
@@ -36,71 +38,56 @@ interface TestPanelProps {
 
 export function TestPanel({ workflowId }: TestPanelProps) {
   const [inputs, setInputs] = useState<Record<string, any>>({});
-  const [inputSchema, setInputSchema] = useState<WorkflowInputSchema | null>(
-    null
-  );
+  const [inputSchema, setInputSchema] = useState<WorkflowInputSchema | null>(null);
   const [execution, setExecution] = useState<WorkflowExecution | null>(null);
+  const [pendingExecutionId, setPendingExecutionId] = useState<string | undefined>();
   const [loading, setLoading] = useState(false);
-  const [polling, setPolling] = useState(false);
   const { nodes, edges } = useWorkflowStore();
 
-  // Extract input schema whenever workflow changes
+  const { execution: streamExecution, done: streamDone } = useWorkflowExecutionStream(
+    pendingExecutionId ? workflowId : undefined,
+    pendingExecutionId
+  );
+
+  useEffect(() => {
+    if (!pendingExecutionId) return;
+    if (streamExecution.status) {
+      setExecution((prev) => (prev ? { ...prev, ...(streamExecution as any) } : null));
+    }
+    if (streamDone) setPendingExecutionId(undefined);
+  }, [streamExecution, streamDone, pendingExecutionId]);
+
   useEffect(() => {
     if (nodes.length > 0) {
-      const schema = extractWorkflowInputSchema({
-        nodes,
-        edges,
-        startNodeId: undefined, // Will auto-detect
-      });
+      const schema = extractWorkflowInputSchema({ nodes, edges, startNodeId: undefined });
       setInputSchema(schema);
-
-      // Initialize inputs based on schema - only required params get default values
       if (schema) {
-        const initialInputs: Record<string, any> = {};
+        const initial: Record<string, any> = {};
         schema.parameters.forEach((param) => {
-          // Only initialize required params, let optional ones be undefined
           if (param.required) {
-            initialInputs[param.name] = param.type === "number" ? 0 :
-                                       param.type === "boolean" ? false : "";
+            initial[param.name] = param.type === "number" ? 0 : param.type === "boolean" ? false : "";
           }
         });
-        setInputs(initialInputs);
+        setInputs(initial);
       }
     }
   }, [nodes, edges]);
 
-  const handleRunWorkflow = async () => {
+  const handleRun = async () => {
     setLoading(true);
     setExecution(null);
-
     try {
-      // Filter out empty strings and undefined values from inputs
-      const cleanInputs = Object.entries(inputs).reduce((acc, [key, value]) => {
-        if (value !== "" && value !== undefined && value !== null) {
-          acc[key] = value;
-        }
+      const cleanInputs = Object.entries(inputs).reduce((acc, [k, v]) => {
+        if (v !== "" && v !== undefined && v !== null) acc[k] = v;
         return acc;
       }, {} as Record<string, any>);
 
-      const res = await fetch(`/api/workflows/${workflowId}/execute`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ inputs: cleanInputs }),
-      });
-
-      if (!res.ok) {
-        throw new Error("Failed to execute workflow");
+      const data = await commons.workflows.execute(workflowId, { inputData: cleanInputs });
+      setExecution(data as any);
+      if ((data as any).status === "running" || (data as any).status === "pending") {
+        setPendingExecutionId((data as any).executionId);
       }
-
-      const data = await res.json();
-      setExecution(data.data);
-
-      // Poll for results if async
-      if (data.data.status === "running" || data.data.status === "pending") {
-        pollExecution(data.data.executionId);
-      }
-    } catch (error) {
-      console.error("Failed to run workflow:", error);
+    } catch {
       setExecution({
         executionId: "",
         workflowId,
@@ -113,310 +100,209 @@ export function TestPanel({ workflowId }: TestPanelProps) {
     }
   };
 
-  const pollExecution = async (executionId: string) => {
-    setPolling(true);
+  const renderField = (param: any) => {
+    const value = inputs[param.name] ?? "";
+    const set = (v: any) => setInputs({ ...inputs, [param.name]: v });
+    const typePill = (
+      <span
+        className="inline-flex items-center text-[10px] px-1.5 py-0 rounded-full border"
+        style={{
+          backgroundColor: getTypeColor(param.type) + "18",
+          borderColor: getTypeColor(param.type) + "50",
+          color: getTypeColor(param.type),
+        }}
+      >
+        {formatType(param.type)}
+      </span>
+    );
 
-    const interval = setInterval(async () => {
-      try {
-        const res = await fetch(`/api/workflows/${workflowId}/executions/${executionId}`);
-
-        if (!res.ok) {
-          clearInterval(interval);
-          setPolling(false);
-          return;
-        }
-
-        const data = await res.json();
-        setExecution(data.data);
-
-        if (data.data.status === "completed" || data.data.status === "failed") {
-          clearInterval(interval);
-          setPolling(false);
-        }
-      } catch (error) {
-        console.error("Polling error:", error);
-        clearInterval(interval);
-        setPolling(false);
-      }
-    }, 1000);
-
-    // Stop polling after 5 minutes
-    setTimeout(() => {
-      clearInterval(interval);
-      setPolling(false);
-    }, 300000);
-  };
-
-  const renderInputField = (param: any) => {
-    const value = inputs[param.name] || "";
-    const handleChange = (newValue: any) => {
-      setInputs({ ...inputs, [param.name]: newValue });
-    };
-
-    switch (param.type) {
-      case "boolean":
-        return (
-          <div className="flex items-center space-x-2">
-            <Checkbox
-              id={param.name}
-              checked={value === true || value === "true"}
-              onCheckedChange={(checked) => handleChange(checked)}
-            />
-            <Label htmlFor={param.name} className="text-xs text-gray-600">
-              {param.name}
-              {param.required && <span className="text-red-500 ml-1">*</span>}
-            </Label>
-          </div>
-        );
-
-      case "number":
-        return (
-          <div>
-            <Label htmlFor={param.name} className="text-xs text-gray-600 flex items-center gap-2">
-              <span>{param.name}</span>
-              {param.required && <span className="text-red-500">*</span>}
-              <Badge
-                variant="outline"
-                className="text-xs"
-                style={{ backgroundColor: getTypeColor(param.type) + "20" }}
-              >
-                {formatType(param.type)}
-              </Badge>
-            </Label>
-            <Input
-              id={param.name}
-              type="number"
-              value={value}
-              onChange={(e) => handleChange(parseFloat(e.target.value) || 0)}
-              placeholder={param.description || `Enter ${param.name}...`}
-              className="mt-1"
-            />
-            {param.description && (
-              <p className="text-xs text-gray-500 mt-1">{param.description}</p>
-            )}
-          </div>
-        );
-
-      case "object":
-      case "array":
-        return (
-          <div>
-            <Label htmlFor={param.name} className="text-xs text-gray-600 flex items-center gap-2">
-              <span>{param.name}</span>
-              {param.required && <span className="text-red-500">*</span>}
-              <Badge
-                variant="outline"
-                className="text-xs"
-                style={{ backgroundColor: getTypeColor(param.type) + "20" }}
-              >
-                {formatType(param.type)}
-              </Badge>
-            </Label>
-            <Textarea
-              id={param.name}
-              value={typeof value === "string" ? value : JSON.stringify(value, null, 2)}
-              onChange={(e) => {
-                try {
-                  handleChange(JSON.parse(e.target.value));
-                } catch {
-                  handleChange(e.target.value);
-                }
-              }}
-              placeholder={`JSON ${param.type}: ${param.description || param.name}`}
-              className="mt-1 font-mono text-xs"
-              rows={4}
-            />
-            {param.description && (
-              <p className="text-xs text-gray-500 mt-1">{param.description}</p>
-            )}
-          </div>
-        );
-
-      case "string":
-      default:
-        return (
-          <div>
-            <Label htmlFor={param.name} className="text-xs text-gray-600 flex items-center gap-2">
-              <span>{param.name}</span>
-              {param.required && <span className="text-red-500">*</span>}
-              <Badge
-                variant="outline"
-                className="text-xs"
-                style={{ backgroundColor: getTypeColor(param.type) + "20" }}
-              >
-                {formatType(param.type)}
-              </Badge>
-            </Label>
-            <Input
-              id={param.name}
-              value={value}
-              onChange={(e) => handleChange(e.target.value)}
-              placeholder={param.description || `Enter ${param.name}...`}
-              className="mt-1"
-            />
-            {param.description && (
-              <p className="text-xs text-gray-500 mt-1">{param.description}</p>
-            )}
-          </div>
-        );
+    if (param.type === "boolean") {
+      return (
+        <div className="flex items-center gap-2">
+          <Checkbox
+            id={param.name}
+            checked={value === true || value === "true"}
+            onCheckedChange={(c) => set(c)}
+          />
+          <Label htmlFor={param.name} className="text-xs cursor-pointer">
+            {param.name}
+            {param.required && <span className="text-destructive ml-0.5">*</span>}
+          </Label>
+        </div>
+      );
     }
-  };
-
-  const getStatusIcon = (status: string) => {
-    switch (status) {
-      case "completed":
-        return <CheckCircle className="h-4 w-4 text-green-600" />;
-      case "failed":
-        return <XCircle className="h-4 w-4 text-red-600" />;
-      case "running":
-      case "pending":
-        return <Loader2 className="h-4 w-4 animate-spin text-blue-600" />;
-      default:
-        return <AlertCircle className="h-4 w-4 text-gray-600" />;
-    }
-  };
-
-  const getStatusBadge = (status: string) => {
-    const variants: Record<string, "default" | "destructive" | "outline"> = {
-      completed: "default",
-      failed: "destructive",
-      running: "outline",
-      pending: "outline",
-    };
 
     return (
-      <Badge variant={variants[status] || "outline"}>
-        {status.toUpperCase()}
-      </Badge>
+      <div className="space-y-1">
+        <div className="flex items-center gap-1.5">
+          <Label htmlFor={param.name} className="text-xs">
+            {param.name}
+            {param.required && <span className="text-destructive ml-0.5">*</span>}
+          </Label>
+          {typePill}
+        </div>
+        {param.type === "object" || param.type === "array" ? (
+          <Textarea
+            id={param.name}
+            value={typeof value === "string" ? value : JSON.stringify(value, null, 2)}
+            onChange={(e) => {
+              try { set(JSON.parse(e.target.value)); }
+              catch { set(e.target.value); }
+            }}
+            placeholder={`JSON ${param.type}…`}
+            className="font-mono text-xs"
+            rows={3}
+          />
+        ) : (
+          <Input
+            id={param.name}
+            type={param.type === "number" ? "number" : "text"}
+            value={value}
+            onChange={(e) => set(param.type === "number" ? parseFloat(e.target.value) || 0 : e.target.value)}
+            placeholder={param.description || `Enter ${param.name}…`}
+            className="h-8 text-xs"
+          />
+        )}
+        {param.description && (
+          <p className="text-[11px] text-muted-foreground">{param.description}</p>
+        )}
+      </div>
     );
   };
 
+  const statusIcon = (status: string) => {
+    switch (status) {
+      case "completed": return <CheckCircle2 className="h-4 w-4 text-emerald-500" />;
+      case "failed": return <XCircle className="h-4 w-4 text-destructive" />;
+      case "running":
+      case "pending": return <Loader2 className="h-4 w-4 animate-spin text-blue-500" />;
+      default: return <AlertCircle className="h-4 w-4 text-muted-foreground" />;
+    }
+  };
+
+  const statusBadge = (status: string) => {
+    const map: Record<string, "default" | "destructive" | "secondary" | "outline"> = {
+      completed: "default",
+      failed: "destructive",
+      running: "secondary",
+      pending: "outline",
+    };
+    return <Badge variant={map[status] ?? "outline"} className="text-[10px]">{status}</Badge>;
+  };
+
   return (
-    <div className="w-96 border-l bg-white flex flex-col h-full">
-      <div className="p-4 border-b">
-        <h3 className="font-semibold text-lg flex items-center gap-2">
-          <Play className="h-5 w-5" />
-          Test Workflow
-        </h3>
-        <p className="text-xs text-gray-500 mt-1">
-          {inputSchema
-            ? `Entry: ${inputSchema.startNodeLabel}`
-            : "Run your workflow with test inputs"}
-        </p>
+    <div className="w-80 border-l border-border bg-background flex flex-col h-full shrink-0">
+      {/* Header */}
+      <div className="px-4 py-3 border-b border-border flex items-center gap-2">
+        <FlaskConical className="h-4 w-4 text-muted-foreground" />
+        <div>
+          <h3 className="text-sm font-semibold">Test Run</h3>
+          <p className="text-[11px] text-muted-foreground">
+            {inputSchema ? `Entry: ${inputSchema.startNodeLabel}` : "Run with sample inputs"}
+          </p>
+        </div>
       </div>
 
       <ScrollArea className="flex-1">
         <div className="p-4 space-y-4">
-          {/* Dynamic Input Form */}
+          {/* Inputs */}
           {inputSchema && inputSchema.parameters.length > 0 ? (
             <div className="space-y-3">
-              <Label className="text-sm font-semibold">Input Parameters</Label>
-              <div className="space-y-3">
-                {inputSchema.parameters.map((param) => (
-                  <div key={param.name}>{renderInputField(param)}</div>
-                ))}
-              </div>
+              <p className="text-xs font-semibold">Parameters</p>
+              {inputSchema.parameters.map((p) => (
+                <div key={p.name}>{renderField(p)}</div>
+              ))}
             </div>
           ) : (
-            <div className="p-4 bg-gray-50 rounded-lg border border-gray-200">
-              <p className="text-xs text-gray-500 text-center">
-                Add nodes to your workflow to define inputs
+            <div className="rounded-lg border border-dashed border-border p-4 text-center">
+              <p className="text-xs text-muted-foreground">
+                Add nodes to define workflow inputs
               </p>
             </div>
           )}
 
           {/* Run button */}
           <Button
-            onClick={handleRunWorkflow}
-            disabled={loading || polling || !inputSchema}
-            className="w-full"
+            onClick={handleRun}
+            disabled={loading || !!pendingExecutionId || !inputSchema}
+            className="w-full gap-2"
+            size="sm"
           >
-            {loading || polling ? (
+            {loading || pendingExecutionId ? (
               <>
-                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                {loading ? "Starting..." : "Running..."}
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                {loading ? "Starting…" : "Running…"}
               </>
             ) : (
               <>
-                <Play className="h-4 w-4 mr-2" />
+                <Play className="h-3.5 w-3.5" />
                 Run Workflow
               </>
             )}
           </Button>
 
-          {/* Execution results */}
+          {/* Results */}
           {execution && (
-            <div className="mt-4 space-y-3">
+            <div className="space-y-3 pt-1">
               <div className="flex items-center justify-between">
-                <Label className="text-sm font-semibold">Results</Label>
-                <div className="flex items-center gap-2">
-                  {getStatusIcon(execution.status)}
-                  {getStatusBadge(execution.status)}
+                <p className="text-xs font-semibold">Results</p>
+                <div className="flex items-center gap-1.5">
+                  {statusIcon(execution.status)}
+                  {statusBadge(execution.status)}
                 </div>
               </div>
 
-              {/* Error display */}
               {execution.error && (
-                <div className="p-3 bg-red-50 border border-red-200 rounded-lg">
-                  <p className="text-xs font-medium text-red-800 mb-1">Error</p>
-                  <p className="text-xs text-red-700">{execution.error}</p>
+                <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-3">
+                  <p className="text-xs font-medium text-destructive mb-1">Error</p>
+                  <p className="text-xs text-destructive/80">{execution.error}</p>
                 </div>
               )}
 
-              {/* Final result */}
               {execution.result && (
-                <div className="p-3 bg-green-50 border border-green-200 rounded-lg">
-                  <p className="text-xs font-medium text-green-800 mb-1">
-                    Final Result
-                  </p>
-                  <pre className="text-xs text-green-700 overflow-auto max-h-32">
+                <div className="rounded-lg border border-emerald-200 bg-emerald-50/50 p-3">
+                  <p className="text-xs font-medium text-emerald-700 mb-1.5">Output</p>
+                  <pre className="text-[11px] text-emerald-800 overflow-auto max-h-40 font-mono">
                     {JSON.stringify(execution.result, null, 2)}
                   </pre>
                 </div>
               )}
 
-              {/* Step results */}
-              {execution.stepResults &&
-                Object.keys(execution.stepResults).length > 0 && (
-                  <div>
-                    <Label className="text-sm font-semibold mb-2 block">
-                      Step Results
-                    </Label>
-                    <Accordion type="multiple" className="w-full">
-                      {Object.entries(execution.stepResults).map(
-                        ([nodeId, result]) => (
-                          <AccordionItem key={nodeId} value={nodeId}>
-                            <AccordionTrigger className="text-xs font-medium">
-                              {nodeId}
-                            </AccordionTrigger>
-                            <AccordionContent>
-                              <pre className="text-xs bg-gray-50 p-2 rounded overflow-auto max-h-48">
-                                {JSON.stringify(result, null, 2)}
-                              </pre>
-                            </AccordionContent>
-                          </AccordionItem>
-                        )
-                      )}
-                    </Accordion>
-                  </div>
-                )}
+              {execution.stepResults && Object.keys(execution.stepResults).length > 0 && (
+                <div>
+                  <p className="text-xs font-semibold mb-1.5">Step Results</p>
+                  <Accordion type="multiple" className="w-full">
+                    {Object.entries(execution.stepResults).map(([nodeId, result]) => (
+                      <AccordionItem key={nodeId} value={nodeId} className="border-border">
+                        <AccordionTrigger className="text-xs font-medium py-2">
+                          {nodeId}
+                        </AccordionTrigger>
+                        <AccordionContent>
+                          <pre className="text-[11px] bg-muted/50 p-2 rounded-md overflow-auto max-h-48 font-mono">
+                            {JSON.stringify(result, null, 2)}
+                          </pre>
+                        </AccordionContent>
+                      </AccordionItem>
+                    ))}
+                  </Accordion>
+                </div>
+              )}
 
-              {/* Execution metadata */}
-              <div className="pt-3 border-t space-y-1">
-                <p className="text-xs text-gray-500">
-                  <span className="font-medium">Execution ID:</span>{" "}
-                  <code className="text-xs bg-gray-100 px-1 rounded">
-                    {execution.executionId}
+              <div className="pt-2 border-t border-border space-y-1">
+                <p className="text-[11px] text-muted-foreground">
+                  <span className="font-medium">ID:</span>{" "}
+                  <code className="font-mono bg-muted px-1 rounded text-[10px]">
+                    {execution.executionId || "—"}
                   </code>
                 </p>
-                <p className="text-xs text-gray-500">
+                <p className="text-[11px] text-muted-foreground">
                   <span className="font-medium">Started:</span>{" "}
-                  {new Date(execution.startedAt).toLocaleString()}
+                  {new Date(execution.startedAt).toLocaleTimeString()}
                 </p>
                 {execution.completedAt && (
-                  <p className="text-xs text-gray-500">
+                  <p className="text-[11px] text-muted-foreground">
                     <span className="font-medium">Completed:</span>{" "}
-                    {new Date(execution.completedAt).toLocaleString()}
+                    {new Date(execution.completedAt).toLocaleTimeString()}
                   </p>
                 )}
               </div>

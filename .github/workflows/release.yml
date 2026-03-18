@@ -1,0 +1,115 @@
+name: Release
+
+on:
+  push:
+    branches:
+      - main
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # full history needed for git describe / diff
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.3
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: https://registry.npmjs.org
+
+      - id: pnpm-cache
+        run: echo "store=$(pnpm store path)" >> $GITHUB_OUTPUT
+
+      - uses: actions/cache@v4
+        with:
+          path: ${{ steps.pnpm-cache.outputs.store }}
+          key: pnpm-store-${{ runner.os }}-${{ hashFiles('**/pnpm-lock.yaml') }}
+          restore-keys: pnpm-store-${{ runner.os }}-
+
+      - run: pnpm install --no-frozen-lockfile
+
+      - name: Build packages
+        run: pnpm --filter './packages/*' run build
+
+      - name: Auto-generate patch changeset if needed
+        shell: bash
+        run: |
+          # Avoid infinite loop: skip if this is the version bump commit
+          COMMIT_MSG=$(git log -1 --pretty=%B)
+          if echo "$COMMIT_MSG" | grep -q "chore: version packages"; then
+            echo "Version commit detected — skipping auto-patch."
+            exit 0
+          fi
+
+          # Skip if a changeset was already written manually
+          EXISTING=$(ls .changeset/*.md 2>/dev/null | grep -v README | wc -l)
+          if [ "$EXISTING" -gt "0" ]; then
+            echo "Manual changeset found — skipping auto-patch."
+            exit 0
+          fi
+
+          # Check if any packages/ files changed since the last git tag
+          LAST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || git rev-list --max-parents=0 HEAD)
+          CHANGED=$(git diff --name-only "$LAST_TAG" HEAD -- packages/ | grep -v 'node_modules' | head -1)
+
+          if [ -z "$CHANGED" ]; then
+            echo "No package changes since $LAST_TAG — skipping auto-patch."
+            exit 0
+          fi
+
+          echo "Package changes detected since $LAST_TAG. Generating patch changeset..."
+
+          # Map changed directories to package names and write a changeset
+          node -e "
+            const { execSync } = require('child_process');
+            const fs = require('fs');
+            const crypto = require('crypto');
+
+            const dirToPackage = {
+              'packages/commons-sdk': '@agent-commons/sdk',
+              'packages/agc-cli':     '@agent-commons/cli',
+            };
+
+            const lastTag = '$LAST_TAG';
+            const changedFiles = execSync(
+              \`git diff --name-only \${lastTag} HEAD -- packages/\`
+            ).toString().trim().split('\n').filter(Boolean);
+
+            const changedPackages = new Set();
+            for (const file of changedFiles) {
+              for (const [dir, pkg] of Object.entries(dirToPackage)) {
+                if (file.startsWith(dir + '/')) changedPackages.add(pkg);
+              }
+            }
+
+            if (changedPackages.size === 0) {
+              console.log('No mapped packages changed.');
+              process.exit(0);
+            }
+
+            const pkgLines = [...changedPackages].map(p => \`'\${p}': patch\`).join('\n');
+            const id = crypto.randomBytes(4).toString('hex');
+            const content = \`---\n\${pkgLines}\n---\n\nAutomated patch release.\n\`;
+            const filename = \`.changeset/auto-\${id}.md\`;
+            fs.writeFileSync(filename, content);
+            console.log('Wrote', filename, 'for:', [...changedPackages].join(', '));
+          "
+
+      - name: Version and publish
+        uses: changesets/action@v1
+        with:
+          publish: pnpm release
+          title: "chore: version packages"
+          commit: "chore: version packages"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GH_PAT }}
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

@@ -42,7 +42,7 @@ export default function SpacesView({ spaces }: SpacesViewProps) {
   if (spaces.length === 0) {
     return (
       <div className="h-full flex flex-col items-center justify-center p-6 text-center text-muted-foreground">
-        <Users className="h-12 w-12 mb-4 text-gray-300" />
+        <Users className="h-12 w-12 mb-4 text-muted-foreground" />
         <h3 className="font-medium mb-2">No Agent Spaces</h3>
         <p className="text-sm">
           Collaborative spaces will appear here when agents create them.
@@ -53,7 +53,7 @@ export default function SpacesView({ spaces }: SpacesViewProps) {
 
   if (selectedSpace) {
     return (
-      <div className="mx-2 rounded-xl border border-gray-400 h-full">
+      <div className="mx-2 rounded-xl border border-border h-full">
         <div className="flex-1 overflow-hidden">
           <SpaceMessaging
             onBack={handleBackToList}
@@ -67,9 +67,9 @@ export default function SpacesView({ spaces }: SpacesViewProps) {
   }
 
   return (
-    <div className="mx-2 rounded-xl border border-gray-400 h-full">
+    <div className="mx-2 rounded-xl border border-border h-full">
       <div className="space-y-1">
-        <div className="flex items-center justify-between rounded-t-lg items-start border-b border-gray-400 p-2 bg-zinc-100 rounded-t-xl">
+        <div className="flex items-center justify-between rounded-t-lg items-start border-b border-border p-2 bg-zinc-100 rounded-t-xl">
           <h2 className="text-xs font-semibold">Agent Collaboration Spaces</h2>
         </div>
         <ScrollArea className="h-[480px] p-1">
@@ -77,7 +77,7 @@ export default function SpacesView({ spaces }: SpacesViewProps) {
             <button
               key={space.spaceId}
               onClick={() => handleSpaceSelect(space)}
-              className="w-full p-3 text-left hover:bg-gray-50 dark:hover:bg-gray-800 rounded-md transition-colors border border-transparent hover:border-gray-200 dark:hover:border-gray-700"
+              className="w-full p-3 text-left hover:bg-muted/50 dark:hover:bg-muted rounded-md transition-colors border border-transparent hover:border-border dark:hover:border-border"
             >
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 rounded-full bg-gradient-to-br from-green-400 to-teal-500 flex items-center justify-center text-white text-sm font-medium">
@@ -88,22 +88,22 @@ export default function SpacesView({ spaces }: SpacesViewProps) {
                     <h4 className="font-medium text-sm truncate">
                       {space.name}
                     </h4>
-                    <span className="text-xs text-gray-500">
+                    <span className="text-xs text-muted-foreground">
                       {new Date(space.createdAt).toLocaleTimeString([], {
                         hour: "2-digit",
                         minute: "2-digit",
                       })}
                     </span>
                   </div>
-                  <p className="text-xs text-gray-500 truncate mt-1">
+                  <p className="text-xs text-muted-foreground truncate mt-1">
                     {space.description}
                   </p>
                   <div className="flex items-center gap-2 mt-1">
-                    <span className="text-xs text-gray-400">
+                    <span className="text-xs text-muted-foreground">
                       Created by {space.createdByType}
                     </span>
-                    <span className="text-xs text-gray-400">•</span>
-                    <span className="text-xs text-gray-400">
+                    <span className="text-xs text-muted-foreground">•</span>
+                    <span className="text-xs text-muted-foreground">
                       Max {space.maxMembers} members
                     </span>
                   </div>

@@ -9,6 +9,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { BasicInfoStep } from "./wizard-steps/basic-info-step";
+import { commons } from "@/lib/commons";
 import { ApiConfigStep } from "./wizard-steps/api-config-step";
 import { SchemaStep } from "./wizard-steps/schema-step";
 
@@ -151,18 +152,7 @@ export function CreateToolWizard() {
         rateLimitPerHour: formData.rateLimitPerHour || undefined,
       };
 
-      const res = await fetch("/api/tools", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(toolPayload),
-      });
-
-      if (!res.ok) {
-        const errorData = await res.json();
-        throw new Error(errorData.message || "Failed to create tool");
-      }
-
-      // Success! Redirect to tools management
+      await commons.tools.create(toolPayload as any);
       router.push("/studio/tools");
     } catch (err: any) {
       setError(err.message);

@@ -9,6 +9,7 @@ import { ToolSidebar } from "@/components/workflows/editor/tool-sidebar";
 import { WorkflowCanvasProvider } from "@/components/workflows/editor/workflow-canvas";
 import { TestPanel } from "@/components/workflows/editor/test-panel";
 import { useAuth } from "@/context/AuthContext";
+import { commons } from "@/lib/commons";
 import { Loader2 } from "lucide-react";
 
 export default function WorkflowEditorPage() {
@@ -47,32 +48,22 @@ export default function WorkflowEditorPage() {
     if (!walletAddress) return;
 
     try {
-      const res = await fetch("/api/workflows", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          name: "Untitled Workflow",
-          description: "",
-          ownerId: walletAddress.toLowerCase(),
-          ownerType: "user",
-          nodes: [],
-          edges: [],
-        }),
+      const workflow = await commons.workflows.create({
+        name: "Untitled Workflow",
+        description: "",
+        ownerId: walletAddress.toLowerCase(),
+        ownerType: "user",
+        definition: { nodes: [], edges: [] },
       });
 
-      if (!res.ok) {
-        throw new Error("Failed to create workflow");
-      }
-
-      const data = await res.json();
-      if (data.success && data.data) {
-        await loadWorkflow(data.data.workflowId);
+      if (workflow?.workflowId) {
+        await loadWorkflow(workflow.workflowId);
 
         // Update URL to include the new workflow ID
         window.history.replaceState(
           {},
           "",
-          `/studio/workflows/${data.data.workflowId}/edit`
+          `/studio/workflows/${workflow.workflowId}/edit`
         );
       }
     } catch (error) {
@@ -116,7 +107,7 @@ export default function WorkflowEditorPage() {
   if (loading) {
     return (
       <div className="flex items-center justify-center h-screen">
-        <Loader2 className="h-8 w-8 animate-spin text-gray-400" />
+        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
       </div>
     );
   }
@@ -124,13 +115,13 @@ export default function WorkflowEditorPage() {
   if (!workflow) {
     return (
       <div className="flex items-center justify-center h-screen">
-        <p className="text-gray-500">Workflow not found</p>
+        <p className="text-muted-foreground">Workflow not found</p>
       </div>
     );
   }
 
   return (
-    <div className="flex flex-col h-screen bg-gray-50">
+    <div className="flex flex-col h-screen bg-background">
       {/* Top toolbar */}
       <EditorToolbar />
 

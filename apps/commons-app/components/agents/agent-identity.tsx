@@ -2,7 +2,7 @@
 
 import type React from "react";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -16,7 +16,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Check, Copy, PencilIcon } from "lucide-react";
+import { Check, Copy, Eye, EyeOff, PencilIcon } from "lucide-react";
 import RandomAvatar from "@/components/account/random-avatar";
 import { cn } from "@/lib/utils";
 import {
@@ -26,6 +26,15 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Separator } from "@/components/ui/separator";
+
+const MODEL_PLACEHOLDERS: Record<string, string> = {
+  openai: "gpt-4o",
+  anthropic: "claude-sonnet-4-6",
+  google: "gemini-2.0-flash",
+  groq: "llama-3.3-70b-versatile",
+  ollama: "llama3",
+};
 
 export default function AgentIdentity({
   agent,
@@ -48,10 +57,17 @@ export default function AgentIdentity({
       (agent?.tts_provider as "openai" | "elevenlabs") ||
       "openai",
     ttsVoice: (agent?.ttsVoice as string) || (agent?.tts_voice as string) || "",
+    modelProvider: (agent?.modelProvider as string) || "openai",
+    modelId: agent?.modelId || "",
+    modelApiKey: agent?.modelApiKey || "",
+    modelBaseUrl: agent?.modelBaseUrl || "",
+    temperature: agent?.temperature ?? 0.7,
+    maxTokens: agent?.maxTokens ?? 4096,
   });
   const [saving, setSaving] = useState(false);
   const [voices, setVoices] = useState<Array<{ id: string; name: string }>>([]);
   const [voicesLoading, setVoicesLoading] = useState(false);
+  const [showApiKey, setShowApiKey] = useState(false);
 
   const agentAddress = agent?.agentId || "";
 
@@ -64,6 +80,10 @@ export default function AgentIdentity({
 
   const handleChange = (field: string, value: string) => {
     setEditData((prev) => ({ ...prev, [field]: value }));
+  };
+
+  const handleNumberChange = (field: string, value: string) => {
+    setEditData((prev) => ({ ...prev, [field]: parseFloat(value) || 0 }));
   };
 
   const handleSave = async () => {
@@ -91,6 +111,12 @@ export default function AgentIdentity({
         (agent?.tts_voice as string) ||
         prev.ttsVoice ||
         "",
+      modelProvider: (agent?.modelProvider as string) || prev.modelProvider || "openai",
+      modelId: agent?.modelId || prev.modelId || "",
+      modelApiKey: agent?.modelApiKey || prev.modelApiKey || "",
+      modelBaseUrl: agent?.modelBaseUrl || prev.modelBaseUrl || "",
+      temperature: agent?.temperature ?? prev.temperature ?? 0.7,
+      maxTokens: agent?.maxTokens ?? prev.maxTokens ?? 4096,
     }));
   }, [agent]);
 
@@ -150,20 +176,20 @@ export default function AgentIdentity({
   return (
     <Dialog>
       <DialogTrigger asChild>
-        <div className="flex flex-col cursor-pointer border border-gray-400 rounded-xl p-3 hover:border-gray-700 transition-colors relative group">
+        <div className="flex flex-col cursor-pointer border border-border rounded-xl p-3 hover:border-border transition-colors relative group">
           <div className="flex items-center gap-2 mb-2">
             <RandomAvatar size={48} username={agent?.name || "agent"} />
             <div className="flex flex-col">
               <h2 className="ml-1 font-semibold">
                 {agent?.name || "Agent name"}
               </h2>
-              <div className="flex items-center gap-2 bg-gray-100 p-0.5 px-2 rounded-3xl w-fit max-w-52">
-                <p className="text-gray-500 text-xs truncate">{agentAddress}</p>
+              <div className="flex items-center gap-2 bg-muted p-0.5 px-2 rounded-3xl w-fit max-w-52">
+                <p className="text-muted-foreground text-xs truncate">{agentAddress}</p>
                 <button
                   onClick={copyToClipboard}
                   className={cn(
-                    " ml-1 p-1 rounded-full hover:bg-gray-200 transition-colors",
-                    copied ? "text-green-500" : "text-gray-500"
+                    " ml-1 p-1 rounded-full hover:bg-accent transition-colors",
+                    copied ? "text-green-500" : "text-muted-foreground"
                   )}
                   aria-label={copied ? "Copied" : "Copy address"}
                 >
@@ -194,7 +220,7 @@ export default function AgentIdentity({
         </div>
       </DialogTrigger>
       {isOwner && (
-        <DialogContent className="sm:max-w-2xl">
+        <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Agent Identity</DialogTitle>
             <DialogDescription>
@@ -208,19 +234,19 @@ export default function AgentIdentity({
               <input type="file" name="file" id="file" className="hidden" />
               <label htmlFor="file" className="cursor-pointer w-full">
                 <RandomAvatar size={80} username={editData.name || "agent"} />
-                <div className="flex items-center justify-center p-2 bg-white border border-gray-300 rounded-full w-8 -mt-10 ml-auto mx-2">
-                  <PencilIcon className="w-4 h-4 text-gray-700 " />
+                <div className="flex items-center justify-center p-2 bg-background border border-border rounded-full w-8 -mt-10 ml-auto mx-2">
+                  <PencilIcon className="w-4 h-4 text-foreground " />
                 </div>
               </label>
             </div>
             <div className="flex flex-col w-full">
-              <div className="flex items-center gap-2 bg-gray-100 p-0.5 px-2 rounded-3xl w-fit max-w-96">
-                <p className="text-gray-500 text-xs truncate">{agentAddress}</p>
+              <div className="flex items-center gap-2 bg-muted p-0.5 px-2 rounded-3xl w-fit max-w-96">
+                <p className="text-muted-foreground text-xs truncate">{agentAddress}</p>
                 <button
                   onClick={copyToClipboard}
                   className={cn(
-                    " ml-1 p-1 rounded-full hover:bg-gray-200 transition-colors",
-                    copied ? "text-green-500" : "text-gray-500"
+                    " ml-1 p-1 rounded-full hover:bg-accent transition-colors",
+                    copied ? "text-green-500" : "text-muted-foreground"
                   )}
                   aria-label={copied ? "Copied" : "Copy address"}
                 >
@@ -333,6 +359,110 @@ export default function AgentIdentity({
             value={editData.description}
             onChange={(e) => handleChange("description", e.target.value)}
           />
+
+          {/* Model Configuration */}
+          <div className="flex items-center gap-2 mt-2">
+            <span className="text-xs font-semibold text-muted-foreground whitespace-nowrap">
+              Model Configuration
+            </span>
+            <Separator className="flex-1" />
+          </div>
+
+          <div className="grid grid-cols-2 gap-2">
+            <div className="col-span-1">
+              <Label className="text-sm font-semibold">Provider</Label>
+              <Select
+                value={editData.modelProvider}
+                onValueChange={(val) => handleChange("modelProvider", val)}
+              >
+                <SelectTrigger className="w-full mt-1">
+                  <SelectValue placeholder="Select provider" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="openai">OpenAI</SelectItem>
+                  <SelectItem value="anthropic">Anthropic</SelectItem>
+                  <SelectItem value="google">Google</SelectItem>
+                  <SelectItem value="groq">Groq</SelectItem>
+                  <SelectItem value="ollama">Ollama</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="col-span-1">
+              <Label className="text-sm font-semibold">Model ID</Label>
+              <Input
+                className="mt-1"
+                placeholder={
+                  MODEL_PLACEHOLDERS[editData.modelProvider] || "Enter model ID"
+                }
+                value={editData.modelId}
+                onChange={(e) => handleChange("modelId", e.target.value)}
+              />
+            </div>
+          </div>
+
+          {editData.modelProvider !== "ollama" && (
+            <div>
+              <Label className="text-sm font-semibold">API Key</Label>
+              <div className="relative mt-1">
+                <Input
+                  type={showApiKey ? "text" : "password"}
+                  placeholder="Enter API key"
+                  value={editData.modelApiKey}
+                  onChange={(e) => handleChange("modelApiKey", e.target.value)}
+                  className="pr-10"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowApiKey((prev) => !prev)}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 p-1 rounded text-muted-foreground hover:text-foreground transition-colors"
+                  aria-label={showApiKey ? "Hide API key" : "Show API key"}
+                >
+                  {showApiKey ? <EyeOff size={16} /> : <Eye size={16} />}
+                </button>
+              </div>
+            </div>
+          )}
+
+          {editData.modelProvider === "ollama" && (
+            <div>
+              <Label className="text-sm font-semibold">Base URL</Label>
+              <Input
+                className="mt-1"
+                placeholder="http://localhost:11434"
+                value={editData.modelBaseUrl}
+                onChange={(e) => handleChange("modelBaseUrl", e.target.value)}
+              />
+            </div>
+          )}
+
+          <div className="grid grid-cols-2 gap-2">
+            <div className="col-span-1">
+              <Label className="text-sm font-semibold">Temperature</Label>
+              <Input
+                className="mt-1"
+                type="number"
+                min={0}
+                max={1}
+                step={0.05}
+                value={editData.temperature}
+                onChange={(e) =>
+                  handleNumberChange("temperature", e.target.value)
+                }
+              />
+            </div>
+            <div className="col-span-1">
+              <Label className="text-sm font-semibold">Max Tokens</Label>
+              <Input
+                className="mt-1"
+                type="number"
+                min={1}
+                value={editData.maxTokens}
+                onChange={(e) =>
+                  handleNumberChange("maxTokens", e.target.value)
+                }
+              />
+            </div>
+          </div>
 
           <DialogFooter>
             <Button

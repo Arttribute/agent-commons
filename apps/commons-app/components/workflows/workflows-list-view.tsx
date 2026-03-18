@@ -1,143 +1,69 @@
 "use client";
 
-import { useEffect, useState } from "react";
 import { Workflow } from "@/types/workflow";
 import { WorkflowCard } from "./workflow-card";
-import { Loader2 } from "lucide-react";
+import { Loader2, Workflow as WorkflowIcon } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { useWorkflows } from "@/hooks/use-workflows";
+import { commons } from "@/lib/commons";
 
 interface WorkflowsListViewProps {
   userAddress: string;
 }
 
 export function WorkflowsListView({ userAddress }: WorkflowsListViewProps) {
-  const [workflows, setWorkflows] = useState<Workflow[]>([]);
-  const [loading, setLoading] = useState(true);
+  const { workflows, loading, refresh } = useWorkflows(userAddress, "user");
   const { toast } = useToast();
-
-  useEffect(() => {
-    loadWorkflows();
-  }, [userAddress]);
-
-  const loadWorkflows = async () => {
-    if (!userAddress) return;
-
-    setLoading(true);
-    try {
-      const res = await fetch(
-        `/api/workflows?ownerId=${userAddress}&ownerType=user`
-      );
-      const data = await res.json();
-
-      if (data.success || data.data) {
-        setWorkflows(data.data || []);
-      }
-    } catch (error) {
-      console.error("Failed to load workflows:", error);
-      toast({
-        title: "Error",
-        description: "Failed to load workflows",
-        variant: "destructive",
-      });
-    } finally {
-      setLoading(false);
-    }
-  };
 
   const handleDelete = async (workflowId: string) => {
     if (!confirm("Are you sure you want to delete this workflow?")) return;
-
     try {
-      const res = await fetch(`/api/workflows/${workflowId}`, {
-        method: "DELETE",
-      });
-
-      if (res.ok) {
-        toast({
-          title: "Success",
-          description: "Workflow deleted successfully",
-        });
-        loadWorkflows();
-      } else {
-        throw new Error("Failed to delete workflow");
-      }
-    } catch (error) {
-      console.error("Failed to delete workflow:", error);
-      toast({
-        title: "Error",
-        description: "Failed to delete workflow",
-        variant: "destructive",
-      });
+      await commons.workflows.delete(workflowId);
+      toast({ title: "Workflow deleted" });
+      refresh();
+    } catch {
+      toast({ title: "Error", description: "Failed to delete workflow", variant: "destructive" });
     }
   };
 
   const handleDuplicate = async (workflowId: string) => {
     try {
-      // Fetch the workflow details
-      const res = await fetch(`/api/workflows/${workflowId}`);
-      const data = await res.json();
-
-      if (!data.success) {
-        throw new Error("Failed to fetch workflow");
-      }
-
-      const workflow = data.data;
-
-      // Create a new workflow with copied data
-      const createRes = await fetch("/api/workflows", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          name: `${workflow.name} (Copy)`,
-          description: workflow.description,
-          ownerId: userAddress,
-          ownerType: "user",
-          nodes: workflow.nodes,
-          edges: workflow.edges,
-        }),
+      const workflow = await commons.workflows.get(workflowId);
+      await commons.workflows.create({
+        name: `${workflow.name} (Copy)`,
+        description: workflow.description,
+        ownerId: userAddress,
+        ownerType: "user",
+        definition: workflow.definition,
       });
-
-      if (createRes.ok) {
-        toast({
-          title: "Success",
-          description: "Workflow duplicated successfully",
-        });
-        loadWorkflows();
-      } else {
-        throw new Error("Failed to duplicate workflow");
-      }
-    } catch (error) {
-      console.error("Failed to duplicate workflow:", error);
-      toast({
-        title: "Error",
-        description: "Failed to duplicate workflow",
-        variant: "destructive",
-      });
+      toast({ title: "Workflow duplicated" });
+      refresh();
+    } catch {
+      toast({ title: "Error", description: "Failed to duplicate workflow", variant: "destructive" });
     }
   };
 
   if (loading) {
     return (
       <div className="flex items-center justify-center h-32">
-        <Loader2 className="h-5 w-5 animate-spin" />
+        <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
       </div>
     );
   }
 
   if (workflows.length === 0) {
     return (
-      <div className="text-center py-12">
-        <p className="text-gray-500 mb-2">No workflows yet</p>
-        <p className="text-sm text-gray-400">
-          Create your first workflow to get started
-        </p>
+      <div className="flex flex-col items-center justify-center py-16 text-center">
+        <WorkflowIcon className="h-10 w-10 text-muted-foreground/30 mb-3" />
+        <p className="text-sm font-medium text-muted-foreground">No workflows yet</p>
+        <p className="text-xs text-muted-foreground/60 mt-1">Create your first workflow to get started</p>
       </div>
     );
   }
 
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-      {workflows.map((workflow) => (
+      {workflows.map((workflow: any) => (
         <WorkflowCard
           key={workflow.workflowId}
           workflow={workflow}

@@ -1,6 +1,3 @@
-import { ATTRIBUTION_ABI } from '#/lib/abis/AttributionABI';
-import { ATTRIBUTION_ADDRESS } from '#/lib/addresses';
-import { baseSepolia } from '#/lib/baseSepolia';
 import {
   forwardRef,
   Inject,
@@ -9,22 +6,33 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { and, eq, InferInsertModel, InferSelectModel, sql } from 'drizzle-orm';
-import {
-  createPublicClient,
-  createWalletClient,
-  getContract,
-  http,
-} from 'viem';
-import { privateKeyToAccount } from 'viem/accounts';
 import { DatabaseService } from '~/modules/database/database.service';
 import * as schema from '#/models/schema';
 import { first } from 'lodash';
 import { inArray } from 'drizzle-orm';
 import { v4 as uuidv4 } from 'uuid';
+import { EncryptionService } from '~/modules/encryption';
 
 @Injectable()
 export class SessionService {
-  constructor(private db: DatabaseService) {}
+  constructor(
+    private db: DatabaseService,
+    private encryption: EncryptionService,
+  ) {}
+
+  private encryptModelApiKey(model: Record<string, any> | null | undefined): Record<string, any> | null | undefined {
+    if (!model?.apiKey) return model;
+    const { encryptedValue, iv, tag } = this.encryption.encrypt(model.apiKey);
+    return { ...model, apiKey: `enc:${iv}:${tag}:${encryptedValue}` };
+  }
+
+  static decryptModelApiKey(model: Record<string, any> | null | undefined, encryption: EncryptionService): Record<string, any> | null | undefined {
+    if (!model?.apiKey) return model;
+    const stored: string = model.apiKey;
+    if (!stored.startsWith('enc:')) return model; // plaintext (legacy)
+    const [, iv, tag, encryptedValue] = stored.split(':');
+    return { ...model, apiKey: encryption.decrypt(encryptedValue, iv, tag) };
+  }
 
   public async createSession(props: {
     value: InferInsertModel<typeof schema.session>;
@@ -36,6 +44,7 @@ export class SessionService {
       .insert(schema.session)
       .values({
         ...value,
+        model: this.encryptModelApiKey(value.model as any) as any,
         parentSessionId,
         initiator: value.initiator?.toLowerCase(),
       })
@@ -81,7 +90,7 @@ export class SessionService {
         sessionId: uuidv4(),
         agentId,
         initiator: initiator ?? `space:${spaceId}`,
-        model: model ?? ({ name: 'gpt-4o' } as any),
+        model: this.encryptModelApiKey(model as any) ?? ({ name: 'gpt-4o' } as any),
         spaces: { spaceIds: [spaceId] },
         parentSessionId: parentSessionId ?? undefined,
         title: title ?? null,
@@ -196,9 +205,12 @@ export class SessionService {
     delta: Partial<InferInsertModel<typeof schema.session>>;
   }) {
     const { id, delta } = props;
+    const encrypted = delta.model !== undefined
+      ? { ...delta, model: this.encryptModelApiKey(delta.model as any) as any }
+      : delta;
     const sessionEntry = await this.db
       .update(schema.session)
-      .set(delta)
+      .set(encrypted)
       .where(eq(schema.session.sessionId, id))
       .returning();
     return sessionEntry;

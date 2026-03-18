@@ -8,9 +8,15 @@ import {
   Body,
   Query,
   BadRequestException,
+  Sse,
+  Req,
+  UseGuards,
 } from '@nestjs/common';
+import { Request } from 'express';
+import { Observable } from 'rxjs';
 import { WorkflowService } from './workflow.service';
 import { WorkflowExecutorService } from './workflow-executor.service';
+import { OwnerGuard, OwnerOnly } from '~/modules/auth';
 
 /**
  * WorkflowController
@@ -95,6 +101,8 @@ export class WorkflowController {
    * PUT /v1/workflows/:id
    */
   @Put(':id')
+  @UseGuards(OwnerGuard)
+  @OwnerOnly({ table: 'workflow', idParam: 'id' })
   async updateWorkflow(
     @Param('id') workflowId: string,
     @Body()
@@ -117,6 +125,8 @@ export class WorkflowController {
    * DELETE /v1/workflows/:id
    */
   @Delete(':id')
+  @UseGuards(OwnerGuard)
+  @OwnerOnly({ table: 'workflow', idParam: 'id' })
   async deleteWorkflow(@Param('id') workflowId: string) {
     return this.workflowService.deleteWorkflow(workflowId);
   }
@@ -236,5 +246,114 @@ export class WorkflowController {
     @Param('executionId') executionId: string,
   ) {
     return this.workflowExecutor.cancelExecution(executionId);
+  }
+
+  /**
+   * Approve a paused human_approval step
+   * POST /v1/workflows/:id/executions/:executionId/approve
+   */
+  @Post(':id/executions/:executionId/approve')
+  async approveExecution(
+    @Param('id') _workflowId: string,
+    @Param('executionId') executionId: string,
+    @Body() body: { approvalToken: string; approvalData?: Record<string, any> },
+  ) {
+    if (!body.approvalToken) throw new BadRequestException('approvalToken is required');
+    await this.workflowExecutor.approveExecution(executionId, body.approvalToken, body.approvalData);
+    return { success: true, executionId, action: 'approved' };
+  }
+
+  /**
+   * Reject a paused human_approval step
+   * POST /v1/workflows/:id/executions/:executionId/reject
+   */
+  @Post(':id/executions/:executionId/reject')
+  async rejectExecution(
+    @Param('id') _workflowId: string,
+    @Param('executionId') executionId: string,
+    @Body() body: { approvalToken: string; reason?: string },
+  ) {
+    if (!body.approvalToken) throw new BadRequestException('approvalToken is required');
+    await this.workflowExecutor.rejectExecution(executionId, body.approvalToken, body.reason);
+    return { success: true, executionId, action: 'rejected' };
+  }
+
+  /**
+   * Stream workflow execution progress as SSE
+   * GET /v1/workflows/:id/executions/:executionId/stream
+   *
+   * Emits events:
+   *   { type: 'status', status, currentNode, nodeResults }
+   *   { type: 'completed', outputData, nodeResults }
+   *   { type: 'failed', errorMessage }
+   *   { type: 'heartbeat' }  — every 5s to keep connection alive
+   */
+  @Get(':id/executions/:executionId/stream')
+  @Sse(':id/executions/:executionId/stream')
+  streamExecution(
+    @Param('id') _workflowId: string,
+    @Param('executionId') executionId: string,
+    @Req() req: Request,
+  ): Observable<MessageEvent> {
+    return new Observable<MessageEvent>((subscriber) => {
+      let lastStatus = '';
+      let lastCurrentNode = '';
+      let closed = false;
+
+      const heartbeat = setInterval(() => {
+        if (!closed) subscriber.next({ data: JSON.stringify({ type: 'heartbeat' }) } as any);
+      }, 5000);
+
+      const poll = setInterval(async () => {
+        if (closed) return;
+        try {
+          const execution = await this.workflowExecutor.getExecutionStatus(executionId);
+          const currentNode = (execution as any).currentNode ?? '';
+          if (execution.status !== lastStatus || currentNode !== lastCurrentNode) {
+            lastStatus = execution.status;
+            lastCurrentNode = currentNode;
+            subscriber.next({
+              data: JSON.stringify({
+                type: 'status',
+                status: execution.status,
+                currentNode,
+                nodeResults: execution.nodeResults,
+              }),
+            } as any);
+          }
+          if (execution.status === 'completed') {
+            subscriber.next({ data: JSON.stringify({ type: 'completed', outputData: execution.outputData, nodeResults: execution.nodeResults }) } as any);
+            subscriber.complete();
+          } else if (execution.status === 'awaiting_approval') {
+            subscriber.next({
+              data: JSON.stringify({
+                type: 'awaiting_approval',
+                pausedAtNode: (execution as any).pausedAtNode,
+                approvalToken: (execution as any).approvalToken,
+              }),
+            } as any);
+            // Keep stream open — client will continue polling after approval
+          } else if (execution.status === 'failed' || execution.status === 'cancelled') {
+            subscriber.next({ data: JSON.stringify({ type: execution.status, errorMessage: (execution as any).errorMessage }) } as any);
+            subscriber.complete();
+          }
+        } catch (err: any) {
+          subscriber.next({ data: JSON.stringify({ type: 'error', message: err.message }) } as any);
+          subscriber.complete();
+        }
+      }, 750);
+
+      req.on('close', () => {
+        closed = true;
+        clearInterval(heartbeat);
+        clearInterval(poll);
+      });
+
+      return () => {
+        closed = true;
+        clearInterval(heartbeat);
+        clearInterval(poll);
+      };
+    });
   }
 }

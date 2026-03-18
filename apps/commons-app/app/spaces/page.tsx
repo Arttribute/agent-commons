@@ -4,6 +4,7 @@ import AppBar from "@/components/layout/app-bar";
 import { DashboardSideBar } from "@/components/layout/dashboard-side-bar";
 import { useAuth } from "@/context/AuthContext";
 import { useEffect, useMemo, useState } from "react";
+import { commons } from "@/lib/commons";
 import { useSpaces } from "@/hooks/spaces/use-spaces";
 // Create form moved to its own page
 import { SpacesList } from "@/components/spaces/spaces-list";
@@ -24,14 +25,12 @@ export default function SpacesPage() {
     async function load() {
       if (!humanId) return;
       try {
-        const res = await fetch(`/api/agents?owner=${humanId}`);
-        const data = await res.json();
+        const res = await commons.agents.list(humanId);
         if (!cancelled) {
-          const list = data.data || data;
-          const ids = Array.isArray(list)
-            ? list.map((a: any) => a.agentId).filter(Boolean)
-            : [];
-          setAgentIds(ids);
+          const list = res.data || [];
+          setAgentIds(
+            Array.isArray(list) ? list.map((a: any) => a.agentId).filter(Boolean) : []
+          );
         }
       } catch {}
     }
@@ -56,7 +55,7 @@ export default function SpacesPage() {
     <div>
       <AppBar />
       <div className="mt-12">
-        <div className="flex bg-slate-50">
+        <div className="flex bg-background">
           <DashboardSideBar username={humanId || "wallet"} />
           <div className="w-full p-4 space-y-6">
             <div className="flex items-center justify-between px-4 pt-4">
@@ -80,7 +79,7 @@ export default function SpacesPage() {
                 <Button
                   size="sm"
                   variant="outline"
-                  className="border border-gray-800 font-semibold px-6"
+                  className="border border-border font-semibold px-6"
                   onClick={() => {
                     window.open("/spaces/create", "_self");
                   }}
@@ -92,7 +91,7 @@ export default function SpacesPage() {
 
             <ScrollArea className="space-y-4 p-4 h-[72vh]">
               {loading && (
-                <div className="text-xs text-gray-500">Loading spaces...</div>
+                <div className="text-xs text-muted-foreground">Loading spaces...</div>
               )}
               {error && <div className="text-xs text-red-500">{error}</div>}
               <SpacesList

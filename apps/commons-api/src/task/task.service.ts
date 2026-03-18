@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { DatabaseService } from '~/modules/database/database.service';
 import * as schema from '#/models/schema';
 import { and, eq, not, sql } from 'drizzle-orm';
@@ -41,6 +41,8 @@ export interface CreateTaskDto {
 
 @Injectable()
 export class TaskService {
+  private readonly logger = new Logger(TaskService.name);
+
   constructor(private readonly db: DatabaseService) {}
 
   async create(dto: CreateTaskDto) {
@@ -77,7 +79,7 @@ export class TaskService {
 
   /** Next task whose dependencies are all completed */
   async getNextExecutable(agentId: string, sessionId: string) {
-    console.log('getNextExecutable', agentId);
+    this.logger.debug(`getNextExecutable ${agentId}`);
     // Get all tasks for this agent/session that are not completed/failed
     const tasks = await this.db.query.task.findMany({
       where: (t: any) =>

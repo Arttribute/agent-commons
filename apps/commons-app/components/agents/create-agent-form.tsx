@@ -1,8 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useState, useEffect } from "react";
-import { useChainClients } from "@/hooks/useChainClients";
+import { useState } from "react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -23,9 +22,8 @@ import { Bot, Brain, Cog } from "lucide-react";
 import ImageUploader from "./ImageUploader";
 import KnowledgeBaseInput from "./KnowledgeBaseInput";
 import { Presets } from "./presets"; // import your updated Presets
-import { useAgentRegistry } from "@/hooks/useAgentRegistry";
-import { EIP1193Provider, useWallets } from "@privy-io/react-auth";
 import { useAuth } from "@/context/AuthContext";
+import { commons } from "@/lib/commons";
 
 /** Example interface for model config */
 interface ModelConfig {
@@ -62,31 +60,10 @@ export function CreateAgentForm() {
     presencePenalty: 0,
   });
 
-  const { wallets } = useWallets();
-  const [provider, setProvider] = useState<EIP1193Provider | null>(null);
   const [loadingCreate, setLoadingCreate] = useState(false);
 
   // The wallet address in lowercase
   const userAddress = walletAddress?.toLowerCase();
-
-  const { publicClient, walletClient } = useChainClients(provider);
-  const { registerAgent } = useAgentRegistry(publicClient, walletClient);
-
-  useEffect(() => {
-    if (!wallets || wallets.length === 0) {
-      console.log("No wallets available. User may not be signed in.");
-      return;
-    }
-    wallets[0]
-      .getEthereumProvider()
-      .then((prov) => {
-        console.log("Obtained provider:", prov);
-        setProvider(prov);
-      })
-      .catch((err) => {
-        console.error("Error getting Ethereum provider:", err);
-      });
-  }, [wallets]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -126,36 +103,18 @@ export function CreateAgentForm() {
       topP: modelConfig.topP,
       frequencyPenalty: modelConfig.frequencyPenalty,
       presencePenalty: modelConfig.presencePenalty,
+      // Model provider fields (from agent state via Presets)
+      modelProvider: agent.modelProvider,
+      modelId: agent.modelId,
+      modelApiKey: agent.modelApiKey,
+      modelBaseUrl: agent.modelBaseUrl,
     };
 
     try {
-      // POST to /api/agents (create a new agent)
-      const res = await fetch("/api/agents", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(finalAgent),
-      });
-      const json = await res.json();
-
-      if (!res.ok) {
-        console.error("Failed creating agent", json);
-        alert("Failed creating agent.");
-      } else {
-        console.log("Agent created:", json.data);
-
-        // If you do any on-chain registration
-        await registerAgent(
-          json.data.agent_id, // or .agentId, depending on how your DB returns it
-          "https://someurl-metadata...",
-          false
-        );
-
-        alert("Agent created successfully!");
-        router.push("/studio/agents");
-      }
-    } catch (error) {
-      console.error("Exception when creating agent:", error);
-      alert("Exception when creating agent.");
+      await commons.agents.create(finalAgent as any);
+      router.push("/studio/agents");
+    } catch {
+      // creation failed — stay on page
     }
 
     // Reset everything
@@ -178,14 +137,13 @@ export function CreateAgentForm() {
 
   return (
     <form onSubmit={handleSubmit} className="container mx-auto max-w-lg">
-      <Card className="bg-background border border-gray-400 h-[600px] flex flex-col">
-        <div className="m-8">
-          <div className="bg-lime-300 w-48 h-8 -mb-8 rounded-lg"></div>
+      <Card className="bg-background border border-border h-[600px] flex flex-col">
+        <div className="m-8 mb-4">
           <h2 className="text-2xl font-semibold">Create New Agent</h2>
         </div>
         <CardContent className="flex flex-col flex-grow overflow-hidden">
           <Tabs defaultValue="basic" className="space-y-6">
-            <TabsList className="grid grid-cols-3 gap-4 border border-gray-400">
+            <TabsList className="grid grid-cols-3 gap-4 border border-border">
               <TabsTrigger value="basic" className="gap-2">
                 <Bot className="h-4 w-4" />
                 Basic Info

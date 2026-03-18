@@ -80,7 +80,7 @@ export default function SpaceMessage({
   };
 
   return (
-    <div className="flex gap-3 mb-3 hover:bg-gray-50/50 p-2.5 rounded-lg transition-all duration-200 hover:shadow-sm">
+    <div className="flex gap-3 mb-3 hover:bg-muted/50/50 p-2.5 rounded-lg transition-all duration-200 hover:shadow-sm">
       <Avatar className="h-10 w-10 flex-shrink-0 ring-2 ring-white shadow-sm">
         <AvatarFallback
           className={`${getAvatarColor(senderId, senderType)} text-white font-semibold`}
@@ -91,11 +91,11 @@ export default function SpaceMessage({
 
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2 mb-1.5">
-          <span className="font-semibold text-gray-900 text-sm">
+          <span className="font-semibold text-muted-foreground text-sm">
             {getDisplayName(senderId, senderType)}
           </span>
 
-          <span className="text-xs text-gray-400">{formatTime(timestamp)}</span>
+          <span className="text-xs text-muted-foreground">{formatTime(timestamp)}</span>
         </div>
 
         <ReactMarkdown

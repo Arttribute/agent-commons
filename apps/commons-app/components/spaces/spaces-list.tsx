@@ -9,7 +9,7 @@ interface Props {
 export function SpacesList({ spaces, emptyMessage = "No spaces" }: Props) {
   if (!spaces.length) {
     return (
-      <div className="text-xs text-gray-500 border rounded-lg p-6 text-center bg-white">
+      <div className="text-xs text-muted-foreground border rounded-lg p-6 text-center bg-white">
         {emptyMessage}
       </div>
     );

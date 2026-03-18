@@ -16,6 +16,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Plus, Trash2, Eye, EyeOff } from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { commons } from "@/lib/commons";
 
 interface ManageKeysDialogProps {
   tool: Tool | null;
@@ -47,64 +48,38 @@ export function ManageKeysDialog({
   }, [open, ownerId]);
 
   const loadKeys = async () => {
-    try {
-      const res = await fetch(
-        `/api/tool-keys?ownerId=${ownerId}&ownerType=user`
-      );
-      const data = await res.json();
-      if (data.success) {
-        // Filter keys for this tool
-        const toolKeys = tool?.toolId
-          ? data.data.filter(
-              (k: ToolKey) => k.toolId === tool.toolId || !k.toolId
-            )
-          : data.data;
-        setKeys(toolKeys);
-      }
-    } catch (error) {
-      console.error("Failed to load keys:", error);
+    const res = await commons.toolKeys.list({ ownerId, ownerType: "user" }).catch(() => null);
+    if (res?.success) {
+      const toolKeys = tool?.toolId
+        ? res.data.filter((k: ToolKey) => k.toolId === tool.toolId || !k.toolId)
+        : res.data;
+      setKeys(toolKeys);
     }
   };
 
   const handleAddKey = async () => {
     setLoading(true);
     try {
-      const res = await fetch("/api/tool-keys", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          ...newKey,
-          ownerId,
-          ownerType: "user",
-          toolId: tool?.toolId,
-          keyType: "api-key",
-        }),
+      const res = await commons.toolKeys.create({
+        ...newKey,
+        ownerId,
+        ownerType: "user",
+        toolId: tool?.toolId,
+        keyType: "api-key",
       });
-
-      const data = await res.json();
-      if (data.success) {
+      if (res.success) {
         await loadKeys();
         setShowAddForm(false);
         setNewKey({ keyName: "", value: "", displayName: "", description: "" });
       }
-    } catch (error) {
-      console.error("Failed to add key:", error);
     } finally {
       setLoading(false);
     }
   };
 
   const handleDeleteKey = async (keyId: string) => {
-    try {
-      const res = await fetch(`/api/tool-keys/${keyId}`, {
-        method: "DELETE",
-      });
-      if (res.ok) {
-        await loadKeys();
-      }
-    } catch (error) {
-      console.error("Failed to delete key:", error);
-    }
+    const res = await commons.toolKeys.delete(keyId).catch(() => null);
+    if (res?.success) await loadKeys();
   };
 
   return (
@@ -122,7 +97,7 @@ export function ManageKeysDialog({
         <div className="space-y-4">
           <ScrollArea className="h-[400px] pr-4">
             {keys.length === 0 ? (
-              <div className="text-center py-8 text-gray-500">
+              <div className="text-center py-8 text-muted-foreground">
                 <p>No API keys configured</p>
                 <p className="text-sm">Add a key to get started</p>
               </div>
@@ -146,15 +121,15 @@ export function ManageKeysDialog({
                         </Badge>
                       </div>
                       {key.description && (
-                        <p className="text-xs text-gray-600 mb-1">
+                        <p className="text-xs text-muted-foreground mb-1">
                           {key.description}
                         </p>
                       )}
-                      <p className="text-xs font-mono text-gray-500">
+                      <p className="text-xs font-mono text-muted-foreground">
                         {key.maskedValue}
                       </p>
                       {key.usageCount !== undefined && (
-                        <p className="text-xs text-gray-500 mt-1">
+                        <p className="text-xs text-muted-foreground mt-1">
                           Used {key.usageCount} times
                         </p>
                       )}
@@ -174,7 +149,7 @@ export function ManageKeysDialog({
           </ScrollArea>
 
           {showAddForm ? (
-            <div className="border rounded-lg p-4 space-y-3 bg-gray-50">
+            <div className="border rounded-lg p-4 space-y-3 bg-muted/50">
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <Label htmlFor="keyName" className="text-xs">

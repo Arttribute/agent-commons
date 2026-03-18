@@ -181,7 +181,7 @@ export function AgentKnowledgebase({
     <>
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogTrigger asChild>
-          <div className="flex flex-col cursor-pointer border border-gray-400 rounded-xl p-3 hover:border-gray-700 transition-colors relative group">
+          <div className="flex flex-col cursor-pointer border border-border rounded-xl p-3 hover:border-foreground/40 transition-colors relative group">
             <div className="flex items-center justify-between mb-1">
               <div className="flex items-center gap-1">
                 <Book className="h-4 w-4" />

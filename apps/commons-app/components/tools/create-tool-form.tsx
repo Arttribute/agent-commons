@@ -8,6 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { commons } from "@/lib/commons";
 import {
   Select,
   SelectContent,
@@ -51,25 +52,14 @@ export function CreateToolForm() {
         throw new Error("Invalid JSON format in Custom Tool JSON field");
       }
 
-      const res = await fetch("/api/tools", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          name: toolData.name,
-          displayName: toolData.displayName || toolData.name,
-          schema: schema,
-          owner: userAddress,
-          ownerType: "user",
-          visibility: toolData.visibility,
-        }),
+      const data = await commons.tools.create({
+        name: toolData.name,
+        displayName: toolData.displayName || toolData.name,
+        schema,
+        owner: userAddress,
+        ownerType: "user",
+        visibility: toolData.visibility,
       });
-
-      if (!res.ok) {
-        const errorData = await res.json();
-        throw new Error(errorData.message || "Failed to create tool");
-      }
-
-      const data = await res.json();
 
       if (data.data) {
         setSuccess("Tool created successfully!");
@@ -95,7 +85,7 @@ export function CreateToolForm() {
 
   return (
     <form onSubmit={handleSubmit} className="container mx-auto max-w-lg">
-      <Card className="bg-background border border-gray-400 h-[600px] flex flex-col">
+      <Card className="bg-background border border-border h-[600px] flex flex-col">
         <div className="m-8">
           <div className="bg-cyan-300 w-48 h-8 -mb-8 rounded-lg"></div>
           <h2 className="text-2xl font-semibold">Create New Tool</h2>

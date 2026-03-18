@@ -227,8 +227,8 @@ export default function SpaceMessageInput({
   if (!isUserMember) {
     return (
       <div className="p-4 border-t bg-white">
-        <div className="flex items-center justify-center gap-3 p-4 bg-gray-50 rounded-lg">
-          <p className="text-sm text-gray-600">
+        <div className="flex items-center justify-center gap-3 p-4 bg-muted/50 rounded-lg">
+          <p className="text-sm text-muted-foreground">
             You need to join this space to send messages
           </p>
           <Button onClick={handleJoinSpace} disabled={isJoining} size="sm">
@@ -253,8 +253,8 @@ export default function SpaceMessageInput({
   if (!canWrite) {
     return (
       <div className="p-4 border-t bg-white">
-        <div className="flex items-center justify-center p-4 bg-gray-50 rounded-lg">
-          <p className="text-sm text-gray-600">
+        <div className="flex items-center justify-center p-4 bg-muted/50 rounded-lg">
+          <p className="text-sm text-muted-foreground">
             {"You don't have permission to send messages in this space"}
           </p>
         </div>
@@ -267,7 +267,7 @@ export default function SpaceMessageInput({
       {/* Show selected mentions */}
       {selectedMentions.length > 0 && (
         <div className="mb-3 flex flex-wrap gap-1.5">
-          <span className="text-xs font-medium text-gray-500">To:</span>
+          <span className="text-xs font-medium text-muted-foreground">To:</span>
           {selectedMentions.map((mentionId) => (
             <Badge
               key={mentionId}
@@ -291,7 +291,7 @@ export default function SpaceMessageInput({
       )}
 
       <div className="relative">
-        <div className="flex items-center gap-2 px-1  border border-gray-300 rounded-lg focus-within:ring-1 focus-within:ring-gray-500 transition-all">
+        <div className="flex items-center gap-2 px-1  border border-border rounded-lg focus-within:ring-1 focus-within:ring-gray-500 transition-all">
           <Input
             ref={inputRef}
             value={message}
@@ -319,7 +319,7 @@ export default function SpaceMessageInput({
         {/* Mention suggestions popover */}
         {showMentions && filteredMembers.length > 0 && (
           <div
-            className="absolute z-50 w-72 bg-white border border-gray-200 rounded-xl shadow-2xl max-h-64 overflow-y-auto"
+            className="absolute z-50 w-72 bg-white border border-border rounded-xl shadow-2xl max-h-64 overflow-y-auto"
             style={{
               bottom: "100%",
               left: 0,
@@ -327,14 +327,14 @@ export default function SpaceMessageInput({
             }}
           >
             <div className="p-2">
-              <div className="text-xs font-semibold text-gray-600 mb-2 px-2">
+              <div className="text-xs font-semibold text-muted-foreground mb-2 px-2">
                 Mention an agent
               </div>
               {filteredMembers.map((member) => (
                 <button
                   key={member.id}
                   onClick={() => handleMentionSelect(member)}
-                  className="w-full flex items-center gap-3 p-2.5 hover:bg-gray-50 rounded-lg text-left transition-colors"
+                  className="w-full flex items-center gap-3 p-2.5 hover:bg-muted/50 rounded-lg text-left transition-colors"
                 >
                   <Avatar className="h-8 w-8 ring-2 ring-white shadow-sm">
                     <AvatarFallback className="bg-purple-500 text-white text-xs font-semibold">
@@ -342,10 +342,10 @@ export default function SpaceMessageInput({
                     </AvatarFallback>
                   </Avatar>
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm font-semibold text-gray-900 truncate">
+                    <p className="text-sm font-semibold text-muted-foreground truncate">
                       {member.memberId.slice(0, 12)}...
                     </p>
-                    <p className="text-xs text-gray-500">
+                    <p className="text-xs text-muted-foreground">
                       {member.role} • {member.status}
                     </p>
                   </div>

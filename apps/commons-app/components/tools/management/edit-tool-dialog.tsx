@@ -135,7 +135,7 @@ export function EditToolDialog({
                   <SelectItem value="platform">Platform</SelectItem>
                 </SelectContent>
               </Select>
-              <p className="text-xs text-gray-500 mt-1">
+              <p className="text-xs text-muted-foreground mt-1">
                 {formData.visibility === "private" &&
                   "Only you and authorized users can access"}
                 {formData.visibility === "public" &&

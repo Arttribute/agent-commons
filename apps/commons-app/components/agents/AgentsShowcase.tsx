@@ -132,7 +132,7 @@ export default function AgentsShowcase({ agents = [] }: { agents: Agent[] }) {
               >
                 <Link href={`/studio/agents/${agent.agentId}`}>
                   <button
-                    className="w-16 h-16 rounded-full overflow-hidden shadow-md hover:shadow-xl transition p-0.5 border border-gray-400 z-20"
+                    className="w-16 h-16 rounded-full overflow-hidden shadow-md hover:shadow-xl transition p-0.5 border border-border z-20"
                     aria-label={agent.name}
                   >
                     {agent.profileImage ? (
@@ -150,10 +150,9 @@ export default function AgentsShowcase({ agents = [] }: { agents: Agent[] }) {
                 </Link>
               </motion.div>
             </HoverCardTrigger>
-            <HoverCardContent className="z-[1000] w-60  bg-white px-3 py-2 rounded-lg shadow-lg border border-gray-400">
+            <HoverCardContent className="z-[1000] w-60 px-3 py-2 rounded-lg shadow-lg">
               <h3 className="text-sm font-semibold truncate">{agent.name}</h3>
-
-              <p className="text-xs text-gray-500 truncate w-full">
+              <p className="text-xs text-muted-foreground truncate w-full">
                 {agent.persona || agent.description || "No description."}
               </p>
             </HoverCardContent>

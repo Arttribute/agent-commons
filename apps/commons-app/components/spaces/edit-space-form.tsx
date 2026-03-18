@@ -63,7 +63,7 @@ export function EditSpaceForm({ space, onUpdated }: Props) {
           onCheckedChange={(v) => setIsPublic(v)}
           id="public-switch"
         />
-        <label htmlFor="public-switch" className="text-xs text-gray-600">
+        <label htmlFor="public-switch" className="text-xs text-muted-foreground">
           Public
         </label>
       </div>

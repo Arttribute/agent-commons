@@ -22,6 +22,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Search, Plus, Loader2, Filter } from "lucide-react";
 import { useRouter } from "next/navigation";
+import { commons } from "@/lib/commons";
 import {
   Select,
   SelectContent,
@@ -67,16 +68,11 @@ export function ToolsManagementView({ userAddress }: ToolsManagementViewProps) {
   const loadTools = async () => {
     setLoading(true);
     try {
-      const params = new URLSearchParams();
-      if (userAddress) {
-        params.append("owner", userAddress);
-        params.append("ownerType", "user");
-      }
-
-      const res = await fetch(`/api/tools?${params}`);
-      const data = await res.json();
+      const data = await commons.tools.list(
+        userAddress ? { owner: userAddress, ownerType: "user" } : undefined
+      );
       if (data.data) {
-        setTools(data.data);
+        setTools(data.data as unknown as Tool[]);
       }
     } catch (error) {
       console.error("Failed to load tools:", error);
@@ -135,16 +131,9 @@ export function ToolsManagementView({ userAddress }: ToolsManagementViewProps) {
     if (!editTool) return;
 
     try {
-      const res = await fetch(`/api/tools/${editTool.name}`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(updates),
-      });
-
-      if (res.ok) {
-        await loadTools();
-        setEditTool(null);
-      }
+      await commons.tools.update(editTool.toolId, updates as any);
+      await loadTools();
+      setEditTool(null);
     } catch (error) {
       console.error("Failed to update tool:", error);
       throw error;
@@ -155,14 +144,9 @@ export function ToolsManagementView({ userAddress }: ToolsManagementViewProps) {
     if (!deleteTool) return;
 
     try {
-      const res = await fetch(`/api/tools/${deleteTool.name}`, {
-        method: "DELETE",
-      });
-
-      if (res.ok) {
-        await loadTools();
-        setDeleteTool(null);
-      }
+      await commons.tools.delete(deleteTool.toolId);
+      await loadTools();
+      setDeleteTool(null);
     } catch (error) {
       console.error("Failed to delete tool:", error);
     }
@@ -171,7 +155,7 @@ export function ToolsManagementView({ userAddress }: ToolsManagementViewProps) {
   return (
     <Tabs value={activeSubTab} onValueChange={setActiveSubTab} className="w-full">
       <div className="flex items-center justify-between mb-4">
-        <TabsList className="border border-gray-400 rounded-md bg-gray-200">
+        <TabsList className="border border-border rounded-md bg-muted">
           <TabsTrigger value="my-tools">My Tools</TabsTrigger>
           <TabsTrigger value="mcp-servers">MCP Servers</TabsTrigger>
         </TabsList>
@@ -181,7 +165,7 @@ export function ToolsManagementView({ userAddress }: ToolsManagementViewProps) {
         <div className="flex flex-col gap-4 mb-6">
         <div className="flex items-center gap-4">
           <div className="relative flex-1 max-w-md">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             <Input
               placeholder="Search tools..."
               value={searchQuery}
@@ -193,7 +177,7 @@ export function ToolsManagementView({ userAddress }: ToolsManagementViewProps) {
           <Tabs
             value={viewFilter}
             onValueChange={(v) => setViewFilter(v as ViewFilter)}
-            className="border border-gray-400 rounded-md bg-gray-200"
+            className="border border-border rounded-md bg-muted"
           >
             <TabsList>
               <TabsTrigger value="all">All</TabsTrigger>
@@ -243,11 +227,11 @@ export function ToolsManagementView({ userAddress }: ToolsManagementViewProps) {
       {/* Tools Grid */}
       {loading ? (
         <div className="flex items-center justify-center h-64">
-          <Loader2 className="h-8 w-8 animate-spin text-gray-400" />
+          <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
         </div>
       ) : filteredTools.length === 0 ? (
         <div className="text-center py-12">
-          <p className="text-gray-500 mb-4">
+          <p className="text-muted-foreground mb-4">
             {searchQuery || viewFilter !== "all"
               ? "No tools found matching your filters"
               : "No tools yet"}

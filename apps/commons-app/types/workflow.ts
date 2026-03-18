@@ -7,6 +7,9 @@ export interface Workflow {
   ownerId: string;
   ownerType: "user" | "agent";
   isActive: boolean;
+  isPublic?: boolean;
+  category?: string;
+  tags?: string[];
   createdAt: string;
   updatedAt: string;
 }

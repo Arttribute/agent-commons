@@ -1,15 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import {
-  Search,
-  Plus,
-  X,
-  CheckCircle2,
-  AlertCircle,
-  WrenchIcon,
-} from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { Search, X, WrenchIcon } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -23,6 +15,7 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { ToolCard } from "./tool-card";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { commons } from "@/lib/commons";
 
 // Types
 interface Tool {
@@ -60,7 +53,7 @@ export default function AgentTools({
   agentId: string;
 }) {
   // Mock data - in a real app, this would come from props or API
-  const [commonTools, setCommonTools] = useState<Tool[]>([
+  const [commonTools] = useState<Tool[]>([
     {
       id: "tool-1",
       name: "Web Search",
@@ -286,7 +279,7 @@ export default function AgentTools({
     },
   ]);
 
-  const [externalTools, setExternalTools] = useState<Tool[]>([
+  const [externalTools] = useState<Tool[]>([
     {
       id: "ext-1",
       name: "Company Database",
@@ -458,7 +451,7 @@ export default function AgentTools({
   ]);
 
   // My Tools - tools owned by the current user
-  const [myTools, setMyTools] = useState<Tool[]>([
+  const [myTools] = useState<Tool[]>([
     {
       id: "my-tool-1",
       name: "Personal Notes",
@@ -644,43 +637,29 @@ export default function AgentTools({
   };
 
   // Toggle tool loading status
-  const toggleTool = async (
-    tool: Tool,
-    type: "common" | "external" | "my",
-    e: React.MouseEvent
-  ) => {
-    e.stopPropagation(); // Prevent opening the details dialog when clicking the button
-
+  const toggleTool = async (tool: Tool) => {
     const isLoaded = agentTools.some((t) => t.id === tool.id);
-
     if (isLoaded) {
-      // Remove from loaded tools
       await removeTool(tool.id);
     } else {
-      // Add to loaded tools
       await addTool(tool.id);
     }
   };
 
   const addTool = async (toolId: string, usageComments?: string) => {
-    const res = await fetch(`/api/agents/${agentId}/tools`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ toolId, usageComments }),
-    });
-    const json = await res.json();
-    setAgentTools([...agentTools, json.data]);
+    const res = await commons.agents.addTool(agentId, { toolId, usageComments }).catch(() => null);
+    if (res?.data) setAgentTools([...agentTools, res.data]);
   };
 
   const removeTool = async (id: string) => {
-    await fetch(`/api/agents/tools/${id}`, { method: "DELETE" });
+    await commons.agents.removeTool(id).catch(() => null);
     setAgentTools(agentTools.filter((t) => t.id !== id));
   };
 
   return (
     <Dialog>
       <DialogTrigger asChild>
-        <div className="cursor-pointer border border-gray-400 rounded-lg p-2 h-24 hover:border-gray-700 transition-colors ">
+        <div className="cursor-pointer border border-border rounded-lg p-2 h-24 hover:border-border transition-colors ">
           <div className="text-sm flex items-center gap-1 mb-1 ml-1">
             <div className="flex items-center gap-1">
               <WrenchIcon className="h-4 w-4 " />
@@ -739,17 +718,7 @@ export default function AgentTools({
                   {tool.name}
                   <X
                     className="h-3 w-3 cursor-pointer"
-                    onClick={(e) => {
-                      // Determine which list the tool belongs to
-                      let toolType: "common" | "external" | "my" = "common";
-                      if (myTools.some((t) => t.id === tool.id)) {
-                        toolType = "my";
-                      } else if (externalTools.some((t) => t.id === tool.id)) {
-                        toolType = "external";
-                      }
-
-                      toggleTool(tool, toolType, {} as React.MouseEvent);
-                    }}
+                    onClick={() => toggleTool(tool)}
                   />
                 </Badge>
               ))}
@@ -794,7 +763,7 @@ export default function AgentTools({
                         key={tool.id}
                         tool={tool}
                         isLoaded={agentTools.some((t) => t.id === tool.id)}
-                        onToggle={(e) => toggleTool(tool, "my", e)}
+                        onToggle={(_e) => toggleTool(tool)}
                         toolType="my"
                       />
                     </div>
@@ -822,7 +791,7 @@ export default function AgentTools({
                         key={tool.id}
                         tool={tool}
                         isLoaded={agentTools.some((t) => t.id === tool.id)}
-                        onToggle={(e) => toggleTool(tool, "common", e)}
+                        onToggle={(_e) => toggleTool(tool)}
                         toolType="common"
                       />
                     </div>
@@ -846,7 +815,7 @@ export default function AgentTools({
                   key={tool.id}
                   tool={tool}
                   isLoaded={agentTools.some((t) => t.id === tool.id)}
-                  onToggle={(e) => toggleTool(tool, "my", e)}
+                  onToggle={(_e) => toggleTool(tool)}
                   toolType="my"
                 />
               ))
@@ -871,7 +840,7 @@ export default function AgentTools({
                         key={tool.id}
                         tool={tool}
                         isLoaded={agentTools.some((t) => t.id === tool.id)}
-                        onToggle={(e) => toggleTool(tool, "external", e)}
+                        onToggle={(_e) => toggleTool(tool)}
                         toolType="external"
                       />
                     </div>

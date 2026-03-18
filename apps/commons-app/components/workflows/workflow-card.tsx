@@ -46,12 +46,12 @@ export function WorkflowCard({
           </div>
 
           {workflow.description && (
-            <p className="text-sm text-gray-600 mb-3 line-clamp-2">
+            <p className="text-sm text-muted-foreground mb-3 line-clamp-2">
               {workflow.description}
             </p>
           )}
 
-          <div className="flex items-center gap-4 text-xs text-gray-500">
+          <div className="flex items-center gap-4 text-xs text-muted-foreground">
             <span>
               Updated{" "}
               {formatDistanceToNow(new Date(workflow.updatedAt), {
@@ -86,7 +86,7 @@ export function WorkflowCard({
                 e.stopPropagation();
                 onDelete?.(workflow.workflowId);
               }}
-              className="text-red-600"
+              className="text-destructive"
             >
               <Trash2 className="h-4 w-4 mr-2" />
               Delete

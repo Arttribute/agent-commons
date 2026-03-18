@@ -127,13 +127,13 @@ export default function ExecutionWidget({
       >
         {isExpanded ? (
           <motion.div
-            className="bg-white dark:bg-gray-950 rounded-lg shadow-lg border border-gray-400 overflow-hidden flex flex-col h-full max-h-[600px]"
+            className="bg-background rounded-lg shadow-lg border border-border overflow-hidden flex flex-col h-full max-h-[600px]"
             initial={{ opacity: 0, scale: 0.9 }}
             animate={{ opacity: 1, scale: 1 }}
             exit={{ opacity: 0, scale: 0.9 }}
           >
             <Tabs defaultValue="tasks" className="w-full">
-              <div className="p-3 border-b border-gray-400 flex justify-between items-center">
+              <div className="p-3 border-b border-border flex justify-between items-center">
                 <div className="flex items-center gap-1 font-semibold">
                   <div className="bg-purple-100 dark:bg-purple-900 p-0.5 rounded">
                     <Layers className="h-4 w-4 text-purple-500" />
@@ -155,9 +155,9 @@ export default function ExecutionWidget({
 
                   <button
                     onClick={toggleExpanded}
-                    className="p-1 hover:bg-gray-200 dark:hover:bg-gray-800 rounded"
+                    className="p-1 hover:bg-accent dark:hover:bg-muted rounded"
                   >
-                    <Minimize2 className="h-4 w-4 text-gray-500 hover:text-gray-700 cursor-pointer" />
+                    <Minimize2 className="h-4 w-4 text-muted-foreground hover:text-foreground cursor-pointer" />
                   </button>
                 </div>
               </div>
@@ -180,31 +180,31 @@ export default function ExecutionWidget({
         ) : (
           <motion.div
             className={cn(
-              "bg-white dark:bg-gray-950 rounded-lg shadow-xl border border-gray-400 overflow-hidden w-[220px]"
+              "bg-background rounded-lg shadow-xl border border-border overflow-hidden w-[220px]"
             )}
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: 20 }}
           >
             <button onClick={toggleExpanded} className="w-full">
-              <div className="px-2 py-1.5 flex border-b border-gray-400 w-full">
+              <div className="px-2 py-1.5 flex border-b border-border w-full">
                 <div className="flex items-center w-full text-sm">
                   <div className="flex items-center gap-1 font-semibold">
-                    <div className="bg-gray-100 dark:bg-purple-900 p-0.5 rounded">
+                    <div className="bg-muted dark:bg-purple-900 p-0.5 rounded">
                       <Layers className="h-3.5 w-3.5 text-purple-500" />
                     </div>
                     <span>Agent execution</span>
                   </div>
 
-                  <div className="ml-auto p-0.5 hover:bg-gray-200 dark:hover:bg-gray-800 rounded">
-                    <Maximize2 className="h-4 w-4 text-gray-500 hover:text-gray-700 cursor-pointer" />
+                  <div className="ml-auto p-0.5 hover:bg-accent dark:hover:bg-muted rounded">
+                    <Maximize2 className="h-4 w-4 text-muted-foreground hover:text-foreground cursor-pointer" />
                   </div>
                 </div>
               </div>
             </button>
 
             <div className="max-h-[200px] overflow-auto">
-              <div className="border border-gray-400 rounded-lg m-1">
+              <div className="border border-border rounded-lg m-1">
                 <div className="mx-2 mt-1 space-y-1">
                   <div className="flex justify-between text-xs">
                     <span className="">Tasks:</span>
@@ -217,7 +217,7 @@ export default function ExecutionWidget({
                       <span>{calculateOverallProgress()}%</span>
                     </div>
 
-                    <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-1">
+                    <div className="w-full bg-accent dark:bg-muted rounded-full h-1">
                       <div
                         className="bg-zinc-700 h-1 rounded-full"
                         style={{
@@ -240,9 +240,9 @@ export default function ExecutionWidget({
                         {inProgressTasks}
                       </span>
                     </div>
-                    <div className="flex items-center dark:bg-gray-800 p-1 rounded gap-1">
-                      <CircleDashed className="h-3 w-3 text-gray-500" />
-                      <span className="font-medium text-gray-600 dark:text-gray-400">
+                    <div className="flex items-center dark:bg-muted p-1 rounded gap-1">
+                      <CircleDashed className="h-3 w-3 text-muted-foreground" />
+                      <span className="font-medium text-muted-foreground dark:text-muted-foreground">
                         {pendingTasks}
                       </span>
                     </div>
@@ -257,7 +257,7 @@ export default function ExecutionWidget({
                 </div>
 
                 {inProgressTasks > 0 && tasks.find((t) => t.status === "in_progress") && (
-                  <div className="border-t border-gray-400 pt-2 mt-2 mb-2">
+                  <div className="border-t border-border pt-2 mt-2 mb-2">
                     <div className="mx-2 space-y-1">
                       <div className="flex items-center gap-1 text-xs">
                         <Clock className="h-3 w-3 text-blue-500" />

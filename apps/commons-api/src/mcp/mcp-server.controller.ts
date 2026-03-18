@@ -9,6 +9,7 @@ import {
   Query,
   HttpCode,
   HttpStatus,
+  BadRequestException,
 } from '@nestjs/common';
 import { McpServerService } from './mcp-server.service';
 import { McpConnectionService } from './mcp-connection.service';
@@ -165,26 +166,70 @@ export class McpServerController {
   }
 
   /**
-   * Sync tools from MCP server
+   * Full sync: tools + resources + prompts
+   * POST /v1/mcp/servers/:serverId/sync
    */
   @Post(':serverId/sync')
-  async syncTools(
+  async syncAll(
     @Param('serverId') serverId: string,
-    @Body() dto: SyncMcpToolsDto,
-  ): Promise<McpSyncResponseDto> {
-    return await this.toolDiscovery.syncTools(serverId);
+    @Body() _dto: SyncMcpToolsDto,
+  ) {
+    return await this.toolDiscovery.syncAll(serverId);
   }
 
   /**
    * Get tools for a server
+   * GET /v1/mcp/servers/:serverId/tools
    */
   @Get(':serverId/tools')
   async getTools(@Param('serverId') serverId: string) {
     const tools = await this.toolDiscovery.getToolsByServer(serverId);
+    return { tools, total: tools.length };
+  }
 
-    return {
-      tools,
-      total: tools.length,
-    };
+  /**
+   * List resources from a connected MCP server
+   * GET /v1/mcp/servers/:serverId/resources
+   */
+  @Get(':serverId/resources')
+  async listResources(@Param('serverId') serverId: string) {
+    const resources = await this.toolDiscovery.listResources(serverId);
+    return { resources, total: resources.length };
+  }
+
+  /**
+   * Read a specific resource by URI
+   * GET /v1/mcp/servers/:serverId/resources/read?uri=...
+   */
+  @Get(':serverId/resources/read')
+  async readResource(
+    @Param('serverId') serverId: string,
+    @Query('uri') uri: string,
+  ) {
+    const contents = await this.toolDiscovery.readResource(serverId, uri);
+    return { uri, contents };
+  }
+
+  /**
+   * List prompts from a connected MCP server
+   * GET /v1/mcp/servers/:serverId/prompts
+   */
+  @Get(':serverId/prompts')
+  async listPrompts(@Param('serverId') serverId: string) {
+    const prompts = await this.toolDiscovery.listPrompts(serverId);
+    return { prompts, total: prompts.length };
+  }
+
+  /**
+   * Get a rendered prompt with arguments
+   * POST /v1/mcp/servers/:serverId/prompts/:promptName
+   */
+  @Post(':serverId/prompts/:promptName')
+  async getPrompt(
+    @Param('serverId') serverId: string,
+    @Param('promptName') promptName: string,
+    @Body() body: { arguments?: Record<string, string> },
+  ) {
+    return this.toolDiscovery.getPrompt(serverId, promptName, body.arguments);
   }
 }

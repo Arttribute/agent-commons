@@ -29,9 +29,9 @@ export function McpConnectionStatus({
     },
     disconnected: {
       icon: XCircle,
-      color: "text-gray-400",
-      bgColor: "bg-gray-50",
-      borderColor: "border-gray-200",
+      color: "text-muted-foreground",
+      bgColor: "bg-muted/50",
+      borderColor: "border-border",
       text: "Disconnected",
       variant: "secondary" as const,
     },

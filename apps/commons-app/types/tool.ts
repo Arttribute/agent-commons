@@ -54,7 +54,7 @@ export interface ToolKey {
   ownerType: 'user' | 'agent';
   toolId?: string;
   keyType?: 'api-key' | 'bearer-token' | 'oauth-token' | 'secret';
-  isActive: boolean;
+  isActive?: boolean;
   usageCount?: number;
   lastUsedAt?: string;
   createdAt?: string;

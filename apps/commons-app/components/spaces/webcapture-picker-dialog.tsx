@@ -62,9 +62,9 @@ export function WebcapturePickerDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="z-[1001] max-w-md max-h-[800px] p-0 bg-white border-gray-400 text-gray-900 rounded-2xl flex flex-col">
-        <DialogHeader className="px-4 py-3 border-b border-gray-400">
-          <DialogTitle className="text-sm font-semibold text-gray-900">
+      <DialogContent className="z-[1001] max-w-md max-h-[800px] p-0 bg-white border-border text-muted-foreground rounded-2xl flex flex-col">
+        <DialogHeader className="px-4 py-3 border-b border-border">
+          <DialogTitle className="text-sm font-semibold text-muted-foreground">
             Space apps
           </DialogTitle>
         </DialogHeader>
@@ -84,7 +84,7 @@ export function WebcapturePickerDialog({
           {/* Recent Activities */}
           {!searchQuery && recentApps.length > 0 && (
             <div>
-              <h3 className="text-xs text-gray-600 mb-1">Recents</h3>
+              <h3 className="text-xs text-muted-foreground mb-1">Recents</h3>
               <div className="flex gap-3 overflow-x-auto pb-2">
                 {recentApps.slice(0, 6).map((app) => (
                   <WebcaptureCard
@@ -97,7 +97,7 @@ export function WebcapturePickerDialog({
               </div>
             </div>
           )}
-          <h3 className="text-xs mb-1  text-gray-600">
+          <h3 className="text-xs mb-1  text-muted-foreground">
             {searchQuery ? "Search Results" : "Popular apps"}
           </h3>
           {/* Activities */}
@@ -114,7 +114,7 @@ export function WebcapturePickerDialog({
               </div>
 
               {filteredPopularApps.length === 0 && searchQuery && (
-                <div className="text-center py-8 text-gray-400">
+                <div className="text-center py-8 text-muted-foreground">
                   <p className="text-sm">No apps found</p>
                   <p className="text-xs mt-1">
                     Try searching with different keywords
@@ -126,10 +126,10 @@ export function WebcapturePickerDialog({
         </div>
 
         {/* Fixed Custom URL Input at Bottom */}
-        <div className="pt-2 pb-3 px-3 border-t border-gray-200 bg-white rounded-b-2xl">
+        <div className="pt-2 pb-3 px-3 border-t border-border bg-white rounded-b-2xl">
           <div className="flex items-center gap-2 mb-2">
-            <LinkIcon className="h-4 w-4 text-gray-500" />
-            <h3 className="text-xs font-semibold text-gray-600 ">
+            <LinkIcon className="h-4 w-4 text-muted-foreground" />
+            <h3 className="text-xs font-semibold text-muted-foreground ">
               Custom app URL
             </h3>
           </div>

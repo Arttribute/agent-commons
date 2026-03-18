@@ -1,6 +1,8 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { WorkflowService } from './workflow.service';
 import { DatabaseService } from '~/modules/database/database.service';
+import { ToolLoaderService } from './tool-loader.service';
+import { WorkflowExecutorService } from './workflow-executor.service';
 import { BadRequestException, NotFoundException } from '@nestjs/common';
 
 describe('WorkflowService', () => {
@@ -30,8 +32,9 @@ describe('WorkflowService', () => {
       ],
       edges: [
         {
-          from: 'node1',
-          to: 'node2',
+          id: 'e1',
+          source: 'node1',
+          target: 'node2',
           mapping: { result: 'input' },
         },
       ],
@@ -53,20 +56,22 @@ describe('WorkflowService', () => {
           findFirst: jest.fn(),
           findMany: jest.fn(),
         },
+        tool: {
+          findFirst: jest.fn().mockResolvedValue({ toolId: 'tool-1', name: 'tool-1' }),
+        },
       },
       update: jest.fn().mockReturnThis(),
       set: jest.fn().mockReturnThis(),
-      where: jest.fn().mockResolvedValue([mockWorkflowData]),
+      where: jest.fn().mockReturnThis(),
       delete: jest.fn().mockReturnThis(),
     };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         WorkflowService,
-        {
-          provide: DatabaseService,
-          useValue: mockDb,
-        },
+        { provide: DatabaseService,          useValue: mockDb },
+        { provide: ToolLoaderService,        useValue: { loadTool: jest.fn() } },
+        { provide: WorkflowExecutorService,  useValue: { executeWorkflow: jest.fn() } },
       ],
     }).compile();
 
@@ -99,14 +104,14 @@ describe('WorkflowService', () => {
         startNodeId: 'node1',
         endNodeId: 'node3',
         nodes: [
-          { nodeId: 'node1', type: 'tool' as const, config: {} },
-          { nodeId: 'node2', type: 'tool' as const, config: {} },
-          { nodeId: 'node3', type: 'tool' as const, config: {} },
+          { id: 'node1', type: 'tool' as const, position: { x: 0, y: 0 } },
+          { id: 'node2', type: 'tool' as const, position: { x: 100, y: 0 } },
+          { id: 'node3', type: 'tool' as const, position: { x: 200, y: 0 } },
         ],
         edges: [
-          { from: 'node1', to: 'node2', mapping: {} },
-          { from: 'node2', to: 'node3', mapping: {} },
-          { from: 'node3', to: 'node1', mapping: {} }, // Creates cycle
+          { id: 'e1', source: 'node1', target: 'node2', mapping: {} },
+          { id: 'e2', source: 'node2', target: 'node3', mapping: {} },
+          { id: 'e3', source: 'node3', target: 'node1', mapping: {} }, // Creates cycle
         ],
       };
 
@@ -126,9 +131,9 @@ describe('WorkflowService', () => {
       const invalidDefinition = {
         startNodeId: 'node1',
         endNodeId: 'nonexistent',
-        nodes: [{ nodeId: 'node1', type: 'tool' as const, config: {} }],
+        nodes: [{ id: 'node1', type: 'tool' as const, position: { x: 0, y: 0 } }],
         edges: [
-          { from: 'node1', to: 'nonexistent', mapping: {} }, // Invalid node reference
+          { id: 'e1', source: 'node1', target: 'nonexistent', mapping: {} }, // Invalid node reference
         ],
       };
 
@@ -236,12 +241,12 @@ describe('WorkflowService', () => {
         startNodeId: 'node1',
         endNodeId: 'node2',
         nodes: [
-          { nodeId: 'node1', type: 'tool' as const, config: {} },
-          { nodeId: 'node2', type: 'tool' as const, config: {} },
+          { id: 'node1', type: 'tool' as const, position: { x: 0, y: 0 } },
+          { id: 'node2', type: 'tool' as const, position: { x: 100, y: 0 } },
         ],
         edges: [
-          { from: 'node1', to: 'node2', mapping: {} },
-          { from: 'node2', to: 'node1', mapping: {} },
+          { id: 'e1', source: 'node1', target: 'node2', mapping: {} },
+          { id: 'e2', source: 'node2', target: 'node1', mapping: {} },
         ],
       };
 
@@ -263,7 +268,7 @@ describe('WorkflowService', () => {
     });
 
     it('should throw NotFoundException when workflow not found', async () => {
-      mockDb.query.workflow.findFirst.mockResolvedValue(null);
+      mockDb.returning.mockResolvedValueOnce([]);
 
       await expect(service.deleteWorkflow('nonexistent')).rejects.toThrow(
         NotFoundException,

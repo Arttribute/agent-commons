@@ -58,7 +58,7 @@ export default function Home() {
               >
                 <Button
                   variant="outline"
-                  className="rounded-lg lg:w-64 px-16 border border-gray-700"
+                  className="rounded-lg lg:w-64 px-16 border border-border"
                 >
                   {GithubIcon}
                   Github

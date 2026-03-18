@@ -12,7 +12,7 @@ describe('ToolAccessService', () => {
     toolId: 'tool-platform',
     name: 'Platform Tool',
     visibility: 'platform',
-    ownerId: null,
+    owner: null,
     ownerType: null,
   };
 
@@ -20,7 +20,7 @@ describe('ToolAccessService', () => {
     toolId: 'tool-public',
     name: 'Public Tool',
     visibility: 'public',
-    ownerId: 'user-123',
+    owner: 'user-123',
     ownerType: 'user',
   };
 
@@ -28,7 +28,7 @@ describe('ToolAccessService', () => {
     toolId: 'tool-private',
     name: 'Private Tool',
     visibility: 'private',
-    ownerId: 'user-123',
+    owner: 'user-123',
     ownerType: 'user',
   };
 
@@ -493,7 +493,7 @@ describe('ToolAccessService', () => {
     it('should transfer tool ownership', async () => {
       const updatedTool = {
         ...privateTool,
-        ownerId: 'user-456',
+        owner: 'user-456',
         ownerType: 'user',
       };
       mockDb.returning.mockResolvedValue([updatedTool]);
@@ -504,7 +504,7 @@ describe('ToolAccessService', () => {
         'user',
       );
 
-      expect(result.ownerId).toBe('user-456');
+      expect(result.owner).toBe('user-456');
       expect(mockDb.update).toHaveBeenCalled();
     });
 

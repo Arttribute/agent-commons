@@ -15,7 +15,7 @@ interface FullSpace {
 
 export default function SpaceDetailPage() {
   const { spaceId } = useParams() as { spaceId: string };
-  const { authState, login, ready } = useAuth();
+  const { authState, ready } = useAuth();
   const { walletAddress } = authState;
   const [space, setSpace] = useState<FullSpace | null>(null);
   const [loading, setLoading] = useState(false);
@@ -54,7 +54,7 @@ export default function SpaceDetailPage() {
     return (
       <div className="w-screen h-screen">
         {loading && (
-          <div className="absolute inset-0 flex items-center justify-center text-xs text-gray-500">
+          <div className="absolute inset-0 flex items-center justify-center text-xs text-muted-foreground">
             Loading...
           </div>
         )}
@@ -65,7 +65,7 @@ export default function SpaceDetailPage() {
   return (
     <div className="w-screen h-screen">
       {loading && (
-        <div className="absolute inset-0 flex items-center justify-center text-xs text-gray-500">
+        <div className="absolute inset-0 flex items-center justify-center text-xs text-muted-foreground">
           Loading...
         </div>
       )}

@@ -144,7 +144,7 @@ export class McpServerService {
         }
 
         this.validateConnectionConfig(
-          server.connectionType as 'stdio' | 'sse',
+          server.connectionType as 'stdio' | 'sse' | 'http' | 'streamable-http',
           dto.connectionConfig,
         );
       }
@@ -282,19 +282,21 @@ export class McpServerService {
    * Validate connection configuration based on type
    */
   private validateConnectionConfig(
-    connectionType: 'stdio' | 'sse',
+    connectionType: 'stdio' | 'sse' | 'http' | 'streamable-http',
     config: any,
   ): void {
     if (connectionType === 'stdio') {
       if (!config.command) {
-        throw new BadRequestException(
-          'stdio connection requires a command field',
-        );
+        throw new BadRequestException('stdio connection requires a "command" field');
       }
-    } else if (connectionType === 'sse') {
+    } else if (connectionType === 'sse' || connectionType === 'http' || connectionType === 'streamable-http') {
       if (!config.url) {
-        throw new BadRequestException('sse connection requires a url field');
+        throw new BadRequestException(`${connectionType} connection requires a "url" field`);
       }
+    } else {
+      throw new BadRequestException(
+        `Unsupported connection type "${connectionType}". Use: stdio | sse | http | streamable-http`,
+      );
     }
   }
 
@@ -319,7 +321,7 @@ export class McpServerService {
       serverId: server.serverId,
       name: server.name,
       description: server.description,
-      connectionType: server.connectionType as 'stdio' | 'sse',
+      connectionType: server.connectionType as 'stdio' | 'sse' | 'http' | 'streamable-http',
       connectionConfig: server.connectionConfig as any,
       status: (server.status as 'connected' | 'disconnected' | 'error') || 'disconnected',
       lastError: server.lastError,

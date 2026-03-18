@@ -382,10 +382,10 @@ export default function SpaceMessaging({
               {spaceName.charAt(0).toUpperCase()}
             </div>
             <div className="flex-1">
-              <h3 className="font-semibold text-base text-gray-900">
+              <h3 className="font-semibold text-base text-muted-foreground">
                 {spaceName}
               </h3>
-              <p className="text-xs text-gray-500 font-mono">
+              <p className="text-xs text-muted-foreground font-mono">
                 {spaceId.slice(0, 12)}...
               </p>
             </div>
@@ -439,7 +439,7 @@ export default function SpaceMessaging({
             {/* Chat Panel (collapsible sidebar) - Modern Discord-inspired design */}
             {showChatPanel && (
               <div
-                className={`border border-gray-400 m-2 rounded-xl bg-white transition-all duration-300 shadow-2xl ${
+                className={`border border-border m-2 rounded-xl bg-white transition-all duration-300 shadow-2xl ${
                   isChatExpanded
                     ? "w-full h-full absolute inset-0 z-10"
                     : "w-96 h-full flex-shrink-0"
@@ -460,14 +460,14 @@ export default function SpaceMessaging({
                 <div className="flex flex-col h-full rounded-xl">
                   {/* Chat header */}
                   <div className="px-4 py-3 border-b rounded-t-xl">
-                    <h4 className="font-semibold text-sm text-gray-900">
+                    <h4 className="font-semibold text-sm text-muted-foreground">
                       Chat
                     </h4>
                   </div>
 
                   {isLoading && (
                     <div className="flex items-center justify-center h-16">
-                      <Loader2 className="animate-spin h-6 w-6 text-gray-500" />
+                      <Loader2 className="animate-spin h-6 w-6 text-muted-foreground" />
                     </div>
                   )}
                   {error && (
@@ -529,10 +529,10 @@ export default function SpaceMessaging({
               {spaceName.charAt(0).toUpperCase()}
             </div>
             <div className="flex-1">
-              <h3 className="font-semibold text-sm text-gray-900">
+              <h3 className="font-semibold text-sm text-muted-foreground">
                 {spaceName}
               </h3>
-              <p className="text-xs text-gray-500 font-mono">
+              <p className="text-xs text-muted-foreground font-mono">
                 {spaceId.slice(0, 12)}...
               </p>
             </div>
@@ -563,7 +563,7 @@ export default function SpaceMessaging({
           {/* Loading indicator when fetching space data */}
           {isLoading && (
             <div className="flex items-center justify-center h-16">
-              <Loader2 className="animate-spin h-6 w-6 text-gray-500" />
+              <Loader2 className="animate-spin h-6 w-6 text-muted-foreground" />
             </div>
           )}
 
@@ -575,7 +575,7 @@ export default function SpaceMessaging({
           )}
 
           {/* Messages - Embedded view */}
-          <ScrollArea ref={scrollAreaRefEmbedded} className="p-4 h-[380px] bg-gray-50 rounded-b-xl">
+          <ScrollArea ref={scrollAreaRefEmbedded} className="p-4 h-[380px] bg-muted/50 rounded-b-xl">
             <div className="container mx-auto max-w-2xl">
               {messages.map((message, index) => (
                 <SpaceMessage

@@ -16,6 +16,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Loader2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { commons } from "@/lib/commons";
 
 interface CreateWorkflowDialogProps {
   open: boolean;
@@ -48,47 +49,20 @@ export function CreateWorkflowDialog({
 
     setLoading(true);
     try {
-      const res = await fetch("/api/workflows", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          name: formData.name,
-          description: formData.description,
-          ownerId: userAddress,
-          ownerType: "user",
-          definition: {
-            startNodeId: "",
-            endNodeId: "",
-            nodes: [],
-            edges: [],
-          },
-        }),
+      const workflow = await commons.workflows.create({
+        name: formData.name,
+        description: formData.description,
+        ownerId: userAddress,
+        ownerType: "user",
+        definition: { nodes: [], edges: [] },
       });
 
-      if (!res.ok) {
-        throw new Error("Failed to create workflow");
-      }
-
-      const data = await res.json();
-
-      toast({
-        title: "Success",
-        description: "Workflow created successfully",
-      });
-
-      // Navigate to the workflow editor
-      router.push(`/studio/workflows/${data.data.workflowId}/edit`);
-
-      // Reset form and close
+      toast({ title: "Success", description: "Workflow created successfully" });
+      router.push(`/studio/workflows/${workflow.workflowId}/edit`);
       setFormData({ name: "", description: "" });
       onClose();
-    } catch (error) {
-      console.error("Failed to create workflow:", error);
-      toast({
-        title: "Error",
-        description: "Failed to create workflow",
-        variant: "destructive",
-      });
+    } catch {
+      toast({ title: "Error", description: "Failed to create workflow", variant: "destructive" });
     } finally {
       setLoading(false);
     }

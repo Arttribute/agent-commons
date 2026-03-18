@@ -97,7 +97,7 @@ export default function SpaceInfoDialog({
   const getStatusColor = (status: string) => {
     return status === "active"
       ? "bg-green-100 text-green-800"
-      : "bg-gray-100 text-gray-800";
+      : "bg-muted text-muted-foreground";
   };
 
   const getRoleIcon = (role: string) => {
@@ -163,7 +163,7 @@ export default function SpaceInfoDialog({
               </div>
               <div className="flex-1">
                 <h3 className="font-semibold text-sm">{spaceDetails.name}</h3>
-                <p className="text-xs text-gray-500">
+                <p className="text-xs text-muted-foreground">
                   {spaceDetails.description}
                 </p>
               </div>
@@ -176,13 +176,13 @@ export default function SpaceInfoDialog({
               <div className="space-y-2">
                 <div className="grid grid-cols-2 gap-3 text-xs">
                   <div>
-                    <span className="text-gray-500">Created:</span>
+                    <span className="text-muted-foreground">Created:</span>
                     <p className="font-medium">
                       {formatDate(spaceDetails.createdAt)}
                     </p>
                   </div>
                   <div>
-                    <span className="text-gray-500">Members:</span>
+                    <span className="text-muted-foreground">Members:</span>
                     <p className="font-medium">
                       {spaceDetails.members.length}/{spaceDetails.maxMembers}
                     </p>
@@ -224,7 +224,7 @@ export default function SpaceInfoDialog({
                 </CollapsibleTrigger>
                 <CollapsibleContent className="space-y-2 mt-2">
                   <div className="grid grid-cols-2 gap-2">
-                    <div className="flex items-center justify-between p-2 bg-gray-50 rounded text-xs">
+                    <div className="flex items-center justify-between p-2 bg-muted/50 rounded text-xs">
                       <span>Allow Agents</span>
                       <Badge
                         variant={
@@ -237,7 +237,7 @@ export default function SpaceInfoDialog({
                         {spaceDetails.settings.allowAgents ? "Yes" : "No"}
                       </Badge>
                     </div>
-                    <div className="flex items-center justify-between p-2 bg-gray-50 rounded text-xs">
+                    <div className="flex items-center justify-between p-2 bg-muted/50 rounded text-xs">
                       <span>Allow Humans</span>
                       <Badge
                         variant={
@@ -250,7 +250,7 @@ export default function SpaceInfoDialog({
                         {spaceDetails.settings.allowHumans ? "Yes" : "No"}
                       </Badge>
                     </div>
-                    <div className="flex items-center justify-between p-2 bg-gray-50 rounded text-xs">
+                    <div className="flex items-center justify-between p-2 bg-muted/50 rounded text-xs">
                       <span>Require Approval</span>
                       <Badge
                         variant={
@@ -263,23 +263,23 @@ export default function SpaceInfoDialog({
                         {spaceDetails.settings.requireApproval ? "Yes" : "No"}
                       </Badge>
                     </div>
-                    <div className="flex items-center justify-between p-2 bg-gray-50 rounded text-xs">
+                    <div className="flex items-center justify-between p-2 bg-muted/50 rounded text-xs">
                       <span>Moderators</span>
                       <Badge variant="outline" className="text-xs">
                         {spaceDetails.settings.moderators.length}
                       </Badge>
                     </div>
                   </div>
-                  <div className="text-xs text-gray-500 space-y-1">
+                  <div className="text-xs text-muted-foreground space-y-1">
                     <div className="flex justify-between">
                       <span>Space ID:</span>
-                      <code className="bg-gray-100 px-1 rounded">
+                      <code className="bg-muted px-1 rounded">
                         {spaceDetails.spaceId.slice(0, 8)}...
                       </code>
                     </div>
                     <div className="flex justify-between">
                       <span>Session ID:</span>
-                      <code className="bg-gray-100 px-1 rounded">
+                      <code className="bg-muted px-1 rounded">
                         {spaceDetails?.sessionId &&
                           spaceDetails.sessionId.slice(0, 8)}
                         ...
@@ -303,7 +303,7 @@ export default function SpaceInfoDialog({
                       <Tooltip>
                         <TooltipTrigger asChild>
                           <div
-                            className="flex items-center justify-between p-2 bg-gray-50 rounded-lg hover:bg-gray-100 cursor-pointer transition-colors"
+                            className="flex items-center justify-between p-2 bg-muted/50 rounded-lg hover:bg-muted cursor-pointer transition-colors"
                             onClick={() =>
                               setSelectedMember(
                                 selectedMember === member.id ? null : member.id
@@ -352,12 +352,12 @@ export default function SpaceInfoDialog({
                             <p className="font-medium text-xs">
                               {member.memberId}
                             </p>
-                            <p className="text-xs text-gray-500">
+                            <p className="text-xs text-muted-foreground">
                               Joined{" "}
                               {new Date(member.joinedAt).toLocaleDateString()}
                             </p>
                             {member.lastActiveAt && (
-                              <p className="text-xs text-gray-500">
+                              <p className="text-xs text-muted-foreground">
                                 Last active{" "}
                                 {new Date(
                                   member.lastActiveAt
@@ -424,7 +424,7 @@ export default function SpaceInfoDialog({
                                 )
                               )}
                             </div>
-                            <div className="pt-1 border-t text-gray-500">
+                            <div className="pt-1 border-t text-muted-foreground">
                               <p>Joined: {formatDate(member.joinedAt)}</p>
                               {member.lastActiveAt && (
                                 <p>

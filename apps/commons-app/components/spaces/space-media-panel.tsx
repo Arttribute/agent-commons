@@ -365,8 +365,8 @@ export default function SpaceMediaPanel({
         <div className="px-4 py-3 border-b bg-gradient-to-r from-gray-50 to-white shadow-sm">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
-              <Users className="h-4 w-4 text-gray-400" />
-              <span className="text-sm font-semibold text-gray-600">Media</span>
+              <Users className="h-4 w-4 text-muted-foreground" />
+              <span className="text-sm font-semibold text-muted-foreground">Media</span>
               {!joined && (
                 <Badge variant="outline" className="animate-pulse">
                   Connecting...
@@ -376,14 +376,14 @@ export default function SpaceMediaPanel({
           </div>
         </div>
         <div className="flex-1 flex items-center justify-center p-8">
-          <div className="text-center text-gray-500 max-w-xs">
-            <div className="w-16 h-16 rounded-full bg-gray-100 flex items-center justify-center mx-auto mb-4">
-              <Video className="h-8 w-8 text-gray-400" />
+          <div className="text-center text-muted-foreground max-w-xs">
+            <div className="w-16 h-16 rounded-full bg-muted flex items-center justify-center mx-auto mb-4">
+              <Video className="h-8 w-8 text-muted-foreground" />
             </div>
-            <p className="text-sm font-medium text-gray-700 mb-1">
+            <p className="text-sm font-medium text-muted-foreground mb-1">
               No active streams
             </p>
-            <p className="text-xs text-gray-500">
+            <p className="text-xs text-muted-foreground">
               Start your camera, mic, or screen share to begin
             </p>
             {compositeFrameUrl && (

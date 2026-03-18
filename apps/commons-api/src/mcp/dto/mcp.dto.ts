@@ -26,8 +26,8 @@ export class CreateMcpServerDto {
   @IsOptional()
   description?: string;
 
-  @IsEnum(['stdio', 'sse'])
-  connectionType!: 'stdio' | 'sse';
+  @IsEnum(['stdio', 'sse', 'http', 'streamable-http'])
+  connectionType!: 'stdio' | 'sse' | 'http' | 'streamable-http';
 
   @IsObject()
   connectionConfig!: {
@@ -98,7 +98,7 @@ export interface McpServerResponseDto {
   serverId: string;
   name: string;
   description: string | null;
-  connectionType: 'stdio' | 'sse';
+  connectionType: 'stdio' | 'sse' | 'http' | 'streamable-http';
   connectionConfig: {
     command?: string;
     args?: string[];
@@ -196,7 +196,7 @@ export interface McpMarketplaceTemplateDto {
   logoUrl?: string;
   category: string;
   tags: string[];
-  connectionType: 'stdio' | 'sse';
+  connectionType: 'stdio' | 'sse' | 'http' | 'streamable-http';
   configTemplate: {
     command?: string;
     args?: string[];

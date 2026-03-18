@@ -4,11 +4,52 @@ import { useEffect, useState } from "react";
 import { Tool } from "@/types/tool";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Search, Wrench, Download, Upload } from "lucide-react";
+import { Search, Wrench, ArrowDownToLine, ArrowUpFromLine, Loader2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import { Skeleton } from "@/components/ui/skeleton";
+import { commons } from "@/lib/commons";
 
 interface ToolSidebarProps {
   userId: string;
+}
+
+function DragItem({
+  onDragStart,
+  icon,
+  label,
+  description,
+  badge,
+  accentClass,
+}: {
+  onDragStart: (e: React.DragEvent) => void;
+  icon: React.ReactNode;
+  label: string;
+  description?: string;
+  badge?: string;
+  accentClass?: string;
+}) {
+  return (
+    <div
+      draggable
+      onDragStart={onDragStart}
+      className="group flex items-start gap-2.5 p-2.5 rounded-lg border border-border bg-background cursor-grab hover:border-border/80 hover:bg-muted/40 hover:shadow-sm transition-all duration-150 active:cursor-grabbing select-none"
+    >
+      <div className={`mt-0.5 rounded-md p-1.5 shrink-0 ${accentClass ?? "bg-muted"}`}>
+        {icon}
+      </div>
+      <div className="flex-1 min-w-0">
+        <p className="text-xs font-medium text-foreground truncate">{label}</p>
+        {description && (
+          <p className="text-[11px] text-muted-foreground line-clamp-1 mt-0.5">{description}</p>
+        )}
+        {badge && (
+          <Badge variant="secondary" className="mt-1 text-[10px] px-1.5 py-0 h-4">
+            {badge}
+          </Badge>
+        )}
+      </div>
+    </div>
+  );
 }
 
 export function ToolSidebar({ userId }: ToolSidebarProps) {
@@ -23,22 +64,12 @@ export function ToolSidebar({ userId }: ToolSidebarProps) {
 
   const loadTools = async () => {
     try {
-      // Fetch both user tools and static tools in parallel
-      const [userRes, staticRes] = await Promise.all([
-        fetch(`/api/tools?owner=${userId}&ownerType=user`),
-        fetch(`/api/tools/static`),
+      const [userData, staticData] = await Promise.all([
+        commons.tools.list({ owner: userId, ownerType: "user" }),
+        commons.tools.listStatic(),
       ]);
-
-      const userData = await userRes.json();
-      const staticData = await staticRes.json();
-
-      if (userData.success || userData.data) {
-        setUserTools(userData.data || []);
-      }
-
-      if (staticData.success || staticData.data) {
-        setStaticTools(staticData.data || []);
-      }
+      setUserTools((userData.data ?? []) as unknown as Tool[]);
+      setStaticTools((staticData.data ?? []) as unknown as Tool[]);
     } catch (error) {
       console.error("Failed to load tools:", error);
     } finally {
@@ -46,196 +77,135 @@ export function ToolSidebar({ userId }: ToolSidebarProps) {
     }
   };
 
-  const filteredUserTools = userTools.filter(
-    (tool) =>
-      tool.displayName?.toLowerCase().includes(search.toLowerCase()) ||
-      tool.name.toLowerCase().includes(search.toLowerCase()) ||
-      tool.description?.toLowerCase().includes(search.toLowerCase())
-  );
+  const filter = (tools: Tool[]) =>
+    tools.filter(
+      (t) =>
+        !search ||
+        (t.displayName ?? t.name).toLowerCase().includes(search.toLowerCase()) ||
+        t.description?.toLowerCase().includes(search.toLowerCase())
+    );
 
-  const filteredStaticTools = staticTools.filter(
-    (tool) =>
-      tool.displayName?.toLowerCase().includes(search.toLowerCase()) ||
-      tool.name.toLowerCase().includes(search.toLowerCase()) ||
-      tool.description?.toLowerCase().includes(search.toLowerCase())
-  );
-
-  const onDragStart = (
-    event: React.DragEvent,
-    nodeType: string,
-    data: any
-  ) => {
+  const onDragStart = (event: React.DragEvent, data: any) => {
     event.dataTransfer.setData("application/reactflow", JSON.stringify(data));
     event.dataTransfer.effectAllowed = "move";
   };
 
   return (
-    <div className="w-64 border-r bg-white flex flex-col h-full">
-      {/* Search */}
-      <div className="p-4 border-b">
+    <div className="w-60 border-r border-border bg-background flex flex-col h-full shrink-0">
+      {/* Header */}
+      <div className="px-3 pt-3 pb-2 border-b border-border">
+        <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider mb-2">
+          Nodes
+        </p>
         <div className="relative">
-          <Search className="absolute left-2 top-2.5 h-4 w-4 text-gray-400" />
+          <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-muted-foreground" />
           <Input
-            placeholder="Search tools..."
+            placeholder="Search tools…"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="pl-8 h-9"
+            className="pl-8 h-8 text-xs"
           />
         </div>
       </div>
 
       <ScrollArea className="flex-1">
-        <div className="p-4 space-y-2">
-          {/* Special nodes */}
-          <div className="mb-4">
-            <p className="text-xs font-semibold text-gray-500 mb-2 uppercase">
-              Workflow Nodes
+        <div className="p-3 space-y-4">
+          {/* Workflow special nodes */}
+          <div className="space-y-1.5">
+            <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider px-0.5">
+              Flow Control
             </p>
-            <div
-              draggable
-              onDragStart={(e) =>
-                onDragStart(e, "input", {
-                  type: "input",
-                  label: "Input",
-                })
-              }
-              className="p-3 border-2 border-green-500 rounded-lg cursor-move hover:bg-green-50 transition-colors mb-2"
-            >
-              <div className="flex items-center gap-2">
-                <Download className="h-4 w-4 text-green-600" />
-                <div className="flex-1 min-w-0">
-                  <p className="font-medium text-sm text-gray-900">Input</p>
-                  <p className="text-xs text-gray-500">Workflow input</p>
-                </div>
-              </div>
-            </div>
-
-            <div
-              draggable
-              onDragStart={(e) =>
-                onDragStart(e, "output", {
-                  type: "output",
-                  label: "Output",
-                })
-              }
-              className="p-3 border-2 border-purple-500 rounded-lg cursor-move hover:bg-purple-50 transition-colors"
-            >
-              <div className="flex items-center gap-2">
-                <Upload className="h-4 w-4 text-purple-600" />
-                <div className="flex-1 min-w-0">
-                  <p className="font-medium text-sm text-gray-900">Output</p>
-                  <p className="text-xs text-gray-500">Workflow output</p>
-                </div>
-              </div>
-            </div>
+            <DragItem
+              onDragStart={(e) => onDragStart(e, { type: "input", label: "Input" })}
+              icon={<ArrowDownToLine className="h-3.5 w-3.5 text-emerald-600" />}
+              label="Input"
+              description="Workflow entry point"
+              accentClass="bg-emerald-50"
+            />
+            <DragItem
+              onDragStart={(e) => onDragStart(e, { type: "output", label: "Output" })}
+              icon={<ArrowUpFromLine className="h-3.5 w-3.5 text-violet-600" />}
+              label="Output"
+              description="Workflow exit point"
+              accentClass="bg-violet-50"
+            />
           </div>
 
-          {/* Common/Static tools */}
-          {loading ? (
-            <p className="text-sm text-gray-400 text-center py-4">
-              Loading tools...
+          {/* Platform tools */}
+          <div className="space-y-1.5">
+            <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider px-0.5">
+              Platform Tools
             </p>
-          ) : (
-            <>
-              <div className="mb-4">
-                <p className="text-xs font-semibold text-gray-500 mb-2 uppercase">
-                  Common Tools ({filteredStaticTools.length})
-                </p>
-
-                {filteredStaticTools.length === 0 ? (
-                  <p className="text-sm text-gray-400 text-center py-2">
-                    {search ? "No common tools found" : "No common tools"}
-                  </p>
-                ) : (
-                  filteredStaticTools.map((tool) => (
-                    <div
-                      key={tool.toolId}
-                      draggable
-                      onDragStart={(e) =>
-                        onDragStart(e, "tool", {
-                          type: "tool",
-                          toolId: tool.toolId,
-                          toolName: tool.name,
-                          label: tool.displayName || tool.name,
-                          schema: tool.schema,
-                        })
-                      }
-                      className="p-3 border-2 border-purple-300 rounded-lg cursor-move hover:bg-purple-50 hover:border-purple-400 transition-colors mb-2"
-                    >
-                      <div className="flex items-start gap-2">
-                        <Wrench className="h-4 w-4 text-purple-600 mt-0.5 flex-shrink-0" />
-                        <div className="flex-1 min-w-0">
-                          <p className="font-medium text-sm text-gray-900 truncate">
-                            {tool.displayName || tool.name}
-                          </p>
-                          {tool.description && (
-                            <p className="text-xs text-gray-500 line-clamp-2 mt-0.5">
-                              {tool.description}
-                            </p>
-                          )}
-                          <Badge
-                            variant="outline"
-                            className="mt-1 text-xs bg-purple-50"
-                          >
-                            platform
-                          </Badge>
-                        </div>
-                      </div>
-                    </div>
-                  ))
-                )}
+            {loading ? (
+              <div className="space-y-1.5">
+                {[...Array(3)].map((_, i) => (
+                  <Skeleton key={i} className="h-10 w-full rounded-lg" />
+                ))}
               </div>
+            ) : filter(staticTools).length === 0 ? (
+              <p className="text-xs text-muted-foreground text-center py-3">
+                {search ? "No results" : "No platform tools"}
+              </p>
+            ) : (
+              filter(staticTools).map((tool) => (
+                <DragItem
+                  key={tool.toolId}
+                  onDragStart={(e) =>
+                    onDragStart(e, {
+                      type: "tool",
+                      toolId: tool.toolId,
+                      toolName: tool.name,
+                      label: tool.displayName || tool.name,
+                      schema: tool.schema,
+                    })
+                  }
+                  icon={<Wrench className="h-3.5 w-3.5 text-blue-600" />}
+                  label={tool.displayName || tool.name}
+                  description={tool.description}
+                  badge="platform"
+                  accentClass="bg-blue-50"
+                />
+              ))
+            )}
+          </div>
 
-              {/* User tools */}
-              <div>
-                <p className="text-xs font-semibold text-gray-500 mb-2 uppercase">
-                  Your Tools ({filteredUserTools.length})
-                </p>
-
-                {filteredUserTools.length === 0 ? (
-                  <p className="text-sm text-gray-400 text-center py-2">
-                    {search ? "No custom tools found" : "No custom tools"}
-                  </p>
-                ) : (
-                  filteredUserTools.map((tool) => (
-                    <div
-                      key={tool.toolId}
-                      draggable
-                      onDragStart={(e) =>
-                        onDragStart(e, "tool", {
-                          type: "tool",
-                          toolId: tool.toolId,
-                          toolName: tool.name,
-                          label: tool.displayName || tool.name,
-                          schema: tool.schema,
-                        })
-                      }
-                      className="p-3 border-2 border-blue-300 rounded-lg cursor-move hover:bg-blue-50 hover:border-blue-400 transition-colors mb-2"
-                    >
-                      <div className="flex items-start gap-2">
-                        <Wrench className="h-4 w-4 text-blue-600 mt-0.5 flex-shrink-0" />
-                        <div className="flex-1 min-w-0">
-                          <p className="font-medium text-sm text-gray-900 truncate">
-                            {tool.displayName || tool.name}
-                          </p>
-                          {tool.description && (
-                            <p className="text-xs text-gray-500 line-clamp-2 mt-0.5">
-                              {tool.description}
-                            </p>
-                          )}
-                          {tool.visibility && (
-                            <Badge variant="outline" className="mt-1 text-xs">
-                              {tool.visibility}
-                            </Badge>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                  ))
-                )}
+          {/* User tools */}
+          <div className="space-y-1.5">
+            <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider px-0.5">
+              Your Tools
+            </p>
+            {loading ? (
+              <div className="space-y-1.5">
+                {[...Array(2)].map((_, i) => (
+                  <Skeleton key={i} className="h-10 w-full rounded-lg" />
+                ))}
               </div>
-            </>
-          )}
+            ) : filter(userTools).length === 0 ? (
+              <p className="text-xs text-muted-foreground text-center py-3">
+                {search ? "No results" : "No custom tools yet"}
+              </p>
+            ) : (
+              filter(userTools).map((tool) => (
+                <DragItem
+                  key={tool.toolId}
+                  onDragStart={(e) =>
+                    onDragStart(e, {
+                      type: "tool",
+                      toolId: tool.toolId,
+                      toolName: tool.name,
+                      label: tool.displayName || tool.name,
+                      schema: tool.schema,
+                    })
+                  }
+                  icon={<Wrench className="h-3.5 w-3.5 text-orange-500" />}
+                  label={tool.displayName || tool.name}
+                  description={tool.description}
+                  badge={tool.visibility}
+                  accentClass="bg-orange-50"
+                />
+              ))
+            )}
+          </div>
         </div>
       </ScrollArea>
     </div>

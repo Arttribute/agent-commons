@@ -184,7 +184,7 @@ function CodeBlock({ language, code, children }: CodeBlockProps) {
 
   return (
     <div className="my-4 rounded-md overflow-hidden">
-      <div className="flex items-center justify-between bg-muted text-gray-700 px-4 py-2 text-xs font-mono">
+      <div className="flex items-center justify-between bg-muted text-muted-foreground px-4 py-2 text-xs font-mono">
         <span>{language}</span>
         <Button
           variant="ghost"

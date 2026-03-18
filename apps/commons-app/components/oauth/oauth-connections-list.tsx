@@ -108,7 +108,7 @@ export function OAuthConnectionsList({
       case OAuthConnectionStatus.EXPIRED:
         return <Clock className="h-5 w-5 text-yellow-500" />;
       case OAuthConnectionStatus.REVOKED:
-        return <XCircle className="h-5 w-5 text-gray-500" />;
+        return <XCircle className="h-5 w-5 text-muted-foreground" />;
       case OAuthConnectionStatus.ERROR:
         return <AlertTriangle className="h-5 w-5 text-red-500" />;
       default:
@@ -147,8 +147,8 @@ export function OAuthConnectionsList({
     return (
       <div className="flex items-center justify-center p-8">
         <div className="text-center">
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-900 dark:border-white mx-auto"></div>
-          <p className="mt-2 text-sm text-gray-600 dark:text-gray-400">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-border dark:border-white mx-auto"></div>
+          <p className="mt-2 text-sm text-muted-foreground dark:text-muted-foreground">
             Loading...
           </p>
         </div>
@@ -194,7 +194,7 @@ export function OAuthConnectionsList({
                 </CardHeader>
                 <CardContent>
                   <div className="flex items-center justify-between">
-                    <div className="text-sm text-gray-600 dark:text-gray-400">
+                    <div className="text-sm text-muted-foreground dark:text-muted-foreground">
                       <p>
                         Last used:{' '}
                         {connection.lastUsedAt
@@ -291,7 +291,7 @@ export function OAuthConnectionsList({
       {connections.length === 0 && availableProviders.length === 0 && (
         <Card>
           <CardContent className="flex flex-col items-center justify-center p-8">
-            <p className="text-gray-600 dark:text-gray-400 text-center">
+            <p className="text-muted-foreground dark:text-muted-foreground text-center">
               No OAuth providers available at this time.
             </p>
           </CardContent>

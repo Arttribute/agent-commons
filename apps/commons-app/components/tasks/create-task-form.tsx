@@ -18,6 +18,7 @@ import {
 } from "@/components/ui/select";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Checkbox } from "@/components/ui/checkbox";
+import { commons } from "@/lib/commons";
 
 interface Agent {
   agentId: string;
@@ -88,86 +89,43 @@ export function CreateTaskForm({ userAddress }: { userAddress: string }) {
   }, [formData.agentId]);
 
   const fetchAgents = async () => {
-    try {
-      const response = await fetch(`/api/v1/agents?owner=${userAddress}`);
-      const data = await response.json();
-      setAgents(data.data || []);
-    } catch (error) {
-      console.error("Failed to fetch agents:", error);
-    }
+    commons.agents.list(userAddress).then((res) => setAgents(res.data || [])).catch(() => {});
   };
 
   const fetchSessions = async (agentId: string) => {
-    try {
-      const response = await fetch(
-        `/api/sessions?agentId=${agentId}&initiator=${userAddress}`
-      );
-      const data = await response.json();
-      setSessions(data.data || []);
-    } catch (error) {
-      console.error("Failed to fetch sessions:", error);
-    }
+    commons.sessions.list(agentId, userAddress).then((res) => setSessions(res.data || [])).catch(() => {});
   };
 
   const fetchWorkflows = async () => {
-    try {
-      const response = await fetch(`/api/workflows?userAddress=${userAddress}`);
-      const data = await response.json();
-      setWorkflows(data.data || []);
-    } catch (error) {
-      console.error("Failed to fetch workflows:", error);
-    }
+    commons.workflows.list(userAddress, 'user').then((data) => setWorkflows(data || [])).catch(() => {});
   };
 
   const fetchTools = async () => {
-    try {
-      const response = await fetch(`/api/tools?userAddress=${userAddress}`);
-      const data = await response.json();
-      setTools(data.data || []);
-    } catch (error) {
-      console.error("Failed to fetch tools:", error);
-    }
+    commons.tools.list().then((res) => setTools(res.data || [])).catch(() => {});
   };
 
   const handleSubmit = async () => {
     setLoading(true);
     try {
-      // Create or use existing session
       let sessionId = formData.sessionId;
       if (!sessionId) {
-        const sessionResponse = await fetch("/api/sessions", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            agentId: formData.agentId,
-            initiator: userAddress,
-            title: `Task: ${formData.title}`,
-          }),
+        const { data: session } = await commons.sessions.create({
+          agentId: formData.agentId,
+          initiator: userAddress,
+          title: `Task: ${formData.title}`,
         });
-        const sessionData = await sessionResponse.json();
-        sessionId = sessionData.data.sessionId;
+        sessionId = session.sessionId;
       }
 
-      const taskPayload = {
+      await commons.tasks.create({
         ...formData,
         sessionId,
         createdBy: userAddress,
-        createdByType: "user" as const,
+        createdByType: "user",
         scheduledFor: formData.scheduledFor ? new Date(formData.scheduledFor) : undefined,
-      };
-
-      const response = await fetch("/api/v1/tasks", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(taskPayload),
       });
 
-      if (!response.ok) throw new Error("Failed to create task");
-
       router.push("/studio/tasks");
-    } catch (error) {
-      console.error("Error creating task:", error);
-      alert("Failed to create task. Please try again.");
     } finally {
       setLoading(false);
     }
@@ -259,7 +217,7 @@ export function CreateTaskForm({ userAddress }: { userAddress: string }) {
                 placeholder="0"
                 min="0"
               />
-              <p className="text-xs text-gray-500 mt-1">Higher numbers = higher priority</p>
+              <p className="text-xs text-muted-foreground mt-1">Higher numbers = higher priority</p>
             </div>
           </div>
         );
@@ -278,21 +236,21 @@ export function CreateTaskForm({ userAddress }: { userAddress: string }) {
                   <RadioGroupItem value="single" id="single" className="mt-1" />
                   <div>
                     <Label htmlFor="single" className="font-semibold">Single Task</Label>
-                    <p className="text-sm text-gray-500">Execute as a standalone task</p>
+                    <p className="text-sm text-muted-foreground">Execute as a standalone task</p>
                   </div>
                 </div>
                 <div className="flex items-start space-x-3 border p-3 rounded-md">
                   <RadioGroupItem value="workflow" id="workflow" className="mt-1" />
                   <div>
                     <Label htmlFor="workflow" className="font-semibold">Workflow</Label>
-                    <p className="text-sm text-gray-500">Execute a predefined workflow</p>
+                    <p className="text-sm text-muted-foreground">Execute a predefined workflow</p>
                   </div>
                 </div>
                 <div className="flex items-start space-x-3 border p-3 rounded-md">
                   <RadioGroupItem value="sequential" id="sequential" className="mt-1" />
                   <div>
                     <Label htmlFor="sequential" className="font-semibold">Sequential</Label>
-                    <p className="text-sm text-gray-500">Execute tasks one after another</p>
+                    <p className="text-sm text-muted-foreground">Execute tasks one after another</p>
                   </div>
                 </div>
               </RadioGroup>
@@ -332,21 +290,21 @@ export function CreateTaskForm({ userAddress }: { userAddress: string }) {
                   <RadioGroupItem value="none" id="none" className="mt-1" />
                   <div>
                     <Label htmlFor="none" className="font-semibold">No Constraints</Label>
-                    <p className="text-sm text-gray-500">Agent can use any available tools</p>
+                    <p className="text-sm text-muted-foreground">Agent can use any available tools</p>
                   </div>
                 </div>
                 <div className="flex items-start space-x-3 border p-3 rounded-md">
                   <RadioGroupItem value="soft" id="soft" className="mt-1" />
                   <div>
                     <Label htmlFor="soft" className="font-semibold">Soft Recommendation</Label>
-                    <p className="text-sm text-gray-500">Agent should prefer specified tools</p>
+                    <p className="text-sm text-muted-foreground">Agent should prefer specified tools</p>
                   </div>
                 </div>
                 <div className="flex items-start space-x-3 border p-3 rounded-md">
                   <RadioGroupItem value="hard" id="hard" className="mt-1" />
                   <div>
                     <Label htmlFor="hard" className="font-semibold">Hard Constraint</Label>
-                    <p className="text-sm text-gray-500">Agent can ONLY use specified tools</p>
+                    <p className="text-sm text-muted-foreground">Agent can ONLY use specified tools</p>
                   </div>
                 </div>
               </RadioGroup>
@@ -387,7 +345,7 @@ export function CreateTaskForm({ userAddress }: { userAddress: string }) {
                     placeholder="e.g., If you encounter data validation errors, use the validateData tool first"
                     rows={3}
                   />
-                  <p className="text-xs text-gray-500 mt-1">Provide guidance on when/how to use specific tools</p>
+                  <p className="text-xs text-muted-foreground mt-1">Provide guidance on when/how to use specific tools</p>
                 </div>
               </>
             )}
@@ -418,7 +376,7 @@ export function CreateTaskForm({ userAddress }: { userAddress: string }) {
                     onChange={(e) => setFormData({ ...formData, cronExpression: e.target.value })}
                     placeholder="e.g., 0 9 * * 1 (Every Monday at 9 AM)"
                   />
-                  <p className="text-xs text-gray-500 mt-1">
+                  <p className="text-xs text-muted-foreground mt-1">
                     Use cron syntax: minute hour day month weekday
                   </p>
                 </div>
@@ -450,7 +408,7 @@ export function CreateTaskForm({ userAddress }: { userAddress: string }) {
                   value={formData.scheduledFor}
                   onChange={(e) => setFormData({ ...formData, scheduledFor: e.target.value })}
                 />
-                <p className="text-xs text-gray-500 mt-1">Leave empty to execute immediately when ready</p>
+                <p className="text-xs text-muted-foreground mt-1">Leave empty to execute immediately when ready</p>
               </div>
             )}
           </div>
@@ -459,41 +417,41 @@ export function CreateTaskForm({ userAddress }: { userAddress: string }) {
       case 5:
         return (
           <div className="space-y-4">
-            <div className="bg-gray-50 p-4 rounded-md space-y-3">
+            <div className="bg-muted/50 p-4 rounded-md space-y-3">
               <div>
-                <p className="text-sm font-semibold text-gray-700">Title:</p>
+                <p className="text-sm font-semibold">Title:</p>
                 <p className="text-sm">{formData.title}</p>
               </div>
               {formData.description && (
                 <div>
-                  <p className="text-sm font-semibold text-gray-700">Description:</p>
+                  <p className="text-sm font-semibold">Description:</p>
                   <p className="text-sm">{formData.description}</p>
                 </div>
               )}
               <div>
-                <p className="text-sm font-semibold text-gray-700">Agent:</p>
+                <p className="text-sm font-semibold">Agent:</p>
                 <p className="text-sm">{agents.find((a) => a.agentId === formData.agentId)?.name}</p>
               </div>
               <div>
-                <p className="text-sm font-semibold text-gray-700">Execution Mode:</p>
+                <p className="text-sm font-semibold">Execution Mode:</p>
                 <Badge>{formData.executionMode}</Badge>
               </div>
               {formData.priority > 0 && (
                 <div>
-                  <p className="text-sm font-semibold text-gray-700">Priority:</p>
+                  <p className="text-sm font-semibold">Priority:</p>
                   <p className="text-sm">{formData.priority}</p>
                 </div>
               )}
               {formData.toolConstraintType !== "none" && (
                 <div>
-                  <p className="text-sm font-semibold text-gray-700">Tool Constraints:</p>
+                  <p className="text-sm font-semibold">Tool Constraints:</p>
                   <Badge variant="outline">{formData.toolConstraintType}</Badge>
                   <p className="text-sm mt-1">{formData.tools.length} tools selected</p>
                 </div>
               )}
               {formData.isRecurring && (
                 <div>
-                  <p className="text-sm font-semibold text-gray-700">Recurring:</p>
+                  <p className="text-sm font-semibold">Recurring:</p>
                   <p className="text-sm">{formData.cronExpression}</p>
                   <Badge variant="outline" className="mt-1">
                     {formData.recurringSessionMode} session
@@ -523,16 +481,16 @@ export function CreateTaskForm({ userAddress }: { userAddress: string }) {
                       ? "bg-green-500 text-white"
                       : step.id === currentStep
                       ? "bg-blue-500 text-white"
-                      : "bg-gray-200 text-gray-500"
+                      : "bg-muted text-muted-foreground"
                   }`}
                 >
                   {step.id < currentStep ? <CheckCircle2 className="h-5 w-5" /> : step.id}
                 </div>
                 <p className="text-xs mt-1 text-center font-medium">{step.name}</p>
-                <p className="text-xs text-gray-500 text-center hidden md:block">{step.description}</p>
+                <p className="text-xs text-muted-foreground text-center hidden md:block">{step.description}</p>
               </div>
               {index < steps.length - 1 && (
-                <div className={`flex-1 h-0.5 mx-2 ${step.id < currentStep ? "bg-green-500" : "bg-gray-200"}`} />
+                <div className={`flex-1 h-0.5 mx-2 ${step.id < currentStep ? "bg-green-500" : "bg-muted"}`} />
               )}
             </React.Fragment>
           ))}

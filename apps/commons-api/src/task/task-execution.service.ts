@@ -3,17 +3,17 @@ import {
   Logger,
   BadRequestException,
   NotFoundException,
+  forwardRef,
+  Inject,
 } from '@nestjs/common';
-import { eq, and, or, isNull, lte } from 'drizzle-orm';
+import { eq, and } from 'drizzle-orm';
 import { DatabaseService } from '../modules/database';
 import { WorkflowService } from '../tool/workflow.service';
+import { WorkflowExecutorService } from '../tool/workflow-executor.service';
 import { SessionService } from '../session/session.service';
+import { TaskSchedulerService } from './task-scheduler.service';
 import * as schema from '../../models/schema';
-import { CronJob } from 'cron';
 
-/**
- * Task execution result
- */
 export interface TaskExecutionResult {
   taskId: string;
   status: 'completed' | 'failed';
@@ -24,57 +24,27 @@ export interface TaskExecutionResult {
 }
 
 /**
- * TaskExecutionService
- *
  * Handles task execution with support for:
- * - Dependency resolution (wait for dependent tasks)
+ * - Dependency resolution
  * - Workflow execution
- * - Cron-based scheduling
- * - Sequential execution of agent-created todos
- * - One-time and recurring tasks
+ * - Durable DB-driven scheduling (via TaskSchedulerService)
+ * - Recurring tasks with optional new-session-per-run
  */
 @Injectable()
 export class TaskExecutionService {
   private readonly logger = new Logger(TaskExecutionService.name);
-  private readonly scheduledJobs = new Map<string, CronJob>();
 
   constructor(
     private readonly db: DatabaseService,
     private readonly workflowService: WorkflowService,
+    private readonly workflowExecutor: WorkflowExecutorService,
     private readonly sessionService: SessionService,
-  ) {
-    // Initialize: Load and schedule all active cron tasks
-    this.initializeScheduledTasks();
-  }
+    @Inject(forwardRef(() => TaskSchedulerService))
+    private readonly scheduler: TaskSchedulerService,
+  ) {}
 
-  /**
-   * Initialize scheduled tasks on service startup
-   */
-  private async initializeScheduledTasks() {
-    const cronTasks = await this.db.query.task.findMany({
-      where: (t: any) =>
-        and(
-          eq(t.status, 'pending'),
-          eq(t.isRecurring, true),
-          isNull(t.actualEnd),
-        ),
-    });
+  // ── Task CRUD ─────────────────────────────────────────────────────────────
 
-    for (const task of cronTasks) {
-      if (task.cronExpression) {
-        this.scheduleTask(task.taskId, task.cronExpression);
-      }
-    }
-
-    this.logger.log(`Initialized ${cronTasks.length} scheduled tasks`);
-  }
-
-  /**
-   * Create a new task
-   *
-   * @param params - Task creation parameters
-   * @returns Created task
-   */
   async createTask(params: {
     agentId: string;
     sessionId: string;
@@ -93,36 +63,30 @@ export class TaskExecutionService {
     recurringSessionMode?: 'same' | 'new';
     context?: Record<string, any>;
     priority?: number;
+    timeoutMs?: number;
     createdBy: string;
     createdByType: 'user' | 'agent';
   }) {
-    // Validate workflow if specified
     if (params.workflowId) {
       await this.workflowService.getWorkflow(params.workflowId);
     }
 
-    // Validate dependencies exist
-    if (params.dependsOn && params.dependsOn.length > 0) {
+    if (params.dependsOn?.length) {
       for (const depId of params.dependsOn) {
-        const depTask = await this.db.query.task.findFirst({
+        const dep = await this.db.query.task.findFirst({
           where: (t: any) => eq(t.taskId, depId),
         });
-
-        if (!depTask) {
-          throw new BadRequestException(`Dependency task ${depId} not found`);
-        }
+        if (!dep) throw new BadRequestException(`Dependency task ${depId} not found`);
       }
     }
 
-    // Calculate next run time for cron tasks
     let nextRunAt: Date | undefined;
     if (params.cronExpression && params.isRecurring) {
-      nextRunAt = this.getNextCronTime(params.cronExpression);
+      nextRunAt = this.scheduler.getNextRunTime(params.cronExpression) ?? undefined;
     } else if (params.scheduledFor) {
       nextRunAt = params.scheduledFor;
     }
 
-    // Create task
     const [task] = await this.db
       .insert(schema.task)
       .values({
@@ -130,336 +94,231 @@ export class TaskExecutionService {
         sessionId: params.sessionId,
         title: params.title,
         description: params.description,
-        executionMode: params.executionMode || 'single',
+        executionMode: params.executionMode ?? 'single',
         workflowId: params.workflowId,
         workflowInputs: params.workflowInputs,
         cronExpression: params.cronExpression,
         scheduledFor: params.scheduledFor,
-        isRecurring: params.isRecurring || false,
+        isRecurring: params.isRecurring ?? false,
         nextRunAt,
         dependsOn: params.dependsOn,
         tools: params.tools,
-        toolConstraintType: params.toolConstraintType || 'none',
+        toolConstraintType: params.toolConstraintType ?? 'none',
         toolInstructions: params.toolInstructions,
-        recurringSessionMode: params.recurringSessionMode || 'same',
+        recurringSessionMode: params.recurringSessionMode ?? 'same',
         context: params.context,
-        priority: params.priority || 0,
+        priority: params.priority ?? 0,
+        ...(params.timeoutMs && { timeoutMs: params.timeoutMs }),
         createdBy: params.createdBy,
         createdByType: params.createdByType,
         status: 'pending',
       })
       .returning();
 
-    this.logger.log(`Created task ${task.taskId} in session ${params.sessionId}`);
+    this.logger.log(`Created task ${task.taskId}`);
 
-    // Schedule if has cron expression
-    if (params.cronExpression && params.isRecurring) {
-      this.scheduleTask(task.taskId, params.cronExpression);
+    // Schedule the first run durably in the DB
+    const scheduledFor = nextRunAt ?? params.scheduledFor;
+    if (scheduledFor) {
+      await this.scheduler.scheduleRun({
+        taskId: task.taskId,
+        scheduledFor,
+        triggeredBy: params.cronExpression ? 'cron' : 'manual',
+        sessionId: params.sessionId,
+      });
     }
 
     return task;
   }
 
-  /**
-   * Schedule a task with cron expression
-   *
-   * @param taskId - The task ID
-   * @param cronExpression - Cron expression
-   */
-  private scheduleTask(taskId: string, cronExpression: string) {
-    try {
-      // Remove existing job if any
-      this.unscheduleTask(taskId);
+  // ── Execution ─────────────────────────────────────────────────────────────
 
-      // Create new cron job
-      const job = new CronJob(
-        cronExpression,
-        async () => {
-          this.logger.log(`Cron trigger for task ${taskId}`);
-          await this.executeTask(taskId);
-        },
-        null,
-        true, // Start immediately
-        'UTC',
-      );
-
-      this.scheduledJobs.set(taskId, job);
-
-      this.logger.log(`Scheduled task ${taskId} with cron: ${cronExpression}`);
-    } catch (error: any) {
-      this.logger.error(
-        `Failed to schedule task ${taskId}: ${error.message}`,
-      );
-    }
-  }
-
-  /**
-   * Unschedule a task
-   *
-   * @param taskId - The task ID
-   */
-  private unscheduleTask(taskId: string) {
-    const job = this.scheduledJobs.get(taskId);
-    if (job) {
-      job.stop();
-      this.scheduledJobs.delete(taskId);
-      this.logger.log(`Unscheduled task ${taskId}`);
-    }
-  }
-
-  /**
-   * Get next cron execution time
-   *
-   * @param cronExpression - Cron expression
-   * @returns Next execution time
-   */
-  private getNextCronTime(cronExpression: string): Date {
-    try {
-      const job = new CronJob(cronExpression, () => {}, null, false, 'UTC');
-      return job.nextDate().toJSDate();
-    } catch (error: any) {
-      throw new BadRequestException(`Invalid cron expression: ${cronExpression}`);
-    }
-  }
-
-  /**
-   * Execute a task
-   *
-   * @param taskId - The task ID
-   * @returns Execution result
-   */
   async executeTask(taskId: string): Promise<TaskExecutionResult> {
     const startTime = Date.now();
 
     try {
-      // Get task
       const task = await this.db.query.task.findFirst({
         where: (t: any) => eq(t.taskId, taskId),
-        with: {
-          workflow: true,
-        },
+        with: { workflow: true },
       });
 
-      if (!task) {
-        throw new NotFoundException(`Task ${taskId} not found`);
-      }
+      if (!task) throw new NotFoundException(`Task ${taskId} not found`);
 
-      // Check if already running
       if (task.status === 'running') {
-        this.logger.warn(`Task ${taskId} is already running`);
-        return {
-          taskId,
-          status: 'failed',
-          errorMessage: 'Task is already running',
-          duration: Date.now() - startTime,
-        };
+        this.logger.warn(`Task ${taskId} already running`);
+        return { taskId, status: 'failed', errorMessage: 'Task already running', duration: Date.now() - startTime };
       }
 
-      // Check dependencies
-      if (task.dependsOn && task.dependsOn.length > 0) {
+      if (task.dependsOn?.length) {
         const ready = await this.checkDependencies(task.dependsOn);
         if (!ready) {
-          this.logger.log(
-            `Task ${taskId} waiting for dependencies to complete`,
-          );
-          return {
-            taskId,
-            status: 'failed',
-            errorMessage: 'Dependencies not completed',
-            duration: Date.now() - startTime,
-          };
+          return { taskId, status: 'failed', errorMessage: 'Dependencies not completed', duration: Date.now() - startTime };
         }
       }
 
-      // Mark as running
-      await this.db
-        .update(schema.task)
-        .set({
-          status: 'running',
-          actualStart: new Date(),
-        })
+      await this.db.update(schema.task).set({ status: 'running', actualStart: new Date() })
         .where(eq(schema.task.taskId, taskId));
 
-      // Execute based on mode
       let result: any;
       let summary: string;
 
-      switch (task.executionMode) {
-        case 'workflow':
-          if (!task.workflowId) {
-            throw new BadRequestException(
-              'Workflow mode requires workflowId',
-            );
-          }
-
-          // Execute workflow
-          const executionId = await this.workflowService.executeWorkflow({
-            workflowId: task.workflowId,
-            agentId: task.agentId,
-            sessionId: task.sessionId,
-            taskId: task.taskId,
-            inputData: task.workflowInputs || {},
-          });
-
-          // Wait for completion (poll execution status)
-          result = await this.waitForWorkflowCompletion(executionId);
-          summary = `Workflow ${task.workflow?.name} executed successfully`;
-          break;
-
-        case 'sequential':
-        case 'single':
-        default:
-          // Execute as regular task (will be picked up by runAgent)
-          // This is a placeholder - actual execution happens in runAgent
-          result = { executedByAgent: true };
-          summary = `Task queued for agent execution`;
-          break;
+      if (task.executionMode === 'workflow') {
+        if (!task.workflowId) throw new BadRequestException('Workflow mode requires workflowId');
+        const executionId = await this.workflowService.executeWorkflow({
+          workflowId: task.workflowId,
+          agentId: task.agentId,
+          sessionId: task.sessionId,
+          taskId: task.taskId,
+          inputData: task.workflowInputs ?? {},
+        });
+        const timeoutMs = (task as any).timeoutMs ?? undefined;
+        result = await this.waitForWorkflowCompletion(executionId, timeoutMs);
+        summary = `Workflow ${task.workflow?.name ?? task.workflowId} completed`;
+      } else {
+        result = { executedByAgent: true };
+        summary = 'Task queued for agent execution';
       }
 
-      // Mark as completed
-      await this.completeTask(taskId, {
-        status: 'completed',
-        resultContent: result,
-        summary,
-        duration: Date.now() - startTime,
-      });
+      await this.completeTask(taskId, { status: 'completed', resultContent: result, summary, duration: Date.now() - startTime });
 
-      // Update next run time for recurring tasks
-      if (task.isRecurring && task.cronExpression) {
-        const nextRun = this.getNextCronTime(task.cronExpression);
-        let updateData: any = {
-          lastRunAt: new Date(),
-          nextRunAt: nextRun,
-          status: 'pending', // Reset to pending for next run
-        };
-
-        // Handle recurring session mode
-        if (task.recurringSessionMode === 'new') {
-          // Create a new session for the next run
-          const newSession = await this.sessionService.createSession({
-            value: {
-              agentId: task.agentId,
-              initiator: task.createdBy,
-              title: `Recurring: ${task.title}`,
-              model: { name: 'gpt-4o' } as any,
-            },
-          });
-
-          updateData.sessionId = newSession.sessionId;
-          this.logger.log(
-            `Created new session ${newSession.sessionId} for recurring task ${taskId}`,
-          );
-        }
-        // else: recurringSessionMode === 'same', keep existing sessionId
-
-        await this.db
-          .update(schema.task)
-          .set(updateData)
+      // For recurring tasks, next run is scheduled by TaskSchedulerService automatically
+      // For non-recurring tasks with a new-session preference, update the session on next run
+      if (task.isRecurring && task.cronExpression && task.recurringSessionMode === 'new') {
+        const newSession = await this.sessionService.createSession({
+          value: {
+            agentId: task.agentId,
+            initiator: task.createdBy,
+            title: `Recurring: ${task.title}`,
+            model: { name: 'gpt-4o' } as any,
+          },
+        });
+        await this.db.update(schema.task)
+          .set({ sessionId: newSession.sessionId })
           .where(eq(schema.task.taskId, taskId));
       }
 
-      return {
-        taskId,
-        status: 'completed',
-        resultContent: result,
-        summary,
-        duration: Date.now() - startTime,
-      };
+      return { taskId, status: 'completed', resultContent: result, summary, duration: Date.now() - startTime };
     } catch (error: any) {
       this.logger.error(`Task ${taskId} failed: ${error.message}`);
-
-      await this.completeTask(taskId, {
-        status: 'failed',
-        errorMessage: error.message,
-        duration: Date.now() - startTime,
-      });
-
-      return {
-        taskId,
-        status: 'failed',
-        errorMessage: error.message,
-        duration: Date.now() - startTime,
-      };
+      await this.completeTask(taskId, { status: 'failed', errorMessage: error.message, duration: Date.now() - startTime });
+      return { taskId, status: 'failed', errorMessage: error.message, duration: Date.now() - startTime };
     }
   }
 
-  /**
-   * Check if all dependencies are completed
-   *
-   * @param dependencyIds - Array of task IDs
-   * @returns True if all completed
-   */
-  private async checkDependencies(dependencyIds: string[]): Promise<boolean> {
-    for (const depId of dependencyIds) {
-      const dep = await this.db.query.task.findFirst({
-        where: (t: any) => eq(t.taskId, depId),
-      });
+  // ── Queries ───────────────────────────────────────────────────────────────
 
-      if (!dep || dep.status !== 'completed') {
-        return false;
+  async getNextExecutableTask(agentId: string, sessionId: string) {
+    const tasks = await this.db.query.task.findMany({
+      where: (t: any) => and(eq(t.agentId, agentId), eq(t.sessionId, sessionId), eq(t.status, 'pending')),
+      orderBy: (t: any, { desc, asc }: any) => [desc(t.priority), asc(t.createdAt)],
+    });
+
+    for (const task of tasks) {
+      if (task.nextRunAt && task.nextRunAt > new Date()) continue;
+      if (task.dependsOn?.length && !(await this.checkDependencies(task.dependsOn))) continue;
+      return task;
+    }
+    return null;
+  }
+
+  async listSessionTasks(sessionId: string) {
+    return this.db.query.task.findMany({
+      where: (t: any) => eq(t.sessionId, sessionId),
+      orderBy: (t: any, { desc }: any) => [desc(t.createdAt)],
+    });
+  }
+
+  async listAgentTasks(agentId: string) {
+    return this.db.query.task.findMany({
+      where: (t: any) => eq(t.agentId, agentId),
+      orderBy: (t: any, { desc }: any) => [desc(t.createdAt)],
+    });
+  }
+
+  async listTasksByOwner(ownerId: string, ownerType: 'user' | 'agent') {
+    return this.db.query.task.findMany({
+      where: (t: any) => and(eq(t.createdBy, ownerId), eq(t.createdByType, ownerType)),
+      orderBy: (t: any, { desc }: any) => [desc(t.createdAt)],
+    });
+  }
+
+  async cancelTask(taskId: string) {
+    await this.db.update(schema.task)
+      .set({ status: 'cancelled', updatedAt: new Date() })
+      .where(eq(schema.task.taskId, taskId));
+
+    // Hard cancel: also cancel any running workflow executions for this task
+    const activeExecutions = await this.db.query.workflowExecution.findMany({
+      where: (e: any) => and(
+        eq(e.taskId, taskId),
+        // Only cancel non-terminal executions
+      ),
+    });
+    for (const exec of activeExecutions) {
+      if (!['completed', 'failed', 'cancelled'].includes(exec.status)) {
+        try {
+          await this.workflowExecutor.cancelExecution(exec.executionId);
+        } catch (e: any) {
+          this.logger.warn(`Could not cancel workflow execution ${exec.executionId}: ${e.message}`);
+        }
       }
     }
 
+    this.logger.log(`Cancelled task ${taskId} (+ ${activeExecutions.length} workflow execution(s))`);
+    return { success: true };
+  }
+
+  async deleteTask(taskId: string) {
+    const result = await this.db.delete(schema.task).where(eq(schema.task.taskId, taskId)).returning();
+    if (!result.length) throw new NotFoundException(`Task ${taskId} not found`);
+    this.logger.log(`Deleted task ${taskId}`);
+    return { success: true };
+  }
+
+  // ── Helpers ───────────────────────────────────────────────────────────────
+
+  private async checkDependencies(ids: string[]): Promise<boolean> {
+    for (const id of ids) {
+      const dep = await this.db.query.task.findFirst({ where: (t: any) => eq(t.taskId, id) });
+      if (!dep || dep.status !== 'completed') return false;
+    }
     return true;
   }
 
-  /**
-   * Wait for workflow execution to complete
-   *
-   * @param executionId - Workflow execution ID
-   * @returns Workflow result
-   */
-  private async waitForWorkflowCompletion(executionId: string): Promise<any> {
-    const maxWaitTime = 5 * 60 * 1000; // 5 minutes
-    const pollInterval = 2000; // 2 seconds
-    const startTime = Date.now();
-
-    while (Date.now() - startTime < maxWaitTime) {
-      const execution = await this.db.query.workflowExecution.findFirst(
-        {
-          where: (e: any) => eq(e.executionId, executionId),
-        },
-      );
-
-      if (!execution) {
-        throw new Error(`Workflow execution ${executionId} not found`);
-      }
-
-      if (execution.status === 'completed') {
-        return execution.outputData;
-      }
-
+  private async waitForWorkflowCompletion(executionId: string, timeoutMs?: number): Promise<any> {
+    const deadline = Date.now() + (timeoutMs ?? 5 * 60_000);
+    while (Date.now() < deadline) {
+      const execution = await this.db.query.workflowExecution.findFirst({
+        where: (e: any) => eq(e.executionId, executionId),
+      });
+      if (!execution) throw new Error(`Workflow execution ${executionId} not found`);
+      if (execution.status === 'completed') return execution.outputData;
       if (execution.status === 'failed' || execution.status === 'cancelled') {
-        throw new Error(
-          execution.errorMessage || `Workflow ${execution.status}`,
-        );
+        throw new Error(execution.errorMessage ?? `Workflow ${execution.status}`);
       }
-
-      // Wait before next poll
-      await new Promise((resolve) => setTimeout(resolve, pollInterval));
+      if (execution.status === 'awaiting_approval') {
+        // Return a special result — task will wait until the approval resumes the workflow
+        return {
+          paused: true,
+          executionId,
+          pausedAtNode: (execution as any).pausedAtNode,
+          approvalToken: (execution as any).approvalToken,
+          message: 'Workflow paused awaiting human approval',
+        };
+      }
+      await new Promise((r) => setTimeout(r, 2000));
     }
-
     throw new Error('Workflow execution timeout');
   }
 
-  /**
-   * Complete a task
-   *
-   * @param taskId - The task ID
-   * @param result - Execution result
-   */
-  private async completeTask(
-    taskId: string,
-    result: {
-      status: 'completed' | 'failed';
-      resultContent?: any;
-      summary?: string;
-      errorMessage?: string;
-      duration: number;
-    },
-  ) {
-    await this.db
-      .update(schema.task)
+  private async completeTask(taskId: string, result: {
+    status: 'completed' | 'failed';
+    resultContent?: any;
+    summary?: string;
+    errorMessage?: string;
+    duration: number;
+  }) {
+    await this.db.update(schema.task)
       .set({
         status: result.status,
         resultContent: result.resultContent,
@@ -471,143 +330,5 @@ export class TaskExecutionService {
         updatedAt: new Date(),
       })
       .where(eq(schema.task.taskId, taskId));
-  }
-
-  /**
-   * Get next executable task for an agent in a session
-   * Used by runAgent to find next task to execute
-   *
-   * @param agentId - The agent ID
-   * @param sessionId - The session ID
-   * @returns Next task or null
-   */
-  async getNextExecutableTask(agentId: string, sessionId: string) {
-    // Find pending tasks in this session, ordered by priority
-    const tasks = await this.db.query.task.findMany({
-      where: (t: any) =>
-        and(
-          eq(t.agentId, agentId),
-          eq(t.sessionId, sessionId),
-          eq(t.status, 'pending'),
-        ),
-      orderBy: (t: any, { desc, asc }: any) => [desc(t.priority), asc(t.createdAt)],
-    });
-
-    // Find first task with dependencies met
-    for (const task of tasks) {
-      // Skip scheduled tasks that aren't due yet
-      if (task.nextRunAt && task.nextRunAt > new Date()) {
-        continue;
-      }
-
-      // Check dependencies
-      if (task.dependsOn && task.dependsOn.length > 0) {
-        const ready = await this.checkDependencies(task.dependsOn);
-        if (!ready) {
-          continue;
-        }
-      }
-
-      return task;
-    }
-
-    return null;
-  }
-
-  /**
-   * List tasks for a session
-   *
-   * @param sessionId - The session ID
-   * @returns List of tasks
-   */
-  async listSessionTasks(sessionId: string) {
-    return this.db.query.task.findMany({
-      where: (t: any) => eq(t.sessionId, sessionId),
-      orderBy: (t: any, { desc }: any) => [desc(t.createdAt)],
-    });
-  }
-
-  /**
-   * List all tasks for an agent
-   *
-   * @param agentId - The agent ID
-   * @returns List of tasks
-   */
-  async listAgentTasks(agentId: string) {
-    return this.db.query.task.findMany({
-      where: (t: any) => eq(t.agentId, agentId),
-      orderBy: (t: any, { desc }: any) => [desc(t.createdAt)],
-    });
-  }
-
-  /**
-   * List tasks by owner (user or agent)
-   *
-   * @param ownerId - The owner ID (user wallet or agent ID)
-   * @param ownerType - 'user' or 'agent'
-   * @returns List of tasks
-   */
-  async listTasksByOwner(ownerId: string, ownerType: 'user' | 'agent') {
-    return this.db.query.task.findMany({
-      where: (t: any) =>
-        and(eq(t.createdBy, ownerId), eq(t.createdByType, ownerType)),
-      orderBy: (t: any, { desc }: any) => [desc(t.createdAt)],
-    });
-  }
-
-  /**
-   * Cancel a task
-   *
-   * @param taskId - The task ID
-   */
-  async cancelTask(taskId: string) {
-    // Unschedule if it's a cron task
-    this.unscheduleTask(taskId);
-
-    await this.db
-      .update(schema.task)
-      .set({
-        status: 'cancelled',
-        updatedAt: new Date(),
-      })
-      .where(eq(schema.task.taskId, taskId));
-
-    this.logger.log(`Cancelled task ${taskId}`);
-
-    return { success: true };
-  }
-
-  /**
-   * Delete a task
-   *
-   * @param taskId - The task ID
-   */
-  async deleteTask(taskId: string) {
-    // Unschedule if it's a cron task
-    this.unscheduleTask(taskId);
-
-    const result = await this.db
-      .delete(schema.task)
-      .where(eq(schema.task.taskId, taskId))
-      .returning();
-
-    if (!result.length) {
-      throw new NotFoundException(`Task ${taskId} not found`);
-    }
-
-    this.logger.log(`Deleted task ${taskId}`);
-
-    return { success: true };
-  }
-
-  /**
-   * Cleanup: Stop all scheduled jobs
-   */
-  onModuleDestroy() {
-    for (const [taskId, job] of this.scheduledJobs.entries()) {
-      job.stop();
-      this.logger.log(`Stopped scheduled task ${taskId}`);
-    }
-    this.scheduledJobs.clear();
   }
 }

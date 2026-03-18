@@ -35,7 +35,7 @@ const visibilityIcons = {
 };
 
 const visibilityColors = {
-  private: "bg-gray-200 text-gray-700",
+  private: "bg-muted text-foreground",
   public: "bg-green-200 text-green-700",
   platform: "bg-blue-200 text-blue-700",
 };
@@ -50,7 +50,7 @@ export function ToolListItem({
   const VisibilityIcon = visibilityIcons[tool.visibility];
 
   return (
-    <div className="border border-gray-300 rounded-lg p-4 hover:border-gray-500 transition-colors bg-white">
+    <div className="border border-border rounded-lg p-4 hover:border-foreground/30 transition-colors bg-background">
       <div className="flex items-start justify-between mb-2">
         <div className="flex-1">
           <div className="flex items-center gap-2 mb-1">
@@ -65,14 +65,14 @@ export function ToolListItem({
               {tool.visibility}
             </Badge>
           </div>
-          <p className="text-sm text-gray-600 line-clamp-2">
+          <p className="text-sm text-muted-foreground line-clamp-2">
             {tool.description}
           </p>
         </div>
 
         <DropdownMenu>
-          <DropdownMenuTrigger className="hover:bg-gray-100 rounded p-1">
-            <MoreVertical className="h-5 w-5 text-gray-600" />
+          <DropdownMenuTrigger className="hover:bg-accent rounded p-1">
+            <MoreVertical className="h-5 w-5 text-muted-foreground" />
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-48">
             <DropdownMenuItem onClick={() => onEdit(tool)}>
@@ -115,7 +115,7 @@ export function ToolListItem({
           </div>
         )}
         {tool.version && (
-          <span className="text-xs text-gray-500 ml-auto">v{tool.version}</span>
+          <span className="text-xs text-muted-foreground ml-auto">v{tool.version}</span>
         )}
       </div>
     </div>

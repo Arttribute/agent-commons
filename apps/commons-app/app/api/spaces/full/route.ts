@@ -4,7 +4,6 @@ export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
     const spaceId = searchParams.get("spaceId");
-    console.log("space id:", spaceId);
 
     if (!spaceId) {
       return NextResponse.json(
@@ -21,7 +20,6 @@ export async function GET(request: Request) {
     }
 
     const data = await response.json();
-    console.log("Sesion data", data);
     return NextResponse.json(data);
   } catch (error) {
     console.error("Error fetching space details:", error);

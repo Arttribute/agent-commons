@@ -8,6 +8,19 @@ import { InferSelectModel } from 'drizzle-orm';
 import { McpToolResponseDto, McpSyncResponseDto } from './dto/mcp.dto';
 import { ChatCompletionTool } from 'openai/resources/chat/completions.mjs';
 
+export interface McpResourceInfo {
+  uri: string;
+  name: string;
+  description?: string;
+  mimeType?: string;
+}
+
+export interface McpPromptInfo {
+  name: string;
+  description?: string;
+  arguments?: Array<{ name: string; description?: string; required?: boolean }>;
+}
+
 @Injectable()
 export class McpToolDiscoveryService {
   private readonly logger = new Logger(McpToolDiscoveryService.name);
@@ -293,6 +306,115 @@ export class McpToolDiscoveryService {
     });
 
     return tools.map((tool) => this.toOpenAIToolFormat(tool));
+  }
+
+  /**
+   * Full sync: tools + resources + prompts + capabilities in one call.
+   */
+  async syncAll(serverId: string): Promise<McpSyncResponseDto & {
+    resourcesDiscovered: number;
+    promptsDiscovered: number;
+  }> {
+    const toolSync = await this.syncTools(serverId);
+
+    let resourcesDiscovered = 0;
+    let promptsDiscovered = 0;
+
+    try {
+      const resources = await this.listResources(serverId);
+      resourcesDiscovered = resources.length;
+    } catch (e: any) {
+      this.logger.warn(`Resources not available on server ${serverId}: ${e.message}`);
+    }
+
+    try {
+      const prompts = await this.listPrompts(serverId);
+      promptsDiscovered = prompts.length;
+    } catch (e: any) {
+      this.logger.warn(`Prompts not available on server ${serverId}: ${e.message}`);
+    }
+
+    // Update capabilities
+    await this.serverService.updateCapabilities(serverId, {
+      tools: toolSync.toolsDiscovered > 0,
+      resources: resourcesDiscovered > 0,
+      prompts: promptsDiscovered > 0,
+    });
+
+    return { ...toolSync, resourcesDiscovered, promptsDiscovered };
+  }
+
+  /**
+   * List all resources exposed by an MCP server.
+   */
+  async listResources(serverId: string): Promise<McpResourceInfo[]> {
+    const server = await this.db.query.mcpServer.findFirst({
+      where: (s) => eq(s.serverId, serverId),
+    });
+    if (!server) throw new BadRequestException(`Server ${serverId} not found`);
+
+    const client = await this.connectionService.getConnection(server);
+    const result = await client.listResources();
+    return result.resources.map((r) => ({
+      uri: r.uri,
+      name: r.name,
+      description: r.description,
+      mimeType: r.mimeType,
+    }));
+  }
+
+  /**
+   * Read the content of a specific MCP resource.
+   */
+  async readResource(serverId: string, uri: string): Promise<any> {
+    const server = await this.db.query.mcpServer.findFirst({
+      where: (s) => eq(s.serverId, serverId),
+    });
+    if (!server) throw new BadRequestException(`Server ${serverId} not found`);
+
+    const client = await this.connectionService.getConnection(server);
+    const result = await client.readResource({ uri });
+    return result.contents;
+  }
+
+  /**
+   * List all prompts exposed by an MCP server.
+   */
+  async listPrompts(serverId: string): Promise<McpPromptInfo[]> {
+    const server = await this.db.query.mcpServer.findFirst({
+      where: (s) => eq(s.serverId, serverId),
+    });
+    if (!server) throw new BadRequestException(`Server ${serverId} not found`);
+
+    const client = await this.connectionService.getConnection(server);
+    const result = await client.listPrompts();
+    return result.prompts.map((p) => ({
+      name: p.name,
+      description: p.description,
+      arguments: (p.arguments ?? []).map((a) => ({
+        name: a.name,
+        description: a.description,
+        required: a.required,
+      })),
+    }));
+  }
+
+  /**
+   * Retrieve a specific prompt with rendered messages.
+   */
+  async getPrompt(
+    serverId: string,
+    promptName: string,
+    args?: Record<string, string>,
+  ): Promise<{ description?: string; messages: any[] }> {
+    const server = await this.db.query.mcpServer.findFirst({
+      where: (s) => eq(s.serverId, serverId),
+    });
+    if (!server) throw new BadRequestException(`Server ${serverId} not found`);
+
+    const client = await this.connectionService.getConnection(server);
+    const result = await client.getPrompt({ name: promptName, arguments: args ?? {} });
+    return { description: result.description, messages: result.messages };
   }
 
   /* ─────────────────────────  PRIVATE HELPERS  ───────────────────────── */

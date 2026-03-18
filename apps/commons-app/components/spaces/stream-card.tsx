@@ -199,7 +199,7 @@ export function StreamCard({
         <img
           src={peer.webFrameUrl || (peer.frameUrl as string)}
           alt={peer.url || "web"}
-          className="w-full h-full object-contain bg-gray-900"
+          className="w-full h-full object-contain bg-muted"
           draggable={false}
         />
       ) : hasVideo ? (

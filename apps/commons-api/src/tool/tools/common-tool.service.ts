@@ -4,15 +4,17 @@ import {
   Inject,
   Injectable,
 } from '@nestjs/common';
+import { HumanMessage, SystemMessage } from '@langchain/core/messages';
 import { ChatCompletionMessageParam } from 'openai/resources/chat/completions.mjs';
+import { ModelProviderFactory } from '~/modules/model-provider';
 import { EmbeddingType, ResourceType } from '~/embedding/dto/embedding.dto';
 import { AgentService } from '~/agent/agent.service';
 import { GoalService, CreateGoalDto } from '~/goal/goal.service';
 import { TaskService, CreateTaskDto, TaskContext } from '~/task/task.service';
 import { TaskExecutionService } from '~/task/task-execution.service';
-import { AttributionService } from '~/attribution/attribution.service';
 import { ResourceService } from '~/resource/resource.service';
 import { SpaceService } from '~/space/space.service';
+import { SkillService } from '~/skill/skill.service';
 //import { TaskService } from '~/task/task.service';
 import { OpenAIService } from '~/modules/openai/openai.service';
 import { PinataService } from '~/pinata/pinata.service';
@@ -119,24 +121,6 @@ export interface CommonTool {
   // }): any;
   // joinTask(props: { taskId: number }): any;
   // completeTask(props: { taskId: number; resultantFile: string }): any;
-
-  /**
-   * Get Attributions available in the network, you may get by id
-   */
-  getAttributions(): any;
-  getAttributionWithId(props: { id: string }): any;
-
-  /**
-   * Create a new Attribution in the network
-   * The parentResources are the resources that were used to create the new resource
-   * relation types 0,1,2,3  DERIVED_FROM, INSPIRED_BY,USES, COLLABORATED_WITH
-   */
-  createAttribution(props: {
-    resourceId: number;
-    parentResources: number[];
-    relationTypes: number[];
-    descriptions: string[];
-  }): any;
 
   /**
    * Interact with an agent in the network
@@ -358,8 +342,6 @@ export class CommonToolService implements CommonTool {
     private resource: ResourceService,
     //@Inject(forwardRef(() => TaskService)) previous for onchain tasks
     //private task: TaskService,
-    @Inject(forwardRef(() => AttributionService))
-    private attribution: AttributionService,
     @Inject(forwardRef(() => OpenAIService))
     private openAI: OpenAIService,
     @Inject(forwardRef(() => PinataService))
@@ -368,6 +350,8 @@ export class CommonToolService implements CommonTool {
     private space: SpaceService,
     @Inject(forwardRef(() => SpaceTtsService))
     private spaceTts: SpaceTtsService,
+    private skillService: SkillService,
+    private modelProviderFactory: ModelProviderFactory,
   ) {}
 
   async createGoal(props: CreateGoalDto) {
@@ -651,7 +635,6 @@ export class CommonToolService implements CommonTool {
       resourceType: rType,
       embeddingType: etype,
       tags: props.tags,
-      isCoreResource: false,
     });
 
     return resource;
@@ -790,83 +773,6 @@ export class CommonToolService implements CommonTool {
 
   //   return task;
   // }
-
-  getAttributions(props?: { id?: string }) {
-    const graphAPIKey = process.env.GRAPH_API_KEY;
-    const data = graphqlRequest.then(async (_) => {
-      const attributionsDocument = _.gql`
-    	{
-    		attributions {
-				id
-				resourceId
-				parentResources
-				relationTypes
-				contributionDescriptions
-				timestamp
-				derivatives
-				citations {
-				citingResourceId
-				citedResourceId
-				description
-				timestamp
-				}
-			}
-    	}
-    	`;
-      const attributionsWithIdDocument = _.gql`
-    	{
-    		attributions(id: ${props?.id}) {
-    			id
-				taskId
-				creator
-				metadata
-				reward
-				resourceBased
-				status
-				rewardsDistributed
-				parentTaskId
-				maxParticipants
-				currentParticipants
-				contributions {
-				contributor
-				value
-				}
-				subtasks
-    		}
-    	}
-    	`;
-
-      return await _.request(
-        this.graphAPI,
-        props?.id ? attributionsWithIdDocument : attributionsDocument,
-      );
-    });
-
-    return data;
-  }
-  getAttributionWithId(props: { id: string }) {
-    return this.getAttributions({
-      id: props.id,
-    });
-  }
-
-  // @ts-expect-error
-  async createAttribution(
-    props: {
-      resourceId: bigint;
-      parentResources: bigint[];
-      relationTypes: bigint[];
-      descriptions: string[];
-    },
-    metadata: { agentId: string; privateKey: string },
-  ) {
-    const attribution = await this.attribution.createAttribution({
-      ...props,
-      agentId: metadata.agentId,
-    });
-
-    return attribution;
-  }
 
   interactWithAgent(props: {
     agentId: string;
@@ -1264,42 +1170,128 @@ export class CommonToolService implements CommonTool {
     }
 
     try {
-      // Create a simple prompt for the agent to process the data
-      const prompt = `${instruction}
-
-Data to process:
-${JSON.stringify(data, null, 2)}
-
-Please analyze the data and provide your insights in a clear, structured format.`;
-
-      // Call OpenAI directly (NOT through runAgent to avoid recursion)
-      const response = await this.openAI.chat.completions.create({
-        model: 'gpt-4',
-        messages: [
-          {
-            role: 'system',
-            content:
-              'You are a data processor within a workflow. Analyze and transform the provided data according to instructions. Be concise and focused.',
-          },
-          {
-            role: 'user',
-            content: prompt,
-          },
-        ],
-        max_tokens: maxTokens,
+      // Resolve the agent's model config so we use the correct provider (BYOK-aware)
+      const agentRecord = await this.agent.getAgent({ agentId });
+      const llm = this.modelProviderFactory.build({
+        provider: (agentRecord.modelProvider as any) ?? 'openai',
+        modelId: agentRecord.modelId ?? 'gpt-4o',
+        // Note: we don't decrypt the API key here; if it's encrypted the factory
+        // will fall back to the platform env key which is correct for workflow-internal calls.
         temperature: 0.7,
+        maxTokens,
       });
 
-      const result = response.choices[0]?.message?.content || '';
+      const userContent = `${instruction}\n\nData to process:\n${JSON.stringify(data, null, 2)}\n\nProvide a clear, structured result.`;
 
-      return {
-        result,
-        processed: true,
-      };
+      const response = await llm.invoke([
+        new SystemMessage('You are a data processor within a workflow. Analyze and transform the provided data according to the instruction. Be concise and focused. Do not trigger new workflows or sessions.'),
+        new HumanMessage(userContent),
+      ]);
+
+      const result = typeof response.content === 'string'
+        ? response.content
+        : JSON.stringify(response.content);
+
+      return { result, processed: true };
     } catch (error: any) {
+      throw new BadRequestException(`Agent processing failed: ${error.message}`);
+    }
+  }
+
+  /**
+   * invoke_skill — call a local platform skill OR an external A2A-compatible agent.
+   *
+   * Local skill (by slug): returns the skill's full instructions as text payload.
+   * External A2A: sends a `tasks/send` JSON-RPC request to the target agent URL.
+   *
+   * Input params:
+   *   skillSlug {string?} Local platform skill slug (e.g. "web-research")
+   *   url       {string?} Base URL of the target A2A agent endpoint
+   *   message   {string}  The message/prompt to send (used for A2A calls)
+   *   agentId   {string?} Agent ID at the target URL (appended if not in url)
+   *   apiKey    {string?} Bearer token for authenticated A2A endpoints
+   *   contextId {string?} A2A session context ID
+   */
+  async invoke_skill(
+    props: {
+      skillSlug?: string;
+      url?: string;
+      message?: string;
+      agentId?: string;
+      apiKey?: string;
+      contextId?: string;
+    },
+    _metadata?: any,
+  ): Promise<{ text: string; taskId?: string; state?: string; artifacts?: any[] }> {
+    // ── Local skill lookup ─────────────────────────────────────────────────
+    if (props.skillSlug && !props.url) {
+      const skill = await this.skillService.get(props.skillSlug);
+      await this.skillService.incrementUsage(props.skillSlug);
+      return {
+        text: `# ${skill.name}\n\n${skill.instructions}`,
+        state: 'completed',
+      };
+    }
+
+    if (!props.url) {
+      throw new BadRequestException('invoke_skill: either skillSlug or url is required');
+    }
+
+    const { url, message = '', agentId, apiKey, contextId } = props;
+
+    // Build the target endpoint
+    const endpoint = agentId && !url.includes(agentId) ? `${url.replace(/\/$/, '')}/${agentId}` : url;
+
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (apiKey) headers['Authorization'] = `Bearer ${apiKey}`;
+
+    const taskId = `skill-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+
+    const rpcBody = {
+      jsonrpc: '2.0',
+      id: taskId,
+      method: 'tasks/send',
+      params: {
+        id: taskId,
+        message: {
+          role: 'user',
+          parts: [{ type: 'text', text: message }],
+          ...(contextId ? { contextId } : {}),
+        },
+      },
+    };
+
+    console.log(`invoke_skill: calling ${endpoint}`);
+
+    const response = await fetch(endpoint, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(rpcBody),
+      signal: AbortSignal.timeout(30_000),
+    });
+
+    if (!response.ok) {
       throw new BadRequestException(
-        `Agent processing failed: ${error.message}`,
+        `invoke_skill: remote agent returned ${response.status} ${response.statusText}`,
       );
     }
+
+    const rpcResponse = await response.json() as any;
+    if (rpcResponse.error) {
+      throw new BadRequestException(
+        `invoke_skill: remote agent error [${rpcResponse.error.code}] ${rpcResponse.error.message}`,
+      );
+    }
+
+    const task = rpcResponse.result;
+    const textPart = task?.status?.message?.parts?.find((p: any) => p.type === 'text');
+    const text = textPart?.text ?? JSON.stringify(task?.status?.message ?? task);
+
+    return {
+      text,
+      taskId: task?.id ?? taskId,
+      state: task?.status?.state ?? 'unknown',
+      artifacts: task?.artifacts,
+    };
   }
 }

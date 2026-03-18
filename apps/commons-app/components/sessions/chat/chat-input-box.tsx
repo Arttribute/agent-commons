@@ -1,43 +1,9 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
-import UserLockedTokens from "@/components/agents/user-locked-tokens";
+import { useRef, useEffect } from "react";
 import { ArrowUp, Loader2 } from "lucide-react";
-import { useAgentContext } from "@/context/AgentContext"; // Import useAgentContext
-
-function extractMessagesFromAgentResponse(data: any): any[] {
-  const messages: any = [];
-
-  // AI message
-  if (data?.content) {
-    messages.push({
-      role: "ai",
-      content: data.content,
-      metadata: data.metadata || {},
-      timestamp: new Date().toISOString(),
-    });
-  } else if (data?.data?.content) {
-    // Added this condition for nested content
-    messages.push({
-      role: "ai",
-      content: data.data.content,
-      metadata: data.metadata || {},
-      timestamp: new Date().toISOString(),
-    });
-  }
-
-  // Tool calls (if present)
-  if (Array.isArray(data.toolCalls) && data.toolCalls.length > 0) {
-    messages.push({
-      role: "tool",
-      content: JSON.stringify({ toolData: data }, null, 2),
-      metadata: {},
-      timestamp: new Date().toISOString(),
-    });
-  }
-  console.log("Extracted messages:", messages);
-  return messages;
-}
+import { useAgentContext } from "@/context/AgentContext";
+import { useAgentStream } from "@/hooks/use-agent-stream";
 
 export default function ChatInputBox({
   agentId,
@@ -52,217 +18,97 @@ export default function ChatInputBox({
   disabled?: boolean;
   onSessionCreated?: (sessionId: string) => void;
 }) {
-  const [loading, setLoading] = useState(false);
-  const [currentSessionId, setCurrentSessionId] = useState(sessionId);
-  const currentAIMessageRef = useRef<string>("");
+  const accumulatedRef = useRef("");
+  const { addMessage, updateStreamingMessage, finalizeStreamingMessage, inputText, setInputText } =
+    useAgentContext();
 
-  const { addMessage, updateStreamingMessage, finalizeStreamingMessage, inputText, setInputText } = useAgentContext();
+  const { stream, streaming } = useAgentStream(userId, {
+    onToken: (token) => {
+      accumulatedRef.current += token;
+      updateStreamingMessage(accumulatedRef.current);
+    },
+    onFinal: (payload) => {
+      const content = payload?.content ?? payload?.data?.content ?? "";
+      finalizeStreamingMessage(content, payload?.metadata);
+      if (payload?.sessionId && payload.sessionId !== sessionId) {
+        onSessionCreated?.(payload.sessionId);
+      }
+    },
+    onToolStart: (toolName) => {
+      addMessage({
+        role: "tool",
+        content: JSON.stringify({ type: "toolStart", toolName }, null, 2),
+        metadata: {},
+        timestamp: new Date().toISOString(),
+      });
+    },
+    onError: (message) => {
+      addMessage({
+        role: "system",
+        content: `Error: ${message}`,
+        timestamp: new Date().toISOString(),
+      });
+    },
+  });
 
-  // Use context input text for persistence across navigation
-  const input = inputText;
-  const setInput = setInputText;
-
-  useEffect(() => {
-    // set to lading if disabled is true
-    if (disabled) {
-      setLoading(true);
-    } else {
-      setLoading(false);
-    }
-  }, [disabled]);
-  useEffect(() => {
-    setCurrentSessionId(sessionId);
-  }, [sessionId]);
+  const isLoading = streaming || disabled;
 
   const handleSend = async () => {
-    if (!input.trim() || loading) return;
+    if (!inputText.trim() || isLoading) return;
 
-    setLoading(true);
-    const userMessage = input;
-    setInput("");
-    currentAIMessageRef.current = ""; // Clear previous AI message content
+    const userMessage = inputText;
+    setInputText("");
+    accumulatedRef.current = "";
 
-    // Add user message to UI immediately using addMessage
     addMessage({
       role: "human",
       content: userMessage,
       timestamp: new Date().toISOString(),
     });
 
-    try {
-      const response = await fetch("/api/agents/run", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-initiator": userId,
-        },
-        body: JSON.stringify({
-          agentId,
-          sessionId: currentSessionId,
-          messages: [{ role: "user", content: userMessage }],
-        }),
-      });
+    // Placeholder for the streaming AI message
+    addMessage({
+      role: "ai",
+      content: "",
+      metadata: {},
+      timestamp: new Date().toISOString(),
+      isStreaming: true,
+    });
 
-      if (!response.ok) {
-        throw new Error("Failed to send message");
-      }
-
-      const reader = response.body?.getReader();
-      if (!reader) {
-        throw new Error("Failed to get reader from response body");
-      }
-
-      const decoder = new TextDecoder();
-      let accumulatedContent = "";
-
-      // Add a temporary AI message to the state to be updated during streaming
-      addMessage({
-        role: "ai",
-        content: "",
-        metadata: {},
-        timestamp: new Date().toISOString(),
-        isStreaming: true,
-      });
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) {
-          break;
-        }
-
-        const chunk = decoder.decode(value, { stream: true });
-        const lines = chunk.split("\n").filter((line) => line.trim() !== "");
-
-        for (const line of lines) {
-          if (line.startsWith("data:")) {
-            const dataString = line.substring(5).trim();
-            try {
-              const parsedData = JSON.parse(dataString);
-              console.log("Parsed Data:", parsedData);
-
-              if (parsedData.type === "final") {
-                // Handle final message
-                const finalMessages = extractMessagesFromAgentResponse(
-                  parsedData.payload
-                );
-                // Finalize the streaming message with the final content and metadata
-                if (finalMessages[0]) {
-                  finalizeStreamingMessage(
-                    finalMessages[0].content,
-                    finalMessages[0].metadata
-                  );
-                }
-
-                // Stop loading immediately when message is complete
-                setLoading(false);
-
-                if (
-                  parsedData.payload.sessionId &&
-                  parsedData.payload.sessionId !== sessionId
-                ) {
-                  setCurrentSessionId(parsedData.payload.sessionId);
-                  // Navigate immediately to the session page
-                  onSessionCreated?.(parsedData.payload.sessionId);
-                }
-              } else if (parsedData.type === "tool") {
-                // Handle tool calls
-                addMessage({
-                  role: "tool",
-                  content: JSON.stringify(parsedData, null, 2),
-                  metadata: {},
-                  timestamp: new Date().toISOString(),
-                });
-              } else if (parsedData.type === "token") {
-                // Handle streaming text tokens
-                accumulatedContent += parsedData.content;
-                updateStreamingMessage(accumulatedContent);
-              }
-            } catch (jsonError) {
-              console.error(
-                "JSON parsing error:",
-                jsonError,
-                "for line:",
-                dataString
-              );
-            }
-          }
-        }
-      }
-    } catch (error) {
-      console.error("Error during streaming:", error);
-      addMessage({
-        role: "system",
-        content: `Error: ${error}`,
-        timestamp: new Date().toISOString(),
-      });
-    } finally {
-      setLoading(false);
-    }
+    await stream({
+      agentId,
+      sessionId,
+      messages: [{ role: "user", content: userMessage }],
+    });
   };
 
   return (
-    <div className="rounded-xl bg-white  border border-zinc-700">
+    <div className="rounded-xl bg-background border border-border shadow-sm">
       <textarea
         placeholder="Ask me something..."
-        className="text-sm w-full h-16 p-2 rounded-xl resize-none focus:outline-none focus:border-transparent"
-        rows={4}
-        value={input}
-        onChange={(e) => setInput(e.target.value)}
+        className="text-sm w-full h-16 p-3 rounded-xl resize-none focus:outline-none bg-transparent placeholder:text-muted-foreground/60"
+        value={inputText}
+        onChange={(e) => setInputText(e.target.value)}
         onKeyDown={(e) => {
           if (e.key === "Enter" && !e.shiftKey) {
             e.preventDefault();
             handleSend();
           }
         }}
-        onFocus={() => {
-          // Handle focus event
-        }}
-        onBlur={() => {
-          // Handle blur event
-        }}
-        onPaste={(e) => {
-          // Handle paste event
-          const pastedText = e.clipboardData.getData("text");
-          // Do something with the pasted text
-        }}
-        onCopy={(e) => {
-          // Handle copy event
-          const selectedText = window.getSelection()?.toString();
-          if (selectedText) {
-            e.clipboardData.setData("text/plain", selectedText);
-            e.preventDefault();
-          }
-        }}
-        onCut={(e) => {
-          // Handle cut event
-          const selectedText = window.getSelection()?.toString();
-          if (selectedText) {
-            e.clipboardData.setData("text/plain", selectedText);
-            e.preventDefault();
-          }
-        }}
-        onSelect={() => {
-          // Handle select event
-        }}
+        disabled={isLoading}
       />
-      <div className="flex justify-between items-center m-1">
-        <div className="flex items-center ml-auto gap-2">
-          <UserLockedTokens />
-          {!loading && (
-            <button
-              onClick={handleSend}
-              className=" bg-zinc-700 rounded-lg hover:bg-zinc-800 p-1.5 text-white "
-              disabled={!input.trim()}
-            >
-              <ArrowUp className="h-4 w-4 text-white" />
-            </button>
+      <div className="flex justify-end items-center px-2 pb-2">
+        <button
+          onClick={handleSend}
+          disabled={!inputText.trim() || !!isLoading}
+          className="bg-foreground rounded-lg p-1.5 text-background transition-opacity disabled:opacity-40 hover:opacity-80"
+        >
+          {isLoading ? (
+            <Loader2 className="h-4 w-4 animate-spin" />
+          ) : (
+            <ArrowUp className="h-4 w-4" />
           )}
-          {loading && (
-            <button disabled className=" bg-zinc-700 rounded-lg p-1.5">
-              <Loader2 className="h-4 w-4 text-white animate-spin" />
-            </button>
-          )}
-        </div>
+        </button>
       </div>
     </div>
   );

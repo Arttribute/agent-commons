@@ -1,124 +1,148 @@
 "use client";
 
-import { useState } from "react";
-import { Textarea } from "@/components/ui/textarea";
-import { Button } from "@/components/ui/button";
+import { useRef, useState, useCallback } from "react";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { parseCustomMarkdown } from "@/lib/parseMarkdown";
-import LoadingChat from "./LoadingChat";
-import { Loader2 } from "lucide-react";
-import RandomPixelAvatar from "@/components/account/random-avatar";
+import { ArrowUp, Loader2 } from "lucide-react";
+import { useAgentStream } from "@/hooks/use-agent-stream";
+import AgentOutput from "@/components/sessions/chat/agent-output";
+import InitiatorMessage from "@/components/sessions/chat/initiator-message";
 
 interface Message {
-  role: "system" | "user" | "assistant";
+  role: "user" | "ai";
   content: string;
+  isStreaming?: boolean;
 }
 
 interface InteractionInterfaceProps {
-  agentId: string; // the agent to talk to
+  agentId: string;
+  initiator?: string; // wallet address of the current user
+  sessionId?: string;
 }
 
-export function InteractionInterface({ agentId }: InteractionInterfaceProps) {
+export function InteractionInterface({
+  agentId,
+  initiator = "",
+  sessionId,
+}: InteractionInterfaceProps) {
   const [input, setInput] = useState("");
   const [messages, setMessages] = useState<Message[]>([
-    {
-      role: "assistant",
-      content: "Hello! How can I help you today?",
-    },
+    { role: "ai", content: "Hello! How can I help you today?" },
   ]);
-  const [isSending, setIsSending] = useState(false);
+  const accumulatedRef = useRef("");
+  const bottomRef = useRef<HTMLDivElement>(null);
 
-  // Submit user’s message to the agent
-  async function handleSend() {
-    if (!input.trim()) return;
-    const userMessage: Message = { role: "user", content: input.trim() };
-    setMessages((prev) => [...prev, userMessage]);
-    setInput("");
-    setIsSending(true);
+  const scrollToBottom = useCallback(() => {
+    bottomRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+  }, []);
 
-    try {
-      const res = await fetch(`/api/agents/agent?agentId=${agentId}`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          agentId,
-          messages: [userMessage],
-        }),
+  const { stream, streaming } = useAgentStream(initiator, {
+    onToken: (token) => {
+      accumulatedRef.current += token;
+      const accumulated = accumulatedRef.current;
+      setMessages((prev) => {
+        const last = prev[prev.length - 1];
+        if (last?.isStreaming) {
+          return [...prev.slice(0, -1), { ...last, content: accumulated }];
+        }
+        return prev;
       });
-      if (!res.ok) {
-        const errorData = await res.json();
-        throw new Error(errorData.message || "Failed to run agent.");
-      }
-      const data = await res.json();
-
-      // data.data is the final message from the agent, e.g. { role: "assistant", content: "..." }
-      const agentResponse = data.data;
-      setMessages((prev) => [...prev, agentResponse]);
-    } catch (err: any) {
-      console.error("Error running agent:", err);
+      scrollToBottom();
+    },
+    onFinal: (payload) => {
+      const content = payload?.content ?? payload?.data?.content ?? accumulatedRef.current;
+      setMessages((prev) => {
+        const last = prev[prev.length - 1];
+        if (last?.isStreaming) {
+          return [...prev.slice(0, -1), { role: "ai", content, isStreaming: false }];
+        }
+        return prev;
+      });
+      scrollToBottom();
+    },
+    onError: (message) => {
       setMessages((prev) => [
-        ...prev,
-        {
-          role: "assistant",
-          content:
-            err.message || "Sorry, there was an error running the agent.",
-        },
+        ...prev.filter((m) => !m.isStreaming),
+        { role: "ai", content: `Error: ${message}` },
       ]);
-    } finally {
-      setIsSending(false);
-    }
-  }
+    },
+  });
+
+  const handleSend = async () => {
+    if (!input.trim() || streaming) return;
+
+    const userMessage = input.trim();
+    setInput("");
+    accumulatedRef.current = "";
+
+    setMessages((prev) => [
+      ...prev,
+      { role: "user", content: userMessage },
+      { role: "ai", content: "", isStreaming: true },
+    ]);
+
+    setTimeout(scrollToBottom, 50);
+
+    await stream({
+      agentId,
+      sessionId,
+      messages: [{ role: "user", content: userMessage }],
+    });
+  };
 
   return (
-    <div className="space-y-2 rounded-lg bg-gray-100 p-12 h-[90vh] flex flex-col">
-      <ScrollArea className="flex-1 mb-4 p-4 rounded space-y-4">
-        {messages.map((msg, idx) => {
-          // Convert message content to HTML
-          const parsedHtml = parseCustomMarkdown(msg.content);
-
-          return (
-            <div key={idx} className="text-sm text-gray-800 mb-2">
-              <div className="mb-1 font-semibold capitalize">{msg.role}:</div>
-              {/* 
-                We use dangerouslySetInnerHTML to render our HTML. 
-                Make sure you trust the source or sanitize in production. 
-              */}
-              <div
-                className="whitespace-pre-wrap leading-relaxed"
-                dangerouslySetInnerHTML={{ __html: parsedHtml }}
+    <div className="flex flex-col h-full rounded-xl bg-muted/30 border border-border overflow-hidden">
+      <ScrollArea className="flex-1 p-4">
+        <div className="space-y-4 max-w-2xl mx-auto pb-4">
+          {messages.map((msg, idx) => {
+            if (msg.role === "user") {
+              return (
+                <InitiatorMessage
+                  key={idx}
+                  message={msg.content}
+                  timestamp={new Date().toISOString()}
+                />
+              );
+            }
+            return (
+              <AgentOutput
+                key={msg.isStreaming ? `streaming-${idx}` : idx}
+                content={msg.content}
+                isStreaming={msg.isStreaming}
               />
-              {isSending && idx === messages.length - 1 && (
-                <div className="flex justify-center items-center">
-                  <LoadingChat />
-                </div>
-              )}
-            </div>
-          );
-        })}
+            );
+          })}
+          <div ref={bottomRef} />
+        </div>
       </ScrollArea>
 
-      <div>
-        <Textarea
-          placeholder="Type your message here..."
-          className="w-full"
-          disabled={isSending}
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-        />
-        <Button
-          type="submit"
-          className="w-full mt-2"
-          onClick={handleSend}
-          disabled={isSending}
-        >
-          {isSending ? (
-            <>
-              Sending... <Loader2 className="w-4 h-4 animate-spin" />
-            </>
-          ) : (
-            "Send"
-          )}
-        </Button>
+      <div className="p-3 border-t border-border bg-background">
+        <div className="flex gap-2 items-end rounded-xl border border-border bg-background shadow-sm px-3 py-2">
+          <textarea
+            placeholder="Ask me something..."
+            className="flex-1 text-sm resize-none focus:outline-none bg-transparent placeholder:text-muted-foreground/60 min-h-[36px] max-h-32"
+            value={input}
+            rows={1}
+            onChange={(e) => setInput(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && !e.shiftKey) {
+                e.preventDefault();
+                handleSend();
+              }
+            }}
+            disabled={streaming}
+          />
+          <button
+            onClick={handleSend}
+            disabled={!input.trim() || streaming}
+            className="bg-foreground rounded-lg p-1.5 text-background transition-opacity disabled:opacity-40 hover:opacity-80 shrink-0"
+          >
+            {streaming ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <ArrowUp className="h-4 w-4" />
+            )}
+          </button>
+        </div>
       </div>
     </div>
   );

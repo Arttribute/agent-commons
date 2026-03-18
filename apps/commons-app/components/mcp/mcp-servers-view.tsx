@@ -135,7 +135,7 @@ export function McpServersView({ ownerId, ownerType }: McpServersViewProps) {
       <div className="flex flex-col gap-4">
         <div className="flex items-center gap-4">
           <div className="relative flex-1 max-w-md">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             <Input
               placeholder="Search MCP servers..."
               value={searchQuery}
@@ -147,7 +147,7 @@ export function McpServersView({ ownerId, ownerType }: McpServersViewProps) {
           <Tabs
             value={viewFilter}
             onValueChange={(v) => setViewFilter(v as typeof viewFilter)}
-            className="border border-gray-400 rounded-md bg-gray-200"
+            className="border border-border rounded-md bg-muted"
           >
             <TabsList>
               <TabsTrigger value="all">All</TabsTrigger>
@@ -171,11 +171,11 @@ export function McpServersView({ ownerId, ownerType }: McpServersViewProps) {
       {/* Servers Grid */}
       {loading ? (
         <div className="flex items-center justify-center h-64">
-          <Loader2 className="h-8 w-8 animate-spin text-gray-400" />
+          <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
         </div>
       ) : filteredServers.length === 0 ? (
         <div className="text-center py-12">
-          <p className="text-gray-500 mb-4">
+          <p className="text-muted-foreground mb-4">
             {searchQuery || viewFilter !== "all"
               ? "No MCP servers found matching your filters"
               : "No MCP servers configured yet"}

@@ -7,6 +7,7 @@ import {
   WorkflowEdge,
 } from "@/types/workflow";
 import { validateDAG, ValidationResult } from "./workflow-validator";
+import { commons } from "@/lib/commons";
 
 interface HistoryState {
   nodes: ReactFlowNode[];
@@ -315,16 +316,13 @@ export const useWorkflowStore = create<WorkflowEditorState>((set, get) => ({
       const workflow = data.data;
       const definition = workflow.definition || { nodes: [], edges: [] };
 
-      // Fetch all tools (both static and user tools) to restore schemas
-      const [staticToolsRes, userToolsRes] = await Promise.all([
-        fetch(`/api/tools/static`),
-        fetch(`/api/tools?ownerType=platform`), // Fetch all available tools
+      // Fetch all tools (both static and platform tools) to restore schemas
+      const [staticToolsData, platformToolsData] = await Promise.all([
+        commons.tools.listStatic().catch(() => ({ data: [] })),
+        commons.tools.list({ ownerType: 'platform' }).catch(() => ({ data: [] })),
       ]);
 
-      const staticToolsData = staticToolsRes.ok ? await staticToolsRes.json() : { data: [] };
-      const userToolsData = userToolsRes.ok ? await userToolsRes.json() : { data: [] };
-
-      const allTools = [...(staticToolsData.data || []), ...(userToolsData.data || [])];
+      const allTools = [...(staticToolsData.data || []), ...(platformToolsData.data || [])];
       const toolMap = new Map(allTools.map((tool: any) => [tool.toolId, tool]));
 
       // Convert backend nodes to React Flow nodes

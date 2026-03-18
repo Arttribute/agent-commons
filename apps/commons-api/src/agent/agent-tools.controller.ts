@@ -6,9 +6,10 @@ import {
   forwardRef,
   Inject,
   Post,
+  UseGuards,
 } from '@nestjs/common';
+import { RateLimitGuard, RateLimit } from '~/modules/auth';
 import { ChatCompletionMessageToolCall } from 'openai/resources/index.mjs';
-import { merge } from 'lodash';
 
 import { AgentService } from './agent.service';
 import { CommonToolService } from '~/tool/tools/common-tool.service';
@@ -52,6 +53,8 @@ export class AgentToolsController {
   ) {}
 
   @Post('tools')
+  @UseGuards(RateLimitGuard)
+  @RateLimit({ limit: 200, windowMs: 60_000, keyStrategy: 'agent' })
   async makeAgentToolCall(
     @TypedBody()
     body: {
@@ -75,10 +78,6 @@ export class AgentToolsController {
       console.log('Agent not found:', agentId);
       throw new BadRequestException(`Agent "${agentId}" not found`);
     }
-
-    // 2) Merge the agent's private key into metadata if needed
-    const privateKey = this.agent.seedToPrivateKey(agent.wallet.seed);
-    merge(metadata, { privateKey });
 
     console.log('Tool Call', { functionName, args, metadata });
 

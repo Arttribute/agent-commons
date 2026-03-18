@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { Loader2, X } from "lucide-react";
+import { Loader2 } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -23,6 +23,10 @@ import {
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Checkbox } from "@/components/ui/checkbox";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { useAgents } from "@/hooks/use-agents";
+import { useWorkflows } from "@/hooks/use-workflows";
+import { commons } from "@/lib/commons";
+import type { Session } from "@agent-commons/sdk";
 
 interface CreateTaskDialogProps {
   open: boolean;
@@ -32,6 +36,23 @@ interface CreateTaskDialogProps {
   onTaskCreated?: () => void;
 }
 
+const EMPTY_FORM = (preSelectedAgentId?: string) => ({
+  title: "",
+  description: "",
+  agentId: preSelectedAgentId || "",
+  sessionId: "new-session",
+  executionMode: "single" as "single" | "workflow" | "sequential",
+  workflowId: "",
+  priority: 0,
+  tools: [] as string[],
+  toolConstraintType: "none" as "hard" | "soft" | "none",
+  toolInstructions: "",
+  isRecurring: false,
+  cronExpression: "",
+  recurringSessionMode: "same" as "same" | "new",
+  scheduledFor: "",
+});
+
 export function CreateTaskDialog({
   open,
   onClose,
@@ -40,33 +61,16 @@ export function CreateTaskDialog({
   onTaskCreated,
 }: CreateTaskDialogProps) {
   const [loading, setLoading] = useState(false);
-  const [agents, setAgents] = useState<any[]>([]);
-  const [sessions, setSessions] = useState<any[]>([]);
-  const [workflows, setWorkflows] = useState<any[]>([]);
+  const [sessions, setSessions] = useState<Session[]>([]);
   const [tools, setTools] = useState<any[]>([]);
+  const [formData, setFormData] = useState(EMPTY_FORM(preSelectedAgentId));
 
-  const [formData, setFormData] = useState({
-    title: "",
-    description: "",
-    agentId: preSelectedAgentId || "",
-    sessionId: "new-session",
-    executionMode: "single" as "single" | "workflow" | "sequential",
-    workflowId: "",
-    priority: 0,
-    tools: [] as string[],
-    toolConstraintType: "none" as "hard" | "soft" | "none",
-    toolInstructions: "",
-    isRecurring: false,
-    cronExpression: "",
-    recurringSessionMode: "same" as "same" | "new",
-    scheduledFor: "",
-  });
+  const { agents } = useAgents(userAddress);
+  const { workflows } = useWorkflows(userAddress, "user");
 
   useEffect(() => {
     if (open) {
-      fetchAgents();
-      fetchWorkflows();
-      fetchTools();
+      commons.tools.list().then((res) => setTools(res.data)).catch(() => {});
       if (preSelectedAgentId) {
         setFormData((prev) => ({ ...prev, agentId: preSelectedAgentId }));
       }
@@ -74,68 +78,12 @@ export function CreateTaskDialog({
   }, [open, userAddress, preSelectedAgentId]);
 
   useEffect(() => {
-    if (formData.agentId) {
-      fetchSessions(formData.agentId);
-    }
-  }, [formData.agentId]);
-
-  const fetchAgents = async () => {
-    try {
-      const response = await fetch(`/api/agents?owner=${userAddress}`);
-      if (!response.ok) {
-        console.error("Failed to fetch agents:", response.statusText);
-        return;
-      }
-      const data = await response.json();
-      setAgents(data.data || []);
-    } catch (error) {
-      console.error("Failed to fetch agents:", error);
-    }
-  };
-
-  const fetchSessions = async (agentId: string) => {
-    try {
-      const response = await fetch(
-        `/api/sessions?agentId=${agentId}&initiator=${userAddress}`
-      );
-      if (!response.ok) {
-        console.error("Failed to fetch sessions:", response.statusText);
-        return;
-      }
-      const data = await response.json();
-      setSessions(data.data || []);
-    } catch (error) {
-      console.error("Failed to fetch sessions:", error);
-    }
-  };
-
-  const fetchWorkflows = async () => {
-    try {
-      const response = await fetch(`/api/workflows?userAddress=${userAddress}`);
-      if (!response.ok) {
-        console.error("Failed to fetch workflows:", response.statusText);
-        return;
-      }
-      const data = await response.json();
-      setWorkflows(data.data || []);
-    } catch (error) {
-      console.error("Failed to fetch workflows:", error);
-    }
-  };
-
-  const fetchTools = async () => {
-    try {
-      const response = await fetch(`/api/tools?userAddress=${userAddress}`);
-      if (!response.ok) {
-        console.error("Failed to fetch tools:", response.statusText);
-        return;
-      }
-      const data = await response.json();
-      setTools(data.data || []);
-    } catch (error) {
-      console.error("Failed to fetch tools:", error);
-    }
-  };
+    if (!formData.agentId) return;
+    commons.sessions
+      .list(formData.agentId, userAddress)
+      .then((res) => setSessions(res.data))
+      .catch(() => setSessions([]));
+  }, [formData.agentId, userAddress]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -143,62 +91,28 @@ export function CreateTaskDialog({
 
     try {
       let sessionId = formData.sessionId;
-      // Create new session if not selected or "new-session" is selected
       if (!sessionId || sessionId === "new-session") {
-        const sessionResponse = await fetch("/api/sessions", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            agentId: formData.agentId,
-            initiator: userAddress,
-            title: `Task: ${formData.title}`,
-          }),
+        const res = await commons.sessions.create({
+          agentId: formData.agentId,
+          initiator: userAddress,
+          title: `Task: ${formData.title}`,
         });
-        const sessionData = await sessionResponse.json();
-        sessionId = sessionData.data.sessionId;
+        sessionId = res.data.sessionId;
       }
 
-      const taskPayload = {
+      await commons.tasks.create({
         ...formData,
         sessionId,
         createdBy: userAddress,
-        createdByType: "user" as const,
+        createdByType: "user",
         scheduledFor: formData.scheduledFor
           ? new Date(formData.scheduledFor)
           : undefined,
-      };
-
-      const response = await fetch("/api/v1/tasks", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(taskPayload),
       });
 
-      if (!response.ok) throw new Error("Failed to create task");
-
-      // Reset form
-      setFormData({
-        title: "",
-        description: "",
-        agentId: preSelectedAgentId || "",
-        sessionId: "new-session",
-        executionMode: "single",
-        workflowId: "",
-        priority: 0,
-        tools: [],
-        toolConstraintType: "none",
-        toolInstructions: "",
-        isRecurring: false,
-        cronExpression: "",
-        recurringSessionMode: "same",
-        scheduledFor: "",
-      });
-
+      setFormData(EMPTY_FORM(preSelectedAgentId));
       onTaskCreated?.();
       onClose();
-    } catch (error) {
-      console.error("Error creating task:", error);
-      alert("Failed to create task. Please try again.");
     } finally {
       setLoading(false);
     }
@@ -336,10 +250,7 @@ export function CreateTaskDialog({
                 </div>
                 <div className="flex items-center space-x-2 border p-3 rounded-md">
                   <RadioGroupItem value="sequential" id="sequential" />
-                  <Label
-                    htmlFor="sequential"
-                    className="font-normal cursor-pointer"
-                  >
+                  <Label htmlFor="sequential" className="font-normal cursor-pointer">
                     Sequential
                   </Label>
                 </div>
@@ -414,19 +325,12 @@ export function CreateTaskDialog({
                           id={tool.toolId}
                           checked={formData.tools.includes(tool.toolId)}
                           onCheckedChange={(checked) => {
-                            if (checked) {
-                              setFormData({
-                                ...formData,
-                                tools: [...formData.tools, tool.toolId],
-                              });
-                            } else {
-                              setFormData({
-                                ...formData,
-                                tools: formData.tools.filter(
-                                  (t) => t !== tool.toolId
-                                ),
-                              });
-                            }
+                            setFormData({
+                              ...formData,
+                              tools: checked
+                                ? [...formData.tools, tool.toolId]
+                                : formData.tools.filter((t) => t !== tool.toolId),
+                            });
                           }}
                         />
                         <Label
@@ -446,10 +350,7 @@ export function CreateTaskDialog({
                     id="toolInstructions"
                     value={formData.toolInstructions}
                     onChange={(e) =>
-                      setFormData({
-                        ...formData,
-                        toolInstructions: e.target.value,
-                      })
+                      setFormData({ ...formData, toolInstructions: e.target.value })
                     }
                     placeholder="e.g., If validation fails, use the validateData tool"
                     rows={2}
@@ -481,10 +382,7 @@ export function CreateTaskDialog({
                       id="cronExpression"
                       value={formData.cronExpression}
                       onChange={(e) =>
-                        setFormData({
-                          ...formData,
-                          cronExpression: e.target.value,
-                        })
+                        setFormData({ ...formData, cronExpression: e.target.value })
                       }
                       placeholder="e.g., 0 9 * * 1 (Every Monday at 9 AM)"
                     />

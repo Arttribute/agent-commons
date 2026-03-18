@@ -16,14 +16,14 @@ export default function TaskCard({ task }: { task: ToolSnapshot }) {
   return (
     <Dialog>
       <DialogTrigger asChild>
-        <div className="bg-white border rounded-lg shadow-lg p-4">
+        <div className="bg-background border border-border rounded-lg shadow-sm p-4 hover:shadow-md transition-shadow">
           <p className="font-semibold">{task.name}</p>
 
-          <p className="text-sm text-gray-500 runcate w-full overflow-hidden whitespace-nowrap text-ellipsis">
+          <p className="text-sm text-muted-foreground truncate w-full overflow-hidden whitespace-nowrap text-ellipsis">
             {task.description}
           </p>
           <div className="flex justify-between items-center mt-4">
-            <div className="flex items-center text-gray-500">
+            <div className="flex items-center text-muted-foreground">
               <ChartNoAxesColumn className="h-4 w-4" />
               <p className="text-sm ml-1">{task.calls}</p>
             </div>

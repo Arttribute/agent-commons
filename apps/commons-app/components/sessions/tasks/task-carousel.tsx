@@ -152,8 +152,8 @@ export default function TaskCarousel({ tasks }: TaskCarouselProps) {
 
   return (
     <div className="h-full flex flex-col ">
-      <div className="border  border-gray-400 rounded-lg m-2">
-        <div className="flex items-center justify-between rounded-t-lg items-start border-b border-gray-400 p-2 bg-zinc-100">
+      <div className="border  border-border rounded-lg m-2">
+        <div className="flex items-center justify-between rounded-t-lg items-start border-b border-border p-2 bg-zinc-100">
           <h2 className="text-xs font-semibold">{currentTask.title}</h2>
           <Badge
             variant={
@@ -164,7 +164,7 @@ export default function TaskCarousel({ tasks }: TaskCarouselProps) {
             {currentTask.status}
           </Badge>
         </div>
-        <ScrollArea className="h-[420px] p-4 bg-gray-50">
+        <ScrollArea className="h-[420px] p-4 bg-muted/50">
           <p className="text-sm text-muted-foreground mb-4">
             {currentTask.description}
           </p>
