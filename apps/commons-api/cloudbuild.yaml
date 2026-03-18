@@ -1,6 +1,5 @@
 steps:
   - name: 'node:22'
-    dir: './apps/commons-api'
     entrypoint: 'bash'
     env:
       - 'PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true'
@@ -10,7 +9,12 @@ steps:
       - |
         npm install -g pnpm
         pnpm install
-        pnpm build
+        pnpm --filter commons-api build
+        # Deploy prod deps from lockfile into a standalone directory
+        pnpm --filter commons-api deploy --prod --ignore-scripts apps/commons-api/.deploy
+        # Copy compiled dist into the deploy package
+        cp -r apps/commons-api/dist apps/commons-api/.deploy/dist
+
   - name: 'gcr.io/cloud-builders/docker'
     dir: './apps/commons-api'
     args:
@@ -53,6 +57,3 @@ steps:
       - --image=europe-west1-docker.pkg.dev/$PROJECT_ID/commons/commons-api:prod
       - --memory=2Gi
     timeout: 1800s
-# options:
-#   machineType: "E2_MEDIUM"
-

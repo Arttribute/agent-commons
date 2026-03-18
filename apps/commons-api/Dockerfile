@@ -1,4 +1,4 @@
-FROM node:22.11.0-bookworm-slim AS base
+FROM node:22.11.0-bookworm-slim
 
 # Install Chromium and system libraries needed at runtime
 RUN apt-get update && apt-get install -y \
@@ -32,11 +32,8 @@ RUN apt-get update && apt-get install -y \
     --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
-FROM base AS builder
-
 WORKDIR /app
 
-# Use system Chromium; skip downloading Chrome/Firefox via postinstall
 ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true \
     PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium \
     CHROME_PATH=/usr/bin/chromium \
@@ -44,16 +41,9 @@ ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true \
 
 RUN mkdir -p /tmp/.cache && chmod 777 /tmp/.cache
 
-RUN npm install -g corepack@latest
-RUN corepack enable pnpm
-
-COPY package*.json ./
-COPY tsconfig*.json ./
-COPY ./dist ./dist/
-
-# --ignore-scripts avoids heavy postinstall downloads (onnxruntime GPU ~400MB, puppeteer Chrome)
-# Native modules that need binaries use pre-built companion packages or JS fallbacks
-RUN pnpm install --prod --no-frozen-lockfile --ignore-scripts
+# node_modules and dist are pre-built and deployed by pnpm deploy in cloudbuild.yaml
+COPY .deploy/node_modules ./node_modules
+COPY .deploy/dist ./dist
 
 EXPOSE 8080
 
