@@ -14,11 +14,11 @@ import {
 import { MemoryService, MemoryType } from './memory.service';
 
 class CreateMemoryDto {
-  agentId: string;
+  agentId!: string;
   sessionId?: string;
   memoryType?: MemoryType;
-  content: string;
-  summary: string;
+  content!: string;
+  summary!: string;
   importanceScore?: number;
   tags?: string[];
 }

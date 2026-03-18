@@ -37,7 +37,7 @@ export class AgentController {
     @TypedBody()
     body: Except<
       InferInsertModel<typeof schema.agent>,
-      'wallet' | 'agentId' | 'createdAt'
+      'agentId' | 'createdAt'
     > & { commonsOwned?: boolean },
   ) {
     const agent = await this.agent.createAgent({
