@@ -1,13 +1,15 @@
 {
   "name": "@agent-commons/cli",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Agent Commons CLI — chat, run, and manage agents from your terminal",
   "license": "MIT",
   "bin": {
     "agc": "./dist/bin.js"
   },
   "main": "./dist/bin.js",
-  "files": ["dist"],
+  "files": [
+    "dist"
+  ],
   "scripts": {
     "build": "tsup",
     "dev": "tsup --watch",
@@ -24,7 +26,9 @@
     "typescript": "^5.7.2",
     "@types/node": "^22.10.2"
   },
-  "engines": { "node": ">=18" },
+  "engines": {
+    "node": ">=18"
+  },
   "publishConfig": {
     "access": "public"
   }
