@@ -1,6 +1,6 @@
 FROM node:22.11.0-bookworm-slim AS base
 
-# Install Chromium and dependencies for Puppeteer
+# Install Chromium and system libraries needed at runtime
 RUN apt-get update && apt-get install -y \
     chromium \
     chromium-sandbox \
@@ -34,15 +34,14 @@ RUN apt-get update && apt-get install -y \
 
 FROM base AS builder
 
-WORKDIR /
+WORKDIR /app
 
-# Set up environment variables for Puppeteer
+# Use system Chromium; skip downloading Chrome/Firefox via postinstall
 ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true \
     PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium \
     CHROME_PATH=/usr/bin/chromium \
     PUPPETEER_CACHE_DIR=/tmp/.cache
 
-# Create cache directory with proper permissions
 RUN mkdir -p /tmp/.cache && chmod 777 /tmp/.cache
 
 RUN npm install -g corepack@latest
@@ -52,6 +51,8 @@ COPY package*.json ./
 COPY tsconfig*.json ./
 COPY ./dist ./dist/
 
+# --ignore-scripts avoids heavy postinstall downloads (onnxruntime GPU ~400MB, puppeteer Chrome)
+# Native modules that need binaries use pre-built companion packages or JS fallbacks
 RUN pnpm install --prod --no-frozen-lockfile --ignore-scripts
 
 EXPOSE 8080
