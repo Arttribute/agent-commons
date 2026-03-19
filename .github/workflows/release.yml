@@ -11,105 +11,111 @@ concurrency:
 
 jobs:
   release:
+    name: Release
     runs-on: ubuntu-latest
+
+    permissions:
+      contents: write
+      pull-requests: write
+
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
         with:
-          fetch-depth: 0   # full history needed for git describe / diff
+          fetch-depth: 0
           token: ${{ secrets.GH_PAT }}
 
-      - uses: pnpm/action-setup@v4
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
         with:
           version: 9.15.3
 
-      - uses: actions/setup-node@v4
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
         with:
           node-version: 22
           registry-url: https://registry.npmjs.org
 
-      - id: pnpm-cache
+      - name: Get pnpm store directory
+        id: pnpm-cache
         run: echo "store=$(pnpm store path)" >> $GITHUB_OUTPUT
 
-      - uses: actions/cache@v4
+      - name: Cache pnpm store
+        uses: actions/cache@v4
         with:
           path: ${{ steps.pnpm-cache.outputs.store }}
           key: pnpm-store-${{ runner.os }}-${{ hashFiles('**/pnpm-lock.yaml') }}
           restore-keys: pnpm-store-${{ runner.os }}-
 
-      - run: pnpm install --no-frozen-lockfile
+      - name: Install dependencies
+        run: pnpm install --no-frozen-lockfile
 
       - name: Build packages
         run: pnpm --filter './packages/*' run build
 
-      - name: Auto-generate patch changeset if needed
+      - name: Auto-generate patch changeset when packages changed without one
         shell: bash
         run: |
-          # Avoid infinite loop: skip if this is the version bump commit
           COMMIT_MSG=$(git log -1 --pretty=%B)
           if echo "$COMMIT_MSG" | grep -q "chore: version packages"; then
-            echo "Version commit detected — skipping auto-patch."
+            echo "Version commit — skipping auto-patch to allow publish"
             exit 0
           fi
 
-          # Skip if a changeset was already written manually
           EXISTING=$(find .changeset -maxdepth 1 -name '*.md' ! -name 'README.md' | wc -l)
           if [ "$EXISTING" -gt "0" ]; then
-            echo "Manual changeset found — skipping auto-patch."
+            echo "Changesets already present — skipping auto-patch"
             exit 0
           fi
 
-          # Check if any packages/ files changed since the last git tag
           LAST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || git rev-list --max-parents=0 HEAD)
-          CHANGED=$(git diff --name-only "$LAST_TAG" HEAD -- packages/ ':(exclude)**/node_modules/**' | head -1)
+          CHANGED=$(git diff --name-only "$LAST_TAG" HEAD -- packages/ | grep -v 'node_modules' | head -1)
 
           if [ -z "$CHANGED" ]; then
-            echo "No package changes since $LAST_TAG — skipping auto-patch."
+            echo "No package source changes since last tag — skipping auto-patch"
             exit 0
           fi
 
-          echo "Package changes detected since $LAST_TAG. Generating patch changeset..."
+          echo "Package changes detected since $LAST_TAG — generating auto patch changeset"
 
-          # Map changed directories to package names and write a changeset
+          CHANGED_FILES=$(git diff --name-only "$LAST_TAG" HEAD -- packages/ | grep -v 'node_modules')
+
           node -e "
-            const { execSync } = require('child_process');
             const fs = require('fs');
             const crypto = require('crypto');
+            const changedFiles = \`$CHANGED_FILES\`.trim().split('\n').filter(Boolean);
 
             const dirToPackage = {
               'packages/commons-sdk': '@agent-commons/sdk',
               'packages/agc-cli':     '@agent-commons/cli',
             };
 
-            const lastTag = '$LAST_TAG';
-            const changedFiles = execSync(
-              \`git diff --name-only \${lastTag} HEAD -- packages/\`
-            ).toString().trim().split('\n').filter(Boolean);
-
-            const changedPackages = new Set();
+            const changed = new Set();
             for (const file of changedFiles) {
               for (const [dir, pkg] of Object.entries(dirToPackage)) {
-                if (file.startsWith(dir + '/')) changedPackages.add(pkg);
+                if (file.startsWith(dir + '/') || file === dir) {
+                  changed.add(pkg);
+                  break;
+                }
               }
             }
 
-            if (changedPackages.size === 0) {
-              console.log('No mapped packages changed.');
+            if (changed.size === 0) {
+              console.log('No matching packages — skipping changeset');
               process.exit(0);
             }
 
-            const pkgLines = [...changedPackages].map(p => \`'\${p}': patch\`).join('\n');
             const id = crypto.randomBytes(4).toString('hex');
-            const content = \`---\n\${pkgLines}\n---\n\nAutomated patch release.\n\`;
-            const filename = \`.changeset/auto-\${id}.md\`;
-            fs.writeFileSync(filename, content);
-            console.log('Wrote', filename, 'for:', [...changedPackages].join(', '));
+            const frontmatter = [...changed].map(p => \`'\${p}': patch\`).join('\n');
+            const content = \`---\n\${frontmatter}\n---\n\nAuto patch release\n\`;
+            fs.writeFileSync(\`.changeset/auto-\${id}.md\`, content);
+            console.log('Created .changeset/auto-' + id + '.md for: ' + [...changed].join(', '));
           "
 
-      - name: Version and publish
+      - name: Create Release PR or Publish
         uses: changesets/action@v1
         with:
           publish: pnpm release
-          version: pnpm version-packages
           title: "chore: version packages"
           commit: "chore: version packages"
         env:
