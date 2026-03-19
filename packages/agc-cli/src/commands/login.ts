@@ -42,15 +42,21 @@ export function loginCommand(): Command {
           ? opts.apiUrl
           : (await prompt(`API URL [${current.apiUrl ?? DEFAULT_API_URL}]: `)) || (current.apiUrl ?? DEFAULT_API_URL);
 
+        // Derive the commons-app URL from the API URL
+        const appUrl = apiUrl.includes('localhost')
+          ? 'http://localhost:3000'
+          : apiUrl.replace(/\/api$/, '').replace('api.', '').replace(':3001', ':3000');
+
         let apiKey = opts.apiKey;
         if (!apiKey) {
-          apiKey = await prompt(`API Key [${current.apiKey ? '****' : 'none'}]: `);
+          console.log(`\n  Generate an API key at:\n  ${c.bold(`${appUrl}/settings/api-keys`)}\n`);
+          apiKey = await prompt(`API Key (sk-ac-...): `);
           if (!apiKey) apiKey = current.apiKey;
         }
 
         let initiator = opts.initiator;
         if (!initiator) {
-          initiator = await prompt(`Initiator ID [${current.initiator ?? 'none'}]: `);
+          initiator = await prompt(`Wallet address (0x...): `);
           if (!initiator) initiator = current.initiator;
         }
 

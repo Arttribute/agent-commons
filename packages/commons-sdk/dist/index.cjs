@@ -206,6 +206,23 @@ var CommonsClient = class {
       deactivate: (walletId) => this.request("DELETE", `/v1/wallets/${walletId}`)
     };
   }
+  // ── API Keys ──────────────────────────────────────────────────────────────
+  get apiKeys() {
+    return {
+      /**
+       * Generate a new API key for a principal (user or agent).
+       * The plaintext key is returned only in this response — never again.
+       */
+      create: (params) => this.request("POST", "/v1/auth/api-keys", params),
+      /** List all active API keys for a principal (key values not included). */
+      list: (principalId, principalType) => {
+        const q = new URLSearchParams({ principalId, principalType }).toString();
+        return this.request("GET", `/v1/auth/api-keys?${q}`);
+      },
+      /** Revoke (soft-delete) an API key by its UUID. */
+      revoke: (id) => this.request("DELETE", `/v1/auth/api-keys/${id}`)
+    };
+  }
   // ── SSE Streaming internals ───────────────────────────────────────────────
   async *_streamAgentRun(params) {
     const res = await this._fetch(`${this.baseUrl}/v1/agents/run/stream`, {

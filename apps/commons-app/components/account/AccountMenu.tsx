@@ -32,8 +32,10 @@ function AccountMenu() {
             <DropdownMenuContent align="end" className="w-44">
               <DropdownMenuLabel>{username}</DropdownMenuLabel>
               <DropdownMenuSeparator />
-              {/* Profile Button */}
               <DropdownMenuItem>Profile</DropdownMenuItem>
+              <DropdownMenuItem asChild>
+                <Link href="/settings/api-keys">API Keys</Link>
+              </DropdownMenuItem>
               <DropdownMenuItem>
                 <Link href="/" passHref target="_blank">
                   Report Issue

@@ -14,13 +14,14 @@
 import { CommonsClient } from '@agent-commons/sdk';
 
 const apiUrl = process.env.NEXT_PUBLIC_NEST_API_BASE_URL ?? 'http://localhost:3001';
+const apiKey = process.env.NEXT_PUBLIC_NEST_API_SECRET_KEY;
 
-export const commons = new CommonsClient({ baseUrl: apiUrl });
+export const commons = new CommonsClient({ baseUrl: apiUrl, apiKey });
 
 /**
  * Create a CommonsClient with an initiator address (for authenticated runs).
  * Call this inside a component that has access to the user's wallet address.
  */
 export function createCommonsClient(initiator: string): CommonsClient {
-  return new CommonsClient({ baseUrl: apiUrl, initiator });
+  return new CommonsClient({ baseUrl: apiUrl, apiKey, initiator });
 }

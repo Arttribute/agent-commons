@@ -5,57 +5,72 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
+import { ApiKeyService } from './api-key.service';
 
 export const PUBLIC_KEY = 'isPublic';
 
 /**
  * Global API-key guard.
  *
- * Behaviour is controlled by two environment variables:
+ * Auth is checked in priority order:
  *
- *   API_AUTH_REQUIRED=false  — Disables enforcement (opt-out for local dev).
- *                              Default is ENFORCED — set this to disable.
+ *   1. @Public() decorator — skip auth entirely for that route.
  *
- *   API_SECRET_KEY=<secret>  — The expected bearer token value.
+ *   2. API_SECRET_KEY env var match — the commons-app management service key.
+ *      Full access, no principal attached to the request.
  *
- * Mark any controller or route handler as public with:
- *   @SetMetadata('isPublic', true)
- * or the exported helper decorator @Public().
+ *   3. sk-ac-* token — a per-principal key from the api_keys DB table.
+ *      On success, attaches `request.principal = { principalId, principalType }`
+ *      so downstream handlers know who is calling.
  *
- * Requests that carry a matching `Authorization: Bearer <key>` header always
- * pass, regardless of the environment variable, so the SDK/CLI work in any env.
+ *   4. API_AUTH_REQUIRED=false — disables enforcement for local dev.
+ *      Default is ENFORCED.
+ *
+ * Key formats:
+ *   - Management key: any opaque string set in API_SECRET_KEY env var
+ *   - Per-principal:  sk-ac-<32 hex chars>
  */
 @Injectable()
 export class ApiKeyGuard implements CanActivate {
   private readonly enforced: boolean;
   private readonly secretKey: string | undefined;
 
-  constructor(private readonly reflector: Reflector) {
-    // Enforced by default; explicitly set API_AUTH_REQUIRED=false to disable (dev only)
+  constructor(
+    private readonly reflector: Reflector,
+    private readonly apiKeyService: ApiKeyService,
+  ) {
     this.enforced = process.env.API_AUTH_REQUIRED !== 'false';
     this.secretKey = process.env.API_SECRET_KEY;
   }
 
-  canActivate(context: ExecutionContext): boolean {
-    // Allow routes decorated with @Public()
+  async canActivate(context: ExecutionContext): Promise<boolean> {
     const isPublic = this.reflector.getAllAndOverride<boolean>(PUBLIC_KEY, [
       context.getHandler(),
       context.getClass(),
     ]);
     if (isPublic) return true;
 
-    const request = context.switchToHttp().getRequest<Request>();
-    const authHeader: string | undefined = (request.headers as any)['authorization'];
+    const request = context.switchToHttp().getRequest<any>();
+    const authHeader: string | undefined = request.headers['authorization'];
+    const token = authHeader?.startsWith('Bearer ')
+      ? authHeader.slice(7).trim()
+      : authHeader;
 
-    // If a valid bearer key is present, always allow (supports SDK/CLI usage)
-    if (authHeader && this.secretKey) {
-      const token = authHeader.startsWith('Bearer ')
-        ? authHeader.slice(7).trim()
-        : authHeader;
-      if (token === this.secretKey) return true;
+    // 1. Management service key — always passes, no principal attached
+    if (token && this.secretKey && token === this.secretKey) {
+      return true;
     }
 
-    // If enforcement is disabled, pass through
+    // 2. Per-principal key (sk-ac-*) — DB lookup, attach principal to request
+    if (token && token.startsWith('sk-ac-')) {
+      const principal = await this.apiKeyService.validate(token);
+      if (principal) {
+        request.principal = principal;
+        return true;
+      }
+    }
+
+    // 3. Auth disabled for local dev
     if (!this.enforced) return true;
 
     throw new UnauthorizedException('Missing or invalid API key');
