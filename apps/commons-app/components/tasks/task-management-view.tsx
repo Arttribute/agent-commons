@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo, useCallback } from "react";
+import { useState, useMemo, useCallback, useEffect } from "react";
 import { Loader2, Plus, Calendar, CheckCircle2, Circle, XCircle, Clock, Play, Trash2, MoreVertical, RefreshCw, LayoutGrid, GitBranch } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -150,10 +150,14 @@ function TaskDependencyGraph({ tasks, agentMap }: { tasks: Task[]; agentMap: Map
 
 // ── Main view ─────────────────────────────────────────────────────────────────
 
-export function TaskManagementView({ userAddress }: { userAddress: string }) {
+export function TaskManagementView({ userAddress, onRegisterCreate }: { userAddress: string; onRegisterCreate?: (fn: () => void) => void }) {
   const [filterStatus, setFilterStatus] = useState<string>("all");
   const [selectedAgent, setSelectedAgent] = useState<string>("all");
   const [showCreateDialog, setShowCreateDialog] = useState(false);
+
+  useEffect(() => {
+    onRegisterCreate?.(() => setShowCreateDialog(true));
+  }, [onRegisterCreate]);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<"grid" | "graph">("grid");
 
@@ -372,9 +376,19 @@ export function TaskManagementView({ userAddress }: { userAddress: string }) {
                     )}
                   </div>
 
-                  <p className="text-xs text-muted-foreground">
-                    {new Date(task.createdAt).toLocaleDateString()}
-                  </p>
+                  {(task as any).scheduledFor && task.status === "pending" ? (
+                    <p className="text-xs text-blue-600 font-medium">
+                      Scheduled: {new Date((task as any).scheduledFor).toLocaleString()}
+                    </p>
+                  ) : (task as any).nextRunAt && task.isRecurring ? (
+                    <p className="text-xs text-muted-foreground">
+                      Next run: {new Date((task as any).nextRunAt).toLocaleString()}
+                    </p>
+                  ) : (
+                    <p className="text-xs text-muted-foreground">
+                      {new Date(task.createdAt).toLocaleDateString()}
+                    </p>
+                  )}
                 </CardContent>
               </Card>
             );

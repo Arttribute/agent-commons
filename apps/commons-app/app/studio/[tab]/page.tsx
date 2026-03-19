@@ -9,7 +9,6 @@ import { ToolsManagementView } from "@/components/tools/management/tools-managem
 import { WorkflowsListView } from "@/components/workflows/workflows-list-view";
 import { CreateWorkflowDialog } from "@/components/workflows/create-workflow-dialog";
 import { TaskManagementView } from "@/components/tasks/task-management-view";
-import { CreateTaskDialog } from "@/components/tasks/create-task-dialog";
 import { SkillsMarketplaceView } from "@/components/skills/skills-marketplace-view";
 import { Loader2 } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
@@ -28,9 +27,10 @@ const StudioPage: NextPage = () => {
   const activeTab = (tab as string) || "agents";
 
   const [showCreateWorkflowDialog, setShowCreateWorkflowDialog] = useState(false);
-  const [showCreateTaskDialog, setShowCreateTaskDialog] = useState(false);
   const skillCreateRef = useRef<(() => void) | null>(null);
   const registerSkillCreate = useCallback((fn: () => void) => { skillCreateRef.current = fn; }, []);
+  const taskCreateRef = useRef<(() => void) | null>(null);
+  const registerTaskCreate = useCallback((fn: () => void) => { taskCreateRef.current = fn; }, []);
 
   const { agents, loading: loadingAgents } = useAgents(
     activeTab === "agents" ? userAddress : undefined
@@ -55,7 +55,7 @@ const StudioPage: NextPage = () => {
             <p className="text-muted-foreground text-sm mb-4">
               Schedule and manage tasks for your agents
             </p>
-            <TaskManagementView userAddress={userAddress} />
+            <TaskManagementView userAddress={userAddress} onRegisterCreate={registerTaskCreate} />
           </div>
         );
       case "workflows":
@@ -112,7 +112,7 @@ const StudioPage: NextPage = () => {
     if (activeTab === "workflows") {
       setShowCreateWorkflowDialog(true);
     } else if (activeTab === "tasks") {
-      setShowCreateTaskDialog(true);
+      taskCreateRef.current?.();
     } else if (activeTab === "skills") {
       skillCreateRef.current?.();
     } else if (activeTab === "tools") {
@@ -161,12 +161,6 @@ const StudioPage: NextPage = () => {
       <CreateWorkflowDialog
         open={showCreateWorkflowDialog}
         onClose={() => setShowCreateWorkflowDialog(false)}
-        userAddress={userAddress}
-      />
-
-      <CreateTaskDialog
-        open={showCreateTaskDialog}
-        onClose={() => setShowCreateTaskDialog(false)}
         userAddress={userAddress}
       />
     </div>

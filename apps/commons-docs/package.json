@@ -1,0 +1,11 @@
+{
+  "name": "commons-docs",
+  "version": "1.0.0",
+  "scripts": {
+    "dev": "mintlify dev",
+    "build": "mintlify build"
+  },
+  "devDependencies": {
+    "mintlify": "latest"
+  }
+}

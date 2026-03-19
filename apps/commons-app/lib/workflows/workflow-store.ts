@@ -313,7 +313,7 @@ export const useWorkflowStore = create<WorkflowEditorState>((set, get) => ({
       }
 
       const data = await res.json();
-      const workflow = data.data;
+      const workflow = data.data ?? data;
       const definition = workflow.definition || { nodes: [], edges: [] };
 
       // Fetch all tools (both static and platform tools) to restore schemas
