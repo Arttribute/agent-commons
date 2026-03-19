@@ -9,11 +9,14 @@ export function useAgents(owner?: string) {
   const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
+    if (!owner) return;
     setLoading(true);
     setError(null);
     try {
-      const res = await commons.agents.list(owner);
-      setAgents(res.data);
+      const qs = `?owner=${encodeURIComponent(owner)}`;
+      const res = await fetch(`/api/agents${qs}`);
+      const data = await res.json();
+      setAgents(data.data ?? []);
     } catch (err: any) {
       setError(err.message);
     } finally {

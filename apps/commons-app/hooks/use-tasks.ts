@@ -13,8 +13,14 @@ export function useTasks(filter: { sessionId?: string; agentId?: string; ownerId
     setLoading(true);
     setError(null);
     try {
-      const res = await commons.tasks.list(filter);
-      setTasks(res.data);
+      const params = new URLSearchParams();
+      if (filter.ownerId) params.set("ownerId", filter.ownerId);
+      if (filter.ownerType) params.set("ownerType", filter.ownerType);
+      if (filter.sessionId) params.set("sessionId", filter.sessionId);
+      if (filter.agentId) params.set("agentId", filter.agentId);
+      const res = await fetch(`/api/tasks?${params.toString()}`);
+      const data = await res.json();
+      setTasks(data.data ?? []);
     } catch (err: any) {
       setError(err.message);
     } finally {

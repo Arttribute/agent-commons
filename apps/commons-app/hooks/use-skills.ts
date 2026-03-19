@@ -14,8 +14,14 @@ export function useSkills(filter?: { ownerId?: string; ownerType?: string; isPub
     setLoading(true);
     setError(null);
     try {
-      const res = await commons.skills.list(filter);
-      setSkills((res as any)?.data ?? res ?? []);
+      const params = new URLSearchParams();
+      if (filter?.ownerId) params.set("ownerId", filter.ownerId);
+      if (filter?.ownerType) params.set("ownerType", filter.ownerType);
+      if (filter?.isPublic !== undefined) params.set("isPublic", String(filter.isPublic));
+      const qs = params.toString();
+      const res = await fetch(`/api/skills${qs ? `?${qs}` : ""}`);
+      const data = await res.json();
+      setSkills(data?.data ?? []);
     } catch (err: any) {
       setError(err.message);
     } finally {
