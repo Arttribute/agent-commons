@@ -1,7 +1,7 @@
 "use client";
 import { useState, useEffect, useCallback } from "react";
-import { commons } from "@/lib/commons"; // SSE stream only
 import type { Workflow, WorkflowExecution } from "@agent-commons/sdk";
+import { parseEventStream } from "@/lib/sse";
 
 export function useWorkflows(ownerId?: string, ownerType?: 'user' | 'agent') {
   const [workflows, setWorkflows] = useState<Workflow[]>([]);
@@ -41,15 +41,17 @@ export function useWorkflowExecutionStream(workflowId: string | undefined, execu
     let cancelled = false;
     (async () => {
       try {
-        for await (const event of commons.workflows.stream(workflowId, executionId)) {
+        const res = await fetch(`/api/workflows/${workflowId}/executions/${executionId}/stream`);
+        if (!res.ok) throw new Error(`Stream error: ${res.statusText}`);
+        for await (const event of parseEventStream<any>(res)) {
           if (cancelled) break;
           if (event.type === 'status') {
-            setExecution((prev) => ({ ...prev, status: (event as any).status, currentNode: (event as any).currentNode, nodeResults: (event as any).nodeResults }));
+            setExecution((prev) => ({ ...prev, status: event.status, currentNode: event.currentNode, nodeResults: event.nodeResults }));
           } else if (event.type === 'completed') {
-            setExecution((prev) => ({ ...prev, status: 'completed', outputData: (event as any).outputData }));
+            setExecution((prev) => ({ ...prev, status: 'completed', outputData: event.outputData }));
             setDone(true);
           } else if (event.type === 'failed' || event.type === 'cancelled') {
-            setExecution((prev) => ({ ...prev, status: event.type as any, errorMessage: (event as any).errorMessage }));
+            setExecution((prev) => ({ ...prev, status: event.type, errorMessage: event.errorMessage }));
             setDone(true);
           } else if (event.type === 'error') {
             setError(event.message ?? 'Unknown error');

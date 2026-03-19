@@ -1,9 +1,7 @@
 "use client";
 import { useState, useEffect, useCallback } from "react";
-import { commons } from "@/lib/commons";
 import type { Task, CreateTaskParams } from "@agent-commons/sdk";
-
-// Task stream still uses SDK directly (SSE can't be proxied without streaming support)
+import { parseEventStream } from "@/lib/sse";
 
 export function useTasks(filter: { sessionId?: string; agentId?: string; ownerId?: string; ownerType?: 'user' | 'agent' }) {
   const [tasks, setTasks] = useState<Task[]>([]);
@@ -75,11 +73,13 @@ export function useTaskStream(taskId: string | undefined) {
     let cancelled = false;
     (async () => {
       try {
-        for await (const event of commons.tasks.stream(taskId)) {
+        const res = await fetch(`/api/tasks/${taskId}/stream`);
+        if (!res.ok) throw new Error(`Stream error: ${res.statusText}`);
+        for await (const event of parseEventStream<any>(res)) {
           if (cancelled) break;
           if (event.type === 'status') {
-            setStatus((event as any).status ?? '');
-            setProgress((event as any).progress ?? 0);
+            setStatus(event.status ?? '');
+            setProgress(event.progress ?? 0);
           } else if (event.type === 'completed' || event.type === 'failed' || event.type === 'cancelled') {
             setStatus(event.type);
             setDone(true);
