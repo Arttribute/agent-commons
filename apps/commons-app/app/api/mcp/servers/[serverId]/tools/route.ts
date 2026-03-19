@@ -6,7 +6,7 @@ const baseUrl = process.env.NEXT_PUBLIC_NEST_API_BASE_URL;
 // GET /api/mcp/servers/[serverId]/tools
 export async function GET(
   _request: NextRequest,
-  { params }: { params: { serverId: string } }
+  { params }: { params: Promise<{ serverId: string }> }
 ) {
   if (!baseUrl) {
     return NextResponse.json({ error: "Server base URL not configured" }, { status: 500 });

@@ -5,7 +5,7 @@ const baseUrl = process.env.NEXT_PUBLIC_NEST_API_BASE_URL;
 
 export async function GET(
   _request: NextRequest,
-  { params }: { params: { serverId: string } }
+  { params }: { params: Promise<{ serverId: string }> }
 ) {
   if (!baseUrl) {
     return NextResponse.json({ error: "Server base URL not configured" }, { status: 500 });
@@ -25,7 +25,7 @@ export async function GET(
 
 export async function PUT(
   request: NextRequest,
-  { params }: { params: { serverId: string } }
+  { params }: { params: Promise<{ serverId: string }> }
 ) {
   if (!baseUrl) {
     return NextResponse.json({ error: "Server base URL not configured" }, { status: 500 });
@@ -47,7 +47,7 @@ export async function PUT(
 
 export async function DELETE(
   _request: NextRequest,
-  { params }: { params: { serverId: string } }
+  { params }: { params: Promise<{ serverId: string }> }
 ) {
   if (!baseUrl) {
     return NextResponse.json({ error: "Server base URL not configured" }, { status: 500 });

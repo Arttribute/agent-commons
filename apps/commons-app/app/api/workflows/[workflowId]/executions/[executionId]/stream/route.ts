@@ -6,7 +6,7 @@ const baseUrl = process.env.NEXT_PUBLIC_NEST_API_BASE_URL;
 // GET /api/workflows/[workflowId]/executions/[executionId]/stream — proxies SSE
 export async function GET(
   _request: NextRequest,
-  { params }: { params: { workflowId: string; executionId: string } }
+  { params }: { params: Promise<{ workflowId: string; executionId: string }> }
 ) {
   if (!baseUrl) {
     return new Response(JSON.stringify({ error: "Server base URL not configured" }), { status: 500 });

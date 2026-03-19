@@ -6,7 +6,7 @@ const baseUrl = process.env.NEXT_PUBLIC_NEST_API_BASE_URL;
 // GET /api/tasks/[taskId]/stream — proxies SSE to backend
 export async function GET(
   _request: NextRequest,
-  { params }: { params: { taskId: string } }
+  { params }: { params: Promise<{ taskId: string }> }
 ) {
   if (!baseUrl) {
     return new Response(JSON.stringify({ error: "Server base URL not configured" }), { status: 500 });
