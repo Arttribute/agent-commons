@@ -16,7 +16,6 @@ import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Plus, Trash2, Eye, EyeOff } from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { commons } from "@/lib/commons";
 
 interface ManageKeysDialogProps {
   tool: Tool | null;
@@ -48,26 +47,29 @@ export function ManageKeysDialog({
   }, [open, ownerId]);
 
   const loadKeys = async () => {
-    const res = await commons.toolKeys.list({ ownerId, ownerType: "user" }).catch(() => null);
-    if (res?.success) {
-      const toolKeys = tool?.toolId
-        ? res.data.filter((k: ToolKey) => k.toolId === tool.toolId || !k.toolId)
-        : res.data;
-      setKeys(toolKeys);
-    }
+    try {
+      const params = new URLSearchParams({ ownerId, ownerType: "user" });
+      const res = await fetch(`/api/tool-keys?${params.toString()}`);
+      const data = await res.json();
+      if (data?.success) {
+        const toolKeys = tool?.toolId
+          ? data.data.filter((k: ToolKey) => k.toolId === tool.toolId || !k.toolId)
+          : data.data;
+        setKeys(toolKeys);
+      }
+    } catch { /* ignore */ }
   };
 
   const handleAddKey = async () => {
     setLoading(true);
     try {
-      const res = await commons.toolKeys.create({
-        ...newKey,
-        ownerId,
-        ownerType: "user",
-        toolId: tool?.toolId,
-        keyType: "api-key",
+      const res = await fetch("/api/tool-keys", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...newKey, ownerId, ownerType: "user", toolId: tool?.toolId, keyType: "api-key" }),
       });
-      if (res.success) {
+      const data = await res.json();
+      if (data?.success) {
         await loadKeys();
         setShowAddForm(false);
         setNewKey({ keyName: "", value: "", displayName: "", description: "" });
@@ -78,8 +80,9 @@ export function ManageKeysDialog({
   };
 
   const handleDeleteKey = async (keyId: string) => {
-    const res = await commons.toolKeys.delete(keyId).catch(() => null);
-    if (res?.success) await loadKeys();
+    const res = await fetch(`/api/tool-keys/${keyId}`, { method: "DELETE" });
+    const data = await res.json().catch(() => ({}));
+    if (data?.success) await loadKeys();
   };
 
   return (

@@ -3,8 +3,12 @@
 import { useEffect, useState, useCallback } from "react";
 import { useAuth } from "@/context/AuthContext";
 import AppBar from "@/components/layout/app-bar";
-import { commons } from "@/lib/commons";
-import type { ApiKey } from "@agent-commons/sdk";
+interface ApiKey {
+  id: string;
+  label?: string;
+  createdAt: string;
+  lastUsedAt?: string;
+}
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -32,8 +36,9 @@ export default function ApiKeysPage() {
     if (!walletAddress) return;
     setLoading(true);
     try {
-      const data = await commons.apiKeys.list(walletAddress, "user");
-      setKeys(Array.isArray(data) ? data : []);
+      const res = await fetch(`/api/api-keys?principalId=${encodeURIComponent(walletAddress)}&principalType=user`);
+      const data = await res.json();
+      setKeys(Array.isArray(data) ? data : (data.data ?? []));
     } catch {
       setKeys([]);
     } finally {
@@ -47,12 +52,17 @@ export default function ApiKeysPage() {
     if (!walletAddress) return;
     setGenerating(true);
     try {
-      const result = await commons.apiKeys.create({
-        principalId: walletAddress,
-        principalType: "user",
-        label: labelInput.trim() || undefined,
+      const res = await fetch("/api/api-keys", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          principalId: walletAddress,
+          principalType: "user",
+          label: labelInput.trim() || undefined,
+        }),
       });
-      setNewKey(result.key);
+      const result = await res.json();
+      setNewKey(result.key ?? result.data?.key);
       setLabelInput("");
       await fetchKeys();
     } finally {
@@ -63,7 +73,7 @@ export default function ApiKeysPage() {
   const handleRevoke = async (id: string) => {
     setRevoking(id);
     try {
-      await commons.apiKeys.revoke(id);
+      await fetch(`/api/api-keys/${id}`, { method: "DELETE" });
       setKeys((prev) => prev.filter((k) => k.id !== id));
     } finally {
       setRevoking(null);

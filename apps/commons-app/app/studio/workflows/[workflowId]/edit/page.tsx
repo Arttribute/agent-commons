@@ -9,7 +9,6 @@ import { ToolSidebar } from "@/components/workflows/editor/tool-sidebar";
 import { WorkflowCanvasProvider } from "@/components/workflows/editor/workflow-canvas";
 import { TestPanel } from "@/components/workflows/editor/test-panel";
 import { useAuth } from "@/context/AuthContext";
-import { commons } from "@/lib/commons";
 import { Loader2 } from "lucide-react";
 
 export default function WorkflowEditorPage() {
@@ -48,13 +47,19 @@ export default function WorkflowEditorPage() {
     if (!walletAddress) return;
 
     try {
-      const workflow = await commons.workflows.create({
-        name: "Untitled Workflow",
-        description: "",
-        ownerId: walletAddress.toLowerCase(),
-        ownerType: "user",
-        definition: { nodes: [], edges: [] },
+      const res = await fetch("/api/workflows", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: "Untitled Workflow",
+          description: "",
+          ownerId: walletAddress.toLowerCase(),
+          ownerType: "user",
+          definition: { nodes: [], edges: [] },
+        }),
       });
+      const json = await res.json();
+      const workflow = json.data ?? json;
 
       if (workflow?.workflowId) {
         await loadWorkflow(workflow.workflowId);

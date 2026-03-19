@@ -22,7 +22,6 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Search, Plus, Loader2, Filter } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { commons } from "@/lib/commons";
 import {
   Select,
   SelectContent,
@@ -68,12 +67,10 @@ export function ToolsManagementView({ userAddress }: ToolsManagementViewProps) {
   const loadTools = async () => {
     setLoading(true);
     try {
-      const data = await commons.tools.list(
-        userAddress ? { owner: userAddress, ownerType: "user" } : undefined
-      );
-      if (data.data) {
-        setTools(data.data as unknown as Tool[]);
-      }
+      const qs = userAddress ? `?owner=${encodeURIComponent(userAddress)}&ownerType=user` : "";
+      const res = await fetch(`/api/tools${qs}`);
+      const data = await res.json();
+      if (data.data) setTools(data.data as unknown as Tool[]);
     } catch (error) {
       console.error("Failed to load tools:", error);
     } finally {
@@ -129,9 +126,12 @@ export function ToolsManagementView({ userAddress }: ToolsManagementViewProps) {
 
   const handleSaveTool = async (updates: Partial<Tool>) => {
     if (!editTool) return;
-
     try {
-      await commons.tools.update(editTool.toolId, updates as any);
+      await fetch(`/api/tools/${editTool.toolId}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(updates),
+      });
       await loadTools();
       setEditTool(null);
     } catch (error) {
@@ -142,9 +142,8 @@ export function ToolsManagementView({ userAddress }: ToolsManagementViewProps) {
 
   const handleDeleteTool = async () => {
     if (!deleteTool) return;
-
     try {
-      await commons.tools.delete(deleteTool.toolId);
+      await fetch(`/api/tools/${deleteTool.toolId}`, { method: "DELETE" });
       await loadTools();
       setDeleteTool(null);
     } catch (error) {

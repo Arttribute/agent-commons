@@ -1,5 +1,4 @@
 import { useState, useEffect, useCallback } from "react";
-import { commons } from "@/lib/commons";
 import type {
   McpServer,
   CreateMcpServerRequest,
@@ -28,8 +27,11 @@ export function useMcpServers({
     setLoading(true);
     setError(null);
     try {
-      const data = await commons.mcp.listServers(ownerId, ownerType);
-      setServers((data as any).servers ?? []);
+      const res = await fetch(
+        `/api/mcp/servers?ownerId=${encodeURIComponent(ownerId)}&ownerType=${encodeURIComponent(ownerType)}`
+      );
+      const data = await res.json();
+      setServers(data.servers ?? []);
     } catch (err: any) {
       setError(err.message);
     } finally {
@@ -42,9 +44,15 @@ export function useMcpServers({
   ): Promise<McpServer | null> => {
     setError(null);
     try {
-      const data = await commons.mcp.createServer({ ...request, ownerId, ownerType });
+      const res = await fetch("/api/mcp/servers", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...request, ownerId, ownerType }),
+      });
+      if (!res.ok) throw new Error((await res.json()).message ?? "Failed to create");
+      const data = await res.json();
       await loadServers();
-      return data as unknown as McpServer;
+      return data as McpServer;
     } catch (err: any) {
       setError(err.message);
       return null;
@@ -57,18 +65,15 @@ export function useMcpServers({
   ): Promise<McpServer | null> => {
     setError(null);
     try {
-      // SDK doesn't expose PUT /v1/mcp/servers/:id — call directly
-      const res = await fetch(
-        `${process.env.NEXT_PUBLIC_NEST_API_BASE_URL}/v1/mcp/servers/${serverId}`,
-        {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(request),
-        }
-      );
+      const res = await fetch(`/api/mcp/servers/${serverId}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(request),
+      });
       if (!res.ok) throw new Error((await res.json()).message ?? "Failed to update");
+      const data = await res.json();
       await loadServers();
-      return (await res.json()) as McpServer;
+      return data as McpServer;
     } catch (err: any) {
       setError(err.message);
       return null;
@@ -78,7 +83,8 @@ export function useMcpServers({
   const deleteServer = async (serverId: string): Promise<boolean> => {
     setError(null);
     try {
-      await commons.mcp.deleteServer(serverId);
+      const res = await fetch(`/api/mcp/servers/${serverId}`, { method: "DELETE" });
+      if (!res.ok) throw new Error("Failed to delete");
       await loadServers();
       return true;
     } catch (err: any) {
@@ -92,9 +98,11 @@ export function useMcpServers({
   ): Promise<McpConnectionStatus | null> => {
     setError(null);
     try {
-      const data = await commons.mcp.connect(serverId);
+      const res = await fetch(`/api/mcp/servers/${serverId}/connect`, { method: "POST" });
+      if (!res.ok) throw new Error("Failed to connect");
+      const data = await res.json();
       await loadServers();
-      return data as unknown as McpConnectionStatus;
+      return data as McpConnectionStatus;
     } catch (err: any) {
       setError(err.message);
       return null;
@@ -104,7 +112,8 @@ export function useMcpServers({
   const disconnectServer = async (serverId: string): Promise<boolean> => {
     setError(null);
     try {
-      await commons.mcp.disconnect(serverId);
+      const res = await fetch(`/api/mcp/servers/${serverId}/disconnect`, { method: "POST" });
+      if (!res.ok) throw new Error("Failed to disconnect");
       await loadServers();
       return true;
     } catch (err: any) {
@@ -118,9 +127,7 @@ export function useMcpServers({
   ): Promise<McpConnectionStatus | null> => {
     setError(null);
     try {
-      const res = await fetch(
-        `${process.env.NEXT_PUBLIC_NEST_API_BASE_URL}/v1/mcp/servers/${serverId}/status`
-      );
+      const res = await fetch(`/api/mcp/servers/${serverId}/status`);
       if (!res.ok) throw new Error("Failed to get status");
       return (await res.json()) as McpConnectionStatus;
     } catch (err: any) {
@@ -129,15 +136,14 @@ export function useMcpServers({
     }
   };
 
-  const syncTools = async (
-    serverId: string,
-    forceRefresh = false
-  ): Promise<McpSyncResult | null> => {
+  const syncTools = async (serverId: string): Promise<McpSyncResult | null> => {
     setError(null);
     try {
-      const data = await commons.mcp.sync(serverId);
+      const res = await fetch(`/api/mcp/servers/${serverId}/sync`, { method: "POST" });
+      if (!res.ok) throw new Error("Failed to sync");
+      const data = await res.json();
       await loadServers();
-      return data as unknown as McpSyncResult;
+      return data as McpSyncResult;
     } catch (err: any) {
       setError(err.message);
       return null;

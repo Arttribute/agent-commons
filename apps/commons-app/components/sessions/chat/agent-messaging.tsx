@@ -11,7 +11,7 @@ import { Button } from "@/components/ui/button";
 import { ArrowLeft } from "lucide-react";
 import { CommonAgent } from "@/types/agent";
 import { Card } from "@/components/ui/card";
-import { commons } from "@/lib/commons";
+
 
 interface Message {
   role: string;
@@ -81,7 +81,9 @@ export default function AgentMessaging({
       setIsLoading(true);
       setError(null);
       try {
-        const { data } = await commons.sessions.getFull(sessionId);
+        const res = await fetch(`/api/sessions/${sessionId}?full=true`);
+        const json = await res.json();
+        const { data } = json;
         if (data?.history) {
           setMessages(data.history);
         }

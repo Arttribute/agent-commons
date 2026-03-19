@@ -7,7 +7,6 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Search, Wrench, ArrowDownToLine, ArrowUpFromLine, Loader2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import { commons } from "@/lib/commons";
 
 interface ToolSidebarProps {
   userId: string;
@@ -65,8 +64,8 @@ export function ToolSidebar({ userId }: ToolSidebarProps) {
   const loadTools = async () => {
     try {
       const [userData, staticData] = await Promise.all([
-        commons.tools.list({ owner: userId, ownerType: "user" }),
-        commons.tools.listStatic(),
+        fetch(`/api/tools?owner=${encodeURIComponent(userId)}&ownerType=user`).then((r) => r.json()),
+        fetch("/api/tools/static").then((r) => r.json()),
       ]);
       setUserTools((userData.data ?? []) as unknown as Tool[]);
       setStaticTools((staticData.data ?? []) as unknown as Tool[]);

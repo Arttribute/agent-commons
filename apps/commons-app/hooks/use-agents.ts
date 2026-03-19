@@ -1,6 +1,5 @@
 "use client";
 import { useState, useEffect, useCallback } from "react";
-import { commons } from "@/lib/commons";
 import type { Agent, CreateAgentParams } from "@agent-commons/sdk";
 
 export function useAgents(owner?: string) {
@@ -13,8 +12,7 @@ export function useAgents(owner?: string) {
     setLoading(true);
     setError(null);
     try {
-      const qs = `?owner=${encodeURIComponent(owner)}`;
-      const res = await fetch(`/api/agents${qs}`);
+      const res = await fetch(`/api/agents?owner=${encodeURIComponent(owner)}`);
       const data = await res.json();
       setAgents(data.data ?? []);
     } catch (err: any) {
@@ -34,17 +32,25 @@ export function useAgent(agentId: string | undefined) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
+  const load = useCallback(async () => {
     if (!agentId) return;
     setLoading(true);
     setError(null);
-    commons.agents.get(agentId)
-      .then((res) => setAgent(res.data))
-      .catch((err) => setError(err.message))
-      .finally(() => setLoading(false));
+    try {
+      const res = await fetch(`/api/agents/${agentId}`);
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message || "Failed to fetch agent");
+      setAgent(data.data ?? null);
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
   }, [agentId]);
 
-  return { agent, loading, error };
+  useEffect(() => { load(); }, [load]);
+
+  return { agent, loading, error, refresh: load };
 }
 
 export function useCreateAgent() {
@@ -55,8 +61,14 @@ export function useCreateAgent() {
     setLoading(true);
     setError(null);
     try {
-      const res = await commons.agents.create(params);
-      return res.data;
+      const res = await fetch("/api/agents", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(params),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message || "Failed to create agent");
+      return data.data ?? null;
     } catch (err: any) {
       setError(err.message);
       return null;

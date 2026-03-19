@@ -15,7 +15,6 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { ToolCard } from "./tool-card";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { commons } from "@/lib/commons";
 
 // Types
 interface Tool {
@@ -647,13 +646,22 @@ export default function AgentTools({
   };
 
   const addTool = async (toolId: string, usageComments?: string) => {
-    const res = await commons.agents.addTool(agentId, { toolId, usageComments }).catch(() => null);
-    if (res?.data) setAgentTools([...agentTools, res.data]);
+    try {
+      const res = await fetch(`/api/agents/${agentId}/tools`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ toolId, usageComments }),
+      });
+      const data = await res.json();
+      if (data?.data) setAgentTools([...agentTools, data.data]);
+    } catch { /* ignore */ }
   };
 
   const removeTool = async (id: string) => {
-    await commons.agents.removeTool(id).catch(() => null);
-    setAgentTools(agentTools.filter((t) => t.id !== id));
+    try {
+      await fetch(`/api/agents/tools/${id}`, { method: "DELETE" });
+      setAgentTools(agentTools.filter((t) => t.id !== id));
+    } catch { /* ignore */ }
   };
 
   return (

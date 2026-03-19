@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { commons } from "@/lib/commons";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -70,11 +69,13 @@ export default function ToolSelector({
       try {
         let raw: any[] = [];
         if (type === "common") {
-          const res = await commons.tools.listStatic();
-          raw = res.data ?? [];
+          const res = await fetch("/api/tools/static");
+          const data = await res.json();
+          raw = data.data ?? [];
         } else if (type === "external" && owner) {
-          const res = await commons.tools.list({ owner, ownerType: "user" });
-          raw = res.data ?? [];
+          const res = await fetch(`/api/tools?owner=${encodeURIComponent(owner)}&ownerType=user`);
+          const data = await res.json();
+          raw = data.data ?? [];
         }
         // Normalise to { id, name } shape expected by callers
         setTools(raw.map((t) => ({ id: t.toolId ?? t.id, name: t.name })));

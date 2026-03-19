@@ -3,6 +3,8 @@ import { useState, useEffect, useCallback } from "react";
 import { commons } from "@/lib/commons";
 import type { Task, CreateTaskParams } from "@agent-commons/sdk";
 
+// Task stream still uses SDK directly (SSE can't be proxied without streaming support)
+
 export function useTasks(filter: { sessionId?: string; agentId?: string; ownerId?: string; ownerType?: 'user' | 'agent' }) {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [loading, setLoading] = useState(false);
@@ -32,9 +34,15 @@ export function useTasks(filter: { sessionId?: string; agentId?: string; ownerId
 
   const createTask = useCallback(async (params: CreateTaskParams): Promise<Task | null> => {
     try {
-      const res = await commons.tasks.create(params);
-      setTasks((p) => [...p, res.data]);
-      return res.data;
+      const res = await fetch("/api/tasks", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(params),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message || "Failed to create task");
+      setTasks((p) => [...p, data.data]);
+      return data.data;
     } catch (err: any) {
       setError(err.message);
       return null;
@@ -43,8 +51,8 @@ export function useTasks(filter: { sessionId?: string; agentId?: string; ownerId
 
   const cancelTask = useCallback(async (taskId: string) => {
     try {
-      await commons.tasks.cancel(taskId);
-      setTasks((p) => p.map((t) => t.taskId === taskId ? { ...t, status: 'cancelled' } : t));
+      const res = await fetch(`/api/tasks/${taskId}/cancel`, { method: "POST" });
+      if (res.ok) setTasks((p) => p.map((t) => t.taskId === taskId ? { ...t, status: 'cancelled' } : t));
     } catch (err: any) {
       setError(err.message);
     }

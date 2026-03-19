@@ -18,7 +18,6 @@ import {
 } from "@/components/ui/select";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Checkbox } from "@/components/ui/checkbox";
-import { commons } from "@/lib/commons";
 
 interface Agent {
   agentId: string;
@@ -89,19 +88,23 @@ export function CreateTaskForm({ userAddress }: { userAddress: string }) {
   }, [formData.agentId]);
 
   const fetchAgents = async () => {
-    commons.agents.list(userAddress).then((res) => setAgents(res.data || [])).catch(() => {});
+    fetch(`/api/agents?owner=${encodeURIComponent(userAddress)}`)
+      .then((r) => r.json()).then((d) => setAgents(d.data || [])).catch(() => {});
   };
 
   const fetchSessions = async (agentId: string) => {
-    commons.sessions.list(agentId, userAddress).then((res) => setSessions(res.data || [])).catch(() => {});
+    fetch(`/api/sessions/list?agentId=${agentId}&initiatorId=${encodeURIComponent(userAddress)}`)
+      .then((r) => r.json()).then((d) => setSessions(d.data || [])).catch(() => {});
   };
 
   const fetchWorkflows = async () => {
-    commons.workflows.list(userAddress, 'user').then((data) => setWorkflows(data || [])).catch(() => {});
+    fetch(`/api/workflows?ownerId=${encodeURIComponent(userAddress)}&ownerType=user`)
+      .then((r) => r.json()).then((d) => setWorkflows(d || [])).catch(() => {});
   };
 
   const fetchTools = async () => {
-    commons.tools.list().then((res) => setTools(res.data || [])).catch(() => {});
+    fetch("/api/tools")
+      .then((r) => r.json()).then((d) => setTools(d.data || [])).catch(() => {});
   };
 
   const handleSubmit = async () => {
@@ -109,20 +112,25 @@ export function CreateTaskForm({ userAddress }: { userAddress: string }) {
     try {
       let sessionId = formData.sessionId;
       if (!sessionId) {
-        const { data: session } = await commons.sessions.create({
-          agentId: formData.agentId,
-          initiator: userAddress,
-          title: `Task: ${formData.title}`,
+        const res = await fetch("/api/sessions", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ agentId: formData.agentId, initiator: userAddress, title: `Task: ${formData.title}` }),
         });
-        sessionId = session.sessionId;
+        const sessionData = await res.json();
+        sessionId = sessionData.data?.sessionId;
       }
 
-      await commons.tasks.create({
-        ...formData,
-        sessionId,
-        createdBy: userAddress,
-        createdByType: "user",
-        scheduledFor: formData.scheduledFor ? new Date(formData.scheduledFor) : undefined,
+      await fetch("/api/tasks", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ...formData,
+          sessionId,
+          createdBy: userAddress,
+          createdByType: "user",
+          scheduledFor: formData.scheduledFor ? new Date(formData.scheduledFor) : undefined,
+        }),
       });
 
       router.push("/studio/tasks");

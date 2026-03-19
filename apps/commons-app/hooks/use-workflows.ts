@@ -1,6 +1,6 @@
 "use client";
 import { useState, useEffect, useCallback } from "react";
-import { commons } from "@/lib/commons";
+import { commons } from "@/lib/commons"; // SSE stream only
 import type { Workflow, WorkflowExecution } from "@agent-commons/sdk";
 
 export function useWorkflows(ownerId?: string, ownerType?: 'user' | 'agent') {
