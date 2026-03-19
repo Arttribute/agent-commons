@@ -33,7 +33,7 @@ export class TaskSchedulerService implements OnModuleInit, OnModuleDestroy {
   /** Schedule a future run for a task (one-time or recurring) */
   async scheduleRun(params: {
     taskId: string;
-    scheduledFor: Date;
+    scheduledFor: Date | string;
     triggeredBy?: 'cron' | 'manual' | 'dependency';
     sessionId?: string;
   }): Promise<void> {
@@ -44,7 +44,7 @@ export class TaskSchedulerService implements OnModuleInit, OnModuleDestroy {
       status: 'pending',
       ...(params.sessionId ? { sessionId: params.sessionId as any } : {}),
     });
-    this.logger.debug(`Scheduled run for task ${params.taskId} at ${params.scheduledFor.toISOString()}`);
+    this.logger.debug(`Scheduled run for task ${params.taskId} at ${new Date(params.scheduledFor).toISOString()}`);
   }
 
   /**

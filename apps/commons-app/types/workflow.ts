@@ -40,12 +40,27 @@ export interface WorkflowEdge {
 export interface WorkflowExecution {
   executionId: string;
   workflowId: string;
-  status: "pending" | "running" | "completed" | "failed";
+  status: "pending" | "running" | "completed" | "failed" | "awaiting_approval";
   startedAt: string;
   completedAt?: string;
+  /** Final workflow output — from execute API response */
   result?: any;
+  /** Final workflow output — from SSE stream (same value, different field name) */
+  outputData?: any;
+  /** Execution error — from execute API response */
   error?: string;
+  /** Execution error — from SSE stream */
+  errorMessage?: string;
+  /** Per-node results — from execute API response */
   stepResults?: Record<string, any>;
+  /** Per-node results — from SSE stream */
+  nodeResults?: Record<string, any>;
+  /** Currently executing node ID */
+  currentNode?: string;
+  /** Node ID where workflow is paused awaiting approval */
+  pausedAtNode?: string;
+  /** Token required to approve/reject a paused step */
+  approvalToken?: string;
 }
 
 // React Flow types

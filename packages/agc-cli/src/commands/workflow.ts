@@ -104,9 +104,23 @@ export function workflowCommand(): Command {
         console.log(`   Status: ${statusBadge(execution.status)}`);
 
         if (!opts.watch) {
+          const result = (execution as any).result ?? (execution as any).outputData;
           if (execution.status === 'completed') {
             console.log('\n' + c.label('Result'));
-            console.log('  ' + JSON.stringify((execution as any).result ?? (execution as any).outputData, null, 2));
+            console.log('  ' + JSON.stringify(result, null, 2));
+            const steps = (execution as any).stepResults ?? (execution as any).nodeResults;
+            if (steps && Object.keys(steps).length > 0) {
+              console.log('\n' + c.label('Step Results'));
+              for (const [nodeId, step] of Object.entries(steps) as [string, any][]) {
+                const icon = step.status === 'success' ? sym.ok : step.status === 'error' ? sym.fail : '·';
+                const dur = step.duration != null ? c.dim(` (${(step.duration / 1000).toFixed(2)}s)`) : '';
+                console.log(`  ${icon} ${c.id(nodeId)}${dur}`);
+                if (step.error) console.log(`    ${c.error(step.error)}`);
+                else if (step.output !== undefined) console.log(`    ${JSON.stringify(step.output, null, 2).replace(/\n/g, '\n    ')}`);
+              }
+            }
+          } else {
+            console.log(c.dim(`\n  Workflow is ${execution.status}. Use --watch to stream progress.`));
           }
           return;
         }
@@ -121,9 +135,19 @@ export function workflowCommand(): Command {
             process.stdout.write('\n');
             console.log(`\n${sym.ok} ${c.success('Completed')}`);
             const e = event as any;
-            if (e.outputData) {
+            if (e.outputData != null) {
               console.log('\n' + c.label('Output'));
               console.log('  ' + JSON.stringify(e.outputData, null, 2));
+            }
+            if (e.nodeResults && Object.keys(e.nodeResults).length > 0) {
+              console.log('\n' + c.label('Step Results'));
+              for (const [nodeId, step] of Object.entries(e.nodeResults) as [string, any][]) {
+                const icon = step.status === 'success' ? sym.ok : step.status === 'error' ? sym.fail : '·';
+                const dur = step.duration != null ? c.dim(` (${(step.duration / 1000).toFixed(2)}s)`) : '';
+                console.log(`  ${icon} ${c.id(nodeId)}${dur}`);
+                if (step.error) console.log(`    ${c.error(step.error)}`);
+                else if (step.output !== undefined) console.log(`    ${JSON.stringify(step.output, null, 2).replace(/\n/g, '\n    ')}`);
+              }
             }
             break;
           } else if (event.type === 'failed' || event.type === 'cancelled') {

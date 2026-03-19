@@ -46,13 +46,40 @@ export function useWorkflowExecutionStream(workflowId: string | undefined, execu
         for await (const event of parseEventStream<any>(res)) {
           if (cancelled) break;
           if (event.type === 'status') {
-            setExecution((prev) => ({ ...prev, status: event.status, currentNode: event.currentNode, nodeResults: event.nodeResults }));
+            setExecution((prev) => ({
+              ...prev,
+              status: event.status,
+              currentNode: event.currentNode,
+              // normalize both naming conventions
+              nodeResults: event.nodeResults,
+              stepResults: event.nodeResults,
+            }));
           } else if (event.type === 'completed') {
-            setExecution((prev) => ({ ...prev, status: 'completed', outputData: event.outputData }));
+            setExecution((prev) => ({
+              ...prev,
+              status: 'completed',
+              outputData: event.outputData,
+              result: event.outputData,
+              nodeResults: event.nodeResults,
+              stepResults: event.nodeResults,
+              completedAt: new Date().toISOString(),
+            }));
             setDone(true);
           } else if (event.type === 'failed' || event.type === 'cancelled') {
-            setExecution((prev) => ({ ...prev, status: event.type, errorMessage: event.errorMessage }));
+            setExecution((prev) => ({
+              ...prev,
+              status: event.type,
+              errorMessage: event.errorMessage,
+              error: event.errorMessage,
+            }));
             setDone(true);
+          } else if (event.type === 'awaiting_approval') {
+            setExecution((prev) => ({
+              ...prev,
+              status: 'awaiting_approval',
+              pausedAtNode: event.pausedAtNode,
+              approvalToken: event.approvalToken,
+            }));
           } else if (event.type === 'error') {
             setError(event.message ?? 'Unknown error');
             setDone(true);

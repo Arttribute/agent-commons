@@ -180,6 +180,7 @@ export function TestPanel({ workflowId }: TestPanelProps) {
       case "failed": return <XCircle className="h-4 w-4 text-destructive" />;
       case "running":
       case "pending": return <Loader2 className="h-4 w-4 animate-spin text-blue-500" />;
+      case "awaiting_approval": return <AlertCircle className="h-4 w-4 text-amber-500" />;
       default: return <AlertCircle className="h-4 w-4 text-muted-foreground" />;
     }
   };
@@ -190,8 +191,19 @@ export function TestPanel({ workflowId }: TestPanelProps) {
       failed: "destructive",
       running: "secondary",
       pending: "outline",
+      awaiting_approval: "outline",
     };
-    return <Badge variant={map[status] ?? "outline"} className="text-[10px]">{status}</Badge>;
+    return <Badge variant={map[status] ?? "outline"} className="text-[10px]">{status.replace("_", " ")}</Badge>;
+  };
+
+  const nodeStatusIcon = (result: any) => {
+    if (!result) return null;
+    switch (result.status) {
+      case "success": return <CheckCircle2 className="h-3 w-3 text-emerald-500 shrink-0" />;
+      case "error": return <XCircle className="h-3 w-3 text-destructive shrink-0" />;
+      case "skipped": return <AlertCircle className="h-3 w-3 text-muted-foreground shrink-0" />;
+      default: return null;
+    }
   };
 
   return (
@@ -256,41 +268,84 @@ export function TestPanel({ workflowId }: TestPanelProps) {
                 </div>
               </div>
 
-              {execution.error && (
-                <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-3">
-                  <p className="text-xs font-medium text-destructive mb-1">Error</p>
-                  <p className="text-xs text-destructive/80">{execution.error}</p>
+              {/* Running — show current node */}
+              {(execution.status === "running" || execution.status === "pending") && execution.currentNode && (
+                <div className="rounded-lg border border-blue-200 bg-blue-50/50 p-3">
+                  <p className="text-[11px] text-blue-700">
+                    Executing node: <code className="font-mono font-medium">{execution.currentNode}</code>
+                  </p>
                 </div>
               )}
 
-              {execution.result && (
+              {/* Awaiting approval */}
+              {execution.status === "awaiting_approval" && (
+                <div className="rounded-lg border border-amber-200 bg-amber-50/50 p-3 space-y-1">
+                  <p className="text-xs font-medium text-amber-700">Awaiting approval</p>
+                  {execution.pausedAtNode && (
+                    <p className="text-[11px] text-amber-600">
+                      Paused at: <code className="font-mono">{execution.pausedAtNode}</code>
+                    </p>
+                  )}
+                  {execution.approvalToken && (
+                    <p className="text-[11px] text-amber-600 break-all">
+                      Token: <code className="font-mono">{execution.approvalToken}</code>
+                    </p>
+                  )}
+                </div>
+              )}
+
+              {/* Error */}
+              {(execution.error || execution.errorMessage) && (
+                <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-3">
+                  <p className="text-xs font-medium text-destructive mb-1">Error</p>
+                  <p className="text-xs text-destructive/80">{execution.error ?? execution.errorMessage}</p>
+                </div>
+              )}
+
+              {/* Output */}
+              {(execution.result ?? execution.outputData) != null && (
                 <div className="rounded-lg border border-emerald-200 bg-emerald-50/50 p-3">
                   <p className="text-xs font-medium text-emerald-700 mb-1.5">Output</p>
-                  <pre className="text-[11px] text-emerald-800 overflow-auto max-h-40 font-mono">
-                    {JSON.stringify(execution.result, null, 2)}
+                  <pre className="text-[11px] text-emerald-800 overflow-auto max-h-40 font-mono whitespace-pre-wrap break-all">
+                    {JSON.stringify(execution.result ?? execution.outputData, null, 2)}
                   </pre>
                 </div>
               )}
 
-              {execution.stepResults && Object.keys(execution.stepResults).length > 0 && (
-                <div>
-                  <p className="text-xs font-semibold mb-1.5">Step Results</p>
-                  <Accordion type="multiple" className="w-full">
-                    {Object.entries(execution.stepResults).map(([nodeId, result]) => (
-                      <AccordionItem key={nodeId} value={nodeId} className="border-border">
-                        <AccordionTrigger className="text-xs font-medium py-2">
-                          {nodeId}
-                        </AccordionTrigger>
-                        <AccordionContent>
-                          <pre className="text-[11px] bg-muted/50 p-2 rounded-md overflow-auto max-h-48 font-mono">
-                            {JSON.stringify(result, null, 2)}
-                          </pre>
-                        </AccordionContent>
-                      </AccordionItem>
-                    ))}
-                  </Accordion>
-                </div>
-              )}
+              {/* Step results */}
+              {(() => {
+                const steps = execution.stepResults ?? execution.nodeResults;
+                return steps && Object.keys(steps).length > 0 ? (
+                  <div>
+                    <p className="text-xs font-semibold mb-1.5">Step Results</p>
+                    <Accordion type="multiple" className="w-full">
+                      {Object.entries(steps).map(([nodeId, result]) => (
+                        <AccordionItem key={nodeId} value={nodeId} className="border-border">
+                          <AccordionTrigger className="text-xs font-medium py-2">
+                            <div className="flex items-center gap-1.5">
+                              {nodeStatusIcon(result)}
+                              <span>{nodeId}</span>
+                              {(result as any)?.duration != null && (
+                                <span className="text-muted-foreground font-normal">
+                                  {((result as any).duration / 1000).toFixed(2)}s
+                                </span>
+                              )}
+                            </div>
+                          </AccordionTrigger>
+                          <AccordionContent>
+                            {(result as any)?.error && (
+                              <p className="text-[11px] text-destructive px-2 pb-1">{(result as any).error}</p>
+                            )}
+                            <pre className="text-[11px] bg-muted/50 p-2 rounded-md overflow-auto max-h-48 font-mono whitespace-pre-wrap break-all">
+                              {JSON.stringify((result as any)?.output ?? result, null, 2)}
+                            </pre>
+                          </AccordionContent>
+                        </AccordionItem>
+                      ))}
+                    </Accordion>
+                  </div>
+                ) : null;
+              })()}
 
               <div className="pt-2 border-t border-border space-y-1">
                 <p className="text-[11px] text-muted-foreground">
