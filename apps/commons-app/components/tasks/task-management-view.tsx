@@ -22,7 +22,6 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { CreateTaskDialog } from "./create-task-dialog";
 import { useTasks } from "@/hooks/use-tasks";
 import { useAgents } from "@/hooks/use-agents";
-import { commons } from "@/lib/commons";
 import type { Task } from "@agent-commons/sdk";
 import ReactFlow, {
   Background,
@@ -175,7 +174,7 @@ export function TaskManagementView({ userAddress }: { userAddress: string }) {
   const handleExecute = async (taskId: string) => {
     setActionLoading(taskId);
     try {
-      await commons.tasks.execute(taskId);
+      await fetch(`/api/tasks/${taskId}/execute`, { method: "POST" });
       refresh();
     } finally {
       setActionLoading(null);
@@ -185,7 +184,7 @@ export function TaskManagementView({ userAddress }: { userAddress: string }) {
   const handleCancel = async (taskId: string) => {
     setActionLoading(taskId);
     try {
-      await commons.tasks.cancel(taskId);
+      await fetch(`/api/tasks/${taskId}/cancel`, { method: "POST" });
       refresh();
     } finally {
       setActionLoading(null);
@@ -196,7 +195,7 @@ export function TaskManagementView({ userAddress }: { userAddress: string }) {
     if (!confirm("Delete this task?")) return;
     setActionLoading(taskId);
     try {
-      await commons.tasks.delete(taskId);
+      await fetch(`/api/tasks/${taskId}`, { method: "DELETE" });
       refresh();
     } finally {
       setActionLoading(null);

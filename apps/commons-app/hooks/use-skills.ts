@@ -1,6 +1,5 @@
 "use client";
 import { useState, useEffect, useCallback } from "react";
-import { commons } from "@/lib/commons";
 import type { Skill, SkillIndex } from "@agent-commons/sdk";
 
 export function useSkills(filter?: { ownerId?: string; ownerType?: string; isPublic?: boolean }) {
@@ -44,8 +43,10 @@ export function useSkillIndex(ownerId?: string) {
     setLoading(true);
     setError(null);
     try {
-      const res = await commons.skills.getIndex(ownerId);
-      setIndex((res as any)?.data ?? res ?? []);
+      const qs = ownerId ? `?ownerId=${ownerId}` : "";
+      const res = await fetch(`/api/skills/index${qs}`);
+      const data = await res.json();
+      setIndex(data?.data ?? []);
     } catch (err: any) {
       setError(err.message);
     } finally {

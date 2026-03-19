@@ -4,7 +4,6 @@ import { useState, useEffect, useRef } from "react";
 import { Loader2, Sparkles, Search, Plus, Trash2, Globe, Lock } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useSkills } from "@/hooks/use-skills";
-import { commons } from "@/lib/commons";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -181,7 +180,7 @@ export function SkillsMarketplaceView({ userAddress, onRegisterCreate }: SkillsM
   const handleDelete = async (skillId: string) => {
     if (!confirm("Delete this skill?")) return;
     try {
-      await commons.skills.delete(skillId);
+      await fetch(`/api/skills/${skillId}`, { method: "DELETE" });
       toast({ title: "Skill deleted" });
       refreshMine();
     } catch {
@@ -196,19 +195,23 @@ export function SkillsMarketplaceView({ userAddress, onRegisterCreate }: SkillsM
     }
     setCreating(true);
     try {
-      await commons.skills.create({
-        slug: form.slug,
-        name: form.name,
-        description: form.description,
-        instructions: form.instructions,
-        tools: form.tools ? form.tools.split(",").map((s) => s.trim()).filter(Boolean) : [],
-        triggers: form.triggers ? form.triggers.split(",").map((s) => s.trim()).filter(Boolean) : [],
-        tags: form.tags ? form.tags.split(",").map((s) => s.trim()).filter(Boolean) : [],
-        icon: form.icon || undefined,
-        isPublic: form.isPublic,
-        ownerId: userAddress,
-        ownerType: "user",
-        source: "user",
+      await fetch("/api/skills", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          slug: form.slug,
+          name: form.name,
+          description: form.description,
+          instructions: form.instructions,
+          tools: form.tools ? form.tools.split(",").map((s) => s.trim()).filter(Boolean) : [],
+          triggers: form.triggers ? form.triggers.split(",").map((s) => s.trim()).filter(Boolean) : [],
+          tags: form.tags ? form.tags.split(",").map((s) => s.trim()).filter(Boolean) : [],
+          icon: form.icon || undefined,
+          isPublic: form.isPublic,
+          ownerId: userAddress,
+          ownerType: "user",
+          source: "user",
+        }),
       });
       toast({ title: "Skill created" });
       setShowCreate(false);

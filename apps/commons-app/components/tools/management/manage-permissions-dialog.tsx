@@ -22,7 +22,6 @@ import {
 } from "@/components/ui/select";
 import { Plus, Trash2, User, Bot } from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { commons } from "@/lib/commons";
 
 interface ManagePermissionsDialogProps {
   tool: Tool | null;
@@ -54,33 +53,41 @@ export function ManagePermissionsDialog({
 
   const loadPermissions = async () => {
     if (!tool) return;
-    const res = await commons.toolPermissions.list(tool.toolId).catch(() => null);
-    if (res?.success) {
-      setPermissions(
-        res.data.map((p: any) => ({
-          id: p.id,
-          walletAddress: p.subjectId,
-          type: p.subjectType,
-          permission: p.permission,
-          grantedAt: p.createdAt,
-          expiresAt: p.expiresAt,
-        }))
-      );
-    }
+    try {
+      const res = await fetch(`/api/tool-permissions?toolId=${tool.toolId}`);
+      const data = await res.json();
+      if (data?.success) {
+        setPermissions(
+          data.data.map((p: any) => ({
+            id: p.id,
+            walletAddress: p.subjectId,
+            type: p.subjectType,
+            permission: p.permission,
+            grantedAt: p.createdAt,
+            expiresAt: p.expiresAt,
+          }))
+        );
+      }
+    } catch { /* ignore */ }
   };
 
   const handleGrantAccess = async () => {
     if (!tool) return;
     setLoading(true);
     try {
-      const res = await commons.toolPermissions.grant({
-        toolId: tool.toolId,
-        subjectId: newAccess.walletAddress,
-        subjectType: newAccess.type,
-        permission: newAccess.permission,
-        grantedBy: currentUserId,
+      const res = await fetch("/api/tool-permissions/grant", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          toolId: tool.toolId,
+          subjectId: newAccess.walletAddress,
+          subjectType: newAccess.type,
+          permission: newAccess.permission,
+          grantedBy: currentUserId,
+        }),
       });
-      if (res.success) {
+      const data = await res.json();
+      if (data?.success) {
         await loadPermissions();
         setShowAddForm(false);
         setNewAccess({ walletAddress: "", type: "user", permission: "execute" });
@@ -91,8 +98,9 @@ export function ManagePermissionsDialog({
   };
 
   const handleRevokeAccess = async (permissionId: string) => {
-    const res = await commons.toolPermissions.revoke(permissionId).catch(() => null);
-    if (res?.success) await loadPermissions();
+    const res = await fetch(`/api/tool-permissions/revoke/${permissionId}`, { method: "DELETE" });
+    const data = await res.json().catch(() => ({}));
+    if (data?.success) await loadPermissions();
   };
 
   const permissionColors = {

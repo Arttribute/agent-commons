@@ -9,7 +9,6 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Copy, Check, InfoIcon } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import ImageUploader from "./ImageUploader";
-import { commons } from "@/lib/commons";
 
 export default function ExternalAgentForm() {
   const router = useRouter();
@@ -43,7 +42,12 @@ export default function ExternalAgentForm() {
     setLoading(true);
 
     try {
-      const data = await commons.agents.createLiaison(agentData);
+      const res = await fetch("/api/liaison", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(agentData),
+      });
+      const data = await res.json();
       setResult(data); // Store liaison details
       setToolSchema({
         info: {

@@ -4,7 +4,6 @@ import AppBar from "@/components/layout/app-bar";
 import { DashboardSideBar } from "@/components/layout/dashboard-side-bar";
 import { useAuth } from "@/context/AuthContext";
 import { useEffect, useMemo, useState } from "react";
-import { commons } from "@/lib/commons";
 import { useSpaces } from "@/hooks/spaces/use-spaces";
 // Create form moved to its own page
 import { SpacesList } from "@/components/spaces/spaces-list";
@@ -25,9 +24,10 @@ export default function SpacesPage() {
     async function load() {
       if (!humanId) return;
       try {
-        const res = await commons.agents.list(humanId);
+        const res = await fetch(`/api/agents?ownerId=${encodeURIComponent(humanId)}`);
+        const json = await res.json();
         if (!cancelled) {
-          const list = res.data || [];
+          const list = json.data || [];
           setAgentIds(
             Array.isArray(list) ? list.map((a: any) => a.agentId).filter(Boolean) : []
           );

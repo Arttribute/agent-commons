@@ -7,7 +7,6 @@ import SessionInterface from "@/components/sessions/session-interface";
 import { Loader2 } from "lucide-react";
 import { SessionsSideBar } from "@/components/sessions/sessions-side-bar";
 import { useAgentContext } from "@/context/AgentContext";
-import { commons } from "@/lib/commons";
 
 export default function PublicAgentPage() {
   const params = useParams();
@@ -25,16 +24,27 @@ export default function PublicAgentPage() {
 
   const fetchSessions = async () => {
     if (!agentId || !userAddress) return;
-    const res = await commons.sessions.list(agentId, userAddress).catch(() => null);
-    setSessions(res?.data || []);
+    try {
+      const res = await fetch(`/api/sessions/list?agentId=${agentId}&initiatorId=${encodeURIComponent(userAddress)}`);
+      const data = await res.json();
+      setSessions(data?.data || []);
+    } catch {
+      setSessions([]);
+    }
   };
 
   useEffect(() => {
     async function fetchAgent() {
       setLoading(true);
-      const res = await commons.agents.get(agentId).catch(() => null);
-      setAgent(res?.data || null);
-      setLoading(false);
+      try {
+        const res = await fetch(`/api/agents/${agentId}`);
+        const data = await res.json();
+        setAgent(res.ok ? (data.data ?? null) : null);
+      } catch {
+        setAgent(null);
+      } finally {
+        setLoading(false);
+      }
       clearMessages();
       fetchSessions();
     }
@@ -66,7 +76,6 @@ export default function PublicAgentPage() {
         isRedirecting={isRedirecting}
         onSessionCreated={(newSessionId) => {
           setIsRedirecting(true);
-          // Use replace for seamless URL update without page reload feel
           router.replace(`/agents/${agentId}/${newSessionId}`);
         }}
       />

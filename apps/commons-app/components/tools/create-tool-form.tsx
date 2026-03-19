@@ -8,7 +8,6 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { commons } from "@/lib/commons";
 import {
   Select,
   SelectContent,
@@ -52,14 +51,19 @@ export function CreateToolForm() {
         throw new Error("Invalid JSON format in Custom Tool JSON field");
       }
 
-      const data = await commons.tools.create({
-        name: toolData.name,
-        displayName: toolData.displayName || toolData.name,
-        schema,
-        owner: userAddress,
-        ownerType: "user",
-        visibility: toolData.visibility,
+      const res = await fetch("/api/tools", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: toolData.name,
+          displayName: toolData.displayName || toolData.name,
+          schema,
+          owner: userAddress,
+          ownerType: "user",
+          visibility: toolData.visibility,
+        }),
       });
+      const data = await res.json();
 
       if (data.data) {
         setSuccess("Tool created successfully!");

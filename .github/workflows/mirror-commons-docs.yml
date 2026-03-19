@@ -1,0 +1,42 @@
+name: Mirror commons-docs
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "apps/commons-docs/**"
+
+jobs:
+  mirror:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout monorepo
+        uses: actions/checkout@v4
+
+      - name: Mirror to Arttribute/commons-docs
+        env:
+          GH_PAT: ${{ secrets.COMMONS_DOCS_MIRROR_TOKEN }}
+        run: |
+          git clone https://x-access-token:${GH_PAT}@github.com/Arttribute/commons-docs.git /tmp/commons-docs
+
+          # Clear destination contents (preserve .git directory)
+          find /tmp/commons-docs -mindepth 1 -not -path '/tmp/commons-docs/.git*' -delete
+
+          # Copy the commons-docs subdirectory into the destination
+          cp -r apps/commons-docs/. /tmp/commons-docs/
+
+          cd /tmp/commons-docs
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add -A
+
+          # Only commit and push if there are actual changes
+          if git diff --staged --quiet; then
+            echo "No changes to mirror."
+          else
+            git commit -m "sync: mirror from agent-commons monorepo
+
+            Source: ${{ github.repository }}@${{ github.sha }}"
+            git push origin main
+          fi

@@ -23,7 +23,6 @@ import ImageUploader from "./ImageUploader";
 import KnowledgeBaseInput from "./KnowledgeBaseInput";
 import { Presets } from "./presets"; // import your updated Presets
 import { useAuth } from "@/context/AuthContext";
-import { commons } from "@/lib/commons";
 
 /** Example interface for model config */
 interface ModelConfig {
@@ -111,7 +110,12 @@ export function CreateAgentForm() {
     };
 
     try {
-      await commons.agents.create(finalAgent as any);
+      const res = await fetch("/api/agents", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(finalAgent),
+      });
+      if (!res.ok) throw new Error("Failed to create agent");
       router.push("/studio/agents");
     } catch {
       // creation failed — stay on page

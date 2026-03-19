@@ -1,5 +1,4 @@
 import { useState, useEffect, useCallback } from "react";
-import { commons } from "@/lib/commons";
 import { McpTool } from "@/types/mcp";
 
 interface UseMcpToolsForServerOptions {
@@ -20,8 +19,9 @@ export function useMcpToolsForServer({
     setLoading(true);
     setError(null);
     try {
-      const data = await commons.mcp.listTools(serverId);
-      setTools((data as any).tools ?? []);
+      const res = await fetch(`/api/mcp/servers/${serverId}/tools`);
+      const data = await res.json();
+      setTools(data.tools ?? []);
     } catch (err: any) {
       setError(err.message);
     } finally {
@@ -56,8 +56,11 @@ export function useMcpToolsByOwner({
     setLoading(true);
     setError(null);
     try {
-      const data = await commons.mcp.listToolsByOwner(ownerId, ownerType);
-      setTools((data as any).tools ?? []);
+      const res = await fetch(
+        `/api/mcp/tools?ownerId=${encodeURIComponent(ownerId)}&ownerType=${encodeURIComponent(ownerType)}`
+      );
+      const data = await res.json();
+      setTools(data.tools ?? []);
     } catch (err: any) {
       setError(err.message);
     } finally {

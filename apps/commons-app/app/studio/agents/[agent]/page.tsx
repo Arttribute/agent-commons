@@ -13,7 +13,6 @@ import { AgentKnowledgebase } from "@/components/agents/agent-knowledge-base";
 import SessionsList from "@/components/sessions/sessions-list";
 import { CreateTaskDialog } from "@/components/tasks/create-task-dialog";
 import { useAuth } from "@/context/AuthContext";
-import { commons } from "@/lib/commons";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { CommonAgent } from "@/types/agent";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -68,11 +67,13 @@ export default function AgentStudioPage({
       setLoading(true);
       try {
         const [agentRes, toolsRes] = await Promise.all([
-          commons.agents.get(agentId),
-          commons.tools.list({ agentId }),
+          fetch(`/api/agents/${agentId}`),
+          fetch(`/api/agents/${agentId}/tools`),
         ]);
-        setAgent(agentRes.data as unknown as CommonAgent);
-        setAgentTools(toolsRes.data || []);
+        const agentData = await agentRes.json();
+        const toolsData = await toolsRes.json();
+        setAgent(agentRes.ok ? (agentData.data as unknown as CommonAgent) : null);
+        setAgentTools(toolsData.data || []);
       } catch {
         // leave nulls
       } finally {
@@ -82,19 +83,26 @@ export default function AgentStudioPage({
     load();
   }, [agentId]);
 
-  // Fetch sessions + init studio session (single effect, no duplicate list calls)
+  // Fetch sessions + init studio session
   useEffect(() => {
     if (!agentId || !userAddress) return;
     async function initSessionsAndStudio() {
       try {
-        const { data: sessionList } = await commons.sessions.list(agentId, userAddress);
-        setSessions(sessionList || []);
+        const listRes = await fetch(`/api/sessions/list?agentId=${agentId}&initiatorId=${encodeURIComponent(userAddress)}`);
+        const listData = await listRes.json();
+        const sessionList = listData?.data || [];
+        setSessions(sessionList);
 
-        let session = sessionList?.[0] ?? null;
+        let session = sessionList[0] ?? null;
         if (!session) {
-          const { data: created } = await commons.sessions.create({ agentId, initiator: userAddress });
-          session = created;
-          setSessions([created]);
+          const createRes = await fetch("/api/sessions", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ agentId, initiator: userAddress }),
+          });
+          const createData = await createRes.json();
+          session = createData.data ?? null;
+          if (session) setSessions([session]);
         }
         setStudioSession(session);
       } catch {
@@ -129,9 +137,14 @@ export default function AgentStudioPage({
               agent={agent}
               isOwner={userAddress === agent.owner}
               onUpdate={async (data) => {
-                await commons.agents.update(agentId, data);
-                const res = await commons.agents.get(agentId);
-                setAgent(res.data as unknown as CommonAgent);
+                await fetch(`/api/agents/${agentId}`, {
+                  method: "PUT",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify(data),
+                });
+                const res = await fetch(`/api/agents/${agentId}`);
+                const updated = await res.json();
+                setAgent(updated.data as unknown as CommonAgent);
               }}
             />
 
@@ -170,9 +183,13 @@ export default function AgentStudioPage({
             height="calc(100vh - 140px)"
             onSessionCreated={async (newSessionId) => {
               try {
-                const { data: newSession } = await commons.sessions.getFull(newSessionId);
-                setStudioSession(newSession);
-                setSessions((prev) => [newSession, ...prev]);
+                const res = await fetch(`/api/sessions/${newSessionId}?full=true`);
+                const data = await res.json();
+                const newSession = data.data ?? null;
+                if (newSession) {
+                  setStudioSession(newSession);
+                  setSessions((prev) => [newSession, ...prev]);
+                }
               } catch {
                 // ignore
               }

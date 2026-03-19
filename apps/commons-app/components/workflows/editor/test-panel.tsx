@@ -4,7 +4,6 @@ import { useState, useEffect } from "react";
 import { useWorkflowStore } from "@/lib/workflows/workflow-store";
 import { WorkflowExecution } from "@/types/workflow";
 import { useWorkflowExecutionStream } from "@/hooks/use-workflows";
-import { commons } from "@/lib/commons";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -82,7 +81,12 @@ export function TestPanel({ workflowId }: TestPanelProps) {
         return acc;
       }, {} as Record<string, any>);
 
-      const data = await commons.workflows.execute(workflowId, { inputData: cleanInputs });
+      const res = await fetch(`/api/workflows/${workflowId}/execute`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ inputData: cleanInputs }),
+      });
+      const data = await res.json();
       setExecution(data as any);
       if ((data as any).status === "running" || (data as any).status === "pending") {
         setPendingExecutionId((data as any).executionId);

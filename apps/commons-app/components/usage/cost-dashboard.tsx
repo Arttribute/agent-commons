@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { commons } from "@/lib/commons";
 import { UsageAggregation, UsageEvent } from "@agent-commons/sdk";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -94,8 +93,12 @@ export function CostDashboard({ agentId, from, to }: CostDashboardProps) {
       setLoading(true);
       setError(null);
       try {
-        const res = await commons.usage.getAgentUsage(agentId, { from, to });
-        setData(res.data);
+        const params = new URLSearchParams();
+        if (from) params.set("from", from);
+        if (to) params.set("to", to);
+        const res = await fetch(`/api/usage/agents/${agentId}?${params.toString()}`);
+        const json = await res.json();
+        setData(json.data);
       } catch (err: any) {
         setError(err.message ?? "Failed to load usage data");
       } finally {

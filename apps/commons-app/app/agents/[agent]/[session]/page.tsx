@@ -7,7 +7,6 @@ import SessionInterface from "@/components/sessions/session-interface";
 import { SessionsSideBar } from "@/components/sessions/sessions-side-bar";
 import { useAgentContext } from "@/context/AgentContext";
 import { Skeleton } from "@/components/ui/skeleton";
-import { commons } from "@/lib/commons";
 
 function SessionPageSkeleton() {
   return (
@@ -49,8 +48,9 @@ export default function AgentSessionPage() {
   const fetchSessions = async (id: string, address: string) => {
     if (!id || !address) return;
     try {
-      const res = await commons.sessions.list(id, address);
-      setSessions(res.data || []);
+      const res = await fetch(`/api/sessions/list?agentId=${id}&initiatorId=${encodeURIComponent(address)}`);
+      const data = await res.json();
+      setSessions(data?.data || []);
     } catch {
       setSessions([]);
     }
@@ -65,13 +65,16 @@ export default function AgentSessionPage() {
 
       try {
         const [agentRes, sessionRes] = await Promise.all([
-          commons.agents.get(agentId),
-          commons.sessions.getFull(sessionId),
+          fetch(`/api/agents/${agentId}`),
+          fetch(`/api/sessions/${sessionId}?full=true`),
         ]);
 
-        setAgent(agentRes.data);
-        setSession(sessionRes.data);
-        setMessages(sessionRes.data?.history || []);
+        const agentData = await agentRes.json();
+        const sessionData = await sessionRes.json();
+
+        setAgent(agentRes.ok ? (agentData.data ?? null) : null);
+        setSession(sessionRes.ok ? (sessionData.data ?? null) : null);
+        setMessages(sessionData.data?.history || []);
 
         if (lastAgentIdRef.current !== agentId && userAddress) {
           lastAgentIdRef.current = agentId;

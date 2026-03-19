@@ -25,7 +25,6 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useAgents } from "@/hooks/use-agents";
 import { useWorkflows } from "@/hooks/use-workflows";
-import { commons } from "@/lib/commons";
 import type { Session } from "@agent-commons/sdk";
 
 interface CreateTaskDialogProps {
@@ -70,7 +69,7 @@ export function CreateTaskDialog({
 
   useEffect(() => {
     if (open) {
-      commons.tools.list().then((res) => setTools(res.data)).catch(() => {});
+      fetch("/api/tools").then((r) => r.json()).then((d) => setTools(d.data ?? [])).catch(() => {});
       if (preSelectedAgentId) {
         setFormData((prev) => ({ ...prev, agentId: preSelectedAgentId }));
       }
@@ -79,9 +78,9 @@ export function CreateTaskDialog({
 
   useEffect(() => {
     if (!formData.agentId) return;
-    commons.sessions
-      .list(formData.agentId, userAddress)
-      .then((res) => setSessions(res.data))
+    fetch(`/api/sessions/list?agentId=${formData.agentId}&initiatorId=${encodeURIComponent(userAddress)}`)
+      .then((r) => r.json())
+      .then((d) => setSessions(d.data ?? []))
       .catch(() => setSessions([]));
   }, [formData.agentId, userAddress]);
 
@@ -92,22 +91,25 @@ export function CreateTaskDialog({
     try {
       let sessionId = formData.sessionId;
       if (!sessionId || sessionId === "new-session") {
-        const res = await commons.sessions.create({
-          agentId: formData.agentId,
-          initiator: userAddress,
-          title: `Task: ${formData.title}`,
+        const res = await fetch("/api/sessions", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ agentId: formData.agentId, initiator: userAddress, title: `Task: ${formData.title}` }),
         });
-        sessionId = res.data.sessionId;
+        const sessionData = await res.json();
+        sessionId = sessionData.data?.sessionId;
       }
 
-      await commons.tasks.create({
-        ...formData,
-        sessionId,
-        createdBy: userAddress,
-        createdByType: "user",
-        scheduledFor: formData.scheduledFor
-          ? new Date(formData.scheduledFor)
-          : undefined,
+      await fetch("/api/tasks", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ...formData,
+          sessionId,
+          createdBy: userAddress,
+          createdByType: "user",
+          scheduledFor: formData.scheduledFor ? new Date(formData.scheduledFor) : undefined,
+        }),
       });
 
       setFormData(EMPTY_FORM(preSelectedAgentId));

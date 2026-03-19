@@ -5,7 +5,7 @@ import { WorkflowCard } from "./workflow-card";
 import { Loader2, Workflow as WorkflowIcon } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useWorkflows } from "@/hooks/use-workflows";
-import { commons } from "@/lib/commons";
+
 
 interface WorkflowsListViewProps {
   userAddress: string;
@@ -18,7 +18,7 @@ export function WorkflowsListView({ userAddress }: WorkflowsListViewProps) {
   const handleDelete = async (workflowId: string) => {
     if (!confirm("Are you sure you want to delete this workflow?")) return;
     try {
-      await commons.workflows.delete(workflowId);
+      await fetch(`/api/workflows/${workflowId}`, { method: "DELETE" });
       toast({ title: "Workflow deleted" });
       refresh();
     } catch {
@@ -28,13 +28,18 @@ export function WorkflowsListView({ userAddress }: WorkflowsListViewProps) {
 
   const handleDuplicate = async (workflowId: string) => {
     try {
-      const workflow = await commons.workflows.get(workflowId);
-      await commons.workflows.create({
-        name: `${workflow.name} (Copy)`,
-        description: workflow.description,
-        ownerId: userAddress,
-        ownerType: "user",
-        definition: workflow.definition,
+      const res = await fetch(`/api/workflows/${workflowId}`);
+      const { data: workflow } = await res.json();
+      await fetch("/api/workflows", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: `${workflow.name} (Copy)`,
+          description: workflow.description,
+          ownerId: userAddress,
+          ownerType: "user",
+          definition: workflow.definition,
+        }),
       });
       toast({ title: "Workflow duplicated" });
       refresh();

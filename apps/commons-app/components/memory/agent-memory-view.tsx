@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
-import { commons } from "@/lib/commons";
 import { AgentMemory, MemoryType, CreateMemoryParams } from "@agent-commons/sdk";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -180,18 +179,20 @@ function CreateMemoryDialog({
     if (!form.summary.trim()) return;
     setSaving(true);
     try {
-      const res = await commons.memory.create({
-        agentId,
-        memoryType: form.memoryType,
-        summary: form.summary.trim(),
-        content: form.content.trim() || form.summary.trim(),
-        importanceScore: parseFloat(form.importanceScore) || 0.5,
-        tags: form.tags
-          .split(",")
-          .map((t) => t.trim())
-          .filter(Boolean),
+      const res = await fetch("/api/memory", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          agentId,
+          memoryType: form.memoryType,
+          summary: form.summary.trim(),
+          content: form.content.trim() || form.summary.trim(),
+          importanceScore: parseFloat(form.importanceScore) || 0.5,
+          tags: form.tags.split(",").map((t) => t.trim()).filter(Boolean),
+        }),
       });
-      onCreated(res.data);
+      const created = await res.json();
+      onCreated(created.data);
       setOpen(false);
       setForm({
         memoryType: "semantic",
@@ -316,8 +317,8 @@ export function AgentMemoryView({ agentId }: AgentMemoryViewProps) {
     setLoading(true);
     try {
       const [memRes, statRes] = await Promise.all([
-        commons.memory.list(agentId),
-        commons.memory.stats(agentId),
+        fetch(`/api/memory/agents/${agentId}`).then((r) => r.json()),
+        fetch(`/api/memory/agents/${agentId}/stats`).then((r) => r.json()),
       ]);
       setMemories(memRes.data ?? []);
       setStats(statRes.data ?? null);
@@ -333,7 +334,7 @@ export function AgentMemoryView({ agentId }: AgentMemoryViewProps) {
   }, [load]);
 
   const handleDelete = async (memoryId: string) => {
-    await commons.memory.delete(memoryId).catch(() => {});
+    await fetch(`/api/memory/${memoryId}`, { method: "DELETE" }).catch(() => {});
     setMemories((prev) => prev.filter((m) => m.memoryId !== memoryId));
     setStats((s) => s ? { ...s, total: s.total - 1 } : s);
   };

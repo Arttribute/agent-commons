@@ -16,7 +16,6 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Loader2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-import { commons } from "@/lib/commons";
 
 interface CreateWorkflowDialogProps {
   open: boolean;
@@ -49,13 +48,19 @@ export function CreateWorkflowDialog({
 
     setLoading(true);
     try {
-      const workflow = await commons.workflows.create({
-        name: formData.name,
-        description: formData.description,
-        ownerId: userAddress,
-        ownerType: "user",
-        definition: { nodes: [], edges: [] },
+      const res = await fetch("/api/workflows", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: formData.name,
+          description: formData.description,
+          ownerId: userAddress,
+          ownerType: "user",
+          definition: { nodes: [], edges: [] },
+        }),
       });
+      const workflow = await res.json();
+      if (!res.ok) throw new Error(workflow.message || "Failed to create workflow");
 
       toast({ title: "Success", description: "Workflow created successfully" });
       router.push(`/studio/workflows/${workflow.workflowId}/edit`);
