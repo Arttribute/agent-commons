@@ -80,37 +80,22 @@ jobs:
 
           CHANGED_FILES=$(git diff --name-only "$LAST_TAG" HEAD -- packages/ | grep -v 'node_modules')
 
-          CHANGED_FILES="$CHANGED_FILES" node -e "
-            const fs = require('fs');
-            const crypto = require('crypto');
-            const changedFiles = process.env.CHANGED_FILES.trim().split('\n').filter(Boolean);
+          FRONTMATTER=""
+          if echo "$CHANGED_FILES" | grep -q "^packages/commons-sdk/"; then
+            FRONTMATTER="${FRONTMATTER}'@agent-commons/sdk': patch"$'\n'
+          fi
+          if echo "$CHANGED_FILES" | grep -q "^packages/agc-cli/"; then
+            FRONTMATTER="${FRONTMATTER}'@agent-commons/cli': patch"$'\n'
+          fi
 
-            const dirToPackage = {
-              'packages/commons-sdk': '@agent-commons/sdk',
-              'packages/agc-cli':     '@agent-commons/cli',
-            };
+          if [ -z "$FRONTMATTER" ]; then
+            echo "No matching packages — skipping changeset"
+            exit 0
+          fi
 
-            const changed = new Set();
-            for (const file of changedFiles) {
-              for (const [dir, pkg] of Object.entries(dirToPackage)) {
-                if (file.startsWith(dir + '/') || file === dir) {
-                  changed.add(pkg);
-                  break;
-                }
-              }
-            }
-
-            if (changed.size === 0) {
-              console.log('No matching packages — skipping changeset');
-              process.exit(0);
-            }
-
-            const id = crypto.randomBytes(4).toString('hex');
-            const frontmatter = [...changed].map(p => \"'\" + p + \"': patch\").join('\n');
-            const content = '---\n' + frontmatter + '\n---\n\nAuto patch release\n';
-            fs.writeFileSync('.changeset/auto-' + id + '.md', content);
-            console.log('Created .changeset/auto-' + id + '.md for: ' + [...changed].join(', '));
-          "
+          ID=$(openssl rand -hex 4)
+          printf -- "---\n%s---\n\nAuto patch release\n" "$FRONTMATTER" > ".changeset/auto-${ID}.md"
+          echo "Created .changeset/auto-${ID}.md"
 
       - name: Create Release PR or Publish
         id: changesets
