@@ -100,7 +100,7 @@ export class TaskExecutionService {
         title: params.title,
         description: params.description,
         executionMode: params.executionMode ?? 'single',
-        workflowId: params.workflowId,
+        workflowId: params.workflowId || undefined,
         workflowInputs: params.workflowInputs,
         cronExpression: params.cronExpression,
         scheduledFor: scheduledForDate,

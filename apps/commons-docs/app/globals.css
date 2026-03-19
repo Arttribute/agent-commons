@@ -47,12 +47,8 @@
   --ring: 0 0% 83.1%;
 }
 
-/* Space Mono for all headings */
-h1, h2, h3, h4, h5, h6,
-.nd-title,
-[class*="fumadocs"] h1,
-[class*="fumadocs"] h2,
-[class*="fumadocs"] h3 {
+/* Space Mono only for page titles (h1) */
+h1 {
   font-family: 'Space Mono', monospace;
 }
 

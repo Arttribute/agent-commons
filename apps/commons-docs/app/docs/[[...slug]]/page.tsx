@@ -7,6 +7,9 @@ import {
 } from 'fumadocs-ui/page';
 import { notFound } from 'next/navigation';
 import defaultMdxComponents from 'fumadocs-ui/mdx';
+import { readFile } from 'fs/promises';
+import path from 'path';
+import { PageActions } from '@/components/page-actions';
 
 export default async function Page({
   params,
@@ -19,10 +22,17 @@ export default async function Page({
 
   const MDX = page.data.body;
 
+  const githubPath = `content/docs/${page.file.path}`;
+  const rawContent = await readFile(
+    path.join(process.cwd(), 'content/docs', page.file.path),
+    'utf-8'
+  );
+
   return (
     <DocsPage toc={page.data.toc} full={page.data.full}>
       <DocsTitle>{page.data.title}</DocsTitle>
       <DocsDescription>{page.data.description}</DocsDescription>
+      <PageActions rawContent={rawContent} githubPath={githubPath} />
       <DocsBody>
         <MDX components={{ ...defaultMdxComponents }} />
       </DocsBody>

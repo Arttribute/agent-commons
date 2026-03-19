@@ -3,8 +3,9 @@
 import { useState } from "react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
-import { PanelLeft, PlusCircle, Loader2, Bot } from "lucide-react";
+import { PanelLeft, PlusCircle, Loader2, Bot, Search } from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import SessionsList from "@/components/sessions/sessions-list";
 import { useRouter } from "next/navigation";
@@ -23,7 +24,14 @@ export function SessionsSideBar({
   isLoadingSessions?: boolean;
 }) {
   const [isOpen, setIsOpen] = useState(true);
+  const [search, setSearch] = useState("");
   const router = useRouter();
+
+  const filteredSessions = search.trim()
+    ? sessions.filter((s) =>
+        (s.title || "New session").toLowerCase().includes(search.toLowerCase())
+      )
+    : sessions;
 
   return (
     <div
@@ -79,7 +87,20 @@ export function SessionsSideBar({
       {/* Sessions list */}
       {isOpen && (
         <div className="flex-1 overflow-hidden flex flex-col min-h-0">
-          <div className="px-3 py-2 flex items-center justify-between">
+          {/* Search bar */}
+          <div className="px-2 pb-2">
+            <div className="relative">
+              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3 w-3 text-muted-foreground pointer-events-none" />
+              <Input
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Search sessions..."
+                className="h-7 pl-7 text-xs bg-muted/50 border-0 focus-visible:ring-1"
+              />
+            </div>
+          </div>
+
+          <div className="px-3 py-1 flex items-center justify-between">
             <span className="text-[11px] font-medium text-muted-foreground uppercase tracking-wide">
               Recent
             </span>
@@ -100,7 +121,7 @@ export function SessionsSideBar({
                 ))}
               </div>
             ) : (
-              <SessionsList sessions={sessions} currentSessionId={currentSessionId} />
+              <SessionsList sessions={filteredSessions} currentSessionId={currentSessionId} />
             )}
           </ScrollArea>
         </div>
