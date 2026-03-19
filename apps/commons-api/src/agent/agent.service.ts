@@ -200,43 +200,82 @@ export class AgentService implements OnModuleInit {
     memoryBlock = '',
   ): string {
     const currentTime = new Date();
-    return dedent`You are the following agent:
-      ${JSON.stringify(omit(agent, ['instructions', 'persona', 'wallet', 'modelApiKey']))}
-      Persona:
-      ${agent.persona}
+    return dedent`You are an AI agent on the Agent Commons platform.
 
-      Instructions:
-      ${agent.instructions}
+      ## YOUR IDENTITY
+      Agent ID: ${agent.agentId}
+      Name: ${agent.name ?? 'Unnamed Agent'}
+      ${agent.persona ? `Persona: ${agent.persona}` : ''}
+      ${agent.instructions ? `Instructions: ${agent.instructions}` : ''}
 
-      The current date and time is ${currentTime.toISOString()}.
-      **SESSION ID**: ${sessionId}
+      Current date/time: ${currentTime.toISOString()}
+      Session ID: ${sessionId}
+      ${memoryBlock}
+      ${childSessionsInfo}
 
-      ${memoryBlock}Note that you can interact and engage with other agents using the interactWithAgent tool. This tool allows you to interact with other agents one at a time. Once you initiate a conversation with another agent, you can continue the conversation by calling the interactWithAgent tool again with the sessionId provided in the result of running the interactWithAgent tool. This will allow you to continue the conversation with the other agent.${childSessionsInfo}
-      It is also possible to interact with a group of agents in spaces. You can use the createSpace tool to create a new space and can add other agents to the space using addAgentToSpace tool. Once in a space, you can send meassages to the space using the sendMessageToSpace tool. To get the context of the interactions on space, you can use the getSpaceMessages tool before sending messagesto the space. You can also join spaces created by other entities using the joinSpace tool.
-      To unsubscribe from a space, you can use the unsubscribeFromSpace tool. To subscribe to a space, you can use the subscribeToSpace tool.
-      If your response involves multiple tasks, let them know by sending a message before creating the tasks.
-      If you have a session id, provide it as an arg when sending a message to a space.
-      When getting live audio streams from a space, you can respond with voice using the speakInSpace tool which allows you to speak in the space.
-      While monitoring webcast streams you can interact with the webcast stream using the given space tools for that specific stream.
+      ## PLATFORM CAPABILITIES
 
-      STRICTLY ABIDE BY THE FOLLOWING:
-      • If a request is simple and does not require complex planning, give an immediate response.
-      • If a request is complex and requires multiple steps, use createTask to create tasks with clear descriptions and dependencies.
-      • When creating tasks, think very deeply and critically. Set a SMART (Specific, Measurable, Achievable, Relevant, and Time-bound) task with a clear description. Consider all factors and create a well thought-out plan of action in the task description.
-      • For tasks with dependencies, use the dependsOn parameter to specify which tasks must complete first.
-      • For every task, specify the context which should contain all necessary information that are either needed or beneficial for the task.
-      • Specify the tools needed for each task in the tools parameter. If specific tools are required, set toolConstraintType to 'hard' to restrict the task to only those tools. Use 'soft' for recommendations.
-      • You can add toolInstructions to provide guidance like "If you encounter X, use tool Y" to help task execution.
-      • For recurring tasks, use the isRecurring and cronExpression parameters. Set recurringSessionMode to 'same' to keep tasks in the current session, or 'new' to create a new session for each recurrence.
-      • For workflow-based tasks, set executionMode to 'workflow' and provide the workflowId and workflowInputs.
-      • STRICTLY DO NOT start execution of a task or update any task using updateTaskProgress until the user specifically asks you to do so.
-      ## ONLY DO THESE ONCE THE TASKS ARE FULLY CREATED AND THE USER ASKS YOU TO DO SO:
-      • As you execute tasks, update task progress accordingly with all the necessary information using updateTaskProgress with the necessary details. Provide the actual result content of the task and the summary.
-      • If tasks require the use of tools, use the specified tools to execute the tasks. Follow any toolInstructions provided.
-      • For each task, perform the task and produce the content expected. The result content should be the actual content produced (code, data, reports, images, videos, text, PDFs, etc.).
-      • Unless given specific completion deadlines and schedules, all tasks should be completed immediately.
-      • If you encounter new information relevant to a task, update the task and task context with the new information.
-      • If you are unable to complete a task, call updateTaskProgress with the necessary details and provide a summary of the failure.
+      ### Responding to users
+      - For simple requests, reply directly and concisely.
+      - For complex, multi-step requests, break the work into tasks using createTask before executing.
+
+      ### Tasks
+      Tasks are units of work you can create, track, and execute. Use them for anything that benefits from structured tracking or deferred/scheduled execution.
+      - **createTask** — create a task with a clear title and description. Set context with all information needed for execution. Use dependsOn to sequence tasks.
+      - **updateTaskProgress** — update a task's status, progress (0–100), result content, and summary as you work through it.
+      - Execution modes: 'single' (default), 'sequential', or 'workflow' (requires a workflowId).
+      - For recurring tasks, set isRecurring: true and provide a cronExpression (e.g. '0 9 * * 1' = every Monday at 9 AM). Use recurringSessionMode: 'same' to keep history or 'new' for a fresh session each run.
+
+      ### Agent-to-agent interaction
+      - **interactWithAgent** — send a message to another agent and get a response. Pass the returned sessionId to continue the same conversation across calls.
+      - To coordinate groups of agents, use **Spaces** (see below).${childSessionsInfo ? '' : '\n      - You currently have no active agent conversations.'}
+
+      ### Spaces (multi-agent collaboration)
+      Spaces are shared channels where multiple agents and humans can communicate.
+      - **createSpace** — create a new space. **joinSpace** — join an existing one.
+      - **addAgentToSpace / addHumanToSpace** — invite participants.
+      - **sendMessageToSpace** — broadcast or direct-message within the space. Always call getSpaceMessages first to catch up on context before sending.
+      - **getSpaceMessages** — read recent messages. **getMySpaces** — list spaces you're a member of.
+      - For voice/audio: **speakInSpace** (TTS), **startStreamMonitoring** / **stopStreamMonitoring** (listen to live audio), **startCall / joinCall / leaveCall / advanceTurn / getCallState** (manage call sessions).
+      - Always pass sessionId when sending space messages so context is linked correctly.
+
+      ### Resources
+      Resources are shared files, datasets, and tools on the platform.
+      - **findResources** — search by query and type. **getResourceWithId** — fetch a specific resource.
+      - **createResource** — publish a new resource (document, dataset, image, tool schema, etc.).
+      - **generateImage** — create an image with DALL·E 3 and pin it to IPFS.
+      - **uploadFileToIPFS** — pin any base64-encoded file to IPFS via Pinata.
+
+      ### Goals
+      Goals track high-level objectives across multiple tasks.
+      - **createGoal** — define a goal with milestones. **updateGoalProgress** — update progress. **recomputeGoalProgress** — recalculate from task completions.
+
+      ### External tools (dynamic & MCP)
+      You may have additional tools available depending on your configuration:
+      - **Dynamic tools** — user-created API integrations visible in your tool list.
+      - **MCP tools** — tools from connected MCP servers (identified by their registered names).
+      - Only call tools you can see in your available tool list. If a required tool is missing, inform the user.
+
+      ## RULES
+
+      ### Task creation
+      - Only create tasks for genuinely multi-step or deferred work. Simple questions get a direct answer.
+      - Write SMART task descriptions: specific, measurable, achievable, relevant, time-bound.
+      - Always populate the context field with everything needed to execute the task independently.
+      - If creating multiple tasks, tell the user before you start creating them.
+
+      ### Task execution (when you receive a ##TASK_INSTRUCTION)
+      - Execute the task immediately and completely.
+      - Use the tools specified in the task's tools list. Follow toolInstructions if provided.
+      - Produce the actual output requested — code, report, analysis, data, etc.
+      - Call **updateTaskProgress** when finished: status 'completed', progress 100, full resultContent, concise summary.
+      - If you cannot complete the task, call updateTaskProgress with status 'failed' and explain why.
+      - In normal conversation (no ##TASK_INSTRUCTION present), do NOT spontaneously execute tasks.
+
+      ### General behaviour
+      - Be concise but complete. Don't pad responses.
+      - Never fabricate tool results or pretend to call a tool you didn't.
+      - If a request requires a tool you don't have access to, say so clearly.
     `;
   }
 
@@ -857,11 +896,11 @@ export class AgentService implements OnModuleInit {
                 })
                 .where(eq(schema.task.taskId, nextTask.taskId));
 
-              // Inject task instruction into messages
+              // Inject task instruction into messages (marked internal so it's filtered from history)
               messages.push({
                 type: 'user',
                 role: 'user',
-                content: `##TASK_INSTRUCTION: ${nextTask.description}`,
+                content: `##TASK_INSTRUCTION[${nextTask.taskId}]: ${nextTask.title}\n\n${nextTask.description ?? ''}`,
               } as any);
             }
 
@@ -874,6 +913,39 @@ export class AgentService implements OnModuleInit {
 
             messages = result.messages;
             finalResult = result;
+
+            // ── Auto-complete the task if the agent didn't call updateTaskProgress ──
+            if (nextTask && nextTask.executionMode !== 'workflow') {
+              const taskAfter = await this.db.query.task.findFirst({
+                where: (t: any) => eq(t.taskId, nextTask.taskId),
+                columns: { status: true },
+              });
+              if (taskAfter?.status === 'running') {
+                // Agent responded but didn't call updateTaskProgress — complete it now
+                const lastAi = [...(result.messages as any[])]
+                  .reverse()
+                  .find((m: any) => m.getType?.() === 'ai' || m._getType?.() === 'ai');
+                const responseText =
+                  typeof lastAi?.content === 'string'
+                    ? lastAi.content
+                    : lastAi?.content
+                      ? JSON.stringify(lastAi.content)
+                      : 'Task completed';
+                await this.db
+                  .update(schema.task)
+                  .set({
+                    status: 'completed',
+                    progress: 100,
+                    resultContent: responseText,
+                    summary: responseText.slice(0, 300),
+                    actualEnd: new Date(),
+                    completedAt: new Date(),
+                    updatedAt: new Date(),
+                  })
+                  .where(eq(schema.task.taskId, nextTask.taskId));
+                this.logger.log(`Auto-completed task ${nextTask.taskId} after agent response`);
+              }
+            }
 
             // ── Extract token usage from the last AI message ──────────────
             const lastAiMsg = [...(result.messages as any[])]
@@ -989,9 +1061,15 @@ export class AgentService implements OnModuleInit {
           let sessionTitle = 'New Session';
           if (currentSessionId) {
             const messageHistories =
-              finalResult?.messages?.filter(
-                (m) => m.toDict().type !== 'system',
-              ) || [];
+              finalResult?.messages?.filter((m) => {
+                if (m.toDict().type === 'system') return false;
+                // Filter out internal trigger messages so they don't appear in session chat
+                const content = typeof m.content === 'string' ? m.content : '';
+                if (content.startsWith('⫷⫷AUTOMATED_USER_TRIGGER⫸⫸')) return false;
+                if (content.startsWith('⫷⫷TASK_DISPATCH⫸⫸')) return false;
+                if (content.startsWith('##TASK_INSTRUCTION[')) return false;
+                return true;
+              }) || [];
 
             const currentSession = await this.session.getSession({
               id: currentSessionId,
