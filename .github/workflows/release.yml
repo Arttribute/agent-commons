@@ -117,7 +117,7 @@ jobs:
         uses: changesets/action@v1
         with:
           publish: pnpm release
-          version: pnpm version-packages && git checkout -- apps/commons-app/package.json
+          version: pnpm version-ci
           title: "chore: version packages"
           commit: "chore: version packages"
         env:

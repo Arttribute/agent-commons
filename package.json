@@ -8,6 +8,7 @@
     "test": "pnpm --filter './packages/*' run test --passWithNoTests",
     "changeset": "changeset",
     "version-packages": "changeset version",
+    "version-ci": "changeset version && git checkout -- apps/commons-app/package.json",
     "release": "pnpm build && changeset publish"
   },
   "keywords": [],
