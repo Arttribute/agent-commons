@@ -11,12 +11,17 @@ export async function POST(request: NextRequest) {
 
   const body = await request.json();
 
+  // Extract initiator from body and forward as x-initiator header to backend.
+  // The SDK sends it as a header; the web app sends it in the body — normalise both here.
+  const initiator: string | undefined = body.initiator ?? body.initiatorId;
+
   const upstream = await fetch(`${baseUrl}/v1/agents/run/stream`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
       Accept: "text/event-stream",
       ...backendAuthHeaders(),
+      ...(initiator ? { "x-initiator": initiator } : {}),
     },
     body: JSON.stringify(body),
   });
