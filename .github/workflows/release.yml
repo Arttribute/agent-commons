@@ -110,13 +110,17 @@ jobs:
         uses: changesets/action@v1
         with:
           publish: pnpm release
+          # After changeset versions packages, revert commons-app/package.json so it is
+          # never bumped in the release PR (the SDK isn't on npm yet at that point).
+          # We handle commons-app separately in the post-publish step below.
+          version: pnpm changeset version && git checkout -- apps/commons-app/package.json
           title: "chore: version packages"
           commit: "chore: version packages"
         env:
           GITHUB_TOKEN: ${{ secrets.GH_PAT }}
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
-      - name: Bump commons-app SDK dependency
+      - name: Bump commons-app SDK dependency and update lockfile
         if: steps.changesets.outputs.published == 'true'
         run: |
           SDK_VERSION=$(node -p "require('./packages/commons-sdk/package.json').version")
@@ -128,7 +132,10 @@ jobs:
             fs.writeFileSync(path, JSON.stringify(pkg, null, 2) + '\n');
           "
           git diff --quiet apps/commons-app/package.json || {
-            git add apps/commons-app/package.json
+            # Regenerate the lockfile so it stays in sync with the updated package.json.
+            # The SDK is already published to npm at this point so the install succeeds.
+            pnpm install --no-frozen-lockfile
+            git add apps/commons-app/package.json pnpm-lock.yaml
             git commit -m "chore: bump commons-app to @agent-commons/sdk@${SDK_VERSION}"
             git push origin HEAD:main
           }
