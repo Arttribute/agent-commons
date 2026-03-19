@@ -6,7 +6,7 @@
   "linked": [],
   "access": "public",
   "baseBranch": "main",
-  "updateInternalDependencies": "patch",
+  "updateInternalDependencies": "none",
   "ignore": [
     "commons-api",
     "commons-app",
