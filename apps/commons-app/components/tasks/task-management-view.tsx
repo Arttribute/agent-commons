@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useMemo, useCallback, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import { Loader2, Plus, Calendar, CheckCircle2, Circle, XCircle, Clock, Play, Trash2, MoreVertical, RefreshCw, LayoutGrid, GitBranch } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -151,6 +152,7 @@ function TaskDependencyGraph({ tasks, agentMap }: { tasks: Task[]; agentMap: Map
 // ── Main view ─────────────────────────────────────────────────────────────────
 
 export function TaskManagementView({ userAddress, onRegisterCreate }: { userAddress: string; onRegisterCreate?: (fn: () => void) => void }) {
+  const router = useRouter();
   const [filterStatus, setFilterStatus] = useState<string>("all");
   const [selectedAgent, setSelectedAgent] = useState<string>("all");
   const [showCreateDialog, setShowCreateDialog] = useState(false);
@@ -311,7 +313,11 @@ export function TaskManagementView({ userAddress, onRegisterCreate }: { userAddr
             const isActing = actionLoading === task.taskId;
 
             return (
-              <Card key={task.taskId} className="hover:shadow-md transition-shadow">
+              <Card
+                key={task.taskId}
+                className="hover:shadow-md transition-shadow cursor-pointer"
+                onClick={() => router.push(`/studio/tasks/${task.taskId}`)}
+              >
                 <CardHeader className="pb-3">
                   <div className="flex items-start justify-between gap-2">
                     <div className="flex-1 min-w-0">
@@ -322,7 +328,13 @@ export function TaskManagementView({ userAddress, onRegisterCreate }: { userAddr
                     </div>
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>
-                        <Button variant="ghost" size="sm" className="h-7 w-7 p-0 shrink-0" disabled={isActing}>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-7 w-7 p-0 shrink-0"
+                          disabled={isActing}
+                          onClick={(e) => e.stopPropagation()}
+                        >
                           {isActing ? (
                             <Loader2 className="h-3.5 w-3.5 animate-spin" />
                           ) : (
@@ -332,19 +344,19 @@ export function TaskManagementView({ userAddress, onRegisterCreate }: { userAddr
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end">
                         {task.status === "pending" && (
-                          <DropdownMenuItem onClick={() => handleExecute(task.taskId)}>
+                          <DropdownMenuItem onClick={(e) => { e.stopPropagation(); handleExecute(task.taskId); }}>
                             <Play className="h-4 w-4 mr-2" />
                             Execute
                           </DropdownMenuItem>
                         )}
                         {task.status === "running" && (
-                          <DropdownMenuItem onClick={() => handleCancel(task.taskId)}>
+                          <DropdownMenuItem onClick={(e) => { e.stopPropagation(); handleCancel(task.taskId); }}>
                             <XCircle className="h-4 w-4 mr-2" />
                             Cancel
                           </DropdownMenuItem>
                         )}
                         <DropdownMenuItem
-                          onClick={() => handleDelete(task.taskId)}
+                          onClick={(e) => { e.stopPropagation(); handleDelete(task.taskId); }}
                           className="text-destructive"
                         >
                           <Trash2 className="h-4 w-4 mr-2" />
