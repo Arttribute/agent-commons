@@ -1,5 +1,13 @@
 # @agent-commons/cli
 
+## 0.1.3
+
+### Patch Changes
+
+- c65aa7e: Auto patch release
+- Updated dependencies [c65aa7e]
+  - @agent-commons/sdk@0.1.3
+
 ## 0.1.2
 
 ### Patch Changes
