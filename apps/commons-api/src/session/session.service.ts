@@ -176,7 +176,7 @@ export class SessionService {
 
     // Get space details if spaces column contains space IDs
     let spaceDetails: any = [];
-    if (sessionEntry.spaces && sessionEntry.spaces.spaceIds.length > 0) {
+    if (sessionEntry.spaces && Array.isArray((sessionEntry.spaces as any).spaceIds) && (sessionEntry.spaces as any).spaceIds.length > 0) {
       console.log(
         `Fetching spaces for session ${id} with space IDs:`,
         sessionEntry.spaces.spaceIds,

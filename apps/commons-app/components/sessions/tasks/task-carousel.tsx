@@ -141,14 +141,21 @@ export default function TaskCarousel({ tasks }: TaskCarouselProps) {
     return null;
   };
 
-  const hasCodeResult =
-    currentTask.resultContent && currentTask.resultContent.includes("```");
-  const resultParts = hasCodeResult
-    ? extractCodeBlocks(currentTask.resultContent || "")
-    : [];
-  const imageData = currentTask.resultContent
-    ? extractImage(currentTask.resultContent)
-    : null;
+  const resultText =
+    typeof currentTask.resultContent === "string"
+      ? currentTask.resultContent
+      : currentTask.resultContent
+        ? JSON.stringify(currentTask.resultContent, null, 2)
+        : "";
+  const summaryText =
+    typeof currentTask.summary === "string"
+      ? currentTask.summary
+      : currentTask.summary
+        ? JSON.stringify(currentTask.summary)
+        : null;
+  const hasCodeResult = resultText.includes("```");
+  const resultParts = hasCodeResult ? extractCodeBlocks(resultText) : [];
+  const imageData = resultText ? extractImage(resultText) : null;
 
   return (
     <div className="h-full flex flex-col ">
@@ -178,11 +185,23 @@ export default function TaskCarousel({ tasks }: TaskCarouselProps) {
             </div>
           )}
 
-          {currentTask.status === "completed" && currentTask.summary && (
+          {currentTask.status === "completed" && summaryText && (
             <div className="mb-4">
               <h4 className="text-sm font-medium mb-2">Summary</h4>
               <div className="bg-muted/50 p-3 rounded-md text-sm">
-                <p>{currentTask.summary}</p>
+                <p>{summaryText}</p>
+              </div>
+            </div>
+          )}
+
+          {currentTask.status === "completed" && resultText && !hasCodeResult && !imageData && (
+            <div className="mt-4">
+              <div className="flex items-center gap-2 mb-2">
+                <CheckCircle2 className="h-4 w-4 text-green-500" />
+                <h4 className="font-medium text-sm">Result</h4>
+              </div>
+              <div className="bg-muted/50 p-3 rounded-md text-sm whitespace-pre-wrap">
+                {resultText}
               </div>
             </div>
           )}

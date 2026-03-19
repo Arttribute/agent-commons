@@ -12,6 +12,7 @@ import { WorkflowService } from '../tool/workflow.service';
 import { WorkflowExecutorService } from '../tool/workflow-executor.service';
 import { SessionService } from '../session/session.service';
 import { TaskSchedulerService } from './task-scheduler.service';
+import { AgentService } from '../agent/agent.service';
 import * as schema from '../../models/schema';
 
 export interface TaskExecutionResult {
@@ -41,6 +42,8 @@ export class TaskExecutionService {
     private readonly sessionService: SessionService,
     @Inject(forwardRef(() => TaskSchedulerService))
     private readonly scheduler: TaskSchedulerService,
+    @Inject(forwardRef(() => AgentService))
+    private readonly agentService: AgentService,
   ) {}
 
   // ── Task CRUD ─────────────────────────────────────────────────────────────
@@ -180,8 +183,13 @@ export class TaskExecutionService {
         result = await this.waitForWorkflowCompletion(executionId, timeoutMs);
         summary = `Workflow ${task.workflow?.name ?? task.workflowId} completed`;
       } else {
-        result = { executedByAgent: true };
-        summary = 'Task queued for agent execution';
+        // Non-workflow tasks are executed by the agent. Reset to pending if stuck,
+        // then dispatch to the agent and return immediately.
+        await this.db.update(schema.task)
+          .set({ status: 'pending', actualStart: null })
+          .where(eq(schema.task.taskId, taskId));
+        this.agentService.dispatchPendingTask(task.agentId, task.sessionId);
+        return { taskId, status: 'completed', summary: 'Task dispatched to agent', duration: Date.now() - startTime };
       }
 
       await this.completeTask(taskId, { status: 'completed', resultContent: result, summary, duration: Date.now() - startTime });
