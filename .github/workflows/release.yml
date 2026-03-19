@@ -131,12 +131,12 @@ jobs:
           node -e "
             const fs = require('fs');
             const pkg = JSON.parse(fs.readFileSync('apps/commons-app/package.json', 'utf8'));
-            pkg.dependencies['@agent-commons/sdk'] = '^\${SDK_VERSION}';
+            pkg.dependencies['@agent-commons/sdk'] = '^${SDK_VERSION}';
             fs.writeFileSync('apps/commons-app/package.json', JSON.stringify(pkg, null, 2) + '\n');
           "
           git diff --quiet apps/commons-app/package.json || {
             pnpm install --no-frozen-lockfile
             git add apps/commons-app/package.json pnpm-lock.yaml
-            git commit -m "chore: bump commons-app to @agent-commons/sdk@\${SDK_VERSION}"
+            git commit -m "chore: bump commons-app to @agent-commons/sdk@${SDK_VERSION}"
             git push origin HEAD:main
           }
