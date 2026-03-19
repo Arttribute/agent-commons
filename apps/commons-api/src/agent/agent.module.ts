@@ -21,7 +21,7 @@ import { WalletModule } from '~/wallet/wallet.module';
     forwardRef(() => ToolModule),
     SessionModule,
     LogModule,
-    TaskModule,
+    forwardRef(() => TaskModule),
     forwardRef(() => SpaceModule),
     OAuthModule,
     McpModule,

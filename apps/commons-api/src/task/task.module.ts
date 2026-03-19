@@ -6,6 +6,7 @@ import { TaskSchedulerService } from './task-scheduler.service';
 import { DatabaseModule } from '~/modules/database/database.module';
 import { ToolModule } from '../tool';
 import { SessionModule } from '../session/session.module';
+import { AgentModule } from '../agent/agent.module';
 import { OwnerGuard } from '~/modules/auth';
 
 @Module({
@@ -13,6 +14,7 @@ import { OwnerGuard } from '~/modules/auth';
     DatabaseModule,
     forwardRef(() => ToolModule),
     SessionModule,
+    forwardRef(() => AgentModule),
   ],
   providers: [TaskService, TaskExecutionService, TaskSchedulerService, OwnerGuard],
   controllers: [TaskController],

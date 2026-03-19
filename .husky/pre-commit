@@ -2,10 +2,13 @@
 # If any package.json (except node_modules) is staged, ensure pnpm-lock.yaml is also staged.
 # Runs pnpm install and auto-stages the lockfile so CI never sees a mismatch.
 
-STAGED_PKG=$(git diff --cached --name-only | grep -v node_modules | grep 'package\.json$')
+# Skip in CI environments (GitHub Actions, Vercel, etc.)
+[ -n "$CI" ] && exit 0
+
+STAGED_PKG=$(git diff --cached --name-only | grep -v node_modules | grep 'package\.json$' || true)
 
 if [ -n "$STAGED_PKG" ]; then
-  STAGED_LOCK=$(git diff --cached --name-only | grep 'pnpm-lock\.yaml$')
+  STAGED_LOCK=$(git diff --cached --name-only | grep 'pnpm-lock\.yaml$' || true)
 
   if [ -z "$STAGED_LOCK" ]; then
     echo "package.json changed — syncing pnpm-lock.yaml..."

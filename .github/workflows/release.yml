@@ -106,6 +106,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GH_PAT }}
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          HUSKY: 0
 
       - name: Bump commons-app SDK dependency after publish
         if: steps.changesets.outputs.published == 'true'
@@ -120,6 +121,6 @@ jobs:
           git diff --quiet apps/commons-app/package.json || {
             pnpm install --no-frozen-lockfile
             git add apps/commons-app/package.json pnpm-lock.yaml
-            git commit -m "chore: bump commons-app to @agent-commons/sdk@${SDK_VERSION}"
+            HUSKY=0 git commit -m "chore: bump commons-app to @agent-commons/sdk@${SDK_VERSION}"
             git push origin HEAD:main
           }

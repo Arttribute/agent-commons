@@ -339,7 +339,7 @@ export class AgentService implements OnModuleInit {
     const taskSessionId = nextTask.sessionId;
 
     if (taskSessionId) {
-      return this.runAgent({
+      this.runAgent({
         agentId: props.agentId,
         messages: [
           {
@@ -350,8 +350,31 @@ export class AgentService implements OnModuleInit {
         ],
         sessionId: taskSessionId,
         initiator: agent.agentId,
+      }).subscribe({
+        error: (err) => this.logger.error(`triggerAgent error for ${props.agentId}: ${err.message}`),
       });
     }
+  }
+
+  /**
+   * Dispatch a pending task to the agent immediately (fire-and-forget).
+   * Used after user-created task creation — bypasses autonomyEnabled check
+   * since the user explicitly requested execution.
+   */
+  dispatchPendingTask(agentId: string, sessionId: string) {
+    this.runAgent({
+      agentId,
+      messages: [
+        {
+          role: 'user',
+          content: `⫷⫷TASK_DISPATCH⫸⫸: A new task has been created for you. Execute your pending tasks now.`,
+        },
+      ],
+      sessionId,
+      initiator: agentId,
+    }).subscribe({
+      error: (err) => this.logger.error(`dispatchPendingTask error for ${agentId}: ${err.message}`),
+    });
   }
 
   /* ─────────────────────────  MAIN RUN  ───────────────────────── */
