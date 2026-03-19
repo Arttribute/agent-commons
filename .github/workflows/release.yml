@@ -113,6 +113,7 @@ jobs:
           "
 
       - name: Create Release PR or Publish
+        id: changesets
         uses: changesets/action@v1
         with:
           publish: pnpm release
@@ -121,3 +122,20 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GH_PAT }}
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Bump commons-app SDK dependency after publish
+        if: steps.changesets.outputs.published == 'true'
+        run: |
+          SDK_VERSION=$(node -p "require('./packages/commons-sdk/package.json').version")
+          node -e "
+            const fs = require('fs');
+            const pkg = JSON.parse(fs.readFileSync('apps/commons-app/package.json', 'utf8'));
+            pkg.dependencies['@agent-commons/sdk'] = '^\${SDK_VERSION}';
+            fs.writeFileSync('apps/commons-app/package.json', JSON.stringify(pkg, null, 2) + '\n');
+          "
+          git diff --quiet apps/commons-app/package.json || {
+            pnpm install --no-frozen-lockfile
+            git add apps/commons-app/package.json pnpm-lock.yaml
+            git commit -m "chore: bump commons-app to @agent-commons/sdk@\${SDK_VERSION}"
+            git push origin HEAD:main
+          }
