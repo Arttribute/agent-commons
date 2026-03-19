@@ -29,7 +29,8 @@ export function WorkflowsListView({ userAddress }: WorkflowsListViewProps) {
   const handleDuplicate = async (workflowId: string) => {
     try {
       const res = await fetch(`/api/workflows/${workflowId}`);
-      const { data: workflow } = await res.json();
+      const json = await res.json();
+      const workflow = json.data ?? json;
       await fetch("/api/workflows", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
