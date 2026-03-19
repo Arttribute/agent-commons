@@ -69,16 +69,14 @@ jobs:
           fi
 
           LAST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || git rev-list --max-parents=0 HEAD)
-          CHANGED=$(git diff --name-only "$LAST_TAG" HEAD -- packages/ | grep -v 'node_modules' | head -1)
+          CHANGED_FILES=$(git diff --name-only "$LAST_TAG" HEAD -- packages/ | grep -v 'node_modules' || true)
 
-          if [ -z "$CHANGED" ]; then
+          if [ -z "$CHANGED_FILES" ]; then
             echo "No package source changes since last tag — skipping auto-patch"
             exit 0
           fi
 
           echo "Package changes detected since $LAST_TAG — generating auto patch changeset"
-
-          CHANGED_FILES=$(git diff --name-only "$LAST_TAG" HEAD -- packages/ | grep -v 'node_modules')
 
           FRONTMATTER=""
           if echo "$CHANGED_FILES" | grep -q "^packages/commons-sdk/"; then
