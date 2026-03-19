@@ -6,8 +6,8 @@ import { parseEventStream } from "@/lib/sse";
 interface UseAgentStreamOptions {
   onToken?: (token: string) => void;
   onToolStart?: (toolName: string, input: string) => void;
-  onToolEnd?: (output: unknown) => void;
-  onFinal?: (payload: unknown) => void;
+  onToolEnd?: (output: any) => void;
+  onFinal?: (payload: any) => void;
   onError?: (message: string) => void;
 }
 
