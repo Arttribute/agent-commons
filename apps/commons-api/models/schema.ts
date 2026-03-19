@@ -1729,3 +1729,36 @@ export const skill = pgTable('skill', {
     .default(sql`timezone('utc', now())`)
     .notNull(),
 });
+
+/* ─────────────────────────  API KEYS  ───────────────────────── */
+
+/**
+ * Per-principal API keys for programmatic access.
+ * Used by external developers, agents, and the CLI.
+ * The management app (commons-app) uses the shared API_SECRET_KEY env var instead.
+ *
+ * Key format: sk-ac-<32 random hex chars>
+ * Only the SHA-256 hash is stored — plaintext key returned once on creation.
+ */
+export const apiKey = pgTable('api_keys', {
+  id: uuid('id').default(sql`uuid_generate_v4()`).primaryKey(),
+
+  // SHA-256 hash of the raw key — never store plaintext
+  keyHash: text('key_hash').notNull().unique(),
+
+  // Wallet address (for users) or agent_id (for agents)
+  principalId: text('principal_id').notNull(),
+
+  // 'user' | 'agent'
+  principalType: text('principal_type').notNull(),
+
+  label: text('label'),
+
+  active: pgBoolean('active').default(true).notNull(),
+
+  createdAt: timestamp('created_at', { withTimezone: true })
+    .default(sql`timezone('utc', now())`)
+    .notNull(),
+
+  lastUsedAt: timestamp('last_used_at', { withTimezone: true }),
+});

@@ -482,6 +482,25 @@ interface CreateWalletParams {
     externalAddress?: string;
     chainId?: string;
 }
+type ApiKeyPrincipalType = 'user' | 'agent';
+interface ApiKey {
+    id: string;
+    label?: string | null;
+    principalId: string;
+    principalType: ApiKeyPrincipalType;
+    active: boolean;
+    createdAt: string;
+    lastUsedAt?: string | null;
+}
+interface CreateApiKeyParams {
+    principalId: string;
+    principalType: ApiKeyPrincipalType;
+    label?: string;
+}
+/** Returned only on creation — the plaintext key is never available again. */
+interface CreatedApiKey extends ApiKey {
+    key: string;
+}
 
 declare class CommonsClient {
     private readonly baseUrl;
@@ -730,6 +749,19 @@ declare class CommonsClient {
         /** Deactivate a wallet. */
         deactivate: (walletId: string) => Promise<void>;
     };
+    get apiKeys(): {
+        /**
+         * Generate a new API key for a principal (user or agent).
+         * The plaintext key is returned only in this response — never again.
+         */
+        create: (params: CreateApiKeyParams) => Promise<CreatedApiKey>;
+        /** List all active API keys for a principal (key values not included). */
+        list: (principalId: string, principalType: ApiKeyPrincipalType) => Promise<ApiKey[]>;
+        /** Revoke (soft-delete) an API key by its UUID. */
+        revoke: (id: string) => Promise<{
+            revoked: boolean;
+        }>;
+    };
     private _streamAgentRun;
     private _streamSse;
     private _parseEventStream;
@@ -864,4 +896,4 @@ declare class CommonsError extends Error {
     constructor(message: string, status: number, data?: unknown | undefined);
 }
 
-export { type A2AArtifact, type A2ADataPart, type A2AFilePart, type A2AMessage, type A2AMessagePart, type A2ASendTaskParams, type A2ASkill, type A2ATask, type A2ATaskState, type A2ATextPart, type Agent, type AgentCard, type AgentMemory, type AgentWallet, type ChatMessage, CommonsClient, type CommonsClientConfig, CommonsError, type CreateAgentParams, type CreateMemoryParams, type CreateSkillParams, type CreateTaskParams, type CreateToolKeyParams, type CreateToolParams, type CreateWalletParams, type McpConnectionType, type McpPrompt, type McpResource, type McpServer, type MemorySourceType, type MemoryStats, type MemoryType, type ModelConfig, type ModelProvider, type RunParams, type Session, type Skill, type SkillIndex, type StreamEvent, type StreamEventType, type Task, type Tool, type ToolKey, type ToolPermission, type UpdateMemoryParams, type UsageAggregation, type UsageEvent, type WalletBalance, type WalletType, type Workflow, type WorkflowDefinition, type WorkflowEdge, type WorkflowExecution, type WorkflowNode, type WorkflowNodeType };
+export { type A2AArtifact, type A2ADataPart, type A2AFilePart, type A2AMessage, type A2AMessagePart, type A2ASendTaskParams, type A2ASkill, type A2ATask, type A2ATaskState, type A2ATextPart, type Agent, type AgentCard, type AgentMemory, type AgentWallet, type ApiKey, type ApiKeyPrincipalType, type ChatMessage, CommonsClient, type CommonsClientConfig, CommonsError, type CreateAgentParams, type CreateApiKeyParams, type CreateMemoryParams, type CreateSkillParams, type CreateTaskParams, type CreateToolKeyParams, type CreateToolParams, type CreateWalletParams, type CreatedApiKey, type McpConnectionType, type McpPrompt, type McpResource, type McpServer, type MemorySourceType, type MemoryStats, type MemoryType, type ModelConfig, type ModelProvider, type RunParams, type Session, type Skill, type SkillIndex, type StreamEvent, type StreamEventType, type Task, type Tool, type ToolKey, type ToolPermission, type UpdateMemoryParams, type UsageAggregation, type UsageEvent, type WalletBalance, type WalletType, type Workflow, type WorkflowDefinition, type WorkflowEdge, type WorkflowExecution, type WorkflowNode, type WorkflowNodeType };

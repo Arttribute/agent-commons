@@ -23,5 +23,7 @@ export type {
   UsageEvent, UsageAggregation,
   // Wallet
   AgentWallet, WalletBalance, CreateWalletParams, WalletType,
+  // API Keys
+  ApiKey, CreatedApiKey, CreateApiKeyParams, ApiKeyPrincipalType,
   CommonsClientConfig,
 } from './types';

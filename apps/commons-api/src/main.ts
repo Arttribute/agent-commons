@@ -7,19 +7,15 @@ process.env.COINBASE_API_KEY_SECRET =
 process.env.SUPABASE_URL =
   process.env.SUPABASE_URL && decodeURIComponent(process.env.SUPABASE_URL);
 
-import { NestFactory, Reflector } from '@nestjs/core';
+import { NestFactory } from '@nestjs/core';
 import { VersioningType } from '@nestjs/common';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { AppModule } from './app.module';
-import { ApiKeyGuard } from './modules/auth';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
 
-  // ── Global API-key guard ──────────────────────────────────────────────────
-  // Enforced only when API_AUTH_REQUIRED=true is set in the environment.
-  // Set API_SECRET_KEY to the expected bearer token value.
-  app.useGlobalGuards(new ApiKeyGuard(app.get(Reflector)));
+  // ApiKeyGuard is registered globally via AuthModule (APP_GUARD provider)
 
   // ── Versioning ────────────────────────────────────────────────────────────
   app.enableVersioning({ type: VersioningType.URI });

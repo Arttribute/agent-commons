@@ -562,3 +562,28 @@ export interface CreateWalletParams {
   externalAddress?: string;
   chainId?: string;
 }
+
+// ─── API Keys ─────────────────────────────────────────────────────────────────
+
+export type ApiKeyPrincipalType = 'user' | 'agent';
+
+export interface ApiKey {
+  id: string;
+  label?: string | null;
+  principalId: string;
+  principalType: ApiKeyPrincipalType;
+  active: boolean;
+  createdAt: string;
+  lastUsedAt?: string | null;
+}
+
+export interface CreateApiKeyParams {
+  principalId: string;
+  principalType: ApiKeyPrincipalType;
+  label?: string;
+}
+
+/** Returned only on creation — the plaintext key is never available again. */
+export interface CreatedApiKey extends ApiKey {
+  key: string;
+}

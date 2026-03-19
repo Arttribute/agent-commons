@@ -33,7 +33,7 @@ export function walletCommand(): Command {
             Address:  w.address,
             Chain:    chainName(w.chainId),
             Label:    w.label ?? 'Primary',
-            Active:   w.isActive ? sym.pass : sym.fail,
+            Active:   w.isActive ? sym.ok : sym.fail,
           })),
           ['ID', 'Type', 'Address', 'Chain', 'Label', 'Active'],
         );
@@ -165,7 +165,7 @@ export function walletCommand(): Command {
         spinner.stop();
         const w = (wallet as any)?.data ?? wallet;
         if (opts.json) return jsonOut(w);
-        console.log(`\n${sym.pass} ${c.bold('Wallet created')}`);
+        console.log(`\n${sym.ok} ${c.bold('Wallet created')}`);
         detail([
           ['Address',  c.bold(w.address)],
           ['Type',     w.walletType],

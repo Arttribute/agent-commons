@@ -14,6 +14,7 @@ import {
   AgentMemory, MemoryStats, MemoryType,
   CreateMemoryParams, UpdateMemoryParams,
   AgentWallet, WalletBalance, CreateWalletParams,
+  ApiKey, CreatedApiKey, CreateApiKeyParams, ApiKeyPrincipalType,
 } from './types';
 
 export class CommonsClient {
@@ -350,6 +351,29 @@ export class CommonsClient {
       /** Deactivate a wallet. */
       deactivate: (walletId: string): Promise<void> =>
         this.request('DELETE', `/v1/wallets/${walletId}`),
+    };
+  }
+
+  // ── API Keys ──────────────────────────────────────────────────────────────
+
+  get apiKeys() {
+    return {
+      /**
+       * Generate a new API key for a principal (user or agent).
+       * The plaintext key is returned only in this response — never again.
+       */
+      create: (params: CreateApiKeyParams): Promise<CreatedApiKey> =>
+        this.request('POST', '/v1/auth/api-keys', params),
+
+      /** List all active API keys for a principal (key values not included). */
+      list: (principalId: string, principalType: ApiKeyPrincipalType): Promise<ApiKey[]> => {
+        const q = new URLSearchParams({ principalId, principalType }).toString();
+        return this.request('GET', `/v1/auth/api-keys?${q}`);
+      },
+
+      /** Revoke (soft-delete) an API key by its UUID. */
+      revoke: (id: string): Promise<{ revoked: boolean }> =>
+        this.request('DELETE', `/v1/auth/api-keys/${id}`),
     };
   }
 

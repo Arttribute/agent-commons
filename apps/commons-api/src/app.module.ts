@@ -2,7 +2,7 @@ import { Module } from '@nestjs/common';
 import { APP_GUARD } from '@nestjs/core';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
-import { RateLimitGuard } from './modules/auth';
+import { RateLimitGuard, AuthModule } from './modules/auth';
 
 import { AgentModule } from './agent';
 import { PinataModule } from './pinata/pinata.module';
@@ -48,6 +48,7 @@ import { WalletModule } from './wallet/wallet.module';
     UsageModule,
     MemoryModule,
     WalletModule,
+    AuthModule,
   ],
 
   controllers: [AppController],
