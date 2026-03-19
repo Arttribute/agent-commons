@@ -6,7 +6,7 @@ const baseUrl = process.env.NEXT_PUBLIC_NEST_API_BASE_URL;
 // DELETE /api/api-keys/[keyId]
 export async function DELETE(
   _request: NextRequest,
-  { params }: { params: { keyId: string } }
+  { params }: { params: Promise<{ keyId: string }> }
 ) {
   if (!baseUrl) {
     return NextResponse.json({ error: "Server base URL not configured" }, { status: 500 });

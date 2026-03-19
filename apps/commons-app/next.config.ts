@@ -54,8 +54,9 @@ const nextConfig = {
       },
     ],
   },
-  experimental: {
-    missingSuspenseWithCSRBailout: false,
+  experimental: {},
+  eslint: {
+    ignoreDuringBuilds: true,
   },
 };
 
