@@ -16,9 +16,9 @@ jobs:
 
       - name: Mirror to Arttribute/commons-docs
         env:
-          COMMONS_DOCS_MIRROR_TOKEN: ${{ secrets.COMMONS_DOCS_MIRROR_TOKEN }}
+          GH_PAT: ${{ secrets.GH_PAT }}
         run: |
-          git clone https://x-access-token:${COMMONS_DOCS_MIRROR_TOKEN}@github.com/Arttribute/commons-docs.git /tmp/commons-docs
+          git clone https://x-access-token:${GH_PAT}@github.com/Arttribute/commons-docs.git /tmp/commons-docs
 
           # Clear destination contents (preserve .git directory)
           find /tmp/commons-docs -mindepth 1 -not -path '/tmp/commons-docs/.git*' -delete
