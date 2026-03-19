@@ -44,6 +44,12 @@ export class SessionController {
     return { data: session };
   }
 
+  @Get('user/:initiator')
+  async getSessionsByInitiator(@Param('initiator') initiator: string) {
+    const sessions = await this.sessionService.getSessionsByInitiator({ initiator });
+    return { data: sessions };
+  }
+
   @Get('list/:agentId/:initiator/')
   async getSessionsByAgentAndInitiator(
     @Param('agentId') agentId: string,

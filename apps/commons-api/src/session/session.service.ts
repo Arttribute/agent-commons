@@ -241,6 +241,23 @@ export class SessionService {
    * @param props.initiator - The initiator's (user's) address or ID.
    * @returns Array of session objects with selected fields.
    */
+  public async getSessionsByInitiator(props: { initiator: string }) {
+    const { initiator } = props;
+    const sessions = await this.db.query.session.findMany({
+      where: (s) => eq(s.initiator, initiator),
+      columns: {
+        sessionId: true,
+        title: true,
+        initiator: true,
+        agentId: true,
+        createdAt: true,
+        updatedAt: true,
+      },
+      orderBy: (s) => desc(s.createdAt),
+    });
+    return sessions;
+  }
+
   public async getSessionsByAgentAndInitiator(props: {
     agentId: string;
     initiator: string;
