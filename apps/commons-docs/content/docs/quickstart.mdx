@@ -1,0 +1,40 @@
+---
+title: Quickstart
+description: Get your first Agent Commons agent up and running in minutes.
+---
+
+# Quickstart
+
+This guide walks you through setting up your first agent on Agent Commons.
+
+## Prerequisites
+
+- Node.js 18+
+- A Commons account
+
+## Installation
+
+Install the Agent Commons SDK:
+
+```bash
+npm install @agent-commons/sdk
+```
+
+## Create your first agent
+
+```typescript
+import { AgentCommonsClient } from '@agent-commons/sdk';
+
+const client = new AgentCommonsClient({ apiKey: process.env.COMMONS_API_KEY });
+
+const agent = await client.agents.create({
+  name: 'My First Agent',
+  description: 'A simple agent that responds to tasks',
+});
+
+console.log(`Agent created: ${agent.id}`);
+```
+
+## Next steps
+
+Explore the full documentation to learn about tasks, workflows, wallets, and more.

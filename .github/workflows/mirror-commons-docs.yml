@@ -12,6 +12,15 @@ jobs:
       - name: Checkout monorepo
         uses: actions/checkout@v4
 
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - name: Generate standalone lockfile for commons-docs
+        working-directory: apps/commons-docs
+        run: pnpm install --no-frozen-lockfile
+
       - name: Mirror to Arttribute/commons-docs
         env:
           COMMONS_DOCS_MIRROR_TOKEN: ${{ secrets.COMMONS_DOCS_MIRROR_TOKEN }}
@@ -23,6 +32,9 @@ jobs:
 
           # Copy the commons-docs subdirectory into the destination
           cp -r apps/commons-docs/. /tmp/commons-docs/
+
+          # Copy the freshly generated standalone lockfile
+          cp apps/commons-docs/pnpm-lock.yaml /tmp/commons-docs/pnpm-lock.yaml
 
           cd /tmp/commons-docs
           git config user.name "github-actions[bot]"

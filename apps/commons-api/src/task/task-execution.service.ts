@@ -80,11 +80,16 @@ export class TaskExecutionService {
       }
     }
 
+    // Normalise scheduledFor to a Date (JSON body delivers it as a string)
+    const scheduledForDate = params.scheduledFor
+      ? new Date(params.scheduledFor)
+      : undefined;
+
     let nextRunAt: Date | undefined;
     if (params.cronExpression && params.isRecurring) {
       nextRunAt = this.scheduler.getNextRunTime(params.cronExpression) ?? undefined;
-    } else if (params.scheduledFor) {
-      nextRunAt = params.scheduledFor;
+    } else if (scheduledForDate) {
+      nextRunAt = scheduledForDate;
     }
 
     const [task] = await this.db
@@ -98,7 +103,7 @@ export class TaskExecutionService {
         workflowId: params.workflowId,
         workflowInputs: params.workflowInputs,
         cronExpression: params.cronExpression,
-        scheduledFor: params.scheduledFor,
+        scheduledFor: scheduledForDate,
         isRecurring: params.isRecurring ?? false,
         nextRunAt,
         dependsOn: params.dependsOn,
@@ -118,7 +123,7 @@ export class TaskExecutionService {
     this.logger.log(`Created task ${task.taskId}`);
 
     // Schedule the first run durably in the DB
-    const scheduledFor = nextRunAt ?? params.scheduledFor;
+    const scheduledFor = nextRunAt ?? scheduledForDate;
     if (scheduledFor) {
       await this.scheduler.scheduleRun({
         taskId: task.taskId,
