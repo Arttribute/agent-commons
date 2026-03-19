@@ -1,5 +1,11 @@
 # @agent-commons/sdk
 
+## 0.1.4
+
+### Patch Changes
+
+- Auto patch release
+
 ## 0.1.3
 
 ### Patch Changes
