@@ -49,9 +49,10 @@ export class AgentController {
 
   @Post('run')
   async runAgentOnce(
-    @Body() body: RunBody,
-    @Headers('x-initiator') initiator: string,
+    @Body() body: RunBody & { initiator?: string; initiatorId?: string },
+    @Headers('x-initiator') initiatorHeader: string,
   ) {
+    const initiator = initiatorHeader || body.initiator || body.initiatorId || '';
     // collect only the final message; use lastValueFrom
     const { lastValueFrom } = await import('rxjs');
     return lastValueFrom(
@@ -66,10 +67,11 @@ export class AgentController {
   @Post('run/stream')
   @Sse('run/stream')
   runAgentStream(
-    @Body() body: RunBody,
-    @Headers('x-initiator') initiator: string,
+    @Body() body: RunBody & { initiator?: string; initiatorId?: string },
+    @Headers('x-initiator') initiatorHeader: string,
   ) {
-    //set streaming to true
+    // Accept initiator from header (SDK / proxied web requests) or body (direct callers).
+    const initiator = initiatorHeader || body.initiator || body.initiatorId || '';
     return this.agent
       .runAgent({ ...body, stream: true, initiator })
       .pipe(map((data) => ({ data })));

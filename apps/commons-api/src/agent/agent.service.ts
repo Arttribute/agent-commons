@@ -262,7 +262,7 @@ export class AgentService implements OnModuleInit {
     ];
 
     /* build tool definitions exactly like before */
-    const storedTools = await this.toolService.getAllTools();
+    const storedTools = await this.toolService.getAllTools().catch(() => []);
     const dynamicTools = storedTools.map((dbTool) => ({
       type: 'function',
       function: { ...dbTool.schema, name: dbTool.name },

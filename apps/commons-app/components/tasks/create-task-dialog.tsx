@@ -97,10 +97,12 @@ export function CreateTaskDialog({
           body: JSON.stringify({ agentId: formData.agentId, initiator: userAddress, title: `Task: ${formData.title}` }),
         });
         const sessionData = await res.json();
+        if (!res.ok) throw new Error(sessionData.message || "Failed to create session");
         sessionId = sessionData.data?.sessionId;
+        if (!sessionId) throw new Error("Session creation returned no sessionId");
       }
 
-      await fetch("/api/tasks", {
+      const taskRes = await fetch("/api/tasks", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -111,10 +113,14 @@ export function CreateTaskDialog({
           scheduledFor: formData.scheduledFor ? new Date(formData.scheduledFor) : undefined,
         }),
       });
+      const taskData = await taskRes.json();
+      if (!taskRes.ok) throw new Error(taskData.message || "Failed to create task");
 
       setFormData(EMPTY_FORM(preSelectedAgentId));
       onTaskCreated?.();
       onClose();
+    } catch (err: any) {
+      alert(`Error: ${err.message}`);
     } finally {
       setLoading(false);
     }

@@ -5,7 +5,7 @@ import {
   InternalServerErrorException,
   NotFoundException,
 } from '@nestjs/common';
-import { and, eq, InferInsertModel, InferSelectModel, sql } from 'drizzle-orm';
+import { and, eq, InferInsertModel, InferSelectModel, sql, desc } from 'drizzle-orm';
 import { DatabaseService } from '~/modules/database/database.service';
 import * as schema from '#/models/schema';
 import { first } from 'lodash';
@@ -247,7 +247,7 @@ export class SessionService {
   }) {
     const { agentId, initiator } = props;
     const sessions = await this.db.query.session.findMany({
-      where: (s) => eq(s.agentId, agentId) && eq(s.initiator, initiator),
+      where: (s) => and(eq(s.agentId, agentId), eq(s.initiator, initiator)),
       columns: {
         sessionId: true,
         title: true,
@@ -256,7 +256,7 @@ export class SessionService {
         createdAt: true,
         updatedAt: true,
       },
-      orderBy: (s) => s.createdAt,
+      orderBy: (s) => desc(s.createdAt),
     });
     return sessions;
   }

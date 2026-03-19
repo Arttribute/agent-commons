@@ -1,9 +1,28 @@
-import { Controller, Get, Param } from '@nestjs/common';
+import { Controller, Get, Post, Body, Param, BadRequestException } from '@nestjs/common';
 import { SessionService } from './session.service';
 
 @Controller({ version: '1', path: 'sessions' })
 export class SessionController {
   constructor(private readonly sessionService: SessionService) {}
+
+  /**
+   * Create a new session
+   * POST /v1/sessions
+   */
+  @Post()
+  async createSession(
+    @Body() body: { agentId: string; initiator?: string; title?: string },
+  ) {
+    if (!body.agentId) throw new BadRequestException('agentId is required');
+    const session = await this.sessionService.createSession({
+      value: {
+        agentId: body.agentId,
+        initiator: body.initiator,
+        title: body.title,
+      },
+    });
+    return { data: session };
+  }
 
   @Get('agent/:agentId')
   async getSessionsByAgentId(@Param('agentId') agentId: string) {
