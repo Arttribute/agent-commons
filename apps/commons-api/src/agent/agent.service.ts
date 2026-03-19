@@ -198,8 +198,24 @@ export class AgentService implements OnModuleInit {
     sessionId: string,
     childSessionsInfo: string,
     memoryBlock = '',
+    sessionTasks: Array<{ taskId: string; title: string; status: string; description?: string | null; summary?: string | null; createdAt?: Date | null }> = [],
   ): string {
     const currentTime = new Date();
+
+    const taskLines = sessionTasks.length > 0
+      ? sessionTasks.map((t) => {
+          const statusLabel = t.status.toUpperCase();
+          const summary = t.summary ? ` — ${t.summary}` : '';
+          return `- [${statusLabel}] (${t.taskId}) ${t.title}${summary}`;
+        }).join('\n')
+      : '  (no tasks in this session yet)';
+
+    const taskBlock = dedent`
+      ## SESSION TASKS
+      These are your tasks for the current session. Use this list to understand what has been requested, what you are currently working on, and what is still pending.
+      ${taskLines}
+    `;
+
     return dedent`You are an AI agent on the Agent Commons platform.
 
       ## YOUR IDENTITY
@@ -211,6 +227,7 @@ export class AgentService implements OnModuleInit {
       Current date/time: ${currentTime.toISOString()}
       Session ID: ${sessionId}
       ${memoryBlock}
+      ${taskBlock}
       ${childSessionsInfo}
 
       ## PLATFORM CAPABILITIES
@@ -281,12 +298,13 @@ export class AgentService implements OnModuleInit {
 
   /* ─────────────────────────  SESSION BOOTSTRAP  ───────────────────────── */
   private async createAgentSession(agentId: string, sessionId: string, firstUserMessage = '') {
-    const [agent, childSessions, memoryBlock] = await Promise.all([
+    const [agent, childSessions, memoryBlock, sessionTasks] = await Promise.all([
       this.getAgent({ agentId }),
       this.getChildSessions(sessionId),
       firstUserMessage
         ? this.memoryService.buildMemoryBlock(agentId, firstUserMessage).catch(() => '')
         : Promise.resolve(''),
+      this.taskExecution.listSessionTasks(sessionId).catch(() => []),
     ]);
     const childSessionsInfo =
       childSessions.length > 0
@@ -296,7 +314,7 @@ export class AgentService implements OnModuleInit {
     const messages: ChatCompletionMessageParam[] = [
       {
         role: 'system',
-        content: this.buildSystemPrompt(agent, sessionId, childSessionsInfo, memoryBlock),
+        content: this.buildSystemPrompt(agent, sessionId, childSessionsInfo, memoryBlock, sessionTasks),
       },
     ];
 
@@ -752,12 +770,13 @@ export class AgentService implements OnModuleInit {
             // Fetch agent and inject fresh persona/instructions for existing sessions
             const firstMsg = props.messages?.find((m) => m.role === 'user');
             const firstUserText = typeof firstMsg?.content === 'string' ? firstMsg.content : '';
-            const [agent, childSessions, memoryBlock] = await Promise.all([
+            const [agent, childSessions, memoryBlock, sessionTasks] = await Promise.all([
               this.getAgent({ agentId }),
               this.getChildSessions(currentSessionId),
               firstUserText
                 ? this.memoryService.buildMemoryBlock(agentId, firstUserText).catch(() => '')
                 : Promise.resolve(''),
+              this.taskExecution.listSessionTasks(currentSessionId).catch(() => []),
             ]);
             const childSessionsInfo =
               childSessions.length > 0
@@ -767,7 +786,7 @@ export class AgentService implements OnModuleInit {
             messages.push({
               type: 'system',
               role: 'system',
-              content: this.buildSystemPrompt(agent, currentSessionId, childSessionsInfo, memoryBlock),
+              content: this.buildSystemPrompt(agent, currentSessionId, childSessionsInfo, memoryBlock, sessionTasks),
             } as any);
 
             if (
@@ -897,10 +916,19 @@ export class AgentService implements OnModuleInit {
                 .where(eq(schema.task.taskId, nextTask.taskId));
 
               // Inject task instruction into messages (marked internal so it's filtered from history)
+              const taskContextStr = nextTask.context && Object.keys(nextTask.context).length > 0
+                ? `\n\nContext:\n${JSON.stringify(nextTask.context, null, 2)}`
+                : '';
+              const taskToolsStr = nextTask.tools?.length
+                ? `\n\nTools to use: ${nextTask.tools.join(', ')}`
+                : '';
+              const taskToolInstructionsStr = nextTask.toolInstructions
+                ? `\n\nTool instructions: ${nextTask.toolInstructions}`
+                : '';
               messages.push({
                 type: 'user',
                 role: 'user',
-                content: `##TASK_INSTRUCTION[${nextTask.taskId}]: ${nextTask.title}\n\n${nextTask.description ?? ''}`,
+                content: `##TASK_INSTRUCTION[${nextTask.taskId}]: ${nextTask.title}\n\n${nextTask.description ?? ''}${taskContextStr}${taskToolsStr}${taskToolInstructionsStr}`,
               } as any);
             }
 
