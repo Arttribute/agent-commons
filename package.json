@@ -9,14 +9,16 @@
     "changeset": "changeset",
     "version-packages": "changeset version",
     "version-ci": "changeset version && git checkout -- apps/commons-app/package.json",
-    "release": "pnpm build && changeset publish"
+    "release": "pnpm build && changeset publish",
+    "prepare": "husky"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "devDependencies": {
     "@changesets/cli": "^2.29.4",
-    "concurrently": "^9.1.2"
+    "concurrently": "^9.1.2",
+    "husky": "^9.1.7"
   },
   "pnpm": {
     "overrides": {
