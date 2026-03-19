@@ -80,10 +80,10 @@ jobs:
 
           CHANGED_FILES=$(git diff --name-only "$LAST_TAG" HEAD -- packages/ | grep -v 'node_modules')
 
-          node -e "
+          CHANGED_FILES="$CHANGED_FILES" node -e "
             const fs = require('fs');
             const crypto = require('crypto');
-            const changedFiles = \`$CHANGED_FILES\`.trim().split('\n').filter(Boolean);
+            const changedFiles = process.env.CHANGED_FILES.trim().split('\n').filter(Boolean);
 
             const dirToPackage = {
               'packages/commons-sdk': '@agent-commons/sdk',
@@ -106,9 +106,9 @@ jobs:
             }
 
             const id = crypto.randomBytes(4).toString('hex');
-            const frontmatter = [...changed].map(p => \`'\${p}': patch\`).join('\n');
-            const content = \`---\n\${frontmatter}\n---\n\nAuto patch release\n\`;
-            fs.writeFileSync(\`.changeset/auto-\${id}.md\`, content);
+            const frontmatter = [...changed].map(p => \"'\" + p + \"': patch\").join('\n');
+            const content = '---\n' + frontmatter + '\n---\n\nAuto patch release\n';
+            fs.writeFileSync('.changeset/auto-' + id + '.md', content);
             console.log('Created .changeset/auto-' + id + '.md for: ' + [...changed].join(', '));
           "
 
