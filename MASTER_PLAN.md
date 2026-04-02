@@ -1,5 +1,5 @@
 # AGENT COMMONS — MASTER PLAN
-> Version 1.4 — March 2026 | Phases 1–5 complete. Next: Skills system, Auth hardening, Tests, Observability.
+> Version 1.5 — March 2026 | Phases 1–10 complete. Next: Agent Heartbeat & Autonomy system, Task system fixes, UI polish.
 > A comprehensive review, critique, and forward roadmap for the Agent Commons platform.
 
 ---
@@ -27,6 +27,7 @@
    - 5.11 Agent Observability & Cost Tracking
    - 5.12 Multi-Agent Coordination
    - 5.13 API V2 Design
+   - 5.14 Agent Heartbeat & Autonomy System
 6. [Migration & Phased Rollout](#6-migration--phased-rollout)
 7. [Tech Stack Decisions](#7-tech-stack-decisions)
 
@@ -99,6 +100,15 @@ There are no `condition` node types. Workflows cannot take different paths based
 
 #### Workflow System: Agent Processor Nodes are Placeholder
 The `agent_processor` node type in the workflow definition is referenced but the execution logic is not implemented. The executor has no handler for agent processor nodes. This means any workflow using AI decision-making inside the graph cannot function.
+
+#### Task System: Cron Tasks and Heartbeats Are Conflated
+The original task design treated tasks as "heartbeats" — periodic triggers that kept the agent running autonomously. The current design has shifted tasks to be discrete, cron-based work units with a full lifecycle (pending → running → completed). However the code still conflates the two concepts: `dispatchPendingTask` is doing double duty as both an autonomy kick and a task dispatch, and `executeTask` had a `{executedByAgent: true}` placeholder that immediately fake-completed non-workflow tasks. This causes agents to appear to execute tasks when they are not actually acting on them.
+
+The correct design separates these cleanly:
+- **Cron Tasks** — discrete units of work with a title, description, context, defined completion criteria, and a stored result. Scheduled once or on a cron. Agent receives `##TASK_INSTRUCTION` and produces a real result.
+- **Heartbeats** — a separate, lightweight periodic pulse that wakes the agent up to take autonomous initiative. No task record. No completion criteria. The agent decides what (if anything) to do.
+
+These two concepts should co-exist elegantly in the same `runAgent` loop. See section 5.14.
 
 #### Task System: Cron Execution Not Production-Ready
 The cron scheduling in `TaskExecutionService` uses in-memory cron jobs (likely node-cron or similar). These jobs are lost on service restart. In a cloud deployment (Cloud Run, where the API currently runs), container restarts are common. All scheduled tasks are lost on restart.
@@ -1055,6 +1065,8 @@ data: {"output": {...}, "totalDurationMs": 1234}
 
 ### 5.6 Task System V2
 
+> **Design note (March 2026):** Tasks are discrete units of work — they have a title, description, context, tools, and a defined result. They are NOT the agent's autonomy mechanism. Agent autonomy (the "heartbeat") is a separate concept defined in section 5.14. The `runAgent` loop naturally handles both: it checks for pending tasks first, then falls through to the heartbeat prompt if none are found.
+
 #### Durable Cron Scheduling
 
 Replace in-memory cron with database-driven scheduling:
@@ -1535,9 +1547,395 @@ Establish clear versioning: current API is `/v1`. New breaking changes go to `/v
 
 ---
 
+### 5.14 Agent Heartbeat & Autonomy System
+
+#### Problem
+
+The original task system conflated two distinct concepts: discrete work units (tasks) and periodic autonomous activity (heartbeats). As of March 2026, the task system has been redesigned as clean cron-based discrete units. But this removed the agent's ability to act autonomously without an explicit task. Heartbeats need to come back — as a first-class, separate concept that sits alongside tasks without conflicting with them.
+
+#### Conceptual Separation
+
+| Concept | Purpose | DB Record | Completion | Frequency |
+|---|---|---|---|---|
+| **Cron Task** | Execute a specific defined piece of work | Full `task` row with lifecycle | Yes — status + resultContent | Low (daily, weekly, event-driven) |
+| **Heartbeat** | Wake agent up for autonomous initiative | None (or minimal log entry) | No — agent decides what to do | High (minutes to hours) |
+
+The key insight: **a heartbeat is not a task**. It has no defined output, no title, no description, no completion criteria. It is simply a periodic nudge that says: "You are autonomous. Check your world and take appropriate action." The agent then decides — based on its goals, its pending tasks, its memory, its configured role — what if anything to do.
+
+#### Architecture
+
+**Agent configuration additions** (on `agent` table):
+
+```sql
+heartbeat_enabled       BOOLEAN DEFAULT false
+heartbeat_interval_ms   INTEGER DEFAULT 300000  -- 5 minutes default
+heartbeat_prompt        TEXT                    -- custom agent-specific pulse instructions
+```
+
+`autonomy_enabled` (already exists) governs whether the agent can act autonomously at all. `heartbeat_enabled` controls whether the periodic pulse fires. Both must be true for heartbeats to fire.
+
+**`HeartbeatService`** (new, separate from `TaskSchedulerService`):
+
+```typescript
+// Polls every 60 seconds for agents whose heartbeat is due
+private async poll() {
+  const dueAgents = await this.db.query.agent.findMany({
+    where: and(
+      eq(agent.autonomyEnabled, true),
+      eq(agent.heartbeatEnabled, true),
+      lte(agent.lastHeartbeatAt, new Date(Date.now() - agent.heartbeatIntervalMs)),
+    ),
+  });
+
+  for (const agent of dueAgents) {
+    // Find their active session (most recent, or dedicated autonomy session)
+    const session = await this.getActiveSessionForAgent(agent.agentId);
+    if (!session) continue;
+
+    // Skip if agent is already running in this session (concurrency guard)
+    if (this.isSessionLocked(session.sessionId)) continue;
+
+    this.agentService.fireHeartbeat(agent.agentId, session.sessionId, agent.heartbeatPrompt);
+    await this.db.update(schema.agent)
+      .set({ lastHeartbeatAt: new Date() })
+      .where(eq(schema.agent.agentId, agent.agentId));
+  }
+}
+```
+
+**`fireHeartbeat` in `AgentService`**:
+
+```typescript
+fireHeartbeat(agentId: string, sessionId: string, customPrompt?: string) {
+  const prompt = customPrompt
+    ?? `⫷⫷HEARTBEAT⫸⫸: Periodic autonomous check-in. Review your session tasks, goals, and recent context. Take any actions appropriate for your configured role. If there is nothing to do, respond briefly.`;
+
+  this.runAgent({
+    agentId,
+    messages: [{ role: 'user', content: prompt }],
+    sessionId,
+    initiator: agentId,
+    trigger: 'heartbeat',
+  }).subscribe({
+    error: (err) => this.logger.error(`Heartbeat error for ${agentId}: ${err.message}`),
+  });
+}
+```
+
+Heartbeat messages are filtered from session history (same as `⫷⫷TASK_DISPATCH⫸⫸`) so they never appear in the user-visible chat.
+
+#### How Tasks and Heartbeats Work Together
+
+The `runAgent` loop handles both naturally via priority ordering:
+
+```
+runAgent fires (trigger = 'heartbeat' | 'task' | 'user')
+  │
+  ├─ getNextExecutableTask()
+  │     ├─ found → inject ##TASK_INSTRUCTION, graph.invoke
+  │     │          → task completes → inject task completion report into session history
+  │     │          (heartbeat prompt is discarded — task takes priority)
+  │     │
+  │     └─ not found → use original trigger message (heartbeat prompt OR user message)
+  │                    graph.invoke
+  │                    (agent takes autonomous action or replies to user)
+  │
+  └─ loop: check for more pending tasks
+```
+
+**Key properties of this design:**
+- If a heartbeat fires while there are pending tasks, the agent executes the tasks — the heartbeat prompt is never seen by the LLM
+- If there are no pending tasks, the agent gets the heartbeat prompt and takes autonomous initiative
+- Cron tasks created *during* a heartbeat are picked up in the next loop iteration naturally
+- The agent always has SESSION TASKS in its system prompt, so it is aware of its work queue regardless of trigger type
+
+#### Task Outcome Reporting
+
+**The problem:** After a task completes, the user sees nothing in the session chat. If the agent called `updateTaskProgress` with no text content alongside it, the user sees a collapsed "1 tool call" card. If auto-complete fired, the result is in the task table but never surfaced to the conversation. Either way, the agent appears to have gone silent.
+
+**Root cause:** There is a semantic gap between *task execution* (internal, structured, stored in the `task` table) and *task reporting* (conversational, visible in the session chat). Nothing currently bridges the two.
+
+**The three-layer solution:**
+
+**Layer 1 — Prompt instruction (agent-side):**
+The system prompt's task execution rule is updated to require a conversational report after completion:
+
+```
+### Task execution (when you receive a ##TASK_INSTRUCTION)
+- Execute the task immediately and completely.
+- Call updateTaskProgress when finished: status 'completed', progress 100, full resultContent, concise summary.
+- ALWAYS follow updateTaskProgress with a conversational completion report addressed to the user.
+  The report should: confirm what was done, share the key outcome or result, note anything the user should act on.
+  Write it as a natural message — not a log entry. Example: "I've finished the Q1 report. Here's what I found: ..."
+- If you cannot complete the task, call updateTaskProgress with status 'failed' and explain clearly why.
+```
+
+This costs nothing extra (the report is part of the same response turn as the tool call) and produces the most natural output.
+
+**Layer 2 — System-injected completion message (system-side fallback):**
+After every task completion — regardless of whether the agent produced a natural language report — the system checks the session history for a readable AI message following the `##TASK_INSTRUCTION`. If none exists (agent only called the tool with no text, or auto-complete fired), the system formats a completion message from the task record and injects it as an assistant message into the session history before saving:
+
+```typescript
+// After task completes (both updateTaskProgress and auto-complete paths)
+const completedTask = await this.db.query.task.findFirst({ where: eq(task.taskId, nextTask.taskId) });
+const lastAiHasText = /* check if last AI message after ##TASK_INSTRUCTION has readable text content */;
+
+if (!lastAiHasText && completedTask) {
+  const report = formatTaskCompletionReport(completedTask);
+  // Push as assistant message before saving session history
+  messageHistories.push({ role: 'assistant', content: report });
+}
+
+function formatTaskCompletionReport(task) {
+  const lines = [`✅ **${task.title}** — task completed.`];
+  if (task.summary) lines.push(task.summary);
+  if (task.resultContent && typeof task.resultContent === 'string' && task.resultContent !== task.summary) {
+    lines.push(task.resultContent.slice(0, 1000)); // truncate very long results
+  }
+  return lines.join('\n\n');
+}
+```
+
+This is the safety net — deterministic, no LLM cost, always fires if the agent didn't report naturally.
+
+**Layer 3 — UI rendering:**
+The session chat (`AgentOutput` component) detects task completion messages by the `✅` prefix pattern or an optional metadata field (`metadata.taskId`, `metadata.type = 'task_completion'`) and renders them with a distinct visual treatment: a subtle inline task card showing the task title, status badge, and summary — visually distinct from a regular assistant reply but still in the natural conversation flow. The user can click through to the full task detail.
+
+**What the user sees:**
+
+```
+┌─────────────────────────────────────────────────────┐
+│ You: Create a market analysis report for Q1 2026    │
+└─────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────┐
+│ Agent: Sure, I'll create that as a task so I can    │
+│ work through it properly.                            │
+│   [1 tool call ▸]  createTask                       │
+└─────────────────────────────────────────────────────┘
+
+         ... (task executes in background) ...
+
+┌─────────────────────────────────────────────────────┐
+│ ✅  Market Analysis Report — Q1 2026                │
+│    ─────────────────────────────────────            │
+│    I've completed the analysis. Key findings:       │
+│    revenue up 18% YoY, three emerging segments,     │
+│    competitor pricing shift in Feb.                 │
+│    The full report is attached below.               │
+│                          [View full task →]         │
+└─────────────────────────────────────────────────────┘
+```
+
+**Heartbeat reporting:**
+Heartbeat runs that result in autonomous action (the agent sends a message to a space, creates a task, runs a tool) do NOT inject a system-generated report — the agent's own output IS the report. Heartbeats that do nothing (agent decides no action is needed) produce a brief "checked in, nothing to action" response that is saved to the autonomy session but not surfaced to conversation sessions.
+
+#### Session-Level Concurrency Guard
+
+Currently, multiple concurrent `runAgent` calls on the same session are possible (e.g. heartbeat fires while a task is mid-execution). This needs a per-session in-memory lock:
+
+```typescript
+private readonly sessionLocks = new Set<string>();
+
+private acquireSessionLock(sessionId: string): boolean {
+  if (this.sessionLocks.has(sessionId)) return false;
+  this.sessionLocks.add(sessionId);
+  return true;
+}
+
+private releaseSessionLock(sessionId: string) {
+  this.sessionLocks.delete(sessionId);
+}
+```
+
+- `runAgent` calls `acquireSessionLock` at the top; if it returns `false`, returns immediately (heartbeat skipped, task dispatch queued or retried)
+- `releaseSessionLock` is called in the `finally` block
+- This is in-memory (per-instance) which is acceptable for Cloud Run single-instance deployments; for multi-instance, use a Redis lock or a DB advisory lock
+
+#### Heartbeat Scope: Per-Agent, Not Per-Session
+
+Heartbeats operate at the **agent level**, not the session level. The agent has a notion of its "active session" — the most recent non-closed session, or a dedicated `autonomy_session_id` stored on the agent row. This allows:
+
+- Long-running autonomous agents that accumulate memory and context across many heartbeat cycles in one persistent session
+- Users to observe the agent's autonomous activity by opening that session
+- The heartbeat to always have a home, even if the user has never opened the agent's UI
+
+The `getActiveSessionForAgent` helper:
+1. Checks `agent.autonomySessionId` if set (dedicated autonomy session)
+2. Falls back to the most recently updated session for this agent
+3. If no session exists, creates one (with `initiator = agentId`)
+
+#### `runAgent` Redesign
+
+The current `runAgent` function in `AgentService` has grown organically to handle tasks, heartbeats, user messages, tool loading, model selection, session history, memory, usage tracking, and message filtering — all in one 1,000+ line Observable. It is hard to reason about, test, or extend.
+
+The new design treats `runAgent` as a clean orchestrator over a set of focused, composable steps. The function itself becomes thin; the complexity lives in dedicated helpers. This redesign is a prerequisite for Phase 11 — it is the only way to add heartbeat routing, session locking, task reporting, and cross-session context without the existing function becoming unmaintainable.
+
+**The redesigned `runAgent` signature:**
+
+```typescript
+interface RunAgentProps {
+  agentId: string;
+  sessionId: string;
+  messages: ChatCompletionMessageParam[];
+  initiator: string;
+  trigger: 'user' | 'task' | 'heartbeat' | 'a2a';
+}
+
+runAgent(props: RunAgentProps): Observable<AgentStreamEvent>
+```
+
+**The new execution pipeline (each step is a focused async function):**
+
+```
+runAgent(props)
+  │
+  ├── 1. acquireSessionLock(sessionId)         — skip/queue if already running
+  │
+  ├── 2. loadAgentContext(agentId, sessionId)  — agent row, tools, model config
+  │       └── loadTools()                      — static + dynamic + MCP + space tools
+  │       └── buildMemoryBlock()               — semantic memory retrieval
+  │       └── loadSessionHistory()             — existing messages from DB
+  │       └── loadSessionTasks()               — current session tasks for system prompt
+  │       └── buildCrossSessionSummary()       — only if trigger = 'heartbeat'
+  │
+  ├── 3. buildSystemPrompt(context)            — identity + tasks + memory + capabilities
+  │
+  ├── 4. buildGraph(model, tools)              — LangGraph StateGraph + PostgresSaver
+  │
+  ├── 5. executionLoop(messages, graph)
+  │       └── getNextExecutableTask()          — session-scoped + agent-scoped tasks
+  │       │     ├── found: injectTaskInstruction() → graph.invoke()
+  │       │     │           → handleTaskCompletion()
+  │       │     │               ├── updateTaskStatus(completed/failed)
+  │       │     │               └── injectTaskCompletionReport()   ← NEW
+  │       │     └── not found: graph.invoke() with trigger message
+  │       └── loop until no more pending tasks and no more tool calls
+  │
+  ├── 6. persistResults(messages, sessionId)
+  │       └── filterInternalMessages()         — strip triggers, instructions
+  │       └── updateSession(history)
+  │       └── consolidateMemory()              — fire-and-forget
+  │       └── recordUsage()                    — fire-and-forget
+  │
+  └── 7. releaseSessionLock(sessionId)
+```
+
+**Key design principles of the new `runAgent`:**
+
+- **One responsibility per step.** Tool loading is in `loadAgentContext`. History is in `loadSessionHistory`. The graph is in `buildGraph`. The loop is in `executionLoop`. Nothing crosses boundaries.
+- **`trigger` as a first-class citizen.** Every step knows why `runAgent` was called. `buildSystemPrompt` includes cross-session summary only for heartbeats. `persistResults` filters differently for heartbeats (autonomy session) vs user messages (conversation session). `injectTaskCompletionReport` fires for task completions but not heartbeat activity.
+- **Task completion reporting is structural.** `handleTaskCompletion` always calls `injectTaskCompletionReport` — it is not optional prompt behavior. The report is guaranteed to appear in session history.
+- **The loop is explicit.** Currently the loop is a `while` with complex break conditions scattered throughout. In the new design, `executionLoop` has one clear exit condition: no pending tasks AND last graph.invoke produced no tool calls.
+- **All capability surfaces are handled.** The tool loading step covers: static tools (Typia), dynamic tools (DB), MCP tools, space tools, A2A `invoke_skill`. Workflow tasks are dispatched to `WorkflowExecutorService` within `handleTaskCompletion`. This is where all the platform's capabilities — tools, workflows, A2A, spaces — converge.
+
+**What changes in the codebase:**
+- `AgentService.runAgent` is rewritten from scratch (not refactored — a clean rewrite with the old function deleted)
+- `buildSystemPrompt` becomes a pure function (no side effects, fully testable)
+- `executionLoop` is extracted as a private async method
+- `handleTaskCompletion` is a new private method covering both the `updateTaskProgress`-called path and the auto-complete fallback
+- `injectTaskCompletionReport` is a new private method
+- `loadAgentContext` bundles all the parallel data fetching that currently happens in three different places in `runAgent`
+
+This rewrite is Phase 11's largest item and should be done before any heartbeat or session-type work, since those features are impossible to add cleanly to the existing structure.
+
+#### Sessions, Tasks, and Heartbeats: The Unified Model
+
+The current design stamps `sessionId` on every task, making the session both the *execution context* and the *ownership context*. This conflation breaks down as agents become more autonomous — a user creating a task from the management view has no conversation context, a recurring task needs to survive across fresh sessions, and a heartbeat creating tasks should make them visible across the agent's whole view of the world.
+
+The unified model introduces three session types and two task scopes.
+
+---
+
+**Three Session Types**
+
+| Type | Created by | Purpose | History contents |
+|---|---|---|---|
+| **conversation** | User opening chat | User ↔ agent dialogue; user-requested tasks | The conversation + task results |
+| **autonomy** | System on first heartbeat (if none exists) | Agent's persistent home base; one per agent | Heartbeat activity + agent-self-directed tasks |
+| **a2a** | `interactWithAgent` tool call | Agent ↔ agent communication (child session) | Inter-agent messages |
+
+The `session` table gains a `type` column: `'conversation' | 'autonomy' | 'a2a'`.
+
+The agent always has exactly one autonomy session. It is created lazily on the first heartbeat if `agent.autonomySessionId` is null, then stored on the agent row. Users can open this session from the studio to observe what the agent is doing autonomously — it is not hidden infrastructure.
+
+---
+
+**Two Task Scopes**
+
+| Scope | `sessionId` | Who can execute it | Visible in system prompt |
+|---|---|---|---|
+| **session-scoped** (current) | Set to a specific session | Only that session's `runAgent` loop | Current session's prompt only |
+| **agent-scoped** (future) | Null — belongs to agent, not a session | Any session's `runAgent` loop, incl. autonomy session | Every session's prompt |
+
+Session-scoped tasks are the current model and stay as-is. Agent-scoped tasks are introduced in a future phase — they allow a user or external system to create a task for an agent without knowing or caring which session it will run in. `getNextExecutableTask` is updated to check both: session-scoped tasks for the current `sessionId`, plus any agent-scoped tasks (`sessionId IS NULL, agentId = ?`).
+
+---
+
+**Recurring Tasks: `recurringSessionMode` Gets a Third Option**
+
+The existing `recurringSessionMode` field on tasks gains a third value:
+
+| Mode | Behaviour |
+|---|---|
+| `same` | All runs execute in the session the task was created in. History accumulates. |
+| `new` | Each run creates a fresh conversation session. Clean slate. |
+| `autonomy` | Each run executes in the agent's autonomy session. All periodic agent work in one place. |
+
+`autonomy` is the natural default for agent-created recurring tasks and for tasks the user creates from the management view without a specific session context.
+
+---
+
+**Cross-Session Task Visibility**
+
+What the agent sees at each level:
+
+| Context | System prompt contains |
+|---|---|
+| User conversation | Tasks for this session only |
+| Heartbeat (autonomy session) | Tasks for the autonomy session + cross-session summary (see below) |
+| Agent-scoped tasks (future) | Appear in ALL session prompts regardless of session |
+
+The **cross-session summary** is a compact block injected into the heartbeat prompt only — it does not appear in conversation sessions to avoid context bloat:
+
+```
+## RECENT WORK (last 7 days, all sessions)
+- [COMPLETED] Build Q1 report (session: conv-abc, 2026-03-18) — Generated 12-page PDF
+- [COMPLETED] Monitor ETH price (autonomy session, recurring) — Last check: $3,420
+- [PENDING]   Draft partnership proposal (session: conv-xyz) — Not yet started
+```
+
+This gives the agent a longitudinal view of its work history across all conversations and cron runs, without polluting every user conversation with that context.
+
+---
+
+**What Users See**
+
+- **Conversation session** — they see the chat history and the tasks that were created/completed during that conversation in the execution widget
+- **Autonomy session** — they can open this from the sessions list; it shows the agent's self-directed activity, heartbeat outputs, and recurring task results — a window into what the agent is doing on its own
+- **Task management view** — shows all tasks across all sessions for an agent, grouped by session type; filtering by `conversation` vs `autonomy` sessions is the primary navigation axis
+
+---
+
+**Schema Changes Required**
+
+```sql
+-- session table
+ALTER TABLE session ADD COLUMN type TEXT DEFAULT 'conversation';  -- 'conversation' | 'autonomy' | 'a2a'
+
+-- agent table
+ALTER TABLE agent ADD COLUMN autonomy_session_id UUID REFERENCES session(session_id);
+
+-- task table (future: agent-scoped tasks)
+ALTER TABLE task ALTER COLUMN session_id DROP NOT NULL;  -- NULL = agent-scoped
+ALTER TABLE task ADD COLUMN scope TEXT DEFAULT 'session';  -- 'session' | 'agent'
+```
+
+---
+
 ## 6. MIGRATION & PHASED ROLLOUT
 
-> **Last updated: 2026-03-18** — Phases 1–10 complete ✅. Remaining: skills marketplace UI, task dependency graph, execution_log V2, npm publish, CI (deferred).
+> **Last updated: 2026-03-20** — Phases 1–10 complete ✅. Remaining: Phase 11 (Heartbeat & Task cleanup), skills marketplace UI, task dependency graph, execution_log V2, npm publish, CI (deferred).
 
 ### Critical Security Issues (addressed this session)
 - [x] Strip `wallet` JSONB and `modelApiKey` from all agent API responses — `omit` in AgentController
@@ -1713,6 +2111,60 @@ Establish clear versioning: current API is `/v1`. New breaking changes go to `/v
 - [x] `AgentFinances` component — wallet address + USDC balance in agent studio
 - [x] `agent.wallet` JSONB column sunsetted — `phase11-drop-wallet-column.mjs` + schema updated
 - [ ] ZeroDev ERC-4337 / Privy Delegated Actions — deferred; EOA approach adopted for V1 simplicity
+
+### Phase 11: Agent Heartbeat & Autonomy System + Session Model
+**Goal: Clean separation of cron tasks and heartbeats; three session types; agents that act autonomously without user prompting**
+
+**`runAgent` rewrite (do this first — everything else builds on it):**
+- [ ] Delete `AgentService.runAgent` and rewrite from scratch as a clean orchestration pipeline (see 5.14 design)
+- [ ] `loadAgentContext(agentId, sessionId, trigger)` — single parallel data fetch: agent row, tools, memory block, session history, session tasks, cross-session summary (heartbeat only)
+- [ ] `buildGraph(model, tools)` — extracted from runAgent; LangGraph StateGraph + PostgresSaver construction
+- [ ] `executionLoop(messages, graph, agentId, sessionId)` — explicit loop: getNextExecutableTask → injectTaskInstruction → graph.invoke → handleTaskCompletion; exits when no pending tasks and no tool calls
+- [ ] `handleTaskCompletion(task, messages)` — covers both updateTaskProgress-called path and auto-complete fallback; always calls injectTaskCompletionReport
+- [ ] `injectTaskCompletionReport(task, messageHistories)` — formats task title + summary + resultContent as assistant message; checks if agent already produced readable text before injecting
+- [ ] `filterInternalMessages(messages)` — extracted, centralised filter for all internal trigger patterns
+- [ ] `persistResults(messages, sessionId)` — extracted: filterInternalMessages → updateSession → consolidateMemory (fire-and-forget) → recordUsage (fire-and-forget)
+- [ ] `acquireSessionLock / releaseSessionLock` — in-memory Set<sessionId> lock in AgentService; always released in finally block
+- [ ] `buildSystemPrompt` becomes a pure function — no side effects; fully unit-testable; accepts context object
+- [ ] All existing entry points (`triggerAgent`, `dispatchPendingTask`, A2A dispatch) updated to pass correct `trigger` value
+
+**Task system fixes (prerequisites):**
+- [ ] Fix DB migration gaps — add `owner`/`owner_type` to `tool` table; fix `agent_tool.agent_id` type (UUID → text to match agent schema)
+- [ ] Add session-level concurrency guard in `AgentService.runAgent` — in-memory `Set<sessionId>` lock; heartbeats skip if locked, task dispatches retry after delay
+- [ ] Fix status mismatch — `execution-widget.tsx` checks `in_progress` but API returns `running`; align to `running` throughout the frontend
+- [ ] Task detail page — auto-refresh from API; fix task status display in carousel; handle non-string `resultContent` (JSONB objects)
+
+**Task outcome reporting (new):**
+- [ ] Update system prompt task execution rule — require conversational completion report after `updateTaskProgress`; agent must write a natural language outcome message in the same response turn
+- [ ] `formatTaskCompletionReport(task)` helper in `AgentService` — formats task title + summary + truncated resultContent as a markdown assistant message
+- [ ] System-injected fallback in `runAgent` — after each task completion, check if last AI message has readable text content; if not, push formatted completion report into `messageHistories` before `updateSession`
+- [ ] `AgentOutput` component — detect task completion messages (by `metadata.type = 'task_completion'` or `✅` prefix); render with inline task card style (title, status badge, summary, link to task detail)
+- [ ] Task completion messages carry `metadata: { taskId, type: 'task_completion' }` so the UI can distinguish them from normal replies and link through to the task detail page
+
+**Session model (foundation):**
+- [ ] DB migration — add `type` column to `session` table: `'conversation' | 'autonomy' | 'a2a'`; default `'conversation'`
+- [ ] Set `type = 'a2a'` when a child session is created by `interactWithAgent` tool
+- [ ] `GET /v1/sessions` filter — support `?type=conversation|autonomy|a2a`
+- [ ] Sessions list UI — group by session type; label autonomy session distinctly ("Agent Autonomy")
+
+**Heartbeat system (new):**
+- [ ] DB migration — add `heartbeat_enabled` (boolean, default false), `heartbeat_interval_ms` (integer, default 300000), `heartbeat_prompt` (text, nullable), `last_heartbeat_at` (timestamp, nullable), `autonomy_session_id` (uuid, nullable FK → session) to `agent` table
+- [ ] `HeartbeatService` — polls every 60s for agents where `autonomy_enabled=true` AND `heartbeat_enabled=true` AND heartbeat is due; skips if session is locked
+- [ ] `getOrCreateAutonomySession(agentId)` helper — resolves `agent.autonomySessionId` → creates new session with `type='autonomy'` if null, stores ID back on agent
+- [ ] `fireHeartbeat` in `AgentService` — dispatches `⫷⫷HEARTBEAT⫸⫸` trigger message into autonomy session; filtered from session history
+- [ ] `HeartbeatModule` — registers `HeartbeatService`, imports `AgentModule` (forwardRef), `DatabaseModule`, `SessionModule`
+- [ ] Heartbeat config in agent studio UI — toggle switch, interval selector (5 min / 15 min / 1 hr / custom), custom prompt textarea
+- [ ] Autonomy session surfaced in sessions list — always shown at top when heartbeat is enabled; shows last heartbeat time and next scheduled time
+
+**Cross-session task visibility:**
+- [ ] `buildCrossSessionSummary(agentId)` — queries tasks from last 7 days across all sessions for this agent; returns compact markdown block (max 20 tasks, truncated)
+- [ ] Inject cross-session summary into heartbeat prompt only (not conversation session system prompts)
+- [ ] `recurringSessionMode: 'autonomy'` — new option on task; recurring runs execute in the agent's autonomy session; migrate scheduler to route these correctly
+
+**Agent-scoped tasks (foundation for future):**
+- [ ] DB migration — make `task.session_id` nullable; add `scope` column: `'session' | 'agent'` (default `'session'`)
+- [ ] `getNextExecutableTask` — updated to also return agent-scoped tasks (`scope='agent'`, `sessionId IS NULL`) when called from any session for this agent
+- [ ] `POST /v1/tasks` — allow `sessionId` to be omitted; defaults `scope='agent'`; routes execution to autonomy session
 
 ---
 
