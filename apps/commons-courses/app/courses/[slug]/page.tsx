@@ -2,10 +2,10 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Nav } from "@/components/nav";
 import { CourseOutline } from "@/components/courses/course-outline";
+import { EnrolButton } from "@/components/courses/enrol-button";
 import { coursesData } from "@/data/courses";
 import {
   ArrowLeft,
-  ArrowRight,
   Clock,
   BookOpen,
   BarChart2,
@@ -166,9 +166,14 @@ export default async function CoursePage({ params }: Props) {
           </div>
           <span>© 2026 Agent Commons</span>
         </div>
-        <Link href="/courses" className="hover:text-slate-700 transition-colors">
-          Courses
-        </Link>
+        <div className="flex gap-6">
+          <Link href="/courses" className="hover:text-slate-700 transition-colors">
+            Courses
+          </Link>
+          <Link href="/terms" className="hover:text-slate-700 transition-colors">
+            Terms
+          </Link>
+        </div>
       </footer>
     </div>
   );
@@ -188,21 +193,13 @@ function PurchaseCard({ course }: { course: (typeof coursesData)[0] }) {
           </p>
         )}
 
-        <Link
-          href={`/api/payments/checkout?courseSlug=${course.slug}`}
-          className="w-full flex items-center justify-center gap-2 px-5 py-3 rounded-lg text-white text-sm font-bold hover:opacity-90 transition-opacity mb-3"
-          style={{ backgroundColor: "#0a0a0a" }}
-        >
-          {course.isFree ? "Enrol for free" : "Enrol now"}{" "}
-          <ArrowRight className="h-3.5 w-3.5" />
-        </Link>
-
-        <Link
-          href="/auth/signup"
-          className="w-full flex items-center justify-center gap-2 px-5 py-2.5 rounded-lg border border-slate-200 text-sm font-bold text-slate-600 hover:bg-slate-50 transition-colors"
-        >
-          Create account first
-        </Link>
+        <div className="mb-3">
+          <EnrolButton
+            courseSlug={course.slug}
+            isFree={course.isFree}
+            checkoutUrl={`/api/payments/checkout?courseSlug=${course.slug}`}
+          />
+        </div>
 
         <div className="mt-5 pt-4 border-t border-slate-100 space-y-2.5">
           {[
