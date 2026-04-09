@@ -46,8 +46,10 @@ steps:
         '--all-tags',
       ]
 
-  - name: 'gcr.io/cloud-builders/gcloud'
+  - id: deploy
+    name: 'gcr.io/cloud-builders/gcloud'
     entrypoint: gcloud
+    allowFailure: true
     args:
       - run
       - deploy
@@ -56,4 +58,38 @@ steps:
       - --platform=managed
       - --image=europe-west1-docker.pkg.dev/$PROJECT_ID/commons/commons-api:prod
       - --memory=2Gi
+      - --cpu=2
+      - --startup-cpu-boost
+      - --timeout=300
+      - --concurrency=80
     timeout: 1800s
+
+  # Always print recent Cloud Run logs to surface startup errors
+  - name: 'gcr.io/cloud-builders/gcloud'
+    entrypoint: bash
+    waitFor: ['deploy']
+    args:
+      - '-c'
+      - |
+        echo "=== Cloud Run logs for arttribute-commons-api-prod ===" && \
+        gcloud logging read \
+          'resource.type=cloud_run_revision AND resource.labels.service_name=arttribute-commons-api-prod' \
+          --project=$PROJECT_ID \
+          --limit=80 \
+          --format='value(textPayload,jsonPayload.message)' \
+          --freshness=5m 2>/dev/null || true
+    timeout: 60s
+
+  # Fail the build if the deploy step failed
+  - name: 'gcr.io/cloud-builders/gcloud'
+    entrypoint: bash
+    waitFor: ['deploy']
+    args:
+      - '-c'
+      - |
+        gcloud run services describe arttribute-commons-api-prod \
+          --region=europe-west1 \
+          --format='value(status.conditions[0].status)' | grep -q True && \
+          echo "Deploy succeeded" || \
+          (echo "Deploy failed — see logs above" && exit 1)
+    timeout: 60s
