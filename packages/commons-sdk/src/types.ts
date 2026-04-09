@@ -174,7 +174,7 @@ export interface Task {
   sessionId: string;
   title: string;
   description?: string;
-  status: 'pending' | 'running' | 'completed' | 'failed' | 'cancelled';
+  status: 'pending' | 'started' | 'running' | 'completed' | 'failed' | 'cancelled';
   executionMode: 'single' | 'workflow' | 'sequential';
   workflowId?: string;
   cronExpression?: string;

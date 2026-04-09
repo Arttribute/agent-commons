@@ -13,6 +13,7 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { AgentService } from './agent.service';
+import { HeartbeatService } from './heartbeat.service';
 import { TypedBody } from '@nestia/core';
 import * as schema from '#/models/schema';
 import { InferInsertModel } from 'drizzle-orm';
@@ -30,7 +31,10 @@ interface RunBody {
 
 @Controller({ version: '1', path: 'agents' })
 export class AgentController {
-  constructor(private readonly agent: AgentService) {}
+  constructor(
+    private readonly agent: AgentService,
+    private readonly heartbeat: HeartbeatService,
+  ) {}
 
   @Post()
   async createAgent(
@@ -81,9 +85,52 @@ export class AgentController {
   async triggerAgent(@Param('agentId') agentId: string) {
     this.agent.triggerAgent({ agentId });
     return {
-      message:
-        'Agent trigger sent.Make sure you have enabled agent autonomy for the trigger to work',
+      message: 'Agent trigger sent. Make sure you have enabled agent autonomy for the trigger to work',
     };
+  }
+
+  // ──────────────── AUTONOMY / HEARTBEAT ────────────────
+
+  /**
+   * GET /v1/agents/:agentId/autonomy
+   * Returns live heartbeat status for an agent.
+   */
+  @Get(':agentId/autonomy')
+  async getAutonomy(@Param('agentId') agentId: string) {
+    const status = await this.heartbeat.status(agentId);
+    return { data: status };
+  }
+
+  /**
+   * PUT /v1/agents/:agentId/autonomy
+   * Enable or disable the heartbeat, and optionally update the interval.
+   *
+   * Body: { enabled: boolean, intervalSec?: number }
+   */
+  @Put(':agentId/autonomy')
+  @UseGuards(OwnerGuard)
+  @OwnerOnly({ table: 'agent', idParam: 'agentId' })
+  async setAutonomy(
+    @Param('agentId') agentId: string,
+    @Body() body: { enabled: boolean; intervalSec?: number },
+  ) {
+    if (body.enabled) {
+      await this.heartbeat.enable(agentId, body.intervalSec ?? 300);
+    } else {
+      await this.heartbeat.disable(agentId);
+    }
+    const status = await this.heartbeat.status(agentId);
+    return { data: status };
+  }
+
+  /**
+   * POST /v1/agents/:agentId/autonomy/trigger
+   * Fire a single heartbeat beat immediately (for testing / manual wake-up).
+   */
+  @Post(':agentId/autonomy/trigger')
+  async triggerHeartbeat(@Param('agentId') agentId: string) {
+    await this.heartbeat.triggerNow(agentId);
+    return { message: 'Heartbeat triggered' };
   }
 
   @Get(':agentId')

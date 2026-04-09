@@ -1,6 +1,7 @@
 import { forwardRef, Module } from '@nestjs/common';
 import { AgentController } from './agent.controller';
 import { AgentService } from './agent.service';
+import { HeartbeatService } from './heartbeat.service';
 import { ToolModule } from '../tool';
 import { TaskModule } from '../task';
 import { AgentToolsController } from './agent-tools.controller';
@@ -30,7 +31,7 @@ import { WalletModule } from '~/wallet/wallet.module';
     WalletModule,
   ],
   controllers: [AgentController, AgentToolsController],
-  providers: [AgentService, ResourceService, EmbeddingService, OwnerGuard],
-  exports: [AgentService],
+  providers: [AgentService, HeartbeatService, ResourceService, EmbeddingService, OwnerGuard],
+  exports: [AgentService, HeartbeatService],
 })
 export class AgentModule {}

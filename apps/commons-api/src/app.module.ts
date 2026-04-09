@@ -23,6 +23,8 @@ import { SkillModule } from './skill/skill.module';
 import { UsageModule } from './modules/usage';
 import { MemoryModule } from './memory/memory.module';
 import { WalletModule } from './wallet/wallet.module';
+import { LogModule } from './log/log.module';
+import { X402Module } from './modules/x402';
 
 @Module({
   imports: [
@@ -48,6 +50,8 @@ import { WalletModule } from './wallet/wallet.module';
     UsageModule,
     MemoryModule,
     WalletModule,
+    LogModule,
+    X402Module,     // Global x402 micropayment guard
     AuthModule,
   ],
 

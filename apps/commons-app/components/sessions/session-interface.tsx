@@ -175,6 +175,71 @@ export default function SessionInterfaceImproved({
     }
   }, [session, sessionId]);
 
+  // Refresh tasks from API after streaming ends or on mount
+  const fetchTasks = useCallback(async () => {
+    if (!sessionId) return;
+    try {
+      const res = await fetch(`/api/tasks?sessionId=${sessionId}`);
+      if (res.ok) {
+        const data = await res.json();
+        setTasks(data?.data || []);
+      }
+    } catch {
+      // silent — tasks will stay stale if request fails
+    }
+  }, [sessionId]);
+
+  // Poll tasks while any task is active (started/in_progress), stop when all terminal
+  const pollIntervalRef = useRef<NodeJS.Timeout | null>(null);
+
+  const startTaskPolling = useCallback(() => {
+    if (pollIntervalRef.current) return;
+    pollIntervalRef.current = setInterval(() => {
+      fetchTasks().then(() => {
+        setTasks((current) => {
+          const hasActive = current.some(
+            (t: any) => ["started", "running", "in_progress", "pending"].includes((t as any).status)
+          );
+          if (!hasActive && pollIntervalRef.current) {
+            clearInterval(pollIntervalRef.current);
+            pollIntervalRef.current = null;
+          }
+          return current;
+        });
+      });
+    }, 4000);
+  }, [fetchTasks]);
+
+  const stopTaskPolling = useCallback(() => {
+    if (pollIntervalRef.current) {
+      clearInterval(pollIntervalRef.current);
+      pollIntervalRef.current = null;
+    }
+  }, []);
+
+  // When streaming ends, fetch tasks once then start polling if any are active
+  const prevIsStreamingRef = useRef<boolean | undefined>(undefined);
+  useEffect(() => {
+    const wasStreaming = prevIsStreamingRef.current;
+    prevIsStreamingRef.current = isStreaming;
+
+    if (wasStreaming && !isStreaming) {
+      // Streaming just ended — fetch fresh tasks
+      fetchTasks().then(() => {
+        setTasks((current) => {
+          const hasActive = current.some(
+            (t: any) => ["started", "running", "in_progress", "pending"].includes((t as any).status)
+          );
+          if (hasActive) startTaskPolling();
+          return current;
+        });
+      });
+    }
+  }, [isStreaming, fetchTasks, startTaskPolling]);
+
+  // Clean up polling on unmount
+  useEffect(() => () => stopTaskPolling(), [stopTaskPolling]);
+
   return (
     <div className="flex-1 overflow-y-auto py-4">
       <ScrollArea

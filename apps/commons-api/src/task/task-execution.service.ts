@@ -125,16 +125,16 @@ export class TaskExecutionService {
 
     this.logger.log(`Created task ${task.taskId}`);
 
-    // Schedule the first run durably in the DB
-    const scheduledFor = nextRunAt ?? scheduledForDate;
-    if (scheduledFor) {
-      await this.scheduler.scheduleRun({
-        taskId: task.taskId,
-        scheduledFor,
-        triggeredBy: params.cronExpression ? 'cron' : 'manual',
-        sessionId: params.sessionId,
-      });
-    }
+    // Schedule the first run durably in the DB.
+    // Immediate tasks (no future schedule) get scheduledFor=now() so the
+    // scheduler picks them up on the next poll (within ~15 s).
+    const scheduledFor = nextRunAt ?? scheduledForDate ?? new Date();
+    await this.scheduler.scheduleRun({
+      taskId: task.taskId,
+      scheduledFor,
+      triggeredBy: params.cronExpression ? 'cron' : 'manual',
+      sessionId: params.sessionId,
+    });
 
     return task;
   }
@@ -183,13 +183,29 @@ export class TaskExecutionService {
         result = await this.waitForWorkflowCompletion(executionId, timeoutMs);
         summary = `Workflow ${task.workflow?.name ?? task.workflowId} completed`;
       } else {
-        // Non-workflow tasks are executed by the agent. Reset to pending if stuck,
-        // then dispatch to the agent and return immediately.
-        await this.db.update(schema.task)
-          .set({ status: 'pending', actualStart: null })
-          .where(eq(schema.task.taskId, taskId));
-        this.agentService.dispatchPendingTask(task.agentId, task.sessionId);
-        return { taskId, status: 'completed', summary: 'Task dispatched to agent', duration: Date.now() - startTime };
+        // Single/sequential tasks: run the agent with a structured task prompt,
+        // await completion, then mark the task done based on the final event.
+        const taskPrompt = buildTaskPrompt(task);
+        let agentResult: any = null;
+
+        await new Promise<void>((resolve, reject) => {
+          this.agentService.runAgent({
+            agentId: task.agentId,
+            sessionId: task.sessionId,
+            messages: [{ role: 'user', content: taskPrompt }],
+            initiator: task.createdBy ?? task.agentId,
+          }).subscribe({
+            next: (event: any) => {
+              if (event?.type === 'final') agentResult = event.payload;
+            },
+            error: (err: Error) => reject(err),
+            complete: () => resolve(),
+          });
+        });
+
+        const agentText = extractAgentText(agentResult);
+        result = agentResult;
+        summary = agentText ? agentText.slice(0, 500) : 'Task executed by agent';
       }
 
       await this.completeTask(taskId, { status: 'completed', resultContent: result, summary, duration: Date.now() - startTime });
@@ -344,4 +360,59 @@ export class TaskExecutionService {
       })
       .where(eq(schema.task.taskId, taskId));
   }
+}
+
+// ── Module-level helpers ──────────────────────────────────────────────────────
+
+/**
+ * Build a structured prompt for the agent to execute a task.
+ * The agent sees task title, description, context, and any tool hints.
+ */
+export function buildTaskPrompt(task: {
+  taskId: string;
+  title: string;
+  description?: string | null;
+  context?: Record<string, any> | null;
+  tools?: string[] | null;
+  toolInstructions?: string | null;
+}): string {
+  const lines: string[] = [
+    '⫷⫷TASK_EXECUTION⫸⫸',
+    `You have been assigned a task. Execute it and report the result.`,
+    '',
+    `Task ID: ${task.taskId}`,
+    `Title: ${task.title}`,
+  ];
+
+  if (task.description) lines.push(`Description: ${task.description}`);
+
+  if (task.context) {
+    const ctx = task.context as any;
+    if (ctx.objective) lines.push(`Objective: ${ctx.objective}`);
+    if (ctx.expectedOutputType) lines.push(`Expected output type: ${ctx.expectedOutputType}`);
+    if (ctx.constraints?.length) lines.push(`Constraints: ${ctx.constraints.join('; ')}`);
+    if (ctx.evaluationCriteria?.length) lines.push(`Success criteria: ${ctx.evaluationCriteria.join('; ')}`);
+    if (ctx.reasoningStrategy) lines.push(`Suggested approach: ${ctx.reasoningStrategy}`);
+  }
+
+  if (task.tools?.length) lines.push(`Tools available for this task: ${task.tools.join(', ')}`);
+  if (task.toolInstructions) lines.push(`Tool usage notes: ${task.toolInstructions}`);
+
+  lines.push('', 'Execute this task now and provide a clear result.');
+  return lines.join('\n');
+}
+
+/** Extract plain text from a runAgent final event payload */
+function extractAgentText(payload: any): string {
+  if (!payload) return '';
+  if (typeof payload === 'string') return payload;
+  if (typeof payload.content === 'string') return payload.content;
+  if (Array.isArray(payload.content)) {
+    return payload.content
+      .filter((b: any) => b.type === 'text')
+      .map((b: any) => b.text as string)
+      .join('\n');
+  }
+  if (payload.message) return payload.message;
+  return '';
 }

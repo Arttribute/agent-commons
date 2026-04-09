@@ -1,9 +1,10 @@
 import { Module } from '@nestjs/common';
 import { LogService } from './log.service';
+import { LogController } from './log.controller';
 
 @Module({
   imports: [],
-  controllers: [],
+  controllers: [LogController],
   providers: [LogService],
   exports: [LogService],
 })

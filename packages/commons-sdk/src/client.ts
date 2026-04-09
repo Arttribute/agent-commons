@@ -52,6 +52,16 @@ export class CommonsClient {
     return res.json() as Promise<T>;
   }
 
+  // ── Models ────────────────────────────────────────────────────────────────
+
+  get models() {
+    return {
+      /** List all available LLM models from the registry */
+      list: (): Promise<{ data: any[]; grouped: Record<string, any[]> }> =>
+        this.request('GET', '/v1/models'),
+    };
+  }
+
   // ── Agents ────────────────────────────────────────────────────────────────
 
   get agents() {
@@ -95,6 +105,30 @@ export class CommonsClient {
        */
       stream: (params: RunParams): AsyncGenerator<StreamEvent> =>
         this._streamAgentRun(params),
+
+      // ── Autonomy / Heartbeat ─────────────────────────────────────────────
+
+      /** Get the current heartbeat/autonomy status for an agent. */
+      getAutonomy: (agentId: string): Promise<{
+        data: {
+          enabled: boolean;
+          intervalSec: number;
+          isArmed: boolean;
+          lastBeatAt: string | null;
+          nextBeatAt: string | null;
+        };
+      }> => this.request('GET', `/v1/agents/${agentId}/autonomy`),
+
+      /** Enable or disable the heartbeat, optionally setting the interval. */
+      setAutonomy: (
+        agentId: string,
+        params: { enabled: boolean; intervalSec?: number },
+      ): Promise<{ data: { enabled: boolean; intervalSec: number; isArmed: boolean } }> =>
+        this.request('PUT', `/v1/agents/${agentId}/autonomy`, params),
+
+      /** Trigger a single heartbeat beat immediately. */
+      triggerHeartbeat: (agentId: string): Promise<{ message: string }> =>
+        this.request('POST', `/v1/agents/${agentId}/autonomy/trigger`),
     };
   }
 
@@ -207,6 +241,10 @@ export class CommonsClient {
     return {
       list: (agentId: string, initiatorId: string): Promise<{ data: import('./types').Session[] }> =>
         this.request('GET', `/v1/sessions/list/${agentId}/${initiatorId}`),
+
+      /** List all sessions for a user across all agents. */
+      listByUser: (initiator: string): Promise<{ data: import('./types').Session[] }> =>
+        this.request('GET', `/v1/sessions/user/${encodeURIComponent(initiator)}`),
 
       create: (params: {
         agentId: string;
@@ -347,6 +385,29 @@ export class CommonsClient {
       /** Get USDC and native token balance for a wallet. */
       balance: (walletId: string): Promise<WalletBalance> =>
         this.request('GET', `/v1/wallets/${walletId}/balance`),
+
+      /** Transfer USDC or ETH to another address. */
+      transfer: (
+        walletId: string,
+        params: { toAddress: string; amount: string; tokenSymbol?: 'USDC' | 'ETH' },
+      ): Promise<{ txHash: string }> =>
+        this.request('POST', `/v1/wallets/${walletId}/transfer`, params),
+
+      /**
+       * Proxy an HTTP request through an agent's primary wallet, automatically
+       * handling x402 payment challenges.  The wallet signs the payment and
+       * retries once if the target responds with HTTP 402.
+       */
+      x402Fetch: (
+        agentId: string,
+        params: {
+          url: string;
+          method?: string;
+          headers?: Record<string, string>;
+          body?: string;
+        },
+      ): Promise<{ status: number; body: unknown }> =>
+        this.request('POST', `/v1/wallets/agent/${agentId}/x402-fetch`, params),
 
       /** Deactivate a wallet. */
       deactivate: (walletId: string): Promise<void> =>

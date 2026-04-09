@@ -16,6 +16,24 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ tas
   }
 }
 
+// PUT /api/tasks/[taskId]
+export async function PUT(req: NextRequest, { params }: { params: Promise<{ taskId: string }> }) {
+  const { taskId } = await params;
+  if (!baseUrl) return NextResponse.json({ error: "Server base URL not configured" }, { status: 500 });
+  const body = await req.json().catch(() => ({}));
+  try {
+    const res = await fetch(`${baseUrl}/v1/tasks/${taskId}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json", ...backendAuthHeaders() },
+      body: JSON.stringify(body),
+    });
+    const data = await res.json().catch(() => ({ error: "Bad JSON" }));
+    return NextResponse.json(data, { status: res.status });
+  } catch (e: any) {
+    return NextResponse.json({ error: e.message }, { status: 500 });
+  }
+}
+
 // DELETE /api/tasks/[taskId]
 export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ taskId: string }> }) {
   const { taskId } = await params;

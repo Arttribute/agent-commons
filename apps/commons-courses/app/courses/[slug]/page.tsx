@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { Nav } from "@/components/nav";
 import { CourseOutline } from "@/components/courses/course-outline";
 import { EnrolButton } from "@/components/courses/enrol-button";
+import { EnrolledBanner } from "@/components/courses/enrolled-banner";
 import { coursesData } from "@/data/courses";
 import {
   ArrowLeft,
@@ -130,6 +131,11 @@ export default async function CoursePage({ params }: Props) {
                     </div>
                   ))}
                 </div>
+              </div>
+
+              {/* Enrolled banner (shows for logged-in enrolled users) */}
+              <div className="mb-8">
+                <EnrolledBanner courseSlug={course.slug} />
               </div>
 
               {/* Course outline */}

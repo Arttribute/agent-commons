@@ -12,6 +12,7 @@ import { ToolNode } from '@langchain/langgraph/prebuilt';
 import {
   BadRequestException,
   Injectable,
+  Logger,
   OnModuleInit,
   forwardRef,
   Inject,
@@ -60,6 +61,8 @@ const app = typia.llm.application<CommonTool, 'chatgpt'>();
 
 @Injectable()
 export class AgentService implements OnModuleInit {
+  private readonly logger = new Logger(AgentService.name);
+
   constructor(
     private db: DatabaseService,
     private session: SessionService,

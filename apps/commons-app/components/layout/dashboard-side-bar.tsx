@@ -13,6 +13,9 @@ import {
   Search,
   Loader2,
   MessageSquare,
+  Wallet,
+  ScrollText,
+  BarChart2,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -32,6 +35,10 @@ export function DashboardSideBar({ username }: { username: string }) {
   const activeSection = useMemo(() => {
     if (!pathname) return "studio";
     if (pathname.startsWith("/studio")) return "studio";
+    if (pathname.startsWith("/sessions")) return "sessions";
+    if (pathname.startsWith("/wallets")) return "wallets";
+    if (pathname.startsWith("/logs")) return "logs";
+    if (pathname.startsWith("/usage")) return "usage";
     if (pathname.startsWith("/spaces")) return "spaces";
     if (pathname.startsWith("/files")) return "files";
     return "studio";
@@ -78,39 +85,28 @@ export function DashboardSideBar({ username }: { username: string }) {
               <PanelLeft className="h-5 w-5" />
             </button>
             <div className="flex flex-col items-center gap-3 mt-2">
-              <button
-                className={cn(
-                  "rounded-md p-1 hover:bg-accent text-muted-foreground hover:text-foreground",
-                  activeSection === "studio" && "bg-accent text-accent-foreground"
-                )}
-                aria-label="Studio"
-                title="Studio"
-                onClick={() => router.push("/studio/agents")}
-              >
-                <Sparkles className="h-5 w-5" />
-              </button>
-              <button
-                className={cn(
-                  "rounded-md p-1 hover:bg-accent text-muted-foreground hover:text-foreground",
-                  activeSection === "spaces" && "bg-accent text-accent-foreground"
-                )}
-                aria-label="Spaces"
-                title="Spaces"
-                onClick={() => router.push("/spaces")}
-              >
-                <Earth className="h-5 w-5" />
-              </button>
-              <button
-                className={cn(
-                  "rounded-md p-1 hover:bg-accent text-muted-foreground hover:text-foreground",
-                  activeSection === "files" && "bg-accent text-accent-foreground"
-                )}
-                aria-label="Files"
-                title="Files"
-                onClick={() => router.push("/files")}
-              >
-                <Folder className="h-5 w-5" />
-              </button>
+              {[
+                { key: "studio",   icon: Sparkles,      path: "/studio/agents", label: "Studio" },
+                { key: "sessions", icon: MessageSquare, path: "/sessions",      label: "Sessions" },
+                { key: "wallets",  icon: Wallet,        path: "/wallets",       label: "Wallets" },
+                { key: "logs",     icon: ScrollText,    path: "/logs",          label: "Logs" },
+                { key: "usage",    icon: BarChart2,     path: "/usage",         label: "Usage" },
+                { key: "spaces",   icon: Earth,         path: "/spaces",        label: "Spaces" },
+                { key: "files",    icon: Folder,        path: "/files",         label: "Files" },
+              ].map(({ key, icon: Icon, path, label }) => (
+                <button
+                  key={key}
+                  className={cn(
+                    "rounded-md p-1 hover:bg-accent text-muted-foreground hover:text-foreground",
+                    activeSection === key && "bg-accent text-accent-foreground"
+                  )}
+                  aria-label={label}
+                  title={label}
+                  onClick={() => router.push(path)}
+                >
+                  <Icon className="h-5 w-5" />
+                </button>
+              ))}
             </div>
           </div>
         )}

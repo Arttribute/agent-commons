@@ -31,6 +31,7 @@
     "@langchain/groq": "^1.1.5",
     "@langchain/langgraph": "^1.2.3",
     "@langchain/langgraph-checkpoint-postgres": "^1.0.1",
+    "@langchain/mistralai": "^1.0.7",
     "@langchain/ollama": "^1.2.6",
     "@langchain/openai": "^1.3.0",
     "@modelcontextprotocol/sdk": "^1.25.1",
@@ -86,6 +87,7 @@
     "wavefile": "^11.0.0",
     "ws": "^8.18.3",
     "wscat": "6.1.0",
+    "x402": "^1.1.0",
     "zod": "^3.25.0"
   },
   "devDependencies": {
@@ -138,6 +140,7 @@
       "^@langchain/anthropic$": "<rootDir>/__mocks__/langchain-providers.ts",
       "^@langchain/google-genai$": "<rootDir>/__mocks__/langchain-providers.ts",
       "^@langchain/groq$": "<rootDir>/__mocks__/langchain-providers.ts",
+      "^@langchain/mistralai$": "<rootDir>/__mocks__/langchain-providers.ts",
       "^@langchain/ollama$": "<rootDir>/__mocks__/langchain-providers.ts",
       "^@langchain/openai$": "<rootDir>/__mocks__/langchain-providers.ts",
       "^graphql-request$": "<rootDir>/__mocks__/graphql-request.ts",

@@ -37,6 +37,7 @@ import "reactflow/dist/style.css";
 
 const statusColors: Record<Task["status"], string> = {
   pending: "bg-muted text-muted-foreground",
+  started: "bg-blue-100 text-blue-700",
   running: "bg-blue-100 text-blue-700",
   completed: "bg-green-100 text-green-700",
   failed: "bg-red-100 text-red-700",
@@ -45,6 +46,7 @@ const statusColors: Record<Task["status"], string> = {
 
 const statusIcons: Record<Task["status"], React.ElementType> = {
   pending: Circle,
+  started: Clock,
   running: Clock,
   completed: CheckCircle2,
   failed: XCircle,
@@ -55,6 +57,7 @@ const statusIcons: Record<Task["status"], React.ElementType> = {
 
 const statusNodeColors: Record<Task["status"], string> = {
   pending:   "border-muted-foreground/40 bg-muted/30",
+  started:   "border-blue-400 bg-blue-50",
   running:   "border-blue-400 bg-blue-50",
   completed: "border-green-500 bg-green-50",
   failed:    "border-red-400 bg-red-50",
