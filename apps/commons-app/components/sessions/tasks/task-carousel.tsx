@@ -32,7 +32,7 @@ interface Task {
   taskId: string;
   title: string;
   description: string;
-  status: "pending" | "in_progress" | "completed" | "failed";
+  status: "pending" | "started" | "running" | "in_progress" | "completed" | "failed";
   priority: number;
   progress: number;
   context?: TaskContext;
@@ -166,9 +166,9 @@ export default function TaskCarousel({ tasks }: TaskCarouselProps) {
             variant={
               currentTask.status === "completed" ? "default" : "secondary"
             }
-            className="text-xs "
+            className="text-xs"
           >
-            {currentTask.status}
+            {["started", "running"].includes(currentTask.status) ? "in progress" : currentTask.status}
           </Badge>
         </div>
         <ScrollArea className="h-[420px] p-4 bg-muted/50">

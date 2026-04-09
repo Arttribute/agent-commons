@@ -10,6 +10,10 @@ import { chatCommand } from './commands/chat.js';
 import { mcpCommand } from './commands/mcp.js';
 import { skillsCommand } from './commands/skills.js';
 import { walletCommand } from './commands/wallet.js';
+import { modelsCommand } from './commands/models.js';
+import { memoryCommand } from './commands/memory.js';
+import { usageCommand } from './commands/usage.js';
+import { logsCommand } from './commands/logs.js';
 
 const program = new Command();
 
@@ -47,6 +51,16 @@ program.addCommand(skillsCommand());
 
 // Wallets
 program.addCommand(walletCommand());
+
+// Models
+program.addCommand(modelsCommand());
+
+// Memory
+program.addCommand(memoryCommand());
+
+// Usage & Logs (observability)
+program.addCommand(usageCommand());
+program.addCommand(logsCommand());
 
 // Unknown command hint
 program.on('command:*', () => {

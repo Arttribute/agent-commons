@@ -16,3 +16,4 @@ export const ChatAnthropic        = MockChatModel;
 export const ChatGoogleGenerativeAI = MockChatModel;
 export const ChatGroq             = MockChatModel;
 export const ChatOllama           = MockChatModel;
+export const ChatMistralAI        = MockChatModel;

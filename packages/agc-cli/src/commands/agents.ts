@@ -110,5 +110,95 @@ export function agentsCommand(): Command {
       }
     });
 
+  // ── autonomy ────────────────────────────────────────────────────────────────
+  const autonomy = cmd.command('autonomy').description('Manage agent heartbeat / autonomy');
+
+  autonomy
+    .command('status')
+    .description('Show autonomy status for an agent')
+    .requiredOption('--agent <agentId>', 'Agent ID')
+    .option('--json', 'Output as JSON')
+    .action(async (opts) => {
+      const client = makeClient();
+      const spinner = spin('Fetching autonomy status…');
+      try {
+        const res = await client.agents.getAutonomy(opts.agent);
+        spinner.stop();
+        const s = res.data;
+        if (opts.json) return jsonOut(s);
+        console.log(`\n${c.bold('Autonomy Status')}`);
+        detail([
+          ['Enabled',      s.enabled ? c.bold('yes') : 'no'],
+          ['Interval',     s.intervalSec ? `${s.intervalSec}s` : 'n/a'],
+          ['Armed',        s.isArmed ? c.bold('yes') : 'no'],
+          ['Last beat',    s.lastBeatAt ? new Date(s.lastBeatAt).toLocaleString() : 'never'],
+          ['Next beat',    s.nextBeatAt ? new Date(s.nextBeatAt).toLocaleString() : 'n/a'],
+        ]);
+      } catch (err) {
+        spinner.stop();
+        printError(err);
+        process.exit(1);
+      }
+    });
+
+  autonomy
+    .command('enable')
+    .description('Enable autonomous heartbeat for an agent')
+    .requiredOption('--agent <agentId>', 'Agent ID')
+    .option('--interval <seconds>', 'Heartbeat interval in seconds (min 30)', '300')
+    .action(async (opts) => {
+      const client = makeClient();
+      const spinner = spin('Enabling autonomy…');
+      try {
+        await client.agents.setAutonomy(opts.agent, {
+          enabled: true,
+          intervalSec: parseInt(opts.interval, 10),
+        });
+        spinner.stop();
+        console.log(`\n${sym.ok} Autonomy enabled for agent ${c.id(opts.agent)}`);
+        console.log(c.dim(`  Heartbeat every ${opts.interval}s`));
+      } catch (err) {
+        spinner.stop();
+        printError(err);
+        process.exit(1);
+      }
+    });
+
+  autonomy
+    .command('disable')
+    .description('Disable autonomous heartbeat for an agent')
+    .requiredOption('--agent <agentId>', 'Agent ID')
+    .action(async (opts) => {
+      const client = makeClient();
+      const spinner = spin('Disabling autonomy…');
+      try {
+        await client.agents.setAutonomy(opts.agent, { enabled: false });
+        spinner.stop();
+        console.log(`\n${sym.ok} Autonomy disabled for agent ${c.id(opts.agent)}`);
+      } catch (err) {
+        spinner.stop();
+        printError(err);
+        process.exit(1);
+      }
+    });
+
+  autonomy
+    .command('trigger')
+    .description('Trigger a single heartbeat beat immediately')
+    .requiredOption('--agent <agentId>', 'Agent ID')
+    .action(async (opts) => {
+      const client = makeClient();
+      const spinner = spin('Triggering heartbeat…');
+      try {
+        await client.agents.triggerHeartbeat(opts.agent);
+        spinner.stop();
+        console.log(`\n${sym.ok} Heartbeat triggered for agent ${c.id(opts.agent)}`);
+      } catch (err) {
+        spinner.stop();
+        printError(err);
+        process.exit(1);
+      }
+    });
+
   return cmd;
 }

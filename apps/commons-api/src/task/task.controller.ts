@@ -11,8 +11,6 @@ import {
   Sse,
   Req,
   UseGuards,
-  Inject,
-  forwardRef,
 } from '@nestjs/common';
 import { Request } from 'express';
 import { Observable } from 'rxjs';
@@ -22,7 +20,6 @@ import { TaskExecutionService } from './task-execution.service';
 import { DatabaseService } from '../modules/database';
 import * as schema from '../../models/schema';
 import { OwnerGuard, OwnerOnly } from '~/modules/auth';
-import { AgentService } from '../agent/agent.service';
 
 @Controller({ version: '1', path: 'tasks' })
 export class TaskController {
@@ -30,7 +27,6 @@ export class TaskController {
     private readonly tasks: TaskService,
     private readonly taskExecution: TaskExecutionService,
     private readonly db: DatabaseService,
-    @Inject(forwardRef(() => AgentService)) private readonly agentService: AgentService,
   ) {}
 
   /**
@@ -63,14 +59,9 @@ export class TaskController {
       createdByType: 'user' | 'agent';
     },
   ) {
-    // Always use TaskExecutionService for new task creation
     const task = await this.taskExecution.createTask(body);
-
-    // For immediate tasks (no future schedule, no cron), dispatch to the agent right away
-    if (!body.scheduledFor && !body.cronExpression) {
-      this.agentService.dispatchPendingTask(task.agentId, task.sessionId);
-    }
-
+    // createTask() already calls scheduler.scheduleRun() — immediate tasks get
+    // scheduledFor=now() so the scheduler picks them up within 15 s.
     return { data: task };
   }
 

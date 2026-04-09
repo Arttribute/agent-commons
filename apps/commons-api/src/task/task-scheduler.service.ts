@@ -1,5 +1,5 @@
 import { Injectable, Logger, OnModuleDestroy, OnModuleInit, forwardRef, Inject } from '@nestjs/common';
-import { and, eq, lte, lt, isNull, notInArray } from 'drizzle-orm';
+import { and, eq, lte, lt, inArray } from 'drizzle-orm';
 import { DatabaseService } from '../modules/database';
 import { TaskExecutionService } from './task-execution.service';
 import * as schema from '../../models/schema';
@@ -39,7 +39,7 @@ export class TaskSchedulerService implements OnModuleInit, OnModuleDestroy {
   }): Promise<void> {
     await this.db.insert(schema.scheduledTaskRun).values({
       taskId: params.taskId,
-      scheduledFor: params.scheduledFor,
+      scheduledFor: params.scheduledFor instanceof Date ? params.scheduledFor : new Date(params.scheduledFor),
       triggeredBy: params.triggeredBy ?? 'cron',
       status: 'pending',
       ...(params.sessionId ? { sessionId: params.sessionId as any } : {}),
@@ -69,26 +69,16 @@ export class TaskSchedulerService implements OnModuleInit, OnModuleDestroy {
 
       // For each overdue task, check if there's already a pending/running run
       const catchupPromises = overdueTasks.map(async (task) => {
+        // Single DB query that filters by status in SQL
         const existing = await this.db.query.scheduledTaskRun.findFirst({
           where: (r) =>
             and(
               eq(r.taskId, task.taskId),
-              // Only skip if there's already a pending or running record
-              // (i.e., the run was already scheduled before the restart)
+              inArray(r.status, ['pending', 'running']),
             ),
         });
 
-        // Check for any pending or running run
-        const active = await this.db.query.scheduledTaskRun.findMany({
-          where: (r) =>
-            and(
-              eq(r.taskId, task.taskId),
-              // pending or running
-            ),
-        });
-        const hasActivePendingOrRunning = active.some(
-          (r) => r.status === 'pending' || r.status === 'running',
-        );
+        const hasActivePendingOrRunning = !!existing;
 
         if (!hasActivePendingOrRunning) {
           this.logger.warn(

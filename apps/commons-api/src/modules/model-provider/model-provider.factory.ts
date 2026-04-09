@@ -6,6 +6,7 @@ import { buildAnthropicModel } from './providers/anthropic.provider';
 import { buildOllamaModel } from './providers/ollama.provider';
 import { buildGoogleModel } from './providers/google.provider';
 import { buildGroqModel } from './providers/groq.provider';
+import { buildMistralModel } from './providers/mistral.provider';
 
 export const DEFAULT_MODEL_CONFIG: ModelConfig = {
   provider: 'openai',
@@ -37,6 +38,8 @@ export class ModelProviderFactory {
         return buildGoogleModel(resolved) as unknown as BaseChatModel;
       case 'groq':
         return buildGroqModel(resolved);
+      case 'mistral':
+        return buildMistralModel(resolved);
       case 'ollama':
         return buildOllamaModel(resolved);
       default: {

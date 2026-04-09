@@ -52,6 +52,13 @@ var CommonsClient = class {
     }
     return res.json();
   }
+  // ── Models ────────────────────────────────────────────────────────────────
+  get models() {
+    return {
+      /** List all available LLM models from the registry */
+      list: () => this.request("GET", "/v1/models")
+    };
+  }
   // ── Agents ────────────────────────────────────────────────────────────────
   get agents() {
     return {
@@ -76,7 +83,14 @@ var CommonsClient = class {
        *   if (event.type === 'token') process.stdout.write(event.content ?? '');
        * }
        */
-      stream: (params) => this._streamAgentRun(params)
+      stream: (params) => this._streamAgentRun(params),
+      // ── Autonomy / Heartbeat ─────────────────────────────────────────────
+      /** Get the current heartbeat/autonomy status for an agent. */
+      getAutonomy: (agentId) => this.request("GET", `/v1/agents/${agentId}/autonomy`),
+      /** Enable or disable the heartbeat, optionally setting the interval. */
+      setAutonomy: (agentId, params) => this.request("PUT", `/v1/agents/${agentId}/autonomy`, params),
+      /** Trigger a single heartbeat beat immediately. */
+      triggerHeartbeat: (agentId) => this.request("POST", `/v1/agents/${agentId}/autonomy/trigger`)
     };
   }
   // ── Run (non-streaming) ───────────────────────────────────────────────────
@@ -125,6 +139,8 @@ var CommonsClient = class {
   get sessions() {
     return {
       list: (agentId, initiatorId) => this.request("GET", `/v1/sessions/list/${agentId}/${initiatorId}`),
+      /** List all sessions for a user across all agents. */
+      listByUser: (initiator) => this.request("GET", `/v1/sessions/user/${encodeURIComponent(initiator)}`),
       create: (params) => this.request("POST", "/v1/sessions", params),
       get: (sessionId) => this.request("GET", `/v1/sessions/${sessionId}`),
       /** Get full session with history, tasks, childSessions, and spaces. */
@@ -202,6 +218,14 @@ var CommonsClient = class {
       create: (params) => this.request("POST", "/v1/wallets", params),
       /** Get USDC and native token balance for a wallet. */
       balance: (walletId) => this.request("GET", `/v1/wallets/${walletId}/balance`),
+      /** Transfer USDC or ETH to another address. */
+      transfer: (walletId, params) => this.request("POST", `/v1/wallets/${walletId}/transfer`, params),
+      /**
+       * Proxy an HTTP request through an agent's primary wallet, automatically
+       * handling x402 payment challenges.  The wallet signs the payment and
+       * retries once if the target responds with HTTP 402.
+       */
+      x402Fetch: (agentId, params) => this.request("POST", `/v1/wallets/agent/${agentId}/x402-fetch`, params),
       /** Deactivate a wallet. */
       deactivate: (walletId) => this.request("DELETE", `/v1/wallets/${walletId}`)
     };

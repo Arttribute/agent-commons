@@ -25,7 +25,7 @@ interface Task {
   taskId: string;
   title: string;
   description: string;
-  status: "pending" | "in_progress" | "completed" | "failed";
+  status: "pending" | "started" | "running" | "in_progress" | "completed" | "failed";
   progress: number;
   priority: number;
   agentId: string;
@@ -104,7 +104,7 @@ export default function ExecutionWidget({
   // Calculate stats for all tasks
   const totalTasks = tasks.length;
   const completedTasks = tasks.filter((task) => task.status === "completed").length;
-  const inProgressTasks = tasks.filter((task) => task.status === "in_progress").length;
+  const inProgressTasks = tasks.filter((task) => ["in_progress", "started", "running"].includes(task.status)).length;
   const pendingTasks = tasks.filter((task) => task.status === "pending").length;
   const failedTasks = tasks.filter((task) => task.status === "failed").length;
 
@@ -256,13 +256,13 @@ export default function ExecutionWidget({
                   </div>
                 </div>
 
-                {inProgressTasks > 0 && tasks.find((t) => t.status === "in_progress") && (
+                {inProgressTasks > 0 && tasks.find((t) => ["in_progress", "started", "running"].includes(t.status)) && (
                   <div className="border-t border-border pt-2 mt-2 mb-2">
                     <div className="mx-2 space-y-1">
                       <div className="flex items-center gap-1 text-xs">
                         <Clock className="h-3 w-3 text-blue-500" />
                         <span className="truncate">
-                          {tasks.find((t) => t.status === "in_progress")?.title}
+                          {tasks.find((t) => ["in_progress", "started", "running"].includes(t.status))?.title}
                         </span>
                       </div>
                     </div>

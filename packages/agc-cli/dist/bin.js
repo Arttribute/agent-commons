@@ -24,7 +24,7 @@ var __toESM = (mod, isNodeMode, target) => (target = mod != null ? __create(__ge
 ));
 
 // src/bin.ts
-var import_commander11 = require("commander");
+var import_commander16 = require("commander");
 
 // src/commands/login.ts
 var import_commander = require("commander");
@@ -203,14 +203,19 @@ function loginCommand() {
     try {
       const current = loadConfig();
       const apiUrl = opts.apiUrl !== DEFAULT_API_URL ? opts.apiUrl : await prompt(`API URL [${current.apiUrl ?? DEFAULT_API_URL}]: `) || (current.apiUrl ?? DEFAULT_API_URL);
+      const appUrl = apiUrl.includes("localhost") ? "http://localhost:3000" : apiUrl.replace(/\/api$/, "").replace("api.", "").replace(":3001", ":3000");
       let apiKey = opts.apiKey;
       if (!apiKey) {
-        apiKey = await prompt(`API Key [${current.apiKey ? "****" : "none"}]: `);
+        console.log(`
+  Generate an API key at:
+  ${c.bold(`${appUrl}/settings/api-keys`)}
+`);
+        apiKey = await prompt(`API Key (sk-ac-...): `);
         if (!apiKey) apiKey = current.apiKey;
       }
       let initiator = opts.initiator;
       if (!initiator) {
-        initiator = await prompt(`Initiator ID [${current.initiator ?? "none"}]: `);
+        initiator = await prompt(`Wallet address (0x...): `);
         if (!initiator) initiator = current.initiator;
       }
       saveConfig({ apiUrl, apiKey, initiator });
@@ -376,6 +381,76 @@ ${sym.ok} Agent created`);
       process.exit(1);
     }
   });
+  const autonomy = cmd.command("autonomy").description("Manage agent heartbeat / autonomy");
+  autonomy.command("status").description("Show autonomy status for an agent").requiredOption("--agent <agentId>", "Agent ID").option("--json", "Output as JSON").action(async (opts) => {
+    const client = makeClient();
+    const spinner = spin("Fetching autonomy status\u2026");
+    try {
+      const res = await client.agents.getAutonomy(opts.agent);
+      spinner.stop();
+      const s = res.data;
+      if (opts.json) return jsonOut(s);
+      console.log(`
+${c.bold("Autonomy Status")}`);
+      detail([
+        ["Enabled", s.enabled ? c.bold("yes") : "no"],
+        ["Interval", s.intervalSec ? `${s.intervalSec}s` : "n/a"],
+        ["Armed", s.isArmed ? c.bold("yes") : "no"],
+        ["Last beat", s.lastBeatAt ? new Date(s.lastBeatAt).toLocaleString() : "never"],
+        ["Next beat", s.nextBeatAt ? new Date(s.nextBeatAt).toLocaleString() : "n/a"]
+      ]);
+    } catch (err) {
+      spinner.stop();
+      printError(err);
+      process.exit(1);
+    }
+  });
+  autonomy.command("enable").description("Enable autonomous heartbeat for an agent").requiredOption("--agent <agentId>", "Agent ID").option("--interval <seconds>", "Heartbeat interval in seconds (min 30)", "300").action(async (opts) => {
+    const client = makeClient();
+    const spinner = spin("Enabling autonomy\u2026");
+    try {
+      await client.agents.setAutonomy(opts.agent, {
+        enabled: true,
+        intervalSec: parseInt(opts.interval, 10)
+      });
+      spinner.stop();
+      console.log(`
+${sym.ok} Autonomy enabled for agent ${c.id(opts.agent)}`);
+      console.log(c.dim(`  Heartbeat every ${opts.interval}s`));
+    } catch (err) {
+      spinner.stop();
+      printError(err);
+      process.exit(1);
+    }
+  });
+  autonomy.command("disable").description("Disable autonomous heartbeat for an agent").requiredOption("--agent <agentId>", "Agent ID").action(async (opts) => {
+    const client = makeClient();
+    const spinner = spin("Disabling autonomy\u2026");
+    try {
+      await client.agents.setAutonomy(opts.agent, { enabled: false });
+      spinner.stop();
+      console.log(`
+${sym.ok} Autonomy disabled for agent ${c.id(opts.agent)}`);
+    } catch (err) {
+      spinner.stop();
+      printError(err);
+      process.exit(1);
+    }
+  });
+  autonomy.command("trigger").description("Trigger a single heartbeat beat immediately").requiredOption("--agent <agentId>", "Agent ID").action(async (opts) => {
+    const client = makeClient();
+    const spinner = spin("Triggering heartbeat\u2026");
+    try {
+      await client.agents.triggerHeartbeat(opts.agent);
+      spinner.stop();
+      console.log(`
+${sym.ok} Heartbeat triggered for agent ${c.id(opts.agent)}`);
+    } catch (err) {
+      spinner.stop();
+      printError(err);
+      process.exit(1);
+    }
+  });
   return cmd;
 }
 
@@ -383,33 +458,29 @@ ${sym.ok} Agent created`);
 var import_commander3 = require("commander");
 function sessionsCommand() {
   const cmd = new import_commander3.Command("sessions").description("Manage chat sessions");
-  cmd.command("list").description("List sessions for the current initiator + agent").option("--agent <agentId>", "Filter by agent ID").option("--json", "Output as JSON").action(async (opts) => {
+  cmd.command("list").description("List sessions \u2014 all for the current user, or filtered by agent").option("--agent <agentId>", "Filter by agent ID (default: all agents)").option("--json", "Output as JSON").action(async (opts) => {
     const cfg = loadConfig();
     if (!cfg.initiator) {
       console.error(c.error("No initiator set. Run `agc login` first."));
       process.exit(1);
     }
-    const agentId = opts.agent ?? cfg.defaultAgentId;
-    if (!agentId) {
-      console.error(c.error("Specify --agent <agentId> or set defaultAgentId with `agc config set defaultAgentId <id>`"));
-      process.exit(1);
-    }
     const spinner = spin("Fetching sessions\u2026");
     try {
       const client = makeClient();
-      const res = await client.sessions.list(agentId, cfg.initiator);
+      const agentId = opts.agent ?? cfg.defaultAgentId;
+      const res = agentId ? await client.sessions.list(agentId, cfg.initiator) : await client.sessions.listByUser(cfg.initiator);
       const sessions = res?.data ?? res ?? [];
       spinner.stop();
       if (opts.json) return jsonOut(sessions);
-      section(`Sessions (${sessions.length})`);
+      section(`Sessions (${sessions.length})${agentId ? ` \u2014 agent ${agentId.slice(0, 8)}\u2026` : " \u2014 all agents"}`);
       table(
         sessions.map((s) => ({
           ID: s.sessionId.slice(0, 8) + "\u2026",
+          Agent: s.agentId ? s.agentId.slice(0, 8) + "\u2026" : "",
           Title: s.title ?? c.dim("(untitled)"),
-          Model: s.model?.modelId ?? s.model?.name ?? "",
           Created: relativeTime(s.createdAt)
         })),
-        ["ID", "Title", "Model", "Created"]
+        ["ID", "Agent", "Title", "Created"]
       );
     } catch (err) {
       spinner.stop();
@@ -661,9 +732,24 @@ function workflowCommand() {
 ${sym.ok} Execution started: ${c.id(execution.executionId)}`);
       console.log(`   Status: ${statusBadge(execution.status)}`);
       if (!opts.watch) {
+        const result = execution.result ?? execution.outputData;
         if (execution.status === "completed") {
           console.log("\n" + c.label("Result"));
-          console.log("  " + JSON.stringify(execution.result ?? execution.outputData, null, 2));
+          console.log("  " + JSON.stringify(result, null, 2));
+          const steps = execution.stepResults ?? execution.nodeResults;
+          if (steps && Object.keys(steps).length > 0) {
+            console.log("\n" + c.label("Step Results"));
+            for (const [nodeId, step] of Object.entries(steps)) {
+              const icon = step.status === "success" ? sym.ok : step.status === "error" ? sym.fail : "\xB7";
+              const dur = step.duration != null ? c.dim(` (${(step.duration / 1e3).toFixed(2)}s)`) : "";
+              console.log(`  ${icon} ${c.id(nodeId)}${dur}`);
+              if (step.error) console.log(`    ${c.error(step.error)}`);
+              else if (step.output !== void 0) console.log(`    ${JSON.stringify(step.output, null, 2).replace(/\n/g, "\n    ")}`);
+            }
+          }
+        } else {
+          console.log(c.dim(`
+  Workflow is ${execution.status}. Use --watch to stream progress.`));
         }
         return;
       }
@@ -677,9 +763,19 @@ ${sym.ok} Execution started: ${c.id(execution.executionId)}`);
           console.log(`
 ${sym.ok} ${c.success("Completed")}`);
           const e = event;
-          if (e.outputData) {
+          if (e.outputData != null) {
             console.log("\n" + c.label("Output"));
             console.log("  " + JSON.stringify(e.outputData, null, 2));
+          }
+          if (e.nodeResults && Object.keys(e.nodeResults).length > 0) {
+            console.log("\n" + c.label("Step Results"));
+            for (const [nodeId, step] of Object.entries(e.nodeResults)) {
+              const icon = step.status === "success" ? sym.ok : step.status === "error" ? sym.fail : "\xB7";
+              const dur = step.duration != null ? c.dim(` (${(step.duration / 1e3).toFixed(2)}s)`) : "";
+              console.log(`  ${icon} ${c.id(nodeId)}${dur}`);
+              if (step.error) console.log(`    ${c.error(step.error)}`);
+              else if (step.output !== void 0) console.log(`    ${JSON.stringify(step.output, null, 2).replace(/\n/g, "\n    ")}`);
+            }
           }
           break;
         } else if (event.type === "failed" || event.type === "cancelled") {
@@ -1073,12 +1169,27 @@ function chatCommand() {
         process.exit(1);
       }
     }
+    let walletLine = "";
+    try {
+      const primary = await client.wallets.primary(agentId);
+      const w = primary?.data ?? primary;
+      if (w?.id) {
+        const bal = await client.wallets.balance(w.id).catch(() => null);
+        const b = bal?.data ?? bal;
+        const addr = `${w.address.slice(0, 6)}\u2026${w.address.slice(-4)}`;
+        const usdc = b?.usdc ?? "0";
+        walletLine = `${addr}  ${c.bold(usdc + " USDC")}`;
+      }
+    } catch {
+    }
     console.log(`
 ${c.bold("Agent Commons Chat")}`);
-    detail([
+    const headerRows = [
       ["Agent", agentId],
       ["Session", c.id(sessionId) + (isResume ? c.dim(" (resumed)") : c.dim(" (new)"))]
-    ]);
+    ];
+    if (walletLine) headerRows.push(["Wallet", walletLine]);
+    detail(headerRows);
     console.log(c.dim("\nType your message and press Enter. Type /help for commands.\n"));
     const rl = readline2.createInterface({
       input: process.stdin,
@@ -1159,6 +1270,13 @@ ${sym.fail} ${c.error(err.message ?? String(err))}`);
               const e = event;
               const text = extractText(e?.payload);
               if (text && !hasOutput) process.stdout.write(text);
+              const usage = e?.payload?.usage;
+              if (usage) {
+                const tokens = usage.totalTokens ?? (usage.inputTokens ?? 0) + (usage.outputTokens ?? 0);
+                const cost = typeof usage.costUsd === "number" ? `$${usage.costUsd.toFixed(4)}` : "";
+                const parts = [tokens ? `${tokens.toLocaleString()} tokens` : "", cost].filter(Boolean);
+                if (parts.length) process.stdout.write("\n" + c.dim(`  \u21B3 ${parts.join(" \xB7 ")}`));
+              }
               break;
             } else if (event.type === "error") {
               if (hasOutput) process.stdout.write("\n");
@@ -1752,8 +1870,605 @@ function skillsCommand() {
   return cmd;
 }
 
+// src/commands/wallet.ts
+var import_commander11 = require("commander");
+function walletCommand() {
+  const cmd = new import_commander11.Command("wallet").description("Manage agent wallets");
+  cmd.command("list").description("List all wallets for an agent").option("--agent <agentId>", "Agent ID (or use defaultAgentId from config)").option("--json", "Output as JSON").action(async (opts) => {
+    const cfg = loadConfig();
+    const agentId = opts.agent ?? cfg.defaultAgentId;
+    if (!agentId) {
+      console.error(c.error("Specify --agent <agentId> or set defaultAgentId with `agc config set defaultAgentId <id>`"));
+      process.exit(1);
+    }
+    const spinner = spin("Fetching wallets\u2026");
+    try {
+      const client = makeClient();
+      const wallets = await client.wallets.list(agentId);
+      spinner.stop();
+      if (opts.json) return jsonOut(wallets);
+      const list = wallets?.data ?? wallets ?? [];
+      section(`Wallets for agent ${agentId.slice(0, 8)}\u2026 (${list.length})`);
+      table(
+        list.map((w) => ({
+          ID: w.id.slice(0, 8) + "\u2026",
+          Type: w.walletType,
+          Address: w.address,
+          Chain: chainName(w.chainId),
+          Label: w.label ?? "Primary",
+          Active: w.isActive ? sym.ok : sym.fail
+        })),
+        ["ID", "Type", "Address", "Chain", "Label", "Active"]
+      );
+    } catch (err) {
+      spinner.stop();
+      printError(err);
+      process.exit(1);
+    }
+  });
+  cmd.command("show").description("Show the agent's primary wallet address").option("--agent <agentId>", "Agent ID (or use defaultAgentId from config)").option("--json", "Output as JSON").action(async (opts) => {
+    const cfg = loadConfig();
+    const agentId = opts.agent ?? cfg.defaultAgentId;
+    if (!agentId) {
+      console.error(c.error("Specify --agent <agentId> or set defaultAgentId with `agc config set defaultAgentId <id>`"));
+      process.exit(1);
+    }
+    const spinner = spin("Fetching primary wallet\u2026");
+    try {
+      const client = makeClient();
+      const wallet = await client.wallets.primary(agentId);
+      spinner.stop();
+      if (!wallet) {
+        console.log(c.warn(`  No wallet found for agent ${agentId}`));
+        console.log(c.dim(`  Run: agc wallet create --agent ${agentId}`));
+        return;
+      }
+      const w = wallet?.data ?? wallet;
+      if (opts.json) return jsonOut(w);
+      section("Primary Wallet");
+      detail([
+        ["Address", w.address],
+        ["Type", w.walletType],
+        ["Chain", chainName(w.chainId)],
+        ["Label", w.label ?? "Primary"],
+        ["Wallet ID", w.id]
+      ]);
+    } catch (err) {
+      spinner.stop();
+      printError(err);
+      process.exit(1);
+    }
+  });
+  cmd.command("balance").description("Show the agent's wallet USDC and ETH balance").option("--agent <agentId>", "Agent ID (or use defaultAgentId from config)").option("--wallet <walletId>", "Specific wallet ID (defaults to primary)").option("--json", "Output as JSON").action(async (opts) => {
+    const cfg = loadConfig();
+    const agentId = opts.agent ?? cfg.defaultAgentId;
+    if (!agentId) {
+      console.error(c.error("Specify --agent <agentId> or set defaultAgentId with `agc config set defaultAgentId <id>`"));
+      process.exit(1);
+    }
+    const spinner = spin("Fetching balance\u2026");
+    try {
+      const client = makeClient();
+      let walletId = opts.wallet;
+      if (!walletId) {
+        const primary = await client.wallets.primary(agentId);
+        const w = primary?.data ?? primary;
+        if (!w) {
+          spinner.stop();
+          console.log(c.warn(`  No wallet found. Run: agc wallet create --agent ${agentId}`));
+          return;
+        }
+        walletId = w.id;
+      }
+      const balance = await client.wallets.balance(walletId);
+      spinner.stop();
+      const b = balance?.data ?? balance;
+      if (opts.json) return jsonOut(b);
+      section("Wallet Balance");
+      detail([
+        ["Address", b.address],
+        ["Chain", chainName(b.chainId)],
+        ["USDC", c.bold(b.usdc + " USDC")],
+        ["ETH", b.native + " ETH"]
+      ]);
+      console.log();
+      console.log(c.dim("  Fund this wallet by sending USDC to the address above."));
+      console.log(c.dim("  Network: Base Sepolia (chain 84532)"));
+    } catch (err) {
+      spinner.stop();
+      printError(err);
+      process.exit(1);
+    }
+  });
+  cmd.command("create").description("Create a new wallet for an agent").option("--agent <agentId>", "Agent ID (or use defaultAgentId from config)").option("--type <type>", "Wallet type: eoa | external (default: eoa)", "eoa").option("--label <label>", "Wallet label (default: Primary)", "Primary").option("--address <address>", "For --type external: owner-provided address").option("--json", "Output as JSON").action(async (opts) => {
+    const cfg = loadConfig();
+    const agentId = opts.agent ?? cfg.defaultAgentId;
+    if (!agentId) {
+      console.error(c.error("Specify --agent <agentId> or set defaultAgentId with `agc config set defaultAgentId <id>`"));
+      process.exit(1);
+    }
+    if (opts.type === "external" && !opts.address) {
+      console.error(c.error("--address is required for --type external"));
+      process.exit(1);
+    }
+    const spinner = spin("Creating wallet\u2026");
+    try {
+      const client = makeClient();
+      const wallet = await client.wallets.create({
+        agentId,
+        walletType: opts.type,
+        label: opts.label,
+        externalAddress: opts.address
+      });
+      spinner.stop();
+      const w = wallet?.data ?? wallet;
+      if (opts.json) return jsonOut(w);
+      console.log(`
+${sym.ok} ${c.bold("Wallet created")}`);
+      detail([
+        ["Address", c.bold(w.address)],
+        ["Type", w.walletType],
+        ["Chain", chainName(w.chainId)],
+        ["Label", w.label],
+        ["Wallet ID", w.id]
+      ]);
+      console.log();
+      console.log(c.dim("  Fund this wallet by sending USDC to the address above."));
+    } catch (err) {
+      spinner.stop();
+      printError(err);
+      process.exit(1);
+    }
+  });
+  cmd.command("send").description("Send USDC (or ETH) from an agent wallet to another address").requiredOption("--agent <agentId>", "Agent ID").requiredOption("--to <address>", "Recipient address (0x\u2026)").requiredOption("--amount <amount>", "Amount to send (e.g. 10.5)").option("--token <symbol>", "Token to send: USDC or ETH (default: USDC)", "USDC").option("--wallet <walletId>", "Specific wallet ID (defaults to primary)").action(async (opts) => {
+    const client = makeClient();
+    const spinner = spin("Preparing transfer\u2026");
+    try {
+      let walletId = opts.wallet;
+      if (!walletId) {
+        const primary = await client.wallets.primary(opts.agent);
+        const w = primary?.data ?? primary;
+        if (!w?.id) {
+          spinner.stop();
+          console.error(c.error(`No wallet found for agent ${opts.agent}. Run: agc wallet create --agent ${opts.agent}`));
+          process.exit(1);
+        }
+        walletId = w.id;
+      }
+      spinner.text = `Sending ${opts.amount} ${opts.token} \u2192 ${opts.to}\u2026`;
+      const result = await client.wallets.transfer(walletId, {
+        toAddress: opts.to,
+        amount: opts.amount,
+        tokenSymbol: opts.token
+      });
+      const tx = result?.txHash ?? result?.data?.txHash ?? result;
+      spinner.stop();
+      console.log(`
+${c.bold("Transfer sent")}`);
+      detail([
+        ["Amount", `${opts.amount} ${opts.token}`],
+        ["To", opts.to],
+        ["Tx Hash", c.id(tx)]
+      ]);
+    } catch (err) {
+      spinner.stop();
+      printError(err);
+      process.exit(1);
+    }
+  });
+  cmd.command("x402-fetch").description("Fetch a URL using an agent wallet to pay any x402 (402 Payment Required) challenge").requiredOption("--agent <agentId>", "Agent ID").requiredOption("--url <url>", "Target URL to fetch").option("--method <method>", "HTTP method", "GET").option("--header <header>", "Extra header in Key:Value format (repeatable)", collect, []).option("--body <body>", "Request body string").option("--json", "Output response as JSON").action(async (opts) => {
+    const client = makeClient();
+    const spinner = spin(`Fetching ${opts.url}\u2026`);
+    try {
+      const headers = {};
+      for (const h of opts.header) {
+        const idx = h.indexOf(":");
+        if (idx > 0) headers[h.slice(0, idx).trim()] = h.slice(idx + 1).trim();
+      }
+      const res = await client.wallets.x402Fetch(opts.agent, {
+        url: opts.url,
+        method: opts.method,
+        headers: Object.keys(headers).length ? headers : void 0,
+        body: opts.body
+      });
+      spinner.stop();
+      if (opts.json) return jsonOut(res);
+      console.log(`
+${c.bold("Response")}  status ${res.status}`);
+      if (res.status === 200) {
+        console.log(c.dim(JSON.stringify(res.body, null, 2).slice(0, 1e3)));
+      } else {
+        console.log(c.warn(JSON.stringify(res.body, null, 2)));
+      }
+    } catch (err) {
+      spinner.stop();
+      printError(err);
+      process.exit(1);
+    }
+  });
+  return cmd;
+}
+function collect(val, acc) {
+  acc.push(val);
+  return acc;
+}
+function chainName(chainId) {
+  const names = {
+    "84532": "Base Sepolia",
+    "8453": "Base",
+    "1": "Ethereum",
+    "137": "Polygon"
+  };
+  return names[chainId] ?? `chain ${chainId}`;
+}
+
+// src/commands/models.ts
+var import_commander12 = require("commander");
+function modelsCommand() {
+  const cmd = new import_commander12.Command("models").description("List available LLM models");
+  cmd.command("ls").description("List all available models grouped by provider").option("--provider <name>", "Filter by provider (openai, anthropic, google, mistral, groq, ollama)").option("--json", "Output as JSON").action(async (opts) => {
+    const client = makeClient();
+    const spinner = spin("Fetching models\u2026");
+    try {
+      const res = await client.models.list();
+      spinner.stop();
+      const all = res?.data ?? res ?? [];
+      if (opts.json) return jsonOut(all);
+      const filtered = opts.provider ? all.filter((m) => m.provider === opts.provider) : all;
+      if (filtered.length === 0) {
+        console.log(c.warn("  No models found."));
+        return;
+      }
+      const grouped = {};
+      for (const m of filtered) {
+        if (!grouped[m.provider]) grouped[m.provider] = [];
+        grouped[m.provider].push(m);
+      }
+      for (const [provider, models] of Object.entries(grouped)) {
+        console.log(`
+${c.bold(provider.toUpperCase())}`);
+        for (const m of models) {
+          const tags = [
+            m.tier,
+            m.supportsTools ? "tools" : "",
+            m.supportsVision ? "vision" : ""
+          ].filter(Boolean).join(", ");
+          const price = m.inputPricePer1kTokens > 0 ? c.dim(` ($${m.inputPricePer1kTokens}/$${m.outputPricePer1kTokens} /1k)`) : c.dim(" (free/local)");
+          console.log(`  ${c.id(m.modelId.padEnd(36))} ${m.displayName.padEnd(24)} ${c.dim(tags)}${price}`);
+        }
+      }
+      console.log();
+    } catch (err) {
+      spinner.stop();
+      printError(err);
+      process.exit(1);
+    }
+  });
+  return cmd;
+}
+
+// src/commands/memory.ts
+var import_commander13 = require("commander");
+function memoryCommand() {
+  const cmd = new import_commander13.Command("memory").description("View and manage agent memories");
+  cmd.command("list").description("List memories for an agent").option("--agent <agentId>", "Agent ID (defaults to configured agent)").option("--type <type>", "Filter by type: episodic | semantic | procedural").option("--limit <n>", "Max results", "50").option("--json", "Output as JSON").action(async (opts) => {
+    const cfg = loadConfig();
+    const agentId = opts.agent ?? cfg.defaultAgentId;
+    if (!agentId) {
+      console.error(c.error("Specify --agent <agentId> or set defaultAgentId"));
+      process.exit(1);
+    }
+    const spinner = spin("Fetching memories\u2026");
+    try {
+      const client = makeClient();
+      const res = await client.memory.list(agentId, {
+        type: opts.type,
+        limit: parseInt(opts.limit, 10)
+      });
+      const memories = res?.data ?? res ?? [];
+      spinner.stop();
+      if (opts.json) return jsonOut(memories);
+      section(`Memories for ${agentId.slice(0, 12)}\u2026 (${memories.length})`);
+      if (memories.length === 0) {
+        console.log(c.dim("  No memories yet"));
+        return;
+      }
+      table(
+        memories.map((m) => ({
+          ID: m.memoryId?.slice(0, 8) + "\u2026",
+          Type: m.memoryType ?? "",
+          Content: (m.content ?? "").slice(0, 60),
+          Created: relativeTime(m.createdAt)
+        })),
+        ["ID", "Type", "Content", "Created"]
+      );
+    } catch (err) {
+      spinner.stop();
+      printError(err);
+      process.exit(1);
+    }
+  });
+  cmd.command("stats").description("Show memory statistics for an agent").option("--agent <agentId>", "Agent ID").option("--json", "Output as JSON").action(async (opts) => {
+    const cfg = loadConfig();
+    const agentId = opts.agent ?? cfg.defaultAgentId;
+    if (!agentId) {
+      console.error(c.error("Specify --agent <agentId>"));
+      process.exit(1);
+    }
+    const spinner = spin("Fetching stats\u2026");
+    try {
+      const client = makeClient();
+      const res = await client.memory.stats(agentId);
+      const stats = res?.data ?? res;
+      spinner.stop();
+      if (opts.json) return jsonOut(stats);
+      section("Memory Stats");
+      detail([
+        ["Total", String(stats.totalCount ?? 0)],
+        ["Episodic", String(stats.episodicCount ?? 0)],
+        ["Semantic", String(stats.semanticCount ?? 0)],
+        ["Procedural", String(stats.proceduralCount ?? 0)]
+      ]);
+    } catch (err) {
+      spinner.stop();
+      printError(err);
+      process.exit(1);
+    }
+  });
+  cmd.command("create").description("Manually add a memory for an agent").requiredOption("--agent <agentId>", "Agent ID").requiredOption("--content <text>", "Memory content").option("--type <type>", "Memory type: episodic | semantic | procedural", "semantic").option("--json", "Output as JSON").action(async (opts) => {
+    const spinner = spin("Creating memory\u2026");
+    try {
+      const client = makeClient();
+      const res = await client.memory.create({
+        agentId: opts.agent,
+        content: opts.content,
+        memoryType: opts.type
+      });
+      const memory = res?.data ?? res;
+      spinner.stop();
+      if (opts.json) return jsonOut(memory);
+      console.log(`
+${sym.ok} Memory created`);
+      detail([
+        ["ID", c.id(memory.memoryId)],
+        ["Type", memory.memoryType ?? ""],
+        ["Content", memory.content ?? ""]
+      ]);
+    } catch (err) {
+      spinner.stop();
+      printError(err);
+      process.exit(1);
+    }
+  });
+  cmd.command("delete <memoryId>").description("Delete a memory by ID").option("--json", "Output as JSON").action(async (memoryId, opts) => {
+    const spinner = spin("Deleting memory\u2026");
+    try {
+      const client = makeClient();
+      await client.memory.delete(memoryId);
+      spinner.stop();
+      if (opts.json) return jsonOut({ deleted: true, memoryId });
+      console.log(`
+${sym.ok} Memory ${c.id(memoryId)} deleted`);
+    } catch (err) {
+      spinner.stop();
+      printError(err);
+      process.exit(1);
+    }
+  });
+  cmd.command("search <query>").description("Semantic search over agent memories").option("--agent <agentId>", "Agent ID").option("--limit <n>", "Max results", "10").option("--json", "Output as JSON").action(async (query, opts) => {
+    const cfg = loadConfig();
+    const agentId = opts.agent ?? cfg.defaultAgentId;
+    if (!agentId) {
+      console.error(c.error("Specify --agent <agentId>"));
+      process.exit(1);
+    }
+    const spinner = spin("Searching memories\u2026");
+    try {
+      const client = makeClient();
+      const res = await client.memory.retrieve(agentId, query, parseInt(opts.limit, 10));
+      const memories = res?.data ?? res ?? [];
+      spinner.stop();
+      if (opts.json) return jsonOut(memories);
+      section(`Search results (${memories.length})`);
+      if (memories.length === 0) {
+        console.log(c.dim("  No relevant memories found"));
+        return;
+      }
+      memories.forEach((m, i) => {
+        console.log(`
+  ${c.dim(`${i + 1}.`)} ${m.content ?? ""}`);
+        console.log(`     ${c.dim(`type: ${m.memoryType ?? ""} \xB7 ${relativeTime(m.createdAt)}`)}`);
+      });
+    } catch (err) {
+      spinner.stop();
+      printError(err);
+      process.exit(1);
+    }
+  });
+  return cmd;
+}
+
+// src/commands/usage.ts
+var import_commander14 = require("commander");
+function usageCommand() {
+  const cmd = new import_commander14.Command("usage").description("View token usage and cost by agent");
+  cmd.command("agents").description("Show usage summary for all your agents").option("--owner <address>", "Owner address (defaults to configured initiator)").option("--from <date>", "Start date (ISO, e.g. 2025-01-01)").option("--to <date>", "End date (ISO)").option("--json", "Output as JSON").action(async (opts) => {
+    const cfg = loadConfig();
+    const owner = opts.owner ?? cfg.initiator;
+    if (!owner) {
+      console.error(c.error("Specify --owner or run `agc login` first"));
+      process.exit(1);
+    }
+    const spinner = spin("Fetching agents\u2026");
+    try {
+      const client = makeClient();
+      const agentsRes = await client.agents.list(owner);
+      const agents = agentsRes?.data ?? [];
+      spinner.stop();
+      if (agents.length === 0) {
+        console.log(c.dim("No agents found"));
+        return;
+      }
+      spin("Fetching usage\u2026");
+      const rows = await Promise.allSettled(
+        agents.map(
+          (a) => client.usage.getAgentUsage(a.agentId, {
+            from: opts.from,
+            to: opts.to
+          }).then((r) => ({
+            agentId: a.agentId,
+            name: a.name || a.agentId.slice(0, 12),
+            ...r?.data ?? r ?? {}
+          }))
+        )
+      );
+      const data = rows.filter((r) => r.status === "fulfilled").map((r) => r.value);
+      if (opts.json) return jsonOut(data);
+      let totalTokens = 0, totalCost = 0, totalCalls = 0;
+      data.forEach((r) => {
+        totalTokens += r.totalTokens ?? 0;
+        totalCost += r.totalCostUsd ?? 0;
+        totalCalls += r.callCount ?? 0;
+      });
+      section("Usage Summary");
+      detail([
+        ["Total tokens", totalTokens.toLocaleString()],
+        ["Total cost", `$${totalCost.toFixed(4)} USD`],
+        ["LLM calls", totalCalls.toLocaleString()]
+      ]);
+      const active = data.filter((r) => (r.totalTokens ?? 0) > 0);
+      if (active.length) {
+        console.log("");
+        table(
+          active.sort((a, b) => (b.totalCostUsd ?? 0) - (a.totalCostUsd ?? 0)).map((r) => ({
+            Agent: r.name,
+            Calls: (r.callCount ?? 0).toLocaleString(),
+            Tokens: (r.totalTokens ?? 0).toLocaleString(),
+            "Cost $": (r.totalCostUsd ?? 0).toFixed(4)
+          })),
+          ["Agent", "Calls", "Tokens", "Cost $"]
+        );
+      }
+    } catch (err) {
+      printError(err);
+      process.exit(1);
+    }
+  });
+  cmd.command("agent <agentId>").description("Show detailed usage for a specific agent").option("--from <date>", "Start date (ISO)").option("--to <date>", "End date (ISO)").option("--json", "Output as JSON").action(async (agentId, opts) => {
+    const spinner = spin("Fetching usage\u2026");
+    try {
+      const client = makeClient();
+      const res = await client.usage.getAgentUsage(agentId, {
+        from: opts.from,
+        to: opts.to
+      });
+      const data = res?.data ?? res;
+      spinner.stop();
+      if (opts.json) return jsonOut(data);
+      section(`Usage \u2014 ${agentId.slice(0, 12)}\u2026`);
+      detail([
+        ["Calls", (data.callCount ?? 0).toLocaleString()],
+        ["Input tokens", (data.totalInputTokens ?? 0).toLocaleString()],
+        ["Output tokens", (data.totalOutputTokens ?? 0).toLocaleString()],
+        ["Total tokens", (data.totalTokens ?? 0).toLocaleString()],
+        ["Cost", `$${(data.totalCostUsd ?? 0).toFixed(6)} USD`]
+      ]);
+    } catch (err) {
+      spinner.stop();
+      printError(err);
+      process.exit(1);
+    }
+  });
+  return cmd;
+}
+
+// src/commands/logs.ts
+var import_commander15 = require("commander");
+var STATUS_COLOR = {
+  success: (s) => c.bold(s),
+  error: (s) => c.error(s),
+  warning: (s) => c.warn(s)
+};
+function colorStatus(status) {
+  return (STATUS_COLOR[status] ?? c.dim)(status);
+}
+function logsCommand() {
+  const cmd = new import_commander15.Command("logs").description("View agent activity logs");
+  cmd.command("list").alias("ls").description("List recent log entries for an agent").option("--agent <agentId>", "Agent ID (defaults to configured agent)").option("--session <sessionId>", "Filter by session ID").option("--status <status>", "Filter: success | error | warning").option("--limit <n>", "Max entries to show", "50").option("--json", "Output as JSON").action(async (opts) => {
+    const cfg = loadConfig();
+    const agentId = opts.agent ?? cfg.defaultAgentId;
+    if (!agentId) {
+      console.error(c.error("Specify --agent <agentId> or set defaultAgentId"));
+      process.exit(1);
+    }
+    const spinner = spin("Fetching logs\u2026");
+    try {
+      const client = makeClient();
+      const qs = new URLSearchParams({ limit: opts.limit });
+      if (opts.session) qs.set("sessionId", opts.session);
+      const res = await client.request("GET", `/v1/logs/agents/${agentId}?${qs}`);
+      let logs = res?.data ?? res ?? [];
+      if (opts.status) logs = logs.filter((l) => l.status === opts.status);
+      spinner.stop();
+      if (opts.json) return jsonOut(logs);
+      section(`Logs \u2014 ${agentId.slice(0, 12)}\u2026 (${logs.length})`);
+      if (logs.length === 0) {
+        console.log(c.dim("  No logs yet"));
+        return;
+      }
+      logs.forEach((l) => {
+        const tools = (l.tools ?? []).length > 0 ? ` ${c.dim(`[${l.tools.length} tools]`)}` : "";
+        const rt = l.responseTime > 0 ? c.dim(` ${l.responseTime}ms`) : "";
+        console.log(
+          `  ${colorStatus((l.status ?? "info").padEnd(7))}  ${c.bold(l.action ?? "")}${rt}${tools}`
+        );
+        if (l.message) {
+          console.log(`  ${" ".repeat(10)}${c.dim(l.message.slice(0, 80))}`);
+        }
+        console.log(`  ${" ".repeat(10)}${c.dim(relativeTime(l.timestamp))}`);
+        console.log("");
+      });
+    } catch (err) {
+      spin("").stop();
+      printError(err);
+      process.exit(1);
+    }
+  });
+  cmd.command("errors").description("Show only error log entries for an agent").option("--agent <agentId>", "Agent ID").option("--limit <n>", "Max entries", "20").option("--json", "Output as JSON").action(async (opts) => {
+    const cfg = loadConfig();
+    const agentId = opts.agent ?? cfg.defaultAgentId;
+    if (!agentId) {
+      console.error(c.error("Specify --agent <agentId>"));
+      process.exit(1);
+    }
+    const spinner = spin("Fetching error logs\u2026");
+    try {
+      const client = makeClient();
+      const res = await client.request("GET", `/v1/logs/agents/${agentId}?limit=${opts.limit}`);
+      const errors = (res?.data ?? []).filter((l) => l.status === "error");
+      spinner.stop();
+      if (opts.json) return jsonOut(errors);
+      section(`Errors \u2014 ${agentId.slice(0, 12)}\u2026 (${errors.length})`);
+      if (errors.length === 0) {
+        console.log(`${sym.ok} No errors found`);
+        return;
+      }
+      errors.forEach((l) => {
+        console.log(`  ${c.error("\u2716")} ${c.bold(l.action ?? "")}  ${c.dim(relativeTime(l.timestamp))}`);
+        if (l.message) console.log(`    ${c.dim(l.message)}`);
+        console.log("");
+      });
+    } catch (err) {
+      spinner.stop();
+      printError(err);
+      process.exit(1);
+    }
+  });
+  return cmd;
+}
+
 // src/bin.ts
-var program = new import_commander11.Command();
+var program = new import_commander16.Command();
 program.name("agc").description("Agent Commons CLI \u2014 interact with the Agent Commons platform").version("0.1.0", "-v, --version");
 program.addCommand(loginCommand());
 program.addCommand(logoutCommand());
@@ -1768,6 +2483,11 @@ program.addCommand(runCommand());
 program.addCommand(chatCommand());
 program.addCommand(mcpCommand());
 program.addCommand(skillsCommand());
+program.addCommand(walletCommand());
+program.addCommand(modelsCommand());
+program.addCommand(memoryCommand());
+program.addCommand(usageCommand());
+program.addCommand(logsCommand());
 program.on("command:*", () => {
   console.error(`Unknown command: ${program.args.join(" ")}
 Run \`agc --help\` to see available commands.`);

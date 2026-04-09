@@ -182,7 +182,100 @@ export function walletCommand(): Command {
       }
     });
 
+  cmd
+    .command('send')
+    .description('Send USDC (or ETH) from an agent wallet to another address')
+    .requiredOption('--agent <agentId>', 'Agent ID')
+    .requiredOption('--to <address>', 'Recipient address (0x…)')
+    .requiredOption('--amount <amount>', 'Amount to send (e.g. 10.5)')
+    .option('--token <symbol>', 'Token to send: USDC or ETH (default: USDC)', 'USDC')
+    .option('--wallet <walletId>', 'Specific wallet ID (defaults to primary)')
+    .action(async (opts) => {
+      const client = makeClient();
+      const spinner = spin('Preparing transfer…');
+      try {
+        let walletId = opts.wallet;
+        if (!walletId) {
+          const primary = await client.wallets.primary(opts.agent);
+          const w = (primary as any)?.data ?? primary;
+          if (!w?.id) {
+            spinner.stop();
+            console.error(c.error(`No wallet found for agent ${opts.agent}. Run: agc wallet create --agent ${opts.agent}`));
+            process.exit(1);
+          }
+          walletId = w.id;
+        }
+
+        spinner.text = `Sending ${opts.amount} ${opts.token} → ${opts.to}…`;
+        const result = await client.wallets.transfer(walletId, {
+          toAddress: opts.to,
+          amount: opts.amount,
+          tokenSymbol: opts.token as 'USDC' | 'ETH',
+        });
+        const tx = (result as any)?.txHash ?? (result as any)?.data?.txHash ?? result;
+        spinner.stop();
+        console.log(`\n${c.bold('Transfer sent')}`);
+        detail([
+          ['Amount',    `${opts.amount} ${opts.token}`],
+          ['To',        opts.to],
+          ['Tx Hash',   c.id(tx)],
+        ]);
+      } catch (err) {
+        spinner.stop();
+        printError(err);
+        process.exit(1);
+      }
+    });
+
+  cmd
+    .command('x402-fetch')
+    .description('Fetch a URL using an agent wallet to pay any x402 (402 Payment Required) challenge')
+    .requiredOption('--agent <agentId>', 'Agent ID')
+    .requiredOption('--url <url>', 'Target URL to fetch')
+    .option('--method <method>', 'HTTP method', 'GET')
+    .option('--header <header>', 'Extra header in Key:Value format (repeatable)', collect, [])
+    .option('--body <body>', 'Request body string')
+    .option('--json', 'Output response as JSON')
+    .action(async (opts) => {
+      const client = makeClient();
+      const spinner = spin(`Fetching ${opts.url}…`);
+      try {
+        // Parse repeated --header Key:Value flags
+        const headers: Record<string, string> = {};
+        for (const h of opts.header as string[]) {
+          const idx = h.indexOf(':');
+          if (idx > 0) headers[h.slice(0, idx).trim()] = h.slice(idx + 1).trim();
+        }
+
+        const res = await client.wallets.x402Fetch(opts.agent, {
+          url: opts.url,
+          method: opts.method,
+          headers: Object.keys(headers).length ? headers : undefined,
+          body: opts.body,
+        });
+        spinner.stop();
+
+        if (opts.json) return jsonOut(res);
+
+        console.log(`\n${c.bold('Response')}  status ${res.status}`);
+        if (res.status === 200) {
+          console.log(c.dim(JSON.stringify(res.body, null, 2).slice(0, 1000)));
+        } else {
+          console.log(c.warn(JSON.stringify(res.body, null, 2)));
+        }
+      } catch (err) {
+        spinner.stop();
+        printError(err);
+        process.exit(1);
+      }
+    });
+
   return cmd;
+}
+
+function collect(val: string, acc: string[]) {
+  acc.push(val);
+  return acc;
 }
 
 function chainName(chainId: string): string {

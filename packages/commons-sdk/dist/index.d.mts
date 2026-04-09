@@ -133,7 +133,7 @@ interface Task {
     sessionId: string;
     title: string;
     description?: string;
-    status: 'pending' | 'running' | 'completed' | 'failed' | 'cancelled';
+    status: 'pending' | 'started' | 'running' | 'completed' | 'failed' | 'cancelled';
     executionMode: 'single' | 'workflow' | 'sequential';
     workflowId?: string;
     cronExpression?: string;
@@ -510,6 +510,13 @@ declare class CommonsClient {
     constructor(config: CommonsClientConfig);
     private headers;
     private request;
+    get models(): {
+        /** List all available LLM models from the registry */
+        list: () => Promise<{
+            data: any[];
+            grouped: Record<string, any[]>;
+        }>;
+    };
     get agents(): {
         create: (params: CreateAgentParams) => Promise<{
             data: Agent;
@@ -548,6 +555,31 @@ declare class CommonsClient {
          * }
          */
         stream: (params: RunParams) => AsyncGenerator<StreamEvent>;
+        /** Get the current heartbeat/autonomy status for an agent. */
+        getAutonomy: (agentId: string) => Promise<{
+            data: {
+                enabled: boolean;
+                intervalSec: number;
+                isArmed: boolean;
+                lastBeatAt: string | null;
+                nextBeatAt: string | null;
+            };
+        }>;
+        /** Enable or disable the heartbeat, optionally setting the interval. */
+        setAutonomy: (agentId: string, params: {
+            enabled: boolean;
+            intervalSec?: number;
+        }) => Promise<{
+            data: {
+                enabled: boolean;
+                intervalSec: number;
+                isArmed: boolean;
+            };
+        }>;
+        /** Trigger a single heartbeat beat immediately. */
+        triggerHeartbeat: (agentId: string) => Promise<{
+            message: string;
+        }>;
     };
     get run(): {
         once: (params: RunParams) => Promise<any>;
@@ -631,6 +663,10 @@ declare class CommonsClient {
     };
     get sessions(): {
         list: (agentId: string, initiatorId: string) => Promise<{
+            data: Session[];
+        }>;
+        /** List all sessions for a user across all agents. */
+        listByUser: (initiator: string) => Promise<{
             data: Session[];
         }>;
         create: (params: {
@@ -746,6 +782,28 @@ declare class CommonsClient {
         create: (params: CreateWalletParams) => Promise<AgentWallet>;
         /** Get USDC and native token balance for a wallet. */
         balance: (walletId: string) => Promise<WalletBalance>;
+        /** Transfer USDC or ETH to another address. */
+        transfer: (walletId: string, params: {
+            toAddress: string;
+            amount: string;
+            tokenSymbol?: "USDC" | "ETH";
+        }) => Promise<{
+            txHash: string;
+        }>;
+        /**
+         * Proxy an HTTP request through an agent's primary wallet, automatically
+         * handling x402 payment challenges.  The wallet signs the payment and
+         * retries once if the target responds with HTTP 402.
+         */
+        x402Fetch: (agentId: string, params: {
+            url: string;
+            method?: string;
+            headers?: Record<string, string>;
+            body?: string;
+        }) => Promise<{
+            status: number;
+            body: unknown;
+        }>;
         /** Deactivate a wallet. */
         deactivate: (walletId: string) => Promise<void>;
     };

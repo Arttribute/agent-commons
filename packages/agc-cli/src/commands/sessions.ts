@@ -8,8 +8,8 @@ export function sessionsCommand(): Command {
   // ── list ────────────────────────────────────────────────────────────────────
   cmd
     .command('list')
-    .description('List sessions for the current initiator + agent')
-    .option('--agent <agentId>', 'Filter by agent ID')
+    .description('List sessions — all for the current user, or filtered by agent')
+    .option('--agent <agentId>', 'Filter by agent ID (default: all agents)')
     .option('--json', 'Output as JSON')
     .action(async (opts) => {
       const cfg = loadConfig();
@@ -17,27 +17,25 @@ export function sessionsCommand(): Command {
         console.error(c.error('No initiator set. Run `agc login` first.'));
         process.exit(1);
       }
-      const agentId = opts.agent ?? cfg.defaultAgentId;
-      if (!agentId) {
-        console.error(c.error('Specify --agent <agentId> or set defaultAgentId with `agc config set defaultAgentId <id>`'));
-        process.exit(1);
-      }
       const spinner = spin('Fetching sessions…');
       try {
         const client = makeClient();
-        const res = await client.sessions.list(agentId, cfg.initiator);
+        const agentId = opts.agent ?? cfg.defaultAgentId;
+        const res = agentId
+          ? await client.sessions.list(agentId, cfg.initiator)
+          : await client.sessions.listByUser(cfg.initiator);
         const sessions = (res as any)?.data ?? res ?? [];
         spinner.stop();
         if (opts.json) return jsonOut(sessions);
-        section(`Sessions (${sessions.length})`);
+        section(`Sessions (${sessions.length})${agentId ? ` — agent ${agentId.slice(0, 8)}…` : ' — all agents'}`);
         table(
           sessions.map((s: any) => ({
             ID:      s.sessionId.slice(0, 8) + '…',
+            Agent:   s.agentId ? s.agentId.slice(0, 8) + '…' : '',
             Title:   s.title ?? c.dim('(untitled)'),
-            Model:   s.model?.modelId ?? s.model?.name ?? '',
             Created: relativeTime(s.createdAt),
           })),
-          ['ID', 'Title', 'Model', 'Created'],
+          ['ID', 'Agent', 'Title', 'Created'],
         );
       } catch (err) {
         spinner.stop();

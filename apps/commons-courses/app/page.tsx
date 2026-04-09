@@ -477,8 +477,14 @@ export default async function HomePage() {
             Agent Commons
           </a>
           <Link
+            href="/terms"
+            className="hover:text-slate-700 transition-colors"
+          >
+            Terms
+          </Link>
+          <Link
             href="/auth/signin"
-            className="hover:text-slate-300 transition-colors"
+            className="hover:text-slate-700 transition-colors"
           >
             Sign in
           </Link>

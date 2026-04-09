@@ -32,6 +32,7 @@ const MODEL_PLACEHOLDERS: Record<string, string> = {
   openai: "gpt-4o",
   anthropic: "claude-sonnet-4-6",
   google: "gemini-2.0-flash",
+  mistral: "mistral-large-latest",
   groq: "llama-3.3-70b-versatile",
   ollama: "llama3",
 };
@@ -382,6 +383,7 @@ export default function AgentIdentity({
                   <SelectItem value="openai">OpenAI</SelectItem>
                   <SelectItem value="anthropic">Anthropic</SelectItem>
                   <SelectItem value="google">Google</SelectItem>
+                  <SelectItem value="mistral">Mistral</SelectItem>
                   <SelectItem value="groq">Groq</SelectItem>
                   <SelectItem value="ollama">Ollama</SelectItem>
                 </SelectContent>
@@ -402,7 +404,7 @@ export default function AgentIdentity({
 
           {editData.modelProvider !== "ollama" && (
             <div>
-              <Label className="text-sm font-semibold">API Key</Label>
+              <Label className="text-sm font-semibold">API Key (BYOK)</Label>
               <div className="relative mt-1">
                 <Input
                   type={showApiKey ? "text" : "password"}

@@ -19,6 +19,8 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { CostDashboard } from "@/components/usage/cost-dashboard";
 import { AgentMemoryView } from "@/components/memory/agent-memory-view";
 import AgentFinances from "@/components/finances/agent-finances";
+import { AgentAutonomy } from "@/components/agents/agent-autonomy";
+import { AgentMcpSection } from "@/components/mcp/agent-mcp-section";
 
 function AgentPageSkeleton() {
   return (
@@ -169,6 +171,8 @@ export default function AgentStudioPage({
               setKnowledgebase={setKnowledgebase}
               agentId={agentId}
             />
+
+            <AgentMcpSection agentId={agentId} />
           </div>
         </div>
 
@@ -200,6 +204,10 @@ export default function AgentStudioPage({
         {/* ── Right panel ── */}
         <div className="col-span-2 border-l border-border overflow-y-auto">
           <div className="flex flex-col gap-2 p-3">
+            <AgentAutonomy
+              agentId={agentId}
+              isOwner={!!userAddress && agent?.owner?.toLowerCase() === userAddress}
+            />
             <AgentMetrics agentId={agentId} />
             <AgentFinances agentId={agentId} />
 
