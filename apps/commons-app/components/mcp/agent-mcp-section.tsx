@@ -97,8 +97,8 @@ export function AgentMcpSection({ agentId }: Props) {
                 <div className={cn("h-1.5 w-1.5 rounded-full flex-shrink-0", connected ? "bg-green-500" : "bg-muted-foreground/40")} />
                 <div className="flex-1 min-w-0">
                   <p className="text-xs font-medium truncate">{server.name}</p>
-                  {server.toolCount != null && (
-                    <p className="text-[10px] text-muted-foreground">{server.toolCount} tools</p>
+                  {server.toolsCount != null && (
+                    <p className="text-[10px] text-muted-foreground">{server.toolsCount} tools</p>
                   )}
                 </div>
                 <div className="flex items-center gap-0.5 flex-shrink-0">

@@ -42,6 +42,7 @@ ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true \
 RUN mkdir -p /tmp/.cache && chmod 777 /tmp/.cache
 
 # node_modules and dist are pre-built and deployed by pnpm deploy in cloudbuild.yaml
+COPY .deploy/package.json ./package.json
 COPY .deploy/node_modules ./node_modules
 COPY .deploy/dist ./dist
 
