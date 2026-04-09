@@ -84,9 +84,13 @@ export class AgentService implements OnModuleInit {
 
   /* ─────────────────────────  INIT  ───────────────────────── */
   async onModuleInit() {
-    await PostgresSaver.fromConnString(
-      `postgresql://${process.env.POSTGRES_USER}:${process.env.POSTGRES_PASSWORD}@${process.env.POSTGRES_HOST}:${process.env.POSTGRES_PORT}/${process.env.POSTGRES_DATABASE}`,
-    ).setup();
+    try {
+      await PostgresSaver.fromConnString(
+        `postgresql://${process.env.POSTGRES_USER}:${process.env.POSTGRES_PASSWORD}@${process.env.POSTGRES_HOST}:${process.env.POSTGRES_PORT}/${process.env.POSTGRES_DATABASE}`,
+      ).setup();
+    } catch (err: any) {
+      this.logger.error(`LangGraph checkpoint setup failed: ${err.message}`);
+    }
   }
 
   /* ─────────────────────────  CREATE & GET AGENT  ───────────────────────── */
