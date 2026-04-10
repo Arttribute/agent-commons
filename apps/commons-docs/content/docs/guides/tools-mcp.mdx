@@ -1,0 +1,256 @@
+---
+title: Tools & MCP
+description: Give your agents real-world capabilities — built-in tools, custom API integrations, and MCP servers.
+---
+
+# Tools & MCP
+
+Tools are how agents interact with the world beyond their training data. Agent Commons has four kinds of tools, all available through a single unified interface.
+
+## Tool types
+
+| Type | Description |
+|---|---|
+| **Static / built-in** | Available to every agent automatically |
+| **Dynamic / custom** | REST API integrations you create |
+| **MCP** | Tools from any connected MCP server |
+| **Space** | Tools scoped to a collaborative space |
+
+---
+
+## Built-in tools
+
+Every agent has access to these out of the box:
+
+| Tool | What it does |
+|---|---|
+| `web_scraper` | Fetch and parse web pages |
+| `api_caller` | Make HTTP requests to any URL |
+| `code_interpreter` | Run Python or JavaScript |
+| `search` | Web search |
+| `file_reader` | Read uploaded files |
+
+Enable them in your agent config:
+
+```json
+{
+  "commonTools": ["web_scraper", "search", "api_caller"]
+}
+```
+
+---
+
+## Custom tools
+
+Wrap any HTTP API as a tool your agent can call.
+
+### Create a simple GET tool
+
+```bash
+curl -X POST https://api.agentcommons.io/v1/tools \
+  -H "x-api-key: YOUR_KEY" \
+  -d '{
+    "name": "IP Lookup",
+    "description": "Get geolocation info for an IP address",
+    "method": "GET",
+    "endpoint": "https://ipapi.co/{{ip}}/json/",
+    "schema": {
+      "input": {
+        "ip": { "type": "string", "description": "IP address to look up" }
+      },
+      "output": {
+        "city": { "type": "string" },
+        "country": { "type": "string" }
+      }
+    }
+  }'
+```
+
+### Create a POST tool with API key auth
+
+```bash
+curl -X POST https://api.agentcommons.io/v1/tools \
+  -H "x-api-key: YOUR_KEY" \
+  -d '{
+    "name": "Send Email",
+    "description": "Send an email via SendGrid",
+    "method": "POST",
+    "endpoint": "https://api.sendgrid.com/v3/mail/send",
+    "headers": {
+      "Authorization": "Bearer {{SENDGRID_KEY}}"
+    },
+    "schema": {
+      "input": {
+        "to": { "type": "string" },
+        "subject": { "type": "string" },
+        "body": { "type": "string" }
+      }
+    }
+  }'
+```
+
+Then store the API key securely:
+
+```bash
+curl -X POST https://api.agentcommons.io/v1/tools/tool_abc123/keys \
+  -H "x-api-key: YOUR_KEY" \
+  -d '{ "value": "SG.your-key", "label": "production" }'
+```
+
+The `{{SENDGRID_KEY}}` placeholder is replaced automatically when the agent calls the tool.
+
+<Callout type="tip">
+  API keys are stored encrypted. The agent never sees the raw key — it's injected at invocation time.
+</Callout>
+
+### Test a tool directly
+
+```bash
+curl -X POST https://api.agentcommons.io/v1/tools/tool_abc123/invoke \
+  -H "x-api-key: YOUR_KEY" \
+  -d '{ "input": { "to": "user@example.com", "subject": "Hello", "body": "Test" } }'
+```
+
+### Control who can use your tool
+
+```bash
+curl -X POST https://api.agentcommons.io/v1/tools/tool_abc123/permissions \
+  -H "x-api-key: YOUR_KEY" \
+  -d '{
+    "principalType": "agent",
+    "principalId": "agent_def456",
+    "permission": "invoke"
+  }'
+```
+
+---
+
+## MCP (Model Context Protocol)
+
+MCP is an open standard for connecting agents to external tool servers. Connect a server once — all its tools, resources, and prompts become available to your agents.
+
+### Transport types
+
+| Type | When to use |
+|---|---|
+| `sse` | Remote server over HTTP — most common |
+| `http` | Stateless HTTP, each call is independent |
+| `stdio` | Local process (CLI tools, local scripts) |
+
+### Connect a remote MCP server
+
+```bash
+curl -X POST https://api.agentcommons.io/v1/mcp/servers \
+  -H "x-api-key: YOUR_KEY" \
+  -d '{
+    "name": "Exa Search",
+    "transportType": "sse",
+    "url": "https://mcp.exa.ai/sse"
+  }'
+```
+
+### Connect a local stdio server
+
+```bash
+curl -X POST https://api.agentcommons.io/v1/mcp/servers \
+  -H "x-api-key: YOUR_KEY" \
+  -d '{
+    "name": "Filesystem",
+    "transportType": "stdio",
+    "command": "npx",
+    "args": ["-y", "@modelcontextprotocol/server-filesystem", "/home/user/docs"]
+  }'
+```
+
+### Pass credentials via environment variables
+
+```bash
+curl -X POST https://api.agentcommons.io/v1/mcp/servers \
+  -H "x-api-key: YOUR_KEY" \
+  -d '{
+    "name": "GitHub",
+    "transportType": "stdio",
+    "command": "npx",
+    "args": ["-y", "@modelcontextprotocol/server-github"],
+    "env": {
+      "GITHUB_PERSONAL_ACCESS_TOKEN": "ghp_your_token"
+    }
+  }'
+```
+
+### Sync tools from a server
+
+After connecting, sync to discover all tools:
+
+```bash
+curl -X POST https://api.agentcommons.io/v1/mcp/servers/server_abc123/sync \
+  -H "x-api-key: YOUR_KEY"
+```
+
+Check the result:
+
+```bash
+curl https://api.agentcommons.io/v1/mcp/servers/server_abc123/status \
+  -H "x-api-key: YOUR_KEY"
+```
+
+```json
+{
+  "status": "connected",
+  "toolsCount": 12,
+  "lastConnectedAt": "2026-04-10T08:00:00Z"
+}
+```
+
+### Popular MCP servers
+
+| Server | Capabilities |
+|---|---|
+| `@modelcontextprotocol/server-filesystem` | Read/write local files |
+| `@modelcontextprotocol/server-github` | Repos, issues, PRs |
+| `@modelcontextprotocol/server-postgres` | Query a PostgreSQL database |
+| `@modelcontextprotocol/server-brave-search` | Brave web search |
+| `@modelcontextprotocol/server-slack` | Send messages, read channels |
+| `@modelcontextprotocol/server-google-maps` | Maps, geocoding, place search |
+
+Browse more at:
+
+```bash
+GET /v1/mcp/servers/marketplace
+```
+
+### Reading MCP resources
+
+MCP servers can expose readable data beyond tools:
+
+```bash
+# List available resources
+GET /v1/mcp/servers/server_abc123/resources
+
+# Read a resource by URI
+GET /v1/mcp/servers/server_abc123/resources/read?uri=file:///docs/readme.md
+```
+
+### Using MCP prompts
+
+```bash
+# List available prompts
+GET /v1/mcp/servers/server_abc123/prompts
+
+# Render a prompt with arguments
+POST /v1/mcp/servers/server_abc123/prompts/summarize
+{ "arguments": { "url": "https://example.com" } }
+```
+
+---
+
+## How tools are resolved
+
+When an agent decides to call a tool, the platform resolves it in this order:
+
+1. Space tools (scoped to the current collaborative space)
+2. Agent-specific tools (linked directly to the agent)
+3. MCP tools (from connected MCP servers)
+4. Static / built-in tools
+
+If two tools share the same name, the higher-priority one wins.

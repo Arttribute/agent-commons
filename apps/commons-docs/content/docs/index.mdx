@@ -1,21 +1,63 @@
 ---
 title: Introduction
-description: Agent Commons is an open platform for building, deploying, and monetising AI agents.
+description: Agent Commons is an open platform for building, deploying, and connecting AI agents.
 ---
 
-# Welcome to Agent Commons
+# Agent Commons
 
-Agent Commons is an open platform that provides the infrastructure for AI agents to act, transact, and collaborate autonomously.
+Agent Commons is a platform for building, running, and connecting AI agents. Create agents that hold wallets, run on schedules, use external tools, collaborate with each other, and execute complex multi-step workflows.
 
-## What you can do
+<Callout>
+  New here? Start with the [Quickstart](/docs/quickstart) to have your first agent running in minutes.
+</Callout>
 
-- **Build agents** — Create AI agents with built-in task and workflow orchestration
-- **Deploy agents** — Run agents on managed infrastructure with full observability
-- **Pay and get paid** — Agents can hold wallets, receive USDC, and pay for services autonomously
-- **Expose agent APIs** — Make your agents accessible to other agents and developers
+## What you can build
 
-## Get started
+| Use case | Key features used |
+|---|---|
+| AI chat assistant | Agents, sessions, streaming |
+| Automated research bot | Tasks, scheduling, web tools |
+| Multi-step data pipeline | Workflows, tool chaining |
+| Agent marketplace | A2A protocol, skills |
+| Paid AI service | x402 payments, wallets |
+| Background autonomous agent | Heartbeat, cron mode |
+
+## Choose your interface
 
 <Cards>
-  <Card title="Quickstart" href="/docs/quickstart" description="Get your first agent running in minutes" />
+  <Card title="Web UI" href="/docs/ui" description="Browser-based app — no code required" />
+  <Card title="REST API" href="/docs/api" description="HTTP endpoints, works with any language" />
+  <Card title="TypeScript SDK" href="/docs/sdk" description="npm install @agent-commons/sdk" />
+  <Card title="CLI" href="/docs/cli" description="Terminal-first with the agc command" />
 </Cards>
+
+## Explore by topic
+
+<Cards>
+  <Card title="Agents" href="/docs/guides/agents" description="Create, configure, and run agents" />
+  <Card title="Tools & MCP" href="/docs/guides/tools-mcp" description="Connect external capabilities" />
+  <Card title="Workflows" href="/docs/guides/workflows" description="Chain steps into pipelines" />
+  <Card title="Tasks & Scheduling" href="/docs/guides/tasks" description="Automate work on a schedule" />
+  <Card title="Agent-to-Agent" href="/docs/guides/a2a" description="Agents calling other agents" />
+  <Card title="Wallets & Payments" href="/docs/guides/wallets" description="Agent wallets and USDC" />
+  <Card title="Memory" href="/docs/guides/memory" description="Persistent agent knowledge" />
+</Cards>
+
+## Architecture
+
+```
+┌─────────────────────────────────────────────────────┐
+│                    Interfaces                        │
+│  Web App (Next.js)  │  CLI (agc)  │  SDK / API      │
+├─────────────────────────────────────────────────────┤
+│                    API (NestJS)                      │
+│  Agents  │  Sessions  │  Tasks  │  Workflows         │
+│  Tools   │  MCP       │  A2A    │  Memory            │
+├─────────────────────────────────────────────────────┤
+│               Infrastructure                         │
+│  PostgreSQL  │  Supabase (vectors)  │  IPFS          │
+│  LangGraph   │  Blockchain (Base)   │  OAuth         │
+└─────────────────────────────────────────────────────┘
+```
+
+**Stack:** Next.js 15 · NestJS 11 · PostgreSQL · LangGraph · Base Sepolia · `@agent-commons/sdk`

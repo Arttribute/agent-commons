@@ -1,0 +1,289 @@
+---
+title: Tasks & Scheduling
+description: Assign discrete, trackable work to agents — run now, schedule for later, or set up recurring jobs.
+---
+
+# Tasks & Scheduling
+
+Tasks are the automation primitive. Use them to run agents on a schedule, chain multi-step jobs, and track results.
+
+## Task vs session
+
+| | Session | Task |
+|---|---|---|
+| Initiated by | User sending a message | Code, scheduler, or trigger |
+| Duration | Open-ended | Defined goal with completion |
+| Tracking | Message history | Status, progress, stored results |
+| Scheduling | Manual | Cron, one-time, dependency-based |
+
+---
+
+## Create a task
+
+<Tabs items={['API', 'SDK', 'CLI']}>
+  <Tab value="API">
+    ```bash
+    curl -X POST https://api.agentcommons.io/v1/tasks \
+      -H "x-api-key: YOUR_KEY" \
+      -d '{
+        "title": "Summarize today'\''s news",
+        "description": "Get the top 5 tech stories from HackerNews and write a one-line summary of each.",
+        "agentId": "agent_abc123",
+        "executionMode": "single"
+      }'
+    ```
+  </Tab>
+  <Tab value="SDK">
+    ```typescript
+    const { data: task } = await client.tasks.create({
+      title: "Summarize today's news",
+      description: 'Get the top 5 tech stories from HackerNews and summarize each.',
+      agentId: 'agent_abc123',
+      sessionId: 'session_xyz',
+      createdBy: '0xUSER',
+      createdByType: 'user',
+      executionMode: 'single',
+    });
+    ```
+  </Tab>
+  <Tab value="CLI">
+    ```bash
+    agc task create \
+      --title "Summarize today's news" \
+      --description "Get top 5 HN stories and summarize each" \
+      --agent agent_abc123
+    ```
+  </Tab>
+</Tabs>
+
+Then execute it:
+
+<Tabs items={['API', 'SDK', 'CLI']}>
+  <Tab value="API">
+    ```bash
+    curl -X POST https://api.agentcommons.io/v1/tasks/task_abc123/execute \
+      -H "x-api-key: YOUR_KEY"
+    ```
+  </Tab>
+  <Tab value="SDK">
+    ```typescript
+    await client.tasks.execute(task.taskId);
+    ```
+  </Tab>
+  <Tab value="CLI">
+    ```bash
+    agc task execute task_abc123
+    ```
+  </Tab>
+</Tabs>
+
+---
+
+## Execution modes
+
+### `single` — agent runs the description as a prompt
+
+The description becomes the user message. The agent uses its tools and model to complete it.
+
+```json
+{
+  "executionMode": "single",
+  "description": "Write a Python function that parses a CSV file and returns a list of dicts."
+}
+```
+
+### `workflow` — execute a defined workflow
+
+```json
+{
+  "executionMode": "workflow",
+  "workflowId": "workflow_abc123",
+  "workflowInputs": { "url": "https://example.com" }
+}
+```
+
+### `sequential` — run sub-tasks in order
+
+Each sub-task receives the previous one's output as context.
+
+```json
+{
+  "executionMode": "sequential",
+  "subtasks": [
+    { "description": "Research the topic" },
+    { "description": "Write a draft based on the research" },
+    { "description": "Review and polish the draft" }
+  ]
+}
+```
+
+---
+
+## Scheduling
+
+### One-time: run at a specific time
+
+```bash
+curl -X POST https://api.agentcommons.io/v1/tasks \
+  -H "x-api-key: YOUR_KEY" \
+  -d '{
+    "title": "Send weekly report",
+    "description": "Compile this week'\''s metrics and write a summary.",
+    "agentId": "agent_abc123",
+    "executionMode": "single",
+    "scheduledFor": "2026-04-14T09:00:00Z"
+  }'
+```
+
+### Recurring: cron expression
+
+```bash
+curl -X POST https://api.agentcommons.io/v1/tasks \
+  -H "x-api-key: YOUR_KEY" \
+  -d '{
+    "title": "Daily briefing",
+    "description": "Summarize overnight news.",
+    "agentId": "agent_abc123",
+    "executionMode": "single",
+    "cronExpression": "0 8 * * 1-5",
+    "isRecurring": true
+  }'
+```
+
+Common cron patterns:
+
+| Pattern | Meaning |
+|---|---|
+| `0 8 * * *` | Every day at 8am |
+| `0 8 * * 1-5` | Weekdays at 8am |
+| `*/30 * * * *` | Every 30 minutes |
+| `0 9 * * 1` | Every Monday at 9am |
+| `0 0 1 * *` | First of every month at midnight |
+
+---
+
+## Dependencies
+
+A task can wait for other tasks to complete before it starts:
+
+```bash
+# 1. Create the first task
+curl -X POST https://api.agentcommons.io/v1/tasks \
+  -H "x-api-key: YOUR_KEY" \
+  -d '{ "title": "Research topic", "agentId": "agent_researcher", "executionMode": "single" }'
+# → task_research123
+
+# 2. Create a dependent task
+curl -X POST https://api.agentcommons.io/v1/tasks \
+  -H "x-api-key: YOUR_KEY" \
+  -d '{
+    "title": "Write article",
+    "agentId": "agent_writer",
+    "executionMode": "single",
+    "dependsOn": ["task_research123"]
+  }'
+```
+
+The writing task won't start until the research task completes. Its output is passed as context automatically.
+
+---
+
+## Monitor progress
+
+### Poll for status
+
+```bash
+curl https://api.agentcommons.io/v1/tasks/task_abc123 \
+  -H "x-api-key: YOUR_KEY"
+```
+
+```json
+{
+  "taskId": "task_abc123",
+  "status": "completed",
+  "resultContent": "1. OpenAI releases...\n2. ...",
+  "completedAt": "2026-04-10T08:00:15Z"
+}
+```
+
+Task lifecycle: `pending → running → completed / failed / cancelled`
+
+### Stream live updates
+
+<Tabs items={['API', 'SDK', 'CLI']}>
+  <Tab value="API">
+    ```bash
+    curl https://api.agentcommons.io/v1/tasks/task_abc123/stream \
+      -H "x-api-key: YOUR_KEY"
+    ```
+
+    SSE events:
+    ```
+    data: {"status":"running","message":"Fetching HackerNews..."}
+    data: {"status":"running","message":"Generating summaries..."}
+    data: {"status":"completed","result":"1. OpenAI releases..."}
+    ```
+  </Tab>
+  <Tab value="SDK">
+    ```typescript
+    for await (const event of client.tasks.stream(task.taskId)) {
+      console.log(event.type, event.message ?? '');
+      if (event.type === 'completed') {
+        console.log('Result:', event.result);
+        break;
+      }
+    }
+    ```
+  </Tab>
+  <Tab value="CLI">
+    ```bash
+    agc task stream task_abc123
+    ```
+  </Tab>
+</Tabs>
+
+---
+
+## Tool constraints
+
+Control exactly which tools a task can use:
+
+```json
+{
+  "toolConstraintType": "hard",
+  "taskTools": ["web_scraper", "search"],
+  "toolInstructions": "Only search for sources. Do not call external APIs."
+}
+```
+
+| Constraint | Behavior |
+|---|---|
+| `none` | Use all agent tools (default) |
+| `soft` | Prefer listed tools, others allowed |
+| `hard` | Only listed tools, no others |
+
+---
+
+## Priority
+
+```json
+{ "priority": "high" }
+```
+
+Values: `low` · `medium` (default) · `high` · `critical`
+
+Higher priority tasks are picked up first when multiple tasks queue for the same agent.
+
+---
+
+## Cancel and retry
+
+```bash
+# Cancel a running task
+curl -X POST https://api.agentcommons.io/v1/tasks/task_abc123/cancel \
+  -H "x-api-key: YOUR_KEY"
+
+# Re-run a failed or completed task
+curl -X POST https://api.agentcommons.io/v1/tasks/task_abc123/execute \
+  -H "x-api-key: YOUR_KEY"
+```

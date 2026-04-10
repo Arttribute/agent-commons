@@ -1,0 +1,424 @@
+---
+title: TypeScript SDK
+description: Install @agent-commons/sdk and build with type-safe access to the full Agent Commons API.
+---
+
+# TypeScript SDK
+
+The `@agent-commons/sdk` package gives you typed access to the full Agent Commons API from Node.js or any TypeScript/JavaScript environment.
+
+## Installation
+
+```bash
+npm install @agent-commons/sdk
+```
+
+## Setup
+
+```typescript
+import { CommonsClient } from '@agent-commons/sdk';
+
+const client = new CommonsClient({
+  baseUrl: 'https://api.agentcommons.io',
+  apiKey: process.env.COMMONS_API_KEY,
+});
+```
+
+| Option | Type | Required | Description |
+|---|---|---|---|
+| `baseUrl` | `string` | yes | Base URL of the API |
+| `apiKey` | `string` | yes* | API key from Settings → API Keys |
+| `initiator` | `string` | no | Wallet address (alternative to apiKey) |
+| `fetch` | `typeof fetch` | no | Custom fetch implementation |
+
+---
+
+## Agents
+
+```typescript
+// Create
+const { data: agent } = await client.agents.create({
+  name: 'Research Bot',
+  instructions: 'You are a research assistant. Be concise.',
+  modelProvider: 'openai',
+  modelId: 'gpt-4o',
+  temperature: 0.3,
+});
+
+// List
+const { data: agents } = await client.agents.list();
+const { data: mine } = await client.agents.list('0xWALLET');
+
+// Get / Update
+const { data: a } = await client.agents.get(agent.agentId);
+await client.agents.update(agent.agentId, { temperature: 0.7 });
+
+// Tools
+const { data: tools } = await client.agents.listTools(agent.agentId);
+await client.agents.addTool(agent.agentId, { toolId: 'tool_xyz' });
+await client.agents.removeTool(assignmentId); // pass assignment ID, not toolId
+
+// Knowledge base
+await client.agents.updateKnowledgebase(agent.agentId, [
+  { type: 'text', content: 'Background context...' },
+]);
+
+// Autonomy / heartbeat
+await client.agents.setAutonomy(agent.agentId, { enabled: true, intervalSec: 300 });
+await client.agents.triggerHeartbeat(agent.agentId);
+
+// TTS voices
+const { data: voices } = await client.agents.listVoices('openai');
+```
+
+---
+
+## Running agents
+
+### Single run
+
+```typescript
+const result = await client.run.once({
+  agentId: 'agent_abc123',
+  messages: [{ role: 'user', content: 'What is the capital of Kenya?' }],
+});
+
+console.log(result.response);
+console.log(result.sessionId); // reuse to continue the conversation
+```
+
+### Streaming
+
+```typescript
+for await (const event of client.agents.stream({
+  agentId: 'agent_abc123',
+  messages: [{ role: 'user', content: 'Write me a poem about AI.' }],
+})) {
+  if (event.type === 'token')     process.stdout.write(event.content ?? '');
+  if (event.type === 'toolStart') console.log(`\n[tool: ${event.toolName}]`);
+  if (event.type === 'final')     console.log('\nDone!');
+}
+```
+
+**Stream event types:**
+
+| Type | Description |
+|---|---|
+| `token` | A chunk of response text |
+| `toolStart` | Agent is invoking a tool |
+| `toolEnd` | Tool returned a result |
+| `agent_step` | Internal agent step |
+| `final` | Run completed |
+| `error` | An error occurred |
+
+---
+
+## Sessions
+
+```typescript
+// Create
+const { data: session } = await client.sessions.create({
+  agentId: 'agent_abc123',
+  initiator: '0xUSER',
+  title: 'Research session',
+});
+
+// List
+const { data: agentSessions } = await client.sessions.listByAgent('agent_abc123');
+const { data: userSessions } = await client.sessions.listByUser('0xUSER');
+
+// Get full session (history, tasks, spaces)
+const { data: full } = await client.sessions.getFull(session.sessionId);
+```
+
+---
+
+## Tasks
+
+```typescript
+// Create
+const { data: task } = await client.tasks.create({
+  title: 'Daily briefing',
+  description: 'Summarize overnight tech news.',
+  agentId: 'agent_abc123',
+  sessionId: 'session_xyz',
+  createdBy: '0xUSER',
+  createdByType: 'user',
+  executionMode: 'single',
+  cronExpression: '0 8 * * 1-5',
+  isRecurring: true,
+});
+
+// Execute / cancel
+await client.tasks.execute(task.taskId);
+await client.tasks.cancel(task.taskId);
+
+// Stream progress
+for await (const event of client.tasks.stream(task.taskId)) {
+  console.log(event.type, event.message ?? '');
+}
+```
+
+---
+
+## Workflows
+
+```typescript
+// Create
+const workflow = await client.workflows.create({
+  name: 'Summarize and Report',
+  ownerId: '0xUSER',
+  ownerType: 'user',
+  definition: {
+    nodes: [
+      { id: 'input', type: 'input' },
+      { id: 'process', type: 'agent_processor', config: { agentId: 'agent_abc123' } },
+      { id: 'output', type: 'output' },
+    ],
+    edges: [
+      { id: 'e1', source: 'input', target: 'process' },
+      { id: 'e2', source: 'process', target: 'output' },
+    ],
+  },
+});
+
+// Node types: tool | input | output | condition | transform | loop | agent_processor | human_approval
+
+// Execute and stream
+const execution = await client.workflows.execute(workflow.workflowId, {
+  inputData: { url: 'https://example.com' },
+});
+
+for await (const event of client.workflows.stream(workflow.workflowId, execution.executionId)) {
+  console.log(event.type, event.payload);
+}
+
+// Human approval
+await client.workflows.approveExecution(workflow.workflowId, execution.executionId, {
+  approvalToken: execution.approvalToken,
+  approvalData: { approved: true },
+});
+```
+
+---
+
+## Tools
+
+```typescript
+// List
+const { data: tools } = await client.tools.list();
+const { data: agentTools } = await client.tools.list({ agentId: 'agent_abc123' });
+const { data: statics } = await client.tools.listStatic();
+
+// Create
+const { data: tool } = await client.tools.create({
+  name: 'slack_notify',
+  displayName: 'Slack Notify',
+  description: 'Send a message to a Slack channel',
+  schema: {
+    type: 'object',
+    properties: {
+      channel: { type: 'string' },
+      message: { type: 'string' },
+    },
+    required: ['channel', 'message'],
+  },
+  visibility: 'private',
+});
+
+// Store an API key for a tool
+await client.toolKeys.create({
+  toolId: tool.toolId,
+  ownerId: '0xUSER',
+  ownerType: 'user',
+  keyName: 'SLACK_TOKEN',
+  value: 'xoxb-your-slack-token',
+});
+
+// Grant permission to an agent
+await client.toolPermissions.grant({
+  toolId: tool.toolId,
+  subjectId: 'agent_abc123',
+  subjectType: 'agent',
+  permission: 'execute',
+});
+```
+
+---
+
+## MCP Servers
+
+```typescript
+// Create and connect
+const server = await client.mcp.createServer({
+  name: 'GitHub Tools',
+  connectionType: 'sse',
+  connectionConfig: { url: 'https://mcp.example.com/sse' },
+  ownerId: '0xUSER',
+  ownerType: 'user',
+});
+
+await client.mcp.connect(server.serverId);
+const { toolsDiscovered } = await client.mcp.sync(server.serverId);
+
+// Inspect
+const { tools } = await client.mcp.listTools(server.serverId);
+const status = await client.mcp.getServerStatus(server.serverId);
+
+// Browse public servers
+const { servers } = await client.mcp.getMarketplace();
+```
+
+Connection types: `'stdio'` · `'sse'` · `'http'` · `'streamable-http'`
+
+---
+
+## Memory
+
+```typescript
+// Store
+const { data: mem } = await client.memory.create({
+  agentId: 'agent_abc123',
+  memoryType: 'semantic',
+  content: 'User prefers bullet-point responses.',
+  tags: ['preferences'],
+});
+
+// Retrieve by semantic similarity
+const { data: relevant } = await client.memory.retrieve(
+  'agent_abc123',
+  'user formatting preferences',
+  5, // limit
+);
+
+// List all
+const { data: all } = await client.memory.list('agent_abc123', { type: 'semantic' });
+
+// Update / delete
+await client.memory.update(mem.memoryId, { importanceScore: 0.9 });
+await client.memory.delete(mem.memoryId);
+```
+
+Memory types: `'episodic'` · `'semantic'` · `'procedural'`
+
+---
+
+## Wallets
+
+```typescript
+// Create
+const wallet = await client.wallets.create({
+  agentId: 'agent_abc123',
+  walletType: 'eoa',
+  label: 'main',
+});
+
+// Check balance
+const balance = await client.wallets.balance(wallet.id);
+console.log('USDC:', balance.usdc);
+
+// Transfer
+await client.wallets.transfer(wallet.id, {
+  toAddress: '0xRecipientAddress',
+  amount: '1.5',
+  tokenSymbol: 'USDC',
+});
+
+// Get primary wallet
+const primary = await client.wallets.primary('agent_abc123');
+
+// x402 payment fetch
+const response = await client.wallets.x402Fetch('agent_abc123', {
+  url: 'https://paid-api.example.com/data',
+  method: 'GET',
+});
+```
+
+Wallet types: `'eoa'` · `'erc4337'` · `'external'`
+
+---
+
+## API Keys
+
+```typescript
+// Create (plaintext returned only once)
+const created = await client.apiKeys.create({
+  principalId: '0xUSER',
+  principalType: 'user',
+  label: 'production',
+});
+console.log('Key:', created.key); // save this!
+
+// List active keys
+const keys = await client.apiKeys.list('0xUSER', 'user');
+
+// Revoke
+await client.apiKeys.revoke(keyId);
+```
+
+---
+
+## Error handling
+
+```typescript
+import { CommonsClient, CommonsError } from '@agent-commons/sdk';
+
+try {
+  await client.agents.run({ agentId: 'bad-id', messages: [...] });
+} catch (error) {
+  if (error instanceof CommonsError) {
+    console.error(`${error.statusCode}: ${error.message}`);
+  }
+}
+```
+
+---
+
+## End-to-end example
+
+```typescript
+import { CommonsClient } from '@agent-commons/sdk';
+
+const client = new CommonsClient({
+  baseUrl: 'https://api.agentcommons.io',
+  apiKey: process.env.COMMONS_API_KEY!,
+});
+
+async function main() {
+  // 1. Create a research agent
+  const { data: agent } = await client.agents.create({
+    name: 'Daily Researcher',
+    instructions: `You are a research assistant. When given a topic:
+      1. Search the web for the latest information
+      2. Summarize in 5 clear bullet points
+      3. Include sources`,
+    modelProvider: 'anthropic',
+    modelId: 'claude-sonnet-4-6',
+    temperature: 0.2,
+  });
+
+  // 2. Schedule it to run every morning
+  await client.tasks.create({
+    title: 'Daily AI news briefing',
+    description: 'Research the top AI developments from the past 24 hours.',
+    agentId: agent.agentId,
+    sessionId: 'session_placeholder',
+    createdBy: '0xUSER',
+    createdByType: 'user',
+    executionMode: 'single',
+    cronExpression: '0 8 * * *',
+    isRecurring: true,
+  });
+
+  // 3. Run it once now to test
+  for await (const event of client.agents.stream({
+    agentId: agent.agentId,
+    messages: [{ role: 'user', content: 'Top AI news today?' }],
+  })) {
+    if (event.type === 'token') process.stdout.write(event.content ?? '');
+    if (event.type === 'final') console.log('\n✓ Done');
+  }
+}
+
+main();
+```

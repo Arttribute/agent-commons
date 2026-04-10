@@ -1,0 +1,138 @@
+---
+title: Core Concepts
+description: Understand the key building blocks of Agent Commons before you start building.
+---
+
+# Core Concepts
+
+Agent Commons is built around a small set of composable primitives. Understanding these makes everything else click.
+
+## Agent
+
+An **Agent** is the core unit. It's an AI persona with a specific role, instructions, and set of tools. Agents can chat with users, run autonomously on a schedule, call external tools, communicate with other agents, and hold a crypto wallet.
+
+Each agent has:
+- **Instructions** — the system prompt defining personality and behavior
+- **Model config** — which LLM to use (provider, model ID, temperature, etc.)
+- **Tools** — external capabilities it can invoke
+- **Wallet** — optional on-chain wallet for payments
+
+---
+
+## Session
+
+A **Session** is a conversation thread between a user and an agent. It stores the full message history, model configuration, and usage metrics. Sessions are persistent — you can resume them by passing the same `sessionId`.
+
+One agent can have many sessions.
+
+---
+
+## Task
+
+A **Task** is a discrete, trackable unit of work assigned to an agent. Unlike a session (open-ended chat), a task has:
+
+- A clear goal
+- A status lifecycle: `pending → running → completed / failed / cancelled`
+- Optional scheduling (run once at a time, or on a recurring cron)
+- Optional dependencies (wait for other tasks first)
+- Stored results when done
+
+Tasks are the right tool for automation and background work.
+
+---
+
+## Workflow
+
+A **Workflow** is a directed acyclic graph (DAG) of steps. Each **node** is a step — invoke a tool, transform data, or run an AI processor. **Edges** define execution order and data flow.
+
+Use workflows when you have a multi-step process with defined inputs and outputs between steps.
+
+Node types:
+- `tool` — call a tool with specific parameters
+- `agent_processor` — use AI to process or decide at this step
+- `data_transformer` — reshape data between steps
+- `conditional` — branch based on a value
+
+---
+
+## Tool
+
+A **Tool** is a capability an agent can invoke. There are four kinds:
+
+| Type | Description |
+|---|---|
+| **Static tools** | Built-in to every agent (web scraper, API caller, code interpreter, search) |
+| **Dynamic tools** | Custom REST API integrations you create |
+| **MCP tools** | Tools discovered from any MCP server you connect |
+| **Space tools** | Tools scoped to a collaborative space |
+
+---
+
+## MCP Server
+
+**MCP (Model Context Protocol)** is an open standard for connecting agents to external tool servers. Connect a server by URL or stdio command — Agent Commons discovers and syncs its tools automatically.
+
+---
+
+## Agent-to-Agent (A2A)
+
+**A2A** lets agents call other agents as if they were tools. Each agent publishes an **Agent Card** describing what it can do. Other agents discover this card and send tasks via JSON-RPC 2.0.
+
+---
+
+## Wallet
+
+Each agent can have an on-chain wallet (EOA on Base Sepolia). Wallets can hold USDC, make x402 micropayments to access paid services, and receive payments.
+
+---
+
+## Memory
+
+**Memory** gives agents a persistent knowledge store across sessions. Memory types:
+- **Semantic** — facts and knowledge ("user prefers bullet points")
+- **Episodic** — records of past events
+- **Procedural** — how to do things
+
+Memory entries are embedded and retrieved via semantic search.
+
+---
+
+## Space
+
+A **Space** is a real-time collaborative environment using WebRTC. Multiple users and agents can be in the same space, sharing tools and live presence.
+
+---
+
+## Skill
+
+A **Skill** is a published, reusable capability definition. Skills can be discovered and used by other agents via A2A.
+
+---
+
+## OAuth Connection
+
+**OAuth Connections** let agents act on behalf of users in external services (Google, GitHub, Slack, etc.). Authorize once — the token is injected automatically when a tool needs it.
+
+---
+
+## How it all connects
+
+```
+User
+  │
+  ▼
+[Session] ──── messages ────► [Agent]
+                                  │
+                      ┌───────────┼───────────┐
+                      ▼           ▼           ▼
+                   [Tools]    [Memory]    [A2A calls]
+                      │
+              ┌───────┼───────┐
+              ▼       ▼       ▼
+          [Static]  [MCP]  [Custom]
+
+
+[Task] ──── schedule ────► [Agent] ──► [Workflow]
+                                           │
+                                   [Node]→[Node]→[Node]
+```

@@ -1,4 +1,24 @@
 {
   "title": "Agent Commons",
-  "pages": ["index", "quickstart"]
+  "pages": [
+    "index",
+    "---Getting Started---",
+    "quickstart",
+    "concepts",
+    "---Agents---",
+    "guides/agents",
+    "guides/tools-mcp",
+    "---Automation---",
+    "guides/workflows",
+    "guides/tasks",
+    "---Advanced---",
+    "guides/a2a",
+    "guides/wallets",
+    "guides/memory",
+    "---Reference---",
+    "api",
+    "sdk",
+    "cli",
+    "ui"
+  ]
 }

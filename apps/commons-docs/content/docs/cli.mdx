@@ -1,0 +1,190 @@
+---
+title: CLI Reference
+description: Terminal-first access to Agent Commons with the agc command.
+---
+
+# CLI Reference
+
+The `agc` command-line tool gives you full access to Agent Commons from your terminal.
+
+## Installation
+
+```bash
+npm install -g @agent-commons/cli
+```
+
+## Authentication
+
+```bash
+agc login      # authenticate with your API key
+agc logout     # clear credentials
+agc whoami     # show current user
+agc config     # view/edit local config
+```
+
+Or use environment variables instead of `agc login`:
+
+```bash
+export COMMONS_API_KEY=your_key
+export COMMONS_API_URL=https://api.agentcommons.io
+```
+
+---
+
+## Agents
+
+```bash
+agc agents list                          # list your agents
+agc agents get <agentId>                 # get agent details
+agc agents create                        # interactive create
+agc agents create \
+  --name "My Bot" \
+  --instructions "You are helpful." \
+  --model-provider openai \
+  --model-id gpt-4o
+agc agents update <agentId> --temperature 0.5
+agc agents delete <agentId>
+```
+
+---
+
+## Chat & Running
+
+```bash
+agc chat <agentId>                       # interactive chat session
+agc chat <agentId> --session <sessionId> # resume a session
+agc run <agentId> --message "Hello"      # single one-shot run
+agc run <agentId> --message "Hello" --json # JSON output
+```
+
+In-session commands:
+- `/exit` — end session
+- `/session` — show session ID
+- `/history` — print full conversation
+- `/clear` — start fresh session
+
+---
+
+## Sessions
+
+```bash
+agc sessions list
+agc sessions list --agent <agentId>
+agc sessions get <sessionId>
+```
+
+---
+
+## Tasks
+
+```bash
+agc task list
+agc task list --agent <agentId>
+agc task list --status running
+
+agc task create \
+  --title "Daily briefing" \
+  --description "Summarize overnight news" \
+  --agent <agentId> \
+  --cron "0 8 * * 1-5" \
+  --recurring
+
+agc task execute <taskId>      # run immediately + stream output
+agc task stream <taskId>       # stream status of a running task
+agc task cancel <taskId>
+```
+
+---
+
+## Workflows
+
+```bash
+agc workflow list
+agc workflow get <workflowId>
+agc workflow create --file workflow.json
+agc workflow execute <workflowId> --inputs '{"url":"https://example.com"}'
+```
+
+---
+
+## Tools
+
+```bash
+agc tools list
+agc tools list --type mcp
+agc tools list --type custom
+agc tools create --file tool.json
+agc tools invoke <toolId> --input '{"city":"Nairobi"}'
+agc tools add-key <toolId> --value "sk-abc123" --label prod
+```
+
+---
+
+## MCP Servers
+
+```bash
+agc mcp list
+agc mcp connect --name "GitHub Tools" --type sse --url https://mcp.example.com/sse
+agc mcp connect --name "Filesystem" --type stdio \
+  --command "npx -y @modelcontextprotocol/server-filesystem /data"
+agc mcp sync <serverId>
+agc mcp tools <serverId>
+agc mcp disconnect <serverId>
+```
+
+---
+
+## Wallets
+
+```bash
+agc wallet list --agent <agentId>
+agc wallet create --agent <agentId> --label main
+agc wallet balance <walletId>
+agc wallet transfer <walletId> --to 0xADDRESS --amount 5.0 --token USDC
+```
+
+---
+
+## Memory
+
+```bash
+agc memory list --agent <agentId>
+agc memory add --agent <agentId> --type semantic --content "User prefers short answers"
+agc memory search --agent <agentId> --query "user preferences"
+agc memory delete <memoryId>
+```
+
+---
+
+## Usage & Logs
+
+```bash
+agc usage
+agc usage --agent <agentId>
+
+agc logs
+agc logs --agent <agentId>
+agc logs --task <taskId>
+```
+
+---
+
+## Output formats
+
+All commands default to human-readable output. Add `--json` for machine-readable JSON:
+
+```bash
+agc agents list --json
+agc run <agentId> --message "Hello" --json
+```
+
+---
+
+## Scripting
+
+```bash
+#!/bin/bash
+# Run an agent and capture the result
+RESULT=$(agc run agent_abc123 --message "Summarize: $(cat input.txt)" --json)
+echo $RESULT | jq '.response' > summary.txt
+```
