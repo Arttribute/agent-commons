@@ -59,7 +59,7 @@ steps:
       - --image=europe-west1-docker.pkg.dev/$PROJECT_ID/commons/commons-api:prod
       - --memory=2Gi
       - --cpu=2
-      - --startup-cpu-boost
+      - --cpu-boost
       - --timeout=300
       - --concurrency=80
     timeout: 1800s
