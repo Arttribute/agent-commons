@@ -1,40 +1,205 @@
 ---
 title: Quickstart
-description: Get your first Agent Commons agent up and running in minutes.
+description: Get your first agent running in under 5 minutes.
 ---
 
 # Quickstart
 
-This guide walks you through setting up your first agent on Agent Commons.
+Pick the path that works for you.
 
-## Prerequisites
+<Tabs items={['Web UI', 'REST API', 'TypeScript SDK', 'CLI']}>
+  <Tab value="Web UI">
 
-- Node.js 18+
-- A Commons account
+## No-code setup
 
-## Installation
+<Steps>
+  <Step>
+    ### Sign in
 
-Install the Agent Commons SDK:
+    Go to [agentcommons.io](https://www.agentcommons.io) and click **Sign In**. Connect with a wallet (MetaMask, Coinbase Wallet) or email via Privy.
+  </Step>
+  <Step>
+    ### Create an agent
 
-```bash
-npm install @agent-commons/sdk
-```
+    Click **Create Agent** in the sidebar. Fill in a name and instructions, then save.
+  </Step>
+  <Step>
+    ### Chat
 
-## Create your first agent
+    Click your agent to open it. Type a message and press Enter. You'll get a streamed response.
+  </Step>
+</Steps>
 
-```typescript
-import { AgentCommonsClient } from '@agent-commons/sdk';
+Your agent is live. Explore the [UI guide](/docs/ui) to learn what every screen does.
 
-const client = new AgentCommonsClient({ apiKey: process.env.COMMONS_API_KEY });
+  </Tab>
+  <Tab value="REST API">
 
-const agent = await client.agents.create({
-  name: 'My First Agent',
-  description: 'A simple agent that responds to tasks',
-});
+## REST API
 
-console.log(`Agent created: ${agent.id}`);
-```
+### Prerequisites
+
+Get an API key from **Settings → API Keys** in the web app.
+
+<Steps>
+  <Step>
+    ### Create an agent
+
+    ```bash
+    curl -X POST https://api.agentcommons.io/v1/agents \
+      -H "Content-Type: application/json" \
+      -H "x-api-key: YOUR_API_KEY" \
+      -d '{
+        "name": "My First Agent",
+        "instructions": "You are a helpful assistant.",
+        "modelProvider": "openai",
+        "modelId": "gpt-4o"
+      }'
+    ```
+
+    Response:
+
+    ```json
+    {
+      "agentId": "agent_abc123",
+      "name": "My First Agent",
+      "modelProvider": "openai"
+    }
+    ```
+  </Step>
+  <Step>
+    ### Run the agent
+
+    ```bash
+    curl -X POST https://api.agentcommons.io/v1/agents/run \
+      -H "Content-Type: application/json" \
+      -H "x-api-key: YOUR_API_KEY" \
+      -d '{
+        "agentId": "agent_abc123",
+        "messages": [{ "role": "user", "content": "Hello! What can you do?" }]
+      }'
+    ```
+
+    Response:
+
+    ```json
+    {
+      "sessionId": "session_xyz",
+      "response": "Hi! I can answer questions, help with writing, and more.",
+      "usage": { "inputTokens": 24, "outputTokens": 18 }
+    }
+    ```
+  </Step>
+</Steps>
+
+See the full [API reference](/docs/api) for all endpoints.
+
+  </Tab>
+  <Tab value="TypeScript SDK">
+
+## TypeScript SDK
+
+<Steps>
+  <Step>
+    ### Install
+
+    ```bash
+    npm install @agent-commons/sdk
+    ```
+  </Step>
+  <Step>
+    ### Set up the client
+
+    ```typescript
+    import { CommonsClient } from '@agent-commons/sdk';
+
+    const client = new CommonsClient({
+      apiUrl: 'https://api.agentcommons.io',
+      apiKey: process.env.COMMONS_API_KEY,
+    });
+    ```
+
+    Get `COMMONS_API_KEY` from **Settings → API Keys** in the web app.
+  </Step>
+  <Step>
+    ### Create and run an agent
+
+    ```typescript
+    // Create
+    const agent = await client.agents.create({
+      name: 'My First Agent',
+      instructions: 'You are a helpful assistant.',
+      modelProvider: 'openai',
+      modelId: 'gpt-4o',
+    });
+
+    // Run
+    const result = await client.agents.run({
+      agentId: agent.agentId,
+      messages: [{ role: 'user', content: 'Hello!' }],
+    });
+
+    console.log(result.response);
+    ```
+  </Step>
+</Steps>
+
+See the full [SDK reference](/docs/sdk) for all methods and types.
+
+  </Tab>
+  <Tab value="CLI">
+
+## CLI
+
+<Steps>
+  <Step>
+    ### Install
+
+    ```bash
+    npm install -g @agent-commons/cli
+    ```
+  </Step>
+  <Step>
+    ### Authenticate
+
+    ```bash
+    agc login
+    ```
+
+    Paste your API key when prompted (get one from Settings → API Keys).
+  </Step>
+  <Step>
+    ### Create an agent
+
+    ```bash
+    agc agents create
+    ```
+
+    Follow the interactive prompts.
+  </Step>
+  <Step>
+    ### Start chatting
+
+    ```bash
+    agc chat <agentId>
+    ```
+
+    Type messages and press Enter. Exit with `/exit`.
+  </Step>
+</Steps>
+
+See the full [CLI reference](/docs/cli) for all commands.
+
+  </Tab>
+</Tabs>
+
+---
 
 ## Next steps
 
-Explore the full documentation to learn about tasks, workflows, wallets, and more.
+<Cards>
+  <Card title="Add tools" href="/docs/guides/tools-mcp" description="Give your agent web search, APIs, and more" />
+  <Card title="Stream responses" href="/docs/api#streaming" description="Get tokens as they arrive using SSE" />
+  <Card title="Build a workflow" href="/docs/guides/workflows" description="Chain multiple steps into a pipeline" />
+  <Card title="Schedule tasks" href="/docs/guides/tasks" description="Automate work on a cron schedule" />
+</Cards>

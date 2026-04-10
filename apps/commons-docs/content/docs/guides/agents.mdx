@@ -1,0 +1,267 @@
+---
+title: Building Agents
+description: Create, configure, and deploy agents — from a simple chatbot to a fully autonomous worker.
+---
+
+# Building Agents
+
+Agents are defined by their instructions, model, and tools. This guide covers every configuration option.
+
+## Create your first agent
+
+<Tabs items={['UI', 'API', 'SDK', 'CLI']}>
+  <Tab value="UI">
+    Go to **Studio → Create Agent** and fill in the form. The only required fields are **Name** and **Instructions**.
+  </Tab>
+  <Tab value="API">
+    ```bash
+    curl -X POST https://api.agentcommons.io/v1/agents \
+      -H "x-api-key: YOUR_KEY" \
+      -H "Content-Type: application/json" \
+      -d '{
+        "name": "Support Agent",
+        "instructions": "You are a customer support agent. Be polite and solution-focused.",
+        "modelProvider": "openai",
+        "modelId": "gpt-4o"
+      }'
+    ```
+  </Tab>
+  <Tab value="SDK">
+    ```typescript
+    const agent = await client.agents.create({
+      name: 'Support Agent',
+      instructions: 'You are a customer support agent. Be polite and solution-focused.',
+      modelProvider: 'openai',
+      modelId: 'gpt-4o',
+    });
+    ```
+  </Tab>
+  <Tab value="CLI">
+    ```bash
+    agc agents create \
+      --name "Support Agent" \
+      --instructions "You are a customer support agent." \
+      --model-provider openai \
+      --model-id gpt-4o
+    ```
+  </Tab>
+</Tabs>
+
+---
+
+## Model configuration
+
+### Supported providers and models
+
+| Provider | Key | Popular models |
+|---|---|---|
+| OpenAI | `openai` | `gpt-4o`, `gpt-4o-mini`, `o1-mini` |
+| Anthropic | `anthropic` | `claude-opus-4-6`, `claude-sonnet-4-6`, `claude-haiku-4-5-20251001` |
+| Google | `google` | `gemini-1.5-pro`, `gemini-2.0-flash` |
+| Groq | `groq` | `llama-3.3-70b-versatile`, `mixtral-8x7b-32768` |
+| Mistral | `mistral` | `mistral-large-latest`, `mistral-small-latest` |
+| Ollama | `ollama` | Any locally running model |
+
+### Parameters
+
+| Parameter | Default | Description |
+|---|---|---|
+| `temperature` | `0.7` | Creativity. `0` = focused, `1` = creative |
+| `maxTokens` | `2048` | Maximum response length |
+| `topP` | `1.0` | Nucleus sampling |
+| `frequencyPenalty` | `0` | Reduce repetition |
+| `presencePenalty` | `0` | Encourage new topics |
+
+### Bring your own key (BYOK)
+
+Add a personal API key to use your own quota:
+
+```json
+{
+  "modelProvider": "anthropic",
+  "modelId": "claude-sonnet-4-6",
+  "apiKey": "sk-ant-your-key"
+}
+```
+
+Your key is stored encrypted and used only for this agent's calls.
+
+### Self-hosted Ollama
+
+```json
+{
+  "modelProvider": "ollama",
+  "modelId": "llama3.2",
+  "baseUrl": "http://localhost:11434"
+}
+```
+
+---
+
+## Writing effective instructions
+
+Instructions are the agent's system prompt. Be specific — vague instructions produce vague agents.
+
+**Define the role and context clearly:**
+
+```
+You are a financial analyst assistant for hedge fund managers.
+You have access to real-time market data tools.
+Always cite sources and provide confidence levels.
+```
+
+**Specify the output format:**
+
+```
+Always respond in this format:
+1. Brief answer (1–2 sentences)
+2. Supporting detail (bullet points)
+3. Caveats if any
+```
+
+**Set boundaries:**
+
+```
+You only answer questions about cooking.
+For off-topic questions, politely redirect back to culinary topics.
+```
+
+<Callout type="tip">
+  The `persona` field is separate from `instructions`. Use it for tone and character — "Analytical and direct" or "Friendly and patient" — so it doesn't clutter your functional instructions.
+</Callout>
+
+---
+
+## Knowledge base
+
+The knowledge base injects static content the agent always has available — no tool call needed. Good for FAQs, product specs, or internal policies.
+
+<Tabs items={['UI', 'API']}>
+  <Tab value="UI">
+    **Studio → Agent Editor → Knowledge Base** → Add item
+  </Tab>
+  <Tab value="API">
+    ```bash
+    curl -X PUT https://api.agentcommons.io/v1/agents/agent_abc123/knowledgebase \
+      -H "x-api-key: YOUR_KEY" \
+      -d '{
+        "items": [
+          {
+            "title": "Refund Policy",
+            "content": "Full refund within 30 days, no questions asked."
+          },
+          {
+            "title": "Support Hours",
+            "content": "Mon–Fri, 9am–5pm EST. Email: support@acme.com"
+          }
+        ]
+      }'
+    ```
+  </Tab>
+</Tabs>
+
+---
+
+## Adding tools
+
+Tools give agents capabilities beyond their training data.
+
+**Enable built-in tools:**
+
+```json
+{
+  "commonTools": ["web_scraper", "search", "api_caller", "code_interpreter"]
+}
+```
+
+**Link a custom tool to an agent:**
+
+```bash
+curl -X POST https://api.agentcommons.io/v1/agents/agent_abc123/tools \
+  -H "x-api-key: YOUR_KEY" \
+  -d '{ "toolId": "tool_xyz" }'
+```
+
+See [Tools & MCP](/docs/guides/tools-mcp) for how to create custom tools and connect MCP servers.
+
+---
+
+## Autonomous mode
+
+Autonomous mode runs the agent on a schedule — like a cron job for your agent. Each run, the agent wakes up, does its work, and sleeps until next time.
+
+<Tabs items={['UI', 'API']}>
+  <Tab value="UI">
+    **Studio → Agent Editor → Autonomy** → Toggle on → Set interval or cron
+  </Tab>
+  <Tab value="API">
+    ```bash
+    curl -X PUT https://api.agentcommons.io/v1/agents/agent_abc123/autonomy \
+      -H "x-api-key: YOUR_KEY" \
+      -d '{
+        "autonomyEnabled": true,
+        "cronExpression": "0 9 * * 1-5",
+        "message": "Perform your daily check: review tasks, summarize activity."
+      }'
+    ```
+
+    Trigger a heartbeat immediately:
+
+    ```bash
+    curl -X POST https://api.agentcommons.io/v1/agents/agent_abc123/autonomy/trigger \
+      -H "x-api-key: YOUR_KEY"
+    ```
+  </Tab>
+</Tabs>
+
+<Callout>
+  For more control over scheduling — including one-time runs and task dependencies — use the [Tasks](/docs/guides/tasks) system instead.
+</Callout>
+
+---
+
+## OAuth connections
+
+Connect your agent to external services (Google, GitHub, Slack, etc.) so it can act on your behalf:
+
+<Steps>
+  <Step>
+    In **Studio → Agent Editor → Connections**, click **Add Connection**
+  </Step>
+  <Step>
+    Choose a provider (e.g. Google) and complete the OAuth flow
+  </Step>
+  <Step>
+    The token is stored and injected automatically when the agent uses that provider's tools
+  </Step>
+</Steps>
+
+---
+
+## Text-to-speech
+
+Enable voice output for your agent:
+
+```json
+{
+  "ttsProvider": "openai",
+  "ttsVoiceId": "alloy"
+}
+```
+
+List available voices:
+
+```bash
+GET /v1/agents/tts/voices
+```
+
+---
+
+## Monitoring
+
+| What | How |
+|---|---|
+| Live logs | `GET /v1/logs/agents/:agentId` |
+| Usage stats | `GET /v1/usage/agents/:agentId` |
+| Session history | `GET /v1/agents/sessions/:sessionId/chat` |
+| UI view | Studio → Tasks (for autonomous runs) |

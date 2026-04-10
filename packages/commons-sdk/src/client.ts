@@ -129,6 +129,58 @@ export class CommonsClient {
       /** Trigger a single heartbeat beat immediately. */
       triggerHeartbeat: (agentId: string): Promise<{ message: string }> =>
         this.request('POST', `/v1/agents/${agentId}/autonomy/trigger`),
+
+      /**
+       * Manually trigger an agent (fire-and-forget).
+       * Requires autonomy to be enabled on the agent.
+       */
+      trigger: (agentId: string): Promise<{ message: string }> =>
+        this.request('POST', `/v1/agents/${agentId}/trigger`),
+
+      // ── Knowledgebase ────────────────────────────────────────────────────
+
+      /** Get the knowledgebase entries for an agent. */
+      getKnowledgebase: (agentId: string): Promise<{ data: any[] }> =>
+        this.request('GET', `/v1/agents/${agentId}/knowledgebase`),
+
+      /** Replace the knowledgebase entries for an agent. */
+      updateKnowledgebase: (agentId: string, knowledgebase: any[]): Promise<{ data: any[] }> =>
+        this.request('PUT', `/v1/agents/${agentId}/knowledgebase`, { knowledgebase }),
+
+      // ── Preferred Connections ────────────────────────────────────────────
+
+      /** List agents that this agent prefers to collaborate with. */
+      getPreferredConnections: (agentId: string): Promise<{ data: any[] }> =>
+        this.request('GET', `/v1/agents/${agentId}/preferred-connections`),
+
+      /** Add a preferred agent connection. */
+      addPreferredConnection: (
+        agentId: string,
+        params: { preferredAgentId: string; usageComments?: string },
+      ): Promise<{ data: any }> =>
+        this.request('POST', `/v1/agents/${agentId}/preferred-connections`, params),
+
+      /** Remove a preferred agent connection by its record ID. */
+      removePreferredConnection: (id: string): Promise<{ success: boolean }> =>
+        this.request('DELETE', `/v1/agents/preferred-connections/${id}`),
+
+      // ── TTS Voices ───────────────────────────────────────────────────────
+
+      /**
+       * List available TTS voices for a provider.
+       * @param provider - 'openai' (default) or 'elevenlabs'
+       * @param q - optional search query to filter voices
+       */
+      listVoices: (
+        provider?: 'openai' | 'elevenlabs',
+        q?: string,
+      ): Promise<{ data: any[] }> => {
+        const params = new URLSearchParams();
+        if (provider) params.set('provider', provider);
+        if (q) params.set('q', q);
+        const qs = params.toString();
+        return this.request('GET', `/v1/agents/tts/voices${qs ? `?${qs}` : ''}`);
+      },
     };
   }
 
@@ -241,6 +293,10 @@ export class CommonsClient {
     return {
       list: (agentId: string, initiatorId: string): Promise<{ data: import('./types').Session[] }> =>
         this.request('GET', `/v1/sessions/list/${agentId}/${initiatorId}`),
+
+      /** List all sessions for a given agent (all initiators). */
+      listByAgent: (agentId: string): Promise<{ data: import('./types').Session[] }> =>
+        this.request('GET', `/v1/sessions/agent/${agentId}`),
 
       /** List all sessions for a user across all agents. */
       listByUser: (initiator: string): Promise<{ data: import('./types').Session[] }> =>
@@ -565,9 +621,32 @@ export class CommonsClient {
       getServer: (serverId: string): Promise<McpServer> =>
         this.request('GET', `/v1/mcp/servers/${serverId}`),
 
+      /** Update an MCP server's configuration. */
+      updateServer: (serverId: string, params: Partial<{
+        name: string;
+        description: string;
+        connectionConfig: Record<string, any>;
+        isPublic: boolean;
+        tags: string[];
+      }>): Promise<McpServer> =>
+        this.request('PUT', `/v1/mcp/servers/${serverId}`, params),
+
       /** Delete an MCP server. */
       deleteServer: (serverId: string): Promise<void> =>
         this.request('DELETE', `/v1/mcp/servers/${serverId}`),
+
+      /** List public MCP servers (marketplace). */
+      getMarketplace: (): Promise<{ servers: McpServer[]; total: number }> =>
+        this.request('GET', '/v1/mcp/servers/marketplace'),
+
+      /** Get connection status for an MCP server. */
+      getServerStatus: (serverId: string): Promise<{
+        connected: boolean;
+        capabilities: string[];
+        toolsDiscovered: number;
+        lastConnectedAt: Date | null;
+        lastError: string | null;
+      }> => this.request('GET', `/v1/mcp/servers/${serverId}/status`),
 
       /** Connect to an MCP server. */
       connect: (serverId: string): Promise<{ connected: boolean }> =>

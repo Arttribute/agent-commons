@@ -1,0 +1,277 @@
+---
+title: Workflows
+description: Build multi-step pipelines by chaining tool calls, AI processors, and data transformations.
+---
+
+# Workflows
+
+Workflows let you define a sequence of steps — scrape a page, summarize it, post the result somewhere — as a repeatable, executable pipeline.
+
+## When to use a workflow
+
+| Situation | Use |
+|---|---|
+| Open-ended conversation | Agent session |
+| Single automated task | Task (single mode) |
+| Multi-step pipeline with defined I/O | **Workflow** |
+| Scheduled automation | Task with cron + workflow |
+
+---
+
+## Anatomy of a workflow
+
+A workflow has:
+
+- **Nodes** — individual steps
+- **Edges** — connections defining order and data flow
+- **Input schema** — what data it needs to start
+- **Output schema** — what it produces when done
+
+Data flows between nodes using `{{nodeId.output}}` references. Inputs come from `{{inputs.fieldName}}`.
+
+---
+
+## Node types
+
+### `tool` — call a tool
+
+```json
+{
+  "id": "scrape",
+  "type": "tool",
+  "toolName": "web_scraper",
+  "parameters": { "url": "{{inputs.url}}" }
+}
+```
+
+### `agent_processor` — AI-powered step
+
+```json
+{
+  "id": "summarize",
+  "type": "agent_processor",
+  "prompt": "Summarize in 3 bullet points:\n{{scrape.output}}"
+}
+```
+
+### `data_transformer` — reshape data
+
+```json
+{
+  "id": "extract",
+  "type": "data_transformer",
+  "mapping": {
+    "title": "{{scrape.output.title}}",
+    "url": "{{inputs.url}}"
+  }
+}
+```
+
+### `conditional` — branch on a value
+
+```json
+{
+  "id": "check",
+  "type": "conditional",
+  "condition": "{{scrape.output.length}} > 1000"
+}
+```
+
+---
+
+## Create a workflow
+
+### Example: Scrape and summarize
+
+```bash
+curl -X POST https://api.agentcommons.io/v1/workflows \
+  -H "x-api-key: YOUR_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Scrape and Summarize",
+    "definition": {
+      "nodes": [
+        {
+          "id": "scrape",
+          "type": "tool",
+          "toolName": "web_scraper",
+          "parameters": { "url": "{{inputs.url}}" }
+        },
+        {
+          "id": "summarize",
+          "type": "agent_processor",
+          "prompt": "Summarize in 3 bullets:\n{{scrape.output}}"
+        }
+      ],
+      "edges": [{ "from": "scrape", "to": "summarize" }]
+    },
+    "inputSchema": { "url": { "type": "string" } }
+  }'
+```
+
+### Example: Research, write, and post (3 steps)
+
+```json
+{
+  "name": "Research and Write",
+  "definition": {
+    "nodes": [
+      {
+        "id": "search",
+        "type": "tool",
+        "toolName": "search",
+        "parameters": { "query": "{{inputs.topic}} latest 2026" }
+      },
+      {
+        "id": "scrape",
+        "type": "tool",
+        "toolName": "web_scraper",
+        "parameters": { "url": "{{search.output.firstResult.url}}" }
+      },
+      {
+        "id": "write",
+        "type": "agent_processor",
+        "prompt": "Write a 500-word article about {{inputs.topic}} based on:\n{{scrape.output}}"
+      }
+    ],
+    "edges": [
+      { "from": "search", "to": "scrape" },
+      { "from": "scrape", "to": "write" }
+    ]
+  },
+  "inputSchema": { "topic": { "type": "string" } }
+}
+```
+
+---
+
+## Execute a workflow
+
+```bash
+curl -X POST https://api.agentcommons.io/v1/workflows/workflow_abc123/execute \
+  -H "x-api-key: YOUR_KEY" \
+  -d '{ "inputs": { "url": "https://techcrunch.com/latest" } }'
+```
+
+Response:
+
+```json
+{ "executionId": "exec_xyz", "status": "running" }
+```
+
+---
+
+## Stream execution progress
+
+```bash
+curl https://api.agentcommons.io/v1/workflows/exec_xyz/stream \
+  -H "x-api-key: YOUR_KEY"
+```
+
+SSE events arrive as each node runs:
+
+```
+data: {"nodeId":"scrape","status":"running"}
+data: {"nodeId":"scrape","status":"completed","output":"...","duration":1240}
+data: {"nodeId":"summarize","status":"running"}
+data: {"nodeId":"summarize","status":"completed","output":"• Point 1\n...","duration":2100}
+data: {"executionId":"exec_xyz","status":"completed","totalDuration":3340}
+```
+
+---
+
+## View execution history
+
+```bash
+GET /v1/workflows/workflow_abc123/executions
+```
+
+Each record shows status, timing, and the output of every node.
+
+---
+
+## SDK example
+
+```typescript
+// Create
+const workflow = await client.workflows.create({
+  name: 'Summarize URL',
+  definition: {
+    nodes: [
+      { id: 'scrape', type: 'tool', toolName: 'web_scraper', parameters: { url: '{{inputs.url}}' } },
+      { id: 'summarize', type: 'agent_processor', prompt: 'Summarize: {{scrape.output}}' },
+    ],
+    edges: [{ from: 'scrape', to: 'summarize' }],
+  },
+  inputSchema: { url: { type: 'string' } },
+});
+
+// Execute and stream
+const { executionId } = await client.workflows.execute(workflow.workflowId, {
+  inputs: { url: 'https://example.com' },
+});
+
+for await (const event of client.workflows.stream(executionId)) {
+  if (event.nodeId) console.log(`[${event.nodeId}] ${event.status}`);
+  if (event.output) console.log(event.output);
+}
+```
+
+---
+
+## Visual editor
+
+In the web app, go to **Studio → Workflows → Create → Open Editor**:
+
+<Steps>
+  <Step>Add nodes from the sidebar or click the `+` button on the canvas</Step>
+  <Step>Click each node to set its type, tool name, and parameters</Step>
+  <Step>Connect nodes by dragging from one output handle to another node's input</Step>
+  <Step>Define inputs in the Inputs panel</Step>
+  <Step>Click **Run** to test directly from the editor</Step>
+</Steps>
+
+---
+
+## Publish and fork
+
+Make a workflow public for others to find and reuse:
+
+```bash
+curl -X PUT https://api.agentcommons.io/v1/workflows/workflow_abc123 \
+  -H "x-api-key: YOUR_KEY" \
+  -d '{ "isPublic": true, "category": "research" }'
+```
+
+Browse public workflows:
+
+```bash
+GET /v1/workflows/public
+GET /v1/workflows/public?category=research
+```
+
+Fork one to your account:
+
+```bash
+POST /v1/workflows/workflow_abc123/fork
+```
+
+---
+
+## Schedule a workflow
+
+Run a workflow automatically on a cron schedule by combining it with a task:
+
+```bash
+curl -X POST https://api.agentcommons.io/v1/tasks \
+  -H "x-api-key: YOUR_KEY" \
+  -d '{
+    "title": "Daily news pipeline",
+    "agentId": "agent_abc123",
+    "executionMode": "workflow",
+    "workflowId": "workflow_abc123",
+    "workflowInputs": { "url": "https://news.ycombinator.com" },
+    "cronExpression": "0 7 * * *",
+    "isRecurring": true
+  }'
+```

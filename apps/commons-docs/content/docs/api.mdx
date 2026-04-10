@@ -1,0 +1,312 @@
+---
+title: REST API Reference
+description: All API endpoints with request/response examples. Base URL — https://api.agentcommons.io
+---
+
+# REST API Reference
+
+**Base URL:** `https://api.agentcommons.io`
+
+## Authentication
+
+All requests require an API key header:
+
+```http
+x-api-key: your_api_key
+Content-Type: application/json
+```
+
+Get a key from **Settings → API Keys** in the web app.
+
+---
+
+## Agents
+
+| Method | Path | Description |
+|---|---|---|
+| `POST` | `/v1/agents` | Create an agent |
+| `GET` | `/v1/agents` | List agents |
+| `GET` | `/v1/agents/:agentId` | Get an agent |
+| `PUT` | `/v1/agents/:agentId` | Update an agent |
+| `GET` | `/v1/agents/:agentId/autonomy` | Get autonomy settings |
+| `PUT` | `/v1/agents/:agentId/autonomy` | Set autonomy settings |
+| `POST` | `/v1/agents/:agentId/autonomy/trigger` | Trigger a heartbeat |
+| `GET` | `/v1/agents/:agentId/knowledgebase` | Get knowledge base |
+| `PUT` | `/v1/agents/:agentId/knowledgebase` | Update knowledge base |
+| `GET` | `/v1/agents/:agentId/tools` | List agent tools |
+| `POST` | `/v1/agents/:agentId/tools` | Link a tool |
+| `DELETE` | `/v1/agents/tools/:id` | Unlink a tool |
+| `GET` | `/v1/agents/tts/voices` | List TTS voices |
+
+### Create an agent
+
+```bash
+curl -X POST https://api.agentcommons.io/v1/agents \
+  -H "x-api-key: YOUR_KEY" \
+  -d '{
+    "name": "Research Bot",
+    "instructions": "You are a research assistant. Be concise.",
+    "modelProvider": "openai",
+    "modelId": "gpt-4o",
+    "temperature": 0.3,
+    "maxTokens": 2048
+  }'
+```
+
+**Model providers:** `openai` · `anthropic` · `google` · `groq` · `mistral` · `ollama`
+
+---
+
+## Sessions & Running
+
+| Method | Path | Description |
+|---|---|---|
+| `POST` | `/v1/agents/run` | Run agent (blocking) |
+| `POST` | `/v1/agents/run/stream` | Run agent (SSE stream) |
+| `GET` | `/v1/agents/sessions/:sessionId/chat` | Get session history |
+
+### Run (blocking)
+
+```bash
+curl -X POST https://api.agentcommons.io/v1/agents/run \
+  -H "x-api-key: YOUR_KEY" \
+  -d '{
+    "agentId": "agent_abc123",
+    "messages": [{ "role": "user", "content": "Hello!" }],
+    "sessionId": "optional-session-id"
+  }'
+```
+
+```json
+{
+  "sessionId": "session_xyz",
+  "response": "Hi there!",
+  "usage": { "inputTokens": 24, "outputTokens": 8 }
+}
+```
+
+### Run (streaming)
+
+Same body as `/run`. Returns an **SSE stream**:
+
+```
+data: {"type":"token","content":"Hi"}
+data: {"type":"token","content":" there!"}
+data: {"type":"tool_start","toolName":"web_scraper","input":{...}}
+data: {"type":"tool_end","toolName":"web_scraper","output":"..."}
+data: {"type":"done","sessionId":"session_xyz","usage":{...}}
+```
+
+**Stream event types:**
+
+| Type | Description |
+|---|---|
+| `token` | A chunk of response text |
+| `tool_start` | Agent is invoking a tool |
+| `tool_end` | Tool returned a result |
+| `done` | Run completed |
+| `error` | An error occurred |
+
+---
+
+## Tasks
+
+| Method | Path | Description |
+|---|---|---|
+| `POST` | `/v1/tasks` | Create a task |
+| `GET` | `/v1/tasks` | List tasks |
+| `GET` | `/v1/tasks/:id` | Get a task |
+| `PUT` | `/v1/tasks/:id` | Update a task |
+| `DELETE` | `/v1/tasks/:id` | Delete a task |
+| `POST` | `/v1/tasks/:id/execute` | Execute a task |
+| `POST` | `/v1/tasks/:id/cancel` | Cancel a task |
+| `GET` | `/v1/tasks/:id/stream` | Stream task status |
+
+### Create a task
+
+```json
+{
+  "title": "Daily briefing",
+  "description": "Summarize overnight news.",
+  "agentId": "agent_abc123",
+  "executionMode": "single",
+  "cronExpression": "0 8 * * 1-5",
+  "isRecurring": true
+}
+```
+
+**Execution modes:** `single` · `workflow` · `sequential`
+
+---
+
+## Workflows
+
+| Method | Path | Description |
+|---|---|---|
+| `POST` | `/v1/workflows` | Create a workflow |
+| `GET` | `/v1/workflows` | List your workflows |
+| `GET` | `/v1/workflows/public` | Discover public workflows |
+| `GET` | `/v1/workflows/:id` | Get a workflow |
+| `PUT` | `/v1/workflows/:id` | Update a workflow |
+| `DELETE` | `/v1/workflows/:id` | Delete a workflow |
+| `POST` | `/v1/workflows/:id/fork` | Fork a workflow |
+| `POST` | `/v1/workflows/:id/execute` | Execute a workflow |
+| `GET` | `/v1/workflows/:executionId/stream` | Stream execution |
+| `GET` | `/v1/workflows/:id/executions` | Execution history |
+
+### Execute a workflow
+
+```bash
+curl -X POST https://api.agentcommons.io/v1/workflows/workflow_abc123/execute \
+  -H "x-api-key: YOUR_KEY" \
+  -d '{ "inputs": { "url": "https://example.com" } }'
+```
+
+---
+
+## Tools
+
+| Method | Path | Description |
+|---|---|---|
+| `GET` | `/v1/tools` | List tools |
+| `POST` | `/v1/tools` | Create a tool |
+| `GET` | `/v1/tools/:id` | Get a tool |
+| `PUT` | `/v1/tools/:id` | Update a tool |
+| `DELETE` | `/v1/tools/:id` | Delete a tool |
+| `POST` | `/v1/tools/:id/invoke` | Invoke a tool |
+| `GET` | `/v1/tools/permissions` | List permissions |
+| `POST` | `/v1/tools/:id/permissions` | Grant a permission |
+| `GET` | `/v1/tools/:id/keys` | List tool API keys |
+| `POST` | `/v1/tools/:id/keys` | Add an API key |
+| `DELETE` | `/v1/tools/:id/keys/:keyId` | Delete a key |
+
+---
+
+## MCP Servers
+
+| Method | Path | Description |
+|---|---|---|
+| `POST` | `/v1/mcp/servers` | Connect a server |
+| `GET` | `/v1/mcp/servers` | List your servers |
+| `GET` | `/v1/mcp/servers/marketplace` | Browse marketplace |
+| `GET` | `/v1/mcp/servers/:id` | Get a server |
+| `PUT` | `/v1/mcp/servers/:id` | Update a server |
+| `DELETE` | `/v1/mcp/servers/:id` | Delete a server |
+| `POST` | `/v1/mcp/servers/:id/connect` | Connect |
+| `POST` | `/v1/mcp/servers/:id/disconnect` | Disconnect |
+| `GET` | `/v1/mcp/servers/:id/status` | Connection status |
+| `POST` | `/v1/mcp/servers/:id/sync` | Sync tools |
+| `GET` | `/v1/mcp/servers/:id/tools` | List tools |
+| `GET` | `/v1/mcp/servers/:id/resources` | List resources |
+| `GET` | `/v1/mcp/servers/:id/resources/read` | Read a resource |
+| `GET` | `/v1/mcp/servers/:id/prompts` | List prompts |
+| `POST` | `/v1/mcp/servers/:id/prompts/:name` | Render a prompt |
+
+---
+
+## Agent-to-Agent (A2A)
+
+| Method | Path | Description |
+|---|---|---|
+| `GET` | `/.well-known/agent.json?agentId=x` | Get agent card |
+| `POST` | `/v1/a2a/:agentId` | Send a task (JSON-RPC 2.0) |
+| `GET` | `/v1/a2a/:agentId/tasks` | List A2A tasks |
+| `GET` | `/v1/a2a/:agentId/tasks/:taskId/stream` | Stream a task |
+
+### JSON-RPC methods
+
+| Method | Description |
+|---|---|
+| `tasks/send` | Send a task synchronously |
+| `tasks/sendSubscribe` | Send a task with streaming subscription |
+| `tasks/get` | Get task status |
+| `tasks/cancel` | Cancel a task |
+
+---
+
+## Wallets
+
+| Method | Path | Description |
+|---|---|---|
+| `POST` | `/v1/wallets` | Create a wallet |
+| `GET` | `/v1/wallets/agent/:agentId` | List agent wallets |
+| `GET` | `/v1/wallets/agent/:agentId/primary` | Get primary wallet |
+| `GET` | `/v1/wallets/:id` | Get a wallet |
+| `GET` | `/v1/wallets/:id/balance` | Check balance |
+| `POST` | `/v1/wallets/:id/transfer` | Transfer funds |
+| `POST` | `/v1/wallets/agent/:agentId/x402-fetch` | x402 payment fetch |
+| `DELETE` | `/v1/wallets/:id` | Delete a wallet |
+
+---
+
+## Memory
+
+| Method | Path | Description |
+|---|---|---|
+| `POST` | `/v1/memory` | Create a memory |
+| `GET` | `/v1/memory/agents/:agentId` | List memories |
+| `GET` | `/v1/memory/agents/:agentId/stats` | Memory statistics |
+| `GET` | `/v1/memory/agents/:agentId/retrieve?q=...` | Semantic search |
+| `GET` | `/v1/memory/:id` | Get a memory |
+| `PATCH` | `/v1/memory/:id` | Update a memory |
+| `DELETE` | `/v1/memory/:id` | Delete a memory |
+
+---
+
+## OAuth
+
+| Method | Path | Description |
+|---|---|---|
+| `GET` | `/v1/oauth/providers` | List all providers |
+| `POST` | `/v1/oauth/connect` | Start an OAuth flow |
+| `GET` | `/v1/oauth/callback/:providerKey` | OAuth callback |
+| `GET` | `/v1/oauth/connections` | List your connections |
+| `DELETE` | `/v1/oauth/connections/:id` | Remove a connection |
+| `POST` | `/v1/oauth/connections/:id/refresh` | Refresh token |
+
+---
+
+## Skills
+
+| Method | Path | Description |
+|---|---|---|
+| `GET` | `/v1/skills` | List skills |
+| `GET` | `/v1/skills/index` | Public skill index |
+| `POST` | `/v1/skills` | Create a skill |
+| `GET` | `/v1/skills/:id` | Get a skill |
+| `PUT` | `/v1/skills/:id` | Update a skill |
+| `DELETE` | `/v1/skills/:id` | Delete a skill |
+
+---
+
+## Usage & Logs
+
+| Method | Path | Description |
+|---|---|---|
+| `GET` | `/v1/usage/summary` | Overall usage |
+| `GET` | `/v1/usage/agents/:agentId` | Agent usage |
+| `GET` | `/v1/logs/agents/:agentId` | Agent logs |
+| `GET` | `/v1/logs/stream` | Live log stream (SSE) |
+
+---
+
+## Errors
+
+All errors return:
+
+```json
+{
+  "statusCode": 400,
+  "error": "Bad Request",
+  "message": "agentId is required"
+}
+```
+
+| Code | Meaning |
+|---|---|
+| `400` | Bad request — check your body/params |
+| `401` | Unauthorized — missing or invalid API key |
+| `403` | Forbidden — you don't own this resource |
+| `404` | Not found |
+| `429` | Rate limited — 120 requests/min per agent |
+| `500` | Server error |

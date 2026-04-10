@@ -7,6 +7,9 @@ import {
 } from 'fumadocs-ui/page';
 import { notFound } from 'next/navigation';
 import defaultMdxComponents from 'fumadocs-ui/mdx';
+import { Tabs, Tab } from 'fumadocs-ui/components/tabs';
+import { Steps, Step } from 'fumadocs-ui/components/steps';
+import { Accordion, Accordions } from 'fumadocs-ui/components/accordion';
 import { readFile } from 'fs/promises';
 import path from 'path';
 import { PageActions } from '@/components/page-actions';
@@ -34,7 +37,7 @@ export default async function Page({
       <DocsDescription>{page.data.description}</DocsDescription>
       <PageActions rawContent={rawContent} githubPath={githubPath} />
       <DocsBody>
-        <MDX components={{ ...defaultMdxComponents }} />
+        <MDX components={{ ...defaultMdxComponents, Tabs, Tab, Steps, Step, Accordion, Accordions }} />
       </DocsBody>
     </DocsPage>
   );

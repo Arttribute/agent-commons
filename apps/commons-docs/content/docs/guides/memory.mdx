@@ -1,0 +1,209 @@
+---
+title: Memory
+description: Give your agent a persistent knowledge store — facts, past events, and learned procedures that survive across sessions.
+---
+
+# Memory
+
+Memory gives agents knowledge that persists across sessions. Instead of starting fresh each conversation, agents can remember user preferences, past outcomes, and domain knowledge.
+
+---
+
+## Memory types
+
+| Type | What it stores | Example |
+|---|---|---|
+| `semantic` | Facts and knowledge | "User prefers bullet-point summaries" |
+| `episodic` | Records of events | "On Apr 5, user asked about Q1 results" |
+| `procedural` | How to do things | "To generate a report: fetch → aggregate → format" |
+
+---
+
+## Store a memory
+
+<Tabs items={['API', 'SDK', 'CLI']}>
+  <Tab value="API">
+    ```bash
+    curl -X POST https://api.agentcommons.io/v1/memory \
+      -H "x-api-key: YOUR_KEY" \
+      -d '{
+        "agentId": "agent_abc123",
+        "memoryType": "semantic",
+        "content": "The user'\''s name is Alex and they work in product management.",
+        "tags": ["user_info"],
+        "importanceScore": 0.8
+      }'
+    ```
+  </Tab>
+  <Tab value="SDK">
+    ```typescript
+    const { data: mem } = await client.memory.create({
+      agentId: 'agent_abc123',
+      memoryType: 'semantic',
+      content: "The user's name is Alex and they work in product management.",
+      tags: ['user_info'],
+      importanceScore: 0.8,
+    });
+    ```
+  </Tab>
+  <Tab value="CLI">
+    ```bash
+    agc memory add \
+      --agent agent_abc123 \
+      --type semantic \
+      --content "User prefers short responses"
+    ```
+  </Tab>
+</Tabs>
+
+**Fields:**
+
+| Field | Required | Description |
+|---|---|---|
+| `agentId` | yes | Which agent this belongs to |
+| `memoryType` | yes | `semantic`, `episodic`, or `procedural` |
+| `content` | yes | The memory text |
+| `summary` | no | Shorter version for display |
+| `tags` | no | Labels for filtering |
+| `importanceScore` | no | 0.0–1.0 — used for pruning |
+| `sourceType` | no | `conversation`, `task`, or `manual` |
+
+---
+
+## Retrieve relevant memories
+
+Find memories that match a query using semantic similarity:
+
+<Tabs items={['API', 'SDK', 'CLI']}>
+  <Tab value="API">
+    ```bash
+    curl "https://api.agentcommons.io/v1/memory/agents/agent_abc123/retrieve?q=user+formatting+preferences" \
+      -H "x-api-key: YOUR_KEY"
+    ```
+
+    ```json
+    {
+      "memories": [
+        {
+          "memoryId": "mem_abc",
+          "content": "User prefers bullet-point responses over paragraphs.",
+          "score": 0.93,
+          "memoryType": "semantic"
+        }
+      ]
+    }
+    ```
+
+    `score` is cosine similarity (0–1). Higher = more relevant.
+  </Tab>
+  <Tab value="SDK">
+    ```typescript
+    const { data: memories } = await client.memory.retrieve(
+      'agent_abc123',
+      'user formatting preferences',
+      5, // limit
+    );
+
+    memories.forEach(m => console.log(`[${m.score}] ${m.content}`));
+    ```
+  </Tab>
+  <Tab value="CLI">
+    ```bash
+    agc memory search \
+      --agent agent_abc123 \
+      --query "user formatting preferences"
+    ```
+  </Tab>
+</Tabs>
+
+---
+
+## List all memories
+
+```bash
+GET /v1/memory/agents/agent_abc123
+GET /v1/memory/agents/agent_abc123?type=episodic
+```
+
+```typescript
+const { data: all } = await client.memory.list('agent_abc123', {
+  type: 'semantic',
+  limit: 20,
+});
+```
+
+---
+
+## Memory statistics
+
+```typescript
+const { data: stats } = await client.memory.stats('agent_abc123');
+// { total: 42, byType: { semantic: 28, episodic: 10, procedural: 4 } }
+```
+
+---
+
+## Update and delete
+
+```typescript
+// Update importance score or content
+await client.memory.update(mem.memoryId, { importanceScore: 0.9 });
+
+// Remove a memory
+await client.memory.delete(mem.memoryId);
+```
+
+---
+
+## Using memory in your agent workflow
+
+The typical pattern: retrieve relevant memories before the agent runs, inject them as context.
+
+```typescript
+async function runWithMemory(agentId: string, userMessage: string) {
+  // 1. Find relevant memories
+  const { data: memories } = await client.memory.retrieve(agentId, userMessage, 5);
+
+  // 2. Inject as context
+  const memoryContext = memories.map(m => `- ${m.content}`).join('\n');
+
+  // 3. Run with context
+  const result = await client.run.once({
+    agentId,
+    messages: [
+      {
+        role: 'system',
+        content: `What I know about this user:\n${memoryContext}`,
+      },
+      { role: 'user', content: userMessage },
+    ],
+  });
+
+  return result;
+}
+```
+
+---
+
+## Semantic search (embeddings)
+
+Memory retrieval uses vector embeddings stored in Supabase. Each memory is embedded when created and searched by cosine similarity.
+
+You can also use the embedding API directly for custom search:
+
+**Index content:**
+```bash
+curl -X POST https://api.agentcommons.io/v1/embedding \
+  -H "x-api-key: YOUR_KEY" \
+  -d '{
+    "text": "Quantum computing uses qubits for calculations",
+    "metadata": { "topic": "quantum" }
+  }'
+```
+
+**Semantic search:**
+```bash
+curl -X POST https://api.agentcommons.io/v1/embedding/find \
+  -H "x-api-key: YOUR_KEY" \
+  -d '{ "query": "how do quantum computers work", "limit": 5 }'
+```

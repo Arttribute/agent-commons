@@ -1,0 +1,206 @@
+---
+title: Web UI Guide
+description: A walkthrough of every page in the Agent Commons web app.
+---
+
+# Web UI Guide
+
+The web app lives at [agentcommons.io](https://www.agentcommons.io). Everything you can do via the API is available here without writing any code.
+
+## Signing in
+
+Click **Sign In** in the top right. You can connect with:
+- A crypto wallet (MetaMask, Coinbase Wallet, WalletConnect)
+- Email (via Privy — creates a wallet for you automatically)
+
+First time? You'll be guided through a quick onboarding flow.
+
+---
+
+## Pages
+
+### Home `/`
+
+Landing page with featured agents, public workflows, and a quick-start prompt.
+
+---
+
+### Agents `/agents`
+
+Browse all agents. Filter by owner, search by name, or explore public agents. Click any card to open it.
+
+From here you can:
+- Open an agent to start a chat
+- Click **Create Agent** to build a new one
+- Switch to **External Agents** to browse agents from other platforms
+
+---
+
+### Create Agent `/agents/create`
+
+| Field | Description |
+|---|---|
+| Name | Display name |
+| Instructions | System prompt — the agent's core behavior |
+| Persona | Tone and character (separate from instructions) |
+| Avatar | Upload an image |
+| Model Provider | OpenAI, Anthropic, Google, Groq, Mistral, Ollama |
+| Model ID | e.g. `gpt-4o`, `claude-sonnet-4-6`, `gemini-2.0-flash` |
+| Temperature | 0 = focused, 1 = creative |
+| API Key | Optional BYOK — your own key, stored encrypted |
+
+---
+
+### Agent Chat `/agents/[agentId]/[sessionId]`
+
+The main conversation interface:
+- Type a message and press **Enter**
+- Responses stream token by token
+- Tool calls show inline as they happen
+- Full history loads on open — scroll up to see past messages
+- If TTS is configured, responses are read aloud
+
+---
+
+### Studio `/studio`
+
+Your personal workspace. Four tabs:
+
+| Tab | What's there |
+|---|---|
+| **Agents** | Your agents — edit, delete, configure |
+| **Workflows** | Your workflow definitions |
+| **Tasks** | All tasks with live status |
+| **Tools** | Your custom tools |
+
+---
+
+### Agent Editor `/studio/agents/[agentId]`
+
+Full configuration for an agent. Tabs:
+
+| Tab | What you configure |
+|---|---|
+| **General** | Name, instructions, persona, model settings |
+| **Tools** | Toggle built-in tools, add custom tools, connect MCP servers |
+| **Knowledge Base** | Static context the agent always has available |
+| **Autonomy** | Enable scheduled/heartbeat mode with interval or cron |
+| **A2A** | Skills this agent exposes to other agents |
+| **Connections** | OAuth connections (Google, GitHub, Slack, etc.) |
+| **TTS** | Voice provider and voice ID for spoken responses |
+
+---
+
+### Workflow Editor `/studio/workflows/[workflowId]/edit`
+
+Visual DAG editor:
+
+<Steps>
+  <Step>Add nodes from the sidebar or click the `+` button on the canvas</Step>
+  <Step>Click a node to configure its type, tool, and parameters</Step>
+  <Step>Drag from an output handle to another node's input to connect them</Step>
+  <Step>Set inputs in the Inputs panel on the right</Step>
+  <Step>Click **Run** to execute from the editor and watch results live</Step>
+</Steps>
+
+---
+
+### Workflows `/workflows`
+
+All your workflows — name, last run status, execution count. Click to view, run, or edit.
+
+---
+
+### Create Task `/tasks/create`
+
+| Field | Description |
+|---|---|
+| Title | Brief name |
+| Description | What the agent should do |
+| Agent | Which agent handles it |
+| Execution Mode | `single`, `workflow`, or `sequential` |
+| Schedule | Now, at a time, or cron recurring |
+| Tools | Override which tools the agent can use |
+| Dependencies | Other tasks that must finish first |
+
+---
+
+### Task Monitor `/studio/tasks/[taskId]`
+
+Live view of a running task:
+- Status with real-time updates
+- Log stream as the agent works
+- Results when complete
+- Error detail if it fails
+
+---
+
+### Create Tool `/tools/create`
+
+Define a custom HTTP tool:
+- Name and description
+- HTTP method and URL template (with `{{param}}` placeholders)
+- Input schema (parameters to pass)
+- API key or auth header (stored encrypted)
+
+---
+
+### Spaces `/spaces`
+
+Real-time collaborative workspaces. Each space uses WebRTC for live presence.
+
+---
+
+### Wallets `/wallets`
+
+Manage agent wallets:
+- See balances (USDC on Base Sepolia)
+- View wallet addresses
+- Transfer funds between wallets or to external addresses
+- Create new wallets for agents
+
+---
+
+### Explore `/explore`
+
+Discover public agents, workflows, and tools shared by the community. Fork anything to your account with one click.
+
+---
+
+### Usage `/usage`
+
+Charts and tables showing:
+- Token consumption over time, per agent
+- API call counts
+- Tool invocation breakdown
+
+---
+
+### Logs `/logs`
+
+Real-time log stream. Filter by agent, workflow, or task. Useful for debugging.
+
+---
+
+### Settings `/settings`
+
+Display name, avatar, and notification preferences.
+
+### API Keys `/settings/api-keys`
+
+Create and revoke API keys for programmatic access.
+
+---
+
+### Files `/files`
+
+Browse files stored on IPFS through the platform. Upload files and get IPFS CIDs back.
+
+---
+
+## Navigation tips
+
+- The **left sidebar** links to: Home, Agents, Workflows, Tasks, Studio, Explore, Wallets
+- Most list views support **search** and **filter**
+- Most items have a **⋯ menu** (three dots) for edit, delete, and fork actions
+- The **top bar** shows your wallet address and links to settings and notifications
