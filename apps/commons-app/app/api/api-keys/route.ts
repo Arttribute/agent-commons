@@ -15,7 +15,7 @@ export async function GET(request: NextRequest) {
     if (v) params.set(k, v);
   });
   try {
-    const res = await fetch(`${baseUrl}/v1/api-keys?${params.toString()}`, {
+    const res = await fetch(`${baseUrl}/v1/auth/api-keys?${params.toString()}`, {
       cache: "no-store",
       headers: backendAuthHeaders(),
     });
@@ -33,7 +33,7 @@ export async function POST(request: NextRequest) {
   }
   try {
     const body = await request.json();
-    const res = await fetch(`${baseUrl}/v1/api-keys`, {
+    const res = await fetch(`${baseUrl}/v1/auth/api-keys`, {
       method: "POST",
       headers: { "Content-Type": "application/json", ...backendAuthHeaders() },
       body: JSON.stringify(body),

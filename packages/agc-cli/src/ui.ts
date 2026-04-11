@@ -1,5 +1,6 @@
 import chalk from 'chalk';
 import ora, { Ora } from 'ora';
+import { exec } from 'child_process';
 
 // ── Colors & symbols ──────────────────────────────────────────────────────────
 
@@ -21,6 +22,110 @@ export const sym = {
   bullet: chalk.dim('•'),
   dot:    chalk.dim('·'),
 };
+
+// ── Banner ────────────────────────────────────────────────────────────────────
+
+export function banner(version = '0.1.4'): void {
+  const line = chalk.cyan('  ─'.padEnd(2) + '─'.repeat(44));
+  console.log('');
+  console.log(line);
+  console.log(
+    chalk.cyan('  │ ') +
+    chalk.bold.white(' ◈  Agent Commons') +
+    chalk.dim('  ·  CLI') +
+    '  ' +
+    chalk.cyan(`v${version}`),
+  );
+  console.log(chalk.cyan('  │ ') + chalk.dim('  The Open AI Agent Network  ·  agentcommons.io'));
+  console.log(line);
+  console.log('');
+}
+
+// ── Step indicator ────────────────────────────────────────────────────────────
+
+export function step(n: number, total: number, title: string): void {
+  const fraction = chalk.dim(`${n}/${total}`);
+  console.log(`\n${chalk.cyan.bold('  Step ' + n)} ${fraction}  ${chalk.bold(title)}`);
+  console.log(chalk.dim('  ' + '─'.repeat(38)));
+}
+
+// ── Interactive select menu ───────────────────────────────────────────────────
+
+export async function select<T>(
+  prompt: string,
+  choices: Array<{ label: string; value: T; hint?: string }>,
+): Promise<T> {
+  // Non-TTY fallback: return first choice
+  if (!process.stdin.isTTY) {
+    return choices[0].value;
+  }
+
+  let idx = 0;
+  const total = choices.length;
+
+  const render = (first = false) => {
+    if (!first) {
+      // Move cursor up past prompt line + all choice lines then clear
+      process.stdout.write(`\x1b[${total + 2}A\x1b[0J`);
+    }
+    console.log('\n' + chalk.bold('  ' + prompt));
+    for (let i = 0; i < total; i++) {
+      const { label, hint } = choices[i];
+      if (i === idx) {
+        const hintStr = hint ? chalk.dim('  ' + hint) : '';
+        process.stdout.write(chalk.cyan('  › ') + chalk.bold.white(label) + hintStr + '\n');
+      } else {
+        process.stdout.write(chalk.dim('    ' + label) + '\n');
+      }
+    }
+  };
+
+  render(true);
+
+  return new Promise<T>((resolve) => {
+    process.stdin.setRawMode(true);
+    process.stdin.resume();
+    process.stdin.setEncoding('utf8');
+
+    const handler = (data: Buffer | string) => {
+      const key = String(data);
+
+      if (key === '\x1b[A' || key === 'k') {        // up / vim-k
+        idx = (idx - 1 + total) % total;
+        render();
+      } else if (key === '\x1b[B' || key === 'j') { // down / vim-j
+        idx = (idx + 1) % total;
+        render();
+      } else if (key === '\r' || key === '\n' || key === ' ') { // enter / space
+        cleanup();
+        process.stdout.write('\n');
+        resolve(choices[idx].value);
+      } else if (key === '\x03') {                   // Ctrl-C
+        cleanup();
+        process.stdout.write('\n');
+        process.exit(130);
+      }
+    };
+
+    const cleanup = () => {
+      process.stdin.removeListener('data', handler);
+      process.stdin.setRawMode(false);
+      process.stdin.pause();
+    };
+
+    process.stdin.on('data', handler);
+  });
+}
+
+// ── Browser opener ────────────────────────────────────────────────────────────
+
+export function openBrowser(url: string): void {
+  const cmd =
+    process.platform === 'darwin' ? `open "${url}"` :
+    process.platform === 'win32'  ? `start "" "${url}"` :
+                                    `xdg-open "${url}"`;
+  exec(cmd, () => { /* ignore errors — user still sees the URL */ });
+}
 
 // ── Spinner ───────────────────────────────────────────────────────────────────
 

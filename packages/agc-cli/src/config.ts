@@ -13,7 +13,8 @@ export interface AgcConfig {
 const CONFIG_DIR = join(homedir(), '.agc');
 const CONFIG_FILE = join(CONFIG_DIR, 'config.json');
 
-export const DEFAULT_API_URL = process.env.AGC_API_URL ?? 'http://localhost:3001';
+export const DEFAULT_API_URL = process.env.AGC_API_URL ?? 'https://api.agentcommons.io';
+export const DEFAULT_APP_URL = 'https://www.agentcommons.io';
 
 export function loadConfig(): AgcConfig {
   // Env vars take precedence over file

@@ -13,7 +13,7 @@ export async function DELETE(
   }
   const { keyId } = await params;
   try {
-    const res = await fetch(`${baseUrl}/v1/api-keys/${keyId}`, {
+    const res = await fetch(`${baseUrl}/v1/auth/api-keys/${keyId}`, {
       method: "DELETE",
       headers: backendAuthHeaders(),
     });
