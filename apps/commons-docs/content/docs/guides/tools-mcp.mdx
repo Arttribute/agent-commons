@@ -97,7 +97,7 @@ curl -X POST https://api.agentcommons.io/v1/tools/tool_abc123/keys \
   -d '{ "value": "SG.your-key", "label": "production" }'
 ```
 
-The {{SENDGRID_KEY}} placeholder is replaced automatically when the agent calls the tool.
+The SENDGRID_KEY placeholder is replaced automatically when the agent calls the tool.
 
 <Callout type="tip">
   API keys are stored encrypted. The agent never sees the raw key — it's injected at invocation time.
