@@ -319,8 +319,8 @@ importers:
   apps/commons-app:
     dependencies:
       '@agent-commons/sdk':
-        specifier: ^0.1.5
-        version: 0.1.5
+        specifier: ^0.1.6
+        version: 0.1.6
       '@hookform/resolvers':
         specifier: ^3.10.0
         version: 3.10.0(react-hook-form@7.54.2(react@19.0.0))
@@ -704,8 +704,8 @@ packages:
   '@adraffy/ens-normalize@1.11.0':
     resolution: {integrity: sha512-/3DDPKHqqIqxUULp8yP4zODUY1i+2xvVWsv8A79xGWdCAG+8sb0hRh0Rk2QyOJUnnbyPUAZYcpBuRe3nS2OIUg==}
 
-  '@agent-commons/sdk@0.1.5':
-    resolution: {integrity: sha512-fB9AEsEAfeS1LweiK7hHq8isGNtFqSPXfIjoK5+NasW+IZUtYvGRUJ8zztWxFQRjlK1lzDPsN6KO8Qj6xyCK1w==}
+  '@agent-commons/sdk@0.1.6':
+    resolution: {integrity: sha512-RX1/h7GnRhAfafs0zzCGiD5o6tk7F26nf9yFAUnsu8+UUNByGrkLoTGWFpBrW4ohuHWvNyb/RAfTRyTqdryXCQ==}
 
   '@ai-sdk/provider-utils@2.2.7':
     resolution: {integrity: sha512-kM0xS3GWg3aMChh9zfeM+80vEZfXzR3JEUBdycZLtbRZ2TRT8xOj3WodGHPb06sUK5yD7pAXC/P7ctsi2fvUGQ==}
@@ -14505,7 +14505,7 @@ snapshots:
 
   '@adraffy/ens-normalize@1.11.0': {}
 
-  '@agent-commons/sdk@0.1.5': {}
+  '@agent-commons/sdk@0.1.6': {}
 
   '@ai-sdk/provider-utils@2.2.7(zod@3.25.76)':
     dependencies:
