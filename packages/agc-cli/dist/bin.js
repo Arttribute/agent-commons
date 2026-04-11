@@ -25,10 +25,16 @@ var __toESM = (mod, isNodeMode, target) => (target = mod != null ? __create(__ge
 
 // src/bin.ts
 var import_commander16 = require("commander");
+var import_path3 = require("path");
+var import_os3 = require("os");
+var import_child_process2 = require("child_process");
 
 // src/commands/login.ts
 var import_commander = require("commander");
 var readline = __toESM(require("readline"));
+var import_fs2 = require("fs");
+var import_path2 = require("path");
+var import_os2 = require("os");
 
 // src/config.ts
 var import_fs = require("fs");
@@ -37,7 +43,8 @@ var import_path = require("path");
 var import_sdk = require("@agent-commons/sdk");
 var CONFIG_DIR = (0, import_path.join)((0, import_os.homedir)(), ".agc");
 var CONFIG_FILE = (0, import_path.join)(CONFIG_DIR, "config.json");
-var DEFAULT_API_URL = process.env.AGC_API_URL ?? "http://localhost:3001";
+var DEFAULT_API_URL = process.env.AGC_API_URL ?? "https://api.agentcommons.io";
+var DEFAULT_APP_URL = "https://www.agentcommons.io";
 function loadConfig() {
   const fromEnv = {
     ...process.env.AGC_API_URL && { apiUrl: process.env.AGC_API_URL },
@@ -81,6 +88,7 @@ function makeClient(overrides) {
 // src/ui.ts
 var import_chalk = __toESM(require("chalk"));
 var import_ora = __toESM(require("ora"));
+var import_child_process = require("child_process");
 var c = {
   primary: (s) => import_chalk.default.cyan(s),
   success: (s) => import_chalk.default.green(s),
@@ -98,6 +106,80 @@ var sym = {
   bullet: import_chalk.default.dim("\u2022"),
   dot: import_chalk.default.dim("\xB7")
 };
+function banner(version = "0.1.4") {
+  const line = import_chalk.default.cyan("  \u2500".padEnd(2) + "\u2500".repeat(44));
+  console.log("");
+  console.log(line);
+  console.log(
+    import_chalk.default.cyan("  \u2502 ") + import_chalk.default.bold.white(" \u25C8  Agent Commons") + import_chalk.default.dim("  \xB7  CLI") + "  " + import_chalk.default.cyan(`v${version}`)
+  );
+  console.log(import_chalk.default.cyan("  \u2502 ") + import_chalk.default.dim("  The Open AI Agent Network  \xB7  agentcommons.io"));
+  console.log(line);
+  console.log("");
+}
+function step(n, total, title) {
+  const fraction = import_chalk.default.dim(`${n}/${total}`);
+  console.log(`
+${import_chalk.default.cyan.bold("  Step " + n)} ${fraction}  ${import_chalk.default.bold(title)}`);
+  console.log(import_chalk.default.dim("  " + "\u2500".repeat(38)));
+}
+async function select(prompt2, choices) {
+  if (!process.stdin.isTTY) {
+    return choices[0].value;
+  }
+  let idx = 0;
+  const total = choices.length;
+  const render = (first = false) => {
+    if (!first) {
+      process.stdout.write(`\x1B[${total + 2}A\x1B[0J`);
+    }
+    console.log("\n" + import_chalk.default.bold("  " + prompt2));
+    for (let i = 0; i < total; i++) {
+      const { label, hint } = choices[i];
+      if (i === idx) {
+        const hintStr = hint ? import_chalk.default.dim("  " + hint) : "";
+        process.stdout.write(import_chalk.default.cyan("  \u203A ") + import_chalk.default.bold.white(label) + hintStr + "\n");
+      } else {
+        process.stdout.write(import_chalk.default.dim("    " + label) + "\n");
+      }
+    }
+  };
+  render(true);
+  return new Promise((resolve) => {
+    process.stdin.setRawMode(true);
+    process.stdin.resume();
+    process.stdin.setEncoding("utf8");
+    const handler = (data) => {
+      const key = String(data);
+      if (key === "\x1B[A" || key === "k") {
+        idx = (idx - 1 + total) % total;
+        render();
+      } else if (key === "\x1B[B" || key === "j") {
+        idx = (idx + 1) % total;
+        render();
+      } else if (key === "\r" || key === "\n" || key === " ") {
+        cleanup();
+        process.stdout.write("\n");
+        resolve(choices[idx].value);
+      } else if (key === "") {
+        cleanup();
+        process.stdout.write("\n");
+        process.exit(130);
+      }
+    };
+    const cleanup = () => {
+      process.stdin.removeListener("data", handler);
+      process.stdin.setRawMode(false);
+      process.stdin.pause();
+    };
+    process.stdin.on("data", handler);
+  });
+}
+function openBrowser(url) {
+  const cmd = process.platform === "darwin" ? `open "${url}"` : process.platform === "win32" ? `start "" "${url}"` : `xdg-open "${url}"`;
+  (0, import_child_process.exec)(cmd, () => {
+  });
+}
 function spin(text) {
   return (0, import_ora.default)({ text, color: "cyan" }).start();
 }
@@ -174,6 +256,7 @@ function statusBadge(status) {
 }
 
 // src/commands/login.ts
+var CONFIG_FILE2 = (0, import_path2.join)((0, import_os2.homedir)(), ".agc", "config.json");
 function prompt(question, hidden = false) {
   return new Promise((resolve) => {
     const rl = readline.createInterface({
@@ -202,26 +285,70 @@ function loginCommand() {
   cmd.option("--api-url <url>", "API base URL", DEFAULT_API_URL).option("--api-key <key>", "API key (or set AGC_API_KEY env var)").option("--initiator <id>", "Default initiator ID (wallet address or user ID)").action(async (opts) => {
     try {
       const current = loadConfig();
-      const apiUrl = opts.apiUrl !== DEFAULT_API_URL ? opts.apiUrl : await prompt(`API URL [${current.apiUrl ?? DEFAULT_API_URL}]: `) || (current.apiUrl ?? DEFAULT_API_URL);
-      const appUrl = apiUrl.includes("localhost") ? "http://localhost:3000" : apiUrl.replace(/\/api$/, "").replace("api.", "").replace(":3001", ":3000");
+      const isFirstRun = !(0, import_fs2.existsSync)(CONFIG_FILE2);
+      banner();
+      if (isFirstRun) {
+        console.log(c.bold("  Welcome to Agent Commons CLI!"));
+        console.log(c.dim("  Let's get you set up in three quick steps.\n"));
+      } else {
+        console.log(c.bold("  Update your credentials"));
+        console.log(c.dim("  Press Enter to keep existing values.\n"));
+      }
+      step(1, 3, "API Endpoint");
+      const defaultUrl = current.apiUrl ?? DEFAULT_API_URL;
+      let apiUrl;
+      if (opts.apiUrl !== DEFAULT_API_URL) {
+        apiUrl = opts.apiUrl;
+        console.log(`  ${c.dim("Using:")} ${apiUrl}`);
+      } else {
+        const answer = await prompt(
+          `  ${c.dim("URL")} [${c.dim(defaultUrl)}]: `
+        );
+        apiUrl = answer || defaultUrl;
+      }
+      console.log(`  ${sym.ok} ${c.dim("Endpoint:")} ${c.primary(apiUrl)}`);
+      const appUrl = apiUrl.includes("localhost") ? "http://localhost:3000" : DEFAULT_APP_URL;
+      const settingsUrl = `${appUrl}/settings`;
+      step(2, 3, "API Key");
       let apiKey = opts.apiKey;
       if (!apiKey) {
-        console.log(`
-  Generate an API key at:
-  ${c.bold(`${appUrl}/settings/api-keys`)}
+        console.log(`  ${sym.arrow} Opening your browser to generate an API key\u2026`);
+        console.log(`  ${c.dim(settingsUrl)}
 `);
-        apiKey = await prompt(`API Key (sk-ac-...): `);
+        openBrowser(settingsUrl);
+        console.log(c.dim("  Once you have your key, paste it below."));
+        console.log(c.dim("  (Keys look like:  sk-ac-xxxxxxxxxxxxxxxx)\n"));
+        apiKey = await prompt(`  ${c.dim("API Key:")} `);
         if (!apiKey) apiKey = current.apiKey;
       }
+      if (!apiKey) {
+        console.log(`
+  ${c.warn("\u26A0")}  No API key provided \u2014 you can set one later with ${c.bold("agc config set apiKey <key>")}`);
+      } else {
+        console.log(`  ${sym.ok} ${c.dim("Key saved:")} ****${apiKey.slice(-4)}`);
+      }
+      step(3, 3, "Your Identity");
       let initiator = opts.initiator;
       if (!initiator) {
-        initiator = await prompt(`Wallet address (0x...): `);
+        const defaultInitiator = current.initiator ?? "";
+        const hint = defaultInitiator ? `[${c.dim(defaultInitiator.slice(0, 8) + "\u2026")}] ` : "";
+        initiator = await prompt(`  ${c.dim("Wallet address (0x\u2026):")} ${hint}`);
         if (!initiator) initiator = current.initiator;
+      }
+      if (!initiator) {
+        console.log(`  ${c.warn("\u26A0")}  No wallet address \u2014 set one later with ${c.bold("agc config set initiator <address>")}`);
+      } else {
+        console.log(`  ${sym.ok} ${c.dim("Address:")} ${c.id(initiator.slice(0, 10) + "\u2026" + initiator.slice(-6))}`);
       }
       saveConfig({ apiUrl, apiKey, initiator });
       console.log(`
-${sym.ok} Credentials saved to ~/.agc/config.json`);
-      console.log(c.dim("  Run `agc whoami` to verify the connection."));
+  ${sym.ok} ${c.success("All set!")}  Credentials saved to ${c.dim("~/.agc/config.json")}`);
+      console.log(`
+  ${c.dim("Next steps:")}`);
+      console.log(`  ${sym.arrow} ${c.dim("Run")} ${c.bold("agc")} ${c.dim("for an interactive menu")}`);
+      console.log(`  ${sym.arrow} ${c.dim("Run")} ${c.bold("agc whoami")} ${c.dim("to verify your connection")}`);
+      console.log(`  ${sym.arrow} ${c.dim("Run")} ${c.bold("agc chat --agent <id>")} ${c.dim("to start chatting")}
+`);
     } catch (err) {
       printError(err);
       process.exit(1);
@@ -739,12 +866,12 @@ ${sym.ok} Execution started: ${c.id(execution.executionId)}`);
           const steps = execution.stepResults ?? execution.nodeResults;
           if (steps && Object.keys(steps).length > 0) {
             console.log("\n" + c.label("Step Results"));
-            for (const [nodeId, step] of Object.entries(steps)) {
-              const icon = step.status === "success" ? sym.ok : step.status === "error" ? sym.fail : "\xB7";
-              const dur = step.duration != null ? c.dim(` (${(step.duration / 1e3).toFixed(2)}s)`) : "";
+            for (const [nodeId, step2] of Object.entries(steps)) {
+              const icon = step2.status === "success" ? sym.ok : step2.status === "error" ? sym.fail : "\xB7";
+              const dur = step2.duration != null ? c.dim(` (${(step2.duration / 1e3).toFixed(2)}s)`) : "";
               console.log(`  ${icon} ${c.id(nodeId)}${dur}`);
-              if (step.error) console.log(`    ${c.error(step.error)}`);
-              else if (step.output !== void 0) console.log(`    ${JSON.stringify(step.output, null, 2).replace(/\n/g, "\n    ")}`);
+              if (step2.error) console.log(`    ${c.error(step2.error)}`);
+              else if (step2.output !== void 0) console.log(`    ${JSON.stringify(step2.output, null, 2).replace(/\n/g, "\n    ")}`);
             }
           }
         } else {
@@ -769,12 +896,12 @@ ${sym.ok} ${c.success("Completed")}`);
           }
           if (e.nodeResults && Object.keys(e.nodeResults).length > 0) {
             console.log("\n" + c.label("Step Results"));
-            for (const [nodeId, step] of Object.entries(e.nodeResults)) {
-              const icon = step.status === "success" ? sym.ok : step.status === "error" ? sym.fail : "\xB7";
-              const dur = step.duration != null ? c.dim(` (${(step.duration / 1e3).toFixed(2)}s)`) : "";
+            for (const [nodeId, step2] of Object.entries(e.nodeResults)) {
+              const icon = step2.status === "success" ? sym.ok : step2.status === "error" ? sym.fail : "\xB7";
+              const dur = step2.duration != null ? c.dim(` (${(step2.duration / 1e3).toFixed(2)}s)`) : "";
               console.log(`  ${icon} ${c.id(nodeId)}${dur}`);
-              if (step.error) console.log(`    ${c.error(step.error)}`);
-              else if (step.output !== void 0) console.log(`    ${JSON.stringify(step.output, null, 2).replace(/\n/g, "\n    ")}`);
+              if (step2.error) console.log(`    ${c.error(step2.error)}`);
+              else if (step2.output !== void 0) console.log(`    ${JSON.stringify(step2.output, null, 2).replace(/\n/g, "\n    ")}`);
             }
           }
           break;
@@ -2468,8 +2595,80 @@ function logsCommand() {
 }
 
 // src/bin.ts
+var CONFIG_FILE3 = (0, import_path3.join)((0, import_os3.homedir)(), ".agc", "config.json");
+async function interactiveMenu() {
+  banner();
+  const cfg = loadConfig();
+  const isSetup = !!(cfg.apiKey && cfg.initiator);
+  if (!isSetup) {
+    console.log(c.bold("  Welcome to Agent Commons CLI!"));
+    console.log(c.dim("  Looks like this is your first time here \u2014 let's get you set up.\n"));
+    console.log(`  ${sym.arrow} Running ${c.bold("agc login")} to configure your credentials\u2026
+`);
+    runSubcommand(["login"]);
+    return;
+  }
+  console.log(
+    `  ${c.dim("Connected to")}  ${c.primary(cfg.apiUrl)}  ${c.dim("\xB7")}  ${c.dim("Wallet")} ${c.id(cfg.initiator.slice(0, 8) + "\u2026" + cfg.initiator.slice(-4))}
+`
+  );
+  const action = await select("What would you like to do?", [
+    { label: "Chat with an agent", value: "chat", hint: "agc chat" },
+    { label: "Run an agent (one-shot)", value: "run", hint: "agc run" },
+    { label: "View sessions", value: "sessions", hint: "agc sessions list" },
+    { label: "Manage agents", value: "agents", hint: "agc agents list" },
+    { label: "Tasks", value: "tasks", hint: "agc task list" },
+    { label: "Workflows", value: "workflows", hint: "agc workflow list" },
+    { label: "MCP servers", value: "mcp", hint: "agc mcp list" },
+    { label: "Skills", value: "skills", hint: "agc skills list" },
+    { label: "Wallet & balance", value: "wallet", hint: "agc wallet balance" },
+    { label: "Usage & cost", value: "usage", hint: "agc usage" },
+    { label: "Logs", value: "logs", hint: "agc logs" },
+    { label: "Config & credentials", value: "config", hint: "agc config get" },
+    { label: "Exit", value: "exit" }
+  ]);
+  if (action === "exit") {
+    process.exit(0);
+  }
+  const commandMap = {
+    chat: cfg.defaultAgentId ? ["chat", "--agent", cfg.defaultAgentId] : ["chat", "--agent"],
+    run: cfg.defaultAgentId ? ["run", "--agent", cfg.defaultAgentId, "--message"] : ["run", "--agent"],
+    sessions: ["sessions", "list"],
+    agents: ["agents", "list"],
+    tasks: ["task", "list"],
+    workflows: ["workflow", "list"],
+    mcp: ["mcp", "list"],
+    skills: ["skills", "list"],
+    wallet: ["wallet", "balance"],
+    usage: ["usage"],
+    logs: ["logs"],
+    config: ["config", "get"],
+    exit: []
+  };
+  if ((action === "chat" || action === "run") && !cfg.defaultAgentId) {
+    console.log(
+      `
+  ${c.warn("\u26A0")}  No default agent configured.
+  ${sym.arrow} ${c.dim("Run")} ${c.bold("agc agents list")} ${c.dim("to find an agent ID, then")}
+  ${sym.arrow} ${c.dim("Run")} ${c.bold("agc config set defaultAgentId <id>")} ${c.dim("to set a default.")}
+`
+    );
+    console.log(`  ${c.dim("Or pass it directly:  ")}${c.bold(`agc ${action} --agent <id>`)}
+`);
+    return;
+  }
+  runSubcommand(commandMap[action]);
+}
+function runSubcommand(args) {
+  const child = (0, import_child_process2.spawn)(process.argv[0], [process.argv[1], ...args], {
+    stdio: "inherit"
+  });
+  child.on("exit", (code) => process.exit(code ?? 0));
+}
 var program = new import_commander16.Command();
-program.name("agc").description("Agent Commons CLI \u2014 interact with the Agent Commons platform").version("0.1.0", "-v, --version");
+program.name("agc").description("Agent Commons CLI \u2014 interact with the Agent Commons platform").version("0.1.4", "-v, --version").action(async () => {
+  await interactiveMenu();
+});
 program.addCommand(loginCommand());
 program.addCommand(logoutCommand());
 program.addCommand(whoamiCommand());
@@ -2489,8 +2688,12 @@ program.addCommand(memoryCommand());
 program.addCommand(usageCommand());
 program.addCommand(logsCommand());
 program.on("command:*", () => {
-  console.error(`Unknown command: ${program.args.join(" ")}
-Run \`agc --help\` to see available commands.`);
+  console.error(
+    `
+  ${c.error("Unknown command:")} ${program.args.join(" ")}
+  Run ${c.bold("agc --help")} to see available commands, or just ${c.bold("agc")} for the interactive menu.
+`
+  );
   process.exit(1);
 });
 program.parse(process.argv);

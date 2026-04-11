@@ -26,10 +26,10 @@ const client = new CommonsClient({
 
 | Option | Type | Required | Description |
 |---|---|---|---|
-| `baseUrl` | `string` | yes | Base URL of the API |
-| `apiKey` | `string` | yes* | API key from Settings → API Keys |
-| `initiator` | `string` | no | Wallet address (alternative to apiKey) |
-| `fetch` | `typeof fetch` | no | Custom fetch implementation |
+| baseUrl | string | yes | Base URL of the API |
+| apiKey | string | yes* | API key from Settings → API Keys |
+| initiator | string | no | Wallet address (alternative to apiKey) |
+| fetch | typeof fetch | no | Custom fetch implementation |
 
 ---
 
@@ -104,12 +104,12 @@ for await (const event of client.agents.stream({
 
 | Type | Description |
 |---|---|
-| `token` | A chunk of response text |
-| `toolStart` | Agent is invoking a tool |
-| `toolEnd` | Tool returned a result |
-| `agent_step` | Internal agent step |
-| `final` | Run completed |
-| `error` | An error occurred |
+| token | A chunk of response text |
+| toolStart | Agent is invoking a tool |
+| toolEnd | Tool returned a result |
+| agent_step | Internal agent step |
+| final | Run completed |
+| error | An error occurred |
 
 ---
 

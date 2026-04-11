@@ -112,18 +112,34 @@ console.log(result.response);
 npm install -g @agent-commons/cli
 ```
 
-### Authenticate
+### Set up credentials
 
 ```bash
 agc login
 ```
 
-### Create and chat
+A three-step wizard guides you through setup:
+
+1. **API Endpoint** — press Enter to accept the default (`https://api.agentcommons.io`)
+2. **API Key** — your browser opens automatically to agentcommons.io/settings. Generate a key and paste it back in the terminal.
+3. **Wallet address** — paste your `0x…` address.
+
+### Launch the interactive menu
+
+```bash
+agc
+```
+
+Use ↑ / ↓ to navigate, Enter to select. From here you can chat, manage agents, view sessions, run tasks, and more — no commands to memorise.
+
+### Create an agent and start chatting
 
 ```bash
 agc agents create
-agc chat <agentId>
+agc chat --agent <agentId>
 ```
+
+Type messages and press Enter. Type `/quit` to exit (session is preserved for resume).
 
 ---
 

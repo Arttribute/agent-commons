@@ -1,6 +1,6 @@
 # CLI Reference
 
-The `agc` command-line tool gives you full access to Agent Commons from your terminal.
+The `agc` command-line tool gives you full access to Agent Commons from your terminal — with an interactive menu, streaming chat, and scriptable output.
 
 ---
 
@@ -12,21 +12,57 @@ npm install -g @agent-commons/cli
 
 ---
 
+## Interactive menu
+
+Running `agc` with no arguments opens a full interactive menu — no commands to memorise:
+
+```bash
+agc
+```
+
+Use **↑ / ↓** arrow keys to navigate, **Enter** to select. The menu covers every feature: Chat, Run, Sessions, Agents, Tasks, Workflows, MCP, Skills, Wallet, Usage, Logs, and Config.
+
+If no credentials are saved yet, the menu automatically launches the setup wizard.
+
+---
+
 ## Authentication
 
-### Login
+### First-time setup
 
 ```bash
 agc login
 ```
 
-Prompts for your API key (get one from Settings → API Keys in the web app). Credentials are saved locally.
+A three-step guided wizard runs:
+
+1. **API Endpoint** — defaults to `https://api.agentcommons.io`. Press Enter to accept.
+2. **API Key** — your browser opens automatically to **agentcommons.io/settings**. Generate a key there, paste it in the terminal.
+3. **Wallet address** — your `0x…` identity used as the request initiator.
+
+Credentials are stored in `~/.agc/config.json` (mode `0600`).
+
+### Other auth commands
 
 ```bash
-agc logout      # clear stored credentials
-agc whoami      # show current user / wallet
-agc config      # view/edit config
+agc logout                         # clear stored credentials
+agc whoami                         # show config + verify API connectivity
+agc config get                     # show all config values
+agc config set apiKey sk-ac-xxxx   # update a single value
 ```
+
+### Environment variables
+
+You can set credentials via env vars instead of running `agc login`:
+
+```bash
+export AGC_API_KEY=sk-ac-xxxx
+export AGC_API_URL=https://api.agentcommons.io   # optional — this is the default
+export AGC_INITIATOR=0xYourWalletAddress
+export AGC_AGENT_ID=agent_abc123                 # optional default agent
+```
+
+Env vars take precedence over the config file.
 
 ---
 
@@ -89,43 +125,54 @@ agc agents delete agent_abc123
 ### Interactive chat session
 
 ```bash
-agc chat agent_abc123
+agc chat --agent agent_abc123
 ```
 
-Opens a real-time chat. Type messages and get responses. Exit with `Ctrl+C` or type `/exit`.
+Opens a real-time streaming chat. Type messages and get responses. Exit with `/quit`.
 
 ```
-You: What is the capital of Kenya?
-Agent: The capital of Kenya is Nairobi.
+you › What is the capital of Kenya?
+agent › The capital of Kenya is Nairobi.
 
-You: What's the population?
-Agent: Nairobi has a population of approximately 4.4 million people...
+you › What's the population?
+agent › Nairobi has a population of approximately 4.4 million people…
 
-You: /exit
+you › /quit
+Session saved. Resume with: agc chat --resume <sessionId>
 ```
 
-In-session commands:
-- `/exit` — end session
-- `/session` — show current session ID
-- `/history` — print full conversation
-- `/clear` — start a fresh session
+In-session slash commands:
+
+| Command  | Description                                      |
+|----------|--------------------------------------------------|
+| /help    | Show available slash commands                    |
+| /session | Print the current session ID (for later resume)  |
+| /clear   | Clear the terminal screen                        |
+| /quit    | Exit — session is preserved for future resume    |
+
+Set a default agent to skip `--agent` every time:
+
+```bash
+agc config set defaultAgentId agent_abc123
+agc chat   # uses defaultAgentId automatically
+```
 
 ### Resume a session
 
 ```bash
-agc chat agent_abc123 --session session_xyz
+agc chat --agent agent_abc123 --resume session_xyz
 ```
 
 ### Single one-shot run
 
 ```bash
-agc run agent_abc123 --message "Summarize https://example.com"
+agc run --agent agent_abc123 --message "Summarize https://example.com"
 ```
 
-Output is printed to stdout. Useful for scripting:
+Useful for scripting:
 
 ```bash
-agc run agent_abc123 --message "Today's date?" | tee output.txt
+agc run --agent agent_abc123 --message "Today's date?" | tee output.txt
 ```
 
 ---
@@ -183,8 +230,6 @@ agc task list --status running
 ```bash
 agc task stream task_abc123
 ```
-
-Live-streams status updates.
 
 ### Cancel a task
 
@@ -275,7 +320,8 @@ agc tools add-key tool_abc123 --value "sk-abc123" --label "prod"
 agc mcp connect --name "GitHub Tools" --type sse --url https://mcp.example.com/sse
 
 # stdio server
-agc mcp connect --name "Filesystem" --type stdio --command "npx -y @modelcontextprotocol/server-filesystem /data"
+agc mcp connect --name "Filesystem" --type stdio \
+  --command "npx -y @modelcontextprotocol/server-filesystem /data"
 ```
 
 ### Sync tools
@@ -321,6 +367,7 @@ agc wallet transfer wallet_abc123 --to 0xADDRESS --amount 5.0 --token USDC
 agc memory list --agent agent_abc123
 agc memory add --agent agent_abc123 --content "User prefers bullet lists" --type semantic
 agc memory search --agent agent_abc123 --query "user preferences"
+agc memory delete memory_abc123
 ```
 
 ---
@@ -328,22 +375,9 @@ agc memory search --agent agent_abc123 --query "user preferences"
 ## Models
 
 ```bash
-agc models list                  # all supported models
+agc models list                   # all supported models
 agc models list --provider openai
-agc models info anthropic        # details about a provider
-```
-
----
-
-## Usage and Logs
-
-```bash
-agc usage                         # your overall usage
-agc usage --agent agent_abc123    # usage for a specific agent
-
-agc logs                          # stream live logs
-agc logs --agent agent_abc123     # logs for a specific agent
-agc logs --task task_abc123       # logs for a task
+agc models info anthropic         # details about a provider
 ```
 
 ---
@@ -352,8 +386,21 @@ agc logs --task task_abc123       # logs for a task
 
 ```bash
 agc skills list                   # all available skills
-agc skills get skill_abc123       # skill details
+agc skills get skill_abc123
 agc skills create --file skill.yaml
+```
+
+---
+
+## Usage and Logs
+
+```bash
+agc usage                          # your overall usage
+agc usage --agent agent_abc123     # usage for a specific agent
+
+agc logs                           # stream live logs
+agc logs --agent agent_abc123      # logs for a specific agent
+agc logs --task task_abc123        # logs for a task
 ```
 
 ---
@@ -364,7 +411,7 @@ All commands default to a human-readable table or text output. Add `--json` to g
 
 ```bash
 agc agents list --json
-agc run agent_abc123 --message "Hello" --json
+agc run --agent agent_abc123 --message "Hello" --json
 ```
 
 ---
@@ -376,24 +423,9 @@ agc run agent_abc123 --message "Hello" --json
 ```bash
 #!/bin/bash
 # Run an agent and save output
-RESULT=$(agc run agent_abc123 --message "Summarize: $(cat input.txt)" --json)
+RESULT=$(agc run --agent agent_abc123 --message "Summarize: $(cat input.txt)" --json)
 echo $RESULT | jq '.response' > summary.txt
-```
 
-```bash
 # Chain tasks
 agc task execute task_123 && agc task execute task_456
 ```
-
----
-
-## Environment variables
-
-Instead of running `agc login`, you can set:
-
-```bash
-export COMMONS_API_KEY=your_key
-export COMMONS_API_URL=https://api.agentcommons.io
-```
-
-These are picked up automatically by all commands.

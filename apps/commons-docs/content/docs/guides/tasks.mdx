@@ -154,11 +154,11 @@ Common cron patterns:
 
 | Pattern | Meaning |
 |---|---|
-| `0 8 * * *` | Every day at 8am |
-| `0 8 * * 1-5` | Weekdays at 8am |
-| `*/30 * * * *` | Every 30 minutes |
-| `0 9 * * 1` | Every Monday at 9am |
-| `0 0 1 * *` | First of every month at midnight |
+| 0 8 * * * | Every day at 8am |
+| 0 8 * * 1-5 | Weekdays at 8am |
+| */30 * * * * | Every 30 minutes |
+| 0 9 * * 1 | Every Monday at 9am |
+| 0 0 1 * * | First of every month at midnight |
 
 ---
 
@@ -258,9 +258,9 @@ Control exactly which tools a task can use:
 
 | Constraint | Behavior |
 |---|---|
-| `none` | Use all agent tools (default) |
-| `soft` | Prefer listed tools, others allowed |
-| `hard` | Only listed tools, no others |
+| none | Use all agent tools (default) |
+| soft | Prefer listed tools, others allowed |
+| hard | Only listed tools, no others |
 
 ---
 

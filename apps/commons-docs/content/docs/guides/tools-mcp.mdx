@@ -24,11 +24,11 @@ Every agent has access to these out of the box:
 
 | Tool | What it does |
 |---|---|
-| `web_scraper` | Fetch and parse web pages |
-| `api_caller` | Make HTTP requests to any URL |
-| `code_interpreter` | Run Python or JavaScript |
-| `search` | Web search |
-| `file_reader` | Read uploaded files |
+| web_scraper | Fetch and parse web pages |
+| api_caller | Make HTTP requests to any URL |
+| code_interpreter | Run Python or JavaScript |
+| search | Web search |
+| file_reader | Read uploaded files |
 
 Enable them in your agent config:
 
@@ -133,9 +133,9 @@ MCP is an open standard for connecting agents to external tool servers. Connect 
 
 | Type | When to use |
 |---|---|
-| `sse` | Remote server over HTTP — most common |
-| `http` | Stateless HTTP, each call is independent |
-| `stdio` | Local process (CLI tools, local scripts) |
+| sse | Remote server over HTTP — most common |
+| http | Stateless HTTP, each call is independent |
+| stdio | Local process (CLI tools, local scripts) |
 
 ### Connect a remote MCP server
 
@@ -206,12 +206,12 @@ curl https://api.agentcommons.io/v1/mcp/servers/server_abc123/status \
 
 | Server | Capabilities |
 |---|---|
-| `@modelcontextprotocol/server-filesystem` | Read/write local files |
-| `@modelcontextprotocol/server-github` | Repos, issues, PRs |
-| `@modelcontextprotocol/server-postgres` | Query a PostgreSQL database |
-| `@modelcontextprotocol/server-brave-search` | Brave web search |
-| `@modelcontextprotocol/server-slack` | Send messages, read channels |
-| `@modelcontextprotocol/server-google-maps` | Maps, geocoding, place search |
+| @modelcontextprotocol/server-filesystem | Read/write local files |
+| @modelcontextprotocol/server-github | Repos, issues, PRs |
+| @modelcontextprotocol/server-postgres | Query a PostgreSQL database |
+| @modelcontextprotocol/server-brave-search | Brave web search |
+| @modelcontextprotocol/server-slack | Send messages, read channels |
+| @modelcontextprotocol/server-google-maps | Maps, geocoding, place search |
 
 Browse more at:
 

@@ -55,22 +55,22 @@ Agents are defined by their instructions, model, and tools. This guide covers ev
 
 | Provider | Key | Popular models |
 |---|---|---|
-| OpenAI | `openai` | `gpt-4o`, `gpt-4o-mini`, `o1-mini` |
-| Anthropic | `anthropic` | `claude-opus-4-6`, `claude-sonnet-4-6`, `claude-haiku-4-5-20251001` |
-| Google | `google` | `gemini-1.5-pro`, `gemini-2.0-flash` |
-| Groq | `groq` | `llama-3.3-70b-versatile`, `mixtral-8x7b-32768` |
-| Mistral | `mistral` | `mistral-large-latest`, `mistral-small-latest` |
-| Ollama | `ollama` | Any locally running model |
+| OpenAI | openai | gpt-4o, gpt-4o-mini, o1-mini |
+| Anthropic | anthropic | claude-opus-4-6, claude-sonnet-4-6, claude-haiku-4-5-20251001 |
+| Google | google | gemini-1.5-pro, gemini-2.0-flash |
+| Groq | groq | llama-3.3-70b-versatile, mixtral-8x7b-32768 |
+| Mistral | mistral | mistral-large-latest, mistral-small-latest |
+| Ollama | ollama | Any locally running model |
 
 ### Parameters
 
 | Parameter | Default | Description |
 |---|---|---|
-| `temperature` | `0.7` | Creativity. `0` = focused, `1` = creative |
-| `maxTokens` | `2048` | Maximum response length |
-| `topP` | `1.0` | Nucleus sampling |
-| `frequencyPenalty` | `0` | Reduce repetition |
-| `presencePenalty` | `0` | Encourage new topics |
+| temperature | 0.7 | Creativity. 0 = focused, 1 = creative |
+| maxTokens | 2048 | Maximum response length |
+| topP | 1.0 | Nucleus sampling |
+| frequencyPenalty | 0 | Reduce repetition |
+| presencePenalty | 0 | Encourage new topics |
 
 ### Bring your own key (BYOK)
 
@@ -261,7 +261,7 @@ GET /v1/agents/tts/voices
 
 | What | How |
 |---|---|
-| Live logs | `GET /v1/logs/agents/:agentId` |
-| Usage stats | `GET /v1/usage/agents/:agentId` |
-| Session history | `GET /v1/agents/sessions/:sessionId/chat` |
+| Live logs | GET /v1/logs/agents/:agentId |
+| Usage stats | GET /v1/usage/agents/:agentId |
+| Session history | GET /v1/agents/sessions/:sessionId/chat |
 | UI view | Studio → Tasks (for autonomous runs) |
