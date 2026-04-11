@@ -13,9 +13,9 @@ Memory gives agents knowledge that persists across sessions. Instead of starting
 
 | Type | What it stores | Example |
 |---|---|---|
-| `semantic` | Facts and knowledge | "User prefers bullet-point summaries" |
-| `episodic` | Records of events | "On Apr 5, user asked about Q1 results" |
-| `procedural` | How to do things | "To generate a report: fetch → aggregate → format" |
+| semantic | Facts and knowledge | "User prefers bullet-point summaries" |
+| episodic | Records of events | "On Apr 5, user asked about Q1 results" |
+| procedural | How to do things | "To generate a report: fetch → aggregate → format" |
 
 ---
 
@@ -60,13 +60,13 @@ Memory gives agents knowledge that persists across sessions. Instead of starting
 
 | Field | Required | Description |
 |---|---|---|
-| `agentId` | yes | Which agent this belongs to |
-| `memoryType` | yes | `semantic`, `episodic`, or `procedural` |
-| `content` | yes | The memory text |
-| `summary` | no | Shorter version for display |
-| `tags` | no | Labels for filtering |
-| `importanceScore` | no | 0.0–1.0 — used for pruning |
-| `sourceType` | no | `conversation`, `task`, or `manual` |
+| agentId | yes | Which agent this belongs to |
+| memoryType | yes | semantic, episodic, or procedural |
+| content | yes | The memory text |
+| summary | no | Shorter version for display |
+| tags | no | Labels for filtering |
+| importanceScore | no | 0.0–1.0 — used for pruning |
+| sourceType | no | conversation, task, or manual |
 
 ---
 

@@ -5,7 +5,7 @@ description: Terminal-first access to Agent Commons with the agc command.
 
 # CLI Reference
 
-The `agc` command-line tool gives you full access to Agent Commons from your terminal.
+The `agc` command-line tool gives you full access to Agent Commons from your terminal — with an interactive menu, streaming chat, and scriptable output.
 
 ## Installation
 
@@ -13,21 +13,59 @@ The `agc` command-line tool gives you full access to Agent Commons from your ter
 npm install -g @agent-commons/cli
 ```
 
+---
+
+## Interactive menu
+
+Running `agc` with no arguments opens a full interactive menu — no commands to memorise:
+
+```bash
+agc
+```
+
+Use **↑ / ↓** arrow keys to navigate, **Enter** to select. The menu covers every feature: Chat, Run, Sessions, Agents, Tasks, Workflows, MCP, Skills, Wallet, Usage, Logs, and Config.
+
+If no credentials are saved yet, the menu automatically launches the setup wizard.
+
+---
+
 ## Authentication
 
-```bash
-agc login      # authenticate with your API key
-agc logout     # clear credentials
-agc whoami     # show current user
-agc config     # view/edit local config
-```
-
-Or use environment variables instead of `agc login`:
+### First-time setup
 
 ```bash
-export COMMONS_API_KEY=your_key
-export COMMONS_API_URL=https://api.agentcommons.io
+agc login
 ```
+
+A three-step guided wizard runs:
+
+1. **API Endpoint** — defaults to `https://api.agentcommons.io`. Press Enter to accept.
+2. **API Key** — your browser opens automatically to **[agentcommons.io/settings](https://www.agentcommons.io/settings)**. Generate a key there, paste it in the terminal.
+3. **Wallet address** — your `0x…` identity used as the request initiator.
+
+Credentials are stored in `~/.agc/config.json` (mode `0600`).
+
+### Other auth commands
+
+```bash
+agc logout            # clear stored credentials
+agc whoami            # show config + verify API connectivity
+agc config get        # show all config values
+agc config set apiKey sk-ac-xxxx   # update a single value
+```
+
+### Environment variables
+
+You can set credentials via env vars instead of running `agc login`:
+
+```bash
+export AGC_API_KEY=sk-ac-xxxx
+export AGC_API_URL=https://api.agentcommons.io   # optional — this is the default
+export AGC_INITIATOR=0xYourWalletAddress
+export AGC_AGENT_ID=agent_abc123                 # optional default agent
+```
+
+Env vars take precedence over the config file.
 
 ---
 
@@ -51,17 +89,27 @@ agc agents delete <agentId>
 ## Chat & Running
 
 ```bash
-agc chat <agentId>                       # interactive chat session
-agc chat <agentId> --session <sessionId> # resume a session
-agc run <agentId> --message "Hello"      # single one-shot run
-agc run <agentId> --message "Hello" --json # JSON output
+agc chat --agent <agentId>               # interactive streaming chat
+agc chat --agent <agentId> --resume <sessionId>  # resume a session
+agc run  --agent <agentId> --message "Hello"     # one-shot run
+agc run  --agent <agentId> --message "Hello" --json  # JSON output
 ```
 
-In-session commands:
-- `/exit` — end session
-- `/session` — show session ID
-- `/history` — print full conversation
-- `/clear` — start fresh session
+In-session slash commands:
+
+| Command  | Description                                      |
+|----------|--------------------------------------------------|
+| /help    | Show available slash commands                    |
+| /session | Print the current session ID (for later resume)  |
+| /clear   | Clear the terminal screen                        |
+| /quit    | Exit — session is preserved for future resume    |
+
+Set a default agent so you can skip `--agent` every time:
+
+```bash
+agc config set defaultAgentId agent_abc123
+agc chat   # uses defaultAgentId automatically
+```
 
 ---
 
@@ -156,6 +204,26 @@ agc memory delete <memoryId>
 
 ---
 
+## Models
+
+```bash
+agc models list                   # all supported models
+agc models list --provider openai
+agc models info anthropic         # details about a provider
+```
+
+---
+
+## Skills
+
+```bash
+agc skills list                   # all available skills
+agc skills get <skillId>
+agc skills create --file skill.yaml
+```
+
+---
+
 ## Usage & Logs
 
 ```bash
@@ -175,7 +243,7 @@ All commands default to human-readable output. Add `--json` for machine-readable
 
 ```bash
 agc agents list --json
-agc run <agentId> --message "Hello" --json
+agc run --agent <agentId> --message "Hello" --json
 ```
 
 ---
@@ -185,6 +253,9 @@ agc run <agentId> --message "Hello" --json
 ```bash
 #!/bin/bash
 # Run an agent and capture the result
-RESULT=$(agc run agent_abc123 --message "Summarize: $(cat input.txt)" --json)
+RESULT=$(agc run --agent agent_abc123 --message "Summarize: $(cat input.txt)" --json)
 echo $RESULT | jq '.response' > summary.txt
+
+# Chain tasks
+agc task execute task_123 && agc task execute task_456
 ```
