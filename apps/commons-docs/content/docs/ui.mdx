@@ -19,13 +19,13 @@ First time? You'll be guided through a quick onboarding flow.
 
 ## Pages
 
-### Home `/`
+### Home /
 
 Landing page with featured agents, public workflows, and a quick-start prompt.
 
 ---
 
-### Agents `/agents`
+### Agents /agents
 
 Browse all agents. Filter by owner, search by name, or explore public agents. Click any card to open it.
 
@@ -36,7 +36,7 @@ From here you can:
 
 ---
 
-### Create Agent `/agents/create`
+### Create Agent /agents/create
 
 | Field | Description |
 |---|---|
@@ -45,13 +45,13 @@ From here you can:
 | Persona | Tone and character (separate from instructions) |
 | Avatar | Upload an image |
 | Model Provider | OpenAI, Anthropic, Google, Groq, Mistral, Ollama |
-| Model ID | e.g. `gpt-4o`, `claude-sonnet-4-6`, `gemini-2.0-flash` |
+| Model ID | e.g. gpt-4o, claude-sonnet-4-6, gemini-2.0-flash |
 | Temperature | 0 = focused, 1 = creative |
 | API Key | Optional BYOK — your own key, stored encrypted |
 
 ---
 
-### Agent Chat `/agents/[agentId]/[sessionId]`
+### Agent Chat /agents/[agentId]/[sessionId]
 
 The main conversation interface:
 - Type a message and press **Enter**
@@ -62,7 +62,7 @@ The main conversation interface:
 
 ---
 
-### Studio `/studio`
+### Studio /studio
 
 Your personal workspace. Four tabs:
 
@@ -75,7 +75,7 @@ Your personal workspace. Four tabs:
 
 ---
 
-### Agent Editor `/studio/agents/[agentId]`
+### Agent Editor /studio/agents/[agentId]
 
 Full configuration for an agent. Tabs:
 
@@ -91,12 +91,12 @@ Full configuration for an agent. Tabs:
 
 ---
 
-### Workflow Editor `/studio/workflows/[workflowId]/edit`
+### Workflow Editor /studio/workflows/[workflowId]/edit
 
 Visual DAG editor:
 
 <Steps>
-  <Step>Add nodes from the sidebar or click the `+` button on the canvas</Step>
+  <Step>Add nodes from the sidebar or click the + button on the canvas</Step>
   <Step>Click a node to configure its type, tool, and parameters</Step>
   <Step>Drag from an output handle to another node's input to connect them</Step>
   <Step>Set inputs in the Inputs panel on the right</Step>
@@ -105,13 +105,13 @@ Visual DAG editor:
 
 ---
 
-### Workflows `/workflows`
+### Workflows /workflows
 
 All your workflows — name, last run status, execution count. Click to view, run, or edit.
 
 ---
 
-### Create Task `/tasks/create`
+### Create Task /tasks/create
 
 | Field | Description |
 |---|---|
@@ -125,7 +125,7 @@ All your workflows — name, last run status, execution count. Click to view, ru
 
 ---
 
-### Task Monitor `/studio/tasks/[taskId]`
+### Task Monitor /studio/tasks/[taskId]
 
 Live view of a running task:
 - Status with real-time updates
@@ -135,23 +135,23 @@ Live view of a running task:
 
 ---
 
-### Create Tool `/tools/create`
+### Create Tool /tools/create
 
 Define a custom HTTP tool:
 - Name and description
-- HTTP method and URL template (with `{{param}}` placeholders)
+- HTTP method and URL template (with {{param}} placeholders)
 - Input schema (parameters to pass)
 - API key or auth header (stored encrypted)
 
 ---
 
-### Spaces `/spaces`
+### Spaces /spaces
 
 Real-time collaborative workspaces. Each space uses WebRTC for live presence.
 
 ---
 
-### Wallets `/wallets`
+### Wallets /wallets
 
 Manage agent wallets:
 - See balances (USDC on Base Sepolia)
@@ -161,13 +161,13 @@ Manage agent wallets:
 
 ---
 
-### Explore `/explore`
+### Explore /explore
 
 Discover public agents, workflows, and tools shared by the community. Fork anything to your account with one click.
 
 ---
 
-### Usage `/usage`
+### Usage /usage
 
 Charts and tables showing:
 - Token consumption over time, per agent
@@ -176,23 +176,23 @@ Charts and tables showing:
 
 ---
 
-### Logs `/logs`
+### Logs /logs
 
 Real-time log stream. Filter by agent, workflow, or task. Useful for debugging.
 
 ---
 
-### Settings `/settings`
+### Settings /settings
 
 Display name, avatar, and notification preferences.
 
-### API Keys `/settings/api-keys`
+### API Keys /settings/api-keys
 
 Create and revoke API keys for programmatic access.
 
 ---
 
-### Files `/files`
+### Files /files
 
 Browse files stored on IPFS through the platform. Upload files and get IPFS CIDs back.
 

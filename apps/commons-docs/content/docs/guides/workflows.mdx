@@ -27,13 +27,13 @@ A workflow has:
 - **Input schema** — what data it needs to start
 - **Output schema** — what it produces when done
 
-Data flows between nodes using `{{nodeId.output}}` references. Inputs come from `{{inputs.fieldName}}`.
+Data flows between nodes using {{nodeId.output}} references. Inputs come from {{inputs.fieldName}}.
 
 ---
 
 ## Node types
 
-### `tool` — call a tool
+### tool — call a tool
 
 ```json
 {
@@ -44,7 +44,7 @@ Data flows between nodes using `{{nodeId.output}}` references. Inputs come from 
 }
 ```
 
-### `agent_processor` — AI-powered step
+### agent_processor — AI-powered step
 
 ```json
 {
@@ -54,7 +54,7 @@ Data flows between nodes using `{{nodeId.output}}` references. Inputs come from 
 }
 ```
 
-### `data_transformer` — reshape data
+### data_transformer — reshape data
 
 ```json
 {
@@ -67,7 +67,7 @@ Data flows between nodes using `{{nodeId.output}}` references. Inputs come from 
 }
 ```
 
-### `conditional` — branch on a value
+### conditional — branch on a value
 
 ```json
 {
@@ -224,7 +224,7 @@ for await (const event of client.workflows.stream(executionId)) {
 In the web app, go to **Studio → Workflows → Create → Open Editor**:
 
 <Steps>
-  <Step>Add nodes from the sidebar or click the `+` button on the canvas</Step>
+  <Step>Add nodes from the sidebar or click the + button on the canvas</Step>
   <Step>Click each node to set its type, tool name, and parameters</Step>
   <Step>Connect nodes by dragging from one output handle to another node's input</Step>
   <Step>Define inputs in the Inputs panel</Step>

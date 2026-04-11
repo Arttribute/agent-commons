@@ -81,7 +81,7 @@ Then execute it:
 
 ## Execution modes
 
-### `single` — agent runs the description as a prompt
+### single — agent runs the description as a prompt
 
 The description becomes the user message. The agent uses its tools and model to complete it.
 
@@ -92,7 +92,7 @@ The description becomes the user message. The agent uses its tools and model to 
 }
 ```
 
-### `workflow` — execute a defined workflow
+### workflow — execute a defined workflow
 
 ```json
 {
@@ -102,7 +102,7 @@ The description becomes the user message. The agent uses its tools and model to 
 }
 ```
 
-### `sequential` — run sub-tasks in order
+### sequential — run sub-tasks in order
 
 Each sub-task receives the previous one's output as context.
 
@@ -206,7 +206,7 @@ curl https://api.agentcommons.io/v1/tasks/task_abc123 \
 }
 ```
 
-Task lifecycle: `pending → running → completed / failed / cancelled`
+Task lifecycle: pending → running → completed / failed / cancelled
 
 ### Stream live updates
 
@@ -270,7 +270,7 @@ Control exactly which tools a task can use:
 { "priority": "high" }
 ```
 
-Values: `low` · `medium` (default) · `high` · `critical`
+Values: low · medium (default) · high · critical
 
 Higher priority tasks are picked up first when multiple tasks queue for the same agent.
 

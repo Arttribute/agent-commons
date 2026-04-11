@@ -8,7 +8,7 @@ description: Give your agent an on-chain wallet to hold USDC, make payments, and
 Each agent can hold an on-chain wallet — an EOA (Externally Owned Account) on Base Sepolia. Wallets let agents hold USDC, pay for services, transfer funds, and interact with the blockchain.
 
 <Callout>
-  Agent Commons uses **USDC on Base Sepolia** (testnet) for all payment flows. USDC contract address: `0x036CbD53842c5426634e7929541eC2318f3dCF7e`
+  Agent Commons uses **USDC on Base Sepolia** (testnet) for all payment flows. USDC contract address: 0x036CbD53842c5426634e7929541eC2318f3dCF7e
 </Callout>
 
 ---
@@ -59,7 +59,7 @@ Each agent can hold an on-chain wallet — an EOA (Externally Owned Account) on 
   </Tab>
 </Tabs>
 
-Wallet types: `eoa` (standard keypair) · `erc4337` (smart account) · `external` (bring your own)
+Wallet types: eoa (standard keypair) · erc4337 (smart account) · external (bring your own)
 
 ---
 
@@ -135,7 +135,7 @@ Wallet types: `eoa` (standard keypair) · `erc4337` (smart account) · `external
 
 ## x402 payments (pay-per-use APIs)
 
-x402 is a payment protocol for HTTP resources. When your agent requests a paid URL that returns `402 Payment Required`, it automatically pays and retries.
+x402 is a payment protocol for HTTP resources. When your agent requests a paid URL that returns a 402 Payment Required response, it automatically pays and retries.
 
 ```bash
 curl -X POST https://api.agentcommons.io/v1/wallets/agent/agent_abc123/x402-fetch \
@@ -150,7 +150,7 @@ The platform:
 
 <Steps>
   <Step>Makes the request to the target URL</Step>
-  <Step>If it gets a `402`, reads the payment requirements from the response headers</Step>
+  <Step>If it gets a 402, reads the payment requirements from the response headers</Step>
   <Step>Pays the required USDC amount from the agent's primary wallet</Step>
   <Step>Retries the request with a payment proof header</Step>
   <Step>Returns the response to your agent</Step>
@@ -201,7 +201,7 @@ Agent Commons has smart contracts on Base Sepolia for attribution, reputation, a
 
 Use GraphQL to query on-chain state without running a node:
 
-**Endpoint:** `https://api.studio.thegraph.com/query/102152/agentcommons-testnet/v0.0.6`
+**Endpoint:** https://api.studio.thegraph.com/query/102152/agentcommons-testnet/v0.0.6
 
 **Get all registered agents:**
 ```graphql
