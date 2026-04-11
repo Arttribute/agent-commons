@@ -21,7 +21,7 @@ Each agent has:
 
 ## Session
 
-A **Session** is a conversation thread between a user and an agent. It stores the full message history, model configuration, and usage metrics. Sessions are persistent — you can resume them by passing the same `sessionId`.
+A **Session** is a conversation thread between a user and an agent. It stores the full message history, model configuration, and usage metrics. Sessions are persistent — you can resume them by passing the same sessionId.
 
 One agent can have many sessions.
 
@@ -32,7 +32,7 @@ One agent can have many sessions.
 A **Task** is a discrete, trackable unit of work assigned to an agent. Unlike a session (open-ended chat), a task has:
 
 - A clear goal
-- A status lifecycle: `pending → running → completed / failed / cancelled`
+- A status lifecycle: pending → running → completed / failed / cancelled
 - Optional scheduling (run once at a time, or on a recurring cron)
 - Optional dependencies (wait for other tasks first)
 - Stored results when done
@@ -48,10 +48,10 @@ A **Workflow** is a directed acyclic graph (DAG) of steps. Each **node** is a st
 Use workflows when you have a multi-step process with defined inputs and outputs between steps.
 
 Node types:
-- `tool` — call a tool with specific parameters
-- `agent_processor` — use AI to process or decide at this step
-- `data_transformer` — reshape data between steps
-- `conditional` — branch based on a value
+- tool — call a tool with specific parameters
+- agent_processor — use AI to process or decide at this step
+- data_transformer — reshape data between steps
+- conditional — branch based on a value
 
 ---
 

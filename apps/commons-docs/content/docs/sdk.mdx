@@ -5,7 +5,7 @@ description: Install @agent-commons/sdk and build with type-safe access to the f
 
 # TypeScript SDK
 
-The `@agent-commons/sdk` package gives you typed access to the full Agent Commons API from Node.js or any TypeScript/JavaScript environment.
+The @agent-commons/sdk package gives you typed access to the full Agent Commons API from Node.js or any TypeScript/JavaScript environment.
 
 ## Installation
 
@@ -269,7 +269,7 @@ const status = await client.mcp.getServerStatus(server.serverId);
 const { servers } = await client.mcp.getMarketplace();
 ```
 
-Connection types: `'stdio'` · `'sse'` · `'http'` · `'streamable-http'`
+Connection types: stdio · sse · http · streamable-http
 
 ---
 
@@ -299,7 +299,7 @@ await client.memory.update(mem.memoryId, { importanceScore: 0.9 });
 await client.memory.delete(mem.memoryId);
 ```
 
-Memory types: `'episodic'` · `'semantic'` · `'procedural'`
+Memory types: episodic · semantic · procedural
 
 ---
 
@@ -334,7 +334,7 @@ const response = await client.wallets.x402Fetch('agent_abc123', {
 });
 ```
 
-Wallet types: `'eoa'` · `'erc4337'` · `'external'`
+Wallet types: eoa · erc4337 · external
 
 ---
 

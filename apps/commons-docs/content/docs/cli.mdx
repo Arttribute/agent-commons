@@ -5,7 +5,7 @@ description: Terminal-first access to Agent Commons with the agc command.
 
 # CLI Reference
 
-The `agc` command-line tool gives you full access to Agent Commons from your terminal — with an interactive menu, streaming chat, and scriptable output.
+The agc command-line tool gives you full access to Agent Commons from your terminal — with an interactive menu, streaming chat, and scriptable output.
 
 ## Installation
 
@@ -17,7 +17,7 @@ npm install -g @agent-commons/cli
 
 ## Interactive menu
 
-Running `agc` with no arguments opens a full interactive menu — no commands to memorise:
+Running agc with no arguments opens a full interactive menu — no commands to memorise:
 
 ```bash
 agc
@@ -39,11 +39,11 @@ agc login
 
 A three-step guided wizard runs:
 
-1. **API Endpoint** — defaults to `https://api.agentcommons.io`. Press Enter to accept.
+1. **API Endpoint** — defaults to https://api.agentcommons.io. Press Enter to accept.
 2. **API Key** — your browser opens automatically to **[agentcommons.io/settings](https://www.agentcommons.io/settings)**. Generate a key there, paste it in the terminal.
-3. **Wallet address** — your `0x…` identity used as the request initiator.
+3. **Wallet address** — your 0x… identity used as the request initiator.
 
-Credentials are stored in `~/.agc/config.json` (mode `0600`).
+Credentials are stored in ~/.agc/config.json (mode 0600).
 
 ### Other auth commands
 
@@ -56,7 +56,7 @@ agc config set apiKey sk-ac-xxxx   # update a single value
 
 ### Environment variables
 
-You can set credentials via env vars instead of running `agc login`:
+You can set credentials via env vars instead of running agc login:
 
 ```bash
 export AGC_API_KEY=sk-ac-xxxx
@@ -104,7 +104,7 @@ In-session slash commands:
 | /clear   | Clear the terminal screen                        |
 | /quit    | Exit — session is preserved for future resume    |
 
-Set a default agent so you can skip `--agent` every time:
+Set a default agent so you can skip --agent every time:
 
 ```bash
 agc config set defaultAgentId agent_abc123
@@ -239,7 +239,7 @@ agc logs --task <taskId>
 
 ## Output formats
 
-All commands default to human-readable output. Add `--json` for machine-readable JSON:
+All commands default to human-readable output. Add --json for machine-readable JSON:
 
 ```bash
 agc agents list --json
