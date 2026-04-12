@@ -8,7 +8,7 @@ import {
   Post,
   UseGuards,
 } from '@nestjs/common';
-import { RateLimitGuard, RateLimit } from '~/modules/auth';
+import { Public, RateLimitGuard, RateLimit } from '~/modules/auth';
 import { ChatCompletionMessageToolCall } from 'openai/resources/index.mjs';
 
 import { AgentService } from './agent.service';
@@ -53,6 +53,7 @@ export class AgentToolsController {
   ) {}
 
   @Post('tools')
+  @Public()
   @UseGuards(RateLimitGuard)
   @RateLimit({ limit: 200, windowMs: 60_000, keyStrategy: 'agent' })
   async makeAgentToolCall(
