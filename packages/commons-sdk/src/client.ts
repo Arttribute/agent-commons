@@ -471,6 +471,22 @@ export class CommonsClient {
     };
   }
 
+  // ── Auth ─────────────────────────────────────────────────────────────────
+
+  get auth() {
+    return {
+      /**
+       * GET /v1/auth/me
+       *
+       * Returns the principalId (wallet address / user ID) and principalType
+       * that the current API key belongs to. Use this to auto-detect the
+       * initiator without asking the user to type their address manually.
+       */
+      me: (): Promise<{ principalId: string | null; principalType: string | null }> =>
+        this.request('GET', '/v1/auth/me'),
+    };
+  }
+
   // ── API Keys ──────────────────────────────────────────────────────────────
 
   get apiKeys() {

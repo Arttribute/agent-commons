@@ -12,13 +12,10 @@ export function agentsCommand(): Command {
     .option('--json', 'Output as JSON')
     .action(async (opts) => {
       const cfg = loadConfig();
-      if (!cfg.initiator) {
-        console.error(c.error('No initiator set. Run `agc login` first.'));
-        process.exit(1);
-      }
       const spinner = spin('Fetching agents…');
       try {
         const client = makeClient();
+        // Pass initiator as owner filter if set; otherwise list all accessible agents
         const res = await client.agents.list(cfg.initiator);
         const agents = (res as any)?.data ?? res ?? [];
         spinner.stop();

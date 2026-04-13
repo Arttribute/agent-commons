@@ -12,9 +12,28 @@ import {
 import { ApiKeyService, ApiKeyPrincipal } from './api-key.service';
 import { CreateApiKeyDto } from './dto/api-key.dto';
 
-@Controller('v1/auth/api-keys')
+@Controller('v1/auth')
 export class AuthController {
   constructor(private readonly apiKeyService: ApiKeyService) {}
+
+  /**
+   * GET /v1/auth/me
+   *
+   * Returns the identity (principalId + principalType) of the caller derived
+   * from their API key. Useful for CLI tools to auto-detect the initiator.
+   */
+  @Get('me')
+  me(@Req() req: any) {
+    const principal = req.principal as ApiKeyPrincipal | undefined;
+    if (!principal) {
+      // Management key or auth disabled — no principal context available
+      return { principalId: null, principalType: null };
+    }
+    return {
+      principalId: principal.principalId,
+      principalType: principal.principalType,
+    };
+  }
 
   /**
    * POST /v1/auth/api-keys
@@ -22,7 +41,7 @@ export class AuthController {
    * Management key callers (commons-app): can create keys for any principal.
    * Per-principal key callers: can only create keys for themselves.
    */
-  @Post()
+  @Post('api-keys')
   async create(@Body() dto: CreateApiKeyDto, @Req() req: any) {
     const caller = req.principal as ApiKeyPrincipal | undefined;
 
@@ -50,7 +69,7 @@ export class AuthController {
    * Management key callers: can list any principal's keys.
    * Per-principal key callers: can only list their own keys.
    */
-  @Get()
+  @Get('api-keys')
   async list(
     @Query('principalId') principalId: string,
     @Query('principalType') principalType: 'user' | 'agent',
@@ -68,7 +87,7 @@ export class AuthController {
   /**
    * DELETE /v1/auth/api-keys/:id
    */
-  @Delete(':id')
+  @Delete('api-keys/:id')
   async revoke(@Param('id') id: string) {
     await this.apiKeyService.revoke(id);
     return { revoked: true };

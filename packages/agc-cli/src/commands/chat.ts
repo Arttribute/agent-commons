@@ -1,7 +1,28 @@
 import { Command } from 'commander';
 import * as readline from 'readline';
+import { existsSync, mkdirSync, appendFileSync } from 'fs';
+import { join } from 'path';
+import { homedir } from 'os';
 import { loadConfig, makeClient } from '../config.js';
 import { c, sym, spin, detail, printError } from '../ui.js';
+
+// ── Local session log (JSONL, one record per line) ────────────────────────────
+
+const SESSIONS_DIR = join(homedir(), '.agc', 'sessions');
+
+function ensureSessionsDir(): void {
+  if (!existsSync(SESSIONS_DIR)) mkdirSync(SESSIONS_DIR, { recursive: true });
+}
+
+function appendSessionLog(sessionId: string, record: Record<string, unknown>): void {
+  try {
+    ensureSessionsDir();
+    const file = join(SESSIONS_DIR, `${sessionId}.jsonl`);
+    appendFileSync(file, JSON.stringify(record) + '\n', { mode: 0o600 });
+  } catch {
+    // Non-critical — never crash the chat over a log write
+  }
+}
 
 const HELP_TEXT = `
   ${c.label('Slash commands')}
@@ -32,6 +53,7 @@ export function chatCommand(): Command {
       const client = makeClient();
       let sessionId: string = opts.resume ?? '';
       const isResume = !!opts.resume;
+      const initiator = cfg.initiator ?? '';
 
       if (!isResume) {
         // Create a fresh session
@@ -39,12 +61,22 @@ export function chatCommand(): Command {
         try {
           const res = await client.sessions.create({
             agentId,
-            initiator: cfg.initiator,
-            title: `agc chat ${new Date().toISOString().slice(0, 16)}`,
+            initiator,
+            title: `[CLI] agc chat ${new Date().toISOString().slice(0, 16)}`,
           });
           const session = (res as any)?.data ?? res;
           sessionId = session.sessionId;
           spinner.stop();
+
+          // Write session header to local log
+          appendSessionLog(sessionId, {
+            type: 'session_start',
+            sessionId,
+            agentId,
+            initiator,
+            source: 'cli',
+            createdAt: new Date().toISOString(),
+          });
         } catch (err) {
           spinner.stop();
           printError(err);
@@ -147,6 +179,14 @@ export function chatCommand(): Command {
         // ── Send message ─────────────────────────────────────────────────────
         rl.pause();
 
+        // Log user message to local session file
+        appendSessionLog(sessionId, {
+          type: 'message',
+          role: 'user',
+          content: input,
+          timestamp: new Date().toISOString(),
+        });
+
         const params = {
           agentId,
           sessionId,
@@ -162,6 +202,12 @@ export function chatCommand(): Command {
             spinner.stop();
             const text = extractText(result);
             console.log(text);
+            appendSessionLog(sessionId, {
+              type: 'message',
+              role: 'assistant',
+              content: text,
+              timestamp: new Date().toISOString(),
+            });
           } catch (err) {
             spinner.stop();
             console.error(`\n${sym.fail} ${c.error((err as Error).message ?? String(err))}`);
@@ -169,9 +215,12 @@ export function chatCommand(): Command {
         } else {
           try {
             let hasOutput = false;
+            let agentContent = '';
             for await (const event of client.agents.stream(params)) {
               if (event.type === 'token') {
-                process.stdout.write((event as any).content ?? '');
+                const tok = (event as any).content ?? '';
+                process.stdout.write(tok);
+                agentContent += tok;
                 hasOutput = true;
               } else if (event.type === 'toolStart') {
                 // Show tool invocation inline so the user knows the agent is working
@@ -186,14 +235,35 @@ export function chatCommand(): Command {
               } else if (event.type === 'final') {
                 const e = event as any;
                 const text = extractText(e?.payload);
-                if (text && !hasOutput) process.stdout.write(text);
+                if (text && !hasOutput) {
+                  process.stdout.write(text);
+                  agentContent += text;
+                }
                 // ── Cost/usage footer ──────────────────────────────────────
                 const usage = e?.payload?.usage;
                 if (usage) {
-                  const tokens = usage.totalTokens ?? (usage.inputTokens ?? 0) + (usage.outputTokens ?? 0);
-                  const cost   = typeof usage.costUsd === 'number' ? `$${usage.costUsd.toFixed(4)}` : '';
-                  const parts  = [tokens ? `${tokens.toLocaleString()} tokens` : '', cost].filter(Boolean);
+                  const inputTok  = usage.inputTokens ?? 0;
+                  const outputTok = usage.outputTokens ?? 0;
+                  const cachedTok = usage.cachedTokens ?? 0;
+                  const total     = usage.totalTokens ?? (inputTok + outputTok);
+                  const cost      = typeof usage.costUsd === 'number' ? `$${usage.costUsd.toFixed(4)}` : '';
+                  const parts     = [total ? `${total.toLocaleString()} tokens` : '', cost].filter(Boolean);
                   if (parts.length) process.stdout.write('\n' + c.dim(`  ↳ ${parts.join(' · ')}`));
+                  if (cachedTok > 0) process.stdout.write(c.dim(` (${cachedTok.toLocaleString()} cached)`));
+                  appendSessionLog(sessionId, {
+                    type: 'message',
+                    role: 'assistant',
+                    content: agentContent,
+                    usage: { inputTokens: inputTok, outputTokens: outputTok, cachedTokens: cachedTok, totalTokens: total, costUsd: usage.costUsd },
+                    timestamp: new Date().toISOString(),
+                  });
+                } else {
+                  appendSessionLog(sessionId, {
+                    type: 'message',
+                    role: 'assistant',
+                    content: agentContent,
+                    timestamp: new Date().toISOString(),
+                  });
                 }
                 break;
               } else if (event.type === 'error') {
