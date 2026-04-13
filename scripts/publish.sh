@@ -35,7 +35,7 @@ for pkg in "${PACKAGES[@]}"; do
   version="$(pkg_version "$pkgdir")"
   echo "  → ${name}@${version}"
   cd "$pkgdir"
-  npm publish --access public
+  pnpm publish --access public --no-git-checks
   cd "$REPO_ROOT"
 done
 
