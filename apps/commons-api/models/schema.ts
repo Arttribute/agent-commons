@@ -181,6 +181,10 @@ export const session = pgTable('session', {
 
   endedAt: timestamp('ended_at', { withTimezone: true }),
 
+  // 'web' | 'cli' — where this session was initiated from.
+  // Column already exists in DB (phase14 migration); default is 'web'.
+  initiatorType: text('initiator_type').default('web'),
+
   // Keep as JSON list of space IDs for now (not relational)
   spaces: jsonb('spaces').$type<{ spaceIds: string[] }>(),
 

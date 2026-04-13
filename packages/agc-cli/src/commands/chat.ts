@@ -5,6 +5,12 @@ import { join } from 'path';
 import { homedir } from 'os';
 import { loadConfig, makeClient } from '../config.js';
 import { c, sym, spin, detail, printError } from '../ui.js';
+import {
+  buildLocalToolsManifest,
+  extractToolCall,
+  runLocalTool,
+  type LocalToolsConfig,
+} from '../local-tools.js';
 
 // ── Local session log (JSONL, one record per line) ────────────────────────────
 
@@ -28,9 +34,24 @@ const HELP_TEXT = `
   ${c.label('Slash commands')}
   /help          Show this help
   /session       Print the current session ID (copy it to resume later)
+  /tools         Show local tool status and permissions (--local mode)
   /clear         Clear the terminal screen
   /quit          Exit (session is preserved — resume with --resume <id>)
 `;
+
+const LOCAL_TOOLS_DISCLAIMER = `
+  ${c.warn('⚠')}  ${c.bold('Local file system access enabled')}
+
+  ${c.dim('The agent can read and write files, list directories, search files,')}
+  ${c.dim('and execute shell commands on your machine.')}
+
+  ${c.dim('Rules:')}
+  ${sym.bullet} ${c.dim('All paths are restricted to:')} ${c.primary(process.cwd())}
+  ${sym.bullet} ${c.dim('Sensitive paths (.ssh, .env, .aws, credentials) are always blocked')}
+  ${sym.bullet} ${c.dim('Write and run_command operations require your confirmation')}
+  ${sym.bullet} ${c.dim('You can deny any individual request')}
+
+  ${c.dim('Session activity is logged to')} ${c.primary('~/.agc/sessions/')}\n`;
 
 export function chatCommand(): Command {
   return new Command('chat')
@@ -38,6 +59,7 @@ export function chatCommand(): Command {
     .option('--agent <agentId>', 'Agent ID (or set defaultAgentId in config)')
     .option('--resume <sessionId>', 'Resume an existing session by ID')
     .option('--no-stream', 'Disable token streaming (wait for full response)')
+    .option('--local', 'Enable local file system access for the agent (see disclaimer)')
     .action(async (opts) => {
       const cfg = loadConfig();
       const agentId = opts.agent ?? cfg.defaultAgentId;
@@ -62,7 +84,8 @@ export function chatCommand(): Command {
           const res = await client.sessions.create({
             agentId,
             initiator,
-            title: `[CLI] agc chat ${new Date().toISOString().slice(0, 16)}`,
+            title: `agc chat ${new Date().toISOString().slice(0, 16)}`,
+            source: 'cli',
           });
           const session = (res as any)?.data ?? res;
           sessionId = session.sessionId;
@@ -123,7 +146,28 @@ export function chatCommand(): Command {
         ['Session', c.id(sessionId) + (isResume ? c.dim(' (resumed)') : c.dim(' (new)'))],
       ];
       if (walletLine) headerRows.push(['Wallet', walletLine]);
+      if (opts.local) headerRows.push(['Local tools', c.success('enabled') + c.dim('  (read, write, search, run)')]);
       detail(headerRows);
+
+      // ── Local tools setup ────────────────────────────────────────────────────
+      let localToolsCfg: LocalToolsConfig | null = null;
+      if (opts.local) {
+        console.log(LOCAL_TOOLS_DISCLAIMER);
+        const rootDir = process.cwd();
+        localToolsCfg = {
+          rootDir,
+          sessionId,
+          appendLog: (record) => appendSessionLog(sessionId, record),
+          permissions: new Map(),
+        };
+        // Send the tool manifest as the first user message so the agent knows what's available
+        appendSessionLog(sessionId, {
+          type: 'local_tools_enabled',
+          rootDir,
+          timestamp: new Date().toISOString(),
+        });
+      }
+
       console.log(c.dim('\nType your message and press Enter. Type /help for commands.\n'));
 
       // ── Readline REPL ────────────────────────────────────────────────────────
@@ -153,6 +197,26 @@ export function chatCommand(): Command {
 
         if (input === '/help') {
           console.log(HELP_TEXT);
+          rl.prompt();
+          return;
+        }
+
+        if (input === '/tools') {
+          if (!localToolsCfg) {
+            console.log(c.dim(`  Local tools are disabled. Restart with ${c.bold('agc chat --local')} to enable them.`));
+          } else {
+            console.log(`\n  ${c.bold('Local tools')} ${c.success('enabled')}`);
+            console.log(`  ${c.dim('Root directory:')} ${c.primary(localToolsCfg.rootDir)}`);
+            const perms = [...localToolsCfg.permissions.entries()];
+            if (perms.length) {
+              console.log(`  ${c.dim('Cached permissions:')}`);
+              for (const [k, v] of perms) {
+                const badge = v === 'allow' ? c.success('allow') : c.error('deny');
+                console.log(`    ${sym.bullet} ${k}: ${badge}`);
+              }
+            }
+          }
+          console.log();
           rl.prompt();
           return;
         }
@@ -187,10 +251,21 @@ export function chatCommand(): Command {
           timestamp: new Date().toISOString(),
         });
 
+        // Build the message list. In --local mode the first turn injects the
+        // tool manifest as a system message so the LLM treats it as instruction,
+        // not as user content.
+        const outgoingMessages: Array<{ role: 'system' | 'user'; content: string }> =
+          localToolsCfg
+            ? [
+                { role: 'system', content: buildLocalToolsManifest(localToolsCfg.rootDir) },
+                { role: 'user', content: input },
+              ]
+            : [{ role: 'user', content: input }];
+
         const params = {
           agentId,
           sessionId,
-          messages: [{ role: 'user' as const, content: input }],
+          messages: outgoingMessages,
         };
 
         process.stdout.write(c.primary('agent') + c.dim(' › '));
@@ -273,6 +348,11 @@ export function chatCommand(): Command {
               }
             }
             process.stdout.write('\n');
+
+            // ── Local tool-call loop (recursive until no more tool calls) ───
+            if (localToolsCfg && agentContent) {
+              await handleLocalToolLoop(agentContent, localToolsCfg, client, agentId, sessionId, appendSessionLog);
+            }
           } catch (err) {
             process.stdout.write('\n');
             console.error(`${sym.fail} ${c.error((err as Error).message ?? String(err))}`);
@@ -293,6 +373,96 @@ export function chatCommand(): Command {
         process.exit(130);
       });
     });
+}
+
+/**
+ * After each agent response, check whether it contains a local tool call block.
+ * If so, execute it, feed the result back, and recurse — handling chained tool
+ * calls the same way Claude Code handles sequential tool use in one turn.
+ *
+ * MAX_TOOL_DEPTH guards against infinite loops (e.g. a confused agent that
+ * keeps calling tools without making progress).
+ */
+const MAX_TOOL_DEPTH = 10;
+
+async function handleLocalToolLoop(
+  agentText: string,
+  cfg: LocalToolsConfig,
+  client: any,
+  agentId: string,
+  sessionId: string,
+  appendLog: (sessionId: string, record: Record<string, unknown>) => void,
+  depth = 0,
+): Promise<void> {
+  if (depth >= MAX_TOOL_DEPTH) {
+    console.log(c.dim(`\n  [local] Max tool depth reached (${MAX_TOOL_DEPTH}). Stopping tool loop.\n`));
+    return;
+  }
+
+  const toolCall = extractToolCall(agentText);
+  if (!toolCall) return;
+
+  process.stdout.write(c.dim(`\n  [local] ${toolCall.tool}`));
+
+  let result: string;
+  try {
+    result = await runLocalTool(toolCall, cfg);
+    process.stdout.write(c.dim(' ✓\n'));
+  } catch (err: any) {
+    result = `Error: ${err?.message ?? String(err)}`;
+    process.stdout.write(c.dim(' ✗\n'));
+  }
+
+  const resultMsg = `[Tool result: ${toolCall.tool}]\n\`\`\`\n${result}\n\`\`\``;
+
+  appendLog(sessionId, {
+    type: 'message',
+    role: 'tool',
+    tool: toolCall.tool,
+    result: result.slice(0, 4000),
+    timestamp: new Date().toISOString(),
+  });
+
+  // Stream the agent's follow-up response
+  process.stdout.write(c.primary('agent') + c.dim(' › '));
+  let followContent = '';
+
+  try {
+    for await (const evt of client.agents.stream({
+      agentId,
+      sessionId,
+      messages: [{ role: 'user' as const, content: resultMsg }],
+    })) {
+      if (evt.type === 'token') {
+        const tok = (evt as any).content ?? '';
+        process.stdout.write(tok);
+        followContent += tok;
+      } else if (evt.type === 'toolStart') {
+        const name = (evt as any).toolName ?? '';
+        if (followContent) process.stdout.write('\n');
+        process.stdout.write(c.dim(`  [tool] ${name}…`));
+      } else if (evt.type === 'toolEnd') {
+        process.stdout.write(c.dim(' done\n'));
+        process.stdout.write(c.primary('agent') + c.dim(' › '));
+      } else if (evt.type === 'final') {
+        const txt = extractText((evt as any)?.payload);
+        if (txt && !followContent) { process.stdout.write(txt); followContent += txt; }
+        appendLog(sessionId, { type: 'message', role: 'assistant', content: followContent, timestamp: new Date().toISOString() });
+        break;
+      } else if (evt.type === 'error') {
+        console.error(`\n${sym.fail} ${c.error((evt as any).message ?? 'Stream error')}`);
+        break;
+      }
+    }
+    process.stdout.write('\n');
+  } catch (err: any) {
+    process.stdout.write('\n');
+    console.error(`${sym.fail} ${c.error(err?.message ?? String(err))}`);
+    return;
+  }
+
+  // Recurse — the follow-up response may itself contain another tool call
+  await handleLocalToolLoop(followContent, cfg, client, agentId, sessionId, appendLog, depth + 1);
 }
 
 function extractText(payload: any): string {
