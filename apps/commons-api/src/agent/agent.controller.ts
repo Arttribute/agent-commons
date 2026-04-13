@@ -82,6 +82,17 @@ export class AgentController {
       .pipe(map((data) => ({ data })));
   }
 
+  /**
+   * CLI posts the result of a local tool execution back here so the waiting
+   * LangGraph tool node can complete and the agent run can continue.
+   */
+  @Post('cli-tool-result')
+  submitCliToolResult(@Body() body: { requestId: string; result: string }) {
+    const resolved = this.agent.resolveCliToolRequest(body.requestId, body.result);
+    if (!resolved) throw new BadRequestException(`No pending CLI tool request with id "${body.requestId}"`);
+    return { ok: true };
+  }
+
   @Post(':agentId/trigger')
   async triggerAgent(@Param('agentId') agentId: string) {
     this.agent.triggerAgent({ agentId });
