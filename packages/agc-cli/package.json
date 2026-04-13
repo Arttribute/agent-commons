@@ -1,6 +1,6 @@
 {
   "name": "@agent-commons/cli",
-  "version": "0.1.10",
+  "version": "0.1.11",
   "description": "Agent Commons CLI — chat, run, and manage agents from your terminal",
   "license": "MIT",
   "bin": {
