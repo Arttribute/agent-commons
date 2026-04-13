@@ -1,3 +1,5 @@
+declare const __CLI_VERSION__: string;
+
 import { Command } from 'commander';
 import { existsSync } from 'fs';
 import { join } from 'path';
@@ -170,7 +172,7 @@ const program = new Command();
 program
   .name('agc')
   .description('Agent Commons CLI — interact with the Agent Commons platform')
-  .version('0.1.4', '-v, --version')
+  .version(__CLI_VERSION__, '-v, --version')
   // When invoked with no subcommand, show the interactive menu
   .action(async () => {
     await interactiveMenu();
