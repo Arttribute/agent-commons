@@ -63,7 +63,37 @@ var CommonsClient = class {
       /** Enable or disable the heartbeat, optionally setting the interval. */
       setAutonomy: (agentId, params) => this.request("PUT", `/v1/agents/${agentId}/autonomy`, params),
       /** Trigger a single heartbeat beat immediately. */
-      triggerHeartbeat: (agentId) => this.request("POST", `/v1/agents/${agentId}/autonomy/trigger`)
+      triggerHeartbeat: (agentId) => this.request("POST", `/v1/agents/${agentId}/autonomy/trigger`),
+      /**
+       * Manually trigger an agent (fire-and-forget).
+       * Requires autonomy to be enabled on the agent.
+       */
+      trigger: (agentId) => this.request("POST", `/v1/agents/${agentId}/trigger`),
+      // ── Knowledgebase ────────────────────────────────────────────────────
+      /** Get the knowledgebase entries for an agent. */
+      getKnowledgebase: (agentId) => this.request("GET", `/v1/agents/${agentId}/knowledgebase`),
+      /** Replace the knowledgebase entries for an agent. */
+      updateKnowledgebase: (agentId, knowledgebase) => this.request("PUT", `/v1/agents/${agentId}/knowledgebase`, { knowledgebase }),
+      // ── Preferred Connections ────────────────────────────────────────────
+      /** List agents that this agent prefers to collaborate with. */
+      getPreferredConnections: (agentId) => this.request("GET", `/v1/agents/${agentId}/preferred-connections`),
+      /** Add a preferred agent connection. */
+      addPreferredConnection: (agentId, params) => this.request("POST", `/v1/agents/${agentId}/preferred-connections`, params),
+      /** Remove a preferred agent connection by its record ID. */
+      removePreferredConnection: (id) => this.request("DELETE", `/v1/agents/preferred-connections/${id}`),
+      // ── TTS Voices ───────────────────────────────────────────────────────
+      /**
+       * List available TTS voices for a provider.
+       * @param provider - 'openai' (default) or 'elevenlabs'
+       * @param q - optional search query to filter voices
+       */
+      listVoices: (provider, q) => {
+        const params = new URLSearchParams();
+        if (provider) params.set("provider", provider);
+        if (q) params.set("q", q);
+        const qs = params.toString();
+        return this.request("GET", `/v1/agents/tts/voices${qs ? `?${qs}` : ""}`);
+      }
     };
   }
   // ── Run (non-streaming) ───────────────────────────────────────────────────
@@ -112,6 +142,8 @@ var CommonsClient = class {
   get sessions() {
     return {
       list: (agentId, initiatorId) => this.request("GET", `/v1/sessions/list/${agentId}/${initiatorId}`),
+      /** List all sessions for a given agent (all initiators). */
+      listByAgent: (agentId) => this.request("GET", `/v1/sessions/agent/${agentId}`),
       /** List all sessions for a user across all agents. */
       listByUser: (initiator) => this.request("GET", `/v1/sessions/user/${encodeURIComponent(initiator)}`),
       create: (params) => this.request("POST", "/v1/sessions", params),
@@ -201,6 +233,19 @@ var CommonsClient = class {
       x402Fetch: (agentId, params) => this.request("POST", `/v1/wallets/agent/${agentId}/x402-fetch`, params),
       /** Deactivate a wallet. */
       deactivate: (walletId) => this.request("DELETE", `/v1/wallets/${walletId}`)
+    };
+  }
+  // ── Auth ─────────────────────────────────────────────────────────────────
+  get auth() {
+    return {
+      /**
+       * GET /v1/auth/me
+       *
+       * Returns the principalId (wallet address / user ID) and principalType
+       * that the current API key belongs to. Use this to auto-detect the
+       * initiator without asking the user to type their address manually.
+       */
+      me: () => this.request("GET", "/v1/auth/me")
     };
   }
   // ── API Keys ──────────────────────────────────────────────────────────────
@@ -313,8 +358,14 @@ var CommonsClient = class {
       },
       /** Get MCP server by ID. */
       getServer: (serverId) => this.request("GET", `/v1/mcp/servers/${serverId}`),
+      /** Update an MCP server's configuration. */
+      updateServer: (serverId, params) => this.request("PUT", `/v1/mcp/servers/${serverId}`, params),
       /** Delete an MCP server. */
       deleteServer: (serverId) => this.request("DELETE", `/v1/mcp/servers/${serverId}`),
+      /** List public MCP servers (marketplace). */
+      getMarketplace: () => this.request("GET", "/v1/mcp/servers/marketplace"),
+      /** Get connection status for an MCP server. */
+      getServerStatus: (serverId) => this.request("GET", `/v1/mcp/servers/${serverId}/status`),
       /** Connect to an MCP server. */
       connect: (serverId) => this.request("POST", `/v1/mcp/servers/${serverId}/connect`),
       /** Disconnect from an MCP server. */

@@ -580,6 +580,44 @@ declare class CommonsClient {
         triggerHeartbeat: (agentId: string) => Promise<{
             message: string;
         }>;
+        /**
+         * Manually trigger an agent (fire-and-forget).
+         * Requires autonomy to be enabled on the agent.
+         */
+        trigger: (agentId: string) => Promise<{
+            message: string;
+        }>;
+        /** Get the knowledgebase entries for an agent. */
+        getKnowledgebase: (agentId: string) => Promise<{
+            data: any[];
+        }>;
+        /** Replace the knowledgebase entries for an agent. */
+        updateKnowledgebase: (agentId: string, knowledgebase: any[]) => Promise<{
+            data: any[];
+        }>;
+        /** List agents that this agent prefers to collaborate with. */
+        getPreferredConnections: (agentId: string) => Promise<{
+            data: any[];
+        }>;
+        /** Add a preferred agent connection. */
+        addPreferredConnection: (agentId: string, params: {
+            preferredAgentId: string;
+            usageComments?: string;
+        }) => Promise<{
+            data: any;
+        }>;
+        /** Remove a preferred agent connection by its record ID. */
+        removePreferredConnection: (id: string) => Promise<{
+            success: boolean;
+        }>;
+        /**
+         * List available TTS voices for a provider.
+         * @param provider - 'openai' (default) or 'elevenlabs'
+         * @param q - optional search query to filter voices
+         */
+        listVoices: (provider?: "openai" | "elevenlabs", q?: string) => Promise<{
+            data: any[];
+        }>;
     };
     get run(): {
         once: (params: RunParams) => Promise<any>;
@@ -663,6 +701,10 @@ declare class CommonsClient {
     };
     get sessions(): {
         list: (agentId: string, initiatorId: string) => Promise<{
+            data: Session[];
+        }>;
+        /** List all sessions for a given agent (all initiators). */
+        listByAgent: (agentId: string) => Promise<{
             data: Session[];
         }>;
         /** List all sessions for a user across all agents. */
@@ -807,6 +849,19 @@ declare class CommonsClient {
         /** Deactivate a wallet. */
         deactivate: (walletId: string) => Promise<void>;
     };
+    get auth(): {
+        /**
+         * GET /v1/auth/me
+         *
+         * Returns the principalId (wallet address / user ID) and principalType
+         * that the current API key belongs to. Use this to auto-detect the
+         * initiator without asking the user to type their address manually.
+         */
+        me: () => Promise<{
+            principalId: string | null;
+            principalType: string | null;
+        }>;
+    };
     get apiKeys(): {
         /**
          * Generate a new API key for a principal (user or agent).
@@ -859,8 +914,29 @@ declare class CommonsClient {
         }) => Promise<McpServer>;
         /** Get MCP server by ID. */
         getServer: (serverId: string) => Promise<McpServer>;
+        /** Update an MCP server's configuration. */
+        updateServer: (serverId: string, params: Partial<{
+            name: string;
+            description: string;
+            connectionConfig: Record<string, any>;
+            isPublic: boolean;
+            tags: string[];
+        }>) => Promise<McpServer>;
         /** Delete an MCP server. */
         deleteServer: (serverId: string) => Promise<void>;
+        /** List public MCP servers (marketplace). */
+        getMarketplace: () => Promise<{
+            servers: McpServer[];
+            total: number;
+        }>;
+        /** Get connection status for an MCP server. */
+        getServerStatus: (serverId: string) => Promise<{
+            connected: boolean;
+            capabilities: string[];
+            toolsDiscovered: number;
+            lastConnectedAt: Date | null;
+            lastError: string | null;
+        }>;
         /** Connect to an MCP server. */
         connect: (serverId: string) => Promise<{
             connected: boolean;

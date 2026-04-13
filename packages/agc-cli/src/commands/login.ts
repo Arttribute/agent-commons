@@ -45,7 +45,7 @@ export function loginCommand(): Command {
   cmd
     .option('--api-url <url>', 'API base URL', DEFAULT_API_URL)
     .option('--api-key <key>', 'API key (or set AGC_API_KEY env var)')
-    .option('--initiator <id>', 'Default initiator ID (wallet address or user ID)')
+    .option('--initiator <id>', 'User/initiator ID (advanced — usually auto-detected)')
     .action(async (opts) => {
       try {
         const current = loadConfig();
@@ -55,81 +55,88 @@ export function loginCommand(): Command {
 
         if (isFirstRun) {
           console.log(c.bold('  Welcome to Agent Commons CLI!'));
-          console.log(c.dim('  Let\'s get you set up in three quick steps.\n'));
+          console.log(c.dim('  You just need an API key to get started.\n'));
         } else {
           console.log(c.bold('  Update your credentials'));
           console.log(c.dim('  Press Enter to keep existing values.\n'));
         }
 
-        // ── Step 1: API endpoint ───────────────────────────────────────────
-        step(1, 3, 'API Endpoint');
-
-        const defaultUrl = current.apiUrl ?? DEFAULT_API_URL;
+        // ── API endpoint (advanced / non-default only) ─────────────────────
         let apiUrl: string;
-
         if (opts.apiUrl !== DEFAULT_API_URL) {
+          // User explicitly passed a custom URL via --api-url flag
           apiUrl = opts.apiUrl;
-          console.log(`  ${c.dim('Using:')} ${apiUrl}`);
+          console.log(`  ${c.dim('Using API endpoint:')} ${apiUrl}\n`);
+        } else if (current.apiUrl && current.apiUrl !== DEFAULT_API_URL) {
+          // Keep their existing non-default URL
+          apiUrl = current.apiUrl;
+          console.log(`  ${c.dim('Using existing endpoint:')} ${apiUrl}\n`);
         } else {
-          const answer = await prompt(
-            `  ${c.dim('URL')} [${c.dim(defaultUrl)}]: `,
-          );
-          apiUrl = answer || defaultUrl;
+          apiUrl = DEFAULT_API_URL;
         }
-        console.log(`  ${sym.ok} ${c.dim('Endpoint:')} ${c.primary(apiUrl)}`);
 
         // Derive the commons-app URL from the API URL
         const appUrl = apiUrl.includes('localhost')
           ? 'http://localhost:3000'
           : DEFAULT_APP_URL;
-        const settingsUrl = `${appUrl}/settings`;
+        const apiKeysUrl = `${appUrl}/settings/api-keys`;
 
-        // ── Step 2: API key ────────────────────────────────────────────────
-        step(2, 3, 'API Key');
+        // ── Step 1: API key ────────────────────────────────────────────────
+        step(1, 1, 'API Key');
 
         let apiKey = opts.apiKey;
         if (!apiKey) {
-          console.log(`  ${sym.arrow} Opening your browser to generate an API key…`);
-          console.log(`  ${c.dim(settingsUrl)}\n`);
-          openBrowser(settingsUrl);
+          console.log(`  ${c.dim('You\'ll need an API key from your Agent Commons account.')}`);
+          console.log(`  ${c.dim('We\'ll open the API Keys page in your browser.')}\n`);
+          console.log(`  ${c.dim('On that page:')}`);
+          console.log(`  ${sym.bullet} ${c.dim('Click')} ${c.bold('"Generate new key"')}`);
+          console.log(`  ${sym.bullet} ${c.dim('Copy the key (it starts with')} ${c.bold('sk-ac-…')}${c.dim(')')}`);
+          console.log(`  ${sym.bullet} ${c.dim('Paste it here when prompted')}\n`);
 
-          console.log(c.dim('  Once you have your key, paste it below.'));
-          console.log(c.dim('  (Keys look like:  sk-ac-xxxxxxxxxxxxxxxx)\n'));
-          apiKey = await prompt(`  ${c.dim('API Key:')} `);
+          const openNow = await prompt(`  ${c.dim('Open browser now? [Y/n]:')} `);
+          if (!openNow || openNow.toLowerCase() !== 'n') {
+            openBrowser(apiKeysUrl);
+            console.log(`  ${sym.ok} ${c.dim('Opened:')} ${c.primary(apiKeysUrl)}\n`);
+          } else {
+            console.log(`  ${c.dim('You can open it manually:')} ${c.primary(apiKeysUrl)}\n`);
+          }
+
+          console.log(c.dim('  Paste your API key below (input is hidden):'));
+          apiKey = await prompt(`  ${c.dim('API Key:')} `, true);
           if (!apiKey) apiKey = current.apiKey;
         }
 
         if (!apiKey) {
-          console.log(`\n  ${c.warn('⚠')}  No API key provided — you can set one later with ${c.bold('agc config set apiKey <key>')}`);
+          console.log(`\n  ${c.warn('⚠')}  No API key provided — set one later with ${c.bold('agc config set apiKey <key>')}`);
         } else {
           console.log(`  ${sym.ok} ${c.dim('Key saved:')} ****${apiKey.slice(-4)}`);
         }
 
-        // ── Step 3: Identity ──────────────────────────────────────────────
-        step(3, 3, 'Your Identity');
+        // ── Initiator (auto-detect from API key) ──────────────────────────
+        let initiator = opts.initiator ?? current.initiator;
 
-        let initiator = opts.initiator;
-        if (!initiator) {
-          const defaultInitiator = current.initiator ?? '';
-          const hint = defaultInitiator ? `[${c.dim(defaultInitiator.slice(0, 8) + '…')}] ` : '';
-          initiator = await prompt(`  ${c.dim('Wallet address (0x…):')} ${hint}`);
-          if (!initiator) initiator = current.initiator;
-        }
-
-        if (!initiator) {
-          console.log(`  ${c.warn('⚠')}  No wallet address — set one later with ${c.bold('agc config set initiator <address>')}`);
-        } else {
-          console.log(`  ${sym.ok} ${c.dim('Address:')} ${c.id(initiator.slice(0, 10) + '…' + initiator.slice(-6))}`);
+        if (!initiator && apiKey) {
+          try {
+            const { CommonsClient } = await import('@agent-commons/sdk');
+            const client = new CommonsClient({ baseUrl: apiUrl, apiKey });
+            const me = await client.auth.me();
+            if (me?.principalId && me.principalType === 'user') {
+              initiator = me.principalId;
+              console.log(`  ${sym.ok} ${c.dim('Identity detected:')} ${c.id(initiator.slice(0, 10) + '…' + initiator.slice(-6))}`);
+            }
+          } catch {
+            // /v1/auth/me unreachable — skip silently
+          }
         }
 
         // ── Save ───────────────────────────────────────────────────────────
-        saveConfig({ apiUrl, apiKey, initiator });
+        saveConfig({ apiUrl, apiKey, ...(initiator ? { initiator } : {}) });
 
         console.log(`\n  ${sym.ok} ${c.success('All set!')}  Credentials saved to ${c.dim('~/.agc/config.json')}`);
         console.log(`\n  ${c.dim('Next steps:')}`);
-        console.log(`  ${sym.arrow} ${c.dim('Run')} ${c.bold('agc')} ${c.dim('for an interactive menu')}`);
-        console.log(`  ${sym.arrow} ${c.dim('Run')} ${c.bold('agc whoami')} ${c.dim('to verify your connection')}`);
-        console.log(`  ${sym.arrow} ${c.dim('Run')} ${c.bold('agc chat --agent <id>')} ${c.dim('to start chatting')}\n`);
+        console.log(`  ${sym.arrow} ${c.dim('Run')} ${c.bold('agc')} ${c.dim('to open the interactive menu')}`);
+        console.log(`  ${sym.arrow} ${c.dim('Run')} ${c.bold('agc agents list')} ${c.dim('to see your agents')}`);
+        console.log(`  ${sym.arrow} ${c.dim('Run')} ${c.bold('agc chat')} ${c.dim('to start chatting with an agent')}\n`);
       } catch (err) {
         printError(err);
         process.exit(1);

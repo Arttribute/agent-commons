@@ -18,8 +18,8 @@ import { modelsCommand } from './commands/models.js';
 import { memoryCommand } from './commands/memory.js';
 import { usageCommand } from './commands/usage.js';
 import { logsCommand } from './commands/logs.js';
-import { banner, select, c, sym } from './ui.js';
-import { loadConfig } from './config.js';
+import { banner, select, spin, c, sym } from './ui.js';
+import { loadConfig, saveConfig, makeClient } from './config.js';
 
 const CONFIG_FILE = join(homedir(), '.agc', 'config.json');
 
@@ -87,14 +87,11 @@ async function interactiveMenu(): Promise<void> {
     exit:      [],
   };
 
-  // For commands that need an agent ID and none is set, show a hint
+  // For commands that need an agent ID, pick one interactively if no default is set
   if ((action === 'chat' || action === 'run') && !cfg.defaultAgentId) {
-    console.log(
-      `\n  ${c.warn('⚠')}  No default agent configured.\n` +
-      `  ${sym.arrow} ${c.dim('Run')} ${c.bold('agc agents list')} ${c.dim('to find an agent ID, then')}` +
-      `\n  ${sym.arrow} ${c.dim('Run')} ${c.bold('agc config set defaultAgentId <id>')} ${c.dim('to set a default.')}\n`,
-    );
-    console.log(`  ${c.dim('Or pass it directly:  ')}${c.bold(`agc ${action} --agent <id>`)}\n`);
+    const pickedId = await pickAgentInteractively(action);
+    if (!pickedId) return;
+    runSubcommand([action, '--agent', pickedId]);
     return;
   }
 
@@ -106,6 +103,64 @@ function runSubcommand(args: string[]): void {
     stdio: 'inherit',
   });
   child.on('exit', (code) => process.exit(code ?? 0));
+}
+
+/**
+ * Fetch agents and show an interactive picker. Returns the chosen agent ID,
+ * or null if the user cancels or no agents are accessible.
+ * If no agents exist yet, guides the user to create one.
+ */
+async function pickAgentInteractively(action: 'chat' | 'run'): Promise<string | null> {
+  const cfg = loadConfig();
+  const spinner = spin('Fetching your agents…');
+
+  let agents: any[] = [];
+  try {
+    const client = makeClient();
+    const res = await client.agents.list(cfg.initiator);
+    agents = (res as any)?.data ?? (Array.isArray(res) ? res : []);
+    spinner.stop();
+  } catch {
+    spinner.stop();
+    console.log(`\n  ${c.warn('⚠')}  Could not fetch agents. Check your API key and connection.\n`);
+    return null;
+  }
+
+  if (agents.length === 0) {
+    console.log(`\n  ${c.warn('⚠')}  You don't have any agents yet.\n`);
+    const choice = await select<'create' | 'cancel'>('What would you like to do?', [
+      { label: 'Create a new agent now', value: 'create', hint: 'agc agents create' },
+      { label: 'Go back',                value: 'cancel' },
+    ]);
+    if (choice === 'create') {
+      runSubcommand(['agents', 'create']);
+    }
+    return null;
+  }
+
+  console.log();
+  const agentId = await select<string>(
+    `Choose an agent to ${action} with:`,
+    agents.map((a: any) => ({
+      label: a.name,
+      value: a.agentId,
+      hint: `${a.modelProvider}/${a.modelId}`,
+    })),
+  );
+
+  // Offer to save as default so they don't have to pick every time
+  const saveDefault = await select<boolean>('Set as your default agent?', [
+    { label: 'Yes — remember this agent for next time', value: true },
+    { label: 'No — just this once',                     value: false },
+  ]);
+
+  if (saveDefault) {
+    saveConfig({ defaultAgentId: agentId });
+    const chosen = agents.find((a: any) => a.agentId === agentId);
+    console.log(`  ${sym.ok} ${c.dim('Default agent set to')} ${c.bold(chosen?.name ?? agentId)}\n`);
+  }
+
+  return agentId;
 }
 
 // ── Program setup ─────────────────────────────────────────────────────────────
