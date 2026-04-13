@@ -59,8 +59,9 @@ export function chatCommand(): Command {
     .option('--agent <agentId>', 'Agent ID (or set defaultAgentId in config)')
     .option('--resume <sessionId>', 'Resume an existing session by ID')
     .option('--no-stream', 'Disable token streaming (wait for full response)')
-    .option('--local', 'Enable local file system access for the agent (see disclaimer)')
+    .option('--no-local', 'Disable local file system access for the agent')
     .action(async (opts) => {
+      const localEnabled = opts.local !== false;
       const cfg = loadConfig();
       const agentId = opts.agent ?? cfg.defaultAgentId;
       if (!agentId) {
@@ -146,12 +147,12 @@ export function chatCommand(): Command {
         ['Session', c.id(sessionId) + (isResume ? c.dim(' (resumed)') : c.dim(' (new)'))],
       ];
       if (walletLine) headerRows.push(['Wallet', walletLine]);
-      if (opts.local) headerRows.push(['Local tools', c.success('enabled') + c.dim('  (read, write, search, run)')]);
+      if (localEnabled) headerRows.push(['Local tools', c.success('enabled') + c.dim('  (read, write, search, run)')]);
       detail(headerRows);
 
       // ── Local tools setup ────────────────────────────────────────────────────
       let localToolsCfg: LocalToolsConfig | null = null;
-      if (opts.local) {
+      if (localEnabled) {
         console.log(LOCAL_TOOLS_DISCLAIMER);
         const rootDir = process.cwd();
         localToolsCfg = {
@@ -203,7 +204,7 @@ export function chatCommand(): Command {
 
         if (input === '/tools') {
           if (!localToolsCfg) {
-            console.log(c.dim(`  Local tools are disabled. Restart with ${c.bold('agc chat --local')} to enable them.`));
+            console.log(c.dim(`  Local tools are disabled. Remove ${c.bold('--no-local')} flag to re-enable them.`));
           } else {
             console.log(`\n  ${c.bold('Local tools')} ${c.success('enabled')}`);
             console.log(`  ${c.dim('Root directory:')} ${c.primary(localToolsCfg.rootDir)}`);
@@ -251,21 +252,14 @@ export function chatCommand(): Command {
           timestamp: new Date().toISOString(),
         });
 
-        // Build the message list. In --local mode the first turn injects the
-        // tool manifest as a system message so the LLM treats it as instruction,
-        // not as user content.
-        const outgoingMessages: Array<{ role: 'system' | 'user'; content: string }> =
-          localToolsCfg
-            ? [
-                { role: 'system', content: buildLocalToolsManifest(localToolsCfg.rootDir) },
-                { role: 'user', content: input },
-              ]
-            : [{ role: 'user', content: input }];
-
         const params = {
           agentId,
           sessionId,
-          messages: outgoingMessages,
+          messages: [{ role: 'user' as const, content: input }],
+          // Inject the tool manifest into the agent's system prompt server-side so
+          // the LLM receives it as part of its actual instructions, not as a stray
+          // second system message appended after the conversation history.
+          ...(localToolsCfg && { cliContext: buildLocalToolsManifest(localToolsCfg.rootDir) }),
         };
 
         process.stdout.write(c.primary('agent') + c.dim(' › '));

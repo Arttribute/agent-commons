@@ -1541,7 +1541,8 @@ var LOCAL_TOOLS_DISCLAIMER = `
   ${c.dim("Session activity is logged to")} ${c.primary("~/.agc/sessions/")}
 `;
 function chatCommand() {
-  return new import_commander8.Command("chat").description("Start an interactive chat REPL with an agent").option("--agent <agentId>", "Agent ID (or set defaultAgentId in config)").option("--resume <sessionId>", "Resume an existing session by ID").option("--no-stream", "Disable token streaming (wait for full response)").option("--local", "Enable local file system access for the agent (see disclaimer)").action(async (opts) => {
+  return new import_commander8.Command("chat").description("Start an interactive chat REPL with an agent").option("--agent <agentId>", "Agent ID (or set defaultAgentId in config)").option("--resume <sessionId>", "Resume an existing session by ID").option("--no-stream", "Disable token streaming (wait for full response)").option("--no-local", "Disable local file system access for the agent").action(async (opts) => {
+    const localEnabled = opts.local !== false;
     const cfg = loadConfig();
     const agentId = opts.agent ?? cfg.defaultAgentId;
     if (!agentId) {
@@ -1618,10 +1619,10 @@ ${c.bold("Agent Commons Chat")}`);
       ["Session", c.id(sessionId) + (isResume ? c.dim(" (resumed)") : c.dim(" (new)"))]
     ];
     if (walletLine) headerRows.push(["Wallet", walletLine]);
-    if (opts.local) headerRows.push(["Local tools", c.success("enabled") + c.dim("  (read, write, search, run)")]);
+    if (localEnabled) headerRows.push(["Local tools", c.success("enabled") + c.dim("  (read, write, search, run)")]);
     detail(headerRows);
     let localToolsCfg = null;
-    if (opts.local) {
+    if (localEnabled) {
       console.log(LOCAL_TOOLS_DISCLAIMER);
       const rootDir = process.cwd();
       localToolsCfg = {
@@ -1663,7 +1664,7 @@ Session saved. Resume with: agc chat --resume ${sessionId}`));
       }
       if (input === "/tools") {
         if (!localToolsCfg) {
-          console.log(c.dim(`  Local tools are disabled. Restart with ${c.bold("agc chat --local")} to enable them.`));
+          console.log(c.dim(`  Local tools are disabled. Remove ${c.bold("--no-local")} flag to re-enable them.`));
         } else {
           console.log(`
   ${c.bold("Local tools")} ${c.success("enabled")}`);
@@ -1704,14 +1705,14 @@ Session saved. Resume with: agc chat --resume ${sessionId}`));
         content: input,
         timestamp: (/* @__PURE__ */ new Date()).toISOString()
       });
-      const outgoingMessages = localToolsCfg ? [
-        { role: "system", content: buildLocalToolsManifest(localToolsCfg.rootDir) },
-        { role: "user", content: input }
-      ] : [{ role: "user", content: input }];
       const params = {
         agentId,
         sessionId,
-        messages: outgoingMessages
+        messages: [{ role: "user", content: input }],
+        // Inject the tool manifest into the agent's system prompt server-side so
+        // the LLM receives it as part of its actual instructions, not as a stray
+        // second system message appended after the conversation history.
+        ...localToolsCfg && { cliContext: buildLocalToolsManifest(localToolsCfg.rootDir) }
       };
       process.stdout.write(c.primary("agent") + c.dim(" \u203A "));
       if (opts.noStream) {
@@ -3084,9 +3085,18 @@ async function interactiveMenu() {
   if (action === "exit") {
     process.exit(0);
   }
+  const agentId = cfg.defaultAgentId ?? await pickAgentInteractively(action);
+  if ((action === "chat" || action === "run") && !agentId) return;
+  if (action === "run") {
+    const prompt2 = await askPrompt("Enter your prompt:");
+    if (!prompt2) return;
+    runSubcommand(["run", "--agent", agentId, prompt2]);
+    return;
+  }
   const commandMap = {
-    chat: cfg.defaultAgentId ? ["chat", "--agent", cfg.defaultAgentId] : ["chat", "--agent"],
-    run: cfg.defaultAgentId ? ["run", "--agent", cfg.defaultAgentId, "--message"] : ["run", "--agent"],
+    chat: ["chat", "--agent", agentId],
+    run: [],
+    // handled above
     sessions: ["sessions", "list"],
     agents: ["agents", "list"],
     tasks: ["task", "list"],
@@ -3099,13 +3109,21 @@ async function interactiveMenu() {
     config: ["config", "get"],
     exit: []
   };
-  if ((action === "chat" || action === "run") && !cfg.defaultAgentId) {
-    const pickedId = await pickAgentInteractively(action);
-    if (!pickedId) return;
-    runSubcommand([action, "--agent", pickedId]);
-    return;
-  }
   runSubcommand(commandMap[action]);
+}
+async function askPrompt(question) {
+  const { createInterface: createInterface4 } = await import("readline");
+  return new Promise((resolve2) => {
+    const rl = createInterface4({ input: process.stdin, output: process.stdout });
+    process.stdout.write(`
+  ${c.bold(question)}
+  ${c.primary("\u203A")} `);
+    rl.once("line", (line) => {
+      rl.close();
+      const trimmed = line.trim();
+      resolve2(trimmed || null);
+    });
+  });
 }
 function runSubcommand(args) {
   const child = (0, import_child_process3.spawn)(process.argv[0], [process.argv[1], ...args], {

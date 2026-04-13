@@ -72,6 +72,8 @@ export interface RunParams {
   agentId: string;
   messages: ChatMessage[];
   sessionId?: string;
+  /** Extra text injected into the agent's system prompt. Used by the CLI to deliver the local tools manifest. */
+  cliContext?: string;
 }
 
 export interface ChatMessage {
