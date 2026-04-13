@@ -7,6 +7,8 @@ import { loadConfig, makeClient } from '../config.js';
 import { c, sym, spin, detail, printError } from '../ui.js';
 import {
   buildLocalToolsManifest,
+  buildDirSnapshot,
+  readFileForContext,
   extractToolCall,
   runLocalTool,
   type LocalToolsConfig,
@@ -34,9 +36,13 @@ const HELP_TEXT = `
   ${c.label('Slash commands')}
   /help          Show this help
   /session       Print the current session ID (copy it to resume later)
-  /tools         Show local tool status and permissions (--local mode)
+  /tools         Show local tool status and permissions
   /clear         Clear the terminal screen
   /quit          Exit (session is preserved — resume with --resume <id>)
+
+  ${c.label('File context')}
+  Use @path/to/file in your message to inject that file's contents into context.
+  Example: "review @src/index.ts and suggest improvements"
 `;
 
 const LOCAL_TOOLS_DISCLAIMER = `
@@ -161,7 +167,6 @@ export function chatCommand(): Command {
           appendLog: (record) => appendSessionLog(sessionId, record),
           permissions: new Map(),
         };
-        // Send the tool manifest as the first user message so the agent knows what's available
         appendSessionLog(sessionId, {
           type: 'local_tools_enabled',
           rootDir,
@@ -252,14 +257,32 @@ export function chatCommand(): Command {
           timestamp: new Date().toISOString(),
         });
 
+        // ── Build per-turn local context ─────────────────────────────────────
+        let userMessage = input;
+        let cliContext: string | undefined;
+
+        if (localToolsCfg) {
+          const rootDir = localToolsCfg.rootDir;
+
+          // Resolve @filepath references in the user's message.
+          // e.g. "review @src/index.ts" → reads file and injects its content.
+          const atRefs = [...input.matchAll(/@([\S]+)/g)].map(m => m[1]);
+          const fileContextBlocks: string[] = [];
+          for (const ref of atRefs) {
+            const content = readFileForContext(rootDir, ref);
+            fileContextBlocks.push(`**${ref}**\n\`\`\`\n${content}\n\`\`\``);
+          }
+
+          // Fresh directory snapshot on every turn so the agent sees current state.
+          const snapshot = buildDirSnapshot(rootDir, 2);
+          cliContext = buildLocalToolsManifest(rootDir, snapshot, fileContextBlocks);
+        }
+
         const params = {
           agentId,
           sessionId,
-          messages: [{ role: 'user' as const, content: input }],
-          // Inject the tool manifest into the agent's system prompt server-side so
-          // the LLM receives it as part of its actual instructions, not as a stray
-          // second system message appended after the conversation history.
-          ...(localToolsCfg && { cliContext: buildLocalToolsManifest(localToolsCfg.rootDir) }),
+          messages: [{ role: 'user' as const, content: userMessage }],
+          ...(cliContext && { cliContext }),
         };
 
         process.stdout.write(c.primary('agent') + c.dim(' › '));

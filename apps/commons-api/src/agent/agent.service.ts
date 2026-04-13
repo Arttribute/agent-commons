@@ -222,7 +222,6 @@ export class AgentService implements OnModuleInit {
     childSessionsInfo: string,
     memoryBlock = '',
     sessionTasks: Array<{ taskId: string; title: string; status: string; description?: string | null; summary?: string | null; createdAt?: Date | null }> = [],
-    cliMode = false,
   ): string {
     const currentTime = new Date();
 
@@ -258,10 +257,7 @@ export class AgentService implements OnModuleInit {
 
       ### Responding to users
       - For simple requests, reply directly and concisely.
-      ${cliMode
-        ? '- You are running in a CLI session with direct local file system access. Use cli_* tools immediately for any file or directory requests. NEVER create tasks for local file operations.'
-        : '- For complex, multi-step requests, break the work into tasks using createTask before executing.'
-      }
+      - For complex, multi-step requests, break the work into tasks using createTask before executing.
 
       ### Tasks
       Tasks are units of work you can create, track, and execute. Use them for anything that benefits from structured tracking or deferred/scheduled execution.
@@ -893,7 +889,7 @@ export class AgentService implements OnModuleInit {
             messages.push({
               type: 'system',
               role: 'system',
-              content: this.buildSystemPrompt(agent, currentSessionId, childSessionsInfo, memoryBlock, sessionTasks, !!props.cliContext),
+              content: this.buildSystemPrompt(agent, currentSessionId, childSessionsInfo, memoryBlock, sessionTasks),
             } as any);
 
             if (

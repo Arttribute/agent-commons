@@ -30,6 +30,63 @@ import { join, resolve, relative, extname, dirname } from 'path';
 import { execFile } from 'child_process';
 import * as readline from 'readline';
 
+// ── Directory snapshot ────────────────────────────────────────────────────────
+
+const SKIP_DIRS = new Set(['.git', 'node_modules', '.cache', '__pycache__', '.next', 'dist', 'build', '.DS_Store']);
+
+/**
+ * Build a compact tree-style listing of a directory up to `maxDepth` levels.
+ * Skips hidden directories and heavy build/dependency folders.
+ * Capped at 300 entries to keep token count reasonable.
+ */
+export function buildDirSnapshot(dir: string, maxDepth = 2): string {
+  const lines: string[] = [`${dir}/`];
+
+  function walk(d: string, depth: number, prefix: string): void {
+    if (lines.length >= 300) return;
+    let entries: ReturnType<typeof readdirSync>;
+    try { entries = readdirSync(d, { withFileTypes: true }); } catch { return; }
+
+    const sorted = entries.sort((a, b) => {
+      if (a.isDirectory() !== b.isDirectory()) return a.isDirectory() ? -1 : 1;
+      return a.name.localeCompare(b.name);
+    });
+
+    for (const entry of sorted) {
+      if (lines.length >= 300) { lines.push(`${prefix}... (truncated)`); return; }
+      if (entry.name.startsWith('.') || SKIP_DIRS.has(entry.name)) continue;
+      const isDir = entry.isDirectory();
+      lines.push(`${prefix}${entry.name}${isDir ? '/' : ''}`);
+      if (isDir && depth < maxDepth) walk(join(d, entry.name), depth + 1, prefix + '  ');
+    }
+  }
+
+  walk(dir, 1, '  ');
+  return lines.join('\n');
+}
+
+/**
+ * Read a file and return its content, capped at 100 KB.
+ * Returns an error string if the file can't be read.
+ */
+export function readFileForContext(rootDir: string, filePath: string): string {
+  try {
+    const abs = resolve(rootDir, filePath);
+    const rel = relative(rootDir, abs);
+    if (rel.startsWith('..') || rel.startsWith('/')) return `[error: path escapes session root]`;
+    for (const pat of [/\/\.ssh\//, /\/\.aws\//, /\/\.env$/, /\/\.env\./, /id_rsa/, /id_ed25519/]) {
+      if (pat.test(abs)) return `[error: sensitive path blocked]`;
+    }
+    if (!existsSync(abs)) return `[error: file not found: ${filePath}]`;
+    const stat = statSync(abs);
+    if (stat.isDirectory()) return `[error: "${filePath}" is a directory — use list_directory]`;
+    if (stat.size > 100_000) return `[truncated — file too large (${Math.round(stat.size / 1024)} KB). Use cli_read_file for full content]`;
+    return readFileSync(abs, 'utf8');
+  } catch (err: any) {
+    return `[error reading file: ${err?.message}]`;
+  }
+}
+
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 export interface LocalToolCall {
@@ -55,13 +112,24 @@ export interface LocalToolsConfig {
 // Written to closely match how Claude Code/function-calling-trained LLMs
 // expect tool invocation instructions in a system prompt.
 
-export function buildLocalToolsManifest(rootDir: string): string {
+export function buildLocalToolsManifest(rootDir: string, snapshot: string, fileContextBlocks: string[] = []): string {
+  const fileSection = fileContextBlocks.length
+    ? `\n### File contents included in this turn\n\n${fileContextBlocks.join('\n\n')}\n`
+    : '';
+
   return `
 ## CLI Local File System — ACTIVE
 
-You are running inside a CLI session. The following tools are available in your tool list RIGHT NOW and execute directly on the user's machine. They are named with a \`cli_\` prefix.
+You are running inside a CLI session with DIRECT access to the user's local machine. The following tools are in your tool list and execute on the user's machine in real time.
 
 **Session root:** ${rootDir}
+
+### Current file system (live snapshot)
+
+\`\`\`
+${snapshot}
+\`\`\`
+${fileSection}
 
 ### MANDATORY RULES — READ CAREFULLY
 

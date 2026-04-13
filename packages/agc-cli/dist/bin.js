@@ -1257,13 +1257,71 @@ var import_fs3 = require("fs");
 var import_path3 = require("path");
 var import_child_process2 = require("child_process");
 var readline2 = __toESM(require("readline"));
-function buildLocalToolsManifest(rootDir) {
+var SKIP_DIRS = /* @__PURE__ */ new Set([".git", "node_modules", ".cache", "__pycache__", ".next", "dist", "build", ".DS_Store"]);
+function buildDirSnapshot(dir, maxDepth = 2) {
+  const lines = [`${dir}/`];
+  function walk(d, depth, prefix) {
+    if (lines.length >= 300) return;
+    let entries;
+    try {
+      entries = (0, import_fs3.readdirSync)(d, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    const sorted = entries.sort((a, b) => {
+      if (a.isDirectory() !== b.isDirectory()) return a.isDirectory() ? -1 : 1;
+      return a.name.localeCompare(b.name);
+    });
+    for (const entry of sorted) {
+      if (lines.length >= 300) {
+        lines.push(`${prefix}... (truncated)`);
+        return;
+      }
+      if (entry.name.startsWith(".") || SKIP_DIRS.has(entry.name)) continue;
+      const isDir = entry.isDirectory();
+      lines.push(`${prefix}${entry.name}${isDir ? "/" : ""}`);
+      if (isDir && depth < maxDepth) walk((0, import_path3.join)(d, entry.name), depth + 1, prefix + "  ");
+    }
+  }
+  walk(dir, 1, "  ");
+  return lines.join("\n");
+}
+function readFileForContext(rootDir, filePath) {
+  try {
+    const abs = (0, import_path3.resolve)(rootDir, filePath);
+    const rel = (0, import_path3.relative)(rootDir, abs);
+    if (rel.startsWith("..") || rel.startsWith("/")) return `[error: path escapes session root]`;
+    for (const pat of [/\/\.ssh\//, /\/\.aws\//, /\/\.env$/, /\/\.env\./, /id_rsa/, /id_ed25519/]) {
+      if (pat.test(abs)) return `[error: sensitive path blocked]`;
+    }
+    if (!(0, import_fs3.existsSync)(abs)) return `[error: file not found: ${filePath}]`;
+    const stat = (0, import_fs3.statSync)(abs);
+    if (stat.isDirectory()) return `[error: "${filePath}" is a directory \u2014 use list_directory]`;
+    if (stat.size > 1e5) return `[truncated \u2014 file too large (${Math.round(stat.size / 1024)} KB). Use cli_read_file for full content]`;
+    return (0, import_fs3.readFileSync)(abs, "utf8");
+  } catch (err) {
+    return `[error reading file: ${err?.message}]`;
+  }
+}
+function buildLocalToolsManifest(rootDir, snapshot, fileContextBlocks = []) {
+  const fileSection = fileContextBlocks.length ? `
+### File contents included in this turn
+
+${fileContextBlocks.join("\n\n")}
+` : "";
   return `
 ## CLI Local File System \u2014 ACTIVE
 
-You are running inside a CLI session. The following tools are available in your tool list RIGHT NOW and execute directly on the user's machine. They are named with a \`cli_\` prefix.
+You are running inside a CLI session with DIRECT access to the user's local machine. The following tools are in your tool list and execute on the user's machine in real time.
 
 **Session root:** ${rootDir}
+
+### Current file system (live snapshot)
+
+\`\`\`
+${snapshot}
+\`\`\`
+${fileSection}
 
 ### MANDATORY RULES \u2014 READ CAREFULLY
 
@@ -1508,9 +1566,13 @@ var HELP_TEXT = `
   ${c.label("Slash commands")}
   /help          Show this help
   /session       Print the current session ID (copy it to resume later)
-  /tools         Show local tool status and permissions (--local mode)
+  /tools         Show local tool status and permissions
   /clear         Clear the terminal screen
   /quit          Exit (session is preserved \u2014 resume with --resume <id>)
+
+  ${c.label("File context")}
+  Use @path/to/file in your message to inject that file's contents into context.
+  Example: "review @src/index.ts and suggest improvements"
 `;
 var LOCAL_TOOLS_DISCLAIMER = `
   ${c.warn("\u26A0")}  ${c.bold("Local file system access enabled")}
@@ -1691,14 +1753,27 @@ Session saved. Resume with: agc chat --resume ${sessionId}`));
         content: input,
         timestamp: (/* @__PURE__ */ new Date()).toISOString()
       });
+      let userMessage = input;
+      let cliContext;
+      if (localToolsCfg) {
+        const rootDir = localToolsCfg.rootDir;
+        const atRefs = [...input.matchAll(/@([\S]+)/g)].map((m) => m[1]);
+        const fileContextBlocks = [];
+        for (const ref of atRefs) {
+          const content = readFileForContext(rootDir, ref);
+          fileContextBlocks.push(`**${ref}**
+\`\`\`
+${content}
+\`\`\``);
+        }
+        const snapshot = buildDirSnapshot(rootDir, 2);
+        cliContext = buildLocalToolsManifest(rootDir, snapshot, fileContextBlocks);
+      }
       const params = {
         agentId,
         sessionId,
-        messages: [{ role: "user", content: input }],
-        // Inject the tool manifest into the agent's system prompt server-side so
-        // the LLM receives it as part of its actual instructions, not as a stray
-        // second system message appended after the conversation history.
-        ...localToolsCfg && { cliContext: buildLocalToolsManifest(localToolsCfg.rootDir) }
+        messages: [{ role: "user", content: userMessage }],
+        ...cliContext && { cliContext }
       };
       process.stdout.write(c.primary("agent") + c.dim(" \u203A "));
       if (opts.noStream) {
