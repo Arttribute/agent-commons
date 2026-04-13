@@ -120,7 +120,7 @@ for pkg in "${PACKAGES[@]}"; do
   name="$(pkg_name "$pkgdir")"
   echo "       Publishing ${name}@${NEW_VERSION}…"
   cd "$pkgdir"
-  npm publish --access public
+  pnpm publish --access public --no-git-checks
   cd "$REPO_ROOT"
 done
 
