@@ -291,6 +291,47 @@ export function chatCommand(): Command {
                 process.stdout.write(tok);
                 agentContent += tok;
                 hasOutput = true;
+              } else if (event.type === 'cli_tool_request' && localToolsCfg) {
+                // ── Local tool execution ──────────────────────────────────────
+                // The backend registered cli_* tools that, when called by the
+                // LLM, emit this event. We execute locally and POST the result
+                // back so the LangGraph run can continue.
+                const { requestId, tool: toolName, args } = event as any;
+                const displayName = String(toolName).replace('cli_', '');
+                if (hasOutput) { process.stdout.write('\n'); hasOutput = false; }
+                process.stdout.write(c.dim(`  [local] ${displayName}…`));
+
+                let result: string;
+                try {
+                  // Map cli_* names back to the local-tools dispatcher names
+                  const localToolName = String(toolName).replace('cli_', '');
+                  result = await runLocalTool({ tool: localToolName, args: args ?? {} }, localToolsCfg);
+                  process.stdout.write(c.dim(' ✓\n'));
+                } catch (err: any) {
+                  result = `Error: ${err?.message ?? String(err)}`;
+                  process.stdout.write(c.dim(' ✗\n'));
+                }
+
+                appendSessionLog(sessionId, {
+                  type: 'local_tool_result',
+                  tool: toolName,
+                  result: result.slice(0, 4000),
+                  timestamp: new Date().toISOString(),
+                });
+
+                // POST result back to backend so the waiting tool node resolves
+                try {
+                  await fetch(`${cfg.apiUrl}/v1/agents/cli-tool-result`, {
+                    method: 'POST',
+                    headers: {
+                      'Content-Type': 'application/json',
+                      'Authorization': `Bearer ${cfg.apiKey}`,
+                    },
+                    body: JSON.stringify({ requestId, result }),
+                  });
+                } catch (postErr: any) {
+                  console.error(c.warn(`\n  [local] Failed to submit tool result: ${postErr?.message}`));
+                }
               } else if (event.type === 'toolStart') {
                 // Show tool invocation inline so the user knows the agent is working
                 const name = (event as any).toolName ?? '';

@@ -1,5 +1,6 @@
 import * as schema from '#/models/schema';
 import { tool } from '@langchain/core/tools';
+import { z } from 'zod';
 import {
   END,
   Messages,
@@ -62,6 +63,21 @@ const app = typia.llm.application<CommonTool, 'chatgpt'>();
 @Injectable()
 export class AgentService implements OnModuleInit {
   private readonly logger = new Logger(AgentService.name);
+
+  /**
+   * Pending CLI local-tool requests.
+   * Key: requestId  Value: resolve fn that completes the tool call
+   * The CLI POSTs back to /v1/agents/cli-tool-result to resolve these.
+   */
+  public readonly pendingCliToolRequests = new Map<string, (result: string) => void>();
+
+  /** Called by the controller when the CLI POSTs a tool result. */
+  resolveCliToolRequest(requestId: string, result: string): boolean {
+    const resolve = this.pendingCliToolRequests.get(requestId);
+    if (!resolve) return false;
+    resolve(result);
+    return true;
+  }
 
   constructor(
     private db: DatabaseService,
@@ -724,6 +740,73 @@ export class AgentService implements OnModuleInit {
           const toolRunners = toolDefs.map((def) =>
             makeRunner(def as ChatCompletionTool & { endpoint: string }),
           );
+
+          // ── CLI local tools (only injected when the request has cliContext) ──
+          // These run on the user's machine. The server emits a cli_tool_request
+          // SSE event; the CLI executes locally and POSTs the result back.
+          if (props.cliContext) {
+            const makeCliTool = (
+              name: string,
+              description: string,
+              schema: z.ZodObject<any>,
+            ) =>
+              tool(
+                async (args) => {
+                  const requestId = uuidv4();
+                  subscriber.next({ type: 'cli_tool_request', requestId, tool: name, args });
+                  return new Promise<string>((resolve) => {
+                    const timer = setTimeout(() => {
+                      this.pendingCliToolRequests.delete(requestId);
+                      resolve('Error: CLI tool timed out after 30 seconds');
+                    }, 30_000);
+                    this.pendingCliToolRequests.set(requestId, (result: string) => {
+                      clearTimeout(timer);
+                      this.pendingCliToolRequests.delete(requestId);
+                      resolve(result);
+                    });
+                  });
+                },
+                { name, description, schema },
+              );
+
+            toolRunners.push(
+              makeCliTool(
+                'cli_read_file',
+                'Read the full contents of a file on the user\'s local machine. Path is relative to the session root directory.',
+                z.object({ path: z.string().describe('File path relative to session root') }),
+              ),
+              makeCliTool(
+                'cli_list_directory',
+                'List files and directories at a given path on the user\'s local machine. Defaults to the session root.',
+                z.object({ path: z.string().optional().describe('Directory path (default: session root)') }),
+              ),
+              makeCliTool(
+                'cli_write_file',
+                'Write content to a file on the user\'s local machine. Creates parent directories if needed. Requires user confirmation.',
+                z.object({
+                  path: z.string().describe('File path relative to session root'),
+                  content: z.string().describe('Content to write'),
+                }),
+              ),
+              makeCliTool(
+                'cli_search_files',
+                'Search for files matching a name pattern on the user\'s local machine. Returns up to 50 matches.',
+                z.object({
+                  pattern: z.string().describe('Glob-style filename pattern (e.g. "*.ts")'),
+                  directory: z.string().optional().describe('Directory to search in (default: session root)'),
+                }),
+              ),
+              makeCliTool(
+                'cli_run_command',
+                'Execute a shell command on the user\'s local machine and return stdout/stderr. Requires user confirmation. 30s timeout.',
+                z.object({
+                  command: z.string().describe('Command to run (e.g. "node")'),
+                  args: z.array(z.string()).optional().describe('Arguments array'),
+                  cwd: z.string().optional().describe('Working directory (default: session root)'),
+                }),
+              ),
+            );
+          }
 
           const toolNode = new ToolNode(toolRunners);
           const collectedToolCalls = executedCalls;

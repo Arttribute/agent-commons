@@ -1743,6 +1743,42 @@ ${sym.fail} ${c.error(err.message ?? String(err))}`);
               process.stdout.write(tok);
               agentContent += tok;
               hasOutput = true;
+            } else if (event.type === "cli_tool_request" && localToolsCfg) {
+              const { requestId, tool: toolName, args } = event;
+              const displayName = String(toolName).replace("cli_", "");
+              if (hasOutput) {
+                process.stdout.write("\n");
+                hasOutput = false;
+              }
+              process.stdout.write(c.dim(`  [local] ${displayName}\u2026`));
+              let result;
+              try {
+                const localToolName = String(toolName).replace("cli_", "");
+                result = await runLocalTool({ tool: localToolName, args: args ?? {} }, localToolsCfg);
+                process.stdout.write(c.dim(" \u2713\n"));
+              } catch (err) {
+                result = `Error: ${err?.message ?? String(err)}`;
+                process.stdout.write(c.dim(" \u2717\n"));
+              }
+              appendSessionLog(sessionId, {
+                type: "local_tool_result",
+                tool: toolName,
+                result: result.slice(0, 4e3),
+                timestamp: (/* @__PURE__ */ new Date()).toISOString()
+              });
+              try {
+                await fetch(`${cfg.apiUrl}/v1/agents/cli-tool-result`, {
+                  method: "POST",
+                  headers: {
+                    "Content-Type": "application/json",
+                    "Authorization": `Bearer ${cfg.apiKey}`
+                  },
+                  body: JSON.stringify({ requestId, result })
+                });
+              } catch (postErr) {
+                console.error(c.warn(`
+  [local] Failed to submit tool result: ${postErr?.message}`));
+              }
             } else if (event.type === "toolStart") {
               const name = event.toolName ?? "";
               if (hasOutput) process.stdout.write("\n");
