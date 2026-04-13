@@ -11,7 +11,7 @@ export class SessionController {
    */
   @Post()
   async createSession(
-    @Body() body: { agentId: string; initiator?: string; title?: string },
+    @Body() body: { agentId: string; initiator?: string; title?: string; source?: string },
   ) {
     if (!body.agentId) throw new BadRequestException('agentId is required');
     const session = await this.sessionService.createSession({
@@ -19,6 +19,8 @@ export class SessionController {
         agentId: body.agentId,
         initiator: body.initiator,
         title: body.title,
+        // Accept 'cli' | 'web' from the caller; default to 'web' if not provided
+        initiatorType: body.source === 'cli' ? 'cli' : (body.source ?? 'web'),
       },
     });
     return { data: session };

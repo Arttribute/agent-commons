@@ -60,6 +60,10 @@ export interface Session {
   title?: string;
   model: ModelConfig & { name?: string };
   createdAt: string;
+  /** 'cli' | 'web' — origin of the session, used for filtering in the UI */
+  source?: 'cli' | 'web';
+  /** Same as source; returned from the backend column `initiator_type` */
+  initiatorType?: 'cli' | 'web';
 }
 
 // ─── Run / Stream ─────────────────────────────────────────────────────────────

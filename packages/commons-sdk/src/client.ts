@@ -307,6 +307,8 @@ export class CommonsClient {
         initiator: string;
         title?: string;
         model?: Record<string, any>;
+        /** 'cli' | 'web' — marks the origin of this session for filtering in the UI */
+        source?: 'cli' | 'web';
       }): Promise<{ data: import('./types').Session }> =>
         this.request('POST', '/v1/sessions', params),
 

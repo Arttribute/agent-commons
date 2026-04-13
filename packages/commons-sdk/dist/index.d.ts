@@ -52,6 +52,10 @@ interface Session {
         name?: string;
     };
     createdAt: string;
+    /** 'cli' | 'web' — origin of the session, used for filtering in the UI */
+    source?: 'cli' | 'web';
+    /** Same as source; returned from the backend column `initiator_type` */
+    initiatorType?: 'cli' | 'web';
 }
 interface RunParams {
     agentId: string;
@@ -716,6 +720,8 @@ declare class CommonsClient {
             initiator: string;
             title?: string;
             model?: Record<string, any>;
+            /** 'cli' | 'web' — marks the origin of this session for filtering in the UI */
+            source?: "cli" | "web";
         }) => Promise<{
             data: Session;
         }>;
