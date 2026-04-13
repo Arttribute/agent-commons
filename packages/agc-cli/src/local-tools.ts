@@ -30,6 +30,63 @@ import { join, resolve, relative, extname, dirname } from 'path';
 import { execFile } from 'child_process';
 import * as readline from 'readline';
 
+// ── Directory snapshot ────────────────────────────────────────────────────────
+
+const SKIP_DIRS = new Set(['.git', 'node_modules', '.cache', '__pycache__', '.next', 'dist', 'build', '.DS_Store']);
+
+/**
+ * Build a compact tree-style listing of a directory up to `maxDepth` levels.
+ * Skips hidden directories and heavy build/dependency folders.
+ * Capped at 300 entries to keep token count reasonable.
+ */
+export function buildDirSnapshot(dir: string, maxDepth = 2): string {
+  const lines: string[] = [`${dir}/`];
+
+  function walk(d: string, depth: number, prefix: string): void {
+    if (lines.length >= 300) return;
+    let entries: ReturnType<typeof readdirSync>;
+    try { entries = readdirSync(d, { withFileTypes: true }); } catch { return; }
+
+    const sorted = entries.sort((a, b) => {
+      if (a.isDirectory() !== b.isDirectory()) return a.isDirectory() ? -1 : 1;
+      return a.name.localeCompare(b.name);
+    });
+
+    for (const entry of sorted) {
+      if (lines.length >= 300) { lines.push(`${prefix}... (truncated)`); return; }
+      if (entry.name.startsWith('.') || SKIP_DIRS.has(entry.name)) continue;
+      const isDir = entry.isDirectory();
+      lines.push(`${prefix}${entry.name}${isDir ? '/' : ''}`);
+      if (isDir && depth < maxDepth) walk(join(d, entry.name), depth + 1, prefix + '  ');
+    }
+  }
+
+  walk(dir, 1, '  ');
+  return lines.join('\n');
+}
+
+/**
+ * Read a file and return its content, capped at 100 KB.
+ * Returns an error string if the file can't be read.
+ */
+export function readFileForContext(rootDir: string, filePath: string): string {
+  try {
+    const abs = resolve(rootDir, filePath);
+    const rel = relative(rootDir, abs);
+    if (rel.startsWith('..') || rel.startsWith('/')) return `[error: path escapes session root]`;
+    for (const pat of [/\/\.ssh\//, /\/\.aws\//, /\/\.env$/, /\/\.env\./, /id_rsa/, /id_ed25519/]) {
+      if (pat.test(abs)) return `[error: sensitive path blocked]`;
+    }
+    if (!existsSync(abs)) return `[error: file not found: ${filePath}]`;
+    const stat = statSync(abs);
+    if (stat.isDirectory()) return `[error: "${filePath}" is a directory — use list_directory]`;
+    if (stat.size > 100_000) return `[truncated — file too large (${Math.round(stat.size / 1024)} KB). Use cli_read_file for full content]`;
+    return readFileSync(abs, 'utf8');
+  } catch (err: any) {
+    return `[error reading file: ${err?.message}]`;
+  }
+}
+
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 export interface LocalToolCall {
@@ -55,61 +112,58 @@ export interface LocalToolsConfig {
 // Written to closely match how Claude Code/function-calling-trained LLMs
 // expect tool invocation instructions in a system prompt.
 
-export function buildLocalToolsManifest(rootDir: string): string {
-  return `## Local File System Access
+export function buildLocalToolsManifest(rootDir: string, snapshot: string, fileContextBlocks: string[] = []): string {
+  const fileSection = fileContextBlocks.length
+    ? `\n### File contents included in this turn\n\n${fileContextBlocks.join('\n\n')}\n`
+    : '';
 
-You have direct access to the user's local machine file system. Use these tools freely to complete tasks — do not ask the user to run commands themselves.
+  return `
+## CLI Local File System — ACTIVE
+
+You are running inside a CLI session with DIRECT access to the user's local machine. The following tools are in your tool list and execute on the user's machine in real time.
 
 **Session root:** ${rootDir}
-All paths are relative to the session root unless absolute.
 
----
+### Current file system (live snapshot)
 
-### How to call a tool
-
-When you need to use a local tool, output ONLY the following JSON block — nothing else in that message. After receiving the result, continue your response:
-
-\`\`\`tool
-{"tool": "<tool_name>", "args": {"<arg>": "<value>"}}
 \`\`\`
-
-You may call tools multiple times in sequence. Each call will be executed and the result returned to you before you continue.
-
----
-
-### Available tools
-
-**read_file** — Read the full contents of a file.
-\`\`\`tool
-{"tool": "read_file", "args": {"path": "src/index.ts"}}
+${snapshot}
 \`\`\`
+${fileSection}
 
-**write_file** — Write content to a file (creates directories as needed). User must confirm.
-\`\`\`tool
-{"tool": "write_file", "args": {"path": "output.txt", "content": "Hello world"}}
-\`\`\`
+### MANDATORY RULES — READ CAREFULLY
 
-**list_directory** — List files and directories at a path. Defaults to session root.
-\`\`\`tool
-{"tool": "list_directory", "args": {"path": "src"}}
-\`\`\`
+1. **Call cli_* tools immediately and directly.** Do NOT create tasks (createTask) for local file operations. Do NOT delegate to sub-agents. Do NOT ask the user to run commands themselves.
+2. **Always show the actual output** returned by the tool in your response. Never say "I listed the files" without showing them. Report exactly what the tool returns.
+3. **Never fabricate results.** Wait for the real tool output before responding.
+4. **Sensitive paths are blocked** (.ssh, .gnupg, .aws, .env, credentials). Attempting to access them will return an error.
+5. **cli_write_file and cli_run_command require the user to confirm** before executing — you will see the result after they approve.
 
-**search_files** — Find files matching a name/path pattern (glob-style, up to 50 results).
-\`\`\`tool
-{"tool": "search_files", "args": {"pattern": "*.ts", "directory": "src"}}
-\`\`\`
+### Available CLI tools
 
-**run_command** — Execute a shell command and return stdout/stderr. User must confirm. 30s timeout.
-\`\`\`tool
-{"tool": "run_command", "args": {"command": "node", "args": ["--version"]}}
-\`\`\`
+| Tool | What it does |
+|------|-------------|
+| \`cli_list_directory\` | List files and folders at a path (default: session root) |
+| \`cli_read_file\` | Read the full contents of a file |
+| \`cli_write_file\` | Write or overwrite a file (user confirmation required) |
+| \`cli_search_files\` | Find files matching a pattern, e.g. "*.ts" |
+| \`cli_run_command\` | Run a shell command and return output (user confirmation required) |
 
----
+### Example — listing a directory
 
-**Important:**
-- Never fabricate tool results. Always wait for the actual output.
-- Sensitive paths (.ssh, .env, .aws, credentials) are blocked by the system.
-- Write and run_command operations require explicit user approval before executing.
+When the user asks "what's on my desktop?", call \`cli_list_directory\` with \`{"path": "Desktop"}\` immediately. Then show the result.
+
+### Example — reading a file
+
+Call \`cli_read_file\` with \`{"path": "Desktop/notes.txt"}\`. Then quote the content in your reply.
+
+### Example — writing a file
+
+Call \`cli_write_file\` with \`{"path": "output.txt", "content": "Hello"}\`. The user will be prompted to confirm.
+
+### Example — running a command
+
+Call \`cli_run_command\` with \`{"command": "ls", "args": ["-la"]}\`. The user will be prompted to confirm.
 `;
 }
 

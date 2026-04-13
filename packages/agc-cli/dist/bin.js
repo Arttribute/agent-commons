@@ -1257,61 +1257,105 @@ var import_fs3 = require("fs");
 var import_path3 = require("path");
 var import_child_process2 = require("child_process");
 var readline2 = __toESM(require("readline"));
-function buildLocalToolsManifest(rootDir) {
-  return `## Local File System Access
+var SKIP_DIRS = /* @__PURE__ */ new Set([".git", "node_modules", ".cache", "__pycache__", ".next", "dist", "build", ".DS_Store"]);
+function buildDirSnapshot(dir, maxDepth = 2) {
+  const lines = [`${dir}/`];
+  function walk(d, depth, prefix) {
+    if (lines.length >= 300) return;
+    let entries;
+    try {
+      entries = (0, import_fs3.readdirSync)(d, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    const sorted = entries.sort((a, b) => {
+      if (a.isDirectory() !== b.isDirectory()) return a.isDirectory() ? -1 : 1;
+      return a.name.localeCompare(b.name);
+    });
+    for (const entry of sorted) {
+      if (lines.length >= 300) {
+        lines.push(`${prefix}... (truncated)`);
+        return;
+      }
+      if (entry.name.startsWith(".") || SKIP_DIRS.has(entry.name)) continue;
+      const isDir = entry.isDirectory();
+      lines.push(`${prefix}${entry.name}${isDir ? "/" : ""}`);
+      if (isDir && depth < maxDepth) walk((0, import_path3.join)(d, entry.name), depth + 1, prefix + "  ");
+    }
+  }
+  walk(dir, 1, "  ");
+  return lines.join("\n");
+}
+function readFileForContext(rootDir, filePath) {
+  try {
+    const abs = (0, import_path3.resolve)(rootDir, filePath);
+    const rel = (0, import_path3.relative)(rootDir, abs);
+    if (rel.startsWith("..") || rel.startsWith("/")) return `[error: path escapes session root]`;
+    for (const pat of [/\/\.ssh\//, /\/\.aws\//, /\/\.env$/, /\/\.env\./, /id_rsa/, /id_ed25519/]) {
+      if (pat.test(abs)) return `[error: sensitive path blocked]`;
+    }
+    if (!(0, import_fs3.existsSync)(abs)) return `[error: file not found: ${filePath}]`;
+    const stat = (0, import_fs3.statSync)(abs);
+    if (stat.isDirectory()) return `[error: "${filePath}" is a directory \u2014 use list_directory]`;
+    if (stat.size > 1e5) return `[truncated \u2014 file too large (${Math.round(stat.size / 1024)} KB). Use cli_read_file for full content]`;
+    return (0, import_fs3.readFileSync)(abs, "utf8");
+  } catch (err) {
+    return `[error reading file: ${err?.message}]`;
+  }
+}
+function buildLocalToolsManifest(rootDir, snapshot, fileContextBlocks = []) {
+  const fileSection = fileContextBlocks.length ? `
+### File contents included in this turn
 
-You have direct access to the user's local machine file system. Use these tools freely to complete tasks \u2014 do not ask the user to run commands themselves.
+${fileContextBlocks.join("\n\n")}
+` : "";
+  return `
+## CLI Local File System \u2014 ACTIVE
+
+You are running inside a CLI session with DIRECT access to the user's local machine. The following tools are in your tool list and execute on the user's machine in real time.
 
 **Session root:** ${rootDir}
-All paths are relative to the session root unless absolute.
 
----
+### Current file system (live snapshot)
 
-### How to call a tool
-
-When you need to use a local tool, output ONLY the following JSON block \u2014 nothing else in that message. After receiving the result, continue your response:
-
-\`\`\`tool
-{"tool": "<tool_name>", "args": {"<arg>": "<value>"}}
 \`\`\`
-
-You may call tools multiple times in sequence. Each call will be executed and the result returned to you before you continue.
-
----
-
-### Available tools
-
-**read_file** \u2014 Read the full contents of a file.
-\`\`\`tool
-{"tool": "read_file", "args": {"path": "src/index.ts"}}
+${snapshot}
 \`\`\`
+${fileSection}
 
-**write_file** \u2014 Write content to a file (creates directories as needed). User must confirm.
-\`\`\`tool
-{"tool": "write_file", "args": {"path": "output.txt", "content": "Hello world"}}
-\`\`\`
+### MANDATORY RULES \u2014 READ CAREFULLY
 
-**list_directory** \u2014 List files and directories at a path. Defaults to session root.
-\`\`\`tool
-{"tool": "list_directory", "args": {"path": "src"}}
-\`\`\`
+1. **Call cli_* tools immediately and directly.** Do NOT create tasks (createTask) for local file operations. Do NOT delegate to sub-agents. Do NOT ask the user to run commands themselves.
+2. **Always show the actual output** returned by the tool in your response. Never say "I listed the files" without showing them. Report exactly what the tool returns.
+3. **Never fabricate results.** Wait for the real tool output before responding.
+4. **Sensitive paths are blocked** (.ssh, .gnupg, .aws, .env, credentials). Attempting to access them will return an error.
+5. **cli_write_file and cli_run_command require the user to confirm** before executing \u2014 you will see the result after they approve.
 
-**search_files** \u2014 Find files matching a name/path pattern (glob-style, up to 50 results).
-\`\`\`tool
-{"tool": "search_files", "args": {"pattern": "*.ts", "directory": "src"}}
-\`\`\`
+### Available CLI tools
 
-**run_command** \u2014 Execute a shell command and return stdout/stderr. User must confirm. 30s timeout.
-\`\`\`tool
-{"tool": "run_command", "args": {"command": "node", "args": ["--version"]}}
-\`\`\`
+| Tool | What it does |
+|------|-------------|
+| \`cli_list_directory\` | List files and folders at a path (default: session root) |
+| \`cli_read_file\` | Read the full contents of a file |
+| \`cli_write_file\` | Write or overwrite a file (user confirmation required) |
+| \`cli_search_files\` | Find files matching a pattern, e.g. "*.ts" |
+| \`cli_run_command\` | Run a shell command and return output (user confirmation required) |
 
----
+### Example \u2014 listing a directory
 
-**Important:**
-- Never fabricate tool results. Always wait for the actual output.
-- Sensitive paths (.ssh, .env, .aws, credentials) are blocked by the system.
-- Write and run_command operations require explicit user approval before executing.
+When the user asks "what's on my desktop?", call \`cli_list_directory\` with \`{"path": "Desktop"}\` immediately. Then show the result.
+
+### Example \u2014 reading a file
+
+Call \`cli_read_file\` with \`{"path": "Desktop/notes.txt"}\`. Then quote the content in your reply.
+
+### Example \u2014 writing a file
+
+Call \`cli_write_file\` with \`{"path": "output.txt", "content": "Hello"}\`. The user will be prompted to confirm.
+
+### Example \u2014 running a command
+
+Call \`cli_run_command\` with \`{"command": "ls", "args": ["-la"]}\`. The user will be prompted to confirm.
 `;
 }
 var TOOL_CALL_RE = /```tool\s*\n([\s\S]*?)\n```/;
@@ -1522,9 +1566,13 @@ var HELP_TEXT = `
   ${c.label("Slash commands")}
   /help          Show this help
   /session       Print the current session ID (copy it to resume later)
-  /tools         Show local tool status and permissions (--local mode)
+  /tools         Show local tool status and permissions
   /clear         Clear the terminal screen
   /quit          Exit (session is preserved \u2014 resume with --resume <id>)
+
+  ${c.label("File context")}
+  Use @path/to/file in your message to inject that file's contents into context.
+  Example: "review @src/index.ts and suggest improvements"
 `;
 var LOCAL_TOOLS_DISCLAIMER = `
   ${c.warn("\u26A0")}  ${c.bold("Local file system access enabled")}
@@ -1705,14 +1753,27 @@ Session saved. Resume with: agc chat --resume ${sessionId}`));
         content: input,
         timestamp: (/* @__PURE__ */ new Date()).toISOString()
       });
+      let userMessage = input;
+      let cliContext;
+      if (localToolsCfg) {
+        const rootDir = localToolsCfg.rootDir;
+        const atRefs = [...input.matchAll(/@([\S]+)/g)].map((m) => m[1]);
+        const fileContextBlocks = [];
+        for (const ref of atRefs) {
+          const content = readFileForContext(rootDir, ref);
+          fileContextBlocks.push(`**${ref}**
+\`\`\`
+${content}
+\`\`\``);
+        }
+        const snapshot = buildDirSnapshot(rootDir, 2);
+        cliContext = buildLocalToolsManifest(rootDir, snapshot, fileContextBlocks);
+      }
       const params = {
         agentId,
         sessionId,
-        messages: [{ role: "user", content: input }],
-        // Inject the tool manifest into the agent's system prompt server-side so
-        // the LLM receives it as part of its actual instructions, not as a stray
-        // second system message appended after the conversation history.
-        ...localToolsCfg && { cliContext: buildLocalToolsManifest(localToolsCfg.rootDir) }
+        messages: [{ role: "user", content: userMessage }],
+        ...cliContext && { cliContext }
       };
       process.stdout.write(c.primary("agent") + c.dim(" \u203A "));
       if (opts.noStream) {
