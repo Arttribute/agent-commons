@@ -56,60 +56,46 @@ export interface LocalToolsConfig {
 // expect tool invocation instructions in a system prompt.
 
 export function buildLocalToolsManifest(rootDir: string): string {
-  return `## Local File System Access
+  return `
+## CLI Local File System — ACTIVE
 
-You have direct access to the user's local machine file system. Use these tools freely to complete tasks — do not ask the user to run commands themselves.
+You are running inside a CLI session. The following tools are available in your tool list RIGHT NOW and execute directly on the user's machine. They are named with a \`cli_\` prefix.
 
 **Session root:** ${rootDir}
-All paths are relative to the session root unless absolute.
 
----
+### MANDATORY RULES — READ CAREFULLY
 
-### How to call a tool
+1. **Call cli_* tools immediately and directly.** Do NOT create tasks (createTask) for local file operations. Do NOT delegate to sub-agents. Do NOT ask the user to run commands themselves.
+2. **Always show the actual output** returned by the tool in your response. Never say "I listed the files" without showing them. Report exactly what the tool returns.
+3. **Never fabricate results.** Wait for the real tool output before responding.
+4. **Sensitive paths are blocked** (.ssh, .gnupg, .aws, .env, credentials). Attempting to access them will return an error.
+5. **cli_write_file and cli_run_command require the user to confirm** before executing — you will see the result after they approve.
 
-When you need to use a local tool, output ONLY the following JSON block — nothing else in that message. After receiving the result, continue your response:
+### Available CLI tools
 
-\`\`\`tool
-{"tool": "<tool_name>", "args": {"<arg>": "<value>"}}
-\`\`\`
+| Tool | What it does |
+|------|-------------|
+| \`cli_list_directory\` | List files and folders at a path (default: session root) |
+| \`cli_read_file\` | Read the full contents of a file |
+| \`cli_write_file\` | Write or overwrite a file (user confirmation required) |
+| \`cli_search_files\` | Find files matching a pattern, e.g. "*.ts" |
+| \`cli_run_command\` | Run a shell command and return output (user confirmation required) |
 
-You may call tools multiple times in sequence. Each call will be executed and the result returned to you before you continue.
+### Example — listing a directory
 
----
+When the user asks "what's on my desktop?", call \`cli_list_directory\` with \`{"path": "Desktop"}\` immediately. Then show the result.
 
-### Available tools
+### Example — reading a file
 
-**read_file** — Read the full contents of a file.
-\`\`\`tool
-{"tool": "read_file", "args": {"path": "src/index.ts"}}
-\`\`\`
+Call \`cli_read_file\` with \`{"path": "Desktop/notes.txt"}\`. Then quote the content in your reply.
 
-**write_file** — Write content to a file (creates directories as needed). User must confirm.
-\`\`\`tool
-{"tool": "write_file", "args": {"path": "output.txt", "content": "Hello world"}}
-\`\`\`
+### Example — writing a file
 
-**list_directory** — List files and directories at a path. Defaults to session root.
-\`\`\`tool
-{"tool": "list_directory", "args": {"path": "src"}}
-\`\`\`
+Call \`cli_write_file\` with \`{"path": "output.txt", "content": "Hello"}\`. The user will be prompted to confirm.
 
-**search_files** — Find files matching a name/path pattern (glob-style, up to 50 results).
-\`\`\`tool
-{"tool": "search_files", "args": {"pattern": "*.ts", "directory": "src"}}
-\`\`\`
+### Example — running a command
 
-**run_command** — Execute a shell command and return stdout/stderr. User must confirm. 30s timeout.
-\`\`\`tool
-{"tool": "run_command", "args": {"command": "node", "args": ["--version"]}}
-\`\`\`
-
----
-
-**Important:**
-- Never fabricate tool results. Always wait for the actual output.
-- Sensitive paths (.ssh, .env, .aws, credentials) are blocked by the system.
-- Write and run_command operations require explicit user approval before executing.
+Call \`cli_run_command\` with \`{"command": "ls", "args": ["-la"]}\`. The user will be prompted to confirm.
 `;
 }
 

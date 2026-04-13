@@ -222,6 +222,7 @@ export class AgentService implements OnModuleInit {
     childSessionsInfo: string,
     memoryBlock = '',
     sessionTasks: Array<{ taskId: string; title: string; status: string; description?: string | null; summary?: string | null; createdAt?: Date | null }> = [],
+    cliMode = false,
   ): string {
     const currentTime = new Date();
 
@@ -257,7 +258,10 @@ export class AgentService implements OnModuleInit {
 
       ### Responding to users
       - For simple requests, reply directly and concisely.
-      - For complex, multi-step requests, break the work into tasks using createTask before executing.
+      ${cliMode
+        ? '- You are running in a CLI session with direct local file system access. Use cli_* tools immediately for any file or directory requests. NEVER create tasks for local file operations.'
+        : '- For complex, multi-step requests, break the work into tasks using createTask before executing.'
+      }
 
       ### Tasks
       Tasks are units of work you can create, track, and execute. Use them for anything that benefits from structured tracking or deferred/scheduled execution.
@@ -666,7 +670,18 @@ export class AgentService implements OnModuleInit {
             },
           );
 
-          const llmWithTools = (llm as any).bindTools(toolDefs as any, {
+          // CLI tool schemas to expose to the LLM (only when cliContext is present)
+          const cliToolSchemas: ChatCompletionTool[] = props.cliContext
+            ? [
+                { type: 'function', function: { name: 'cli_list_directory', description: 'List files and folders at a path on the user\'s local machine. Call this immediately when asked about local files or directories.', parameters: { type: 'object', properties: { path: { type: 'string', description: 'Directory path relative to session root (default: session root)' } }, required: [] } } },
+                { type: 'function', function: { name: 'cli_read_file', description: 'Read the full contents of a file on the user\'s local machine.', parameters: { type: 'object', properties: { path: { type: 'string', description: 'File path relative to session root' } }, required: ['path'] } } },
+                { type: 'function', function: { name: 'cli_write_file', description: 'Write content to a file on the user\'s local machine. Requires user confirmation.', parameters: { type: 'object', properties: { path: { type: 'string', description: 'File path relative to session root' }, content: { type: 'string', description: 'Content to write' } }, required: ['path', 'content'] } } },
+                { type: 'function', function: { name: 'cli_search_files', description: 'Search for files matching a pattern on the user\'s local machine (e.g. "*.ts").', parameters: { type: 'object', properties: { pattern: { type: 'string', description: 'Glob-style filename pattern' }, directory: { type: 'string', description: 'Directory to search (default: session root)' } }, required: ['pattern'] } } },
+                { type: 'function', function: { name: 'cli_run_command', description: 'Run a shell command on the user\'s local machine and return output. Requires user confirmation.', parameters: { type: 'object', properties: { command: { type: 'string', description: 'Command to run' }, args: { type: 'array', items: { type: 'string' }, description: 'Arguments' }, cwd: { type: 'string', description: 'Working directory' } }, required: ['command'] } } },
+              ]
+            : [];
+
+          const llmWithTools = (llm as any).bindTools([...toolDefs, ...cliToolSchemas] as any, {
             parallel_tool_calls: true,
             strict: false,
             callbacks: [callbackHandler],
@@ -769,7 +784,7 @@ export class AgentService implements OnModuleInit {
                 { name, description, schema },
               );
 
-            toolRunners.push(
+            (toolRunners as any[]).push(
               makeCliTool(
                 'cli_read_file',
                 'Read the full contents of a file on the user\'s local machine. Path is relative to the session root directory.',
@@ -878,7 +893,7 @@ export class AgentService implements OnModuleInit {
             messages.push({
               type: 'system',
               role: 'system',
-              content: this.buildSystemPrompt(agent, currentSessionId, childSessionsInfo, memoryBlock, sessionTasks),
+              content: this.buildSystemPrompt(agent, currentSessionId, childSessionsInfo, memoryBlock, sessionTasks, !!props.cliContext),
             } as any);
 
             if (
