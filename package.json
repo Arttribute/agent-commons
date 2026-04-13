@@ -9,7 +9,9 @@
     "changeset": "changeset",
     "version-packages": "changeset version",
     "version-ci": "changeset version && git checkout -- apps/commons-app/package.json",
-    "release": "pnpm build && changeset publish",
+    "release": "./scripts/release.sh",
+    "release:minor": "./scripts/release.sh minor",
+    "release:major": "./scripts/release.sh major",
     "prepare": "husky"
   },
   "keywords": [],

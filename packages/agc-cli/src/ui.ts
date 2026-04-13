@@ -25,7 +25,9 @@ export const sym = {
 
 // ── Banner ────────────────────────────────────────────────────────────────────
 
-export function banner(version = '0.1.4'): void {
+declare const __CLI_VERSION__: string;
+
+export function banner(version = __CLI_VERSION__): void {
   const line = chalk.cyan('  ─'.padEnd(2) + '─'.repeat(44));
   console.log('');
   console.log(line);
