@@ -453,6 +453,8 @@ export class AgentService implements OnModuleInit {
     stream?: boolean; // ✅ stream flag
     turnCount?: number;
     maxTurns?: number;
+    /** Extra text appended to the agent's system prompt (used by CLI for local tool manifest). */
+    cliContext?: string;
   }): Observable<any> {
     return new Observable<any>((subscriber) => {
       // Keep SSE connection alive through proxies
@@ -863,7 +865,10 @@ export class AgentService implements OnModuleInit {
             latestUserMsg ?? '',
           ).catch(() => '');
 
-          if (memoryBlock) {
+          // Build the extra content to append to the system prompt (memory + CLI context)
+          const extraSystemContent = [memoryBlock, props.cliContext].filter(Boolean).join('\n\n');
+
+          if (extraSystemContent) {
             // Append to the existing system message, or push a new one
             const sysIdx = messages.findIndex(
               (m: any) => m.role === 'system' || m.type === 'system',
@@ -872,13 +877,13 @@ export class AgentService implements OnModuleInit {
               const sys = messages[sysIdx] as any;
               messages[sysIdx] = {
                 ...sys,
-                content: `${sys.content}${memoryBlock}`,
+                content: `${sys.content}${extraSystemContent}`,
               };
             } else {
               messages.push({
                 type: 'system',
                 role: 'system',
-                content: memoryBlock,
+                content: extraSystemContent,
               } as any);
             }
           }

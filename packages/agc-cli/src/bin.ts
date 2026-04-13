@@ -73,9 +73,21 @@ async function interactiveMenu(): Promise<void> {
     process.exit(0);
   }
 
+  // For commands that need an agent ID, pick one interactively if no default is set
+  const agentId = cfg.defaultAgentId ?? await pickAgentInteractively(action as 'chat' | 'run');
+  if ((action === 'chat' || action === 'run') && !agentId) return;
+
+  // "run" needs a prompt typed before handing off to the subprocess
+  if (action === 'run') {
+    const prompt = await askPrompt('Enter your prompt:');
+    if (!prompt) return;
+    runSubcommand(['run', '--agent', agentId!, prompt]);
+    return;
+  }
+
   const commandMap: Record<MenuAction, string[]> = {
-    chat:      cfg.defaultAgentId ? ['chat', '--agent', cfg.defaultAgentId] : ['chat', '--agent'],
-    run:       cfg.defaultAgentId ? ['run', '--agent', cfg.defaultAgentId, '--message'] : ['run', '--agent'],
+    chat:      ['chat', '--agent', agentId!],
+    run:       [],  // handled above
     sessions:  ['sessions', 'list'],
     agents:    ['agents', 'list'],
     tasks:     ['task', 'list'],
@@ -89,15 +101,20 @@ async function interactiveMenu(): Promise<void> {
     exit:      [],
   };
 
-  // For commands that need an agent ID, pick one interactively if no default is set
-  if ((action === 'chat' || action === 'run') && !cfg.defaultAgentId) {
-    const pickedId = await pickAgentInteractively(action);
-    if (!pickedId) return;
-    runSubcommand([action, '--agent', pickedId]);
-    return;
-  }
-
   runSubcommand(commandMap[action]);
+}
+
+async function askPrompt(question: string): Promise<string | null> {
+  const { createInterface } = await import('readline');
+  return new Promise((resolve) => {
+    const rl = createInterface({ input: process.stdin, output: process.stdout });
+    process.stdout.write(`\n  ${c.bold(question)}\n  ${c.primary('›')} `);
+    rl.once('line', (line) => {
+      rl.close();
+      const trimmed = line.trim();
+      resolve(trimmed || null);
+    });
+  });
 }
 
 function runSubcommand(args: string[]): void {

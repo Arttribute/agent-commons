@@ -27,6 +27,7 @@ interface RunBody {
   agentId: string;
   messages: any[];
   sessionId?: string;
+  cliContext?: string;
 }
 
 @Controller({ version: '1', path: 'agents' })
