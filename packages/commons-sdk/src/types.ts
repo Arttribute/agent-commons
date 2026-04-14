@@ -94,6 +94,7 @@ export type StreamEventType =
   | 'cancelled'
   | 'status'
   | 'keepalive'
+  | 'cli_tool_request'
   | 'error';
 
 export interface StreamEvent {

@@ -515,7 +515,7 @@ ${sym.ok} Agent created`);
       process.exit(1);
     }
   });
-  const autonomy = cmd.command("autonomy").description("Manage agent heartbeat / autonomy");
+  const autonomy = cmd.command("autonomy").description("Manage agent heartbeat");
   autonomy.command("status").description("Show autonomy status for an agent").requiredOption("--agent <agentId>", "Agent ID").option("--json", "Output as JSON").action(async (opts) => {
     const client = makeClient();
     const spinner = spin("Fetching autonomy status\u2026");
@@ -525,7 +525,7 @@ ${sym.ok} Agent created`);
       const s = res.data;
       if (opts.json) return jsonOut(s);
       console.log(`
-${c.bold("Autonomy Status")}`);
+${c.bold("Heartbeat Status")}`);
       detail([
         ["Enabled", s.enabled ? c.bold("yes") : "no"],
         ["Interval", s.intervalSec ? `${s.intervalSec}s` : "n/a"],
@@ -539,7 +539,7 @@ ${c.bold("Autonomy Status")}`);
       process.exit(1);
     }
   });
-  autonomy.command("enable").description("Enable autonomous heartbeat for an agent").requiredOption("--agent <agentId>", "Agent ID").option("--interval <seconds>", "Heartbeat interval in seconds (min 30)", "300").action(async (opts) => {
+  autonomy.command("enable").description("Enable heartbeat for an agent").requiredOption("--agent <agentId>", "Agent ID").option("--interval <seconds>", "Heartbeat interval in seconds (min 30)", "300").action(async (opts) => {
     const client = makeClient();
     const spinner = spin("Enabling autonomy\u2026");
     try {
@@ -557,7 +557,7 @@ ${sym.ok} Autonomy enabled for agent ${c.id(opts.agent)}`);
       process.exit(1);
     }
   });
-  autonomy.command("disable").description("Disable autonomous heartbeat for an agent").requiredOption("--agent <agentId>", "Agent ID").action(async (opts) => {
+  autonomy.command("disable").description("Disable heartbeat for an agent").requiredOption("--agent <agentId>", "Agent ID").action(async (opts) => {
     const client = makeClient();
     const spinner = spin("Disabling autonomy\u2026");
     try {
@@ -571,7 +571,7 @@ ${sym.ok} Autonomy disabled for agent ${c.id(opts.agent)}`);
       process.exit(1);
     }
   });
-  autonomy.command("trigger").description("Trigger a single heartbeat beat immediately").requiredOption("--agent <agentId>", "Agent ID").action(async (opts) => {
+  autonomy.command("trigger").description("Trigger a single heartbeat immediately").requiredOption("--agent <agentId>", "Agent ID").action(async (opts) => {
     const client = makeClient();
     const spinner = spin("Triggering heartbeat\u2026");
     try {
@@ -2042,6 +2042,8 @@ ${sym.fail} ${c.error(err.message ?? String(err))}`);
         try {
           let hasOutput = false;
           let agentContent = "";
+          let toolStartMs = 0;
+          let lastToolName = "";
           const thinkingSpinner = spin("thinking\u2026");
           for await (const event of client.agents.stream(params)) {
             if (event.type === "token") {
@@ -2057,20 +2059,40 @@ ${sym.fail} ${c.error(err.message ?? String(err))}`);
               if (thinkingSpinner.isSpinning) thinkingSpinner.stop();
               const { requestId, tool: toolName, args } = event;
               const displayName = String(toolName).replace("cli_", "");
+              const argStr = toolArgSummary(displayName, args ?? {});
+              const isWaiting = displayName === "wait_for_process";
               if (hasOutput) {
                 process.stdout.write("\n");
                 hasOutput = false;
               }
-              process.stdout.write(c.dim(`  [local] ${displayName}\u2026`));
+              process.stdout.write(`  ${c.dim("\u2500")} ${c.bold(displayName)}${argStr ? "  " + c.dim(argStr) : ""}`);
+              const startMs = Date.now();
+              let elapsedSec = 0;
+              let elapsedInterval = null;
+              if (isWaiting) {
+                elapsedInterval = setInterval(() => {
+                  elapsedSec++;
+                  readline3.cursorTo(process.stdout, 0);
+                  process.stdout.write(`  ${c.dim("\u2500")} ${c.bold(displayName)}${argStr ? "  " + c.dim(argStr) : ""}  ${c.dim(elapsedSec + "s\u2026")}`);
+                }, 1e3);
+              }
               let result;
+              let toolOk = true;
               try {
-                const localToolName = String(toolName).replace("cli_", "");
-                result = await runLocalTool({ tool: localToolName, args: args ?? {} }, localToolsCfg);
-                process.stdout.write(c.dim(" \u2713\n"));
+                result = await runLocalTool({ tool: displayName, args: args ?? {} }, localToolsCfg);
               } catch (err) {
                 result = `Error: ${err?.message ?? String(err)}`;
-                process.stdout.write(c.dim(" \u2717\n"));
+                toolOk = false;
               }
+              if (elapsedInterval) clearInterval(elapsedInterval);
+              const elapsed = ((Date.now() - startMs) / 1e3).toFixed(1);
+              const preview = toolOk ? toolResultPreview(displayName, result) : "";
+              readline3.cursorTo(process.stdout, 0);
+              readline3.clearLine(process.stdout, 0);
+              const statusIcon = toolOk ? sym.ok : sym.fail;
+              const previewPart = preview ? `  ${c.dim(preview)}` : "";
+              process.stdout.write(`  ${c.dim("\u2500")} ${c.bold(displayName)}${argStr ? "  " + c.dim(argStr) : ""}  ${statusIcon}${previewPart}  ${c.dim("(" + elapsed + "s)")}
+`);
               appendSessionLog(sessionId, {
                 type: "local_tool_result",
                 tool: toolName,
@@ -2090,15 +2112,20 @@ ${sym.fail} ${c.error(err.message ?? String(err))}`);
                 console.error(c.warn(`
   [local] Failed to submit tool result: ${postErr?.message}`));
               }
-            } else if (event.type === "ping") {
+            } else if (event.type === "keepalive") {
             } else if (event.type === "toolStart") {
               if (thinkingSpinner.isSpinning) thinkingSpinner.stop();
-              const name = event.toolName ?? "";
+              lastToolName = event.toolName ?? "";
+              toolStartMs = Date.now();
               if (hasOutput) process.stdout.write("\n");
-              process.stdout.write(c.dim(`  [tool] ${name}\u2026`));
+              process.stdout.write(`  ${c.dim("\u2500")} ${c.bold(lastToolName)}`);
               hasOutput = false;
             } else if (event.type === "toolEnd") {
-              process.stdout.write(c.dim(" done\n"));
+              const elapsed = ((Date.now() - toolStartMs) / 1e3).toFixed(1);
+              readline3.cursorTo(process.stdout, 0);
+              readline3.clearLine(process.stdout, 0);
+              process.stdout.write(`  ${c.dim("\u2500")} ${c.bold(lastToolName)}  ${sym.ok}  ${c.dim("(" + elapsed + "s)")}
+`);
               process.stdout.write(c.primary("agent") + c.dim(" \u203A "));
               hasOutput = false;
             } else if (event.type === "final") {
@@ -2178,16 +2205,25 @@ async function handleLocalToolLoop(agentText, cfg, client, agentId, sessionId, a
   }
   const toolCall = extractToolCall(agentText);
   if (!toolCall) return;
-  process.stdout.write(c.dim(`
-  [local] ${toolCall.tool}`));
+  const argStr = toolArgSummary(toolCall.tool, toolCall.args ?? {});
+  process.stdout.write(`
+  ${c.dim("\u2500")} ${c.bold(toolCall.tool)}${argStr ? "  " + c.dim(argStr) : ""}`);
+  const startMs = Date.now();
   let result;
+  let toolOk = true;
   try {
     result = await runLocalTool(toolCall, cfg);
-    process.stdout.write(c.dim(" \u2713\n"));
   } catch (err) {
     result = `Error: ${err?.message ?? String(err)}`;
-    process.stdout.write(c.dim(" \u2717\n"));
+    toolOk = false;
   }
+  const elapsed = ((Date.now() - startMs) / 1e3).toFixed(1);
+  const preview = toolOk ? toolResultPreview(toolCall.tool, result) : "";
+  readline3.cursorTo(process.stdout, 0);
+  readline3.clearLine(process.stdout, 0);
+  const previewPart = preview ? `  ${c.dim(preview)}` : "";
+  process.stdout.write(`  ${c.dim("\u2500")} ${c.bold(toolCall.tool)}${argStr ? "  " + c.dim(argStr) : ""}  ${toolOk ? sym.ok : sym.fail}${previewPart}  ${c.dim("(" + elapsed + "s)")}
+`);
   const resultMsg = `[Tool result: ${toolCall.tool}]
 \`\`\`
 ${result}
@@ -2202,6 +2238,8 @@ ${result}
   process.stdout.write(c.primary("agent") + c.dim(" \u203A "));
   let followContent = "";
   try {
+    let loopToolName = "";
+    let loopToolStartMs = 0;
     for await (const evt of client.agents.stream({
       agentId,
       sessionId,
@@ -2212,11 +2250,16 @@ ${result}
         process.stdout.write(tok);
         followContent += tok;
       } else if (evt.type === "toolStart") {
-        const name = evt.toolName ?? "";
+        loopToolName = evt.toolName ?? "";
+        loopToolStartMs = Date.now();
         if (followContent) process.stdout.write("\n");
-        process.stdout.write(c.dim(`  [tool] ${name}\u2026`));
+        process.stdout.write(`  ${c.dim("\u2500")} ${c.bold(loopToolName)}`);
       } else if (evt.type === "toolEnd") {
-        process.stdout.write(c.dim(" done\n"));
+        const elapsed2 = ((Date.now() - loopToolStartMs) / 1e3).toFixed(1);
+        readline3.cursorTo(process.stdout, 0);
+        readline3.clearLine(process.stdout, 0);
+        process.stdout.write(`  ${c.dim("\u2500")} ${c.bold(loopToolName)}  ${sym.ok}  ${c.dim("(" + elapsed2 + "s)")}
+`);
         process.stdout.write(c.primary("agent") + c.dim(" \u203A "));
       } else if (evt.type === "final") {
         const txt = extractText(evt?.payload);
@@ -2239,6 +2282,80 @@ ${sym.fail} ${c.error(evt.message ?? "Stream error")}`);
     return;
   }
   await handleLocalToolLoop(followContent, cfg, client, agentId, sessionId, appendLog, depth + 1);
+}
+function truncate(s, max) {
+  const str = String(s ?? "");
+  return str.length <= max ? str : str.slice(0, max - 1) + "\u2026";
+}
+function toolArgSummary(toolName, args) {
+  switch (toolName) {
+    case "read_file":
+      return truncate(args.path ?? "", 60);
+    case "write_file":
+      return truncate(args.path ?? "", 60);
+    case "delete_file":
+      return truncate(args.path ?? "", 60);
+    case "list_directory":
+      return truncate(args.path ?? ".", 60);
+    case "run_command":
+      return truncate(args.command ?? "", 60);
+    case "start_process":
+      return truncate(args.command ?? "", 60);
+    case "wait_for_process":
+      return truncate(args.process_id ?? "", 20);
+    case "process_status":
+      return truncate(args.process_id ?? "", 20);
+    case "kill_process":
+      return truncate(args.process_id ?? "", 20);
+    case "list_processes":
+      return "";
+    case "search_files": {
+      const parts = [args.pattern, args.query].filter(Boolean);
+      return truncate(parts.join(" "), 60);
+    }
+    default: {
+      const first = args.path ?? args.query ?? args.command ?? args.pattern ?? "";
+      return truncate(String(first), 60);
+    }
+  }
+}
+function toolResultPreview(toolName, result) {
+  if (!result || result.startsWith("Error:")) return "";
+  switch (toolName) {
+    case "read_file": {
+      const lines = result.split("\n").length;
+      return `${lines} lines`;
+    }
+    case "write_file":
+      return "written";
+    case "delete_file":
+      return "deleted";
+    case "list_directory": {
+      const count = result.split("\n").filter(Boolean).length;
+      return `${count} entries`;
+    }
+    case "run_command": {
+      const first = result.split("\n").find((l) => l.trim());
+      return first ? truncate(first.trim(), 50) : "done";
+    }
+    case "start_process": {
+      const match = result.match(/process[_\s-]?id[:\s]+([a-zA-Z0-9_-]+)/i) ?? result.match(/"id"[:\s]+"([^"]+)"/);
+      return match ? `pid ${match[1]}` : "started";
+    }
+    case "wait_for_process": {
+      if (/done|complete|exit/i.test(result)) return "done";
+      if (/running/i.test(result)) return "still running";
+      return truncate(result.split("\n")[0]?.trim() ?? "", 40);
+    }
+    case "search_files": {
+      const count = result.split("\n").filter(Boolean).length;
+      return `${count} match${count === 1 ? "" : "es"}`;
+    }
+    default: {
+      const first = result.split("\n").find((l) => l.trim());
+      return first ? truncate(first.trim(), 50) : "";
+    }
+  }
 }
 function extractText(payload) {
   if (!payload) return "";
