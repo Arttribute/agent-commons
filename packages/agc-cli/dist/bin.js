@@ -106,7 +106,7 @@ var sym = {
   bullet: import_chalk.default.dim("\u2022"),
   dot: import_chalk.default.dim("\xB7")
 };
-function banner(version = "0.1.8") {
+function banner(version = "0.1.15") {
   const line = import_chalk.default.cyan("  \u2500".padEnd(2) + "\u2500".repeat(44));
   console.log("");
   console.log(line);
@@ -1257,6 +1257,12 @@ var import_fs3 = require("fs");
 var import_path3 = require("path");
 var import_child_process2 = require("child_process");
 var readline2 = __toESM(require("readline"));
+var managedProcesses = /* @__PURE__ */ new Map();
+function capBuffer(existing, chunk, maxBytes) {
+  const joined = existing + chunk;
+  if (joined.length <= maxBytes) return joined;
+  return "\u2026(truncated)\n" + joined.slice(-(maxBytes - 20));
+}
 var SKIP_DIRS = /* @__PURE__ */ new Set([".git", "node_modules", ".cache", "__pycache__", ".next", "dist", "build", ".DS_Store"]);
 function buildDirSnapshot(dir, maxDepth = 2) {
   const lines = [`${dir}/`];
@@ -1335,27 +1341,59 @@ ${fileSection}
 
 | Tool | What it does |
 |------|-------------|
-| \`cli_list_directory\` | List files and folders at a path (default: session root) |
-| \`cli_read_file\` | Read the full contents of a file |
+| \`cli_list_directory\` | List files and folders at a path |
+| \`cli_read_file\` | Read a file (PDF and Word docs are extracted to text) |
 | \`cli_write_file\` | Write or overwrite a file (user confirmation required) |
-| \`cli_search_files\` | Find files matching a pattern, e.g. "*.ts" |
-| \`cli_run_command\` | Run a shell command and return output (user confirmation required) |
+| \`cli_search_files\` | Find files matching a pattern |
+| \`cli_run_command\` | Run a short command and return its output (user confirmation required) |
+| \`cli_start_process\` | Start a long-running command in the background; returns a processId immediately |
+| \`cli_wait_for_process\` | Block up to N seconds for a background process, then return current output |
+| \`cli_process_status\` | Instant non-blocking check on a background process |
+| \`cli_kill_process\` | Kill a running background process |
+| \`cli_list_processes\` | List all background processes started this session |
 
-### Example \u2014 listing a directory
+### Choosing between run_command and start_process
 
-When the user asks "what's on my desktop?", call \`cli_list_directory\` with \`{"path": "Desktop"}\` immediately. Then show the result.
+| Situation | Use |
+|-----------|-----|
+| Command finishes in under ~30s | \`cli_run_command\` |
+| Command may take minutes (npm install, build, scaffold) | \`cli_start_process\` + \`cli_wait_for_process\` |
+| Command needs live stdin (e.g. a REPL) | \`cli_run_command\` with \`"interactive": true\` |
 
-### Example \u2014 reading a file
+### run_command options
+- \`timeout_seconds\` (default 120, max 300) \u2014 kill the process after N seconds
+- \`interactive\` (boolean) \u2014 connects the user's terminal stdin for commands that need input
 
-Call \`cli_read_file\` with \`{"path": "Desktop/notes.txt"}\`. Then quote the content in your reply.
+### start_process + wait_for_process pattern
 
-### Example \u2014 writing a file
+For long commands like \`npx create-next-app@latest my-app --yes\`:
 
-Call \`cli_write_file\` with \`{"path": "output.txt", "content": "Hello"}\`. The user will be prompted to confirm.
+1. Call \`cli_start_process\` \u2014 returns \`{processId, status: "running"}\` immediately. Tell the user it has started.
+2. Call \`cli_wait_for_process\` with \`{"processId": "...", "wait_seconds": 60}\` \u2014 blocks up to 60s then returns current stdout/status. Report progress to the user.
+3. Repeat step 2 until \`status\` is \`"done"\` or \`"error"\`.
+4. Report the final output to the user.
 
-### Example \u2014 running a command
+Never hold the user in silence. Between each \`cli_wait_for_process\` call, tell them what you saw so far.
 
-Call \`cli_run_command\` with \`{"command": "ls", "args": ["-la"]}\`. The user will be prompted to confirm.
+### Example \u2014 scaffolding a Next.js project
+
+\`\`\`
+cli_start_process: {"command": "npx", "args": ["create-next-app@latest", "my-app", "--yes"], "cwd": "Desktop"}
+\u2192 {processId: "proc_1a2b", status: "running"}
+
+Tell user: "Started! Installing dependencies, this takes a minute or two. Checking in 60s\u2026"
+
+cli_wait_for_process: {"processId": "proc_1a2b", "wait_seconds": 60}
+\u2192 {status: "running", elapsedSec: 60, stdout: "Creating project...
+Installing packages\u2026"}
+
+Tell user: "Still installing \u2014 here's output so far: [stdout]. Checking again\u2026"
+
+cli_wait_for_process: {"processId": "proc_1a2b", "wait_seconds": 60}
+\u2192 {status: "done", exitCode: 0, elapsedSec: 93, stdout: "Success! Created my-app"}
+
+Tell user: "Done! Project created in Desktop/my-app"
+\`\`\`
 `;
 }
 var TOOL_CALL_RE = /```tool\s*\n([\s\S]*?)\n```/;
@@ -1421,6 +1459,61 @@ async function confirm(message, config, permissionKey) {
     });
   });
 }
+var OFFICE_EXTS = /* @__PURE__ */ new Set([".docx", ".doc", ".rtf", ".odt", ".pages"]);
+var PDF_EXTS = /* @__PURE__ */ new Set([".pdf"]);
+var UNREADABLE_BINARY_EXTS = /* @__PURE__ */ new Set([
+  ".png",
+  ".jpg",
+  ".jpeg",
+  ".gif",
+  ".bmp",
+  ".ico",
+  ".webp",
+  ".tiff",
+  ".mp3",
+  ".mp4",
+  ".wav",
+  ".aac",
+  ".ogg",
+  ".flac",
+  ".zip",
+  ".tar",
+  ".gz",
+  ".bz2",
+  ".7z",
+  ".rar",
+  ".exe",
+  ".dll",
+  ".so",
+  ".dylib",
+  ".bin",
+  ".psd",
+  ".ai",
+  ".sketch",
+  ".figma",
+  ".xlsx",
+  ".xls",
+  ".pptx",
+  ".ppt"
+]);
+function extractViaCommand(cmd, cmdArgs) {
+  return new Promise((res) => {
+    (0, import_child_process2.execFile)(cmd, cmdArgs, { timeout: 3e4, maxBuffer: 2 * 1024 * 1024 }, (err, stdout) => {
+      if (err) res("");
+      else res(stdout.trim());
+    });
+  });
+}
+async function extractPdfText(abs) {
+  const text = await extractViaCommand("pdftotext", [abs, "-"]);
+  if (text) return text;
+  return `[Cannot extract PDF text: pdftotext not found. Install with: brew install poppler]`;
+}
+async function extractOfficeText(abs, ext) {
+  const text = await extractViaCommand("textutil", ["-stdout", "-cat", "txt", abs]);
+  if (text) return text;
+  return `[Cannot extract ${ext} text: textutil failed or is unavailable on this system]`;
+}
 async function toolReadFile(args, cfg) {
   const { path: userPath } = args;
   if (!userPath) throw new Error('read_file requires a "path" argument');
@@ -1430,6 +1523,12 @@ async function toolReadFile(args, cfg) {
   const stat = (0, import_fs3.statSync)(abs);
   if (stat.isDirectory()) throw new Error(`"${userPath}" is a directory, not a file`);
   if (stat.size > 5e5) throw new Error(`File too large to read (${Math.round(stat.size / 1024)} KB). Max 500 KB.`);
+  const ext = (0, import_path3.extname)(abs).toLowerCase();
+  if (PDF_EXTS.has(ext)) return extractPdfText(abs);
+  if (OFFICE_EXTS.has(ext)) return extractOfficeText(abs, ext);
+  if (UNREADABLE_BINARY_EXTS.has(ext)) {
+    throw new Error(`Cannot read binary file "${userPath}" (${ext} format). Only text, PDF, and Word documents are supported.`);
+  }
   return (0, import_fs3.readFileSync)(abs, "utf8");
 }
 async function toolWriteFile(args, cfg) {
@@ -1487,11 +1586,12 @@ async function toolSearchFiles(args, cfg) {
   return results.length ? results.join("\n") : "No files found matching: " + pattern;
 }
 async function toolRunCommand(args, cfg) {
-  const { command, args: cmdArgs = [], cwd } = args;
+  const { command, args: cmdArgs = [], cwd, timeout_seconds, interactive } = args;
   if (!command || typeof command !== "string") throw new Error('run_command requires a "command" string');
   if (!Array.isArray(cmdArgs)) throw new Error('"args" must be an array of strings');
   const workDir = cwd ? safePath(cfg.rootDir, cwd) : cfg.rootDir;
   const preview = [command, ...cmdArgs].join(" ");
+  const timeoutMs = Math.min((typeof timeout_seconds === "number" ? timeout_seconds : 120) * 1e3, 3e5);
   const ok = await confirm(
     `Agent wants to run: \x1B[1m${preview}\x1B[0m
   \x1B[2min: ${workDir}\x1B[0m`,
@@ -1499,13 +1599,141 @@ async function toolRunCommand(args, cfg) {
     "run_command"
   );
   if (!ok) return "User denied command execution.";
+  if (interactive) {
+    return new Promise((resolve2) => {
+      const child = (0, import_child_process2.spawn)(command, cmdArgs.map(String), { cwd: workDir, stdio: "inherit" });
+      const timer = setTimeout(() => {
+        child.kill();
+        resolve2(`(command timed out after ${timeoutMs / 1e3}s)`);
+      }, timeoutMs);
+      child.on("close", (code) => {
+        clearTimeout(timer);
+        resolve2(`(command exited with code ${code ?? "unknown"})`);
+      });
+      child.on("error", (err) => {
+        clearTimeout(timer);
+        resolve2(`Error: ${err.message}`);
+      });
+    });
+  }
   return new Promise((resolve2) => {
-    (0, import_child_process2.execFile)(command, cmdArgs.map(String), { cwd: workDir, timeout: 3e4, maxBuffer: 1024 * 1024 }, (err, stdout, stderr) => {
+    (0, import_child_process2.execFile)(command, cmdArgs.map(String), { cwd: workDir, timeout: timeoutMs, maxBuffer: 1024 * 1024 }, (err, stdout, stderr) => {
       const out = [stdout, stderr].filter(Boolean).join("\n--- stderr ---\n");
       if (err && !out) return resolve2(`Error: ${err.message}`);
       resolve2(out || "(no output)");
     });
   });
+}
+async function toolStartProcess(args, cfg) {
+  const { command, args: cmdArgs = [], cwd } = args;
+  if (!command || typeof command !== "string") throw new Error('start_process requires a "command" string');
+  if (!Array.isArray(cmdArgs)) throw new Error('"args" must be an array of strings');
+  const workDir = cwd ? safePath(cfg.rootDir, cwd) : cfg.rootDir;
+  const preview = [command, ...cmdArgs].join(" ");
+  const ok = await confirm(
+    `Agent wants to start background process: \x1B[1m${preview}\x1B[0m
+  \x1B[2min: ${workDir}\x1B[0m`,
+    cfg,
+    "start_process"
+  );
+  if (!ok) return JSON.stringify({ error: "User denied process start." });
+  const id = `proc_${Date.now().toString(36)}`;
+  const child = (0, import_child_process2.spawn)(command, cmdArgs.map(String), {
+    cwd: workDir,
+    stdio: ["ignore", "pipe", "pipe"],
+    detached: false
+  });
+  const proc = {
+    id,
+    command: preview,
+    status: "running",
+    exitCode: null,
+    stdout: "",
+    stderr: "",
+    startedAt: /* @__PURE__ */ new Date(),
+    endedAt: null,
+    child
+  };
+  child.stdout?.on("data", (chunk) => {
+    proc.stdout = capBuffer(proc.stdout, chunk.toString(), 2e5);
+  });
+  child.stderr?.on("data", (chunk) => {
+    proc.stderr = capBuffer(proc.stderr, chunk.toString(), 5e4);
+  });
+  child.on("close", (code) => {
+    proc.status = code === 0 ? "done" : "error";
+    proc.exitCode = code;
+    proc.endedAt = /* @__PURE__ */ new Date();
+  });
+  child.on("error", (err) => {
+    proc.status = "error";
+    proc.endedAt = /* @__PURE__ */ new Date();
+    proc.stderr = capBuffer(proc.stderr, `
+Spawn error: ${err.message}`, 5e4);
+  });
+  managedProcesses.set(id, proc);
+  cfg.appendLog({ type: "process_start", processId: id, command: preview, timestamp: (/* @__PURE__ */ new Date()).toISOString() });
+  return JSON.stringify({ processId: id, status: "running", command: preview });
+}
+function processSnapshot(proc) {
+  const elapsedSec = Math.round((Date.now() - proc.startedAt.getTime()) / 1e3);
+  const recentStdout = proc.stdout.length > 4e3 ? "\u2026(earlier output truncated)\n" + proc.stdout.slice(-4e3) : proc.stdout;
+  return JSON.stringify({
+    processId: proc.id,
+    command: proc.command,
+    status: proc.status,
+    exitCode: proc.exitCode,
+    elapsedSec,
+    stdout: recentStdout || "(no output yet)",
+    stderr: proc.stderr.slice(-1e3) || void 0
+  });
+}
+async function toolProcessStatus(args, _cfg) {
+  const { processId } = args;
+  if (!processId) throw new Error('process_status requires a "processId" argument');
+  const proc = managedProcesses.get(processId);
+  if (!proc) return JSON.stringify({ error: `No process found with id "${processId}"` });
+  return processSnapshot(proc);
+}
+async function toolWaitForProcess(args, _cfg) {
+  const { processId, wait_seconds = 60 } = args;
+  if (!processId) throw new Error('wait_for_process requires a "processId" argument');
+  const proc = managedProcesses.get(processId);
+  if (!proc) return JSON.stringify({ error: `No process found with id "${processId}"` });
+  if (proc.status !== "running") return processSnapshot(proc);
+  const maxWait = Math.min((typeof wait_seconds === "number" ? wait_seconds : 60) * 1e3, 12e4);
+  const deadline = Date.now() + maxWait;
+  await new Promise((resolve2) => {
+    const tick = setInterval(() => {
+      if (proc.status !== "running" || Date.now() >= deadline) {
+        clearInterval(tick);
+        resolve2();
+      }
+    }, 500);
+  });
+  return processSnapshot(proc);
+}
+async function toolKillProcess(args, cfg) {
+  const { processId } = args;
+  if (!processId) throw new Error('kill_process requires a "processId" argument');
+  const proc = managedProcesses.get(processId);
+  if (!proc) return JSON.stringify({ error: `No process found with id "${processId}"` });
+  if (proc.status !== "running") return JSON.stringify({ error: `Process "${processId}" is not running (status: ${proc.status})` });
+  proc.child.kill("SIGTERM");
+  proc.status = "killed";
+  proc.endedAt = /* @__PURE__ */ new Date();
+  cfg.appendLog({ type: "process_killed", processId, timestamp: (/* @__PURE__ */ new Date()).toISOString() });
+  return JSON.stringify({ processId, status: "killed" });
+}
+async function toolListProcesses(_args, _cfg) {
+  if (managedProcesses.size === 0) return JSON.stringify([]);
+  const list = [...managedProcesses.values()].map((p) => ({
+    processId: p.id,
+    command: p.command,
+    status: p.status,
+    elapsedSec: Math.round((Date.now() - p.startedAt.getTime()) / 1e3)
+  }));
+  return JSON.stringify(list);
 }
 async function runLocalTool(call, cfg) {
   const { tool, args } = call;
@@ -1533,8 +1761,23 @@ async function runLocalTool(call, cfg) {
       case "run_command":
         result = await toolRunCommand(args, cfg);
         break;
+      case "start_process":
+        result = await toolStartProcess(args, cfg);
+        break;
+      case "process_status":
+        result = await toolProcessStatus(args, cfg);
+        break;
+      case "wait_for_process":
+        result = await toolWaitForProcess(args, cfg);
+        break;
+      case "kill_process":
+        result = await toolKillProcess(args, cfg);
+        break;
+      case "list_processes":
+        result = await toolListProcesses(args, cfg);
+        break;
       default:
-        result = `Unknown tool: "${tool}". Available: read_file, write_file, list_directory, search_files, run_command`;
+        result = `Unknown tool: "${tool}". Available: read_file, write_file, list_directory, search_files, run_command, start_process, wait_for_process, process_status, kill_process, list_processes`;
     }
   } catch (err) {
     result = `Error: ${err?.message ?? String(err)}`;
@@ -1840,6 +2083,7 @@ ${sym.fail} ${c.error(err.message ?? String(err))}`);
                 console.error(c.warn(`
   [local] Failed to submit tool result: ${postErr?.message}`));
               }
+            } else if (event.type === "ping") {
             } else if (event.type === "toolStart") {
               const name = event.toolName ?? "";
               if (hasOutput) process.stdout.write("\n");
@@ -3279,7 +3523,7 @@ async function pickAgentInteractively(action) {
   return agentId;
 }
 var program = new import_commander16.Command();
-program.name("agc").description("Agent Commons CLI \u2014 interact with the Agent Commons platform").version("0.1.8", "-v, --version").action(async () => {
+program.name("agc").description("Agent Commons CLI \u2014 interact with the Agent Commons platform").version("0.1.15", "-v, --version").action(async () => {
   await interactiveMenu();
 });
 program.addCommand(loginCommand());

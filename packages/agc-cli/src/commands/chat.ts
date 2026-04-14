@@ -355,6 +355,8 @@ export function chatCommand(): Command {
                 } catch (postErr: any) {
                   console.error(c.warn(`\n  [local] Failed to submit tool result: ${postErr?.message}`));
                 }
+              } else if (event.type === 'ping') {
+                // server keepalive — no action needed
               } else if (event.type === 'toolStart') {
                 // Show tool invocation inline so the user knows the agent is working
                 const name = (event as any).toolName ?? '';
