@@ -474,7 +474,7 @@ export class AgentService implements OnModuleInit {
   }): Observable<any> {
     return new Observable<any>((subscriber) => {
       // Keep SSE connection alive through proxies
-      const heartbeat = setInterval(() => subscriber.next({ type: 'heartbeat' }), 15_000);
+      const keepalive = setInterval(() => subscriber.next({ type: 'keepalive' }), 15_000);
 
       const run = async () => {
         const tStart = performance.now();
@@ -778,7 +778,7 @@ export class AgentService implements OnModuleInit {
                   return new Promise<string>((resolve) => {
                     // Keepalive pings prevent GCP from closing the idle SSE stream
                     const pingInterval = setInterval(() => {
-                      try { subscriber.next({ type: 'ping' }); } catch { /* stream may already be closed */ }
+                      try { subscriber.next({ type: 'keepalive' }); } catch { /* stream may already be closed */ }
                     }, CLI_KEEPALIVE_INTERVAL_MS);
 
                     const cleanup = () => {
@@ -1406,7 +1406,7 @@ export class AgentService implements OnModuleInit {
             },
           });
 
-          clearInterval(heartbeat);
+          clearInterval(keepalive);
           subscriber.complete();
 
           // ── Memory consolidation (fire-and-forget after stream closes) ──
@@ -1436,13 +1436,13 @@ export class AgentService implements OnModuleInit {
             }
           }
         } catch (err) {
-          clearInterval(heartbeat);
+          clearInterval(keepalive);
           subscriber.error(err);
         }
       };
 
       run();
-      return () => clearInterval(heartbeat);
+      return () => clearInterval(keepalive);
     });
   }
 

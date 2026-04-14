@@ -286,7 +286,7 @@ export class WorkflowController {
    *   { type: 'status', status, currentNode, nodeResults }
    *   { type: 'completed', outputData, nodeResults }
    *   { type: 'failed', errorMessage }
-   *   { type: 'heartbeat' }  — every 5s to keep connection alive
+   *   { type: 'keepalive' }  — every 5s to keep connection alive
    */
   @Get(':id/executions/:executionId/stream')
   @Sse(':id/executions/:executionId/stream')
@@ -300,8 +300,8 @@ export class WorkflowController {
       let lastCurrentNode = '';
       let closed = false;
 
-      const heartbeat = setInterval(() => {
-        if (!closed) subscriber.next({ data: JSON.stringify({ type: 'heartbeat' }) } as any);
+      const keepalive = setInterval(() => {
+        if (!closed) subscriber.next({ data: JSON.stringify({ type: 'keepalive' }) } as any);
       }, 5000);
 
       const poll = setInterval(async () => {
@@ -345,13 +345,13 @@ export class WorkflowController {
 
       req.on('close', () => {
         closed = true;
-        clearInterval(heartbeat);
+        clearInterval(keepalive);
         clearInterval(poll);
       });
 
       return () => {
         closed = true;
-        clearInterval(heartbeat);
+        clearInterval(keepalive);
         clearInterval(poll);
       };
     });

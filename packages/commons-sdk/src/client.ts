@@ -106,9 +106,9 @@ export class CommonsClient {
       stream: (params: RunParams): AsyncGenerator<StreamEvent> =>
         this._streamAgentRun(params),
 
-      // ── Autonomy / Heartbeat ─────────────────────────────────────────────
+      // ── Heartbeat ─────────────────────────────────────────────────────────
 
-      /** Get the current heartbeat/autonomy status for an agent. */
+      /** Get the current heartbeat status for an agent. */
       getAutonomy: (agentId: string): Promise<{
         data: {
           enabled: boolean;
@@ -126,7 +126,7 @@ export class CommonsClient {
       ): Promise<{ data: { enabled: boolean; intervalSec: number; isArmed: boolean } }> =>
         this.request('PUT', `/v1/agents/${agentId}/autonomy`, params),
 
-      /** Trigger a single heartbeat beat immediately. */
+      /** Trigger a single heartbeat immediately. */
       triggerHeartbeat: (agentId: string): Promise<{ message: string }> =>
         this.request('POST', `/v1/agents/${agentId}/autonomy/trigger`),
 
@@ -563,7 +563,7 @@ export class CommonsClient {
           if (raw === '[DONE]') return;
           try {
             const event = JSON.parse(raw) as StreamEvent;
-            if (event.type !== 'heartbeat') yield event;
+            if (event.type !== 'keepalive') yield event;
             if (event.type === 'final' || event.type === 'completed') return;
           } catch {
             // Ignore malformed lines

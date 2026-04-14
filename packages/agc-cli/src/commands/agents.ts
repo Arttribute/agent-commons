@@ -108,7 +108,7 @@ export function agentsCommand(): Command {
     });
 
   // ── autonomy ────────────────────────────────────────────────────────────────
-  const autonomy = cmd.command('autonomy').description('Manage agent heartbeat / autonomy');
+  const autonomy = cmd.command('autonomy').description('Manage agent heartbeat');
 
   autonomy
     .command('status')
@@ -123,7 +123,7 @@ export function agentsCommand(): Command {
         spinner.stop();
         const s = res.data;
         if (opts.json) return jsonOut(s);
-        console.log(`\n${c.bold('Autonomy Status')}`);
+        console.log(`\n${c.bold('Heartbeat Status')}`);
         detail([
           ['Enabled',      s.enabled ? c.bold('yes') : 'no'],
           ['Interval',     s.intervalSec ? `${s.intervalSec}s` : 'n/a'],
@@ -140,7 +140,7 @@ export function agentsCommand(): Command {
 
   autonomy
     .command('enable')
-    .description('Enable autonomous heartbeat for an agent')
+    .description('Enable heartbeat for an agent')
     .requiredOption('--agent <agentId>', 'Agent ID')
     .option('--interval <seconds>', 'Heartbeat interval in seconds (min 30)', '300')
     .action(async (opts) => {
@@ -163,7 +163,7 @@ export function agentsCommand(): Command {
 
   autonomy
     .command('disable')
-    .description('Disable autonomous heartbeat for an agent')
+    .description('Disable heartbeat for an agent')
     .requiredOption('--agent <agentId>', 'Agent ID')
     .action(async (opts) => {
       const client = makeClient();
@@ -181,7 +181,7 @@ export function agentsCommand(): Command {
 
   autonomy
     .command('trigger')
-    .description('Trigger a single heartbeat beat immediately')
+    .description('Trigger a single heartbeat immediately')
     .requiredOption('--agent <agentId>', 'Agent ID')
     .action(async (opts) => {
       const client = makeClient();

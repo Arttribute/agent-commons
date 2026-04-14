@@ -359,7 +359,7 @@ export function chatCommand(): Command {
                 } catch (postErr: any) {
                   console.error(c.warn(`\n  [local] Failed to submit tool result: ${postErr?.message}`));
                 }
-              } else if (event.type === 'ping') {
+              } else if (event.type === 'keepalive') {
                 // server keepalive — no action needed
               } else if (event.type === 'toolStart') {
                 if (thinkingSpinner.isSpinning) thinkingSpinner.stop();
