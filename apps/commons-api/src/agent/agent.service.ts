@@ -756,6 +756,16 @@ export class AgentService implements OnModuleInit {
           // These run on the user's machine. The server emits a cli_tool_request
           // SSE event; the CLI executes locally and POSTs the result back.
           if (props.cliContext) {
+            // Maximum time the server waits for the CLI to execute a local tool
+            // and POST the result back. Must be well above the CLI's own command
+            // timeout (currently up to 300s). Set to 360s to give breathing room.
+            const CLI_TOOL_TIMEOUT_MS = 360_000;
+
+            // GCP load balancers close idle connections after ~30s. We send a
+            // lightweight SSE ping every 20s while a CLI tool is pending so the
+            // connection stays alive for the full duration.
+            const CLI_KEEPALIVE_INTERVAL_MS = 20_000;
+
             const makeCliTool = (
               name: string,
               description: string,
@@ -766,13 +776,24 @@ export class AgentService implements OnModuleInit {
                   const requestId = uuidv4();
                   subscriber.next({ type: 'cli_tool_request', requestId, tool: name, args });
                   return new Promise<string>((resolve) => {
-                    const timer = setTimeout(() => {
-                      this.pendingCliToolRequests.delete(requestId);
-                      resolve('Error: CLI tool timed out after 30 seconds');
-                    }, 30_000);
-                    this.pendingCliToolRequests.set(requestId, (result: string) => {
+                    // Keepalive pings prevent GCP from closing the idle SSE stream
+                    const pingInterval = setInterval(() => {
+                      try { subscriber.next({ type: 'ping' }); } catch { /* stream may already be closed */ }
+                    }, CLI_KEEPALIVE_INTERVAL_MS);
+
+                    const cleanup = () => {
                       clearTimeout(timer);
+                      clearInterval(pingInterval);
                       this.pendingCliToolRequests.delete(requestId);
+                    };
+
+                    const timer = setTimeout(() => {
+                      cleanup();
+                      resolve(`Error: CLI tool timed out after ${CLI_TOOL_TIMEOUT_MS / 1_000}s`);
+                    }, CLI_TOOL_TIMEOUT_MS);
+
+                    this.pendingCliToolRequests.set(requestId, (result: string) => {
+                      cleanup();
                       resolve(result);
                     });
                   });
@@ -809,12 +830,50 @@ export class AgentService implements OnModuleInit {
               ),
               makeCliTool(
                 'cli_run_command',
-                'Execute a shell command on the user\'s local machine and return stdout/stderr. Requires user confirmation. 30s timeout.',
+                'Execute a short shell command (<30s) on the user\'s local machine. For long-running commands (installs, builds, scaffolders) use cli_start_process instead.',
                 z.object({
                   command: z.string().describe('Command to run (e.g. "node")'),
                   args: z.array(z.string()).optional().describe('Arguments array'),
                   cwd: z.string().optional().describe('Working directory (default: session root)'),
+                  timeout_seconds: z.number().optional().describe('Max seconds to wait (default 120, max 300)'),
+                  interactive: z.boolean().optional().describe('Connect user terminal stdin for commands that need prompts. Output not captured.'),
                 }),
+              ),
+              makeCliTool(
+                'cli_start_process',
+                'Start a long-running command in the background (npm install, builds, scaffolders, etc). Returns a processId immediately — use cli_wait_for_process to poll progress. Requires user confirmation.',
+                z.object({
+                  command: z.string().describe('Command to run (e.g. "npx")'),
+                  args: z.array(z.string()).optional().describe('Arguments array'),
+                  cwd: z.string().optional().describe('Working directory (default: session root)'),
+                }),
+              ),
+              makeCliTool(
+                'cli_wait_for_process',
+                'Block for up to wait_seconds (max 120) waiting for a background process to finish, then return its current output and status. Call in a loop, reporting progress to the user between each call.',
+                z.object({
+                  processId: z.string().describe('processId returned by cli_start_process'),
+                  wait_seconds: z.number().optional().describe('How long to block (default 60, max 120)'),
+                }),
+              ),
+              makeCliTool(
+                'cli_process_status',
+                'Instantly check the status and recent stdout of a background process without blocking.',
+                z.object({
+                  processId: z.string().describe('processId returned by cli_start_process'),
+                }),
+              ),
+              makeCliTool(
+                'cli_kill_process',
+                'Kill a running background process.',
+                z.object({
+                  processId: z.string().describe('processId returned by cli_start_process'),
+                }),
+              ),
+              makeCliTool(
+                'cli_list_processes',
+                'List all background processes started this session, with their current status and elapsed time.',
+                z.object({}),
               ),
             );
           }
