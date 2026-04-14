@@ -153,8 +153,8 @@ export class A2aController {
     return new Observable<MessageEvent>((subscriber) => {
       let closed = false;
 
-      const heartbeat = setInterval(() => {
-        if (!closed) subscriber.next({ data: JSON.stringify({ type: 'heartbeat' }) } as any);
+      const keepalive = setInterval(() => {
+        if (!closed) subscriber.next({ data: JSON.stringify({ type: 'keepalive' }) } as any);
       }, 5000);
 
       // Poll task status every 750ms (same pattern as workflow SSE)
@@ -178,13 +178,13 @@ export class A2aController {
 
       req.on('close', () => {
         closed = true;
-        clearInterval(heartbeat);
+        clearInterval(keepalive);
         clearInterval(poll);
       });
 
       return () => {
         closed = true;
-        clearInterval(heartbeat);
+        clearInterval(keepalive);
         clearInterval(poll);
       };
     });

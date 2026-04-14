@@ -70,7 +70,7 @@ interface ChatMessage {
     tool_call_id?: string;
     name?: string;
 }
-type StreamEventType = 'token' | 'toolStart' | 'toolEnd' | 'agent_step' | 'final' | 'completed' | 'failed' | 'cancelled' | 'status' | 'heartbeat' | 'error';
+type StreamEventType = 'token' | 'toolStart' | 'toolEnd' | 'agent_step' | 'final' | 'completed' | 'failed' | 'cancelled' | 'status' | 'keepalive' | 'cli_tool_request' | 'error';
 interface StreamEvent {
     type: StreamEventType;
     role?: string;
@@ -561,7 +561,7 @@ declare class CommonsClient {
          * }
          */
         stream: (params: RunParams) => AsyncGenerator<StreamEvent>;
-        /** Get the current heartbeat/autonomy status for an agent. */
+        /** Get the current heartbeat status for an agent. */
         getAutonomy: (agentId: string) => Promise<{
             data: {
                 enabled: boolean;
@@ -582,7 +582,7 @@ declare class CommonsClient {
                 isArmed: boolean;
             };
         }>;
-        /** Trigger a single heartbeat beat immediately. */
+        /** Trigger a single heartbeat immediately. */
         triggerHeartbeat: (agentId: string) => Promise<{
             message: string;
         }>;

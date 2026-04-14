@@ -84,12 +84,12 @@ var CommonsClient = class {
        * }
        */
       stream: (params) => this._streamAgentRun(params),
-      // ── Autonomy / Heartbeat ─────────────────────────────────────────────
-      /** Get the current heartbeat/autonomy status for an agent. */
+      // ── Heartbeat ─────────────────────────────────────────────────────────
+      /** Get the current heartbeat status for an agent. */
       getAutonomy: (agentId) => this.request("GET", `/v1/agents/${agentId}/autonomy`),
       /** Enable or disable the heartbeat, optionally setting the interval. */
       setAutonomy: (agentId, params) => this.request("PUT", `/v1/agents/${agentId}/autonomy`, params),
-      /** Trigger a single heartbeat beat immediately. */
+      /** Trigger a single heartbeat immediately. */
       triggerHeartbeat: (agentId) => this.request("POST", `/v1/agents/${agentId}/autonomy/trigger`),
       /**
        * Manually trigger an agent (fire-and-forget).
@@ -333,7 +333,7 @@ var CommonsClient = class {
           if (raw === "[DONE]") return;
           try {
             const event = JSON.parse(raw);
-            if (event.type !== "heartbeat") yield event;
+            if (event.type !== "keepalive") yield event;
             if (event.type === "final" || event.type === "completed") return;
           } catch {
           }

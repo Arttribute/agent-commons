@@ -16,26 +16,36 @@ import * as schema from '#/models/schema';
 const MIN_INTERVAL_SEC = 30;
 
 /**
- * HeartbeatService — drives autonomous agent behaviour.
+ * HeartbeatService — drives proactive, scheduled agent behaviour.
  *
- * When `autonomyEnabled = true` and `autonomousIntervalSec > 0`, a repeating
- * timer fires for each agent.  On every tick the agent gets a "check for work"
- * message in its dedicated heartbeat session so it can:
+ * This is NOT a network keepalive. The heartbeat means the agent initiates
+ * actions on its own schedule rather than waiting for a user message.
+ *
+ * When `autonomyEnabled = true` and `autonomousIntervalSec > 0` for an agent,
+ * a repeating timer fires at that interval. Each beat sends the agent a
+ * structured prompt so it can:
  *   - Pick up pending tasks
  *   - Poll external services / tools
  *   - Take any other autonomous action defined in its instructions
  *
- * The service survives restarts: `onModuleInit` re-arms all enabled agents
- * found in the database.
+ * ── Distinct from SSE keepalive events ────────────────────────────────────
+ * The `{type: "keepalive"}` events emitted on the streaming endpoint are a
+ * purely technical measure to prevent GCP load-balancer idle timeouts. They
+ * carry no agent behaviour and are handled silently by the CLI.
+ * HeartbeatService is entirely separate from that mechanism.
+ *
+ * ── Lifecycle ─────────────────────────────────────────────────────────────
+ * The service re-arms all enabled agents on startup so heartbeats survive
+ * server restarts automatically.
  */
 @Injectable()
 export class HeartbeatService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(HeartbeatService.name);
 
-  /** agentId → active Node.js timer */
+  /** agentId → active Node.js interval timer */
   private readonly timers = new Map<string, NodeJS.Timeout>();
 
-  /** agentId → last beat timestamp */
+  /** agentId → timestamp of last beat */
   private readonly lastBeat = new Map<string, Date>();
 
   constructor(
@@ -46,7 +56,6 @@ export class HeartbeatService implements OnModuleInit, OnModuleDestroy {
   ) {}
 
   async onModuleInit() {
-    // Reload all enabled agents and arm their heartbeats
     try {
       const agents = await this.db.query.agent.findMany({
         where: (a) => and(eq(a.autonomyEnabled, true), gt(a.autonomousIntervalSec!, 0)),
@@ -55,7 +64,7 @@ export class HeartbeatService implements OnModuleInit, OnModuleDestroy {
         this.arm(agent.agentId, agent.autonomousIntervalSec!);
       }
       if (agents.length) {
-        this.logger.log(`Heartbeat armed for ${agents.length} autonomous agent(s)`);
+        this.logger.log(`Heartbeat armed for ${agents.length} agent(s)`);
       }
     } catch (err: any) {
       this.logger.error(`HeartbeatService init failed: ${err.message}`);
@@ -72,10 +81,7 @@ export class HeartbeatService implements OnModuleInit, OnModuleDestroy {
 
   // ── Public API ────────────────────────────────────────────────────────────
 
-  /**
-   * Enable the heartbeat for an agent and persist the settings.
-   * Called when the user toggles autonomy on or updates the interval.
-   */
+  /** Enable the heartbeat for an agent and persist the settings. */
   async enable(agentId: string, intervalSec: number): Promise<void> {
     const clamped = Math.max(intervalSec, MIN_INTERVAL_SEC);
     await this.db
@@ -87,9 +93,7 @@ export class HeartbeatService implements OnModuleInit, OnModuleDestroy {
     this.logger.log(`Heartbeat enabled for agent ${agentId} every ${clamped}s`);
   }
 
-  /**
-   * Disable the heartbeat for an agent and persist.
-   */
+  /** Disable the heartbeat for an agent and persist. */
   async disable(agentId: string): Promise<void> {
     await this.db
       .update(schema.agent)
@@ -100,9 +104,7 @@ export class HeartbeatService implements OnModuleInit, OnModuleDestroy {
     this.logger.log(`Heartbeat disabled for agent ${agentId}`);
   }
 
-  /**
-   * Return heartbeat status for an agent (live + persisted state).
-   */
+  /** Return live + persisted heartbeat status for an agent. */
   async status(agentId: string): Promise<{
     enabled: boolean;
     intervalSec: number;
@@ -126,10 +128,7 @@ export class HeartbeatService implements OnModuleInit, OnModuleDestroy {
     return { enabled, intervalSec, isArmed, lastBeatAt, nextBeatAt };
   }
 
-  /**
-   * Manually trigger a single heartbeat beat immediately.
-   * Useful for testing or "wake up now" scenarios.
-   */
+  /** Fire a single heartbeat beat immediately (for testing or manual wake-up). */
   async triggerNow(agentId: string): Promise<void> {
     await this.beat(agentId);
   }
@@ -137,11 +136,14 @@ export class HeartbeatService implements OnModuleInit, OnModuleDestroy {
   // ── Internal ──────────────────────────────────────────────────────────────
 
   private arm(agentId: string, intervalSec: number) {
-    this.disarm(agentId); // Cancel any existing timer
+    this.disarm(agentId);
     const ms = Math.max(intervalSec, MIN_INTERVAL_SEC) * 1000;
-    const timer = setInterval(() => this.beat(agentId).catch((err) =>
-      this.logger.error(`Heartbeat beat error for ${agentId}: ${err.message}`),
-    ), ms);
+    const timer = setInterval(
+      () => this.beat(agentId).catch((err) =>
+        this.logger.error(`Heartbeat beat error for ${agentId}: ${err.message}`),
+      ),
+      ms,
+    );
     this.timers.set(agentId, timer);
   }
 
@@ -166,20 +168,21 @@ export class HeartbeatService implements OnModuleInit, OnModuleDestroy {
         this.disarm(agentId);
         return;
       }
-      // Re-check autonomy still enabled (user may have disabled via UI)
       if (!agent.autonomyEnabled) {
         this.disarm(agentId);
         return;
       }
 
-      // Get or create the dedicated heartbeat session
-      const session = await this.getOrCreateHeartbeatSession(agent);
+      // The heartbeat marker session exists only for DB tracking. Each beat gets
+      // a fresh LangGraph thread ID so checkpoint history never accumulates —
+      // reusing the same sessionId causes the context window to grow unboundedly.
+      const markerSession = await this.getOrCreateHeartbeatSession(agent);
+      const beatThreadId = `${markerSession.sessionId}:${Date.now()}`;
 
-      // Run the agent — fire-and-forget (subscribe to drain the observable)
       this.agentService
         .runAgent({
           agentId,
-          sessionId: session.sessionId,
+          sessionId: beatThreadId,
           messages: [{ role: 'user', content: HEARTBEAT_PROMPT }],
           initiator: agentId,
         })
@@ -192,8 +195,13 @@ export class HeartbeatService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
-  private async getOrCreateHeartbeatSession(agent: { agentId: string; modelProvider?: string | null; modelId?: string | null; temperature?: number | null; maxTokens?: number | null }) {
-    // Look for an existing heartbeat session (title contains the marker)
+  private async getOrCreateHeartbeatSession(agent: {
+    agentId: string;
+    modelProvider?: string | null;
+    modelId?: string | null;
+    temperature?: number | null;
+    maxTokens?: number | null;
+  }) {
     const existing = await this.db.query.session.findFirst({
       where: (s) => and(
         eq(s.agentId, agent.agentId),
@@ -202,7 +210,6 @@ export class HeartbeatService implements OnModuleInit, OnModuleDestroy {
     });
     if (existing) return existing;
 
-    // Create a fresh heartbeat session
     return this.sessionService.createSession({
       value: {
         agentId: agent.agentId,
@@ -222,9 +229,9 @@ export class HeartbeatService implements OnModuleInit, OnModuleDestroy {
 
 const HEARTBEAT_SESSION_TITLE = '__heartbeat__';
 
-const HEARTBEAT_PROMPT = `⫷⫷AUTONOMOUS_HEARTBEAT⫸⫸
+const HEARTBEAT_PROMPT = `⫷⫷HEARTBEAT⫸⫸
 
-This is your autonomous heartbeat. You are running without direct user input.
+This is your scheduled heartbeat. You are running without direct user input.
 
 Check your current state and decide what (if anything) to do:
 1. Review your pending tasks — if any are due, execute them.

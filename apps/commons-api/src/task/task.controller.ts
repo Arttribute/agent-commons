@@ -192,7 +192,7 @@ export class TaskController {
    *   { type: 'status', status, progress }
    *   { type: 'completed', resultContent, summary }
    *   { type: 'failed', errorMessage }
-   *   { type: 'heartbeat' }  — every 5s
+   *   { type: 'keepalive' }  — every 5s
    */
   @Get(':id/stream')
   @Sse(':id/stream')
@@ -201,8 +201,8 @@ export class TaskController {
       let lastStatus = '';
       let closed = false;
 
-      const heartbeat = setInterval(() => {
-        if (!closed) subscriber.next({ data: JSON.stringify({ type: 'heartbeat' }) } as any);
+      const keepalive = setInterval(() => {
+        if (!closed) subscriber.next({ data: JSON.stringify({ type: 'keepalive' }) } as any);
       }, 5000);
 
       const poll = setInterval(async () => {
@@ -227,8 +227,8 @@ export class TaskController {
         }
       }, 750);
 
-      req.on('close', () => { closed = true; clearInterval(heartbeat); clearInterval(poll); });
-      return () => { closed = true; clearInterval(heartbeat); clearInterval(poll); };
+      req.on('close', () => { closed = true; clearInterval(keepalive); clearInterval(poll); });
+      return () => { closed = true; clearInterval(keepalive); clearInterval(poll); };
     });
   }
 }

@@ -31,6 +31,11 @@ import {
 import { join, resolve, relative, extname, dirname } from 'path';
 import { execFile, spawn } from 'child_process';
 import * as readline from 'readline';
+// pdf-parse: pure-JS PDF text extractor, no system dependencies required.
+// Import from lib/pdf-parse.js to skip the test-file side-effect in the main entry.
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const pdfParse: (buf: Buffer) => Promise<{ text: string; numpages: number }> =
+  require('pdf-parse/lib/pdf-parse.js');
 
 // ── Background process manager ────────────────────────────────────────────────
 //
@@ -337,10 +342,28 @@ function extractViaCommand(cmd: string, cmdArgs: string[]): Promise<string> {
 }
 
 async function extractPdfText(abs: string): Promise<string> {
-  // pdftotext (poppler, via `brew install poppler`) — outputs to stdout with "-"
+  // Primary: pdf-parse — pure Node.js, no system dependencies.
+  try {
+    const buffer = readFileSync(abs);
+    const data = await pdfParse(buffer);
+    const text = data.text?.trim();
+    if (text) {
+      // Cap at ~150 KB of text to keep token count reasonable
+      const MAX_CHARS = 150_000;
+      if (text.length > MAX_CHARS) {
+        return text.slice(0, MAX_CHARS) + `\n\n[…truncated — showing first ${MAX_CHARS.toLocaleString()} characters of ${text.length.toLocaleString()} total]`;
+      }
+      return text;
+    }
+  } catch {
+    // fall through to pdftotext
+  }
+
+  // Fallback: pdftotext (poppler, via `brew install poppler`)
   const text = await extractViaCommand('pdftotext', [abs, '-']);
   if (text) return text;
-  return `[Cannot extract PDF text: pdftotext not found. Install with: brew install poppler]`;
+
+  return `[Cannot extract PDF text: the file may be scanned/image-only or password-protected]`;
 }
 
 async function extractOfficeText(abs: string, ext: string): Promise<string> {
@@ -358,16 +381,26 @@ async function toolReadFile(args: Record<string, any>, cfg: LocalToolsConfig): P
   if (!existsSync(abs)) throw new Error(`File not found: ${userPath}`);
   const stat = statSync(abs);
   if (stat.isDirectory()) throw new Error(`"${userPath}" is a directory, not a file`);
-  if (stat.size > 500_000) throw new Error(`File too large to read (${Math.round(stat.size / 1024)} KB). Max 500 KB.`);
 
   const ext = extname(abs).toLowerCase();
 
-  if (PDF_EXTS.has(ext)) return extractPdfText(abs);
-  if (OFFICE_EXTS.has(ext)) return extractOfficeText(abs, ext);
-  if (UNREADABLE_BINARY_EXTS.has(ext)) {
-    throw new Error(`Cannot read binary file "${userPath}" (${ext} format). Only text, PDF, and Word documents are supported.`);
+  // PDFs and Office docs: extract text regardless of binary size (a large PDF
+  // often compresses to a small amount of readable text).
+  if (PDF_EXTS.has(ext)) {
+    if (stat.size > 50_000_000) throw new Error(`PDF too large to read (${Math.round(stat.size / 1_000_000)} MB). Max 50 MB.`);
+    return extractPdfText(abs);
+  }
+  if (OFFICE_EXTS.has(ext)) {
+    if (stat.size > 20_000_000) throw new Error(`Document too large to read (${Math.round(stat.size / 1_000_000)} MB). Max 20 MB.`);
+    return extractOfficeText(abs, ext);
   }
 
+  if (UNREADABLE_BINARY_EXTS.has(ext)) {
+    throw new Error(`Cannot read binary file "${userPath}" (${ext} format). Only text, PDF, and Office documents are supported.`);
+  }
+
+  // Plain text files: enforce 500 KB limit
+  if (stat.size > 500_000) throw new Error(`File too large to read (${Math.round(stat.size / 1024)} KB). Max 500 KB.`);
   return readFileSync(abs, 'utf8');
 }
 

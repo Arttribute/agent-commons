@@ -39,7 +39,7 @@ function makeDb(agentsForInit: any[] = []) {
 function makeSessionService() {
   return {
     createSession: jest.fn().mockResolvedValue({
-      sessionId: 'hb-sess-1',
+      sessionId: 'heartbeat-sess-1',
       agentId: 'agent-1',
       title: '__heartbeat__',
     }),
@@ -94,12 +94,11 @@ describe('HeartbeatService', () => {
 
   /* ── onModuleInit ─────────────────────────────────────────────────────── */
   describe('onModuleInit()', () => {
-    it('arms agents that are autonomy-enabled on startup', async () => {
+    it('arms agents that are heartbeat-enabled on startup', async () => {
       const db2 = makeDb([baseAgent]);
       const svc = await buildService(db2, sessionSvc, agentSvc);
       await svc.onModuleInit();
 
-      // Timer should be registered for the agent
       expect((svc as any).timers.has('agent-1')).toBe(true);
       svc.onModuleDestroy();
     });
@@ -133,9 +132,8 @@ describe('HeartbeatService', () => {
     });
 
     it('clamps interval to minimum 30s', async () => {
-      await service.enable('agent-1', 5); // below minimum
+      await service.enable('agent-1', 5);
 
-      // Timer is armed with at least 30s interval — verify via arm() not throwing
       expect((service as any).timers.has('agent-1')).toBe(true);
     });
 
@@ -185,6 +183,7 @@ describe('HeartbeatService', () => {
     });
 
     it('returns lastBeatAt after a beat', async () => {
+      db.query.session.findFirst = jest.fn().mockResolvedValue({ sessionId: 'heartbeat-sess-1' });
       await service.triggerNow('agent-1');
       const s = await service.status('agent-1');
 
@@ -202,16 +201,15 @@ describe('HeartbeatService', () => {
   /* ── triggerNow ───────────────────────────────────────────────────────── */
   describe('triggerNow()', () => {
     it('calls runAgent with HEARTBEAT_PROMPT', async () => {
-      // Ensure heartbeat session is found (reuse existing)
-      db.query.session.findFirst = jest.fn().mockResolvedValue({ sessionId: 'hb-sess-1' });
+      db.query.session.findFirst = jest.fn().mockResolvedValue({ sessionId: 'heartbeat-sess-1' });
 
       await service.triggerNow('agent-1');
 
       expect(agentSvc.runAgent).toHaveBeenCalledWith(
         expect.objectContaining({
           agentId: 'agent-1',
-          sessionId: 'hb-sess-1',
-          messages: [expect.objectContaining({ content: expect.stringContaining('⫷⫷AUTONOMOUS_HEARTBEAT⫸⫸') })],
+          sessionId: expect.stringContaining('heartbeat-sess-1'),
+          messages: [expect.objectContaining({ content: expect.stringContaining('⫷⫷HEARTBEAT⫸⫸') })],
         }),
       );
     });
@@ -238,7 +236,7 @@ describe('HeartbeatService', () => {
       expect((service as any).timers.has('agent-1')).toBe(false);
     });
 
-    it('disarms and returns if autonomy was disabled', async () => {
+    it('disarms and returns if heartbeat was disabled', async () => {
       db.query.agent.findFirst = jest.fn().mockResolvedValue({
         ...baseAgent,
         autonomyEnabled: false,
@@ -251,7 +249,7 @@ describe('HeartbeatService', () => {
     });
 
     it('logs error but does not throw if runAgent errors', async () => {
-      db.query.session.findFirst = jest.fn().mockResolvedValue({ sessionId: 'hb-sess-1' });
+      db.query.session.findFirst = jest.fn().mockResolvedValue({ sessionId: 'heartbeat-sess-1' });
       agentSvc.runAgent = jest.fn().mockReturnValue(
         throwError(() => new Error('LLM unavailable')),
       );
@@ -263,10 +261,9 @@ describe('HeartbeatService', () => {
   /* ── timer fires ──────────────────────────────────────────────────────── */
   describe('timer-driven beat', () => {
     it('calls runAgent when the interval elapses', async () => {
-      db.query.session.findFirst = jest.fn().mockResolvedValue({ sessionId: 'hb-sess-1' });
+      db.query.session.findFirst = jest.fn().mockResolvedValue({ sessionId: 'heartbeat-sess-1' });
       await service.enable('agent-1', 60);
 
-      // Advance time past one interval (async variant flushes microtasks too)
       await jest.advanceTimersByTimeAsync(61_000);
 
       expect(agentSvc.runAgent).toHaveBeenCalled();
