@@ -1257,6 +1257,7 @@ var import_fs3 = require("fs");
 var import_path3 = require("path");
 var import_child_process2 = require("child_process");
 var readline2 = __toESM(require("readline"));
+var pdfParse = require("pdf-parse/lib/pdf-parse.js");
 var managedProcesses = /* @__PURE__ */ new Map();
 function capBuffer(existing, chunk, maxBytes) {
   const joined = existing + chunk;
@@ -1505,9 +1506,24 @@ function extractViaCommand(cmd, cmdArgs) {
   });
 }
 async function extractPdfText(abs) {
+  try {
+    const buffer = (0, import_fs3.readFileSync)(abs);
+    const data = await pdfParse(buffer);
+    const text2 = data.text?.trim();
+    if (text2) {
+      const MAX_CHARS = 15e4;
+      if (text2.length > MAX_CHARS) {
+        return text2.slice(0, MAX_CHARS) + `
+
+[\u2026truncated \u2014 showing first ${MAX_CHARS.toLocaleString()} characters of ${text2.length.toLocaleString()} total]`;
+      }
+      return text2;
+    }
+  } catch {
+  }
   const text = await extractViaCommand("pdftotext", [abs, "-"]);
   if (text) return text;
-  return `[Cannot extract PDF text: pdftotext not found. Install with: brew install poppler]`;
+  return `[Cannot extract PDF text: the file may be scanned/image-only or password-protected]`;
 }
 async function extractOfficeText(abs, ext) {
   const text = await extractViaCommand("textutil", ["-stdout", "-cat", "txt", abs]);
@@ -1522,13 +1538,19 @@ async function toolReadFile(args, cfg) {
   if (!(0, import_fs3.existsSync)(abs)) throw new Error(`File not found: ${userPath}`);
   const stat = (0, import_fs3.statSync)(abs);
   if (stat.isDirectory()) throw new Error(`"${userPath}" is a directory, not a file`);
-  if (stat.size > 5e5) throw new Error(`File too large to read (${Math.round(stat.size / 1024)} KB). Max 500 KB.`);
   const ext = (0, import_path3.extname)(abs).toLowerCase();
-  if (PDF_EXTS.has(ext)) return extractPdfText(abs);
-  if (OFFICE_EXTS.has(ext)) return extractOfficeText(abs, ext);
-  if (UNREADABLE_BINARY_EXTS.has(ext)) {
-    throw new Error(`Cannot read binary file "${userPath}" (${ext} format). Only text, PDF, and Word documents are supported.`);
+  if (PDF_EXTS.has(ext)) {
+    if (stat.size > 5e7) throw new Error(`PDF too large to read (${Math.round(stat.size / 1e6)} MB). Max 50 MB.`);
+    return extractPdfText(abs);
   }
+  if (OFFICE_EXTS.has(ext)) {
+    if (stat.size > 2e7) throw new Error(`Document too large to read (${Math.round(stat.size / 1e6)} MB). Max 20 MB.`);
+    return extractOfficeText(abs, ext);
+  }
+  if (UNREADABLE_BINARY_EXTS.has(ext)) {
+    throw new Error(`Cannot read binary file "${userPath}" (${ext} format). Only text, PDF, and Office documents are supported.`);
+  }
+  if (stat.size > 5e5) throw new Error(`File too large to read (${Math.round(stat.size / 1024)} KB). Max 500 KB.`);
   return (0, import_fs3.readFileSync)(abs, "utf8");
 }
 async function toolWriteFile(args, cfg) {
