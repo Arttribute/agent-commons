@@ -2018,12 +2018,13 @@ ${content}
         messages: [{ role: "user", content: userMessage }],
         ...cliContext && { cliContext }
       };
-      process.stdout.write(c.primary("agent") + c.dim(" \u203A "));
       if (opts.noStream) {
-        const spinner = spin("");
+        process.stdout.write(c.primary("agent") + c.dim(" \u203A "));
+        const spinner = spin("thinking\u2026");
         try {
           const result = await client.run.once(params);
           spinner.stop();
+          process.stdout.write(c.primary("agent") + c.dim(" \u203A "));
           const text = extractText(result);
           console.log(text);
           appendSessionLog(sessionId, {
@@ -2041,13 +2042,19 @@ ${sym.fail} ${c.error(err.message ?? String(err))}`);
         try {
           let hasOutput = false;
           let agentContent = "";
+          const thinkingSpinner = spin("thinking\u2026");
           for await (const event of client.agents.stream(params)) {
             if (event.type === "token") {
+              if (thinkingSpinner.isSpinning) {
+                thinkingSpinner.stop();
+                process.stdout.write(c.primary("agent") + c.dim(" \u203A "));
+              }
               const tok = event.content ?? "";
               process.stdout.write(tok);
               agentContent += tok;
               hasOutput = true;
             } else if (event.type === "cli_tool_request" && localToolsCfg) {
+              if (thinkingSpinner.isSpinning) thinkingSpinner.stop();
               const { requestId, tool: toolName, args } = event;
               const displayName = String(toolName).replace("cli_", "");
               if (hasOutput) {
@@ -2085,6 +2092,7 @@ ${sym.fail} ${c.error(err.message ?? String(err))}`);
               }
             } else if (event.type === "ping") {
             } else if (event.type === "toolStart") {
+              if (thinkingSpinner.isSpinning) thinkingSpinner.stop();
               const name = event.toolName ?? "";
               if (hasOutput) process.stdout.write("\n");
               process.stdout.write(c.dim(`  [tool] ${name}\u2026`));
@@ -2127,12 +2135,14 @@ ${sym.fail} ${c.error(err.message ?? String(err))}`);
               }
               break;
             } else if (event.type === "error") {
+              if (thinkingSpinner.isSpinning) thinkingSpinner.stop();
               if (hasOutput) process.stdout.write("\n");
               console.error(`
 ${sym.fail} ${c.error(event.message ?? "Stream error")}`);
               break;
             }
           }
+          if (thinkingSpinner.isSpinning) thinkingSpinner.stop();
           process.stdout.write("\n");
           if (localToolsCfg && agentContent) {
             await handleLocalToolLoop(agentContent, localToolsCfg, client, agentId, sessionId, appendSessionLog);
@@ -2143,6 +2153,8 @@ ${sym.fail} ${c.error(event.message ?? "Stream error")}`);
         }
       }
       console.log();
+      readline3.cursorTo(process.stdout, 0);
+      readline3.clearLine(process.stdout, 0);
       rl.resume();
       rl.prompt();
     });

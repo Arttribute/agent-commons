@@ -285,13 +285,13 @@ export function chatCommand(): Command {
           ...(cliContext && { cliContext }),
         };
 
-        process.stdout.write(c.primary('agent') + c.dim(' › '));
-
         if (opts.noStream) {
-          const spinner = spin('');
+          process.stdout.write(c.primary('agent') + c.dim(' › '));
+          const spinner = spin('thinking…');
           try {
             const result = await client.run.once(params);
             spinner.stop();
+            process.stdout.write(c.primary('agent') + c.dim(' › '));
             const text = extractText(result);
             console.log(text);
             appendSessionLog(sessionId, {
@@ -308,17 +308,21 @@ export function chatCommand(): Command {
           try {
             let hasOutput = false;
             let agentContent = '';
+            // Show thinking spinner until first token arrives
+            const thinkingSpinner = spin('thinking…');
             for await (const event of client.agents.stream(params)) {
               if (event.type === 'token') {
+                if (thinkingSpinner.isSpinning) {
+                  thinkingSpinner.stop();
+                  process.stdout.write(c.primary('agent') + c.dim(' › '));
+                }
                 const tok = (event as any).content ?? '';
                 process.stdout.write(tok);
                 agentContent += tok;
                 hasOutput = true;
               } else if (event.type === 'cli_tool_request' && localToolsCfg) {
                 // ── Local tool execution ──────────────────────────────────────
-                // The backend registered cli_* tools that, when called by the
-                // LLM, emit this event. We execute locally and POST the result
-                // back so the LangGraph run can continue.
+                if (thinkingSpinner.isSpinning) thinkingSpinner.stop();
                 const { requestId, tool: toolName, args } = event as any;
                 const displayName = String(toolName).replace('cli_', '');
                 if (hasOutput) { process.stdout.write('\n'); hasOutput = false; }
@@ -358,7 +362,7 @@ export function chatCommand(): Command {
               } else if (event.type === 'ping') {
                 // server keepalive — no action needed
               } else if (event.type === 'toolStart') {
-                // Show tool invocation inline so the user knows the agent is working
+                if (thinkingSpinner.isSpinning) thinkingSpinner.stop();
                 const name = (event as any).toolName ?? '';
                 if (hasOutput) process.stdout.write('\n');
                 process.stdout.write(c.dim(`  [tool] ${name}…`));
@@ -402,11 +406,13 @@ export function chatCommand(): Command {
                 }
                 break;
               } else if (event.type === 'error') {
+                if (thinkingSpinner.isSpinning) thinkingSpinner.stop();
                 if (hasOutput) process.stdout.write('\n');
                 console.error(`\n${sym.fail} ${c.error((event as any).message ?? 'Stream error')}`);
                 break;
               }
             }
+            if (thinkingSpinner.isSpinning) thinkingSpinner.stop();
             process.stdout.write('\n');
 
             // ── Local tool-call loop (recursive until no more tool calls) ───
@@ -420,6 +426,10 @@ export function chatCommand(): Command {
         }
 
         console.log();
+        // Clear any characters the user typed while we were processing
+        // (terminal echoes them while readline is paused, causing double display)
+        readline.cursorTo(process.stdout, 0);
+        readline.clearLine(process.stdout, 0);
         rl.resume();
         rl.prompt();
       });

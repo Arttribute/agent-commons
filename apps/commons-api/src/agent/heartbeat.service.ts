@@ -172,14 +172,19 @@ export class HeartbeatService implements OnModuleInit, OnModuleDestroy {
         return;
       }
 
-      // Get or create the dedicated heartbeat session
+      // Get or create the dedicated heartbeat marker session (for DB tracking).
       const session = await this.getOrCreateHeartbeatSession(agent);
+
+      // Use a fresh LangGraph thread ID for every beat so the checkpoint history
+      // never accumulates. Re-using the same sessionId causes the context window
+      // to grow with every beat until it exceeds the model's token limit.
+      const beatThreadId = `${session.sessionId}:${Date.now()}`;
 
       // Run the agent — fire-and-forget (subscribe to drain the observable)
       this.agentService
         .runAgent({
           agentId,
-          sessionId: session.sessionId,
+          sessionId: beatThreadId,
           messages: [{ role: 'user', content: HEARTBEAT_PROMPT }],
           initiator: agentId,
         })

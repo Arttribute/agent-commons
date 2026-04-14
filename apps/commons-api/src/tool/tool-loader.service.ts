@@ -1,5 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { eq } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import { DatabaseService } from '../modules/database';
 import { ToolAccessService } from './tool-access.service';
 import { ToolKeyService } from './tool-key.service';
@@ -242,9 +242,11 @@ export class ToolLoaderService {
     endpoint: string,
   ): Promise<ToolDefinition[]> {
     try {
-      // Get agent tool mappings
+      // Get agent tool mappings.
+      // Cast agent_id to text explicitly — the DB column may be uuid while
+      // agentId here is an Ethereum address (text), causing "uuid = text" errors.
       const mappings = await this.db.query.agentTool.findMany({
-        where: (at: any) => eq(at.agentId, agentId),
+        where: () => sql`agent_tool.agent_id::text = ${agentId}`,
         with: {
           tool: true,
         },
