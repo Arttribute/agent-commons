@@ -173,6 +173,7 @@ Stream event types:
 | `cancelled` | — | Run was cancelled |
 | `status` | `message` | Status update |
 | `error` | `message` | An error occurred |
+| `cli_tool_request` | `toolName`, `input` | CLI-side tool invocation (used internally by the CLI) |
 
 ---
 
@@ -193,6 +194,7 @@ const { data: session } = await client.sessions.create({
   agentId: 'agent_abc123',
   initiator: '0xUSER',
   title: 'Research session',
+  source: 'web', // optional: 'web' | 'cli' — used for filtering in the UI
 });
 
 // Get a session
@@ -278,6 +280,19 @@ const workflow = await client.workflows.create({
 
 Workflow node types: `tool` | `input` | `output` | `condition` | `transform` | `loop` | `agent_processor` | `human_approval`
 
+### List, update, and delete workflows
+
+```typescript
+// List all workflows for an owner
+const workflows = await client.workflows.list('0xUSER', 'user');
+
+// Update a workflow
+await client.workflows.update(workflow.workflowId, { name: 'Updated name' });
+
+// Delete a workflow
+await client.workflows.delete(workflow.workflowId);
+```
+
 ### Execute and stream a workflow
 
 ```typescript
@@ -288,6 +303,19 @@ const execution = await client.workflows.execute(workflow.workflowId, {
 for await (const event of client.workflows.stream(workflow.workflowId, execution.executionId)) {
   console.log(event.type, event.payload);
 }
+```
+
+### Manage executions
+
+```typescript
+// Get a single execution
+const exec = await client.workflows.getExecution(workflow.workflowId, execution.executionId);
+
+// List recent executions
+const history = await client.workflows.listExecutions(workflow.workflowId, 10);
+
+// Cancel a running execution
+await client.workflows.cancelExecution(workflow.workflowId, execution.executionId);
 ```
 
 ### Human approval
@@ -379,6 +407,9 @@ await client.toolPermissions.revoke(permissionId);
 ## MCP Servers
 
 ```typescript
+// List servers for an owner
+const { servers } = await client.mcp.listServers('0xUSER', 'user');
+
 // Create a new MCP server
 const server = await client.mcp.createServer({
   name: 'GitHub Tools',
@@ -387,6 +418,9 @@ const server = await client.mcp.createServer({
   ownerId: '0xUSER',
   ownerType: 'user',
 });
+
+// Get a server by ID
+const s = await client.mcp.getServer(server.serverId);
 
 // Connect to it
 await client.mcp.connect(server.serverId);
@@ -397,14 +431,29 @@ const { toolsDiscovered } = await client.mcp.sync(server.serverId);
 // List discovered tools
 const { tools } = await client.mcp.listTools(server.serverId);
 
+// List all MCP tools across every server for an owner
+const { tools: allTools } = await client.mcp.listToolsByOwner('0xUSER', 'user');
+
 // Get server status
 const status = await client.mcp.getServerStatus(server.serverId);
 
 // Update server config
 await client.mcp.updateServer(server.serverId, { isPublic: true });
 
+// Resources
+const { resources } = await client.mcp.listResources(server.serverId);
+const resource = await client.mcp.readResource(server.serverId, 'file:///README.md');
+
+// Prompts
+const { prompts } = await client.mcp.listPrompts(server.serverId);
+const rendered = await client.mcp.getPrompt(server.serverId, 'summarize', { language: 'en' });
+
+// Disconnect and delete
+await client.mcp.disconnect(server.serverId);
+await client.mcp.deleteServer(server.serverId);
+
 // Browse public marketplace servers
-const { servers } = await client.mcp.getMarketplace();
+const { servers: marketplace } = await client.mcp.getMarketplace();
 ```
 
 MCP connection types: `'stdio'` | `'sse'` | `'http'` | `'streamable-http'`
@@ -483,6 +532,16 @@ Wallet types: `'eoa'` | `'erc4337'` | `'external'`
 
 ---
 
+## Auth
+
+```typescript
+// Resolve the principalId (wallet address) for the current API key
+// Useful so you don't need to hard-code the initiator address
+const { principalId, principalType } = await client.auth.me();
+```
+
+---
+
 ## API Keys
 
 ```typescript
@@ -527,6 +586,9 @@ const taskStatus = await client.a2a.getTask('agent_abc123', a2aTask.id);
 
 // Cancel a task
 await client.a2a.cancelTask('agent_abc123', a2aTask.id);
+
+// List recent A2A tasks for an agent
+const { tasks } = await client.a2a.listTasks('agent_abc123', 20);
 ```
 
 ---
@@ -552,6 +614,12 @@ const { data: newSkill } = await client.skills.create({
   tools: ['tool_abc'],
   isPublic: false,
 });
+
+// Update a skill
+await client.skills.update('my-skill', { isPublic: true });
+
+// Delete a skill
+await client.skills.delete('my-skill');
 ```
 
 ---

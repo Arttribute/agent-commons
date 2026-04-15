@@ -51,10 +51,14 @@ A **Workflow** is a directed acyclic graph (DAG) of steps that an agent (or mult
 Workflows are useful when you have a multi-step process with clear inputs and outputs between steps. They're defined in a JSON schema and executed via the API or UI.
 
 Node types:
-- `tool` — call a tool with specific parameters
-- `agent_processor` — use an AI to process/decide at this step
-- `data_transformer` — map or reshape data between steps
-- `conditional` — branch based on a condition
+- `input` — passes the workflow's input data downstream
+- `output` — marks the final output of the workflow
+- `tool` — invokes a registered tool with specific parameters
+- `agent_processor` — runs an LLM inference step via a configured agent
+- `transform` — maps or reshapes fields between steps (no tool call)
+- `condition` — evaluates an expression and routes to a true or false branch
+- `loop` — iterates a fixed number of times or over an array
+- `human_approval` — pauses execution until a human approves or rejects
 
 ---
 

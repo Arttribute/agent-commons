@@ -81,12 +81,12 @@ npm install @agent-commons/sdk
 import { CommonsClient } from '@agent-commons/sdk';
 
 const client = new CommonsClient({
-  apiUrl: 'https://api.agentcommons.io',
+  baseUrl: 'https://api.agentcommons.io',
   apiKey: process.env.COMMONS_API_KEY,
 });
 
 // Create an agent
-const agent = await client.agents.create({
+const { data: agent } = await client.agents.create({
   name: 'My First Agent',
   instructions: 'You are a helpful assistant.',
   modelProvider: 'openai',
@@ -94,7 +94,7 @@ const agent = await client.agents.create({
 });
 
 // Run it
-const result = await client.agents.run({
+const result = await client.run.once({
   agentId: agent.agentId,
   messages: [{ role: 'user', content: 'Hello!' }],
 });
