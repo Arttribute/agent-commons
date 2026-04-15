@@ -166,13 +166,22 @@ agc chat --agent agent_abc123 --resume session_xyz
 ### Single one-shot run
 
 ```bash
-agc run --agent agent_abc123 --message "Summarize https://example.com"
+agc run --agent agent_abc123 "Summarize https://example.com"
 ```
+
+The prompt is a positional argument (not a flag). Optional flags:
+
+| Flag | Description |
+|---|---|
+| `--agent <agentId>` | Agent to run (falls back to `defaultAgentId` in config) |
+| `--session <sessionId>` | Attach run to an existing session |
+| `--no-stream` | Wait for the full response instead of streaming tokens |
+| `--json` | Output raw event stream as JSON lines |
 
 Useful for scripting:
 
 ```bash
-agc run --agent agent_abc123 --message "Today's date?" | tee output.txt
+agc run --agent agent_abc123 "Today's date?" | tee output.txt
 ```
 
 ---
@@ -423,7 +432,7 @@ agc run --agent agent_abc123 --message "Hello" --json
 ```bash
 #!/bin/bash
 # Run an agent and save output
-RESULT=$(agc run --agent agent_abc123 --message "Summarize: $(cat input.txt)" --json)
+RESULT=$(agc run --agent agent_abc123 "Summarize: $(cat input.txt)" --json)
 echo $RESULT | jq '.response' > summary.txt
 
 # Chain tasks
