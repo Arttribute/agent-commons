@@ -910,7 +910,11 @@ export class AgentService implements OnModuleInit {
           let messages: Messages = [];
           if (isNewSession) {
             const firstMsg = props.messages?.find((m) => m.role === 'user');
-            const firstUserText = typeof firstMsg?.content === 'string' ? firstMsg.content : '';
+            const firstUserText = typeof firstMsg?.content === 'string'
+              ? firstMsg.content
+              : Array.isArray(firstMsg?.content)
+                ? (firstMsg.content as any[]).filter((c: any) => c.type === 'text').map((c: any) => c.text).join(' ')
+                : '';
             const boot = await this.createAgentSession(
               agentId,
               currentSessionId,
@@ -931,7 +935,11 @@ export class AgentService implements OnModuleInit {
 
             // Fetch agent and inject fresh persona/instructions for existing sessions
             const firstMsg = props.messages?.find((m) => m.role === 'user');
-            const firstUserText = typeof firstMsg?.content === 'string' ? firstMsg.content : '';
+            const firstUserText = typeof firstMsg?.content === 'string'
+              ? firstMsg.content
+              : Array.isArray(firstMsg?.content)
+                ? (firstMsg.content as any[]).filter((c: any) => c.type === 'text').map((c: any) => c.text).join(' ')
+                : '';
             const [agent, childSessions, memoryBlock, sessionTasks] = await Promise.all([
               this.getAgent({ agentId }),
               this.getChildSessions(currentSessionId),
@@ -961,11 +969,21 @@ export class AgentService implements OnModuleInit {
                   entry.role === 'user' || entry.role === 'assistant',
               );
               messages.push(
-                ...validHistoryMessages.map((historyEntry: any) => ({
-                  type: historyEntry.role,
-                  role: historyEntry.role,
-                  content: historyEntry.content ?? '',
-                })),
+                ...validHistoryMessages.map((historyEntry: any) => {
+                  let content = historyEntry.content ?? '';
+                  if (typeof content === 'string' && content.startsWith('[')) {
+                    try {
+                      content = JSON.parse(content);
+                    } catch {
+                      // keep as string if parse fails
+                    }
+                  }
+                  return {
+                    type: historyEntry.role,
+                    role: historyEntry.role,
+                    content,
+                  };
+                }),
               );
             }
           }
