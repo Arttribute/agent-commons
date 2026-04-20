@@ -45,6 +45,8 @@ export class StreamMonitorService implements OnModuleDestroy {
   private compositeMs = 2000; // composite generation interval
   private speakingHoldMs = 1500; // keep speaking flag for a while after last loud chunk
   private speakingThreshold = 0.03; // RMS threshold
+  /** Frames older than this are treated as if the stream stopped (ms). Default 10s. */
+  private frameStaleMs = 10_000;
   // Timers to flip off speaking state when we simulate speech (e.g., TTS playback on clients)
   private speakingTimers = new Map<string, NodeJS.Timeout>();
 
@@ -63,12 +65,25 @@ export class StreamMonitorService implements OnModuleDestroy {
     compositeMs?: number;
     speakingHoldMs?: number;
     speakingThreshold?: number;
+    frameStaleMs?: number;
   }) {
     if (opts.compositeMs !== undefined) this.compositeMs = opts.compositeMs;
     if (opts.speakingHoldMs !== undefined)
       this.speakingHoldMs = opts.speakingHoldMs;
     if (opts.speakingThreshold !== undefined)
       this.speakingThreshold = opts.speakingThreshold;
+    if (opts.frameStaleMs !== undefined)
+      this.frameStaleMs = opts.frameStaleMs;
+  }
+
+  /** Explicitly remove a single stream kind for a participant (e.g. camera/screen stopped). */
+  clearParticipantStream(spaceId: string, participantId: string, kind: StreamKind) {
+    const space = this.spaces.get(spaceId);
+    if (!space) return;
+    const participant = space.participants.get(participantId);
+    if (!participant) return;
+    delete participant.streams[kind];
+    this.logger.debug(`Cleared ${kind} stream for ${participantId} in space ${spaceId}`);
   }
 
   ensureSpace(spaceId: string) {
@@ -343,13 +358,21 @@ export class StreamMonitorService implements OnModuleDestroy {
       stream: VideoStreamState;
     }[] = [];
 
+    const staleThreshold = Date.now() - this.frameStaleMs;
+
     for (const p of participants) {
       const scr = p.streams.screen;
-      if (scr?.lastFrame) screenEntries.push({ participant: p, stream: scr });
+      if (scr?.lastFrame && scr.updatedAt >= staleThreshold) screenEntries.push({ participant: p, stream: scr });
       const web = p.streams.web;
-      if (web?.lastFrame) webEntries.push({ participant: p, stream: web });
+      if (web?.lastFrame && web.updatedAt >= staleThreshold) webEntries.push({ participant: p, stream: web });
       const cam = p.streams.camera;
-      if (cam?.lastFrame) cameraEntries.push({ participant: p, stream: cam });
+      if (cam?.lastFrame && cam.updatedAt >= staleThreshold) cameraEntries.push({ participant: p, stream: cam });
+    }
+
+    // No active (non-stale) streams — clear the composite so agents stop seeing old frames
+    if (!screenEntries.length && !webEntries.length && !cameraEntries.length) {
+      state.lastComposite = undefined;
+      return;
     }
 
     let yOffsetForThumbs = height;
@@ -419,7 +442,6 @@ export class StreamMonitorService implements OnModuleDestroy {
     } else {
       // No web or screen: grid of cameras (and any other stray kinds)
       const videoEntries = [...cameraEntries];
-      if (!videoEntries.length) return;
       const n = videoEntries.length;
       const cols = Math.ceil(Math.sqrt(n));
       const rows = Math.ceil(n / cols);
