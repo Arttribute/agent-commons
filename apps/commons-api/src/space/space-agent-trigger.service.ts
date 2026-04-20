@@ -50,7 +50,10 @@ export class SpaceAgentTriggerService {
     try {
       // Ignore system & agent messages to avoid loops
       if (message.senderType !== 'human') return;
-      if (!message.content || !message.content.trim()) return;
+      if (!message.content) return;
+      // Allow JSON array content (multimodal) even when it has no plain-text portion
+      const isMultimodal = (() => { try { return Array.isArray(JSON.parse(message.content)); } catch { return false; } })();
+      if (!isMultimodal && !message.content.trim()) return;
 
       // Immediate parallel trigger mode (default). Use queue only if explicitly enabled.
       const useQueue = process.env.SPACE_TRIGGER_USE_QUEUE === '1';
@@ -157,11 +160,21 @@ export class SpaceAgentTriggerService {
       `;
 
       for (const agentMember of subscribed) {
-        // Basic turn limiting metadata: start at 0
-        const fullTriggercontent: any[] = [
-          { type: 'text', text: trigger.content },
-        ];
-        if (latestFrameUrl) {
+        // Parse trigger.content — it may already be a multimodal JSON array
+        // (e.g. [{"type":"text","text":"..."},{"type":"image_url","image_url":{"url":"..."}}])
+        let parsedContent: any[] | null = null;
+        try {
+          const parsed = JSON.parse(trigger.content);
+          if (Array.isArray(parsed)) parsedContent = parsed;
+        } catch {
+          // plain text — fall through
+        }
+
+        const fullTriggercontent: any[] = parsedContent
+          ? parsedContent
+          : [{ type: 'text', text: trigger.content }];
+
+        if (latestFrameUrl && !fullTriggercontent.some((c: any) => c.type === 'image_url')) {
           fullTriggercontent.push({
             type: 'image_url',
             image_url: { url: latestFrameUrl },

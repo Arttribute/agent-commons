@@ -289,6 +289,22 @@ export class SpaceRtcGateway
     return { success: true };
   }
 
+  @SubscribeMessage('stream_stopped')
+  handleStreamStopped(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() body: { spaceId?: string; kind: StreamKind },
+  ) {
+    const ctx = this.ensureCtx(client, body);
+    if (!ctx) return { error: 'join first' };
+    if (!body.kind) return { error: 'missing kind' };
+    this.monitor.clearParticipantStream(ctx.spaceId, ctx.participantId, body.kind);
+    this.server.to(ctx.spaceId).emit('participant_stream_stopped', {
+      participantId: ctx.participantId,
+      kind: body.kind,
+    });
+    return { success: true };
+  }
+
   @SubscribeMessage('audio_chunk')
   handleAudioChunk(
     @ConnectedSocket() client: Socket,
