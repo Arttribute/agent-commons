@@ -1184,73 +1184,7 @@ ${sym.fail} ${c.error(event.message ?? event.type)}`);
 
 // src/commands/run.ts
 var import_commander7 = require("commander");
-function runCommand() {
-  return new import_commander7.Command("run").description("Send a single prompt to an agent and stream the response").argument("<prompt>", "Prompt text to send").option("--agent <agentId>", "Agent ID").option("--session <sessionId>", "Session ID").option("--no-stream", "Disable streaming (wait for full response)").option("--json", "Output raw event stream as JSON lines").action(async (prompt2, opts) => {
-    const cfg = loadConfig();
-    const agentId = opts.agent ?? cfg.defaultAgentId;
-    if (!agentId) {
-      console.error(c.error("Specify --agent <agentId> or set defaultAgentId with `agc config set defaultAgentId <id>`"));
-      process.exit(1);
-    }
-    const params = {
-      agentId,
-      sessionId: opts.session,
-      messages: [{ role: "user", content: prompt2 }],
-      ...cfg.initiator && { initiatorId: cfg.initiator }
-    };
-    if (opts.noStream) {
-      const spinner = spin("Running\u2026");
-      try {
-        const client = makeClient();
-        const result = await client.run.once(params);
-        spinner.stop();
-        if (opts.json) return jsonOut(result);
-        const text = result?.content ?? result?.text ?? result?.message ?? JSON.stringify(result);
-        console.log(text);
-      } catch (err) {
-        spinner.stop();
-        printError(err);
-        process.exit(1);
-      }
-      return;
-    }
-    try {
-      const client = makeClient();
-      let hasOutput = false;
-      for await (const event of client.agents.stream(params)) {
-        if (opts.json) {
-          console.log(JSON.stringify(event));
-          continue;
-        }
-        if (event.type === "token") {
-          process.stdout.write(event.content ?? "");
-          hasOutput = true;
-        } else if (event.type === "final") {
-          if (hasOutput) process.stdout.write("\n");
-          const e = event;
-          if (e.content && !hasOutput) console.log(e.content);
-          break;
-        } else if (event.type === "error") {
-          if (hasOutput) process.stdout.write("\n");
-          console.error(`
-${sym.fail} ${c.error(event.message ?? "Error")}`);
-          process.exit(1);
-        }
-      }
-      if (hasOutput && !opts.json) process.stdout.write("\n");
-    } catch (err) {
-      printError(err);
-      process.exit(1);
-    }
-  });
-}
-
-// src/commands/chat.ts
-var import_commander8 = require("commander");
 var readline3 = __toESM(require("readline"));
-var import_fs4 = require("fs");
-var import_path4 = require("path");
-var import_os3 = require("os");
 
 // src/local-tools.ts
 var import_fs3 = require("fs");
@@ -1310,7 +1244,7 @@ function readFileForContext(rootDir, filePath) {
     return `[error reading file: ${err?.message}]`;
   }
 }
-function buildLocalToolsManifest(rootDir, snapshot, fileContextBlocks = []) {
+function buildLocalToolsManifest(rootDir, snapshot, fileContextBlocks = [], autoApprove = false) {
   const fileSection = fileContextBlocks.length ? `
 ### File contents included in this turn
 
@@ -1336,7 +1270,8 @@ ${fileSection}
 2. **Always show the actual output** returned by the tool in your response. Never say "I listed the files" without showing them. Report exactly what the tool returns.
 3. **Never fabricate results.** Wait for the real tool output before responding.
 4. **Sensitive paths are blocked** (.ssh, .gnupg, .aws, .env, credentials). Attempting to access them will return an error.
-5. **cli_write_file and cli_run_command require the user to confirm** before executing \u2014 you will see the result after they approve.
+5. ${autoApprove ? "**cli_write_file and cli_run_command execute immediately** \u2014 auto-approve is active, no user confirmation is required." : "**cli_write_file and cli_run_command require the user to confirm** before executing \u2014 you will see the result after they approve."}
+6. **Git commits must carry the agc co-author trailer.** Always include \`--trailer "Co-Authored-By: <AgentName> (agc) <agc-agent@users.noreply.github.com>"\` when running \`git commit\`. The CLI injects this automatically \u2014 do not omit it or pass \`--no-trailer\`.
 
 ### Available CLI tools
 
@@ -1408,6 +1343,72 @@ function extractToolCall(text) {
   }
   return null;
 }
+function injectAgcTrailer(command, args, agentId, agentName) {
+  if (command !== "git") return args;
+  if (!args.some((a) => a === "commit")) return args;
+  if (args.some((a) => a.includes("Co-Authored-By: agc"))) return args;
+  const identity = agentName ? `${agentName} (agc)` : agentId ? `agc/${agentId}` : "agc agent";
+  return [...args, "--trailer", `Co-Authored-By: ${identity} <agc-agent@users.noreply.github.com>`];
+}
+var AGC_HOOK_MARKER = "# agc-session:";
+var HOOK_BACKUP_SUFFIX = ".agc-backup";
+function findGitDir(rootDir) {
+  const gitPath = (0, import_path3.join)(rootDir, ".git");
+  if (!(0, import_fs3.existsSync)(gitPath)) return null;
+  const s = (0, import_fs3.statSync)(gitPath);
+  if (s.isDirectory()) return gitPath;
+  if (s.isFile()) {
+    const content = (0, import_fs3.readFileSync)(gitPath, "utf8");
+    const match = content.match(/^gitdir:\s*(.+)$/m);
+    if (match) return match[1].trim();
+  }
+  return null;
+}
+function installGitHook(rootDir, sessionId, agentId, agentName) {
+  const gitDir = findGitDir(rootDir);
+  if (!gitDir) return;
+  const hooksDir = (0, import_path3.join)(gitDir, "hooks");
+  (0, import_fs3.mkdirSync)(hooksDir, { recursive: true });
+  const hookPath = (0, import_path3.join)(hooksDir, "prepare-commit-msg");
+  if ((0, import_fs3.existsSync)(hookPath)) {
+    const existing = (0, import_fs3.readFileSync)(hookPath, "utf8");
+    if (!existing.includes(AGC_HOOK_MARKER)) {
+      (0, import_fs3.writeFileSync)(hookPath + HOOK_BACKUP_SUFFIX, existing, { mode: 493 });
+    }
+  }
+  const identity = agentName ? `${agentName} (agc)` : agentId ? `agc/${agentId}` : "agc agent";
+  const trailer = `Co-Authored-By: ${identity} <agc-agent@users.noreply.github.com>`;
+  const chainLine = (0, import_fs3.existsSync)(hookPath + HOOK_BACKUP_SUFFIX) ? `
+# chain pre-existing hook
+"$(dirname "$0")/prepare-commit-msg${HOOK_BACKUP_SUFFIX}" "$@" 2>/dev/null || true
+` : "";
+  const hook = `#!/bin/sh
+${AGC_HOOK_MARKER}${sessionId}
+COMMIT_MSG_FILE="$1"
+COMMIT_SOURCE="$2"
+${chainLine}
+case "$COMMIT_SOURCE" in merge|squash) exit 0 ;; esac
+TRAILER="${trailer}"
+grep -qF "$TRAILER" "$COMMIT_MSG_FILE" 2>/dev/null && exit 0
+printf '\\n%s\\n' "$TRAILER" >> "$COMMIT_MSG_FILE"
+`;
+  (0, import_fs3.writeFileSync)(hookPath, hook, { mode: 493 });
+}
+function removeGitHook(rootDir) {
+  const gitDir = findGitDir(rootDir);
+  if (!gitDir) return;
+  const hookPath = (0, import_path3.join)(gitDir, "hooks", "prepare-commit-msg");
+  if (!(0, import_fs3.existsSync)(hookPath)) return;
+  const content = (0, import_fs3.readFileSync)(hookPath, "utf8");
+  if (!content.includes(AGC_HOOK_MARKER)) return;
+  const backupPath = hookPath + HOOK_BACKUP_SUFFIX;
+  if ((0, import_fs3.existsSync)(backupPath)) {
+    (0, import_fs3.writeFileSync)(hookPath, (0, import_fs3.readFileSync)(backupPath, "utf8"), { mode: 493 });
+    (0, import_fs3.unlinkSync)(backupPath);
+  } else {
+    (0, import_fs3.unlinkSync)(hookPath);
+  }
+}
 function safePath(root, userPath) {
   const abs = (0, import_path3.resolve)(root, userPath);
   const rel = (0, import_path3.relative)(root, abs);
@@ -1434,6 +1435,7 @@ function assertNotSensitive(abs) {
   }
 }
 async function confirm(message, config, permissionKey) {
+  if (config.autoApprove) return true;
   const cached = config.permissions.get(permissionKey);
   if (cached === "allow") return true;
   if (cached === "deny") return false;
@@ -1612,7 +1614,8 @@ async function toolRunCommand(args, cfg) {
   if (!command || typeof command !== "string") throw new Error('run_command requires a "command" string');
   if (!Array.isArray(cmdArgs)) throw new Error('"args" must be an array of strings');
   const workDir = cwd ? safePath(cfg.rootDir, cwd) : cfg.rootDir;
-  const preview = [command, ...cmdArgs].join(" ");
+  const injectedArgs = injectAgcTrailer(command, cmdArgs, cfg.agentId, cfg.agentName);
+  const preview = [command, ...injectedArgs].join(" ");
   const timeoutMs = Math.min((typeof timeout_seconds === "number" ? timeout_seconds : 120) * 1e3, 3e5);
   const ok = await confirm(
     `Agent wants to run: \x1B[1m${preview}\x1B[0m
@@ -1623,7 +1626,7 @@ async function toolRunCommand(args, cfg) {
   if (!ok) return "User denied command execution.";
   if (interactive) {
     return new Promise((resolve2) => {
-      const child = (0, import_child_process2.spawn)(command, cmdArgs.map(String), { cwd: workDir, stdio: "inherit" });
+      const child = (0, import_child_process2.spawn)(command, injectedArgs.map(String), { cwd: workDir, stdio: "inherit" });
       const timer = setTimeout(() => {
         child.kill();
         resolve2(`(command timed out after ${timeoutMs / 1e3}s)`);
@@ -1639,7 +1642,7 @@ async function toolRunCommand(args, cfg) {
     });
   }
   return new Promise((resolve2) => {
-    (0, import_child_process2.execFile)(command, cmdArgs.map(String), { cwd: workDir, timeout: timeoutMs, maxBuffer: 1024 * 1024 }, (err, stdout, stderr) => {
+    (0, import_child_process2.execFile)(command, injectedArgs.map(String), { cwd: workDir, timeout: timeoutMs, maxBuffer: 1024 * 1024 }, (err, stdout, stderr) => {
       const out = [stdout, stderr].filter(Boolean).join("\n--- stderr ---\n");
       if (err && !out) return resolve2(`Error: ${err.message}`);
       resolve2(out || "(no output)");
@@ -1814,7 +1817,190 @@ async function runLocalTool(call, cfg) {
   return result;
 }
 
+// src/commands/run.ts
+function runCommand() {
+  return new import_commander7.Command("run").description("Send a single prompt to an agent and stream the response").argument("<prompt>", "Prompt text to send").option("--agent <agentId>", "Agent ID").option("--session <sessionId>", "Resume an existing session by ID").option("--new-session", "Create a new session and print its ID for future use").option("--local", "Enable local file system access (with permission prompts)").option("-y, --yes", "Enable local file system access and auto-approve all operations").option("--no-stream", "Disable streaming (wait for full response)").option("--json", "Output raw event stream as JSON lines").action(async (prompt2, opts) => {
+    const cfg = loadConfig();
+    const agentId = opts.agent ?? cfg.defaultAgentId;
+    if (!agentId) {
+      console.error(c.error("Specify --agent <agentId> or set defaultAgentId with `agc config set defaultAgentId <id>`"));
+      process.exit(1);
+    }
+    if (opts.session && opts.newSession) {
+      console.error(c.error("Cannot use --session and --new-session together."));
+      process.exit(1);
+    }
+    const client = makeClient();
+    let sessionId = opts.session;
+    if (opts.session) {
+      const spinner = spin("Loading session\u2026");
+      try {
+        await client.sessions.get(opts.session);
+        spinner.stop();
+      } catch {
+        spinner.stop();
+        console.error(c.error(`Session "${opts.session}" not found.`));
+        process.exit(1);
+      }
+    }
+    if (opts.newSession) {
+      const spinner = spin("Creating session\u2026");
+      try {
+        const res = await client.sessions.create({
+          agentId,
+          initiator: cfg.initiator ?? "",
+          title: `agc run ${(/* @__PURE__ */ new Date()).toISOString().slice(0, 16)}`,
+          source: "cli"
+        });
+        const session = res?.data ?? res;
+        sessionId = session.sessionId;
+        spinner.stop();
+      } catch (err) {
+        spinner.stop();
+        printError(err);
+        process.exit(1);
+      }
+    }
+    const localEnabled = opts.yes || opts.local;
+    const autoApprove = !!opts.yes;
+    let localToolsCfg = null;
+    let cliContext;
+    if (localEnabled) {
+      const rootDir = process.cwd();
+      localToolsCfg = {
+        rootDir,
+        sessionId: sessionId ?? "run",
+        appendLog: () => {
+        },
+        permissions: /* @__PURE__ */ new Map(),
+        agentId,
+        autoApprove
+      };
+      const snapshot = buildDirSnapshot(rootDir, 2);
+      cliContext = buildLocalToolsManifest(rootDir, snapshot, [], autoApprove);
+    }
+    if (!opts.json) {
+      const rows = [];
+      if (sessionId) {
+        const label = opts.newSession ? `${c.id(sessionId)}${c.dim(" (new)")}` : `${c.id(sessionId)}${c.dim(" (resumed)")}`;
+        rows.push(["Session", label]);
+      }
+      if (localEnabled) {
+        rows.push(["Local tools", autoApprove ? c.warn("enabled  (auto-approve on)") : c.success("enabled")]);
+      }
+      if (rows.length) {
+        detail(rows);
+        console.log();
+      }
+    }
+    const params = {
+      agentId,
+      sessionId,
+      messages: [{ role: "user", content: prompt2 }],
+      ...cfg.initiator && { initiatorId: cfg.initiator },
+      ...cliContext && { cliContext }
+    };
+    if (opts.noStream) {
+      const spinner = spin("Running\u2026");
+      try {
+        const result = await client.run.once(params);
+        spinner.stop();
+        if (opts.json) return jsonOut(result);
+        const text = result?.content ?? result?.text ?? result?.message ?? JSON.stringify(result);
+        console.log(text);
+        if (sessionId) console.log(c.dim(`
+Session: ${sessionId}  (resume with: agc run --session ${sessionId} "<prompt>")`));
+      } catch (err) {
+        spinner.stop();
+        printError(err);
+        process.exit(1);
+      }
+      return;
+    }
+    try {
+      let hasOutput = false;
+      let toolStartMs = 0;
+      let lastToolName = "";
+      for await (const event of client.agents.stream(params)) {
+        if (opts.json) {
+          console.log(JSON.stringify(event));
+          continue;
+        }
+        if (event.type === "token") {
+          process.stdout.write(event.content ?? "");
+          hasOutput = true;
+        } else if (event.type === "cli_tool_request" && localToolsCfg) {
+          const { requestId, tool: toolName, args } = event;
+          const displayName = String(toolName).replace("cli_", "");
+          if (hasOutput) {
+            process.stdout.write("\n");
+            hasOutput = false;
+          }
+          process.stdout.write(`  ${c.dim("\u2500")} ${c.bold(displayName)}`);
+          const startMs = Date.now();
+          let result;
+          let toolOk = true;
+          try {
+            result = await runLocalTool({ tool: displayName, args: args ?? {} }, localToolsCfg);
+          } catch (err) {
+            result = `Error: ${err?.message ?? String(err)}`;
+            toolOk = false;
+          }
+          const elapsed = ((Date.now() - startMs) / 1e3).toFixed(1);
+          readline3.cursorTo(process.stdout, 0);
+          readline3.clearLine(process.stdout, 0);
+          process.stdout.write(`  ${c.dim("\u2500")} ${c.bold(displayName)}  ${toolOk ? sym.ok : sym.fail}  ${c.dim("(" + elapsed + "s)")}
+`);
+          try {
+            await fetch(`${cfg.apiUrl}/v1/agents/cli-tool-result`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json", "Authorization": `Bearer ${cfg.apiKey}` },
+              body: JSON.stringify({ requestId, result })
+            });
+          } catch {
+          }
+        } else if (event.type === "toolStart") {
+          lastToolName = event.toolName ?? "";
+          toolStartMs = Date.now();
+          if (hasOutput) {
+            process.stdout.write("\n");
+            hasOutput = false;
+          }
+          process.stdout.write(`  ${c.dim("\u2500")} ${c.bold(lastToolName)}`);
+        } else if (event.type === "toolEnd") {
+          const elapsed = ((Date.now() - toolStartMs) / 1e3).toFixed(1);
+          readline3.cursorTo(process.stdout, 0);
+          readline3.clearLine(process.stdout, 0);
+          process.stdout.write(`  ${c.dim("\u2500")} ${c.bold(lastToolName)}  ${sym.ok}  ${c.dim("(" + elapsed + "s)")}
+`);
+        } else if (event.type === "final") {
+          if (hasOutput) process.stdout.write("\n");
+          const e = event;
+          if (e.content && !hasOutput) console.log(e.content);
+          if (sessionId) console.log(c.dim(`
+Session: ${sessionId}  (resume with: agc run --session ${sessionId} "<prompt>")`));
+          break;
+        } else if (event.type === "error") {
+          if (hasOutput) process.stdout.write("\n");
+          console.error(`
+${sym.fail} ${c.error(event.message ?? "Error")}`);
+          process.exit(1);
+        }
+      }
+      if (hasOutput && !opts.json) process.stdout.write("\n");
+    } catch (err) {
+      printError(err);
+      process.exit(1);
+    }
+  });
+}
+
 // src/commands/chat.ts
+var import_commander8 = require("commander");
+var readline4 = __toESM(require("readline"));
+var import_fs4 = require("fs");
+var import_path4 = require("path");
+var import_os3 = require("os");
 var SESSIONS_DIR = (0, import_path4.join)((0, import_os3.homedir)(), ".agc", "sessions");
 function ensureSessionsDir() {
   if (!(0, import_fs4.existsSync)(SESSIONS_DIR)) (0, import_fs4.mkdirSync)(SESSIONS_DIR, { recursive: true });
@@ -1912,23 +2098,27 @@ function chatCommand() {
         process.exit(1);
       }
     }
+    let agentName;
     let walletLine = "";
-    try {
-      const primary = await client.wallets.primary(agentId);
-      const w = primary?.data ?? primary;
-      if (w?.id) {
-        const bal = await client.wallets.balance(w.id).catch(() => null);
-        const b = bal?.data ?? bal;
-        const addr = `${w.address.slice(0, 6)}\u2026${w.address.slice(-4)}`;
-        const usdc = b?.usdc ?? "0";
-        walletLine = `${addr}  ${c.bold(usdc + " USDC")}`;
-      }
-    } catch {
-    }
+    await Promise.allSettled([
+      client.agents.get(agentId).then((res) => {
+        agentName = (res?.data ?? res)?.name;
+      }),
+      client.wallets.primary(agentId).then(async (primary) => {
+        const w = primary?.data ?? primary;
+        if (w?.id) {
+          const bal = await client.wallets.balance(w.id).catch(() => null);
+          const b = bal?.data ?? bal;
+          const addr = `${w.address.slice(0, 6)}\u2026${w.address.slice(-4)}`;
+          const usdc = b?.usdc ?? "0";
+          walletLine = `${addr}  ${c.bold(usdc + " USDC")}`;
+        }
+      })
+    ]);
     console.log(`
 ${c.bold("Agent Commons Chat")}`);
     const headerRows = [
-      ["Agent", agentId],
+      ["Agent", agentName ? `${agentName}  ${c.dim(agentId)}` : agentId],
       ["Session", c.id(sessionId) + (isResume ? c.dim(" (resumed)") : c.dim(" (new)"))]
     ];
     if (walletLine) headerRows.push(["Wallet", walletLine]);
@@ -1941,9 +2131,12 @@ ${c.bold("Agent Commons Chat")}`);
       localToolsCfg = {
         rootDir,
         sessionId,
+        agentId,
+        agentName,
         appendLog: (record) => appendSessionLog(sessionId, record),
         permissions: /* @__PURE__ */ new Map()
       };
+      installGitHook(rootDir, sessionId, agentId, agentName);
       appendSessionLog(sessionId, {
         type: "local_tools_enabled",
         rootDir,
@@ -1951,7 +2144,7 @@ ${c.bold("Agent Commons Chat")}`);
       });
     }
     console.log(c.dim("\nType your message and press Enter. Type /help for commands.\n"));
-    const rl = readline3.createInterface({
+    const rl = readline4.createInterface({
       input: process.stdin,
       output: process.stdout,
       terminal: true,
@@ -2094,7 +2287,7 @@ ${sym.fail} ${c.error(err.message ?? String(err))}`);
               if (isWaiting) {
                 elapsedInterval = setInterval(() => {
                   elapsedSec++;
-                  readline3.cursorTo(process.stdout, 0);
+                  readline4.cursorTo(process.stdout, 0);
                   process.stdout.write(`  ${c.dim("\u2500")} ${c.bold(displayName)}${argStr ? "  " + c.dim(argStr) : ""}  ${c.dim(elapsedSec + "s\u2026")}`);
                 }, 1e3);
               }
@@ -2109,8 +2302,8 @@ ${sym.fail} ${c.error(err.message ?? String(err))}`);
               if (elapsedInterval) clearInterval(elapsedInterval);
               const elapsed = ((Date.now() - startMs) / 1e3).toFixed(1);
               const preview = toolOk ? toolResultPreview(displayName, result) : "";
-              readline3.cursorTo(process.stdout, 0);
-              readline3.clearLine(process.stdout, 0);
+              readline4.cursorTo(process.stdout, 0);
+              readline4.clearLine(process.stdout, 0);
               const statusIcon = toolOk ? sym.ok : sym.fail;
               const previewPart = preview ? `  ${c.dim(preview)}` : "";
               process.stdout.write(`  ${c.dim("\u2500")} ${c.bold(displayName)}${argStr ? "  " + c.dim(argStr) : ""}  ${statusIcon}${previewPart}  ${c.dim("(" + elapsed + "s)")}
@@ -2144,8 +2337,8 @@ ${sym.fail} ${c.error(err.message ?? String(err))}`);
               hasOutput = false;
             } else if (event.type === "toolEnd") {
               const elapsed = ((Date.now() - toolStartMs) / 1e3).toFixed(1);
-              readline3.cursorTo(process.stdout, 0);
-              readline3.clearLine(process.stdout, 0);
+              readline4.cursorTo(process.stdout, 0);
+              readline4.clearLine(process.stdout, 0);
               process.stdout.write(`  ${c.dim("\u2500")} ${c.bold(lastToolName)}  ${sym.ok}  ${c.dim("(" + elapsed + "s)")}
 `);
               process.stdout.write(c.primary("agent") + c.dim(" \u203A "));
@@ -2202,15 +2395,20 @@ ${sym.fail} ${c.error(event.message ?? "Stream error")}`);
         }
       }
       console.log();
-      readline3.cursorTo(process.stdout, 0);
-      readline3.clearLine(process.stdout, 0);
+      readline4.cursorTo(process.stdout, 0);
+      readline4.clearLine(process.stdout, 0);
       rl.resume();
       rl.prompt();
     });
+    const cleanup = () => {
+      if (localToolsCfg) removeGitHook(localToolsCfg.rootDir);
+    };
     rl.on("close", () => {
+      cleanup();
       process.exit(0);
     });
     process.on("SIGINT", () => {
+      cleanup();
       console.log(c.dim(`
 Session preserved. Resume with: agc chat --resume ${sessionId}`));
       process.exit(130);
@@ -2241,8 +2439,8 @@ async function handleLocalToolLoop(agentText, cfg, client, agentId, sessionId, a
   }
   const elapsed = ((Date.now() - startMs) / 1e3).toFixed(1);
   const preview = toolOk ? toolResultPreview(toolCall.tool, result) : "";
-  readline3.cursorTo(process.stdout, 0);
-  readline3.clearLine(process.stdout, 0);
+  readline4.cursorTo(process.stdout, 0);
+  readline4.clearLine(process.stdout, 0);
   const previewPart = preview ? `  ${c.dim(preview)}` : "";
   process.stdout.write(`  ${c.dim("\u2500")} ${c.bold(toolCall.tool)}${argStr ? "  " + c.dim(argStr) : ""}  ${toolOk ? sym.ok : sym.fail}${previewPart}  ${c.dim("(" + elapsed + "s)")}
 `);
@@ -2278,8 +2476,8 @@ ${result}
         process.stdout.write(`  ${c.dim("\u2500")} ${c.bold(loopToolName)}`);
       } else if (evt.type === "toolEnd") {
         const elapsed2 = ((Date.now() - loopToolStartMs) / 1e3).toFixed(1);
-        readline3.cursorTo(process.stdout, 0);
-        readline3.clearLine(process.stdout, 0);
+        readline4.cursorTo(process.stdout, 0);
+        readline4.clearLine(process.stdout, 0);
         process.stdout.write(`  ${c.dim("\u2500")} ${c.bold(loopToolName)}  ${sym.ok}  ${c.dim("(" + elapsed2 + "s)")}
 `);
         process.stdout.write(c.primary("agent") + c.dim(" \u203A "));
@@ -2917,8 +3115,8 @@ function skillsCommand() {
   });
   cmd.command("delete <slug>").description("Permanently delete a skill").option("--yes", "Skip confirmation prompt").option("--json", "Output result as JSON").action(async (slug, opts) => {
     if (!opts.yes) {
-      const readline4 = await import("readline");
-      const rl = readline4.createInterface({ input: process.stdin, output: process.stdout });
+      const readline5 = await import("readline");
+      const rl = readline5.createInterface({ input: process.stdin, output: process.stdout });
       const answer = await new Promise(
         (resolve2) => rl.question(c.warn(`Delete skill "${slug}"? This cannot be undone. [y/N] `), resolve2)
       );
