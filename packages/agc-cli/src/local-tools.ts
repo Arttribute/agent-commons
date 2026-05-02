@@ -24,6 +24,7 @@ import {
   existsSync,
   readFileSync,
   writeFileSync,
+  unlinkSync,
   mkdirSync,
   readdirSync,
   statSync,
@@ -143,6 +144,12 @@ export interface LocalToolsConfig {
   appendLog: (record: Record<string, unknown>) => void;
   /** Per-tool-type permission cache so user isn't asked repeatedly. */
   permissions: Map<string, PermissionLevel>;
+  /** Agent ID — used as fallback identity in git commit trailers. */
+  agentId?: string;
+  /** Agent display name — preferred identity in git commit trailers. */
+  agentName?: string;
+  /** When true, all confirmation prompts are automatically approved. */
+  autoApprove?: boolean;
 }
 
 // ── Tool manifest injected as a system message at session start ───────────────
@@ -150,7 +157,7 @@ export interface LocalToolsConfig {
 // Written to closely match how Claude Code/function-calling-trained LLMs
 // expect tool invocation instructions in a system prompt.
 
-export function buildLocalToolsManifest(rootDir: string, snapshot: string, fileContextBlocks: string[] = []): string {
+export function buildLocalToolsManifest(rootDir: string, snapshot: string, fileContextBlocks: string[] = [], autoApprove = false): string {
   const fileSection = fileContextBlocks.length
     ? `\n### File contents included in this turn\n\n${fileContextBlocks.join('\n\n')}\n`
     : '';
@@ -175,7 +182,8 @@ ${fileSection}
 2. **Always show the actual output** returned by the tool in your response. Never say "I listed the files" without showing them. Report exactly what the tool returns.
 3. **Never fabricate results.** Wait for the real tool output before responding.
 4. **Sensitive paths are blocked** (.ssh, .gnupg, .aws, .env, credentials). Attempting to access them will return an error.
-5. **cli_write_file and cli_run_command require the user to confirm** before executing — you will see the result after they approve.
+5. ${autoApprove ? '**cli_write_file and cli_run_command execute immediately** — auto-approve is active, no user confirmation is required.' : '**cli_write_file and cli_run_command require the user to confirm** before executing — you will see the result after they approve.'}
+6. **Git commits must carry the agc co-author trailer.** Always include \`--trailer "Co-Authored-By: <AgentName> (agc) <agc-agent@users.noreply.github.com>"\` when running \`git commit\`. The CLI injects this automatically — do not omit it or pass \`--no-trailer\`.
 
 ### Available CLI tools
 
@@ -252,6 +260,99 @@ export function extractToolCall(text: string): LocalToolCall | null {
   return null;
 }
 
+// ── Git commit co-author injection ────────────────────────────────────────────
+//
+// Any git commit run through cli_run_command automatically gets a Co-Authored-By
+// trailer identifying the agc agent, mirroring how Claude Code marks its commits.
+
+export function injectAgcTrailer(command: string, args: string[], agentId?: string, agentName?: string): string[] {
+  if (command !== 'git') return args;
+  if (!args.some(a => a === 'commit')) return args;
+  if (args.some(a => a.includes('Co-Authored-By: agc'))) return args; // already present
+  const identity = agentName ? `${agentName} (agc)` : agentId ? `agc/${agentId}` : 'agc agent';
+  return [...args, '--trailer', `Co-Authored-By: ${identity} <agc-agent@users.noreply.github.com>`];
+}
+
+// ── Git hook management ───────────────────────────────────────────────────────
+//
+// A prepare-commit-msg hook is installed at session start so that commits made
+// by the human (not just the agent) also carry the Co-Authored-By trailer.
+// Any pre-existing hook is saved alongside and restored on session exit.
+
+const AGC_HOOK_MARKER = '# agc-session:';
+const HOOK_BACKUP_SUFFIX = '.agc-backup';
+
+function findGitDir(rootDir: string): string | null {
+  const gitPath = join(rootDir, '.git');
+  if (!existsSync(gitPath)) return null;
+  const s = statSync(gitPath);
+  if (s.isDirectory()) return gitPath;
+  // worktree: .git is a file pointing to the real gitdir
+  if (s.isFile()) {
+    const content = readFileSync(gitPath, 'utf8');
+    const match = content.match(/^gitdir:\s*(.+)$/m);
+    if (match) return match[1].trim();
+  }
+  return null;
+}
+
+export function installGitHook(rootDir: string, sessionId: string, agentId?: string, agentName?: string): void {
+  const gitDir = findGitDir(rootDir);
+  if (!gitDir) return;
+
+  const hooksDir = join(gitDir, 'hooks');
+  mkdirSync(hooksDir, { recursive: true });
+  const hookPath = join(hooksDir, 'prepare-commit-msg');
+
+  // Back up any existing hook that isn't already ours
+  if (existsSync(hookPath)) {
+    const existing = readFileSync(hookPath, 'utf8');
+    if (!existing.includes(AGC_HOOK_MARKER)) {
+      writeFileSync(hookPath + HOOK_BACKUP_SUFFIX, existing, { mode: 0o755 });
+    }
+  }
+
+  const identity = agentName ? `${agentName} (agc)` : agentId ? `agc/${agentId}` : 'agc agent';
+  const trailer = `Co-Authored-By: ${identity} <agc-agent@users.noreply.github.com>`;
+
+  // Call through to any backed-up hook first so we don't break existing workflows
+  const chainLine = existsSync(hookPath + HOOK_BACKUP_SUFFIX)
+    ? `\n# chain pre-existing hook\n"$(dirname "$0")/prepare-commit-msg${HOOK_BACKUP_SUFFIX}" "$@" 2>/dev/null || true\n`
+    : '';
+
+  const hook = `#!/bin/sh
+${AGC_HOOK_MARKER}${sessionId}
+COMMIT_MSG_FILE="$1"
+COMMIT_SOURCE="$2"
+${chainLine}
+case "$COMMIT_SOURCE" in merge|squash) exit 0 ;; esac
+TRAILER="${trailer}"
+grep -qF "$TRAILER" "$COMMIT_MSG_FILE" 2>/dev/null && exit 0
+printf '\\n%s\\n' "$TRAILER" >> "$COMMIT_MSG_FILE"
+`;
+
+  writeFileSync(hookPath, hook, { mode: 0o755 });
+}
+
+export function removeGitHook(rootDir: string): void {
+  const gitDir = findGitDir(rootDir);
+  if (!gitDir) return;
+
+  const hookPath = join(gitDir, 'hooks', 'prepare-commit-msg');
+  if (!existsSync(hookPath)) return;
+
+  const content = readFileSync(hookPath, 'utf8');
+  if (!content.includes(AGC_HOOK_MARKER)) return; // not ours — don't touch it
+
+  const backupPath = hookPath + HOOK_BACKUP_SUFFIX;
+  if (existsSync(backupPath)) {
+    writeFileSync(hookPath, readFileSync(backupPath, 'utf8'), { mode: 0o755 });
+    unlinkSync(backupPath);
+  } else {
+    unlinkSync(hookPath);
+  }
+}
+
 // ── Security helpers ──────────────────────────────────────────────────────────
 
 function safePath(root: string, userPath: string): string {
@@ -290,6 +391,7 @@ async function confirm(
   config: LocalToolsConfig,
   permissionKey: string,
 ): Promise<boolean> {
+  if (config.autoApprove) return true;
   const cached = config.permissions.get(permissionKey);
   if (cached === 'allow') return true;
   if (cached === 'deny') return false;
@@ -469,7 +571,8 @@ async function toolRunCommand(args: Record<string, any>, cfg: LocalToolsConfig):
   if (!Array.isArray(cmdArgs)) throw new Error('"args" must be an array of strings');
 
   const workDir = cwd ? safePath(cfg.rootDir, cwd) : cfg.rootDir;
-  const preview = [command, ...cmdArgs].join(' ');
+  const injectedArgs = injectAgcTrailer(command, cmdArgs, cfg.agentId, cfg.agentName);
+  const preview = [command, ...injectedArgs].join(' ');
   // Default 120s, user-configurable up to 5 min
   const timeoutMs = Math.min(((typeof timeout_seconds === 'number' ? timeout_seconds : 120)) * 1_000, 300_000);
 
@@ -483,7 +586,7 @@ async function toolRunCommand(args: Record<string, any>, cfg: LocalToolsConfig):
   if (interactive) {
     // Connect the terminal's stdin/stdout so the user can answer prompts directly
     return new Promise((resolve) => {
-      const child = spawn(command, cmdArgs.map(String), { cwd: workDir, stdio: 'inherit' });
+      const child = spawn(command, injectedArgs.map(String), { cwd: workDir, stdio: 'inherit' });
       const timer = setTimeout(() => {
         child.kill();
         resolve(`(command timed out after ${timeoutMs / 1_000}s)`);
@@ -500,7 +603,7 @@ async function toolRunCommand(args: Record<string, any>, cfg: LocalToolsConfig):
   }
 
   return new Promise((resolve) => {
-    execFile(command, cmdArgs.map(String), { cwd: workDir, timeout: timeoutMs, maxBuffer: 1_024 * 1_024 }, (err, stdout, stderr) => {
+    execFile(command, injectedArgs.map(String), { cwd: workDir, timeout: timeoutMs, maxBuffer: 1_024 * 1_024 }, (err, stdout, stderr) => {
       const out = [stdout, stderr].filter(Boolean).join('\n--- stderr ---\n');
       if (err && !out) return resolve(`Error: ${err.message}`);
       resolve(out || '(no output)');
