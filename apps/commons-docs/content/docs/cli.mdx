@@ -86,14 +86,15 @@ agc agents delete <agentId>
 
 ---
 
-## Chat & Running
+## Chat
+
+`agc chat` opens an interactive streaming REPL. Each conversation is tied to a session so history is preserved.
 
 ```bash
-agc chat --agent <agentId>                       # interactive streaming chat
-agc chat --agent <agentId> --resume <sessionId>  # resume a session
-agc run  --agent <agentId> "Hello"               # one-shot run (prompt is a positional arg)
-agc run  --agent <agentId> "Hello" --json        # JSON output
-agc run  --agent <agentId> "Hello" --no-stream   # wait for full response before printing
+agc chat --agent <agentId>                       # start a new session
+agc chat --agent <agentId> --resume <sessionId>  # resume an existing session
+agc chat --agent <agentId> --no-local            # disable local file system access
+agc chat --agent <agentId> --no-stream           # wait for full response before printing
 ```
 
 In-session slash commands:
@@ -102,14 +103,103 @@ In-session slash commands:
 |----------|--------------------------------------------------|
 | /help    | Show available slash commands                    |
 | /session | Print the current session ID (for later resume)  |
+| /tools   | Show local tools status and cached permissions   |
 | /clear   | Clear the terminal screen                        |
 | /quit    | Exit — session is preserved for future resume    |
 
-Set a default agent so you can skip --agent every time:
+File context: prefix any path with `@` to inject its contents into your message:
+
+```
+you › review @src/index.ts and suggest improvements
+```
+
+Set a default agent so you can skip `--agent` every time:
 
 ```bash
 agc config set defaultAgentId agent_abc123
 agc chat   # uses defaultAgentId automatically
+```
+
+---
+
+## Run (one-shot)
+
+`agc run` sends a single prompt and exits. Useful for scripting, piping output, or quick one-off queries.
+
+```bash
+agc run --agent <agentId> "Hello"                 # stream response to stdout
+agc run --agent <agentId> "Hello" --no-stream     # wait for full response
+agc run --agent <agentId> "Hello" --json          # raw JSON event stream
+```
+
+### Session flags
+
+By default `agc run` is stateless — each call starts fresh. Use session flags when you need the agent to remember context across calls:
+
+```bash
+# Create a new session and print its ID
+agc run --agent <agentId> "Summarise this repo" --new-session
+# Session: ses_abc123 (new)
+# ... response ...
+# Session: ses_abc123  (resume with: agc run --session ses_abc123 "<prompt>")
+
+# Resume that session in the next call
+agc run --agent <agentId> "Now refactor main.ts" --session ses_abc123
+# Session: ses_abc123 (resumed)
+# ... response with full prior context ...
+```
+
+| Flag | Description |
+|---|---|
+| `--session <id>` | Resume an existing session. Validates the ID before running. |
+| `--new-session` | Create a new session, print its ID, use it for this run. |
+
+The session ID is printed at the end of every run that uses one, so you can copy it straight from the terminal.
+
+### Local file system flags
+
+Give the agent direct access to files on your machine:
+
+```bash
+agc run --agent <agentId> "List all TypeScript files and summarise each" --local
+# → prompts you before each write or shell command
+
+agc run --agent <agentId> "Fix the lint errors in src/" --yes
+# → auto-approves all operations — no prompts
+```
+
+| Flag | Description |
+|---|---|
+| `--local` | Enable local file system access with per-operation confirmation prompts |
+| `--yes` / `-y` | Enable local file system access and auto-approve all operations |
+
+All file operations are sandboxed to the current working directory. Sensitive paths (`.ssh`, `.aws`, `.env`, credentials) are always blocked regardless of flags.
+
+When `--local` or `--yes` is active, the agent gains access to these tools:
+
+| Tool | Description |
+|---|---|
+| `cli_read_file` | Read a file (plain text, PDF, or Word doc) |
+| `cli_write_file` | Write or overwrite a file |
+| `cli_list_directory` | List directory contents |
+| `cli_search_files` | Find files by name pattern |
+| `cli_run_command` | Run a shell command and capture output |
+| `cli_start_process` | Start a long-running background command |
+| `cli_wait_for_process` | Wait for a background process and stream its output |
+| `cli_process_status` | Check status of a background process |
+| `cli_kill_process` | Kill a background process |
+| `cli_list_processes` | List all background processes this session |
+
+### Combining flags
+
+```bash
+# Research + remember context + work with files
+agc run --agent <agentId> "Read package.json and list all dependencies" \
+  --new-session --yes
+
+# Resume with more work in the same session
+agc run --agent <agentId> "Now check each dependency for known issues" \
+  --session ses_abc123 --yes
 ```
 
 ---
@@ -121,6 +211,8 @@ agc sessions list
 agc sessions list --agent <agentId>
 agc sessions get <sessionId>
 ```
+
+Session logs from `agc chat` and `agc run --local` are written to `~/.agc/sessions/<sessionId>.jsonl`. Each line is a JSON record of the message or tool call.
 
 ---
 
@@ -256,6 +348,16 @@ agc run --agent <agentId> "Hello" --json
 # Run an agent and capture the result
 RESULT=$(agc run --agent agent_abc123 "Summarize: $(cat input.txt)" --json)
 echo $RESULT | jq '.response' > summary.txt
+
+# Multi-turn scripted conversation using sessions
+SESSION=$(agc run --agent agent_abc123 "Analyse this codebase" --new-session --yes 2>&1 \
+  | grep "^Session:" | awk '{print $2}')
+
+agc run --agent agent_abc123 "Now write a test for every exported function" \
+  --session "$SESSION" --yes
+
+agc run --agent agent_abc123 "Create a CHANGELOG.md summarising your changes" \
+  --session "$SESSION" --yes
 
 # Chain tasks
 agc task execute task_123 && agc task execute task_456

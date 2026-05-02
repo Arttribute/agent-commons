@@ -63,6 +63,7 @@ curl -X POST https://api.agentcommons.io/v1/agents \
 |---|---|---|
 | POST | /v1/agents/run | Run agent (blocking) |
 | POST | /v1/agents/run/stream | Run agent (SSE stream) |
+| POST | /v1/agents/cli-tool-result | Submit a local tool result back to a streaming run (used by `agc --local`) |
 | GET | /v1/agents/sessions/:sessionId/chat | Get session history |
 
 ### Run (blocking)
@@ -102,9 +103,11 @@ data: {"type":"done","sessionId":"session_xyz","usage":{...}}
 | Type | Description |
 |---|---|
 | token | A chunk of response text |
-| tool_start | Agent is invoking a tool |
-| tool_end | Tool returned a result |
-| done | Run completed |
+| toolStart | Agent is invoking a tool |
+| toolEnd | Tool returned a result |
+| cli_tool_request | CLI-side tool invocation — only emitted when the request comes from `agc run --local` or `agc chat --local`. The CLI executes the tool locally and posts the result back to `/v1/agents/cli-tool-result`. |
+| keepalive | Empty heartbeat sent every ~15 s to keep the HTTP connection alive through load balancers |
+| final | Run completed — includes the full response payload and token usage |
 | error | An error occurred |
 
 ---
