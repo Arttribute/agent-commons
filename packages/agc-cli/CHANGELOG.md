@@ -1,5 +1,11 @@
 # @agent-commons/cli
 
+## 0.1.18
+
+### Patch Changes
+
+- Auto patch release
+
 ## 0.1.17
 
 ### Patch Changes
