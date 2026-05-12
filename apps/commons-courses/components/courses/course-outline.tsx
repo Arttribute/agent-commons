@@ -39,7 +39,11 @@ export function CourseOutline({
   const toggle = (i: number) => {
     setOpenModules((prev) => {
       const next = new Set(prev);
-      next.has(i) ? next.delete(i) : next.add(i);
+      if (next.has(i)) {
+        next.delete(i);
+      } else {
+        next.add(i);
+      }
       return next;
     });
   };
@@ -53,18 +57,18 @@ export function CourseOutline({
         >
           <button
             onClick={() => toggle(i)}
-            className="w-full flex items-center justify-between px-5 py-4 bg-white hover:bg-slate-50 transition-colors text-left"
+            className="w-full min-w-0 flex items-center justify-between px-5 py-4 bg-white hover:bg-slate-50 transition-colors text-left"
           >
-            <div className="flex items-center gap-3">
+            <div className="flex min-w-0 items-center gap-3">
               <span className="text-xs font-bold tabular-nums w-6 flex-shrink-0 text-slate-900">
                 {String(i + 1).padStart(2, "0")}
               </span>
-              <div>
-                <p className="text-sm font-semibold text-slate-900">
+              <div className="min-w-0">
+                <p className="truncate text-sm font-semibold text-slate-900">
                   {module.title}
                 </p>
                 {module.description && (
-                  <p className="text-xs text-slate-400 mt-0.5 hidden sm:block">
+                  <p className="text-xs text-slate-400 mt-0.5 hidden truncate sm:block">
                     {module.description}
                   </p>
                 )}

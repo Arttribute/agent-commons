@@ -4,7 +4,8 @@ import { Nav } from "@/components/nav";
 import { CourseOutline } from "@/components/courses/course-outline";
 import { EnrolButton } from "@/components/courses/enrol-button";
 import { EnrolledBanner } from "@/components/courses/enrolled-banner";
-import { coursesData } from "@/data/courses";
+import { connectDB } from "@/lib/db";
+import Course from "@/models/Course";
 import {
   ArrowLeft,
   Clock,
@@ -12,15 +13,60 @@ import {
   BarChart2,
   Users,
   CheckCircle,
+  FlaskConical,
+  ShieldCheck,
 } from "lucide-react";
 
 interface Props {
   params: Promise<{ slug: string }>;
 }
 
+interface LessonData {
+  title: string;
+  duration: string;
+  description?: string;
+  isFree: boolean;
+}
+
+interface ModuleData {
+  title: string;
+  description?: string;
+  lessons: LessonData[];
+}
+
+interface CourseDetailData {
+  title: string;
+  slug: string;
+  tagline: string;
+  description: string;
+  longDescription: string;
+  price: number;
+  currency?: string;
+  isFree: boolean;
+  courseType: "self-paced" | "live";
+  level: "beginner" | "intermediate" | "advanced";
+  duration: string;
+  lessonsCount: number;
+  modulesCount: number;
+  instructor: string;
+  tags: string[];
+  modules: ModuleData[];
+}
+
+function formatCoursePrice(course: { isFree: boolean; price: number; currency?: string }) {
+  if (course.isFree) return "Free";
+  if (["kes", "ksh"].includes(course.currency?.toLowerCase() ?? "")) {
+    return `Ksh ${course.price.toLocaleString("en-KE")}`;
+  }
+  return `$${course.price}`;
+}
+
 export default async function CoursePage({ params }: Props) {
   const { slug } = await params;
-  const course = coursesData.find((c) => c.slug === slug);
+  await connectDB();
+  const course = (await Course.findOne({ slug, published: true }).lean()) as
+    | CourseDetailData
+    | null;
   if (!course) notFound();
 
   const totalMinutes = course.modules
@@ -28,12 +74,11 @@ export default async function CoursePage({ params }: Props) {
     .reduce((acc, l) => acc + parseInt(l.duration), 0);
 
   return (
-    <div className="min-h-screen bg-white">
+    <div className="min-h-screen overflow-x-hidden bg-white">
       <Nav />
       <div className="pt-20">
-        {/* Hero */}
-        <div className="relative overflow-hidden bg-white border-b border-slate-100">
-          <div className="max-w-5xl mx-auto px-6 lg:px-12 py-14">
+        <div className="relative bg-white border-b border-slate-100">
+          <div className="mx-auto max-w-6xl px-4 py-12 sm:px-6 lg:px-8">
             <Link
               href="/courses"
               className="inline-flex items-center gap-1.5 text-sm text-slate-400 hover:text-slate-700 transition-colors mb-8"
@@ -41,32 +86,36 @@ export default async function CoursePage({ params }: Props) {
               <ArrowLeft className="h-3.5 w-3.5" /> All courses
             </Link>
 
-            <div className="grid lg:grid-cols-[1fr_320px] gap-12 items-start">
-              {/* Left */}
-              <div>
+            <div className="grid items-start gap-8 lg:grid-cols-[minmax(0,1fr)_minmax(280px,320px)] lg:gap-10">
+              {/* Intro */}
+              <section className="min-w-0">
                 <div className="flex items-center gap-2 mb-5">
-                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full border border-slate-300 text-slate-600 bg-slate-50">
+                  <span className="text-xs font-bold px-2 py-1 rounded-md border border-slate-300 text-slate-700 bg-slate-50">
                     {course.level}
                   </span>
                   {course.isFree ? (
-                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full border border-slate-300 text-slate-600 bg-slate-50">
+                    <span className="text-xs font-bold px-2 py-1 rounded-md border border-slate-300 text-slate-700 bg-slate-50">
                       Free
                     </span>
                   ) : (
-                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full border border-slate-900 text-slate-900 bg-white">
+                    <span className="text-xs font-bold px-2 py-1 rounded-md border border-slate-900 text-slate-900 bg-white">
                       Paid
                     </span>
                   )}
+                  <span className="inline-flex items-center gap-1 text-xs font-bold px-2 py-1 rounded-md bg-lime-100 text-slate-800">
+                    <FlaskConical className="h-3 w-3" />
+                    Lab-ready
+                  </span>
                 </div>
 
-                <h1 className="text-4xl font-bold text-slate-900 mb-4 leading-tight">
+                <h1 className="break-words text-3xl font-semibold text-slate-950 mb-4 leading-tight sm:text-4xl">
                   {course.title}
                 </h1>
-                <p className="text-slate-500 leading-relaxed mb-6 max-w-xl">
+                <p className="max-w-xl break-words text-[17px] text-slate-800 leading-8 mb-6">
                   {course.tagline}
                 </p>
 
-                <div className="flex flex-wrap items-center gap-5 text-sm text-slate-400 mb-8">
+                <div className="flex flex-wrap items-center gap-5 text-[15px] text-slate-700 mb-8">
                   <span className="flex items-center gap-1.5">
                     <Clock className="h-3.5 w-3.5" />
                     {course.duration}
@@ -89,109 +138,130 @@ export default async function CoursePage({ params }: Props) {
                   {course.tags.map((tag) => (
                     <span
                       key={tag}
-                      className="text-xs px-2.5 py-1 rounded-full border border-slate-200 text-slate-500"
+                      className="max-w-full break-words text-sm px-2.5 py-1 rounded-md border border-slate-200 text-slate-700"
                     >
                       {tag}
                     </span>
                   ))}
                 </div>
-              </div>
+              </section>
 
-              {/* Right: Purchase card (hero) */}
-              <PurchaseCard course={course} />
-            </div>
-          </div>
-        </div>
+              {/* Sticky purchase card */}
+              <aside className="min-w-0 lg:row-span-2">
+                <div className="lg:sticky lg:top-24">
+                  <PurchaseCard course={course} />
+                </div>
+              </aside>
 
-        {/* Body */}
-        <div className="max-w-5xl mx-auto px-6 lg:px-12 py-16">
-          <div className="grid lg:grid-cols-[1fr_320px] gap-12">
-            {/* Left: description + outline */}
-            <div>
-              {/* About */}
-              <div className="mb-12">
-                <h2 className="text-lg font-bold text-slate-900 mb-4">
-                  About this course
-                </h2>
-                <p className="text-sm text-slate-500 leading-relaxed">
-                  {course.longDescription}
-                </p>
-              </div>
+              {/* Course content */}
+              <section className="min-w-0 pt-4 lg:pt-8">
+                {/* About */}
+                <div className="mb-12">
+                  <h2 className="text-lg font-bold text-slate-900 mb-4">
+                    About this course
+                  </h2>
+                  <p className="break-words text-[15px] text-slate-800 leading-7">
+                    {course.longDescription}
+                  </p>
+                </div>
 
-              {/* What you will learn */}
-              <div className="mb-12">
-                <h2 className="text-lg font-bold text-slate-900 mb-5">
-                  What you will learn
-                </h2>
-                <div className="grid sm:grid-cols-2 gap-3">
-                  {course.modules.map((m) => (
-                    <div key={m.title} className="flex items-start gap-2.5">
-                      <CheckCircle className="h-4 w-4 text-slate-400 mt-0.5 flex-shrink-0" />
-                      <span className="text-sm text-slate-700">{m.title}</span>
+                <div className="mb-12 rounded-xl border border-slate-200 bg-slate-50 p-6">
+                  <div className="flex items-start gap-4">
+                    <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-lg bg-lime-300">
+                      <ShieldCheck className="h-5 w-5 text-slate-950" />
                     </div>
-                  ))}
+                    <div>
+                      <h2 className="text-lg font-bold text-slate-900 mb-2">
+                        How the lab fits in
+                      </h2>
+                      <p className="text-[15px] leading-7 text-slate-800">
+                        CommonLab courses are designed to pair lessons with safe
+                        agent practice: prompts, tool calls, workflows, logs,
+                        and review checkpoints before learners move into real
+                        integrations.
+                      </p>
+                    </div>
+                  </div>
                 </div>
-              </div>
 
-              {/* Enrolled banner (shows for logged-in enrolled users) */}
-              <div className="mb-8">
-                <EnrolledBanner courseSlug={course.slug} />
-              </div>
-
-              {/* Course outline */}
-              <div>
-                <h2 className="text-lg font-bold text-slate-900 mb-3">
-                  Course outline
-                </h2>
-                <div className="flex items-center gap-3 text-xs text-slate-400 mb-5">
-                  <span>{course.modulesCount} modules</span>
-                  <span>·</span>
-                  <span>{course.lessonsCount} lessons</span>
-                  <span>·</span>
-                  <span>~{totalMinutes} min total</span>
+                {/* What you will learn */}
+                <div className="mb-12">
+                  <h2 className="text-lg font-bold text-slate-900 mb-5">
+                    What you will learn
+                  </h2>
+                  <div className="grid sm:grid-cols-2 gap-3">
+                    {course.modules.map((m) => (
+                      <div key={m.title} className="flex items-start gap-2.5">
+                        <CheckCircle className="h-4 w-4 text-slate-400 mt-0.5 flex-shrink-0" />
+                        <span className="text-sm text-slate-700">
+                          {m.title}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
                 </div>
-                <CourseOutline modules={course.modules} enrolled={false} />
-              </div>
-            </div>
 
-            {/* Right: sticky purchase card */}
-            <div className="hidden lg:block">
-              <div className="sticky top-24">
-                <PurchaseCard course={course} />
-              </div>
+                {/* Enrolled banner (shows for logged-in enrolled users) */}
+                <div className="mb-8">
+                  <EnrolledBanner courseSlug={course.slug} />
+                </div>
+
+                {/* Course outline */}
+                <div>
+                  <h2 className="text-lg font-bold text-slate-900 mb-3">
+                    Course outline
+                  </h2>
+                  <div className="flex items-center gap-3 text-xs text-slate-400 mb-5">
+                    <span>{course.modulesCount} modules</span>
+                    <span>·</span>
+                    <span>{course.lessonsCount} lessons</span>
+                    <span>·</span>
+                    <span>~{totalMinutes} min total</span>
+                  </div>
+                  <CourseOutline modules={course.modules} enrolled={false} />
+                </div>
+              </section>
             </div>
           </div>
         </div>
       </div>
 
       {/* Footer */}
-      <footer className="bg-white px-6 lg:px-12 py-8 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-slate-400 border-t border-slate-200">
-        <div className="flex items-center gap-2.5">
-          <div className="h-5 w-5 rounded bg-slate-900 flex items-center justify-center">
-            <BookOpen className="h-3 w-3 text-white" />
+      <footer className="border-t border-slate-200 bg-white">
+        <div className="mx-auto flex max-w-6xl flex-col items-center justify-between gap-4 px-4 py-8 text-sm text-slate-600 sm:flex-row sm:px-6 lg:px-8">
+          <div className="flex items-center gap-2.5">
+            <div className="h-5 w-5 rounded bg-slate-950 flex items-center justify-center">
+              <FlaskConical className="h-3 w-3 text-white" />
+            </div>
+            <span>© 2026 CommonLab</span>
           </div>
-          <span>© 2026 Agent Commons</span>
-        </div>
-        <div className="flex gap-6">
-          <Link href="/courses" className="hover:text-slate-700 transition-colors">
-            Courses
-          </Link>
-          <Link href="/terms" className="hover:text-slate-700 transition-colors">
-            Terms
-          </Link>
+          <div className="flex gap-6">
+            <Link
+              href="/courses"
+              className="hover:text-slate-700 transition-colors"
+            >
+              Courses
+            </Link>
+            <Link
+              href="/terms"
+              className="hover:text-slate-700 transition-colors"
+            >
+              Terms
+            </Link>
+          </div>
         </div>
       </footer>
     </div>
   );
 }
 
-function PurchaseCard({ course }: { course: (typeof coursesData)[0] }) {
+function PurchaseCard({ course }: { course: CourseDetailData }) {
   return (
-    <div className="rounded-xl border border-slate-200 bg-white overflow-hidden shadow-sm">
+    <div className="w-full min-w-0 max-w-sm rounded-xl border border-slate-200 bg-white overflow-hidden shadow-sm lg:max-w-none">
       <div className="h-1 bg-slate-900" />
       <div className="p-6">
         <div className="text-3xl font-bold text-slate-900 mb-1">
-          {course.isFree ? "Free" : `$${course.price}`}
+          {formatCoursePrice(course)}
         </div>
         {!course.isFree && (
           <p className="text-xs text-slate-400 mb-5">
@@ -212,7 +282,7 @@ function PurchaseCard({ course }: { course: (typeof coursesData)[0] }) {
             `${course.lessonsCount} lessons`,
             `${course.duration} of content`,
             `${course.modulesCount} modules`,
-            "Lifetime access",
+            "Sandbox-oriented exercises",
             "Free preview lessons",
           ].map((item) => (
             <div

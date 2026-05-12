@@ -1,12 +1,11 @@
 @import "tailwindcss";
 
 @theme inline {
-  --font-sans: var(--font-space-mono);
-  --font-mono: var(--font-space-mono);
+  --font-sans: var(--font-space-grotesk);
+  --font-mono: var(--font-space-grotesk);
 
-  /* Brand accent — Agent Commons indigo */
-  --color-brand: #676fff;
-  --color-brand-hover: #5258e4;
+  --color-brand: #111827;
+  --color-brand-hover: #374151;
 
   /* RetroGrid animation */
   --animate-grid: grid 15s linear infinite;
@@ -23,10 +22,17 @@
 
 :root {
   --background: #ffffff;
-  --foreground: #0a0a0a;
+  --foreground: #020617;
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
+  font-size: 16px;
+  text-rendering: optimizeLegibility;
+}
+
+::selection {
+  background: #d9f99d;
+  color: #0a0a0a;
 }

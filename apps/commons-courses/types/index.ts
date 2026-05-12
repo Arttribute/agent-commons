@@ -15,6 +15,7 @@ export interface CourseCardData {
   tagline: string;
   description: string;
   price: number;
+  currency?: string;
   isFree: boolean;
   level: string;
   duration: string;

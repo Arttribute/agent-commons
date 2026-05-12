@@ -1,6 +1,6 @@
 import { Nav } from "@/components/nav";
 import { CourseCard } from "@/components/courses/course-card";
-import { BookOpen } from "lucide-react";
+import { BookOpen, FlaskConical } from "lucide-react";
 import { connectDB } from "@/lib/db";
 import Course from "@/models/Course";
 import type { CourseCardData } from "@/types";
@@ -20,6 +20,7 @@ async function getCourses(): Promise<CourseCardData[]> {
       tagline: c.tagline,
       description: c.description,
       price: c.price,
+      currency: c.currency,
       isFree: c.isFree,
       level: c.level,
       duration: c.duration,
@@ -29,24 +30,7 @@ async function getCourses(): Promise<CourseCardData[]> {
       tags: c.tags,
     }));
   } catch {
-    // Fallback to static data if DB not yet connected
-    return [
-      {
-        _id: "1",
-        title: "Fundamentals of AI Agents",
-        slug: "fundamentals-of-ai-agents",
-        tagline: "Build intelligent, autonomous agents from the ground up.",
-        description: "A comprehensive introduction to AI agents.",
-        price: 99,
-        isFree: false,
-        level: "beginner",
-        duration: "8 hours",
-        lessonsCount: 28,
-        modulesCount: 6,
-        instructor: "Agent Commons",
-        tags: ["AI Agents", "LLMs", "MCP"],
-      },
-    ];
+    return [];
   }
 }
 
@@ -56,38 +40,70 @@ export default async function CoursesPage() {
     <div className="min-h-screen bg-white">
       <Nav />
       <div className="pt-20">
-        {/* Header */}
-        <div className="relative overflow-hidden border-b border-slate-100">
-          <div className="max-w-5xl mx-auto px-6 lg:px-12 py-16">
-            <p className="text-xs tracking-[0.2em] uppercase text-slate-400 mb-4">
-              All courses
+        <div className="border-b border-slate-200 bg-white">
+          <div className="mx-auto max-w-6xl px-4 py-12 sm:px-6 lg:px-8">
+            <p className="mb-3 text-sm font-semibold text-slate-600">
+              CommonLab catalog
             </p>
-            <h1 className="text-4xl font-bold text-slate-900 mb-3">
-              Learn AI Agents.
+            <h1 className="text-3xl font-semibold leading-tight tracking-tight text-slate-950 sm:text-4xl">
+              Courses for learning by building.
             </h1>
-            <p className="text-sm text-slate-500 max-w-md">
-              Structured courses built by practitioners. From agent fundamentals
-              to production deployment and the agentic economy.
+            <p className="mt-4 max-w-2xl text-[17px] leading-8 text-slate-800">
+              Start with the courses already available, then grow into a
+              broader library of educator-led programs. Each course can become a
+              path of lessons, projects, and safe agent sandboxes.
             </p>
+            <div className="mt-6 flex flex-wrap gap-2">
+              {[
+                "AI agents",
+                "LLMs",
+                "MCP",
+                "Tool calls",
+                "Workflows",
+                "Sandboxing",
+              ].map((item, index) => (
+                <span
+                  key={item}
+                  className={[
+                    "rounded-md border px-2.5 py-1 text-sm font-semibold",
+                    [
+                      "border-[#A6E45E] bg-[#B8F56D] text-slate-950",
+                      "border-[#5DCDD5] bg-[#71E0E7] text-slate-950",
+                      "border-[#F3D05C] bg-[#FFE177] text-slate-950",
+                      "border-[#D58DD0] bg-[#E5A3DF] text-slate-950",
+                      "border-[#899CE8] bg-[#9FB0F4] text-slate-950",
+                      "border-[#E88EA3] bg-[#F3A2B4] text-slate-950",
+                    ][index],
+                  ].join(" ")}
+                >
+                  {item}
+                </span>
+              ))}
+            </div>
           </div>
         </div>
 
-        {/* Courses grid */}
-        <div className="max-w-5xl mx-auto px-6 lg:px-12 pt-10 pb-24">
+        <div className="mx-auto max-w-6xl px-4 py-10 sm:px-6 lg:px-8">
           {courses.length === 0 ? (
             <div className="text-center py-24">
               <BookOpen className="h-8 w-8 text-slate-300 mx-auto mb-4" />
-              <p className="text-sm text-slate-400">
+              <p className="text-sm text-slate-600">
                 No courses yet. Check back soon.
               </p>
             </div>
           ) : (
             <>
-              <p className="text-xs text-slate-400 mb-6">
-                {courses.length} course{courses.length !== 1 ? "s" : ""}{" "}
-                available
-              </p>
-              <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-5">
+              <div className="mb-6 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                <p className="text-[15px] text-slate-700">
+                  {courses.length} course{courses.length !== 1 ? "s" : ""}{" "}
+                  available
+                </p>
+                <p className="inline-flex items-center gap-1.5 text-[15px] text-slate-700">
+                  <FlaskConical className="h-3.5 w-3.5" />
+                  Lab environments are being expanded across the catalog
+                </p>
+              </div>
+              <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
                 {courses.map((course) => (
                   <CourseCard key={course._id} course={course} />
                 ))}
@@ -98,12 +114,13 @@ export default async function CoursesPage() {
       </div>
 
       {/* Footer */}
-      <footer className="bg-white px-6 lg:px-12 py-8 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-slate-400 border-t border-slate-200">
+      <footer className="border-t border-slate-200 bg-white">
+        <div className="mx-auto flex max-w-6xl flex-col items-center justify-between gap-4 px-4 py-8 text-sm text-slate-600 sm:flex-row sm:px-6 lg:px-8">
         <div className="flex items-center gap-2.5">
-          <div className="h-5 w-5 rounded bg-slate-900 flex items-center justify-center">
-            <BookOpen className="h-3 w-3 text-white" />
+          <div className="h-5 w-5 rounded bg-slate-950 flex items-center justify-center">
+            <FlaskConical className="h-3 w-3 text-white" />
           </div>
-          <span>© 2026 Agent Commons</span>
+          <span>© 2026 CommonLab</span>
         </div>
         <a
           href="https://agentcommons.io"
@@ -113,6 +130,7 @@ export default async function CoursesPage() {
         >
           Agent Commons
         </a>
+        </div>
       </footer>
     </div>
   );

@@ -1,20 +1,19 @@
 import type { Metadata } from "next";
-import { Space_Mono } from "next/font/google";
+import { Space_Grotesk } from "next/font/google";
 import "./globals.css";
 import { Providers } from "@/components/providers";
 
-const spaceMono = Space_Mono({
-  variable: "--font-space-mono",
-  weight: ["400", "700"],
+const spaceGrotesk = Space_Grotesk({
+  variable: "--font-space-grotesk",
   subsets: ["latin"],
   display: "swap",
-  fallback: ["Helvetica", "Arial", "sans-serif"],
+  fallback: ["Inter", "Arial", "sans-serif"],
 });
 
 export const metadata: Metadata = {
-  title: "Agent Commons Courses — Learn to Build AI Agents",
+  title: "CommonLab - AI agent courses and learning sandboxes",
   description:
-    "Structured courses on building AI agents, MCP, LLMs, tools, workflows, and the emerging agentic economy. From fundamentals to production.",
+    "CommonLab helps educators teach practical AI literacy with structured courses, guided agent labs, and safe sandboxes for learners.",
 };
 
 export default function RootLayout({
@@ -23,8 +22,8 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className={`${spaceMono.variable} h-full antialiased`}>
-      <body className={`${spaceMono.className} min-h-full flex flex-col`}>
+    <html lang="en" className={`${spaceGrotesk.variable} h-full antialiased`}>
+      <body className={`${spaceGrotesk.className} min-h-full flex flex-col`}>
         <Providers>{children}</Providers>
       </body>
     </html>

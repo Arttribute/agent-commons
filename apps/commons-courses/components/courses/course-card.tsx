@@ -1,5 +1,11 @@
 import Link from "next/link";
-import { Clock, BookOpen, BarChart2, ArrowRight } from "lucide-react";
+import {
+  ArrowRight,
+  BarChart2,
+  BookOpen,
+  Clock,
+  FlaskConical,
+} from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { CourseCardData } from "@/types";
 
@@ -9,56 +15,65 @@ interface CourseCardProps {
 }
 
 const levelColors: Record<string, string> = {
-  beginner: "text-emerald-700 bg-emerald-50 border-emerald-200",
-  intermediate: "text-blue-700 bg-blue-50 border-blue-200",
-  advanced: "text-violet-700 bg-violet-50 border-violet-200",
+  beginner: "text-slate-950 bg-[#B8F56D] border-[#A6E45E]",
+  intermediate: "text-slate-950 bg-[#71E0E7] border-[#5DCDD5]",
+  advanced: "text-slate-950 bg-[#E5A3DF] border-[#D58DD0]",
 };
+
+function formatCoursePrice(course: CourseCardData) {
+  if (course.isFree) return "Free";
+  if (["kes", "ksh"].includes(course.currency?.toLowerCase() ?? "")) {
+    return `Ksh ${course.price.toLocaleString("en-KE")}`;
+  }
+  return `$${course.price}`;
+}
 
 export function CourseCard({ course, enrolled }: CourseCardProps) {
   return (
     <Link
       href={`/courses/${course.slug}`}
-      className="group flex flex-col rounded-2xl border border-slate-200 bg-white hover:shadow-lg hover:-translate-y-0.5 transition-all duration-200 overflow-hidden"
+      className="group flex flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm transition-colors hover:border-slate-300"
     >
-      {/* Top colour bar */}
-      <div className="h-1 bg-slate-900" />
+      <div className="h-1.5 bg-[#B8F56D]" />
 
-      <div className="p-7 flex flex-col flex-1">
-        {/* Badges */}
-        <div className="flex items-center gap-2 mb-4">
+      <div className="flex flex-1 flex-col p-5 sm:p-6">
+        <div className="mb-5 flex flex-wrap items-center gap-2">
           <span
             className={cn(
-              "text-[10px] font-semibold px-2 py-0.5 rounded-full border",
+              "rounded-md border px-2 py-1 text-xs font-semibold capitalize",
               levelColors[course.level] || levelColors.beginner
             )}
           >
             {course.level}
           </span>
           {course.isFree ? (
-            <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full border text-emerald-700 bg-emerald-50 border-emerald-200">
+            <span className="rounded-md border border-emerald-200 bg-emerald-50 px-2 py-1 text-xs font-semibold text-emerald-800">
               Free
             </span>
           ) : (
-            <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full border text-blue-700 bg-blue-50 border-blue-200">
+            <span className="rounded-md border border-slate-200 bg-slate-100 px-2 py-1 text-xs font-semibold text-slate-800">
               Paid
             </span>
           )}
+          <span className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-2 py-1 text-xs font-semibold text-slate-700 sm:ml-auto">
+            <FlaskConical className="h-3 w-3" />
+            Lab-ready
+          </span>
           {enrolled && (
-            <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full border text-slate-600 bg-slate-50 border-slate-200">
+            <span className="rounded-md border border-slate-200 bg-slate-50 px-2 py-1 text-xs font-semibold text-slate-700">
               Enrolled
             </span>
           )}
         </div>
 
-        <h3 className="text-lg font-bold text-slate-900 leading-tight mb-2 group-hover:text-blue-600 transition-colors">
+        <h3 className="mb-2 text-lg font-semibold leading-tight text-slate-950 group-hover:underline">
           {course.title}
         </h3>
-        <p className="text-sm text-slate-500 leading-relaxed mb-5 flex-1">
+        <p className="mb-5 flex-1 text-[15px] leading-6 text-slate-700">
           {course.tagline}
         </p>
 
-        {/* Stats */}
-        <div className="flex items-center gap-4 text-xs text-slate-400 mb-5">
+        <div className="mb-5 flex flex-wrap items-center gap-4 text-[15px] text-slate-700">
           <span className="flex items-center gap-1.5">
             <Clock className="h-3.5 w-3.5" />
             {course.duration}
@@ -73,14 +88,11 @@ export function CourseCard({ course, enrolled }: CourseCardProps) {
           </span>
         </div>
 
-        {/* Price + CTA */}
-        <div className="flex items-center justify-between pt-4 border-t border-slate-100">
-          <span className="text-lg font-bold text-slate-900">
-            {course.isFree ? "Free" : `$${course.price}`}
+        <div className="flex items-center justify-between border-t border-slate-200 pt-4">
+          <span className="text-lg font-semibold text-slate-950">
+            {formatCoursePrice(course)}
           </span>
-          <span
-            className="flex items-center gap-1 text-sm font-bold text-slate-900 group-hover:gap-2 transition-all"
-          >
+          <span className="flex items-center gap-1 text-sm font-semibold text-slate-950">
             View course <ArrowRight className="h-3.5 w-3.5" />
           </span>
         </div>
