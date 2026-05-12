@@ -10,6 +10,7 @@ export interface ILesson {
 export interface IModule {
   title: string;
   description?: string;
+  assignment?: string;
   lessons: ILesson[];
 }
 
@@ -20,6 +21,7 @@ export interface ICourse extends Document {
   description: string;
   longDescription: string;
   price: number;
+  currency?: string;
   isFree: boolean;
   /** "self-paced" — pre-recorded on-demand content; "live" — scheduled live class sessions */
   courseType: "self-paced" | "live";
@@ -29,6 +31,7 @@ export interface ICourse extends Document {
   modulesCount: number;
   instructor: string;
   tags: string[];
+  imageUrl?: string;
   modules: IModule[];
   published: boolean;
   /** Pinned as the single hero feature on the landing page */
@@ -54,6 +57,7 @@ const LessonSchema = new Schema<ILesson>({
 const ModuleSchema = new Schema<IModule>({
   title: { type: String, required: true },
   description: String,
+  assignment: String,
   lessons: [LessonSchema],
 });
 
@@ -65,6 +69,7 @@ const CourseSchema = new Schema<ICourse>(
     description: { type: String, required: true },
     longDescription: { type: String, required: true },
     price: { type: Number, default: 0 },
+    currency: { type: String, default: "USD" },
     isFree: { type: Boolean, default: false },
     courseType: {
       type: String,
@@ -81,6 +86,7 @@ const CourseSchema = new Schema<ICourse>(
     modulesCount: { type: Number, default: 0 },
     instructor: { type: String, required: true },
     tags: [String],
+    imageUrl: String,
     modules: [ModuleSchema],
     published: { type: Boolean, default: false },
     isMainFeatured: { type: Boolean, default: false },

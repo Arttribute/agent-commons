@@ -1,9 +1,8 @@
 "use client";
 
 import { use, useCallback, useEffect, useState } from "react";
-import { notFound, useRouter, useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
-import { coursesData } from "@/data/courses";
 import { Nav } from "@/components/nav";
 import {
   CheckCircle,
@@ -20,20 +19,37 @@ interface Props {
   params: Promise<{ slug: string }>;
 }
 
+interface LessonData {
+  title: string;
+  duration: string;
+  description?: string;
+  isFree: boolean;
+}
+
+interface ModuleData {
+  title: string;
+  description?: string;
+  assignment?: string;
+  lessons: LessonData[];
+}
+
+interface CourseLearnData {
+  title: string;
+  slug: string;
+  modules: ModuleData[];
+}
+
 export default function LearnPage({ params }: Props) {
   const { slug } = use(params);
   const router = useRouter();
   const searchParams = useSearchParams();
-
-  const course = coursesData.find((c) => c.slug === slug);
-  if (!course) notFound();
+  const [course, setCourse] = useState<CourseLearnData | null>(null);
+  const [courseLoading, setCourseLoading] = useState(true);
+  const [courseMissing, setCourseMissing] = useState(false);
 
   // Parse m=moduleIndex&l=lessonIndex from URL (default to 0:0)
   const moduleIdx = parseInt(searchParams.get("m") ?? "0", 10);
   const lessonIdx = parseInt(searchParams.get("l") ?? "0", 10);
-
-  const currentModule = course.modules[moduleIdx];
-  const currentLesson = currentModule?.lessons[lessonIdx];
 
   const [completedLessons, setCompletedLessons] = useState<string[]>([]);
   const [enrolled, setEnrolled] = useState<boolean | null>(null);
@@ -42,6 +58,33 @@ export default function LearnPage({ params }: Props) {
 
   const lessonKey = `${moduleIdx}:${lessonIdx}`;
   const isCompleted = completedLessons.includes(lessonKey);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function fetchCourse() {
+      setCourseLoading(true);
+      try {
+        const res = await fetch(`/api/courses/${slug}`);
+        if (!res.ok) {
+          if (!cancelled) setCourseMissing(true);
+          return;
+        }
+        const data = (await res.json()) as CourseLearnData;
+        if (!cancelled) {
+          setCourse(data);
+          setCourseMissing(false);
+        }
+      } catch {
+        if (!cancelled) setCourseMissing(true);
+      } finally {
+        if (!cancelled) setCourseLoading(false);
+      }
+    }
+    fetchCourse();
+    return () => {
+      cancelled = true;
+    };
+  }, [slug]);
 
   // Fetch enrollment + progress
   const fetchProgress = useCallback(async () => {
@@ -57,6 +100,39 @@ export default function LearnPage({ params }: Props) {
   }, [slug]);
 
   useEffect(() => { fetchProgress(); }, [fetchProgress]);
+
+  if (courseLoading) {
+    return (
+      <div className="min-h-screen bg-white">
+        <Nav />
+        <div className="pt-32 px-6 text-center">
+          <p className="text-sm text-slate-500">Loading course…</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (courseMissing || !course) {
+    return (
+      <div className="min-h-screen bg-white">
+        <Nav />
+        <div className="pt-32 px-6 text-center">
+          <h2 className="text-lg font-bold text-slate-900 mb-2">
+            Course not found
+          </h2>
+          <Link
+            href="/courses"
+            className="text-sm font-semibold text-slate-700 hover:text-slate-950"
+          >
+            Back to courses
+          </Link>
+        </div>
+      </div>
+    );
+  }
+
+  const currentModule = course.modules[moduleIdx];
+  const currentLesson = currentModule?.lessons[lessonIdx];
 
   // Navigate to a specific lesson
   const navigate = (mi: number, li: number) => {
@@ -287,13 +363,13 @@ export default function LearnPage({ params }: Props) {
 
               {/* Module assignment (show on last lesson of each module) */}
               {lessonIdx === currentModule?.lessons.length - 1 &&
-                (currentModule as any).assignment && (
+                currentModule.assignment && (
                   <div className="mt-8 rounded-xl border border-slate-200 bg-slate-50 p-5">
                     <p className="text-xs font-bold uppercase tracking-widest text-slate-500 mb-2">
                       Module Assignment
                     </p>
                     <p className="text-sm text-slate-700 leading-relaxed">
-                      {(currentModule as any).assignment}
+                      {currentModule.assignment}
                     </p>
                   </div>
                 )}

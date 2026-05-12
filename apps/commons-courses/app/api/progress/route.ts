@@ -2,7 +2,23 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { connectDB } from "@/lib/db";
 import Enrollment from "@/models/Enrollment";
-import { coursesData } from "@/data/courses";
+import Course from "@/models/Course";
+import type mongoose from "mongoose";
+
+interface EnrollmentProgress {
+  _id: mongoose.Types.ObjectId;
+  completedLessons?: string[];
+  progress?: number;
+  status?: string;
+}
+
+interface CourseIdOnly {
+  _id: mongoose.Types.ObjectId;
+}
+
+interface CourseWithModules extends CourseIdOnly {
+  modules?: { lessons?: unknown[] }[];
+}
 
 /**
  * GET /api/progress?courseSlug=xxx
@@ -17,16 +33,17 @@ export async function GET(req: NextRequest) {
 
   await connectDB();
 
-  const enrollment = await Enrollment.findOne({ userId: session.user.id })
-    .where("courseId")
-    .lean();
+  const course = (await Course.findOne({ slug: courseSlug, published: true })
+    .select("_id")
+    .lean()) as unknown as CourseIdOnly | null;
+  if (!course) {
+    return NextResponse.json({ enrolled: false, completedLessons: [], progress: 0 });
+  }
 
-  // Also try matching by slug via populated course — use a looser find
-  const allEnrollments = await Enrollment.find({ userId: session.user.id })
-    .populate("courseId", "slug")
-    .lean();
-
-  const match = allEnrollments.find((e: any) => e.courseId?.slug === courseSlug);
+  const match = (await Enrollment.findOne({
+    userId: session.user.id,
+    courseId: course._id,
+  }).lean()) as EnrollmentProgress | null;
 
   if (!match) {
     return NextResponse.json({ enrolled: false, completedLessons: [], progress: 0 });
@@ -34,9 +51,9 @@ export async function GET(req: NextRequest) {
 
   return NextResponse.json({
     enrolled: true,
-    completedLessons: (match as any).completedLessons ?? [],
-    progress: (match as any).progress ?? 0,
-    status: (match as any).status,
+    completedLessons: match.completedLessons ?? [],
+    progress: match.progress ?? 0,
+    status: match.status,
   });
 }
 
@@ -58,29 +75,37 @@ export async function POST(req: NextRequest) {
 
   await connectDB();
 
-  // Find enrollment via populated slug
-  const allEnrollments = await Enrollment.find({ userId: session.user.id })
-    .populate("courseId", "slug")
-    .lean();
+  const course = (await Course.findOne({ slug: courseSlug, published: true })
+    .select("_id modules")
+    .lean()) as unknown as CourseWithModules | null;
+  if (!course) {
+    return NextResponse.json({ error: "Course not found" }, { status: 404 });
+  }
 
-  const match = allEnrollments.find((e: any) => e.courseId?.slug === courseSlug);
+  const match = (await Enrollment.findOne({
+    userId: session.user.id,
+    courseId: course._id,
+  }).lean()) as EnrollmentProgress | null;
 
   if (!match) {
     return NextResponse.json({ error: "Not enrolled in this course" }, { status: 403 });
   }
 
-  // Calculate total lessons from static data (fallback when DB course isn't fully populated)
-  const courseData = coursesData.find((c) => c.slug === courseSlug);
-  const totalLessons = courseData?.modules.reduce((sum, m) => sum + m.lessons.length, 0) ?? 1;
+  const totalLessons =
+    course.modules?.reduce(
+      (sum: number, module: { lessons?: unknown[] }) =>
+        sum + (module.lessons?.length ?? 0),
+      0,
+    ) || 1;
 
   // Add lessonKey if not already present
-  const existing: string[] = (match as any).completedLessons ?? [];
+  const existing: string[] = match.completedLessons ?? [];
   const updated = existing.includes(lessonKey) ? existing : [...existing, lessonKey];
   const progress = Math.round((updated.length / totalLessons) * 100);
   const status = progress >= 100 ? "completed" : "active";
 
   await Enrollment.updateOne(
-    { _id: (match as any)._id },
+    { _id: match._id },
     {
       $set: {
         completedLessons: updated,

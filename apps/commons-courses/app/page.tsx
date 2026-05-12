@@ -1,5 +1,19 @@
 import Link from "next/link";
-import { ArrowRight, BookOpen, Clock, Layers, Play, Wifi } from "lucide-react";
+import {
+  ArrowRight,
+  BookOpen,
+  Boxes,
+  CheckCircle,
+  Clock,
+  FlaskConical,
+  GraduationCap,
+  Layers,
+  Play,
+  ShieldCheck,
+  Terminal,
+  Users,
+  Wifi,
+} from "lucide-react";
 import { Nav } from "@/components/nav";
 import { connectDB } from "@/lib/db";
 import Course from "@/models/Course";
@@ -9,6 +23,7 @@ interface CourseData {
   slug: string;
   tagline: string;
   price: number;
+  currency?: string;
   isFree: boolean;
   courseType: "self-paced" | "live";
   level: string;
@@ -17,6 +32,7 @@ interface CourseData {
   modulesCount: number;
   duration: string;
   tags: string[];
+  imageUrl?: string | null;
   nextSessionDate?: string | null;
   modules: { title: string; lessons: { title: string }[] }[];
 }
@@ -26,30 +42,65 @@ interface LandingData {
   featured: CourseData[];
 }
 
+interface RawCourse {
+  title: string;
+  slug: string;
+  tagline: string;
+  price: number;
+  currency?: string;
+  isFree: boolean;
+  courseType?: "self-paced" | "live";
+  level: string;
+  description: string;
+  lessonsCount: number;
+  modulesCount: number;
+  duration: string;
+  tags?: string[];
+  imageUrl?: string | null;
+  image?: string | null;
+  bannerImage?: string | null;
+  thumbnail?: string | null;
+  coverImage?: string | null;
+  nextSessionDate?: Date | string | null;
+  isMainFeatured?: boolean;
+  isFeatured?: boolean;
+  modules?: {
+    title: string;
+    lessons?: { title: string }[];
+  }[];
+}
+
 async function getLandingData(): Promise<LandingData> {
   try {
     await connectDB();
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const courses: any[] = await Course.find({ published: true })
+    const courses = (await Course.find({ published: true })
       .sort({ isMainFeatured: -1, isFeatured: -1, createdAt: 1 })
       .select(
-        "title slug tagline price isFree courseType level description lessonsCount modulesCount duration tags nextSessionDate modules isMainFeatured isFeatured",
+        "title slug tagline price currency isFree courseType level description lessonsCount modulesCount duration tags imageUrl image bannerImage thumbnail coverImage nextSessionDate modules isMainFeatured isFeatured",
       )
-      .lean();
+      .lean()) as unknown as RawCourse[];
 
-    const toData = (c: any): CourseData => ({
-      title: c.title as string,
-      slug: c.slug as string,
-      tagline: c.tagline as string,
-      price: c.price as number,
-      isFree: c.isFree as boolean,
-      courseType: (c.courseType as "self-paced" | "live") ?? "self-paced",
-      level: c.level as string,
-      description: c.description as string,
-      lessonsCount: c.lessonsCount as number,
-      modulesCount: c.modulesCount as number,
-      duration: c.duration as string,
-      tags: (c.tags as string[]) ?? [],
+    const toData = (c: RawCourse): CourseData => ({
+      title: c.title,
+      slug: c.slug,
+      tagline: c.tagline,
+      price: c.price,
+      currency: c.currency,
+      isFree: c.isFree,
+      courseType: c.courseType ?? "self-paced",
+      level: c.level,
+      description: c.description,
+      lessonsCount: c.lessonsCount,
+      modulesCount: c.modulesCount,
+      duration: c.duration,
+      tags: c.tags ?? [],
+      imageUrl:
+        c.imageUrl ??
+        c.bannerImage ??
+        c.coverImage ??
+        c.thumbnail ??
+        c.image ??
+        null,
       nextSessionDate: c.nextSessionDate
         ? new Date(c.nextSessionDate).toLocaleDateString("en-GB", {
             day: "numeric",
@@ -57,11 +108,9 @@ async function getLandingData(): Promise<LandingData> {
             year: "numeric",
           })
         : null,
-      modules: (c.modules as any[]).map((m: any) => ({
-        title: m.title as string,
-        lessons: (m.lessons as any[]).map((l: any) => ({
-          title: l.title as string,
-        })),
+      modules: (c.modules ?? []).map((m) => ({
+        title: m.title,
+        lessons: (m.lessons ?? []).map((l) => ({ title: l.title })),
       })),
     });
 
@@ -80,107 +129,304 @@ async function getLandingData(): Promise<LandingData> {
   }
 }
 
-const FALLBACK: CourseData = {
-  title: "Fundamentals of AI Agents",
-  slug: "fundamentals-of-ai-agents",
-  tagline: "Build intelligent, autonomous agents from the ground up.",
-  description:
-    "A comprehensive introduction to AI agents — what they are, how they work, and how to build them. Covers the full stack: LLMs, tools, MCP, agent frameworks, security, and agentic commerce.",
-  price: 99,
-  isFree: false,
-  courseType: "self-paced",
-  level: "beginner",
-  lessonsCount: 28,
-  modulesCount: 6,
-  duration: "8 hours",
-  tags: ["AI Agents", "LLMs", "MCP", "LangGraph", "Security"],
-  modules: [
-    { title: "What Are AI Agents?", lessons: Array(4).fill({ title: "" }) },
-    { title: "Core Building Blocks", lessons: Array(5).fill({ title: "" }) },
-    {
-      title: "Setting Up Your First Agent",
-      lessons: Array(4).fill({ title: "" }),
-    },
-    { title: "Agent Frameworks", lessons: Array(4).fill({ title: "" }) },
-    { title: "Security and Trust", lessons: Array(4).fill({ title: "" }) },
-    {
-      title: "Agentic Ecosystems and Commerce",
-      lessons: Array(4).fill({ title: "" }),
-    },
-  ],
-};
+const chipStyles = [
+  "bg-[#B8F56D] text-slate-950 border-[#A6E45E]",
+  "bg-[#71E0E7] text-slate-950 border-[#5DCDD5]",
+  "bg-[#FFE177] text-slate-950 border-[#F3D05C]",
+  "bg-[#E5A3DF] text-slate-950 border-[#D58DD0]",
+  "bg-[#9FB0F4] text-slate-950 border-[#899CE8]",
+  "bg-[#F3A2B4] text-slate-950 border-[#E88EA3]",
+];
 
 function CourseTypeBadge({ type }: { type: "self-paced" | "live" }) {
   if (type === "live") {
     return (
-      <span className="inline-flex items-center gap-1.5 text-xs font-bold px-2.5 py-1 rounded-full bg-rose-50 text-rose-600 border border-rose-100">
-        <Wifi className="h-2.5 w-2.5" /> Live class
+      <span className="inline-flex items-center gap-1.5 rounded-md border border-rose-200 bg-rose-50 px-2.5 py-1 text-xs font-semibold text-rose-800">
+        <Wifi className="h-3 w-3" /> Live cohort
       </span>
     );
   }
   return (
-    <span className="inline-flex items-center gap-1.5 text-xs font-bold px-2.5 py-1 rounded-full bg-slate-100 text-slate-600">
-      <Play className="h-2.5 w-2.5" /> Self-paced
+    <span className="inline-flex items-center gap-1.5 rounded-md border border-slate-200 bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-700">
+      <Play className="h-3 w-3" /> Self-paced
     </span>
+  );
+}
+
+function formatCoursePrice(course: Pick<CourseData, "isFree" | "price" | "currency">) {
+  if (course.isFree) return "Free";
+  if (["kes", "ksh"].includes(course.currency?.toLowerCase() ?? "")) {
+    return `Ksh ${course.price.toLocaleString("en-KE")}`;
+  }
+  return `$${course.price}`;
+}
+
+function Eyebrow({ children }: { children: React.ReactNode }) {
+  return <p className="text-[15px] font-semibold text-slate-700">{children}</p>;
+}
+
+function Highlight({
+  children,
+  index = 0,
+  className = "",
+}: {
+  children: React.ReactNode;
+  index?: number;
+  className?: string;
+}) {
+  return (
+    <span
+      className={`rounded-md px-1.5 py-0.5 ${
+        chipStyles[index % chipStyles.length]
+      } ${className}`}
+    >
+      {children}
+    </span>
+  );
+}
+
+function Marker({
+  children,
+  index = 0,
+}: {
+  children: React.ReactNode;
+  index?: number;
+}) {
+  return (
+    <span className="relative inline-block whitespace-nowrap">
+      <span
+        className={`absolute -inset-x-2 bottom-1 top-2 rounded-lg border ${
+          chipStyles[index % chipStyles.length]
+        }`}
+      />
+      <span className="relative">{children}</span>
+    </span>
+  );
+}
+
+function HighlightPill({
+  children,
+  index,
+}: {
+  children: React.ReactNode;
+  index: number;
+}) {
+  return (
+    <span
+      className={`inline-flex rounded-md border px-2.5 py-1 text-sm font-semibold ${
+        chipStyles[index % chipStyles.length]
+      }`}
+    >
+      {children}
+    </span>
+  );
+}
+
+function HeroPanel({ hero }: { hero: CourseData }) {
+  return (
+    <div className="flex min-h-[420px] flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+      <div className="border-b border-slate-200 p-5 sm:p-6">
+        <p className="text-[15px] font-semibold text-slate-700">
+          Featured path
+        </p>
+        <h2 className="mt-2 line-clamp-2 min-h-[3.5rem] text-xl font-semibold leading-snug text-slate-950">
+          {hero.title}
+        </h2>
+        <p className="mt-2 line-clamp-2 min-h-12 text-[15px] leading-6 text-slate-700">
+          {hero.tagline}
+        </p>
+      </div>
+
+      <div className="grid grid-cols-3 divide-x divide-slate-200 border-b border-slate-200">
+        {[
+          [hero.modulesCount, "Modules"],
+          [hero.lessonsCount, "Lessons"],
+          [hero.duration, "Duration"],
+        ].map(([value, label]) => (
+          <div key={label} className="p-4 text-center">
+            <p className="text-lg font-semibold text-slate-950">{value}</p>
+            <p className="mt-1 text-xs font-medium text-slate-600">{label}</p>
+          </div>
+        ))}
+      </div>
+
+      <div className="flex flex-1 flex-col p-5 sm:p-6">
+        <div className="space-y-3">
+          {[
+            "Course publishing and enrolment",
+            "Guided learner projects",
+            "Sandbox-ready agent exercises",
+          ].map((item) => (
+            <div
+              key={item}
+              className="flex items-center gap-3 text-[15px] text-slate-800"
+            >
+              <CheckCircle className="h-4 w-4 text-slate-900" />
+              <span>{item}</span>
+            </div>
+          ))}
+        </div>
+        <div className="min-h-8 flex-1" />
+        <Link
+          href={`/courses/${hero.slug}`}
+          className="inline-flex w-full items-center justify-center gap-2 rounded-md bg-slate-950 px-4 py-2.5 text-sm font-semibold text-white hover:bg-slate-800"
+        >
+          View course <ArrowRight className="h-4 w-4" />
+        </Link>
+      </div>
+    </div>
+  );
+}
+
+function NoFeaturedCoursePanel() {
+  return (
+    <div className="flex min-h-[420px] flex-col justify-between overflow-hidden rounded-xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
+      <div>
+        <p className="text-[15px] font-semibold text-slate-700">
+          Featured path
+        </p>
+        <h2 className="mt-2 text-xl font-semibold leading-snug text-slate-950">
+          Courses are loading from MongoDB.
+        </h2>
+        <p className="mt-2 text-[15px] leading-6 text-slate-700">
+          Once a published course is available, it will appear here
+          automatically.
+        </p>
+      </div>
+      <Link
+        href="/courses"
+        className="inline-flex w-full items-center justify-center gap-2 rounded-md bg-slate-950 px-4 py-2.5 text-sm font-semibold text-white hover:bg-slate-800"
+      >
+        Browse courses <ArrowRight className="h-4 w-4" />
+      </Link>
+    </div>
+  );
+}
+
+function SandboxFlow() {
+  const steps = [
+    ["01", "Build", "Create an agent from a lesson template."],
+    ["02", "Run", "Test it with limited tools and sample data."],
+    ["03", "Review", "Inspect logs, outputs, and next steps."],
+  ];
+
+  return (
+    <div className="rounded-xl border border-slate-200 bg-white p-5 sm:p-6">
+      <div className="flex flex-col gap-3 border-b border-slate-200 pb-5 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <h3 className="text-lg font-semibold text-slate-950">
+            Guided sandbox workflow
+          </h3>
+          <p className="mt-1 text-[15px] leading-6 text-slate-700">
+            Learners practice in a controlled environment before using real
+            tools or production data.
+          </p>
+        </div>
+        <span className="self-start rounded-md border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-800">
+          Safe practice
+        </span>
+      </div>
+
+      <div className="mt-5 grid gap-3 sm:grid-cols-3">
+        {steps.map(([num, title, body], index) => (
+          <div key={num} className="rounded-lg border border-slate-200 p-4">
+            <span
+              className={`inline-flex rounded-md border px-2 py-1 text-xs font-semibold ${chipStyles[index]}`}
+            >
+              {num}
+            </span>
+            <h4 className="mt-4 text-[15px] font-semibold text-slate-950">
+              {title}
+            </h4>
+            <p className="mt-2 text-[15px] leading-6 text-slate-700">{body}</p>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function Footer() {
+  return (
+    <footer className="border-t border-slate-200 bg-white">
+      <div className="mx-auto flex max-w-6xl flex-col items-center justify-between gap-4 px-4 py-8 text-sm text-slate-600 sm:flex-row sm:px-6 lg:px-8">
+        <div className="flex items-center gap-2.5">
+          <div className="flex h-6 w-6 items-center justify-center rounded-md bg-slate-950">
+            <FlaskConical className="h-3 w-3 text-white" />
+          </div>
+          <span>© 2026 CommonLab</span>
+        </div>
+        <div className="flex gap-6">
+          <Link href="/courses" className="hover:text-slate-950">
+            Courses
+          </Link>
+          <Link href="/terms" className="hover:text-slate-950">
+            Terms
+          </Link>
+          <a
+            href="https://agentcommons.io"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="hover:text-slate-950"
+          >
+            Agent Commons
+          </a>
+        </div>
+      </div>
+    </footer>
   );
 }
 
 export default async function HomePage() {
   const { mainFeatured: mainFeaturedRaw, featured } = await getLandingData();
-  const hero = mainFeaturedRaw ?? FALLBACK;
+  const hero = mainFeaturedRaw;
 
   return (
-    <div className="min-h-screen bg-white text-slate-900 overflow-x-hidden">
+    <div className="min-h-screen bg-white text-slate-900">
       <Nav />
 
-      {/* ─── Hero ─────────────────────────────────────────────────── */}
-      <section className="pt-28 pb-20 px-6 lg:px-12 bg-white border-b border-slate-100">
-        <div className="max-w-7xl mx-auto grid lg:grid-cols-[1fr_420px] gap-16 items-start">
-          {/* Left — editorial headline */}
-          <div className="pt-4">
-            <p className="text-xs tracking-[0.25em] uppercase text-slate-400 mb-8">
-              Agent Commons — Courses
-            </p>
-
-            <h1 className="font-bold leading-[0.88] tracking-tight text-slate-900 mb-8">
-              <span className="block text-6xl lg:text-8xl">Learn </span>
-
-              <span className="block text-6xl lg:text-8xl">AI agents.</span>
+      <section className="border-b border-slate-200 bg-white pt-28">
+        <div className="mx-auto grid max-w-6xl gap-10 px-4 pb-16 sm:px-6 lg:grid-cols-[1fr_420px] lg:px-8">
+          <div>
+            <Eyebrow>CommonLab</Eyebrow>
+            <h1 className="mt-4 max-w-2xl text-4xl font-semibold leading-tight tracking-tight text-slate-950 sm:text-5xl lg:text-[3.25rem]">
+              A practical space for{" "}
+              <Marker index={0}>teaching and learning</Marker>{" "}
+              <Highlight index={2} className="whitespace-nowrap">
+                AI&nbsp;agents
+              </Highlight>
+              .
             </h1>
-
-            <p className="text-base text-slate-500 leading-relaxed max-w-md mb-10">
-              Structured courses on the full agentic stack — from fundamentals
-              to production-grade multi-agent systems. Built by the team behind
-              Agent Commons.
+            <p className="mt-5 max-w-2xl text-lg leading-8 text-slate-800">
+              CommonLab helps educators publish courses and gives learners a
+              safe place to build, run, observe, and debug agents before using
+              real-world tools.
             </p>
 
-            <div className="flex flex-wrap gap-3 mb-14">
+            <div className="mt-8 flex flex-col gap-3 sm:flex-row">
               <Link
                 href="/courses"
-                className="inline-flex items-center gap-2 px-6 py-3 rounded-xl text-sm font-bold text-white transition-opacity hover:opacity-90"
-                style={{ backgroundColor: "#0a0a0a" }}
+                className="inline-flex items-center justify-center gap-2 rounded-md bg-slate-950 px-4 py-2.5 text-sm font-semibold text-white hover:bg-slate-800"
               >
-                Browse courses <ArrowRight className="h-3.5 w-3.5" />
+                Explore courses <ArrowRight className="h-4 w-4" />
               </Link>
               <Link
-                href="/auth/signup"
-                className="inline-flex items-center gap-2 px-6 py-3 rounded-xl border border-slate-200 text-sm font-bold text-slate-700 hover:bg-slate-50 transition-colors"
+                href="#educators"
+                className="inline-flex items-center justify-center gap-2 rounded-md border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-800 hover:bg-slate-50"
               >
-                Sign up free
+                Teach with CommonLab
               </Link>
             </div>
 
-            {/* Divider + social proof row */}
-            <div className="border-t border-slate-100 pt-8 flex flex-wrap gap-10">
+            <div className="mt-10 grid gap-3 sm:grid-cols-3">
               {[
-                { value: "6", label: "Modules" },
-                { value: "28", label: "Lessons" },
-                { value: "8h", label: "On-demand video" },
-                { value: "2", label: "Free preview lessons" },
-              ].map(({ value, label }) => (
-                <div key={label}>
-                  <p className="text-2xl font-bold text-slate-900">{value}</p>
-                  <p className="text-xs text-slate-400 uppercase tracking-widest mt-0.5">
+                ["Courses", "Lessons, cohorts, enrolment"],
+                ["Labs", "Guided sandbox exercises"],
+                ["Review", "Progress, traces, outputs"],
+              ].map(([value, label], index) => (
+                <div key={value} className="rounded-lg border border-slate-200 p-4">
+                  <HighlightPill index={index}>{value}</HighlightPill>
+                  <p className="mt-3 text-[15px] leading-6 text-slate-700">
                     {label}
                   </p>
                 </div>
@@ -188,182 +434,248 @@ export default async function HomePage() {
             </div>
           </div>
 
-          {/* Right — featured course card */}
-          <div className="lg:sticky lg:top-24">
-            <div className="rounded-2xl border border-slate-200 overflow-hidden shadow-xl shadow-slate-100">
-              {/* Card header */}
-              <div className="bg-slate-50 border-b border-slate-100 px-6 pt-7 pb-6">
-                <div className="flex items-center justify-between mb-4">
-                  <CourseTypeBadge type={hero.courseType} />
-                  <span className="text-2xl font-bold text-slate-900">
-                    {hero.isFree ? "Free" : `$${hero.price}`}
-                  </span>
-                </div>
-                <h2 className="text-lg font-bold text-slate-900 leading-snug mb-2">
-                  {hero.title}
-                </h2>
-                <p className="text-xs text-slate-500 leading-relaxed">
-                  {hero.tagline}
-                </p>
-
-                {/* Stats row */}
-                <div className="flex gap-5 mt-5 pt-5 border-t border-slate-200 text-xs text-slate-500">
-                  <span className="flex items-center gap-1.5">
-                    <Layers className="h-3 w-3" />
-                    {hero.modulesCount} modules
-                  </span>
-                  <span className="flex items-center gap-1.5">
-                    <BookOpen className="h-3 w-3" />
-                    {hero.lessonsCount} lessons
-                  </span>
-                  <span className="flex items-center gap-1.5">
-                    <Clock className="h-3 w-3" />
-                    {hero.duration}
-                  </span>
-                </div>
-              </div>
-
-              {/* Module list */}
-              <div className="divide-y divide-slate-100">
-                {hero.modules.map((m, i) => (
-                  <div
-                    key={m.title}
-                    className="flex items-center gap-3 px-6 py-3.5"
-                  >
-                    <span
-                      className="text-[10px] font-bold tabular-nums w-5 flex-shrink-0 text-slate-400"
-                    >
-                      {String(i + 1).padStart(2, "0")}
-                    </span>
-                    <span className="text-sm text-slate-700 flex-1 leading-snug">
-                      {m.title}
-                    </span>
-                    <span className="text-xs text-slate-400">
-                      {m.lessons.length}
-                    </span>
-                  </div>
-                ))}
-              </div>
-
-              {/* CTA */}
-              <div className="px-6 py-5 border-t border-slate-100 bg-slate-50">
-                <Link
-                  href={`/courses/${hero.slug}`}
-                  className="flex items-center justify-center gap-2 w-full py-3 rounded-xl text-sm font-bold text-white transition-opacity hover:opacity-90"
-                  style={{ backgroundColor: "#0a0a0a" }}
-                >
-                  View course <ArrowRight className="h-3.5 w-3.5" />
-                </Link>
-                <p className="text-center text-xs text-slate-400 mt-3">
-                  First 2 lessons free · No payment needed to preview
-                </p>
-              </div>
-            </div>
+          <div className="lg:pt-10">
+            {hero ? <HeroPanel hero={hero} /> : <NoFeaturedCoursePanel />}
           </div>
         </div>
       </section>
 
-      {/* ─── What you will learn ──────────────────────────────────── */}
-      <section className="py-24 px-6 lg:px-12 bg-white">
-        <div className="max-w-7xl mx-auto">
-          <div className="flex flex-col lg:flex-row lg:items-end justify-between mb-14 gap-4">
-            <div>
-              <p className="text-xs tracking-[0.2em] uppercase text-slate-400 mb-4">
-                Curriculum
-              </p>
-              <h2 className="text-3xl lg:text-5xl font-bold leading-tight">
-                The{" "}
-                <span className="relative inline-block">
-                  <span
-                    className="absolute -inset-x-2 inset-y-0.5 rounded-lg -z-10"
-                    style={{
-                      background: "linear-gradient(120deg, #86EFAC, #22D3EE)",
-                    }}
-                  />
-                  full stack,
-                </span>
-                <br className="hidden lg:block" /> start to finish.
-              </h2>
-            </div>
-            <Link
-              href="/courses"
-              className="inline-flex items-center gap-1.5 text-sm font-bold text-slate-900 hover:underline"
-            >
-              All courses <ArrowRight className="h-3.5 w-3.5" />
-            </Link>
+      <section className="bg-white py-16">
+        <div className="mx-auto max-w-6xl px-4 sm:px-6 lg:px-8">
+          <div className="max-w-3xl">
+            <Eyebrow>What CommonLab does</Eyebrow>
+            <h2 className="mt-3 text-3xl font-semibold tracking-tight text-slate-950">
+              Course delivery, <Highlight index={1}>hands-on practice</Highlight>,
+              and safe agent exploration in one place.
+            </h2>
+            <p className="mt-4 text-[17px] leading-8 text-slate-800">
+              Learners do not need to jump between scattered tools and risky
+              integrations. Educators can structure the learning journey while
+              learners practice with visible, reviewable agent work.
+            </p>
           </div>
 
-          <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-px bg-slate-100 rounded-2xl overflow-hidden border border-slate-100">
+          <div className="mt-10 grid gap-4 md:grid-cols-3">
             {[
               {
-                num: "01",
-                title: "Foundations",
-                desc: "LLMs, tools, MCP, the perceive-reason-act loop. What makes a system an agent and why it matters.",
-                pill: "linear-gradient(120deg, #FFE566, #FFAEC4)",
+                icon: GraduationCap,
+                title: "Structured courses",
+                desc: "Publish self-paced lessons, live cohorts, projects, and assessments.",
               },
               {
-                num: "02",
-                title: "Build",
-                desc: "Working agents with Claude API, LangGraph, and the Claude Agent SDK. Real TypeScript you can run.",
-                pill: "linear-gradient(120deg, #C084FC, #818CF8)",
+                icon: FlaskConical,
+                title: "Hands-on labs",
+                desc: "Attach sandbox exercises for prompts, tool calls, memory, APIs, and workflows.",
               },
               {
-                num: "03",
-                title: "Security",
-                desc: "Prompt injection, trust protocols, sandboxing, and least-privilege agent design.",
-                pill: "linear-gradient(120deg, #FFAEC4, #C084FC)",
+                icon: ShieldCheck,
+                title: "Safe practice",
+                desc: "Let learners test agent behavior before moving into live accounts and data.",
               },
-              {
-                num: "04",
-                title: "Agentic Economy",
-                desc: "Multi-agent coordination, agentic commerce, and USDC payments on Base.",
-                pill: "linear-gradient(120deg, #86EFAC, #22D3EE)",
-              },
-            ].map(({ num, title, desc, pill }) => (
-              <div key={num} className="bg-white p-8 flex flex-col gap-5">
-                <span
-                  className="text-xs font-bold px-2.5 py-1 rounded-full self-start tabular-nums tracking-widest"
-                  style={{ background: pill }}
+            ].map(({ icon: Icon, title, desc }, index) => (
+              <div key={title} className="rounded-xl border border-slate-200 bg-white p-6">
+                <div
+                  className={`inline-flex h-10 w-10 items-center justify-center rounded-md border ${chipStyles[index]}`}
                 >
-                  {num}
-                </span>
-                <h3 className="text-base font-bold text-slate-900">{title}</h3>
-                <p className="text-sm text-slate-500 leading-relaxed">{desc}</p>
+                  <Icon className="h-5 w-5" />
+                </div>
+                <h3 className="mt-5 text-base font-semibold text-slate-950">
+                  {title}
+                </h3>
+                <p className="mt-2 text-[15px] leading-6 text-slate-700">
+                  {desc}
+                </p>
               </div>
             ))}
           </div>
         </div>
       </section>
 
-      {/* ─── Featured courses (if any beyond main) ────────────────── */}
-      {featured.length > 0 && (
-        <section className="py-20 px-6 lg:px-12 bg-slate-50 border-y border-slate-100">
-          <div className="max-w-7xl mx-auto">
-            <p className="text-xs tracking-[0.2em] uppercase text-slate-400 mb-10">
-              More courses
+      <section
+        id="sandboxes"
+        className="border-y border-slate-200 bg-slate-50 py-16"
+      >
+        <div className="mx-auto grid max-w-6xl gap-8 px-4 sm:px-6 lg:grid-cols-[0.9fr_1.1fr] lg:px-8">
+          <div>
+            <Eyebrow>Sandbox layer</Eyebrow>
+            <h2 className="mt-3 text-3xl font-semibold tracking-tight text-slate-950">
+              A <Highlight index={2}>controlled workspace</Highlight> for each
+              learner, cohort, or team.
+            </h2>
+            <p className="mt-4 text-[17px] leading-8 text-slate-800">
+              The course structure stays familiar: enrol, learn, complete
+              lessons, and submit projects. The lab layer adds isolated
+              workspaces, observable runs, and permissioned tools.
             </p>
-            <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-6">
+          </div>
+
+          <SandboxFlow />
+        </div>
+
+        <div className="mx-auto mt-6 grid max-w-6xl gap-4 px-4 sm:px-6 md:grid-cols-2 lg:grid-cols-4 lg:px-8">
+          {[
+            {
+              icon: Boxes,
+              title: "Isolated runtimes",
+              desc: "Separate practice environments for learners and cohorts.",
+            },
+            {
+              icon: Terminal,
+              title: "Run history",
+              desc: "Review tasks, logs, tool calls, files, and outputs.",
+            },
+            {
+              icon: Users,
+              title: "Multi-agent practice",
+              desc: "Teach coordination, delegation, and collaboration patterns.",
+            },
+            {
+              icon: ShieldCheck,
+              title: "Teaching guardrails",
+              desc: "Limit tools, reset labs, and review attempts.",
+            },
+          ].map(({ icon: Icon, title, desc }) => (
+            <div key={title} className="rounded-xl border border-slate-200 bg-white p-5">
+              <Icon className="h-5 w-5 text-slate-900" />
+              <h3 className="mt-4 text-[15px] font-semibold text-slate-950">
+                {title}
+              </h3>
+              <p className="mt-2 text-[15px] leading-6 text-slate-700">{desc}</p>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      <section id="educators" className="bg-white py-16">
+        <div className="mx-auto grid max-w-6xl gap-8 px-4 sm:px-6 lg:grid-cols-[360px_1fr] lg:px-8">
+          <div>
+            <Eyebrow>For educators</Eyebrow>
+            <h2 className="mt-3 text-3xl font-semibold tracking-tight text-slate-950">
+              Bring your curriculum. CommonLab provides the{" "}
+              <Highlight index={3}>learning workspace</Highlight>.
+            </h2>
+          </div>
+
+          <div className="grid gap-4 sm:grid-cols-2">
+            {[
+              "Publish public or private courses",
+              "Run 4 to 6 week cohorts or self-paced programs",
+              "Attach sandbox exercises to lessons",
+              "Track enrolment, progress, and completion",
+              "Create templates for agents, tools, and workflows",
+              "Offer affordable access for learners and communities",
+            ].map((item) => (
+              <div key={item} className="flex items-start gap-3 rounded-lg border border-slate-200 p-4">
+                <CheckCircle className="mt-0.5 h-4 w-4 flex-shrink-0 text-slate-900" />
+                <p className="text-[15px] leading-6 text-slate-800">{item}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {hero && (
+        <section className="border-y border-slate-200 bg-white py-16">
+          <div className="mx-auto grid max-w-6xl gap-8 px-4 sm:px-6 lg:grid-cols-[1fr_420px] lg:px-8">
+            <div>
+              <Eyebrow>Featured course</Eyebrow>
+              <h2 className="mt-3 text-3xl font-semibold tracking-tight text-slate-950">
+                Start with a <Highlight index={4}>structured path</Highlight>,
+                then practice in the lab.
+              </h2>
+              <p className="mt-4 text-[17px] leading-8 text-slate-800">
+                CommonLab continues to support the course structure already in
+                place while preparing the product for educator-created courses
+                and attached lab environments.
+              </p>
+            </div>
+
+            <div className="rounded-xl border border-slate-200 bg-white shadow-sm">
+              <div className="border-b border-slate-200 p-5 sm:p-6">
+                <div className="mb-4 flex items-center justify-between gap-3">
+                  <CourseTypeBadge type={hero.courseType} />
+                  <span className="text-xl font-semibold text-slate-950">
+                    {formatCoursePrice(hero)}
+                  </span>
+                </div>
+                <h3 className="text-lg font-semibold text-slate-950">
+                  {hero.title}
+                </h3>
+                <p className="mt-2 text-[15px] leading-6 text-slate-700">
+                  {hero.tagline}
+                </p>
+                <div className="mt-5 flex flex-wrap gap-4 border-t border-slate-200 pt-5 text-sm text-slate-600">
+                  <span className="flex items-center gap-1.5">
+                    <Layers className="h-4 w-4" />
+                    {hero.modulesCount} modules
+                  </span>
+                  <span className="flex items-center gap-1.5">
+                    <BookOpen className="h-4 w-4" />
+                    {hero.lessonsCount} lessons
+                  </span>
+                  <span className="flex items-center gap-1.5">
+                    <Clock className="h-4 w-4" />
+                    {hero.duration}
+                  </span>
+                </div>
+              </div>
+
+              <div className="divide-y divide-slate-200">
+                {hero.modules.slice(0, 6).map((m, i) => (
+                  <div
+                    key={m.title}
+                    className="flex items-center gap-3 px-5 py-3.5 sm:px-6"
+                  >
+                    <span className="w-6 text-xs font-semibold tabular-nums text-slate-500">
+                      {String(i + 1).padStart(2, "0")}
+                    </span>
+                    <span className="flex-1 text-[15px] leading-6 text-slate-800">
+                      {m.title}
+                    </span>
+                    <span className="text-sm text-slate-500">
+                      {m.lessons.length}
+                    </span>
+                  </div>
+                ))}
+              </div>
+
+              <div className="border-t border-slate-200 bg-slate-50 p-5 sm:p-6">
+                <Link
+                  href={`/courses/${hero.slug}`}
+                  className="inline-flex w-full items-center justify-center gap-2 rounded-md bg-slate-950 px-4 py-2.5 text-sm font-semibold text-white hover:bg-slate-800"
+                >
+                  View course <ArrowRight className="h-4 w-4" />
+                </Link>
+              </div>
+            </div>
+          </div>
+        </section>
+      )}
+
+      {featured.length > 0 && (
+        <section className="bg-slate-50 py-16">
+          <div className="mx-auto max-w-6xl px-4 sm:px-6 lg:px-8">
+            <Eyebrow>More courses</Eyebrow>
+            <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
               {featured.map((c) => (
                 <Link
                   key={c.slug}
                   href={`/courses/${c.slug}`}
-                  className="bg-white rounded-2xl border border-slate-200 overflow-hidden hover:shadow-md transition-shadow group"
+                  className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm transition-colors hover:border-slate-300"
                 >
-                  <div className="px-6 pt-6 pb-5">
-                    <div className="flex items-center justify-between mb-4">
-                      <CourseTypeBadge type={c.courseType} />
-                      <span className="text-sm font-bold text-slate-900">
-                        {c.isFree ? "Free" : `$${c.price}`}
-                      </span>
-                    </div>
-                    <h3 className="text-base font-bold text-slate-900 leading-snug mb-2 group-hover:underline transition-colors">
-                      {c.title}
-                    </h3>
-                    <p className="text-xs text-slate-500 leading-relaxed line-clamp-2">
-                      {c.tagline}
-                    </p>
+                  <div className="mb-4 flex items-center justify-between gap-3">
+                    <CourseTypeBadge type={c.courseType} />
+                    <span className="text-sm font-semibold text-slate-950">
+                      {formatCoursePrice(c)}
+                    </span>
                   </div>
-                  <div className="px-6 py-3 border-t border-slate-100 flex gap-5 text-xs text-slate-400">
+                  <h3 className="text-base font-semibold text-slate-950">
+                    {c.title}
+                  </h3>
+                  <p className="mt-2 line-clamp-2 text-[15px] leading-6 text-slate-700">
+                    {c.tagline}
+                  </p>
+                  <div className="mt-5 flex flex-wrap gap-3 border-t border-slate-200 pt-4 text-sm text-slate-600">
                     <span>{c.modulesCount} modules</span>
                     <span>{c.lessonsCount} lessons</span>
                     <span>{c.duration}</span>
@@ -375,75 +687,24 @@ export default async function HomePage() {
         </section>
       )}
 
-      {/* ─── Free previews callout ────────────────────────────────── */}
-      <section className="py-24 px-6 lg:px-12 bg-white border-b border-slate-100">
-        <div className="max-w-7xl mx-auto grid lg:grid-cols-2 gap-16 items-center">
-          <div>
-            <p className="text-xs tracking-[0.2em] uppercase text-slate-400 mb-4">
-              Try before you buy
-            </p>
-            <h2 className="text-4xl lg:text-5xl font-bold leading-tight">
-              Two lessons{" "}
-              <span className="relative inline-block">
-                <span
-                  className="absolute -inset-x-2 inset-y-0.5 rounded-lg -z-10"
-                  style={{
-                    background: "linear-gradient(120deg, #FFE566, #FFAEC4)",
-                  }}
-                />
-                free
-              </span>
-              <br />
-              on every course.
-            </h2>
-          </div>
-          <div>
-            <p className="text-sm text-slate-500 leading-relaxed mb-8">
-              Create a free account and preview the first two lessons of any
-              course before committing. No payment required — just sign up and
-              start learning.
-            </p>
-            <Link
-              href="/auth/signup"
-              className="inline-flex items-center gap-2 px-6 py-3 rounded-xl border border-slate-200 text-sm font-bold text-slate-700 hover:bg-slate-50 transition-colors"
-            >
-              Get started free <ArrowRight className="h-3.5 w-3.5" />
-            </Link>
-          </div>
-        </div>
-      </section>
-
-      {/* ─── Final CTA ────────────────────────────────────────────── */}
-      <section className="py-36 px-6 lg:px-12 bg-white border-t border-slate-100">
-        <div className="max-w-7xl mx-auto">
-          <p className="text-xs tracking-[0.2em] uppercase text-slate-400 mb-8">
-            Get started
-          </p>
-          <h2 className="text-5xl lg:text-7xl font-bold text-slate-900 leading-[0.92] tracking-tight mb-12">
-            Start{" "}
-            <span className="relative inline-block">
-              <span
-                className="absolute -inset-x-3 inset-y-1 rounded-xl -z-10"
-                style={{
-                  background:
-                    "linear-gradient(120deg, #86EFAC, #34D399, #22D3EE)",
-                }}
-              />
-              building
-            </span>
-            <br />
-            agents today.
+      <section className="bg-white py-16">
+        <div className="mx-auto max-w-6xl px-4 sm:px-6 lg:px-8">
+          <Eyebrow>Get started</Eyebrow>
+          <h2 className="mt-3 max-w-3xl text-3xl font-semibold tracking-tight text-slate-950">
+            Make AI agents understandable by giving learners a{" "}
+            <Highlight index={0}>safe place</Highlight> to build and inspect
+            them.
           </h2>
-          <div className="flex flex-col sm:flex-row gap-3">
+          <div className="mt-8 flex flex-col gap-3 sm:flex-row">
             <Link
               href="/auth/signup"
-              className="inline-flex items-center justify-center gap-2 px-7 py-3.5 rounded-xl text-sm font-bold text-white transition-opacity hover:opacity-90 bg-slate-900"
+              className="inline-flex items-center justify-center gap-2 rounded-md bg-slate-950 px-4 py-2.5 text-sm font-semibold text-white hover:bg-slate-800"
             >
               Create free account <ArrowRight className="h-4 w-4" />
             </Link>
             <Link
               href="/courses"
-              className="inline-flex items-center justify-center gap-2 px-7 py-3.5 rounded-xl border border-slate-200 text-sm font-bold text-slate-700 hover:bg-slate-50 transition-colors"
+              className="inline-flex items-center justify-center gap-2 rounded-md border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-800 hover:bg-slate-50"
             >
               Browse courses
             </Link>
@@ -451,45 +712,7 @@ export default async function HomePage() {
         </div>
       </section>
 
-      {/* ─── Footer ───────────────────────────────────────────────── */}
-      <footer className="bg-white px-6 lg:px-12 py-8 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-slate-400 border-t border-slate-200">
-        <div className="flex items-center gap-2.5">
-          <div
-            className="h-6 w-6 rounded bg-slate-900 flex items-center justify-center"
-          >
-            <BookOpen className="h-3 w-3 text-white" />
-          </div>
-          <span>© 2026 Agent Commons</span>
-        </div>
-        <div className="flex gap-6">
-          <Link
-            href="/courses"
-            className="hover:text-slate-700 transition-colors"
-          >
-            Courses
-          </Link>
-          <a
-            href="https://agentcommons.io"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="hover:text-slate-700 transition-colors"
-          >
-            Agent Commons
-          </a>
-          <Link
-            href="/terms"
-            className="hover:text-slate-700 transition-colors"
-          >
-            Terms
-          </Link>
-          <Link
-            href="/auth/signin"
-            className="hover:text-slate-700 transition-colors"
-          >
-            Sign in
-          </Link>
-        </div>
-      </footer>
+      <Footer />
     </div>
   );
 }

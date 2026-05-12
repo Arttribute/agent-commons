@@ -11,6 +11,8 @@ import {
   readFileForContext,
   extractToolCall,
   runLocalTool,
+  installGitHook,
+  removeGitHook,
   type LocalToolsConfig,
 } from '../local-tools.js';
 
@@ -132,24 +134,29 @@ export function chatCommand(): Command {
         }
       }
 
-      // ── Wallet info (non-blocking) ───────────────────────────────────────────
+      // ── Agent name + wallet info (non-blocking, run in parallel) ────────────
+      let agentName: string | undefined;
       let walletLine = '';
-      try {
-        const primary = await client.wallets.primary(agentId);
-        const w = (primary as any)?.data ?? primary;
-        if (w?.id) {
-          const bal = await client.wallets.balance(w.id).catch(() => null);
-          const b = (bal as any)?.data ?? bal;
-          const addr = `${w.address.slice(0, 6)}…${w.address.slice(-4)}`;
-          const usdc = b?.usdc ?? '0';
-          walletLine = `${addr}  ${c.bold(usdc + ' USDC')}`;
-        }
-      } catch { /* non-critical */ }
+      await Promise.allSettled([
+        client.agents.get(agentId).then((res: any) => {
+          agentName = (res?.data ?? res)?.name as string | undefined;
+        }),
+        client.wallets.primary(agentId).then(async (primary: any) => {
+          const w = (primary as any)?.data ?? primary;
+          if (w?.id) {
+            const bal = await client.wallets.balance(w.id).catch(() => null);
+            const b = (bal as any)?.data ?? bal;
+            const addr = `${w.address.slice(0, 6)}…${w.address.slice(-4)}`;
+            const usdc = b?.usdc ?? '0';
+            walletLine = `${addr}  ${c.bold(usdc + ' USDC')}`;
+          }
+        }),
+      ]);
 
       // ── Header ──────────────────────────────────────────────────────────────
       console.log(`\n${c.bold('Agent Commons Chat')}`);
       const headerRows: [string, string][] = [
-        ['Agent',   agentId],
+        ['Agent',   agentName ? `${agentName}  ${c.dim(agentId)}` : agentId],
         ['Session', c.id(sessionId) + (isResume ? c.dim(' (resumed)') : c.dim(' (new)'))],
       ];
       if (walletLine) headerRows.push(['Wallet', walletLine]);
@@ -164,9 +171,12 @@ export function chatCommand(): Command {
         localToolsCfg = {
           rootDir,
           sessionId,
+          agentId,
+          agentName,
           appendLog: (record) => appendSessionLog(sessionId, record),
           permissions: new Map(),
         };
+        installGitHook(rootDir, sessionId, agentId, agentName);
         appendSessionLog(sessionId, {
           type: 'local_tools_enabled',
           rootDir,
@@ -466,11 +476,17 @@ export function chatCommand(): Command {
         rl.prompt();
       });
 
+      const cleanup = () => {
+        if (localToolsCfg) removeGitHook(localToolsCfg.rootDir);
+      };
+
       rl.on('close', () => {
+        cleanup();
         process.exit(0);
       });
 
       process.on('SIGINT', () => {
+        cleanup();
         console.log(c.dim(`\nSession preserved. Resume with: agc chat --resume ${sessionId}`));
         process.exit(130);
       });
