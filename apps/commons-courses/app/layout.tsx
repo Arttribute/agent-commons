@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Space_Grotesk } from "next/font/google";
+import { Analytics } from "@vercel/analytics/next";
 import "./globals.css";
 import { Providers } from "@/components/providers";
 
@@ -25,6 +26,7 @@ export default function RootLayout({
     <html lang="en" className={`${spaceGrotesk.variable} h-full antialiased`}>
       <body className={`${spaceGrotesk.className} min-h-full flex flex-col`}>
         <Providers>{children}</Providers>
+        <Analytics />
       </body>
     </html>
   );
