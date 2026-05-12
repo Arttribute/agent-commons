@@ -1,6 +1,6 @@
 {
   "name": "@agent-commons/sdk",
-  "version": "0.1.12",
+  "version": "0.1.13",
   "description": "Typed client SDK for the Agent Commons API",
   "main": "./dist/index.cjs",
   "module": "./dist/index.mjs",

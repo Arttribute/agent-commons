@@ -1,5 +1,25 @@
 # @agent-commons/cli
 
+## 0.1.18
+
+### Patch Changes
+
+- Auto patch release
+
+## 0.1.17
+
+### Patch Changes
+
+- Auto patch release
+- Updated dependencies
+  - @agent-commons/sdk@0.1.13
+
+## 0.1.16
+
+### Patch Changes
+
+- Auto patch release
+
 ## 0.1.14
 
 ### Patch Changes
