@@ -4,6 +4,7 @@ export interface IUser extends Document {
   name: string;
   email: string;
   password: string;
+  role: "learner" | "educator" | "admin";
   /** Timestamp of when the user accepted the Terms & Conditions. Null = not yet accepted. */
   termsAcceptedAt?: Date;
   createdAt: Date;
@@ -20,6 +21,11 @@ const UserSchema = new Schema<IUser>(
       trim: true,
     },
     password: { type: String, required: true, select: false },
+    role: {
+      type: String,
+      enum: ["learner", "educator", "admin"],
+      default: "learner",
+    },
     termsAcceptedAt: { type: Date, default: null },
   },
   { timestamps: true }

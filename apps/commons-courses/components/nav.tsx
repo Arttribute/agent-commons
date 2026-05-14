@@ -67,6 +67,14 @@ export function Nav() {
               Dashboard
             </Link>
           )}
+          {session?.user?.role && ["educator", "admin"].includes(session.user.role) && (
+            <Link
+              href="/educator"
+              className="text-sm text-slate-600 hover:text-slate-900 transition-colors"
+            >
+              Educator
+            </Link>
+          )}
           <a
             href="https://agentcommons.io"
             target="_blank"
@@ -154,6 +162,15 @@ export function Nav() {
               onClick={() => setMobileOpen(false)}
             >
               Dashboard
+            </Link>
+          )}
+          {session?.user?.role && ["educator", "admin"].includes(session.user.role) && (
+            <Link
+              href="/educator"
+              className="text-sm text-slate-700"
+              onClick={() => setMobileOpen(false)}
+            >
+              Educator
             </Link>
           )}
           <a
