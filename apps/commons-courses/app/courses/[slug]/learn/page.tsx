@@ -53,6 +53,8 @@ export default function LearnPage({ params }: Props) {
 
   const [completedLessons, setCompletedLessons] = useState<string[]>([]);
   const [enrolled, setEnrolled] = useState<boolean | null>(null);
+  const [accessLevel, setAccessLevel] = useState<"full" | "partial">("full");
+  const [currentInstallment, setCurrentInstallment] = useState(0);
   const [marking, setMarking] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
@@ -93,6 +95,8 @@ export default function LearnPage({ params }: Props) {
       if (!res.ok) { setEnrolled(false); return; }
       const data = await res.json();
       setEnrolled(data.enrolled);
+      setAccessLevel(data.accessLevel ?? "full");
+      setCurrentInstallment(data.currentInstallment ?? 0);
       setCompletedLessons(data.completedLessons ?? []);
     } catch {
       setEnrolled(false);
@@ -186,6 +190,34 @@ export default function LearnPage({ params }: Props) {
             className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg bg-slate-900 text-white text-sm font-bold hover:opacity-90 transition-opacity"
           >
             View course
+          </Link>
+        </div>
+      </div>
+    );
+  }
+
+  const maxUnlockedModule =
+    accessLevel === "partial" ? Math.max(currentInstallment - 1, 0) : Infinity;
+
+  if (enrolled && accessLevel === "partial" && moduleIdx > maxUnlockedModule) {
+    return (
+      <div className="min-h-screen bg-white">
+        <Nav />
+        <div className="pt-32 flex flex-col items-center justify-center text-center px-6">
+          <Lock className="h-10 w-10 text-slate-300 mb-4" />
+          <h2 className="text-lg font-bold text-slate-900 mb-2">
+            This module unlocks with your next payment
+          </h2>
+          <p className="text-sm text-slate-500 mb-6 max-w-xs">
+            Your current plan unlocks the first {currentInstallment || 1} module
+            {currentInstallment === 1 ? "" : "s"}. Continue with lipa mdogo
+            mdogo when you are ready.
+          </p>
+          <Link
+            href={`/api/payments/checkout?courseSlug=${slug}&plan=installment&provider=paystack`}
+            className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg bg-slate-900 text-white text-sm font-bold hover:opacity-90 transition-opacity"
+          >
+            Make next payment
           </Link>
         </div>
       </div>

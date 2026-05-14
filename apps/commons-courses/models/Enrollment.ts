@@ -4,7 +4,12 @@ export interface IEnrollment extends Document {
   userId: mongoose.Types.ObjectId;
   courseId: mongoose.Types.ObjectId;
   status: "active" | "completed" | "cancelled";
+  accessLevel: "full" | "partial";
+  paymentStatus: "free" | "paid" | "partial" | "overdue";
   paymentId?: string;
+  paidAmount: number;
+  totalAmountDue: number;
+  currentInstallment: number;
   enrolledAt: Date;
   completedAt?: Date;
   progress: number;
@@ -20,7 +25,20 @@ const EnrollmentSchema = new Schema<IEnrollment>(
       enum: ["active", "completed", "cancelled"],
       default: "active",
     },
+    accessLevel: {
+      type: String,
+      enum: ["full", "partial"],
+      default: "full",
+    },
+    paymentStatus: {
+      type: String,
+      enum: ["free", "paid", "partial", "overdue"],
+      default: "free",
+    },
     paymentId: String,
+    paidAmount: { type: Number, default: 0 },
+    totalAmountDue: { type: Number, default: 0 },
+    currentInstallment: { type: Number, default: 0 },
     enrolledAt: { type: Date, default: Date.now },
     completedAt: Date,
     progress: { type: Number, default: 0 },
