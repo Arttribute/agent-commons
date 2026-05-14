@@ -4,6 +4,7 @@ import { use, useCallback, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { Nav } from "@/components/nav";
+import { AssignmentSubmissions } from "@/components/courses/assignment-submissions";
 import {
   CheckCircle,
   ChevronLeft,
@@ -405,6 +406,13 @@ export default function LearnPage({ params }: Props) {
                     </p>
                   </div>
                 )}
+
+              <AssignmentSubmissions
+                courseSlug={slug}
+                moduleIndex={moduleIdx}
+                lessonIndex={lessonIdx}
+                enrolled={enrolled}
+              />
 
               {/* Mark complete + navigation */}
               <div className="mt-10 flex flex-col sm:flex-row items-stretch sm:items-center gap-3">

@@ -1,0 +1,66 @@
+import { NextRequest, NextResponse } from "next/server";
+import { connectDB } from "@/lib/db";
+import { requireEducator, slugifyCourseTitle } from "@/lib/educator-auth";
+import { normalizeCourseInput } from "@/lib/course-input";
+import Course from "@/models/Course";
+import EducatorProfile from "@/models/EducatorProfile";
+
+export async function GET() {
+  const authResult = await requireEducator();
+  if (authResult.error) return authResult.error;
+
+  await connectDB();
+  const filter =
+    authResult.session.role === "admin"
+      ? {}
+      : { "educator.userId": authResult.session.userId };
+  const courses = await Course.find(filter).sort({ updatedAt: -1 }).lean();
+
+  return NextResponse.json({ courses });
+}
+
+export async function POST(req: NextRequest) {
+  const authResult = await requireEducator();
+  if (authResult.error) return authResult.error;
+
+  const body = await req.json();
+  if (!body.title || !body.tagline || !body.description) {
+    return NextResponse.json(
+      { error: "title, tagline, and description are required." },
+      { status: 400 }
+    );
+  }
+
+  await connectDB();
+  const profile = await EducatorProfile.findOne({
+    userId: authResult.session.userId,
+  });
+  const slug = body.slug || slugifyCourseTitle(body.title);
+  const existing = await Course.findOne({ slug });
+  if (existing) {
+    return NextResponse.json(
+      { error: "A course with this slug already exists." },
+      { status: 409 }
+    );
+  }
+
+  const course = await Course.create({
+    ...normalizeCourseInput(body),
+    slug,
+    instructor: body.instructor || profile?.displayName || "CommonLab educator",
+    longDescription:
+      body.longDescription || body.description || "Course details coming soon.",
+    duration: body.duration || "Self-paced",
+    educator: {
+      userId: authResult.session.userId,
+      name: profile?.displayName,
+      plan: profile?.plan || "free",
+      settlementMode: profile?.settlementMode || "platform_rails",
+      platformFeePercent: profile?.platformFeePercent ?? 20,
+      paystackSubaccountCode: profile?.paystackSubaccountCode,
+      stripeAccountId: profile?.stripeAccountId,
+    },
+  });
+
+  return NextResponse.json({ course }, { status: 201 });
+}

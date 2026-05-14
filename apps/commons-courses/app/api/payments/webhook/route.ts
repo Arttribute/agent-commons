@@ -8,6 +8,7 @@ import { connectDB } from "@/lib/db";
 import Payment from "@/models/Payment";
 import Enrollment from "@/models/Enrollment";
 import Course from "@/models/Course";
+import { recordSaleLedger } from "@/lib/payout-ledger";
 import type Stripe from "stripe";
 
 interface ExistingEnrollment {
@@ -62,13 +63,17 @@ export async function POST(req: NextRequest) {
     await connectDB();
 
     // Update payment record
-    await Payment.findOneAndUpdate(
+    const updatedPayment = await Payment.findOneAndUpdate(
       { stripeSessionId: session.id },
       {
         status: "completed",
         stripePaymentIntentId: session.payment_intent as string,
-      }
+      },
+      { new: true }
     );
+    if (updatedPayment?._id) {
+      await recordSaleLedger(updatedPayment._id.toString());
+    }
 
     // Find course and enroll user
     const course = await Course.findOne({ slug: courseSlug });
@@ -151,6 +156,9 @@ async function handlePaystackWebhook(body: string, signature: string) {
     },
     { new: true }
   );
+  if (payment?._id) {
+    await recordSaleLedger(payment._id.toString());
+  }
 
   const course = await Course.findOne({ slug: courseSlug });
   if (course) {
