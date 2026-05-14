@@ -10,6 +10,9 @@ interface EnrollmentProgress {
   completedLessons?: string[];
   progress?: number;
   status?: string;
+  accessLevel?: "full" | "partial";
+  paymentStatus?: "free" | "paid" | "partial" | "overdue";
+  currentInstallment?: number;
 }
 
 interface CourseIdOnly {
@@ -54,6 +57,9 @@ export async function GET(req: NextRequest) {
     completedLessons: match.completedLessons ?? [],
     progress: match.progress ?? 0,
     status: match.status,
+    accessLevel: match.accessLevel ?? "full",
+    paymentStatus: match.paymentStatus ?? "free",
+    currentInstallment: match.currentInstallment ?? 0,
   });
 }
 

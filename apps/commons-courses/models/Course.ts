@@ -30,6 +30,26 @@ export interface ICourse extends Document {
   lessonsCount: number;
   modulesCount: number;
   instructor: string;
+  educator?: {
+    userId?: mongoose.Types.ObjectId;
+    name?: string;
+    plan?: "free" | "starter" | "growth" | "institution";
+    settlementMode?: "platform_rails" | "educator_direct";
+    platformFeePercent?: number;
+    paystackSubaccountCode?: string;
+    stripeAccountId?: string;
+  };
+  paymentProviders?: ("stripe" | "paystack")[];
+  installmentPlan?: {
+    enabled: boolean;
+    label?: string;
+    installmentAmount?: number;
+    installmentCount?: number;
+    releaseAccess:
+      | "full_after_first_payment"
+      | "module_by_module"
+      | "full_after_completion";
+  };
   tags: string[];
   imageUrl?: string;
   modules: IModule[];
@@ -61,6 +81,46 @@ const ModuleSchema = new Schema<IModule>({
   lessons: [LessonSchema],
 });
 
+const EducatorSchema = new Schema(
+  {
+    userId: { type: Schema.Types.ObjectId, ref: "User" },
+    name: String,
+    plan: {
+      type: String,
+      enum: ["free", "starter", "growth", "institution"],
+      default: "free",
+    },
+    settlementMode: {
+      type: String,
+      enum: ["platform_rails", "educator_direct"],
+      default: "platform_rails",
+    },
+    platformFeePercent: { type: Number, default: 20, min: 0, max: 100 },
+    paystackSubaccountCode: String,
+    stripeAccountId: String,
+  },
+  { _id: false }
+);
+
+const InstallmentPlanSchema = new Schema(
+  {
+    enabled: { type: Boolean, default: false },
+    label: { type: String, default: "Lipa mdogo mdogo" },
+    installmentAmount: Number,
+    installmentCount: { type: Number, default: 4, min: 2 },
+    releaseAccess: {
+      type: String,
+      enum: [
+        "full_after_first_payment",
+        "module_by_module",
+        "full_after_completion",
+      ],
+      default: "module_by_module",
+    },
+  },
+  { _id: false }
+);
+
 const CourseSchema = new Schema<ICourse>(
   {
     title: { type: String, required: true },
@@ -85,6 +145,13 @@ const CourseSchema = new Schema<ICourse>(
     lessonsCount: { type: Number, default: 0 },
     modulesCount: { type: Number, default: 0 },
     instructor: { type: String, required: true },
+    educator: EducatorSchema,
+    paymentProviders: {
+      type: [String],
+      enum: ["stripe", "paystack"],
+      default: ["stripe"],
+    },
+    installmentPlan: InstallmentPlanSchema,
     tags: [String],
     imageUrl: String,
     modules: [ModuleSchema],

@@ -8,11 +8,12 @@ interface Props {
   courseSlug: string;
   isFree: boolean;
   checkoutUrl: string;
+  label?: string;
 }
 
 type TermsStatus = "loading" | "not-logged-in" | "pending" | "accepted";
 
-export function EnrolButton({ courseSlug, isFree, checkoutUrl }: Props) {
+export function EnrolButton({ courseSlug, isFree, checkoutUrl, label }: Props) {
   const [termsStatus, setTermsStatus] = useState<TermsStatus>("loading");
   const [modalOpen, setModalOpen] = useState(false);
   const [checked, setChecked] = useState(false);
@@ -92,7 +93,7 @@ export function EnrolButton({ courseSlug, isFree, checkoutUrl }: Props) {
         onClick={handleEnrolClick}
         className="w-full flex items-center justify-center gap-2 px-5 py-3 rounded-lg bg-slate-900 text-white text-sm font-bold hover:opacity-90 transition-opacity"
       >
-        {isFree ? "Enrol for free" : "Enrol now"}{" "}
+        {label || (isFree ? "Enrol for free" : "Enrol now")}{" "}
         <ArrowRight className="h-3.5 w-3.5" />
       </button>
 

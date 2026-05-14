@@ -43,6 +43,17 @@ interface CourseDetailData {
   price: number;
   currency?: string;
   isFree: boolean;
+  paymentProviders?: ("stripe" | "paystack")[];
+  installmentPlan?: {
+    enabled: boolean;
+    label?: string;
+    installmentAmount?: number;
+    installmentCount?: number;
+    releaseAccess:
+      | "full_after_first_payment"
+      | "module_by_module"
+      | "full_after_completion";
+  };
   courseType: "self-paced" | "live";
   level: "beginner" | "intermediate" | "advanced";
   duration: string;
@@ -256,6 +267,14 @@ export default async function CoursePage({ params }: Props) {
 }
 
 function PurchaseCard({ course }: { course: CourseDetailData }) {
+  const providers = course.paymentProviders || ["stripe"];
+  const supportsPaystack = providers.includes("paystack");
+  const supportsStripe = providers.includes("stripe");
+  const isKes = ["kes", "ksh"].includes(course.currency?.toLowerCase() ?? "");
+  const installmentAmount =
+    course.installmentPlan?.installmentAmount ||
+    Math.ceil(course.price / (course.installmentPlan?.installmentCount || 4));
+
   return (
     <div className="w-full min-w-0 max-w-sm rounded-xl border border-slate-200 bg-white overflow-hidden shadow-sm lg:max-w-none">
       <div className="h-1 bg-slate-900" />
@@ -273,9 +292,42 @@ function PurchaseCard({ course }: { course: CourseDetailData }) {
           <EnrolButton
             courseSlug={course.slug}
             isFree={course.isFree}
-            checkoutUrl={`/api/payments/checkout?courseSlug=${course.slug}`}
+            checkoutUrl={`/api/payments/checkout?courseSlug=${course.slug}${
+              supportsPaystack && isKes ? "&provider=paystack" : ""
+            }`}
+            label={
+              !course.isFree && supportsPaystack && isKes
+                ? "Pay with M-Pesa or card"
+                : undefined
+            }
           />
         </div>
+
+        {!course.isFree && course.installmentPlan?.enabled && (
+          <div className="mb-3">
+            <EnrolButton
+              courseSlug={course.slug}
+              isFree={false}
+              checkoutUrl={`/api/payments/checkout?courseSlug=${course.slug}&plan=installment${
+                supportsPaystack ? "&provider=paystack" : ""
+              }`}
+              label={`Lipa mdogo mdogo · ${formatCoursePrice({
+                isFree: false,
+                price: installmentAmount,
+                currency: course.currency,
+              })}`}
+            />
+          </div>
+        )}
+
+        {!course.isFree && supportsStripe && supportsPaystack && isKes && (
+          <Link
+            href={`/api/payments/checkout?courseSlug=${course.slug}&provider=stripe`}
+            className="block text-center text-xs font-semibold text-slate-500 hover:text-slate-900"
+          >
+            Prefer international card checkout?
+          </Link>
+        )}
 
         <div className="mt-5 pt-4 border-t border-slate-100 space-y-2.5">
           {[
