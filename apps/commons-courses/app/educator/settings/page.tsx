@@ -2,6 +2,7 @@
 
 import { FormEvent, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import { useSession } from "next-auth/react";
 import { Nav } from "@/components/nav";
 
 type Profile = {
@@ -17,6 +18,7 @@ type Profile = {
 
 export default function EducatorSettingsPage() {
   const router = useRouter();
+  const { update } = useSession();
   const [profile, setProfile] = useState<Profile>({ settlementMode: "platform_rails" });
   const [saving, setSaving] = useState(false);
 
@@ -38,7 +40,10 @@ export default function EducatorSettingsPage() {
       body: JSON.stringify(profile),
     });
     setSaving(false);
-    if (res.ok) router.push("/educator");
+    if (res.ok) {
+      await update({ user: { role: "educator" } });
+      router.push("/educator");
+    }
   }
 
   return (
