@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireEducatorCourse } from "@/lib/educator-auth";
+import { indexSubmissionForSearch } from "@/lib/search-indexers";
 import Course from "@/models/Course";
 import Submission from "@/models/Submission";
 
@@ -35,6 +36,7 @@ export async function PATCH(
     reviewedAt: new Date(),
   });
   await submission.save();
+  await indexSubmissionForSearch(submission);
 
   return NextResponse.json({ submission });
 }

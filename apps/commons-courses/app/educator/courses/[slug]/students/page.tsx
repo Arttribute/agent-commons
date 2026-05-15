@@ -4,6 +4,8 @@ import { auth } from "@/lib/auth";
 import { requireEducatorCourse } from "@/lib/educator-auth";
 import Enrollment from "@/models/Enrollment";
 import { Nav } from "@/components/nav";
+import { CourseAgentDrawer } from "@/components/course-agents/course-agent-drawer";
+import type { CourseAgentConfig } from "@/types/course-agent";
 
 export default async function CourseStudentsPage({
   params,
@@ -21,10 +23,23 @@ export default async function CourseStudentsPage({
     .populate("userId", "name email")
     .sort({ enrolledAt: -1 })
     .lean();
+  const agents = JSON.parse(
+    JSON.stringify(result.course.agents || [])
+  ) as CourseAgentConfig[];
 
   return (
     <div className="min-h-screen bg-white">
       <Nav />
+      <CourseAgentDrawer
+        courseSlug={slug}
+        role="educator"
+        agents={agents}
+        context={{
+          page: "educator.students",
+          title: "Students",
+          visibleText: `${result.course.title}\n${enrollments.length} enrolled students`,
+        }}
+      />
       <main className="mx-auto max-w-6xl px-4 pb-16 pt-24 sm:px-6 lg:px-8">
         <Link href="/educator" className="text-sm font-bold text-slate-500">
           Back to educator console

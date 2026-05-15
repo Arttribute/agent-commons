@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { Nav } from "@/components/nav";
 import { AssignmentSubmissions } from "@/components/courses/assignment-submissions";
+import { CourseAgentDrawer } from "@/components/course-agents/course-agent-drawer";
 import {
   CheckCircle,
   ChevronLeft,
@@ -15,6 +16,7 @@ import {
   X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import type { CourseAgentConfig } from "@/types/course-agent";
 
 interface Props {
   params: Promise<{ slug: string }>;
@@ -40,6 +42,7 @@ interface CourseLearnData {
   currency?: string;
   paymentProviders?: ("stripe" | "paystack")[];
   modules: ModuleData[];
+  agents?: CourseAgentConfig[];
 }
 
 export default function LearnPage({ params }: Props) {
@@ -237,6 +240,27 @@ export default function LearnPage({ params }: Props) {
   return (
     <div className="min-h-screen bg-white flex flex-col">
       <Nav />
+      <CourseAgentDrawer
+        courseSlug={slug}
+        role="learner"
+        agents={course.agents}
+        context={{
+          page: "course.learn",
+          title: currentLesson?.title,
+          moduleIndex: moduleIdx,
+          lessonIndex: lessonIdx,
+          visibleText: [
+            currentModule?.title,
+            currentLesson?.title,
+            currentLesson?.description,
+            lessonIdx === currentModule?.lessons.length - 1
+              ? currentModule?.assignment
+              : "",
+          ]
+            .filter(Boolean)
+            .join("\n"),
+        }}
+      />
 
       <div className="flex flex-1 pt-16">
         {/* ── Sidebar ── */}

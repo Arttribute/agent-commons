@@ -511,6 +511,9 @@ importers:
 
   apps/commons-courses:
     dependencies:
+      '@agent-commons/sdk':
+        specifier: workspace:*
+        version: link:../../packages/commons-sdk
       '@stripe/stripe-js':
         specifier: ^5.5.0
         version: 5.10.0

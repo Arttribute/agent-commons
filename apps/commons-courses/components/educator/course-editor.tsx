@@ -2,6 +2,9 @@
 
 import { FormEvent, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import { CourseAgentEditor } from "@/components/educator/course-agent-editor";
+import { defaultCourseAgents } from "@/lib/course-agent-defaults";
+import type { CourseAgentConfig } from "@/types/course-agent";
 
 type Lesson = {
   title: string;
@@ -43,6 +46,7 @@ type CourseForm = {
       | "full_after_completion";
   };
   modules: Module[];
+  agents: CourseAgentConfig[];
 };
 
 const emptyCourse: CourseForm = {
@@ -71,6 +75,7 @@ const emptyCourse: CourseForm = {
       lessons: [{ title: "Lesson 1", duration: "15", isFree: true }],
     },
   ],
+  agents: defaultCourseAgents,
 };
 
 export function CourseEditor({ slug }: { slug?: string }) {
@@ -91,6 +96,7 @@ export function CourseEditor({ slug }: { slug?: string }) {
           ...c,
           tagsText: Array.isArray(c.tags) ? c.tags.join(", ") : "",
           modules: c.modules?.length ? c.modules : emptyCourse.modules,
+          agents: c.agents?.length ? c.agents : emptyCourse.agents,
           installmentPlan: {
             ...emptyCourse.installmentPlan,
             ...(c.installmentPlan || {}),
@@ -235,6 +241,11 @@ export function CourseEditor({ slug }: { slug?: string }) {
           </label>
         </div>
       </section>
+
+      <CourseAgentEditor
+        agents={course.agents}
+        onChange={(agents) => setCourse({ ...course, agents })}
+      />
 
       <section className="space-y-4">
         <div className="flex items-center justify-between">

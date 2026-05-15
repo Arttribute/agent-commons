@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireEducatorCourse } from "@/lib/educator-auth";
+import { indexAssignmentForSearch } from "@/lib/search-indexers";
 import Assignment from "@/models/Assignment";
 import Submission from "@/models/Submission";
 
@@ -57,6 +58,7 @@ export async function POST(
     acceptsUrl: body.acceptsUrl !== false,
     published: body.published !== false,
   });
+  await indexAssignmentForSearch(assignment);
 
   return NextResponse.json({ assignment }, { status: 201 });
 }

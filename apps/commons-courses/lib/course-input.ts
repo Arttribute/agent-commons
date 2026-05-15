@@ -1,3 +1,6 @@
+import { normalizeCourseAgents } from "@/lib/course-agent-defaults";
+import type { CourseAgentConfig } from "@/types/course-agent";
+
 export type CourseInput = {
   title?: string;
   slug?: string;
@@ -23,6 +26,7 @@ export type CourseInput = {
       isFree?: boolean;
     }>;
   }>;
+  agents?: CourseAgentConfig[];
   published?: boolean;
   isMainFeatured?: boolean;
   isFeatured?: boolean;
@@ -55,6 +59,7 @@ export function normalizeCourseInput(input: CourseInput) {
     level: input.level || "beginner",
     tags: Array.isArray(input.tags) ? input.tags : [],
     modules,
+    agents: normalizeCourseAgents(input.agents),
     modulesCount: modules.length,
     lessonsCount,
     paymentProviders: input.paymentProviders?.length
