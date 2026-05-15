@@ -243,6 +243,7 @@ export function CourseEditor({ slug }: { slug?: string }) {
       </section>
 
       <CourseAgentEditor
+        courseSlug={slug}
         agents={course.agents}
         onChange={(agents) => setCourse({ ...course, agents })}
       />
