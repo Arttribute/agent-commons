@@ -411,7 +411,7 @@ export default async function HomePage() {
                 Explore courses <ArrowRight className="h-4 w-4" />
               </Link>
               <Link
-                href="#educators"
+                href="/educator"
                 className="inline-flex items-center justify-center gap-2 rounded-md border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-800 hover:bg-slate-50"
               >
                 Teach with CommonLab
@@ -554,6 +554,12 @@ export default async function HomePage() {
               Bring your curriculum. CommonLab provides the{" "}
               <Highlight index={3}>learning workspace</Highlight>.
             </h2>
+            <Link
+              href="/educator"
+              className="mt-6 inline-flex items-center justify-center gap-2 rounded-md bg-slate-950 px-4 py-2.5 text-sm font-semibold text-white hover:bg-slate-800"
+            >
+              Open educator console <ArrowRight className="h-4 w-4" />
+            </Link>
           </div>
 
           <div className="grid gap-4 sm:grid-cols-2">

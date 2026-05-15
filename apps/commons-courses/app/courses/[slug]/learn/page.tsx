@@ -37,6 +37,8 @@ interface ModuleData {
 interface CourseLearnData {
   title: string;
   slug: string;
+  currency?: string;
+  paymentProviders?: ("stripe" | "paystack")[];
   modules: ModuleData[];
 }
 
@@ -199,6 +201,9 @@ export default function LearnPage({ params }: Props) {
 
   const maxUnlockedModule =
     accessLevel === "partial" ? Math.max(currentInstallment - 1, 0) : Infinity;
+  const nextPaymentProvider = course.paymentProviders?.includes("paystack")
+    ? "&provider=paystack"
+    : "";
 
   if (enrolled && accessLevel === "partial" && moduleIdx > maxUnlockedModule) {
     return (
@@ -215,7 +220,7 @@ export default function LearnPage({ params }: Props) {
             mdogo when you are ready.
           </p>
           <Link
-            href={`/api/payments/checkout?courseSlug=${slug}&plan=installment&provider=paystack`}
+            href={`/api/payments/checkout?courseSlug=${slug}&plan=installment${nextPaymentProvider}`}
             className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg bg-slate-900 text-white text-sm font-bold hover:opacity-90 transition-opacity"
           >
             Make next payment

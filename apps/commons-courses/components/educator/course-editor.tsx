@@ -102,6 +102,10 @@ export function CourseEditor({ slug }: { slug?: string }) {
 
   async function onSubmit(event: FormEvent) {
     event.preventDefault();
+    if (!course.isFree && course.paymentProviders.length === 0) {
+      setError("Choose at least one payment provider for a paid course.");
+      return;
+    }
     setSaving(true);
     setError("");
     const payload = {
@@ -172,7 +176,13 @@ export function CourseEditor({ slug }: { slug?: string }) {
       </section>
 
       <section className="rounded-xl border border-slate-200 p-5">
-        <h2 className="mb-4 text-lg font-bold text-slate-900">Payments</h2>
+        <div className="mb-5">
+          <h2 className="text-lg font-bold text-slate-900">Payments</h2>
+          <p className="mt-1 text-sm text-slate-500">
+            Choose which checkout options learners can use for this course.
+            Paystack is recommended for KES courses and M-Pesa/mobile money.
+          </p>
+        </div>
         <div className="grid gap-4 md:grid-cols-4">
           <Field label="Price" type="number" value={String(course.price)} onChange={(value) => setCourse({ ...course, price: Number(value), isFree: Number(value) <= 0 })} />
           <Field label="Currency" value={course.currency} onChange={(value) => setCourse({ ...course, currency: value.toUpperCase() })} />
@@ -185,6 +195,17 @@ export function CourseEditor({ slug }: { slug?: string }) {
             Paystack
           </label>
         </div>
+        {!course.isFree && course.currency.toUpperCase() === "KES" && !course.paymentProviders.includes("paystack") && (
+          <p className="mt-3 rounded-lg bg-amber-50 p-3 text-sm text-amber-800">
+            This is a KES course without Paystack enabled. Learners will not see
+            M-Pesa/mobile money unless Paystack is selected.
+          </p>
+        )}
+        {!course.isFree && course.paymentProviders.length === 0 && (
+          <p className="mt-3 rounded-lg bg-red-50 p-3 text-sm text-red-700">
+            Paid courses need at least one checkout provider.
+          </p>
+        )}
         <div className="mt-4 grid gap-4 md:grid-cols-4">
           <label className="flex items-center gap-3 pt-7 text-sm font-bold text-slate-700">
             <input type="checkbox" checked={course.installmentPlan.enabled} onChange={(event) => setCourse({ ...course, installmentPlan: { ...course.installmentPlan, enabled: event.target.checked } })} />
@@ -192,6 +213,26 @@ export function CourseEditor({ slug }: { slug?: string }) {
           </label>
           <Field label="Installment amount" type="number" value={String(course.installmentPlan.installmentAmount || "")} onChange={(value) => setCourse({ ...course, installmentPlan: { ...course.installmentPlan, installmentAmount: Number(value) || undefined } })} />
           <Field label="Installments" type="number" value={String(course.installmentPlan.installmentCount)} onChange={(value) => setCourse({ ...course, installmentPlan: { ...course.installmentPlan, installmentCount: Number(value) || 4 } })} />
+          <label>
+            <span className="text-sm font-bold text-slate-700">Access release</span>
+            <select
+              className="mt-2 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+              value={course.installmentPlan.releaseAccess}
+              onChange={(event) =>
+                setCourse({
+                  ...course,
+                  installmentPlan: {
+                    ...course.installmentPlan,
+                    releaseAccess: event.target.value as CourseForm["installmentPlan"]["releaseAccess"],
+                  },
+                })
+              }
+            >
+              <option value="module_by_module">Module by module</option>
+              <option value="full_after_first_payment">Full after first payment</option>
+              <option value="full_after_completion">Full after completion</option>
+            </select>
+          </label>
         </div>
       </section>
 

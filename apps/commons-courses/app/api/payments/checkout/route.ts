@@ -40,9 +40,33 @@ function getCourseCurrency(currency?: string) {
   return currency?.toLowerCase() === "kes" ? "kes" : "usd";
 }
 
-function getProvider(reqProvider: string | null, currency: string): PaymentProvider {
+function getProvider(
+  reqProvider: string | null,
+  currency: string,
+  enabledProviders: PaymentProvider[]
+): PaymentProvider {
   if (reqProvider === "paystack" || reqProvider === "stripe") return reqProvider;
-  return currency === "kes" ? "paystack" : "stripe";
+  if (currency === "kes" && enabledProviders.includes("paystack")) {
+    return "paystack";
+  }
+  return enabledProviders[0] || "stripe";
+}
+
+function redirectPaymentError(
+  req: NextRequest,
+  params: {
+    code: string;
+    courseSlug?: string;
+    provider?: string;
+    message?: string;
+  }
+) {
+  const url = new URL("/payments/error", req.url);
+  url.searchParams.set("code", params.code);
+  if (params.courseSlug) url.searchParams.set("courseSlug", params.courseSlug);
+  if (params.provider) url.searchParams.set("provider", params.provider);
+  if (params.message) url.searchParams.set("message", params.message);
+  return NextResponse.redirect(url);
 }
 
 function getPlanAmount(course: CheckoutCourse, plan: PaymentPlan) {
@@ -79,7 +103,10 @@ export async function GET(req: NextRequest) {
   const requestedProvider = searchParams.get("provider");
   const requestedPlan = searchParams.get("plan") === "installment" ? "installment" : "one_time";
   if (!courseSlug) {
-    return NextResponse.json({ error: "Missing courseSlug." }, { status: 400 });
+    return redirectPaymentError(req, {
+      code: "missing_course",
+      message: "We could not tell which course you wanted to enroll in.",
+    });
   }
 
   await connectDB();
@@ -89,7 +116,7 @@ export async function GET(req: NextRequest) {
     published: true,
   })) as CheckoutCourse | null;
   if (!dbCourse) {
-    return NextResponse.json({ error: "Course not found." }, { status: 404 });
+    return redirectPaymentError(req, { code: "course_not_found", courseSlug });
   }
 
   if (dbCourse.isFree) {
@@ -102,17 +129,22 @@ export async function GET(req: NextRequest) {
     coursePrice = getPlanAmount(dbCourse, requestedPlan);
   } catch (err) {
     const message = err instanceof Error ? err.message : "Invalid payment plan.";
-    return NextResponse.json({ error: message }, { status: 400 });
+    return redirectPaymentError(req, {
+      code: "invalid_payment_plan",
+      courseSlug,
+      message,
+    });
   }
   const courseTitle = dbCourse.title;
   const courseCurrency = getCourseCurrency(dbCourse.currency);
-  const provider = getProvider(requestedProvider, courseCurrency);
   const enabledProviders = dbCourse.paymentProviders || ["stripe"];
+  const provider = getProvider(requestedProvider, courseCurrency, enabledProviders);
   if (!enabledProviders.includes(provider)) {
-    return NextResponse.json(
-      { error: `${provider} is not enabled for this course.` },
-      { status: 400 }
-    );
+    return redirectPaymentError(req, {
+      code: "provider_not_enabled",
+      courseSlug,
+      provider,
+    });
   }
 
   const baseUrl =
@@ -137,27 +169,41 @@ export async function GET(req: NextRequest) {
         ? Math.round(coursePrice * 100 * (dbCourse.educator.platformFeePercent / 100))
         : undefined;
 
-    const paystackTransaction = await initializePaystackTransaction({
-      email: session.user.email!,
-      amount: coursePrice * 100,
-      currency: courseCurrency.toUpperCase(),
-      reference: providerReference,
-      callback_url: `${baseUrl}/dashboard?payment=paystack`,
-      channels:
-        courseCurrency === "kes"
-          ? ["mobile_money", "card", "bank_transfer"]
-          : ["card", "bank_transfer"],
-      subaccount,
-      bearer: subaccount ? "account" : undefined,
-      transaction_charge: transactionCharge,
-      metadata: {
-        userId: session.user.id,
+    let paystackTransaction;
+    try {
+      paystackTransaction = await initializePaystackTransaction({
+        email: session.user.email!,
+        amount: coursePrice * 100,
+        currency: courseCurrency.toUpperCase(),
+        reference: providerReference,
+        callback_url: `${baseUrl}/dashboard?payment=paystack`,
+        channels:
+          courseCurrency === "kes"
+            ? ["mobile_money", "card", "bank_transfer"]
+            : ["card", "bank_transfer"],
+        subaccount,
+        bearer: subaccount ? "account" : undefined,
+        transaction_charge: transactionCharge,
+        metadata: {
+          userId: session.user.id,
+          courseSlug,
+          paymentPlan: requestedPlan,
+          installmentNumber: nextInstallment,
+          accessLevel: getAccessLevel(dbCourse, requestedPlan),
+        },
+      });
+    } catch (err) {
+      const message =
+        err instanceof Error
+          ? err.message
+          : "Paystack checkout could not be started.";
+      return redirectPaymentError(req, {
+        code: "provider_start_failed",
         courseSlug,
-        paymentPlan: requestedPlan,
-        installmentNumber: nextInstallment,
-        accessLevel: getAccessLevel(dbCourse, requestedPlan),
-      },
-    });
+        provider,
+        message,
+      });
+    }
 
     await Payment.create({
       userId: session.user.id,
@@ -182,32 +228,44 @@ export async function GET(req: NextRequest) {
     return NextResponse.redirect(paystackTransaction.authorization_url);
   }
 
-  const stripeSession = await stripe.checkout.sessions.create({
-    payment_method_types: ["card"],
-    line_items: [
-      {
-        price_data: {
-          currency: courseCurrency,
-          product_data: {
-            name: courseTitle,
-            description: "Agent Commons Courses — Lifetime access",
+  let stripeSession;
+  try {
+    stripeSession = await stripe.checkout.sessions.create({
+      payment_method_types: ["card"],
+      line_items: [
+        {
+          price_data: {
+            currency: courseCurrency,
+            product_data: {
+              name: courseTitle,
+              description: "Agent Commons Courses — Lifetime access",
+            },
+            unit_amount: coursePrice * 100,
           },
-          unit_amount: coursePrice * 100,
+          quantity: 1,
         },
-        quantity: 1,
+      ],
+      mode: "payment",
+      success_url: `${baseUrl}/dashboard?enrolled=1`,
+      cancel_url: `${baseUrl}/courses/${courseSlug}`,
+      metadata: {
+        userId: session.user.id,
+        courseSlug,
+        paymentPlan: requestedPlan,
+        installmentNumber: nextInstallment ?? null,
+        accessLevel: getAccessLevel(dbCourse, requestedPlan),
       },
-    ],
-    mode: "payment",
-    success_url: `${baseUrl}/dashboard?enrolled=1`,
-    cancel_url: `${baseUrl}/courses/${courseSlug}`,
-    metadata: {
-      userId: session.user.id,
+    });
+  } catch (err) {
+    const message =
+      err instanceof Error ? err.message : "Stripe checkout could not be started.";
+    return redirectPaymentError(req, {
+      code: "provider_start_failed",
       courseSlug,
-      paymentPlan: requestedPlan,
-      installmentNumber: nextInstallment ?? null,
-      accessLevel: getAccessLevel(dbCourse, requestedPlan),
-    },
-  });
+      provider,
+      message,
+    });
+  }
 
   // Record pending payment (best-effort)
   if (courseMongoId) {

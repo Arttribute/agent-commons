@@ -10,6 +10,10 @@ export function Nav() {
   const { data: session } = useSession();
   const [scrolled, setScrolled] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
+  const educatorLabel =
+    session?.user?.role && ["educator", "admin"].includes(session.user.role)
+      ? "Educator console"
+      : "Teach";
 
   useEffect(() => {
     const handler = () => setScrolled(window.scrollY > 10);
@@ -54,10 +58,10 @@ export function Nav() {
             Sandboxes
           </Link>
           <Link
-            href="/#educators"
+            href="/educator"
             className="text-sm text-slate-600 hover:text-slate-900 transition-colors"
           >
-            For educators
+            {educatorLabel}
           </Link>
           {session && (
             <Link
@@ -65,14 +69,6 @@ export function Nav() {
               className="text-sm text-slate-600 hover:text-slate-900 transition-colors"
             >
               Dashboard
-            </Link>
-          )}
-          {session?.user?.role && ["educator", "admin"].includes(session.user.role) && (
-            <Link
-              href="/educator"
-              className="text-sm text-slate-600 hover:text-slate-900 transition-colors"
-            >
-              Educator
             </Link>
           )}
           <a
@@ -113,6 +109,12 @@ export function Nav() {
               >
                 Start learning
               </Link>
+              <Link
+                href="/educator"
+                className="rounded-md border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 transition-colors hover:bg-slate-50"
+              >
+                Teach
+              </Link>
             </>
           )}
         </div>
@@ -149,11 +151,11 @@ export function Nav() {
             Sandboxes
           </Link>
           <Link
-            href="/#educators"
+            href="/educator"
             className="text-sm text-slate-700"
             onClick={() => setMobileOpen(false)}
           >
-            For educators
+            {educatorLabel}
           </Link>
           {session && (
             <Link
@@ -162,15 +164,6 @@ export function Nav() {
               onClick={() => setMobileOpen(false)}
             >
               Dashboard
-            </Link>
-          )}
-          {session?.user?.role && ["educator", "admin"].includes(session.user.role) && (
-            <Link
-              href="/educator"
-              className="text-sm text-slate-700"
-              onClick={() => setMobileOpen(false)}
-            >
-              Educator
             </Link>
           )}
           <a
@@ -203,6 +196,13 @@ export function Nav() {
                 onClick={() => setMobileOpen(false)}
               >
                 Start learning
+              </Link>
+              <Link
+                href="/educator"
+                className="text-sm font-bold text-slate-900"
+                onClick={() => setMobileOpen(false)}
+              >
+                Teach
               </Link>
             </>
           )}
