@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { normalizeCourseInput } from "@/lib/course-input";
 import { requireEducatorCourse, slugifyCourseTitle } from "@/lib/educator-auth";
+import { indexCourseForSearch } from "@/lib/search-indexers";
 
 export async function GET(
   _req: NextRequest,
@@ -29,6 +30,7 @@ export async function PUT(
   });
 
   await result.course.save();
+  await indexCourseForSearch(result.course);
 
   return NextResponse.json({ course: result.course });
 }

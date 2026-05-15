@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { connectDB } from "@/lib/db";
+import { indexSubmissionForSearch } from "@/lib/search-indexers";
 import Assignment from "@/models/Assignment";
 import Enrollment from "@/models/Enrollment";
 import Submission from "@/models/Submission";
@@ -53,6 +54,7 @@ export async function POST(
     },
     { upsert: true, new: true, runValidators: true }
   );
+  await indexSubmissionForSearch(submission);
 
   return NextResponse.json({ submission }, { status: 201 });
 }

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { connectDB } from "@/lib/db";
 import { requireEducator, slugifyCourseTitle } from "@/lib/educator-auth";
 import { normalizeCourseInput } from "@/lib/course-input";
+import { indexCourseForSearch } from "@/lib/search-indexers";
 import Course from "@/models/Course";
 import EducatorProfile from "@/models/EducatorProfile";
 
@@ -61,6 +62,7 @@ export async function POST(req: NextRequest) {
       stripeAccountId: profile?.stripeAccountId,
     },
   });
+  await indexCourseForSearch(course);
 
   return NextResponse.json({ course }, { status: 201 });
 }

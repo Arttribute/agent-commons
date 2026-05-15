@@ -1,4 +1,9 @@
 import mongoose, { Schema, Document } from "mongoose";
+import {
+  getDefaultCourseAgents,
+  normalizeCourseAgents,
+} from "@/lib/course-agent-defaults";
+import type { CourseAgentConfig } from "@/types/course-agent";
 
 export interface ILesson {
   title: string;
@@ -53,6 +58,7 @@ export interface ICourse extends Document {
   tags: string[];
   imageUrl?: string;
   modules: IModule[];
+  agents: CourseAgentConfig[];
   published: boolean;
   /** Pinned as the single hero feature on the landing page */
   isMainFeatured: boolean;
@@ -121,6 +127,42 @@ const InstallmentPlanSchema = new Schema(
   { _id: false }
 );
 
+const CourseAgentSchema = new Schema<CourseAgentConfig>(
+  {
+    id: { type: String, required: true },
+    name: { type: String, required: true },
+    agentCommonsAgentId: String,
+    audience: {
+      type: String,
+      enum: ["learners", "educators", "both"],
+      default: "learners",
+    },
+    enabled: { type: Boolean, default: true },
+    dataScope: {
+      type: String,
+      enum: [
+        "course_overview",
+        "course_content",
+        "course_content_and_progress",
+        "educator_operations",
+      ],
+      default: "course_content",
+    },
+    learningMode: {
+      type: String,
+      enum: ["socratic", "guided", "direct_support"],
+      default: "guided",
+    },
+    actions: {
+      type: [String],
+      enum: ["suggest", "draft", "fill_view", "navigate"],
+      default: ["suggest"],
+    },
+    instructions: { type: String, default: "" },
+  },
+  { _id: false }
+);
+
 const CourseSchema = new Schema<ICourse>(
   {
     title: { type: String, required: true },
@@ -155,6 +197,16 @@ const CourseSchema = new Schema<ICourse>(
     tags: [String],
     imageUrl: String,
     modules: [ModuleSchema],
+    agents: {
+      type: [CourseAgentSchema],
+      default: getDefaultCourseAgents,
+      validate: {
+        validator(value: CourseAgentConfig[]) {
+          return Array.isArray(value) && value.length > 0;
+        },
+        message: "At least one course agent is required.",
+      },
+    },
     published: { type: Boolean, default: false },
     isMainFeatured: { type: Boolean, default: false },
     isFeatured: { type: Boolean, default: false },
@@ -166,6 +218,14 @@ const CourseSchema = new Schema<ICourse>(
   },
   { timestamps: true }
 );
+
+CourseSchema.pre("validate", function normalizeAgents(next) {
+  this.agents = normalizeCourseAgents(this.agents);
+  next();
+});
+
+CourseSchema.index({ "agents.id": 1 });
+CourseSchema.index({ "agents.agentCommonsAgentId": 1 });
 
 export default mongoose.models.Course ||
   mongoose.model<ICourse>("Course", CourseSchema);
