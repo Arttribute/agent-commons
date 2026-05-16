@@ -225,7 +225,9 @@ export async function GET(req: NextRequest) {
       : undefined;
 
   if (provider === "paystack") {
-    const providerReference = `ac_${courseMongoId}_${Date.now()}`;
+    const providerReference = `ac_${courseMongoId}_${Date.now()}_${Math.random()
+      .toString(36)
+      .slice(2, 8)}`;
     const subaccount =
       dbCourse.educator?.settlementMode === "platform_rails"
         ? dbCourse.educator?.paystackSubaccountCode
@@ -279,6 +281,7 @@ export async function GET(req: NextRequest) {
       channel: courseCurrency === "kes" ? "mobile_money" : "unknown",
       paymentPlan: requestedPlan,
       installmentNumber: nextInstallment,
+      stripeSessionId: `paystack:${providerReference}`,
       providerReference,
       providerAccessCode: paystackTransaction.access_code,
       checkoutUrl: paystackTransaction.authorization_url,

@@ -65,6 +65,13 @@ interface CourseDetailData {
   modules: ModuleData[];
   accessProgram?: {
     discounts?: unknown[];
+    earlyPaymentDiscounts?: Array<{
+      active?: boolean;
+      amountType?: "percent" | "fixed";
+      amount?: number;
+      deadline?: string | Date;
+      label?: string;
+    }>;
     scholarships?: unknown[];
     passes?: unknown[];
     affiliates?: unknown[];
@@ -298,8 +305,12 @@ function PurchaseCard({
     : "";
   const accessProgramCount =
     (course.accessProgram?.discounts?.length || 0) +
+    (course.accessProgram?.earlyPaymentDiscounts?.length || 0) +
     (course.accessProgram?.scholarships?.length || 0) +
     (course.accessProgram?.passes?.length || 0);
+  const earlyDiscount = course.accessProgram?.earlyPaymentDiscounts?.find(
+    (rule) => rule.active !== false && rule.deadline
+  );
 
   return (
     <div className="w-full min-w-0 max-w-sm rounded-xl border border-slate-200 bg-white overflow-hidden shadow-sm lg:max-w-none">
@@ -348,6 +359,14 @@ function PurchaseCard({
           </p>
         )}
 
+        {!course.isFree && earlyDiscount?.deadline && (
+          <p className="mt-2 rounded-lg bg-lime-50 p-3 text-xs leading-5 text-slate-700">
+            Pay before {formatDate(earlyDiscount.deadline)} for an automatic{" "}
+            {formatDiscount(earlyDiscount, course.currency)} early payment
+            discount.
+          </p>
+        )}
+
         <div className="mt-5 pt-4 border-t border-slate-100 space-y-2.5">
           {[
             `${course.lessonsCount} lessons`,
@@ -368,4 +387,26 @@ function PurchaseCard({
       </div>
     </div>
   );
+}
+
+function formatDiscount(
+  rule: { amountType?: "percent" | "fixed"; amount?: number },
+  currency?: string
+) {
+  if (rule.amountType === "fixed") {
+    return formatCoursePrice({
+      isFree: false,
+      price: rule.amount || 0,
+      currency,
+    });
+  }
+  return `${rule.amount || 0}%`;
+}
+
+function formatDate(value: string | Date) {
+  return new Intl.DateTimeFormat("en", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  }).format(new Date(value));
 }

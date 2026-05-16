@@ -41,8 +41,20 @@ export interface ICourseAffiliateProgram {
   conversions: number;
 }
 
+export interface ICourseEarlyPaymentDiscount {
+  id: string;
+  label?: string;
+  active: boolean;
+  amountType: "percent" | "fixed";
+  amount: number;
+  deadline: Date;
+  maxRedemptions?: number;
+  redeemedCount: number;
+}
+
 export interface ICourseAccessProgram {
   discounts: ICourseAccessCode[];
+  earlyPaymentDiscounts: ICourseEarlyPaymentDiscount[];
   scholarships: ICourseAccessCode[];
   passes: ICourseAccessCode[];
   affiliates: ICourseAffiliateProgram[];
@@ -193,9 +205,31 @@ const AffiliateProgramSchema = new Schema<ICourseAffiliateProgram>(
   { _id: false }
 );
 
+const EarlyPaymentDiscountSchema = new Schema<ICourseEarlyPaymentDiscount>(
+  {
+    id: { type: String, required: true },
+    label: String,
+    active: { type: Boolean, default: true },
+    amountType: {
+      type: String,
+      enum: ["percent", "fixed"],
+      default: "percent",
+    },
+    amount: { type: Number, default: 10, min: 0 },
+    deadline: { type: Date, required: true },
+    maxRedemptions: { type: Number, min: 1 },
+    redeemedCount: { type: Number, default: 0, min: 0 },
+  },
+  { _id: false }
+);
+
 const AccessProgramSchema = new Schema<ICourseAccessProgram>(
   {
     discounts: { type: [AccessCodeSchema], default: [] },
+    earlyPaymentDiscounts: {
+      type: [EarlyPaymentDiscountSchema],
+      default: [],
+    },
     scholarships: { type: [AccessCodeSchema], default: [] },
     passes: { type: [AccessCodeSchema], default: [] },
     affiliates: { type: [AffiliateProgramSchema], default: [] },
@@ -304,6 +338,7 @@ CourseSchema.pre("validate", function normalizeAgents(next) {
 CourseSchema.index({ "agents.id": 1 });
 CourseSchema.index({ "agents.agentCommonsAgentId": 1 });
 CourseSchema.index({ "accessProgram.discounts.code": 1 });
+CourseSchema.index({ "accessProgram.earlyPaymentDiscounts.deadline": 1 });
 CourseSchema.index({ "accessProgram.scholarships.code": 1 });
 CourseSchema.index({ "accessProgram.passes.code": 1 });
 CourseSchema.index({ "accessProgram.affiliates.code": 1 });

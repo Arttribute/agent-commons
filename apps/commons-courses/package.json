@@ -6,7 +6,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "repair:payments-index": "node scripts/repair-payments-index.mjs"
   },
   "dependencies": {
     "@agent-commons/sdk": "^0.1.13",

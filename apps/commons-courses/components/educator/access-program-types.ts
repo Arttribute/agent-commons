@@ -20,8 +20,20 @@ export type AffiliateForm = {
   conversions?: number;
 };
 
+export type EarlyPaymentDiscountForm = {
+  id: string;
+  label?: string;
+  active: boolean;
+  amountType: "percent" | "fixed";
+  amount: number;
+  deadline?: string;
+  maxRedemptions?: number;
+  redeemedCount?: number;
+};
+
 export type AccessProgramForm = {
   discounts: AccessCodeForm[];
+  earlyPaymentDiscounts: EarlyPaymentDiscountForm[];
   scholarships: AccessCodeForm[];
   passes: AccessCodeForm[];
   affiliates: AffiliateForm[];
