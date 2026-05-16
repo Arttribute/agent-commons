@@ -7,6 +7,7 @@ import EducatorProfile from "@/models/EducatorProfile";
 import Payment from "@/models/Payment";
 import Enrollment from "@/models/Enrollment";
 import { Nav } from "@/components/nav";
+import { GeneralAgentDrawer } from "@/components/agents/general-agent-drawer";
 import { ArrowRight, BookOpen, CreditCard, Users } from "lucide-react";
 
 export default async function EducatorDashboardPage() {
@@ -32,6 +33,13 @@ export default async function EducatorDashboardPage() {
   return (
     <div className="min-h-screen bg-white">
       <Nav />
+      <GeneralAgentDrawer
+        context={{
+          page: "educator.dashboard",
+          title: "Educator console",
+          visibleText: "Educator console with courses, students, assignments, and payments",
+        }}
+      />
       <main className="mx-auto max-w-6xl px-4 pb-16 pt-24 sm:px-6 lg:px-8">
         <div className="mb-8 flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
           <div>

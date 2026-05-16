@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import Link from "next/link";
 import { auth } from "@/lib/auth";
 import { Nav } from "@/components/nav";
+import { GeneralAgentDrawer } from "@/components/agents/general-agent-drawer";
 import { connectDB } from "@/lib/db";
 import Enrollment from "@/models/Enrollment";
 import { BookOpen, ArrowRight, Clock } from "lucide-react";
@@ -19,6 +20,13 @@ export default async function DashboardPage() {
   return (
     <div className="min-h-screen bg-white">
       <Nav />
+      <GeneralAgentDrawer
+        context={{
+          page: "dashboard",
+          title: "Dashboard",
+          visibleText: "User dashboard with enrolled courses and progress",
+        }}
+      />
       <div className="pt-24 pb-16 max-w-5xl mx-auto px-6 lg:px-12">
         {/* Header */}
         <div className="mb-12">

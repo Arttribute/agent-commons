@@ -12,6 +12,12 @@ export interface IPayment extends Document {
   providerReference: string;
   providerAccessCode?: string;
   checkoutUrl?: string;
+  originalAmount?: number;
+  discountAmount?: number;
+  accessCode?: string;
+  accessCodeType?: "discount" | "scholarship" | "pass";
+  affiliateCode?: string;
+  affiliateCommissionAmount?: number;
   amount: number;
   currency: string;
   status: "pending" | "completed" | "failed" | "refunded";
@@ -45,6 +51,15 @@ const PaymentSchema = new Schema<IPayment>(
     providerReference: { type: String, required: true, unique: true },
     providerAccessCode: String,
     checkoutUrl: String,
+    originalAmount: Number,
+    discountAmount: { type: Number, default: 0 },
+    accessCode: String,
+    accessCodeType: {
+      type: String,
+      enum: ["discount", "scholarship", "pass"],
+    },
+    affiliateCode: String,
+    affiliateCommissionAmount: Number,
     amount: { type: Number, required: true },
     currency: { type: String, default: "usd" },
     status: {

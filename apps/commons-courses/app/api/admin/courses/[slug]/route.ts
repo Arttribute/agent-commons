@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { connectDB } from "@/lib/db";
+import { getSafeErrorMessage } from "@/lib/safe-error";
 import Course from "@/models/Course";
 
 function isAuthorized(req: NextRequest) {
@@ -28,8 +29,10 @@ export async function PUT(
     }
     return NextResponse.json(course);
   } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : "Server error.";
-    return NextResponse.json({ error: message }, { status: 500 });
+    console.error("Admin course update failed", {
+      message: getSafeErrorMessage(err),
+    });
+    return NextResponse.json({ error: "Server error." }, { status: 500 });
   }
 }
 

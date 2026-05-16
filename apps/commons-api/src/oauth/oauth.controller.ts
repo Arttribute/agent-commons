@@ -36,6 +36,21 @@ import {
   OAuthConnectionDto,
 } from './dto/oauth.dto';
 
+function redirectOAuthError(res: Response, code = 'oauth_failed') {
+  return res.redirect(`/oauth/error?code=${encodeURIComponent(code)}`);
+}
+
+function redactSecrets(value: string) {
+  return value
+    .replace(/\bsk_(test|live)_[A-Za-z0-9_]+/g, 'sk_$1_[redacted]')
+    .replace(/\bpk_(test|live)_[A-Za-z0-9_]+/g, 'pk_$1_[redacted]')
+    .replace(/\bwhsec_[A-Za-z0-9_]+/g, 'whsec_[redacted]');
+}
+
+function getSafeErrorMessage(error: unknown) {
+  return error instanceof Error ? redactSecrets(error.message) : 'Unknown error';
+}
+
 @Controller({ version: '1', path: 'oauth' })
 export class OAuthController {
   constructor(
@@ -163,13 +178,11 @@ export class OAuthController {
     try {
       // Handle OAuth errors from provider
       if (query.error) {
-        const errorMessage =
-          query.error_description || query.error || 'OAuth authorization failed';
-
-        // Redirect to error page
-        return res.redirect(
-          `/oauth/error?message=${encodeURIComponent(errorMessage)}`,
-        );
+        console.error('OAuth provider authorization failed:', {
+          providerKey,
+          error: query.error,
+        });
+        return redirectOAuthError(res, 'provider_authorization_failed');
       }
 
       // Exchange code for tokens
@@ -184,14 +197,12 @@ export class OAuthController {
         `/oauth/success?connectionId=${result.connectionId}&provider=${providerKey}`,
       );
     } catch (error) {
-      console.error('OAuth callback error:', error);
+      console.error('OAuth callback error:', {
+        providerKey,
+        message: getSafeErrorMessage(error),
+      });
 
-      const errorMessage =
-        error instanceof Error ? error.message : 'OAuth callback failed';
-
-      return res.redirect(
-        `/oauth/error?message=${encodeURIComponent(errorMessage)}`,
-      );
+      return redirectOAuthError(res, 'callback_failed');
     }
   }
 

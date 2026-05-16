@@ -9,6 +9,7 @@ import Payment from "@/models/Payment";
 import Enrollment from "@/models/Enrollment";
 import Course from "@/models/Course";
 import { recordSaleLedger } from "@/lib/payout-ledger";
+import { recordAccessProgramConversion } from "@/lib/course-access";
 import type Stripe from "stripe";
 
 interface ExistingEnrollment {
@@ -64,7 +65,7 @@ export async function POST(req: NextRequest) {
 
     // Update payment record
     const updatedPayment = await Payment.findOneAndUpdate(
-      { stripeSessionId: session.id },
+      { stripeSessionId: session.id, status: { $ne: "completed" } },
       {
         status: "completed",
         stripePaymentIntentId: session.payment_intent as string,
@@ -78,7 +79,8 @@ export async function POST(req: NextRequest) {
     // Find course and enroll user
     const course = await Course.findOne({ slug: courseSlug });
     if (course) {
-      const payment = await Payment.findOne({ stripeSessionId: session.id });
+      const payment =
+        updatedPayment || (await Payment.findOne({ stripeSessionId: session.id }));
       const paymentPlan = payment?.paymentPlan || "one_time";
       const requestedAccessLevel =
         getMetadataString(payment?.metadata, "accessLevel") ||
@@ -93,7 +95,7 @@ export async function POST(req: NextRequest) {
         paymentPlan === "installment"
           ? ((existingEnrollment as ExistingEnrollment | null)?.paidAmount || 0) +
             paidAmount
-          : course.price;
+          : paidAmount;
       const installmentNumber =
         payment?.installmentNumber ||
         Number(session.metadata?.installmentNumber) ||
@@ -116,12 +118,23 @@ export async function POST(req: NextRequest) {
           accessLevel,
           paymentStatus,
           paymentId: session.id,
+          accessSource: payment?.accessCodeType ? payment.accessCodeType : "payment",
+          accessCode: payment?.accessCode,
+          affiliateCode: payment?.affiliateCode,
           paidAmount: nextPaidAmount,
           totalAmountDue: course.price,
           currentInstallment: installmentNumber,
         },
         { upsert: true }
       );
+      if (updatedPayment) {
+        await recordAccessProgramConversion({
+          courseId: course._id.toString(),
+          accessCode: payment?.accessCode,
+          accessCodeType: payment?.accessCodeType,
+          affiliateCode: payment?.affiliateCode,
+        });
+      }
     }
   }
 
@@ -149,7 +162,11 @@ async function handlePaystackWebhook(body: string, signature: string) {
   await connectDB();
 
   const payment = await Payment.findOneAndUpdate(
-    { provider: "paystack", providerReference: reference },
+    {
+      provider: "paystack",
+      providerReference: reference,
+      status: { $ne: "completed" },
+    },
     {
       status: "completed",
       channel: channel || "unknown",
@@ -162,12 +179,15 @@ async function handlePaystackWebhook(body: string, signature: string) {
 
   const course = await Course.findOne({ slug: courseSlug });
   if (course) {
-    const paymentPlan = payment?.paymentPlan || "one_time";
+    const completedPayment =
+      payment ||
+      (await Payment.findOne({ provider: "paystack", providerReference: reference }));
+    const paymentPlan = completedPayment?.paymentPlan || "one_time";
     const requestedAccessLevel =
-      getMetadataString(payment?.metadata, "accessLevel") ||
+      getMetadataString(completedPayment?.metadata, "accessLevel") ||
       getMetadataString(metadata, "accessLevel") ||
       (paymentPlan === "installment" ? "partial" : "full");
-    const paidAmount = payment?.amount || event.data.amount / 100;
+    const paidAmount = completedPayment?.amount || event.data.amount / 100;
     const existingEnrollment = await Enrollment.findOne({
       userId,
       courseId: course._id,
@@ -176,9 +196,9 @@ async function handlePaystackWebhook(body: string, signature: string) {
       paymentPlan === "installment"
         ? ((existingEnrollment as ExistingEnrollment | null)?.paidAmount || 0) +
           paidAmount
-        : course.price;
+        : paidAmount;
     const installmentNumber =
-      payment?.installmentNumber ||
+      completedPayment?.installmentNumber ||
       getMetadataNumber(metadata, "installmentNumber") ||
       (paymentPlan === "installment"
         ? ((existingEnrollment as ExistingEnrollment | null)?.currentInstallment ||
@@ -199,12 +219,25 @@ async function handlePaystackWebhook(body: string, signature: string) {
         accessLevel,
         paymentStatus,
         paymentId: reference,
+        accessSource: completedPayment?.accessCodeType
+          ? completedPayment.accessCodeType
+          : "payment",
+        accessCode: completedPayment?.accessCode,
+        affiliateCode: completedPayment?.affiliateCode,
         paidAmount: nextPaidAmount,
         totalAmountDue: course.price,
         currentInstallment: installmentNumber,
       },
       { upsert: true }
     );
+    if (payment) {
+      await recordAccessProgramConversion({
+        courseId: course._id.toString(),
+        accessCode: completedPayment?.accessCode,
+        accessCodeType: completedPayment?.accessCodeType,
+        affiliateCode: completedPayment?.affiliateCode,
+      });
+    }
   }
 
   return NextResponse.json({ received: true });

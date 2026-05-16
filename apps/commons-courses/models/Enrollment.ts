@@ -7,6 +7,9 @@ export interface IEnrollment extends Document {
   accessLevel: "full" | "partial";
   paymentStatus: "free" | "paid" | "partial" | "overdue";
   paymentId?: string;
+  accessSource?: "free" | "payment" | "discount" | "scholarship" | "pass";
+  accessCode?: string;
+  affiliateCode?: string;
   paidAmount: number;
   totalAmountDue: number;
   currentInstallment: number;
@@ -36,6 +39,12 @@ const EnrollmentSchema = new Schema<IEnrollment>(
       default: "free",
     },
     paymentId: String,
+    accessSource: {
+      type: String,
+      enum: ["free", "payment", "discount", "scholarship", "pass"],
+    },
+    accessCode: String,
+    affiliateCode: String,
     paidAmount: { type: Number, default: 0 },
     totalAmountDue: { type: Number, default: 0 },
     currentInstallment: { type: Number, default: 0 },

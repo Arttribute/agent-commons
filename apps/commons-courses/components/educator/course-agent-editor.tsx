@@ -1,6 +1,7 @@
 "use client";
 
-import { Plus, Trash2 } from "lucide-react";
+import { Bot, CheckCircle, Plus, Trash2 } from "lucide-react";
+import { useState } from "react";
 import type {
   CourseAgentAction,
   CourseAgentConfig,
@@ -8,6 +9,7 @@ import type {
 } from "@/types/course-agent";
 
 type Props = {
+  courseSlug?: string;
   agents: CourseAgentConfig[];
   onChange: (agents: CourseAgentConfig[]) => void;
 };
@@ -19,7 +21,10 @@ const actionOptions: CourseAgentAction[] = [
   "navigate",
 ];
 
-export function CourseAgentEditor({ agents, onChange }: Props) {
+export function CourseAgentEditor({ courseSlug, agents, onChange }: Props) {
+  const [creatingId, setCreatingId] = useState<string | null>(null);
+  const [error, setError] = useState("");
+
   function updateAgent(index: number, next: CourseAgentConfig) {
     const updated = [...agents];
     updated[index] = next;
@@ -42,6 +47,30 @@ export function CourseAgentEditor({ agents, onChange }: Props) {
     ]);
   }
 
+  async function createAgentCommonsAgent(agent: CourseAgentConfig, index: number) {
+    if (!courseSlug || creatingId) return;
+
+    setCreatingId(agent.id);
+    setError("");
+    const res = await fetch(`/api/educator/courses/${courseSlug}/agents`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ courseAgentId: agent.id, agent }),
+    });
+    const data = await res.json();
+    setCreatingId(null);
+
+    if (!res.ok) {
+      setError(data.error || "Could not create the Agent Commons agent.");
+      return;
+    }
+
+    updateAgent(index, {
+      ...agent,
+      agentCommonsAgentId: data.agentCommonsAgentId,
+    });
+  }
+
   return (
     <section className="space-y-4 rounded-xl border border-slate-200 p-5">
       <div className="flex items-center justify-between gap-3">
@@ -60,22 +89,34 @@ export function CourseAgentEditor({ agents, onChange }: Props) {
           <Plus className="h-3.5 w-3.5" /> Add
         </button>
       </div>
+      {error && <p className="rounded-lg bg-red-50 p-3 text-sm text-red-700">{error}</p>}
 
       {agents.map((agent, index) => (
         <div key={agent.id} className="space-y-4 rounded-lg bg-slate-50 p-4">
-          <div className="grid gap-3 md:grid-cols-[1fr_1fr_auto]">
+          <div className="grid gap-3 md:grid-cols-[1fr_auto_auto]">
             <Field
               label="Name"
               value={agent.name}
               onChange={(value) => updateAgent(index, { ...agent, name: value })}
             />
-            <Field
-              label="Agent Commons ID"
-              value={agent.agentCommonsAgentId || ""}
-              onChange={(value) =>
-                updateAgent(index, { ...agent, agentCommonsAgentId: value })
-              }
-            />
+            <button
+              type="button"
+              disabled={!courseSlug || Boolean(agent.agentCommonsAgentId) || creatingId === agent.id}
+              onClick={() => createAgentCommonsAgent(agent, index)}
+              className="inline-flex items-center justify-center gap-2 self-end rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {agent.agentCommonsAgentId ? (
+                <>
+                  <CheckCircle className="h-3.5 w-3.5 text-green-600" />
+                  Created
+                </>
+              ) : (
+                <>
+                  <Bot className="h-3.5 w-3.5" />
+                  {creatingId === agent.id ? "Creating..." : "Create agent"}
+                </>
+              )}
+            </button>
             <label className="flex items-center gap-2 pt-7 text-sm font-bold text-slate-700">
               <input
                 type="checkbox"

@@ -67,13 +67,25 @@ export default async function CoursePaymentsPage({
             return (
               <div
                 key={String(payment._id)}
-                className="grid gap-3 border-b border-slate-100 p-4 last:border-b-0 md:grid-cols-[1fr_120px_120px_120px]"
-              >
+              className="grid gap-3 border-b border-slate-100 p-4 last:border-b-0 md:grid-cols-[1fr_120px_120px_120px_120px]"
+            >
                 <div>
                   <p className="font-bold text-slate-900">{user?.name || user?.email}</p>
                   <p className="text-xs text-slate-500">{payment.providerReference}</p>
+                  {(payment.accessCode || payment.affiliateCode) && (
+                    <p className="mt-1 text-xs text-slate-500">
+                      {[payment.accessCode, payment.affiliateCode]
+                        .filter(Boolean)
+                        .join(" · ")}
+                    </p>
+                  )}
                 </div>
                 <span className="text-sm">{formatMoney(payment.amount, payment.currency)}</span>
+                <span className="text-sm">
+                  {payment.discountAmount
+                    ? `-${formatMoney(payment.discountAmount, payment.currency)}`
+                    : "None"}
+                </span>
                 <span className="text-sm">{payment.provider}</span>
                 <span className="text-sm">{payment.status}</span>
               </div>
