@@ -88,6 +88,12 @@ export function Nav() {
               <span className="text-sm text-slate-500">
                 {session.user?.name}
               </span>
+              <Link
+                href="/account"
+                className="text-sm px-4 py-2 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50 transition-colors"
+              >
+                Account
+              </Link>
               <button
                 onClick={() => signOut()}
                 className="text-sm px-4 py-2 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50 transition-colors"
@@ -175,12 +181,21 @@ export function Nav() {
             Agent Commons
           </a>
           {session ? (
-            <button
-              onClick={() => signOut()}
-              className="text-sm text-slate-700 text-left"
-            >
-              Sign out
-            </button>
+            <>
+              <Link
+                href="/account"
+                className="text-sm text-slate-700"
+                onClick={() => setMobileOpen(false)}
+              >
+                Account
+              </Link>
+              <button
+                onClick={() => signOut()}
+                className="text-sm text-slate-700 text-left"
+              >
+                Sign out
+              </button>
+            </>
           ) : (
             <>
               <Link

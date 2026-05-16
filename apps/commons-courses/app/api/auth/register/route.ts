@@ -1,12 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
+import { createAccountToken } from "@/lib/account-tokens";
 import { connectDB } from "@/lib/db";
-import { sendWelcomeEmail } from "@/lib/email/resend";
+import { sendVerificationEmail } from "@/lib/email/resend";
 import User from "@/models/User";
 
 export async function POST(req: NextRequest) {
   try {
-    const { name, email, password } = await req.json();
+    const { name, email, password, callbackUrl } = await req.json();
 
     if (!name || !email || !password) {
       return NextResponse.json(
@@ -32,10 +33,24 @@ export async function POST(req: NextRequest) {
     }
 
     const hashed = await bcrypt.hash(password, 12);
-    const user = await User.create({ name, email, password: hashed });
-    await sendWelcomeEmail({ name: user.name, email: user.email });
+    const user = await User.create({
+      name,
+      email,
+      password: hashed,
+      authProvider: "credentials",
+    });
+    const { token } = await createAccountToken({
+      userId: user._id,
+      purpose: "email_verification",
+      ttlMinutes: 60 * 24,
+    });
+    await sendVerificationEmail({
+      user: { name: user.name, email: user.email },
+      token,
+      callbackUrl,
+    });
 
-    return NextResponse.json({ success: true }, { status: 201 });
+    return NextResponse.json({ success: true, verificationRequired: true }, { status: 201 });
   } catch {
     return NextResponse.json({ error: "Server error." }, { status: 500 });
   }

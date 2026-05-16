@@ -89,7 +89,7 @@ export function EnrolButton({ courseSlug, isFree, checkoutUrl, label }: Props) {
         href={`/auth/signin?callbackUrl=/courses/${courseSlug}`}
         className="w-full flex items-center justify-center gap-2 px-5 py-3 rounded-lg bg-slate-900 text-white text-sm font-bold hover:opacity-90 transition-opacity"
       >
-        Sign in to enrol <ArrowRight className="h-3.5 w-3.5" />
+        Continue to enrol <ArrowRight className="h-3.5 w-3.5" />
       </Link>
     );
   }
