@@ -7,7 +7,6 @@ interface Props {
     code?: string;
     courseSlug?: string;
     provider?: string;
-    message?: string;
   }>;
 }
 
@@ -16,19 +15,10 @@ const fallbackTitle = "Payment could not be started";
 function getErrorCopy({
   code,
   provider,
-  message,
 }: {
   code?: string;
   provider?: string;
-  message?: string;
 }) {
-  if (message) {
-    return {
-      title: fallbackTitle,
-      detail: message,
-    };
-  }
-
   if (code === "provider_not_enabled") {
     return {
       title: "This payment option is not available",
@@ -53,6 +43,21 @@ function getErrorCopy({
     };
   }
 
+  if (code === "missing_course") {
+    return {
+      title: "Course missing",
+      detail: "We could not tell which course you wanted to enroll in.",
+    };
+  }
+
+  if (code === "provider_start_failed") {
+    return {
+      title: fallbackTitle,
+      detail:
+        "We could not open checkout with the selected payment provider. Please try again or return to the course page.",
+    };
+  }
+
   return {
     title: fallbackTitle,
     detail:
@@ -63,7 +68,9 @@ function getErrorCopy({
 export default async function PaymentErrorPage({ searchParams }: Props) {
   const params = await searchParams;
   const { title, detail } = getErrorCopy(params);
-  const courseHref = params.courseSlug ? `/courses/${params.courseSlug}` : "/courses";
+  const courseHref = params.courseSlug
+    ? `/courses/${encodeURIComponent(params.courseSlug)}`
+    : "/courses";
 
   return (
     <div className="min-h-screen bg-white">

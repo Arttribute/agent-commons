@@ -7,6 +7,7 @@ import Course from "@/models/Course";
 import Enrollment from "@/models/Enrollment";
 import Payment from "@/models/Payment";
 import mongoose from "mongoose";
+import { getSafeErrorMessage } from "@/lib/safe-error";
 import {
   CourseAccessProgram,
   priceCourseAccess,
@@ -51,10 +52,10 @@ function getProvider(
   currency: string,
   enabledProviders: PaymentProvider[]
 ): PaymentProvider {
-  if (reqProvider === "paystack" || reqProvider === "stripe") return reqProvider;
-  if (currency === "kes" && enabledProviders.includes("paystack")) {
+  if (currency === "kes") {
     return "paystack";
   }
+  if (reqProvider === "paystack" || reqProvider === "stripe") return reqProvider;
   return enabledProviders[0] || "stripe";
 }
 
@@ -64,15 +65,25 @@ function redirectPaymentError(
     code: string;
     courseSlug?: string;
     provider?: string;
-    message?: string;
   }
 ) {
   const url = new URL("/payments/error", req.url);
   url.searchParams.set("code", params.code);
   if (params.courseSlug) url.searchParams.set("courseSlug", params.courseSlug);
   if (params.provider) url.searchParams.set("provider", params.provider);
-  if (params.message) url.searchParams.set("message", params.message);
   return NextResponse.redirect(url);
+}
+
+function logProviderStartFailure(
+  provider: PaymentProvider,
+  courseSlug: string,
+  err: unknown
+) {
+  console.error("Payment provider checkout failed", {
+    provider,
+    courseSlug,
+    message: getSafeErrorMessage(err, "Unknown provider error"),
+  });
 }
 
 function getPlanAmount(course: CheckoutCourse, plan: PaymentPlan) {
@@ -113,7 +124,6 @@ export async function GET(req: NextRequest) {
   if (!courseSlug) {
     return redirectPaymentError(req, {
       code: "missing_course",
-      message: "We could not tell which course you wanted to enroll in.",
     });
   }
 
@@ -149,12 +159,10 @@ export async function GET(req: NextRequest) {
   let coursePrice: number;
   try {
     coursePrice = getPlanAmount(dbCourse, requestedPlan);
-  } catch (err) {
-    const message = err instanceof Error ? err.message : "Invalid payment plan.";
+  } catch {
     return redirectPaymentError(req, {
       code: "invalid_payment_plan",
       courseSlug,
-      message,
     });
   }
   const accessPrice = priceCourseAccess({
@@ -256,15 +264,11 @@ export async function GET(req: NextRequest) {
         },
       });
     } catch (err) {
-      const message =
-        err instanceof Error
-          ? err.message
-          : "Paystack checkout could not be started.";
+      logProviderStartFailure(provider, courseSlug, err);
       return redirectPaymentError(req, {
         code: "provider_start_failed",
         courseSlug,
         provider,
-        message,
       });
     }
 
@@ -336,13 +340,11 @@ export async function GET(req: NextRequest) {
       },
     });
   } catch (err) {
-    const message =
-      err instanceof Error ? err.message : "Stripe checkout could not be started.";
+    logProviderStartFailure(provider, courseSlug, err);
     return redirectPaymentError(req, {
       code: "provider_start_failed",
       courseSlug,
       provider,
-      message,
     });
   }
 

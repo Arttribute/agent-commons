@@ -284,8 +284,12 @@ function PurchaseCard({
 }) {
   const providers = course.paymentProviders || ["stripe"];
   const supportsPaystack = providers.includes("paystack");
-  const supportsStripe = providers.includes("stripe");
   const isKes = ["kes", "ksh"].includes(course.currency?.toLowerCase() ?? "");
+  const checkoutProviderParam = isKes
+    ? "&provider=paystack"
+    : supportsPaystack
+      ? "&provider=paystack"
+      : "";
   const installmentAmount =
     course.installmentPlan?.installmentAmount ||
     Math.ceil(course.price / (course.installmentPlan?.installmentCount || 4));
@@ -314,9 +318,7 @@ function PurchaseCard({
           <EnrolButton
             courseSlug={course.slug}
             isFree={course.isFree}
-            checkoutUrl={`/api/payments/checkout?courseSlug=${course.slug}${
-              supportsPaystack && isKes ? "&provider=paystack" : ""
-            }${affiliateParam}`}
+            checkoutUrl={`/api/payments/checkout?courseSlug=${course.slug}${checkoutProviderParam}${affiliateParam}`}
             label={
               !course.isFree && supportsPaystack && isKes
                 ? "Pay with M-Pesa or card"
@@ -330,9 +332,7 @@ function PurchaseCard({
             <EnrolButton
               courseSlug={course.slug}
               isFree={false}
-              checkoutUrl={`/api/payments/checkout?courseSlug=${course.slug}&plan=installment${
-                supportsPaystack ? "&provider=paystack" : ""
-              }${affiliateParam}`}
+              checkoutUrl={`/api/payments/checkout?courseSlug=${course.slug}&plan=installment${checkoutProviderParam}${affiliateParam}`}
               label={`Lipa mdogo mdogo · ${formatCoursePrice({
                 isFree: false,
                 price: installmentAmount,
@@ -340,15 +340,6 @@ function PurchaseCard({
               })}`}
             />
           </div>
-        )}
-
-        {!course.isFree && supportsStripe && supportsPaystack && isKes && (
-          <Link
-            href={`/api/payments/checkout?courseSlug=${course.slug}&provider=stripe`}
-            className="block text-center text-xs font-semibold text-slate-500 hover:text-slate-900"
-          >
-            Prefer international card checkout?
-          </Link>
         )}
 
         {!course.isFree && accessProgramCount > 0 && (

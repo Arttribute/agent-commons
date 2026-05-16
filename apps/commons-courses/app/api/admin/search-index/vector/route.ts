@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { connectDB } from "@/lib/db";
+import { getSafeErrorMessage } from "@/lib/safe-error";
 import {
   ensureVectorSearchIndex,
   listVectorSearchIndexes,
@@ -38,13 +39,12 @@ export async function POST(req: NextRequest) {
     const result = await ensureVectorSearchIndex();
     return NextResponse.json(result, { status: result.created ? 201 : 200 });
   } catch (error) {
-    const message =
-      error instanceof Error
-        ? error.message
-        : "Could not create MongoDB Vector Search index.";
+    console.error("Vector search index creation failed", {
+      message: getSafeErrorMessage(error),
+    });
     return NextResponse.json(
       {
-        error: message,
+        error: "Could not create MongoDB Vector Search index.",
         hint: "MongoDB Vector Search indexes require a deployment that supports MongoDB Search/Vector Search, such as Atlas or a compatible local deployment.",
       },
       { status: 500 }

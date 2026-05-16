@@ -3,6 +3,23 @@ import { NextResponse } from 'next/server';
 
 const baseUrl = process.env.NEXT_PUBLIC_NEST_API_BASE_URL;
 
+function redactSecrets(value: string) {
+  return value
+    .replace(/\bsk_(test|live)_[A-Za-z0-9_]+/g, 'sk_$1_[redacted]')
+    .replace(/\bpk_(test|live)_[A-Za-z0-9_]+/g, 'pk_$1_[redacted]')
+    .replace(/\bwhsec_[A-Za-z0-9_]+/g, 'whsec_[redacted]');
+}
+
+function getSafeErrorMessage(error: unknown) {
+  return error instanceof Error ? redactSecrets(error.message) : 'Unknown error';
+}
+
+function logOAuthProxyError(method: string, error: unknown) {
+  console.error(`OAuth ${method} error:`, {
+    message: getSafeErrorMessage(error),
+  });
+}
+
 /**
  * Catch-all OAuth API proxy
  * Forwards all requests to /api/oauth/* to the NestJS backend at /v1/oauth/*
@@ -60,9 +77,9 @@ export async function GET(
 
     const data = await res.json();
     return NextResponse.json(data, { status: res.status });
-  } catch (error: any) {
-    console.error('OAuth GET error:', error.message);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+  } catch (error: unknown) {
+    logOAuthProxyError('GET', error);
+    return NextResponse.json({ error: 'OAuth request failed.' }, { status: 500 });
   }
 }
 
@@ -107,9 +124,9 @@ export async function POST(
 
     const data = await res.json();
     return NextResponse.json(data, { status: res.status });
-  } catch (error: any) {
-    console.error('OAuth POST error:', error.message);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+  } catch (error: unknown) {
+    logOAuthProxyError('POST', error);
+    return NextResponse.json({ error: 'OAuth request failed.' }, { status: 500 });
   }
 }
 
@@ -153,9 +170,9 @@ export async function PUT(
 
     const data = await res.json();
     return NextResponse.json(data, { status: res.status });
-  } catch (error: any) {
-    console.error('OAuth PUT error:', error.message);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+  } catch (error: unknown) {
+    logOAuthProxyError('PUT', error);
+    return NextResponse.json({ error: 'OAuth request failed.' }, { status: 500 });
   }
 }
 
@@ -197,8 +214,8 @@ export async function DELETE(
 
     const data = await res.json();
     return NextResponse.json(data, { status: res.status });
-  } catch (error: any) {
-    console.error('OAuth DELETE error:', error.message);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+  } catch (error: unknown) {
+    logOAuthProxyError('DELETE', error);
+    return NextResponse.json({ error: 'OAuth request failed.' }, { status: 500 });
   }
 }
