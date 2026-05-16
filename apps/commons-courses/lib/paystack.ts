@@ -33,6 +33,8 @@ export type PaystackEvent = {
   };
 };
 
+export type PaystackVerifiedTransaction = PaystackEvent["data"];
+
 function getPaystackSecretKey() {
   const secretKey = process.env.PAYSTACK_SECRET_KEY;
   if (!secretKey) {
@@ -68,4 +70,23 @@ export function verifyPaystackWebhookSignature(body: string, signature: string) 
     .digest("hex");
 
   return crypto.timingSafeEqual(Buffer.from(hash), Buffer.from(signature));
+}
+
+export async function verifyPaystackTransaction(reference: string) {
+  const res = await fetch(
+    `${PAYSTACK_BASE_URL}/transaction/verify/${encodeURIComponent(reference)}`,
+    {
+      headers: {
+        Authorization: `Bearer ${getPaystackSecretKey()}`,
+      },
+      cache: "no-store",
+    }
+  );
+
+  const json = await res.json();
+  if (!res.ok || !json.status) {
+    throw new Error(json.message || "Paystack transaction verification failed.");
+  }
+
+  return json.data as PaystackVerifiedTransaction;
 }

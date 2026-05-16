@@ -244,7 +244,7 @@ export async function GET(req: NextRequest) {
         amount: Math.round(accessPrice.finalAmount * 100),
         currency: courseCurrency.toUpperCase(),
         reference: providerReference,
-        callback_url: `${baseUrl}/dashboard?payment=paystack`,
+        callback_url: `${baseUrl}/api/payments/paystack/callback`,
         channels:
           courseCurrency === "kes"
             ? ["mobile_money", "card", "bank_transfer"]
@@ -327,7 +327,7 @@ export async function GET(req: NextRequest) {
         },
       ],
       mode: "payment",
-      success_url: `${baseUrl}/dashboard?enrolled=1`,
+      success_url: `${baseUrl}/api/payments/stripe/success?session_id={CHECKOUT_SESSION_ID}`,
       cancel_url: `${baseUrl}/courses/${courseSlug}`,
       metadata: {
         userId: session.user.id,
