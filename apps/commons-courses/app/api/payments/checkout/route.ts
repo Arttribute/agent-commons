@@ -8,6 +8,7 @@ import Enrollment from "@/models/Enrollment";
 import Payment from "@/models/Payment";
 import mongoose from "mongoose";
 import { getSafeErrorMessage } from "@/lib/safe-error";
+import { recoverCompletedEnrollment } from "@/lib/payment-recovery";
 import {
   CourseAccessProgram,
   priceCourseAccess,
@@ -41,6 +42,9 @@ interface CheckoutCourse {
 
 interface ExistingEnrollment {
   currentInstallment?: number;
+  accessLevel?: AccessLevel;
+  paymentStatus?: "free" | "paid" | "partial" | "overdue";
+  status?: "active" | "completed" | "cancelled";
 }
 
 function getCourseCurrency(currency?: string) {
@@ -219,13 +223,29 @@ export async function GET(req: NextRequest) {
     userId: session.user.id,
     courseId: courseMongoId,
   }).lean();
+  const existing = existingEnrollment as ExistingEnrollment | null;
+  if (
+    existing?.status !== "cancelled" &&
+    (existing?.accessLevel === "full" ||
+      existing?.paymentStatus === "paid" ||
+      existing?.paymentStatus === "free")
+  ) {
+    return NextResponse.redirect(new URL("/dashboard?enrolled=1", req.url));
+  }
+  const recoveredEnrollment = await recoverCompletedEnrollment({
+    userId: session.user.id,
+    courseId: courseMongoId.toString(),
+  });
+  if (recoveredEnrollment) {
+    return NextResponse.redirect(new URL("/dashboard?enrolled=1", req.url));
+  }
   const nextInstallment =
     requestedPlan === "installment"
-      ? ((existingEnrollment as ExistingEnrollment | null)?.currentInstallment || 0) + 1
+      ? (existing?.currentInstallment || 0) + 1
       : undefined;
 
   if (provider === "paystack") {
-    const providerReference = `ac_${courseMongoId}_${Date.now()}_${Math.random()
+    const providerReference = `ac-${courseMongoId}-${Date.now()}-${Math.random()
       .toString(36)
       .slice(2, 8)}`;
     const subaccount =
@@ -234,7 +254,14 @@ export async function GET(req: NextRequest) {
         : undefined;
     const transactionCharge =
       subaccount && typeof dbCourse.educator?.platformFeePercent === "number"
-        ? Math.round(coursePrice * 100 * (dbCourse.educator.platformFeePercent / 100))
+        ? Math.min(
+            Math.round(accessPrice.finalAmount * 100),
+            Math.round(
+              accessPrice.finalAmount *
+                100 *
+                (dbCourse.educator.platformFeePercent / 100)
+            )
+          )
         : undefined;
 
     let paystackTransaction;
