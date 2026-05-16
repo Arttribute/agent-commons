@@ -19,6 +19,7 @@ import {
 
 interface Props {
   params: Promise<{ slug: string }>;
+  searchParams?: Promise<{ ref?: string; affiliate?: string }>;
 }
 
 interface LessonData {
@@ -62,6 +63,12 @@ interface CourseDetailData {
   instructor: string;
   tags: string[];
   modules: ModuleData[];
+  accessProgram?: {
+    discounts?: unknown[];
+    scholarships?: unknown[];
+    passes?: unknown[];
+    affiliates?: unknown[];
+  };
 }
 
 function formatCoursePrice(course: { isFree: boolean; price: number; currency?: string }) {
@@ -72,8 +79,10 @@ function formatCoursePrice(course: { isFree: boolean; price: number; currency?: 
   return `$${course.price}`;
 }
 
-export default async function CoursePage({ params }: Props) {
+export default async function CoursePage({ params, searchParams }: Props) {
   const { slug } = await params;
+  const query = searchParams ? await searchParams : {};
+  const affiliateCode = query.affiliate || query.ref;
   await connectDB();
   const course = (await Course.findOne({ slug, published: true }).lean()) as
     | CourseDetailData
@@ -160,7 +169,7 @@ export default async function CoursePage({ params }: Props) {
               {/* Sticky purchase card */}
               <aside className="min-w-0 lg:row-span-2">
                 <div className="lg:sticky lg:top-24">
-                  <PurchaseCard course={course} />
+                  <PurchaseCard course={course} affiliateCode={affiliateCode} />
                 </div>
               </aside>
 
@@ -266,7 +275,13 @@ export default async function CoursePage({ params }: Props) {
   );
 }
 
-function PurchaseCard({ course }: { course: CourseDetailData }) {
+function PurchaseCard({
+  course,
+  affiliateCode,
+}: {
+  course: CourseDetailData;
+  affiliateCode?: string;
+}) {
   const providers = course.paymentProviders || ["stripe"];
   const supportsPaystack = providers.includes("paystack");
   const supportsStripe = providers.includes("stripe");
@@ -274,6 +289,13 @@ function PurchaseCard({ course }: { course: CourseDetailData }) {
   const installmentAmount =
     course.installmentPlan?.installmentAmount ||
     Math.ceil(course.price / (course.installmentPlan?.installmentCount || 4));
+  const affiliateParam = affiliateCode
+    ? `&affiliate=${encodeURIComponent(affiliateCode)}`
+    : "";
+  const accessProgramCount =
+    (course.accessProgram?.discounts?.length || 0) +
+    (course.accessProgram?.scholarships?.length || 0) +
+    (course.accessProgram?.passes?.length || 0);
 
   return (
     <div className="w-full min-w-0 max-w-sm rounded-xl border border-slate-200 bg-white overflow-hidden shadow-sm lg:max-w-none">
@@ -294,7 +316,7 @@ function PurchaseCard({ course }: { course: CourseDetailData }) {
             isFree={course.isFree}
             checkoutUrl={`/api/payments/checkout?courseSlug=${course.slug}${
               supportsPaystack && isKes ? "&provider=paystack" : ""
-            }`}
+            }${affiliateParam}`}
             label={
               !course.isFree && supportsPaystack && isKes
                 ? "Pay with M-Pesa or card"
@@ -310,7 +332,7 @@ function PurchaseCard({ course }: { course: CourseDetailData }) {
               isFree={false}
               checkoutUrl={`/api/payments/checkout?courseSlug=${course.slug}&plan=installment${
                 supportsPaystack ? "&provider=paystack" : ""
-              }`}
+              }${affiliateParam}`}
               label={`Lipa mdogo mdogo · ${formatCoursePrice({
                 isFree: false,
                 price: installmentAmount,
@@ -327,6 +349,12 @@ function PurchaseCard({ course }: { course: CourseDetailData }) {
           >
             Prefer international card checkout?
           </Link>
+        )}
+
+        {!course.isFree && accessProgramCount > 0 && (
+          <p className="mt-3 text-xs leading-5 text-slate-500">
+            Codes are applied securely at checkout.
+          </p>
         )}
 
         <div className="mt-5 pt-4 border-t border-slate-100 space-y-2.5">

@@ -3,6 +3,11 @@
 import { FormEvent, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { CourseAgentEditor } from "@/components/educator/course-agent-editor";
+import {
+  AccessProgramEditor,
+  normalizeAccessProgramForm,
+  type AccessProgramForm,
+} from "@/components/educator/access-program-editor";
 import { defaultCourseAgents } from "@/lib/course-agent-defaults";
 import type { CourseAgentConfig } from "@/types/course-agent";
 
@@ -45,6 +50,7 @@ type CourseForm = {
       | "module_by_module"
       | "full_after_completion";
   };
+  accessProgram: AccessProgramForm;
   modules: Module[];
   agents: CourseAgentConfig[];
 };
@@ -69,6 +75,7 @@ const emptyCourse: CourseForm = {
     installmentCount: 4,
     releaseAccess: "module_by_module",
   },
+  accessProgram: normalizeAccessProgramForm(),
   modules: [
     {
       title: "Module 1",
@@ -101,6 +108,7 @@ export function CourseEditor({ slug }: { slug?: string }) {
             ...emptyCourse.installmentPlan,
             ...(c.installmentPlan || {}),
           },
+          accessProgram: normalizeAccessProgramForm(c.accessProgram),
         });
       })
       .catch(() => setError("Could not load course."));
@@ -241,6 +249,12 @@ export function CourseEditor({ slug }: { slug?: string }) {
           </label>
         </div>
       </section>
+
+      <AccessProgramEditor
+        value={course.accessProgram}
+        currency={course.currency}
+        onChange={(accessProgram) => setCourse({ ...course, accessProgram })}
+      />
 
       <CourseAgentEditor
         courseSlug={slug}

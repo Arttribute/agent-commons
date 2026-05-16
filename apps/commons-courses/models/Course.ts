@@ -19,6 +19,35 @@ export interface IModule {
   lessons: ILesson[];
 }
 
+export interface ICourseAccessCode {
+  id: string;
+  code: string;
+  label?: string;
+  active: boolean;
+  amountType?: "percent" | "fixed";
+  amount?: number;
+  maxRedemptions?: number;
+  redeemedCount: number;
+  expiresAt?: Date;
+}
+
+export interface ICourseAffiliateProgram {
+  id: string;
+  code: string;
+  name: string;
+  active: boolean;
+  commissionType: "percent" | "fixed";
+  commissionAmount: number;
+  conversions: number;
+}
+
+export interface ICourseAccessProgram {
+  discounts: ICourseAccessCode[];
+  scholarships: ICourseAccessCode[];
+  passes: ICourseAccessCode[];
+  affiliates: ICourseAffiliateProgram[];
+}
+
 export interface ICourse extends Document {
   title: string;
   slug: string;
@@ -55,6 +84,7 @@ export interface ICourse extends Document {
       | "module_by_module"
       | "full_after_completion";
   };
+  accessProgram?: ICourseAccessProgram;
   tags: string[];
   imageUrl?: string;
   modules: IModule[];
@@ -127,6 +157,52 @@ const InstallmentPlanSchema = new Schema(
   { _id: false }
 );
 
+const AccessCodeSchema = new Schema<ICourseAccessCode>(
+  {
+    id: { type: String, required: true },
+    code: { type: String, required: true, uppercase: true, trim: true },
+    label: String,
+    active: { type: Boolean, default: true },
+    amountType: {
+      type: String,
+      enum: ["percent", "fixed"],
+      default: "percent",
+    },
+    amount: { type: Number, default: 0, min: 0 },
+    maxRedemptions: { type: Number, min: 1 },
+    redeemedCount: { type: Number, default: 0, min: 0 },
+    expiresAt: Date,
+  },
+  { _id: false }
+);
+
+const AffiliateProgramSchema = new Schema<ICourseAffiliateProgram>(
+  {
+    id: { type: String, required: true },
+    code: { type: String, required: true, uppercase: true, trim: true },
+    name: { type: String, required: true },
+    active: { type: Boolean, default: true },
+    commissionType: {
+      type: String,
+      enum: ["percent", "fixed"],
+      default: "percent",
+    },
+    commissionAmount: { type: Number, default: 10, min: 0 },
+    conversions: { type: Number, default: 0, min: 0 },
+  },
+  { _id: false }
+);
+
+const AccessProgramSchema = new Schema<ICourseAccessProgram>(
+  {
+    discounts: { type: [AccessCodeSchema], default: [] },
+    scholarships: { type: [AccessCodeSchema], default: [] },
+    passes: { type: [AccessCodeSchema], default: [] },
+    affiliates: { type: [AffiliateProgramSchema], default: [] },
+  },
+  { _id: false }
+);
+
 const CourseAgentSchema = new Schema<CourseAgentConfig>(
   {
     id: { type: String, required: true },
@@ -194,6 +270,7 @@ const CourseSchema = new Schema<ICourse>(
       default: ["stripe"],
     },
     installmentPlan: InstallmentPlanSchema,
+    accessProgram: AccessProgramSchema,
     tags: [String],
     imageUrl: String,
     modules: [ModuleSchema],
@@ -226,6 +303,10 @@ CourseSchema.pre("validate", function normalizeAgents(next) {
 
 CourseSchema.index({ "agents.id": 1 });
 CourseSchema.index({ "agents.agentCommonsAgentId": 1 });
+CourseSchema.index({ "accessProgram.discounts.code": 1 });
+CourseSchema.index({ "accessProgram.scholarships.code": 1 });
+CourseSchema.index({ "accessProgram.passes.code": 1 });
+CourseSchema.index({ "accessProgram.affiliates.code": 1 });
 
 export default mongoose.models.Course ||
   mongoose.model<ICourse>("Course", CourseSchema);

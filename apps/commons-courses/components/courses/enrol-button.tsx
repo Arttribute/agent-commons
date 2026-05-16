@@ -17,6 +17,7 @@ export function EnrolButton({ courseSlug, isFree, checkoutUrl, label }: Props) {
   const [termsStatus, setTermsStatus] = useState<TermsStatus>("loading");
   const [modalOpen, setModalOpen] = useState(false);
   const [checked, setChecked] = useState(false);
+  const [accessCode, setAccessCode] = useState("");
   const [accepting, setAccepting] = useState(false);
   const [error, setError] = useState("");
 
@@ -40,10 +41,17 @@ export function EnrolButton({ courseSlug, isFree, checkoutUrl, label }: Props) {
     fetchStatus();
   }, [fetchStatus]);
 
+  const buildCheckoutUrl = useCallback(() => {
+    if (!accessCode.trim()) return checkoutUrl;
+    const separator = checkoutUrl.includes("?") ? "&" : "?";
+    return `${checkoutUrl}${separator}accessCode=${encodeURIComponent(
+      accessCode.trim()
+    )}`;
+  }, [accessCode, checkoutUrl]);
+
   const handleEnrolClick = () => {
     if (termsStatus === "accepted") {
-      // Terms already accepted — go straight to checkout
-      window.location.href = checkoutUrl;
+      window.location.href = buildCheckoutUrl();
     } else {
       setModalOpen(true);
     }
@@ -58,8 +66,7 @@ export function EnrolButton({ courseSlug, isFree, checkoutUrl, label }: Props) {
       if (!res.ok) throw new Error("Failed to record acceptance.");
       setTermsStatus("accepted");
       setModalOpen(false);
-      // Proceed to checkout after accepting
-      window.location.href = checkoutUrl;
+      window.location.href = buildCheckoutUrl();
     } catch {
       setError("Something went wrong. Please try again.");
     } finally {
@@ -89,6 +96,19 @@ export function EnrolButton({ courseSlug, isFree, checkoutUrl, label }: Props) {
 
   return (
     <>
+      {!isFree && (
+        <label className="mb-3 block">
+          <span className="text-xs font-bold text-slate-600">
+            Promo, scholarship, or pass code
+          </span>
+          <input
+            value={accessCode}
+            onChange={(event) => setAccessCode(event.target.value)}
+            placeholder="Optional"
+            className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-slate-400"
+          />
+        </label>
+      )}
       <button
         onClick={handleEnrolClick}
         className="w-full flex items-center justify-center gap-2 px-5 py-3 rounded-lg bg-slate-900 text-white text-sm font-bold hover:opacity-90 transition-opacity"

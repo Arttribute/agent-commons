@@ -7,6 +7,11 @@ import Course from "@/models/Course";
 import Enrollment from "@/models/Enrollment";
 import Payment from "@/models/Payment";
 import mongoose from "mongoose";
+import {
+  CourseAccessProgram,
+  priceCourseAccess,
+  recordAccessProgramConversion,
+} from "@/lib/course-access";
 
 type PaymentProvider = "stripe" | "paystack";
 type PaymentPlan = "one_time" | "installment";
@@ -25,6 +30,7 @@ interface CheckoutCourse {
     installmentCount?: number;
     releaseAccess?: "full_after_first_payment" | "module_by_module" | "full_after_completion";
   };
+  accessProgram?: CourseAccessProgram;
   educator?: {
     settlementMode?: "platform_rails" | "educator_direct";
     platformFeePercent?: number;
@@ -102,6 +108,8 @@ export async function GET(req: NextRequest) {
   const courseSlug = searchParams.get("courseSlug");
   const requestedProvider = searchParams.get("provider");
   const requestedPlan = searchParams.get("plan") === "installment" ? "installment" : "one_time";
+  const accessCode = searchParams.get("accessCode") || searchParams.get("code");
+  const affiliateCode = searchParams.get("affiliate") || searchParams.get("ref");
   if (!courseSlug) {
     return redirectPaymentError(req, {
       code: "missing_course",
@@ -119,11 +127,25 @@ export async function GET(req: NextRequest) {
     return redirectPaymentError(req, { code: "course_not_found", courseSlug });
   }
 
+  const courseMongoId = dbCourse._id as mongoose.Types.ObjectId;
   if (dbCourse.isFree) {
+    await Enrollment.findOneAndUpdate(
+      { userId: session.user.id, courseId: courseMongoId },
+      {
+        userId: session.user.id,
+        courseId: courseMongoId,
+        status: "active",
+        accessLevel: "full",
+        paymentStatus: "free",
+        accessSource: "free",
+        paidAmount: 0,
+        totalAmountDue: 0,
+      },
+      { upsert: true }
+    );
     return NextResponse.redirect(new URL("/dashboard", req.url));
   }
 
-  const courseMongoId = dbCourse._id as mongoose.Types.ObjectId;
   let coursePrice: number;
   try {
     coursePrice = getPlanAmount(dbCourse, requestedPlan);
@@ -135,6 +157,42 @@ export async function GET(req: NextRequest) {
       message,
     });
   }
+  const accessPrice = priceCourseAccess({
+    amount: coursePrice,
+    accessProgram: dbCourse.accessProgram,
+    accessCode,
+    affiliateCode,
+  });
+
+  if (accessPrice.freeAccess) {
+    await Enrollment.findOneAndUpdate(
+      { userId: session.user.id, courseId: courseMongoId },
+      {
+        userId: session.user.id,
+        courseId: courseMongoId,
+        status: "active",
+        accessLevel: "full",
+        paymentStatus:
+          accessPrice.accessCodeType === "discount" ? "paid" : "free",
+        paymentId: accessPrice.accessCode,
+        accessSource: accessPrice.accessCodeType,
+        accessCode: accessPrice.accessCode,
+        affiliateCode: accessPrice.affiliateCode,
+        paidAmount: 0,
+        totalAmountDue: dbCourse.price,
+        currentInstallment: 0,
+      },
+      { upsert: true }
+    );
+    await recordAccessProgramConversion({
+      courseId: courseMongoId.toString(),
+      accessCode: accessPrice.accessCode,
+      accessCodeType: accessPrice.accessCodeType,
+      affiliateCode: accessPrice.affiliateCode,
+    });
+    return NextResponse.redirect(new URL("/dashboard?enrolled=1", req.url));
+  }
+
   const courseTitle = dbCourse.title;
   const courseCurrency = getCourseCurrency(dbCourse.currency);
   const enabledProviders = dbCourse.paymentProviders || ["stripe"];
@@ -173,7 +231,7 @@ export async function GET(req: NextRequest) {
     try {
       paystackTransaction = await initializePaystackTransaction({
         email: session.user.email!,
-        amount: coursePrice * 100,
+        amount: Math.round(accessPrice.finalAmount * 100),
         currency: courseCurrency.toUpperCase(),
         reference: providerReference,
         callback_url: `${baseUrl}/dashboard?payment=paystack`,
@@ -190,6 +248,11 @@ export async function GET(req: NextRequest) {
           paymentPlan: requestedPlan,
           installmentNumber: nextInstallment,
           accessLevel: getAccessLevel(dbCourse, requestedPlan),
+          accessCode: accessPrice.accessCode,
+          accessCodeType: accessPrice.accessCodeType,
+          affiliateCode: accessPrice.affiliateCode,
+          discountAmount: accessPrice.discountAmount,
+          originalAmount: accessPrice.originalAmount,
         },
       });
     } catch (err) {
@@ -215,13 +278,24 @@ export async function GET(req: NextRequest) {
       providerReference,
       providerAccessCode: paystackTransaction.access_code,
       checkoutUrl: paystackTransaction.authorization_url,
-      amount: coursePrice,
+      originalAmount: accessPrice.originalAmount,
+      discountAmount: accessPrice.discountAmount,
+      accessCode: accessPrice.accessCode,
+      accessCodeType: accessPrice.accessCodeType,
+      affiliateCode: accessPrice.affiliateCode,
+      affiliateCommissionAmount: accessPrice.affiliateCommissionAmount,
+      amount: accessPrice.finalAmount,
       currency: courseCurrency,
       status: "pending",
       metadata: {
         courseSlug,
         installmentNumber: nextInstallment,
         accessLevel: getAccessLevel(dbCourse, requestedPlan),
+        accessCode: accessPrice.accessCode,
+        accessCodeType: accessPrice.accessCodeType,
+        affiliateCode: accessPrice.affiliateCode,
+        discountAmount: accessPrice.discountAmount,
+        originalAmount: accessPrice.originalAmount,
       },
     });
 
@@ -240,7 +314,7 @@ export async function GET(req: NextRequest) {
               name: courseTitle,
               description: "Agent Commons Courses — Lifetime access",
             },
-            unit_amount: coursePrice * 100,
+            unit_amount: Math.round(accessPrice.finalAmount * 100),
           },
           quantity: 1,
         },
@@ -254,6 +328,11 @@ export async function GET(req: NextRequest) {
         paymentPlan: requestedPlan,
         installmentNumber: nextInstallment ?? null,
         accessLevel: getAccessLevel(dbCourse, requestedPlan),
+        accessCode: accessPrice.accessCode || "",
+        accessCodeType: accessPrice.accessCodeType || "",
+        affiliateCode: accessPrice.affiliateCode || "",
+        discountAmount: String(accessPrice.discountAmount),
+        originalAmount: String(accessPrice.originalAmount),
       },
     });
   } catch (err) {
@@ -278,13 +357,24 @@ export async function GET(req: NextRequest) {
       stripeSessionId: stripeSession.id,
       providerReference: stripeSession.id,
       checkoutUrl: stripeSession.url || undefined,
-      amount: coursePrice,
+      originalAmount: accessPrice.originalAmount,
+      discountAmount: accessPrice.discountAmount,
+      accessCode: accessPrice.accessCode,
+      accessCodeType: accessPrice.accessCodeType,
+      affiliateCode: accessPrice.affiliateCode,
+      affiliateCommissionAmount: accessPrice.affiliateCommissionAmount,
+      amount: accessPrice.finalAmount,
       currency: courseCurrency,
       status: "pending",
       metadata: {
         courseSlug,
         installmentNumber: nextInstallment,
         accessLevel: getAccessLevel(dbCourse, requestedPlan),
+        accessCode: accessPrice.accessCode,
+        accessCodeType: accessPrice.accessCodeType,
+        affiliateCode: accessPrice.affiliateCode,
+        discountAmount: accessPrice.discountAmount,
+        originalAmount: accessPrice.originalAmount,
       },
     }).catch(() => {});
   }
