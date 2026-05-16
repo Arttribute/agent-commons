@@ -238,7 +238,7 @@ export default function LearnPage({ params }: Props) {
     totalLessons > 0 ? Math.round((completedLessons.length / totalLessons) * 100) : 0;
 
   return (
-    <div className="min-h-screen bg-white flex flex-col">
+    <div className="h-dvh bg-white flex flex-col overflow-hidden">
       <Nav />
       <CourseAgentDrawer
         courseSlug={slug}
@@ -262,7 +262,7 @@ export default function LearnPage({ params }: Props) {
         }}
       />
 
-      <div className="flex flex-1 pt-16">
+      <div className="flex flex-1 min-h-0 pt-16">
         {/* ── Sidebar ── */}
         {/* Mobile overlay */}
         {sidebarOpen && (
@@ -274,7 +274,7 @@ export default function LearnPage({ params }: Props) {
 
         <aside
           className={cn(
-            "fixed lg:static z-50 top-0 left-0 h-full w-72 bg-white border-r border-slate-100 flex flex-col transition-transform duration-200 pt-16 lg:pt-0",
+            "fixed lg:static z-50 top-0 left-0 h-dvh lg:h-full w-72 bg-white border-r border-slate-100 flex flex-col transition-transform duration-200 pt-16 lg:pt-0",
             sidebarOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0",
           )}
         >
@@ -314,7 +314,7 @@ export default function LearnPage({ params }: Props) {
           </div>
 
           {/* Module + lesson list */}
-          <div className="flex-1 overflow-y-auto py-2">
+          <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain py-2">
             {course.modules.map((mod, mi) => (
               <div key={mi} className="mb-1">
                 <div className="px-4 py-2 text-[10px] font-bold tracking-widest uppercase text-slate-400">
@@ -366,7 +366,7 @@ export default function LearnPage({ params }: Props) {
         </aside>
 
         {/* ── Main content ── */}
-        <main className="flex-1 min-w-0 flex flex-col">
+        <main className="flex-1 min-w-0 min-h-0 flex flex-col">
           {/* Top bar */}
           <div className="flex items-center gap-3 px-6 py-3 border-b border-slate-100 bg-white sticky top-16 z-10">
             <button
@@ -387,7 +387,7 @@ export default function LearnPage({ params }: Props) {
           </div>
 
           {/* Lesson body */}
-          <div className="flex-1 overflow-y-auto">
+          <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain">
             <div className="max-w-3xl mx-auto px-6 py-10">
               {/* Module / lesson header */}
               <div className="mb-8">

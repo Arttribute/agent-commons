@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { connectDB } from "@/lib/db";
+import { sendEnrollmentEmail } from "@/lib/email/resend";
 import Enrollment from "@/models/Enrollment";
 import Course from "@/models/Course";
 
@@ -54,6 +55,16 @@ export async function POST(req: NextRequest) {
       courseId,
       status: "active",
     });
+    await sendEnrollmentEmail(
+      { name: session.user.name, email: session.user.email },
+      {
+        title: course.title,
+        slug: course.slug,
+        instructor: course.instructor,
+        duration: course.duration,
+        settings: course.emailSettings,
+      }
+    );
 
     return NextResponse.json(enrollment, { status: 201 });
   } catch {

@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireEducatorCourse } from "@/lib/educator-auth";
+import { sendAssignmentNotification } from "@/lib/email/resend";
 import Assignment from "@/models/Assignment";
 import Course from "@/models/Course";
+import Enrollment from "@/models/Enrollment";
 
 async function getOwnedAssignment(id: string) {
   const assignment = await Assignment.findById(id);
@@ -14,7 +16,9 @@ async function getOwnedAssignment(id: string) {
       assignment: null,
     };
   }
-  const course = await Course.findById(assignment.courseId).select("slug");
+  const course = await Course.findById(assignment.courseId).select(
+    "title slug emailSettings"
+  );
   if (!course) {
     return {
       error: NextResponse.json({ error: "Course not found." }, { status: 404 }),
@@ -23,7 +27,7 @@ async function getOwnedAssignment(id: string) {
   }
   const result = await requireEducatorCourse(course.slug);
   if (result.error) return result;
-  return { error: null, assignment };
+  return { error: null, assignment, course };
 }
 
 export async function PUT(
@@ -53,6 +57,35 @@ export async function PUT(
     published: body.published !== false,
   });
   await result.assignment.save();
+  if (result.assignment.published && result.course) {
+    const enrollments = await Enrollment.find({
+      courseId: result.assignment.courseId,
+      status: "active",
+    })
+      .populate("userId", "name email")
+      .lean();
+    await sendAssignmentNotification({
+      recipients: enrollments.map((enrollment) => {
+        const user = enrollment.userId as unknown as {
+          name?: string;
+          email?: string;
+        };
+        return { name: user?.name, email: user?.email };
+      }),
+      course: {
+        title: result.course.title,
+        slug: result.course.slug,
+        settings: result.course.emailSettings,
+      },
+      assignment: {
+        title: result.assignment.title,
+        dueAt: result.assignment.dueAt,
+        points: result.assignment.points,
+        instructions: result.assignment.instructions,
+      },
+      event: "updated",
+    });
+  }
 
   return NextResponse.json({ assignment: result.assignment });
 }

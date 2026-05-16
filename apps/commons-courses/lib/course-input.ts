@@ -81,6 +81,16 @@ export type CourseInput = {
     passes?: AccessCodeInput[];
     affiliates?: AffiliateInput[];
   };
+  emailSettings?: {
+    welcomeEnabled?: boolean;
+    enrollmentEnabled?: boolean;
+    assignmentCreatedEnabled?: boolean;
+    assignmentUpdatedEnabled?: boolean;
+    courseUpdateEnabled?: boolean;
+    agentManaged?: boolean;
+    replyTo?: string;
+    customIntro?: string;
+  };
 };
 
 function makeId(prefix: string, code?: string) {
@@ -241,5 +251,17 @@ export function normalizeCourseInput(input: CourseInput) {
         input.installmentPlan?.releaseAccess || "module_by_module",
     },
     accessProgram: normalizeAccessProgramInput(input.accessProgram),
+    emailSettings: {
+      welcomeEnabled: input.emailSettings?.welcomeEnabled !== false,
+      enrollmentEnabled: input.emailSettings?.enrollmentEnabled !== false,
+      assignmentCreatedEnabled:
+        input.emailSettings?.assignmentCreatedEnabled !== false,
+      assignmentUpdatedEnabled:
+        input.emailSettings?.assignmentUpdatedEnabled !== false,
+      courseUpdateEnabled: Boolean(input.emailSettings?.courseUpdateEnabled),
+      agentManaged: Boolean(input.emailSettings?.agentManaged),
+      replyTo: input.emailSettings?.replyTo?.trim() || undefined,
+      customIntro: input.emailSettings?.customIntro?.trim() || undefined,
+    },
   };
 }

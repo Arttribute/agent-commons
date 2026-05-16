@@ -1,7 +1,9 @@
 import Course from "@/models/Course";
 import Enrollment from "@/models/Enrollment";
 import Payment from "@/models/Payment";
+import User from "@/models/User";
 import { recordAccessProgramConversion } from "@/lib/course-access";
+import { sendEnrollmentEmail } from "@/lib/email/resend";
 import { recordSaleLedger } from "@/lib/payout-ledger";
 
 type FulfillmentParams = {
@@ -20,6 +22,11 @@ type FulfillmentParams = {
 type ExistingEnrollment = {
   paidAmount?: number;
   currentInstallment?: number;
+};
+
+type EmailUser = {
+  name?: string;
+  email?: string;
 };
 
 function getMetadataString(metadata: unknown, key: string) {
@@ -108,6 +115,22 @@ export async function fulfillCompletedPayment(params: FulfillmentParams) {
     },
     { upsert: true }
   );
+
+  if (!existingEnrollment) {
+    const user = (await User.findById(userId)
+      .select("name email")
+      .lean()) as EmailUser | null;
+    await sendEnrollmentEmail(
+      { name: user?.name, email: user?.email },
+      {
+        title: course.title,
+        slug: course.slug,
+        instructor: course.instructor,
+        duration: course.duration,
+        settings: course.emailSettings,
+      }
+    );
+  }
 
   if (updatedPayment) {
     await recordAccessProgramConversion({
