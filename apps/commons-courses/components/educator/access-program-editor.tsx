@@ -2,6 +2,7 @@
 
 import { AccessCodeList } from "@/components/educator/access-code-list";
 import { AffiliateList } from "@/components/educator/affiliate-list";
+import { EarlyPaymentDiscountList } from "@/components/educator/early-payment-discount-list";
 import type { AccessProgramForm } from "@/components/educator/access-program-types";
 export type { AccessProgramForm } from "@/components/educator/access-program-types";
 
@@ -13,6 +14,7 @@ type Props = {
 
 const emptyAccessProgram: AccessProgramForm = {
   discounts: [],
+  earlyPaymentDiscounts: [],
   scholarships: [],
   passes: [],
   affiliates: [],
@@ -23,6 +25,7 @@ export function normalizeAccessProgramForm(value?: Partial<AccessProgramForm>) {
     ...emptyAccessProgram,
     ...(value || {}),
     discounts: value?.discounts || [],
+    earlyPaymentDiscounts: value?.earlyPaymentDiscounts || [],
     scholarships: value?.scholarships || [],
     passes: value?.passes || [],
     affiliates: value?.affiliates || [],
@@ -56,6 +59,11 @@ export function AccessProgramEditor({ value, currency, onChange }: Props) {
           items={accessProgram.discounts}
           defaultAmount={10}
           onChange={(items) => setList("discounts", items)}
+        />
+        <EarlyPaymentDiscountList
+          currency={currency}
+          items={accessProgram.earlyPaymentDiscounts}
+          onChange={(items) => setList("earlyPaymentDiscounts", items)}
         />
         <AccessCodeList
           title="Scholarships"

@@ -15,7 +15,7 @@ export interface IPayment extends Document {
   originalAmount?: number;
   discountAmount?: number;
   accessCode?: string;
-  accessCodeType?: "discount" | "scholarship" | "pass";
+  accessCodeType?: "discount" | "early_payment" | "scholarship" | "pass";
   affiliateCode?: string;
   affiliateCommissionAmount?: number;
   amount: number;
@@ -56,7 +56,7 @@ const PaymentSchema = new Schema<IPayment>(
     accessCode: String,
     accessCodeType: {
       type: String,
-      enum: ["discount", "scholarship", "pass"],
+      enum: ["discount", "early_payment", "scholarship", "pass"],
     },
     affiliateCode: String,
     affiliateCommissionAmount: Number,
@@ -72,7 +72,13 @@ const PaymentSchema = new Schema<IPayment>(
   { timestamps: true }
 );
 
-PaymentSchema.index({ stripeSessionId: 1 }, { unique: true, sparse: true });
+PaymentSchema.index(
+  { stripeSessionId: 1 },
+  {
+    unique: true,
+    partialFilterExpression: { stripeSessionId: { $type: "string" } },
+  }
+);
 
 export default mongoose.models.Payment ||
   mongoose.model<IPayment>("Payment", PaymentSchema);

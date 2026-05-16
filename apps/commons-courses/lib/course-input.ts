@@ -23,6 +23,17 @@ export type AffiliateInput = {
   conversions?: number;
 };
 
+export type EarlyPaymentDiscountInput = {
+  id?: string;
+  label?: string;
+  active?: boolean;
+  amountType?: "percent" | "fixed";
+  amount?: number;
+  deadline?: string | Date;
+  maxRedemptions?: number;
+  redeemedCount?: number;
+};
+
 export type CourseInput = {
   title?: string;
   slug?: string;
@@ -65,6 +76,7 @@ export type CourseInput = {
   };
   accessProgram?: {
     discounts?: AccessCodeInput[];
+    earlyPaymentDiscounts?: EarlyPaymentDiscountInput[];
     scholarships?: AccessCodeInput[];
     passes?: AccessCodeInput[];
     affiliates?: AffiliateInput[];
@@ -149,9 +161,44 @@ function normalizeAffiliates(items: AffiliateInput[] | undefined) {
     .filter(Boolean);
 }
 
+function normalizeEarlyPaymentDiscounts(
+  items: EarlyPaymentDiscountInput[] | undefined
+) {
+  if (!Array.isArray(items)) return [];
+
+  return items
+    .map((item) => {
+      const deadline = item.deadline ? new Date(item.deadline) : null;
+      if (!deadline || Number.isNaN(deadline.getTime())) return null;
+      return {
+        id: item.id || makeId("early", item.label || deadline.toISOString()),
+        label: item.label?.trim(),
+        active: item.active !== false,
+        amountType: item.amountType === "fixed" ? "fixed" : "percent",
+        amount:
+          typeof item.amount === "number" && Number.isFinite(item.amount)
+            ? Math.max(0, item.amount)
+            : 10,
+        deadline,
+        maxRedemptions:
+          typeof item.maxRedemptions === "number" && item.maxRedemptions > 0
+            ? Math.floor(item.maxRedemptions)
+            : undefined,
+        redeemedCount:
+          typeof item.redeemedCount === "number" && item.redeemedCount > 0
+            ? Math.floor(item.redeemedCount)
+            : 0,
+      };
+    })
+    .filter(Boolean);
+}
+
 export function normalizeAccessProgramInput(input: CourseInput["accessProgram"]) {
   return {
     discounts: normalizeAccessCodes(input?.discounts, "discount", "percent", 10),
+    earlyPaymentDiscounts: normalizeEarlyPaymentDiscounts(
+      input?.earlyPaymentDiscounts
+    ),
     scholarships: normalizeAccessCodes(
       input?.scholarships,
       "scholarship",

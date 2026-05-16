@@ -1,6 +1,10 @@
 import Course from "@/models/Course";
 
-export type AccessCodeKind = "discount" | "scholarship" | "pass";
+export type AccessCodeKind =
+  | "discount"
+  | "early_payment"
+  | "scholarship"
+  | "pass";
 export type PaymentPlan = "one_time" | "installment";
 
 export type AccessCodeRule = {
@@ -25,8 +29,20 @@ export type AffiliateRule = {
   conversions?: number;
 };
 
+export type EarlyPaymentDiscountRule = {
+  id: string;
+  label?: string;
+  active?: boolean;
+  amountType?: "percent" | "fixed";
+  amount?: number;
+  deadline?: Date | string;
+  maxRedemptions?: number;
+  redeemedCount?: number;
+};
+
 export type CourseAccessProgram = {
   discounts?: AccessCodeRule[];
+  earlyPaymentDiscounts?: EarlyPaymentDiscountRule[];
   scholarships?: AccessCodeRule[];
   passes?: AccessCodeRule[];
   affiliates?: AffiliateRule[];
@@ -58,6 +74,15 @@ function codeIsRedeemable(rule: AccessCodeRule) {
     return false;
   }
   return true;
+}
+
+function earlyDiscountIsRedeemable(rule: EarlyPaymentDiscountRule, now: Date) {
+  if (rule.active === false) return false;
+  if (rule.maxRedemptions && (rule.redeemedCount || 0) >= rule.maxRedemptions) {
+    return false;
+  }
+  if (!rule.deadline) return false;
+  return new Date(rule.deadline).getTime() >= now.getTime();
 }
 
 function findAccessCode(program: CourseAccessProgram | undefined, code?: string | null) {
@@ -93,6 +118,13 @@ function calculateDiscount(amount: number, rule: AccessCodeRule) {
   return Math.min(amount, amount * (Math.max(0, rule.amount || 0) / 100));
 }
 
+function calculateEarlyDiscount(amount: number, rule: EarlyPaymentDiscountRule) {
+  if ((rule.amountType || "percent") === "fixed") {
+    return Math.min(amount, Math.max(0, rule.amount || 0));
+  }
+  return Math.min(amount, amount * (Math.max(0, rule.amount || 0) / 100));
+}
+
 function calculateCommission(amount: number, affiliate: AffiliateRule) {
   if (affiliate.commissionType === "fixed") {
     return Math.max(0, affiliate.commissionAmount || 0);
@@ -105,11 +137,38 @@ export function priceCourseAccess(params: {
   accessProgram?: CourseAccessProgram;
   accessCode?: string | null;
   affiliateCode?: string | null;
+  now?: Date;
 }): AccessPriceResult {
   const originalAmount = Math.max(0, params.amount);
+  const now = params.now || new Date();
   const access = findAccessCode(params.accessProgram, params.accessCode);
   const affiliate = findAffiliate(params.accessProgram, params.affiliateCode);
-  const discountAmount = access ? calculateDiscount(originalAmount, access.rule) : 0;
+  const earlyDiscounts = params.accessProgram?.earlyPaymentDiscounts || [];
+  const earlyCandidates = earlyDiscounts
+    .filter((rule) => earlyDiscountIsRedeemable(rule, now))
+    .map((rule) => ({
+      kind: "early_payment" as const,
+      id: rule.id,
+      label: rule.label,
+      discountAmount: calculateEarlyDiscount(originalAmount, rule),
+    }));
+  const candidates = [
+    ...(access
+      ? [
+          {
+            kind: access.kind,
+            id: access.rule.code,
+            label: access.rule.label,
+            discountAmount: calculateDiscount(originalAmount, access.rule),
+          },
+        ]
+      : []),
+    ...earlyCandidates,
+  ];
+  const bestDiscount = candidates.sort(
+    (a, b) => b.discountAmount - a.discountAmount
+  )[0];
+  const discountAmount = bestDiscount?.discountAmount || 0;
   const finalAmount = Math.max(0, originalAmount - discountAmount);
   const affiliateCommissionAmount = affiliate
     ? calculateCommission(finalAmount, affiliate)
@@ -119,9 +178,9 @@ export function priceCourseAccess(params: {
     originalAmount,
     finalAmount,
     discountAmount,
-    accessCode: access?.rule.code,
-    accessCodeType: access?.kind,
-    accessLabel: access?.rule.label,
+    accessCode: bestDiscount?.id,
+    accessCodeType: bestDiscount?.kind,
+    accessLabel: bestDiscount?.label,
     affiliateCode: affiliate?.code,
     affiliateName: affiliate?.name,
     affiliateCommissionAmount,
@@ -138,12 +197,9 @@ export async function recordAccessProgramConversion(params: {
   const updates: Record<string, number> = {};
   const arrayFilters: Record<string, string | undefined>[] = [];
   if (params.accessCode && params.accessCodeType) {
-    const field =
-      params.accessCodeType === "scholarship"
-        ? "scholarships"
-        : `${params.accessCodeType}s`;
+    const field = getAccessProgramField(params.accessCodeType);
     updates[`accessProgram.${field}.$[access].redeemedCount`] = 1;
-    arrayFilters.push({ "access.code": params.accessCode });
+    arrayFilters.push({ [getAccessProgramMatchField(params.accessCodeType)]: params.accessCode });
   }
   if (params.affiliateCode) {
     updates["accessProgram.affiliates.$[affiliate].conversions"] = 1;
@@ -156,4 +212,14 @@ export async function recordAccessProgramConversion(params: {
     { $inc: updates },
     { arrayFilters }
   );
+}
+
+function getAccessProgramField(type: AccessCodeKind) {
+  if (type === "scholarship") return "scholarships";
+  if (type === "early_payment") return "earlyPaymentDiscounts";
+  return `${type}s`;
+}
+
+function getAccessProgramMatchField(type: AccessCodeKind) {
+  return type === "early_payment" ? "access.id" : "access.code";
 }
