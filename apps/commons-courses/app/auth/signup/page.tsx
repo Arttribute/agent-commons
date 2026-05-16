@@ -1,15 +1,18 @@
 "use client";
 
-import { useState } from "react";
+import { Suspense, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
+import { signIn } from "next-auth/react";
 import { BookOpen, Loader2 } from "lucide-react";
 
 const inputCls =
   "w-full px-3.5 py-2.5 rounded-lg border border-slate-200 text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-300 focus:border-slate-400 transition-colors";
 
-export default function SignUpPage() {
+function SignUpForm() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const callbackUrl = searchParams.get("callbackUrl") || "/dashboard";
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -24,7 +27,7 @@ export default function SignUpPage() {
     const res = await fetch("/api/auth/register", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name, email, password }),
+      body: JSON.stringify({ name, email, password, callbackUrl }),
     });
 
     const data = await res.json();
@@ -33,8 +36,14 @@ export default function SignUpPage() {
     if (!res.ok) {
       setError(data.error || "Something went wrong.");
     } else {
-      router.push("/auth/signin?registered=1");
+      router.push(
+        `/auth/signin?registered=1&callbackUrl=${encodeURIComponent(callbackUrl)}`
+      );
     }
+  };
+
+  const handleGoogle = () => {
+    signIn("google", { callbackUrl });
   };
 
   return (
@@ -60,8 +69,24 @@ export default function SignUpPage() {
           Create your account
         </h1>
         <p className="text-sm text-slate-500 text-center mb-8">
-          Start learning AI agents for free
+          Create an account and continue straight to your course
         </p>
+
+        <button
+          type="button"
+          onClick={handleGoogle}
+          className="mb-4 flex w-full items-center justify-center gap-2 rounded-lg border border-slate-200 px-5 py-2.5 text-sm font-bold text-slate-800 hover:bg-slate-50"
+        >
+          Continue with Google
+        </button>
+
+        <div className="mb-4 flex items-center gap-3">
+          <div className="h-px flex-1 bg-slate-200" />
+          <span className="text-xs font-bold uppercase tracking-wide text-slate-400">
+            Or
+          </span>
+          <div className="h-px flex-1 bg-slate-200" />
+        </div>
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
@@ -123,7 +148,7 @@ export default function SignUpPage() {
         <p className="text-center text-sm text-slate-500 mt-6">
           Already have an account?{" "}
           <Link
-            href="/auth/signin"
+            href={`/auth/signin?callbackUrl=${encodeURIComponent(callbackUrl)}`}
             className="font-bold text-slate-900"
           >
             Sign in
@@ -136,5 +161,13 @@ export default function SignUpPage() {
         </p>
       </div>
     </div>
+  );
+}
+
+export default function SignUpPage() {
+  return (
+    <Suspense>
+      <SignUpForm />
+    </Suspense>
   );
 }

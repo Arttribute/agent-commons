@@ -120,6 +120,71 @@ export async function sendWelcomeEmail(user: Recipient) {
   });
 }
 
+export async function sendVerificationEmail({
+  user,
+  token,
+  callbackUrl,
+}: {
+  user: Recipient;
+  token: string;
+  callbackUrl?: string;
+}) {
+  if (!user.email) return;
+  const verifyUrl = new URL("/api/auth/verify-email", appUrl);
+  verifyUrl.searchParams.set("token", token);
+  if (callbackUrl) verifyUrl.searchParams.set("callbackUrl", callbackUrl);
+
+  await sendEmail({
+    to: [user.email],
+    subject: "Verify your CommonLab email",
+    react: (
+      <CommonsEmail
+        preview="Verify your email to finish setting up CommonLab."
+        eyebrow="Email verification"
+        title="Confirm your email"
+        intro="One quick check and your CommonLab account is ready for course enrollment, assignments, and learning updates."
+        action={{ label: "Verify email", href: verifyUrl.toString() }}
+      >
+        <Paragraph>
+          This link expires soon. If you did not create a CommonLab account, you
+          can ignore this email.
+        </Paragraph>
+      </CommonsEmail>
+    ),
+  });
+}
+
+export async function sendPasswordResetEmail({
+  user,
+  token,
+}: {
+  user: Recipient;
+  token: string;
+}) {
+  if (!user.email) return;
+  const resetUrl = new URL("/auth/reset-password", appUrl);
+  resetUrl.searchParams.set("token", token);
+
+  await sendEmail({
+    to: [user.email],
+    subject: "Reset your CommonLab password",
+    react: (
+      <CommonsEmail
+        preview="Reset your CommonLab password."
+        eyebrow="Password reset"
+        title="Reset your password"
+        intro="Use this secure link to choose a new password for your CommonLab account."
+        action={{ label: "Reset password", href: resetUrl.toString() }}
+      >
+        <Paragraph>
+          This link expires soon. If you did not request a password reset, you
+          can ignore this email.
+        </Paragraph>
+      </CommonsEmail>
+    ),
+  });
+}
+
 export async function sendEnrollmentEmail(user: Recipient, course: CourseEmailContext) {
   if (!course.settings?.enrollmentEnabled || !user.email) return;
 
