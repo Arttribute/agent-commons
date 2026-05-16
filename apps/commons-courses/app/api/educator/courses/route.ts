@@ -1,20 +1,31 @@
 import { NextRequest, NextResponse } from "next/server";
+import { auth } from "@/lib/auth";
 import { connectDB } from "@/lib/db";
-import { requireEducator, slugifyCourseTitle } from "@/lib/educator-auth";
+import {
+  buildManagedCoursesFilter,
+  requireEducator,
+  slugifyCourseTitle,
+} from "@/lib/educator-auth";
 import { normalizeCourseInput } from "@/lib/course-input";
 import { indexCourseForSearch } from "@/lib/search-indexers";
 import Course from "@/models/Course";
 import EducatorProfile from "@/models/EducatorProfile";
 
 export async function GET() {
-  const authResult = await requireEducator();
-  if (authResult.error) return authResult.error;
+  const session = await auth();
+  if (!session?.user?.id) {
+    return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
+  }
 
   await connectDB();
   const filter =
-    authResult.session.role === "admin"
+    session.user.role === "admin"
       ? {}
-      : { "educator.userId": authResult.session.userId };
+      : buildManagedCoursesFilter({
+          userId: session.user.id,
+          email: session.user.email,
+          role: session.user.role,
+        });
   const courses = await Course.find(filter).sort({ updatedAt: -1 }).lean();
 
   return NextResponse.json({ courses });

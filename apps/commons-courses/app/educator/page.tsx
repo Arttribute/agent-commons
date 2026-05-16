@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import Link from "next/link";
 import { auth } from "@/lib/auth";
 import { connectDB } from "@/lib/db";
+import { buildManagedCoursesFilter } from "@/lib/educator-auth";
 import Course from "@/models/Course";
 import EducatorProfile from "@/models/EducatorProfile";
 import Payment from "@/models/Payment";
@@ -15,14 +16,23 @@ export default async function EducatorDashboardPage() {
   if (!session?.user?.id) redirect("/auth/signin?callbackUrl=/educator");
 
   await connectDB();
+  const sharedCourseFilter = buildManagedCoursesFilter({
+    userId: session.user.id,
+    email: session.user.email,
+    role: session.user.role,
+  });
+  const sharedCourseCount =
+    session.user.role === "admin"
+      ? 0
+      : await Course.countDocuments(sharedCourseFilter);
   const profile = await EducatorProfile.findOne({ userId: session.user.id }).lean();
-  if (!profile && session.user.role !== "admin") {
+  if (!profile && session.user.role !== "admin" && sharedCourseCount === 0) {
     redirect("/educator/settings");
   }
 
-  const courseFilter =
-    session.user.role === "admin" ? {} : { "educator.userId": session.user.id };
-  const courses = await Course.find(courseFilter).sort({ updatedAt: -1 }).lean();
+  const courses = await Course.find(
+    session.user.role === "admin" ? {} : sharedCourseFilter
+  ).sort({ updatedAt: -1 }).lean();
   const courseIds = courses.map((course) => course._id);
   const [enrollmentCount, payments] = await Promise.all([
     Enrollment.countDocuments({ courseId: { $in: courseIds } }),

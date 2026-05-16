@@ -53,11 +53,7 @@ export async function buildSearchScope({
     };
   }
 
-  const sessionRole = session.user.role || "learner";
-  const requestedRole =
-    role === "educator" && (sessionRole === "educator" || sessionRole === "admin")
-      ? "educator"
-      : "learner";
+  const requestedRole = role === "educator" ? "educator" : "learner";
 
   if (requestedRole === "educator") {
     const result = await requireEducatorCourse(courseSlug);

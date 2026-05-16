@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { normalizeCourseInput } from "@/lib/course-input";
-import { requireEducatorCourse, slugifyCourseTitle } from "@/lib/educator-auth";
+import {
+  canManageCourseCollaborators,
+  requireEducatorCourse,
+  slugifyCourseTitle,
+} from "@/lib/educator-auth";
 import { indexCourseForSearch } from "@/lib/search-indexers";
 
 export async function GET(
@@ -42,6 +46,9 @@ export async function DELETE(
   const { slug } = await params;
   const result = await requireEducatorCourse(slug);
   if (result.error) return result.error;
+  if (!canManageCourseCollaborators(result.course, result.session)) {
+    return NextResponse.json({ error: "Forbidden." }, { status: 403 });
+  }
 
   await result.course.deleteOne();
   return NextResponse.json({ success: true });

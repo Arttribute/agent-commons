@@ -3,6 +3,7 @@
 import { FormEvent, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { CourseAgentEditor } from "@/components/educator/course-agent-editor";
+import { CourseCollaborators } from "@/components/educator/course-collaborators";
 import {
   AccessProgramEditor,
   normalizeAccessProgramForm,
@@ -146,8 +147,12 @@ export function CourseEditor({ slug }: { slug?: string }) {
     }
     setSaving(true);
     setError("");
+    const courseForPayload = { ...course } as CourseForm & {
+      collaborators?: unknown;
+    };
+    delete courseForPayload.collaborators;
     const payload = {
-      ...course,
+      ...courseForPayload,
       tags: course.tagsText
         .split(",")
         .map((tag) => tag.trim())
@@ -383,6 +388,8 @@ export function CourseEditor({ slug }: { slug?: string }) {
         agents={course.agents}
         onChange={(agents) => setCourse({ ...course, agents })}
       />
+
+      <CourseCollaborators slug={slug} />
 
       <section className="space-y-4">
         <div className="flex items-center justify-between">

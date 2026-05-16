@@ -71,6 +71,17 @@ export interface ICourseEmailSettings {
   customIntro?: string;
 }
 
+export interface ICourseCollaborator {
+  id: string;
+  userId?: mongoose.Types.ObjectId;
+  email: string;
+  name?: string;
+  role: "co_owner" | "editor";
+  invitedBy?: mongoose.Types.ObjectId;
+  invitedAt: Date;
+  lastInvitedAt?: Date;
+}
+
 export interface ICourse extends Document {
   title: string;
   slug: string;
@@ -109,6 +120,7 @@ export interface ICourse extends Document {
   };
   accessProgram?: ICourseAccessProgram;
   emailSettings?: ICourseEmailSettings;
+  collaborators: ICourseCollaborator[];
   tags: string[];
   imageUrl?: string;
   modules: IModule[];
@@ -263,6 +275,24 @@ const CourseEmailSettingsSchema = new Schema<ICourseEmailSettings>(
   { _id: false }
 );
 
+const CourseCollaboratorSchema = new Schema<ICourseCollaborator>(
+  {
+    id: { type: String, required: true },
+    userId: { type: Schema.Types.ObjectId, ref: "User" },
+    email: { type: String, required: true, lowercase: true, trim: true },
+    name: { type: String, trim: true },
+    role: {
+      type: String,
+      enum: ["co_owner", "editor"],
+      default: "editor",
+    },
+    invitedBy: { type: Schema.Types.ObjectId, ref: "User" },
+    invitedAt: { type: Date, default: Date.now },
+    lastInvitedAt: Date,
+  },
+  { _id: false }
+);
+
 const CourseAgentSchema = new Schema<CourseAgentConfig>(
   {
     id: { type: String, required: true },
@@ -335,6 +365,7 @@ const CourseSchema = new Schema<ICourse>(
       type: CourseEmailSettingsSchema,
       default: () => ({}),
     },
+    collaborators: { type: [CourseCollaboratorSchema], default: [] },
     tags: [String],
     imageUrl: String,
     modules: [ModuleSchema],
@@ -367,6 +398,8 @@ CourseSchema.pre("validate", function normalizeAgents(next) {
 
 CourseSchema.index({ "agents.id": 1 });
 CourseSchema.index({ "agents.agentCommonsAgentId": 1 });
+CourseSchema.index({ "collaborators.userId": 1 });
+CourseSchema.index({ "collaborators.email": 1 });
 CourseSchema.index({ "accessProgram.discounts.code": 1 });
 CourseSchema.index({ "accessProgram.earlyPaymentDiscounts.deadline": 1 });
 CourseSchema.index({ "accessProgram.scholarships.code": 1 });

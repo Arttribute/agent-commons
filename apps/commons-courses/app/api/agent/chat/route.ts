@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { connectDB } from "@/lib/db";
+import { buildManagedCoursesFilter } from "@/lib/educator-auth";
 import { runGeneralAgent } from "@/lib/general-agent-runtime";
 import {
   courseEducatorsKey,
@@ -56,7 +57,11 @@ export async function POST(req: NextRequest) {
   const educatorCourses = (await Course.find(
     session.user.role === "admin"
       ? {}
-      : { "educator.userId": session.user.id }
+      : buildManagedCoursesFilter({
+          userId: session.user.id,
+          email: session.user.email,
+          role: session.user.role,
+        })
   )
     .select("_id title slug")
     .sort({ updatedAt: -1 })

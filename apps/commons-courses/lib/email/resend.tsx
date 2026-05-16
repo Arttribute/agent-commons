@@ -212,3 +212,47 @@ export async function sendAssignmentNotification({
     )
   );
 }
+
+export async function sendCourseCollaboratorInvite({
+  recipient,
+  course,
+  inviterName,
+  role,
+}: {
+  recipient: Recipient;
+  course: CourseEmailContext;
+  inviterName?: string | null;
+  role: "co_owner" | "editor";
+}) {
+  if (!recipient.email) return;
+
+  await sendEmail({
+    to: [recipient.email],
+    subject: `You're invited to collaborate on ${course.title}`,
+    replyTo: course.settings?.replyTo,
+    react: (
+      <CommonsEmail
+        preview={`You've been invited to help manage ${course.title} on CommonLab.`}
+        eyebrow="Course collaboration"
+        title="You're invited to collaborate"
+        intro={`${inviterName || "A course owner"} invited you to help manage ${course.title} on CommonLab.`}
+        action={{
+          label: "Open course",
+          href: absoluteUrl(`/educator/courses/${course.slug}/edit`),
+        }}
+      >
+        <DetailList
+          items={[
+            ["Course", course.title],
+            ["Role", role === "co_owner" ? "Co-owner" : "Editor"],
+            ["Instructor", course.instructor],
+          ]}
+        />
+        <Paragraph>
+          Sign in with this email address to access the course from your
+          educator console.
+        </Paragraph>
+      </CommonsEmail>
+    ),
+  });
+}
