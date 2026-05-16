@@ -51,6 +51,16 @@ type CourseForm = {
       | "full_after_completion";
   };
   accessProgram: AccessProgramForm;
+  emailSettings: {
+    welcomeEnabled: boolean;
+    enrollmentEnabled: boolean;
+    assignmentCreatedEnabled: boolean;
+    assignmentUpdatedEnabled: boolean;
+    courseUpdateEnabled: boolean;
+    agentManaged: boolean;
+    replyTo?: string;
+    customIntro?: string;
+  };
   modules: Module[];
   agents: CourseAgentConfig[];
 };
@@ -76,6 +86,16 @@ const emptyCourse: CourseForm = {
     releaseAccess: "module_by_module",
   },
   accessProgram: normalizeAccessProgramForm(),
+  emailSettings: {
+    welcomeEnabled: true,
+    enrollmentEnabled: true,
+    assignmentCreatedEnabled: true,
+    assignmentUpdatedEnabled: true,
+    courseUpdateEnabled: false,
+    agentManaged: false,
+    replyTo: "",
+    customIntro: "",
+  },
   modules: [
     {
       title: "Module 1",
@@ -109,6 +129,10 @@ export function CourseEditor({ slug }: { slug?: string }) {
             ...(c.installmentPlan || {}),
           },
           accessProgram: normalizeAccessProgramForm(c.accessProgram),
+          emailSettings: {
+            ...emptyCourse.emailSettings,
+            ...(c.emailSettings || {}),
+          },
         });
       })
       .catch(() => setError("Could not load course."));
@@ -256,6 +280,104 @@ export function CourseEditor({ slug }: { slug?: string }) {
         onChange={(accessProgram) => setCourse({ ...course, accessProgram })}
       />
 
+      <section className="rounded-xl border border-slate-200 p-5">
+        <div className="mb-5">
+          <h2 className="text-lg font-bold text-slate-900">Email notifications</h2>
+          <p className="mt-1 text-sm text-slate-500">
+            Configure automated CommonLab emails for enrollments and course work.
+          </p>
+        </div>
+        <div className="grid gap-3 md:grid-cols-2">
+          <Toggle
+            label="Send enrollment confirmations"
+            checked={course.emailSettings.enrollmentEnabled}
+            onChange={(checked) =>
+              setCourse({
+                ...course,
+                emailSettings: {
+                  ...course.emailSettings,
+                  enrollmentEnabled: checked,
+                },
+              })
+            }
+          />
+          <Toggle
+            label="Send new assignment emails"
+            checked={course.emailSettings.assignmentCreatedEnabled}
+            onChange={(checked) =>
+              setCourse({
+                ...course,
+                emailSettings: {
+                  ...course.emailSettings,
+                  assignmentCreatedEnabled: checked,
+                },
+              })
+            }
+          />
+          <Toggle
+            label="Send assignment update emails"
+            checked={course.emailSettings.assignmentUpdatedEnabled}
+            onChange={(checked) =>
+              setCourse({
+                ...course,
+                emailSettings: {
+                  ...course.emailSettings,
+                  assignmentUpdatedEnabled: checked,
+                },
+              })
+            }
+          />
+          <Toggle
+            label="Allow course update emails"
+            checked={course.emailSettings.courseUpdateEnabled}
+            onChange={(checked) =>
+              setCourse({
+                ...course,
+                emailSettings: {
+                  ...course.emailSettings,
+                  courseUpdateEnabled: checked,
+                },
+              })
+            }
+          />
+          <Toggle
+            label="Let course agents manage emails"
+            checked={course.emailSettings.agentManaged}
+            onChange={(checked) =>
+              setCourse({
+                ...course,
+                emailSettings: {
+                  ...course.emailSettings,
+                  agentManaged: checked,
+                },
+              })
+            }
+          />
+        </div>
+        <div className="mt-4 grid gap-4 md:grid-cols-2">
+          <Field
+            label="Reply-to email"
+            value={course.emailSettings.replyTo || ""}
+            onChange={(value) =>
+              setCourse({
+                ...course,
+                emailSettings: { ...course.emailSettings, replyTo: value },
+              })
+            }
+          />
+          <TextArea
+            label="Enrollment email intro"
+            value={course.emailSettings.customIntro || ""}
+            onChange={(value) =>
+              setCourse({
+                ...course,
+                emailSettings: { ...course.emailSettings, customIntro: value },
+              })
+            }
+          />
+        </div>
+      </section>
+
       <CourseAgentEditor
         courseSlug={slug}
         agents={course.agents}
@@ -327,6 +449,27 @@ function TextArea({ label, value, onChange }: { label: string; value: string; on
     <label className="block">
       <span className="text-sm font-bold text-slate-700">{label}</span>
       <textarea value={value} onChange={(event) => onChange(event.target.value)} className="mt-2 min-h-24 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-slate-400" />
+    </label>
+  );
+}
+
+function Toggle({
+  label,
+  checked,
+  onChange,
+}: {
+  label: string;
+  checked: boolean;
+  onChange: (checked: boolean) => void;
+}) {
+  return (
+    <label className="flex min-h-12 items-center justify-between gap-3 rounded-lg border border-slate-200 px-3 py-2 text-sm font-bold text-slate-700">
+      <span>{label}</span>
+      <input
+        type="checkbox"
+        checked={checked}
+        onChange={(event) => onChange(event.target.checked)}
+      />
     </label>
   );
 }

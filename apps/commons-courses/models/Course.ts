@@ -60,6 +60,17 @@ export interface ICourseAccessProgram {
   affiliates: ICourseAffiliateProgram[];
 }
 
+export interface ICourseEmailSettings {
+  welcomeEnabled: boolean;
+  enrollmentEnabled: boolean;
+  assignmentCreatedEnabled: boolean;
+  assignmentUpdatedEnabled: boolean;
+  courseUpdateEnabled: boolean;
+  agentManaged: boolean;
+  replyTo?: string;
+  customIntro?: string;
+}
+
 export interface ICourse extends Document {
   title: string;
   slug: string;
@@ -97,6 +108,7 @@ export interface ICourse extends Document {
       | "full_after_completion";
   };
   accessProgram?: ICourseAccessProgram;
+  emailSettings?: ICourseEmailSettings;
   tags: string[];
   imageUrl?: string;
   modules: IModule[];
@@ -237,6 +249,20 @@ const AccessProgramSchema = new Schema<ICourseAccessProgram>(
   { _id: false }
 );
 
+const CourseEmailSettingsSchema = new Schema<ICourseEmailSettings>(
+  {
+    welcomeEnabled: { type: Boolean, default: true },
+    enrollmentEnabled: { type: Boolean, default: true },
+    assignmentCreatedEnabled: { type: Boolean, default: true },
+    assignmentUpdatedEnabled: { type: Boolean, default: true },
+    courseUpdateEnabled: { type: Boolean, default: false },
+    agentManaged: { type: Boolean, default: false },
+    replyTo: { type: String, trim: true },
+    customIntro: { type: String, trim: true },
+  },
+  { _id: false }
+);
+
 const CourseAgentSchema = new Schema<CourseAgentConfig>(
   {
     id: { type: String, required: true },
@@ -305,6 +331,10 @@ const CourseSchema = new Schema<ICourse>(
     },
     installmentPlan: InstallmentPlanSchema,
     accessProgram: AccessProgramSchema,
+    emailSettings: {
+      type: CourseEmailSettingsSchema,
+      default: () => ({}),
+    },
     tags: [String],
     imageUrl: String,
     modules: [ModuleSchema],

@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireEducatorCourse } from "@/lib/educator-auth";
+import { sendAssignmentNotification } from "@/lib/email/resend";
 import { indexAssignmentForSearch } from "@/lib/search-indexers";
 import Assignment from "@/models/Assignment";
+import Enrollment from "@/models/Enrollment";
 import Submission from "@/models/Submission";
 
 export async function GET(
@@ -59,6 +61,35 @@ export async function POST(
     published: body.published !== false,
   });
   await indexAssignmentForSearch(assignment);
+  if (assignment.published) {
+    const enrollments = await Enrollment.find({
+      courseId: result.course._id,
+      status: "active",
+    })
+      .populate("userId", "name email")
+      .lean();
+    await sendAssignmentNotification({
+      recipients: enrollments.map((enrollment) => {
+        const user = enrollment.userId as unknown as {
+          name?: string;
+          email?: string;
+        };
+        return { name: user?.name, email: user?.email };
+      }),
+      course: {
+        title: result.course.title,
+        slug: result.course.slug,
+        settings: result.course.emailSettings,
+      },
+      assignment: {
+        title: assignment.title,
+        dueAt: assignment.dueAt,
+        points: assignment.points,
+        instructions: assignment.instructions,
+      },
+      event: "created",
+    });
+  }
 
   return NextResponse.json({ assignment }, { status: 201 });
 }

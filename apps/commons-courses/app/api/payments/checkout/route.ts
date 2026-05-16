@@ -3,6 +3,7 @@ import { auth } from "@/lib/auth";
 import { stripe } from "@/lib/stripe";
 import { initializePaystackTransaction } from "@/lib/paystack";
 import { connectDB } from "@/lib/db";
+import { sendEnrollmentEmail } from "@/lib/email/resend";
 import Course from "@/models/Course";
 import Enrollment from "@/models/Enrollment";
 import Payment from "@/models/Payment";
@@ -22,6 +23,9 @@ type AccessLevel = "full" | "partial";
 interface CheckoutCourse {
   _id: mongoose.Types.ObjectId;
   title: string;
+  slug: string;
+  instructor?: string;
+  duration?: string;
   price: number;
   currency?: string;
   isFree: boolean;
@@ -33,6 +37,11 @@ interface CheckoutCourse {
     releaseAccess?: "full_after_first_payment" | "module_by_module" | "full_after_completion";
   };
   accessProgram?: CourseAccessProgram;
+  emailSettings?: {
+    enrollmentEnabled?: boolean;
+    replyTo?: string;
+    customIntro?: string;
+  };
   educator?: {
     settlementMode?: "platform_rails" | "educator_direct";
     platformFeePercent?: number;
@@ -143,6 +152,10 @@ export async function GET(req: NextRequest) {
 
   const courseMongoId = dbCourse._id as mongoose.Types.ObjectId;
   if (dbCourse.isFree) {
+    const existingFreeEnrollment = await Enrollment.findOne({
+      userId: session.user.id,
+      courseId: courseMongoId,
+    }).lean();
     await Enrollment.findOneAndUpdate(
       { userId: session.user.id, courseId: courseMongoId },
       {
@@ -157,6 +170,18 @@ export async function GET(req: NextRequest) {
       },
       { upsert: true }
     );
+    if (!existingFreeEnrollment) {
+      await sendEnrollmentEmail(
+        { name: session.user.name, email: session.user.email },
+        {
+          title: dbCourse.title,
+          slug: dbCourse.slug,
+          instructor: dbCourse.instructor,
+          duration: dbCourse.duration,
+          settings: dbCourse.emailSettings,
+        }
+      );
+    }
     return NextResponse.redirect(new URL("/dashboard", req.url));
   }
 
@@ -177,6 +202,10 @@ export async function GET(req: NextRequest) {
   });
 
   if (accessPrice.freeAccess) {
+    const existingAccessEnrollment = await Enrollment.findOne({
+      userId: session.user.id,
+      courseId: courseMongoId,
+    }).lean();
     await Enrollment.findOneAndUpdate(
       { userId: session.user.id, courseId: courseMongoId },
       {
@@ -201,7 +230,19 @@ export async function GET(req: NextRequest) {
       accessCode: accessPrice.accessCode,
       accessCodeType: accessPrice.accessCodeType,
       affiliateCode: accessPrice.affiliateCode,
-    });
+      });
+    if (!existingAccessEnrollment) {
+      await sendEnrollmentEmail(
+        { name: session.user.name, email: session.user.email },
+        {
+          title: dbCourse.title,
+          slug: dbCourse.slug,
+          instructor: dbCourse.instructor,
+          duration: dbCourse.duration,
+          settings: dbCourse.emailSettings,
+        }
+      );
+    }
     return NextResponse.redirect(new URL("/dashboard?enrolled=1", req.url));
   }
 

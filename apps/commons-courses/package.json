@@ -21,6 +21,7 @@
     "next-auth": "^5.0.0-beta.25",
     "react": "19.2.4",
     "react-dom": "19.2.4",
+    "resend": "^6.12.3",
     "stripe": "^17.5.0",
     "tailwind-merge": "^2.6.0",
     "zod": "^3.24.1"
