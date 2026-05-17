@@ -4,8 +4,11 @@ import { Nav } from "@/components/nav";
 import { CourseOutline } from "@/components/courses/course-outline";
 import { EnrolButton } from "@/components/courses/enrol-button";
 import { EnrolledBanner } from "@/components/courses/enrolled-banner";
+import { EnrollmentAwareActions } from "@/components/courses/enrollment-aware-actions";
+import { auth } from "@/lib/auth";
 import { connectDB } from "@/lib/db";
 import Course from "@/models/Course";
+import Enrollment from "@/models/Enrollment";
 import {
   ArrowLeft,
   Clock,
@@ -36,6 +39,7 @@ interface ModuleData {
 }
 
 interface CourseDetailData {
+  _id: unknown;
   title: string;
   slug: string;
   tagline: string;
@@ -78,6 +82,10 @@ interface CourseDetailData {
   };
 }
 
+interface EnrollmentData {
+  progress?: number;
+}
+
 function formatCoursePrice(course: { isFree: boolean; price: number; currency?: string }) {
   if (course.isFree) return "Free";
   if (["kes", "ksh"].includes(course.currency?.toLowerCase() ?? "")) {
@@ -95,6 +103,17 @@ export default async function CoursePage({ params, searchParams }: Props) {
     | CourseDetailData
     | null;
   if (!course) notFound();
+  const session = await auth();
+  const enrollment = session?.user?.id
+    ? ((await Enrollment.findOne({
+        userId: session.user.id,
+        courseId: course._id,
+      })
+        .select("progress")
+        .lean()) as EnrollmentData | null)
+    : null;
+  const isEnrolled = Boolean(enrollment);
+  const enrollmentProgress = enrollment?.progress ?? 0;
 
   const totalMinutes = course.modules
     .flatMap((m) => m.lessons)
@@ -161,6 +180,13 @@ export default async function CoursePage({ params, searchParams }: Props) {
                   </span>
                 </div>
 
+                <EnrolledBanner
+                  courseSlug={course.slug}
+                  initialEnrolled={isEnrolled}
+                  initialProgress={enrollmentProgress}
+                  className="mb-8 max-w-2xl"
+                />
+
                 <div className="flex flex-wrap gap-2">
                   {course.tags.map((tag) => (
                     <span
@@ -176,7 +202,12 @@ export default async function CoursePage({ params, searchParams }: Props) {
               {/* Sticky purchase card */}
               <aside className="min-w-0 lg:row-span-2">
                 <div className="lg:sticky lg:top-24">
-                  <PurchaseCard course={course} affiliateCode={affiliateCode} />
+                  <PurchaseCard
+                    course={course}
+                    affiliateCode={affiliateCode}
+                    isEnrolled={isEnrolled}
+                    enrollmentProgress={enrollmentProgress}
+                  />
                 </div>
               </aside>
 
@@ -228,11 +259,6 @@ export default async function CoursePage({ params, searchParams }: Props) {
                   </div>
                 </div>
 
-                {/* Enrolled banner (shows for logged-in enrolled users) */}
-                <div className="mb-8">
-                  <EnrolledBanner courseSlug={course.slug} />
-                </div>
-
                 {/* Course outline */}
                 <div>
                   <h2 className="text-lg font-bold text-slate-900 mb-3">
@@ -245,7 +271,7 @@ export default async function CoursePage({ params, searchParams }: Props) {
                     <span>·</span>
                     <span>~{totalMinutes} min total</span>
                   </div>
-                  <CourseOutline modules={course.modules} enrolled={false} />
+                  <CourseOutline modules={course.modules} enrolled={isEnrolled} />
                 </div>
               </section>
             </div>
@@ -285,9 +311,13 @@ export default async function CoursePage({ params, searchParams }: Props) {
 function PurchaseCard({
   course,
   affiliateCode,
+  isEnrolled,
+  enrollmentProgress,
 }: {
   course: CourseDetailData;
   affiliateCode?: string;
+  isEnrolled: boolean;
+  enrollmentProgress: number;
 }) {
   const providers = course.paymentProviders || ["stripe"];
   const supportsPaystack = providers.includes("paystack");
@@ -316,56 +346,62 @@ function PurchaseCard({
     <div className="w-full min-w-0 max-w-sm rounded-xl border border-slate-200 bg-white overflow-hidden shadow-sm lg:max-w-none">
       <div className="h-1 bg-slate-900" />
       <div className="p-6">
-        <div className="text-3xl font-bold text-slate-900 mb-1">
-          {formatCoursePrice(course)}
-        </div>
-        {!course.isFree && (
-          <p className="text-xs text-slate-400 mb-5">
-            One-time payment · Lifetime access
-          </p>
-        )}
+        <EnrollmentAwareActions
+          courseSlug={course.slug}
+          initialEnrolled={isEnrolled}
+          initialProgress={enrollmentProgress}
+        >
+          <div className="text-3xl font-bold text-slate-900 mb-1">
+            {formatCoursePrice(course)}
+          </div>
+          {!course.isFree && (
+            <p className="text-xs text-slate-400 mb-5">
+              One-time payment · Lifetime access
+            </p>
+          )}
 
-        <div className="mb-3">
-          <EnrolButton
-            courseSlug={course.slug}
-            isFree={course.isFree}
-            checkoutUrl={`/api/payments/checkout?courseSlug=${course.slug}${checkoutProviderParam}${affiliateParam}`}
-            label={
-              !course.isFree && supportsPaystack && isKes
-                ? "Pay with M-Pesa or card"
-                : undefined
-            }
-          />
-        </div>
-
-        {!course.isFree && course.installmentPlan?.enabled && (
           <div className="mb-3">
             <EnrolButton
               courseSlug={course.slug}
-              isFree={false}
-              checkoutUrl={`/api/payments/checkout?courseSlug=${course.slug}&plan=installment${checkoutProviderParam}${affiliateParam}`}
-              label={`Lipa mdogo mdogo · ${formatCoursePrice({
-                isFree: false,
-                price: installmentAmount,
-                currency: course.currency,
-              })}`}
+              isFree={course.isFree}
+              checkoutUrl={`/api/payments/checkout?courseSlug=${course.slug}${checkoutProviderParam}${affiliateParam}`}
+              label={
+                !course.isFree && supportsPaystack && isKes
+                  ? "Pay with M-Pesa or card"
+                  : undefined
+              }
             />
           </div>
-        )}
 
-        {!course.isFree && accessProgramCount > 0 && (
-          <p className="mt-3 text-xs leading-5 text-slate-500">
-            Codes are applied securely at checkout.
-          </p>
-        )}
+          {!course.isFree && course.installmentPlan?.enabled && (
+            <div className="mb-3">
+              <EnrolButton
+                courseSlug={course.slug}
+                isFree={false}
+                checkoutUrl={`/api/payments/checkout?courseSlug=${course.slug}&plan=installment${checkoutProviderParam}${affiliateParam}`}
+                label={`Lipa mdogo mdogo · ${formatCoursePrice({
+                  isFree: false,
+                  price: installmentAmount,
+                  currency: course.currency,
+                })}`}
+              />
+            </div>
+          )}
 
-        {!course.isFree && earlyDiscount?.deadline && (
-          <p className="mt-2 rounded-lg bg-lime-50 p-3 text-xs leading-5 text-slate-700">
-            Pay before {formatDate(earlyDiscount.deadline)} for an automatic{" "}
-            {formatDiscount(earlyDiscount, course.currency)} early payment
-            discount.
-          </p>
-        )}
+          {!course.isFree && accessProgramCount > 0 && (
+            <p className="mt-3 text-xs leading-5 text-slate-500">
+              Codes are applied securely at checkout.
+            </p>
+          )}
+
+          {!course.isFree && earlyDiscount?.deadline && (
+            <p className="mt-2 rounded-lg bg-lime-50 p-3 text-xs leading-5 text-slate-700">
+              Pay before {formatDate(earlyDiscount.deadline)} for an automatic{" "}
+              {formatDiscount(earlyDiscount, course.currency)} early payment
+              discount.
+            </p>
+          )}
+        </EnrollmentAwareActions>
 
         <div className="mt-5 pt-4 border-t border-slate-100 space-y-2.5">
           {[

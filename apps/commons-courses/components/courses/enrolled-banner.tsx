@@ -7,14 +7,26 @@ import { cn } from "@/lib/utils";
 
 interface Props {
   courseSlug: string;
+  className?: string;
+  initialEnrolled?: boolean;
+  initialProgress?: number;
 }
 
-export function EnrolledBanner({ courseSlug }: Props) {
+export function EnrolledBanner({
+  courseSlug,
+  className,
+  initialEnrolled = false,
+  initialProgress = 0,
+}: Props) {
   const [state, setState] = useState<{
     loading: boolean;
     enrolled: boolean;
     progress: number;
-  }>({ loading: true, enrolled: false, progress: 0 });
+  }>({
+    loading: !initialEnrolled,
+    enrolled: initialEnrolled,
+    progress: initialProgress,
+  });
 
   useEffect(() => {
     fetch(`/api/progress?courseSlug=${courseSlug}`)
@@ -27,7 +39,12 @@ export function EnrolledBanner({ courseSlug }: Props) {
 
   if (state.loading) {
     return (
-      <div className="flex items-center gap-2 text-slate-400 text-sm px-1">
+      <div
+        className={cn(
+          "flex items-center gap-2 text-slate-400 text-sm px-1",
+          className,
+        )}
+      >
         <Loader2 className="h-3.5 w-3.5 animate-spin" /> Checking enrolment…
       </div>
     );
@@ -36,7 +53,12 @@ export function EnrolledBanner({ courseSlug }: Props) {
   if (!state.enrolled) return null;
 
   return (
-    <div className="rounded-xl bg-green-50 border border-green-200 p-4 flex items-center justify-between gap-4">
+    <div
+      className={cn(
+        "rounded-xl bg-green-50 border border-green-200 p-4 flex items-center justify-between gap-4",
+        className,
+      )}
+    >
       <div className="flex items-center gap-3">
         <div className="p-2 rounded-full bg-green-100">
           <BookOpen className="h-4 w-4 text-green-700" />
