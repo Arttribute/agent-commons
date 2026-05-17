@@ -24,6 +24,7 @@ const colors = {
   lime: "#B8F56D",
   cyan: "#71E0E7",
   violet: "#9FB0F4",
+  rose: "#F3A2B4",
 };
 
 const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || "http://localhost:3000";
@@ -48,15 +49,36 @@ export function CommonsEmail({
                 <table role="presentation" width="100%" style={styles.card}>
                   <tbody>
                     <tr>
+                      <td style={styles.colorBar}>
+                        <table role="presentation" width="100%" cellPadding="0" cellSpacing="0">
+                          <tbody>
+                            <tr>
+                              <td style={{ ...styles.colorCell, backgroundColor: colors.lime }} />
+                              <td style={{ ...styles.colorCell, backgroundColor: colors.cyan }} />
+                              <td style={{ ...styles.colorCell, backgroundColor: colors.violet }} />
+                              <td style={{ ...styles.colorCell, backgroundColor: colors.rose }} />
+                            </tr>
+                          </tbody>
+                        </table>
+                      </td>
+                    </tr>
+                    <tr>
                       <td style={styles.topBar}>
-                        <span style={{ ...styles.swatch, background: colors.lime }} />
-                        <span style={{ ...styles.swatch, background: colors.cyan }} />
-                        <span style={{ ...styles.swatch, background: colors.violet }} />
+                        <table role="presentation" width="100%" cellPadding="0" cellSpacing="0">
+                          <tbody>
+                            <tr>
+                              <td style={styles.logoMark}>C</td>
+                              <td style={styles.logoText}>
+                                <p style={styles.brand}>CommonLab</p>
+                                <p style={styles.tagline}>Courses and learning sandboxes</p>
+                              </td>
+                            </tr>
+                          </tbody>
+                        </table>
                       </td>
                     </tr>
                     <tr>
                       <td style={styles.content}>
-                        <p style={styles.brand}>CommonLab</p>
                         <p style={styles.eyebrow}>{eyebrow}</p>
                         <h1 style={styles.title}>{title}</h1>
                         <p style={styles.intro}>{intro}</p>
@@ -143,27 +165,54 @@ const styles: Record<string, React.CSSProperties> = {
     borderRadius: "12px",
     overflow: "hidden",
   },
+  colorBar: {
+    padding: 0,
+    height: "8px",
+    lineHeight: "8px",
+  },
+  colorCell: {
+    height: "8px",
+    lineHeight: "8px",
+    fontSize: 0,
+  },
   topBar: {
-    padding: "18px 24px",
+    padding: "22px 28px",
     borderBottom: `1px solid ${colors.border}`,
     backgroundColor: "#ffffff",
   },
-  swatch: {
-    display: "inline-block",
-    width: "44px",
-    height: "8px",
-    borderRadius: "4px",
-    marginRight: "8px",
+  logoMark: {
+    width: "42px",
+    height: "42px",
+    borderRadius: "10px",
+    backgroundColor: colors.ink,
+    color: "#ffffff",
+    fontSize: "20px",
+    lineHeight: "42px",
+    fontWeight: 800,
+    textAlign: "center",
+    verticalAlign: "middle",
+  },
+  logoText: {
+    paddingLeft: "12px",
+    verticalAlign: "middle",
   },
   content: {
     padding: "34px 30px 28px",
   },
   brand: {
-    margin: "0 0 18px",
+    margin: 0,
     color: colors.ink,
-    fontSize: "18px",
+    fontSize: "19px",
+    lineHeight: "23px",
     fontWeight: 800,
     letterSpacing: 0,
+  },
+  tagline: {
+    margin: "2px 0 0",
+    color: colors.muted,
+    fontSize: "12px",
+    lineHeight: "17px",
+    fontWeight: 700,
   },
   eyebrow: {
     margin: "0 0 10px",

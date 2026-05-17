@@ -1,5 +1,6 @@
 import "server-only";
 
+import { render } from "@react-email/render";
 import { Resend } from "resend";
 import { CommonsEmail, DetailList, Paragraph } from "@/lib/email/templates";
 
@@ -41,6 +42,7 @@ const resend = process.env.RESEND_API_KEY
 const appUrl = process.env.NEXT_PUBLIC_BASE_URL || "http://localhost:3000";
 const fromAddress =
   process.env.RESEND_FROM_EMAIL || "CommonLab <onboarding@resend.dev>";
+const replyToAddress = process.env.RESEND_REPLY_TO_EMAIL;
 
 function absoluteUrl(path: string) {
   return new URL(path, appUrl).toString();
@@ -76,12 +78,17 @@ async function sendEmail({
   }
 
   try {
+    const [html, text] = await Promise.all([
+      render(react, { pretty: true }),
+      render(react, { plainText: true }),
+    ]);
     const { data, error } = await resend.emails.send({
       from: fromAddress,
       to: recipients,
       subject,
-      react,
-      replyTo,
+      html,
+      text,
+      replyTo: replyTo || replyToAddress,
     });
 
     if (error) {
