@@ -1,9 +1,9 @@
 "use client";
 
-import { useState, Suspense } from "react";
+import { useEffect, useState, Suspense } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { signIn } from "next-auth/react";
+import { getProviders, signIn } from "next-auth/react";
 import { BookOpen, Loader2 } from "lucide-react";
 
 const inputCls =
@@ -22,6 +22,13 @@ function SignInForm() {
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [loading, setLoading] = useState(false);
+  const [googleAvailable, setGoogleAvailable] = useState(false);
+
+  useEffect(() => {
+    getProviders().then((providers) => {
+      setGoogleAvailable(Boolean(providers?.google));
+    });
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -112,22 +119,26 @@ function SignInForm() {
           Sign in and continue to your course
         </p>
 
-        <button
-          type="button"
-          onClick={handleGoogle}
-          className="mb-4 flex w-full items-center justify-center gap-2 rounded-lg border border-slate-200 px-5 py-2.5 text-sm font-bold text-slate-800 hover:bg-slate-50"
-        >
-          <GoogleLogo />
-          Continue with Google
-        </button>
+        {googleAvailable && (
+          <>
+            <button
+              type="button"
+              onClick={handleGoogle}
+              className="mb-4 flex w-full items-center justify-center gap-2 rounded-lg border border-slate-200 px-5 py-2.5 text-sm font-bold text-slate-800 hover:bg-slate-50"
+            >
+              <GoogleLogo />
+              Continue with Google
+            </button>
 
-        <div className="mb-4 flex items-center gap-3">
-          <div className="h-px flex-1 bg-slate-200" />
-          <span className="text-xs font-bold uppercase tracking-wide text-slate-400">
-            Or
-          </span>
-          <div className="h-px flex-1 bg-slate-200" />
-        </div>
+            <div className="mb-4 flex items-center gap-3">
+              <div className="h-px flex-1 bg-slate-200" />
+              <span className="text-xs font-bold uppercase tracking-wide text-slate-400">
+                Or
+              </span>
+              <div className="h-px flex-1 bg-slate-200" />
+            </div>
+          </>
+        )}
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
