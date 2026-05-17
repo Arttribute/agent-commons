@@ -6,7 +6,10 @@ import { getAppBaseUrl } from "@/lib/app-url";
 import { stripe } from "@/lib/stripe";
 import { initializePaystackTransaction } from "@/lib/paystack";
 import { connectDB } from "@/lib/db";
-import { sendEnrollmentEmail } from "@/lib/email/resend";
+import {
+  sendEnrollmentEmail,
+  sendVerificationEmail,
+} from "@/lib/email/resend";
 import Course from "@/models/Course";
 import Enrollment from "@/models/Enrollment";
 import Payment from "@/models/Payment";
@@ -65,6 +68,7 @@ interface CheckoutUser {
   email: string;
   name?: string | null;
   canUseCheckoutSignIn: boolean;
+  needsEmailVerification: boolean;
 }
 
 function getCourseCurrency(currency?: string) {
@@ -164,6 +168,7 @@ async function resolveCheckoutUser({
       email: session.user.email,
       name: session.user.name,
       canUseCheckoutSignIn: false,
+      needsEmailVerification: false,
     };
   }
 
@@ -183,6 +188,7 @@ async function resolveCheckoutUser({
       email: existing.email,
       name: existing.name,
       canUseCheckoutSignIn: !existing.password && !existing.emailVerifiedAt,
+      needsEmailVerification: Boolean(existing.password && !existing.emailVerifiedAt),
     };
   }
 
@@ -199,7 +205,29 @@ async function resolveCheckoutUser({
     email: created.email,
     name: created.name,
     canUseCheckoutSignIn: true,
+    needsEmailVerification: false,
   };
+}
+
+async function sendCheckoutVerificationIfNeeded({
+  checkoutUser,
+  courseSlug,
+}: {
+  checkoutUser: CheckoutUser;
+  courseSlug: string;
+}) {
+  if (!checkoutUser.needsEmailVerification) return;
+
+  const { token } = await createAccountToken({
+    userId: checkoutUser.id,
+    purpose: "email_verification",
+    ttlMinutes: 60 * 24,
+  });
+  await sendVerificationEmail({
+    user: { name: checkoutUser.name, email: checkoutUser.email },
+    token,
+    callbackUrl: `/courses/${courseSlug}/learn`,
+  });
 }
 
 async function redirectAfterEnrollment({
@@ -275,6 +303,7 @@ export async function GET(req: NextRequest) {
     );
     return NextResponse.redirect(signinUrl);
   }
+  await sendCheckoutVerificationIfNeeded({ checkoutUser, courseSlug });
 
   const courseMongoId = dbCourse._id as mongoose.Types.ObjectId;
   if (dbCourse.isFree) {
