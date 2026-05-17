@@ -1,11 +1,8 @@
-import Link from "next/link";
 import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
 import { requireEducatorCourse } from "@/lib/educator-auth";
 import Enrollment from "@/models/Enrollment";
-import { Nav } from "@/components/nav";
-import { CourseAgentDrawer } from "@/components/course-agents/course-agent-drawer";
-import type { CourseAgentConfig } from "@/types/course-agent";
+import { ScrollableListFrame } from "@/components/educator/scrollable-list-frame";
 
 export default async function CourseStudentsPage({
   params,
@@ -23,34 +20,21 @@ export default async function CourseStudentsPage({
     .populate("userId", "name email")
     .sort({ enrolledAt: -1 })
     .lean();
-  const agents = JSON.parse(
-    JSON.stringify(result.course.agents || [])
-  ) as CourseAgentConfig[];
-
   return (
-    <div className="min-h-screen bg-white">
-      <Nav />
-      <CourseAgentDrawer
-        courseSlug={slug}
-        role="educator"
-        agents={agents}
-        context={{
-          page: "educator.students",
-          title: "Students",
-          visibleText: `${result.course.title}\n${enrollments.length} enrolled students`,
-        }}
-      />
-      <main className="mx-auto max-w-6xl px-4 pb-16 pt-24 sm:px-6 lg:px-8">
-        <Link href="/educator" className="text-sm font-bold text-slate-500">
-          Back to educator console
-        </Link>
-        <h1 className="mb-2 mt-4 text-3xl font-bold text-slate-950">
-          Students
-        </h1>
-        <p className="mb-8 text-sm text-slate-500">{result.course.title}</p>
+    <div className="space-y-6">
+      <div>
+        <p className="text-sm font-bold uppercase tracking-[0.16em] text-slate-400">
+          Learners
+        </p>
+        <h2 className="mt-2 text-3xl font-bold text-slate-950">Students</h2>
+        <p className="mt-2 text-sm text-slate-500">
+          Enrollment, progress, payment state, and access level.
+        </p>
+      </div>
 
-        <div className="overflow-hidden rounded-xl border border-slate-200">
-          <div className="grid grid-cols-[1.3fr_0.7fr_0.7fr_0.7fr] gap-3 bg-slate-50 px-4 py-3 text-xs font-bold uppercase tracking-wide text-slate-500">
+      <ScrollableListFrame title="Enrolled students" count={enrollments.length}>
+        <div className="min-w-[720px]">
+          <div className="sticky top-0 grid grid-cols-[1.3fr_0.7fr_0.7fr_0.7fr] gap-3 bg-slate-50 px-4 py-3 text-xs font-bold uppercase tracking-wide text-slate-500">
             <span>Student</span>
             <span>Progress</span>
             <span>Payment</span>
@@ -77,7 +61,7 @@ export default async function CourseStudentsPage({
             <p className="p-6 text-sm text-slate-500">No students enrolled yet.</p>
           )}
         </div>
-      </main>
+      </ScrollableListFrame>
     </div>
   );
 }

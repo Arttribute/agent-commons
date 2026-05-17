@@ -9,7 +9,7 @@ import Payment from "@/models/Payment";
 import Enrollment from "@/models/Enrollment";
 import { Nav } from "@/components/nav";
 import { GeneralAgentDrawer } from "@/components/agents/general-agent-drawer";
-import { ArrowRight, BookOpen, CreditCard, Users } from "lucide-react";
+import { ArrowRight, BookOpen, CreditCard, LayoutDashboard, Users } from "lucide-react";
 
 export default async function EducatorDashboardPage() {
   const session = await auth();
@@ -108,11 +108,12 @@ export default async function EducatorDashboardPage() {
               </Link>
             </div>
           ) : (
-            <div className="overflow-hidden rounded-xl border border-slate-200">
+            <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
               {courses.map((course) => (
-                <div
+                <Link
                   key={String(course._id)}
-                  className="grid gap-3 border-b border-slate-100 p-4 last:border-b-0 md:grid-cols-[1fr_auto]"
+                  href={`/educator/courses/${course.slug}`}
+                  className="grid gap-3 border-b border-slate-100 p-4 transition-colors last:border-b-0 hover:bg-slate-50 md:grid-cols-[1fr_auto]"
                 >
                   <div>
                     <div className="mb-1 flex flex-wrap items-center gap-2">
@@ -123,14 +124,11 @@ export default async function EducatorDashboardPage() {
                     </div>
                     <p className="text-sm text-slate-500">{course.tagline}</p>
                   </div>
-                  <div className="flex flex-wrap items-center gap-2">
-                    <CourseLink slug={course.slug} label="Edit" href="edit" />
-                    <CourseLink slug={course.slug} label="Students" href="students" />
-                    <CourseLink slug={course.slug} label="Assignments" href="assignments" />
-                    <CourseLink slug={course.slug} label="Analytics" href="analytics" />
-                    <CourseLink slug={course.slug} label="Payments" href="payments" />
+                  <div className="flex items-center gap-2 text-sm font-bold text-slate-700">
+                    <LayoutDashboard className="h-4 w-4 text-slate-400" />
+                    Open dashboard
                   </div>
-                </div>
+                </Link>
               ))}
             </div>
           )}
@@ -155,24 +153,5 @@ function Metric({
       <p className="text-2xl font-bold text-slate-950">{value}</p>
       <p className="text-sm text-slate-500">{label}</p>
     </div>
-  );
-}
-
-function CourseLink({
-  slug,
-  href,
-  label,
-}: {
-  slug: string;
-  href: string;
-  label: string;
-}) {
-  return (
-    <Link
-      href={`/educator/courses/${slug}/${href}`}
-      className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-bold text-slate-600 hover:bg-slate-50"
-    >
-      {label}
-    </Link>
   );
 }

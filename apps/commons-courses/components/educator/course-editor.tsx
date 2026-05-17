@@ -1,7 +1,7 @@
 "use client";
 
 import { FormEvent, useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { CourseAgentEditor } from "@/components/educator/course-agent-editor";
 import { CourseCollaborators } from "@/components/educator/course-collaborators";
 import {
@@ -66,6 +66,15 @@ type CourseForm = {
   agents: CourseAgentConfig[];
 };
 
+export type CourseEditorSection =
+  | "all"
+  | "info"
+  | "access"
+  | "notifications"
+  | "agents"
+  | "content"
+  | "collaborators";
+
 const emptyCourse: CourseForm = {
   title: "",
   tagline: "",
@@ -106,11 +115,20 @@ const emptyCourse: CourseForm = {
   agents: defaultCourseAgents,
 };
 
-export function CourseEditor({ slug }: { slug?: string }) {
+export function CourseEditor({
+  slug,
+  section = "all",
+}: {
+  slug?: string;
+  section?: CourseEditorSection;
+}) {
   const router = useRouter();
+  const pathname = usePathname();
   const [course, setCourse] = useState<CourseForm>(emptyCourse);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const isFullEditor = section === "all";
+  const show = (name: CourseEditorSection) => isFullEditor || section === name;
 
   useEffect(() => {
     if (!slug) return;
@@ -169,6 +187,16 @@ export function CourseEditor({ slug }: { slug?: string }) {
       setError(data.error || "Could not save course.");
       return;
     }
+    if (slug) {
+      const savedSlug = data.course?.slug || slug;
+      if (savedSlug !== slug) {
+        router.push(pathname.replace(`/educator/courses/${slug}`, `/educator/courses/${savedSlug}`));
+        return;
+      }
+      router.refresh();
+      router.push(pathname);
+      return;
+    }
     router.push("/educator");
   }
 
@@ -181,44 +209,56 @@ export function CourseEditor({ slug }: { slug?: string }) {
     });
   }
 
+  if (section === "collaborators") {
+    return <CourseCollaborators slug={slug} />;
+  }
+
   return (
     <form onSubmit={onSubmit} className="space-y-8">
       {error && <p className="rounded-lg bg-red-50 p-3 text-sm text-red-700">{error}</p>}
-      <section className="grid gap-4 md:grid-cols-2">
-        <Field label="Title" value={course.title} required onChange={(value) => setCourse({ ...course, title: value })} />
-        <Field label="Slug" value={course.slug || ""} onChange={(value) => setCourse({ ...course, slug: value })} />
-        <Field label="Tagline" value={course.tagline} required onChange={(value) => setCourse({ ...course, tagline: value })} />
-        <Field label="Instructor" value={course.instructor} onChange={(value) => setCourse({ ...course, instructor: value })} />
-        <Field label="Duration" value={course.duration} onChange={(value) => setCourse({ ...course, duration: value })} />
-        <Field label="Tags" value={course.tagsText} onChange={(value) => setCourse({ ...course, tagsText: value })} />
-      </section>
+      {show("info") && (
+        <EditorPanel
+          title="Course info"
+          description="Core identity, positioning, publish status, and public course details."
+        >
+          <div className="grid gap-4 md:grid-cols-2">
+            <Field label="Title" value={course.title} required onChange={(value) => setCourse({ ...course, title: value })} />
+            <Field label="Slug" value={course.slug || ""} onChange={(value) => setCourse({ ...course, slug: value })} />
+            <Field label="Tagline" value={course.tagline} required onChange={(value) => setCourse({ ...course, tagline: value })} />
+            <Field label="Instructor" value={course.instructor} onChange={(value) => setCourse({ ...course, instructor: value })} />
+            <Field label="Duration" value={course.duration} onChange={(value) => setCourse({ ...course, duration: value })} />
+            <Field label="Tags" value={course.tagsText} onChange={(value) => setCourse({ ...course, tagsText: value })} />
+          </div>
 
-      <TextArea label="Short description" value={course.description} onChange={(value) => setCourse({ ...course, description: value })} />
-      <TextArea label="Long description" value={course.longDescription} onChange={(value) => setCourse({ ...course, longDescription: value })} />
+          <TextArea label="Short description" value={course.description} onChange={(value) => setCourse({ ...course, description: value })} />
+          <TextArea label="Long description" value={course.longDescription} onChange={(value) => setCourse({ ...course, longDescription: value })} />
 
-      <section className="grid gap-4 md:grid-cols-3">
-        <label>
-          <span className="text-sm font-bold text-slate-700">Level</span>
-          <select className="mt-2 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm" value={course.level} onChange={(event) => setCourse({ ...course, level: event.target.value as CourseForm["level"] })}>
-            <option value="beginner">Beginner</option>
-            <option value="intermediate">Intermediate</option>
-            <option value="advanced">Advanced</option>
-          </select>
-        </label>
-        <label>
-          <span className="text-sm font-bold text-slate-700">Course type</span>
-          <select className="mt-2 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm" value={course.courseType} onChange={(event) => setCourse({ ...course, courseType: event.target.value as CourseForm["courseType"] })}>
-            <option value="self-paced">Self-paced</option>
-            <option value="live">Live</option>
-          </select>
-        </label>
-        <label className="flex items-center gap-3 pt-7 text-sm font-bold text-slate-700">
-          <input type="checkbox" checked={course.published} onChange={(event) => setCourse({ ...course, published: event.target.checked })} />
-          Published
-        </label>
-      </section>
+          <div className="grid gap-4 md:grid-cols-3">
+            <label>
+              <span className="text-sm font-bold text-slate-700">Level</span>
+              <select className="mt-2 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm" value={course.level} onChange={(event) => setCourse({ ...course, level: event.target.value as CourseForm["level"] })}>
+                <option value="beginner">Beginner</option>
+                <option value="intermediate">Intermediate</option>
+                <option value="advanced">Advanced</option>
+              </select>
+            </label>
+            <label>
+              <span className="text-sm font-bold text-slate-700">Course type</span>
+              <select className="mt-2 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm" value={course.courseType} onChange={(event) => setCourse({ ...course, courseType: event.target.value as CourseForm["courseType"] })}>
+                <option value="self-paced">Self-paced</option>
+                <option value="live">Live</option>
+              </select>
+            </label>
+            <label className="flex items-center gap-3 pt-7 text-sm font-bold text-slate-700">
+              <input type="checkbox" checked={course.published} onChange={(event) => setCourse({ ...course, published: event.target.checked })} />
+              Published
+            </label>
+          </div>
+        </EditorPanel>
+      )}
 
-      <section className="rounded-xl border border-slate-200 p-5">
+      {show("access") && (
+      <section className="rounded-lg border border-slate-200 bg-white p-5">
         <div className="mb-5">
           <h2 className="text-lg font-bold text-slate-900">Payments</h2>
           <p className="mt-1 text-sm text-slate-500">
@@ -278,14 +318,18 @@ export function CourseEditor({ slug }: { slug?: string }) {
           </label>
         </div>
       </section>
+      )}
 
-      <AccessProgramEditor
-        value={course.accessProgram}
-        currency={course.currency}
-        onChange={(accessProgram) => setCourse({ ...course, accessProgram })}
-      />
+      {show("access") && (
+        <AccessProgramEditor
+          value={course.accessProgram}
+          currency={course.currency}
+          onChange={(accessProgram) => setCourse({ ...course, accessProgram })}
+        />
+      )}
 
-      <section className="rounded-xl border border-slate-200 p-5">
+      {show("notifications") && (
+      <section className="rounded-lg border border-slate-200 bg-white p-5">
         <div className="mb-5">
           <h2 className="text-lg font-bold text-slate-900">Email notifications</h2>
           <p className="mt-1 text-sm text-slate-500">
@@ -382,35 +426,68 @@ export function CourseEditor({ slug }: { slug?: string }) {
           />
         </div>
       </section>
+      )}
 
-      <CourseAgentEditor
-        courseSlug={slug}
-        agents={course.agents}
-        onChange={(agents) => setCourse({ ...course, agents })}
-      />
+      {show("agents") && (
+        <CourseAgentEditor
+          courseSlug={slug}
+          agents={course.agents}
+          onChange={(agents) => setCourse({ ...course, agents })}
+        />
+      )}
 
-      <CourseCollaborators slug={slug} />
+      {isFullEditor && <CourseCollaborators slug={slug} />}
 
-      <section className="space-y-4">
+      {show("content") && (
+      <section className="space-y-4 rounded-lg border border-slate-200 bg-white p-5">
         <div className="flex items-center justify-between">
-          <h2 className="text-lg font-bold text-slate-900">Modules and lessons</h2>
+          <div>
+            <h2 className="text-lg font-bold text-slate-900">Modules and lessons</h2>
+            <p className="mt-1 text-sm text-slate-500">
+              Manage the learning path, lesson timing, prompts, and free previews.
+            </p>
+          </div>
           <button type="button" onClick={() => setCourse({ ...course, modules: [...course.modules, { title: `Module ${course.modules.length + 1}`, lessons: [] }] })} className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-bold">
             Add module
           </button>
         </div>
         {course.modules.map((module, moduleIndex) => (
-          <div key={moduleIndex} className="rounded-xl border border-slate-200 p-4">
-            <Field label="Module title" value={module.title} onChange={(value) => updateModule(course, setCourse, moduleIndex, { ...module, title: value })} />
+          <div key={moduleIndex} className="rounded-lg border border-slate-200 p-4">
+            <div className="grid gap-4 md:grid-cols-[1fr_auto]">
+              <Field label="Module title" value={module.title} onChange={(value) => updateModule(course, setCourse, moduleIndex, { ...module, title: value })} />
+              <button
+                type="button"
+                onClick={() => setCourse({ ...course, modules: course.modules.filter((_, index) => index !== moduleIndex) })}
+                className="self-end rounded-lg border border-slate-200 px-3 py-2 text-xs font-bold text-slate-600 hover:bg-slate-50"
+              >
+                Remove module
+              </button>
+            </div>
+            <TextArea label="Module description" value={module.description || ""} onChange={(value) => updateModule(course, setCourse, moduleIndex, { ...module, description: value })} />
             <TextArea label="Module assignment prompt" value={module.assignment || ""} onChange={(value) => updateModule(course, setCourse, moduleIndex, { ...module, assignment: value })} />
-            <div className="mt-4 space-y-3">
+            <div className="mt-4 max-h-[420px] space-y-3 overflow-y-auto rounded-lg border border-slate-200 bg-slate-50 p-3">
               {module.lessons.map((lesson, lessonIndex) => (
-                <div key={lessonIndex} className="grid gap-3 rounded-lg bg-slate-50 p-3 md:grid-cols-[1fr_100px_auto]">
-                  <input className="rounded-lg border border-slate-200 px-3 py-2 text-sm" value={lesson.title} onChange={(event) => updateLesson(course, setCourse, moduleIndex, lessonIndex, { ...lesson, title: event.target.value })} />
-                  <input className="rounded-lg border border-slate-200 px-3 py-2 text-sm" value={lesson.duration} onChange={(event) => updateLesson(course, setCourse, moduleIndex, lessonIndex, { ...lesson, duration: event.target.value })} />
+                <div key={lessonIndex} className="grid gap-3 rounded-lg border border-slate-200 bg-white p-3 md:grid-cols-[1fr_120px_auto_auto]">
+                  <input aria-label="Lesson title" className="rounded-lg border border-slate-200 px-3 py-2 text-sm" value={lesson.title} onChange={(event) => updateLesson(course, setCourse, moduleIndex, lessonIndex, { ...lesson, title: event.target.value })} />
+                  <input aria-label="Lesson duration" className="rounded-lg border border-slate-200 px-3 py-2 text-sm" value={lesson.duration} onChange={(event) => updateLesson(course, setCourse, moduleIndex, lessonIndex, { ...lesson, duration: event.target.value })} />
                   <label className="flex items-center gap-2 text-xs font-bold text-slate-600">
                     <input type="checkbox" checked={Boolean(lesson.isFree)} onChange={(event) => updateLesson(course, setCourse, moduleIndex, lessonIndex, { ...lesson, isFree: event.target.checked })} />
                     Free preview
                   </label>
+                  <button
+                    type="button"
+                    onClick={() => updateModule(course, setCourse, moduleIndex, { ...module, lessons: module.lessons.filter((_, index) => index !== lessonIndex) })}
+                    className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-bold text-slate-600 hover:bg-slate-50"
+                  >
+                    Remove
+                  </button>
+                  <textarea
+                    aria-label="Lesson description"
+                    placeholder="Lesson notes, video link, document references, or prep instructions"
+                    value={lesson.description || ""}
+                    onChange={(event) => updateLesson(course, setCourse, moduleIndex, lessonIndex, { ...lesson, description: event.target.value })}
+                    className="min-h-20 rounded-lg border border-slate-200 px-3 py-2 text-sm md:col-span-4"
+                  />
                 </div>
               ))}
               <button type="button" onClick={() => updateModule(course, setCourse, moduleIndex, { ...module, lessons: [...module.lessons, { title: "New lesson", duration: "15" }] })} className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-bold">
@@ -420,11 +497,34 @@ export function CourseEditor({ slug }: { slug?: string }) {
           </div>
         ))}
       </section>
+      )}
 
-      <button disabled={saving} className="rounded-lg bg-slate-950 px-5 py-2.5 text-sm font-bold text-white disabled:opacity-50">
-        {saving ? "Saving..." : "Save course"}
-      </button>
+      <div className="sticky bottom-4 z-10 flex justify-end">
+        <button disabled={saving} className="rounded-lg bg-slate-950 px-5 py-2.5 text-sm font-bold text-white shadow-lg shadow-slate-200 disabled:opacity-50">
+          {saving ? "Saving..." : "Save course"}
+        </button>
+      </div>
     </form>
+  );
+}
+
+function EditorPanel({
+  title,
+  description,
+  children,
+}: {
+  title: string;
+  description: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <section className="space-y-5 rounded-lg border border-slate-200 bg-white p-5">
+      <div>
+        <h2 className="text-lg font-bold text-slate-900">{title}</h2>
+        <p className="mt-1 text-sm text-slate-500">{description}</p>
+      </div>
+      {children}
+    </section>
   );
 }
 

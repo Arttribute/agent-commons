@@ -1,11 +1,8 @@
-import Link from "next/link";
 import { redirect } from "next/navigation";
 import { requireEducatorCourse } from "@/lib/educator-auth";
 import Payment from "@/models/Payment";
 import PayoutLedger from "@/models/PayoutLedger";
-import { Nav } from "@/components/nav";
-import { CourseAgentDrawer } from "@/components/course-agents/course-agent-drawer";
-import type { CourseAgentConfig } from "@/types/course-agent";
+import { ScrollableListFrame } from "@/components/educator/scrollable-list-frame";
 
 export default async function CoursePaymentsPage({
   params,
@@ -28,40 +25,26 @@ export default async function CoursePaymentsPage({
   const platformFeePercent = result.course.educator?.platformFeePercent ?? 20;
   const platformFees = gross * (platformFeePercent / 100);
   const net = gross - platformFees;
-  const agents = JSON.parse(
-    JSON.stringify(result.course.agents || [])
-  ) as CourseAgentConfig[];
-
   return (
-    <div className="min-h-screen bg-white">
-      <Nav />
-      <CourseAgentDrawer
-        courseSlug={slug}
-        role="educator"
-        agents={agents}
-        context={{
-          page: "educator.payments",
-          title: "Payments",
-          visibleText: `${result.course.title}\nGross ${gross}\nEstimated net ${net}\n${payments.length} payments`,
-        }}
-      />
-      <main className="mx-auto max-w-6xl px-4 pb-16 pt-24 sm:px-6 lg:px-8">
-        <Link href="/educator" className="text-sm font-bold text-slate-500">
-          Back to educator console
-        </Link>
-        <h1 className="mb-2 mt-4 text-3xl font-bold text-slate-950">
-          Payments
-        </h1>
-        <p className="mb-8 text-sm text-slate-500">{result.course.title}</p>
+    <div className="space-y-8">
+      <div>
+        <p className="text-sm font-bold uppercase tracking-[0.16em] text-slate-400">
+          Revenue
+        </p>
+        <h2 className="mt-2 text-3xl font-bold text-slate-950">Payments</h2>
+        <p className="mt-2 text-sm text-slate-500">
+          Transactions, discounts, providers, and payout ledger activity.
+        </p>
+      </div>
 
-        <div className="mb-8 grid gap-4 md:grid-cols-3">
+        <div className="grid gap-4 md:grid-cols-3">
           <Metric label="Gross" value={formatMoney(gross, result.course.currency)} />
           <Metric label="Platform fees" value={formatMoney(platformFees, result.course.currency)} />
           <Metric label="Estimated net" value={formatMoney(net, result.course.currency)} />
         </div>
 
-        <h2 className="mb-3 text-lg font-bold text-slate-900">Transactions</h2>
-        <div className="overflow-hidden rounded-xl border border-slate-200">
+        <ScrollableListFrame title="Transactions" count={payments.length} rowHeight={84}>
+          <div className="min-w-[860px]">
           {payments.map((payment) => {
             const user = payment.userId as unknown as { name?: string; email?: string };
             return (
@@ -95,9 +78,10 @@ export default async function CoursePaymentsPage({
             <p className="p-6 text-sm text-slate-500">No payments yet.</p>
           )}
         </div>
+        </ScrollableListFrame>
 
-        <h2 className="mb-3 mt-8 text-lg font-bold text-slate-900">Payout ledger</h2>
-        <div className="overflow-hidden rounded-xl border border-slate-200">
+        <ScrollableListFrame title="Payout ledger" count={ledger.length} rowHeight={64}>
+          <div className="min-w-[680px]">
           {ledger.map((entry) => (
             <div
               key={String(entry._id)}
@@ -115,14 +99,14 @@ export default async function CoursePaymentsPage({
             </p>
           )}
         </div>
-      </main>
+        </ScrollableListFrame>
     </div>
   );
 }
 
 function Metric({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-xl border border-slate-200 p-5">
+    <div className="rounded-lg border border-slate-200 bg-white p-5">
       <p className="text-2xl font-bold text-slate-950">{value}</p>
       <p className="text-sm text-slate-500">{label}</p>
     </div>
