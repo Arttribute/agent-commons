@@ -1,14 +1,13 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import { usePathname } from "next/navigation";
 import {
   BarChart3,
   Bell,
   BookOpen,
   Bot,
-  ChevronLeft,
-  ChevronRight,
   ClipboardList,
   CreditCard,
   FileText,
@@ -16,6 +15,8 @@ import {
   GraduationCap,
   LayoutDashboard,
   Menu,
+  PanelLeftClose,
+  PanelLeftOpen,
   Users,
   X,
 } from "lucide-react";
@@ -85,38 +86,41 @@ export function CourseDashboardShell({
             collapsed ? "lg:w-[76px]" : "lg:w-72"
           )}
         >
-          <div className="flex border-b border-slate-100 p-3">
-            <div className={cn("min-w-0 flex-1", collapsed && "hidden")}>
-              <Link
-                href="/educator"
-                className="text-[10px] font-bold uppercase tracking-[0.18em] text-slate-400 transition-colors hover:text-slate-700"
-              >
-                Educator console
-              </Link>
-              <h2 className="mt-1 line-clamp-2 text-sm font-bold leading-snug text-slate-950">
-                {title}
-              </h2>
-              <div className="mt-2 flex flex-wrap items-center gap-2">
-                <span className="inline-flex rounded-md border border-[#A6E45E] bg-[#B8F56D] px-2 py-0.5 text-[11px] font-bold text-slate-950">
-                  {published ? "Published" : "Draft"}
-                </span>
-                <Link
-                  href={`/courses/${slug}`}
-                  className="text-[11px] font-bold text-slate-500 hover:text-slate-950"
-                >
-                  Public page
-                </Link>
-              </div>
-            </div>
-            {collapsed && (
-              <Link
-                href={basePath}
-                title={`${title} · ${published ? "Published" : "Draft"}`}
-                className="hidden h-10 w-10 items-center justify-center rounded-lg border border-[#A6E45E] bg-[#B8F56D] text-slate-950 lg:flex"
-              >
-                <BookOpen className="h-4 w-4" />
-              </Link>
+          <div
+            className={cn(
+              "flex h-14 items-center border-b border-slate-100 px-3",
+              collapsed ? "justify-center" : "justify-between"
             )}
+          >
+            <Link
+              href="/educator"
+              title="Educator console"
+              className={cn(
+                "flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-white",
+                collapsed && "hidden"
+              )}
+            >
+              <Image
+                src="/ac-icon.svg"
+                alt="CommonLab"
+                width={24}
+                height={24}
+                className="rounded-md"
+              />
+            </Link>
+            <button
+              type="button"
+              onClick={() => setCollapsed((value) => !value)}
+              className="hidden h-9 w-9 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100 hover:text-slate-900 lg:flex"
+              aria-label={collapsed ? "Expand course navigation" : "Collapse course navigation"}
+              title={collapsed ? "Expand" : "Collapse"}
+            >
+              {collapsed ? (
+                <PanelLeftOpen className="h-5 w-5" />
+              ) : (
+                <PanelLeftClose className="h-5 w-5" />
+              )}
+            </button>
             <button
               className="ml-2 rounded p-1 text-slate-400 hover:text-slate-700 lg:hidden"
               onClick={() => setMobileOpen(false)}
@@ -127,16 +131,6 @@ export function CourseDashboardShell({
           </div>
 
           <div className="flex min-h-0 flex-1 flex-col p-3">
-            <button
-              type="button"
-              onClick={() => setCollapsed((value) => !value)}
-              className="mb-3 hidden h-9 items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white text-xs font-bold text-slate-600 hover:bg-[#FFE177]/30 lg:flex"
-              aria-label={collapsed ? "Expand course navigation" : "Collapse course navigation"}
-            >
-              {collapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}
-              {!collapsed && <span>Collapse</span>}
-            </button>
-
             <nav className="min-h-0 flex-1 space-y-5 overflow-y-auto overscroll-contain">
               {navGroups.map((group) => (
                 <div key={group.label}>
