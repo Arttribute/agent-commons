@@ -6,6 +6,7 @@ import {
 } from "@/lib/paystack";
 import { connectDB } from "@/lib/db";
 import { fulfillCompletedPayment } from "@/lib/payment-fulfillment";
+import { trackAnalyticsEvent } from "@/lib/analytics";
 import type Stripe from "stripe";
 
 export async function POST(req: NextRequest) {
@@ -42,7 +43,7 @@ export async function POST(req: NextRequest) {
 
     await connectDB();
 
-    await fulfillCompletedPayment({
+    const result = await fulfillCompletedPayment({
       provider: "stripe",
       providerReference: session.id,
       stripePaymentIntentId: session.payment_intent as string,
@@ -52,6 +53,25 @@ export async function POST(req: NextRequest) {
         metadata: session.metadata || undefined,
       },
     });
+    if (result.fulfilled) {
+      await trackAnalyticsEvent({
+        eventType: "payment_completed",
+        userId: result.payment.userId.toString(),
+        courseId: result.payment.courseId,
+        courseSlug: result.course.slug,
+        page: "webhook",
+        provider: "stripe",
+        paymentPlan: result.payment.paymentPlan,
+        accessCode: result.payment.accessCode,
+        accessCodeType: result.payment.accessCodeType,
+        affiliateCode: result.payment.affiliateCode,
+        originalAmount: result.payment.originalAmount,
+        finalAmount: result.payment.amount,
+        discountAmount: result.payment.discountAmount,
+        currency: result.payment.currency,
+        metadata: { providerReference: session.id },
+      });
+    }
   }
 
   return NextResponse.json({ received: true });
@@ -77,7 +97,7 @@ async function handlePaystackWebhook(body: string, signature: string) {
 
   await connectDB();
 
-  await fulfillCompletedPayment({
+  const result = await fulfillCompletedPayment({
     provider: "paystack",
     providerReference: reference,
     channel: channel || "unknown",
@@ -88,6 +108,25 @@ async function handlePaystackWebhook(body: string, signature: string) {
       metadata,
     },
   });
+  if (result.fulfilled) {
+    await trackAnalyticsEvent({
+      eventType: "payment_completed",
+      userId: result.payment.userId.toString(),
+      courseId: result.payment.courseId,
+      courseSlug: result.course.slug,
+      page: "webhook",
+      provider: "paystack",
+      paymentPlan: result.payment.paymentPlan,
+      accessCode: result.payment.accessCode,
+      accessCodeType: result.payment.accessCodeType,
+      affiliateCode: result.payment.affiliateCode,
+      originalAmount: result.payment.originalAmount,
+      finalAmount: result.payment.amount,
+      discountAmount: result.payment.discountAmount,
+      currency: result.payment.currency,
+      metadata: { providerReference: reference, channel },
+    });
+  }
 
   return NextResponse.json({ received: true });
 }

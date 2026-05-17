@@ -4,6 +4,7 @@ import { createAccountToken } from "@/lib/account-tokens";
 import { connectDB } from "@/lib/db";
 import { fulfillCompletedPayment } from "@/lib/payment-fulfillment";
 import { verifyPaystackTransaction } from "@/lib/paystack";
+import { trackAnalyticsEvent } from "@/lib/analytics";
 
 export async function GET(req: NextRequest) {
   const url = new URL(req.url);
@@ -39,8 +40,36 @@ export async function GET(req: NextRequest) {
   });
 
   if (!result.fulfilled) {
+    await trackAnalyticsEvent({
+      eventType: "payment_failed",
+      page: "checkout",
+      provider: "paystack",
+      metadata: {
+        code: result.reason || "fulfillment_failed",
+        providerReference: transaction.reference,
+      },
+      request: req,
+    });
     return redirectError(req, result.reason || "fulfillment_failed");
   }
+  await trackAnalyticsEvent({
+    eventType: "payment_completed",
+    userId: result.payment.userId.toString(),
+    courseId: result.payment.courseId,
+    courseSlug: result.course.slug,
+    page: "checkout",
+    provider: "paystack",
+    paymentPlan: result.payment.paymentPlan,
+    accessCode: result.payment.accessCode,
+    accessCodeType: result.payment.accessCodeType,
+    affiliateCode: result.payment.affiliateCode,
+    originalAmount: result.payment.originalAmount,
+    finalAmount: result.payment.amount,
+    discountAmount: result.payment.discountAmount,
+    currency: result.payment.currency,
+    metadata: { providerReference: transaction.reference, channel: transaction.channel },
+    request: req,
+  });
 
   return redirectAfterPayment(req, {
     userId: result.payment.userId.toString(),

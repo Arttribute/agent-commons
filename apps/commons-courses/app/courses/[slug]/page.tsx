@@ -5,6 +5,7 @@ import { CourseOutline } from "@/components/courses/course-outline";
 import { EnrolButton } from "@/components/courses/enrol-button";
 import { EnrolledBanner } from "@/components/courses/enrolled-banner";
 import { EnrollmentAwareActions } from "@/components/courses/enrollment-aware-actions";
+import { AnalyticsTracker } from "@/components/analytics/analytics-tracker";
 import { auth } from "@/lib/auth";
 import { connectDB } from "@/lib/db";
 import Course from "@/models/Course";
@@ -121,6 +122,16 @@ export default async function CoursePage({ params, searchParams }: Props) {
 
   return (
     <div className="min-h-screen overflow-x-hidden bg-white">
+      <AnalyticsTracker
+        courseSlug={course.slug}
+        page="course.detail"
+        metadata={{
+          affiliateCode,
+          price: course.price,
+          currency: course.currency,
+          isFree: course.isFree,
+        }}
+      />
       <Nav />
       <div className="pt-20">
         <div className="relative bg-white border-b border-slate-100">

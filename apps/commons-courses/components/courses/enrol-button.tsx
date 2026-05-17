@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
 import { getProviders, signIn } from "next-auth/react";
 import { ArrowRight, Loader2, X, ExternalLink } from "lucide-react";
+import { useAnalytics } from "@/components/analytics/analytics-tracker";
 
 interface Props {
   courseSlug: string;
@@ -15,6 +16,7 @@ interface Props {
 type TermsStatus = "loading" | "not-logged-in" | "pending" | "accepted";
 
 export function EnrolButton({ isFree, checkoutUrl, label }: Props) {
+  const track = useAnalytics();
   const [termsStatus, setTermsStatus] = useState<TermsStatus>("loading");
   const [modalOpen, setModalOpen] = useState(false);
   const [checked, setChecked] = useState(false);
@@ -66,9 +68,37 @@ export function EnrolButton({ isFree, checkoutUrl, label }: Props) {
   }, [buildCheckoutUrl, email]);
 
   const handleEnrolClick = () => {
+    const url = new URL(buildCheckoutUrl(), window.location.origin);
+    track({
+      eventType: "course_cta_click",
+      courseSlug: url.searchParams.get("courseSlug") || undefined,
+      page: "course.detail",
+      provider: normalizeProvider(url.searchParams.get("provider")),
+      paymentPlan:
+        url.searchParams.get("plan") === "installment" ? "installment" : "one_time",
+      accessCode: url.searchParams.get("accessCode") || undefined,
+      affiliateCode: url.searchParams.get("affiliate") || undefined,
+      metadata: { isFree, label },
+    });
     if (termsStatus === "accepted") {
+      track({
+        eventType: "checkout_redirect",
+        courseSlug: url.searchParams.get("courseSlug") || undefined,
+        page: "course.detail",
+        provider: normalizeProvider(url.searchParams.get("provider")),
+        paymentPlan:
+          url.searchParams.get("plan") === "installment" ? "installment" : "one_time",
+        accessCode: url.searchParams.get("accessCode") || undefined,
+        affiliateCode: url.searchParams.get("affiliate") || undefined,
+      });
       window.location.href = buildCheckoutUrl();
     } else {
+      track({
+        eventType: "terms_modal_open",
+        courseSlug: url.searchParams.get("courseSlug") || undefined,
+        page: "course.detail",
+        metadata: { termsStatus },
+      });
       setModalOpen(true);
     }
   };
@@ -89,6 +119,12 @@ export function EnrolButton({ isFree, checkoutUrl, label }: Props) {
 
       const res = await fetch("/api/user/accept-terms", { method: "POST" });
       if (!res.ok) throw new Error("Failed to record acceptance.");
+      const url = new URL(buildCheckoutUrl(), window.location.origin);
+      track({
+        eventType: "terms_accepted",
+        courseSlug: url.searchParams.get("courseSlug") || undefined,
+        page: "course.detail",
+      });
       setTermsStatus("accepted");
       setModalOpen(false);
       window.location.href = buildCheckoutUrl();
@@ -269,6 +305,10 @@ export function EnrolButton({ isFree, checkoutUrl, label }: Props) {
       )}
     </>
   );
+}
+
+function normalizeProvider(provider: string | null) {
+  return provider === "paystack" || provider === "stripe" ? provider : undefined;
 }
 
 function GoogleLogo() {

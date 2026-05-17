@@ -17,6 +17,7 @@ import User from "@/models/User";
 import mongoose from "mongoose";
 import { getSafeErrorMessage } from "@/lib/safe-error";
 import { recoverCompletedEnrollment } from "@/lib/payment-recovery";
+import { trackAnalyticsEvent } from "@/lib/analytics";
 import {
   CourseAccessProgram,
   priceCourseAccess,
@@ -275,6 +276,12 @@ export async function GET(req: NextRequest) {
   const checkoutUserEmail = searchParams.get("email") || searchParams.get("learnerEmail");
   const acceptedTerms = searchParams.get("acceptTerms") === "1";
   if (!courseSlug) {
+    await trackAnalyticsEvent({
+      eventType: "checkout_error",
+      page: "checkout",
+      metadata: { code: "missing_course" },
+      request: req,
+    });
     return redirectPaymentError(req, {
       code: "missing_course",
     });
@@ -287,6 +294,13 @@ export async function GET(req: NextRequest) {
     published: true,
   })) as CheckoutCourse | null;
   if (!dbCourse) {
+    await trackAnalyticsEvent({
+      eventType: "checkout_error",
+      courseSlug,
+      page: "checkout",
+      metadata: { code: "course_not_found" },
+      request: req,
+    });
     return redirectPaymentError(req, { code: "course_not_found", courseSlug });
   }
 
@@ -296,6 +310,18 @@ export async function GET(req: NextRequest) {
     acceptedTerms,
   });
   if (!checkoutUser) {
+    await trackAnalyticsEvent({
+      eventType: "checkout_error",
+      courseId: dbCourse._id,
+      courseSlug,
+      page: "checkout",
+      source: affiliateCode || undefined,
+      accessCode: accessCode || undefined,
+      affiliateCode: affiliateCode || undefined,
+      paymentPlan: requestedPlan,
+      metadata: { code: "auth_or_terms_required" },
+      request: req,
+    });
     const signinUrl = new URL("/auth/signin", req.url);
     signinUrl.searchParams.set(
       "callbackUrl",
@@ -306,6 +332,24 @@ export async function GET(req: NextRequest) {
   await sendCheckoutVerificationIfNeeded({ checkoutUser, courseSlug });
 
   const courseMongoId = dbCourse._id as mongoose.Types.ObjectId;
+  await trackAnalyticsEvent({
+    eventType: "checkout_started",
+    userId: checkoutUser.id,
+    courseId: courseMongoId,
+    courseSlug,
+    page: "checkout",
+    source: affiliateCode || undefined,
+    provider:
+      requestedProvider === "stripe" || requestedProvider === "paystack"
+        ? requestedProvider
+        : undefined,
+    paymentPlan: requestedPlan,
+    accessCode: accessCode || undefined,
+    affiliateCode: affiliateCode || undefined,
+    currency: getCourseCurrency(dbCourse.currency),
+    metadata: { acceptedTerms, checkoutSignin: checkoutUser.canUseCheckoutSignIn },
+    request: req,
+  });
   if (dbCourse.isFree) {
     const existingFreeEnrollment = await Enrollment.findOne({
       userId: checkoutUser.id,
@@ -337,6 +381,16 @@ export async function GET(req: NextRequest) {
         }
       );
     }
+    await trackAnalyticsEvent({
+      eventType: "free_enrollment",
+      userId: checkoutUser.id,
+      courseId: courseMongoId,
+      courseSlug,
+      page: "checkout",
+      finalAmount: 0,
+      currency: getCourseCurrency(dbCourse.currency),
+      request: req,
+    });
     return redirectAfterEnrollment({
       req,
       session,
@@ -350,6 +404,16 @@ export async function GET(req: NextRequest) {
   try {
     coursePrice = getPlanAmount(dbCourse, requestedPlan);
   } catch {
+    await trackAnalyticsEvent({
+      eventType: "checkout_error",
+      userId: checkoutUser.id,
+      courseId: courseMongoId,
+      courseSlug,
+      page: "checkout",
+      paymentPlan: requestedPlan,
+      metadata: { code: "invalid_payment_plan" },
+      request: req,
+    });
     return redirectPaymentError(req, {
       code: "invalid_payment_plan",
       courseSlug,
@@ -392,6 +456,22 @@ export async function GET(req: NextRequest) {
       accessCodeType: accessPrice.accessCodeType,
       affiliateCode: accessPrice.affiliateCode,
       });
+    await trackAnalyticsEvent({
+      eventType: "access_code_enrollment",
+      userId: checkoutUser.id,
+      courseId: courseMongoId,
+      courseSlug,
+      page: "checkout",
+      paymentPlan: requestedPlan,
+      accessCode: accessPrice.accessCode,
+      accessCodeType: accessPrice.accessCodeType,
+      affiliateCode: accessPrice.affiliateCode,
+      originalAmount: accessPrice.originalAmount,
+      finalAmount: 0,
+      discountAmount: accessPrice.discountAmount,
+      currency: getCourseCurrency(dbCourse.currency),
+      request: req,
+    });
     if (!existingAccessEnrollment) {
       await sendEnrollmentEmail(
         { name: checkoutUser.name, email: checkoutUser.email },
@@ -418,6 +498,17 @@ export async function GET(req: NextRequest) {
   const enabledProviders = dbCourse.paymentProviders || ["stripe"];
   const provider = getProvider(requestedProvider, courseCurrency, enabledProviders);
   if (!enabledProviders.includes(provider)) {
+    await trackAnalyticsEvent({
+      eventType: "checkout_error",
+      userId: checkoutUser.id,
+      courseId: courseMongoId,
+      courseSlug,
+      page: "checkout",
+      provider,
+      paymentPlan: requestedPlan,
+      metadata: { code: "provider_not_enabled" },
+      request: req,
+    });
     return redirectPaymentError(req, {
       code: "provider_not_enabled",
       courseSlug,
@@ -514,6 +605,24 @@ export async function GET(req: NextRequest) {
       });
     } catch (err) {
       logProviderStartFailure(provider, courseSlug, err);
+      await trackAnalyticsEvent({
+        eventType: "checkout_error",
+        userId: checkoutUser.id,
+        courseId: courseMongoId,
+        courseSlug,
+        page: "checkout",
+        provider,
+        paymentPlan: requestedPlan,
+        accessCode: accessPrice.accessCode,
+        accessCodeType: accessPrice.accessCodeType,
+        affiliateCode: accessPrice.affiliateCode,
+        originalAmount: accessPrice.originalAmount,
+        finalAmount: accessPrice.finalAmount,
+        discountAmount: accessPrice.discountAmount,
+        currency: courseCurrency,
+        metadata: { code: "provider_start_failed" },
+        request: req,
+      });
       return redirectPaymentError(req, {
         code: "provider_start_failed",
         courseSlug,
@@ -553,6 +662,27 @@ export async function GET(req: NextRequest) {
         originalAmount: accessPrice.originalAmount,
         checkoutSignin: checkoutUser.canUseCheckoutSignIn,
       },
+    });
+    await trackAnalyticsEvent({
+      eventType: "checkout_redirect",
+      userId: checkoutUser.id,
+      courseId: courseMongoId,
+      courseSlug,
+      page: "checkout",
+      provider,
+      paymentPlan: requestedPlan,
+      accessCode: accessPrice.accessCode,
+      accessCodeType: accessPrice.accessCodeType,
+      affiliateCode: accessPrice.affiliateCode,
+      originalAmount: accessPrice.originalAmount,
+      finalAmount: accessPrice.finalAmount,
+      discountAmount: accessPrice.discountAmount,
+      currency: courseCurrency,
+      metadata: {
+        providerReference,
+        channel: courseCurrency === "kes" ? "mobile_money" : "unknown",
+      },
+      request: req,
     });
 
     return NextResponse.redirect(paystackTransaction.authorization_url);
@@ -595,6 +725,24 @@ export async function GET(req: NextRequest) {
     });
   } catch (err) {
     logProviderStartFailure(provider, courseSlug, err);
+    await trackAnalyticsEvent({
+      eventType: "checkout_error",
+      userId: checkoutUser.id,
+      courseId: courseMongoId,
+      courseSlug,
+      page: "checkout",
+      provider,
+      paymentPlan: requestedPlan,
+      accessCode: accessPrice.accessCode,
+      accessCodeType: accessPrice.accessCodeType,
+      affiliateCode: accessPrice.affiliateCode,
+      originalAmount: accessPrice.originalAmount,
+      finalAmount: accessPrice.finalAmount,
+      discountAmount: accessPrice.discountAmount,
+      currency: courseCurrency,
+      metadata: { code: "provider_start_failed" },
+      request: req,
+    });
     return redirectPaymentError(req, {
       code: "provider_start_failed",
       courseSlug,
@@ -636,6 +784,24 @@ export async function GET(req: NextRequest) {
       },
     }).catch(() => {});
   }
+  await trackAnalyticsEvent({
+    eventType: "checkout_redirect",
+    userId: checkoutUser.id,
+    courseId: courseMongoId,
+    courseSlug,
+    page: "checkout",
+    provider,
+    paymentPlan: requestedPlan,
+    accessCode: accessPrice.accessCode,
+    accessCodeType: accessPrice.accessCodeType,
+    affiliateCode: accessPrice.affiliateCode,
+    originalAmount: accessPrice.originalAmount,
+    finalAmount: accessPrice.finalAmount,
+    discountAmount: accessPrice.discountAmount,
+    currency: courseCurrency,
+    metadata: { providerReference: stripeSession.id },
+    request: req,
+  });
 
   return NextResponse.redirect(stripeSession.url!);
 }

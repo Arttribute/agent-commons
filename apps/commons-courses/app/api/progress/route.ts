@@ -4,6 +4,7 @@ import { connectDB } from "@/lib/db";
 import Enrollment from "@/models/Enrollment";
 import Course from "@/models/Course";
 import type mongoose from "mongoose";
+import { trackAnalyticsEvent } from "@/lib/analytics";
 
 interface EnrollmentProgress {
   _id: mongoose.Types.ObjectId;
@@ -121,6 +122,20 @@ export async function POST(req: NextRequest) {
       },
     },
   );
+  const [moduleIndex, lessonIndex] = lessonKey
+    .split(":")
+    .map((part: string) => Number.parseInt(part, 10));
+  await trackAnalyticsEvent({
+    eventType: "lesson_completed",
+    userId: session.user.id,
+    courseId: course._id,
+    courseSlug,
+    page: "course.learn",
+    moduleIndex: Number.isFinite(moduleIndex) ? moduleIndex : undefined,
+    lessonIndex: Number.isFinite(lessonIndex) ? lessonIndex : undefined,
+    metadata: { progress, status },
+    request: req,
+  });
 
   return NextResponse.json({ completedLessons: updated, progress, status });
 }

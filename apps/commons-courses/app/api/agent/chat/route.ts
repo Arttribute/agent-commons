@@ -164,6 +164,7 @@ export async function POST(req: NextRequest) {
         studentsHref: `/educator/courses/${course.slug}/students`,
         assignmentsHref: `/educator/courses/${course.slug}/assignments`,
         paymentsHref: `/educator/courses/${course.slug}/payments`,
+        analyticsHref: `/educator/courses/${course.slug}/analytics`,
       })),
     },
     searchResults: searchResults.slice(0, 10),
