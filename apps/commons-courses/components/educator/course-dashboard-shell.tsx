@@ -96,11 +96,11 @@ export function CourseDashboardShell({
               href="/educator"
               title="Educator console"
               className={cn(
-                "flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-white",
+                "flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100 hover:text-slate-900",
                 collapsed && "hidden"
               )}
             >
-              <FlaskConical className="h-5 w-5 text-slate-700" />
+              <FlaskConical className="h-4 w-4" />
             </Link>
             <button
               type="button"
