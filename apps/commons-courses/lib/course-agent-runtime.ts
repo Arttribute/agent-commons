@@ -31,6 +31,7 @@ type RuntimeInput = {
     progress?: number;
     accessLevel?: string;
   } | null;
+  educatorAnalytics?: Record<string, unknown> | null;
 };
 
 export function findRunnableCourseAgent(
@@ -171,5 +172,11 @@ function buildScopedContext(input: RuntimeInput) {
     };
   }
 
-  return base;
+  return {
+    ...base,
+    educatorAnalytics:
+      input.agent.dataScope === "educator_operations"
+        ? input.educatorAnalytics
+        : null,
+  };
 }

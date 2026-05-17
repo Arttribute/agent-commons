@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { Nav } from "@/components/nav";
 import { AssignmentSubmissions } from "@/components/courses/assignment-submissions";
+import { AnalyticsTracker, useAnalytics } from "@/components/analytics/analytics-tracker";
 import { CourseAgentDrawer } from "@/components/course-agents/course-agent-drawer";
 import {
   CheckCircle,
@@ -63,9 +64,12 @@ export default function LearnPage({ params }: Props) {
   const [currentInstallment, setCurrentInstallment] = useState(0);
   const [marking, setMarking] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const track = useAnalytics();
 
   const lessonKey = `${moduleIdx}:${lessonIdx}`;
   const isCompleted = completedLessons.includes(lessonKey);
+  const currentModule = course?.modules[moduleIdx];
+  const currentLesson = currentModule?.lessons[lessonIdx];
 
   useEffect(() => {
     let cancelled = false;
@@ -111,6 +115,43 @@ export default function LearnPage({ params }: Props) {
 
   useEffect(() => { fetchProgress(); }, [fetchProgress]);
 
+  useEffect(() => {
+    if (!course || !currentLesson) return;
+    track({
+      eventType: "lesson_view",
+      courseSlug: slug,
+      page: "course.learn",
+      moduleIndex: moduleIdx,
+      lessonIndex: lessonIdx,
+      metadata: {
+        lessonTitle: currentLesson.title,
+        moduleTitle: currentModule?.title,
+        isFree: currentLesson.isFree,
+      },
+    });
+  }, [course, currentLesson, currentModule?.title, lessonIdx, moduleIdx, slug, track]);
+
+  const maxUnlockedModule =
+    accessLevel === "partial" ? Math.max(currentInstallment - 1, 0) : Infinity;
+  const lockedReason =
+    enrolled === false && !currentLesson?.isFree
+      ? "not_enrolled"
+      : enrolled && accessLevel === "partial" && moduleIdx > maxUnlockedModule
+        ? "installment_locked"
+        : null;
+
+  useEffect(() => {
+    if (!lockedReason) return;
+    track({
+      eventType: "locked_lesson_view",
+      courseSlug: slug,
+      page: "course.learn.locked",
+      moduleIndex: moduleIdx,
+      lessonIndex: lessonIdx,
+      metadata: { reason: lockedReason, currentInstallment },
+    });
+  }, [currentInstallment, lessonIdx, lockedReason, moduleIdx, slug, track]);
+
   if (courseLoading) {
     return (
       <div className="min-h-screen bg-white">
@@ -141,11 +182,16 @@ export default function LearnPage({ params }: Props) {
     );
   }
 
-  const currentModule = course.modules[moduleIdx];
-  const currentLesson = currentModule?.lessons[lessonIdx];
-
   // Navigate to a specific lesson
   const navigate = (mi: number, li: number) => {
+    track({
+      eventType: "lesson_navigation",
+      courseSlug: slug,
+      page: "course.learn",
+      moduleIndex: mi,
+      lessonIndex: li,
+      metadata: { fromModuleIndex: moduleIdx, fromLessonIndex: lessonIdx },
+    });
     router.push(`/courses/${slug}/learn?m=${mi}&l=${li}`);
     setSidebarOpen(false);
   };
@@ -164,6 +210,13 @@ export default function LearnPage({ params }: Props) {
   // Mark current lesson as complete
   const markComplete = async () => {
     if (isCompleted || marking) return;
+    track({
+      eventType: "lesson_complete_clicked",
+      courseSlug: slug,
+      page: "course.learn",
+      moduleIndex: moduleIdx,
+      lessonIndex: lessonIdx,
+    });
     setMarking(true);
     try {
       const res = await fetch("/api/progress", {
@@ -179,6 +232,10 @@ export default function LearnPage({ params }: Props) {
       setMarking(false);
     }
   };
+
+  const nextPaymentProvider = course.paymentProviders?.includes("paystack")
+    ? "&provider=paystack"
+    : "";
 
   // Guard: redirect to course page if not enrolled and lesson is not free
   if (enrolled === false && !currentLesson?.isFree) {
@@ -201,12 +258,6 @@ export default function LearnPage({ params }: Props) {
       </div>
     );
   }
-
-  const maxUnlockedModule =
-    accessLevel === "partial" ? Math.max(currentInstallment - 1, 0) : Infinity;
-  const nextPaymentProvider = course.paymentProviders?.includes("paystack")
-    ? "&provider=paystack"
-    : "";
 
   if (enrolled && accessLevel === "partial" && moduleIdx > maxUnlockedModule) {
     return (
@@ -233,12 +284,36 @@ export default function LearnPage({ params }: Props) {
     );
   }
 
+  if (!currentModule || !currentLesson) {
+    return (
+      <div className="min-h-screen bg-white">
+        <Nav />
+        <div className="pt-32 px-6 text-center">
+          <h2 className="text-lg font-bold text-slate-900 mb-2">
+            Lesson not found
+          </h2>
+          <Link
+            href={`/courses/${slug}`}
+            className="text-sm font-semibold text-slate-700 hover:text-slate-950"
+          >
+            Back to course
+          </Link>
+        </div>
+      </div>
+    );
+  }
+
   const totalLessons = allLessons.length;
   const progressPct =
     totalLessons > 0 ? Math.round((completedLessons.length / totalLessons) * 100) : 0;
 
   return (
     <div className="h-dvh bg-white flex flex-col overflow-hidden">
+      <AnalyticsTracker
+        courseSlug={slug}
+        page="course.learn"
+        metadata={{ moduleIndex: moduleIdx, lessonIndex: lessonIdx }}
+      />
       <Nav />
       <CourseAgentDrawer
         courseSlug={slug}

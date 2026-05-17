@@ -26,6 +26,7 @@ type GeneralAgentInput = {
       studentsHref: string;
       assignmentsHref: string;
       paymentsHref: string;
+      analyticsHref: string;
     }>;
   };
   searchResults: Array<ScopedSearchResult & { courseTitle?: string; courseSlug?: string }>;

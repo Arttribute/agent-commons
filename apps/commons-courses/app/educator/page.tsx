@@ -65,6 +65,12 @@ export default async function EducatorDashboardPage() {
           </div>
           <div className="flex gap-2">
             <Link
+              href="/educator/analytics"
+              className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-bold text-slate-700 hover:bg-slate-50"
+            >
+              Analytics
+            </Link>
+            <Link
               href="/educator/settings"
               className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-bold text-slate-700 hover:bg-slate-50"
             >
@@ -121,6 +127,7 @@ export default async function EducatorDashboardPage() {
                     <CourseLink slug={course.slug} label="Edit" href="edit" />
                     <CourseLink slug={course.slug} label="Students" href="students" />
                     <CourseLink slug={course.slug} label="Assignments" href="assignments" />
+                    <CourseLink slug={course.slug} label="Analytics" href="analytics" />
                     <CourseLink slug={course.slug} label="Payments" href="payments" />
                   </div>
                 </div>

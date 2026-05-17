@@ -3,6 +3,7 @@ import { auth } from "@/lib/auth";
 import { defaultCourseAgents } from "@/lib/course-agent-defaults";
 import { connectDB } from "@/lib/db";
 import { buildSearchScope } from "@/lib/search-access";
+import { buildCourseAnalyticsForAgent } from "@/lib/analytics";
 import {
   findRunnableCourseAgent,
   runCourseAgent,
@@ -111,6 +112,8 @@ export async function POST(req: NextRequest) {
     query: body.message,
     limit: 5,
   });
+  const educatorAnalytics =
+    role === "educator" ? await buildCourseAnalyticsForAgent(course._id as never) : null;
 
   const reply = await runCourseAgent({
     course,
@@ -121,6 +124,7 @@ export async function POST(req: NextRequest) {
     context: body.context,
     searchResults,
     learnerProgress,
+    educatorAnalytics,
   });
 
   return NextResponse.json({ reply });
