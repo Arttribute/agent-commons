@@ -1,7 +1,6 @@
 "use client";
 
 import Link from "next/link";
-import Image from "next/image";
 import { usePathname } from "next/navigation";
 import {
   BarChart3,
@@ -11,6 +10,7 @@ import {
   ClipboardList,
   CreditCard,
   FileText,
+  FlaskConical,
   Gift,
   GraduationCap,
   LayoutDashboard,
@@ -100,13 +100,7 @@ export function CourseDashboardShell({
                 collapsed && "hidden"
               )}
             >
-              <Image
-                src="/ac-icon.svg"
-                alt="CommonLab"
-                width={24}
-                height={24}
-                className="rounded-md"
-              />
+              <FlaskConical className="h-5 w-5 text-slate-700" />
             </Link>
             <button
               type="button"
