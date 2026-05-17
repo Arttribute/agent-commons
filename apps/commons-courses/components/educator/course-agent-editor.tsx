@@ -2,6 +2,7 @@
 
 import { Bot, CheckCircle, Plus, Trash2 } from "lucide-react";
 import { useState } from "react";
+import { useToast } from "@/components/toast-provider";
 import type {
   CourseAgentAction,
   CourseAgentConfig,
@@ -22,6 +23,7 @@ const actionOptions: CourseAgentAction[] = [
 ];
 
 export function CourseAgentEditor({ courseSlug, agents, onChange }: Props) {
+  const { toast } = useToast();
   const [creatingId, setCreatingId] = useState<string | null>(null);
   const [error, setError] = useState("");
 
@@ -45,6 +47,11 @@ export function CourseAgentEditor({ courseSlug, agents, onChange }: Props) {
         instructions: "",
       },
     ]);
+    toast({
+      title: "Agent added",
+      description: "Save course agents to apply this change.",
+      tone: "info",
+    });
   }
 
   async function createAgentCommonsAgent(agent: CourseAgentConfig, index: number) {
@@ -62,12 +69,22 @@ export function CourseAgentEditor({ courseSlug, agents, onChange }: Props) {
 
     if (!res.ok) {
       setError(data.error || "Could not create the Agent Commons agent.");
+      toast({
+        tone: "error",
+        title: "Could not create agent",
+        description: data.error || "Please try again.",
+      });
       return;
     }
 
     updateAgent(index, {
       ...agent,
       agentCommonsAgentId: data.agentCommonsAgentId,
+    });
+    toast({
+      tone: "success",
+      title: "Agent created",
+      description: `${agent.name} is connected to Agent Commons.`,
     });
   }
 
@@ -214,7 +231,14 @@ export function CourseAgentEditor({ courseSlug, agents, onChange }: Props) {
 
           <button
             type="button"
-            onClick={() => onChange(agents.filter((_, itemIndex) => itemIndex !== index))}
+            onClick={() => {
+              onChange(agents.filter((_, itemIndex) => itemIndex !== index));
+              toast({
+                title: "Agent removed",
+                description: "Save course agents to apply this change.",
+                tone: "info",
+              });
+            }}
             className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-bold text-slate-600 hover:bg-slate-50"
           >
             <Trash2 className="h-3.5 w-3.5" /> Remove

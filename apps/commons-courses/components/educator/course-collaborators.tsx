@@ -1,6 +1,7 @@
 "use client";
 
 import { FormEvent, useEffect, useState } from "react";
+import { useToast } from "@/components/toast-provider";
 
 type CollaboratorRole = "co_owner" | "editor";
 
@@ -14,6 +15,7 @@ type Collaborator = {
 };
 
 export function CourseCollaborators({ slug }: { slug?: string }) {
+  const { toast } = useToast();
   const [collaborators, setCollaborators] = useState<Collaborator[]>([]);
   const [canManage, setCanManage] = useState(false);
   const [email, setEmail] = useState("");
@@ -52,6 +54,11 @@ export function CourseCollaborators({ slug }: { slug?: string }) {
     setSaving(false);
     if (!res.ok) {
       setError(data.error || "Could not invite collaborator.");
+      toast({
+        tone: "error",
+        title: "Could not invite collaborator",
+        description: data.error || "Please try again.",
+      });
       return;
     }
 
@@ -60,6 +67,11 @@ export function CourseCollaborators({ slug }: { slug?: string }) {
     setName("");
     setRole("editor");
     setNotice("Invite sent.");
+    toast({
+      tone: "success",
+      title: "Collaborator invited",
+      description: `${email} can now help manage this course.`,
+    });
   }
 
   async function removeCollaborator(id: string) {
@@ -73,10 +85,20 @@ export function CourseCollaborators({ slug }: { slug?: string }) {
     const data = await res.json();
     if (!res.ok) {
       setError(data.error || "Could not remove collaborator.");
+      toast({
+        tone: "error",
+        title: "Could not remove collaborator",
+        description: data.error || "Please try again.",
+      });
       return;
     }
     setCollaborators(data.collaborators || []);
     setNotice("Collaborator removed.");
+    toast({
+      tone: "success",
+      title: "Collaborator removed",
+      description: "Course access was updated.",
+    });
   }
 
   if (!slug) {
