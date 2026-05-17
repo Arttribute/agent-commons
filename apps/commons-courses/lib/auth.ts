@@ -8,8 +8,10 @@ import User from "@/models/User";
 const googleEnabled =
   Boolean(process.env.GOOGLE_CLIENT_ID) &&
   Boolean(process.env.GOOGLE_CLIENT_SECRET);
+const authSecret = process.env.AUTH_SECRET || process.env.NEXTAUTH_SECRET;
 
 export const { handlers, signIn, signOut, auth } = NextAuth({
+  secret: authSecret,
   trustHost: true,
   providers: [
     ...(googleEnabled
@@ -61,28 +63,36 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
       const email = user.email || profile?.email;
       if (!email) return false;
 
-      await connectDB();
-      const existing = await User.findOne({ email });
-      if (existing) {
-        if (!existing.emailVerifiedAt) existing.emailVerifiedAt = new Date();
-        existing.authProvider = "google";
-        if (!existing.name && user.name) existing.name = user.name;
-        await existing.save();
-        user.id = existing._id.toString();
-        user.role = existing.role;
-        return true;
-      }
+      try {
+        await connectDB();
+        const existing = await User.findOne({ email });
+        if (existing) {
+          if (!existing.emailVerifiedAt) existing.emailVerifiedAt = new Date();
+          existing.authProvider = "google";
+          if (!existing.name && user.name) existing.name = user.name;
+          await existing.save();
+          user.id = existing._id.toString();
+          user.role = existing.role;
+          return true;
+        }
 
-      const created = await User.create({
-        name: user.name || email.split("@")[0],
-        email,
-        role: "learner",
-        authProvider: "google",
-        emailVerifiedAt: new Date(),
-      });
-      user.id = created._id.toString();
-      user.role = created.role;
-      return true;
+        const created = await User.create({
+          name: user.name || email.split("@")[0],
+          email,
+          role: "learner",
+          authProvider: "google",
+          emailVerifiedAt: new Date(),
+        });
+        user.id = created._id.toString();
+        user.role = created.role;
+        return true;
+      } catch (error) {
+        console.error("[auth] google sign-in failed", {
+          email,
+          message: error instanceof Error ? error.message : String(error),
+        });
+        return false;
+      }
     },
     jwt({ token, user, trigger, session }) {
       if (user) {

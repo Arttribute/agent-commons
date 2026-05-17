@@ -2,6 +2,7 @@ import "server-only";
 
 import { render } from "@react-email/render";
 import { Resend } from "resend";
+import { getAppBaseUrl } from "@/lib/app-url";
 import { CommonsEmail, DetailList, Paragraph } from "@/lib/email/templates";
 
 type Recipient = {
@@ -39,7 +40,7 @@ const resend = process.env.RESEND_API_KEY
   ? new Resend(process.env.RESEND_API_KEY)
   : null;
 
-const appUrl = process.env.NEXT_PUBLIC_BASE_URL || "http://localhost:3000";
+const appUrl = getAppBaseUrl();
 const fromAddress =
   process.env.RESEND_FROM_EMAIL || "CommonLab <onboarding@resend.dev>";
 const replyToAddress = process.env.RESEND_REPLY_TO_EMAIL;

@@ -1,4 +1,5 @@
 import * as React from "react";
+import { getAppBaseUrl } from "@/lib/app-url";
 
 export type EmailAction = {
   label: string;
@@ -27,7 +28,7 @@ const colors = {
   rose: "#F3A2B4",
 };
 
-const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || "http://localhost:3000";
+const baseUrl = getAppBaseUrl();
 
 export function CommonsEmail({
   preview,
