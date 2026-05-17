@@ -1,6 +1,7 @@
 "use client";
 
 import { FormEvent, useCallback, useEffect, useState } from "react";
+import { ScrollableListFrame } from "@/components/educator/scrollable-list-frame";
 
 type Assignment = {
   _id: string;
@@ -88,8 +89,8 @@ export function AssignmentManager({ slug }: { slug: string }) {
   }
 
   return (
-    <div className="grid gap-8 lg:grid-cols-[360px_1fr]">
-      <form onSubmit={createAssignment} className="space-y-4 rounded-xl border border-slate-200 p-5">
+    <div className="grid gap-6 lg:grid-cols-[360px_1fr]">
+      <form onSubmit={createAssignment} className="space-y-4 rounded-lg border border-slate-200 bg-white p-5">
         <h2 className="text-lg font-bold text-slate-900">New assignment</h2>
         <input
           required
@@ -131,11 +132,10 @@ export function AssignmentManager({ slug }: { slug: string }) {
       </form>
 
       <div className="space-y-8">
-        <section>
-          <h2 className="mb-3 text-lg font-bold text-slate-900">Assignments</h2>
-          <div className="space-y-3">
+        <ScrollableListFrame title="Assignments" count={assignments.length} rowHeight={116}>
+          <div className="space-y-3 p-3">
             {assignments.map((assignment) => (
-              <div key={assignment._id} className="rounded-xl border border-slate-200 p-4">
+              <div key={assignment._id} className="rounded-lg border border-slate-200 p-4">
                 <div className="flex items-center justify-between gap-3">
                   <h3 className="font-bold text-slate-900">{assignment.title}</h3>
                   <span className="text-xs text-slate-500">{assignment.points} pts</span>
@@ -145,11 +145,10 @@ export function AssignmentManager({ slug }: { slug: string }) {
             ))}
             {assignments.length === 0 && <p className="text-sm text-slate-500">No assignments yet.</p>}
           </div>
-        </section>
+        </ScrollableListFrame>
 
-        <section>
-          <h2 className="mb-3 text-lg font-bold text-slate-900">Submissions</h2>
-          <div className="space-y-3">
+        <ScrollableListFrame title="Submissions" count={submissions.length} rowHeight={172}>
+          <div className="space-y-3 p-3">
             {submissions.map((submission) => (
               <SubmissionReview
                 key={submission._id}
@@ -160,7 +159,7 @@ export function AssignmentManager({ slug }: { slug: string }) {
             ))}
             {submissions.length === 0 && <p className="text-sm text-slate-500">No submissions yet.</p>}
           </div>
-        </section>
+        </ScrollableListFrame>
       </div>
     </div>
   );
@@ -180,7 +179,7 @@ function SubmissionReview({
   const assignment = assignments.find((item) => item._id === submission.assignmentId);
 
   return (
-    <div className="rounded-xl border border-slate-200 p-4">
+    <div className="rounded-lg border border-slate-200 bg-white p-4">
       <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
         <div>
           <p className="font-bold text-slate-900">{assignment?.title || "Assignment"}</p>

@@ -1,11 +1,8 @@
-import Link from "next/link";
 import { redirect } from "next/navigation";
 import { Activity, BadgePercent, CreditCard, MousePointerClick, Users } from "lucide-react";
-import { Nav } from "@/components/nav";
-import { CourseAgentDrawer } from "@/components/course-agents/course-agent-drawer";
 import { requireEducatorCourse } from "@/lib/educator-auth";
 import { buildCourseAnalyticsSummary } from "@/lib/analytics";
-import type { CourseAgentConfig } from "@/types/course-agent";
+import { ScrollableListFrame } from "@/components/educator/scrollable-list-frame";
 
 export default async function CourseAnalyticsPage({
   params,
@@ -21,48 +18,21 @@ export default async function CourseAnalyticsPage({
     courseSlug: slug,
     days: 30,
   });
-  const agents = JSON.parse(
-    JSON.stringify(result.course.agents || [])
-  ) as CourseAgentConfig[];
-
   return (
-    <div className="min-h-screen bg-white">
-      <Nav />
-      <CourseAgentDrawer
-        courseSlug={slug}
-        role="educator"
-        agents={agents}
-        context={{
-          page: "educator.analytics",
-          title: "Analytics",
-          visibleText: [
-            result.course.title,
-            `${summary.totals.courseViews} course views`,
-            `${summary.totals.completedPayments} completed payments`,
-            `${summary.totals.stalePendingPayments} likely abandoned payments`,
-            `${summary.funnels.checkoutCompletionRate}% checkout completion`,
-          ].join("\n"),
-        }}
-      />
-      <main className="mx-auto max-w-6xl px-4 pb-16 pt-24 sm:px-6 lg:px-8">
-        <Link href="/educator" className="text-sm font-bold text-slate-500">
-          Back to educator console
-        </Link>
-        <div className="mt-4 flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
+    <div className="space-y-8">
+        <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
           <div>
-            <h1 className="text-3xl font-bold text-slate-950">Analytics</h1>
-            <p className="mt-2 text-sm text-slate-500">
-              {result.course.title} · Last {summary.windowDays} days
+            <p className="text-sm font-bold uppercase tracking-[0.16em] text-slate-400">
+              Performance
             </p>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            <CourseLink slug={slug} href="students" label="Students" />
-            <CourseLink slug={slug} href="payments" label="Payments" />
-            <CourseLink slug={slug} href="edit" label="Edit" />
+            <h2 className="mt-2 text-3xl font-bold text-slate-950">Analytics</h2>
+            <p className="mt-2 text-sm text-slate-500">
+              Last {summary.windowDays} days
+            </p>
           </div>
         </div>
 
-        <div className="mt-8 grid gap-4 md:grid-cols-5">
+        <div className="grid gap-4 md:grid-cols-5">
           <Metric
             icon={MousePointerClick}
             label="Course views"
@@ -86,14 +56,14 @@ export default async function CourseAnalyticsPage({
           />
         </div>
 
-        <section className="mt-8 grid gap-4 md:grid-cols-4">
+        <section className="grid gap-4 md:grid-cols-4">
           <Funnel label="View to checkout" value={summary.funnels.viewToCheckoutRate} />
           <Funnel label="Checkout completion" value={summary.funnels.checkoutCompletionRate} />
           <Funnel label="Likely abandonment" value={summary.funnels.pendingAbandonmentRate} />
           <Funnel label="Lesson completion" value={summary.funnels.lessonCompletionRate} />
         </section>
 
-        <section className="mt-10 grid gap-6 lg:grid-cols-2">
+        <section className="grid gap-6 lg:grid-cols-2">
           <Breakdown title="Sources" rows={summary.breakdowns.sources} />
           <Breakdown title="Payment status" rows={summary.breakdowns.paymentStatus} />
           <Breakdown title="Providers" rows={summary.breakdowns.providers} />
@@ -102,11 +72,12 @@ export default async function CourseAnalyticsPage({
           <Breakdown title="Page activity" rows={summary.breakdowns.pages} />
         </section>
 
-        <section className="mt-10">
-          <h2 className="mb-3 text-lg font-bold text-slate-900">
-            Likely abandoned payments
-          </h2>
-          <div className="overflow-hidden rounded-lg border border-slate-200">
+        <ScrollableListFrame
+          title="Likely abandoned payments"
+          count={summary.recentPendingPayments.length}
+          rowHeight={74}
+        >
+          <div className="min-w-[720px]">
             {summary.recentPendingPayments.map((payment, index) => (
               <div
                 key={`${payment.createdAt}-${index}`}
@@ -129,8 +100,7 @@ export default async function CourseAnalyticsPage({
               </p>
             )}
           </div>
-        </section>
-      </main>
+        </ScrollableListFrame>
     </div>
   );
 }
@@ -145,7 +115,7 @@ function Metric({
   value: string | number;
 }) {
   return (
-    <div className="rounded-lg border border-slate-200 p-4">
+    <div className="rounded-lg border border-slate-200 bg-white p-4">
       <Icon className="mb-3 h-4 w-4 text-slate-400" />
       <p className="break-words text-xl font-bold text-slate-950">{value}</p>
       <p className="text-sm text-slate-500">{label}</p>
@@ -155,7 +125,7 @@ function Metric({
 
 function Funnel({ label, value }: { label: string; value: number }) {
   return (
-    <div className="rounded-lg border border-slate-200 p-4">
+    <div className="rounded-lg border border-slate-200 bg-white p-4">
       <div className="mb-2 flex items-center justify-between text-sm">
         <span className="font-bold text-slate-900">{label}</span>
         <span className="text-slate-500">{value}%</span>
@@ -177,7 +147,7 @@ function Breakdown({
   return (
     <div>
       <h2 className="mb-3 text-lg font-bold text-slate-900">{title}</h2>
-      <div className="overflow-hidden rounded-lg border border-slate-200">
+      <div className="max-h-80 overflow-auto rounded-lg border border-slate-200 bg-white">
         {rows.slice(0, 8).map((row) => (
           <div
             key={row.label}
@@ -190,25 +160,6 @@ function Breakdown({
         {rows.length === 0 && <p className="p-4 text-sm text-slate-500">No data yet.</p>}
       </div>
     </div>
-  );
-}
-
-function CourseLink({
-  slug,
-  href,
-  label,
-}: {
-  slug: string;
-  href: string;
-  label: string;
-}) {
-  return (
-    <Link
-      href={`/educator/courses/${slug}/${href}`}
-      className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-bold text-slate-600 hover:bg-slate-50"
-    >
-      {label}
-    </Link>
   );
 }
 
