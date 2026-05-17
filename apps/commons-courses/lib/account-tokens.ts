@@ -2,7 +2,10 @@ import crypto from "crypto";
 import mongoose from "mongoose";
 import AccountToken from "@/models/AccountToken";
 
-export type AccountTokenPurpose = "email_verification" | "password_reset";
+export type AccountTokenPurpose =
+  | "email_verification"
+  | "password_reset"
+  | "checkout_signin";
 
 export function hashAccountToken(token: string) {
   return crypto.createHash("sha256").update(token).digest("hex");

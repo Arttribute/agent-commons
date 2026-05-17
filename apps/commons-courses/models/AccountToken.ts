@@ -3,7 +3,7 @@ import mongoose, { Schema, Document } from "mongoose";
 export interface IAccountToken extends Document {
   userId: mongoose.Types.ObjectId;
   tokenHash: string;
-  purpose: "email_verification" | "password_reset";
+  purpose: "email_verification" | "password_reset" | "checkout_signin";
   expiresAt: Date;
   usedAt?: Date;
   createdAt: Date;
@@ -15,7 +15,7 @@ const AccountTokenSchema = new Schema<IAccountToken>(
     tokenHash: { type: String, required: true, unique: true },
     purpose: {
       type: String,
-      enum: ["email_verification", "password_reset"],
+      enum: ["email_verification", "password_reset", "checkout_signin"],
       required: true,
     },
     expiresAt: { type: Date, required: true },

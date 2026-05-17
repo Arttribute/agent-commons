@@ -2,6 +2,7 @@ import NextAuth from "next-auth";
 import Credentials from "next-auth/providers/credentials";
 import Google from "next-auth/providers/google";
 import bcrypt from "bcryptjs";
+import { consumeAccountToken } from "@/lib/account-tokens";
 import { connectDB } from "@/lib/db";
 import User from "@/models/User";
 
@@ -23,6 +24,35 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
           }),
         ]
       : []),
+    Credentials({
+      id: "checkout",
+      name: "checkout",
+      credentials: {
+        token: { label: "Checkout token", type: "text" },
+      },
+      async authorize(credentials) {
+        const token = credentials?.token;
+        if (!token || typeof token !== "string") return null;
+
+        await connectDB();
+        const record = await consumeAccountToken({
+          token,
+          purpose: "checkout_signin",
+        });
+        if (!record) return null;
+
+        const user = await User.findById(record.userId);
+        if (!user) return null;
+
+        return {
+          id: user._id.toString(),
+          email: user.email,
+          name: user.name,
+          role: user.role,
+          emailVerifiedAt: user.emailVerifiedAt,
+        };
+      },
+    }),
     Credentials({
       name: "credentials",
       credentials: {

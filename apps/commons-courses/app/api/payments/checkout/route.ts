@@ -1,5 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
+import type { Session } from "next-auth";
 import { auth } from "@/lib/auth";
+import { createAccountToken } from "@/lib/account-tokens";
+import { getAppBaseUrl } from "@/lib/app-url";
 import { stripe } from "@/lib/stripe";
 import { initializePaystackTransaction } from "@/lib/paystack";
 import { connectDB } from "@/lib/db";
@@ -7,6 +10,7 @@ import { sendEnrollmentEmail } from "@/lib/email/resend";
 import Course from "@/models/Course";
 import Enrollment from "@/models/Enrollment";
 import Payment from "@/models/Payment";
+import User from "@/models/User";
 import mongoose from "mongoose";
 import { getSafeErrorMessage } from "@/lib/safe-error";
 import { recoverCompletedEnrollment } from "@/lib/payment-recovery";
@@ -54,6 +58,13 @@ interface ExistingEnrollment {
   accessLevel?: AccessLevel;
   paymentStatus?: "free" | "paid" | "partial" | "overdue";
   status?: "active" | "completed" | "cancelled";
+}
+
+interface CheckoutUser {
+  id: string;
+  email: string;
+  name?: string | null;
+  canUseCheckoutSignIn: boolean;
 }
 
 function getCourseCurrency(currency?: string) {
@@ -121,19 +132,120 @@ function getAccessLevel(course: CheckoutCourse, plan: PaymentPlan): AccessLevel 
     : "partial";
 }
 
-export async function GET(req: NextRequest) {
-  const session = await auth();
-  if (!session) {
-    const signinUrl = new URL("/auth/signin", req.url);
-    return NextResponse.redirect(signinUrl);
+function normalizeEmail(email: string | null) {
+  return email?.trim().toLowerCase() || "";
+}
+
+function isValidEmail(email: string) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+}
+
+function defaultNameFromEmail(email: string) {
+  return email.split("@")[0]?.replace(/[._-]+/g, " ") || "Learner";
+}
+
+async function resolveCheckoutUser({
+  session,
+  email,
+  acceptedTerms,
+}: {
+  session: Session | null;
+  email: string | null;
+  acceptedTerms: boolean;
+}): Promise<CheckoutUser | null> {
+  if (session?.user?.id && session.user.email) {
+    if (acceptedTerms) {
+      await User.findByIdAndUpdate(session.user.id, {
+        $set: { termsAcceptedAt: new Date() },
+      });
+    }
+    return {
+      id: session.user.id,
+      email: session.user.email,
+      name: session.user.name,
+      canUseCheckoutSignIn: false,
+    };
   }
 
+  const normalizedEmail = normalizeEmail(email);
+  if (!isValidEmail(normalizedEmail) || !acceptedTerms) return null;
+
+  const existing = await User.findOne({ email: normalizedEmail }).select(
+    "+password"
+  );
+  if (existing) {
+    if (!existing.termsAcceptedAt) {
+      existing.termsAcceptedAt = new Date();
+      await existing.save();
+    }
+    return {
+      id: existing._id.toString(),
+      email: existing.email,
+      name: existing.name,
+      canUseCheckoutSignIn: !existing.password && !existing.emailVerifiedAt,
+    };
+  }
+
+  const created = await User.create({
+    name: defaultNameFromEmail(normalizedEmail),
+    email: normalizedEmail,
+    role: "learner",
+    authProvider: "credentials",
+    termsAcceptedAt: new Date(),
+  });
+
+  return {
+    id: created._id.toString(),
+    email: created.email,
+    name: created.name,
+    canUseCheckoutSignIn: true,
+  };
+}
+
+async function redirectAfterEnrollment({
+  req,
+  session,
+  userId,
+  courseSlug,
+  canUseCheckoutSignIn,
+}: {
+  req: NextRequest;
+  session: Session | null;
+  userId: string;
+  courseSlug: string;
+  canUseCheckoutSignIn: boolean;
+}) {
+  if (session?.user?.id) {
+    return NextResponse.redirect(new URL("/dashboard?enrolled=1", req.url));
+  }
+
+  if (!canUseCheckoutSignIn) {
+    const signInUrl = new URL("/auth/signin", req.url);
+    signInUrl.searchParams.set("callbackUrl", `/courses/${courseSlug}/learn`);
+    return NextResponse.redirect(signInUrl);
+  }
+
+  const { token } = await createAccountToken({
+    userId,
+    purpose: "checkout_signin",
+    ttlMinutes: 15,
+  });
+  const signInUrl = new URL("/auth/checkout", req.url);
+  signInUrl.searchParams.set("token", token);
+  signInUrl.searchParams.set("callbackUrl", `/courses/${courseSlug}/learn`);
+  return NextResponse.redirect(signInUrl);
+}
+
+export async function GET(req: NextRequest) {
+  const session = await auth();
   const { searchParams } = new URL(req.url);
   const courseSlug = searchParams.get("courseSlug");
   const requestedProvider = searchParams.get("provider");
   const requestedPlan = searchParams.get("plan") === "installment" ? "installment" : "one_time";
   const accessCode = searchParams.get("accessCode") || searchParams.get("code");
   const affiliateCode = searchParams.get("affiliate") || searchParams.get("ref");
+  const checkoutUserEmail = searchParams.get("email") || searchParams.get("learnerEmail");
+  const acceptedTerms = searchParams.get("acceptTerms") === "1";
   if (!courseSlug) {
     return redirectPaymentError(req, {
       code: "missing_course",
@@ -150,16 +262,30 @@ export async function GET(req: NextRequest) {
     return redirectPaymentError(req, { code: "course_not_found", courseSlug });
   }
 
+  const checkoutUser = await resolveCheckoutUser({
+    session,
+    email: checkoutUserEmail,
+    acceptedTerms,
+  });
+  if (!checkoutUser) {
+    const signinUrl = new URL("/auth/signin", req.url);
+    signinUrl.searchParams.set(
+      "callbackUrl",
+      `/api/payments/checkout?courseSlug=${encodeURIComponent(courseSlug)}`
+    );
+    return NextResponse.redirect(signinUrl);
+  }
+
   const courseMongoId = dbCourse._id as mongoose.Types.ObjectId;
   if (dbCourse.isFree) {
     const existingFreeEnrollment = await Enrollment.findOne({
-      userId: session.user.id,
+      userId: checkoutUser.id,
       courseId: courseMongoId,
     }).lean();
     await Enrollment.findOneAndUpdate(
-      { userId: session.user.id, courseId: courseMongoId },
+      { userId: checkoutUser.id, courseId: courseMongoId },
       {
-        userId: session.user.id,
+        userId: checkoutUser.id,
         courseId: courseMongoId,
         status: "active",
         accessLevel: "full",
@@ -172,7 +298,7 @@ export async function GET(req: NextRequest) {
     );
     if (!existingFreeEnrollment) {
       await sendEnrollmentEmail(
-        { name: session.user.name, email: session.user.email },
+        { name: checkoutUser.name, email: checkoutUser.email },
         {
           title: dbCourse.title,
           slug: dbCourse.slug,
@@ -182,7 +308,13 @@ export async function GET(req: NextRequest) {
         }
       );
     }
-    return NextResponse.redirect(new URL("/dashboard", req.url));
+    return redirectAfterEnrollment({
+      req,
+      session,
+      userId: checkoutUser.id,
+      courseSlug,
+      canUseCheckoutSignIn: checkoutUser.canUseCheckoutSignIn,
+    });
   }
 
   let coursePrice: number;
@@ -203,13 +335,13 @@ export async function GET(req: NextRequest) {
 
   if (accessPrice.freeAccess) {
     const existingAccessEnrollment = await Enrollment.findOne({
-      userId: session.user.id,
+      userId: checkoutUser.id,
       courseId: courseMongoId,
     }).lean();
     await Enrollment.findOneAndUpdate(
-      { userId: session.user.id, courseId: courseMongoId },
+      { userId: checkoutUser.id, courseId: courseMongoId },
       {
-        userId: session.user.id,
+        userId: checkoutUser.id,
         courseId: courseMongoId,
         status: "active",
         accessLevel: "full",
@@ -233,7 +365,7 @@ export async function GET(req: NextRequest) {
       });
     if (!existingAccessEnrollment) {
       await sendEnrollmentEmail(
-        { name: session.user.name, email: session.user.email },
+        { name: checkoutUser.name, email: checkoutUser.email },
         {
           title: dbCourse.title,
           slug: dbCourse.slug,
@@ -243,7 +375,13 @@ export async function GET(req: NextRequest) {
         }
       );
     }
-    return NextResponse.redirect(new URL("/dashboard?enrolled=1", req.url));
+    return redirectAfterEnrollment({
+      req,
+      session,
+      userId: checkoutUser.id,
+      courseSlug,
+      canUseCheckoutSignIn: checkoutUser.canUseCheckoutSignIn,
+    });
   }
 
   const courseTitle = dbCourse.title;
@@ -258,10 +396,9 @@ export async function GET(req: NextRequest) {
     });
   }
 
-  const baseUrl =
-    process.env.NEXT_PUBLIC_BASE_URL || "http://localhost:3000";
+  const baseUrl = getAppBaseUrl();
   const existingEnrollment = await Enrollment.findOne({
-    userId: session.user.id,
+    userId: checkoutUser.id,
     courseId: courseMongoId,
   }).lean();
   const existing = existingEnrollment as ExistingEnrollment | null;
@@ -271,14 +408,26 @@ export async function GET(req: NextRequest) {
       existing?.paymentStatus === "paid" ||
       existing?.paymentStatus === "free")
   ) {
-    return NextResponse.redirect(new URL("/dashboard?enrolled=1", req.url));
+    return redirectAfterEnrollment({
+      req,
+      session,
+      userId: checkoutUser.id,
+      courseSlug,
+      canUseCheckoutSignIn: checkoutUser.canUseCheckoutSignIn,
+    });
   }
   const recoveredEnrollment = await recoverCompletedEnrollment({
-    userId: session.user.id,
+    userId: checkoutUser.id,
     courseId: courseMongoId.toString(),
   });
   if (recoveredEnrollment) {
-    return NextResponse.redirect(new URL("/dashboard?enrolled=1", req.url));
+    return redirectAfterEnrollment({
+      req,
+      session,
+      userId: checkoutUser.id,
+      courseSlug,
+      canUseCheckoutSignIn: checkoutUser.canUseCheckoutSignIn,
+    });
   }
   const nextInstallment =
     requestedPlan === "installment"
@@ -308,7 +457,7 @@ export async function GET(req: NextRequest) {
     let paystackTransaction;
     try {
       paystackTransaction = await initializePaystackTransaction({
-        email: session.user.email!,
+        email: checkoutUser.email,
         amount: Math.round(accessPrice.finalAmount * 100),
         currency: courseCurrency.toUpperCase(),
         reference: providerReference,
@@ -321,7 +470,7 @@ export async function GET(req: NextRequest) {
         bearer: subaccount ? "account" : undefined,
         transaction_charge: transactionCharge,
         metadata: {
-          userId: session.user.id,
+          userId: checkoutUser.id,
           courseSlug,
           paymentPlan: requestedPlan,
           installmentNumber: nextInstallment,
@@ -331,6 +480,7 @@ export async function GET(req: NextRequest) {
           affiliateCode: accessPrice.affiliateCode,
           discountAmount: accessPrice.discountAmount,
           originalAmount: accessPrice.originalAmount,
+          checkoutSignin: checkoutUser.canUseCheckoutSignIn ? "1" : "0",
         },
       });
     } catch (err) {
@@ -343,7 +493,7 @@ export async function GET(req: NextRequest) {
     }
 
     await Payment.create({
-      userId: session.user.id,
+      userId: checkoutUser.id,
       courseId: courseMongoId,
       provider,
       channel: courseCurrency === "kes" ? "mobile_money" : "unknown",
@@ -363,6 +513,7 @@ export async function GET(req: NextRequest) {
       currency: courseCurrency,
       status: "pending",
       metadata: {
+        userId: checkoutUser.id,
         courseSlug,
         installmentNumber: nextInstallment,
         accessLevel: getAccessLevel(dbCourse, requestedPlan),
@@ -371,6 +522,7 @@ export async function GET(req: NextRequest) {
         affiliateCode: accessPrice.affiliateCode,
         discountAmount: accessPrice.discountAmount,
         originalAmount: accessPrice.originalAmount,
+        checkoutSignin: checkoutUser.canUseCheckoutSignIn,
       },
     });
 
@@ -395,10 +547,11 @@ export async function GET(req: NextRequest) {
         },
       ],
       mode: "payment",
+      customer_email: checkoutUser.email,
       success_url: `${baseUrl}/api/payments/stripe/success?session_id={CHECKOUT_SESSION_ID}`,
       cancel_url: `${baseUrl}/courses/${courseSlug}`,
       metadata: {
-        userId: session.user.id,
+        userId: checkoutUser.id,
         courseSlug,
         paymentPlan: requestedPlan,
         installmentNumber: nextInstallment ?? null,
@@ -408,6 +561,7 @@ export async function GET(req: NextRequest) {
         affiliateCode: accessPrice.affiliateCode || "",
         discountAmount: String(accessPrice.discountAmount),
         originalAmount: String(accessPrice.originalAmount),
+        checkoutSignin: checkoutUser.canUseCheckoutSignIn ? "1" : "0",
       },
     });
   } catch (err) {
@@ -422,7 +576,7 @@ export async function GET(req: NextRequest) {
   // Record pending payment (best-effort)
   if (courseMongoId) {
     await Payment.create({
-      userId: session.user.id,
+      userId: checkoutUser.id,
       courseId: courseMongoId,
       provider,
       paymentPlan: requestedPlan,
@@ -440,6 +594,7 @@ export async function GET(req: NextRequest) {
       currency: courseCurrency,
       status: "pending",
       metadata: {
+        userId: checkoutUser.id,
         courseSlug,
         installmentNumber: nextInstallment,
         accessLevel: getAccessLevel(dbCourse, requestedPlan),
@@ -448,6 +603,7 @@ export async function GET(req: NextRequest) {
         affiliateCode: accessPrice.affiliateCode,
         discountAmount: accessPrice.discountAmount,
         originalAmount: accessPrice.originalAmount,
+        checkoutSignin: checkoutUser.canUseCheckoutSignIn,
       },
     }).catch(() => {});
   }
