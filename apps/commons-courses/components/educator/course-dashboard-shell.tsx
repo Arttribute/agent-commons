@@ -70,53 +70,74 @@ export function CourseDashboardShell({
   const basePath = `/educator/courses/${slug}`;
 
   return (
-    <div className="min-h-screen bg-slate-50 pt-16">
-      <div className="border-b border-slate-200 bg-white">
-        <div className="mx-auto flex max-w-[1440px] items-center justify-between gap-4 px-4 py-4 sm:px-6 lg:px-8">
-          <div className="min-w-0">
-            <Link href="/educator" className="text-xs font-bold uppercase tracking-[0.16em] text-slate-400">
-              Educator console
-            </Link>
-            <div className="mt-1 flex flex-wrap items-center gap-2">
-              <h1 className="truncate text-xl font-bold text-slate-950 sm:text-2xl">
-                {title}
-              </h1>
-              <span className="rounded-md border border-slate-200 px-2 py-0.5 text-xs font-bold text-slate-500">
-                {published ? "Published" : "Draft"}
-              </span>
-            </div>
-          </div>
-          <button
-            type="button"
-            onClick={() => setMobileOpen((value) => !value)}
-            className="inline-flex h-10 w-10 items-center justify-center rounded-lg border border-slate-200 text-slate-600 lg:hidden"
-            aria-label="Toggle course navigation"
-          >
-            {mobileOpen ? <X className="h-4 w-4" /> : <Menu className="h-4 w-4" />}
-          </button>
-        </div>
-      </div>
-
-      <div className="mx-auto grid max-w-[1440px] lg:grid-cols-[auto_1fr]">
+    <div className="h-dvh overflow-hidden bg-white pt-16">
+      <div className="flex h-[calc(100dvh-4rem)] min-h-0">
+        {mobileOpen && (
+          <div
+            className="fixed inset-0 z-40 bg-slate-950/30 lg:hidden"
+            onClick={() => setMobileOpen(false)}
+          />
+        )}
         <aside
           className={cn(
-            "border-b border-slate-200 bg-white lg:sticky lg:top-16 lg:h-[calc(100vh-4rem)] lg:overflow-y-auto lg:border-b-0 lg:border-r",
-            mobileOpen ? "block" : "hidden lg:block",
+            "fixed left-0 top-0 z-50 flex h-dvh w-72 flex-col border-r border-slate-200 bg-white pt-16 transition-transform duration-200 lg:static lg:z-auto lg:h-full lg:pt-0",
+            mobileOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0",
             collapsed ? "lg:w-[76px]" : "lg:w-72"
           )}
         >
-          <div className="flex min-h-full flex-col p-3">
+          <div className="flex border-b border-slate-100 p-3">
+            <div className={cn("min-w-0 flex-1", collapsed && "hidden")}>
+              <Link
+                href="/educator"
+                className="text-[10px] font-bold uppercase tracking-[0.18em] text-slate-400 transition-colors hover:text-slate-700"
+              >
+                Educator console
+              </Link>
+              <h2 className="mt-1 line-clamp-2 text-sm font-bold leading-snug text-slate-950">
+                {title}
+              </h2>
+              <div className="mt-2 flex flex-wrap items-center gap-2">
+                <span className="inline-flex rounded-md border border-[#A6E45E] bg-[#B8F56D] px-2 py-0.5 text-[11px] font-bold text-slate-950">
+                  {published ? "Published" : "Draft"}
+                </span>
+                <Link
+                  href={`/courses/${slug}`}
+                  className="text-[11px] font-bold text-slate-500 hover:text-slate-950"
+                >
+                  Public page
+                </Link>
+              </div>
+            </div>
+            {collapsed && (
+              <Link
+                href={basePath}
+                title={`${title} · ${published ? "Published" : "Draft"}`}
+                className="hidden h-10 w-10 items-center justify-center rounded-lg border border-[#A6E45E] bg-[#B8F56D] text-slate-950 lg:flex"
+              >
+                <BookOpen className="h-4 w-4" />
+              </Link>
+            )}
+            <button
+              className="ml-2 rounded p-1 text-slate-400 hover:text-slate-700 lg:hidden"
+              onClick={() => setMobileOpen(false)}
+              aria-label="Close course navigation"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+
+          <div className="flex min-h-0 flex-1 flex-col p-3">
             <button
               type="button"
               onClick={() => setCollapsed((value) => !value)}
-              className="mb-3 hidden h-9 items-center justify-center gap-2 rounded-lg border border-slate-200 text-xs font-bold text-slate-600 hover:bg-slate-50 lg:flex"
+              className="mb-3 hidden h-9 items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white text-xs font-bold text-slate-600 hover:bg-[#FFE177]/30 lg:flex"
               aria-label={collapsed ? "Expand course navigation" : "Collapse course navigation"}
             >
               {collapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}
               {!collapsed && <span>Collapse</span>}
             </button>
 
-            <nav className="space-y-5">
+            <nav className="min-h-0 flex-1 space-y-5 overflow-y-auto overscroll-contain">
               {navGroups.map((group) => (
                 <div key={group.label}>
                   {!collapsed && (
@@ -141,8 +162,8 @@ export function CourseDashboardShell({
                           className={cn(
                             "flex h-10 items-center gap-3 rounded-lg px-3 text-sm font-bold transition-colors",
                             active
-                              ? "bg-slate-950 text-white"
-                              : "text-slate-600 hover:bg-slate-100 hover:text-slate-950",
+                              ? "bg-slate-950 text-white shadow-sm"
+                              : "text-slate-600 hover:bg-[#71E0E7]/20 hover:text-slate-950",
                             collapsed && "justify-center px-0"
                           )}
                         >
@@ -158,8 +179,31 @@ export function CourseDashboardShell({
           </div>
         </aside>
 
-        <main className="min-w-0 px-4 py-6 sm:px-6 lg:px-8">
-          <div className="mx-auto max-w-6xl">{children}</div>
+        <main className="flex min-w-0 flex-1 flex-col bg-slate-50">
+          <div className="sticky top-0 z-20 flex h-14 items-center gap-3 border-b border-slate-200 bg-white px-4 sm:px-6 lg:px-8">
+            <button
+              type="button"
+              onClick={() => setMobileOpen(true)}
+              className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50 lg:hidden"
+              aria-label="Open course navigation"
+            >
+              <Menu className="h-4 w-4" />
+            </button>
+            <div className="min-w-0 flex-1">
+              <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-slate-400">
+                Course dashboard
+              </p>
+              <div className="flex min-w-0 items-center gap-2">
+                <h1 className="truncate text-sm font-bold text-slate-950">{title}</h1>
+                <span className="shrink-0 rounded-md border border-[#A6E45E] bg-[#B8F56D] px-2 py-0.5 text-[10px] font-bold text-slate-950">
+                  {published ? "Published" : "Draft"}
+                </span>
+              </div>
+            </div>
+          </div>
+          <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-6 sm:px-6 lg:px-8">
+            <div className="mx-auto max-w-6xl">{children}</div>
+          </div>
         </main>
       </div>
     </div>

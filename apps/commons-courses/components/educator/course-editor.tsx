@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, useEffect, useMemo, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { CourseAgentEditor } from "@/components/educator/course-agent-editor";
 import { CourseCollaborators } from "@/components/educator/course-collaborators";
@@ -9,7 +9,9 @@ import {
   normalizeAccessProgramForm,
   type AccessProgramForm,
 } from "@/components/educator/access-program-editor";
+import { useToast } from "@/components/toast-provider";
 import { defaultCourseAgents } from "@/lib/course-agent-defaults";
+import { cn } from "@/lib/utils";
 import type { CourseAgentConfig } from "@/types/course-agent";
 
 type Lesson = {
@@ -64,6 +66,10 @@ type CourseForm = {
   };
   modules: Module[];
   agents: CourseAgentConfig[];
+};
+
+type CourseResponse = Partial<CourseForm> & {
+  tags?: string[];
 };
 
 export type CourseEditorSection =
@@ -124,11 +130,22 @@ export function CourseEditor({
 }) {
   const router = useRouter();
   const pathname = usePathname();
+  const { toast } = useToast();
   const [course, setCourse] = useState<CourseForm>(emptyCourse);
+  const [savedSectionSnapshot, setSavedSectionSnapshot] = useState(() =>
+    stringifySectionSnapshot(emptyCourse, section)
+  );
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const [draftSavedAt, setDraftSavedAt] = useState<Date | null>(null);
   const isFullEditor = section === "all";
   const show = (name: CourseEditorSection) => isFullEditor || section === name;
+  const sectionLabel = getSectionLabel(section);
+  const currentSectionSnapshot = useMemo(
+    () => stringifySectionSnapshot(course, section),
+    [course, section]
+  );
+  const hasUnsavedChanges = currentSectionSnapshot !== savedSectionSnapshot;
 
   useEffect(() => {
     if (!slug) return;
@@ -137,25 +154,28 @@ export function CourseEditor({
       .then((data) => {
         const c = data.course;
         if (!c) return;
-        setCourse({
-          ...emptyCourse,
-          ...c,
-          tagsText: Array.isArray(c.tags) ? c.tags.join(", ") : "",
-          modules: c.modules?.length ? c.modules : emptyCourse.modules,
-          agents: c.agents?.length ? c.agents : emptyCourse.agents,
-          installmentPlan: {
-            ...emptyCourse.installmentPlan,
-            ...(c.installmentPlan || {}),
-          },
-          accessProgram: normalizeAccessProgramForm(c.accessProgram),
-          emailSettings: {
-            ...emptyCourse.emailSettings,
-            ...(c.emailSettings || {}),
-          },
-        });
+        const nextCourse = hydrateCourse(c);
+        setCourse(nextCourse);
+        setSavedSectionSnapshot(stringifySectionSnapshot(nextCourse, section));
       })
       .catch(() => setError("Could not load course."));
-  }, [slug]);
+  }, [section, slug]);
+
+  useEffect(() => {
+    if (!hasUnsavedChanges || !slug || section === "collaborators") return;
+    const timeout = window.setTimeout(() => {
+      localStorage.setItem(
+        `commonlab-course-draft:${slug}:${section}`,
+        JSON.stringify({
+          savedAt: new Date().toISOString(),
+          snapshot: getSectionSnapshot(course, section),
+        })
+      );
+      setDraftSavedAt(new Date());
+    }, 1800);
+
+    return () => window.clearTimeout(timeout);
+  }, [course, hasUnsavedChanges, section, slug]);
 
   async function onSubmit(event: FormEvent) {
     event.preventDefault();
@@ -185,8 +205,25 @@ export function CourseEditor({
     setSaving(false);
     if (!res.ok) {
       setError(data.error || "Could not save course.");
+      toast({
+        tone: "error",
+        title: "Could not save",
+        description: data.error || "Please check the form and try again.",
+      });
       return;
     }
+    const nextCourse = data.course ? hydrateCourse(data.course) : course;
+    setCourse(nextCourse);
+    setSavedSectionSnapshot(stringifySectionSnapshot(nextCourse, section));
+    setDraftSavedAt(null);
+    if (slug) {
+      localStorage.removeItem(`commonlab-course-draft:${slug}:${section}`);
+    }
+    toast({
+      tone: "success",
+      title: `${sectionLabel} saved`,
+      description: "Your changes are now live for this course.",
+    });
     if (slug) {
       const savedSlug = data.course?.slug || slug;
       if (savedSlug !== slug) {
@@ -195,6 +232,10 @@ export function CourseEditor({
       }
       router.refresh();
       router.push(pathname);
+      return;
+    }
+    if (data.course?.slug) {
+      router.push(`/educator/courses/${data.course.slug}`);
       return;
     }
     router.push("/educator");
@@ -447,7 +488,10 @@ export function CourseEditor({
               Manage the learning path, lesson timing, prompts, and free previews.
             </p>
           </div>
-          <button type="button" onClick={() => setCourse({ ...course, modules: [...course.modules, { title: `Module ${course.modules.length + 1}`, lessons: [] }] })} className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-bold">
+          <button type="button" onClick={() => {
+            setCourse({ ...course, modules: [...course.modules, { title: `Module ${course.modules.length + 1}`, lessons: [] }] });
+            toast({ title: "Module added", description: "Save content to apply this change.", tone: "info" });
+          }} className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-bold">
             Add module
           </button>
         </div>
@@ -457,7 +501,10 @@ export function CourseEditor({
               <Field label="Module title" value={module.title} onChange={(value) => updateModule(course, setCourse, moduleIndex, { ...module, title: value })} />
               <button
                 type="button"
-                onClick={() => setCourse({ ...course, modules: course.modules.filter((_, index) => index !== moduleIndex) })}
+                onClick={() => {
+                  setCourse({ ...course, modules: course.modules.filter((_, index) => index !== moduleIndex) });
+                  toast({ title: "Module removed", description: "Save content to apply this change.", tone: "info" });
+                }}
                 className="self-end rounded-lg border border-slate-200 px-3 py-2 text-xs font-bold text-slate-600 hover:bg-slate-50"
               >
                 Remove module
@@ -476,7 +523,10 @@ export function CourseEditor({
                   </label>
                   <button
                     type="button"
-                    onClick={() => updateModule(course, setCourse, moduleIndex, { ...module, lessons: module.lessons.filter((_, index) => index !== lessonIndex) })}
+                    onClick={() => {
+                      updateModule(course, setCourse, moduleIndex, { ...module, lessons: module.lessons.filter((_, index) => index !== lessonIndex) });
+                      toast({ title: "Lesson removed", description: "Save content to apply this change.", tone: "info" });
+                    }}
                     className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-bold text-slate-600 hover:bg-slate-50"
                   >
                     Remove
@@ -490,7 +540,10 @@ export function CourseEditor({
                   />
                 </div>
               ))}
-              <button type="button" onClick={() => updateModule(course, setCourse, moduleIndex, { ...module, lessons: [...module.lessons, { title: "New lesson", duration: "15" }] })} className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-bold">
+              <button type="button" onClick={() => {
+                updateModule(course, setCourse, moduleIndex, { ...module, lessons: [...module.lessons, { title: "New lesson", duration: "15" }] });
+                toast({ title: "Lesson added", description: "Save content to apply this change.", tone: "info" });
+              }} className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-bold">
                 Add lesson
               </button>
             </div>
@@ -499,13 +552,118 @@ export function CourseEditor({
       </section>
       )}
 
-      <div className="sticky bottom-4 z-10 flex justify-end">
-        <button disabled={saving} className="rounded-lg bg-slate-950 px-5 py-2.5 text-sm font-bold text-white shadow-lg shadow-slate-200 disabled:opacity-50">
-          {saving ? "Saving..." : "Save course"}
+      <div className="sticky bottom-4 z-10 flex flex-wrap items-center justify-end gap-3">
+        <div className="rounded-lg border border-slate-200 bg-white/95 px-3 py-2 text-xs font-bold text-slate-500 shadow-sm backdrop-blur">
+          {hasUnsavedChanges
+            ? draftSavedAt
+              ? `Unsaved changes · local draft ${formatDraftTime(draftSavedAt)}`
+              : "Unsaved changes"
+            : "All changes saved"}
+        </div>
+        <button
+          disabled={saving || !hasUnsavedChanges}
+          className={cn(
+            "rounded-lg px-5 py-2.5 text-sm font-bold shadow-lg transition-all disabled:cursor-not-allowed disabled:opacity-50",
+            hasUnsavedChanges
+              ? "border border-[#A6E45E] bg-[#B8F56D] text-slate-950 shadow-lime-100 hover:-translate-y-0.5"
+              : "bg-slate-950 text-white shadow-slate-200"
+          )}
+        >
+          {saving ? "Saving..." : `Save ${sectionLabel.toLowerCase()}`}
         </button>
       </div>
     </form>
   );
+}
+
+function getSectionLabel(section: CourseEditorSection) {
+  const labels: Record<CourseEditorSection, string> = {
+    all: "Course",
+    info: "Course info",
+    access: "Access programs",
+    notifications: "Notifications",
+    agents: "Course agents",
+    content: "Content",
+    collaborators: "Collaborators",
+  };
+  return labels[section];
+}
+
+function hydrateCourse(course: CourseResponse): CourseForm {
+  return {
+    ...emptyCourse,
+    ...course,
+    tagsText: Array.isArray(course.tags) ? course.tags.join(", ") : "",
+    modules: course.modules?.length ? course.modules : emptyCourse.modules,
+    agents: course.agents?.length ? course.agents : emptyCourse.agents,
+    installmentPlan: {
+      ...emptyCourse.installmentPlan,
+      ...(course.installmentPlan || {}),
+    },
+    accessProgram: normalizeAccessProgramForm(course.accessProgram),
+    emailSettings: {
+      ...emptyCourse.emailSettings,
+      ...(course.emailSettings || {}),
+    },
+  };
+}
+
+function getCoursePayload(course: CourseForm) {
+  return {
+    ...course,
+    tags: course.tagsText
+      .split(",")
+      .map((tag) => tag.trim())
+      .filter(Boolean),
+  };
+}
+
+function getSectionSnapshot(course: CourseForm, section: CourseEditorSection) {
+  const payload = getCoursePayload(course);
+  switch (section) {
+    case "info":
+      return {
+        title: payload.title,
+        slug: payload.slug,
+        tagline: payload.tagline,
+        description: payload.description,
+        longDescription: payload.longDescription,
+        published: payload.published,
+        level: payload.level,
+        courseType: payload.courseType,
+        duration: payload.duration,
+        instructor: payload.instructor,
+        tags: payload.tags,
+      };
+    case "access":
+      return {
+        price: payload.price,
+        currency: payload.currency,
+        isFree: payload.isFree,
+        paymentProviders: payload.paymentProviders,
+        installmentPlan: payload.installmentPlan,
+        accessProgram: payload.accessProgram,
+      };
+    case "notifications":
+      return payload.emailSettings;
+    case "agents":
+      return payload.agents;
+    case "content":
+      return payload.modules;
+    case "collaborators":
+      return {};
+    case "all":
+    default:
+      return payload;
+  }
+}
+
+function stringifySectionSnapshot(course: CourseForm, section: CourseEditorSection) {
+  return JSON.stringify(getSectionSnapshot(course, section));
+}
+
+function formatDraftTime(value: Date) {
+  return value.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 }
 
 function EditorPanel({
