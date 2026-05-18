@@ -10,6 +10,8 @@ interface Props {
   className?: string;
   initialEnrolled?: boolean;
   initialProgress?: number;
+  hasStarted?: boolean;
+  startDateLabel?: string | null;
 }
 
 export function EnrolledBanner({
@@ -17,25 +19,45 @@ export function EnrolledBanner({
   className,
   initialEnrolled = false,
   initialProgress = 0,
+  hasStarted = true,
+  startDateLabel = null,
 }: Props) {
   const [state, setState] = useState<{
     loading: boolean;
     enrolled: boolean;
     progress: number;
+    hasStarted: boolean;
+    startDateLabel: string | null;
   }>({
     loading: !initialEnrolled,
     enrolled: initialEnrolled,
     progress: initialProgress,
+    hasStarted,
+    startDateLabel,
   });
 
   useEffect(() => {
     fetch(`/api/progress?courseSlug=${courseSlug}`)
       .then((r) => r.json())
       .then((d) =>
-        setState({ loading: false, enrolled: d.enrolled, progress: d.progress ?? 0 }),
+        setState({
+          loading: false,
+          enrolled: d.enrolled,
+          progress: d.progress ?? 0,
+          hasStarted: d.hasStarted !== false,
+          startDateLabel: d.startDateLabel ?? startDateLabel,
+        }),
       )
-      .catch(() => setState({ loading: false, enrolled: false, progress: 0 }));
-  }, [courseSlug]);
+      .catch(() =>
+        setState({
+          loading: false,
+          enrolled: false,
+          progress: 0,
+          hasStarted,
+          startDateLabel,
+        }),
+      );
+  }, [courseSlug, hasStarted, startDateLabel]);
 
   if (state.loading) {
     return (
@@ -70,18 +92,28 @@ export function EnrolledBanner({
               {state.progress}% complete
             </p>
           )}
+          {!state.hasStarted && (
+            <p className="text-xs text-green-700 mt-0.5">
+              Opens{state.startDateLabel ? ` on ${state.startDateLabel}` : " soon"}
+            </p>
+          )}
         </div>
       </div>
       <Link
-        href={`/courses/${courseSlug}/learn`}
+        href={state.hasStarted ? `/courses/${courseSlug}/learn` : `/courses/${courseSlug}`}
+        aria-disabled={!state.hasStarted}
         className={cn(
           "inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-bold transition-opacity",
-          state.progress > 0
+          !state.hasStarted
+            ? "bg-slate-100 text-slate-500"
+            : state.progress > 0
             ? "bg-green-700 text-white hover:opacity-90"
             : "bg-slate-900 text-white hover:opacity-90",
         )}
       >
-        {state.progress > 0 ? (
+        {!state.hasStarted ? (
+          "Opens soon"
+        ) : state.progress > 0 ? (
           <>
             Continue <CheckCircle className="h-3.5 w-3.5" />
           </>

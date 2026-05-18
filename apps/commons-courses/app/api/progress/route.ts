@@ -5,6 +5,7 @@ import Enrollment from "@/models/Enrollment";
 import Course from "@/models/Course";
 import type mongoose from "mongoose";
 import { trackAnalyticsEvent } from "@/lib/analytics";
+import { getCourseStartStatus } from "@/lib/course-schedule";
 
 interface EnrollmentProgress {
   _id: mongoose.Types.ObjectId;
@@ -18,6 +19,7 @@ interface EnrollmentProgress {
 
 interface CourseIdOnly {
   _id: mongoose.Types.ObjectId;
+  startDate?: Date;
 }
 
 interface CourseWithModules extends CourseIdOnly {
@@ -38,7 +40,7 @@ export async function GET(req: NextRequest) {
   await connectDB();
 
   const course = (await Course.findOne({ slug: courseSlug, published: true })
-    .select("_id")
+    .select("_id startDate")
     .lean()) as unknown as CourseIdOnly | null;
   if (!course) {
     return NextResponse.json({ enrolled: false, completedLessons: [], progress: 0 });
@@ -61,6 +63,9 @@ export async function GET(req: NextRequest) {
     accessLevel: match.accessLevel ?? "full",
     paymentStatus: match.paymentStatus ?? "free",
     currentInstallment: match.currentInstallment ?? 0,
+    hasStarted: getCourseStartStatus(course.startDate).started,
+    startDate: course.startDate,
+    startDateLabel: getCourseStartStatus(course.startDate).label,
   });
 }
 
@@ -83,7 +88,7 @@ export async function POST(req: NextRequest) {
   await connectDB();
 
   const course = (await Course.findOne({ slug: courseSlug, published: true })
-    .select("_id modules")
+    .select("_id modules startDate")
     .lean()) as unknown as CourseWithModules | null;
   if (!course) {
     return NextResponse.json({ error: "Course not found" }, { status: 404 });
@@ -96,6 +101,18 @@ export async function POST(req: NextRequest) {
 
   if (!match) {
     return NextResponse.json({ error: "Not enrolled in this course" }, { status: 403 });
+  }
+
+  const startStatus = getCourseStartStatus(course.startDate);
+  if (!startStatus.started) {
+    return NextResponse.json(
+      {
+        error: "This course has not started yet.",
+        startDate: course.startDate,
+        startDateLabel: startStatus.label,
+      },
+      { status: 403 }
+    );
   }
 
   const totalLessons =

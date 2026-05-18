@@ -1,4 +1,5 @@
 import type { DefaultSession } from "next-auth";
+import type { LiveSchedule } from "@/lib/course-schedule";
 
 declare module "next-auth" {
   interface Session {
@@ -24,6 +25,9 @@ export interface CourseCardData {
   price: number;
   currency?: string;
   isFree: boolean;
+  courseType?: "self-paced" | "live";
+  startDate?: string | Date | null;
+  liveSchedule?: LiveSchedule | null;
   level: string;
   duration: string;
   lessonsCount: number;

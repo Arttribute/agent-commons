@@ -4,7 +4,7 @@ import { useEffect, useState, Suspense } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { getProviders, signIn } from "next-auth/react";
-import { BookOpen, Loader2 } from "lucide-react";
+import { FlaskConical, Loader2 } from "lucide-react";
 
 const inputCls =
   "w-full px-3.5 py-2.5 rounded-lg border border-slate-200 text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-300 focus:border-slate-400 transition-colors";
@@ -82,11 +82,10 @@ function SignInForm() {
             className="h-7 w-7 rounded flex items-center justify-center"
             style={{ backgroundColor: "#0a0a0a" }}
           >
-            <BookOpen className="h-3.5 w-3.5 text-white" />
+            <FlaskConical className="h-3.5 w-3.5 text-white" />
           </div>
           <span className="text-sm font-bold text-slate-900 tracking-tight">
-            Agent Commons{" "}
-            <span className="font-bold text-slate-900">Courses</span>
+            CommonLab
           </span>
         </Link>
 

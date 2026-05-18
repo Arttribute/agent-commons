@@ -21,7 +21,13 @@ import {
   CheckCircle,
   FlaskConical,
   ShieldCheck,
+  Wifi,
 } from "lucide-react";
+import {
+  getCourseStartStatus,
+  getLiveScheduleSummary,
+  type LiveSchedule,
+} from "@/lib/course-schedule";
 
 interface Props {
   params: Promise<{ slug: string }>;
@@ -63,6 +69,9 @@ interface CourseDetailData {
       | "full_after_completion";
   };
   courseType: "self-paced" | "live";
+  startDate?: string | Date | null;
+  liveSchedule?: LiveSchedule | null;
+  sessionDates?: Array<string | Date>;
   level: "beginner" | "intermediate" | "advanced";
   duration: string;
   lessonsCount: number;
@@ -170,6 +179,8 @@ export default async function CoursePage({ params, searchParams }: Props) {
   const isEnrolled = Boolean(enrollment);
   const enrollmentProgress = enrollment?.progress ?? 0;
   const bannerImageUrl = course.bannerImageUrl || course.imageUrl || null;
+  const startStatus = getCourseStartStatus(course.startDate);
+  const liveScheduleSummary = getLiveScheduleSummary(course.liveSchedule);
 
   const totalMinutes = course.modules
     .flatMap((m) => m.lessons)
@@ -228,6 +239,11 @@ export default async function CoursePage({ params, searchParams }: Props) {
                     <FlaskConical className="h-3 w-3" />
                     Lab-ready
                   </span>
+                  {startStatus.label ? (
+                    <span className="text-xs font-bold px-2 py-1 rounded-md border border-slate-200 bg-white text-slate-700">
+                      Starts {startStatus.label}
+                    </span>
+                  ) : null}
                 </div>
 
                 <h1 className="break-words text-3xl font-semibold text-slate-950 mb-4 leading-tight sm:text-4xl">
@@ -256,10 +272,30 @@ export default async function CoursePage({ params, searchParams }: Props) {
                   </span>
                 </div>
 
+                {course.courseType === "live" && (
+                  <div className="mb-8 max-w-2xl rounded-xl border border-lime-200 bg-lime-50 p-4">
+                    <p className="flex items-center gap-2 text-sm font-bold text-slate-950">
+                      <Wifi className="h-4 w-4" />
+                      Live class schedule
+                    </p>
+                    <p className="mt-2 text-sm leading-6 text-slate-700">
+                      {liveScheduleSummary ||
+                        "Live meeting details will be shared by the organizer."}
+                    </p>
+                    <p className="mt-2 text-xs leading-5 text-slate-600">
+                      The {course.lessonsCount} lessons are the course content
+                      library. Live classes are scheduled cohort sessions for
+                      discussion, walkthroughs, and support.
+                    </p>
+                  </div>
+                )}
+
                 <EnrolledBanner
                   courseSlug={course.slug}
                   initialEnrolled={isEnrolled}
                   initialProgress={enrollmentProgress}
+                  hasStarted={startStatus.started}
+                  startDateLabel={startStatus.label}
                   className="mb-8 max-w-2xl"
                 />
 
@@ -283,6 +319,8 @@ export default async function CoursePage({ params, searchParams }: Props) {
                     affiliateCode={affiliateCode}
                     isEnrolled={isEnrolled}
                     enrollmentProgress={enrollmentProgress}
+                    hasStarted={startStatus.started}
+                    startDateLabel={startStatus.label}
                   />
                 </div>
               </aside>
@@ -389,11 +427,15 @@ function PurchaseCard({
   affiliateCode,
   isEnrolled,
   enrollmentProgress,
+  hasStarted,
+  startDateLabel,
 }: {
   course: CourseDetailData;
   affiliateCode?: string;
   isEnrolled: boolean;
   enrollmentProgress: number;
+  hasStarted: boolean;
+  startDateLabel: string | null;
 }) {
   const providers = course.paymentProviders || ["stripe"];
   const supportsPaystack = providers.includes("paystack");
@@ -426,6 +468,8 @@ function PurchaseCard({
           courseSlug={course.slug}
           initialEnrolled={isEnrolled}
           initialProgress={enrollmentProgress}
+          hasStarted={hasStarted}
+          startDateLabel={startDateLabel}
         >
           <div className="text-3xl font-bold text-slate-900 mb-1">
             {formatCoursePrice(course)}
@@ -433,6 +477,18 @@ function PurchaseCard({
           {!course.isFree && (
             <p className="text-xs text-slate-400 mb-5">
               One-time payment · Lifetime access
+            </p>
+          )}
+          {course.courseType === "live" && (
+            <p className="mb-5 rounded-lg bg-slate-50 p-3 text-xs leading-5 text-slate-700">
+              {getLiveScheduleSummary(course.liveSchedule) ||
+                "Live class schedule will be confirmed by the organizer."}
+            </p>
+          )}
+          {startDateLabel && (
+            <p className="mb-5 rounded-lg border border-lime-200 bg-lime-50 p-3 text-xs font-semibold leading-5 text-slate-800">
+              Course content opens on {startDateLabel}. You can reserve your
+              place now.
             </p>
           )}
 

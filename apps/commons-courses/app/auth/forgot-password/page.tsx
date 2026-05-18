@@ -2,7 +2,7 @@
 
 import { FormEvent, useState } from "react";
 import Link from "next/link";
-import { BookOpen, Loader2 } from "lucide-react";
+import { FlaskConical, Loader2 } from "lucide-react";
 
 const inputCls =
   "w-full px-3.5 py-2.5 rounded-lg border border-slate-200 text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-300 focus:border-slate-400 transition-colors";
@@ -29,10 +29,10 @@ export default function ForgotPasswordPage() {
       <div className="w-full max-w-sm">
         <Link href="/" className="mb-10 flex items-center justify-center gap-2.5">
           <div className="flex h-7 w-7 items-center justify-center rounded bg-slate-950">
-            <BookOpen className="h-3.5 w-3.5 text-white" />
+            <FlaskConical className="h-3.5 w-3.5 text-white" />
           </div>
           <span className="text-sm font-bold tracking-tight text-slate-900">
-            Agent Commons Courses
+            CommonLab
           </span>
         </Link>
         <h1 className="mb-1 text-center text-2xl font-bold text-slate-900">

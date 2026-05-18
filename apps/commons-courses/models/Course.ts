@@ -82,6 +82,22 @@ export interface ICourseCollaborator {
   lastInvitedAt?: Date;
 }
 
+export interface ICourseLiveSchedule {
+  cadence?: "weekly" | "biweekly" | "monthly" | "custom";
+  dayOfWeek?:
+    | "monday"
+    | "tuesday"
+    | "wednesday"
+    | "thursday"
+    | "friday"
+    | "saturday"
+    | "sunday";
+  time?: string;
+  timezone?: string;
+  sessionsCount?: number;
+  description?: string;
+}
+
 export interface ICourse extends Document {
   title: string;
   slug: string;
@@ -93,6 +109,8 @@ export interface ICourse extends Document {
   isFree: boolean;
   /** "self-paced" — pre-recorded on-demand content; "live" — scheduled live class sessions */
   courseType: "self-paced" | "live";
+  /** Course-level availability gate. Learners can enroll before this date, but course content stays locked. */
+  startDate?: Date;
   level: "beginner" | "intermediate" | "advanced";
   duration: string;
   lessonsCount: number;
@@ -135,6 +153,7 @@ export interface ICourse extends Document {
   // Live-class specific (only relevant when courseType === "live")
   nextSessionDate?: Date;
   sessionDates?: Date[];
+  liveSchedule?: ICourseLiveSchedule;
   maxEnrollments?: number;
   liveSessionUrl?: string;
   createdAt: Date;
@@ -331,6 +350,33 @@ const CourseAgentSchema = new Schema<CourseAgentConfig>(
   { _id: false }
 );
 
+const CourseLiveScheduleSchema = new Schema<ICourseLiveSchedule>(
+  {
+    cadence: {
+      type: String,
+      enum: ["weekly", "biweekly", "monthly", "custom"],
+      default: "weekly",
+    },
+    dayOfWeek: {
+      type: String,
+      enum: [
+        "monday",
+        "tuesday",
+        "wednesday",
+        "thursday",
+        "friday",
+        "saturday",
+        "sunday",
+      ],
+    },
+    time: { type: String, trim: true },
+    timezone: { type: String, trim: true },
+    sessionsCount: { type: Number, min: 1 },
+    description: { type: String, trim: true },
+  },
+  { _id: false }
+);
+
 const CourseSchema = new Schema<ICourse>(
   {
     title: { type: String, required: true },
@@ -346,6 +392,7 @@ const CourseSchema = new Schema<ICourse>(
       enum: ["self-paced", "live"],
       default: "self-paced",
     },
+    startDate: Date,
     level: {
       type: String,
       enum: ["beginner", "intermediate", "advanced"],
@@ -389,6 +436,7 @@ const CourseSchema = new Schema<ICourse>(
     // Live-only fields
     nextSessionDate: Date,
     sessionDates: [Date],
+    liveSchedule: CourseLiveScheduleSchema,
     maxEnrollments: Number,
     liveSessionUrl: String,
   },
@@ -402,6 +450,7 @@ CourseSchema.pre("validate", function normalizeAgents(next) {
 
 CourseSchema.index({ "agents.id": 1 });
 CourseSchema.index({ "agents.agentCommonsAgentId": 1 });
+CourseSchema.index({ startDate: 1 });
 CourseSchema.index({ "collaborators.userId": 1 });
 CourseSchema.index({ "collaborators.email": 1 });
 CourseSchema.index({ "accessProgram.discounts.code": 1 });

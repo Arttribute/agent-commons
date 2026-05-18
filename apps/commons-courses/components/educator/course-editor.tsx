@@ -11,6 +11,7 @@ import {
 } from "@/components/educator/access-program-editor";
 import { useToast } from "@/components/toast-provider";
 import { defaultCourseAgents } from "@/lib/course-agent-defaults";
+import type { LiveSchedule } from "@/lib/course-schedule";
 import { cn } from "@/lib/utils";
 import type { CourseAgentConfig } from "@/types/course-agent";
 
@@ -40,6 +41,12 @@ type CourseForm = {
   published: boolean;
   level: "beginner" | "intermediate" | "advanced";
   courseType: "self-paced" | "live";
+  startDate?: string;
+  nextSessionDate?: string;
+  sessionDatesText: string;
+  liveSchedule: LiveSchedule;
+  maxEnrollments?: number;
+  liveSessionUrl?: string;
   duration: string;
   instructor: string;
   tagsText: string;
@@ -73,6 +80,10 @@ type CourseForm = {
 
 type CourseResponse = Partial<CourseForm> & {
   tags?: string[];
+  startDate?: string | Date | null;
+  nextSessionDate?: string | Date | null;
+  sessionDates?: Array<string | Date>;
+  liveSchedule?: LiveSchedule;
 };
 
 export type CourseEditorSection =
@@ -95,6 +106,19 @@ const emptyCourse: CourseForm = {
   published: false,
   level: "beginner",
   courseType: "self-paced",
+  startDate: "",
+  nextSessionDate: "",
+  sessionDatesText: "",
+  liveSchedule: {
+    cadence: "weekly",
+    dayOfWeek: "thursday",
+    time: "",
+    timezone: "",
+    sessionsCount: undefined,
+    description: "",
+  },
+  maxEnrollments: undefined,
+  liveSessionUrl: "",
   duration: "Self-paced",
   instructor: "",
   tagsText: "",
@@ -306,6 +330,18 @@ export function CourseEditor({
             <Field label="Instructor" value={course.instructor} onChange={(value) => setCourse({ ...course, instructor: value })} />
             <Field label="Duration" value={course.duration} onChange={(value) => setCourse({ ...course, duration: value })} />
             <Field label="Tags" value={course.tagsText} onChange={(value) => setCourse({ ...course, tagsText: value })} />
+            <Field
+              label="Start date"
+              type="date"
+              value={course.startDate || ""}
+              onChange={(value) => setCourse({ ...course, startDate: value })}
+            />
+            <Field
+              label="Next live session"
+              type="datetime-local"
+              value={course.nextSessionDate || ""}
+              onChange={(value) => setCourse({ ...course, nextSessionDate: value })}
+            />
           </div>
 
           <TextArea label="Short description" value={course.description} onChange={(value) => setCourse({ ...course, description: value })} />
@@ -356,6 +392,134 @@ export function CourseEditor({
               Published
             </label>
           </div>
+
+          {course.courseType === "live" && (
+            <div className="grid gap-4 md:grid-cols-3">
+              <TextArea
+                label="Live session dates"
+                value={course.sessionDatesText}
+                onChange={(value) =>
+                  setCourse({ ...course, sessionDatesText: value })
+                }
+              />
+              <Field
+                label="Max enrollments"
+                type="number"
+                value={String(course.maxEnrollments || "")}
+                onChange={(value) =>
+                  setCourse({
+                    ...course,
+                    maxEnrollments: Number(value) || undefined,
+                  })
+                }
+              />
+              <Field
+                label="Live session URL"
+                type="url"
+                value={course.liveSessionUrl || ""}
+                onChange={(value) => setCourse({ ...course, liveSessionUrl: value })}
+              />
+              <label>
+                <span className="text-sm font-bold text-slate-700">Live cadence</span>
+                <select
+                  className="mt-2 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+                  value={course.liveSchedule.cadence || "weekly"}
+                  onChange={(event) =>
+                    setCourse({
+                      ...course,
+                      liveSchedule: {
+                        ...course.liveSchedule,
+                        cadence: event.target.value as LiveSchedule["cadence"],
+                      },
+                    })
+                  }
+                >
+                  <option value="weekly">Weekly</option>
+                  <option value="biweekly">Every other week</option>
+                  <option value="monthly">Monthly</option>
+                  <option value="custom">Custom</option>
+                </select>
+              </label>
+              <label>
+                <span className="text-sm font-bold text-slate-700">Live day</span>
+                <select
+                  className="mt-2 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+                  value={course.liveSchedule.dayOfWeek || ""}
+                  onChange={(event) =>
+                    setCourse({
+                      ...course,
+                      liveSchedule: {
+                        ...course.liveSchedule,
+                        dayOfWeek: event.target.value,
+                      },
+                    })
+                  }
+                >
+                  <option value="">Choose day</option>
+                  <option value="monday">Monday</option>
+                  <option value="tuesday">Tuesday</option>
+                  <option value="wednesday">Wednesday</option>
+                  <option value="thursday">Thursday</option>
+                  <option value="friday">Friday</option>
+                  <option value="saturday">Saturday</option>
+                  <option value="sunday">Sunday</option>
+                </select>
+              </label>
+              <Field
+                label="Live class time"
+                type="time"
+                value={course.liveSchedule.time || ""}
+                onChange={(value) =>
+                  setCourse({
+                    ...course,
+                    liveSchedule: { ...course.liveSchedule, time: value },
+                  })
+                }
+              />
+              <Field
+                label="Timezone"
+                value={course.liveSchedule.timezone || ""}
+                onChange={(value) =>
+                  setCourse({
+                    ...course,
+                    liveSchedule: { ...course.liveSchedule, timezone: value },
+                  })
+                }
+              />
+              <Field
+                label="Live classes"
+                type="number"
+                value={String(course.liveSchedule.sessionsCount || "")}
+                onChange={(value) =>
+                  setCourse({
+                    ...course,
+                    liveSchedule: {
+                      ...course.liveSchedule,
+                      sessionsCount: Number(value) || undefined,
+                    },
+                  })
+                }
+              />
+              <TextArea
+                label="Learner-facing live schedule note"
+                value={course.liveSchedule.description || ""}
+                onChange={(value) =>
+                  setCourse({
+                    ...course,
+                    liveSchedule: {
+                      ...course.liveSchedule,
+                      description: value,
+                    },
+                  })
+                }
+              />
+              <p className="text-xs leading-5 text-slate-500 md:col-span-3">
+                Learners can enroll before the start date, but lessons stay
+                locked until that day. Use the live schedule fields to clarify
+                how meetings relate to the course lessons.
+              </p>
+            </div>
+          )}
         </EditorPanel>
       )}
 
@@ -654,6 +818,18 @@ function hydrateCourse(course: CourseResponse): CourseForm {
   return {
     ...emptyCourse,
     ...course,
+    startDate: toDateInputValue(course.startDate),
+    nextSessionDate: toDateTimeInputValue(course.nextSessionDate),
+    liveSchedule: {
+      ...emptyCourse.liveSchedule,
+      ...(course.liveSchedule || {}),
+    },
+    sessionDatesText: Array.isArray(course.sessionDates)
+      ? course.sessionDates
+          .map((value) => toDateTimeInputValue(value) || toDateInputValue(value))
+          .filter(Boolean)
+          .join("\n")
+      : "",
     tagsText: Array.isArray(course.tags) ? course.tags.join(", ") : "",
     modules: course.modules?.length ? course.modules : emptyCourse.modules,
     agents: course.agents?.length ? course.agents : emptyCourse.agents,
@@ -672,6 +848,18 @@ function hydrateCourse(course: CourseResponse): CourseForm {
 function getCoursePayload(course: CourseForm) {
   return {
     ...course,
+    startDate: course.startDate || undefined,
+    nextSessionDate: course.nextSessionDate || undefined,
+    sessionDates: course.sessionDatesText
+      .split(/\n|,/)
+      .map((value) => value.trim())
+      .filter(Boolean),
+    liveSchedule: {
+      ...course.liveSchedule,
+      description: course.liveSchedule.description?.trim() || undefined,
+      timezone: course.liveSchedule.timezone?.trim() || undefined,
+      time: course.liveSchedule.time || undefined,
+    },
     tags: course.tagsText
       .split(",")
       .map((tag) => tag.trim())
@@ -692,6 +880,12 @@ function getSectionSnapshot(course: CourseForm, section: CourseEditorSection) {
         published: payload.published,
         level: payload.level,
         courseType: payload.courseType,
+        startDate: payload.startDate,
+        nextSessionDate: payload.nextSessionDate,
+        sessionDates: payload.sessionDates,
+        liveSchedule: payload.liveSchedule,
+        maxEnrollments: payload.maxEnrollments,
+        liveSessionUrl: payload.liveSessionUrl,
         duration: payload.duration,
         instructor: payload.instructor,
         tags: payload.tags,
@@ -728,6 +922,20 @@ function stringifySectionSnapshot(course: CourseForm, section: CourseEditorSecti
 
 function formatDraftTime(value: Date) {
   return value.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+}
+
+function toDateInputValue(value?: string | Date | null) {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  return date.toISOString().slice(0, 10);
+}
+
+function toDateTimeInputValue(value?: string | Date | null) {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  return date.toISOString().slice(0, 16);
 }
 
 function EditorPanel({
