@@ -21,8 +21,13 @@ import {
   CheckCircle,
   FlaskConical,
   ShieldCheck,
+  Wifi,
 } from "lucide-react";
-import { getCourseStartStatus } from "@/lib/course-schedule";
+import {
+  getCourseStartStatus,
+  getLiveScheduleSummary,
+  type LiveSchedule,
+} from "@/lib/course-schedule";
 
 interface Props {
   params: Promise<{ slug: string }>;
@@ -65,6 +70,8 @@ interface CourseDetailData {
   };
   courseType: "self-paced" | "live";
   startDate?: string | Date | null;
+  liveSchedule?: LiveSchedule | null;
+  sessionDates?: Array<string | Date>;
   level: "beginner" | "intermediate" | "advanced";
   duration: string;
   lessonsCount: number;
@@ -173,6 +180,7 @@ export default async function CoursePage({ params, searchParams }: Props) {
   const enrollmentProgress = enrollment?.progress ?? 0;
   const bannerImageUrl = course.bannerImageUrl || course.imageUrl || null;
   const startStatus = getCourseStartStatus(course.startDate);
+  const liveScheduleSummary = getLiveScheduleSummary(course.liveSchedule);
 
   const totalMinutes = course.modules
     .flatMap((m) => m.lessons)
@@ -263,6 +271,24 @@ export default async function CoursePage({ params, searchParams }: Props) {
                     By {course.instructor}
                   </span>
                 </div>
+
+                {course.courseType === "live" && (
+                  <div className="mb-8 max-w-2xl rounded-xl border border-lime-200 bg-lime-50 p-4">
+                    <p className="flex items-center gap-2 text-sm font-bold text-slate-950">
+                      <Wifi className="h-4 w-4" />
+                      Live class schedule
+                    </p>
+                    <p className="mt-2 text-sm leading-6 text-slate-700">
+                      {liveScheduleSummary ||
+                        "Live meeting details will be shared by the organizer."}
+                    </p>
+                    <p className="mt-2 text-xs leading-5 text-slate-600">
+                      The {course.lessonsCount} lessons are the course content
+                      library. Live classes are scheduled cohort sessions for
+                      discussion, walkthroughs, and support.
+                    </p>
+                  </div>
+                )}
 
                 <EnrolledBanner
                   courseSlug={course.slug}
@@ -451,6 +477,12 @@ function PurchaseCard({
           {!course.isFree && (
             <p className="text-xs text-slate-400 mb-5">
               One-time payment · Lifetime access
+            </p>
+          )}
+          {course.courseType === "live" && (
+            <p className="mb-5 rounded-lg bg-slate-50 p-3 text-xs leading-5 text-slate-700">
+              {getLiveScheduleSummary(course.liveSchedule) ||
+                "Live class schedule will be confirmed by the organizer."}
             </p>
           )}
           {startDateLabel && (

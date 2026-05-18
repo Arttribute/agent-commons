@@ -15,6 +15,10 @@ import {
   Wifi,
 } from "lucide-react";
 import { Nav } from "@/components/nav";
+import {
+  getLiveScheduleSummary,
+  type LiveSchedule,
+} from "@/lib/course-schedule";
 import { connectDB } from "@/lib/db";
 import Course from "@/models/Course";
 
@@ -36,6 +40,7 @@ interface CourseData {
   bannerImageUrl?: string | null;
   previewImageUrl?: string | null;
   startDate?: string | null;
+  liveSchedule?: LiveSchedule | null;
   nextSessionDate?: string | null;
   modules: { title: string; lessons: { title: string }[] }[];
 }
@@ -68,6 +73,7 @@ interface RawCourse {
   coverImage?: string | null;
   nextSessionDate?: Date | string | null;
   startDate?: Date | string | null;
+  liveSchedule?: LiveSchedule | null;
   isMainFeatured?: boolean;
   isFeatured?: boolean;
   modules?: {
@@ -82,7 +88,7 @@ async function getLandingData(): Promise<LandingData> {
     const courses = (await Course.find({ published: true })
       .sort({ isMainFeatured: -1, isFeatured: -1, createdAt: 1 })
       .select(
-        "title slug tagline price currency isFree courseType level description lessonsCount modulesCount duration tags imageUrl bannerImageUrl previewImageUrl image bannerImage thumbnail coverImage startDate nextSessionDate modules isMainFeatured isFeatured",
+        "title slug tagline price currency isFree courseType level description lessonsCount modulesCount duration tags imageUrl bannerImageUrl previewImageUrl image bannerImage thumbnail coverImage startDate liveSchedule nextSessionDate modules isMainFeatured isFeatured",
       )
       .lean()) as unknown as RawCourse[];
 
@@ -117,6 +123,7 @@ async function getLandingData(): Promise<LandingData> {
             year: "numeric",
           })
         : null,
+      liveSchedule: c.liveSchedule ?? null,
       nextSessionDate: c.nextSessionDate
         ? new Date(c.nextSessionDate).toLocaleDateString("en-GB", {
             day: "numeric",
@@ -631,6 +638,11 @@ export default async function HomePage() {
                     Starts {hero.startDate}
                   </p>
                 )}
+                {getLiveScheduleSummary(hero.liveSchedule) && (
+                  <p className="mt-3 rounded-lg bg-slate-50 px-3 py-2 text-sm leading-6 text-slate-700">
+                    {getLiveScheduleSummary(hero.liveSchedule)}
+                  </p>
+                )}
                 <div className="mt-5 flex flex-wrap gap-4 border-t border-slate-200 pt-5 text-sm text-slate-600">
                   <span className="flex items-center gap-1.5">
                     <Layers className="h-4 w-4" />
@@ -705,6 +717,11 @@ export default async function HomePage() {
                   {c.startDate && (
                     <p className="mt-4 rounded-lg bg-lime-50 px-3 py-2 text-xs font-semibold text-slate-800">
                       Starts {c.startDate}
+                    </p>
+                  )}
+                  {getLiveScheduleSummary(c.liveSchedule) && (
+                    <p className="mt-3 rounded-lg bg-slate-50 px-3 py-2 text-xs leading-5 text-slate-700">
+                      {getLiveScheduleSummary(c.liveSchedule)}
                     </p>
                   )}
                   <div className="mt-5 flex flex-wrap gap-3 border-t border-slate-200 pt-4 text-sm text-slate-600">

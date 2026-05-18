@@ -1,5 +1,9 @@
 import { normalizeCourseAgents } from "@/lib/course-agent-defaults";
-import { normalizeCourseStartDate } from "@/lib/course-schedule";
+import {
+  getLiveScheduleSummary,
+  normalizeCourseStartDate,
+  type LiveSchedule,
+} from "@/lib/course-schedule";
 import type { CourseAgentConfig } from "@/types/course-agent";
 
 export type AccessCodeInput = {
@@ -48,6 +52,7 @@ export type CourseInput = {
   startDate?: string | Date | null;
   nextSessionDate?: string | Date | null;
   sessionDates?: Array<string | Date>;
+  liveSchedule?: LiveSchedule;
   maxEnrollments?: number;
   liveSessionUrl?: string;
   level?: "beginner" | "intermediate" | "advanced";
@@ -256,6 +261,7 @@ export function normalizeCourseInput(input: CourseInput) {
     startDate: normalizeCourseStartDate(input.startDate),
     nextSessionDate: normalizeCourseStartDate(input.nextSessionDate),
     sessionDates,
+    liveSchedule: normalizeLiveSchedule(input.liveSchedule),
     maxEnrollments:
       typeof input.maxEnrollments === "number" && input.maxEnrollments > 0
         ? Math.floor(input.maxEnrollments)
@@ -295,4 +301,39 @@ export function normalizeCourseInput(input: CourseInput) {
       customIntro: input.emailSettings?.customIntro?.trim() || undefined,
     },
   };
+}
+
+function normalizeLiveSchedule(input?: LiveSchedule) {
+  if (!input) return undefined;
+  const cadence = ["weekly", "biweekly", "monthly", "custom"].includes(
+    input.cadence || ""
+  )
+    ? input.cadence
+    : "weekly";
+  const dayOfWeek = input.dayOfWeek?.toLowerCase();
+  const normalized = {
+    cadence,
+    dayOfWeek:
+      dayOfWeek &&
+      [
+        "monday",
+        "tuesday",
+        "wednesday",
+        "thursday",
+        "friday",
+        "saturday",
+        "sunday",
+      ].includes(dayOfWeek)
+        ? dayOfWeek
+        : undefined,
+    time: input.time?.trim() || undefined,
+    timezone: input.timezone?.trim() || undefined,
+    sessionsCount:
+      typeof input.sessionsCount === "number" && input.sessionsCount > 0
+        ? Math.floor(input.sessionsCount)
+        : undefined,
+    description: input.description?.trim() || undefined,
+  } satisfies LiveSchedule;
+
+  return getLiveScheduleSummary(normalized) ? normalized : undefined;
 }
