@@ -13,7 +13,7 @@ const config: Config = {
   theme: {
     extend: {
       fontFamily: {
-        mono: ['Space Mono', 'monospace'],
+        mono: ['var(--font-space-grotesk)', 'Space Grotesk', 'sans-serif'],
         sans: ['Geist', 'Arial', 'Helvetica', 'sans-serif'],
       },
       colors: {

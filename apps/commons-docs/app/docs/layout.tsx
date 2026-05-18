@@ -17,7 +17,7 @@ export default function Layout({ children }: { children: ReactNode }) {
               height={22}
             />
             <span
-              style={{ fontFamily: 'var(--font-space-mono), monospace' }}
+              style={{ fontFamily: 'var(--font-space-grotesk), sans-serif' }}
               className="font-bold text-sm"
             >
               Agent Commons

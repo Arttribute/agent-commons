@@ -1,5 +1,5 @@
 import './globals.css';
-import { Space_Mono } from 'next/font/google';
+import { Space_Grotesk } from 'next/font/google';
 import { GeistSans } from 'geist/font/sans';
 import { GeistMono } from 'geist/font/mono';
 import { RootProvider } from 'fumadocs-ui/provider';
@@ -20,10 +20,10 @@ export const metadata: Metadata = {
   },
 };
 
-const spaceMono = Space_Mono({
+const spaceGrotesk = Space_Grotesk({
   subsets: ['latin'],
   weight: ['400', '700'],
-  variable: '--font-space-mono',
+  variable: '--font-space-grotesk',
   display: 'swap',
 });
 
@@ -31,7 +31,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html
       lang="en"
-      className={`${GeistSans.variable} ${GeistMono.variable} ${spaceMono.variable}`}
+      className={`${GeistSans.variable} ${GeistMono.variable} ${spaceGrotesk.variable}`}
       suppressHydrationWarning
     >
       <head>
