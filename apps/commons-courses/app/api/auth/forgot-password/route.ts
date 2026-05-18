@@ -6,12 +6,13 @@ import User from "@/models/User";
 
 export async function POST(req: NextRequest) {
   const { email } = await req.json();
-  if (!email) {
+  const normalizedEmail = String(email || "").trim().toLowerCase();
+  if (!normalizedEmail) {
     return NextResponse.json({ error: "Email is required." }, { status: 400 });
   }
 
   await connectDB();
-  const user = await User.findOne({ email: String(email).toLowerCase() });
+  const user = await User.findOne({ email: normalizedEmail }).select("+password");
   if (user?.password) {
     const { token } = await createAccountToken({
       userId: user._id,

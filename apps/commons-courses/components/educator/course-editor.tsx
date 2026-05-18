@@ -43,6 +43,9 @@ type CourseForm = {
   duration: string;
   instructor: string;
   tagsText: string;
+  imageUrl?: string;
+  bannerImageUrl?: string;
+  previewImageUrl?: string;
   paymentProviders: ("stripe" | "paystack")[];
   installmentPlan: {
     enabled: boolean;
@@ -95,6 +98,9 @@ const emptyCourse: CourseForm = {
   duration: "Self-paced",
   instructor: "",
   tagsText: "",
+  imageUrl: "",
+  bannerImageUrl: "",
+  previewImageUrl: "",
   paymentProviders: ["stripe"],
   installmentPlan: {
     enabled: false,
@@ -136,6 +142,7 @@ export function CourseEditor({
     stringifySectionSnapshot(emptyCourse, section)
   );
   const [saving, setSaving] = useState(false);
+  const [uploadingMedia, setUploadingMedia] = useState<string | null>(null);
   const [error, setError] = useState("");
   const [draftSavedAt, setDraftSavedAt] = useState<Date | null>(null);
   const isFullEditor = section === "all";
@@ -250,6 +257,36 @@ export function CourseEditor({
     });
   }
 
+  async function uploadMedia(
+    field: "imageUrl" | "bannerImageUrl" | "previewImageUrl",
+    file?: File
+  ) {
+    if (!file) return;
+    setUploadingMedia(field);
+    const formData = new FormData();
+    formData.append("file", file);
+    const res = await fetch("/api/educator/uploads", {
+      method: "POST",
+      body: formData,
+    });
+    const data = await res.json();
+    setUploadingMedia(null);
+    if (!res.ok) {
+      toast({
+        tone: "error",
+        title: "Upload failed",
+        description: data.error || "Could not upload this image.",
+      });
+      return;
+    }
+    setCourse((current) => ({ ...current, [field]: data.url }));
+    toast({
+      tone: "success",
+      title: "Image uploaded",
+      description: "Save course info to publish this image.",
+    });
+  }
+
   if (section === "collaborators") {
     return <CourseCollaborators slug={slug} />;
   }
@@ -273,6 +310,30 @@ export function CourseEditor({
 
           <TextArea label="Short description" value={course.description} onChange={(value) => setCourse({ ...course, description: value })} />
           <TextArea label="Long description" value={course.longDescription} onChange={(value) => setCourse({ ...course, longDescription: value })} />
+
+          <div className="grid gap-4 md:grid-cols-3">
+            <MediaField
+              label="Card image URL"
+              value={course.imageUrl || ""}
+              onChange={(value) => setCourse({ ...course, imageUrl: value })}
+              onUpload={(file) => uploadMedia("imageUrl", file)}
+              uploading={uploadingMedia === "imageUrl"}
+            />
+            <MediaField
+              label="Banner image URL"
+              value={course.bannerImageUrl || ""}
+              onChange={(value) => setCourse({ ...course, bannerImageUrl: value })}
+              onUpload={(file) => uploadMedia("bannerImageUrl", file)}
+              uploading={uploadingMedia === "bannerImageUrl"}
+            />
+            <MediaField
+              label="Link preview image URL"
+              value={course.previewImageUrl || ""}
+              onChange={(value) => setCourse({ ...course, previewImageUrl: value })}
+              onUpload={(file) => uploadMedia("previewImageUrl", file)}
+              uploading={uploadingMedia === "previewImageUrl"}
+            />
+          </div>
 
           <div className="grid gap-4 md:grid-cols-3">
             <label>
@@ -634,6 +695,9 @@ function getSectionSnapshot(course: CourseForm, section: CourseEditorSection) {
         duration: payload.duration,
         instructor: payload.instructor,
         tags: payload.tags,
+        imageUrl: payload.imageUrl,
+        bannerImageUrl: payload.bannerImageUrl,
+        previewImageUrl: payload.previewImageUrl,
       };
     case "access":
       return {
@@ -705,6 +769,53 @@ function Field({ label, value, onChange, required, type = "text" }: { label: str
     <label className="block">
       <span className="text-sm font-bold text-slate-700">{label}</span>
       <input type={type} required={required} value={value} onChange={(event) => onChange(event.target.value)} className="mt-2 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-slate-400" />
+    </label>
+  );
+}
+
+function MediaField({
+  label,
+  value,
+  onChange,
+  onUpload,
+  uploading,
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  onUpload: (file?: File) => void;
+  uploading: boolean;
+}) {
+  return (
+    <label className="block">
+      <span className="text-sm font-bold text-slate-700">{label}</span>
+      <input
+        type="url"
+        value={value}
+        placeholder="https://..."
+        onChange={(event) => onChange(event.target.value)}
+        className="mt-2 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-slate-400"
+      />
+      <span className="mt-2 block">
+        <input
+          type="file"
+          accept="image/png,image/jpeg,image/webp"
+          disabled={uploading}
+          onChange={(event) => onUpload(event.target.files?.[0])}
+          className="w-full text-xs text-slate-600 file:mr-3 file:rounded-md file:border-0 file:bg-slate-950 file:px-3 file:py-2 file:text-xs file:font-bold file:text-white disabled:opacity-50"
+        />
+      </span>
+      <span className="mt-1 block text-xs leading-5 text-slate-500">
+        {uploading
+          ? "Uploading..."
+          : "Upload or paste a public 1200x630 image for best sharing results."}
+      </span>
+      {value ? (
+        <div className="mt-3 aspect-[1200/630] overflow-hidden rounded-lg border border-slate-200 bg-slate-50">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={value} alt="" className="h-full w-full object-cover" />
+        </div>
+      ) : null}
     </label>
   );
 }

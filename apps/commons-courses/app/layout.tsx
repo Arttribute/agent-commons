@@ -3,6 +3,7 @@ import { Space_Grotesk } from "next/font/google";
 import { Analytics } from "@vercel/analytics/next";
 import "./globals.css";
 import { Providers } from "@/components/providers";
+import { getAppBaseUrl } from "@/lib/app-url";
 
 const spaceGrotesk = Space_Grotesk({
   variable: "--font-space-grotesk",
@@ -12,9 +13,32 @@ const spaceGrotesk = Space_Grotesk({
 });
 
 export const metadata: Metadata = {
-  title: "CommonLab - AI agent courses and learning sandboxes",
+  metadataBase: new URL(getAppBaseUrl()),
+  title: {
+    default: "CommonLab - AI agent courses",
+    template: "%s | CommonLab",
+  },
   description:
     "CommonLab helps educators teach practical AI literacy with structured courses, guided agent labs, and safe sandboxes for learners.",
+  icons: {
+    icon: "/ac-icon.svg",
+    shortcut: "/ac-icon.svg",
+    apple: "/logo.jpg",
+  },
+  openGraph: {
+    title: "CommonLab - AI agent courses",
+    description:
+      "Practical AI literacy courses with guided agent labs and safe learning environments.",
+    siteName: "CommonLab",
+    images: [{ url: "/opengraph-image", width: 1200, height: 630 }],
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "CommonLab - AI agent courses",
+    description:
+      "Practical AI literacy courses with guided agent labs and safe learning environments.",
+    images: ["/opengraph-image"],
+  },
 };
 
 export default function RootLayout({
