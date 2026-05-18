@@ -386,14 +386,6 @@ function Footer() {
           <Link href="/terms" className="hover:text-slate-950">
             Terms
           </Link>
-          <a
-            href="https://agentcommons.io"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="hover:text-slate-950"
-          >
-            Agent Commons
-          </a>
         </div>
       </div>
     </footer>

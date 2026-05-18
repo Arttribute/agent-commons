@@ -128,14 +128,6 @@ export default async function CoursesPage() {
           </div>
           <span>© 2026 CommonLab</span>
         </div>
-        <a
-          href="https://agentcommons.io"
-          target="_blank"
-          rel="noopener noreferrer"
-          className="hover:text-slate-700 transition-colors"
-        >
-          Agent Commons
-        </a>
         </div>
       </footer>
     </div>

@@ -698,7 +698,7 @@ export async function GET(req: NextRequest) {
             currency: courseCurrency,
             product_data: {
               name: courseTitle,
-              description: "Agent Commons Courses — Lifetime access",
+              description: "CommonLab — Lifetime access",
             },
             unit_amount: Math.round(accessPrice.finalAmount * 100),
           },

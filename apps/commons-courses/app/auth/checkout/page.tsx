@@ -4,7 +4,7 @@ import { Suspense, useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { signIn } from "next-auth/react";
-import { BookOpen, Loader2 } from "lucide-react";
+import { FlaskConical, Loader2 } from "lucide-react";
 
 function CheckoutSignIn() {
   const router = useRouter();
@@ -48,10 +48,10 @@ function CheckoutSignIn() {
       <div className="w-full max-w-sm text-center">
         <Link href="/" className="mb-10 flex items-center justify-center gap-2.5">
           <div className="flex h-7 w-7 items-center justify-center rounded bg-slate-950">
-            <BookOpen className="h-3.5 w-3.5 text-white" />
+            <FlaskConical className="h-3.5 w-3.5 text-white" />
           </div>
           <span className="text-sm font-bold tracking-tight text-slate-900">
-            Agent Commons Courses
+            CommonLab
           </span>
         </Link>
         {error ? (

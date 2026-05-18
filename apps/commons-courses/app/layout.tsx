@@ -21,9 +21,9 @@ export const metadata: Metadata = {
   description:
     "CommonLab helps educators teach practical AI literacy with structured courses, guided agent labs, and safe sandboxes for learners.",
   icons: {
-    icon: "/ac-icon.svg",
-    shortcut: "/ac-icon.svg",
-    apple: "/logo.jpg",
+    icon: "/icon.svg",
+    shortcut: "/icon.svg",
+    apple: "/icon.svg",
   },
   openGraph: {
     title: "CommonLab - AI agent courses",

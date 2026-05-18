@@ -68,7 +68,16 @@ export function CommonsEmail({
                         <table role="presentation" width="100%" cellPadding="0" cellSpacing="0">
                           <tbody>
                             <tr>
-                              <td style={styles.logoMark}>C</td>
+                              <td style={styles.logoMark}>
+                                {/* eslint-disable-next-line @next/next/no-img-element */}
+                                <img
+                                  src={`${baseUrl}/icon.svg`}
+                                  alt="CommonLab"
+                                  width="42"
+                                  height="42"
+                                  style={styles.logoImage}
+                                />
+                              </td>
                               <td style={styles.logoText}>
                                 <p style={styles.brand}>CommonLab</p>
                                 <p style={styles.tagline}>Courses and learning sandboxes</p>
@@ -184,14 +193,13 @@ const styles: Record<string, React.CSSProperties> = {
   logoMark: {
     width: "42px",
     height: "42px",
-    borderRadius: "10px",
-    backgroundColor: colors.ink,
-    color: "#ffffff",
-    fontSize: "20px",
-    lineHeight: "42px",
-    fontWeight: 800,
-    textAlign: "center",
     verticalAlign: "middle",
+  },
+  logoImage: {
+    display: "block",
+    width: "42px",
+    height: "42px",
+    border: 0,
   },
   logoText: {
     paddingLeft: "12px",

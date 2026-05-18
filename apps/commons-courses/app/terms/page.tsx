@@ -1,16 +1,16 @@
 import Link from "next/link";
-import { BookOpen } from "lucide-react";
+import { FlaskConical } from "lucide-react";
 import { Nav } from "@/components/nav";
 
 export const metadata = {
-  title: "Terms & Conditions — Agent Commons Courses",
+  title: "Terms & Conditions — CommonLab",
   description:
-    "Terms and conditions for enrolling in and accessing Agent Commons Courses.",
+    "Terms and conditions for enrolling in and accessing CommonLab courses.",
 };
 
 const EFFECTIVE_DATE = "1 April 2026";
 const COMPANY = "Agent Commons";
-const PLATFORM = "Agent Commons Courses";
+const PLATFORM = "CommonLab";
 const CONTACT_EMAIL = "courses@agentcommons.io";
 
 export default function TermsPage() {
@@ -295,9 +295,9 @@ export default function TermsPage() {
       <footer className="bg-white px-6 lg:px-12 py-8 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-slate-400 border-t border-slate-200">
         <div className="flex items-center gap-2.5">
           <div className="h-5 w-5 rounded bg-slate-900 flex items-center justify-center">
-            <BookOpen className="h-3 w-3 text-white" />
+            <FlaskConical className="h-3 w-3 text-white" />
           </div>
-          <span>© 2026 Agent Commons</span>
+          <span>© 2026 CommonLab</span>
         </div>
         <div className="flex gap-6">
           <Link href="/courses" className="hover:text-slate-700 transition-colors">
