@@ -7,7 +7,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "repair:payments-index": "node scripts/repair-payments-index.mjs"
+    "repair:payments-index": "node scripts/repair-payments-index.mjs",
+    "set:ai-quick-wins-start-date": "node scripts/set-ai-quick-wins-start-date.mjs"
   },
   "dependencies": {
     "@agent-commons/sdk": "^0.1.13",

@@ -1,4 +1,5 @@
 import { normalizeCourseAgents } from "@/lib/course-agent-defaults";
+import { normalizeCourseStartDate } from "@/lib/course-schedule";
 import type { CourseAgentConfig } from "@/types/course-agent";
 
 export type AccessCodeInput = {
@@ -44,6 +45,11 @@ export type CourseInput = {
   currency?: string;
   isFree?: boolean;
   courseType?: "self-paced" | "live";
+  startDate?: string | Date | null;
+  nextSessionDate?: string | Date | null;
+  sessionDates?: Array<string | Date>;
+  maxEnrollments?: number;
+  liveSessionUrl?: string;
   level?: "beginner" | "intermediate" | "advanced";
   duration?: string;
   instructor?: string;
@@ -231,6 +237,11 @@ export function normalizeAccessProgramInput(input: CourseInput["accessProgram"])
 
 export function normalizeCourseInput(input: CourseInput) {
   const modules = Array.isArray(input.modules) ? input.modules : [];
+  const sessionDates = Array.isArray(input.sessionDates)
+    ? input.sessionDates
+        .map((value) => normalizeCourseStartDate(value))
+        .filter((value): value is Date => Boolean(value))
+    : [];
   const lessonsCount = modules.reduce(
     (sum, module) => sum + (module.lessons?.length || 0),
     0
@@ -242,6 +253,14 @@ export function normalizeCourseInput(input: CourseInput) {
     price: Number(input.price || 0),
     isFree: Boolean(input.isFree || Number(input.price || 0) <= 0),
     courseType: input.courseType || "self-paced",
+    startDate: normalizeCourseStartDate(input.startDate),
+    nextSessionDate: normalizeCourseStartDate(input.nextSessionDate),
+    sessionDates,
+    maxEnrollments:
+      typeof input.maxEnrollments === "number" && input.maxEnrollments > 0
+        ? Math.floor(input.maxEnrollments)
+        : undefined,
+    liveSessionUrl: input.liveSessionUrl?.trim() || undefined,
     level: input.level || "beginner",
     tags: Array.isArray(input.tags) ? input.tags : [],
     imageUrl: normalizeImageUrl(input.imageUrl),

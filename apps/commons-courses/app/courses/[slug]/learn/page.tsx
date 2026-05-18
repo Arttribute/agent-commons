@@ -42,6 +42,9 @@ interface CourseLearnData {
   slug: string;
   currency?: string;
   paymentProviders?: ("stripe" | "paystack")[];
+  startDate?: string | Date | null;
+  startDateLabel?: string | null;
+  hasStarted?: boolean;
   modules: ModuleData[];
   agents?: CourseAgentConfig[];
 }
@@ -62,6 +65,8 @@ export default function LearnPage({ params }: Props) {
   const [enrolled, setEnrolled] = useState<boolean | null>(null);
   const [accessLevel, setAccessLevel] = useState<"full" | "partial">("full");
   const [currentInstallment, setCurrentInstallment] = useState(0);
+  const [hasStarted, setHasStarted] = useState(true);
+  const [startDateLabel, setStartDateLabel] = useState<string | null>(null);
   const [marking, setMarking] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const track = useAnalytics();
@@ -107,6 +112,8 @@ export default function LearnPage({ params }: Props) {
       setEnrolled(data.enrolled);
       setAccessLevel(data.accessLevel ?? "full");
       setCurrentInstallment(data.currentInstallment ?? 0);
+      setHasStarted(data.hasStarted !== false);
+      setStartDateLabel(data.startDateLabel ?? null);
       setCompletedLessons(data.completedLessons ?? []);
     } catch {
       setEnrolled(false);
@@ -134,7 +141,9 @@ export default function LearnPage({ params }: Props) {
   const maxUnlockedModule =
     accessLevel === "partial" ? Math.max(currentInstallment - 1, 0) : Infinity;
   const lockedReason =
-    enrolled === false && !currentLesson?.isFree
+    course?.hasStarted === false || hasStarted === false
+      ? "course_not_started"
+      : enrolled === false && !currentLesson?.isFree
       ? "not_enrolled"
       : enrolled && accessLevel === "partial" && moduleIdx > maxUnlockedModule
         ? "installment_locked"
@@ -236,6 +245,32 @@ export default function LearnPage({ params }: Props) {
   const nextPaymentProvider = course.paymentProviders?.includes("paystack")
     ? "&provider=paystack"
     : "";
+
+  const courseStartLabel = startDateLabel || course.startDateLabel;
+
+  if (course.hasStarted === false || hasStarted === false) {
+    return (
+      <div className="min-h-screen bg-white">
+        <Nav />
+        <div className="pt-32 flex flex-col items-center justify-center text-center px-6">
+          <Lock className="h-10 w-10 text-slate-300 mb-4" />
+          <h2 className="text-lg font-bold text-slate-900 mb-2">
+            This course has not started yet
+          </h2>
+          <p className="text-sm text-slate-500 mb-6 max-w-sm">
+            You&apos;re enrolled, and the course space opens
+            {courseStartLabel ? ` on ${courseStartLabel}` : " on the start date"}.
+          </p>
+          <Link
+            href={`/courses/${slug}`}
+            className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg bg-slate-900 text-white text-sm font-bold hover:opacity-90 transition-opacity"
+          >
+            Back to course
+          </Link>
+        </div>
+      </div>
+    );
+  }
 
   // Guard: redirect to course page if not enrolled and lesson is not free
   if (enrolled === false && !currentLesson?.isFree) {
@@ -399,7 +434,7 @@ export default function LearnPage({ params }: Props) {
                   const key = `${mi}:${li}`;
                   const done = completedLessons.includes(key);
                   const active = mi === moduleIdx && li === lessonIdx;
-                  const accessible = les.isFree || enrolled;
+                  const accessible = hasStarted && (les.isFree || enrolled);
 
                   return (
                     <button

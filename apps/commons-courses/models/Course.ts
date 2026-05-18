@@ -93,6 +93,8 @@ export interface ICourse extends Document {
   isFree: boolean;
   /** "self-paced" — pre-recorded on-demand content; "live" — scheduled live class sessions */
   courseType: "self-paced" | "live";
+  /** Course-level availability gate. Learners can enroll before this date, but course content stays locked. */
+  startDate?: Date;
   level: "beginner" | "intermediate" | "advanced";
   duration: string;
   lessonsCount: number;
@@ -346,6 +348,7 @@ const CourseSchema = new Schema<ICourse>(
       enum: ["self-paced", "live"],
       default: "self-paced",
     },
+    startDate: Date,
     level: {
       type: String,
       enum: ["beginner", "intermediate", "advanced"],
@@ -402,6 +405,7 @@ CourseSchema.pre("validate", function normalizeAgents(next) {
 
 CourseSchema.index({ "agents.id": 1 });
 CourseSchema.index({ "agents.agentCommonsAgentId": 1 });
+CourseSchema.index({ startDate: 1 });
 CourseSchema.index({ "collaborators.userId": 1 });
 CourseSchema.index({ "collaborators.email": 1 });
 CourseSchema.index({ "accessProgram.discounts.code": 1 });

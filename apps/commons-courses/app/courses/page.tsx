@@ -22,6 +22,8 @@ async function getCourses(): Promise<CourseCardData[]> {
       price: c.price,
       currency: c.currency,
       isFree: c.isFree,
+      courseType: c.courseType,
+      startDate: c.startDate ? String(c.startDate) : null,
       level: c.level,
       duration: c.duration,
       lessonsCount: c.lessonsCount,

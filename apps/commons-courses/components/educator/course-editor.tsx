@@ -40,6 +40,11 @@ type CourseForm = {
   published: boolean;
   level: "beginner" | "intermediate" | "advanced";
   courseType: "self-paced" | "live";
+  startDate?: string;
+  nextSessionDate?: string;
+  sessionDatesText: string;
+  maxEnrollments?: number;
+  liveSessionUrl?: string;
   duration: string;
   instructor: string;
   tagsText: string;
@@ -73,6 +78,9 @@ type CourseForm = {
 
 type CourseResponse = Partial<CourseForm> & {
   tags?: string[];
+  startDate?: string | Date | null;
+  nextSessionDate?: string | Date | null;
+  sessionDates?: Array<string | Date>;
 };
 
 export type CourseEditorSection =
@@ -95,6 +103,11 @@ const emptyCourse: CourseForm = {
   published: false,
   level: "beginner",
   courseType: "self-paced",
+  startDate: "",
+  nextSessionDate: "",
+  sessionDatesText: "",
+  maxEnrollments: undefined,
+  liveSessionUrl: "",
   duration: "Self-paced",
   instructor: "",
   tagsText: "",
@@ -306,6 +319,18 @@ export function CourseEditor({
             <Field label="Instructor" value={course.instructor} onChange={(value) => setCourse({ ...course, instructor: value })} />
             <Field label="Duration" value={course.duration} onChange={(value) => setCourse({ ...course, duration: value })} />
             <Field label="Tags" value={course.tagsText} onChange={(value) => setCourse({ ...course, tagsText: value })} />
+            <Field
+              label="Start date"
+              type="date"
+              value={course.startDate || ""}
+              onChange={(value) => setCourse({ ...course, startDate: value })}
+            />
+            <Field
+              label="Next live session"
+              type="datetime-local"
+              value={course.nextSessionDate || ""}
+              onChange={(value) => setCourse({ ...course, nextSessionDate: value })}
+            />
           </div>
 
           <TextArea label="Short description" value={course.description} onChange={(value) => setCourse({ ...course, description: value })} />
@@ -356,6 +381,39 @@ export function CourseEditor({
               Published
             </label>
           </div>
+
+          {course.courseType === "live" && (
+            <div className="grid gap-4 md:grid-cols-3">
+              <TextArea
+                label="Live session dates"
+                value={course.sessionDatesText}
+                onChange={(value) =>
+                  setCourse({ ...course, sessionDatesText: value })
+                }
+              />
+              <Field
+                label="Max enrollments"
+                type="number"
+                value={String(course.maxEnrollments || "")}
+                onChange={(value) =>
+                  setCourse({
+                    ...course,
+                    maxEnrollments: Number(value) || undefined,
+                  })
+                }
+              />
+              <Field
+                label="Live session URL"
+                type="url"
+                value={course.liveSessionUrl || ""}
+                onChange={(value) => setCourse({ ...course, liveSessionUrl: value })}
+              />
+              <p className="text-xs leading-5 text-slate-500 md:col-span-3">
+                Learners can enroll before the start date, but lessons stay
+                locked until that day.
+              </p>
+            </div>
+          )}
         </EditorPanel>
       )}
 
@@ -654,6 +712,14 @@ function hydrateCourse(course: CourseResponse): CourseForm {
   return {
     ...emptyCourse,
     ...course,
+    startDate: toDateInputValue(course.startDate),
+    nextSessionDate: toDateTimeInputValue(course.nextSessionDate),
+    sessionDatesText: Array.isArray(course.sessionDates)
+      ? course.sessionDates
+          .map((value) => toDateTimeInputValue(value) || toDateInputValue(value))
+          .filter(Boolean)
+          .join("\n")
+      : "",
     tagsText: Array.isArray(course.tags) ? course.tags.join(", ") : "",
     modules: course.modules?.length ? course.modules : emptyCourse.modules,
     agents: course.agents?.length ? course.agents : emptyCourse.agents,
@@ -672,6 +738,12 @@ function hydrateCourse(course: CourseResponse): CourseForm {
 function getCoursePayload(course: CourseForm) {
   return {
     ...course,
+    startDate: course.startDate || undefined,
+    nextSessionDate: course.nextSessionDate || undefined,
+    sessionDates: course.sessionDatesText
+      .split(/\n|,/)
+      .map((value) => value.trim())
+      .filter(Boolean),
     tags: course.tagsText
       .split(",")
       .map((tag) => tag.trim())
@@ -692,6 +764,11 @@ function getSectionSnapshot(course: CourseForm, section: CourseEditorSection) {
         published: payload.published,
         level: payload.level,
         courseType: payload.courseType,
+        startDate: payload.startDate,
+        nextSessionDate: payload.nextSessionDate,
+        sessionDates: payload.sessionDates,
+        maxEnrollments: payload.maxEnrollments,
+        liveSessionUrl: payload.liveSessionUrl,
         duration: payload.duration,
         instructor: payload.instructor,
         tags: payload.tags,
@@ -728,6 +805,20 @@ function stringifySectionSnapshot(course: CourseForm, section: CourseEditorSecti
 
 function formatDraftTime(value: Date) {
   return value.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+}
+
+function toDateInputValue(value?: string | Date | null) {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  return date.toISOString().slice(0, 10);
+}
+
+function toDateTimeInputValue(value?: string | Date | null) {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  return date.toISOString().slice(0, 16);
 }
 
 function EditorPanel({

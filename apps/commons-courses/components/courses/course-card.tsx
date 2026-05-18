@@ -5,8 +5,10 @@ import {
   BookOpen,
   Clock,
   FlaskConical,
+  Wifi,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { formatCourseStartDate } from "@/lib/course-schedule";
 import type { CourseCardData } from "@/types";
 
 interface CourseCardProps {
@@ -31,6 +33,7 @@ function formatCoursePrice(course: CourseCardData) {
 export function CourseCard({ course, enrolled }: CourseCardProps) {
   const imageUrl =
     course.bannerImageUrl || course.imageUrl || course.previewImageUrl || null;
+  const startDateLabel = formatCourseStartDate(course.startDate);
 
   return (
     <Link
@@ -69,6 +72,12 @@ export function CourseCard({ course, enrolled }: CourseCardProps) {
               Paid
             </span>
           )}
+          {course.courseType === "live" && (
+            <span className="inline-flex items-center gap-1 rounded-md border border-rose-200 bg-rose-50 px-2 py-1 text-xs font-semibold text-rose-800">
+              <Wifi className="h-3 w-3" />
+              Live
+            </span>
+          )}
           <span className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-2 py-1 text-xs font-semibold text-slate-700 sm:ml-auto">
             <FlaskConical className="h-3 w-3" />
             Lab-ready
@@ -86,6 +95,11 @@ export function CourseCard({ course, enrolled }: CourseCardProps) {
         <p className="mb-5 flex-1 text-[15px] leading-6 text-slate-700">
           {course.tagline}
         </p>
+        {startDateLabel && (
+          <p className="mb-4 rounded-lg bg-lime-50 px-3 py-2 text-xs font-semibold text-slate-800">
+            Starts {startDateLabel}
+          </p>
+        )}
 
         <div className="mb-5 flex flex-wrap items-center gap-4 text-[15px] text-slate-700">
           <span className="flex items-center gap-1.5">
