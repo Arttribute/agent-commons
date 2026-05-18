@@ -4,7 +4,10 @@ import { auth } from "@/lib/auth";
 import { createAccountToken } from "@/lib/account-tokens";
 import { getAppBaseUrl } from "@/lib/app-url";
 import { stripe } from "@/lib/stripe";
-import { initializePaystackTransaction } from "@/lib/paystack";
+import {
+  initializePaystackTransaction,
+  type PaystackCustomField,
+} from "@/lib/paystack";
 import { connectDB } from "@/lib/db";
 import {
   sendEnrollmentEmail,
@@ -135,6 +138,39 @@ function getAccessLevel(course: CheckoutCourse, plan: PaymentPlan): AccessLevel 
   return course.installmentPlan?.releaseAccess === "full_after_first_payment"
     ? "full"
     : "partial";
+}
+
+function buildPaystackCustomFields({
+  courseTitle,
+  requestedPlan,
+  nextInstallment,
+}: {
+  courseTitle: string;
+  requestedPlan: PaymentPlan;
+  nextInstallment?: number;
+}): PaystackCustomField[] {
+  const fields: PaystackCustomField[] = [
+    {
+      display_name: "Course",
+      variable_name: "course",
+      value: courseTitle,
+    },
+    {
+      display_name: "Payment plan",
+      variable_name: "payment_plan",
+      value: requestedPlan === "installment" ? "Installment" : "One-time",
+    },
+  ];
+
+  if (typeof nextInstallment === "number") {
+    fields.push({
+      display_name: "Installment",
+      variable_name: "installment",
+      value: String(nextInstallment),
+    });
+  }
+
+  return fields;
 }
 
 function normalizeEmail(email: string | null) {
@@ -592,6 +628,7 @@ export async function GET(req: NextRequest) {
         metadata: {
           userId: checkoutUser.id,
           courseSlug,
+          courseTitle,
           paymentPlan: requestedPlan,
           installmentNumber: nextInstallment,
           accessLevel: getAccessLevel(dbCourse, requestedPlan),
@@ -601,6 +638,11 @@ export async function GET(req: NextRequest) {
           discountAmount: accessPrice.discountAmount,
           originalAmount: accessPrice.originalAmount,
           checkoutSignin: checkoutUser.canUseCheckoutSignIn ? "1" : "0",
+          custom_fields: buildPaystackCustomFields({
+            courseTitle,
+            requestedPlan,
+            nextInstallment,
+          }),
         },
       });
     } catch (err) {
@@ -653,6 +695,7 @@ export async function GET(req: NextRequest) {
       metadata: {
         userId: checkoutUser.id,
         courseSlug,
+        courseTitle,
         installmentNumber: nextInstallment,
         accessLevel: getAccessLevel(dbCourse, requestedPlan),
         accessCode: accessPrice.accessCode,
