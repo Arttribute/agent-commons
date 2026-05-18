@@ -28,6 +28,9 @@ async function getCourses(): Promise<CourseCardData[]> {
       modulesCount: c.modulesCount,
       instructor: c.instructor,
       tags: c.tags,
+      imageUrl: c.imageUrl,
+      bannerImageUrl: c.bannerImageUrl,
+      previewImageUrl: c.previewImageUrl,
     }));
   } catch {
     return [];

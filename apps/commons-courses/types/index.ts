@@ -30,4 +30,7 @@ export interface CourseCardData {
   modulesCount: number;
   instructor: string;
   tags: string[];
+  imageUrl?: string | null;
+  bannerImageUrl?: string | null;
+  previewImageUrl?: string | null;
 }

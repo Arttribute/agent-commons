@@ -29,12 +29,26 @@ function formatCoursePrice(course: CourseCardData) {
 }
 
 export function CourseCard({ course, enrolled }: CourseCardProps) {
+  const imageUrl =
+    course.bannerImageUrl || course.imageUrl || course.previewImageUrl || null;
+
   return (
     <Link
       href={`/courses/${course.slug}`}
       className="group flex flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm transition-colors hover:border-slate-300"
     >
-      <div className="h-1.5 bg-[#B8F56D]" />
+      {imageUrl ? (
+        <div className="aspect-[16/9] overflow-hidden bg-slate-100">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={imageUrl}
+            alt=""
+            className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-[1.02]"
+          />
+        </div>
+      ) : (
+        <div className="h-1.5 bg-[#B8F56D]" />
+      )}
 
       <div className="flex flex-1 flex-col p-5 sm:p-6">
         <div className="mb-5 flex flex-wrap items-center gap-2">

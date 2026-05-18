@@ -1,4 +1,5 @@
 import Link from "next/link";
+import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { Nav } from "@/components/nav";
 import { CourseOutline } from "@/components/courses/course-outline";
@@ -7,6 +8,7 @@ import { EnrolledBanner } from "@/components/courses/enrolled-banner";
 import { EnrollmentAwareActions } from "@/components/courses/enrollment-aware-actions";
 import { AnalyticsTracker } from "@/components/analytics/analytics-tracker";
 import { auth } from "@/lib/auth";
+import { getAppBaseUrl } from "@/lib/app-url";
 import { connectDB } from "@/lib/db";
 import Course from "@/models/Course";
 import Enrollment from "@/models/Enrollment";
@@ -67,6 +69,9 @@ interface CourseDetailData {
   modulesCount: number;
   instructor: string;
   tags: string[];
+  imageUrl?: string | null;
+  bannerImageUrl?: string | null;
+  previewImageUrl?: string | null;
   modules: ModuleData[];
   accessProgram?: {
     discounts?: unknown[];
@@ -95,6 +100,55 @@ function formatCoursePrice(course: { isFree: boolean; price: number; currency?: 
   return `$${course.price}`;
 }
 
+function getCourseImageUrl(course?: {
+  previewImageUrl?: string | null;
+  bannerImageUrl?: string | null;
+  imageUrl?: string | null;
+}) {
+  return (
+    course?.previewImageUrl ||
+    course?.bannerImageUrl ||
+    course?.imageUrl ||
+    `${getAppBaseUrl()}/opengraph-image`
+  );
+}
+
+export async function generateMetadata({ params }: Props): Promise<Metadata> {
+  const { slug } = await params;
+  await connectDB();
+  const course = (await Course.findOne({ slug, published: true })
+    .select("title tagline description imageUrl bannerImageUrl previewImageUrl")
+    .lean()) as
+    | (Pick<
+        CourseDetailData,
+        "title" | "tagline" | "description" | "imageUrl" | "bannerImageUrl" | "previewImageUrl"
+      > & { slug?: string })
+    | null;
+
+  if (!course) return {};
+
+  const title = course.title;
+  const description = course.tagline || course.description;
+  const image = getCourseImageUrl(course);
+
+  return {
+    title,
+    description,
+    openGraph: {
+      title: `${course.title} | CommonLab`,
+      description,
+      type: "website",
+      images: [{ url: image, width: 1200, height: 630, alt: course.title }],
+    },
+    twitter: {
+      card: "summary_large_image",
+      title,
+      description,
+      images: [image],
+    },
+  };
+}
+
 export default async function CoursePage({ params, searchParams }: Props) {
   const { slug } = await params;
   const query = searchParams ? await searchParams : {};
@@ -115,6 +169,7 @@ export default async function CoursePage({ params, searchParams }: Props) {
     : null;
   const isEnrolled = Boolean(enrollment);
   const enrollmentProgress = enrollment?.progress ?? 0;
+  const bannerImageUrl = course.bannerImageUrl || course.imageUrl || null;
 
   const totalMinutes = course.modules
     .flatMap((m) => m.lessons)
@@ -146,6 +201,16 @@ export default async function CoursePage({ params, searchParams }: Props) {
             <div className="grid items-start gap-8 lg:grid-cols-[minmax(0,1fr)_minmax(280px,320px)] lg:gap-10">
               {/* Intro */}
               <section className="min-w-0">
+                {bannerImageUrl ? (
+                  <div className="mb-8 aspect-[16/9] overflow-hidden rounded-xl border border-slate-200 bg-slate-100">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={bannerImageUrl}
+                      alt=""
+                      className="h-full w-full object-cover"
+                    />
+                  </div>
+                ) : null}
                 <div className="flex items-center gap-2 mb-5">
                   <span className="text-xs font-bold px-2 py-1 rounded-md border border-slate-300 text-slate-700 bg-slate-50">
                     {course.level}

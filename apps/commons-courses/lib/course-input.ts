@@ -48,6 +48,9 @@ export type CourseInput = {
   duration?: string;
   instructor?: string;
   tags?: string[];
+  imageUrl?: string;
+  bannerImageUrl?: string;
+  previewImageUrl?: string;
   modules?: Array<{
     title: string;
     description?: string;
@@ -103,6 +106,12 @@ function makeId(prefix: string, code?: string) {
 
 function normalizeCode(code?: string) {
   return (code || "").trim().toUpperCase();
+}
+
+function normalizeImageUrl(value?: string) {
+  const url = value?.trim();
+  if (!url) return undefined;
+  return url;
 }
 
 function normalizeAccessCodes(
@@ -235,6 +244,9 @@ export function normalizeCourseInput(input: CourseInput) {
     courseType: input.courseType || "self-paced",
     level: input.level || "beginner",
     tags: Array.isArray(input.tags) ? input.tags : [],
+    imageUrl: normalizeImageUrl(input.imageUrl),
+    bannerImageUrl: normalizeImageUrl(input.bannerImageUrl),
+    previewImageUrl: normalizeImageUrl(input.previewImageUrl),
     modules,
     agents: normalizeCourseAgents(input.agents),
     modulesCount: modules.length,

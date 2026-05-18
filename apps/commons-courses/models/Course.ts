@@ -123,6 +123,8 @@ export interface ICourse extends Document {
   collaborators: ICourseCollaborator[];
   tags: string[];
   imageUrl?: string;
+  bannerImageUrl?: string;
+  previewImageUrl?: string;
   modules: IModule[];
   agents: CourseAgentConfig[];
   published: boolean;
@@ -368,6 +370,8 @@ const CourseSchema = new Schema<ICourse>(
     collaborators: { type: [CourseCollaboratorSchema], default: [] },
     tags: [String],
     imageUrl: String,
+    bannerImageUrl: String,
+    previewImageUrl: String,
     modules: [ModuleSchema],
     agents: {
       type: [CourseAgentSchema],

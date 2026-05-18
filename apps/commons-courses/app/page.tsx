@@ -33,6 +33,8 @@ interface CourseData {
   duration: string;
   tags: string[];
   imageUrl?: string | null;
+  bannerImageUrl?: string | null;
+  previewImageUrl?: string | null;
   nextSessionDate?: string | null;
   modules: { title: string; lessons: { title: string }[] }[];
 }
@@ -59,6 +61,8 @@ interface RawCourse {
   imageUrl?: string | null;
   image?: string | null;
   bannerImage?: string | null;
+  bannerImageUrl?: string | null;
+  previewImageUrl?: string | null;
   thumbnail?: string | null;
   coverImage?: string | null;
   nextSessionDate?: Date | string | null;
@@ -76,7 +80,7 @@ async function getLandingData(): Promise<LandingData> {
     const courses = (await Course.find({ published: true })
       .sort({ isMainFeatured: -1, isFeatured: -1, createdAt: 1 })
       .select(
-        "title slug tagline price currency isFree courseType level description lessonsCount modulesCount duration tags imageUrl image bannerImage thumbnail coverImage nextSessionDate modules isMainFeatured isFeatured",
+        "title slug tagline price currency isFree courseType level description lessonsCount modulesCount duration tags imageUrl bannerImageUrl previewImageUrl image bannerImage thumbnail coverImage nextSessionDate modules isMainFeatured isFeatured",
       )
       .lean()) as unknown as RawCourse[];
 
@@ -95,12 +99,15 @@ async function getLandingData(): Promise<LandingData> {
       duration: c.duration,
       tags: c.tags ?? [],
       imageUrl:
+        c.bannerImageUrl ??
         c.imageUrl ??
         c.bannerImage ??
         c.coverImage ??
         c.thumbnail ??
         c.image ??
         null,
+      bannerImageUrl: c.bannerImageUrl ?? c.bannerImage ?? c.coverImage ?? null,
+      previewImageUrl: c.previewImageUrl ?? null,
       nextSessionDate: c.nextSessionDate
         ? new Date(c.nextSessionDate).toLocaleDateString("en-GB", {
             day: "numeric",

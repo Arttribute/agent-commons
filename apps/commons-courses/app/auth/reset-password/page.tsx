@@ -49,7 +49,9 @@ function ResetPasswordForm() {
           Choose a new password
         </h1>
         <p className="mb-8 text-center text-sm text-slate-500">
-          Use at least 8 characters.
+          {token
+            ? "Use at least 8 characters."
+            : "This reset link is missing a token. Request a new link to continue."}
         </p>
         <form onSubmit={handleSubmit} className="space-y-4">
           <input
