@@ -65,6 +65,8 @@ interface ExistingEnrollment {
   accessLevel?: AccessLevel;
   paymentStatus?: "free" | "paid" | "partial" | "overdue";
   status?: "active" | "completed" | "cancelled";
+  paidAmount?: number;
+  totalAmountDue?: number;
 }
 
 interface CheckoutUser {
@@ -558,8 +560,18 @@ export async function GET(req: NextRequest) {
     courseId: courseMongoId,
   }).lean();
   const existing = existingEnrollment as ExistingEnrollment | null;
+  const existingBalanceDue =
+    (existing?.totalAmountDue || dbCourse.price) - (existing?.paidAmount || 0);
+  const continuingInstallment =
+    requestedPlan === "installment" &&
+    existing?.status !== "cancelled" &&
+    (existing?.paymentStatus === "partial" || existing?.paymentStatus === "overdue") &&
+    existingBalanceDue > 0 &&
+    (existing?.currentInstallment || 0) <
+      (dbCourse.installmentPlan?.installmentCount || 2);
   if (
     existing?.status !== "cancelled" &&
+    !continuingInstallment &&
     (existing?.accessLevel === "full" ||
       existing?.paymentStatus === "paid" ||
       existing?.paymentStatus === "free")
@@ -572,10 +584,12 @@ export async function GET(req: NextRequest) {
       canUseCheckoutSignIn: checkoutUser.canUseCheckoutSignIn,
     });
   }
-  const recoveredEnrollment = await recoverCompletedEnrollment({
-    userId: checkoutUser.id,
-    courseId: courseMongoId.toString(),
-  });
+  const recoveredEnrollment = continuingInstallment
+    ? false
+    : await recoverCompletedEnrollment({
+        userId: checkoutUser.id,
+        courseId: courseMongoId.toString(),
+      });
   if (recoveredEnrollment) {
     return redirectAfterEnrollment({
       req,

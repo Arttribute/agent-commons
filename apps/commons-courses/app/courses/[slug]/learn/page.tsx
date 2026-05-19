@@ -64,7 +64,13 @@ export default function LearnPage({ params }: Props) {
   const [completedLessons, setCompletedLessons] = useState<string[]>([]);
   const [enrolled, setEnrolled] = useState<boolean | null>(null);
   const [accessLevel, setAccessLevel] = useState<"full" | "partial">("full");
+  const [paymentStatus, setPaymentStatus] = useState<
+    "free" | "paid" | "partial" | "overdue"
+  >("free");
   const [currentInstallment, setCurrentInstallment] = useState(0);
+  const [paymentGraceEndsAt, setPaymentGraceEndsAt] = useState<string | null>(
+    null
+  );
   const [hasStarted, setHasStarted] = useState(true);
   const [startDateLabel, setStartDateLabel] = useState<string | null>(null);
   const [marking, setMarking] = useState(false);
@@ -111,7 +117,9 @@ export default function LearnPage({ params }: Props) {
       const data = await res.json();
       setEnrolled(data.enrolled);
       setAccessLevel(data.accessLevel ?? "full");
+      setPaymentStatus(data.paymentStatus ?? "free");
       setCurrentInstallment(data.currentInstallment ?? 0);
+      setPaymentGraceEndsAt(data.paymentGraceEndsAt ?? null);
       setHasStarted(data.hasStarted !== false);
       setStartDateLabel(data.startDateLabel ?? null);
       setCompletedLessons(data.completedLessons ?? []);
@@ -143,6 +151,8 @@ export default function LearnPage({ params }: Props) {
   const lockedReason =
     course?.hasStarted === false || hasStarted === false
       ? "course_not_started"
+      : enrolled && paymentStatus === "overdue"
+      ? "installment_overdue"
       : enrolled === false && !currentLesson?.isFree
       ? "not_enrolled"
       : enrolled && accessLevel === "partial" && moduleIdx > maxUnlockedModule
@@ -288,6 +298,31 @@ export default function LearnPage({ params }: Props) {
             className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg bg-slate-900 text-white text-sm font-bold hover:opacity-90 transition-opacity"
           >
             View course
+          </Link>
+        </div>
+      </div>
+    );
+  }
+
+  if (enrolled && paymentStatus === "overdue") {
+    return (
+      <div className="min-h-screen bg-white">
+        <Nav />
+        <div className="pt-32 flex flex-col items-center justify-center text-center px-6">
+          <Lock className="h-10 w-10 text-slate-300 mb-4" />
+          <h2 className="text-lg font-bold text-slate-900 mb-2">
+            Your next installment is overdue
+          </h2>
+          <p className="text-sm text-slate-500 mb-6 max-w-xs">
+            The grace period
+            {paymentGraceEndsAt ? ` ended on ${formatDate(paymentGraceEndsAt)}` : " has ended"}.
+            Make your next payment to continue the course.
+          </p>
+          <Link
+            href={`/api/payments/checkout?courseSlug=${slug}&plan=installment${nextPaymentProvider}`}
+            className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg bg-slate-900 text-white text-sm font-bold hover:opacity-90 transition-opacity"
+          >
+            Make next payment
           </Link>
         </div>
       </div>
@@ -609,4 +644,15 @@ export default function LearnPage({ params }: Props) {
       </div>
     </div>
   );
+}
+
+function formatDate(value: string) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+
+  return new Intl.DateTimeFormat("en", {
+    month: "long",
+    day: "numeric",
+    year: "numeric",
+  }).format(date);
 }

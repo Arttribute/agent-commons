@@ -4,6 +4,7 @@ import Payment from "@/models/Payment";
 import User from "@/models/User";
 import { recordAccessProgramConversion } from "@/lib/course-access";
 import { sendEnrollmentEmail } from "@/lib/email/resend";
+import { getNextInstallmentSchedule } from "@/lib/installment-enforcement";
 import { recordSaleLedger } from "@/lib/payout-ledger";
 
 type FulfillmentParams = {
@@ -96,22 +97,36 @@ export async function fulfillCompletedPayment(params: FulfillmentParams) {
     paymentPlan === "installment" && nextPaidAmount < course.price
       ? "partial"
       : "paid";
+  const nextInstallmentSchedule =
+    paymentStatus === "partial"
+      ? getNextInstallmentSchedule({
+          course,
+          currentInstallment: installmentNumber,
+          completedAt: payment.updatedAt || new Date(),
+        })
+      : null;
 
   await Enrollment.findOneAndUpdate(
     { userId, courseId: course._id },
     {
-      userId,
-      courseId: course._id,
-      status: "active",
-      accessLevel: paymentStatus === "paid" ? "full" : requestedAccessLevel,
-      paymentStatus,
-      paymentId: params.providerReference,
-      accessSource: payment.accessCodeType || "payment",
-      accessCode: payment.accessCode,
-      affiliateCode: payment.affiliateCode,
-      paidAmount: nextPaidAmount,
-      totalAmountDue: course.price,
-      currentInstallment: installmentNumber,
+      $set: {
+        userId,
+        courseId: course._id,
+        status: "active",
+        accessLevel: paymentStatus === "paid" ? "full" : requestedAccessLevel,
+        paymentStatus,
+        paymentId: params.providerReference,
+        accessSource: payment.accessCodeType || "payment",
+        accessCode: payment.accessCode,
+        affiliateCode: payment.affiliateCode,
+        paidAmount: nextPaidAmount,
+        totalAmountDue: course.price,
+        currentInstallment: installmentNumber,
+        ...(nextInstallmentSchedule || {}),
+      },
+      ...(paymentStatus === "paid"
+        ? { $unset: { nextPaymentDueAt: "", paymentGraceEndsAt: "" } }
+        : {}),
     },
     { upsert: true }
   );

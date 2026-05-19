@@ -14,6 +14,12 @@ const sessionDates = [
   new Date("2026-06-18T16:00:00.000Z"),
   new Date("2026-06-25T16:00:00.000Z"),
 ];
+const secondInstallmentDueAt = new Date(
+  startDate.getTime() + 7 * 24 * 60 * 60 * 1000
+);
+const secondInstallmentGraceEndsAt = new Date(
+  secondInstallmentDueAt.getTime() + 3 * 24 * 60 * 60 * 1000
+);
 
 await mongoose.connect(uri);
 
@@ -55,5 +61,43 @@ const result = await mongoose.connection.collection("courses").updateMany(
 console.log(
   `Updated ${result.modifiedCount} AI Quick Wins course document(s); matched ${result.matchedCount}.`
 );
+
+const courses = await mongoose.connection
+  .collection("courses")
+  .find(
+    {
+      $or: [
+        { slug: /ai-quick-wins/i },
+        { title: /ai quick wins/i },
+        { title: /quick wins.*leaders/i },
+      ],
+    },
+    { projection: { _id: 1 } }
+  )
+  .toArray();
+
+if (courses.length > 0) {
+  const enrollmentResult = await mongoose.connection
+    .collection("enrollments")
+    .updateMany(
+      {
+        courseId: { $in: courses.map((course) => course._id) },
+        paymentStatus: { $in: ["partial", "overdue"] },
+        currentInstallment: 1,
+        paidAmount: { $lt: 12000 },
+      },
+      {
+        $set: {
+          nextPaymentDueAt: secondInstallmentDueAt,
+          paymentGraceEndsAt: secondInstallmentGraceEndsAt,
+          updatedAt: new Date(),
+        },
+      }
+    );
+
+  console.log(
+    `Backfilled installment due dates for ${enrollmentResult.modifiedCount} enrollment(s).`
+  );
+}
 
 await mongoose.disconnect();
