@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { HelpCircle } from "lucide-react";
 import { EnrolButton } from "@/components/courses/enrol-button";
 
 interface Props {
@@ -23,6 +24,7 @@ export function CoursePaymentOptions({
   installment,
 }: Props) {
   const [accessCode, setAccessCode] = useState("");
+  const [installmentInfoOpen, setInstallmentInfoOpen] = useState(false);
 
   return (
     <>
@@ -52,21 +54,33 @@ export function CoursePaymentOptions({
       </div>
 
       {!isFree && installment && (
-        <div className="mb-3 rounded-lg border border-lime-200 bg-lime-50 p-3">
-          <p className="mb-2 text-xs font-bold uppercase tracking-[0.08em] text-lime-700">
-            Flexible payment option
-          </p>
-          <EnrolButton
-            courseSlug={courseSlug}
-            isFree={false}
-            checkoutUrl={installment.checkoutUrl}
-            label={installment.buttonLabel}
-            accessCode={accessCode}
-            showAccessCodeInput={false}
-          />
-          <p className="mt-2 text-xs leading-5 text-slate-700">
-            {installment.description}
-          </p>
+        <div className="mb-3">
+          <div className="flex items-stretch gap-2">
+            <div className="min-w-0 flex-1">
+              <EnrolButton
+                courseSlug={courseSlug}
+                isFree={false}
+                checkoutUrl={installment.checkoutUrl}
+                label={installment.buttonLabel}
+                accessCode={accessCode}
+                showAccessCodeInput={false}
+              />
+            </div>
+            <button
+              type="button"
+              aria-label="Show payment plan details"
+              aria-expanded={installmentInfoOpen}
+              onClick={() => setInstallmentInfoOpen((open) => !open)}
+              className="flex w-11 shrink-0 items-center justify-center rounded-lg border border-slate-200 text-slate-500 transition-colors hover:bg-slate-50 hover:text-slate-900"
+            >
+              <HelpCircle className="h-4 w-4" />
+            </button>
+          </div>
+          {installmentInfoOpen && (
+            <p className="mt-2 rounded-lg bg-slate-50 p-3 text-xs leading-5 text-slate-700">
+              {installment.description}
+            </p>
+          )}
         </div>
       )}
     </>
