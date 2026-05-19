@@ -123,7 +123,7 @@ function formatInstallmentPlan(course: CourseDetailData, amount: number) {
     ["kes", "ksh"].includes(course.currency?.toLowerCase() ?? "");
 
   return {
-    buttonLabel: `${planLabel} · ${installmentPrice} now`,
+    buttonLabel: planLabel,
     description: isTwoPartKesPlan
       ? `${installmentPrice} at the start of the course, then ${installmentPrice} in week 2.`
       : `${count} installments of ${installmentPrice}.`,
