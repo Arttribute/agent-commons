@@ -11,20 +11,32 @@ interface Props {
   isFree: boolean;
   checkoutUrl: string;
   label?: string;
+  accessCode?: string;
+  showAccessCodeInput?: boolean;
+  onAccessCodeChange?: (value: string) => void;
 }
 
 type TermsStatus = "loading" | "not-logged-in" | "pending" | "accepted";
 
-export function EnrolButton({ isFree, checkoutUrl, label }: Props) {
+export function EnrolButton({
+  isFree,
+  checkoutUrl,
+  label,
+  accessCode: externalAccessCode,
+  showAccessCodeInput = true,
+  onAccessCodeChange,
+}: Props) {
   const track = useAnalytics();
   const [termsStatus, setTermsStatus] = useState<TermsStatus>("loading");
   const [modalOpen, setModalOpen] = useState(false);
   const [checked, setChecked] = useState(false);
-  const [accessCode, setAccessCode] = useState("");
+  const [internalAccessCode, setInternalAccessCode] = useState("");
   const [email, setEmail] = useState("");
   const [accepting, setAccepting] = useState(false);
   const [error, setError] = useState("");
   const [googleAvailable, setGoogleAvailable] = useState(false);
+  const accessCode = externalAccessCode ?? internalAccessCode;
+  const setAccessCode = onAccessCodeChange ?? setInternalAccessCode;
 
   const fetchStatus = useCallback(async () => {
     try {
@@ -158,7 +170,7 @@ export function EnrolButton({ isFree, checkoutUrl, label }: Props) {
 
   return (
     <>
-      {!isFree && (
+      {!isFree && showAccessCodeInput && (
         <label className="mb-3 block">
           <span className="text-xs font-bold text-slate-600">
             Promo, scholarship, or pass code

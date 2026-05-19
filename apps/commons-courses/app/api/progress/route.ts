@@ -6,6 +6,7 @@ import Course from "@/models/Course";
 import type mongoose from "mongoose";
 import { trackAnalyticsEvent } from "@/lib/analytics";
 import { getCourseStartStatus } from "@/lib/course-schedule";
+import { isInstallmentOverdue } from "@/lib/installment-enforcement";
 
 interface EnrollmentProgress {
   _id: mongoose.Types.ObjectId;
@@ -15,11 +16,16 @@ interface EnrollmentProgress {
   accessLevel?: "full" | "partial";
   paymentStatus?: "free" | "paid" | "partial" | "overdue";
   currentInstallment?: number;
+  paidAmount?: number;
+  totalAmountDue?: number;
+  nextPaymentDueAt?: Date;
+  paymentGraceEndsAt?: Date;
 }
 
 interface CourseIdOnly {
   _id: mongoose.Types.ObjectId;
   startDate?: Date;
+  price?: number;
 }
 
 interface CourseWithModules extends CourseIdOnly {
@@ -40,7 +46,7 @@ export async function GET(req: NextRequest) {
   await connectDB();
 
   const course = (await Course.findOne({ slug: courseSlug, published: true })
-    .select("_id startDate")
+    .select("_id startDate price")
     .lean()) as unknown as CourseIdOnly | null;
   if (!course) {
     return NextResponse.json({ enrolled: false, completedLessons: [], progress: 0 });
@@ -55,14 +61,27 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ enrolled: false, completedLessons: [], progress: 0 });
   }
 
+  const paymentStatus = isInstallmentOverdue(match)
+    ? "overdue"
+    : match.paymentStatus ?? "free";
+  if (paymentStatus === "overdue" && match.paymentStatus !== "overdue") {
+    await Enrollment.updateOne(
+      { _id: match._id },
+      { $set: { paymentStatus: "overdue", accessLevel: "partial" } }
+    );
+  }
+
   return NextResponse.json({
     enrolled: true,
     completedLessons: match.completedLessons ?? [],
     progress: match.progress ?? 0,
     status: match.status,
-    accessLevel: match.accessLevel ?? "full",
-    paymentStatus: match.paymentStatus ?? "free",
+    accessLevel:
+      paymentStatus === "overdue" ? "partial" : match.accessLevel ?? "full",
+    paymentStatus,
     currentInstallment: match.currentInstallment ?? 0,
+    nextPaymentDueAt: match.nextPaymentDueAt,
+    paymentGraceEndsAt: match.paymentGraceEndsAt,
     hasStarted: getCourseStartStatus(course.startDate).started,
     startDate: course.startDate,
     startDateLabel: getCourseStartStatus(course.startDate).label,
@@ -101,6 +120,22 @@ export async function POST(req: NextRequest) {
 
   if (!match) {
     return NextResponse.json({ error: "Not enrolled in this course" }, { status: 403 });
+  }
+
+  if (isInstallmentOverdue(match)) {
+    await Enrollment.updateOne(
+      { _id: match._id },
+      { $set: { paymentStatus: "overdue", accessLevel: "partial" } }
+    );
+    return NextResponse.json(
+      {
+        error: "Your next installment is overdue.",
+        paymentStatus: "overdue",
+        nextPaymentDueAt: match.nextPaymentDueAt,
+        paymentGraceEndsAt: match.paymentGraceEndsAt,
+      },
+      { status: 402 }
+    );
   }
 
   const startStatus = getCourseStartStatus(course.startDate);

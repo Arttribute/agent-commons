@@ -3,7 +3,7 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { Nav } from "@/components/nav";
 import { CourseOutline } from "@/components/courses/course-outline";
-import { EnrolButton } from "@/components/courses/enrol-button";
+import { CoursePaymentOptions } from "@/components/courses/course-payment-options";
 import { EnrolledBanner } from "@/components/courses/enrolled-banner";
 import { EnrollmentAwareActions } from "@/components/courses/enrollment-aware-actions";
 import { AnalyticsTracker } from "@/components/analytics/analytics-tracker";
@@ -107,6 +107,27 @@ function formatCoursePrice(course: { isFree: boolean; price: number; currency?: 
     return `Ksh ${course.price.toLocaleString("en-KE")}`;
   }
   return `$${course.price}`;
+}
+
+function formatInstallmentPlan(course: CourseDetailData, amount: number) {
+  const count = course.installmentPlan?.installmentCount || 2;
+  const planLabel = course.installmentPlan?.label || "Payment plan";
+  const installmentPrice = formatCoursePrice({
+    isFree: false,
+    price: amount,
+    currency: course.currency,
+  });
+  const isTwoPartKesPlan =
+    count === 2 &&
+    amount === 6000 &&
+    ["kes", "ksh"].includes(course.currency?.toLowerCase() ?? "");
+
+  return {
+    buttonLabel: `${planLabel} · ${installmentPrice} now`,
+    description: isTwoPartKesPlan
+      ? `${installmentPrice} at the start of the course, then ${installmentPrice} in week 2.`
+      : `${count} installments of ${installmentPrice}.`,
+  };
 }
 
 function getCourseImageUrl(course?: {
@@ -448,6 +469,7 @@ function PurchaseCard({
   const installmentAmount =
     course.installmentPlan?.installmentAmount ||
     Math.ceil(course.price / (course.installmentPlan?.installmentCount || 4));
+  const installmentPlan = formatInstallmentPlan(course, installmentAmount);
   const affiliateParam = affiliateCode
     ? `&affiliate=${encodeURIComponent(affiliateCode)}`
     : "";
@@ -479,12 +501,6 @@ function PurchaseCard({
               One-time payment · Lifetime access
             </p>
           )}
-          {course.courseType === "live" && (
-            <p className="mb-5 rounded-lg bg-slate-50 p-3 text-xs leading-5 text-slate-700">
-              {getLiveScheduleSummary(course.liveSchedule) ||
-                "Live class schedule will be confirmed by the organizer."}
-            </p>
-          )}
           {startDateLabel && (
             <p className="mb-5 rounded-lg border border-lime-200 bg-lime-50 p-3 text-xs font-semibold leading-5 text-slate-800">
               Course content opens on {startDateLabel}. You can reserve your
@@ -492,33 +508,25 @@ function PurchaseCard({
             </p>
           )}
 
-          <div className="mb-3">
-            <EnrolButton
-              courseSlug={course.slug}
-              isFree={course.isFree}
-              checkoutUrl={`/api/payments/checkout?courseSlug=${course.slug}${checkoutProviderParam}${affiliateParam}`}
-              label={
-                !course.isFree && supportsPaystack && isKes
-                  ? "Pay with M-Pesa or card"
-                  : undefined
-              }
-            />
-          </div>
-
-          {!course.isFree && course.installmentPlan?.enabled && (
-            <div className="mb-3">
-              <EnrolButton
-                courseSlug={course.slug}
-                isFree={false}
-                checkoutUrl={`/api/payments/checkout?courseSlug=${course.slug}&plan=installment${checkoutProviderParam}${affiliateParam}`}
-                label={`Lipa mdogo mdogo · ${formatCoursePrice({
-                  isFree: false,
-                  price: installmentAmount,
-                  currency: course.currency,
-                })}`}
-              />
-            </div>
-          )}
+          <CoursePaymentOptions
+            courseSlug={course.slug}
+            isFree={course.isFree}
+            checkoutUrl={`/api/payments/checkout?courseSlug=${course.slug}${checkoutProviderParam}${affiliateParam}`}
+            primaryLabel={
+              !course.isFree && supportsPaystack && isKes
+                ? "Pay with M-Pesa or card"
+                : undefined
+            }
+            installment={
+              !course.isFree && course.installmentPlan?.enabled
+                ? {
+                    checkoutUrl: `/api/payments/checkout?courseSlug=${course.slug}&plan=installment${checkoutProviderParam}${affiliateParam}`,
+                    buttonLabel: installmentPlan.buttonLabel,
+                    description: installmentPlan.description,
+                  }
+                : undefined
+            }
+          />
 
           {!course.isFree && accessProgramCount > 0 && (
             <p className="mt-3 text-xs leading-5 text-slate-500">

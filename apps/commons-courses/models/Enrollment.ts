@@ -19,6 +19,8 @@ export interface IEnrollment extends Document {
   paidAmount: number;
   totalAmountDue: number;
   currentInstallment: number;
+  nextPaymentDueAt?: Date;
+  paymentGraceEndsAt?: Date;
   enrolledAt: Date;
   completedAt?: Date;
   progress: number;
@@ -54,6 +56,8 @@ const EnrollmentSchema = new Schema<IEnrollment>(
     paidAmount: { type: Number, default: 0 },
     totalAmountDue: { type: Number, default: 0 },
     currentInstallment: { type: Number, default: 0 },
+    nextPaymentDueAt: Date,
+    paymentGraceEndsAt: Date,
     enrolledAt: { type: Date, default: Date.now },
     completedAt: Date,
     progress: { type: Number, default: 0 },

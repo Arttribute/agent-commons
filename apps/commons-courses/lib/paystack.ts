@@ -2,6 +2,16 @@ import crypto from "crypto";
 
 const PAYSTACK_BASE_URL = "https://api.paystack.co";
 
+export type PaystackCustomField = {
+  display_name: string;
+  variable_name: string;
+  value: string;
+};
+
+export type PaystackMetadata = Record<string, unknown> & {
+  custom_fields?: PaystackCustomField[];
+};
+
 export type PaystackInitializeTransactionInput = {
   email: string;
   amount: number;
@@ -12,7 +22,7 @@ export type PaystackInitializeTransactionInput = {
   subaccount?: string;
   bearer?: "account" | "subaccount";
   transaction_charge?: number;
-  metadata?: Record<string, unknown>;
+  metadata?: PaystackMetadata;
 };
 
 export type PaystackInitializeTransaction = {
