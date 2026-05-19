@@ -40,6 +40,13 @@ const result = await mongoose.connection.collection("courses").updateMany(
         description:
           "Weekly live classes on Thursdays at 7:00 PM EAT for four weeks. The 24 lessons are the course content library; live classes are cohort sessions for walkthroughs, discussion, and support.",
       },
+      installmentPlan: {
+        enabled: true,
+        label: "2-payment plan",
+        installmentAmount: 6000,
+        installmentCount: 2,
+        releaseAccess: "full_after_first_payment",
+      },
       updatedAt: new Date(),
     },
   }
