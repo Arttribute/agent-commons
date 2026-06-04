@@ -1,4 +1,4 @@
-FROM node:22.11.0-bookworm-slim
+FROM public.ecr.aws/docker/library/node:22.11.0-bookworm-slim
 
 # Install Chromium and system libraries needed at runtime
 RUN apt-get update && apt-get install -y \
