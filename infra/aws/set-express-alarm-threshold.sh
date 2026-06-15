@@ -25,3 +25,11 @@ jq --argjson threshold "$THRESHOLD" '{
 } | with_entries(select(.value != null))' > "$ALARM_JSON"
 
 aws_cli cloudwatch put-metric-alarm --cli-input-json "file://$ALARM_JSON" --region "$AWS_REGION"
+
+if (( THRESHOLD > 1 )); then
+  aws_cli cloudwatch set-alarm-state \
+    --alarm-name "default/${SERVICE_NAME}/RollbackAlarm" \
+    --state-value OK \
+    --state-reason "Reset before ECS Express deployment" \
+    --region "$AWS_REGION"
+fi
