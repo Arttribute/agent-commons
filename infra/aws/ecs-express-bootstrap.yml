@@ -1,0 +1,256 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Bootstrap resources for deploying commons-api to Amazon ECS Express Mode.
+
+Parameters:
+  GitHubOrganization:
+    Type: String
+    Default: Arttribute
+  GitHubRepository:
+    Type: String
+    Default: agent-commons
+  GitHubEnvironment:
+    Type: String
+    Default: production
+  ExistingGitHubOidcProviderArn:
+    Type: String
+    Default: ""
+    Description: Leave empty to create the GitHub Actions OIDC provider in this account.
+
+Conditions:
+  CreateGitHubOidcProvider: !Equals [!Ref ExistingGitHubOidcProviderArn, ""]
+
+Resources:
+  ApiRepository:
+    Type: AWS::ECR::Repository
+    Properties:
+      RepositoryName: agent-commons/commons-api
+      ImageScanningConfiguration:
+        ScanOnPush: true
+      ImageTagMutability: MUTABLE
+      LifecyclePolicy:
+        LifecyclePolicyText: |
+          {
+            "rules": [{
+              "rulePriority": 1,
+              "description": "Keep the latest 30 production images",
+              "selection": {
+                "tagStatus": "any",
+                "countType": "imageCountMoreThan",
+                "countNumber": 30
+              },
+              "action": {"type": "expire"}
+            }]
+          }
+
+  ApiRuntimeSecret:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Name: agent-commons/commons-api/production
+      Description: Runtime environment variables for the production commons-api service.
+      SecretString: "{}"
+
+  SourceBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub agent-commons-cicd-${AWS::AccountId}-${AWS::Region}
+      VersioningConfiguration:
+        Status: Enabled
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+
+  GitHubOidcProvider:
+    Type: AWS::IAM::OIDCProvider
+    Condition: CreateGitHubOidcProvider
+    Properties:
+      Url: https://token.actions.githubusercontent.com
+      ClientIdList:
+        - sts.amazonaws.com
+      ThumbprintList:
+        - 6938fd4d98bab03faadb97b34396831e3780aea1
+
+  TaskExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: agent-commons-api-task-execution
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy
+      Policies:
+        - PolicyName: ReadCommonsApiRuntimeSecret
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: secretsmanager:GetSecretValue
+                Resource: !Ref ApiRuntimeSecret
+
+  InfrastructureRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: agent-commons-api-ecs-infrastructure
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AmazonECSInfrastructureRoleforExpressGatewayServices
+
+  GitHubDeployRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: agent-commons-api-github-deploy
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Federated: !If
+                - CreateGitHubOidcProvider
+                - !Ref GitHubOidcProvider
+                - !Ref ExistingGitHubOidcProviderArn
+            Action: sts:AssumeRoleWithWebIdentity
+            Condition:
+              StringEquals:
+                token.actions.githubusercontent.com:aud: sts.amazonaws.com
+                token.actions.githubusercontent.com:sub: !Sub repo:${GitHubOrganization}/${GitHubRepository}:environment:${GitHubEnvironment}
+      Policies:
+        - PolicyName: DeployCommonsApi
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:PutObject
+                  - s3:GetObject
+                Resource: !Sub ${SourceBucket.Arn}/agent-commons/*
+              - Effect: Allow
+                Action:
+                  - codebuild:StartBuild
+                  - codebuild:BatchGetBuilds
+                Resource: !GetAtt ApiBuildProject.Arn
+
+  CodeBuildRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: agent-commons-api-codebuild
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: codebuild.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: BuildAndDeployAgentCommonsApi
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                  - ecr:GetAuthorizationToken
+                  - cloudformation:DescribeStacks
+                  - cloudformation:CreateStack
+                  - cloudformation:UpdateStack
+                  - cloudformation:CreateChangeSet
+                  - cloudformation:DescribeChangeSet
+                  - cloudformation:ExecuteChangeSet
+                  - cloudformation:DeleteChangeSet
+                  - cloudformation:GetTemplate
+                  - cloudformation:GetTemplateSummary
+                  - cloudwatch:DescribeAlarms
+                  - cloudwatch:PutMetricAlarm
+                  - ecs:CreateCluster
+                  - ecs:RegisterTaskDefinition
+                  - ecs:CreateExpressGatewayService
+                  - ecs:UpdateExpressGatewayService
+                  - ecs:DeleteExpressGatewayService
+                  - ecs:DescribeExpressGatewayService
+                  - ecs:DescribeClusters
+                  - ecs:DescribeServices
+                  - ecs:DescribeServiceRevisions
+                  - ecs:ListServiceDeployments
+                  - ecs:DescribeServiceDeployments
+                  - ecs:TagResource
+                  - ecs:UntagResource
+                Resource: "*"
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:GetObjectVersion
+                Resource: !Sub ${SourceBucket.Arn}/agent-commons/*
+              - Effect: Allow
+                Action:
+                  - ecr:BatchCheckLayerAvailability
+                  - ecr:CompleteLayerUpload
+                  - ecr:GetDownloadUrlForLayer
+                  - ecr:InitiateLayerUpload
+                  - ecr:PutImage
+                  - ecr:UploadLayerPart
+                Resource: !GetAtt ApiRepository.Arn
+              - Effect: Allow
+                Action: iam:PassRole
+                Resource:
+                  - !GetAtt TaskExecutionRole.Arn
+                  - !GetAtt InfrastructureRole.Arn
+
+  ApiBuildProject:
+    Type: AWS::CodeBuild::Project
+    Properties:
+      Name: agent-commons-api-production
+      ServiceRole: !GetAtt CodeBuildRole.Arn
+      Source:
+        Type: S3
+        Location: !Sub ${SourceBucket}/agent-commons/source.zip
+        BuildSpec: buildspec.aws.yml
+      Artifacts:
+        Type: NO_ARTIFACTS
+      Environment:
+        Type: LINUX_CONTAINER
+        ComputeType: BUILD_GENERAL1_LARGE
+        Image: aws/codebuild/standard:7.0
+        PrivilegedMode: true
+        EnvironmentVariables:
+          - Name: AWS_ACCOUNT_ID
+            Value: !Ref AWS::AccountId
+          - Name: ECR_REPOSITORY
+            Value: !Ref ApiRepository
+          - Name: TASK_EXECUTION_ROLE_ARN
+            Value: !GetAtt TaskExecutionRole.Arn
+          - Name: INFRASTRUCTURE_ROLE_ARN
+            Value: !GetAtt InfrastructureRole.Arn
+          - Name: RUNTIME_SECRET_ARN
+            Value: !Ref ApiRuntimeSecret
+      TimeoutInMinutes: 60
+
+Outputs:
+  AwsRegion:
+    Value: !Ref AWS::Region
+  EcrRepository:
+    Value: !Ref ApiRepository
+  GitHubDeployRoleArn:
+    Value: !GetAtt GitHubDeployRole.Arn
+  TaskExecutionRoleArn:
+    Value: !GetAtt TaskExecutionRole.Arn
+  InfrastructureRoleArn:
+    Value: !GetAtt InfrastructureRole.Arn
+  RuntimeSecretArn:
+    Value: !Ref ApiRuntimeSecret
+  SourceBucketName:
+    Value: !Ref SourceBucket
+  CodeBuildProjectName:
+    Value: !Ref ApiBuildProject

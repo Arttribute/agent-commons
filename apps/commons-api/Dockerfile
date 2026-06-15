@@ -1,6 +1,29 @@
-FROM public.ecr.aws/docker/library/node:22.11.0-bookworm-slim
+FROM public.ecr.aws/docker/library/node:22.11.0-bookworm-slim AS build
 
-# Install Chromium and system libraries needed at runtime
+WORKDIR /workspace
+
+RUN apt-get update && apt-get install -y \
+    build-essential \
+    python3 \
+    --no-install-recommends \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN corepack enable && corepack prepare pnpm@9.15.3 --activate
+
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+COPY apps/commons-api/package.json apps/commons-api/package.json
+
+RUN pnpm install --filter commons-api... --frozen-lockfile
+
+COPY apps/commons-api apps/commons-api
+
+RUN pnpm --filter commons-api build \
+    && pnpm --filter commons-api deploy --prod --ignore-scripts /deploy \
+    && cp -r apps/commons-api/dist /deploy/dist
+
+FROM public.ecr.aws/docker/library/node:22.11.0-bookworm-slim AS runtime
+
+# Chromium and its runtime libraries are required by the web capture service.
 RUN apt-get update && apt-get install -y \
     chromium \
     chromium-sandbox \
@@ -34,17 +57,16 @@ RUN apt-get update && apt-get install -y \
 
 WORKDIR /app
 
-ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true \
+ENV NODE_ENV=production \
+    PORT=8080 \
+    PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true \
     PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium \
     CHROME_PATH=/usr/bin/chromium \
     PUPPETEER_CACHE_DIR=/tmp/.cache
 
 RUN mkdir -p /tmp/.cache && chmod 777 /tmp/.cache
 
-# node_modules and dist are pre-built and deployed by pnpm deploy in cloudbuild.yaml
-COPY .deploy/package.json ./package.json
-COPY .deploy/node_modules ./node_modules
-COPY .deploy/dist ./dist
+COPY --from=build /deploy ./
 
 EXPOSE 8080
 

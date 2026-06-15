@@ -1,0 +1,93 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Agent Commons API ECS Express Mode service.
+
+Parameters:
+  ImageUri:
+    Type: String
+  ExecutionRoleArn:
+    Type: String
+  InfrastructureRoleArn:
+    Type: String
+  RuntimeSecretArn:
+    Type: String
+
+Resources:
+  ApiService:
+    Type: AWS::ECS::ExpressGatewayService
+    Properties:
+      ServiceName: agent-commons-api-production
+      Cluster: default
+      ExecutionRoleArn: !Ref ExecutionRoleArn
+      InfrastructureRoleArn: !Ref InfrastructureRoleArn
+      Cpu: "2048"
+      Memory: "4096"
+      HealthCheckPath: /health
+      PrimaryContainer:
+        Image: !Ref ImageUri
+        ContainerPort: 8080
+        Environment:
+          - Name: NODE_ENV
+            Value: production
+          - Name: HOST
+            Value: 0.0.0.0
+          - Name: LOG_LEVEL
+            Value: info
+          - Name: PORT
+            Value: "8080"
+        Secrets:
+          - Name: APP_KEY
+            ValueFrom: !Sub "${RuntimeSecretArn}:APP_KEY::"
+          - Name: PINATA_JWT
+            ValueFrom: !Sub "${RuntimeSecretArn}:PINATA_JWT::"
+          - Name: GATEWAY_URL
+            ValueFrom: !Sub "${RuntimeSecretArn}:GATEWAY_URL::"
+          - Name: POSTGRES_DATABASE
+            ValueFrom: !Sub "${RuntimeSecretArn}:POSTGRES_DATABASE::"
+          - Name: POSTGRES_USER
+            ValueFrom: !Sub "${RuntimeSecretArn}:POSTGRES_USER::"
+          - Name: POSTGRES_PORT
+            ValueFrom: !Sub "${RuntimeSecretArn}:POSTGRES_PORT::"
+          - Name: POSTGRES_HOST
+            ValueFrom: !Sub "${RuntimeSecretArn}:POSTGRES_HOST::"
+          - Name: POSTGRES_PASSWORD
+            ValueFrom: !Sub "${RuntimeSecretArn}:POSTGRES_PASSWORD::"
+          - Name: WALLET_PRIVATE_KEY
+            ValueFrom: !Sub "${RuntimeSecretArn}:WALLET_PRIVATE_KEY::"
+          - Name: OPENAI_API_KEY
+            ValueFrom: !Sub "${RuntimeSecretArn}:OPENAI_API_KEY::"
+          - Name: GRAPH_API_KEY
+            ValueFrom: !Sub "${RuntimeSecretArn}:GRAPH_API_KEY::"
+          - Name: SUPABASE_URL
+            ValueFrom: !Sub "${RuntimeSecretArn}:SUPABASE_URL::"
+          - Name: SUPABASE_KEY
+            ValueFrom: !Sub "${RuntimeSecretArn}:SUPABASE_KEY::"
+          - Name: COINBASE_API_KEY_NAME
+            ValueFrom: !Sub "${RuntimeSecretArn}:COINBASE_API_KEY_NAME::"
+          - Name: COINBASE_API_KEY_SECRET
+            ValueFrom: !Sub "${RuntimeSecretArn}:COINBASE_API_KEY_SECRET::"
+          - Name: TOOL_KEY_ENCRYPTION_MASTER
+            ValueFrom: !Sub "${RuntimeSecretArn}:TOOL_KEY_ENCRYPTION_MASTER::"
+          - Name: ELEVENLABS_API_KEY
+            ValueFrom: !Sub "${RuntimeSecretArn}:ELEVENLABS_API_KEY::"
+          - Name: POSTHOG_PUBLIC_API_KEY
+            ValueFrom: !Sub "${RuntimeSecretArn}:POSTHOG_PUBLIC_API_KEY::"
+          - Name: API_SECRET_KEY
+            ValueFrom: !Sub "${RuntimeSecretArn}:API_SECRET_KEY::"
+      ScalingTarget:
+        MinTaskCount: 1
+        MaxTaskCount: 4
+        AutoScalingMetric: AVERAGE_CPU
+        AutoScalingTargetValue: 70
+      Tags:
+        - Key: Organization
+          Value: agent-commons
+        - Key: Project
+          Value: agent-commons
+        - Key: Environment
+          Value: production
+
+Outputs:
+  Endpoint:
+    Value: !GetAtt ApiService.Endpoint
+  ServiceArn:
+    Value: !GetAtt ApiService.ServiceArn

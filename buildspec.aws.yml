@@ -1,0 +1,41 @@
+version: 0.2
+
+env:
+  shell: bash
+
+phases:
+  pre_build:
+    commands:
+      - set -euo pipefail
+      - IMAGE_TAG="${CODEBUILD_RESOLVED_SOURCE_VERSION:-manual}-${CODEBUILD_BUILD_NUMBER}"
+      - IMAGE_URI="${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${ECR_REPOSITORY}:${IMAGE_TAG}"
+      - aws ecr get-login-password --region "$AWS_REGION" | docker login --username AWS --password-stdin "${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com"
+  build:
+    commands:
+      - docker build --platform linux/amd64 -f apps/commons-api/Dockerfile -t "$IMAGE_URI" .
+      - docker push "$IMAGE_URI"
+  post_build:
+    commands:
+      - trap 'infra/aws/set-express-alarm-threshold.sh agent-commons-api-production 1 || true' EXIT
+      - infra/aws/set-express-alarm-threshold.sh agent-commons-api-production 100
+      - >-
+        aws cloudformation deploy
+        --stack-name agent-commons-api-service
+        --template-file infra/aws/ecs-express-service.yml
+        --capabilities CAPABILITY_NAMED_IAM
+        --parameter-overrides
+        ImageUri="$IMAGE_URI"
+        ExecutionRoleArn="$TASK_EXECUTION_ROLE_ARN"
+        InfrastructureRoleArn="$INFRASTRUCTURE_ROLE_ARN"
+        RuntimeSecretArn="$RUNTIME_SECRET_ARN"
+        --region "$AWS_REGION"
+      - ENDPOINT=$(aws cloudformation describe-stacks --stack-name agent-commons-api-service --query 'Stacks[0].Outputs[?OutputKey==`Endpoint`].OutputValue' --output text --region "$AWS_REGION")
+      - ENDPOINT="https://${ENDPOINT#https://}"
+      - curl --fail --show-error --silent --retry 18 --retry-delay 10 --retry-all-errors "${ENDPOINT%/}/health" | jq -e '.status == "ok"'
+      - infra/aws/set-express-alarm-threshold.sh agent-commons-api-production 1
+      - trap - EXIT
+      - printf '{"endpoint":"%s","image":"%s"}\n' "$ENDPOINT" "$IMAGE_URI" > deployment.json
+
+artifacts:
+  files:
+    - deployment.json
