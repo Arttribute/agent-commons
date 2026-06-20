@@ -747,6 +747,12 @@ export class AgentService implements OnModuleInit {
                 { type: 'function', function: { name: 'cli_write_file', description: 'Write content to a file on the user\'s local machine. Requires user confirmation.', parameters: { type: 'object', properties: { path: { type: 'string', description: 'File path relative to session root' }, content: { type: 'string', description: 'Content to write' } }, required: ['path', 'content'] } } },
                 { type: 'function', function: { name: 'cli_search_files', description: 'Search for files matching a pattern on the user\'s local machine (e.g. "*.ts").', parameters: { type: 'object', properties: { pattern: { type: 'string', description: 'Glob-style filename pattern' }, directory: { type: 'string', description: 'Directory to search (default: session root)' } }, required: ['pattern'] } } },
                 { type: 'function', function: { name: 'cli_run_command', description: 'Run a shell command on the user\'s local machine and return output. Requires user confirmation.', parameters: { type: 'object', properties: { command: { type: 'string', description: 'Command to run' }, args: { type: 'array', items: { type: 'string' }, description: 'Arguments' }, cwd: { type: 'string', description: 'Working directory' } }, required: ['command'] } } },
+                { type: 'function', function: { name: 'cli_browser_open', description: 'Launch the user\'s shared pod browser and navigate to a URL.', parameters: { type: 'object', properties: { url: { type: 'string', description: 'URL to open' } }, required: ['url'] } } },
+                { type: 'function', function: { name: 'cli_browser_status', description: 'Return the shared browser\'s on/off state, current URL, page title, and latest screenshot.', parameters: { type: 'object', properties: {}, required: [] } } },
+                { type: 'function', function: { name: 'cli_browser_screenshot', description: 'Refresh and return the latest screenshot of the shared browser.', parameters: { type: 'object', properties: {}, required: [] } } },
+                { type: 'function', function: { name: 'cli_browser_click', description: 'Click a coordinate in the shared browser\'s viewport.', parameters: { type: 'object', properties: { x: { type: 'number' }, y: { type: 'number' } }, required: ['x', 'y'] } } },
+                { type: 'function', function: { name: 'cli_browser_type', description: 'Type text into the focused element, or into a CSS selector, in the shared browser.', parameters: { type: 'object', properties: { text: { type: 'string' }, selector: { type: 'string' } }, required: ['text'] } } },
+                { type: 'function', function: { name: 'cli_browser_close', description: 'Close the shared browser.', parameters: { type: 'object', properties: {}, required: [] } } },
               ]
             : [];
 
@@ -946,6 +952,42 @@ export class AgentService implements OnModuleInit {
               makeCliTool(
                 'cli_list_processes',
                 'List all background processes started this session, with their current status and elapsed time.',
+                z.object({}),
+              ),
+              makeCliTool(
+                'cli_browser_open',
+                'Launch the user\'s shared pod browser and navigate to a URL.',
+                z.object({ url: z.string().describe('URL to open') }),
+              ),
+              makeCliTool(
+                'cli_browser_status',
+                'Return the shared browser\'s on/off state, current URL, page title, and latest screenshot.',
+                z.object({}),
+              ),
+              makeCliTool(
+                'cli_browser_screenshot',
+                'Refresh and return the latest screenshot of the shared browser.',
+                z.object({}),
+              ),
+              makeCliTool(
+                'cli_browser_click',
+                'Click a coordinate in the shared browser\'s viewport.',
+                z.object({
+                  x: z.number().describe('X coordinate'),
+                  y: z.number().describe('Y coordinate'),
+                }),
+              ),
+              makeCliTool(
+                'cli_browser_type',
+                'Type text into the focused element, or into a CSS selector, in the shared browser.',
+                z.object({
+                  text: z.string().describe('Text to type'),
+                  selector: z.string().optional().describe('Optional CSS selector to type into'),
+                }),
+              ),
+              makeCliTool(
+                'cli_browser_close',
+                'Close the shared browser.',
                 z.object({}),
               ),
             );
