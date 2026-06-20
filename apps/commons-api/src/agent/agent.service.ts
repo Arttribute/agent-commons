@@ -53,6 +53,7 @@ import { Observable, of } from 'rxjs';
 import { SpaceToolsService } from '~/space/space-tools.service';
 import { UsageService } from '~/modules/usage/usage.service';
 import { calculateCost } from '~/modules/model-provider/model-registry';
+import { extractTokenUsageFromLLMResult } from '~/modules/usage/token-usage.util';
 import { MemoryService } from '~/memory/memory.service';
 import { WalletService } from '~/wallet/wallet.service';
 
@@ -598,8 +599,23 @@ export class AgentService implements OnModuleInit {
             duration?: number;
           }[] = [];
           const executedCalls: any[] = [];
+          const llmRunStartedAt = new Map<string, number>();
+          const usageContext = {
+            provider: (agent.modelProvider ?? 'openai') as any,
+            modelId: agent.modelId ?? 'gpt-4o',
+            isByok: !!agent.modelApiKey,
+          };
+          const usageTotals = {
+            inputTokens: 0,
+            outputTokens: 0,
+            cachedTokens: 0,
+            costUsd: 0,
+          };
 
           const callbackHandler = BaseCallbackHandler.fromMethods({
+            handleLLMStart: async (_llm: any, _prompts: string[], runId: string) => {
+              if (runId) llmRunStartedAt.set(runId, performance.now());
+            },
             handleLLMNewToken: async (token: string) => {
               if (stream) {
                 subscriber.next({
@@ -627,7 +643,58 @@ export class AgentService implements OnModuleInit {
             },
             /** Structured trace log — parseable by log aggregators (CloudWatch, Datadog, etc.) */
             handleLLMEnd: async (result: any, runId: string) => {
-              const usage = result?.llmOutput?.tokenUsage ?? result?.llmOutput?.usage ?? {};
+              const usage = extractTokenUsageFromLLMResult(result);
+              const durationMs = runId && llmRunStartedAt.has(runId)
+                ? Math.round(performance.now() - llmRunStartedAt.get(runId)!)
+                : undefined;
+              if (runId) llmRunStartedAt.delete(runId);
+
+              if (!usage) {
+                console.log(JSON.stringify({
+                  level: 'warn',
+                  event: 'llm_call_usage_missing',
+                  traceId,
+                  langchainRunId: runId,
+                  agentId,
+                  sessionId: currentSessionId,
+                  provider: usageContext.provider,
+                  modelId: usageContext.modelId,
+                  ts: new Date().toISOString(),
+                }));
+                return;
+              }
+
+              const costUsd = calculateCost(
+                usageContext.provider,
+                usageContext.modelId,
+                Math.max(0, usage.inputTokens - usage.cachedTokens),
+                usage.outputTokens,
+              );
+
+              usageTotals.inputTokens += usage.inputTokens;
+              usageTotals.outputTokens += usage.outputTokens;
+              usageTotals.cachedTokens += usage.cachedTokens;
+              usageTotals.costUsd += costUsd;
+
+              this.usageService
+                .record({
+                  agentId,
+                  sessionId: currentSessionId as any,
+                  provider: usageContext.provider,
+                  modelId: usageContext.modelId,
+                  inputTokens: usage.inputTokens,
+                  outputTokens: usage.outputTokens,
+                  cachedTokens: usage.cachedTokens,
+                  totalTokens: usage.totalTokens,
+                  costUsd,
+                  isByok: usageContext.isByok,
+                  durationMs,
+                  traceId,
+                })
+                .catch((err) =>
+                  console.error('[UsageService] Failed to record event:', err),
+                );
+
               console.log(JSON.stringify({
                 level: 'info',
                 event: 'llm_call',
@@ -635,8 +702,14 @@ export class AgentService implements OnModuleInit {
                 langchainRunId: runId,
                 agentId,
                 sessionId: currentSessionId,
-                inputTokens:  usage.prompt_tokens    ?? usage.input_tokens  ?? 0,
-                outputTokens: usage.completion_tokens ?? usage.output_tokens ?? 0,
+                provider: usageContext.provider,
+                modelId: usageContext.modelId,
+                inputTokens: usage.inputTokens,
+                outputTokens: usage.outputTokens,
+                cachedTokens: usage.cachedTokens,
+                totalTokens: usage.totalTokens,
+                costUsd,
+                usageSource: usage.source,
                 ts: new Date().toISOString(),
               }));
             },
@@ -1063,11 +1136,9 @@ export class AgentService implements OnModuleInit {
           const effectiveProvider = (agent.modelProvider ?? 'openai') as any;
           const effectiveModelId  = agent.modelId ?? 'gpt-4o';
           const isByok = !!agent.modelApiKey;
-
-          // Accumulate token counts across all invoke() loops
-          let totalInputTokens  = 0;
-          let totalOutputTokens = 0;
-          let totalCachedTokens = 0;
+          usageContext.provider = effectiveProvider;
+          usageContext.modelId = effectiveModelId;
+          usageContext.isByok = isByok;
 
           let loop = 0;
           let max_recurssion = agent.autonomyEnabled ? 2 : 4;
@@ -1115,12 +1186,10 @@ export class AgentService implements OnModuleInit {
               } as any);
             }
 
-            const tInvoke = performance.now();
             const result = await graph.invoke(
               { messages },
               { configurable: { thread_id: currentSessionId } },
             );
-            const invokeDurationMs = Math.round(performance.now() - tInvoke);
 
             messages = result.messages;
             finalResult = result;
@@ -1156,65 +1225,6 @@ export class AgentService implements OnModuleInit {
                   .where(eq(schema.task.taskId, nextTask.taskId));
                 this.logger.log(`Auto-completed task ${nextTask.taskId} after agent response`);
               }
-            }
-
-            // ── Extract token usage from the last AI message ──────────────
-            const lastAiMsg = [...(result.messages as any[])]
-              .reverse()
-              .find((m: any) => m.getType?.() === 'ai' || m._getType?.() === 'ai');
-
-            let inputTokens  = 0;
-            let outputTokens = 0;
-            let cachedTokens = 0;
-
-            if (lastAiMsg) {
-              // LangChain standardised usage_metadata (LangChain >= 0.2)
-              const um = lastAiMsg.usage_metadata;
-              if (um) {
-                inputTokens  = um.input_tokens  ?? 0;
-                outputTokens = um.output_tokens ?? 0;
-                cachedTokens = um.input_token_details?.cache_read ?? 0;
-              } else {
-                // Fallback: provider-specific response_metadata
-                const rm = lastAiMsg.response_metadata ?? {};
-                // OpenAI shape
-                const usage = rm.usage ?? rm.token_usage ?? {};
-                inputTokens  = usage.prompt_tokens     ?? usage.input_tokens  ?? 0;
-                outputTokens = usage.completion_tokens ?? usage.output_tokens ?? 0;
-              }
-            }
-
-            const iterTotalTokens = inputTokens + outputTokens;
-            totalInputTokens  += inputTokens;
-            totalOutputTokens += outputTokens;
-            totalCachedTokens += cachedTokens;
-
-            // ── Persist usage_event row (fire-and-forget — don't block) ──
-            if (iterTotalTokens > 0) {
-              const costUsd = calculateCost(
-                effectiveProvider,
-                effectiveModelId,
-                inputTokens,
-                outputTokens,
-              );
-              this.usageService
-                .record({
-                  agentId:   agentId,
-                  sessionId: currentSessionId as any,
-                  provider:  effectiveProvider,
-                  modelId:   effectiveModelId,
-                  inputTokens,
-                  outputTokens,
-                  cachedTokens,
-                  totalTokens: iterTotalTokens,
-                  costUsd,
-                  isByok,
-                  durationMs: invokeDurationMs,
-                  traceId,
-                })
-                .catch((err) =>
-                  console.error('[UsageService] Failed to record event:', err),
-                );
             }
 
             // Check for more pending tasks
@@ -1347,7 +1357,7 @@ export class AgentService implements OnModuleInit {
                   : currentSession.title ||
                     (spaceId ? `Space: ${spaceId}` : sessionTitle),
                 metrics: {
-                  totalTokens: totalInputTokens + totalOutputTokens,
+                  totalTokens: usageTotals.inputTokens + usageTotals.outputTokens,
                   toolCalls: toolUsage.length,
                   errorCount: toolUsage.filter((t) => t.status === 'error')
                     .length,
@@ -1396,13 +1406,6 @@ export class AgentService implements OnModuleInit {
 
           const lastMessage = finalResult?.messages?.at(-1)?.toDict() ?? {};
 
-          const totalCostUsd = calculateCost(
-            effectiveProvider,
-            effectiveModelId,
-            totalInputTokens,
-            totalOutputTokens,
-          );
-
           subscriber.next({
             type: 'final',
             payload: {
@@ -1411,11 +1414,11 @@ export class AgentService implements OnModuleInit {
               title: sessionTitle ?? 'New Session',
               traceId,
               usage: {
-                inputTokens:  totalInputTokens,
-                outputTokens: totalOutputTokens,
-                cachedTokens: totalCachedTokens,
-                totalTokens:  totalInputTokens + totalOutputTokens,
-                costUsd:      totalCostUsd,
+                inputTokens:  usageTotals.inputTokens,
+                outputTokens: usageTotals.outputTokens,
+                cachedTokens: usageTotals.cachedTokens,
+                totalTokens:  usageTotals.inputTokens + usageTotals.outputTokens,
+                costUsd:      usageTotals.costUsd,
               },
               metadata: {
                 toolCalls,
