@@ -28,6 +28,7 @@ interface RunBody {
   messages: any[];
   sessionId?: string;
   cliContext?: string;
+  cliTools?: Array<{ name: string; description: string; parameters: Record<string, unknown> }>;
 }
 
 @Controller({ version: '1', path: 'agents' })

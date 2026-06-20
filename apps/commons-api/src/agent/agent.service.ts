@@ -472,6 +472,13 @@ export class AgentService implements OnModuleInit {
     maxTurns?: number;
     /** Extra text appended to the agent's system prompt (used by CLI for local tool manifest). */
     cliContext?: string;
+    /**
+     * Dynamic CLI tool catalog sent by the caller's own daemon/CLI process.
+     * When present, this fully replaces the hardcoded CLI tool list below —
+     * the caller is the single source of truth for what it can execute, so
+     * adding a new pod-local tool never requires a commons-api change.
+     */
+    cliTools?: Array<{ name: string; description: string; parameters: Record<string, unknown> }>;
   }): Observable<any> {
     return new Observable<any>((subscriber) => {
       // Keep SSE connection alive through proxies
@@ -739,9 +746,20 @@ export class AgentService implements OnModuleInit {
             },
           );
 
-          // CLI tool schemas to expose to the LLM (only when cliContext is present)
+          // CLI tool schemas to expose to the LLM (only when cliContext is present).
+          // When the caller (e.g. the CommonOS daemon) sends its own dynamic
+          // cliTools catalog, that fully replaces the hardcoded list below —
+          // the caller is the single source of truth for what it can execute,
+          // so it can add new pod-local tools without a commons-api change.
+          const dynamicCliTools = props.cliTools?.length
+            ? props.cliTools.map((def): ChatCompletionTool => ({
+                type: 'function',
+                function: { name: def.name, description: def.description, parameters: def.parameters as any },
+              }))
+            : null;
+
           const cliToolSchemas: ChatCompletionTool[] = props.cliContext
-            ? [
+            ? dynamicCliTools ?? [
                 { type: 'function', function: { name: 'cli_list_directory', description: 'List files and folders at a path on the user\'s local machine. Call this immediately when asked about local files or directories.', parameters: { type: 'object', properties: { path: { type: 'string', description: 'Directory path relative to session root (default: session root)' } }, required: [] } } },
                 { type: 'function', function: { name: 'cli_read_file', description: 'Read the full contents of a file on the user\'s local machine.', parameters: { type: 'object', properties: { path: { type: 'string', description: 'File path relative to session root' } }, required: ['path'] } } },
                 { type: 'function', function: { name: 'cli_write_file', description: 'Write content to a file on the user\'s local machine. Requires user confirmation.', parameters: { type: 'object', properties: { path: { type: 'string', description: 'File path relative to session root' }, content: { type: 'string', description: 'Content to write' } }, required: ['path', 'content'] } } },
@@ -848,7 +866,7 @@ export class AgentService implements OnModuleInit {
             const makeCliTool = (
               name: string,
               description: string,
-              schema: z.ZodObject<any>,
+              schema: z.ZodObject<any> | Record<string, unknown>,
             ) =>
               tool(
                 async (args) => {
@@ -877,120 +895,130 @@ export class AgentService implements OnModuleInit {
                     });
                   });
                 },
-                { name, description, schema },
+                { name, description, schema: schema as any },
               );
 
-            (toolRunners as any[]).push(
-              makeCliTool(
-                'cli_read_file',
-                'Read the full contents of a file on the user\'s local machine. Path is relative to the session root directory.',
-                z.object({ path: z.string().describe('File path relative to session root') }),
-              ),
-              makeCliTool(
-                'cli_list_directory',
-                'List files and directories at a given path on the user\'s local machine. Defaults to the session root.',
-                z.object({ path: z.string().optional().describe('Directory path (default: session root)') }),
-              ),
-              makeCliTool(
-                'cli_write_file',
-                'Write content to a file on the user\'s local machine. Creates parent directories if needed. Requires user confirmation.',
-                z.object({
-                  path: z.string().describe('File path relative to session root'),
-                  content: z.string().describe('Content to write'),
-                }),
-              ),
-              makeCliTool(
-                'cli_search_files',
-                'Search for files matching a name pattern on the user\'s local machine. Returns up to 50 matches.',
-                z.object({
-                  pattern: z.string().describe('Glob-style filename pattern (e.g. "*.ts")'),
-                  directory: z.string().optional().describe('Directory to search in (default: session root)'),
-                }),
-              ),
-              makeCliTool(
-                'cli_run_command',
-                'Execute a short shell command (<30s) on the user\'s local machine. For long-running commands (installs, builds, scaffolders) use cli_start_process instead.',
-                z.object({
-                  command: z.string().describe('Command to run (e.g. "node")'),
-                  args: z.array(z.string()).optional().describe('Arguments array'),
-                  cwd: z.string().optional().describe('Working directory (default: session root)'),
-                  timeout_seconds: z.number().optional().describe('Max seconds to wait (default 120, max 300)'),
-                  interactive: z.boolean().optional().describe('Connect user terminal stdin for commands that need prompts. Output not captured.'),
-                }),
-              ),
-              makeCliTool(
-                'cli_start_process',
-                'Start a long-running command in the background (npm install, builds, scaffolders, etc). Returns a processId immediately — use cli_wait_for_process to poll progress. Requires user confirmation.',
-                z.object({
-                  command: z.string().describe('Command to run (e.g. "npx")'),
-                  args: z.array(z.string()).optional().describe('Arguments array'),
-                  cwd: z.string().optional().describe('Working directory (default: session root)'),
-                }),
-              ),
-              makeCliTool(
-                'cli_wait_for_process',
-                'Block for up to wait_seconds (max 120) waiting for a background process to finish, then return its current output and status. Call in a loop, reporting progress to the user between each call.',
-                z.object({
-                  processId: z.string().describe('processId returned by cli_start_process'),
-                  wait_seconds: z.number().optional().describe('How long to block (default 60, max 120)'),
-                }),
-              ),
-              makeCliTool(
-                'cli_process_status',
-                'Instantly check the status and recent stdout of a background process without blocking.',
-                z.object({
-                  processId: z.string().describe('processId returned by cli_start_process'),
-                }),
-              ),
-              makeCliTool(
-                'cli_kill_process',
-                'Kill a running background process.',
-                z.object({
-                  processId: z.string().describe('processId returned by cli_start_process'),
-                }),
-              ),
-              makeCliTool(
-                'cli_list_processes',
-                'List all background processes started this session, with their current status and elapsed time.',
-                z.object({}),
-              ),
-              makeCliTool(
-                'cli_browser_open',
-                'Launch the user\'s shared pod browser and navigate to a URL.',
-                z.object({ url: z.string().describe('URL to open') }),
-              ),
-              makeCliTool(
-                'cli_browser_status',
-                'Return the shared browser\'s on/off state, current URL, page title, and latest screenshot.',
-                z.object({}),
-              ),
-              makeCliTool(
-                'cli_browser_screenshot',
-                'Refresh and return the latest screenshot of the shared browser.',
-                z.object({}),
-              ),
-              makeCliTool(
-                'cli_browser_click',
-                'Click a coordinate in the shared browser\'s viewport.',
-                z.object({
-                  x: z.number().describe('X coordinate'),
-                  y: z.number().describe('Y coordinate'),
-                }),
-              ),
-              makeCliTool(
-                'cli_browser_type',
-                'Type text into the focused element, or into a CSS selector, in the shared browser.',
-                z.object({
-                  text: z.string().describe('Text to type'),
-                  selector: z.string().optional().describe('Optional CSS selector to type into'),
-                }),
-              ),
-              makeCliTool(
-                'cli_browser_close',
-                'Close the shared browser.',
-                z.object({}),
-              ),
-            );
+            if (dynamicCliTools) {
+              // Caller supplied its own catalog — mirror it 1:1 with no
+              // hardcoded tool list to maintain.
+              (toolRunners as any[]).push(
+                ...props.cliTools!.map((def) =>
+                  makeCliTool(def.name, def.description, def.parameters),
+                ),
+              );
+            } else {
+              (toolRunners as any[]).push(
+                makeCliTool(
+                  'cli_read_file',
+                  'Read the full contents of a file on the user\'s local machine. Path is relative to the session root directory.',
+                  z.object({ path: z.string().describe('File path relative to session root') }),
+                ),
+                makeCliTool(
+                  'cli_list_directory',
+                  'List files and directories at a given path on the user\'s local machine. Defaults to the session root.',
+                  z.object({ path: z.string().optional().describe('Directory path (default: session root)') }),
+                ),
+                makeCliTool(
+                  'cli_write_file',
+                  'Write content to a file on the user\'s local machine. Creates parent directories if needed. Requires user confirmation.',
+                  z.object({
+                    path: z.string().describe('File path relative to session root'),
+                    content: z.string().describe('Content to write'),
+                  }),
+                ),
+                makeCliTool(
+                  'cli_search_files',
+                  'Search for files matching a name pattern on the user\'s local machine. Returns up to 50 matches.',
+                  z.object({
+                    pattern: z.string().describe('Glob-style filename pattern (e.g. "*.ts")'),
+                    directory: z.string().optional().describe('Directory to search in (default: session root)'),
+                  }),
+                ),
+                makeCliTool(
+                  'cli_run_command',
+                  'Execute a short shell command (<30s) on the user\'s local machine. For long-running commands (installs, builds, scaffolders) use cli_start_process instead.',
+                  z.object({
+                    command: z.string().describe('Command to run (e.g. "node")'),
+                    args: z.array(z.string()).optional().describe('Arguments array'),
+                    cwd: z.string().optional().describe('Working directory (default: session root)'),
+                    timeout_seconds: z.number().optional().describe('Max seconds to wait (default 120, max 300)'),
+                    interactive: z.boolean().optional().describe('Connect user terminal stdin for commands that need prompts. Output not captured.'),
+                  }),
+                ),
+                makeCliTool(
+                  'cli_start_process',
+                  'Start a long-running command in the background (npm install, builds, scaffolders, etc). Returns a processId immediately — use cli_wait_for_process to poll progress. Requires user confirmation.',
+                  z.object({
+                    command: z.string().describe('Command to run (e.g. "npx")'),
+                    args: z.array(z.string()).optional().describe('Arguments array'),
+                    cwd: z.string().optional().describe('Working directory (default: session root)'),
+                  }),
+                ),
+                makeCliTool(
+                  'cli_wait_for_process',
+                  'Block for up to wait_seconds (max 120) waiting for a background process to finish, then return its current output and status. Call in a loop, reporting progress to the user between each call.',
+                  z.object({
+                    processId: z.string().describe('processId returned by cli_start_process'),
+                    wait_seconds: z.number().optional().describe('How long to block (default 60, max 120)'),
+                  }),
+                ),
+                makeCliTool(
+                  'cli_process_status',
+                  'Instantly check the status and recent stdout of a background process without blocking.',
+                  z.object({
+                    processId: z.string().describe('processId returned by cli_start_process'),
+                  }),
+                ),
+                makeCliTool(
+                  'cli_kill_process',
+                  'Kill a running background process.',
+                  z.object({
+                    processId: z.string().describe('processId returned by cli_start_process'),
+                  }),
+                ),
+                makeCliTool(
+                  'cli_list_processes',
+                  'List all background processes started this session, with their current status and elapsed time.',
+                  z.object({}),
+                ),
+                makeCliTool(
+                  'cli_browser_open',
+                  'Launch the user\'s shared pod browser and navigate to a URL.',
+                  z.object({ url: z.string().describe('URL to open') }),
+                ),
+                makeCliTool(
+                  'cli_browser_status',
+                  'Return the shared browser\'s on/off state, current URL, page title, and latest screenshot.',
+                  z.object({}),
+                ),
+                makeCliTool(
+                  'cli_browser_screenshot',
+                  'Refresh and return the latest screenshot of the shared browser.',
+                  z.object({}),
+                ),
+                makeCliTool(
+                  'cli_browser_click',
+                  'Click a coordinate in the shared browser\'s viewport.',
+                  z.object({
+                    x: z.number().describe('X coordinate'),
+                    y: z.number().describe('Y coordinate'),
+                  }),
+                ),
+                makeCliTool(
+                  'cli_browser_type',
+                  'Type text into the focused element, or into a CSS selector, in the shared browser.',
+                  z.object({
+                    text: z.string().describe('Text to type'),
+                    selector: z.string().optional().describe('Optional CSS selector to type into'),
+                  }),
+                ),
+                makeCliTool(
+                  'cli_browser_close',
+                  'Close the shared browser.',
+                  z.object({}),
+                ),
+              );
+            }
           }
 
           const toolNode = new ToolNode(toolRunners);
