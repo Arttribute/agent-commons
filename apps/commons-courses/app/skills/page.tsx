@@ -99,9 +99,6 @@ export default function SkillsPage() {
     }),
     { points: 0, completed: 0, challenges: 0, streak: 0 }
   );
-  const completionPct = totals.challenges
-    ? Math.round((totals.completed / totals.challenges) * 100)
-    : 0;
 
   if (loading) {
     return (
@@ -125,11 +122,12 @@ export default function SkillsPage() {
               AI fluency skills
             </p>
             <h1 className="max-w-2xl text-3xl font-semibold tracking-tight text-slate-950 sm:text-5xl">
-              Build your daily AI fluency streak.
+              Earn AI skills one daily badge at a time.
             </h1>
             <p className="mt-4 max-w-2xl text-[16px] leading-7 text-slate-700">
-              Short skill paths, focused daily challenges, and quizzes that make
-              the concepts stick.
+              Skills are atomic learning achievements: small enough to finish
+              today, useful enough to stack into real AI fluency, and flexible
+              enough to live inside courses or stand alone.
             </p>
           </div>
 
@@ -154,8 +152,8 @@ export default function SkillsPage() {
               />
               <Stat
                 icon={Trophy}
-                label="Done"
-                value={`${completionPct}%`}
+                label="Badges"
+                value={String(totals.completed)}
                 color="text-amber-500"
                 bg="bg-amber-50"
               />
@@ -171,7 +169,7 @@ export default function SkillsPage() {
             </h2>
             <p className="mx-auto mt-3 max-w-md text-sm leading-6 text-slate-600">
               Add a skillPack to a published course to start rendering daily,
-              gamified AI fluency challenges here.
+              badge-based AI fluency challenges here.
             </p>
           </section>
         ) : (
@@ -218,7 +216,7 @@ export default function SkillsPage() {
                         </h2>
                       </div>
                       <span className="rounded-md bg-[#B8F56D] px-2.5 py-1 text-xs font-black text-slate-950">
-                        {completed}/{pack.challenges.length}
+                        {completed} badge{completed === 1 ? "" : "s"}
                       </span>
                     </div>
                     <p className="mt-3 line-clamp-2 text-sm leading-6 text-slate-600">
@@ -256,7 +254,7 @@ export default function SkillsPage() {
               </p>
               <p className="mt-1 text-sm text-slate-600">
                 Weekly AI fluency standings across points, streaks, and skills
-                completed.
+                earned as badges.
               </p>
             </div>
             <div className="rounded-lg bg-amber-100 p-2">
@@ -318,7 +316,7 @@ export default function SkillsPage() {
                     {row.streak} day
                   </p>
                   <p className="hidden text-right text-sm font-semibold text-amber-600 sm:block">
-                    {row.completedSkills} skills
+                    {row.completedSkills} badges
                   </p>
                   <p className="hidden text-right text-sm font-semibold text-slate-500 sm:block">
                     {row.skillPathsStarted} paths

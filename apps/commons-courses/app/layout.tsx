@@ -19,7 +19,7 @@ export const metadata: Metadata = {
     template: "%s | CommonLab",
   },
   description:
-    "CommonLab helps educators teach practical AI literacy with structured courses, guided agent labs, and safe sandboxes for learners.",
+    "CommonLab helps educators teach practical AI literacy with structured courses, daily skill badges, builder quests, and safe practice environments.",
   icons: {
     icon: "/icon.svg",
     shortcut: "/icon.svg",
@@ -28,7 +28,7 @@ export const metadata: Metadata = {
   openGraph: {
     title: "CommonLab - AI agent courses",
     description:
-      "Practical AI literacy courses with guided agent labs and safe learning environments.",
+      "Practical AI literacy courses with daily skill badges, builder quests, and safe learning environments.",
     siteName: "CommonLab",
     images: [{ url: "/opengraph-image", width: 1200, height: 630 }],
   },
@@ -36,7 +36,7 @@ export const metadata: Metadata = {
     card: "summary_large_image",
     title: "CommonLab - AI agent courses",
     description:
-      "Practical AI literacy courses with guided agent labs and safe learning environments.",
+      "Practical AI literacy courses with daily skill badges, builder quests, and safe learning environments.",
     images: ["/opengraph-image"],
   },
 };

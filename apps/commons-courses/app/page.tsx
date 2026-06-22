@@ -1,6 +1,7 @@
 import Link from "next/link";
 import {
   ArrowRight,
+  Award,
   BookOpen,
   Boxes,
   CheckCircle,
@@ -9,6 +10,7 @@ import {
   GraduationCap,
   Layers,
   Play,
+  Rocket,
   ShieldCheck,
   Terminal,
   Users,
@@ -436,8 +438,8 @@ export default async function HomePage() {
             <div className="mt-10 grid gap-3 sm:grid-cols-3">
               {[
                 ["Courses", "Lessons, cohorts, enrolment"],
-                ["Labs", "Guided sandbox exercises"],
-                ["Review", "Progress, traces, outputs"],
+                ["Skills", "Daily badges and streaks"],
+                ["Builders", "Quests, demos, prototypes"],
               ].map(([value, label], index) => (
                 <div key={value} className="rounded-lg border border-slate-200 p-4">
                   <HighlightPill index={index}>{value}</HighlightPill>
@@ -460,13 +462,14 @@ export default async function HomePage() {
           <div className="max-w-3xl">
             <Eyebrow>What CommonLab does</Eyebrow>
             <h2 className="mt-3 text-3xl font-semibold tracking-tight text-slate-950">
-              Course delivery, <Highlight index={1}>hands-on practice</Highlight>,
-              and safe agent exploration in one place.
+              Structured courses, <Highlight index={1}>daily skill badges</Highlight>,
+              and builder quests in one place.
             </h2>
             <p className="mt-4 text-[17px] leading-8 text-slate-800">
-              Learners do not need to jump between scattered tools and risky
-              integrations. Educators can structure the learning journey while
-              learners practice with visible, reviewable agent work.
+              Educators can publish deep learning paths, attach atomic skill
+              challenges, and move learners into practical build quests. Learners
+              get a clear path from understanding concepts to earning badges and
+              shipping real work.
             </p>
           </div>
 
@@ -478,14 +481,14 @@ export default async function HomePage() {
                 desc: "Publish self-paced lessons, live cohorts, projects, and assessments.",
               },
               {
-                icon: FlaskConical,
-                title: "Hands-on labs",
-                desc: "Attach sandbox exercises for prompts, tool calls, memory, APIs, and workflows.",
+                icon: Award,
+                title: "Skill badges",
+                desc: "Create short daily challenges that learners can finish, streak, and proudly collect.",
               },
               {
-                icon: ShieldCheck,
-                title: "Safe practice",
-                desc: "Let learners test agent behavior before moving into live accounts and data.",
+                icon: Rocket,
+                title: "Builder quests",
+                desc: "Turn learning into prototypes, hackathons, build nights, demos, and startup pathways.",
               },
             ].map(({ icon: Icon, title, desc }, index) => (
               <div key={title} className="rounded-xl border border-slate-200 bg-white p-6">
@@ -507,20 +510,22 @@ export default async function HomePage() {
       </section>
 
       <section
-        id="sandboxes"
+        id="practice"
         className="border-y border-slate-200 bg-slate-50 py-16"
       >
         <div className="mx-auto grid max-w-6xl gap-8 px-4 sm:px-6 lg:grid-cols-[0.9fr_1.1fr] lg:px-8">
           <div>
-            <Eyebrow>Sandbox layer</Eyebrow>
+            <Eyebrow>Practice layer</Eyebrow>
             <h2 className="mt-3 text-3xl font-semibold tracking-tight text-slate-950">
               A <Highlight index={2}>controlled workspace</Highlight> for each
-              learner, cohort, or team.
+              learner, cohort, skill, or quest.
             </h2>
             <p className="mt-4 text-[17px] leading-8 text-slate-800">
               The course structure stays familiar: enrol, learn, complete
-              lessons, and submit projects. The lab layer adds isolated
-              workspaces, observable runs, and permissioned tools.
+              lessons, and submit projects. Skills add atomic daily practice.
+              Builder quests add project momentum. The sandbox layer supports
+              all of them with isolated workspaces, observable runs, and
+              permissioned tools.
             </p>
           </div>
 
@@ -547,7 +552,7 @@ export default async function HomePage() {
             {
               icon: ShieldCheck,
               title: "Teaching guardrails",
-              desc: "Limit tools, reset labs, and review attempts.",
+              desc: "Limit tools, reset practice spaces, and review attempts.",
             },
           ].map(({ icon: Icon, title, desc }) => (
             <div key={title} className="rounded-xl border border-slate-200 bg-white p-5">
@@ -580,11 +585,11 @@ export default async function HomePage() {
           <div className="grid gap-4 sm:grid-cols-2">
             {[
               "Publish public or private courses",
+              "Attach daily skill badge challenges to course concepts",
               "Run 4 to 6 week cohorts or self-paced programs",
-              "Attach sandbox exercises to lessons",
+              "Create builder quests for prototypes, demos, and hackathons",
               "Track enrolment, progress, and completion",
               "Create templates for agents, tools, and workflows",
-              "Offer affordable access for learners and communities",
             ].map((item) => (
               <div key={item} className="flex items-start gap-3 rounded-lg border border-slate-200 p-4">
                 <CheckCircle className="mt-0.5 h-4 w-4 flex-shrink-0 text-slate-900" />
@@ -602,12 +607,12 @@ export default async function HomePage() {
               <Eyebrow>Featured course</Eyebrow>
               <h2 className="mt-3 text-3xl font-semibold tracking-tight text-slate-950">
                 Start with a <Highlight index={4}>structured path</Highlight>,
-                then practice in the lab.
+                then earn daily skill badges.
               </h2>
               <p className="mt-4 text-[17px] leading-8 text-slate-800">
-                CommonLab continues to support the course structure already in
-                place while preparing the product for educator-created courses
-                and attached lab environments.
+                Courses provide the deep structure. Skill challenges break key
+                ideas into daily achievements learners can complete, collect,
+                and return to.
               </p>
             </div>
 
@@ -733,7 +738,7 @@ export default async function HomePage() {
           <Eyebrow>Get started</Eyebrow>
           <h2 className="mt-3 max-w-3xl text-3xl font-semibold tracking-tight text-slate-950">
             Make AI agents understandable by giving learners a{" "}
-            <Highlight index={0}>safe place</Highlight> to build and inspect
+            <Highlight index={0}>clear path</Highlight> to learn, practice, and build with
             them.
           </h2>
           <div className="mt-8 flex flex-col gap-3 sm:flex-row">

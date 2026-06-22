@@ -78,6 +78,12 @@ export function Nav() {
             Skills
           </Link>
           <Link
+            href="/builders"
+            className="text-sm text-slate-600 hover:text-slate-900 transition-colors"
+          >
+            Builders
+          </Link>
+          <Link
             href="/educator"
             className="text-sm text-slate-600 hover:text-slate-900 transition-colors"
           >
@@ -199,6 +205,13 @@ export function Nav() {
             onClick={() => setMobileOpen(false)}
           >
             Skills
+          </Link>
+          <Link
+            href="/builders"
+            className="text-sm text-slate-700"
+            onClick={() => setMobileOpen(false)}
+          >
+            Builders
           </Link>
           <Link
             href="/educator"

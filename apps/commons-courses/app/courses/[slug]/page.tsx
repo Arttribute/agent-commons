@@ -13,7 +13,9 @@ import { connectDB } from "@/lib/db";
 import Course from "@/models/Course";
 import Enrollment from "@/models/Enrollment";
 import {
+  ArrowRight,
   ArrowLeft,
+  Award,
   Clock,
   BookOpen,
   BarChart2,
@@ -81,6 +83,18 @@ interface CourseDetailData {
   imageUrl?: string | null;
   bannerImageUrl?: string | null;
   previewImageUrl?: string | null;
+  skillPack?: {
+    enabled?: boolean;
+    title?: string;
+    subtitle?: string;
+    learnerPromise?: string;
+    challenges?: Array<{
+      id: string;
+      title: string;
+      shortTitle?: string;
+      points?: number;
+    }>;
+  };
   modules: ModuleData[];
   accessProgram?: {
     discounts?: unknown[];
@@ -203,6 +217,10 @@ export default async function CoursePage({ params, searchParams }: Props) {
   const isCourseMedia = Boolean(bannerImageUrl?.includes("/api/media/"));
   const startStatus = getCourseStartStatus(course.startDate);
   const liveScheduleSummary = getLiveScheduleSummary(course.liveSchedule);
+  const skillChallenges =
+    course.skillPack?.enabled && course.skillPack.challenges?.length
+      ? course.skillPack.challenges
+      : [];
 
   const totalMinutes = course.modules
     .flatMap((m) => m.lessons)
@@ -372,17 +390,61 @@ export default async function CoursePage({ params, searchParams }: Props) {
                     </div>
                     <div>
                       <h2 className="text-lg font-bold text-slate-900 mb-2">
-                        How the lab fits in
+                        How practice fits in
                       </h2>
                       <p className="text-[15px] leading-7 text-slate-800">
-                        CommonLab courses are designed to pair lessons with safe
-                        agent practice: prompts, tool calls, workflows, logs,
-                        and review checkpoints before learners move into real
-                        integrations.
+                        CommonLab courses can pair lessons with daily skill
+                        badges, practical assignments, and safe agent practice:
+                        prompts, tool calls, workflows, logs, and review
+                        checkpoints before learners move into real integrations.
                       </p>
                     </div>
                   </div>
                 </div>
+
+                {skillChallenges.length > 0 ? (
+                  <div className="mb-12 rounded-xl border border-amber-200 bg-amber-50/60 p-6">
+                    <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+                      <div className="flex items-start gap-4">
+                        <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-lg bg-amber-200">
+                          <Award className="h-5 w-5 text-amber-800" />
+                        </div>
+                        <div>
+                          <h2 className="text-lg font-bold text-slate-900 mb-2">
+                            Daily skill badges in this course
+                          </h2>
+                          <p className="text-[15px] leading-7 text-slate-800">
+                            This course includes atomic skill challenges learners
+                            can complete one at a time. Each challenge is small
+                            enough to stand on its own and meaningful enough to
+                            count as an earned skill badge.
+                          </p>
+                        </div>
+                      </div>
+                      <Link
+                        href={`/skills/${course.slug}`}
+                        className="inline-flex shrink-0 items-center justify-center gap-2 rounded-lg bg-slate-950 px-4 py-2.5 text-sm font-bold text-white"
+                      >
+                        Open skill path <ArrowRight className="h-4 w-4" />
+                      </Link>
+                    </div>
+                    <div className="mt-5 grid gap-2 sm:grid-cols-2">
+                      {skillChallenges.slice(0, 6).map((challenge) => (
+                        <div
+                          key={challenge.id}
+                          className="rounded-lg border border-amber-200 bg-white px-3 py-2"
+                        >
+                          <p className="truncate text-sm font-bold text-slate-900">
+                            {challenge.shortTitle || challenge.title}
+                          </p>
+                          <p className="text-xs font-semibold text-amber-700">
+                            {challenge.points ?? 0} pts
+                          </p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
 
                 {/* What you will learn */}
                 <div className="mb-12">

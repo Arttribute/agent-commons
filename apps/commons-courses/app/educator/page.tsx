@@ -9,7 +9,15 @@ import Payment from "@/models/Payment";
 import Enrollment from "@/models/Enrollment";
 import { Nav } from "@/components/nav";
 import { GeneralAgentDrawer } from "@/components/agents/general-agent-drawer";
-import { ArrowRight, BookOpen, CreditCard, LayoutDashboard, Users } from "lucide-react";
+import {
+  ArrowRight,
+  Award,
+  BookOpen,
+  CreditCard,
+  LayoutDashboard,
+  Rocket,
+  Users,
+} from "lucide-react";
 
 export default async function EducatorDashboardPage() {
   const session = await auth();
@@ -57,10 +65,11 @@ export default async function EducatorDashboardPage() {
               Educator console
             </p>
             <h1 className="text-3xl font-bold text-slate-950">
-              Manage your courses
+              Manage your learning community
             </h1>
             <p className="mt-2 text-sm text-slate-500">
-              Courses, students, assignments, submissions, and payment activity.
+              Courses are the base. Skill badges and builder quests help learners
+              practice daily, show progress, and move toward real projects.
             </p>
           </div>
           <div className="flex gap-2">
@@ -90,6 +99,30 @@ export default async function EducatorDashboardPage() {
           <Metric icon={Users} label="Students" value={enrollmentCount} />
           <Metric icon={CreditCard} label="Completed sales" value={gross.toLocaleString()} />
         </div>
+
+        <section className="mb-8 grid gap-4 md:grid-cols-3">
+          <FormatCard
+            icon={BookOpen}
+            title="Courses"
+            body="Create structured learning paths with modules, lessons, assignments, and access."
+            href="/educator/courses/new"
+            action="Create course"
+          />
+          <FormatCard
+            icon={Award}
+            title="Skill badges"
+            body="Attach atomic daily challenges to courses so learners can earn skills and keep streaks."
+            href="/skills"
+            action="View skills"
+          />
+          <FormatCard
+            icon={Rocket}
+            title="Builder quests"
+            body="Guide learners into prototypes, build nights, hackathons, demos, and showcases."
+            href="/builders"
+            action="View Builders"
+          />
+        </section>
 
         <section>
           <div className="mb-3 flex items-center justify-between">
@@ -153,5 +186,33 @@ function Metric({
       <p className="text-2xl font-bold text-slate-950">{value}</p>
       <p className="text-sm text-slate-500">{label}</p>
     </div>
+  );
+}
+
+function FormatCard({
+  icon: Icon,
+  title,
+  body,
+  href,
+  action,
+}: {
+  icon: typeof BookOpen;
+  title: string;
+  body: string;
+  href: string;
+  action: string;
+}) {
+  return (
+    <Link
+      href={href}
+      className="rounded-xl border border-slate-200 p-5 transition-colors hover:border-slate-300 hover:bg-slate-50"
+    >
+      <Icon className="mb-4 h-5 w-5 text-slate-500" />
+      <h2 className="font-bold text-slate-950">{title}</h2>
+      <p className="mt-2 text-sm leading-6 text-slate-500">{body}</p>
+      <p className="mt-4 inline-flex items-center gap-1.5 text-sm font-bold text-slate-900">
+        {action} <ArrowRight className="h-3.5 w-3.5" />
+      </p>
+    </Link>
   );
 }

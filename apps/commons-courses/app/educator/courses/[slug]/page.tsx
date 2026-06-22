@@ -1,6 +1,13 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { BarChart3, BookOpen, ClipboardList, CreditCard, GraduationCap } from "lucide-react";
+import {
+  Award,
+  BarChart3,
+  BookOpen,
+  ClipboardList,
+  CreditCard,
+  GraduationCap,
+} from "lucide-react";
 import { requireEducatorCourse } from "@/lib/educator-auth";
 import Enrollment from "@/models/Enrollment";
 import Payment from "@/models/Payment";
@@ -52,11 +59,17 @@ export default async function CourseDashboardPage({
         <Metric icon={ClipboardList} label="Assignments" value={assignments} />
       </div>
 
-      <section className="grid gap-4 lg:grid-cols-3">
+      <section className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
         <ActionCard
           icon={BookOpen}
           title="Build course content"
           body="Organize modules, lesson details, preview access, and course structure."
+          href={`/educator/courses/${slug}/content`}
+        />
+        <ActionCard
+          icon={Award}
+          title="Attach daily skill badges"
+          body="Create atomic challenges that can live inside this course and also stand alone on the Skills page."
           href={`/educator/courses/${slug}/content`}
         />
         <ActionCard

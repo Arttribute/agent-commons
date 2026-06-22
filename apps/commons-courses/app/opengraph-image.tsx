@@ -65,7 +65,8 @@ export default function Image() {
             }}
           >
             <span>Courses</span>
-            <span>Guided labs</span>
+            <span>Skill badges</span>
+            <span>Builder quests</span>
             <span>Educator tools</span>
           </div>
         </div>

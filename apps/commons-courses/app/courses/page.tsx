@@ -74,18 +74,19 @@ export default async function CoursesPage() {
               Courses for learning by building.
             </h1>
             <p className="mt-4 max-w-2xl text-[17px] leading-8 text-slate-800">
-              Start with the courses already available, then grow into a
-              broader library of educator-led programs. Each course can become a
-              path of lessons, projects, and safe agent sandboxes.
+              Courses are the structured home for deeper learning. Educators can
+              attach daily skill badges for focused practice, and larger builder
+              quests can link back to the courses that prepare learners to ship.
             </p>
             <div className="mt-6 flex flex-wrap gap-2">
               {[
                 "AI agents",
                 "LLMs",
+                "Skill badges",
+                "Builder quests",
                 "MCP",
                 "Tool calls",
                 "Workflows",
-                "Sandboxing",
               ].map((item, index) => (
                 <span
                   key={item}
@@ -98,6 +99,7 @@ export default async function CoursesPage() {
                       "border-[#D58DD0] bg-[#E5A3DF] text-slate-950",
                       "border-[#899CE8] bg-[#9FB0F4] text-slate-950",
                       "border-[#E88EA3] bg-[#F3A2B4] text-slate-950",
+                      "border-slate-300 bg-slate-100 text-slate-950",
                     ][index],
                   ].join(" ")}
                 >
