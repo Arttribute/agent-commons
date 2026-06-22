@@ -9,6 +9,7 @@ import {
   CheckCircle,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { stripRichTextHtml } from "@/lib/rich-text";
 
 interface Lesson {
   title: string;
@@ -69,7 +70,7 @@ export function CourseOutline({
                 </p>
                 {module.description && (
                   <p className="text-xs text-slate-400 mt-0.5 hidden truncate sm:block">
-                    {module.description}
+                    {stripRichTextHtml(module.description)}
                   </p>
                 )}
               </div>
@@ -118,7 +119,7 @@ export function CourseOutline({
                       </p>
                       {lesson.description && (
                         <p className="text-xs text-slate-400 truncate hidden sm:block">
-                          {lesson.description}
+                          {stripRichTextHtml(lesson.description)}
                         </p>
                       )}
                     </div>

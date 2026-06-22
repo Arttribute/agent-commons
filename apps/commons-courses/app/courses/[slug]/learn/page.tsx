@@ -7,6 +7,7 @@ import { Nav } from "@/components/nav";
 import { AssignmentSubmissions } from "@/components/courses/assignment-submissions";
 import { AnalyticsTracker, useAnalytics } from "@/components/analytics/analytics-tracker";
 import { CourseAgentDrawer } from "@/components/course-agents/course-agent-drawer";
+import { RichTextRenderer } from "@/components/rich-text-renderer";
 import {
   CheckCircle,
   ChevronLeft,
@@ -576,7 +577,7 @@ export default function LearnPage({ params }: Props) {
               {currentLesson?.description && (
                 <div className="prose prose-sm max-w-none">
                   <h3 className="text-base font-bold text-slate-900 mb-3">Lesson Summary</h3>
-                  <p className="text-slate-600 leading-relaxed">{currentLesson.description}</p>
+                  <RichTextRenderer value={currentLesson.description} />
                 </div>
               )}
 
@@ -587,9 +588,7 @@ export default function LearnPage({ params }: Props) {
                     <p className="text-xs font-bold uppercase tracking-widest text-slate-500 mb-2">
                       Module Assignment
                     </p>
-                    <p className="text-sm text-slate-700 leading-relaxed">
-                      {currentModule.assignment}
-                    </p>
+                    <RichTextRenderer value={currentModule.assignment} />
                   </div>
                 )}
 

@@ -7,6 +7,7 @@ import { CoursePaymentOptions } from "@/components/courses/course-payment-option
 import { EnrolledBanner } from "@/components/courses/enrolled-banner";
 import { EnrollmentAwareActions } from "@/components/courses/enrollment-aware-actions";
 import { AnalyticsTracker } from "@/components/analytics/analytics-tracker";
+import { RichTextRenderer } from "@/components/rich-text-renderer";
 import { auth } from "@/lib/auth";
 import { getAppBaseUrl } from "@/lib/app-url";
 import { connectDB } from "@/lib/db";
@@ -382,9 +383,10 @@ export default async function CoursePage({ params, searchParams }: Props) {
                   <h2 className="text-lg font-bold text-slate-900 mb-4">
                     About this course
                   </h2>
-                  <p className="break-words text-[15px] text-slate-800 leading-7">
-                    {course.longDescription}
-                  </p>
+                  <RichTextRenderer
+                    value={course.longDescription}
+                    className="break-words text-slate-800"
+                  />
                 </div>
 
                 <div className="mb-12 rounded-xl border border-slate-200 bg-slate-50 p-6">

@@ -2,6 +2,7 @@ import type mongoose from "mongoose";
 import Assignment from "@/models/Assignment";
 import Course from "@/models/Course";
 import Submission from "@/models/Submission";
+import { stripRichTextHtml } from "@/lib/rich-text";
 import { upsertSearchIndexItem } from "@/lib/vector-search";
 
 type CourseDocument = {
@@ -55,6 +56,7 @@ export async function indexCourseForSearch(course: CourseDocument) {
     title: course.title,
     text: [course.tagline, course.description, course.longDescription]
       .filter(Boolean)
+      .map((item) => stripRichTextHtml(item))
       .join("\n\n"),
     visibility: "course_enrolled",
     metadata: { slug: course.slug },
@@ -67,7 +69,10 @@ export async function indexCourseForSearch(course: CourseDocument) {
       sourceId: String(course._id),
       sourcePath: `modules.${moduleIndex}`,
       title: module.title,
-      text: [module.description, module.assignment].filter(Boolean).join("\n\n"),
+      text: [module.description, module.assignment]
+        .filter(Boolean)
+        .map((item) => stripRichTextHtml(item))
+        .join("\n\n"),
       visibility: "course_enrolled",
       metadata: { slug: course.slug, moduleIndex },
     });
@@ -79,7 +84,10 @@ export async function indexCourseForSearch(course: CourseDocument) {
         sourceId: String(course._id),
         sourcePath: `modules.${moduleIndex}.lessons.${lessonIndex}`,
         title: lesson.title,
-        text: [lesson.duration, lesson.description].filter(Boolean).join("\n\n"),
+        text: [lesson.duration, lesson.description]
+          .filter(Boolean)
+          .map((item) => stripRichTextHtml(item))
+          .join("\n\n"),
         visibility: lesson.isFree ? "course_public" : "course_enrolled",
         metadata: { slug: course.slug, moduleIndex, lessonIndex },
       });

@@ -16,6 +16,7 @@ import {
   Zap,
 } from "lucide-react";
 import { Nav } from "@/components/nav";
+import { RichTextRenderer } from "@/components/rich-text-renderer";
 import { cn } from "@/lib/utils";
 import type { CourseSkillPack, SkillChallenge } from "@/types/skills";
 
@@ -376,7 +377,7 @@ function LessonView({
             {challenge.hook}
           </p>
         ) : null}
-        <p className="text-[15px] leading-7 text-slate-700">{challenge.lesson}</p>
+        <RichTextRenderer value={challenge.lesson} />
       </div>
 
       <div className="mt-4 grid gap-2 sm:grid-cols-3">

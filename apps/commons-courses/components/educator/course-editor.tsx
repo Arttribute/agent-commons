@@ -4,6 +4,7 @@ import { FormEvent, useEffect, useMemo, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { CourseAgentEditor } from "@/components/educator/course-agent-editor";
 import { CourseCollaborators } from "@/components/educator/course-collaborators";
+import { RichTextEditor } from "@/components/educator/rich-text-editor";
 import {
   AccessProgramEditor,
   normalizeAccessProgramForm,
@@ -364,7 +365,7 @@ export function CourseEditor({
           </div>
 
           <TextArea label="Short description" value={course.description} onChange={(value) => setCourse({ ...course, description: value })} />
-          <TextArea label="Long description" value={course.longDescription} onChange={(value) => setCourse({ ...course, longDescription: value })} />
+          <RichTextEditor label="Long description" value={course.longDescription} onChange={(value) => setCourse({ ...course, longDescription: value })} />
 
           <div className="grid gap-4 md:grid-cols-3">
             <MediaField
@@ -754,8 +755,8 @@ export function CourseEditor({
                 Remove module
               </button>
             </div>
-            <TextArea label="Module description" value={module.description || ""} onChange={(value) => updateModule(course, setCourse, moduleIndex, { ...module, description: value })} />
-            <TextArea label="Module assignment prompt" value={module.assignment || ""} onChange={(value) => updateModule(course, setCourse, moduleIndex, { ...module, assignment: value })} />
+            <RichTextEditor label="Module description" value={module.description || ""} onChange={(value) => updateModule(course, setCourse, moduleIndex, { ...module, description: value })} />
+            <RichTextEditor label="Module assignment prompt" value={module.assignment || ""} onChange={(value) => updateModule(course, setCourse, moduleIndex, { ...module, assignment: value })} />
             <div className="mt-4 max-h-[420px] space-y-3 overflow-y-auto rounded-lg border border-slate-200 bg-slate-50 p-3">
               {module.lessons.map((lesson, lessonIndex) => (
                 <div key={lessonIndex} className="grid gap-3 rounded-lg border border-slate-200 bg-white p-3 md:grid-cols-[1fr_120px_auto_auto]">
@@ -775,13 +776,18 @@ export function CourseEditor({
                   >
                     Remove
                   </button>
-                  <textarea
-                    aria-label="Lesson description"
-                    placeholder="Lesson notes, video link, document references, or prep instructions"
-                    value={lesson.description || ""}
-                    onChange={(event) => updateLesson(course, setCourse, moduleIndex, lessonIndex, { ...lesson, description: event.target.value })}
-                    className="min-h-20 rounded-lg border border-slate-200 px-3 py-2 text-sm md:col-span-4"
-                  />
+                  <div className="md:col-span-4">
+                    <RichTextEditor
+                      label="Lesson description"
+                      value={lesson.description || ""}
+                      onChange={(value) =>
+                        updateLesson(course, setCourse, moduleIndex, lessonIndex, {
+                          ...lesson,
+                          description: value,
+                        })
+                      }
+                    />
+                  </div>
                   <input
                     aria-label="Lesson asset URL"
                     placeholder="Lesson asset URL"
@@ -1045,7 +1051,7 @@ function SkillPackEditor({
           onChange={(subtitle) => onChange({ ...skillPack, subtitle })}
         />
       </div>
-      <TextArea
+      <RichTextEditor
         label="Learner promise"
         value={skillPack.learnerPromise || ""}
         onChange={(learnerPromise) => onChange({ ...skillPack, learnerPromise })}
@@ -1195,7 +1201,7 @@ function SkillPackEditor({
                 }
               />
             </div>
-            <TextArea
+            <RichTextEditor
               label="Explanatory lesson"
               value={challenge.lesson}
               onChange={(lesson) =>

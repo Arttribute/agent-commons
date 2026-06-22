@@ -4,6 +4,7 @@ import {
   normalizeCourseStartDate,
   type LiveSchedule,
 } from "@/lib/course-schedule";
+import { sanitizeRichTextHtml } from "@/lib/rich-text";
 import type { CourseAgentConfig } from "@/types/course-agent";
 import type { SkillPack } from "@/types/skills";
 
@@ -137,7 +138,7 @@ function normalizeSkillPack(input?: SkillPack) {
     enabled: Boolean(input.enabled),
     title: input.title?.trim() || "Daily challenges",
     subtitle: input.subtitle?.trim() || undefined,
-    learnerPromise: input.learnerPromise?.trim() || undefined,
+    learnerPromise: sanitizeRichTextHtml(input.learnerPromise) || undefined,
     challenges: challenges
       .map((challenge, index) => ({
         id: challenge.id?.trim() || `challenge-${index + 1}`,
@@ -165,8 +166,8 @@ function normalizeSkillPack(input?: SkillPack) {
         audioCue: ["spark", "focus", "complete"].includes(challenge.audioCue || "")
           ? challenge.audioCue
           : "focus",
-        hook: challenge.hook?.trim() || undefined,
-        lesson: challenge.lesson?.trim() || "",
+        hook: sanitizeRichTextHtml(challenge.hook) || undefined,
+        lesson: sanitizeRichTextHtml(challenge.lesson),
         keyIdeas: Array.isArray(challenge.keyIdeas)
           ? challenge.keyIdeas.map((idea) => idea.trim()).filter(Boolean)
           : [],
@@ -328,9 +329,12 @@ export function normalizeCourseInput(input: CourseInput) {
   const modules = Array.isArray(input.modules)
     ? input.modules.map((module) => ({
         ...module,
+        description: sanitizeRichTextHtml(module.description) || undefined,
+        assignment: sanitizeRichTextHtml(module.assignment) || undefined,
         lessons: Array.isArray(module.lessons)
           ? module.lessons.map((lesson) => ({
               ...lesson,
+              description: sanitizeRichTextHtml(lesson.description) || undefined,
               assetUrl: normalizeImageUrl(lesson.assetUrl),
               assetAlt: lesson.assetAlt?.trim() || undefined,
             }))
@@ -351,6 +355,7 @@ export function normalizeCourseInput(input: CourseInput) {
     ...input,
     currency: (input.currency || "USD").toUpperCase(),
     price: Number(input.price || 0),
+    longDescription: sanitizeRichTextHtml(input.longDescription),
     isFree: Boolean(input.isFree || Number(input.price || 0) <= 0),
     courseType: input.courseType || "self-paced",
     startDate: normalizeCourseStartDate(input.startDate),

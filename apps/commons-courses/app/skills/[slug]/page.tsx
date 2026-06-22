@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { connectDB } from "@/lib/db";
 import { getAppBaseUrl } from "@/lib/app-url";
+import { stripRichTextHtml } from "@/lib/rich-text";
 import Course from "@/models/Course";
 import SkillPathClient from "./skill-path-client";
 
@@ -54,7 +55,9 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   if (!course?.skillPack) return {};
 
   const title = course.skillPack.title || course.title;
-  const description = course.skillPack.learnerPromise || course.skillPack.subtitle;
+  const description = stripRichTextHtml(
+    course.skillPack.learnerPromise || course.skillPack.subtitle
+  );
   const image = getSkillImageUrl(course);
   const url = `${getAppBaseUrl()}/skills/${slug}`;
 

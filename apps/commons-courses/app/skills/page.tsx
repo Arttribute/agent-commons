@@ -13,6 +13,7 @@ import {
   Zap,
 } from "lucide-react";
 import { Nav } from "@/components/nav";
+import { stripRichTextHtml } from "@/lib/rich-text";
 import type { CourseSkillPack, SkillLeaderboardEntry } from "@/types/skills";
 
 type SkillProgress = {
@@ -237,7 +238,7 @@ export default function SkillsPage() {
                       </span>
                     </div>
                     <p className="mt-3 line-clamp-2 text-sm leading-6 text-slate-600">
-                      {pack.learnerPromise || pack.subtitle}
+                      {stripRichTextHtml(pack.learnerPromise || pack.subtitle)}
                     </p>
                     <div className="mt-5 h-2 overflow-hidden rounded-full bg-slate-100">
                       <div
