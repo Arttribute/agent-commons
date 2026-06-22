@@ -279,6 +279,10 @@ export default function SkillPathClient({ slug }: Props) {
                     setFeedback(null);
                   }}
                   onPrevious={() => setQuestionIndex((index) => Math.max(index - 1, 0))}
+                  onBackToLesson={() => {
+                    setMode("learn");
+                    setFeedback(null);
+                  }}
                   onNext={() => {
                     if (selectedAnswer === undefined) return;
                     if (!currentCorrect) {
@@ -424,6 +428,7 @@ function QuizView({
   signInHref,
   onSelect,
   onPrevious,
+  onBackToLesson,
   onNext,
 }: {
   challenge: SkillChallenge;
@@ -437,6 +442,7 @@ function QuizView({
   signInHref: string;
   onSelect: (answerIndex: number) => void;
   onPrevious: () => void;
+  onBackToLesson: () => void;
   onNext: () => void;
 }) {
   const question = challenge.questions[questionIndex];
@@ -459,6 +465,13 @@ function QuizView({
         <p className="text-xs font-bold uppercase tracking-widest text-slate-500">
           Question {questionIndex + 1} of {challenge.questions.length}
         </p>
+        <button
+          type="button"
+          onClick={onBackToLesson}
+          className="text-xs font-bold text-slate-500 hover:text-slate-950"
+        >
+          Back to lesson
+        </button>
         <div className="h-2 w-28 overflow-hidden rounded-full bg-slate-100">
           <div
             className="h-full rounded-full bg-slate-950"
