@@ -24,11 +24,14 @@ export function RichTextEditor({
   onChange: (value: string) => void;
 }) {
   const editorRef = useRef<HTMLDivElement>(null);
+  const editingRef = useRef(false);
 
   useEffect(() => {
     const editor = editorRef.current;
-    if (!editor || editor.innerHTML === value) return;
-    editor.innerHTML = toEditorHtml(value);
+    if (!editor || editingRef.current) return;
+    const nextHtml = toEditorHtml(value);
+    if (editor.innerHTML === nextHtml) return;
+    editor.innerHTML = nextHtml;
   }, [value]);
 
   function run(command: string, commandValue?: string) {
@@ -46,6 +49,17 @@ export function RichTextEditor({
 
   function emitChange() {
     const html = sanitizeRichTextHtml(editorRef.current?.innerHTML || "");
+    onChange(html);
+  }
+
+  function finishEditing() {
+    editingRef.current = false;
+    const editor = editorRef.current;
+    if (!editor) return;
+    const html = sanitizeRichTextHtml(editor.innerHTML);
+    if (editor.innerHTML !== html) {
+      editor.innerHTML = html;
+    }
     onChange(html);
   }
 
@@ -86,8 +100,11 @@ export function RichTextEditor({
           ref={editorRef}
           contentEditable
           suppressContentEditableWarning
+          onFocus={() => {
+            editingRef.current = true;
+          }}
           onInput={emitChange}
-          onBlur={emitChange}
+          onBlur={finishEditing}
           onPaste={(event) => {
             event.preventDefault();
             const text = event.clipboardData.getData("text/plain");
