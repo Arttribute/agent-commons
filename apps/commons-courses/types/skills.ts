@@ -54,6 +54,7 @@ export type CourseSkillPack = SkillPack & {
 export type SkillLeaderboardEntry = {
   userId: string;
   name: string;
+  avatarUrl?: string;
   points: number;
   streak: number;
   longestStreak: number;

@@ -37,4 +37,5 @@ export interface CourseCardData {
   imageUrl?: string | null;
   bannerImageUrl?: string | null;
   previewImageUrl?: string | null;
+  progress?: number;
 }

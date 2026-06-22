@@ -48,6 +48,7 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
           id: user._id.toString(),
           email: user.email,
           name: user.name,
+          image: user.image,
           role: user.role,
           emailVerifiedAt: user.emailVerifiedAt,
         };
@@ -80,6 +81,7 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
           id: user._id.toString(),
           email: user.email,
           name: user.name,
+          image: user.image,
           role: user.role,
           emailVerifiedAt: user.emailVerifiedAt,
         };
@@ -100,6 +102,7 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
           if (!existing.emailVerifiedAt) existing.emailVerifiedAt = new Date();
           existing.authProvider = "google";
           if (!existing.name && user.name) existing.name = user.name;
+          if (user.image) existing.image = user.image;
           await existing.save();
           user.id = existing._id.toString();
           user.role = existing.role;
@@ -109,6 +112,7 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
         const created = await User.create({
           name: user.name || email.split("@")[0],
           email,
+          image: user.image,
           role: "learner",
           authProvider: "google",
           emailVerifiedAt: new Date(),
@@ -128,6 +132,7 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
       if (user) {
         token.id = user.id;
         token.role = user.role;
+        if (user.image) token.picture = user.image;
         token.emailVerifiedAt = (user as { emailVerifiedAt?: Date }).emailVerifiedAt;
       }
       const updatedRole = (
@@ -147,6 +152,9 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
       }
       if (token?.emailVerifiedAt) {
         session.user.emailVerifiedAt = token.emailVerifiedAt as string;
+      }
+      if (token?.picture) {
+        session.user.image = token.picture as string;
       }
       return session;
     },

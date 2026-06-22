@@ -179,6 +179,13 @@ export default function SkillsPage() {
             {cards.map(({ pack, progress }) => {
               const completed = progress.completedChallenges.length;
               const pct = Math.round((completed / pack.challenges.length) * 100);
+              const fullyComplete = completed === pack.challenges.length;
+              const actionLabel =
+                completed > 0 && !fullyComplete
+                  ? "Continue"
+                  : fullyComplete
+                    ? "Review"
+                    : "Start";
               const nextChallenge =
                 pack.challenges.find(
                   (challenge) => !progress.completedChallenges.includes(challenge.id)
@@ -231,7 +238,7 @@ export default function SkillsPage() {
                         </p>
                       </div>
                       <span className="inline-flex items-center gap-1.5 rounded-lg bg-slate-950 px-3 py-2 text-sm font-bold text-white">
-                        Start <ArrowRight className="h-4 w-4" />
+                        {actionLabel} <ArrowRight className="h-4 w-4" />
                       </span>
                     </div>
                   </div>
@@ -273,19 +280,28 @@ export default function SkillsPage() {
                     #{index + 1}
                   </span>
                   <div className="flex min-w-0 items-center gap-3">
-                    <div
-                      className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-sm font-black text-slate-950 ${
-                        index === 0
-                          ? "bg-amber-200"
-                          : index === 1
-                            ? "bg-sky-200"
-                            : index === 2
-                              ? "bg-orange-100"
-                              : "bg-slate-100"
-                      }`}
-                    >
-                      {row.name.slice(0, 1)}
-                    </div>
+                    {row.avatarUrl ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        src={row.avatarUrl}
+                        alt=""
+                        className="h-9 w-9 shrink-0 rounded-full object-cover"
+                      />
+                    ) : (
+                      <div
+                        className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-sm font-black text-slate-950 ${
+                          index === 0
+                            ? "bg-amber-200"
+                            : index === 1
+                              ? "bg-sky-200"
+                              : index === 2
+                                ? "bg-orange-100"
+                                : "bg-slate-100"
+                        }`}
+                      >
+                        {row.name.slice(0, 1)}
+                      </div>
+                    )}
                     <div className="min-w-0">
                       <p className="truncate text-sm font-black text-slate-950">
                         {row.name}

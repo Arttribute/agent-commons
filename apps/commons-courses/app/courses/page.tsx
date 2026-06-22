@@ -1,17 +1,35 @@
 import { Nav } from "@/components/nav";
 import { CourseCard } from "@/components/courses/course-card";
 import { BookOpen, FlaskConical } from "lucide-react";
+import { auth } from "@/lib/auth";
 import { connectDB } from "@/lib/db";
 import Course from "@/models/Course";
+import Enrollment from "@/models/Enrollment";
 import type { CourseCardData } from "@/types";
 
 async function getCourses(): Promise<CourseCardData[]> {
   try {
+    const session = await auth();
     await connectDB();
     const courses = await Course.find({ published: true })
       .select("-modules -longDescription")
       .sort({ createdAt: -1 })
       .lean();
+    const courseIds = courses.map((course) => course._id);
+    const enrollments = session?.user?.id
+      ? await Enrollment.find({
+          userId: session.user.id,
+          courseId: { $in: courseIds },
+        })
+          .select("courseId progress")
+          .lean()
+      : [];
+    const progressByCourseId = new Map(
+      enrollments.map((enrollment) => [
+        enrollment.courseId.toString(),
+        enrollment.progress ?? 0,
+      ])
+    );
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     return courses.map((c: any) => ({
       _id: (c._id as { toString(): string }).toString(),
@@ -34,6 +52,7 @@ async function getCourses(): Promise<CourseCardData[]> {
       imageUrl: c.imageUrl,
       bannerImageUrl: c.bannerImageUrl,
       previewImageUrl: c.previewImageUrl,
+      progress: progressByCourseId.get(c._id.toString()),
     }));
   } catch {
     return [];
@@ -111,7 +130,11 @@ export default async function CoursesPage() {
               </div>
               <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
                 {courses.map((course) => (
-                  <CourseCard key={course._id} course={course} />
+                  <CourseCard
+                    key={course._id}
+                    course={course}
+                    enrolled={course.progress !== undefined}
+                  />
                 ))}
               </div>
             </>

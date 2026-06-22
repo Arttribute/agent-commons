@@ -39,6 +39,13 @@ export function CourseCard({ course, enrolled }: CourseCardProps) {
   const isCourseMedia = Boolean(imageUrl?.includes("/api/media/"));
   const startDateLabel = formatCourseStartDate(course.startDate);
   const liveScheduleSummary = getLiveScheduleSummary(course.liveSchedule);
+  const courseProgress = course.progress ?? 0;
+  const actionLabel =
+    enrolled && courseProgress > 0
+      ? "Continue"
+      : enrolled
+        ? "Start learning"
+        : "View course";
 
   return (
     <Link
@@ -141,7 +148,7 @@ export function CourseCard({ course, enrolled }: CourseCardProps) {
             {formatCoursePrice(course)}
           </span>
           <span className="flex items-center gap-1 text-sm font-semibold text-slate-950">
-            View course <ArrowRight className="h-3.5 w-3.5" />
+            {actionLabel} <ArrowRight className="h-3.5 w-3.5" />
           </span>
         </div>
       </div>

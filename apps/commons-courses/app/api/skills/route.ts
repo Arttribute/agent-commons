@@ -71,6 +71,7 @@ export async function GET() {
             _id: 0,
             userId: { $toString: "$_id" },
             name: "$user.name",
+            avatarUrl: "$user.image",
             points: 1,
             streak: 1,
             longestStreak: 1,
@@ -85,6 +86,9 @@ export async function GET() {
 
   const leaderboard = leaderboardRows.map((row) => ({
     ...row,
+    avatarUrl:
+      row.avatarUrl ||
+      (row.userId === session?.user?.id ? session.user.image ?? undefined : undefined),
     isCurrentUser: row.userId === session?.user?.id,
   }));
 

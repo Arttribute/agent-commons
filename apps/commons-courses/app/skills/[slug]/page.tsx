@@ -279,7 +279,7 @@ export default function SkillPathPage({ params }: Props) {
                   onNext={() => {
                     if (selectedAnswer === undefined) return;
                     if (!currentCorrect) {
-                      setFeedback("Not quite. Revisit the slide and try again.");
+                      setFeedback("Not quite. Review the lesson and try again.");
                       playCue("focus");
                       return;
                     }
@@ -433,6 +433,17 @@ function QuizView({
 }) {
   const question = challenge.questions[questionIndex];
   const isLast = questionIndex === challenge.questions.length - 1;
+  const options = useMemo(
+    () =>
+      question.options
+        .map((option, originalIndex) => ({ option, originalIndex }))
+        .sort(
+          (a, b) =>
+            stableOptionRank(challenge.id, question.id, a.option, a.originalIndex) -
+            stableOptionRank(challenge.id, question.id, b.option, b.originalIndex)
+        ),
+    [challenge.id, question.id, question.options]
+  );
 
   return (
     <div className="flex flex-1 flex-col rounded-xl border border-slate-200 bg-white p-4">
@@ -454,13 +465,13 @@ function QuizView({
         {question.prompt}
       </h2>
       <div className="mt-5 grid gap-3">
-        {question.options.map((option, index) => {
-          const selected = selectedAnswer === index;
+        {options.map(({ option, originalIndex }) => {
+          const selected = selectedAnswer === originalIndex;
           return (
             <button
-              key={option}
+              key={`${question.id}:${originalIndex}`}
               type="button"
-              onClick={() => onSelect(index)}
+              onClick={() => onSelect(originalIndex)}
               className={cn(
                 "rounded-xl border px-4 py-3 text-left text-sm font-semibold leading-6 transition-colors",
                 selected
@@ -561,6 +572,20 @@ function DoneView({
       )}
     </div>
   );
+}
+
+function stableOptionRank(
+  challengeId: string,
+  questionId: string,
+  option: string,
+  index: number
+) {
+  const input = `${challengeId}:${questionId}:${option}:${index}`;
+  let hash = 0;
+  for (let i = 0; i < input.length; i += 1) {
+    hash = (hash * 31 + input.charCodeAt(i)) >>> 0;
+  }
+  return hash;
 }
 
 function DailyPath({
