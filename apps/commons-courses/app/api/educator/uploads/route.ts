@@ -42,6 +42,16 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ url, storage: "s3" });
   }
 
+  if (process.env.NODE_ENV === "production") {
+    return NextResponse.json(
+      {
+        error:
+          "Course media storage is not configured. Set COURSE_MEDIA_S3_BUCKET, COURSE_MEDIA_S3_REGION, and COURSE_MEDIA_CDN_URL.",
+      },
+      { status: 500 }
+    );
+  }
+
   await connectDB();
   const media = await CourseMedia.create({
     filename: file.name,
