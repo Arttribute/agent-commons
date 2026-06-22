@@ -4,9 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import {
   ArrowRight,
-  BadgeCheck,
-  Brain,
-  CheckCircle2,
+  BookOpen,
   Flame,
   Loader2,
   Medal,
@@ -15,176 +13,90 @@ import {
   Zap,
 } from "lucide-react";
 import { Nav } from "@/components/nav";
-import { cn } from "@/lib/utils";
-import type { CourseSkillPack, SkillChallenge } from "@/types/skills";
+import type { CourseSkillPack } from "@/types/skills";
 
 type SkillProgress = {
   authenticated: boolean;
   enrolled: boolean;
   completedChallenges: string[];
-  challengeAnswers: Record<string, number>;
   points: number;
   streak: number;
   longestStreak: number;
-  practicalSignals: Array<{
-    id: string;
-    platform: string;
-    eventType: string;
-    status: "pending" | "verified";
-  }>;
+};
+
+type SkillCard = {
+  pack: CourseSkillPack;
+  progress: SkillProgress;
 };
 
 const emptyProgress: SkillProgress = {
   authenticated: false,
   enrolled: false,
   completedChallenges: [],
-  challengeAnswers: {},
   points: 0,
   streak: 0,
   longestStreak: 0,
-  practicalSignals: [],
 };
 
 export default function SkillsPage() {
   const [packs, setPacks] = useState<CourseSkillPack[]>([]);
-  const [selectedSlug, setSelectedSlug] = useState("");
-  const [selectedChallengeId, setSelectedChallengeId] = useState("");
-  const [progress, setProgress] = useState<SkillProgress>(emptyProgress);
-  const [selectedAnswers, setSelectedAnswers] = useState<Record<string, number>>({});
+  const [progressBySlug, setProgressBySlug] = useState<Record<string, SkillProgress>>({});
   const [loading, setLoading] = useState(true);
-  const [progressLoading, setProgressLoading] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const [feedback, setFeedback] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
-    async function loadPacks() {
+    async function loadSkills() {
       setLoading(true);
       try {
         const res = await fetch("/api/skills");
         const data = (await res.json()) as { packs?: CourseSkillPack[] };
-        if (cancelled) return;
         const nextPacks = data.packs ?? [];
+        if (cancelled) return;
         setPacks(nextPacks);
-        setSelectedSlug((current) => current || nextPacks[0]?.courseSlug || "");
-        setSelectedChallengeId(
-          (current) => current || nextPacks[0]?.challenges[0]?.id || ""
+
+        const progressEntries = await Promise.all(
+          nextPacks.map(async (pack) => {
+            const progressRes = await fetch(`/api/skills/${pack.courseSlug}/progress`);
+            if (!progressRes.ok) {
+              return [pack.courseSlug, { ...emptyProgress, authenticated: progressRes.status !== 401 }] as const;
+            }
+            const progress = (await progressRes.json()) as Partial<SkillProgress>;
+            return [pack.courseSlug, { ...emptyProgress, ...progress }] as const;
+          })
         );
+        if (!cancelled) setProgressBySlug(Object.fromEntries(progressEntries));
       } finally {
         if (!cancelled) setLoading(false);
       }
     }
-    loadPacks();
+    loadSkills();
     return () => {
       cancelled = true;
     };
   }, []);
 
-  const pack = useMemo(
-    () => packs.find((item) => item.courseSlug === selectedSlug) || packs[0],
-    [packs, selectedSlug]
-  );
-
-  const challenge = useMemo(
+  const cards = useMemo<SkillCard[]>(
     () =>
-      pack?.challenges.find((item) => item.id === selectedChallengeId) ||
-      pack?.challenges[0],
-    [pack, selectedChallengeId]
+      packs.map((pack) => ({
+        pack,
+        progress: progressBySlug[pack.courseSlug] || emptyProgress,
+      })),
+    [packs, progressBySlug]
   );
 
-  useEffect(() => {
-    if (!pack) return;
-    let cancelled = false;
-    async function loadProgress() {
-      setProgressLoading(true);
-      try {
-        const res = await fetch(`/api/skills/${pack.courseSlug}/progress`);
-        if (!res.ok) {
-          if (!cancelled) setProgress({ ...emptyProgress, authenticated: res.status !== 401 });
-          return;
-        }
-        const data = (await res.json()) as Partial<SkillProgress>;
-        if (!cancelled) setProgress({ ...emptyProgress, ...data });
-      } finally {
-        if (!cancelled) setProgressLoading(false);
-      }
-    }
-    loadProgress();
-    setSelectedChallengeId(pack.challenges[0]?.id || "");
-    return () => {
-      cancelled = true;
-    };
-  }, [pack]);
-
-  useEffect(() => {
-    if (!challenge) return;
-    const answers = Object.fromEntries(
-      challenge.questions
-        .map((question) => [
-          question.id,
-          progress.challengeAnswers[`${challenge.id}:${question.id}`],
-        ])
-        .filter(([, answer]) => answer !== undefined)
-    ) as Record<string, number>;
-    setSelectedAnswers(answers);
-    setFeedback(null);
-  }, [challenge, progress.challengeAnswers]);
-
-  const completed = Boolean(
-    challenge && progress.completedChallenges.includes(challenge.id)
+  const totals = cards.reduce(
+    (acc, item) => ({
+      points: acc.points + item.progress.points,
+      completed:
+        acc.completed + item.progress.completedChallenges.length,
+      challenges: acc.challenges + item.pack.challenges.length,
+      streak: Math.max(acc.streak, item.progress.streak),
+    }),
+    { points: 0, completed: 0, challenges: 0, streak: 0 }
   );
-  const unlockedIndex = Math.min(
-    progress.completedChallenges.length,
-    Math.max((pack?.challenges.length ?? 1) - 1, 0)
-  );
-  const currentIndex = pack?.challenges.findIndex((item) => item.id === challenge?.id) ?? 0;
-  const locked = currentIndex > unlockedIndex;
-  const answeredCount =
-    challenge?.questions.filter((question) => selectedAnswers[question.id] !== undefined)
-      .length ?? 0;
-  const correctCount =
-    challenge?.questions.filter(
-      (question) => selectedAnswers[question.id] === question.answerIndex
-    ).length ?? 0;
-  const completionPercent = pack
-    ? Math.round((progress.completedChallenges.length / pack.challenges.length) * 100)
+  const completionPct = totals.challenges
+    ? Math.round((totals.completed / totals.challenges) * 100)
     : 0;
-
-  const chooseAnswer = (questionId: string, answerIndex: number) => {
-    if (locked || completed) return;
-    setSelectedAnswers((current) => ({ ...current, [questionId]: answerIndex }));
-  };
-
-  const completeChallenge = async () => {
-    if (!pack || !challenge || locked || completed) return;
-    if (correctCount < challenge.questions.length) {
-      setFeedback("Almost. Answer every quiz question correctly to keep the streak.");
-      playCue("focus");
-      return;
-    }
-
-    setSaving(true);
-    const res = await fetch(`/api/skills/${pack.courseSlug}/progress`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ challengeId: challenge.id, answers: selectedAnswers }),
-    });
-    const data = await res.json();
-    setSaving(false);
-
-    if (!res.ok) {
-      setFeedback(data.error || "Could not save progress yet.");
-      playCue("focus");
-      return;
-    }
-
-    setProgress((current) => ({ ...current, ...data, authenticated: true, enrolled: true }));
-    setFeedback(`+${challenge.points} points. Streak updated.`);
-    playCue(challenge.audioCue || "complete");
-
-    const next = pack.challenges[currentIndex + 1];
-    if (next) window.setTimeout(() => setSelectedChallengeId(next.id), 650);
-  };
 
   if (loading) {
     return (
@@ -197,425 +109,150 @@ export default function SkillsPage() {
     );
   }
 
-  if (!pack || !challenge) {
-    return (
-      <div className="min-h-screen bg-white">
-        <Nav />
-        <main className="mx-auto max-w-3xl px-4 pt-32 text-center sm:px-6">
-          <Sparkles className="mx-auto mb-4 h-8 w-8 text-slate-300" />
-          <h1 className="text-2xl font-semibold text-slate-950">
-            No skill paths are published yet
-          </h1>
-          <p className="mt-3 text-sm leading-6 text-slate-600">
-            Add a `skillPack` to a published course to start rendering daily,
-            gamified AI fluency challenges here.
-          </p>
-          <Link
-            href="/courses"
-            className="mt-6 inline-flex items-center gap-2 rounded-lg bg-slate-950 px-4 py-2 text-sm font-bold text-white"
-          >
-            Browse courses <ArrowRight className="h-4 w-4" />
-          </Link>
-        </main>
-      </div>
-    );
-  }
-
   return (
     <div className="min-h-screen bg-white text-slate-950">
       <Nav />
-      <main className="pt-16">
-        <section className="border-b border-slate-200 bg-white">
-          <div className="mx-auto grid max-w-6xl gap-8 px-4 py-8 sm:px-6 lg:grid-cols-[minmax(0,1fr)_340px] lg:px-8">
-            <div>
-              <div className="mb-5 flex flex-wrap items-center gap-2">
-                <span className="inline-flex items-center gap-1.5 rounded-md border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs font-bold text-slate-700">
-                  <Sparkles className="h-3.5 w-3.5" />
-                  Daily AI fluency
-                </span>
-                <span className="rounded-md bg-[#B8F56D] px-2.5 py-1 text-xs font-bold">
-                  {pack.courseTitle}
-                </span>
-              </div>
-              <h1 className="max-w-3xl text-3xl font-semibold tracking-tight text-slate-950 sm:text-5xl">
-                {pack.title}
-              </h1>
-              {pack.learnerPromise || pack.subtitle ? (
-                <p className="mt-4 max-w-2xl text-[17px] leading-8 text-slate-700">
-                  {pack.learnerPromise || pack.subtitle}
-                </p>
-              ) : null}
-              <div className="mt-6 flex flex-wrap gap-2">
-                <Metric icon={Flame} label={`${progress.streak} day streak`} />
-                <Metric icon={Zap} label={`${progress.points} points`} />
-                <Metric icon={Trophy} label={`${completionPercent}% complete`} />
-              </div>
-            </div>
+      <main className="mx-auto max-w-6xl px-4 pb-10 pt-24 sm:px-6 lg:px-8">
+        <section className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_340px]">
+          <div>
+            <p className="mb-3 inline-flex items-center gap-1.5 rounded-md border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs font-bold text-slate-700">
+              <Sparkles className="h-3.5 w-3.5" />
+              AI fluency skills
+            </p>
+            <h1 className="max-w-2xl text-3xl font-semibold tracking-tight text-slate-950 sm:text-5xl">
+              Build your daily AI fluency streak.
+            </h1>
+            <p className="mt-4 max-w-2xl text-[16px] leading-7 text-slate-700">
+              Short skill paths, focused daily challenges, and quizzes that make
+              the concepts stick.
+            </p>
+          </div>
 
-            <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
-              <div className="flex items-center justify-between gap-3">
-                <div>
-                  <p className="text-xs font-bold uppercase tracking-widest text-slate-500">
-                    Skill scoreboard
-                  </p>
-                  <p className="mt-1 text-sm text-slate-700">
-                    Your course-backed points and streak.
-                  </p>
-                </div>
-                <Medal className="h-5 w-5 text-slate-500" />
-              </div>
-              <div className="mt-4 rounded-lg bg-white px-3 py-3 text-sm">
-                <div className="flex items-center justify-between">
-                  <span className="font-semibold text-slate-900">You</span>
-                  <span className="text-slate-500">{progress.points} pts</span>
-                </div>
-                <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-slate-100">
-                  <div
-                    className="h-full rounded-full bg-slate-950"
-                    style={{ width: `${completionPercent}%` }}
-                  />
-                </div>
-              </div>
-              {progressLoading ? (
-                <p className="mt-3 text-xs text-slate-500">Syncing progress...</p>
-              ) : null}
+          <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+            <p className="text-xs font-bold uppercase tracking-widest text-slate-500">
+              Your stats
+            </p>
+            <div className="mt-4 grid grid-cols-3 gap-2">
+              <Stat icon={Flame} label="Streak" value={String(totals.streak)} />
+              <Stat icon={Zap} label="Points" value={String(totals.points)} />
+              <Stat icon={Trophy} label="Done" value={`${completionPct}%`} />
             </div>
           </div>
         </section>
 
-        <section className="mx-auto grid max-w-6xl gap-6 px-4 py-6 sm:px-6 lg:grid-cols-[280px_minmax(0,1fr)] lg:px-8">
-          <aside className="lg:sticky lg:top-20 lg:self-start">
-            {packs.length > 1 ? (
-              <label className="mb-4 block">
-                <span className="text-xs font-bold uppercase tracking-widest text-slate-500">
-                  Skill path
-                </span>
-                <select
-                  value={pack.courseSlug}
-                  onChange={(event) => setSelectedSlug(event.target.value)}
-                  className="mt-2 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-semibold"
-                >
-                  {packs.map((item) => (
-                    <option key={item.courseSlug} value={item.courseSlug}>
-                      {item.title}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            ) : null}
-            <p className="mb-3 text-xs font-bold uppercase tracking-widest text-slate-500">
-              Daily path
+        {cards.length === 0 ? (
+          <section className="mt-12 rounded-xl border border-dashed border-slate-300 p-10 text-center">
+            <BookOpen className="mx-auto mb-4 h-8 w-8 text-slate-300" />
+            <h2 className="text-xl font-semibold text-slate-950">
+              No skill paths are published yet
+            </h2>
+            <p className="mx-auto mt-3 max-w-md text-sm leading-6 text-slate-600">
+              Add a skillPack to a published course to start rendering daily,
+              gamified AI fluency challenges here.
             </p>
-            <div className="space-y-2">
-              {pack.challenges.map((item, index) => {
-                const itemCompleted = progress.completedChallenges.includes(item.id);
-                const itemLocked = index > unlockedIndex;
-                const active = item.id === challenge.id;
+          </section>
+        ) : (
+          <section className="mt-8 grid gap-4 md:grid-cols-2">
+            {cards.map(({ pack, progress }) => {
+              const completed = progress.completedChallenges.length;
+              const pct = Math.round((completed / pack.challenges.length) * 100);
+              const nextChallenge =
+                pack.challenges.find(
+                  (challenge) => !progress.completedChallenges.includes(challenge.id)
+                ) || pack.challenges[pack.challenges.length - 1];
 
-                return (
-                  <button
-                    key={item.id}
-                    type="button"
-                    disabled={itemLocked}
-                    onClick={() => setSelectedChallengeId(item.id)}
-                    className={cn(
-                      "flex w-full items-center gap-3 rounded-lg border px-3 py-3 text-left transition-colors",
-                      active
-                        ? "border-slate-950 bg-slate-950 text-white"
-                        : "border-slate-200 bg-white text-slate-800 hover:bg-slate-50",
-                      itemLocked && "cursor-not-allowed opacity-45"
-                    )}
-                  >
-                    <span
-                      className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-xs font-black text-slate-950"
-                      style={{ backgroundColor: item.accentColor || "#B8F56D" }}
-                    >
-                      {itemCompleted ? <CheckCircle2 className="h-4 w-4" /> : item.day}
+              return (
+                <Link
+                  key={pack.courseSlug}
+                  href={`/skills/${pack.courseSlug}`}
+                  className="group rounded-xl border border-slate-200 bg-white p-5 transition-all hover:-translate-y-0.5 hover:border-slate-300 hover:shadow-lg"
+                >
+                  <div className="flex items-start justify-between gap-4">
+                    <div>
+                      <p className="text-xs font-bold uppercase tracking-widest text-slate-500">
+                        {pack.courseTitle}
+                      </p>
+                      <h2 className="mt-2 text-2xl font-semibold tracking-tight text-slate-950">
+                        {pack.title}
+                      </h2>
+                    </div>
+                    <span className="rounded-md bg-[#B8F56D] px-2.5 py-1 text-xs font-black text-slate-950">
+                      {completed}/{pack.challenges.length}
                     </span>
-                    <span className="min-w-0 flex-1">
-                      <span className="block truncate text-sm font-bold">
-                        {item.shortTitle || item.title}
-                      </span>
-                      <span
-                        className={cn(
-                          "block text-xs",
-                          active ? "text-white/60" : "text-slate-500"
-                        )}
-                      >
-                        {item.minutes} min · {item.points} pts
-                      </span>
+                  </div>
+                  <p className="mt-3 line-clamp-2 text-sm leading-6 text-slate-600">
+                    {pack.learnerPromise || pack.subtitle}
+                  </p>
+                  <div className="mt-5 h-2 overflow-hidden rounded-full bg-slate-100">
+                    <div
+                      className="h-full rounded-full bg-slate-950 transition-all"
+                      style={{ width: `${pct}%` }}
+                    />
+                  </div>
+                  <div className="mt-5 flex items-center justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="text-xs text-slate-500">Next daily challenge</p>
+                      <p className="truncate text-sm font-bold text-slate-900">
+                        {nextChallenge.shortTitle || nextChallenge.title}
+                      </p>
+                    </div>
+                    <span className="inline-flex items-center gap-1.5 rounded-lg bg-slate-950 px-3 py-2 text-sm font-bold text-white">
+                      Start <ArrowRight className="h-4 w-4" />
                     </span>
-                  </button>
-                );
-              })}
+                  </div>
+                </Link>
+              );
+            })}
+          </section>
+        )}
+
+        <section className="mt-8 rounded-xl border border-slate-200 bg-slate-50 p-5">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-xs font-bold uppercase tracking-widest text-slate-500">
+                Leaderboard
+              </p>
+              <p className="mt-1 text-sm text-slate-600">
+                Your points are ready. Shared leaderboards can plug into the same
+                scoring model next.
+              </p>
             </div>
-          </aside>
-
-          <SkillChallengePanel
-            challenge={challenge}
-            selectedAnswers={selectedAnswers}
-            completed={completed}
-            locked={locked}
-            saving={saving}
-            feedback={feedback}
-            answeredCount={answeredCount}
-            correctCount={correctCount}
-            authenticated={progress.authenticated}
-            onAnswer={chooseAnswer}
-            onComplete={completeChallenge}
-          />
+            <Medal className="h-5 w-5 text-slate-500" />
+          </div>
+          <div className="mt-4 grid gap-2 sm:grid-cols-3">
+            {[
+              ["You", totals.points],
+              ["Amina", 220],
+              ["Kofi", 180],
+            ].map(([name, points], index) => (
+              <div key={name} className="rounded-lg bg-white px-3 py-2 text-sm">
+                <p className="font-bold text-slate-950">
+                  {index + 1}. {name}
+                </p>
+                <p className="text-slate-500">{points} pts</p>
+              </div>
+            ))}
+          </div>
         </section>
       </main>
     </div>
   );
 }
 
-function SkillChallengePanel({
-  challenge,
-  selectedAnswers,
-  completed,
-  locked,
-  saving,
-  feedback,
-  answeredCount,
-  correctCount,
-  authenticated,
-  onAnswer,
-  onComplete,
-}: {
-  challenge: SkillChallenge;
-  selectedAnswers: Record<string, number>;
-  completed: boolean;
-  locked: boolean;
-  saving: boolean;
-  feedback: string | null;
-  answeredCount: number;
-  correctCount: number;
-  authenticated: boolean;
-  onAnswer: (questionId: string, answerIndex: number) => void;
-  onComplete: () => void;
-}) {
-  return (
-    <div className="min-w-0">
-      <div>
-        <article className="min-w-0 rounded-xl border border-slate-200 bg-white">
-          <div className="border-b border-slate-100 p-5">
-            <div className="mb-4 flex flex-wrap items-center gap-2">
-              <span
-                className="rounded-md px-2.5 py-1 text-xs font-black"
-                style={{ backgroundColor: challenge.accentColor || "#B8F56D" }}
-              >
-                Day {challenge.day}
-              </span>
-              <span className="rounded-md border border-slate-200 px-2.5 py-1 text-xs font-bold text-slate-600">
-                {challenge.minutes} minutes
-              </span>
-              <span className="rounded-md border border-slate-200 px-2.5 py-1 text-xs font-bold text-slate-600">
-                {challenge.points} points
-              </span>
-            </div>
-            <h2 className="text-2xl font-semibold tracking-tight text-slate-950">
-              {challenge.title}
-            </h2>
-            {challenge.hook ? (
-              <p className="mt-3 text-[15px] leading-7 text-slate-700">
-                {challenge.hook}
-              </p>
-            ) : null}
-          </div>
-
-          <div className="grid gap-0 lg:grid-cols-[minmax(0,1fr)_260px]">
-            <div className="p-5">
-              <p className="text-[15px] leading-8 text-slate-700">{challenge.lesson}</p>
-
-              {challenge.keyIdeas.length > 0 ? (
-                <div className="mt-6">
-                  <p className="mb-3 text-xs font-bold uppercase tracking-widest text-slate-500">
-                    Key ideas
-                  </p>
-                  <div className="space-y-2">
-                    {challenge.keyIdeas.map((idea) => (
-                      <div
-                        key={idea}
-                        className="flex gap-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700"
-                      >
-                        <Brain className="mt-0.5 h-4 w-4 shrink-0 text-slate-500" />
-                        <span>{idea}</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              ) : null}
-
-              {challenge.microTask ? (
-                <div className="mt-6 rounded-xl border border-[#A6E45E] bg-[#F3FFE4] p-4">
-                  <p className="text-xs font-black uppercase tracking-widest text-slate-600">
-                    Tiny task
-                  </p>
-                  <p className="mt-2 text-sm leading-6 text-slate-800">
-                    {challenge.microTask}
-                  </p>
-                </div>
-              ) : null}
-
-              {challenge.practicalSignal ? (
-                <div className="mt-4 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs leading-5 text-slate-500">
-                  Optional practical check: {challenge.practicalSignal.label}
-                </div>
-              ) : null}
-            </div>
-
-            <div className="border-t border-slate-100 p-5 lg:border-l lg:border-t-0">
-              {challenge.assetUrl ? (
-                <div className="relative aspect-[16/9] overflow-hidden rounded-lg border border-slate-200 bg-slate-100 lg:aspect-[4/5]">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
-                    src={challenge.assetUrl}
-                    alt={challenge.assetAlt || ""}
-                    className="h-full w-full object-cover"
-                  />
-                </div>
-              ) : (
-                <div className="flex aspect-[16/9] items-center justify-center rounded-lg border border-dashed border-slate-300 bg-slate-50 text-sm font-semibold text-slate-400 lg:aspect-[4/5]">
-                  Dynamic asset URL not set
-                </div>
-              )}
-            </div>
-          </div>
-        </article>
-      </div>
-
-      <section className="mt-6 rounded-xl border border-slate-200 bg-white p-5">
-        <div className="mb-5 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <p className="text-xs font-black uppercase tracking-widest text-slate-500">
-              Quick quiz
-            </p>
-            <p className="mt-1 text-sm text-slate-600">
-              {answeredCount}/{challenge.questions.length} answered · {correctCount} correct
-            </p>
-          </div>
-          {completed ? (
-            <span className="inline-flex items-center gap-1.5 rounded-md bg-[#B8F56D] px-3 py-1.5 text-sm font-black text-slate-950">
-              <BadgeCheck className="h-4 w-4" />
-              Completed
-            </span>
-          ) : null}
-        </div>
-
-        <div className="space-y-4">
-          {challenge.questions.map((question) => {
-            const selected = selectedAnswers[question.id];
-            const answered = selected !== undefined;
-            const correct = selected === question.answerIndex;
-
-            return (
-              <div key={question.id} className="rounded-lg border border-slate-200 p-4">
-                <p className="text-sm font-bold text-slate-950">{question.prompt}</p>
-                <div className="mt-3 grid gap-2">
-                  {question.options.map((option, index) => (
-                    <button
-                      key={option}
-                      type="button"
-                      disabled={locked || completed}
-                      onClick={() => onAnswer(question.id, index)}
-                      className={cn(
-                        "rounded-lg border px-3 py-2 text-left text-sm transition-colors",
-                        selected === index
-                          ? correct
-                            ? "border-green-400 bg-green-50 text-green-900"
-                            : "border-rose-300 bg-rose-50 text-rose-900"
-                          : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50",
-                        (locked || completed) && "cursor-default"
-                      )}
-                    >
-                      {option}
-                    </button>
-                  ))}
-                </div>
-                {answered ? (
-                  <p
-                    className={cn(
-                      "mt-3 text-sm leading-6",
-                      correct ? "text-green-700" : "text-rose-700"
-                    )}
-                  >
-                    {correct
-                      ? question.explanation || "Correct."
-                      : "Not quite. Try that one again."}
-                  </p>
-                ) : null}
-              </div>
-            );
-          })}
-        </div>
-
-        <div className="mt-5 flex flex-col gap-3 sm:flex-row sm:items-center">
-          {!authenticated ? (
-            <Link
-              href="/auth/signin"
-              className="inline-flex items-center justify-center gap-2 rounded-lg bg-slate-950 px-5 py-3 text-sm font-bold text-white"
-            >
-              Sign in to save streak <ArrowRight className="h-4 w-4" />
-            </Link>
-          ) : (
-            <button
-              type="button"
-              disabled={locked || completed || saving || !answeredCount}
-              onClick={onComplete}
-              className="inline-flex items-center justify-center gap-2 rounded-lg bg-slate-950 px-5 py-3 text-sm font-bold text-white transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-35"
-            >
-              {saving ? "Saving..." : "Complete daily skill"}
-              <ArrowRight className="h-4 w-4" />
-            </button>
-          )}
-          {feedback ? <p className="text-sm font-semibold text-slate-700">{feedback}</p> : null}
-          {locked ? (
-            <p className="text-sm text-slate-500">Finish earlier days to unlock this.</p>
-          ) : null}
-        </div>
-      </section>
-    </div>
-  );
-}
-
-function Metric({
+function Stat({
   icon: Icon,
   label,
+  value,
 }: {
   icon: typeof Flame;
   label: string;
+  value: string;
 }) {
   return (
-    <span className="inline-flex items-center gap-1.5 rounded-md border border-slate-200 bg-white px-3 py-2 text-sm font-bold text-slate-800">
-      <Icon className="h-4 w-4 text-slate-500" />
-      {label}
-    </span>
+    <div className="rounded-lg bg-white p-3">
+      <Icon className="mb-2 h-4 w-4 text-slate-500" />
+      <p className="text-lg font-black text-slate-950">{value}</p>
+      <p className="text-xs text-slate-500">{label}</p>
+    </div>
   );
-}
-
-function playCue(cue: SkillChallenge["audioCue"]) {
-  const AudioContextClass = window.AudioContext || window.webkitAudioContext;
-  if (!AudioContextClass) return;
-
-  const audio = new AudioContextClass();
-  const oscillator = audio.createOscillator();
-  const gain = audio.createGain();
-  const frequency = cue === "complete" ? 740 : cue === "spark" ? 620 : 440;
-
-  oscillator.frequency.value = frequency;
-  oscillator.type = "sine";
-  gain.gain.setValueAtTime(0.0001, audio.currentTime);
-  gain.gain.exponentialRampToValueAtTime(0.08, audio.currentTime + 0.02);
-  gain.gain.exponentialRampToValueAtTime(0.0001, audio.currentTime + 0.16);
-  oscillator.connect(gain);
-  gain.connect(audio.destination);
-  oscillator.start();
-  oscillator.stop(audio.currentTime + 0.18);
-}
-
-declare global {
-  interface Window {
-    webkitAudioContext?: typeof AudioContext;
-  }
 }
