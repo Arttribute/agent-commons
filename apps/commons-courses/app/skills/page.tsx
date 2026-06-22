@@ -8,10 +8,8 @@ import {
   Brain,
   CheckCircle2,
   Flame,
-  Gauge,
   Loader2,
   Medal,
-  Radio,
   Sparkles,
   Trophy,
   Zap,
@@ -363,8 +361,6 @@ export default function SkillsPage() {
             answeredCount={answeredCount}
             correctCount={correctCount}
             authenticated={progress.authenticated}
-            enrolled={progress.enrolled}
-            courseSlug={pack.courseSlug}
             onAnswer={chooseAnswer}
             onComplete={completeChallenge}
           />
@@ -384,8 +380,6 @@ function SkillChallengePanel({
   answeredCount,
   correctCount,
   authenticated,
-  enrolled,
-  courseSlug,
   onAnswer,
   onComplete,
 }: {
@@ -398,14 +392,12 @@ function SkillChallengePanel({
   answeredCount: number;
   correctCount: number;
   authenticated: boolean;
-  enrolled: boolean;
-  courseSlug: string;
   onAnswer: (questionId: string, answerIndex: number) => void;
   onComplete: () => void;
 }) {
   return (
     <div className="min-w-0">
-      <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_320px]">
+      <div>
         <article className="min-w-0 rounded-xl border border-slate-200 bg-white">
           <div className="border-b border-slate-100 p-5">
             <div className="mb-4 flex flex-wrap items-center gap-2">
@@ -465,6 +457,12 @@ function SkillChallengePanel({
                   </p>
                 </div>
               ) : null}
+
+              {challenge.practicalSignal ? (
+                <div className="mt-4 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs leading-5 text-slate-500">
+                  Optional practical check: {challenge.practicalSignal.label}
+                </div>
+              ) : null}
             </div>
 
             <div className="border-t border-slate-100 p-5 lg:border-l lg:border-t-0">
@@ -485,37 +483,6 @@ function SkillChallengePanel({
             </div>
           </div>
         </article>
-
-        <aside className="rounded-xl border border-slate-200 bg-slate-50 p-5 xl:self-start">
-          <p className="flex items-center gap-2 text-xs font-black uppercase tracking-widest text-slate-500">
-            <Gauge className="h-4 w-4" />
-            Platform evidence
-          </p>
-          <p className="mt-3 text-sm leading-6 text-slate-700">
-            Skill paths can verify practical work through Agent Commons, Common OS,
-            or another connected platform.
-          </p>
-          {challenge.practicalSignal ? (
-            <div className="mt-4 rounded-lg border border-slate-200 bg-white p-3">
-              <p className="flex items-center gap-2 text-sm font-bold text-slate-950">
-                <Radio className="h-4 w-4" />
-                {challenge.practicalSignal.label}
-              </p>
-              <p className="mt-2 text-xs leading-5 text-slate-500">
-                Event: {challenge.practicalSignal.eventType}
-              </p>
-              {challenge.practicalSignal.description ? (
-                <p className="mt-2 text-sm leading-6 text-slate-700">
-                  {challenge.practicalSignal.description}
-                </p>
-              ) : null}
-            </div>
-          ) : (
-            <div className="mt-4 rounded-lg border border-dashed border-slate-300 bg-white p-3 text-sm leading-6 text-slate-600">
-              Concept challenge. No external activity is required for this day.
-            </div>
-          )}
-        </aside>
       </div>
 
       <section className="mt-6 rounded-xl border border-slate-200 bg-white p-5">
@@ -590,13 +557,6 @@ function SkillChallengePanel({
               className="inline-flex items-center justify-center gap-2 rounded-lg bg-slate-950 px-5 py-3 text-sm font-bold text-white"
             >
               Sign in to save streak <ArrowRight className="h-4 w-4" />
-            </Link>
-          ) : !enrolled ? (
-            <Link
-              href={`/courses/${courseSlug}`}
-              className="inline-flex items-center justify-center gap-2 rounded-lg bg-slate-950 px-5 py-3 text-sm font-bold text-white"
-            >
-              Enrol to save progress <ArrowRight className="h-4 w-4" />
             </Link>
           ) : (
             <button

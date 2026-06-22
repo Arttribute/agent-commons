@@ -10,6 +10,8 @@ export interface ILesson {
   title: string;
   duration: string;
   description?: string;
+  assetUrl?: string;
+  assetAlt?: string;
   isFree: boolean;
 }
 
@@ -166,6 +168,8 @@ const LessonSchema = new Schema<ILesson>({
   title: { type: String, required: true },
   duration: { type: String, required: true },
   description: String,
+  assetUrl: String,
+  assetAlt: String,
   isFree: { type: Boolean, default: false },
 });
 

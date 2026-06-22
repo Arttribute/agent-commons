@@ -71,6 +71,8 @@ export type CourseInput = {
       title: string;
       duration: string;
       description?: string;
+      assetUrl?: string;
+      assetAlt?: string;
       isFree?: boolean;
     }>;
   }>;
@@ -323,7 +325,18 @@ export function normalizeAccessProgramInput(input: CourseInput["accessProgram"])
 }
 
 export function normalizeCourseInput(input: CourseInput) {
-  const modules = Array.isArray(input.modules) ? input.modules : [];
+  const modules = Array.isArray(input.modules)
+    ? input.modules.map((module) => ({
+        ...module,
+        lessons: Array.isArray(module.lessons)
+          ? module.lessons.map((lesson) => ({
+              ...lesson,
+              assetUrl: normalizeImageUrl(lesson.assetUrl),
+              assetAlt: lesson.assetAlt?.trim() || undefined,
+            }))
+          : [],
+      }))
+    : [];
   const sessionDates = Array.isArray(input.sessionDates)
     ? input.sessionDates
         .map((value) => normalizeCourseStartDate(value))

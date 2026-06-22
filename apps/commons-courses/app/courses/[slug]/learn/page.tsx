@@ -27,6 +27,8 @@ interface LessonData {
   title: string;
   duration: string;
   description?: string;
+  assetUrl?: string;
+  assetAlt?: string;
   isFree: boolean;
 }
 
@@ -547,18 +549,28 @@ export default function LearnPage({ params }: Props) {
                 )}
               </div>
 
-              {/* Video placeholder */}
-              <div className="aspect-video rounded-2xl bg-slate-100 flex flex-col items-center justify-center mb-8 text-center px-6 border border-slate-200">
-                <div className="w-12 h-12 rounded-full bg-slate-200 flex items-center justify-center mb-3">
-                  <svg className="h-5 w-5 text-slate-400" fill="currentColor" viewBox="0 0 20 20">
-                    <path d="M6.3 2.841A1.5 1.5 0 004 4.11V15.89a1.5 1.5 0 002.3 1.269l9.344-5.89a1.5 1.5 0 000-2.538L6.3 2.84z" />
-                  </svg>
+              {currentLesson?.assetUrl ? (
+                <div className="mb-8 overflow-hidden rounded-2xl border border-slate-200 bg-slate-100">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={currentLesson.assetUrl}
+                    alt={currentLesson.assetAlt || ""}
+                    className="h-auto w-full object-contain"
+                  />
                 </div>
-                <p className="text-sm font-semibold text-slate-600">Video coming soon</p>
-                <p className="text-xs text-slate-400 mt-1">
-                  Read the lesson summary below while we finish recording.
-                </p>
-              </div>
+              ) : (
+                <div className="aspect-video rounded-2xl bg-slate-100 flex flex-col items-center justify-center mb-8 text-center px-6 border border-slate-200">
+                  <div className="w-12 h-12 rounded-full bg-slate-200 flex items-center justify-center mb-3">
+                    <svg className="h-5 w-5 text-slate-400" fill="currentColor" viewBox="0 0 20 20">
+                      <path d="M6.3 2.841A1.5 1.5 0 004 4.11V15.89a1.5 1.5 0 002.3 1.269l9.344-5.89a1.5 1.5 0 000-2.538L6.3 2.84z" />
+                    </svg>
+                  </div>
+                  <p className="text-sm font-semibold text-slate-600">Lesson media coming soon</p>
+                  <p className="text-xs text-slate-400 mt-1">
+                    Read the lesson summary below while we finish preparing this asset.
+                  </p>
+                </div>
+              )}
 
               {/* Lesson description / summary */}
               {currentLesson?.description && (

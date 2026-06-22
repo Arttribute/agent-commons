@@ -10,6 +10,7 @@ import type { Types } from "mongoose";
 type CourseWithSkillPack = {
   _id: Types.ObjectId;
   slug: string;
+  isFree?: boolean;
   skillPack?: {
     enabled?: boolean;
     challenges?: SkillChallenge[];
@@ -24,12 +25,14 @@ type SkillProgress = {
   streak?: number;
   longestStreak?: number;
   lastChallengeCompletedAt?: Date;
-  practicalSignals?: Array<{
-    id: string;
-    platform: string;
-    eventType: string;
-    status: "pending" | "verified";
-  }>;
+  practicalSignals?: SkillProgressSignal[];
+};
+
+type SkillProgressSignal = {
+  id: string;
+  platform: string;
+  eventType: string;
+  status: "pending" | "verified";
 };
 
 export async function GET(
@@ -48,21 +51,17 @@ export async function GET(
     published: true,
     "skillPack.enabled": true,
   })
-    .select("_id")
+    .select("_id isFree")
     .lean()) as CourseWithSkillPack | null;
 
   if (!course) {
     return NextResponse.json({ error: "Skill pack not found." }, { status: 404 });
   }
 
-  const enrollment = (await Enrollment.findOne({
+  const enrollment = await findOrCreateFreeSkillEnrollment({
     userId: session.user.id,
-    courseId: course._id,
-  })
-    .select(
-      "completedChallenges challengeAnswers points streak longestStreak lastChallengeCompletedAt practicalSignals"
-    )
-    .lean()) as SkillProgress | null;
+    course,
+  });
 
   if (!enrollment) {
     return NextResponse.json({
@@ -88,6 +87,45 @@ export async function GET(
     lastChallengeCompletedAt: enrollment.lastChallengeCompletedAt,
     practicalSignals: enrollment.practicalSignals ?? [],
   });
+}
+
+async function findOrCreateFreeSkillEnrollment({
+  userId,
+  course,
+}: {
+  userId: string;
+  course: CourseWithSkillPack;
+}) {
+  const enrollment = (await Enrollment.findOne({
+    userId,
+    courseId: course._id,
+  })
+    .select(
+      "completedChallenges challengeAnswers points streak longestStreak lastChallengeCompletedAt practicalSignals"
+    )
+    .lean()) as SkillProgress | null;
+
+  if (enrollment || !course.isFree) return enrollment;
+
+  const created = await Enrollment.create({
+    userId,
+    courseId: course._id,
+    status: "active",
+    accessLevel: "full",
+    paymentStatus: "free",
+    accessSource: "free",
+  });
+
+  return {
+    _id: created._id,
+    completedChallenges: created.completedChallenges ?? [],
+    challengeAnswers: {},
+    points: created.points ?? 0,
+    streak: created.streak ?? 0,
+    longestStreak: created.longestStreak ?? 0,
+    lastChallengeCompletedAt: created.lastChallengeCompletedAt,
+    practicalSignals: created.practicalSignals ?? [],
+  } satisfies SkillProgress;
 }
 
 export async function POST(
@@ -117,7 +155,7 @@ export async function POST(
     published: true,
     "skillPack.enabled": true,
   })
-    .select("_id slug skillPack")
+    .select("_id slug isFree skillPack")
     .lean()) as CourseWithSkillPack | null;
 
   const challenge = course?.skillPack?.challenges?.find(
@@ -137,10 +175,10 @@ export async function POST(
     );
   }
 
-  const enrollment = (await Enrollment.findOne({
+  const enrollment = await findOrCreateFreeSkillEnrollment({
     userId: session.user.id,
-    courseId: course._id,
-  })) as SkillProgress | null;
+    course,
+  });
 
   if (!enrollment) {
     return NextResponse.json(
@@ -169,7 +207,8 @@ export async function POST(
   const practicalSignals = challenge.practicalSignal
     ? [
         ...(enrollment.practicalSignals ?? []).filter(
-          (signal) => signal.id !== challenge.practicalSignal?.id
+          (signal: SkillProgressSignal) =>
+            signal.id !== challenge.practicalSignal?.id
         ),
         {
           id: challenge.practicalSignal.id,

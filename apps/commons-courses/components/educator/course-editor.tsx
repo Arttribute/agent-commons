@@ -19,6 +19,8 @@ type Lesson = {
   title: string;
   duration: string;
   description?: string;
+  assetUrl?: string;
+  assetAlt?: string;
   isFree?: boolean;
 };
 
@@ -762,6 +764,20 @@ export function CourseEditor({
                     value={lesson.description || ""}
                     onChange={(event) => updateLesson(course, setCourse, moduleIndex, lessonIndex, { ...lesson, description: event.target.value })}
                     className="min-h-20 rounded-lg border border-slate-200 px-3 py-2 text-sm md:col-span-4"
+                  />
+                  <input
+                    aria-label="Lesson asset URL"
+                    placeholder="Lesson asset URL"
+                    value={lesson.assetUrl || ""}
+                    onChange={(event) => updateLesson(course, setCourse, moduleIndex, lessonIndex, { ...lesson, assetUrl: event.target.value })}
+                    className="rounded-lg border border-slate-200 px-3 py-2 text-sm md:col-span-2"
+                  />
+                  <input
+                    aria-label="Lesson asset alt text"
+                    placeholder="Asset alt text"
+                    value={lesson.assetAlt || ""}
+                    onChange={(event) => updateLesson(course, setCourse, moduleIndex, lessonIndex, { ...lesson, assetAlt: event.target.value })}
+                    className="rounded-lg border border-slate-200 px-3 py-2 text-sm md:col-span-2"
                   />
                 </div>
               ))}
