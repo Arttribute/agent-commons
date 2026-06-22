@@ -90,14 +90,22 @@ export default function SkillsPage() {
   );
 
   const totals = cards.reduce(
-    (acc, item) => ({
-      points: acc.points + item.progress.points,
-      completed:
-        acc.completed + item.progress.completedChallenges.length,
-      challenges: acc.challenges + item.pack.challenges.length,
-      streak: Math.max(acc.streak, item.progress.streak),
-    }),
-    { points: 0, completed: 0, challenges: 0, streak: 0 }
+    (acc, item) => {
+      const completed = item.progress.completedChallenges.length;
+      const earned =
+        item.pack.challenges.length > 0 && completed >= item.pack.challenges.length;
+      const inProgress = completed > 0 && !earned;
+
+      return {
+        points: acc.points + item.progress.points,
+        completed: acc.completed + completed,
+        earnedSkills: acc.earnedSkills + (earned ? 1 : 0),
+        inProgress: acc.inProgress + (inProgress ? 1 : 0),
+        challenges: acc.challenges + item.pack.challenges.length,
+        streak: Math.max(acc.streak, item.progress.streak),
+      };
+    },
+    { points: 0, completed: 0, earnedSkills: 0, inProgress: 0, challenges: 0, streak: 0 }
   );
 
   if (loading) {
@@ -152,12 +160,17 @@ export default function SkillsPage() {
               />
               <Stat
                 icon={Trophy}
-                label="Badges"
-                value={String(totals.completed)}
+                label="Earned"
+                value={String(totals.earnedSkills)}
                 color="text-amber-500"
                 bg="bg-amber-50"
               />
             </div>
+            {totals.inProgress > 0 ? (
+              <p className="mt-3 text-right text-xs font-semibold text-slate-500">
+                {totals.inProgress} skill path{totals.inProgress === 1 ? "" : "s"} in progress
+              </p>
+            ) : null}
           </div>
         </section>
 
@@ -216,7 +229,11 @@ export default function SkillsPage() {
                         </h2>
                       </div>
                       <span className="rounded-md bg-[#B8F56D] px-2.5 py-1 text-xs font-black text-slate-950">
-                        {completed} badge{completed === 1 ? "" : "s"}
+                        {fullyComplete
+                          ? "Earned"
+                          : completed > 0
+                            ? `${completed}/${pack.challenges.length}`
+                            : `${pack.challenges.length} days`}
                       </span>
                     </div>
                     <p className="mt-3 line-clamp-2 text-sm leading-6 text-slate-600">
@@ -270,7 +287,7 @@ export default function SkillsPage() {
               leaderboard.map((row, index) => (
                 <div
                   key={row.userId}
-                  className={`grid grid-cols-[auto_1fr_auto] items-center gap-3 border-b border-slate-100 px-3 py-3 last:border-b-0 sm:grid-cols-[auto_1fr_90px_90px_90px_90px] ${
+                  className={`grid grid-cols-[auto_1fr_auto] items-center gap-3 border-b border-slate-100 px-3 py-3 last:border-b-0 sm:grid-cols-[auto_1fr_90px_90px_90px_90px_90px] ${
                     row.isCurrentUser ? "bg-lime-50/70" : ""
                   }`}
                 >
@@ -316,7 +333,10 @@ export default function SkillsPage() {
                     {row.streak} day
                   </p>
                   <p className="hidden text-right text-sm font-semibold text-amber-600 sm:block">
-                    {row.completedSkills} badges
+                    {row.completedSkills} earned
+                  </p>
+                  <p className="hidden text-right text-xs font-semibold text-sky-600 sm:block">
+                    {row.skillPathsInProgress || 0} active
                   </p>
                   <p className="hidden text-right text-sm font-semibold text-slate-500 sm:block">
                     {row.skillPathsStarted} paths

@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import {
   ArrowLeft,
   ArrowRight,
@@ -43,6 +44,7 @@ const emptyProgress: SkillProgress = {
 };
 
 export default function SkillPathClient({ slug }: Props) {
+  const pathname = usePathname();
   const [pack, setPack] = useState<CourseSkillPack | null>(null);
   const [progress, setProgress] = useState<SkillProgress>(emptyProgress);
   const [selectedChallengeId, setSelectedChallengeId] = useState("");
@@ -267,6 +269,7 @@ export default function SkillPathClient({ slug }: Props) {
                   feedback={feedback}
                   saving={saving}
                   authenticated={progress.authenticated}
+                  signInHref={`/auth/signin?callbackUrl=${encodeURIComponent(pathname)}`}
                   onSelect={(answerIndex) => {
                     setSelectedAnswers((current) => ({
                       ...current,
@@ -301,6 +304,7 @@ export default function SkillPathClient({ slug }: Props) {
                 <LessonView
                   challenge={challenge}
                   authenticated={progress.authenticated}
+                  signInHref={`/auth/signin?callbackUrl=${encodeURIComponent(pathname)}`}
                   onStartQuiz={() => setMode("quiz")}
                 />
               )}
@@ -345,10 +349,12 @@ export default function SkillPathClient({ slug }: Props) {
 function LessonView({
   challenge,
   authenticated,
+  signInHref,
   onStartQuiz,
 }: {
   challenge: SkillChallenge;
   authenticated: boolean;
+  signInHref: string;
   onStartQuiz: () => void;
 }) {
   return (
@@ -384,10 +390,10 @@ function LessonView({
         ))}
       </div>
 
-      <div className="mt-4 flex flex-col gap-2 sm:mt-auto sm:flex-row sm:items-center sm:justify-between">
+      <div className="sticky bottom-0 -mx-4 mt-4 flex flex-col gap-2 border-t border-slate-100 bg-white/95 px-4 py-3 backdrop-blur sm:mt-auto sm:flex-row sm:items-center sm:justify-between sm:border-t-0 sm:bg-transparent sm:px-0 sm:backdrop-blur-none">
         {!authenticated ? (
           <Link
-            href="/auth/signin"
+            href={signInHref}
             className="inline-flex items-center justify-center gap-2 rounded-lg bg-slate-950 px-5 py-3 text-sm font-bold text-white"
           >
             Sign in to save streak <ArrowRight className="h-4 w-4" />
@@ -414,6 +420,7 @@ function QuizView({
   feedback,
   saving,
   authenticated,
+  signInHref,
   onSelect,
   onPrevious,
   onNext,
@@ -426,6 +433,7 @@ function QuizView({
   feedback: string | null;
   saving: boolean;
   authenticated: boolean;
+  signInHref: string;
   onSelect: (answerIndex: number) => void;
   onPrevious: () => void;
   onNext: () => void;
@@ -497,7 +505,7 @@ function QuizView({
         </p>
       ) : null}
 
-      <div className="mt-auto flex items-center justify-between gap-3 pt-6">
+      <div className="sticky bottom-0 -mx-4 mt-auto flex items-center justify-between gap-3 border-t border-slate-100 bg-white/95 px-4 py-3 pt-3 backdrop-blur">
         <button
           type="button"
           onClick={onPrevious}
@@ -519,7 +527,7 @@ function QuizView({
           </button>
         ) : (
           <Link
-            href="/auth/signin"
+            href={signInHref}
             className="inline-flex items-center gap-1.5 rounded-lg bg-slate-950 px-5 py-3 text-sm font-bold text-white"
           >
             Sign in

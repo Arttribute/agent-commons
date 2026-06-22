@@ -70,7 +70,7 @@ export default async function CourseDashboardPage({
           icon={Award}
           title="Attach daily skill badges"
           body="Create atomic challenges that can live inside this course and also stand alone on the Skills page."
-          href={`/educator/courses/${slug}/content`}
+          href={`/educator/courses/${slug}/skills`}
         />
         <ActionCard
           icon={CreditCard}

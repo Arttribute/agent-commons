@@ -59,6 +59,7 @@ export type SkillLeaderboardEntry = {
   streak: number;
   longestStreak: number;
   completedSkills: number;
+  skillPathsInProgress?: number;
   skillPathsStarted: number;
   isCurrentUser?: boolean;
 };

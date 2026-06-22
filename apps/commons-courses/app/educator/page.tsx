@@ -112,8 +112,8 @@ export default async function EducatorDashboardPage() {
             icon={Award}
             title="Skill badges"
             body="Attach atomic daily challenges to courses so learners can earn skills and keep streaks."
-            href="/skills"
-            action="View skills"
+            href="/educator/skills"
+            action="Manage skills"
           />
           <FormatCard
             icon={Rocket}

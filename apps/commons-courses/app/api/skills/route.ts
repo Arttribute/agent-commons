@@ -44,14 +44,60 @@ export async function GET() {
           },
         },
         {
+          $lookup: {
+            from: "courses",
+            localField: "courseId",
+            foreignField: "_id",
+            as: "course",
+          },
+        },
+        { $unwind: "$course" },
+        {
+          $project: {
+            userId: 1,
+            points: { $ifNull: ["$points", 0] },
+            streak: { $ifNull: ["$streak", 0] },
+            longestStreak: { $ifNull: ["$longestStreak", 0] },
+            completedCount: {
+              $size: { $ifNull: ["$completedChallenges", []] },
+            },
+            challengeCount: {
+              $size: { $ifNull: ["$course.skillPack.challenges", []] },
+            },
+          },
+        },
+        {
           $group: {
             _id: "$userId",
-            points: { $sum: { $ifNull: ["$points", 0] } },
-            streak: { $max: { $ifNull: ["$streak", 0] } },
-            longestStreak: { $max: { $ifNull: ["$longestStreak", 0] } },
+            points: { $sum: "$points" },
+            streak: { $max: "$streak" },
+            longestStreak: { $max: "$longestStreak" },
             completedSkills: {
               $sum: {
-                $size: { $ifNull: ["$completedChallenges", []] },
+                $cond: [
+                  {
+                    $and: [
+                      { $gt: ["$challengeCount", 0] },
+                      { $gte: ["$completedCount", "$challengeCount"] },
+                    ],
+                  },
+                  1,
+                  0,
+                ],
+              },
+            },
+            skillPathsInProgress: {
+              $sum: {
+                $cond: [
+                  {
+                    $and: [
+                      { $gt: ["$completedCount", 0] },
+                      { $lt: ["$completedCount", "$challengeCount"] },
+                    ],
+                  },
+                  1,
+                  0,
+                ],
               },
             },
             skillPathsStarted: { $sum: 1 },
@@ -76,6 +122,7 @@ export async function GET() {
             streak: 1,
             longestStreak: 1,
             completedSkills: 1,
+            skillPathsInProgress: 1,
             skillPathsStarted: 1,
           },
         },

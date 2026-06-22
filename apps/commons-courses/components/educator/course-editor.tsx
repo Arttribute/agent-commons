@@ -14,6 +14,7 @@ import { defaultCourseAgents } from "@/lib/course-agent-defaults";
 import type { LiveSchedule } from "@/lib/course-schedule";
 import { cn } from "@/lib/utils";
 import type { CourseAgentConfig } from "@/types/course-agent";
+import type { SkillChallenge, SkillPack, SkillQuestion } from "@/types/skills";
 
 type Lesson = {
   title: string;
@@ -77,6 +78,7 @@ type CourseForm = {
     customIntro?: string;
   };
   modules: Module[];
+  skillPack: SkillPack;
   agents: CourseAgentConfig[];
 };
 
@@ -95,6 +97,7 @@ export type CourseEditorSection =
   | "notifications"
   | "agents"
   | "content"
+  | "skills"
   | "collaborators";
 
 const emptyCourse: CourseForm = {
@@ -151,6 +154,13 @@ const emptyCourse: CourseForm = {
     },
   ],
   agents: defaultCourseAgents,
+  skillPack: {
+    enabled: false,
+    title: "Daily skill challenges",
+    subtitle: "",
+    learnerPromise: "",
+    challenges: [],
+  },
 };
 
 export function CourseEditor({
@@ -284,7 +294,7 @@ export function CourseEditor({
   }
 
   async function uploadMedia(
-    field: "imageUrl" | "bannerImageUrl" | "previewImageUrl",
+    field: "imageUrl" | "bannerImageUrl" | "previewImageUrl" | `skillPack.${number}.assetUrl`,
     file?: File
   ) {
     if (!file) return;
@@ -305,7 +315,14 @@ export function CourseEditor({
       });
       return;
     }
-    setCourse((current) => ({ ...current, [field]: data.url }));
+    if (field.startsWith("skillPack.")) {
+      const challengeIndex = Number(field.split(".")[1]);
+      setCourse((current) =>
+        updateSkillChallengeValue(current, challengeIndex, { assetUrl: data.url })
+      );
+    } else {
+      setCourse((current) => ({ ...current, [field]: data.url }));
+    }
     toast({
       tone: "success",
       title: "Image uploaded",
@@ -793,6 +810,17 @@ export function CourseEditor({
       </section>
       )}
 
+      {show("skills") && (
+        <SkillPackEditor
+          skillPack={course.skillPack}
+          uploadingMedia={uploadingMedia}
+          onChange={(skillPack) => setCourse({ ...course, skillPack })}
+          onUpload={(challengeIndex, file) =>
+            uploadMedia(`skillPack.${challengeIndex}.assetUrl`, file)
+          }
+        />
+      )}
+
       <div className="sticky bottom-4 z-10 flex flex-wrap items-center justify-end gap-3">
         <div className="rounded-lg border border-slate-200 bg-white/95 px-3 py-2 text-xs font-bold text-slate-500 shadow-sm backdrop-blur">
           {hasUnsavedChanges
@@ -825,6 +853,7 @@ function getSectionLabel(section: CourseEditorSection) {
     notifications: "Notifications",
     agents: "Course agents",
     content: "Content",
+    skills: "Skill badges",
     collaborators: "Collaborators",
   };
   return labels[section];
@@ -848,6 +877,11 @@ function hydrateCourse(course: CourseResponse): CourseForm {
       : "",
     tagsText: Array.isArray(course.tags) ? course.tags.join(", ") : "",
     modules: course.modules?.length ? course.modules : emptyCourse.modules,
+    skillPack: {
+      ...emptyCourse.skillPack,
+      ...(course.skillPack || {}),
+      challenges: course.skillPack?.challenges || [],
+    },
     agents: course.agents?.length ? course.agents : emptyCourse.agents,
     installmentPlan: {
       ...emptyCourse.installmentPlan,
@@ -924,6 +958,8 @@ function getSectionSnapshot(course: CourseForm, section: CourseEditorSection) {
       return payload.agents;
     case "content":
       return payload.modules;
+    case "skills":
+      return payload.skillPack;
     case "collaborators":
       return {};
     case "all":
@@ -972,6 +1008,406 @@ function EditorPanel({
       {children}
     </section>
   );
+}
+
+function SkillPackEditor({
+  skillPack,
+  uploadingMedia,
+  onChange,
+  onUpload,
+}: {
+  skillPack: SkillPack;
+  uploadingMedia: string | null;
+  onChange: (skillPack: SkillPack) => void;
+  onUpload: (challengeIndex: number, file?: File) => void;
+}) {
+  const challenges = skillPack.challenges || [];
+
+  return (
+    <EditorPanel
+      title="Skill badges"
+      description="Create atomic daily challenges that can stand alone on the Skills page or reinforce this course."
+    >
+      <div className="grid gap-4 md:grid-cols-[auto_1fr_1fr]">
+        <Toggle
+          label="Publish skill path"
+          checked={skillPack.enabled}
+          onChange={(enabled) => onChange({ ...skillPack, enabled })}
+        />
+        <Field
+          label="Skill path title"
+          value={skillPack.title || ""}
+          onChange={(title) => onChange({ ...skillPack, title })}
+        />
+        <Field
+          label="Short subtitle"
+          value={skillPack.subtitle || ""}
+          onChange={(subtitle) => onChange({ ...skillPack, subtitle })}
+        />
+      </div>
+      <TextArea
+        label="Learner promise"
+        value={skillPack.learnerPromise || ""}
+        onChange={(learnerPromise) => onChange({ ...skillPack, learnerPromise })}
+      />
+
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <h3 className="text-sm font-black text-slate-950">Daily challenges</h3>
+          <p className="mt-1 text-xs leading-5 text-slate-500">
+            A completed full path counts as one earned skill.
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={() =>
+            onChange({
+              ...skillPack,
+              challenges: [...challenges, createSkillChallenge(challenges.length)],
+            })
+          }
+          className="rounded-lg border border-slate-200 px-3 py-2 text-xs font-bold hover:bg-slate-50"
+        >
+          Add challenge
+        </button>
+      </div>
+
+      <div className="space-y-4">
+        {challenges.length === 0 ? (
+          <div className="rounded-lg border border-dashed border-slate-300 p-5 text-sm leading-6 text-slate-600">
+            Add the first daily challenge to make this skill path appear once the
+            course is published.
+          </div>
+        ) : null}
+
+        {challenges.map((challenge, challengeIndex) => (
+          <div key={challenge.id || challengeIndex} className="rounded-lg border border-slate-200 bg-slate-50 p-4">
+            <div className="mb-4 flex items-start justify-between gap-3">
+              <div>
+                <p className="text-xs font-bold uppercase tracking-widest text-slate-500">
+                  Day {challengeIndex + 1}
+                </p>
+                <h4 className="mt-1 text-base font-black text-slate-950">
+                  {challenge.title || "Untitled challenge"}
+                </h4>
+              </div>
+              <button
+                type="button"
+                onClick={() =>
+                  onChange({
+                    ...skillPack,
+                    challenges: challenges.filter((_, index) => index !== challengeIndex),
+                  })
+                }
+                className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-600 hover:bg-white"
+              >
+                Remove
+              </button>
+            </div>
+
+            <div className="grid gap-3 md:grid-cols-4">
+              <Field
+                label="Title"
+                value={challenge.title}
+                onChange={(title) =>
+                  onChange(updateSkillPackChallenge(skillPack, challengeIndex, { title }))
+                }
+              />
+              <Field
+                label="Short title"
+                value={challenge.shortTitle || ""}
+                onChange={(shortTitle) =>
+                  onChange(updateSkillPackChallenge(skillPack, challengeIndex, { shortTitle }))
+                }
+              />
+              <Field
+                label="Minutes"
+                type="number"
+                value={String(challenge.minutes || 5)}
+                onChange={(minutes) =>
+                  onChange(
+                    updateSkillPackChallenge(skillPack, challengeIndex, {
+                      minutes: Number(minutes) || 5,
+                    })
+                  )
+                }
+              />
+              <Field
+                label="Points"
+                type="number"
+                value={String(challenge.points || 50)}
+                onChange={(points) =>
+                  onChange(
+                    updateSkillPackChallenge(skillPack, challengeIndex, {
+                      points: Number(points) || 50,
+                    })
+                  )
+                }
+              />
+            </div>
+
+            <div className="mt-3 grid gap-3 md:grid-cols-[1fr_1fr_120px]">
+              <MediaField
+                label="Challenge image URL"
+                value={challenge.assetUrl || ""}
+                onChange={(assetUrl) =>
+                  onChange(updateSkillPackChallenge(skillPack, challengeIndex, { assetUrl }))
+                }
+                onUpload={(file) => onUpload(challengeIndex, file)}
+                uploading={uploadingMedia === `skillPack.${challengeIndex}.assetUrl`}
+              />
+              <Field
+                label="Image alt text"
+                value={challenge.assetAlt || ""}
+                onChange={(assetAlt) =>
+                  onChange(updateSkillPackChallenge(skillPack, challengeIndex, { assetAlt }))
+                }
+              />
+              <Field
+                label="Accent"
+                value={challenge.accentColor || "#B8F56D"}
+                onChange={(accentColor) =>
+                  onChange(updateSkillPackChallenge(skillPack, challengeIndex, { accentColor }))
+                }
+              />
+            </div>
+
+            <div className="mt-3 grid gap-3 md:grid-cols-2">
+              <TextArea
+                label="Hook"
+                value={challenge.hook || ""}
+                onChange={(hook) =>
+                  onChange(updateSkillPackChallenge(skillPack, challengeIndex, { hook }))
+                }
+              />
+              <TextArea
+                label="Key ideas"
+                value={(challenge.keyIdeas || []).join("\n")}
+                onChange={(value) =>
+                  onChange(
+                    updateSkillPackChallenge(skillPack, challengeIndex, {
+                      keyIdeas: value
+                        .split(/\n|,/)
+                        .map((item) => item.trim())
+                        .filter(Boolean),
+                    })
+                  )
+                }
+              />
+            </div>
+            <TextArea
+              label="Explanatory lesson"
+              value={challenge.lesson}
+              onChange={(lesson) =>
+                onChange(updateSkillPackChallenge(skillPack, challengeIndex, { lesson }))
+              }
+            />
+
+            <div className="mt-4 rounded-lg border border-slate-200 bg-white p-3">
+              <div className="mb-3 flex items-center justify-between gap-3">
+                <p className="text-sm font-black text-slate-950">Quiz questions</p>
+                <button
+                  type="button"
+                  onClick={() =>
+                    onChange(
+                      updateSkillPackChallenge(skillPack, challengeIndex, {
+                        questions: [
+                          ...(challenge.questions || []),
+                          createSkillQuestion(challenge.questions?.length || 0),
+                        ],
+                      })
+                    )
+                  }
+                  className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-bold hover:bg-slate-50"
+                >
+                  Add question
+                </button>
+              </div>
+              <div className="space-y-3">
+                {(challenge.questions || []).map((question, questionIndex) => (
+                  <QuestionEditor
+                    key={question.id || questionIndex}
+                    question={question}
+                    onChange={(nextQuestion) =>
+                      onChange(
+                        updateSkillPackChallenge(skillPack, challengeIndex, {
+                          questions: updateQuestionList(
+                            challenge.questions || [],
+                            questionIndex,
+                            nextQuestion
+                          ),
+                        })
+                      )
+                    }
+                    onRemove={() =>
+                      onChange(
+                        updateSkillPackChallenge(skillPack, challengeIndex, {
+                          questions: (challenge.questions || []).filter(
+                            (_, index) => index !== questionIndex
+                          ),
+                        })
+                      )
+                    }
+                  />
+                ))}
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+    </EditorPanel>
+  );
+}
+
+function QuestionEditor({
+  question,
+  onChange,
+  onRemove,
+}: {
+  question: SkillQuestion;
+  onChange: (question: SkillQuestion) => void;
+  onRemove: () => void;
+}) {
+  const options = question.options.length ? question.options : ["", ""];
+
+  return (
+    <div className="rounded-lg border border-slate-200 bg-white p-3">
+      <div className="grid gap-3 md:grid-cols-[1fr_auto]">
+        <Field
+          label="Question"
+          value={question.prompt}
+          onChange={(prompt) => onChange({ ...question, prompt })}
+        />
+        <button
+          type="button"
+          onClick={onRemove}
+          className="self-end rounded-lg border border-slate-200 px-3 py-2 text-xs font-bold text-slate-600 hover:bg-slate-50"
+        >
+          Remove
+        </button>
+      </div>
+      <div className="mt-3 grid gap-2 md:grid-cols-2">
+        {options.map((option, optionIndex) => (
+          <label key={optionIndex} className="block">
+            <span className="text-xs font-bold text-slate-600">
+              Option {optionIndex + 1}
+            </span>
+            <div className="mt-1 flex gap-2">
+              <input
+                value={option}
+                onChange={(event) => {
+                  const nextOptions = [...options];
+                  nextOptions[optionIndex] = event.target.value;
+                  onChange({ ...question, options: nextOptions });
+                }}
+                className="min-w-0 flex-1 rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-slate-400"
+              />
+              <input
+                type="radio"
+                checked={question.answerIndex === optionIndex}
+                onChange={() => onChange({ ...question, answerIndex: optionIndex })}
+                aria-label={`Mark option ${optionIndex + 1} correct`}
+              />
+            </div>
+          </label>
+        ))}
+      </div>
+      <div className="mt-3 flex flex-wrap gap-2">
+        <button
+          type="button"
+          onClick={() => onChange({ ...question, options: [...options, ""] })}
+          className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-bold hover:bg-slate-50"
+        >
+          Add option
+        </button>
+        {options.length > 2 ? (
+          <button
+            type="button"
+            onClick={() =>
+              onChange({
+                ...question,
+                options: options.slice(0, -1),
+                answerIndex: Math.min(question.answerIndex, options.length - 2),
+              })
+            }
+            className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-bold hover:bg-slate-50"
+          >
+            Remove option
+          </button>
+        ) : null}
+      </div>
+      <TextArea
+        label="Explanation"
+        value={question.explanation || ""}
+        onChange={(explanation) => onChange({ ...question, explanation })}
+      />
+    </div>
+  );
+}
+
+function createSkillChallenge(index: number): SkillChallenge {
+  return {
+    id: `day-${index + 1}`,
+    day: index + 1,
+    title: `Day ${index + 1}`,
+    shortTitle: "",
+    minutes: 6,
+    points: 60,
+    streakBoost: 1,
+    assetUrl: "",
+    assetAlt: "",
+    accentColor: "#B8F56D",
+    audioCue: "focus",
+    hook: "",
+    lesson: "",
+    keyIdeas: [],
+    questions: [createSkillQuestion(0)],
+  };
+}
+
+function createSkillQuestion(index: number): SkillQuestion {
+  return {
+    id: `q${index + 1}`,
+    prompt: "",
+    options: ["", ""],
+    answerIndex: 0,
+    explanation: "",
+  };
+}
+
+function updateSkillPackChallenge(
+  skillPack: SkillPack,
+  challengeIndex: number,
+  patch: Partial<SkillChallenge>
+): SkillPack {
+  const challenges = [...(skillPack.challenges || [])];
+  challenges[challengeIndex] = {
+    ...challenges[challengeIndex],
+    ...patch,
+    day: challengeIndex + 1,
+  };
+  return { ...skillPack, challenges };
+}
+
+function updateSkillChallengeValue(
+  course: CourseForm,
+  challengeIndex: number,
+  patch: Partial<SkillChallenge>
+): CourseForm {
+  return {
+    ...course,
+    skillPack: updateSkillPackChallenge(course.skillPack, challengeIndex, patch),
+  };
+}
+
+function updateQuestionList(
+  questions: SkillQuestion[],
+  questionIndex: number,
+  question: SkillQuestion
+) {
+  const nextQuestions = [...questions];
+  nextQuestions[questionIndex] = question;
+  return nextQuestions;
 }
 
 function updateModule(course: CourseForm, setCourse: (course: CourseForm) => void, index: number, module: Module) {
