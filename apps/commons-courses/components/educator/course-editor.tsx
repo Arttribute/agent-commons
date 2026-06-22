@@ -5,6 +5,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { CourseAgentEditor } from "@/components/educator/course-agent-editor";
 import { CourseCollaborators } from "@/components/educator/course-collaborators";
 import { RichTextEditor } from "@/components/educator/rich-text-editor";
+import { ColorPicker } from "@/components/color-picker";
 import {
   AccessProgramEditor,
   normalizeAccessProgramForm,
@@ -1169,7 +1170,7 @@ function SkillPackEditor({
                   onChange(updateSkillPackChallenge(skillPack, challengeIndex, { assetAlt }))
                 }
               />
-              <Field
+              <ColorPicker
                 label="Accent"
                 value={challenge.accentColor || "#B8F56D"}
                 onChange={(accentColor) =>
