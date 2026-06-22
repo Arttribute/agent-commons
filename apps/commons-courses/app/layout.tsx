@@ -29,6 +29,7 @@ export const metadata: Metadata = {
     title: "CommonLab - AI agent courses",
     description:
       "Practical AI literacy courses with daily skill badges, builder quests, and safe learning environments.",
+    url: getAppBaseUrl(),
     siteName: "CommonLab",
     images: [{ url: "/opengraph-image", width: 1200, height: 630 }],
   },

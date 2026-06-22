@@ -174,13 +174,17 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const title = course.title;
   const description = course.tagline || course.description;
   const image = getCourseImageUrl(course);
+  const url = `${getAppBaseUrl()}/courses/${slug}`;
 
   return {
     title,
     description,
+    alternates: { canonical: url },
     openGraph: {
       title: `${course.title} | CommonLab`,
       description,
+      url,
+      siteName: "CommonLab",
       type: "website",
       images: [{ url: image, width: 1200, height: 630, alt: course.title }],
     },
