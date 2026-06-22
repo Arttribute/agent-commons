@@ -36,6 +36,7 @@ function formatCoursePrice(course: CourseCardData) {
 export function CourseCard({ course, enrolled }: CourseCardProps) {
   const imageUrl =
     course.bannerImageUrl || course.imageUrl || course.previewImageUrl || null;
+  const isCourseMedia = Boolean(imageUrl?.includes("/api/media/"));
   const startDateLabel = formatCourseStartDate(course.startDate);
   const liveScheduleSummary = getLiveScheduleSummary(course.liveSchedule);
 
@@ -45,12 +46,22 @@ export function CourseCard({ course, enrolled }: CourseCardProps) {
       className="group flex flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm transition-colors hover:border-slate-300"
     >
       {imageUrl ? (
-        <div className="aspect-[16/9] overflow-hidden bg-slate-100">
+        <div
+          className={cn(
+            "aspect-[16/9] overflow-hidden",
+            isCourseMedia ? "bg-white p-2" : "bg-slate-100"
+          )}
+        >
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
             src={imageUrl}
             alt=""
-            className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-[1.02]"
+            className={cn(
+              "h-full w-full transition-transform duration-300",
+              isCourseMedia
+                ? "rounded-lg object-contain"
+                : "object-cover group-hover:scale-[1.02]"
+            )}
           />
         </div>
       ) : (

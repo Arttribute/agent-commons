@@ -200,6 +200,7 @@ export default async function CoursePage({ params, searchParams }: Props) {
   const isEnrolled = Boolean(enrollment);
   const enrollmentProgress = enrollment?.progress ?? 0;
   const bannerImageUrl = course.bannerImageUrl || course.imageUrl || null;
+  const isCourseMedia = Boolean(bannerImageUrl?.includes("/api/media/"));
   const startStatus = getCourseStartStatus(course.startDate);
   const liveScheduleSummary = getLiveScheduleSummary(course.liveSchedule);
 
@@ -234,12 +235,18 @@ export default async function CoursePage({ params, searchParams }: Props) {
               {/* Intro */}
               <section className="min-w-0">
                 {bannerImageUrl ? (
-                  <div className="mb-8 aspect-[16/9] overflow-hidden rounded-xl border border-slate-200 bg-slate-100">
+                  <div
+                    className={`mb-8 aspect-[16/9] overflow-hidden rounded-xl border border-slate-200 ${
+                      isCourseMedia ? "bg-white p-2" : "bg-slate-100"
+                    }`}
+                  >
                     {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img
                       src={bannerImageUrl}
                       alt=""
-                      className="h-full w-full object-cover"
+                      className={`h-full w-full ${
+                        isCourseMedia ? "rounded-lg object-contain" : "object-cover"
+                      }`}
                     />
                   </div>
                 ) : null}

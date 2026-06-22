@@ -13,7 +13,7 @@ import {
   Zap,
 } from "lucide-react";
 import { Nav } from "@/components/nav";
-import type { CourseSkillPack } from "@/types/skills";
+import type { CourseSkillPack, SkillLeaderboardEntry } from "@/types/skills";
 
 type SkillProgress = {
   authenticated: boolean;
@@ -40,6 +40,7 @@ const emptyProgress: SkillProgress = {
 
 export default function SkillsPage() {
   const [packs, setPacks] = useState<CourseSkillPack[]>([]);
+  const [leaderboard, setLeaderboard] = useState<SkillLeaderboardEntry[]>([]);
   const [progressBySlug, setProgressBySlug] = useState<Record<string, SkillProgress>>({});
   const [loading, setLoading] = useState(true);
 
@@ -49,10 +50,14 @@ export default function SkillsPage() {
       setLoading(true);
       try {
         const res = await fetch("/api/skills");
-        const data = (await res.json()) as { packs?: CourseSkillPack[] };
+        const data = (await res.json()) as {
+          packs?: CourseSkillPack[];
+          leaderboard?: SkillLeaderboardEntry[];
+        };
         const nextPacks = data.packs ?? [];
         if (cancelled) return;
         setPacks(nextPacks);
+        setLeaderboard(data.leaderboard ?? []);
 
         const progressEntries = await Promise.all(
           nextPacks.map(async (pack) => {
@@ -133,9 +138,27 @@ export default function SkillsPage() {
               Your stats
             </p>
             <div className="mt-4 grid grid-cols-3 gap-2">
-              <Stat icon={Flame} label="Streak" value={String(totals.streak)} />
-              <Stat icon={Zap} label="Points" value={String(totals.points)} />
-              <Stat icon={Trophy} label="Done" value={`${completionPct}%`} />
+              <Stat
+                icon={Flame}
+                label="Streak"
+                value={String(totals.streak)}
+                color="text-orange-500"
+                bg="bg-orange-50"
+              />
+              <Stat
+                icon={Zap}
+                label="Points"
+                value={String(totals.points)}
+                color="text-sky-500"
+                bg="bg-sky-50"
+              />
+              <Stat
+                icon={Trophy}
+                label="Done"
+                value={`${completionPct}%`}
+                color="text-amber-500"
+                bg="bg-amber-50"
+              />
             </div>
           </div>
         </section>
@@ -165,40 +188,52 @@ export default function SkillsPage() {
                 <Link
                   key={pack.courseSlug}
                   href={`/skills/${pack.courseSlug}`}
-                  className="group rounded-xl border border-slate-200 bg-white p-5 transition-all hover:-translate-y-0.5 hover:border-slate-300 hover:shadow-lg"
+                  className="group overflow-hidden rounded-xl border border-slate-200 bg-white transition-all hover:-translate-y-0.5 hover:border-slate-300 hover:shadow-lg"
                 >
-                  <div className="flex items-start justify-between gap-4">
-                    <div>
-                      <p className="text-xs font-bold uppercase tracking-widest text-slate-500">
-                        {pack.courseTitle}
-                      </p>
-                      <h2 className="mt-2 text-2xl font-semibold tracking-tight text-slate-950">
-                        {pack.title}
-                      </h2>
+                  {pack.challenges[0]?.assetUrl ? (
+                    <div className="border-b border-slate-100 bg-white p-2">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={pack.challenges[0].assetUrl}
+                        alt={pack.challenges[0].assetAlt || ""}
+                        className="h-auto w-full rounded-lg object-contain"
+                      />
                     </div>
-                    <span className="rounded-md bg-[#B8F56D] px-2.5 py-1 text-xs font-black text-slate-950">
-                      {completed}/{pack.challenges.length}
-                    </span>
-                  </div>
-                  <p className="mt-3 line-clamp-2 text-sm leading-6 text-slate-600">
-                    {pack.learnerPromise || pack.subtitle}
-                  </p>
-                  <div className="mt-5 h-2 overflow-hidden rounded-full bg-slate-100">
-                    <div
-                      className="h-full rounded-full bg-slate-950 transition-all"
-                      style={{ width: `${pct}%` }}
-                    />
-                  </div>
-                  <div className="mt-5 flex items-center justify-between gap-3">
-                    <div className="min-w-0">
-                      <p className="text-xs text-slate-500">Next daily challenge</p>
-                      <p className="truncate text-sm font-bold text-slate-900">
-                        {nextChallenge.shortTitle || nextChallenge.title}
-                      </p>
+                  ) : null}
+                  <div className="p-5">
+                    <div className="flex items-start justify-between gap-4">
+                      <div>
+                        <p className="text-xs font-bold uppercase tracking-widest text-slate-500">
+                          {pack.courseTitle}
+                        </p>
+                        <h2 className="mt-2 text-2xl font-semibold tracking-tight text-slate-950">
+                          {pack.title}
+                        </h2>
+                      </div>
+                      <span className="rounded-md bg-[#B8F56D] px-2.5 py-1 text-xs font-black text-slate-950">
+                        {completed}/{pack.challenges.length}
+                      </span>
                     </div>
-                    <span className="inline-flex items-center gap-1.5 rounded-lg bg-slate-950 px-3 py-2 text-sm font-bold text-white">
-                      Start <ArrowRight className="h-4 w-4" />
-                    </span>
+                    <p className="mt-3 line-clamp-2 text-sm leading-6 text-slate-600">
+                      {pack.learnerPromise || pack.subtitle}
+                    </p>
+                    <div className="mt-5 h-2 overflow-hidden rounded-full bg-slate-100">
+                      <div
+                        className="h-full rounded-full bg-slate-950 transition-all"
+                        style={{ width: `${pct}%` }}
+                      />
+                    </div>
+                    <div className="mt-5 flex items-center justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="text-xs text-slate-500">Next daily challenge</p>
+                        <p className="truncate text-sm font-bold text-slate-900">
+                          {nextChallenge.shortTitle || nextChallenge.title}
+                        </p>
+                      </div>
+                      <span className="inline-flex items-center gap-1.5 rounded-lg bg-slate-950 px-3 py-2 text-sm font-bold text-white">
+                        Start <ArrowRight className="h-4 w-4" />
+                      </span>
+                    </div>
                   </div>
                 </Link>
               );
@@ -206,32 +241,75 @@ export default function SkillsPage() {
           </section>
         )}
 
-        <section className="mt-8 rounded-xl border border-slate-200 bg-slate-50 p-5">
+        <section className="mt-8 rounded-xl border border-slate-200 bg-gradient-to-br from-slate-50 via-white to-sky-50 p-5">
           <div className="flex items-center justify-between">
             <div>
               <p className="text-xs font-bold uppercase tracking-widest text-slate-500">
                 Leaderboard
               </p>
               <p className="mt-1 text-sm text-slate-600">
-                Your points are ready. Shared leaderboards can plug into the same
-                scoring model next.
+                Weekly AI fluency standings across points, streaks, and skills
+                completed.
               </p>
             </div>
-            <Medal className="h-5 w-5 text-slate-500" />
+            <div className="rounded-lg bg-amber-100 p-2">
+              <Medal className="h-5 w-5 text-amber-600" />
+            </div>
           </div>
-          <div className="mt-4 grid gap-2 sm:grid-cols-3">
-            {[
-              ["You", totals.points],
-              ["Amina", 220],
-              ["Kofi", 180],
-            ].map(([name, points], index) => (
-              <div key={name} className="rounded-lg bg-white px-3 py-2 text-sm">
-                <p className="font-bold text-slate-950">
-                  {index + 1}. {name}
-                </p>
-                <p className="text-slate-500">{points} pts</p>
+          <div className="mt-4 overflow-hidden rounded-xl border border-slate-200 bg-white">
+            {leaderboard.length === 0 ? (
+              <div className="px-4 py-6 text-sm leading-6 text-slate-600">
+                Complete a daily challenge to start the leaderboard.
               </div>
-            ))}
+            ) : (
+              leaderboard.map((row, index) => (
+                <div
+                  key={row.userId}
+                  className={`grid grid-cols-[auto_1fr_auto] items-center gap-3 border-b border-slate-100 px-3 py-3 last:border-b-0 sm:grid-cols-[auto_1fr_90px_90px_90px_90px] ${
+                    row.isCurrentUser ? "bg-lime-50/70" : ""
+                  }`}
+                >
+                  <span className="text-sm font-black text-slate-500">
+                    #{index + 1}
+                  </span>
+                  <div className="flex min-w-0 items-center gap-3">
+                    <div
+                      className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-sm font-black text-slate-950 ${
+                        index === 0
+                          ? "bg-amber-200"
+                          : index === 1
+                            ? "bg-sky-200"
+                            : index === 2
+                              ? "bg-orange-100"
+                              : "bg-slate-100"
+                      }`}
+                    >
+                      {row.name.slice(0, 1)}
+                    </div>
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-black text-slate-950">
+                        {row.name}
+                      </p>
+                      <p className="text-xs text-slate-500">
+                        {row.isCurrentUser ? "You" : "AI fluency league"}
+                      </p>
+                    </div>
+                  </div>
+                  <p className="text-right text-sm font-black text-sky-600">
+                    {row.points} pts
+                  </p>
+                  <p className="hidden text-right text-sm font-semibold text-orange-600 sm:block">
+                    {row.streak} day
+                  </p>
+                  <p className="hidden text-right text-sm font-semibold text-amber-600 sm:block">
+                    {row.completedSkills} skills
+                  </p>
+                  <p className="hidden text-right text-sm font-semibold text-slate-500 sm:block">
+                    {row.skillPathsStarted} paths
+                  </p>
+                </div>
+              ))
+            )}
           </div>
         </section>
       </main>
@@ -243,14 +321,20 @@ function Stat({
   icon: Icon,
   label,
   value,
+  color,
+  bg,
 }: {
   icon: typeof Flame;
   label: string;
   value: string;
+  color: string;
+  bg: string;
 }) {
   return (
     <div className="rounded-lg bg-white p-3">
-      <Icon className="mb-2 h-4 w-4 text-slate-500" />
+      <div className={`mb-2 inline-flex rounded-md p-1.5 ${bg}`}>
+        <Icon className={`h-4 w-4 ${color}`} />
+      </div>
       <p className="text-lg font-black text-slate-950">{value}</p>
       <p className="text-xs text-slate-500">{label}</p>
     </div>

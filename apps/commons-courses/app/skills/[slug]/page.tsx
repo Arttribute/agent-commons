@@ -10,7 +10,7 @@ import {
   ChevronLeft,
   Flame,
   Loader2,
-  Menu,
+  Route,
   X,
   Zap,
 } from "lucide-react";
@@ -206,7 +206,7 @@ export default function SkillPathPage({ params }: Props) {
               className="inline-flex rounded-lg border border-slate-200 p-2 text-slate-600 sm:hidden"
               aria-label="Open daily path"
             >
-              <Menu className="h-4 w-4" />
+              <Route className="h-4 w-4" />
             </button>
             <div className="min-w-0 flex-1">
               <p className="truncate text-xs font-bold uppercase tracking-widest text-slate-500">
