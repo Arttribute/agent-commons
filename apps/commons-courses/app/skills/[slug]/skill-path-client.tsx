@@ -221,8 +221,8 @@ export default function SkillPathClient({ slug }: Props) {
               </div>
             </div>
             <div className="flex shrink-0 items-center gap-2">
-              <Pill icon={Flame} label={String(progress.streak)} />
-              <Pill icon={Zap} label={String(progress.points)} />
+              <Pill icon={Flame} label={String(progress.streak)} color="text-orange-500" />
+              <Pill icon={Zap} label={String(progress.points)} color="text-sky-500" />
             </div>
           </div>
         </header>
@@ -670,13 +670,15 @@ function LockedState() {
 function Pill({
   icon: Icon,
   label,
+  color,
 }: {
   icon: typeof Flame;
   label: string;
+  color: string;
 }) {
   return (
     <span className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs font-black text-slate-800">
-      <Icon className="h-3.5 w-3.5 text-slate-500" />
+      <Icon className={`h-3.5 w-3.5 ${color}`} />
       {label}
     </span>
   );
