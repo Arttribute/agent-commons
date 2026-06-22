@@ -25,6 +25,20 @@ export interface IEnrollment extends Document {
   completedAt?: Date;
   progress: number;
   completedLessons: string[];
+  points: number;
+  streak: number;
+  longestStreak: number;
+  lastChallengeCompletedAt?: Date;
+  completedChallenges: string[];
+  challengeAnswers: Record<string, number>;
+  practicalSignals: Array<{
+    id: string;
+    platform: "agent_commons" | "common_os" | "external";
+    eventType: string;
+    status: "pending" | "verified";
+    verifiedAt?: Date;
+    metadata?: Record<string, unknown>;
+  }>;
 }
 
 const EnrollmentSchema = new Schema<IEnrollment>(
@@ -62,6 +76,33 @@ const EnrollmentSchema = new Schema<IEnrollment>(
     completedAt: Date,
     progress: { type: Number, default: 0 },
     completedLessons: [String],
+    points: { type: Number, default: 0, min: 0 },
+    streak: { type: Number, default: 0, min: 0 },
+    longestStreak: { type: Number, default: 0, min: 0 },
+    lastChallengeCompletedAt: Date,
+    completedChallenges: { type: [String], default: [] },
+    challengeAnswers: { type: Map, of: Number, default: {} },
+    practicalSignals: {
+      type: [
+        {
+          id: { type: String, required: true },
+          platform: {
+            type: String,
+            enum: ["agent_commons", "common_os", "external"],
+            required: true,
+          },
+          eventType: { type: String, required: true },
+          status: {
+            type: String,
+            enum: ["pending", "verified"],
+            default: "pending",
+          },
+          verifiedAt: Date,
+          metadata: Schema.Types.Mixed,
+        },
+      ],
+      default: [],
+    },
   },
   { timestamps: true }
 );

@@ -4,6 +4,7 @@ import {
   normalizeCourseAgents,
 } from "@/lib/course-agent-defaults";
 import type { CourseAgentConfig } from "@/types/course-agent";
+import type { SkillPack } from "@/types/skills";
 
 export interface ILesson {
   title: string;
@@ -144,6 +145,7 @@ export interface ICourse extends Document {
   bannerImageUrl?: string;
   previewImageUrl?: string;
   modules: IModule[];
+  skillPack?: SkillPack;
   agents: CourseAgentConfig[];
   published: boolean;
   /** Pinned as the single hero feature on the landing page */
@@ -350,6 +352,71 @@ const CourseAgentSchema = new Schema<CourseAgentConfig>(
   { _id: false }
 );
 
+const SkillQuestionSchema = new Schema(
+  {
+    id: { type: String, required: true, trim: true },
+    prompt: { type: String, required: true, trim: true },
+    options: { type: [String], required: true, validate: (value: string[]) => value.length >= 2 },
+    answerIndex: { type: Number, required: true, min: 0 },
+    explanation: { type: String, trim: true },
+  },
+  { _id: false }
+);
+
+const SkillActivityRequirementSchema = new Schema(
+  {
+    id: { type: String, required: true, trim: true },
+    platform: {
+      type: String,
+      enum: ["agent_commons", "common_os", "external"],
+      required: true,
+    },
+    eventType: { type: String, required: true, trim: true },
+    label: { type: String, required: true, trim: true },
+    description: { type: String, trim: true },
+    points: { type: Number, min: 0 },
+  },
+  { _id: false }
+);
+
+const SkillChallengeSchema = new Schema(
+  {
+    id: { type: String, required: true, trim: true },
+    day: { type: Number, required: true, min: 1 },
+    title: { type: String, required: true, trim: true },
+    shortTitle: { type: String, trim: true },
+    minutes: { type: Number, required: true, min: 1 },
+    points: { type: Number, required: true, min: 0 },
+    streakBoost: { type: Number, default: 1, min: 0 },
+    assetUrl: { type: String, trim: true },
+    assetAlt: { type: String, trim: true },
+    accentColor: { type: String, trim: true },
+    audioCue: {
+      type: String,
+      enum: ["spark", "focus", "complete"],
+      default: "focus",
+    },
+    hook: { type: String, trim: true },
+    lesson: { type: String, required: true, trim: true },
+    keyIdeas: { type: [String], default: [] },
+    microTask: { type: String, trim: true },
+    practicalSignal: SkillActivityRequirementSchema,
+    questions: { type: [SkillQuestionSchema], default: [] },
+  },
+  { _id: false }
+);
+
+const SkillPackSchema = new Schema(
+  {
+    enabled: { type: Boolean, default: false },
+    title: { type: String, trim: true },
+    subtitle: { type: String, trim: true },
+    learnerPromise: { type: String, trim: true },
+    challenges: { type: [SkillChallengeSchema], default: [] },
+  },
+  { _id: false }
+);
+
 const CourseLiveScheduleSchema = new Schema<ICourseLiveSchedule>(
   {
     cadence: {
@@ -420,6 +487,7 @@ const CourseSchema = new Schema<ICourse>(
     bannerImageUrl: String,
     previewImageUrl: String,
     modules: [ModuleSchema],
+    skillPack: SkillPackSchema,
     agents: {
       type: [CourseAgentSchema],
       default: getDefaultCourseAgents,

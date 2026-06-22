@@ -5,6 +5,7 @@ import {
   type LiveSchedule,
 } from "@/lib/course-schedule";
 import type { CourseAgentConfig } from "@/types/course-agent";
+import type { SkillPack } from "@/types/skills";
 
 export type AccessCodeInput = {
   id?: string;
@@ -73,6 +74,7 @@ export type CourseInput = {
       isFree?: boolean;
     }>;
   }>;
+  skillPack?: SkillPack;
   agents?: CourseAgentConfig[];
   published?: boolean;
   isMainFeatured?: boolean;
@@ -123,6 +125,86 @@ function normalizeImageUrl(value?: string) {
   const url = value?.trim();
   if (!url) return undefined;
   return url;
+}
+
+function normalizeSkillPack(input?: SkillPack) {
+  if (!input) return undefined;
+  const challenges = Array.isArray(input.challenges) ? input.challenges : [];
+
+  return {
+    enabled: Boolean(input.enabled),
+    title: input.title?.trim() || "Daily challenges",
+    subtitle: input.subtitle?.trim() || undefined,
+    learnerPromise: input.learnerPromise?.trim() || undefined,
+    challenges: challenges
+      .map((challenge, index) => ({
+        id: challenge.id?.trim() || `challenge-${index + 1}`,
+        day:
+          typeof challenge.day === "number" && challenge.day > 0
+            ? Math.floor(challenge.day)
+            : index + 1,
+        title: challenge.title?.trim() || `Day ${index + 1}`,
+        shortTitle: challenge.shortTitle?.trim() || undefined,
+        minutes:
+          typeof challenge.minutes === "number" && challenge.minutes > 0
+            ? Math.floor(challenge.minutes)
+            : 5,
+        points:
+          typeof challenge.points === "number" && challenge.points > 0
+            ? Math.floor(challenge.points)
+            : 10,
+        streakBoost:
+          typeof challenge.streakBoost === "number" && challenge.streakBoost >= 0
+            ? Math.floor(challenge.streakBoost)
+            : 1,
+        assetUrl: normalizeImageUrl(challenge.assetUrl),
+        assetAlt: challenge.assetAlt?.trim() || undefined,
+        accentColor: challenge.accentColor?.trim() || undefined,
+        audioCue: ["spark", "focus", "complete"].includes(challenge.audioCue || "")
+          ? challenge.audioCue
+          : "focus",
+        hook: challenge.hook?.trim() || undefined,
+        lesson: challenge.lesson?.trim() || "",
+        keyIdeas: Array.isArray(challenge.keyIdeas)
+          ? challenge.keyIdeas.map((idea) => idea.trim()).filter(Boolean)
+          : [],
+        microTask: challenge.microTask?.trim() || undefined,
+        practicalSignal: challenge.practicalSignal
+          ? {
+              ...challenge.practicalSignal,
+              id: challenge.practicalSignal.id?.trim(),
+              eventType: challenge.practicalSignal.eventType?.trim(),
+              label: challenge.practicalSignal.label?.trim(),
+              description: challenge.practicalSignal.description?.trim() || undefined,
+            }
+          : undefined,
+        questions: Array.isArray(challenge.questions)
+          ? challenge.questions.map((question, questionIndex) => ({
+              id: question.id?.trim() || `q${questionIndex + 1}`,
+              prompt: question.prompt?.trim() || "",
+              options: Array.isArray(question.options)
+                ? question.options.map((option) => option.trim()).filter(Boolean)
+                : [],
+              answerIndex:
+                typeof question.answerIndex === "number" && question.answerIndex >= 0
+                  ? Math.floor(question.answerIndex)
+                  : 0,
+              explanation: question.explanation?.trim() || undefined,
+            }))
+          : [],
+      }))
+      .filter(
+        (challenge) =>
+          challenge.title &&
+          challenge.lesson &&
+          challenge.questions.every(
+            (question) =>
+              question.prompt &&
+              question.options.length >= 2 &&
+              question.answerIndex < question.options.length
+          )
+      ),
+  };
 }
 
 function normalizeAccessCodes(
@@ -273,6 +355,7 @@ export function normalizeCourseInput(input: CourseInput) {
     bannerImageUrl: normalizeImageUrl(input.bannerImageUrl),
     previewImageUrl: normalizeImageUrl(input.previewImageUrl),
     modules,
+    skillPack: normalizeSkillPack(input.skillPack),
     agents: normalizeCourseAgents(input.agents),
     modulesCount: modules.length,
     lessonsCount,
