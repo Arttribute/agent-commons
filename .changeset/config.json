@@ -10,6 +10,7 @@
   "ignore": [
     "commons-api",
     "commons-app",
+    "commons-courses",
     "onchain"
   ]
 }

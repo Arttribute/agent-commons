@@ -1,6 +1,6 @@
 {
   "name": "commons-courses",
-  "version": "0.1.1",
+  "version": "0.1.0",
   "private": true,
   "scripts": {
     "dev": "next dev",
@@ -12,7 +12,7 @@
     "set:ai-quick-wins-start-date": "node scripts/set-ai-quick-wins-start-date.mjs"
   },
   "dependencies": {
-    "@agent-commons/sdk": "^0.2.0",
+    "@agent-commons/sdk": "^0.1.13",
     "@aws-sdk/client-s3": "^3.1073.0",
     "@react-email/render": "^2.0.8",
     "@stripe/stripe-js": "^5.5.0",
