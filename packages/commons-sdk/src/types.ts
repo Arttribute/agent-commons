@@ -1,6 +1,15 @@
 // ─── Core Types ───────────────────────────────────────────────────────────────
 
-export type ModelProvider = 'openai' | 'anthropic' | 'google' | 'mistral' | 'groq' | 'ollama';
+export type ModelProvider =
+  | 'openai'
+  | 'anthropic'
+  | 'google'
+  | 'mistral'
+  | 'groq'
+  | 'ollama'
+  | 'openrouter'
+  | 'xai'
+  | 'custom';
 
 export interface ModelConfig {
   provider: ModelProvider;
@@ -72,8 +81,15 @@ export interface RunParams {
   agentId: string;
   messages: ChatMessage[];
   sessionId?: string;
+  initiatorId?: string;
   /** Extra text injected into the agent's system prompt. Used by the CLI to deliver the local tools manifest. */
   cliContext?: string;
+  /** Caller-owned function catalog executed through cli_tool_request events. */
+  cliTools?: Array<{
+    name: string;
+    description: string;
+    parameters: Record<string, unknown>;
+  }>;
 }
 
 export interface ChatMessage {

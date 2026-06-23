@@ -106,7 +106,7 @@ var sym = {
   bullet: import_chalk.default.dim("\u2022"),
   dot: import_chalk.default.dim("\xB7")
 };
-function banner(version = "0.1.15") {
+function banner(version = "0.1.18") {
   const line = import_chalk.default.cyan("  \u2500".padEnd(2) + "\u2500".repeat(44));
   console.log("");
   console.log(line);
@@ -482,7 +482,7 @@ function agentsCommand() {
       process.exit(1);
     }
   });
-  cmd.command("create").description("Create a new agent").requiredOption("--name <name>", "Agent name").option("--instructions <text>", "System instructions").option("--provider <provider>", "Model provider (openai|anthropic|google|groq)", "openai").option("--model <id>", "Model ID", "gpt-4o").option("--json", "Output as JSON").action(async (opts) => {
+  cmd.command("create").description("Create a new agent").requiredOption("--name <name>", "Agent name").option("--instructions <text>", "System instructions").option("--provider <provider>", "Model provider (openai|anthropic|google|groq|openrouter|xai|ollama|custom)", "openai").option("--model <id>", "Model ID", "gpt-5.4-mini").option("--model-api-key <key>", "Provider API key (BYOK)").option("--model-base-url <url>", "Base URL for custom or local OpenAI-compatible providers").option("--json", "Output as JSON").action(async (opts) => {
     const cfg = loadConfig();
     if (!cfg.initiator) {
       console.error(c.error("No initiator set. Run `agc login` first."));
@@ -496,7 +496,9 @@ function agentsCommand() {
         instructions: opts.instructions,
         owner: cfg.initiator,
         modelProvider: opts.provider,
-        modelId: opts.model
+        modelId: opts.model,
+        modelApiKey: opts.modelApiKey,
+        modelBaseUrl: opts.modelBaseUrl
       });
       const agent = res?.data ?? res;
       spinner.stop();
@@ -645,7 +647,7 @@ function sessionsCommand() {
       process.exit(1);
     }
   });
-  cmd.command("create").description("Create a new session").option("--agent <agentId>", "Agent ID").option("--title <title>", "Session title").option("--model <id>", "Model ID (e.g. gpt-4o, claude-sonnet-4-6)").option("--provider <provider>", "Model provider").option("--json", "Output as JSON").action(async (opts) => {
+  cmd.command("create").description("Create a new session").option("--agent <agentId>", "Agent ID").option("--title <title>", "Session title").option("--model <id>", "Model ID (e.g. gpt-5.4-mini, claude-sonnet-4-6)").option("--provider <provider>", "Model provider").option("--json", "Output as JSON").action(async (opts) => {
     const cfg = loadConfig();
     const agentId = opts.agent ?? cfg.defaultAgentId;
     if (!agentId) {
@@ -1267,11 +1269,12 @@ ${fileSection}
 ### MANDATORY RULES \u2014 READ CAREFULLY
 
 1. **Call cli_* tools immediately and directly.** Do NOT create tasks (createTask) for local file operations. Do NOT delegate to sub-agents. Do NOT ask the user to run commands themselves.
-2. **Always show the actual output** returned by the tool in your response. Never say "I listed the files" without showing them. Report exactly what the tool returns.
-3. **Never fabricate results.** Wait for the real tool output before responding.
-4. **Sensitive paths are blocked** (.ssh, .gnupg, .aws, .env, credentials). Attempting to access them will return an error.
-5. ${autoApprove ? "**cli_write_file and cli_run_command execute immediately** \u2014 auto-approve is active, no user confirmation is required." : "**cli_write_file and cli_run_command require the user to confirm** before executing \u2014 you will see the result after they approve."}
-6. **Git commits must carry the agc co-author trailer.** Always include \`--trailer "Co-Authored-By: <AgentName> (agc) <agc-agent@users.noreply.github.com>"\` when running \`git commit\`. The CLI injects this automatically \u2014 do not omit it or pass \`--no-trailer\`.
+2. **Own the request through completion.** Continue across tool calls, process polling, retries, debugging, and verification. Do not stop after describing a plan or asking whether to proceed when the request is already clear.
+3. **Use actual tool output as evidence.** Summarize the important result; do not fabricate success or dump noisy logs unless they help diagnose a failure.
+4. **Never fabricate results.** Wait for the real tool output before responding.
+5. **Sensitive paths are blocked** (.ssh, .gnupg, .aws, .env, credentials). Attempting to access them will return an error.
+6. ${autoApprove ? "**cli_write_file and cli_run_command execute immediately** \u2014 auto-approve is active, no user confirmation is required." : "**cli_write_file and cli_run_command require the user to confirm** before executing \u2014 you will see the result after they approve."}
+7. **Git commits must carry the agc co-author trailer.** Always include \`--trailer "Co-Authored-By: <AgentName> (agc) <agc-agent@users.noreply.github.com>"\` when running \`git commit\`. The CLI injects this automatically \u2014 do not omit it or pass \`--no-trailer\`.
 
 ### Available CLI tools
 
@@ -1304,12 +1307,12 @@ ${fileSection}
 
 For long commands like \`npx create-next-app@latest my-app --yes\`:
 
-1. Call \`cli_start_process\` \u2014 returns \`{processId, status: "running"}\` immediately. Tell the user it has started.
-2. Call \`cli_wait_for_process\` with \`{"processId": "...", "wait_seconds": 60}\` \u2014 blocks up to 60s then returns current stdout/status. Report progress to the user.
-3. Repeat step 2 until \`status\` is \`"done"\` or \`"error"\`.
-4. Report the final output to the user.
+1. Call \`cli_start_process\` \u2014 it returns \`{processId, status: "running"}\` immediately.
+2. Call \`cli_wait_for_process\` with \`{"processId": "...", "wait_seconds": 60}\`.
+3. Repeat step 2 until \`status\` is \`"done"\` or \`"error"\`; diagnose and repair errors when possible.
+4. Continue with the rest of the assignment and verify the final outcome before responding.
 
-Never hold the user in silence. Between each \`cli_wait_for_process\` call, tell them what you saw so far.
+Do not end the turn merely because a process is still running. Keep polling within the same run. Progress events may be streamed by the client, but the final answer comes only after completion or a genuine blocker.
 
 ### Example \u2014 scaffolding a Next.js project
 
@@ -1317,18 +1320,14 @@ Never hold the user in silence. Between each \`cli_wait_for_process\` call, tell
 cli_start_process: {"command": "npx", "args": ["create-next-app@latest", "my-app", "--yes"], "cwd": "Desktop"}
 \u2192 {processId: "proc_1a2b", status: "running"}
 
-Tell user: "Started! Installing dependencies, this takes a minute or two. Checking in 60s\u2026"
-
 cli_wait_for_process: {"processId": "proc_1a2b", "wait_seconds": 60}
 \u2192 {status: "running", elapsedSec: 60, stdout: "Creating project...
 Installing packages\u2026"}
 
-Tell user: "Still installing \u2014 here's output so far: [stdout]. Checking again\u2026"
-
 cli_wait_for_process: {"processId": "proc_1a2b", "wait_seconds": 60}
 \u2192 {status: "done", exitCode: 0, elapsedSec: 93, stdout: "Success! Created my-app"}
 
-Tell user: "Done! Project created in Desktop/my-app"
+Continue by running the requested checks and opening/inspecting the app when the assignment requires it.
 \`\`\`
 `;
 }
@@ -1900,7 +1899,7 @@ function runCommand() {
       ...cfg.initiator && { initiatorId: cfg.initiator },
       ...cliContext && { cliContext }
     };
-    if (opts.noStream) {
+    if (opts.noStream && !localEnabled) {
       const spinner = spin("Running\u2026");
       try {
         const result = await client.run.once(params);
@@ -1976,7 +1975,8 @@ Session: ${sessionId}  (resume with: agc run --session ${sessionId} "<prompt>")`
         } else if (event.type === "final") {
           if (hasOutput) process.stdout.write("\n");
           const e = event;
-          if (e.content && !hasOutput) console.log(e.content);
+          const finalText = e.content ?? e.payload?.content ?? e.payload?.text ?? e.payload?.message;
+          if (finalText && !hasOutput) console.log(finalText);
           if (sessionId) console.log(c.dim(`
 Session: ${sessionId}  (resume with: agc run --session ${sessionId} "<prompt>")`));
           break;
@@ -3872,7 +3872,7 @@ async function pickAgentInteractively(action) {
   return agentId;
 }
 var program = new import_commander16.Command();
-program.name("agc").description("Agent Commons CLI \u2014 interact with the Agent Commons platform").version("0.1.15", "-v, --version").action(async () => {
+program.name("agc").description("Agent Commons CLI \u2014 interact with the Agent Commons platform").version("0.1.18", "-v, --version").action(async () => {
   await interactiveMenu();
 });
 program.addCommand(loginCommand());

@@ -10,7 +10,7 @@ import { buildMistralModel } from './providers/mistral.provider';
 
 export const DEFAULT_MODEL_CONFIG: ModelConfig = {
   provider: 'openai',
-  modelId: 'gpt-4o',
+  modelId: 'gpt-5.4-mini',
 };
 
 @Injectable()
@@ -31,6 +31,9 @@ export class ModelProviderFactory {
 
     switch (resolved.provider as ModelProviderName) {
       case 'openai':
+      case 'openrouter':
+      case 'xai':
+      case 'custom':
         return buildOpenAIModel(resolved);
       case 'anthropic':
         return buildAnthropicModel(resolved);
@@ -63,7 +66,7 @@ export class ModelProviderFactory {
     // Support legacy format: { name: 'gpt-4o' }
     const provider =
       sessionModel.provider ?? this.inferProviderFromModelName(sessionModel.name) ?? 'openai';
-    const modelId = sessionModel.modelId ?? sessionModel.name ?? 'gpt-4o';
+    const modelId = sessionModel.modelId ?? sessionModel.name ?? DEFAULT_MODEL_CONFIG.modelId;
 
     return this.build({
       provider,
@@ -82,6 +85,7 @@ export class ModelProviderFactory {
   private inferProviderFromModelName(name?: string): ModelProviderName | undefined {
     if (!name) return undefined;
     if (name.startsWith('gpt-') || name.startsWith('o1') || name.startsWith('o3')) return 'openai';
+    if (name.startsWith('grok-')) return 'xai';
     if (name.startsWith('claude-')) return 'anthropic';
     if (name.startsWith('gemini-')) return 'google';
     if (name.startsWith('mistral-') || name.startsWith('mixtral-')) return 'mistral';

@@ -71,8 +71,10 @@ export function agentsCommand(): Command {
     .description('Create a new agent')
     .requiredOption('--name <name>', 'Agent name')
     .option('--instructions <text>', 'System instructions')
-    .option('--provider <provider>', 'Model provider (openai|anthropic|google|groq)', 'openai')
-    .option('--model <id>', 'Model ID', 'gpt-4o')
+    .option('--provider <provider>', 'Model provider (openai|anthropic|google|groq|openrouter|xai|ollama|custom)', 'openai')
+    .option('--model <id>', 'Model ID', 'gpt-5.4-mini')
+    .option('--model-api-key <key>', 'Provider API key (BYOK)')
+    .option('--model-base-url <url>', 'Base URL for custom or local OpenAI-compatible providers')
     .option('--json', 'Output as JSON')
     .action(async (opts) => {
       const cfg = loadConfig();
@@ -89,6 +91,8 @@ export function agentsCommand(): Command {
           owner: cfg.initiator,
           modelProvider: opts.provider as any,
           modelId: opts.model,
+          modelApiKey: opts.modelApiKey,
+          modelBaseUrl: opts.modelBaseUrl,
         });
         const agent = (res as any)?.data ?? res;
         spinner.stop();

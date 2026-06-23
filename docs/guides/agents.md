@@ -27,7 +27,7 @@ curl -X POST https://api.agentcommons.io/v1/agents \
     "instructions": "You are a customer support agent for Acme Corp. Be polite and solution-focused. If you cannot solve an issue, escalate to a human.",
     "persona": "Friendly, empathetic, professional",
     "modelProvider": "openai",
-    "modelId": "gpt-4o"
+    "modelId": "gpt-5.4-mini"
   }'
 ```
 
@@ -41,7 +41,7 @@ Be polite and solution-focused.
 If you cannot solve an issue, escalate to a human.`,
   persona: 'Friendly, empathetic, professional',
   modelProvider: 'openai',
-  modelId: 'gpt-4o',
+  modelId: 'gpt-5.4-mini',
 });
 ```
 
@@ -53,12 +53,15 @@ If you cannot solve an issue, escalate to a human.`,
 
 | Provider | Popular models |
 |---|---|
-| `openai` | `gpt-4o`, `gpt-4o-mini`, `gpt-4-turbo`, `o1-mini` |
+| `openai` | `gpt-5.5`, `gpt-5.4`, `gpt-5.4-mini`, `gpt-4o` |
 | `anthropic` | `claude-opus-4-6`, `claude-sonnet-4-6`, `claude-haiku-4-5-20251001` |
 | `google` | `gemini-1.5-pro`, `gemini-1.5-flash`, `gemini-2.0-flash` |
 | `groq` | `llama-3.3-70b-versatile`, `mixtral-8x7b-32768` |
 | `mistral` | `mistral-large-latest`, `mistral-small-latest` |
 | `ollama` | Any locally running model (set `baseUrl` to your Ollama server) |
+| `openrouter` | OpenRouter model routes such as `openai/gpt-5.4-mini` |
+| `xai` | xAI Grok models |
+| `custom` | Any OpenAI-compatible endpoint (set `modelBaseUrl`) |
 
 ### Key parameters
 

@@ -58,7 +58,7 @@ export const agent = pgTable('agent', {
 
   // Model provider configuration (BYOK support)
   modelProvider: text('model_provider').default('openai'),  // 'openai' | 'anthropic' | 'google' | 'mistral' | 'groq' | 'ollama'
-  modelId: text('model_id').default('gpt-4o'),
+  modelId: text('model_id').default('gpt-5.4-mini'),
   modelApiKey: text('model_api_key'),   // Encrypted BYOK API key
   modelBaseUrl: text('model_base_url'), // For Ollama / custom endpoints
 

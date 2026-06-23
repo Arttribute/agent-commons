@@ -31,7 +31,7 @@ curl -X POST https://api.agentcommons.io/v1/agents \
     "name": "My First Agent",
     "instructions": "You are a helpful assistant.",
     "modelProvider": "openai",
-    "modelId": "gpt-4o"
+    "modelId": "gpt-5.4-mini"
   }'
 ```
 
@@ -90,7 +90,7 @@ const { data: agent } = await client.agents.create({
   name: 'My First Agent',
   instructions: 'You are a helpful assistant.',
   modelProvider: 'openai',
-  modelId: 'gpt-4o',
+  modelId: 'gpt-5.4-mini',
 });
 
 // Run it

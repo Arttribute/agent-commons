@@ -1,4 +1,13 @@
-export type ModelProviderName = 'openai' | 'anthropic' | 'google' | 'mistral' | 'groq' | 'ollama';
+export type ModelProviderName =
+  | 'openai'
+  | 'anthropic'
+  | 'google'
+  | 'mistral'
+  | 'groq'
+  | 'ollama'
+  | 'openrouter'
+  | 'xai'
+  | 'custom';
 
 export interface ModelConfig {
   provider: ModelProviderName;

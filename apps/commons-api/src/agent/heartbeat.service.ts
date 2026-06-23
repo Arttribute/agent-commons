@@ -216,9 +216,9 @@ export class HeartbeatService implements OnModuleInit, OnModuleDestroy {
         initiator: agent.agentId,
         title: HEARTBEAT_SESSION_TITLE,
         model: {
-          name: agent.modelId ?? 'gpt-4o',
+          name: agent.modelId ?? 'gpt-5.4-mini',
           provider: agent.modelProvider ?? 'openai',
-          modelId: agent.modelId ?? 'gpt-4o',
+          modelId: agent.modelId ?? 'gpt-5.4-mini',
           temperature: agent.temperature ?? 0.7,
           maxTokens: agent.maxTokens ?? 2048,
         } as any,

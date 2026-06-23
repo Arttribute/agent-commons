@@ -90,7 +90,7 @@ export class SessionService {
         sessionId: uuidv4(),
         agentId,
         initiator: initiator ?? `space:${spaceId}`,
-        model: this.encryptModelApiKey(model as any) ?? ({ name: 'gpt-4o' } as any),
+        model: this.encryptModelApiKey(model as any) ?? ({ name: 'gpt-5.4-mini' } as any),
         spaces: { spaceIds: [spaceId] },
         parentSessionId: parentSessionId ?? undefined,
         title: title ?? null,

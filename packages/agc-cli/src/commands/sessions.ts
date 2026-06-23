@@ -79,7 +79,7 @@ export function sessionsCommand(): Command {
     .description('Create a new session')
     .option('--agent <agentId>', 'Agent ID')
     .option('--title <title>', 'Session title')
-    .option('--model <id>', 'Model ID (e.g. gpt-4o, claude-sonnet-4-6)')
+    .option('--model <id>', 'Model ID (e.g. gpt-5.4-mini, claude-sonnet-4-6)')
     .option('--provider <provider>', 'Model provider')
     .option('--json', 'Output as JSON')
     .action(async (opts) => {

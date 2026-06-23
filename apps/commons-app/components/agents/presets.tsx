@@ -17,14 +17,17 @@ import {
 } from "@/components/ui/select";
 import { Eye, EyeOff } from "lucide-react";
 
-const MODEL_PROVIDERS = ["openai", "anthropic", "google", "groq", "ollama"] as const;
+const MODEL_PROVIDERS = ["openai", "anthropic", "google", "groq", "openrouter", "xai", "custom", "ollama"] as const;
 type ModelProvider = typeof MODEL_PROVIDERS[number];
 
 const MODEL_PLACEHOLDERS: Record<ModelProvider, string> = {
-  openai: "gpt-4o",
+  openai: "gpt-5.4-mini",
   anthropic: "claude-sonnet-4-6",
   google: "gemini-2.0-flash",
   groq: "llama-3.3-70b-versatile",
+  openrouter: "openai/gpt-5.4-mini",
+  xai: "grok-4",
+  custom: "your-model-id",
   ollama: "llama3",
 };
 
@@ -281,13 +284,13 @@ export function Presets({
             )}
 
             {/* Base URL (ollama only) */}
-            {agent.modelProvider === "ollama" && (
+            {(agent.modelProvider === "ollama" || agent.modelProvider === "custom") && (
               <div className="space-y-1">
                 <Label>Base URL</Label>
                 <Input
                   value={agent.modelBaseUrl || ""}
                   onChange={(e) => setAgent((prev) => ({ ...prev, modelBaseUrl: e.target.value }))}
-                  placeholder="http://localhost:11434"
+                  placeholder={agent.modelProvider === "ollama" ? "http://localhost:11434" : "https://your-provider.example/v1"}
                 />
               </div>
             )}

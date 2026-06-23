@@ -218,7 +218,7 @@ export class TaskExecutionService {
             agentId: task.agentId,
             initiator: task.createdBy,
             title: `Recurring: ${task.title}`,
-            model: { name: 'gpt-4o' } as any,
+            model: { name: 'gpt-5.4-mini' } as any,
           },
         });
         await this.db.update(schema.task)

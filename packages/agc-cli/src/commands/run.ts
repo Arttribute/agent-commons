@@ -110,7 +110,11 @@ export function runCommand(): Command {
         ...(cliContext && { cliContext }),
       };
 
-      if (opts.noStream) {
+      // Local tools require the SSE channel so the CLI can execute
+      // cli_tool_request events and post results while the run is active.
+      // Keep using the streaming transport when --local/--yes is enabled,
+      // even if the caller requested presentation without streaming.
+      if (opts.noStream && !localEnabled) {
         const spinner = spin('Running…');
         try {
           const result = await client.run.once(params);
@@ -178,7 +182,11 @@ export function runCommand(): Command {
           } else if (event.type === 'final') {
             if (hasOutput) process.stdout.write('\n');
             const e = event as any;
-            if (e.content && !hasOutput) console.log(e.content);
+            const finalText = e.content
+              ?? e.payload?.content
+              ?? e.payload?.text
+              ?? e.payload?.message;
+            if (finalText && !hasOutput) console.log(finalText);
             if (sessionId) console.log(c.dim(`\nSession: ${sessionId}  (resume with: agc run --session ${sessionId} "<prompt>")`));
             break;
           } else if (event.type === 'error') {

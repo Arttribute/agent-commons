@@ -1174,7 +1174,7 @@ export class CommonToolService implements CommonTool {
       const agentRecord = await this.agent.getAgent({ agentId });
       const llm = this.modelProviderFactory.build({
         provider: (agentRecord.modelProvider as any) ?? 'openai',
-        modelId: agentRecord.modelId ?? 'gpt-4o',
+        modelId: agentRecord.modelId ?? 'gpt-5.4-mini',
         // Note: we don't decrypt the API key here; if it's encrypted the factory
         // will fall back to the platform env key which is correct for workflow-internal calls.
         temperature: 0.7,

@@ -121,6 +121,8 @@ export class AgentService implements OnModuleInit {
       : (props.value.owner as string);
 
     const insertValue = { ...props.value };
+    insertValue.modelProvider ??= 'openai';
+    insertValue.modelId ??= 'gpt-5.4-mini';
     if (insertValue.modelApiKey) {
       insertValue.modelApiKey = this.encryptApiKey(insertValue.modelApiKey);
     }
@@ -254,11 +256,22 @@ export class AgentService implements OnModuleInit {
       ${taskBlock}
       ${childSessionsInfo}
 
+      ## AUTONOMOUS EXECUTION CONTRACT
+      Own each clear request from intent to a verified outcome.
+      - If the request is clear enough to act, begin immediately. Ask a question only when missing information would materially change the result or authorize a significant external side effect.
+      - Once execution begins, continue through tool calls, retries, debugging, and validation without handing routine decisions back to the user.
+      - A plan, code sample, or list of next steps is not completion when tools can perform the work.
+      - Inspect existing state before changing it. Preserve useful work and avoid creating competing structures.
+      - Use tool results as evidence. Retry recoverable failures with a changed approach instead of guessing.
+      - Verify the actual outcome before reporting success. For software work, run the relevant checks; for browser work, inspect the rendered result and fix runtime or console errors.
+      - Stop only when the outcome is verified, a genuine blocker requires user input or new authority, or an execution limit is reached. When blocked, state the exact evidence and smallest decision needed.
+      - Keep the final response concise: what changed, what was verified, and any material caveat.
+
       ## PLATFORM CAPABILITIES
 
       ### Responding to users
       - For simple requests, reply directly and concisely.
-      - For complex, multi-step requests, break the work into tasks using createTask before executing.
+      - For complex requests, choose and execute the work directly. Create platform tasks only when persistent tracking, scheduling, dependencies, delegation, or deferred execution materially helps; task creation must never replace doing the requested work.
 
       ### Tasks
       Tasks are units of work you can create, track, and execute. Use them for anything that benefits from structured tracking or deferred/scheduled execution.
@@ -385,7 +398,7 @@ export class AgentService implements OnModuleInit {
       ],
       tool_choice: 'auto',
       parallel_tool_calls: true,
-      model: 'gpt-4o',
+      model: 'gpt-5.4-mini',
     };
     return completionBody;
   }
@@ -524,9 +537,9 @@ export class AgentService implements OnModuleInit {
                   agentId,
                   initiator: initiator,
                   model: {
-                    name: agent.modelId ?? 'gpt-4o',          // legacy compat
+                    name: agent.modelId ?? 'gpt-5.4-mini',          // legacy compat
                     provider: agent.modelProvider ?? 'openai',
-                    modelId: agent.modelId ?? 'gpt-4o',
+                    modelId: agent.modelId ?? 'gpt-5.4-mini',
                     temperature: agent.temperature || 0.7,
                     maxTokens: agent.maxTokens || 2000,
                     topP: agent.topP || 1,
@@ -549,9 +562,9 @@ export class AgentService implements OnModuleInit {
                   initiator,
                   parentSessionId: parentSessionId ?? undefined,
                   model: {
-                    name: agent.modelId ?? 'gpt-4o',
+                    name: agent.modelId ?? 'gpt-5.4-mini',
                     provider: agent.modelProvider ?? 'openai',
-                    modelId: agent.modelId ?? 'gpt-4o',
+                    modelId: agent.modelId ?? 'gpt-5.4-mini',
                     temperature: agent.temperature || 0.7,
                     maxTokens: agent.maxTokens || 2000,
                     topP: agent.topP || 1,
@@ -609,7 +622,7 @@ export class AgentService implements OnModuleInit {
           const llmRunStartedAt = new Map<string, number>();
           const usageContext = {
             provider: (agent.modelProvider ?? 'openai') as any,
-            modelId: agent.modelId ?? 'gpt-4o',
+            modelId: agent.modelId ?? 'gpt-5.4-mini',
             isByok: !!agent.modelApiKey,
           };
           const usageTotals = {
@@ -735,7 +748,7 @@ export class AgentService implements OnModuleInit {
             sessionModel,
             {
               provider: (agent.modelProvider as any) ?? 'openai',
-              modelId: agent.modelId ?? 'gpt-4o',
+              modelId: agent.modelId ?? 'gpt-5.4-mini',
               apiKey: decryptedApiKey,
               baseUrl: agent.modelBaseUrl ?? undefined,
               temperature: agent.temperature ?? 0,
@@ -1204,17 +1217,17 @@ export class AgentService implements OnModuleInit {
 
           // Resolve effective provider/model for cost tracking
           const effectiveProvider = (agent.modelProvider ?? 'openai') as any;
-          const effectiveModelId  = agent.modelId ?? 'gpt-4o';
+          const effectiveModelId  = agent.modelId ?? 'gpt-5.4-mini';
           const isByok = !!agent.modelApiKey;
           usageContext.provider = effectiveProvider;
           usageContext.modelId = effectiveModelId;
           usageContext.isByok = isByok;
 
           let loop = 0;
-          let max_recurssion = agent.autonomyEnabled ? 2 : 4;
+          const maxTaskCycles = Number(process.env.AGENT_MAX_TASK_CYCLES ?? 20);
           let finalResult = null;
 
-          while (loop++ < max_recurssion) {
+          while (loop++ < maxTaskCycles) {
             // ✅ Check for next executable task using new TaskExecutionService
             const nextTask = await this.taskExecution.getNextExecutableTask(
               agentId,
@@ -1258,7 +1271,10 @@ export class AgentService implements OnModuleInit {
 
             const result = await graph.invoke(
               { messages },
-              { configurable: { thread_id: currentSessionId } },
+              {
+                configurable: { thread_id: currentSessionId },
+                recursionLimit: Number(process.env.AGENT_GRAPH_RECURSION_LIMIT ?? 100),
+              },
             );
 
             messages = result.messages;
@@ -1547,7 +1563,7 @@ export class AgentService implements OnModuleInit {
       // Use a fast model for title generation — always use platform OpenAI key
       const titleLlm = this.modelProviderFactory.build({
         provider: 'openai',
-        modelId: 'gpt-4o-mini',
+        modelId: 'gpt-5.4-mini',
         temperature: 0.3,
         maxTokens: 20,
       });

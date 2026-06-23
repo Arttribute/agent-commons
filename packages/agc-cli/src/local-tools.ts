@@ -179,11 +179,12 @@ ${fileSection}
 ### MANDATORY RULES — READ CAREFULLY
 
 1. **Call cli_* tools immediately and directly.** Do NOT create tasks (createTask) for local file operations. Do NOT delegate to sub-agents. Do NOT ask the user to run commands themselves.
-2. **Always show the actual output** returned by the tool in your response. Never say "I listed the files" without showing them. Report exactly what the tool returns.
-3. **Never fabricate results.** Wait for the real tool output before responding.
-4. **Sensitive paths are blocked** (.ssh, .gnupg, .aws, .env, credentials). Attempting to access them will return an error.
-5. ${autoApprove ? '**cli_write_file and cli_run_command execute immediately** — auto-approve is active, no user confirmation is required.' : '**cli_write_file and cli_run_command require the user to confirm** before executing — you will see the result after they approve.'}
-6. **Git commits must carry the agc co-author trailer.** Always include \`--trailer "Co-Authored-By: <AgentName> (agc) <agc-agent@users.noreply.github.com>"\` when running \`git commit\`. The CLI injects this automatically — do not omit it or pass \`--no-trailer\`.
+2. **Own the request through completion.** Continue across tool calls, process polling, retries, debugging, and verification. Do not stop after describing a plan or asking whether to proceed when the request is already clear.
+3. **Use actual tool output as evidence.** Summarize the important result; do not fabricate success or dump noisy logs unless they help diagnose a failure.
+4. **Never fabricate results.** Wait for the real tool output before responding.
+5. **Sensitive paths are blocked** (.ssh, .gnupg, .aws, .env, credentials). Attempting to access them will return an error.
+6. ${autoApprove ? '**cli_write_file and cli_run_command execute immediately** — auto-approve is active, no user confirmation is required.' : '**cli_write_file and cli_run_command require the user to confirm** before executing — you will see the result after they approve.'}
+7. **Git commits must carry the agc co-author trailer.** Always include \`--trailer "Co-Authored-By: <AgentName> (agc) <agc-agent@users.noreply.github.com>"\` when running \`git commit\`. The CLI injects this automatically — do not omit it or pass \`--no-trailer\`.
 
 ### Available CLI tools
 
@@ -216,12 +217,12 @@ ${fileSection}
 
 For long commands like \`npx create-next-app@latest my-app --yes\`:
 
-1. Call \`cli_start_process\` — returns \`{processId, status: "running"}\` immediately. Tell the user it has started.
-2. Call \`cli_wait_for_process\` with \`{"processId": "...", "wait_seconds": 60}\` — blocks up to 60s then returns current stdout/status. Report progress to the user.
-3. Repeat step 2 until \`status\` is \`"done"\` or \`"error"\`.
-4. Report the final output to the user.
+1. Call \`cli_start_process\` — it returns \`{processId, status: "running"}\` immediately.
+2. Call \`cli_wait_for_process\` with \`{"processId": "...", "wait_seconds": 60}\`.
+3. Repeat step 2 until \`status\` is \`"done"\` or \`"error"\`; diagnose and repair errors when possible.
+4. Continue with the rest of the assignment and verify the final outcome before responding.
 
-Never hold the user in silence. Between each \`cli_wait_for_process\` call, tell them what you saw so far.
+Do not end the turn merely because a process is still running. Keep polling within the same run. Progress events may be streamed by the client, but the final answer comes only after completion or a genuine blocker.
 
 ### Example — scaffolding a Next.js project
 
@@ -229,17 +230,13 @@ Never hold the user in silence. Between each \`cli_wait_for_process\` call, tell
 cli_start_process: {"command": "npx", "args": ["create-next-app@latest", "my-app", "--yes"], "cwd": "Desktop"}
 → {processId: "proc_1a2b", status: "running"}
 
-Tell user: "Started! Installing dependencies, this takes a minute or two. Checking in 60s…"
-
 cli_wait_for_process: {"processId": "proc_1a2b", "wait_seconds": 60}
 → {status: "running", elapsedSec: 60, stdout: "Creating project...\nInstalling packages…"}
-
-Tell user: "Still installing — here's output so far: [stdout]. Checking again…"
 
 cli_wait_for_process: {"processId": "proc_1a2b", "wait_seconds": 60}
 → {status: "done", exitCode: 0, elapsedSec: 93, stdout: "Success! Created my-app"}
 
-Tell user: "Done! Project created in Desktop/my-app"
+Continue by running the requested checks and opening/inspecting the app when the assignment requires it.
 \`\`\`
 `;
 }

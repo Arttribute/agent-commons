@@ -29,11 +29,14 @@ import {
 import { Separator } from "@/components/ui/separator";
 
 const MODEL_PLACEHOLDERS: Record<string, string> = {
-  openai: "gpt-4o",
+  openai: "gpt-5.4-mini",
   anthropic: "claude-sonnet-4-6",
   google: "gemini-2.0-flash",
   mistral: "mistral-large-latest",
   groq: "llama-3.3-70b-versatile",
+  openrouter: "openai/gpt-5.4-mini",
+  xai: "grok-4",
+  custom: "your-model-id",
   ollama: "llama3",
 };
 
@@ -385,6 +388,9 @@ export default function AgentIdentity({
                   <SelectItem value="google">Google</SelectItem>
                   <SelectItem value="mistral">Mistral</SelectItem>
                   <SelectItem value="groq">Groq</SelectItem>
+                  <SelectItem value="openrouter">OpenRouter</SelectItem>
+                  <SelectItem value="xai">xAI</SelectItem>
+                  <SelectItem value="custom">Custom compatible endpoint</SelectItem>
                   <SelectItem value="ollama">Ollama</SelectItem>
                 </SelectContent>
               </Select>
@@ -425,12 +431,12 @@ export default function AgentIdentity({
             </div>
           )}
 
-          {editData.modelProvider === "ollama" && (
+          {(editData.modelProvider === "ollama" || editData.modelProvider === "custom") && (
             <div>
               <Label className="text-sm font-semibold">Base URL</Label>
               <Input
                 className="mt-1"
-                placeholder="http://localhost:11434"
+                  placeholder={editData.modelProvider === "ollama" ? "http://localhost:11434" : "https://your-provider.example/v1"}
                 value={editData.modelBaseUrl}
                 onChange={(e) => handleChange("modelBaseUrl", e.target.value)}
               />
