@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
@@ -16,6 +16,7 @@ import {
   Zap,
 } from "lucide-react";
 import { Nav } from "@/components/nav";
+import { Confetti, type ConfettiRef } from "@/components/magicui/confetti";
 import { RichTextRenderer } from "@/components/rich-text-renderer";
 import { cn } from "@/lib/utils";
 import type { CourseSkillPack, SkillChallenge } from "@/types/skills";
@@ -56,6 +57,7 @@ export default function SkillPathClient({ slug }: Props) {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const confettiRef = useRef<ConfettiRef>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -187,10 +189,12 @@ export default function SkillPathClient({ slug }: Props) {
     setMode("done");
     setFeedback(`+${challenge.points} points. Streak updated.`);
     playCue(challenge.audioCue || "complete");
+    celebrateChallenge(confettiRef.current, challenge.accentColor);
   };
 
   return (
     <div className="min-h-screen bg-white text-slate-950">
+      <Confetti ref={confettiRef} />
       <Nav />
       <main className="flex h-dvh flex-col overflow-hidden pt-16">
         <header className="border-b border-slate-200 bg-white px-4 py-3 sm:px-6">
@@ -716,6 +720,45 @@ function playCue(cue: SkillChallenge["audioCue"]) {
   gain.connect(audio.destination);
   oscillator.start();
   oscillator.stop(audio.currentTime + 0.18);
+}
+
+function celebrateChallenge(
+  confettiController: ConfettiRef | null,
+  accentColor?: string
+) {
+  if (!confettiController) return;
+
+  const colors = [
+    accentColor || "#B8F56D",
+    "#38BDF8",
+    "#F59E0B",
+    "#F472B6",
+    "#5EEAD4",
+  ];
+
+  confettiController.fire({
+    particleCount: 70,
+    angle: 60,
+    spread: 55,
+    origin: { x: 0, y: 0.72 },
+    colors,
+  });
+  confettiController.fire({
+    particleCount: 70,
+    angle: 120,
+    spread: 55,
+    origin: { x: 1, y: 0.72 },
+    colors,
+  });
+  window.setTimeout(() => {
+    confettiController.fire({
+      particleCount: 45,
+      spread: 100,
+      startVelocity: 28,
+      origin: { x: 0.5, y: 0.45 },
+      colors,
+    });
+  }, 180);
 }
 
 declare global {
