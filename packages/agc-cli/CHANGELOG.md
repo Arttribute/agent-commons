@@ -1,5 +1,16 @@
 # @agent-commons/cli
 
+## 0.2.0
+
+### Minor Changes
+
+- fb271d2: Make autonomous execution the default for local agent work, add caller-defined CLI tool catalogs to the SDK, fix local `--no-stream` runs so tool results can complete, and expand provider configuration for OpenRouter, xAI, Ollama, and custom OpenAI-compatible endpoints.
+
+### Patch Changes
+
+- Updated dependencies [fb271d2]
+  - @agent-commons/sdk@0.2.0
+
 ## 0.1.18
 
 ### Patch Changes
