@@ -10,11 +10,49 @@ const googleEnabled =
   Boolean(process.env.GOOGLE_CLIENT_ID) &&
   Boolean(process.env.GOOGLE_CLIENT_SECRET);
 const authSecret = process.env.AUTH_SECRET || process.env.NEXTAUTH_SECRET;
+const commonsIdentityEnabled =
+  Boolean(process.env.COMMONS_IDENTITY_ISSUER) &&
+  Boolean(process.env.COMMONS_IDENTITY_CLIENT_ID);
 
 export const { handlers, signIn, signOut, auth } = NextAuth({
   secret: authSecret,
   trustHost: true,
   providers: [
+    ...(commonsIdentityEnabled
+      ? [
+          {
+            id: "commons",
+            name: "Commons",
+            type: "oidc" as const,
+            issuer: process.env.COMMONS_IDENTITY_ISSUER,
+            clientId: process.env.COMMONS_IDENTITY_CLIENT_ID,
+            clientSecret: process.env.COMMONS_IDENTITY_CLIENT_SECRET,
+            authorization: {
+              params: {
+                scope: "openid email profile offline_access activity:read",
+                resource: "commons-platform",
+              },
+            },
+            checks: ["pkce" as const, "state" as const],
+            profile(profile: {
+              sub: string;
+              email?: string;
+              name?: string;
+              picture?: string;
+              email_verified?: boolean;
+            }) {
+              return {
+                id: profile.sub,
+                identityUserId: profile.sub,
+                email: profile.email,
+                name: profile.name ?? profile.email?.split("@")[0],
+                image: profile.picture,
+                emailVerifiedAt: profile.email_verified ? new Date() : undefined,
+              };
+            },
+          },
+        ]
+      : []),
     ...(googleEnabled
       ? [
           Google({
@@ -90,6 +128,44 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
   ],
   callbacks: {
     async signIn({ account, profile, user }) {
+      if (account?.provider === "commons") {
+        const email = user.email || profile?.email;
+        const identityUserId =
+          (user as { identityUserId?: string }).identityUserId ??
+          (profile as { sub?: string } | undefined)?.sub;
+        if (!email || !identityUserId) return false;
+
+        await connectDB();
+        const existing = await User.findOne({
+          $or: [{ identityUserId }, { email: email.toLowerCase() }],
+        });
+        if (existing) {
+          existing.identityUserId = identityUserId;
+          if (!existing.emailVerifiedAt) existing.emailVerifiedAt = new Date();
+          if (!existing.name && user.name) existing.name = user.name;
+          if (user.image) existing.image = user.image;
+          await existing.save();
+          user.id = existing._id.toString();
+          user.role = existing.role;
+          user.identityUserId = identityUserId;
+          return true;
+        }
+
+        const created = await User.create({
+          name: user.name || email.split("@")[0],
+          email,
+          image: user.image,
+          role: "learner",
+          authProvider: "commons",
+          emailVerifiedAt: new Date(),
+          identityUserId,
+        });
+        user.id = created._id.toString();
+        user.role = created.role;
+        user.identityUserId = identityUserId;
+        return true;
+      }
+
       if (account?.provider !== "google") return true;
 
       const email = user.email || profile?.email;
@@ -132,6 +208,7 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
       if (user) {
         token.id = user.id;
         token.role = user.role;
+        token.identityUserId = user.identityUserId;
         if (user.image) token.picture = user.image;
         token.emailVerifiedAt = (user as { emailVerifiedAt?: Date }).emailVerifiedAt;
       }
@@ -155,6 +232,9 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
       }
       if (token?.picture) {
         session.user.image = token.picture as string;
+      }
+      if (token?.identityUserId) {
+        session.user.identityUserId = token.identityUserId as string;
       }
       return session;
     },

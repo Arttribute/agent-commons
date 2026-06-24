@@ -25,6 +25,7 @@ import { MemoryModule } from './memory/memory.module';
 import { WalletModule } from './wallet/wallet.module';
 import { LogModule } from './log/log.module';
 import { X402Module } from './modules/x402';
+import { ActivityModule } from './activity/activity.module';
 
 @Module({
   imports: [
@@ -38,6 +39,7 @@ import { X402Module } from './modules/x402';
 
     // Feature modules
     AgentModule,
+    ActivityModule,
     ToolModule,
     TaskModule,
     ResourceModule,

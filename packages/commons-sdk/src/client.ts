@@ -24,7 +24,9 @@ export class CommonsClient {
   private readonly _fetch: typeof fetch;
 
   constructor(config: CommonsClientConfig) {
-    this.baseUrl = config.baseUrl.replace(/\/$/, '');
+    this.baseUrl = (
+      config.baseUrl ?? 'https://api.agentcommons.io'
+    ).replace(/\/$/, '');
     this.apiKey = config.apiKey;
     this.initiator = config.initiator;
     this._fetch = config.fetch ?? fetch;

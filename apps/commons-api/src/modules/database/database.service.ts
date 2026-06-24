@@ -25,6 +25,10 @@ export const DatabaseServiceProvider: FactoryProvider<
       password: process.env.POSTGRES_PASSWORD || '',
       ssl: false,
       prepare: isLambda ? false : undefined,
+      connection: {
+        search_path: 'public',
+        application_name: 'agent-commons-api',
+      },
     });
 
     return drizzle({

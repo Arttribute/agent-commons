@@ -16,7 +16,7 @@ export async function POST(
       `${baseUrl}/v1/workflows/${workflowId}/executions/${executionId}/reject`,
       {
         method: "POST",
-        headers: { "Content-Type": "application/json", ...backendAuthHeaders() },
+        headers: { "Content-Type": "application/json", ...await backendAuthHeaders() },
         body: JSON.stringify(body),
       }
     );

@@ -4,11 +4,19 @@ import { eq, and } from 'drizzle-orm';
 import { DatabaseService } from '../database/database.service';
 import * as schema from '#/models/schema';
 
-export type PrincipalType = 'user' | 'agent';
+export type PrincipalType = 'user' | 'agent' | 'service';
 
 export interface ApiKeyPrincipal {
   principalId: string;
   principalType: PrincipalType;
+  workspaceId?: string | null;
+  projectId?: string | null;
+  scopes?: string[];
+  authMethod?:
+    | 'identity_token'
+    | 'personal_access_token'
+    | 'agent_token'
+    | 'gateway';
 }
 
 type ApiKeyRecord = typeof schema.apiKey.$inferSelect;
@@ -48,6 +56,7 @@ export class ApiKeyService {
     });
 
     if (!record) return null;
+    if (record.expiresAt && record.expiresAt <= new Date()) return null;
 
     // Fire-and-forget — don't block the request on this update
     this.db
@@ -59,6 +68,12 @@ export class ApiKeyService {
     return {
       principalId: record.principalId,
       principalType: record.principalType as PrincipalType,
+      workspaceId: record.workspaceId,
+      scopes: record.scopes ?? [],
+      authMethod:
+        record.credentialType === 'agent_token'
+          ? 'agent_token'
+          : 'personal_access_token',
     };
   }
 
@@ -86,6 +101,19 @@ export class ApiKeyService {
       .update(schema.apiKey)
       .set({ active: false })
       .where(eq(schema.apiKey.id, id));
+  }
+
+  async getPrincipalForKey(id: string): Promise<ApiKeyPrincipal | null> {
+    const record = await this.db.query.apiKey.findFirst({
+      where: (k) => eq(k.id, id),
+    });
+    if (!record) return null;
+    return {
+      principalId: record.principalId,
+      principalType: record.principalType as PrincipalType,
+      workspaceId: record.workspaceId,
+      scopes: record.scopes ?? [],
+    };
   }
 
   private hash(rawKey: string): string {

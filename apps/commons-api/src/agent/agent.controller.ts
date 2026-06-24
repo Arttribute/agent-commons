@@ -10,6 +10,7 @@ import {
   Query,
   Sse,
   Headers,
+  Req,
   UseGuards,
 } from '@nestjs/common';
 import { AgentService } from './agent.service';
@@ -45,9 +46,25 @@ export class AgentController {
       InferInsertModel<typeof schema.agent>,
       'agentId' | 'createdAt'
     > & { commonsOwned?: boolean },
+    @Req() req: any,
   ) {
+    const principal = req.principal as
+      | {
+          principalId: string;
+          principalType: 'user' | 'agent';
+          workspaceId?: string | null;
+        }
+      | undefined;
+    const ownedBody =
+      principal?.principalType === 'user'
+        ? {
+            ...body,
+            ownerUserId: principal.principalId,
+            workspaceId: principal.workspaceId ?? body.workspaceId,
+          }
+        : body;
     const agent = await this.agent.createAgent({
-      value: body as InferInsertModel<typeof schema.agent>,
+      value: ownedBody as InferInsertModel<typeof schema.agent>,
       commonsOwned: body.commonsOwned,
     });
     return { data: omit(agent, ['wallet', 'modelApiKey']) };
@@ -147,6 +164,8 @@ export class AgentController {
   }
 
   @Get(':agentId')
+  @UseGuards(OwnerGuard)
+  @OwnerOnly({ table: 'agent', idParam: 'agentId' })
   async getAgent(@Param('agentId') agentId: string) {
     const agent = await this.agent.getAgent({ agentId });
     if (!agent) {
@@ -156,10 +175,23 @@ export class AgentController {
   }
 
   @Get()
-  async getAgents(@Query('owner') owner?: string) {
-    const agents = owner
-      ? await this.agent.getAgentsByOwner(owner)
-      : await this.agent.getAgents();
+  async getAgents(@Query('owner') owner: string | undefined, @Req() req: any) {
+    const principal = req.principal as
+      | {
+          principalId: string;
+          principalType: 'user' | 'agent';
+          workspaceId?: string | null;
+        }
+      | undefined;
+    const agents =
+      principal?.principalType === 'user'
+        ? await this.agent.getAgentsForPrincipal(
+            principal.principalId,
+            principal.workspaceId,
+          )
+        : owner
+          ? await this.agent.getAgentsByOwner(owner)
+          : await this.agent.getAgents();
     return { data: agents.map((a) => omit(a, ['wallet', 'modelApiKey'])) };
   }
 

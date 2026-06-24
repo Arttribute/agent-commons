@@ -1,0 +1,46 @@
+version: 0.2
+
+env:
+  shell: bash
+
+phases:
+  pre_build:
+    commands:
+      - set -euo pipefail
+      - IMAGE_TAG="${CODEBUILD_RESOLVED_SOURCE_VERSION:-manual}-${CODEBUILD_BUILD_NUMBER}"
+      - REGISTRY="${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com"
+      - IDENTITY_IMAGE="${REGISTRY}/${IDENTITY_ECR_REPOSITORY}:${IMAGE_TAG}"
+      - GATEWAY_IMAGE="${REGISTRY}/${GATEWAY_ECR_REPOSITORY}:${IMAGE_TAG}"
+      - aws ecr get-login-password --region "$AWS_REGION" | docker login --username AWS --password-stdin "$REGISTRY"
+  build:
+    commands:
+      - docker build --platform linux/amd64 -f apps/commons-identity/Dockerfile -t "$IDENTITY_IMAGE" .
+      - docker build --platform linux/amd64 -f apps/commons-api-gateway/Dockerfile -t "$GATEWAY_IMAGE" .
+      - docker push "$IDENTITY_IMAGE"
+      - docker push "$GATEWAY_IMAGE"
+  post_build:
+    commands:
+      - >-
+        aws cloudformation deploy
+        --stack-name commons-platform-services
+        --template-file infra/aws/api-platform-services.yml
+        --capabilities CAPABILITY_NAMED_IAM
+        --parameter-overrides
+        IdentityImageUri="$IDENTITY_IMAGE"
+        GatewayImageUri="$GATEWAY_IMAGE"
+        ExecutionRoleArn="$TASK_EXECUTION_ROLE_ARN"
+        InfrastructureRoleArn="$INFRASTRUCTURE_ROLE_ARN"
+        IdentityRuntimeSecretArn="$IDENTITY_RUNTIME_SECRET_ARN"
+        GatewayRuntimeSecretArn="$GATEWAY_RUNTIME_SECRET_ARN"
+        AgentCommonsInternalUrl="https://ag-7e8bac7021504d988073ef19cc0ea6ad.ecs.eu-west-1.on.aws"
+        CommonOsInternalUrl="https://co-34acbf16a9a0464c8be79137d4f7bbd6.ecs.eu-west-1.on.aws"
+        --region "$AWS_REGION"
+      - IDENTITY_ENDPOINT=$(aws cloudformation describe-stacks --stack-name commons-platform-services --query 'Stacks[0].Outputs[?OutputKey==`IdentityEndpoint`].OutputValue' --output text --region "$AWS_REGION")
+      - GATEWAY_ENDPOINT=$(aws cloudformation describe-stacks --stack-name commons-platform-services --query 'Stacks[0].Outputs[?OutputKey==`GatewayEndpoint`].OutputValue' --output text --region "$AWS_REGION")
+      - curl --fail --silent --show-error --retry 20 --retry-delay 10 --retry-all-errors "https://${IDENTITY_ENDPOINT#https://}/health"
+      - curl --fail --silent --show-error --retry 20 --retry-delay 10 --retry-all-errors "https://${GATEWAY_ENDPOINT#https://}/health"
+      - printf '{"identityEndpoint":"%s","gatewayEndpoint":"%s"}\n' "$IDENTITY_ENDPOINT" "$GATEWAY_ENDPOINT" > deployment.json
+
+artifacts:
+  files:
+    - deployment.json

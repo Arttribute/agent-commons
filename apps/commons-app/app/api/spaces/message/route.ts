@@ -8,7 +8,7 @@ export async function POST(req: NextRequest) {
     "Content-Type": "application/json",
     "x-sender-id": body.senderId || body.currentUserId,
     "x-sender-type": body.senderType || "human",
-    ...backendAuthHeaders(),
+    ...await backendAuthHeaders(),
   };
 
   try {

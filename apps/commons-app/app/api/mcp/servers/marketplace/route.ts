@@ -9,7 +9,7 @@ export async function GET(_req: NextRequest) {
   try {
     const res = await fetch(`${baseUrl}/v1/mcp/servers/marketplace`, {
       cache: "no-store",
-      headers: backendAuthHeaders(),
+      headers: await backendAuthHeaders(),
     });
     const data = await res.json().catch(() => ({ error: "Bad JSON" }));
     return NextResponse.json(data, { status: res.status });

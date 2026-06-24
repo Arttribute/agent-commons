@@ -45,10 +45,14 @@ var CONFIG_DIR = (0, import_path.join)((0, import_os.homedir)(), ".agc");
 var CONFIG_FILE = (0, import_path.join)(CONFIG_DIR, "config.json");
 var DEFAULT_API_URL = process.env.AGC_API_URL ?? "https://api.agentcommons.io";
 var DEFAULT_APP_URL = "https://www.agentcommons.io";
+var DEFAULT_IDENTITY_URL = process.env.COMMONS_IDENTITY_URL ?? "https://auth.agentcommons.io";
+var DEFAULT_IDENTITY_CLIENT_ID = process.env.COMMONS_IDENTITY_CLIENT_ID ?? "commons-cli";
 function loadConfig() {
   const fromEnv = {
     ...process.env.AGC_API_URL && { apiUrl: process.env.AGC_API_URL },
     ...process.env.AGC_API_KEY && { apiKey: process.env.AGC_API_KEY },
+    ...process.env.COMMONS_ACCESS_TOKEN && { accessToken: process.env.COMMONS_ACCESS_TOKEN },
+    ...process.env.COMMONS_IDENTITY_URL && { identityUrl: process.env.COMMONS_IDENTITY_URL },
     ...process.env.AGC_INITIATOR && { initiator: process.env.AGC_INITIATOR },
     ...process.env.AGC_AGENT_ID && { defaultAgentId: process.env.AGC_AGENT_ID }
   };
@@ -61,6 +65,8 @@ function loadConfig() {
   }
   return {
     apiUrl: DEFAULT_API_URL,
+    identityUrl: DEFAULT_IDENTITY_URL,
+    identityClientId: DEFAULT_IDENTITY_CLIENT_ID,
     ...fromFile,
     ...fromEnv
   };
@@ -73,16 +79,64 @@ function saveConfig(updates) {
 }
 function clearConfig() {
   if ((0, import_fs.existsSync)(CONFIG_FILE)) {
-    (0, import_fs.writeFileSync)(CONFIG_FILE, JSON.stringify({ apiUrl: DEFAULT_API_URL }, null, 2));
+    (0, import_fs.writeFileSync)(
+      CONFIG_FILE,
+      JSON.stringify(
+        {
+          apiUrl: DEFAULT_API_URL,
+          identityUrl: DEFAULT_IDENTITY_URL,
+          identityClientId: DEFAULT_IDENTITY_CLIENT_ID
+        },
+        null,
+        2
+      ),
+      { mode: 384 }
+    );
   }
 }
 function makeClient(overrides) {
   const cfg = { ...loadConfig(), ...overrides };
   return new import_sdk.CommonsClient({
     baseUrl: cfg.apiUrl,
-    apiKey: cfg.apiKey,
-    initiator: cfg.initiator
+    apiKey: cfg.accessToken ?? cfg.apiKey,
+    initiator: cfg.userId ?? cfg.initiator
   });
+}
+function decodeJwtPayload(token) {
+  const [, payload] = token.split(".");
+  if (!payload) return {};
+  try {
+    return JSON.parse(Buffer.from(payload, "base64url").toString("utf8"));
+  } catch {
+    return {};
+  }
+}
+async function ensureAccessToken() {
+  const cfg = loadConfig();
+  if (cfg.apiKey && !cfg.sessionToken) return cfg;
+  if (cfg.accessToken && cfg.accessTokenExpiresAt && cfg.accessTokenExpiresAt > Date.now() + 3e4) {
+    return cfg;
+  }
+  if (!cfg.sessionToken || !cfg.identityUrl) return cfg;
+  const response = await fetch(
+    `${cfg.identityUrl.replace(/\/$/, "")}/api/auth/token`,
+    { headers: { Authorization: `Bearer ${cfg.sessionToken}` } }
+  );
+  if (!response.ok) {
+    throw new Error("Your Commons login has expired. Run `agc login` again.");
+  }
+  const data = await response.json();
+  if (!data.token) throw new Error("Commons Identity did not return an access token.");
+  const claims = decodeJwtPayload(data.token);
+  const updates = {
+    accessToken: data.token,
+    accessTokenExpiresAt: typeof claims.exp === "number" ? claims.exp * 1e3 : Date.now() + 10 * 60 * 1e3,
+    userId: typeof claims.sub === "string" ? claims.sub : cfg.userId,
+    workspaceId: typeof claims.workspace_id === "string" ? claims.workspace_id : cfg.workspaceId,
+    initiator: typeof claims.sub === "string" ? claims.sub : cfg.initiator
+  };
+  saveConfig(updates);
+  return { ...cfg, ...updates };
 }
 
 // src/ui.ts
@@ -106,7 +160,7 @@ var sym = {
   bullet: import_chalk.default.dim("\u2022"),
   dot: import_chalk.default.dim("\xB7")
 };
-function banner(version = "0.1.18") {
+function banner(version = "0.2.0") {
   const line = import_chalk.default.cyan("  \u2500".padEnd(2) + "\u2500".repeat(44));
   console.log("");
   console.log(line);
@@ -282,14 +336,14 @@ function prompt(question, hidden = false) {
 }
 function loginCommand() {
   const cmd = new import_commander.Command("login").description("Configure API credentials");
-  cmd.option("--api-url <url>", "API base URL", DEFAULT_API_URL).option("--api-key <key>", "API key (or set AGC_API_KEY env var)").option("--initiator <id>", "User/initiator ID (advanced \u2014 usually auto-detected)").action(async (opts) => {
+  cmd.option("--api-url <url>", "API base URL", DEFAULT_API_URL).option("--identity-url <url>", "Commons Identity URL", DEFAULT_IDENTITY_URL).option("--api-key <key>", "API key (or set AGC_API_KEY env var)").option("--initiator <id>", "User/initiator ID (advanced \u2014 usually auto-detected)").action(async (opts) => {
     try {
       const current = loadConfig();
       const isFirstRun = !(0, import_fs2.existsSync)(CONFIG_FILE2);
       banner();
       if (isFirstRun) {
         console.log(c.bold("  Welcome to Agent Commons CLI!"));
-        console.log(c.dim("  You just need an API key to get started.\n"));
+        console.log(c.dim("  Sign in once with your Commons account to get started.\n"));
       } else {
         console.log(c.bold("  Update your credentials"));
         console.log(c.dim("  Press Enter to keep existing values.\n"));
@@ -308,7 +362,74 @@ function loginCommand() {
       }
       const appUrl = apiUrl.includes("localhost") ? "http://localhost:3000" : DEFAULT_APP_URL;
       const apiKeysUrl = `${appUrl}/settings/api-keys`;
-      step(1, 1, "API Key");
+      if (!opts.apiKey) {
+        step(1, 1, "Commons account");
+        const identityUrl = String(opts.identityUrl).replace(/\/$/, "");
+        const clientId = DEFAULT_IDENTITY_CLIENT_ID;
+        const deviceResponse = await fetch(`${identityUrl}/api/auth/device/code`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            client_id: clientId,
+            scope: "openid profile email offline_access agents:read agents:write agents:run compute:read compute:write activity:read usage:read"
+          })
+        });
+        const device = await deviceResponse.json();
+        if (!deviceResponse.ok || !device.device_code || !device.user_code) {
+          throw new Error(device.error_description || "Could not start Commons login.");
+        }
+        const verificationUrl = device.verification_uri_complete ?? `${identityUrl}/device?user_code=${encodeURIComponent(device.user_code)}`;
+        console.log(`  ${c.dim("Authorize this CLI in your browser:")}`);
+        console.log(`  ${c.primary(verificationUrl)}`);
+        console.log(`  ${c.dim("Code:")} ${c.bold(device.user_code)}
+`);
+        openBrowser(verificationUrl);
+        const deadline = Date.now() + (device.expires_in ?? 600) * 1e3;
+        let intervalMs = Math.max(device.interval ?? 5, 1) * 1e3;
+        let sessionToken;
+        while (Date.now() < deadline) {
+          await new Promise((resolve2) => setTimeout(resolve2, intervalMs));
+          const tokenResponse = await fetch(`${identityUrl}/api/auth/device/token`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              grant_type: "urn:ietf:params:oauth:grant-type:device_code",
+              device_code: device.device_code,
+              client_id: clientId
+            })
+          });
+          const token = await tokenResponse.json();
+          if (tokenResponse.ok && token.access_token) {
+            sessionToken = token.access_token;
+            break;
+          }
+          if (token.error === "slow_down") {
+            intervalMs += 1e3;
+            continue;
+          }
+          if (token.error === "authorization_pending") continue;
+          throw new Error(token.error_description || token.error || "Commons login failed.");
+        }
+        if (!sessionToken) throw new Error("Commons login expired before approval.");
+        saveConfig({
+          apiUrl,
+          identityUrl,
+          identityClientId: clientId,
+          sessionToken,
+          accessToken: void 0,
+          accessTokenExpiresAt: void 0,
+          apiKey: void 0
+        });
+        const authenticated = await ensureAccessToken();
+        console.log(
+          `  ${sym.ok} ${c.success("Signed in")} as ${c.id(authenticated.userId ?? "Commons user")}`
+        );
+        console.log(`
+  ${sym.ok} ${c.success("All set!")} Credentials saved to ${c.dim("~/.agc/config.json")}
+`);
+        return;
+      }
+      step(1, 1, "Legacy API Key");
       let apiKey = opts.apiKey;
       if (!apiKey) {
         console.log(`  ${c.dim("You'll need an API key from your Agent Commons account.")}`);
@@ -377,15 +498,22 @@ function whoamiCommand() {
   return new import_commander.Command("whoami").description("Show current configuration and verify API connectivity").option("--json", "Output as JSON").action(async (opts) => {
     const cfg = loadConfig();
     if (opts.json) {
-      console.log(JSON.stringify({ apiUrl: cfg.apiUrl, initiator: cfg.initiator, hasApiKey: !!cfg.apiKey }, null, 2));
+      console.log(JSON.stringify({
+        apiUrl: cfg.apiUrl,
+        identityUrl: cfg.identityUrl,
+        userId: cfg.userId ?? cfg.initiator,
+        workspaceId: cfg.workspaceId,
+        authenticated: Boolean(cfg.sessionToken || cfg.apiKey)
+      }, null, 2));
       return;
     }
     console.log(`
 ${c.bold("Current configuration")}`);
     detail([
       ["API URL", cfg.apiUrl],
-      ["Initiator", cfg.initiator ?? c.dim("(not set)")],
-      ["API Key", cfg.apiKey ? `****${cfg.apiKey.slice(-4)}` : c.dim("(not set)")],
+      ["Identity", cfg.userId ?? cfg.initiator ?? c.dim("(not set)")],
+      ["Workspace", cfg.workspaceId ?? c.dim("(not set)")],
+      ["Auth", cfg.sessionToken ? "Commons account" : cfg.apiKey ? "Legacy API key" : c.dim("(not set)")],
       ["Agent ID", cfg.defaultAgentId ?? c.dim("(not set)")]
     ]);
     try {
@@ -3494,6 +3622,7 @@ function memoryCommand() {
       const res = await client.memory.create({
         agentId: opts.agent,
         content: opts.content,
+        summary: String(opts.content).slice(0, 200),
         memoryType: opts.type
       });
       const memory = res?.data ?? res;
@@ -3744,7 +3873,7 @@ var CONFIG_FILE3 = (0, import_path5.join)((0, import_os4.homedir)(), ".agc", "co
 async function interactiveMenu() {
   banner();
   const cfg = loadConfig();
-  const isSetup = !!(cfg.apiKey && cfg.initiator);
+  const isSetup = !!((cfg.accessToken || cfg.apiKey || cfg.sessionToken) && (cfg.userId || cfg.initiator));
   if (!isSetup) {
     console.log(c.bold("  Welcome to Agent Commons CLI!"));
     console.log(c.dim("  Looks like this is your first time here \u2014 let's get you set up.\n"));
@@ -3754,7 +3883,7 @@ async function interactiveMenu() {
     return;
   }
   console.log(
-    `  ${c.dim("Connected to")}  ${c.primary(cfg.apiUrl)}  ${c.dim("\xB7")}  ${c.dim("Wallet")} ${c.id(cfg.initiator.slice(0, 8) + "\u2026" + cfg.initiator.slice(-4))}
+    `  ${c.dim("Connected to")}  ${c.primary(cfg.apiUrl)}  ${c.dim("\xB7")}  ${c.dim("Identity")} ${c.id((cfg.userId ?? cfg.initiator).slice(0, 8) + "\u2026" + (cfg.userId ?? cfg.initiator).slice(-4))}
 `
   );
   const action = await select("What would you like to do?", [
@@ -3872,8 +4001,12 @@ async function pickAgentInteractively(action) {
   return agentId;
 }
 var program = new import_commander16.Command();
-program.name("agc").description("Agent Commons CLI \u2014 interact with the Agent Commons platform").version("0.1.18", "-v, --version").action(async () => {
+program.name("agc").description("Agent Commons CLI \u2014 interact with the Agent Commons platform").version("0.2.0", "-v, --version").action(async () => {
   await interactiveMenu();
+});
+program.hook("preAction", async (_thisCommand, actionCommand) => {
+  if (actionCommand.name() === "login" || actionCommand.name() === "logout") return;
+  await ensureAccessToken();
 });
 program.addCommand(loginCommand());
 program.addCommand(logoutCommand());

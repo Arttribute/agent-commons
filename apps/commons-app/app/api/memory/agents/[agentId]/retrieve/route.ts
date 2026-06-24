@@ -19,7 +19,7 @@ export async function GET(
   try {
     const res = await fetch(
       `${baseUrl}/v1/memory/agents/${agentId}/retrieve?${p.toString()}`,
-      { cache: "no-store", headers: backendAuthHeaders() }
+      { cache: "no-store", headers: await backendAuthHeaders() }
     );
     const data = await res.json().catch(() => ({ error: "Bad JSON" }));
     return NextResponse.json(data, { status: res.status });

@@ -18,7 +18,7 @@ export async function GET(
     method: "GET",
     headers: {
       Accept: "text/event-stream",
-      ...backendAuthHeaders(),
+      ...await backendAuthHeaders(),
     },
   });
 

@@ -70,9 +70,23 @@ export default function SkillPathClient({ slug }: Props) {
         ]);
         const skillsData = (await skillsRes.json()) as { packs?: CourseSkillPack[] };
         const nextPack = skillsData.packs?.find((item) => item.courseSlug === slug) || null;
-        const nextProgress = progressRes.ok
+        let nextProgress = progressRes.ok
           ? ({ ...emptyProgress, ...((await progressRes.json()) as Partial<SkillProgress>) })
           : { ...emptyProgress, authenticated: progressRes.status !== 401 };
+        if (progressRes.ok && nextProgress.authenticated && nextProgress.enrolled) {
+          const verifyRes = await fetch(`/api/skills/${slug}/verify`, {
+            method: "POST",
+          });
+          if (verifyRes.ok) {
+            const refreshed = await fetch(`/api/skills/${slug}/progress`);
+            if (refreshed.ok) {
+              nextProgress = {
+                ...emptyProgress,
+                ...((await refreshed.json()) as Partial<SkillProgress>),
+              };
+            }
+          }
+        }
 
         if (cancelled) return;
         setPack(nextPack);

@@ -10,7 +10,7 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ ta
   try {
     const res = await fetch(`${baseUrl}/v1/tasks/${taskId}/cancel`, {
       method: "POST",
-      headers: { "Content-Type": "application/json", ...backendAuthHeaders() },
+      headers: { "Content-Type": "application/json", ...await backendAuthHeaders() },
     });
     const data = await res.json().catch(() => ({ error: "Bad JSON" }));
     return NextResponse.json(data, { status: res.status });

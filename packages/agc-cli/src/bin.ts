@@ -21,7 +21,7 @@ import { memoryCommand } from './commands/memory.js';
 import { usageCommand } from './commands/usage.js';
 import { logsCommand } from './commands/logs.js';
 import { banner, select, spin, c, sym } from './ui.js';
-import { loadConfig, saveConfig, makeClient } from './config.js';
+import { loadConfig, saveConfig, makeClient, ensureAccessToken } from './config.js';
 
 const CONFIG_FILE = join(homedir(), '.agc', 'config.json');
 
@@ -31,7 +31,7 @@ async function interactiveMenu(): Promise<void> {
   banner();
 
   const cfg = loadConfig();
-  const isSetup = !!(cfg.apiKey && cfg.initiator);
+  const isSetup = !!((cfg.accessToken || cfg.apiKey || cfg.sessionToken) && (cfg.userId || cfg.initiator));
 
   // First-run: guide user through login
   if (!isSetup) {
@@ -45,7 +45,7 @@ async function interactiveMenu(): Promise<void> {
   // Show connection context
   console.log(
     `  ${c.dim('Connected to')}  ${c.primary(cfg.apiUrl)}  ${c.dim('·')}  ` +
-    `${c.dim('Wallet')} ${c.id(cfg.initiator!.slice(0, 8) + '…' + cfg.initiator!.slice(-4))}\n`,
+    `${c.dim('Identity')} ${c.id((cfg.userId ?? cfg.initiator)!.slice(0, 8) + '…' + (cfg.userId ?? cfg.initiator)!.slice(-4))}\n`,
   );
 
   type MenuAction =
@@ -194,6 +194,11 @@ program
   .action(async () => {
     await interactiveMenu();
   });
+
+program.hook('preAction', async (_thisCommand, actionCommand) => {
+  if (actionCommand.name() === 'login' || actionCommand.name() === 'logout') return;
+  await ensureAccessToken();
+});
 
 // Auth & config
 program.addCommand(loginCommand());

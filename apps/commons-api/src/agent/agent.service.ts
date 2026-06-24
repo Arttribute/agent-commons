@@ -26,6 +26,7 @@ import {
   InferInsertModel,
   InferSelectModel,
   inArray,
+  or,
   sql,
 } from 'drizzle-orm';
 import { compact, first, get, map, omit } from 'lodash';
@@ -56,6 +57,7 @@ import { calculateCost } from '~/modules/model-provider/model-registry';
 import { extractTokenUsageFromLLMResult } from '~/modules/usage/token-usage.util';
 import { MemoryService } from '~/memory/memory.service';
 import { WalletService } from '~/wallet/wallet.service';
+import { ActivityService } from '~/activity/activity.service';
 
 const got = import('got');
 
@@ -90,6 +92,7 @@ export class AgentService implements OnModuleInit {
     private usageService: UsageService,
     private memoryService: MemoryService,
     private walletService: WalletService,
+    private activityService: ActivityService,
     @Inject(forwardRef(() => TaskService)) private tasks: TaskService,
     @Inject(forwardRef(() => TaskExecutionService))
     private taskExecution: TaskExecutionService,
@@ -103,7 +106,7 @@ export class AgentService implements OnModuleInit {
   async onModuleInit() {
     try {
       await PostgresSaver.fromConnString(
-        `postgresql://${process.env.POSTGRES_USER}:${process.env.POSTGRES_PASSWORD}@${process.env.POSTGRES_HOST}:${process.env.POSTGRES_PORT}/${process.env.POSTGRES_DATABASE}`,
+        `postgresql://${process.env.POSTGRES_USER}:${process.env.POSTGRES_PASSWORD}@${process.env.POSTGRES_HOST}:${process.env.POSTGRES_PORT}/${process.env.POSTGRES_DATABASE}?options=-c%20search_path%3Dpublic`,
       ).setup();
     } catch (err: any) {
       this.logger.error(`LangGraph checkpoint setup failed: ${err.message}`);
@@ -145,6 +148,23 @@ export class AgentService implements OnModuleInit {
     }).catch((err) =>
       console.error(`[AgentService] Failed to create wallet for agent ${agentId}:`, err),
     );
+
+    const actorId = agentEntry.ownerUserId ?? agentEntry.owner ?? agentId;
+    await this.activityService
+      .record({
+        eventType: 'agent.created',
+        actorType: agentEntry.ownerUserId ? 'user' : 'service',
+        actorId,
+        workspaceId: agentEntry.workspaceId,
+        subjectType: 'agent',
+        subjectId: agentId,
+        metadata: { name: agentEntry.name },
+      })
+      .catch((err) =>
+        this.logger.warn(
+          `Could not record agent.created activity for ${agentId}: ${err.message}`,
+        ),
+      );
 
     return agentEntry;
   }
@@ -1059,7 +1079,7 @@ export class AgentService implements OnModuleInit {
             .addEdge('tools', 'model')
             .compile({
               checkpointer: PostgresSaver.fromConnString(
-                `postgresql://${process.env.POSTGRES_USER}:${process.env.POSTGRES_PASSWORD}@${process.env.POSTGRES_HOST}:${process.env.POSTGRES_PORT}/${process.env.POSTGRES_DATABASE}`,
+                `postgresql://${process.env.POSTGRES_USER}:${process.env.POSTGRES_PASSWORD}@${process.env.POSTGRES_HOST}:${process.env.POSTGRES_PORT}/${process.env.POSTGRES_DATABASE}?options=-c%20search_path%3Dpublic`,
               ),
             });
 
@@ -1619,6 +1639,14 @@ export class AgentService implements OnModuleInit {
   }
   async getAgentsByOwner(owner: string) {
     return this.db.query.agent.findMany({ where: (t) => eq(t.owner, owner) });
+  }
+  async getAgentsForPrincipal(userId: string, workspaceId?: string | null) {
+    return this.db.query.agent.findMany({
+      where: (t) =>
+        workspaceId
+          ? or(eq(t.ownerUserId, userId), eq(t.workspaceId, workspaceId))
+          : eq(t.ownerUserId, userId),
+    });
   }
 
   //get agent session full chat

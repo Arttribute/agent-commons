@@ -1,6 +1,10 @@
 "use client";
 import React, { createContext, useContext, useEffect, useState } from "react";
-import { usePrivy } from "@privy-io/react-auth";
+import {
+  signIn as commonsSignIn,
+  signOut as commonsSignOut,
+  useSession,
+} from "next-auth/react";
 
 declare module "@privy-io/react-auth" {
   interface Google {
@@ -22,6 +26,8 @@ export interface AuthState {
   username?: string;
   walletAddress?: string;
   profileImage?: string;
+  userId?: string;
+  workspaceId?: string;
   // Feel free to add other fields
   // ...
 }
@@ -40,15 +46,9 @@ interface AuthContextValue {
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 
 export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
-  // Get user + login + logout from Privy
-  const {
-    ready,
-    authenticated,
-    user, // The user object from Privy
-    login: privyLogin,
-    logout: privyLogout,
-    getAccessToken,
-  } = usePrivy();
+  const { data: session, status } = useSession();
+  const ready = status !== "loading";
+  const authenticated = status === "authenticated";
 
   const [authState, setAuthState] = useState<AuthState>({});
 
@@ -57,7 +57,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     if (!ready) return;
 
     // If not authenticated, clear everything
-    if (!authenticated || !user) {
+    if (!authenticated || !session?.user) {
       localStorage.removeItem("authState");
       setAuthState({});
       return;
@@ -66,31 +66,23 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     // If authenticated, gather user data
     const storeAuthData = async () => {
       try {
-        // If you have Privy’s identity token enabled, you can fetch that:
-        // 1. token = user.identityToken
-        // Or simply get the user’s access token if you prefer:
-        const token = await getAccessToken();
-
-        // Basic details from user
         const username =
-          user.email?.address ||
-          user.google?.email ||
-          user.discord?.username ||
-          user.wallet?.address ||
-          user.id.slice(0, 10); // fallback
-
-        const walletAddress = user.wallet?.address;
-        const profileImage =
-          user.google?.picture ||
-          user.discord?.picture ||
-          user.twitter?.picture ||
-          ""; // fallback or handle differently
+          session.user.name ||
+          session.user.email ||
+          session.user.id.slice(0, 12);
+        // During the compatibility window, walletAddress doubles as the
+        // principal identifier in older UI code. Real onchain actions must
+        // still require an actual connected Privy wallet.
+        const walletAddress = session.user.id;
+        const profileImage = session.user.image || "";
 
         const newState: AuthState = {
-          idToken: token, // or identity token if you enabled that
+          idToken: "commons-session",
           username,
           walletAddress,
           profileImage,
+          userId: session.user.id,
+          workspaceId: session.user.workspaceId,
         };
 
         setAuthState(newState);
@@ -101,13 +93,12 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     };
 
     storeAuthData();
-  }, [ready, authenticated, user, getAccessToken]);
+  }, [ready, authenticated, session]);
 
   // 2) Provide login, logout, and refresh
   const login = async () => {
     try {
-      await privyLogin();
-      // After login completes, the `useEffect` above will run
+      await commonsSignIn("commons");
     } catch (err) {
       console.error("Login error:", err);
     }
@@ -115,8 +106,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
   const logout = async () => {
     try {
-      await privyLogout();
-      // `useEffect` will clear local storage
+      await commonsSignOut({ callbackUrl: "/" });
     } catch (err) {
       console.error("Logout error:", err);
     }

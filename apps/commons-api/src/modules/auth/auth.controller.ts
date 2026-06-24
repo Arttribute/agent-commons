@@ -88,7 +88,18 @@ export class AuthController {
    * DELETE /v1/auth/api-keys/:id
    */
   @Delete('api-keys/:id')
-  async revoke(@Param('id') id: string) {
+  async revoke(@Param('id') id: string, @Req() req: any) {
+    const caller = req.principal as ApiKeyPrincipal | undefined;
+    if (caller) {
+      const owner = await this.apiKeyService.getPrincipalForKey(id);
+      if (
+        !owner ||
+        owner.principalId.toLowerCase() !== caller.principalId.toLowerCase() ||
+        owner.principalType !== caller.principalType
+      ) {
+        throw new ForbiddenException('You can only revoke your own API keys');
+      }
+    }
     await this.apiKeyService.revoke(id);
     return { revoked: true };
   }

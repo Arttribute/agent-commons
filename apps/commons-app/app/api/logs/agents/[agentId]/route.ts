@@ -19,7 +19,7 @@ export async function GET(
   try {
     const res = await fetch(
       `${baseUrl}/v1/logs/agents/${encodeURIComponent(agentId)}${p.toString() ? `?${p}` : ""}`,
-      { cache: "no-store", headers: backendAuthHeaders() }
+      { cache: "no-store", headers: await backendAuthHeaders() }
     );
     const data = await res.json().catch(() => ({ error: "Bad JSON" }));
     return NextResponse.json(data, { status: res.status });

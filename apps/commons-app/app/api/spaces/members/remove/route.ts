@@ -15,7 +15,7 @@ export async function POST(request: NextRequest) {
       );
     }
     const url = `${baseUrl}/v1/spaces/${spaceId}/members/${memberId}?memberType=${memberType}`;
-    const res = await fetch(url, { method: "DELETE", headers: backendAuthHeaders() });
+    const res = await fetch(url, { method: "DELETE", headers: await backendAuthHeaders() });
     const data = await res.json();
     return NextResponse.json(data, { status: res.status });
   } catch (e: any) {

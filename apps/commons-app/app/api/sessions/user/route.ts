@@ -21,7 +21,7 @@ export async function GET(request: NextRequest) {
   }
   const url = `${baseUrl}/v1/sessions/user/${encodeURIComponent(initiatorId)}`;
   try {
-    const res = await fetch(url, { cache: "no-store", headers: backendAuthHeaders() });
+    const res = await fetch(url, { cache: "no-store", headers: await backendAuthHeaders() });
     const data = await res.json().catch(() => ({ error: "Bad JSON" }));
     return NextResponse.json(data, { status: res.status });
   } catch (e: any) {

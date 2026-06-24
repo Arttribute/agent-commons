@@ -14,7 +14,7 @@ export async function GET(
   try {
     const res = await fetch(`${baseUrl}/v1/mcp/servers/${serverId}`, {
       cache: "no-store",
-      headers: backendAuthHeaders(),
+      headers: await backendAuthHeaders(),
     });
     const data = await res.json().catch(() => ({ error: "Bad JSON" }));
     return NextResponse.json(data, { status: res.status });
@@ -35,7 +35,7 @@ export async function PUT(
     const body = await request.json();
     const res = await fetch(`${baseUrl}/v1/mcp/servers/${serverId}`, {
       method: "PUT",
-      headers: { "Content-Type": "application/json", ...backendAuthHeaders() },
+      headers: { "Content-Type": "application/json", ...await backendAuthHeaders() },
       body: JSON.stringify(body),
     });
     const data = await res.json().catch(() => ({ error: "Bad JSON" }));
@@ -56,7 +56,7 @@ export async function DELETE(
   try {
     const res = await fetch(`${baseUrl}/v1/mcp/servers/${serverId}`, {
       method: "DELETE",
-      headers: backendAuthHeaders(),
+      headers: await backendAuthHeaders(),
     });
     const data = await res.json().catch(() => ({}));
     return NextResponse.json(data, { status: res.status });

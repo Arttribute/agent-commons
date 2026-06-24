@@ -20,7 +20,7 @@ export async function POST(request: NextRequest) {
     headers: {
       "Content-Type": "application/json",
       Accept: "text/event-stream",
-      ...backendAuthHeaders(),
+      ...await backendAuthHeaders(),
       ...(initiator ? { "x-initiator": initiator } : {}),
     },
     body: JSON.stringify(body),

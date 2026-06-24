@@ -14,7 +14,7 @@ export async function POST(
   try {
     const res = await fetch(`${baseUrl}/v1/wallets/agent/${encodeURIComponent(agentId)}/x402-fetch`, {
       method: "POST",
-      headers: { "Content-Type": "application/json", ...backendAuthHeaders() },
+      headers: { "Content-Type": "application/json", ...await backendAuthHeaders() },
       body: JSON.stringify(body),
     });
     const data = await res.json().catch(() => ({ error: "Bad JSON" }));

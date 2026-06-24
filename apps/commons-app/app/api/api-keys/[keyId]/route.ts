@@ -15,7 +15,7 @@ export async function DELETE(
   try {
     const res = await fetch(`${baseUrl}/v1/auth/api-keys/${keyId}`, {
       method: "DELETE",
-      headers: backendAuthHeaders(),
+      headers: await backendAuthHeaders(),
     });
     const data = await res.json().catch(() => ({}));
     return NextResponse.json(data, { status: res.status });

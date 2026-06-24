@@ -100,6 +100,7 @@ export function memoryCommand(): Command {
         const res = await client.memory.create({
           agentId: opts.agent,
           content: opts.content,
+          summary: String(opts.content).slice(0, 200),
           memoryType: opts.type,
         });
         const memory = (res as any)?.data ?? res;

@@ -13,7 +13,7 @@ export async function POST(
   try {
     const res = await fetch(
       `${baseUrl}/v1/workflows/${workflowId}/executions/${executionId}/cancel`,
-      { method: "POST", headers: backendAuthHeaders() }
+      { method: "POST", headers: await backendAuthHeaders() }
     );
     const data = await res.json().catch(() => ({ error: "Bad JSON" }));
     return NextResponse.json(data, { status: res.status });

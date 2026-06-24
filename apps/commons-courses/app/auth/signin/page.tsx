@@ -23,10 +23,12 @@ function SignInForm() {
   const [notice, setNotice] = useState("");
   const [loading, setLoading] = useState(false);
   const [googleAvailable, setGoogleAvailable] = useState(false);
+  const [commonsAvailable, setCommonsAvailable] = useState(false);
 
   useEffect(() => {
     getProviders().then((providers) => {
       setGoogleAvailable(Boolean(providers?.google));
+      setCommonsAvailable(Boolean(providers?.commons));
     });
   }, []);
 
@@ -53,6 +55,10 @@ function SignInForm() {
 
   const handleGoogle = () => {
     signIn("google", { callbackUrl });
+  };
+
+  const handleCommons = () => {
+    signIn("commons", { callbackUrl });
   };
 
   const resendVerification = async () => {
@@ -118,6 +124,16 @@ function SignInForm() {
           Sign in and continue to your course
         </p>
 
+        {commonsAvailable && (
+          <button
+            type="button"
+            onClick={handleCommons}
+            className="mb-4 flex w-full items-center justify-center rounded-lg bg-slate-950 px-5 py-2.5 text-sm font-bold text-white hover:bg-slate-800"
+          >
+            Continue with Commons
+          </button>
+        )}
+
         {googleAvailable && (
           <>
             <button
@@ -129,14 +145,17 @@ function SignInForm() {
               Continue with Google
             </button>
 
-            <div className="mb-4 flex items-center gap-3">
-              <div className="h-px flex-1 bg-slate-200" />
-              <span className="text-xs font-bold uppercase tracking-wide text-slate-400">
-                Or
-              </span>
-              <div className="h-px flex-1 bg-slate-200" />
-            </div>
           </>
+        )}
+
+        {(commonsAvailable || googleAvailable) && (
+          <div className="mb-4 flex items-center gap-3">
+            <div className="h-px flex-1 bg-slate-200" />
+            <span className="text-xs font-bold uppercase tracking-wide text-slate-400">
+              Legacy sign in
+            </span>
+            <div className="h-px flex-1 bg-slate-200" />
+          </div>
         )}
 
         <form onSubmit={handleSubmit} className="space-y-4">

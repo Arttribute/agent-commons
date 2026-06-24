@@ -8,7 +8,7 @@ export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ 
   const { assignmentId } = await params;
   if (!baseUrl) return NextResponse.json({ error: "Server base URL not configured" }, { status: 500 });
   try {
-    const res = await fetch(`${baseUrl}/v1/agents/tools/${assignmentId}`, { method: "DELETE", headers: backendAuthHeaders() });
+    const res = await fetch(`${baseUrl}/v1/agents/tools/${assignmentId}`, { method: "DELETE", headers: await backendAuthHeaders() });
     const data = await res.json().catch(() => ({}));
     return NextResponse.json(data, { status: res.status });
   } catch (e: any) {

@@ -11,6 +11,7 @@ import { Request } from 'express';
 import { DatabaseService } from '../database/database.service';
 import { eq } from 'drizzle-orm';
 import * as schema from '../../../models/schema';
+import type { ApiKeyPrincipal } from './api-key.service';
 
 export const OWNER_RESOURCE_KEY = 'owner_resource';
 
@@ -36,8 +37,8 @@ export interface OwnerResourceOptions {
  *   1. The `x-owner-id` request header (set by SDK / web clients)
  *   2. The `x-initiator` header (used by agent-to-agent calls)
  *
- * Enforcement is only active when OWNER_AUTH_REQUIRED=true in env.
- * When disabled, the guard passes through (safe default for dev).
+ * Enforcement is active by default. Set OWNER_AUTH_REQUIRED=false only for
+ * deliberate local compatibility testing during the migration window.
  */
 export const OwnerOnly = (options: OwnerResourceOptions) =>
   SetMetadata(OWNER_RESOURCE_KEY, options);
@@ -50,7 +51,7 @@ export class OwnerGuard implements CanActivate {
     private readonly reflector: Reflector,
     private readonly db: DatabaseService,
   ) {
-    this.enforced = process.env.OWNER_AUTH_REQUIRED === 'true';
+    this.enforced = process.env.OWNER_AUTH_REQUIRED !== 'false';
   }
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
@@ -65,7 +66,9 @@ export class OwnerGuard implements CanActivate {
     const req = context.switchToHttp().getRequest<Request>();
 
     // Resolve caller identity
+    const principal = (req as any).principal as ApiKeyPrincipal | undefined;
     const callerId =
+      principal?.principalId ??
       (req.headers['x-owner-id'] as string) ??
       (req.headers['x-initiator'] as string);
 
@@ -87,8 +90,27 @@ export class OwnerGuard implements CanActivate {
 
     // Platform resources (owner=null) are accessible to everyone
     if (owner === undefined) return true;
+    if (!owner.ownerUserId && !owner.workspaceId && !owner.legacyOwner) {
+      return true;
+    }
 
-    if (owner.toLowerCase() !== callerId.toLowerCase()) {
+    if (
+      principal?.principalType === 'user' &&
+      ((owner.ownerUserId &&
+        owner.ownerUserId.toLowerCase() ===
+          principal.principalId.toLowerCase()) ||
+        (owner.workspaceId &&
+          principal.workspaceId &&
+          owner.workspaceId.toLowerCase() ===
+            principal.workspaceId.toLowerCase()))
+    ) {
+      return true;
+    }
+
+    if (
+      !owner.legacyOwner ||
+      owner.legacyOwner.toLowerCase() !== callerId.toLowerCase()
+    ) {
       throw new ForbiddenException(`You do not own this ${opts.table}`);
     }
 
@@ -98,28 +120,44 @@ export class OwnerGuard implements CanActivate {
   private async resolveOwner(
     table: OwnerResourceOptions['table'],
     id: string,
-  ): Promise<string | null | undefined> {
+  ): Promise<
+    | {
+        ownerUserId?: string | null;
+        workspaceId?: string | null;
+        legacyOwner?: string | null;
+      }
+    | null
+    | undefined
+  > {
     switch (table) {
       case 'agent': {
         const row = await this.db.query.agent.findFirst({
           where: (t) => eq(t.agentId, id),
         });
         if (!row) return null;
-        return row.owner ?? undefined;
+        return {
+          ownerUserId: row.ownerUserId,
+          workspaceId: row.workspaceId,
+          legacyOwner: row.owner,
+        };
       }
       case 'task': {
         const row = await this.db.query.task.findFirst({
           where: (t) => eq(t.taskId, id),
         });
         if (!row) return null;
-        return (row as any).owner ?? (row as any).createdBy ?? undefined;
+        return {
+          legacyOwner: (row as any).owner ?? (row as any).createdBy,
+        };
       }
       case 'workflow': {
         const row = await this.db.query.workflow.findFirst({
           where: (t) => eq(t.workflowId, id),
         });
         if (!row) return null;
-        return (row as any).ownerId ?? (row as any).owner ?? undefined;
+        return {
+          legacyOwner: (row as any).ownerId ?? (row as any).owner,
+        };
       }
       default:
         return undefined;

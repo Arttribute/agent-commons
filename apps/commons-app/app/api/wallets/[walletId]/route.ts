@@ -12,7 +12,7 @@ export async function GET(_req: NextRequest, { params }: Ctx) {
   try {
     const res = await fetch(`${baseUrl}/v1/wallets/${encodeURIComponent(walletId)}`, {
       cache: "no-store",
-      headers: backendAuthHeaders(),
+      headers: await backendAuthHeaders(),
     });
     const data = await res.json().catch(() => ({ error: "Bad JSON" }));
     return NextResponse.json(data, { status: res.status });
@@ -28,7 +28,7 @@ export async function DELETE(_req: NextRequest, { params }: Ctx) {
   try {
     const res = await fetch(`${baseUrl}/v1/wallets/${encodeURIComponent(walletId)}`, {
       method: "DELETE",
-      headers: backendAuthHeaders(),
+      headers: await backendAuthHeaders(),
     });
     if (res.status === 204) return new NextResponse(null, { status: 204 });
     const data = await res.json().catch(() => ({ error: "Bad JSON" }));

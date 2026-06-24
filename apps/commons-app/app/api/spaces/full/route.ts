@@ -14,7 +14,7 @@ export async function GET(request: Request) {
     }
 
     const backendUrl = `${process.env.NEXT_PUBLIC_NEST_API_BASE_URL}/v1/spaces/${spaceId}/full`;
-    const response = await fetch(backendUrl, { headers: backendAuthHeaders() });
+    const response = await fetch(backendUrl, { headers: await backendAuthHeaders() });
 
     if (!response.ok) {
       throw new Error("Failed to fetch space details");

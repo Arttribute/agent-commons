@@ -12,7 +12,7 @@ export async function GET(_req: NextRequest, { params }: Ctx) {
   try {
     const res = await fetch(
       `${baseUrl}/v1/workflows/${workflowId}/executions/${executionId}`,
-      { cache: "no-store", headers: backendAuthHeaders() }
+      { cache: "no-store", headers: await backendAuthHeaders() }
     );
     const data = await res.json().catch(() => ({ error: "Bad JSON" }));
     return NextResponse.json(data, { status: res.status });

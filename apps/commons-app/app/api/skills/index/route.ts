@@ -9,7 +9,7 @@ export async function GET(request: NextRequest) {
   const ownerId = new URL(request.url).searchParams.get("ownerId");
   const qs = ownerId ? `?ownerId=${ownerId}` : "";
   try {
-    const res = await fetch(`${baseUrl}/v1/skills/index${qs}`, { cache: "no-store", headers: backendAuthHeaders() });
+    const res = await fetch(`${baseUrl}/v1/skills/index${qs}`, { cache: "no-store", headers: await backendAuthHeaders() });
     const data = await res.json().catch(() => ({ error: "Bad JSON" }));
     return NextResponse.json(data, { status: res.status });
   } catch (e: any) {

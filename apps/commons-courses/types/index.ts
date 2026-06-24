@@ -7,12 +7,14 @@ declare module "next-auth" {
       id: string;
       role?: "learner" | "educator" | "admin";
       emailVerifiedAt?: string;
+      identityUserId?: string;
     } & DefaultSession["user"];
   }
 
   interface User {
     role?: "learner" | "educator" | "admin";
     emailVerifiedAt?: Date | string;
+    identityUserId?: string;
   }
 }
 

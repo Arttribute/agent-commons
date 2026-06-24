@@ -7,7 +7,9 @@ export interface IUser extends Document {
   password?: string;
   role: "learner" | "educator" | "admin";
   emailVerifiedAt?: Date;
-  authProvider?: "credentials" | "google";
+  authProvider?: "credentials" | "google" | "commons";
+  identityUserId?: string;
+  identityWorkspaceId?: string;
   /** Timestamp of when the user accepted the Terms & Conditions. Null = not yet accepted. */
   termsAcceptedAt?: Date;
   createdAt: Date;
@@ -33,9 +35,11 @@ const UserSchema = new Schema<IUser>(
     emailVerifiedAt: { type: Date, default: null },
     authProvider: {
       type: String,
-      enum: ["credentials", "google"],
+      enum: ["credentials", "google", "commons"],
       default: "credentials",
     },
+    identityUserId: { type: String, unique: true, sparse: true, index: true },
+    identityWorkspaceId: { type: String, index: true },
     termsAcceptedAt: { type: Date, default: null },
   },
   { timestamps: true }

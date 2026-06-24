@@ -10,7 +10,7 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const res = await fetch(`${baseUrl}/v1/sessions`, {
       method: "POST",
-      headers: { "Content-Type": "application/json", ...backendAuthHeaders() },
+      headers: { "Content-Type": "application/json", ...await backendAuthHeaders() },
       body: JSON.stringify(body),
     });
     const data = await res.json().catch(() => ({ error: "Bad JSON" }));

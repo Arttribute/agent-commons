@@ -8,7 +8,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ age
   const { agentId } = await params;
   if (!baseUrl) return NextResponse.json({ error: "Server base URL not configured" }, { status: 500 });
   try {
-    const res = await fetch(`${baseUrl}/v1/agents/${agentId}/tools`, { cache: "no-store", headers: backendAuthHeaders() });
+    const res = await fetch(`${baseUrl}/v1/agents/${agentId}/tools`, { cache: "no-store", headers: await backendAuthHeaders() });
     const data = await res.json().catch(() => ({ error: "Bad JSON" }));
     return NextResponse.json(data, { status: res.status });
   } catch (e: any) {
@@ -24,7 +24,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     const body = await request.json();
     const res = await fetch(`${baseUrl}/v1/agents/${agentId}/tools`, {
       method: "POST",
-      headers: { "Content-Type": "application/json", ...backendAuthHeaders() },
+      headers: { "Content-Type": "application/json", ...await backendAuthHeaders() },
       body: JSON.stringify(body),
     });
     const data = await res.json().catch(() => ({ error: "Bad JSON" }));

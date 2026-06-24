@@ -1,0 +1,42 @@
+{
+  "name": "commons-identity",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsup",
+    "start": "node dist/index.js",
+    "auth:generate": "better-auth generate --config lib/auth.schema.ts --output migrations/better-auth.sql --yes",
+    "auth:migrate": "better-auth migrate --config lib/auth.ts --yes",
+    "db:migrate": "tsx scripts/migrate-database.ts",
+    "oauth:bootstrap": "tsx scripts/bootstrap-oauth-clients.ts",
+    "test:e2e": "tsx scripts/e2e-smoke.ts",
+    "identity:migrate": "tsx scripts/migrate-legacy-identities.ts",
+    "identity:migrate:apply": "tsx scripts/migrate-legacy-identities.ts --apply"
+  },
+  "dependencies": {
+    "@better-auth/core": "1.6.20",
+    "@better-auth/oauth-provider": "^1.6.20",
+    "@better-auth/utils": "0.4.2",
+    "@better-fetch/fetch": "1.3.1",
+    "@hono/node-server": "^1.19.5",
+    "bcryptjs": "^2.4.3",
+    "better-auth": "^1.6.20",
+    "better-call": "1.3.6",
+    "hono": "^4.12.14",
+    "mongodb": "^6.15.0",
+    "pg": "^8.16.3",
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "@better-auth/cli": "^1.4.21",
+    "@types/bcryptjs": "^2.4.6",
+    "@types/node": "^22",
+    "@types/pg": "^8.15.5",
+    "pg-mem": "^3.0.14",
+    "tsup": "^8.5.1",
+    "tsx": "^4.20.6",
+    "typescript": "^5.8.3"
+  }
+}

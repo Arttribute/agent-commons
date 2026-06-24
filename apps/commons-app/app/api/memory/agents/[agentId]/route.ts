@@ -12,7 +12,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
   ["type", "limit"].forEach((k) => { const v = searchParams.get(k); if (v) p.set(k, v); });
   const qs = p.toString();
   try {
-    const res = await fetch(`${baseUrl}/v1/memory/agents/${agentId}${qs ? `?${qs}` : ""}`, { cache: "no-store", headers: backendAuthHeaders() });
+    const res = await fetch(`${baseUrl}/v1/memory/agents/${agentId}${qs ? `?${qs}` : ""}`, { cache: "no-store", headers: await backendAuthHeaders() });
     const data = await res.json().catch(() => ({ error: "Bad JSON" }));
     return NextResponse.json(data, { status: res.status });
   } catch (e: any) {

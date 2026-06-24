@@ -12,7 +12,7 @@ export async function GET(_req: NextRequest, { params }: Ctx) {
   try {
     const res = await fetch(`${baseUrl}/v1/a2a/${agentId}/.well-known`, {
       cache: "no-store",
-      headers: backendAuthHeaders(),
+      headers: await backendAuthHeaders(),
     });
     const data = await res.json().catch(() => ({ error: "Bad JSON" }));
     return NextResponse.json(data, { status: res.status });
@@ -29,7 +29,7 @@ export async function POST(req: NextRequest, { params }: Ctx) {
   try {
     const res = await fetch(`${baseUrl}/v1/a2a/${agentId}`, {
       method: "POST",
-      headers: { "Content-Type": "application/json", ...backendAuthHeaders() },
+      headers: { "Content-Type": "application/json", ...await backendAuthHeaders() },
       body: JSON.stringify(body),
     });
     const data = await res.json().catch(() => ({ error: "Bad JSON" }));

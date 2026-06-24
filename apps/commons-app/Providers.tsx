@@ -1,18 +1,24 @@
 "use client";
 import React from "react";
 import { PrivyProvider } from "@privy-io/react-auth";
+import { SessionProvider } from "next-auth/react";
 
 type Props = {
   children: React.ReactNode;
 };
 
 export default function Providers({ children }: Props) {
+  const privyAppId = process.env.NEXT_PUBLIC_PRIVY_APP_ID;
+  if (!privyAppId) {
+    return <SessionProvider>{children}</SessionProvider>;
+  }
   return (
-    <PrivyProvider
-      appId={process.env.NEXT_PUBLIC_PRIVY_APP_ID as string}
-      config={{
-        // (Optional) Customize the login methods displayed to users upfront:
-        loginMethods: ["email", "wallet", "google"],
+    <SessionProvider>
+      <PrivyProvider
+        appId={privyAppId}
+        config={{
+          // Privy is wallet infrastructure only; Commons Identity owns login.
+          loginMethods: ["wallet"],
 
         appearance: {
           theme: "light",
@@ -24,11 +30,12 @@ export default function Providers({ children }: Props) {
         // (Optional) Embedded wallet creation. If you want to auto-create
         // embedded wallets for new users, set createOnLogin: 'users-without-wallets'
         embeddedWallets: {
-          createOnLogin: "users-without-wallets",
+          createOnLogin: "off",
         },
-      }}
-    >
-      {children}
-    </PrivyProvider>
+        }}
+      >
+        {children}
+      </PrivyProvider>
+    </SessionProvider>
   );
 }

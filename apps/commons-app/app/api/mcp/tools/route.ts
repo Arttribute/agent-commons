@@ -17,7 +17,7 @@ export async function GET(request: NextRequest) {
   try {
     const res = await fetch(`${baseUrl}/v1/mcp/tools?${params.toString()}`, {
       cache: "no-store",
-      headers: backendAuthHeaders(),
+      headers: await backendAuthHeaders(),
     });
     const data = await res.json().catch(() => ({ error: "Bad JSON" }));
     return NextResponse.json(data, { status: res.status });

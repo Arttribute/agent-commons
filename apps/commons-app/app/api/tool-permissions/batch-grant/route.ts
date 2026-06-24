@@ -10,7 +10,7 @@ export async function POST(req: NextRequest) {
   try {
     const res = await fetch(`${baseUrl}/v1/tool-permissions/batch-grant`, {
       method: "POST",
-      headers: { "Content-Type": "application/json", ...backendAuthHeaders() },
+      headers: { "Content-Type": "application/json", ...await backendAuthHeaders() },
       body: JSON.stringify(body),
     });
     const data = await res.json().catch(() => ({ error: "Bad JSON" }));

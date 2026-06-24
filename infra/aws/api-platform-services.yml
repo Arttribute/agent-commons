@@ -1,0 +1,98 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Commons Identity and unified API gateway ECS Express services.
+
+Parameters:
+  IdentityImageUri: { Type: String }
+  GatewayImageUri: { Type: String }
+  ExecutionRoleArn: { Type: String }
+  InfrastructureRoleArn: { Type: String }
+  IdentityRuntimeSecretArn: { Type: String }
+  GatewayRuntimeSecretArn: { Type: String }
+  AgentCommonsInternalUrl: { Type: String }
+  CommonOsInternalUrl: { Type: String }
+
+Resources:
+  IdentityService:
+    Type: AWS::ECS::ExpressGatewayService
+    Properties:
+      ServiceName: commons-identity-production
+      Cluster: default
+      ExecutionRoleArn: !Ref ExecutionRoleArn
+      InfrastructureRoleArn: !Ref InfrastructureRoleArn
+      Cpu: "512"
+      Memory: "1024"
+      HealthCheckPath: /health
+      PrimaryContainer:
+        Image: !Ref IdentityImageUri
+        ContainerPort: 8080
+        Environment:
+          - { Name: NODE_ENV, Value: production }
+          - { Name: PORT, Value: "8080" }
+          - { Name: IDENTITY_DB_SCHEMA, Value: commons_identity }
+          - { Name: IDENTITY_DB_SSL, Value: "true" }
+        Secrets:
+          - Name: DATABASE_URL
+            ValueFrom: !Sub "${IdentityRuntimeSecretArn}:DATABASE_URL::"
+          - Name: BETTER_AUTH_SECRET
+            ValueFrom: !Sub "${IdentityRuntimeSecretArn}:BETTER_AUTH_SECRET::"
+          - Name: BETTER_AUTH_URL
+            ValueFrom: !Sub "${IdentityRuntimeSecretArn}:BETTER_AUTH_URL::"
+          - Name: COMMONS_IDENTITY_ISSUER
+            ValueFrom: !Sub "${IdentityRuntimeSecretArn}:COMMONS_IDENTITY_ISSUER::"
+          - Name: COMMONS_TRUSTED_ORIGINS
+            ValueFrom: !Sub "${IdentityRuntimeSecretArn}:COMMONS_TRUSTED_ORIGINS::"
+          - Name: COMMONS_GATEWAY_INTERNAL_SECRET
+            ValueFrom: !Sub "${IdentityRuntimeSecretArn}:COMMONS_GATEWAY_INTERNAL_SECRET::"
+          - Name: GOOGLE_CLIENT_ID
+            ValueFrom: !Sub "${IdentityRuntimeSecretArn}:GOOGLE_CLIENT_ID::"
+          - Name: GOOGLE_CLIENT_SECRET
+            ValueFrom: !Sub "${IdentityRuntimeSecretArn}:GOOGLE_CLIENT_SECRET::"
+          - Name: RESEND_API_KEY
+            ValueFrom: !Sub "${IdentityRuntimeSecretArn}:RESEND_API_KEY::"
+          - Name: IDENTITY_FROM_EMAIL
+            ValueFrom: !Sub "${IdentityRuntimeSecretArn}:IDENTITY_FROM_EMAIL::"
+      ScalingTarget:
+        MinTaskCount: 1
+        MaxTaskCount: 3
+        AutoScalingMetric: AVERAGE_CPU
+        AutoScalingTargetValue: 70
+
+  GatewayService:
+    Type: AWS::ECS::ExpressGatewayService
+    Properties:
+      ServiceName: commons-api-gateway-production
+      Cluster: default
+      ExecutionRoleArn: !Ref ExecutionRoleArn
+      InfrastructureRoleArn: !Ref InfrastructureRoleArn
+      Cpu: "512"
+      Memory: "1024"
+      HealthCheckPath: /health
+      PrimaryContainer:
+        Image: !Ref GatewayImageUri
+        ContainerPort: 8080
+        Environment:
+          - { Name: NODE_ENV, Value: production }
+          - { Name: PORT, Value: "8080" }
+          - { Name: COMMONS_IDENTITY_ISSUER, Value: "https://auth.agentcommons.io/api/auth" }
+          - Name: COMMONS_IDENTITY_JWKS_URL
+            Value: !Sub "https://${IdentityService.Endpoint}/api/auth/.well-known/jwks.json"
+          - { Name: COMMONS_IDENTITY_AUDIENCE, Value: commons-platform }
+          - Name: COMMONS_IDENTITY_PLATFORM_URL
+            Value: !Sub "https://${IdentityService.Endpoint}/api/platform"
+          - { Name: AGENT_COMMONS_INTERNAL_URL, Value: !Ref AgentCommonsInternalUrl }
+          - { Name: COMMON_OS_INTERNAL_URL, Value: !Ref CommonOsInternalUrl }
+          - { Name: RATE_LIMIT_PER_MINUTE, Value: "600" }
+        Secrets:
+          - Name: COMMONS_GATEWAY_INTERNAL_SECRET
+            ValueFrom: !Sub "${GatewayRuntimeSecretArn}:COMMONS_GATEWAY_INTERNAL_SECRET::"
+          - Name: CORS_ORIGINS
+            ValueFrom: !Sub "${GatewayRuntimeSecretArn}:CORS_ORIGINS::"
+      ScalingTarget:
+        MinTaskCount: 1
+        MaxTaskCount: 6
+        AutoScalingMetric: AVERAGE_CPU
+        AutoScalingTargetValue: 60
+
+Outputs:
+  IdentityEndpoint: { Value: !GetAtt IdentityService.Endpoint }
+  GatewayEndpoint: { Value: !GetAtt GatewayService.Endpoint }

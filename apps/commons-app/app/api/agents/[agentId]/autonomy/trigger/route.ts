@@ -12,7 +12,7 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<Para
   try {
     const res = await fetch(`${baseUrl}/v1/agents/${agentId}/autonomy/trigger`, {
       method: "POST",
-      headers: { "Content-Type": "application/json", ...backendAuthHeaders() },
+      headers: { "Content-Type": "application/json", ...await backendAuthHeaders() },
     });
     const data = await res.json().catch(() => ({}));
     return NextResponse.json(data, { status: res.status });

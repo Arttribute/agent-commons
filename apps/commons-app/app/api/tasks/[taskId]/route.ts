@@ -8,7 +8,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ tas
   const { taskId } = await params;
   if (!baseUrl) return NextResponse.json({ error: "Server base URL not configured" }, { status: 500 });
   try {
-    const res = await fetch(`${baseUrl}/v1/tasks/${taskId}`, { cache: "no-store", headers: backendAuthHeaders() });
+    const res = await fetch(`${baseUrl}/v1/tasks/${taskId}`, { cache: "no-store", headers: await backendAuthHeaders() });
     const data = await res.json().catch(() => ({ error: "Bad JSON" }));
     return NextResponse.json(data, { status: res.status });
   } catch (e: any) {
@@ -24,7 +24,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ task
   try {
     const res = await fetch(`${baseUrl}/v1/tasks/${taskId}`, {
       method: "PUT",
-      headers: { "Content-Type": "application/json", ...backendAuthHeaders() },
+      headers: { "Content-Type": "application/json", ...await backendAuthHeaders() },
       body: JSON.stringify(body),
     });
     const data = await res.json().catch(() => ({ error: "Bad JSON" }));
@@ -39,7 +39,7 @@ export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ 
   const { taskId } = await params;
   if (!baseUrl) return NextResponse.json({ error: "Server base URL not configured" }, { status: 500 });
   try {
-    const res = await fetch(`${baseUrl}/v1/tasks/${taskId}`, { method: "DELETE", headers: backendAuthHeaders() });
+    const res = await fetch(`${baseUrl}/v1/tasks/${taskId}`, { method: "DELETE", headers: await backendAuthHeaders() });
     const data = await res.json().catch(() => ({}));
     return NextResponse.json(data, { status: res.status });
   } catch (e: any) {

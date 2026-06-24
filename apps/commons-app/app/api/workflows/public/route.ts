@@ -11,7 +11,7 @@ export async function GET(req: NextRequest) {
   try {
     const res = await fetch(`${baseUrl}/v1/workflows/public${qs ? `?${qs}` : ""}`, {
       cache: "no-store",
-      headers: backendAuthHeaders(),
+      headers: await backendAuthHeaders(),
     });
     const data = await res.json().catch(() => ({ error: "Bad JSON" }));
     return NextResponse.json(data, { status: res.status });

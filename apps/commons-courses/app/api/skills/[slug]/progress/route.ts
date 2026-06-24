@@ -189,13 +189,17 @@ export async function POST(
 
   const completedChallenges = enrollment.completedChallenges ?? [];
   const alreadyCompleted = completedChallenges.includes(challenge.id);
-  const streak = alreadyCompleted
+  const awaitsPracticalVerification = Boolean(challenge.practicalSignal);
+  const shouldCompleteNow = !alreadyCompleted && !awaitsPracticalVerification;
+  const streak = !shouldCompleteNow
     ? enrollment.streak ?? 0
     : calculateNextStreak(enrollment.lastChallengeCompletedAt, enrollment.streak ?? 0);
   const nextCompleted = alreadyCompleted
     ? completedChallenges
-    : [...completedChallenges, challenge.id];
-  const nextPoints = alreadyCompleted
+    : shouldCompleteNow
+      ? [...completedChallenges, challenge.id]
+      : completedChallenges;
+  const nextPoints = !shouldCompleteNow
     ? enrollment.points ?? 0
     : (enrollment.points ?? 0) + challenge.points;
   const answerEntries = Object.fromEntries(
@@ -227,7 +231,7 @@ export async function POST(
         points: nextPoints,
         streak,
         longestStreak: Math.max(enrollment.longestStreak ?? 0, streak),
-        lastChallengeCompletedAt: alreadyCompleted
+        lastChallengeCompletedAt: !shouldCompleteNow
           ? enrollment.lastChallengeCompletedAt
           : new Date(),
         practicalSignals,

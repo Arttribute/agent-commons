@@ -19,8 +19,8 @@ Resources:
       Cluster: default
       ExecutionRoleArn: !Ref ExecutionRoleArn
       InfrastructureRoleArn: !Ref InfrastructureRoleArn
-      Cpu: "2048"
-      Memory: "4096"
+      Cpu: "1024"
+      Memory: "2048"
       HealthCheckPath: /health
       PrimaryContainer:
         Image: !Ref ImageUri
@@ -73,6 +73,18 @@ Resources:
             ValueFrom: !Sub "${RuntimeSecretArn}:POSTHOG_PUBLIC_API_KEY::"
           - Name: API_SECRET_KEY
             ValueFrom: !Sub "${RuntimeSecretArn}:API_SECRET_KEY::"
+          - Name: COMMONS_IDENTITY_ISSUER
+            ValueFrom: !Sub "${RuntimeSecretArn}:COMMONS_IDENTITY_ISSUER::"
+          - Name: COMMONS_IDENTITY_JWKS_URL
+            ValueFrom: !Sub "${RuntimeSecretArn}:COMMONS_IDENTITY_JWKS_URL::"
+          - Name: COMMONS_IDENTITY_AUDIENCE
+            ValueFrom: !Sub "${RuntimeSecretArn}:COMMONS_IDENTITY_AUDIENCE::"
+          - Name: COMMONS_GATEWAY_INTERNAL_SECRET
+            ValueFrom: !Sub "${RuntimeSecretArn}:COMMONS_GATEWAY_INTERNAL_SECRET::"
+          - Name: API_AUTH_REQUIRED
+            ValueFrom: !Sub "${RuntimeSecretArn}:API_AUTH_REQUIRED::"
+          - Name: OWNER_AUTH_REQUIRED
+            ValueFrom: !Sub "${RuntimeSecretArn}:OWNER_AUTH_REQUIRED::"
       ScalingTarget:
         MinTaskCount: 1
         MaxTaskCount: 4

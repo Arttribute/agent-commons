@@ -1,0 +1,46 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: CloudFront edge distribution for auth.agentcommons.io.
+
+Parameters:
+  IdentityOriginDomain:
+    Type: String
+  CertificateArn:
+    Type: String
+
+Resources:
+  IdentityDistribution:
+    Type: AWS::CloudFront::Distribution
+    Properties:
+      DistributionConfig:
+        Enabled: true
+        Comment: Commons Identity edge
+        HttpVersion: http2and3
+        IPV6Enabled: true
+        Aliases:
+          - auth.agentcommons.io
+        Origins:
+          - Id: commons-identity-ecs
+            DomainName: !Ref IdentityOriginDomain
+            CustomOriginConfig:
+              OriginProtocolPolicy: https-only
+              OriginSSLProtocols: [TLSv1.2]
+              OriginReadTimeout: 30
+              OriginKeepaliveTimeout: 5
+        DefaultCacheBehavior:
+          TargetOriginId: commons-identity-ecs
+          ViewerProtocolPolicy: redirect-to-https
+          AllowedMethods: [GET, HEAD, OPTIONS, PUT, PATCH, POST, DELETE]
+          CachedMethods: [GET, HEAD, OPTIONS]
+          Compress: true
+          CachePolicyId: 4135ea2d-6df8-44a3-9df3-4b5a84be39ad
+          OriginRequestPolicyId: b689b0a8-53d0-40ab-baf2-68738e2966ac
+        ViewerCertificate:
+          AcmCertificateArn: !Ref CertificateArn
+          SslSupportMethod: sni-only
+          MinimumProtocolVersion: TLSv1.2_2021
+
+Outputs:
+  DistributionId:
+    Value: !Ref IdentityDistribution
+  DistributionDomain:
+    Value: !GetAtt IdentityDistribution.DomainName

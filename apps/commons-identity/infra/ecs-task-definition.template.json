@@ -1,0 +1,72 @@
+{
+  "family": "commons-identity",
+  "networkMode": "awsvpc",
+  "requiresCompatibilities": ["FARGATE"],
+  "cpu": "512",
+  "memory": "1024",
+  "executionRoleArn": "${ECS_EXECUTION_ROLE_ARN}",
+  "taskRoleArn": "${ECS_TASK_ROLE_ARN}",
+  "containerDefinitions": [
+    {
+      "name": "commons-identity",
+      "image": "${ECR_IMAGE}",
+      "essential": true,
+      "portMappings": [
+        {
+          "containerPort": 3010,
+          "protocol": "tcp",
+          "appProtocol": "http"
+        }
+      ],
+      "environment": [
+        { "name": "NODE_ENV", "value": "production" },
+        { "name": "PORT", "value": "3010" },
+        { "name": "BETTER_AUTH_URL", "value": "https://auth.agentcommons.io" },
+        {
+          "name": "COMMONS_IDENTITY_ISSUER",
+          "value": "https://auth.agentcommons.io/api/auth"
+        },
+        {
+          "name": "COMMONS_IDENTITY_AUDIENCE",
+          "value": "commons-platform"
+        }
+      ],
+      "secrets": [
+        {
+          "name": "DATABASE_URL",
+          "valueFrom": "${DATABASE_URL_SECRET_ARN}"
+        },
+        {
+          "name": "BETTER_AUTH_SECRET",
+          "valueFrom": "${BETTER_AUTH_SECRET_ARN}"
+        },
+        {
+          "name": "GOOGLE_CLIENT_ID",
+          "valueFrom": "${GOOGLE_CLIENT_ID_SECRET_ARN}"
+        },
+        {
+          "name": "GOOGLE_CLIENT_SECRET",
+          "valueFrom": "${GOOGLE_CLIENT_SECRET_ARN}"
+        }
+      ],
+      "healthCheck": {
+        "command": [
+          "CMD-SHELL",
+          "wget -qO- http://127.0.0.1:3010/health || exit 1"
+        ],
+        "interval": 30,
+        "timeout": 5,
+        "retries": 3,
+        "startPeriod": 20
+      },
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group": "/ecs/commons-identity",
+          "awslogs-region": "${AWS_REGION}",
+          "awslogs-stream-prefix": "identity"
+        }
+      }
+    }
+  ]
+}

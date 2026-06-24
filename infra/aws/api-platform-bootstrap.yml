@@ -1,0 +1,185 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Bootstrap resources for Commons Identity and the unified Commons API gateway.
+
+Parameters:
+  SourceBucketName:
+    Type: String
+    Default: agent-commons-cicd-286273777416-eu-west-1
+
+Resources:
+  IdentityRepository:
+    Type: AWS::ECR::Repository
+    Properties:
+      RepositoryName: agent-commons/identity
+      ImageScanningConfiguration: { ScanOnPush: true }
+      ImageTagMutability: MUTABLE
+      LifecyclePolicy:
+        LifecyclePolicyText: |
+          {"rules":[{"rulePriority":1,"description":"Keep 30 images","selection":{"tagStatus":"any","countType":"imageCountMoreThan","countNumber":30},"action":{"type":"expire"}}]}
+
+  GatewayRepository:
+    Type: AWS::ECR::Repository
+    Properties:
+      RepositoryName: agent-commons/api-gateway
+      ImageScanningConfiguration: { ScanOnPush: true }
+      ImageTagMutability: MUTABLE
+      LifecyclePolicy:
+        LifecyclePolicyText: |
+          {"rules":[{"rulePriority":1,"description":"Keep 30 images","selection":{"tagStatus":"any","countType":"imageCountMoreThan","countNumber":30},"action":{"type":"expire"}}]}
+
+  IdentityRuntimeSecret:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Name: agent-commons/identity/production
+      Description: Commons Identity production runtime configuration.
+      SecretString: "{}"
+
+  GatewayRuntimeSecret:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Name: agent-commons/api-gateway/production
+      Description: Commons API gateway production runtime configuration.
+      SecretString: "{}"
+
+  TaskExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: commons-platform-task-execution
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal: { Service: ecs-tasks.amazonaws.com }
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy
+      Policies:
+        - PolicyName: ReadCommonsPlatformSecrets
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: secretsmanager:GetSecretValue
+                Resource:
+                  - !Ref IdentityRuntimeSecret
+                  - !Ref GatewayRuntimeSecret
+
+  InfrastructureRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: commons-platform-ecs-infrastructure
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal: { Service: ecs.amazonaws.com }
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AmazonECSInfrastructureRoleforExpressGatewayServices
+
+  CodeBuildRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: commons-platform-codebuild
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal: { Service: codebuild.amazonaws.com }
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: BuildAndDeployCommonsPlatform
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                  - ecr:GetAuthorizationToken
+                  - cloudformation:DescribeStacks
+                  - cloudformation:CreateStack
+                  - cloudformation:UpdateStack
+                  - cloudformation:CreateChangeSet
+                  - cloudformation:DescribeChangeSet
+                  - cloudformation:ExecuteChangeSet
+                  - cloudformation:DeleteChangeSet
+                  - cloudformation:GetTemplate
+                  - cloudformation:GetTemplateSummary
+                  - cloudwatch:DescribeAlarms
+                  - cloudwatch:PutMetricAlarm
+                  - ecs:CreateCluster
+                  - ecs:RegisterTaskDefinition
+                  - ecs:CreateExpressGatewayService
+                  - ecs:UpdateExpressGatewayService
+                  - ecs:DeleteExpressGatewayService
+                  - ecs:DescribeExpressGatewayService
+                  - ecs:DescribeClusters
+                  - ecs:DescribeServices
+                  - ecs:DescribeServiceRevisions
+                  - ecs:ListServiceDeployments
+                  - ecs:DescribeServiceDeployments
+                  - ecs:TagResource
+                  - ecs:UntagResource
+                Resource: "*"
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:GetObjectVersion
+                Resource: !Sub arn:aws:s3:::${SourceBucketName}/commons-platform/*
+              - Effect: Allow
+                Action:
+                  - ecr:BatchCheckLayerAvailability
+                  - ecr:CompleteLayerUpload
+                  - ecr:GetDownloadUrlForLayer
+                  - ecr:InitiateLayerUpload
+                  - ecr:PutImage
+                  - ecr:UploadLayerPart
+                Resource:
+                  - !GetAtt IdentityRepository.Arn
+                  - !GetAtt GatewayRepository.Arn
+              - Effect: Allow
+                Action: iam:PassRole
+                Resource:
+                  - !GetAtt TaskExecutionRole.Arn
+                  - !GetAtt InfrastructureRole.Arn
+
+  BuildProject:
+    Type: AWS::CodeBuild::Project
+    Properties:
+      Name: commons-platform-production
+      ServiceRole: !GetAtt CodeBuildRole.Arn
+      Source:
+        Type: S3
+        Location: !Sub ${SourceBucketName}/commons-platform/source.zip
+        BuildSpec: buildspec.api-platform.yml
+      Artifacts: { Type: NO_ARTIFACTS }
+      Environment:
+        Type: LINUX_CONTAINER
+        ComputeType: BUILD_GENERAL1_LARGE
+        Image: aws/codebuild/standard:7.0
+        PrivilegedMode: true
+        EnvironmentVariables:
+          - Name: AWS_ACCOUNT_ID
+            Value: !Ref AWS::AccountId
+          - Name: IDENTITY_ECR_REPOSITORY
+            Value: !Ref IdentityRepository
+          - Name: GATEWAY_ECR_REPOSITORY
+            Value: !Ref GatewayRepository
+          - Name: TASK_EXECUTION_ROLE_ARN
+            Value: !GetAtt TaskExecutionRole.Arn
+          - Name: INFRASTRUCTURE_ROLE_ARN
+            Value: !GetAtt InfrastructureRole.Arn
+          - Name: IDENTITY_RUNTIME_SECRET_ARN
+            Value: !Ref IdentityRuntimeSecret
+          - Name: GATEWAY_RUNTIME_SECRET_ARN
+            Value: !Ref GatewayRuntimeSecret
+      TimeoutInMinutes: 60
+
+Outputs:
+  IdentityRuntimeSecretArn: { Value: !Ref IdentityRuntimeSecret }
+  GatewayRuntimeSecretArn: { Value: !Ref GatewayRuntimeSecret }
+  TaskExecutionRoleArn: { Value: !GetAtt TaskExecutionRole.Arn }
+  InfrastructureRoleArn: { Value: !GetAtt InfrastructureRole.Arn }
+  CodeBuildProjectName: { Value: !Ref BuildProject }

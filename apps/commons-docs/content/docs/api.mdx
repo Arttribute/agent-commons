@@ -9,14 +9,17 @@ description: All API endpoints with request/response examples. Base URL — http
 
 ## Authentication
 
-All requests require an API key header:
+Use a project API key from the
+[Commons API Platform](https://auth.agentcommons.io/platform), or a short-lived
+Commons OAuth access token:
 
 ```http
-x-api-key: your_api_key
+Authorization: Bearer csk_live_your_project_key
 Content-Type: application/json
 ```
 
-Get a key from **Settings → API Keys** in the web app.
+Project keys belong to a workspace project and can be scoped independently.
+Legacy `sk-ac-*` keys remain accepted during migration.
 
 ---
 
@@ -42,7 +45,7 @@ Get a key from **Settings → API Keys** in the web app.
 
 ```bash
 curl -X POST https://api.agentcommons.io/v1/agents \
-  -H "x-api-key: YOUR_KEY" \
+  -H "Authorization: Bearer $COMMONS_API_KEY" \
   -d '{
     "name": "Research Bot",
     "instructions": "You are a research assistant. Be concise.",
@@ -54,6 +57,27 @@ curl -X POST https://api.agentcommons.io/v1/agents \
 ```
 
 **Model providers:** openai · anthropic · google · groq · mistral · ollama
+
+---
+
+## Compute and Common OS
+
+Common OS remains an independently deployed service and is exposed through the
+same credential and API platform under `/v1/compute`.
+
+| Method | Path | Description |
+|---|---|---|
+| POST | /v1/compute/fleets | Create a fleet |
+| GET | /v1/compute/fleets | List fleets |
+| GET | /v1/compute/fleets/:fleetId | Get a fleet |
+| POST | /v1/compute/fleets/:fleetId/agents | Deploy an Agent Commons agent |
+| GET | /v1/compute/fleets/:fleetId/agents | List deployed agents |
+| GET | /v1/compute/fleets/:fleetId/agents/:agentId | Get a deployment |
+| DELETE | /v1/compute/fleets/:fleetId/agents/:agentId | Terminate a deployment |
+| GET | /v1/compute/activity/events | Query deployment activity |
+
+Passing an existing Agent Commons `agentId` deploys that agent to compute
+without creating a duplicate agent identity.
 
 ---
 
@@ -70,7 +94,7 @@ curl -X POST https://api.agentcommons.io/v1/agents \
 
 ```bash
 curl -X POST https://api.agentcommons.io/v1/agents/run \
-  -H "x-api-key: YOUR_KEY" \
+  -H "Authorization: Bearer $COMMONS_API_KEY" \
   -d '{
     "agentId": "agent_abc123",
     "messages": [{ "role": "user", "content": "Hello!" }],
@@ -161,7 +185,7 @@ data: {"type":"done","sessionId":"session_xyz","usage":{...}}
 
 ```bash
 curl -X POST https://api.agentcommons.io/v1/workflows/workflow_abc123/execute \
-  -H "x-api-key: YOUR_KEY" \
+  -H "Authorization: Bearer $COMMONS_API_KEY" \
   -d '{ "inputs": { "url": "https://example.com" } }'
 ```
 

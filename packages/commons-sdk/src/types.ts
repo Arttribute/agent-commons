@@ -416,7 +416,8 @@ export interface McpPrompt {
 // ─── SDK Config ───────────────────────────────────────────────────────────────
 
 export interface CommonsClientConfig {
-  baseUrl: string;
+  /** Defaults to the unified Commons API platform. */
+  baseUrl?: string;
   apiKey?: string;
   initiator?: string;
   /** Fetch implementation — defaults to global fetch */

@@ -10,7 +10,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
   const full = new URL(request.url).searchParams.get("full") === "true";
   const path = full ? `/v1/sessions/${sessionId}/full` : `/v1/sessions/${sessionId}`;
   try {
-    const res = await fetch(`${baseUrl}${path}`, { cache: "no-store", headers: backendAuthHeaders() });
+    const res = await fetch(`${baseUrl}${path}`, { cache: "no-store", headers: await backendAuthHeaders() });
     const data = await res.json().catch(() => ({ error: "Bad JSON" }));
     return NextResponse.json(data, { status: res.status });
   } catch (e: any) {

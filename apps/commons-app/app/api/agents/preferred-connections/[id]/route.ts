@@ -13,7 +13,7 @@ export async function DELETE(
   try {
     const res = await fetch(`${baseUrl}/v1/agents/preferred-connections/${encodeURIComponent(id)}`, {
       method: "DELETE",
-      headers: backendAuthHeaders(),
+      headers: await backendAuthHeaders(),
     });
     if (res.status === 204) return new NextResponse(null, { status: 204 });
     const data = await res.json().catch(() => ({ error: "Bad JSON" }));

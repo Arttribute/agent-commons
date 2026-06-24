@@ -13,7 +13,7 @@ export async function GET(request: NextRequest) {
     if (v) params.set(k, v);
   });
   try {
-    const res = await fetch(`${baseUrl}/v1/tool-keys?${params.toString()}`, { cache: "no-store", headers: backendAuthHeaders() });
+    const res = await fetch(`${baseUrl}/v1/tool-keys?${params.toString()}`, { cache: "no-store", headers: await backendAuthHeaders() });
     const data = await res.json().catch(() => ({ error: "Bad JSON" }));
     return NextResponse.json(data, { status: res.status });
   } catch (e: any) {
@@ -28,7 +28,7 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const res = await fetch(`${baseUrl}/v1/tool-keys`, {
       method: "POST",
-      headers: { "Content-Type": "application/json", ...backendAuthHeaders() },
+      headers: { "Content-Type": "application/json", ...await backendAuthHeaders() },
       body: JSON.stringify(body),
     });
     const data = await res.json().catch(() => ({ error: "Bad JSON" }));

@@ -12,7 +12,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<Param
   try {
     const res = await fetch(`${baseUrl}/v1/agents/${agentId}/autonomy`, {
       cache: "no-store",
-      headers: backendAuthHeaders(),
+      headers: await backendAuthHeaders(),
     });
     const data = await res.json().catch(() => ({}));
     return NextResponse.json(data, { status: res.status });
@@ -29,7 +29,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<Params
     const body = await req.json();
     const res = await fetch(`${baseUrl}/v1/agents/${agentId}/autonomy`, {
       method: "PUT",
-      headers: { "Content-Type": "application/json", ...backendAuthHeaders() },
+      headers: { "Content-Type": "application/json", ...await backendAuthHeaders() },
       body: JSON.stringify(body),
     });
     const data = await res.json().catch(() => ({}));

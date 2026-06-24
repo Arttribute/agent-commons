@@ -10,7 +10,7 @@ export async function GET(_req: NextRequest, { params }: Ctx) {
   const { memoryId } = await params;
   if (!baseUrl) return NextResponse.json({ error: "Server base URL not configured" }, { status: 500 });
   try {
-    const res = await fetch(`${baseUrl}/v1/memory/${memoryId}`, { cache: "no-store", headers: backendAuthHeaders() });
+    const res = await fetch(`${baseUrl}/v1/memory/${memoryId}`, { cache: "no-store", headers: await backendAuthHeaders() });
     const data = await res.json().catch(() => ({ error: "Bad JSON" }));
     return NextResponse.json(data, { status: res.status });
   } catch (e: any) {
@@ -26,7 +26,7 @@ export async function PATCH(req: NextRequest, { params }: Ctx) {
   try {
     const res = await fetch(`${baseUrl}/v1/memory/${memoryId}`, {
       method: "PATCH",
-      headers: { "Content-Type": "application/json", ...backendAuthHeaders() },
+      headers: { "Content-Type": "application/json", ...await backendAuthHeaders() },
       body: JSON.stringify(body),
     });
     const data = await res.json().catch(() => ({ error: "Bad JSON" }));
@@ -41,7 +41,7 @@ export async function DELETE(_req: NextRequest, { params }: Ctx) {
   const { memoryId } = await params;
   if (!baseUrl) return NextResponse.json({ error: "Server base URL not configured" }, { status: 500 });
   try {
-    const res = await fetch(`${baseUrl}/v1/memory/${memoryId}`, { method: "DELETE", headers: backendAuthHeaders() });
+    const res = await fetch(`${baseUrl}/v1/memory/${memoryId}`, { method: "DELETE", headers: await backendAuthHeaders() });
     if (res.status === 204) return new NextResponse(null, { status: 204 });
     const data = await res.json().catch(() => ({}));
     return NextResponse.json(data, { status: res.status });

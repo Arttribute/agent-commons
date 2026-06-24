@@ -22,6 +22,10 @@ export const agent = pgTable('agent', {
 
   instructions: text(),
   persona: text(),
+  // Canonical Commons identity fields. `owner` remains during the migration
+  // window as a legacy wallet/external identifier.
+  ownerUserId: text('owner_user_id'),
+  workspaceId: text('workspace_id'),
   owner: text(),
   name: text().notNull(),
   knowledgebase: jsonb('knowledgebase').$type<
@@ -1736,6 +1740,23 @@ export const skill = pgTable('skill', {
 
 /* ─────────────────────────  API KEYS  ───────────────────────── */
 
+export const activityEvent = pgTable('activity_event', {
+  eventId: text('event_id')
+    .default(sql`uuid_generate_v4()::text`)
+    .primaryKey(),
+  eventType: text('event_type').notNull(),
+  actorType: text('actor_type').notNull(),
+  actorId: text('actor_id').notNull(),
+  workspaceId: text('workspace_id'),
+  subjectType: text('subject_type').notNull(),
+  subjectId: text('subject_id').notNull(),
+  source: text('source').notNull().default('agent_commons'),
+  metadata: jsonb('metadata').$type<Record<string, unknown>>().default({}),
+  occurredAt: timestamp('occurred_at', { withTimezone: true })
+    .default(sql`timezone('utc', now())`)
+    .notNull(),
+});
+
 /**
  * Per-principal API keys for programmatic access.
  * Used by external developers, agents, and the CLI.
@@ -1755,6 +1776,13 @@ export const apiKey = pgTable('api_keys', {
 
   // 'user' | 'agent'
   principalType: text('principal_type').notNull(),
+
+  workspaceId: text('workspace_id'),
+  scopes: text('scopes').array().default(sql`'{}'::text[]`).notNull(),
+  expiresAt: timestamp('expires_at', { withTimezone: true }),
+  credentialType: text('credential_type')
+    .default('personal_access_token')
+    .notNull(),
 
   label: text('label'),
 

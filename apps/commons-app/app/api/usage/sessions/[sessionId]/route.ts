@@ -13,7 +13,7 @@ export async function GET(
   try {
     const res = await fetch(`${baseUrl}/v1/usage/sessions/${encodeURIComponent(sessionId)}`, {
       cache: "no-store",
-      headers: backendAuthHeaders(),
+      headers: await backendAuthHeaders(),
     });
     const data = await res.json().catch(() => ({ error: "Bad JSON" }));
     return NextResponse.json(data, { status: res.status });

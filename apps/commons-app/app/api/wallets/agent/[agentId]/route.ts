@@ -13,7 +13,7 @@ export async function GET(
   try {
     const res = await fetch(`${baseUrl}/v1/wallets/agent/${encodeURIComponent(agentId)}`, {
       cache: "no-store",
-      headers: backendAuthHeaders(),
+      headers: await backendAuthHeaders(),
     });
     const data = await res.json().catch(() => ({ error: "Bad JSON" }));
     return NextResponse.json(data, { status: res.status });
@@ -33,7 +33,7 @@ export async function POST(
   try {
     const res = await fetch(`${baseUrl}/v1/wallets`, {
       method: "POST",
-      headers: { "Content-Type": "application/json", ...backendAuthHeaders() },
+      headers: { "Content-Type": "application/json", ...await backendAuthHeaders() },
       body: JSON.stringify({ agentId, ...body }),
     });
     const data = await res.json().catch(() => ({ error: "Bad JSON" }));
