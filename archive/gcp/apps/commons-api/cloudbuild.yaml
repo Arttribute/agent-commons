@@ -1,3 +1,5 @@
+# Archived June 2026 after the production API moved to AWS ECS Express Mode.
+# This file is retained for historical reference and is not connected to CI.
 steps:
   - name: 'node:22'
     entrypoint: 'bash'

@@ -33,22 +33,7 @@ Copy the stack outputs into GitHub's `production` environment as variables:
 
 ## Runtime secrets
 
-For the GCP migration, export the Cloud Run service and transfer its direct
-values and Secret Manager references without printing them:
-
-```bash
-gcloud run services describe arttribute-commons-api-prod \
-  --project arttribute-424420 \
-  --region europe-west1 \
-  --format=json > /tmp/agent-commons-prod.json
-
-infra/aws/import-cloud-run-secrets.sh \
-  /tmp/agent-commons-prod.json \
-  arttribute-424420 \
-  agent-commons/commons-api/production
-```
-
-For local development or recovery, values can instead be uploaded from a
+Values can be uploaded from a
 dotenv file. Values are sent directly to Secrets Manager and are not printed:
 
 ```bash
@@ -61,10 +46,6 @@ infra/aws/import-runtime-secrets.sh apps/commons-api/.env \
 Run the `Deploy commons-api to AWS` workflow. It builds the API image, pushes it
 to ECR, creates or updates the Express Mode service, and verifies `/health`.
 
-Once the endpoint passes application smoke tests, update the API custom-domain
-DNS record for `api.agentcommons.io` to the Express Mode load balancer. The CLI
-and courses app already use that stable hostname. Keep Cloud Run available
-during a short validation period, then remove the Cloud Build trigger and Cloud
-Run service. The Vercel projects, workflows, and application DNS records remain
-unchanged; only their API origin continues to resolve through
-`api.agentcommons.io`.
+The API custom domain `api.agentcommons.io` resolves to the AWS deployment.
+Historical Cloud Run build and secret-migration files are retained under
+`archive/gcp/` and must not be connected to an automatic trigger.

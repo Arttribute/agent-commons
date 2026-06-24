@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# Archived migration helper. Production secrets now live in AWS Secrets Manager.
 set -euo pipefail
 
 SERVICE_JSON="${1:?Cloud Run service JSON is required}"
