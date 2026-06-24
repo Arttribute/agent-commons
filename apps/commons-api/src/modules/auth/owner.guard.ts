@@ -94,6 +94,18 @@ export class OwnerGuard implements CanActivate {
       return true;
     }
 
+    // Trusted service principals may read agent metadata when explicitly
+    // granted agents:read. The calling service remains responsible for
+    // enforcing any end-user ownership constraint on the result.
+    if (
+      opts.table === 'agent' &&
+      principal?.principalType === 'service' &&
+      ['GET', 'HEAD'].includes(req.method.toUpperCase()) &&
+      principal.scopes?.includes('agents:read')
+    ) {
+      return true;
+    }
+
     if (
       principal?.principalType === 'user' &&
       ((owner.ownerUserId &&
