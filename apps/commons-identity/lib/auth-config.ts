@@ -53,6 +53,9 @@ export function commonsAuthOptions(database: unknown) {
       sendResetPassword: async ({ user, url }: IdentityEmailContext) => {
         await sendIdentityEmail({
           to: user.email,
+          from:
+            process.env.IDENTITY_SECURITY_FROM_EMAIL ??
+            "Commons Security <security@agentcommons.io>",
           subject: "Reset your Commons password",
           heading: "Reset your Commons password",
           body: "Use the secure link below to choose a new password.",
@@ -74,6 +77,10 @@ export function commonsAuthOptions(database: unknown) {
       }: IdentityEmailContext) => {
         await sendIdentityEmail({
           to: user.email,
+          from:
+            process.env.IDENTITY_ONBOARDING_FROM_EMAIL ??
+            process.env.IDENTITY_FROM_EMAIL ??
+            "Commons Accounts <onboarding@agentcommons.io>",
           subject: "Verify your Commons account",
           heading: "Verify your Commons account",
           body: "One account gives you access to Commons Courses, Agent Commons, Common OS, and the CLI.",
@@ -239,6 +246,7 @@ export function commonsAuthOptions(database: unknown) {
 
 async function sendIdentityEmail(input: {
   to: string;
+  from: string;
   subject: string;
   heading: string;
   body: string;
@@ -259,9 +267,7 @@ async function sendIdentityEmail(input: {
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
-      from:
-        process.env.IDENTITY_FROM_EMAIL ??
-        "Commons <accounts@agentcommons.io>",
+      from: input.from,
       to: [input.to],
       subject: input.subject,
       html: `<h1>${input.heading}</h1><p>${input.body}</p><p><a href="${input.url}">Continue</a></p>`,
