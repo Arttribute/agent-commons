@@ -34,6 +34,46 @@ export async function ensureOAuthClient(
     [input.name],
   );
   if (existing.rows[0]) {
+    await database.query(
+      `update "oauthClient"
+          set uri = $2,
+              "redirectUris" = $3::jsonb,
+              "postLogoutRedirectUris" = $4::jsonb,
+              "grantTypes" = $5::jsonb,
+              "requirePKCE" = $6,
+              "skipConsent" = $7,
+              scopes = $8::jsonb,
+              metadata = $9::jsonb,
+              "updatedAt" = $10
+        where "clientId" = $1`,
+      [
+        existing.rows[0].clientId,
+        input.clientUri ?? null,
+        JSON.stringify(input.redirectUris),
+        JSON.stringify(input.postLogoutRedirectUris ?? []),
+        JSON.stringify(input.grantTypes),
+        input.requirePkce ?? input.grantTypes.includes("authorization_code"),
+        input.skipConsent ?? true,
+        JSON.stringify(
+          input.scopes ?? [
+            "openid",
+            "profile",
+            "email",
+            "offline_access",
+            "activity:read",
+            "agents:create",
+            "agents:read",
+            "agents:write",
+            "agents:run",
+            "compute:read",
+            "compute:write",
+            "usage:read",
+          ],
+        ),
+        JSON.stringify(input.metadata ?? {}),
+        new Date(),
+      ],
+    );
     return {
       client_id: existing.rows[0].clientId as string,
       existing: true as const,
