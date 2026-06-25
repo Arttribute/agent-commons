@@ -17,7 +17,7 @@ export default async function SignUpPage({ searchParams }: Props) {
   const appUrl =
     process.env.AUTH_URL ??
     process.env.NEXTAUTH_URL ??
-    "https://labs.agentcommons.io";
+    "https://commonlab.agentcommons.io";
   const returnTo = `${appUrl}/auth/signin?callbackUrl=${encodeURIComponent(callbackUrl)}`;
 
   if (!authorizeUrl) {

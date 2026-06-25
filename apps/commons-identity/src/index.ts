@@ -14,7 +14,7 @@ const baseUrl = process.env.BETTER_AUTH_URL ?? "http://localhost:3010";
 const nativeApps = {
   commonlabs: {
     name: "CommonLab",
-    defaultReturnTo: "https://labs.agentcommons.io/auth/signin",
+    defaultReturnTo: "https://commonlab.agentcommons.io/auth/signin",
   },
   "agent-commons": {
     name: "Agent Commons",
@@ -531,7 +531,7 @@ app.post("/api/identity/apps/:app/activate", async (c) => {
             : "Your agent workspace is ready. Your existing agents and sessions stay attached to this identity.",
       url:
         appId === "commonlabs"
-          ? "https://labs.agentcommons.io/dashboard"
+          ? "https://commonlab.agentcommons.io/dashboard"
           : appId === "common-os"
             ? "https://os.agentcommons.io/dashboard"
             : "https://www.agentcommons.io/agents",
