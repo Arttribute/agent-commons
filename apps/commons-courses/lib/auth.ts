@@ -14,6 +14,18 @@ const commonsIdentityEnabled =
   Boolean(process.env.COMMONS_IDENTITY_ISSUER) &&
   Boolean(process.env.COMMONS_IDENTITY_CLIENT_ID);
 
+async function activateProduct(accessToken: unknown) {
+  const issuer = process.env.COMMONS_IDENTITY_ISSUER;
+  if (!issuer || typeof accessToken !== "string") return;
+  await fetch(
+    `${issuer.replace(/\/api\/auth\/?$/, "")}/api/identity/apps/commonlabs/activate`,
+    {
+      method: "POST",
+      headers: { Authorization: `Bearer ${accessToken}` },
+    },
+  ).catch(() => undefined);
+}
+
 export const { handlers, signIn, signOut, auth } = NextAuth({
   secret: authSecret,
   trustHost: true,
@@ -204,7 +216,7 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
         return false;
       }
     },
-    jwt({ token, user, trigger, session }) {
+    async jwt({ token, user, trigger, session, account }) {
       if (user) {
         token.id = user.id;
         token.role = user.role;
@@ -219,6 +231,9 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
       )?.user?.role;
       if (trigger === "update" && updatedRole) {
         token.role = updatedRole;
+      }
+      if (account?.provider === "commons") {
+        await activateProduct(account.access_token);
       }
       return token;
     },

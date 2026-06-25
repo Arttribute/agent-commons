@@ -26,6 +26,11 @@ export function WorkflowCard({
   onDuplicate,
 }: WorkflowCardProps) {
   const router = useRouter();
+  const updatedAt = workflow.updatedAt ? new Date(workflow.updatedAt) : null;
+  const updatedLabel =
+    updatedAt && !Number.isNaN(updatedAt.getTime())
+      ? formatDistanceToNow(updatedAt, { addSuffix: true })
+      : "recently";
 
   const handleEdit = () => {
     router.push(`/studio/workflows/${workflow.workflowId}/edit`);
@@ -53,10 +58,7 @@ export function WorkflowCard({
 
           <div className="flex items-center gap-4 text-xs text-muted-foreground">
             <span>
-              Updated{" "}
-              {formatDistanceToNow(new Date(workflow.updatedAt), {
-                addSuffix: true,
-              })}
+              Updated {updatedLabel}
             </span>
           </div>
         </div>

@@ -15,7 +15,8 @@ export function useWorkflows(ownerId?: string, ownerType?: 'user' | 'agent') {
     try {
       const res = await fetch(`/api/workflows?ownerId=${encodeURIComponent(ownerId)}&ownerType=${ownerType}`);
       const data = await res.json();
-      setWorkflows(data ?? []);
+      if (!res.ok) throw new Error(data?.message ?? data?.error ?? "Failed to load workflows");
+      setWorkflows(Array.isArray(data) ? data : Array.isArray(data?.data) ? data.data : []);
     } catch (err: any) {
       setError(err.message);
     } finally {

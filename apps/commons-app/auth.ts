@@ -2,6 +2,17 @@ import NextAuth from "next-auth";
 
 const issuer = process.env.COMMONS_IDENTITY_ISSUER;
 
+async function activateProduct(accessToken: unknown) {
+  if (!issuer || typeof accessToken !== "string") return;
+  await fetch(
+    `${issuer.replace(/\/api\/auth\/?$/, "")}/api/identity/apps/agent-commons/activate`,
+    {
+      method: "POST",
+      headers: { Authorization: `Bearer ${accessToken}` },
+    },
+  ).catch(() => undefined);
+}
+
 async function refreshAccessToken(token: any) {
   if (!issuer || !token.refreshToken) return token;
   try {
@@ -86,6 +97,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         token.accessTokenExpiresAt = account.expires_at
           ? account.expires_at * 1000
           : Date.now() + 60 * 60 * 1000;
+        await activateProduct(account.access_token);
       }
       if (
         token.accessTokenExpiresAt &&

@@ -4,11 +4,94 @@ import { cors } from "hono/cors";
 import { logger } from "hono/logger";
 import { secureHeaders } from "hono/secure-headers";
 import { auth } from "../lib/auth.js";
+import { appEmailBrand, sendIdentityEmail } from "../lib/auth-config.js";
 import { pool } from "../lib/db.js";
+import { createCommonsId } from "../lib/ids.js";
 import { escapeHtml, page, safeReturnPath } from "./ui.js";
 import { createPlatformRouter } from "./platform.js";
 
 const baseUrl = process.env.BETTER_AUTH_URL ?? "http://localhost:3010";
+const nativeApps = {
+  commonlabs: {
+    name: "CommonLab",
+    defaultReturnTo: "https://labs.agentcommons.io/auth/signin",
+  },
+  "agent-commons": {
+    name: "Agent Commons",
+    defaultReturnTo: "https://www.agentcommons.io/login",
+  },
+  "common-os": {
+    name: "CommonOS",
+    defaultReturnTo: "https://os.agentcommons.io/auth",
+  },
+} as const;
+
+type NativeApp = keyof typeof nativeApps;
+
+function nativeApp(value: string | undefined): NativeApp {
+  return value && value in nativeApps ? (value as NativeApp) : "agent-commons";
+}
+
+function safeExternalReturnTo(value: string | undefined, app: NativeApp) {
+  if (!value) return nativeApps[app].defaultReturnTo;
+  try {
+    const url = new URL(value);
+    const allowed = (process.env.COMMONS_TRUSTED_ORIGINS ?? "")
+      .split(",")
+      .map((origin) => origin.trim())
+      .filter(Boolean);
+    if (allowed.includes(url.origin)) return url.toString();
+  } catch {}
+  return nativeApps[app].defaultReturnTo;
+}
+
+function oauthQueryFromAuthorizeUrl(value: string | undefined) {
+  if (!value) return "";
+  try {
+    const url = new URL(value);
+    if (url.origin !== new URL(baseUrl).origin) return "";
+    return url.search.slice(1);
+  } catch {
+    return "";
+  }
+}
+
+async function nativeAuthResponse(
+  authService: typeof auth,
+  input: {
+    endpoint: "/api/auth/sign-in/email" | "/api/auth/sign-up/email" | "/api/auth/sign-in/social";
+    body: Record<string, unknown>;
+    request: Request;
+    returnTo: string;
+  },
+) {
+  const request = new Request(new URL(input.endpoint, baseUrl), {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      cookie: input.request.headers.get("cookie") ?? "",
+      origin: new URL(baseUrl).origin,
+    },
+    body: JSON.stringify(input.body),
+  });
+  const response = await authService.handler(request);
+  const data = (await response.clone().json().catch(() => ({}))) as {
+    url?: string;
+    redirect?: string;
+    message?: string;
+    error?: string;
+  };
+  const location = data.url ?? data.redirect;
+  const target = response.ok
+    ? location ?? input.returnTo
+    : `${input.returnTo}${input.returnTo.includes("?") ? "&" : "?"}authError=${encodeURIComponent(
+        data.message ?? data.error ?? "Authentication failed",
+      )}`;
+  const headers = new Headers({ location: target });
+  const setCookie = response.headers.get("set-cookie");
+  if (setCookie) headers.set("set-cookie", setCookie);
+  return new Response(null, { status: 302, headers });
+}
 
 export function createIdentityApp(
   authService: typeof auth = auth,
@@ -193,6 +276,67 @@ app.get("/sign-in", (c) => {
   );
 });
 
+app.get("/native/sign-in/google", async (c) => {
+  const appId = nativeApp(c.req.query("app"));
+  const returnTo = safeExternalReturnTo(c.req.query("return_to"), appId);
+  const oauthQuery = oauthQueryFromAuthorizeUrl(c.req.query("authorize_url"));
+  if (!oauthQuery) return c.redirect(`${returnTo}?authError=Invalid+sign-in+request`);
+  return nativeAuthResponse(authService, {
+    endpoint: "/api/auth/sign-in/social",
+    request: c.req.raw,
+    returnTo,
+    body: {
+      provider: "google",
+      callbackURL: returnTo,
+      oauth_query: oauthQuery,
+    },
+  });
+});
+
+app.post("/native/sign-in/email", async (c) => {
+  const form = await c.req.parseBody();
+  const appId = nativeApp(String(form.app ?? ""));
+  const returnTo = safeExternalReturnTo(String(form.return_to ?? ""), appId);
+  const oauthQuery = oauthQueryFromAuthorizeUrl(String(form.authorize_url ?? ""));
+  if (!oauthQuery) return c.redirect(`${returnTo}?authError=Invalid+sign-in+request`);
+  return nativeAuthResponse(authService, {
+    endpoint: "/api/auth/sign-in/email",
+    request: c.req.raw,
+    returnTo,
+    body: {
+      email: String(form.email ?? ""),
+      password: String(form.password ?? ""),
+      callbackURL: returnTo,
+      oauth_query: oauthQuery,
+    },
+  });
+});
+
+app.post("/native/sign-up/email", async (c) => {
+  const form = await c.req.parseBody();
+  const appId = nativeApp(String(form.app ?? ""));
+  const returnToUrl = new URL(
+    safeExternalReturnTo(String(form.return_to ?? ""), appId),
+  );
+  returnToUrl.searchParams.set("registered", "1");
+  returnToUrl.searchParams.set("commons_app", appId);
+  const returnTo = returnToUrl.toString();
+  const oauthQuery = oauthQueryFromAuthorizeUrl(String(form.authorize_url ?? ""));
+  if (!oauthQuery) return c.redirect(`${returnTo}?authError=Invalid+sign-up+request`);
+  return nativeAuthResponse(authService, {
+    endpoint: "/api/auth/sign-up/email",
+    request: c.req.raw,
+    returnTo,
+    body: {
+      name: String(form.name ?? ""),
+      email: String(form.email ?? ""),
+      password: String(form.password ?? ""),
+      callbackURL: returnTo,
+      oauth_query: oauthQuery,
+    },
+  });
+});
+
 app.get("/sign-up", (c) => {
   const redirect = safeReturnPath(c.req.query("redirect") ?? null, "/");
   const oauthQuery = new URL(c.req.url).search.slice(1);
@@ -344,6 +488,56 @@ app.get("/api/identity/me", async (c) => {
     [session.user.id],
   );
   return c.json({ user: session.user, workspaces: memberships.rows });
+});
+
+app.post("/api/identity/apps/:app/activate", async (c) => {
+  const bearerToken = (c.req.header("authorization") ?? "").replace(/^Bearer\s+/i, "");
+  const session = await authService.api.getSession({ headers: c.req.raw.headers });
+  const tokenUser = bearerToken
+    ? await database.query(
+        `select u.id, u.email
+           from "oauthAccessToken" t
+           join "user" u on u.id = t."userId"
+          where t.token = $1 and t."expiresAt" > now() and t.revoked is null
+          limit 1`,
+        [bearerToken],
+      )
+    : { rows: [] };
+  const user = session?.user ?? tokenUser.rows[0];
+  if (!user) return c.json({ error: "Unauthorized" }, 401);
+  const appId = nativeApp(c.req.param("app"));
+  const membershipId = createCommonsId("membership");
+  const activated = await database.query(
+    `insert into commons_app_membership (id, user_id, app_id)
+     values ($1, $2, $3)
+     on conflict (user_id, app_id)
+     do update set last_seen_at = now()
+     returning (xmax = 0) as created`,
+    [membershipId, user.id, appId],
+  );
+  const created = Boolean(activated.rows[0]?.created);
+  if (created) {
+    const brand = appEmailBrand(appId);
+    await sendIdentityEmail({
+      to: String(user.email),
+      from: brand.from,
+      subject: `Welcome to ${brand.product}`,
+      heading: `Welcome to ${brand.product}`,
+      body:
+        appId === "commonlabs"
+          ? "Your learning account is ready. Pick up a course whenever you are ready."
+          : appId === "common-os"
+            ? "Your compute account is ready. Your fleets and imported agents stay attached to this identity."
+            : "Your agent workspace is ready. Your existing agents and sessions stay attached to this identity.",
+      url:
+        appId === "commonlabs"
+          ? "https://labs.agentcommons.io/dashboard"
+          : appId === "common-os"
+            ? "https://os.agentcommons.io/dashboard"
+            : "https://www.agentcommons.io/agents",
+    });
+  }
+  return c.json({ activated: true, firstActivation: created });
 });
 
 app.notFound((c) => c.json({ error: "Not found" }, 404));

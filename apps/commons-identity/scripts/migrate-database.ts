@@ -19,11 +19,18 @@ async function main() {
   try {
     await client.query(`create schema if not exists "${schema}"`);
     await client.query(`set search_path to "${schema}"`);
-    for (const file of [
-      "migrations/better-auth.sql",
+    const authSchemaExists = await client.query(
+      `select to_regclass('"${schema}"."user"') as table_name`,
+    );
+    const files = [
+      ...(authSchemaExists.rows[0]?.table_name
+        ? []
+        : ["migrations/better-auth.sql"]),
       "migrations/001-commons-identity-domain.sql",
       "migrations/002-api-platform.sql",
-    ]) {
+      "migrations/003-app-memberships.sql",
+    ];
+    for (const file of files) {
       const sql = await readFile(resolve(file), "utf8");
       await client.query(sql);
       console.log(`Applied ${file}`);

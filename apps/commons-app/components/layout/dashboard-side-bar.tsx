@@ -158,9 +158,13 @@ export function DashboardSideBar({ username }: { username: string }) {
               <div className="space-y-0.5">
                 {filteredSessions.map((session) => {
                   const isActive = pathname?.includes(session.sessionId);
-                  const timeAgo = session.createdAt
-                    ? formatDistanceToNow(new Date(session.createdAt), { addSuffix: true })
+                  const createdAt = session.createdAt
+                    ? new Date(session.createdAt)
                     : null;
+                  const timeAgo =
+                    createdAt && !Number.isNaN(createdAt.getTime())
+                      ? formatDistanceToNow(createdAt, { addSuffix: true })
+                      : null;
                   return (
                     <Link
                       key={session.sessionId}

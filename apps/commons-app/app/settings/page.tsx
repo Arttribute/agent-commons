@@ -98,7 +98,14 @@ function ModelDefaultsSection() {
     fetch("/api/models")
       .then((r) => r.json())
       .then((d) => {
-        const list: ModelInfo[] = d.data ?? d ?? [];
+        const raw = Array.isArray(d?.data) ? d.data : Array.isArray(d) ? d : [];
+        const list: ModelInfo[] = raw.filter(
+          (model: Partial<ModelInfo>) =>
+            typeof model.modelId === "string" &&
+            model.modelId.length > 0 &&
+            typeof model.provider === "string" &&
+            model.provider.length > 0,
+        );
         setModels(list);
         // Load persisted defaults
         const stored = localStorage.getItem("agc:model-defaults");
@@ -209,7 +216,8 @@ function ApiKeysSection({ walletAddress }: { walletAddress: string }) {
     try {
       const res = await fetch(`/api/api-keys?principalId=${encodeURIComponent(walletAddress)}&principalType=user`);
       const data = await res.json();
-      setKeys(data.data ?? data ?? []);
+      if (!res.ok) throw new Error(data?.message ?? data?.error ?? "Failed to load API keys");
+      setKeys(Array.isArray(data?.data) ? data.data : Array.isArray(data) ? data : []);
     } catch {} finally { setLoading(false); }
   }, [walletAddress]);
 

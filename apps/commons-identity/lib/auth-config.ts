@@ -19,6 +19,74 @@ type IdentityEmailContext = {
   url: string;
 };
 
+type IdentityEmailBrand = {
+  from: string;
+  product: string;
+  subject: string;
+  heading: string;
+  body: string;
+};
+
+function appFromVerificationUrl(url: string): string | null {
+  try {
+    const verificationUrl = new URL(url);
+    const callbackURL =
+      verificationUrl.searchParams.get("callbackURL") ??
+      verificationUrl.searchParams.get("callbackUrl");
+    if (!callbackURL) return null;
+    const callback = new URL(callbackURL);
+    return callback.searchParams.get("commons_app");
+  } catch {
+    return null;
+  }
+}
+
+export function appEmailBrand(app: string | null): IdentityEmailBrand {
+  switch (app) {
+    case "commonlabs":
+      return {
+        from:
+          process.env.COMMON_LABS_ONBOARDING_FROM_EMAIL ??
+          "CommonLab <no-reply-commonlabs@agentcommons.io>",
+        product: "CommonLab",
+        subject: "Verify your CommonLab account",
+        heading: "Welcome to CommonLab",
+        body: "Verify your email to continue learning and building with CommonLab.",
+      };
+    case "agent-commons":
+      return {
+        from:
+          process.env.AGENT_COMMONS_ONBOARDING_FROM_EMAIL ??
+          "Agent Commons <onboarding-agentcommons@agentcommons.io>",
+        product: "Agent Commons",
+        subject: "Verify your Agent Commons account",
+        heading: "Welcome to Agent Commons",
+        body: "Verify your email to start creating and running agents.",
+      };
+    case "common-os":
+      return {
+        from:
+          process.env.COMMON_OS_ONBOARDING_FROM_EMAIL ??
+          "CommonOS <onboarding-commonos@agentcommons.io>",
+        product: "CommonOS",
+        subject: "Verify your CommonOS account",
+        heading: "Welcome to CommonOS",
+        body: "Verify your email to access your fleets and agent compute.",
+      };
+    default:
+      return {
+        from:
+          process.env.IDENTITY_ONBOARDING_FROM_EMAIL ??
+          process.env.IDENTITY_FROM_EMAIL ??
+          "Commons Accounts <onboarding@agentcommons.io>",
+        product: "Commons",
+        subject: "Verify your Commons account",
+        heading: "Verify your Commons account",
+        body: "One account gives you access to every Commons product.",
+      };
+  }
+}
+
 function workspaceSlug(email: string) {
   const base = email
     .split("@")[0]!
@@ -75,15 +143,13 @@ export function commonsAuthOptions(database: unknown) {
         user,
         url,
       }: IdentityEmailContext) => {
+        const brand = appEmailBrand(appFromVerificationUrl(url));
         await sendIdentityEmail({
           to: user.email,
-          from:
-            process.env.IDENTITY_ONBOARDING_FROM_EMAIL ??
-            process.env.IDENTITY_FROM_EMAIL ??
-            "Commons Accounts <onboarding@agentcommons.io>",
-          subject: "Verify your Commons account",
-          heading: "Verify your Commons account",
-          body: "One account gives you access to Commons Courses, Agent Commons, Common OS, and the CLI.",
+          from: brand.from,
+          subject: brand.subject,
+          heading: brand.heading,
+          body: brand.body,
           url,
         });
       },
@@ -191,6 +257,7 @@ export function commonsAuthOptions(database: unknown) {
             email: user.email,
             email_verified: user.emailVerified,
             name: user.name,
+            picture: user.image,
             workspace_id:
               (user as { defaultWorkspaceId?: string }).defaultWorkspaceId ??
               null,
@@ -226,6 +293,7 @@ export function commonsAuthOptions(database: unknown) {
           email: user?.email,
           email_verified: user?.emailVerified,
           name: user?.name,
+          picture: user?.image,
           workspace_id:
             (user as { defaultWorkspaceId?: string } | undefined)
               ?.defaultWorkspaceId ??
@@ -244,7 +312,7 @@ export function commonsAuthOptions(database: unknown) {
   };
 }
 
-async function sendIdentityEmail(input: {
+export async function sendIdentityEmail(input: {
   to: string;
   from: string;
   subject: string;
