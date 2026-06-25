@@ -5,10 +5,11 @@ import AppBar from "@/components/layout/app-bar";
 import AgentsShowcase from "@/components/agents/AgentsShowcase";
 import { useAgents } from "@/hooks/use-agents";
 import { Loader2 } from "lucide-react";
+import { normalizePrincipalId } from "@/lib/principal-id";
 
 export default function AgentsPage() {
   const { authState } = useAuth();
-  const userAddress = authState.walletAddress?.toLowerCase() || "";
+  const userAddress = normalizePrincipalId(authState.walletAddress);
   const { agents, loading } = useAgents(userAddress || undefined);
 
   return (

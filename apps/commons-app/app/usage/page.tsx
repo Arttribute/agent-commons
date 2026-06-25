@@ -1,6 +1,7 @@
 "use client";
 
 import { useAuth } from "@/context/AuthContext";
+import { normalizePrincipalId } from "@/lib/principal-id";
 import AppBar from "@/components/layout/app-bar";
 import { DashboardSideBar } from "@/components/layout/dashboard-side-bar";
 import { useAgents } from "@/hooks/use-agents";
@@ -45,7 +46,7 @@ function StatCard({ label, value, icon: Icon, sub }: {
 
 export default function UsagePage() {
   const { authState } = useAuth();
-  const userAddress = authState.walletAddress?.toLowerCase() || "";
+  const userAddress = normalizePrincipalId(authState.walletAddress);
   const { agents, loading: loadingAgents } = useAgents(userAddress || undefined);
 
   const [usageRows, setUsageRows] = useState<UsageData[]>([]);

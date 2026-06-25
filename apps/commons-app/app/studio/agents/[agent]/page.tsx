@@ -21,6 +21,7 @@ import { AgentMemoryView } from "@/components/memory/agent-memory-view";
 import AgentFinances from "@/components/finances/agent-finances";
 import { AgentAutonomy } from "@/components/agents/agent-autonomy";
 import { AgentMcpSection } from "@/components/mcp/agent-mcp-section";
+import { normalizePrincipalId } from "@/lib/principal-id";
 
 function AgentPageSkeleton() {
   return (
@@ -52,7 +53,7 @@ export default function AgentStudioPage({
 }) {
   const { agent: agentId } = use(params);
   const { authState } = useAuth();
-  const userAddress = authState.walletAddress?.toLowerCase() || "";
+  const userAddress = normalizePrincipalId(authState.walletAddress);
 
   const [agent, setAgent] = useState<CommonAgent | null>(null);
   const [loading, setLoading] = useState(true);

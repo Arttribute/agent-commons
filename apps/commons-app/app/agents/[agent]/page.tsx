@@ -7,6 +7,7 @@ import SessionInterface from "@/components/sessions/session-interface";
 import { Loader2 } from "lucide-react";
 import { SessionsSideBar } from "@/components/sessions/sessions-side-bar";
 import { useAgentContext } from "@/context/AgentContext";
+import { normalizePrincipalId } from "@/lib/principal-id";
 
 export default function PublicAgentPage() {
   const params = useParams();
@@ -20,7 +21,7 @@ export default function PublicAgentPage() {
   const [isRedirecting, setIsRedirecting] = useState(false);
 
   const { authState } = useAuth();
-  const userAddress = authState.walletAddress?.toLowerCase() || "";
+  const userAddress = normalizePrincipalId(authState.walletAddress);
 
   const fetchSessions = async () => {
     if (!agentId || !userAddress) return;

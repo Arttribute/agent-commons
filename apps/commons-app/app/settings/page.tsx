@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { useAuth } from "@/context/AuthContext";
+import { normalizePrincipalId } from "@/lib/principal-id";
 import AppBar from "@/components/layout/app-bar";
 import { DashboardSideBar } from "@/components/layout/dashboard-side-bar";
 import { Button } from "@/components/ui/button";
@@ -315,7 +316,7 @@ function ApiKeysSection({ walletAddress }: { walletAddress: string }) {
 // ─── Page ────────────────────────────────────────────────────────────────────
 export default function SettingsPage() {
   const { authState } = useAuth();
-  const walletAddress = authState.walletAddress?.toLowerCase() ?? "";
+  const walletAddress = normalizePrincipalId(authState.walletAddress);
   const [section, setSection] = useState<Section>("profile");
 
   return (

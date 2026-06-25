@@ -7,6 +7,7 @@ import SessionInterface from "@/components/sessions/session-interface";
 import { SessionsSideBar } from "@/components/sessions/sessions-side-bar";
 import { useAgentContext } from "@/context/AgentContext";
 import { Skeleton } from "@/components/ui/skeleton";
+import { normalizePrincipalId } from "@/lib/principal-id";
 
 function SessionPageSkeleton() {
   return (
@@ -41,7 +42,7 @@ export default function AgentSessionPage() {
   const [loading, setLoading] = useState(true);
 
   const { authState } = useAuth();
-  const userAddress = authState.walletAddress?.toLowerCase() || "";
+  const userAddress = normalizePrincipalId(authState.walletAddress);
 
   const lastAgentIdRef = useRef<string>("");
 

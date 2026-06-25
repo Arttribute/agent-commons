@@ -19,10 +19,11 @@ import { Input } from "@/components/ui/input";
 import { useState, useMemo } from "react";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
+import { normalizePrincipalId } from "@/lib/principal-id";
 
 export default function SessionsPage() {
   const { authState } = useAuth();
-  const userAddress = authState.walletAddress?.toLowerCase() || "";
+  const userAddress = normalizePrincipalId(authState.walletAddress);
   const { sessions, isLoading } = useUserSessions(userAddress);
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState<"all" | "cli" | "web">("all");

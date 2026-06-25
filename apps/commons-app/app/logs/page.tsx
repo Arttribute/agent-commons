@@ -1,6 +1,7 @@
 "use client";
 
 import { useAuth } from "@/context/AuthContext";
+import { normalizePrincipalId } from "@/lib/principal-id";
 import AppBar from "@/components/layout/app-bar";
 import { DashboardSideBar } from "@/components/layout/dashboard-side-bar";
 import { useAgents } from "@/hooks/use-agents";
@@ -108,7 +109,7 @@ function LogRow({ log }: { log: LogEntry }) {
 
 export default function LogsPage() {
   const { authState } = useAuth();
-  const userAddress = authState.walletAddress?.toLowerCase() || "";
+  const userAddress = normalizePrincipalId(authState.walletAddress);
   const { agents, loading: loadingAgents } = useAgents(userAddress || undefined);
 
   const [logs, setLogs] = useState<LogEntry[]>([]);

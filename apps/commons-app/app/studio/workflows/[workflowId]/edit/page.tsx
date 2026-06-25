@@ -9,6 +9,7 @@ import { ToolSidebar } from "@/components/workflows/editor/tool-sidebar";
 import { WorkflowCanvasProvider } from "@/components/workflows/editor/workflow-canvas";
 import { TestPanel } from "@/components/workflows/editor/test-panel";
 import { useAuth } from "@/context/AuthContext";
+import { normalizePrincipalId } from "@/lib/principal-id";
 import { Loader2 } from "lucide-react";
 
 export default function WorkflowEditorPage() {
@@ -53,7 +54,7 @@ export default function WorkflowEditorPage() {
         body: JSON.stringify({
           name: "Untitled Workflow",
           description: "",
-          ownerId: walletAddress.toLowerCase(),
+          ownerId: normalizePrincipalId(walletAddress),
           ownerType: "user",
           definition: { nodes: [], edges: [] },
         }),
@@ -133,7 +134,7 @@ export default function WorkflowEditorPage() {
       {/* Main editor area */}
       <div className="flex flex-1 overflow-hidden">
         {/* Left sidebar - Tools */}
-        <ToolSidebar userId={walletAddress?.toLowerCase() || ""} />
+        <ToolSidebar userId={normalizePrincipalId(walletAddress)} />
 
         {/* Center - Canvas */}
         <WorkflowCanvasProvider />

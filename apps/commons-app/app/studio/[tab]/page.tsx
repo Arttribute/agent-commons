@@ -17,12 +17,13 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { useRouter } from "next/navigation";
 import { useAgents } from "@/hooks/use-agents";
+import { normalizePrincipalId } from "@/lib/principal-id";
 
 const StudioPage: NextPage = () => {
   const { tab } = useParams() as { tab: string };
   const router = useRouter();
   const { authState } = useAuth();
-  const userAddress = authState.walletAddress?.toLowerCase() || "";
+  const userAddress = normalizePrincipalId(authState.walletAddress);
 
   const activeTab = (tab as string) || "agents";
 

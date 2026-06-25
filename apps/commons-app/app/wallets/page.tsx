@@ -1,6 +1,7 @@
 "use client";
 
 import { useAuth } from "@/context/AuthContext";
+import { normalizePrincipalId } from "@/lib/principal-id";
 import AppBar from "@/components/layout/app-bar";
 import { DashboardSideBar } from "@/components/layout/dashboard-side-bar";
 import { useAgents } from "@/hooks/use-agents";
@@ -258,7 +259,7 @@ function AgentWalletRow({ agent }: { agent: { agentId: string; name: string } })
 
 export default function WalletsPage() {
   const { authState } = useAuth();
-  const userAddress = authState.walletAddress?.toLowerCase() || "";
+  const userAddress = normalizePrincipalId(authState.walletAddress);
   const { agents, loading } = useAgents(userAddress || undefined);
 
   return (
