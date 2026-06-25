@@ -507,7 +507,7 @@ app.post("/api/identity/apps/:app/activate", async (c) => {
         `select u.id, u.email
            from "oauthAccessToken" t
            join "user" u on u.id = t."userId"
-          where t.token = $1 and t."expiresAt" > now() and t.revoked is null
+          where t.token = $1 and t."expiresAt" > now()
           limit 1`,
         [bearerToken],
       )

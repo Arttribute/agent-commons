@@ -149,7 +149,6 @@ export function createPlatformRouter(
        join "user" u on u.id = t."userId"
        where t.token = $1
          and t."expiresAt" > now()
-         and t.revoked is null
        limit 1`,
       [body.token],
     );
