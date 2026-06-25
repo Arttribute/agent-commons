@@ -14,6 +14,8 @@ const styles = `
     border: 0; border-radius: 9px; background: #f8fafc; color: #09101c;
     font-weight: 800; cursor: pointer; text-align: center; text-decoration: none; }
   button.secondary { background: #202b3f; color: #f8fafc; }
+  .google-button { display: flex; align-items: center; justify-content: center; gap: 10px; }
+  .google-logo { width: 18px; height: 18px; flex: none; }
   button.danger { background: #7f1d1d; color: white; }
   .row { display: flex; gap: 10px; }
   .row > * { flex: 1; }

@@ -2,6 +2,7 @@ import Link from "next/link";
 import { FlaskConical } from "lucide-react";
 import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
+import { GoogleLogo } from "@/components/auth/google-logo";
 
 type Props = {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
@@ -108,8 +109,4 @@ function Divider() {
       <span className="h-px flex-1 bg-slate-200" />
     </div>
   );
-}
-
-function GoogleLogo() {
-  return <span className="font-bold text-blue-600">G</span>;
 }

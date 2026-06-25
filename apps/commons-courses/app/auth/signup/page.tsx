@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { FlaskConical } from "lucide-react";
 import { redirect } from "next/navigation";
+import { GoogleLogo } from "@/components/auth/google-logo";
 
 type Props = {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
@@ -40,7 +41,7 @@ export default async function SignUpPage({ searchParams }: Props) {
           className="mb-4 flex w-full items-center justify-center gap-2 rounded-lg border border-slate-200 px-5 py-2.5 text-sm font-bold text-slate-800 hover:bg-slate-50"
           href={`${identityUrl}/native/sign-in/google?app=commonlabs&oauth_query=${encodeURIComponent(oauthQuery)}&return_to=${encodeURIComponent(returnTo)}`}
         >
-          <span className="font-bold text-blue-600">G</span> Continue with Google
+          <GoogleLogo /> Continue with Google
         </a>
         <div className="mb-4 flex items-center gap-3">
           <span className="h-px flex-1 bg-slate-200" /><span className="text-xs font-bold uppercase text-slate-400">or</span><span className="h-px flex-1 bg-slate-200" />

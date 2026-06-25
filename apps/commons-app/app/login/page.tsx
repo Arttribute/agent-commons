@@ -2,6 +2,7 @@ import Link from "next/link";
 import { Bot } from "lucide-react";
 import { redirect } from "next/navigation";
 import { auth } from "@/auth";
+import { GoogleLogo } from "@/components/auth/google-logo";
 
 type Props = {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
@@ -90,8 +91,4 @@ function Brand() {
       Agent Commons
     </Link>
   );
-}
-
-function GoogleLogo() {
-  return <span className="font-bold text-blue-600">G</span>;
 }
