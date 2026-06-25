@@ -45,12 +45,16 @@ function safeExternalReturnTo(value: string | undefined, app: NativeApp) {
   return nativeApps[app].defaultReturnTo;
 }
 
-function oauthQueryFromAuthorizeUrl(value: string | undefined) {
+function validOAuthQuery(value: string | undefined) {
   if (!value) return "";
   try {
-    const url = new URL(value);
-    if (url.origin !== new URL(baseUrl).origin) return "";
-    return url.search.slice(1);
+    const query = new URLSearchParams(value);
+    return query.has("client_id") &&
+      query.has("redirect_uri") &&
+      query.has("state") &&
+      query.has("sig")
+      ? value
+      : "";
   } catch {
     return "";
   }
@@ -279,7 +283,7 @@ app.get("/sign-in", (c) => {
 app.get("/native/sign-in/google", async (c) => {
   const appId = nativeApp(c.req.query("app"));
   const returnTo = safeExternalReturnTo(c.req.query("return_to"), appId);
-  const oauthQuery = oauthQueryFromAuthorizeUrl(c.req.query("authorize_url"));
+  const oauthQuery = validOAuthQuery(c.req.query("oauth_query"));
   if (!oauthQuery) return c.redirect(`${returnTo}?authError=Invalid+sign-in+request`);
   return nativeAuthResponse(authService, {
     endpoint: "/api/auth/sign-in/social",
@@ -297,7 +301,7 @@ app.post("/native/sign-in/email", async (c) => {
   const form = await c.req.parseBody();
   const appId = nativeApp(String(form.app ?? ""));
   const returnTo = safeExternalReturnTo(String(form.return_to ?? ""), appId);
-  const oauthQuery = oauthQueryFromAuthorizeUrl(String(form.authorize_url ?? ""));
+  const oauthQuery = validOAuthQuery(String(form.oauth_query ?? ""));
   if (!oauthQuery) return c.redirect(`${returnTo}?authError=Invalid+sign-in+request`);
   return nativeAuthResponse(authService, {
     endpoint: "/api/auth/sign-in/email",
@@ -321,7 +325,7 @@ app.post("/native/sign-up/email", async (c) => {
   returnToUrl.searchParams.set("registered", "1");
   returnToUrl.searchParams.set("commons_app", appId);
   const returnTo = returnToUrl.toString();
-  const oauthQuery = oauthQueryFromAuthorizeUrl(String(form.authorize_url ?? ""));
+  const oauthQuery = validOAuthQuery(String(form.oauth_query ?? ""));
   if (!oauthQuery) return c.redirect(`${returnTo}?authError=Invalid+sign-up+request`);
   return nativeAuthResponse(authService, {
     endpoint: "/api/auth/sign-up/email",

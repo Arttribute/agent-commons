@@ -14,9 +14,24 @@ export async function POST(request: NextRequest) {
       new URL("/auth/signin?authError=Could+not+start+sign-in", origin),
     );
   }
+  const prepared = await fetch(authorizeUrl, {
+    headers: { Accept: "application/json" },
+    cache: "no-store",
+  });
+  const preparedData = (await prepared.json().catch(() => ({}))) as {
+    url?: string;
+  };
+  const oauthQuery = preparedData.url
+    ? new URL(preparedData.url, authorizeUrl).search.slice(1)
+    : "";
+  if (!prepared.ok || !oauthQuery) {
+    return NextResponse.redirect(
+      new URL("/auth/signin?authError=Could+not+prepare+sign-in", origin),
+    );
+  }
   return NextResponse.redirect(
     new URL(
-      `/auth/signin?authorize_url=${encodeURIComponent(authorizeUrl)}&callbackUrl=${encodeURIComponent(callbackUrl)}`,
+      `/auth/signin?oauth_query=${encodeURIComponent(oauthQuery)}&callbackUrl=${encodeURIComponent(callbackUrl)}`,
       origin,
     ),
   );

@@ -9,8 +9,8 @@ export default async function SignInPage({ searchParams }: Props) {
   const params = await searchParams;
   const callbackUrl =
     typeof params.callbackUrl === "string" ? params.callbackUrl : "/dashboard";
-  const authorizeUrl =
-    typeof params.authorize_url === "string" ? params.authorize_url : "";
+  const oauthQuery =
+    typeof params.oauth_query === "string" ? params.oauth_query : "";
   const error = typeof params.authError === "string" ? params.authError : "";
   const registered = params.registered === "1";
   const identityUrl =
@@ -22,7 +22,7 @@ export default async function SignInPage({ searchParams }: Props) {
     "https://commonlab.agentcommons.io";
   const returnTo = `${appUrl}/auth/signin?callbackUrl=${encodeURIComponent(callbackUrl)}`;
 
-  if (!authorizeUrl) {
+  if (!oauthQuery) {
     return (
       <Shell>
         <h1 className="mb-1 text-center text-2xl font-bold text-slate-900">Welcome back</h1>
@@ -50,14 +50,14 @@ export default async function SignInPage({ searchParams }: Props) {
       {error && <p className="mb-4 text-center text-sm text-red-600">{error}</p>}
       <a
         className="mb-4 flex w-full items-center justify-center gap-2 rounded-lg border border-slate-200 px-5 py-2.5 text-sm font-bold text-slate-800 hover:bg-slate-50"
-        href={`${identityUrl}/native/sign-in/google?app=commonlabs&authorize_url=${encodeURIComponent(authorizeUrl)}&return_to=${encodeURIComponent(returnTo)}`}
+        href={`${identityUrl}/native/sign-in/google?app=commonlabs&oauth_query=${encodeURIComponent(oauthQuery)}&return_to=${encodeURIComponent(returnTo)}`}
       >
         <GoogleLogo /> Continue with Google
       </a>
       <Divider />
       <form method="post" action={`${identityUrl}/native/sign-in/email`} className="space-y-4">
         <input type="hidden" name="app" value="commonlabs" />
-        <input type="hidden" name="authorize_url" value={authorizeUrl} />
+        <input type="hidden" name="oauth_query" value={oauthQuery} />
         <input type="hidden" name="return_to" value={returnTo} />
         <Field label="Email" name="email" type="email" autoComplete="email" />
         <Field label="Password" name="password" type="password" autoComplete="current-password" />
@@ -69,7 +69,7 @@ export default async function SignInPage({ searchParams }: Props) {
         No account?{" "}
         <Link
           className="font-bold text-slate-900"
-          href={`/auth/signup?authorize_url=${encodeURIComponent(authorizeUrl)}&callbackUrl=${encodeURIComponent(callbackUrl)}`}
+          href={`/auth/signup?oauth_query=${encodeURIComponent(oauthQuery)}&callbackUrl=${encodeURIComponent(callbackUrl)}`}
         >
           Sign up
         </Link>

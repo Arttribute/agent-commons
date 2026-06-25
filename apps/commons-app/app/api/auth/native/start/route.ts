@@ -12,7 +12,20 @@ export async function POST(request: NextRequest) {
   if (!authorizeUrl || authorizeUrl.includes("error=Configuration")) {
     return NextResponse.redirect(new URL("/login?authError=Could+not+start+sign-in", origin));
   }
+  const prepared = await fetch(authorizeUrl, {
+    headers: { Accept: "application/json" },
+    cache: "no-store",
+  });
+  const preparedData = (await prepared.json().catch(() => ({}))) as {
+    url?: string;
+  };
+  const oauthQuery = preparedData.url
+    ? new URL(preparedData.url, authorizeUrl).search.slice(1)
+    : "";
+  if (!prepared.ok || !oauthQuery) {
+    return NextResponse.redirect(new URL("/login?authError=Could+not+prepare+sign-in", origin));
+  }
   return NextResponse.redirect(
-    new URL(`/login?authorize_url=${encodeURIComponent(authorizeUrl)}&callbackUrl=${encodeURIComponent(callbackUrl)}`, origin),
+    new URL(`/login?oauth_query=${encodeURIComponent(oauthQuery)}&callbackUrl=${encodeURIComponent(callbackUrl)}`, origin),
   );
 }

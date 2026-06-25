@@ -9,8 +9,8 @@ export default async function SignUpPage({ searchParams }: Props) {
   const params = await searchParams;
   const callbackUrl =
     typeof params.callbackUrl === "string" ? params.callbackUrl : "/dashboard";
-  const authorizeUrl =
-    typeof params.authorize_url === "string" ? params.authorize_url : "";
+  const oauthQuery =
+    typeof params.oauth_query === "string" ? params.oauth_query : "";
   const identityUrl =
     process.env.COMMONS_IDENTITY_ISSUER?.replace(/\/api\/auth\/?$/, "") ??
     "https://auth.agentcommons.io";
@@ -20,7 +20,7 @@ export default async function SignUpPage({ searchParams }: Props) {
     "https://commonlab.agentcommons.io";
   const returnTo = `${appUrl}/auth/signin?callbackUrl=${encodeURIComponent(callbackUrl)}`;
 
-  if (!authorizeUrl) {
+  if (!oauthQuery) {
     return (
       <form method="post" action="/api/auth/native/start">
         <input type="hidden" name="callbackUrl" value={callbackUrl} />
@@ -42,7 +42,7 @@ export default async function SignUpPage({ searchParams }: Props) {
         <p className="mb-8 text-center text-sm text-slate-500">Start learning with CommonLab</p>
         <a
           className="mb-4 flex w-full items-center justify-center gap-2 rounded-lg border border-slate-200 px-5 py-2.5 text-sm font-bold text-slate-800 hover:bg-slate-50"
-          href={`${identityUrl}/native/sign-in/google?app=commonlabs&authorize_url=${encodeURIComponent(authorizeUrl)}&return_to=${encodeURIComponent(returnTo)}`}
+          href={`${identityUrl}/native/sign-in/google?app=commonlabs&oauth_query=${encodeURIComponent(oauthQuery)}&return_to=${encodeURIComponent(returnTo)}`}
         >
           <span className="font-bold text-blue-600">G</span> Continue with Google
         </a>
@@ -51,7 +51,7 @@ export default async function SignUpPage({ searchParams }: Props) {
         </div>
         <form method="post" action={`${identityUrl}/native/sign-up/email`} className="space-y-4">
           <input type="hidden" name="app" value="commonlabs" />
-          <input type="hidden" name="authorize_url" value={authorizeUrl} />
+          <input type="hidden" name="oauth_query" value={oauthQuery} />
           <input type="hidden" name="return_to" value={returnTo} />
           <Input label="Name" name="name" autoComplete="name" />
           <Input label="Email" name="email" type="email" autoComplete="email" />
@@ -60,7 +60,7 @@ export default async function SignUpPage({ searchParams }: Props) {
         </form>
         <p className="mt-6 text-center text-sm text-slate-500">
           Already have an account?{" "}
-          <Link className="font-bold text-slate-900" href={`/auth/signin?authorize_url=${encodeURIComponent(authorizeUrl)}&callbackUrl=${encodeURIComponent(callbackUrl)}`}>Sign in</Link>
+          <Link className="font-bold text-slate-900" href={`/auth/signin?oauth_query=${encodeURIComponent(oauthQuery)}&callbackUrl=${encodeURIComponent(callbackUrl)}`}>Sign in</Link>
         </p>
       </div>
     </main>
