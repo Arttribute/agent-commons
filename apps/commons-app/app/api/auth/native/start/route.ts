@@ -15,14 +15,16 @@ export async function POST(request: NextRequest) {
   const prepared = await fetch(authorizeUrl, {
     headers: { Accept: "application/json" },
     cache: "no-store",
+    redirect: "manual",
   });
   const preparedData = (await prepared.json().catch(() => ({}))) as {
     url?: string;
   };
-  const oauthQuery = preparedData.url
-    ? new URL(preparedData.url, authorizeUrl).search.slice(1)
+  const preparedUrl = preparedData.url ?? prepared.headers.get("location");
+  const oauthQuery = preparedUrl
+    ? new URL(preparedUrl, authorizeUrl).search.slice(1)
     : "";
-  if (!prepared.ok || !oauthQuery) {
+  if ((!prepared.ok && !preparedUrl) || !oauthQuery) {
     return NextResponse.redirect(new URL("/login?authError=Could+not+prepare+sign-in", origin));
   }
   return NextResponse.redirect(
