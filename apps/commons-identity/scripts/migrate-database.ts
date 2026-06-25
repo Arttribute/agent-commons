@@ -29,6 +29,7 @@ async function main() {
       "migrations/001-commons-identity-domain.sql",
       "migrations/002-api-platform.sql",
       "migrations/003-app-memberships.sql",
+      "migrations/004-oauth-token-rollout-compat.sql",
     ];
     for (const file of files) {
       const sql = await readFile(resolve(file), "utf8");

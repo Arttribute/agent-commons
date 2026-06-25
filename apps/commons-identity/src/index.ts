@@ -1,4 +1,5 @@
 import { serve } from "@hono/node-server";
+import { createHash } from "node:crypto";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { logger } from "hono/logger";
@@ -509,7 +510,7 @@ app.post("/api/identity/apps/:app/activate", async (c) => {
            join "user" u on u.id = t."userId"
           where t.token = $1 and t."expiresAt" > now()
           limit 1`,
-        [bearerToken],
+        [createHash("sha256").update(bearerToken).digest("base64url")],
       )
     : { rows: [] };
   const user = session?.user ?? tokenUser.rows[0];

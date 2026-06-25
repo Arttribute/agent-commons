@@ -1,5 +1,6 @@
 import { timingSafeEqual } from "node:crypto";
 import { Hono } from "hono";
+import { createHash } from "node:crypto";
 import type { auth } from "../lib/auth.js";
 import type { pool } from "../lib/db.js";
 import {
@@ -150,7 +151,7 @@ export function createPlatformRouter(
        where t.token = $1
          and t."expiresAt" > now()
        limit 1`,
-      [body.token],
+      [createHash("sha256").update(body.token).digest("base64url")],
     );
     const token = result.rows[0];
     if (!token) return c.json({ active: false });
