@@ -545,6 +545,7 @@ app.post("/api/identity/apps/:app/activate", async (c) => {
           : appId === "common-os"
             ? "https://os.agentcommons.io/dashboard"
             : "https://www.agentcommons.io/agents",
+      template: appId === "commonlabs" ? "commonlab" : "default",
     });
   }
   const identity = await database.query(

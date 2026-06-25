@@ -319,6 +319,7 @@ export async function sendIdentityEmail(input: {
   heading: string;
   body: string;
   url: string;
+  template?: "commonlab" | "default";
 }) {
   const apiKey = process.env.RESEND_API_KEY;
   if (!apiKey) {
@@ -328,6 +329,38 @@ export async function sendIdentityEmail(input: {
     }
     throw new Error("RESEND_API_KEY is required to send identity emails.");
   }
+  const commonLabHtml = `
+    <div style="margin:0;padding:32px 16px;background:#f8fafc;color:#020617;font-family:Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif">
+      <table role="presentation" width="100%" cellspacing="0" cellpadding="0">
+        <tr><td align="center">
+          <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:620px;background:#fff;border:1px solid #e2e8f0;border-radius:12px;overflow:hidden">
+            <tr>
+              <td style="height:8px;background:linear-gradient(90deg,#B8F56D 0 25%,#71E0E7 25% 50%,#9FB0F4 50% 75%,#F3A2B4 75%)"></td>
+            </tr>
+            <tr>
+              <td style="padding:22px 28px;border-bottom:1px solid #e2e8f0">
+                <div style="font-size:20px;font-weight:800">CommonLab</div>
+                <div style="margin-top:3px;color:#64748b;font-size:12px;font-weight:600">Courses and learning sandboxes</div>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:34px 30px 30px">
+                <div style="margin-bottom:10px;color:#475569;font-size:14px;font-weight:700">Welcome</div>
+                <h1 style="margin:0 0 16px;font-size:32px;line-height:1.15">${input.heading}</h1>
+                <p style="margin:0 0 18px;color:#475569;font-size:16px;line-height:1.65">${input.body}</p>
+                <p style="margin:0 0 26px;color:#475569;font-size:15px;line-height:1.65">Explore structured courses, hands-on assignments, and guided agent-building practice at your own pace.</p>
+                <a href="${input.url}" style="display:inline-block;padding:13px 20px;border-radius:8px;background:#020617;color:#fff;text-decoration:none;font-size:14px;font-weight:800">Explore CommonLab</a>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:20px 30px;border-top:1px solid #e2e8f0;color:#64748b;font-size:12px;line-height:1.5">
+                You are receiving this because you signed in to CommonLab.
+              </td>
+            </tr>
+          </table>
+        </td></tr>
+      </table>
+    </div>`;
   const response = await fetch("https://api.resend.com/emails", {
     method: "POST",
     headers: {
@@ -338,7 +371,10 @@ export async function sendIdentityEmail(input: {
       from: input.from,
       to: [input.to],
       subject: input.subject,
-      html: `<h1>${input.heading}</h1><p>${input.body}</p><p><a href="${input.url}">Continue</a></p>`,
+      html:
+        input.template === "commonlab"
+          ? commonLabHtml
+          : `<h1>${input.heading}</h1><p>${input.body}</p><p><a href="${input.url}">Continue</a></p>`,
     }),
   });
   if (!response.ok) {
