@@ -92,8 +92,13 @@ async function nativeAuthResponse(
         data.message ?? data.error ?? "Authentication failed",
       )}`;
   const headers = new Headers({ location: target });
-  const setCookie = response.headers.get("set-cookie");
-  if (setCookie) headers.set("set-cookie", setCookie);
+  const setCookies =
+    "getSetCookie" in response.headers
+      ? (response.headers as Headers & { getSetCookie(): string[] }).getSetCookie()
+      : [response.headers.get("set-cookie")].filter(
+          (value): value is string => Boolean(value),
+        );
+  setCookies.forEach((cookie) => headers.append("set-cookie", cookie));
   return new Response(null, { status: 302, headers });
 }
 
@@ -541,7 +546,18 @@ app.post("/api/identity/apps/:app/activate", async (c) => {
             : "https://www.agentcommons.io/agents",
     });
   }
-  return c.json({ activated: true, firstActivation: created });
+  const identity = await database.query(
+    `select id, "defaultWorkspaceId" as "workspaceId", image
+       from "user" where id = $1`,
+    [user.id],
+  );
+  return c.json({
+    activated: true,
+    firstActivation: created,
+    userId: identity.rows[0]?.id ?? user.id,
+    workspaceId: identity.rows[0]?.workspaceId ?? null,
+    image: identity.rows[0]?.image ?? null,
+  });
 });
 
 app.notFound((c) => c.json({ error: "Not found" }, 404));

@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { FlaskConical } from "lucide-react";
+import { redirect } from "next/navigation";
 
 type Props = {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
@@ -21,12 +22,7 @@ export default async function SignUpPage({ searchParams }: Props) {
   const returnTo = `${appUrl}/auth/signin?callbackUrl=${encodeURIComponent(callbackUrl)}`;
 
   if (!oauthQuery) {
-    return (
-      <form method="post" action="/api/auth/native/start">
-        <input type="hidden" name="callbackUrl" value={callbackUrl} />
-        <script dangerouslySetInnerHTML={{ __html: "document.forms[0].submit()" }} />
-      </form>
-    );
+    redirect(`/api/auth/native/start?callbackUrl=${encodeURIComponent(callbackUrl)}`);
   }
 
   return (

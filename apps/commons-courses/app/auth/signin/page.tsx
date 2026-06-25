@@ -1,5 +1,7 @@
 import Link from "next/link";
-import { FlaskConical, Loader2 } from "lucide-react";
+import { FlaskConical } from "lucide-react";
+import { redirect } from "next/navigation";
+import { auth } from "@/lib/auth";
 
 type Props = {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
@@ -21,21 +23,11 @@ export default async function SignInPage({ searchParams }: Props) {
     process.env.NEXTAUTH_URL ??
     "https://commonlab.agentcommons.io";
   const returnTo = `${appUrl}/auth/signin?callbackUrl=${encodeURIComponent(callbackUrl)}`;
+  const session = await auth();
+  if (session?.user) redirect(callbackUrl);
 
   if (!oauthQuery) {
-    return (
-      <Shell>
-        <h1 className="mb-1 text-center text-2xl font-bold text-slate-900">Welcome back</h1>
-        <p className="mb-8 text-center text-sm text-slate-500">Sign in and continue learning</p>
-        <form method="post" action="/api/auth/native/start">
-          <input type="hidden" name="callbackUrl" value={callbackUrl} />
-          <button className="flex w-full items-center justify-center rounded-lg bg-slate-950 px-5 py-2.5 text-sm font-bold text-white">
-            <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Preparing sign in…
-          </button>
-        </form>
-        <script dangerouslySetInnerHTML={{ __html: "document.forms[0].submit()" }} />
-      </Shell>
-    );
+    redirect(`/api/auth/native/start?callbackUrl=${encodeURIComponent(callbackUrl)}`);
   }
 
   return (

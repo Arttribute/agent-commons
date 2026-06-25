@@ -3,14 +3,20 @@ import NextAuth from "next-auth";
 const issuer = process.env.COMMONS_IDENTITY_ISSUER;
 
 async function activateProduct(accessToken: unknown) {
-  if (!issuer || typeof accessToken !== "string") return;
-  await fetch(
+  if (!issuer || typeof accessToken !== "string") return null;
+  const response = await fetch(
     `${issuer.replace(/\/api\/auth\/?$/, "")}/api/identity/apps/agent-commons/activate`,
     {
       method: "POST",
       headers: { Authorization: `Bearer ${accessToken}` },
     },
-  ).catch(() => undefined);
+  ).catch(() => null);
+  if (!response?.ok) return null;
+  return response.json() as Promise<{
+    userId?: string;
+    workspaceId?: string | null;
+    image?: string | null;
+  }>;
 }
 
 async function refreshAccessToken(token: any) {
@@ -97,7 +103,10 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         token.accessTokenExpiresAt = account.expires_at
           ? account.expires_at * 1000
           : Date.now() + 60 * 60 * 1000;
-        await activateProduct(account.access_token);
+        const identity = await activateProduct(account.access_token);
+        if (identity?.userId) token.identityUserId = identity.userId;
+        if (identity?.workspaceId) token.workspaceId = identity.workspaceId;
+        if (identity?.image) token.picture = identity.image;
       }
       if (
         token.accessTokenExpiresAt &&
@@ -110,6 +119,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     session({ session, token }) {
       session.user.id = String(token.identityUserId ?? token.sub ?? "");
       session.user.workspaceId = token.workspaceId as string | undefined;
+      if (token.picture) session.user.image = String(token.picture);
       session.accessToken = token.accessToken as string | undefined;
       session.accessTokenError = token.accessTokenError as string | undefined;
       return session;

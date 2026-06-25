@@ -130,6 +130,44 @@ export function createPlatformRouter(
     return c.json(principal ?? { active: false });
   });
 
+  router.post("/internal/oauth-tokens/introspect", async (c) => {
+    const expected = process.env.COMMONS_GATEWAY_INTERNAL_SECRET ?? "";
+    const provided = c.req.header("x-commons-internal-secret") ?? "";
+    if (!expected || !secureEqual(expected, provided)) {
+      return c.json({ error: "unauthorized" }, 401);
+    }
+    const body = await c.req.json<{ token?: string }>();
+    if (!body.token) return c.json({ active: false });
+    const result = await database.query(
+      `select
+         t."userId" as "actorId",
+         u."defaultWorkspaceId" as "workspaceId",
+         t.scopes,
+         t."clientId",
+         t."expiresAt"
+       from "oauthAccessToken" t
+       join "user" u on u.id = t."userId"
+       where t.token = $1
+         and t."expiresAt" > now()
+         and t.revoked is null
+       limit 1`,
+      [body.token],
+    );
+    const token = result.rows[0];
+    if (!token) return c.json({ active: false });
+    return c.json({
+      active: true,
+      actorId: token.actorId,
+      actorType: "user",
+      workspaceId: token.workspaceId,
+      projectId: null,
+      scopes: Array.isArray(token.scopes) ? token.scopes : [],
+      credentialType: "oauth",
+      clientId: token.clientId,
+      expiresAt: token.expiresAt,
+    });
+  });
+
   router.post("/internal/usage", async (c) => {
     const expected = process.env.COMMONS_GATEWAY_INTERNAL_SECRET ?? "";
     const provided = c.req.header("x-commons-internal-secret") ?? "";

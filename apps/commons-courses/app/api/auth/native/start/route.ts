@@ -1,9 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { signIn } from "@/lib/auth";
 
-export async function POST(request: NextRequest) {
-  const form = await request.formData();
-  const callbackUrl = String(form.get("callbackUrl") ?? "/dashboard");
+async function start(request: NextRequest, callbackUrl: string) {
   const origin = request.nextUrl.origin;
   const authorizeUrl = await signIn("commons", {
     redirect: false,
@@ -37,4 +35,13 @@ export async function POST(request: NextRequest) {
       origin,
     ),
   );
+}
+
+export async function GET(request: NextRequest) {
+  return start(request, request.nextUrl.searchParams.get("callbackUrl") ?? "/dashboard");
+}
+
+export async function POST(request: NextRequest) {
+  const form = await request.formData();
+  return start(request, String(form.get("callbackUrl") ?? "/dashboard"));
 }

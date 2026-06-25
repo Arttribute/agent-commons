@@ -106,7 +106,25 @@ export async function authenticate(
       credentialType: "oauth",
     };
   } catch {
-    return null;
+    const platformUrl = process.env.COMMONS_IDENTITY_PLATFORM_URL;
+    const secret = process.env.COMMONS_GATEWAY_INTERNAL_SECRET;
+    if (!platformUrl || !secret) return null;
+    const response = await fetch(
+      `${platformUrl.replace(/\/$/, "")}/internal/oauth-tokens/introspect`,
+      {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "x-commons-internal-secret": secret,
+        },
+        body: JSON.stringify({ token }),
+      },
+    );
+    if (!response.ok) return null;
+    const result = (await response.json()) as GatewayPrincipal & {
+      active?: boolean;
+    };
+    return result.active ? result : null;
   }
 }
 

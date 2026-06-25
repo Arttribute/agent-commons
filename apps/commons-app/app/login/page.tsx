@@ -1,5 +1,7 @@
 import Link from "next/link";
-import { Bot, Loader2 } from "lucide-react";
+import { Bot } from "lucide-react";
+import { redirect } from "next/navigation";
+import { auth } from "@/auth";
 
 type Props = {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
@@ -17,25 +19,11 @@ export default async function LoginPage({ searchParams }: Props) {
     process.env.COMMONS_IDENTITY_ISSUER?.replace(/\/api\/auth\/?$/, "") ??
     "https://auth.agentcommons.io";
   const returnTo = `${process.env.AUTH_URL ?? "https://www.agentcommons.io"}/login?callbackUrl=${encodeURIComponent(callbackUrl)}`;
+  const session = await auth();
+  if (session?.user) redirect(callbackUrl);
 
   if (!oauthQuery) {
-    return (
-      <main className="mx-auto flex min-h-screen max-w-md flex-col justify-center px-6">
-        <Brand />
-        <h1 className="mb-2 text-3xl font-bold">Welcome to Agent Commons</h1>
-        <p className="mb-8 text-sm text-muted-foreground">
-          Sign in to create, run, and manage your agents.
-        </p>
-        <form method="post" action="/api/auth/native/start">
-          <input type="hidden" name="callbackUrl" value={callbackUrl} />
-          <button className="flex w-full items-center justify-center rounded-md bg-black px-4 py-3 font-semibold text-white">
-            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-            Preparing sign in…
-          </button>
-        </form>
-        <script dangerouslySetInnerHTML={{ __html: "document.forms[0].submit()" }} />
-      </main>
-    );
+    redirect(`/api/auth/native/start?callbackUrl=${encodeURIComponent(callbackUrl)}`);
   }
 
   return (

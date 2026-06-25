@@ -16,14 +16,20 @@ const commonsIdentityEnabled =
 
 async function activateProduct(accessToken: unknown) {
   const issuer = process.env.COMMONS_IDENTITY_ISSUER;
-  if (!issuer || typeof accessToken !== "string") return;
-  await fetch(
+  if (!issuer || typeof accessToken !== "string") return null;
+  const response = await fetch(
     `${issuer.replace(/\/api\/auth\/?$/, "")}/api/identity/apps/commonlabs/activate`,
     {
       method: "POST",
       headers: { Authorization: `Bearer ${accessToken}` },
     },
-  ).catch(() => undefined);
+  ).catch(() => null);
+  if (!response?.ok) return null;
+  return response.json() as Promise<{
+    userId?: string;
+    workspaceId?: string | null;
+    image?: string | null;
+  }>;
 }
 
 export const { handlers, signIn, signOut, auth } = NextAuth({
@@ -233,7 +239,23 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
         token.role = updatedRole;
       }
       if (account?.provider === "commons") {
-        await activateProduct(account.access_token);
+        const identity = await activateProduct(account.access_token);
+        if (identity?.userId) {
+          token.identityUserId = identity.userId;
+          if (token.email) {
+            await connectDB();
+            await User.updateOne(
+              { email: String(token.email).toLowerCase() },
+              {
+                $set: {
+                  identityUserId: identity.userId,
+                  ...(identity.image ? { image: identity.image } : {}),
+                },
+              },
+            );
+          }
+        }
+        if (identity?.image) token.picture = identity.image;
       }
       return token;
     },
