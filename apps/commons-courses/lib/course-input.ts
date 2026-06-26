@@ -6,7 +6,12 @@ import {
 } from "@/lib/course-schedule";
 import { sanitizeRichTextHtml } from "@/lib/rich-text";
 import type { CourseAgentConfig } from "@/types/course-agent";
-import type { SkillPack } from "@/types/skills";
+import type {
+  AgentSandboxCapability,
+  AgentSandboxConfig,
+  AgentSandboxStepTarget,
+  SkillPack,
+} from "@/types/skills";
 
 export type AccessCodeInput = {
   id?: string;
@@ -130,6 +135,105 @@ function normalizeImageUrl(value?: string) {
   return url;
 }
 
+const sandboxCapabilities: AgentSandboxCapability[] = [
+  "identity",
+  "system_prompt",
+  "skills",
+  "tools",
+  "connectors",
+  "tasks",
+  "workflows",
+  "chat",
+  "logs",
+  "credits",
+];
+
+const sandboxTargets: AgentSandboxStepTarget[] = [
+  "identity",
+  "system_prompt",
+  "skills",
+  "tools",
+  "connectors",
+  "tasks",
+  "workflows",
+  "chat",
+  "logs",
+  "publish",
+];
+
+function normalizeSandboxConfig(input?: AgentSandboxConfig) {
+  if (!input?.enabled) return undefined;
+  const capabilities = Array.isArray(input.capabilities)
+    ? input.capabilities.filter((capability): capability is AgentSandboxCapability =>
+        sandboxCapabilities.includes(capability)
+      )
+    : [];
+
+  return {
+    enabled: true,
+    mode: ["simple", "builder", "full"].includes(input.mode) ? input.mode : "builder",
+    title: input.title?.trim() || "Agent learner sandbox",
+    brief: sanitizeRichTextHtml(input.brief) || undefined,
+    capabilities: capabilities.length
+      ? capabilities
+      : ["identity", "system_prompt", "skills", "tools", "chat", "logs"],
+    requiredCapabilities: Array.isArray(input.requiredCapabilities)
+      ? input.requiredCapabilities.filter((capability): capability is AgentSandboxCapability =>
+          sandboxCapabilities.includes(capability)
+        )
+      : ["identity", "system_prompt", "skills", "tools", "chat"],
+    guideSteps: Array.isArray(input.guideSteps)
+      ? input.guideSteps
+          .map((step, index) => ({
+            id: step.id?.trim() || `step-${index + 1}`,
+            target: sandboxTargets.includes(step.target) ? step.target : "identity",
+            title: step.title?.trim() || `Step ${index + 1}`,
+            body: step.body?.trim() || "",
+          }))
+          .filter((step) => step.body)
+      : [],
+    starterAgent: input.starterAgent
+      ? {
+          name: input.starterAgent.name?.trim() || undefined,
+          persona: input.starterAgent.persona?.trim() || undefined,
+          systemPrompt: input.starterAgent.systemPrompt?.trim() || undefined,
+        }
+      : undefined,
+    skillTemplates: Array.isArray(input.skillTemplates)
+      ? input.skillTemplates
+          .map((skill, index) => ({
+            id: skill.id?.trim() || `skill-${index + 1}`,
+            name: skill.name?.trim() || "",
+            instructions: skill.instructions?.trim() || "",
+          }))
+          .filter((skill) => skill.name && skill.instructions)
+      : [],
+    toolTemplates: Array.isArray(input.toolTemplates)
+      ? input.toolTemplates
+          .map((tool, index) => ({
+            id: tool.id?.trim() || `tool-${index + 1}`,
+            name: tool.name?.trim() || "",
+            description: tool.description?.trim() || undefined,
+            connectorKind:
+              tool.connectorKind &&
+              ["google_calendar", "gmail", "google_drive", "github", "custom"].includes(
+                tool.connectorKind
+              )
+                ? tool.connectorKind
+                : "custom",
+            simulated: tool.simulated !== false,
+          }))
+          .filter((tool) => tool.name)
+      : [],
+    creditReward:
+      typeof input.creditReward === "number" && input.creditReward > 0
+        ? Math.floor(input.creditReward)
+        : 0,
+    completionEventType:
+      input.completionEventType?.trim() || "agent_sandbox_completed",
+  };
+}
+
 function normalizeSkillPack(input?: SkillPack) {
   if (!input) return undefined;
   const challenges = Array.isArray(input.challenges) ? input.challenges : [];
@@ -181,6 +285,7 @@ function normalizeSkillPack(input?: SkillPack) {
               description: challenge.practicalSignal.description?.trim() || undefined,
             }
           : undefined,
+        sandbox: normalizeSandboxConfig(challenge.sandbox),
         questions: Array.isArray(challenge.questions)
           ? challenge.questions.map((question, questionIndex) => ({
               id: question.id?.trim() || `q${questionIndex + 1}`,
@@ -200,12 +305,13 @@ function normalizeSkillPack(input?: SkillPack) {
         (challenge) =>
           challenge.title &&
           challenge.lesson &&
-          challenge.questions.every(
-            (question) =>
-              question.prompt &&
-              question.options.length >= 2 &&
-              question.answerIndex < question.options.length
-          )
+          (challenge.sandbox?.enabled ||
+            challenge.questions.every(
+              (question) =>
+                question.prompt &&
+                question.options.length >= 2 &&
+                question.answerIndex < question.options.length
+            ))
       ),
   };
 }

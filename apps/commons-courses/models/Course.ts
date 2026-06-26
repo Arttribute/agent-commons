@@ -383,6 +383,115 @@ const SkillActivityRequirementSchema = new Schema(
   { _id: false }
 );
 
+const AgentSandboxGuideStepSchema = new Schema(
+  {
+    id: { type: String, required: true, trim: true },
+    target: {
+      type: String,
+      enum: [
+        "identity",
+        "system_prompt",
+        "skills",
+        "tools",
+        "connectors",
+        "tasks",
+        "workflows",
+        "chat",
+        "logs",
+        "publish",
+      ],
+      required: true,
+    },
+    title: { type: String, required: true, trim: true },
+    body: { type: String, required: true, trim: true },
+  },
+  { _id: false }
+);
+
+const AgentSandboxSkillTemplateSchema = new Schema(
+  {
+    id: { type: String, required: true, trim: true },
+    name: { type: String, required: true, trim: true },
+    instructions: { type: String, required: true, trim: true },
+  },
+  { _id: false }
+);
+
+const AgentSandboxToolTemplateSchema = new Schema(
+  {
+    id: { type: String, required: true, trim: true },
+    name: { type: String, required: true, trim: true },
+    description: { type: String, trim: true },
+    connectorKind: {
+      type: String,
+      enum: ["google_calendar", "gmail", "google_drive", "github", "custom"],
+      default: "custom",
+    },
+    simulated: { type: Boolean, default: true },
+  },
+  { _id: false }
+);
+
+const AgentSandboxConfigSchema = new Schema(
+  {
+    enabled: { type: Boolean, default: false },
+    mode: {
+      type: String,
+      enum: ["simple", "builder", "full"],
+      default: "builder",
+    },
+    title: { type: String, trim: true },
+    brief: { type: String, trim: true },
+    capabilities: {
+      type: [String],
+      enum: [
+        "identity",
+        "system_prompt",
+        "skills",
+        "tools",
+        "connectors",
+        "tasks",
+        "workflows",
+        "chat",
+        "logs",
+        "credits",
+      ],
+      default: ["identity", "system_prompt", "skills", "tools", "chat", "logs"],
+    },
+    requiredCapabilities: {
+      type: [String],
+      enum: [
+        "identity",
+        "system_prompt",
+        "skills",
+        "tools",
+        "connectors",
+        "tasks",
+        "workflows",
+        "chat",
+        "logs",
+        "credits",
+      ],
+      default: ["identity", "system_prompt", "skills", "tools", "chat"],
+    },
+    guideSteps: { type: [AgentSandboxGuideStepSchema], default: [] },
+    starterAgent: {
+      name: { type: String, trim: true },
+      persona: { type: String, trim: true },
+      systemPrompt: { type: String, trim: true },
+    },
+    skillTemplates: { type: [AgentSandboxSkillTemplateSchema], default: [] },
+    toolTemplates: { type: [AgentSandboxToolTemplateSchema], default: [] },
+    creditReward: { type: Number, default: 0, min: 0 },
+    completionEventType: {
+      type: String,
+      default: "agent_sandbox_completed",
+      trim: true,
+    },
+  },
+  { _id: false }
+);
+
 const SkillChallengeSchema = new Schema(
   {
     id: { type: String, required: true, trim: true },
@@ -405,6 +514,7 @@ const SkillChallengeSchema = new Schema(
     keyIdeas: { type: [String], default: [] },
     microTask: { type: String, trim: true },
     practicalSignal: SkillActivityRequirementSchema,
+    sandbox: AgentSandboxConfigSchema,
     questions: { type: [SkillQuestionSchema], default: [] },
   },
   { _id: false }

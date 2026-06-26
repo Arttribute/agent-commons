@@ -141,10 +141,15 @@ export async function POST(
   const body = (await req.json()) as {
     challengeId?: string;
     answers?: Record<string, number>;
+    sandboxCompletion?: {
+      agentId?: string;
+      simulated?: boolean;
+      creditReward?: number;
+    };
   };
-  if (!body.challengeId || !body.answers) {
+  if (!body.challengeId || (!body.answers && !body.sandboxCompletion)) {
     return NextResponse.json(
-      { error: "challengeId and answers are required." },
+      { error: "challengeId and answers or sandboxCompletion are required." },
       { status: 400 }
     );
   }
@@ -165,12 +170,14 @@ export async function POST(
     return NextResponse.json({ error: "Challenge not found." }, { status: 404 });
   }
 
-  const allCorrect = challenge.questions.every(
+  const allCorrect = challenge.sandbox?.enabled
+    ? Boolean(body.sandboxCompletion)
+    : challenge.questions.every(
     (question) => body.answers?.[question.id] === question.answerIndex
-  );
+      );
   if (!allCorrect) {
     return NextResponse.json(
-      { error: "Answer all quiz questions correctly to complete the challenge." },
+      { error: challenge.sandbox?.enabled ? "Complete the sandbox task first." : "Answer all quiz questions correctly to complete the challenge." },
       { status: 422 }
     );
   }
@@ -203,7 +210,7 @@ export async function POST(
     ? enrollment.points ?? 0
     : (enrollment.points ?? 0) + challenge.points;
   const answerEntries = Object.fromEntries(
-    Object.entries(body.answers).map(([questionId, answer]) => [
+    Object.entries(body.answers || {}).map(([questionId, answer]) => [
       `${challenge.id}:${questionId}`,
       answer,
     ])

@@ -17,6 +17,70 @@ export type SkillActivityRequirement = {
   points?: number;
 };
 
+export type AgentSandboxCapability =
+  | "identity"
+  | "system_prompt"
+  | "skills"
+  | "tools"
+  | "connectors"
+  | "tasks"
+  | "workflows"
+  | "chat"
+  | "logs"
+  | "credits";
+
+export type AgentSandboxStepTarget =
+  | "identity"
+  | "system_prompt"
+  | "skills"
+  | "tools"
+  | "connectors"
+  | "tasks"
+  | "workflows"
+  | "chat"
+  | "logs"
+  | "publish";
+
+export type AgentSandboxGuideStep = {
+  id: string;
+  target: AgentSandboxStepTarget;
+  title: string;
+  body: string;
+};
+
+export type AgentSandboxToolTemplate = {
+  id: string;
+  name: string;
+  description?: string;
+  connectorKind?: "google_calendar" | "gmail" | "google_drive" | "github" | "custom";
+  simulated?: boolean;
+};
+
+export type AgentSandboxSkillTemplate = {
+  id: string;
+  name: string;
+  instructions: string;
+};
+
+export type AgentSandboxConfig = {
+  enabled: boolean;
+  mode: "simple" | "builder" | "full";
+  title?: string;
+  brief?: string;
+  capabilities: AgentSandboxCapability[];
+  requiredCapabilities?: AgentSandboxCapability[];
+  guideSteps: AgentSandboxGuideStep[];
+  starterAgent?: {
+    name?: string;
+    persona?: string;
+    systemPrompt?: string;
+  };
+  skillTemplates?: AgentSandboxSkillTemplate[];
+  toolTemplates?: AgentSandboxToolTemplate[];
+  creditReward?: number;
+  completionEventType?: string;
+};
+
 export type SkillChallenge = {
   id: string;
   day: number;
@@ -34,6 +98,7 @@ export type SkillChallenge = {
   keyIdeas: string[];
   microTask?: string;
   practicalSignal?: SkillActivityRequirement;
+  sandbox?: AgentSandboxConfig;
   questions: SkillQuestion[];
 };
 

@@ -18,6 +18,7 @@ import {
 import { Nav } from "@/components/nav";
 import { Confetti, type ConfettiRef } from "@/components/magicui/confetti";
 import { RichTextRenderer } from "@/components/rich-text-renderer";
+import { AgentLearnerSandbox } from "@/components/agents/agent-learner-sandbox";
 import { cn } from "@/lib/utils";
 import type { CourseSkillPack, SkillChallenge } from "@/types/skills";
 
@@ -206,6 +207,47 @@ export default function SkillPathClient({ slug }: Props) {
     celebrateChallenge(confettiRef.current, challenge.accentColor);
   };
 
+  const completeSandboxChallenge = async (completion: {
+    agentId?: string;
+    simulated: boolean;
+    creditReward: number;
+  }) => {
+    if (!progress.authenticated || saving || locked || completed || !challenge?.sandbox) {
+      return;
+    }
+    setSaving(true);
+    const answers = Object.fromEntries(
+      challenge.questions.map((question) => [question.id, question.answerIndex])
+    );
+    const res = await fetch(`/api/skills/${pack.courseSlug}/progress`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        challengeId: challenge.id,
+        answers,
+        sandboxCompletion: completion,
+      }),
+    });
+    const data = await res.json();
+    setSaving(false);
+
+    if (!res.ok) {
+      setFeedback(data.error || "Could not save sandbox progress yet.");
+      playCue("focus");
+      return;
+    }
+
+    setProgress((current) => ({ ...current, ...data, authenticated: true, enrolled: true }));
+    setMode("done");
+    setFeedback(
+      completion.creditReward
+        ? `Agent created. +${challenge.points} points and ${completion.creditReward} credits queued.`
+        : `Agent created. +${challenge.points} points.`
+    );
+    playCue(challenge.audioCue || "complete");
+    celebrateChallenge(confettiRef.current, challenge.accentColor);
+  };
+
   return (
     <div className="min-h-screen bg-white text-slate-950">
       <Confetti ref={confettiRef} />
@@ -278,6 +320,16 @@ export default function SkillPathClient({ slug }: Props) {
 
               {locked ? (
                 <LockedState />
+              ) : challenge.sandbox?.enabled ? (
+                <AgentLearnerSandbox
+                  courseSlug={pack.courseSlug}
+                  challengeId={challenge.id}
+                  config={challenge.sandbox}
+                  completed={completed}
+                  authenticated={progress.authenticated}
+                  signInHref={`/auth/signin?callbackUrl=${encodeURIComponent(pathname)}`}
+                  onComplete={completeSandboxChallenge}
+                />
               ) : mode === "quiz" ? (
                 <QuizView
                   challenge={challenge}
