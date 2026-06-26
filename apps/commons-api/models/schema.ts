@@ -1746,7 +1746,7 @@ export const creditLedgerEntry = pgTable(
   'credit_ledger_entry',
   {
     entryId: uuid('entry_id')
-      .default(sql`uuid_generate_v4()`)
+      .default(sql`gen_random_uuid()`)
       .primaryKey(),
 
     principalId: text('principal_id').notNull(),

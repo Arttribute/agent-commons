@@ -1,5 +1,7 @@
+create extension if not exists "uuid-ossp";
+
 create table if not exists credit_ledger_entry (
-  entry_id uuid primary key default uuid_generate_v4(),
+  entry_id uuid primary key default gen_random_uuid(),
   principal_id text not null,
   principal_type text not null default 'user',
   workspace_id text,
