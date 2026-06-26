@@ -216,9 +216,14 @@ function normalizeSandboxConfig(input?: AgentSandboxConfig) {
             description: tool.description?.trim() || undefined,
             connectorKind:
               tool.connectorKind &&
-              ["google_calendar", "gmail", "google_drive", "github", "custom"].includes(
-                tool.connectorKind
-              )
+              [
+                "google_calendar",
+                "gmail",
+                "google_drive",
+                "google_sheets",
+                "github",
+                "custom",
+              ].includes(tool.connectorKind)
                 ? tool.connectorKind
                 : "custom",
             simulated: tool.simulated !== false,

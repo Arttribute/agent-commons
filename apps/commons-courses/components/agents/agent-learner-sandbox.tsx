@@ -298,6 +298,7 @@ export function AgentLearnerSandbox({
                 items={(config.toolTemplates || []).map((tool) => ({
                   id: tool.id,
                   name: tool.name,
+                  connectorKind: tool.connectorKind,
                   description:
                     tool.description ||
                     (tool.simulated ? "Simulated for this lesson" : "Connected tool"),
@@ -459,7 +460,12 @@ function Picker({
   selected,
   onChange,
 }: {
-  items: Array<{ id: string; name: string; description?: string }>;
+  items: Array<{
+    id: string;
+    name: string;
+    description?: string;
+    connectorKind?: string;
+  }>;
   selected: string[];
   onChange: (items: string[]) => void;
 }) {
@@ -486,22 +492,64 @@ function Picker({
               )
             }
             className={cn(
-              "w-full rounded-lg border px-3 py-2 text-left transition-colors",
+              "flex w-full items-start gap-3 rounded-lg border px-3 py-2 text-left transition-colors",
               checked
                 ? "border-slate-950 bg-slate-950 text-white"
                 : "border-slate-200 bg-white text-slate-800 hover:bg-slate-50"
             )}
           >
-            <span className="block text-sm font-bold">{item.name}</span>
-            {item.description ? (
-              <span className={cn("mt-1 block line-clamp-2 text-xs leading-5", checked ? "text-white/65" : "text-slate-500")}>
-                {item.description}
-              </span>
-            ) : null}
+            <ConnectorLogo kind={item.connectorKind} />
+            <span className="min-w-0">
+              <span className="block text-sm font-bold">{item.name}</span>
+              {item.description ? (
+                <span className={cn("mt-1 block line-clamp-2 text-xs leading-5", checked ? "text-white/65" : "text-slate-500")}>
+                  {item.description}
+                </span>
+              ) : null}
+            </span>
           </button>
         );
       })}
     </div>
+  );
+}
+
+function ConnectorLogo({ kind }: { kind?: string }) {
+  if (!kind?.startsWith("google_") && kind !== "gmail") {
+    return (
+      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-slate-600">
+        <Hammer className="h-4 w-4" />
+      </span>
+    );
+  }
+
+  const label =
+    kind === "gmail"
+      ? "M"
+      : kind === "google_calendar"
+        ? "31"
+        : kind === "google_drive"
+          ? ""
+          : "S";
+
+  if (kind === "google_drive") {
+    return (
+      <span className="relative h-9 w-9 shrink-0 rounded-lg bg-white shadow-sm ring-1 ring-slate-200">
+        <span className="absolute left-[15px] top-1 h-6 w-2 rotate-[30deg] rounded-sm bg-[#0F9D58]" />
+        <span className="absolute bottom-1 left-2 h-2 w-6 rounded-sm bg-[#4285F4]" />
+        <span className="absolute right-2 top-1 h-6 w-2 -rotate-[30deg] rounded-sm bg-[#F4B400]" />
+      </span>
+    );
+  }
+
+  return (
+    <span className="relative flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-white text-[11px] font-black text-slate-700 shadow-sm ring-1 ring-slate-200">
+      <span className="absolute inset-x-0 top-0 h-1.5 bg-[#4285F4]" />
+      <span className="absolute inset-y-0 left-0 w-1.5 bg-[#34A853]" />
+      <span className="absolute inset-y-0 right-0 w-1.5 bg-[#FBBC04]" />
+      <span className="absolute inset-x-0 bottom-0 h-1.5 bg-[#EA4335]" />
+      {label}
+    </span>
   );
 }
 

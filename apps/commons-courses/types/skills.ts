@@ -52,7 +52,13 @@ export type AgentSandboxToolTemplate = {
   id: string;
   name: string;
   description?: string;
-  connectorKind?: "google_calendar" | "gmail" | "google_drive" | "github" | "custom";
+  connectorKind?:
+    | "google_calendar"
+    | "gmail"
+    | "google_drive"
+    | "google_sheets"
+    | "github"
+    | "custom";
   simulated?: boolean;
 };
 

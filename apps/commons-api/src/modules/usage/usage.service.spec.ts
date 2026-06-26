@@ -1,6 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { UsageService } from './usage.service';
 import { DatabaseService } from '../database/database.service';
+import { CreditService } from '~/credit';
 
 /* ─── DB mock factory ───────────────────────────────────────────────────── */
 function makeDb(overrides: Partial<Record<string, jest.Mock>> = {}) {
@@ -26,6 +27,10 @@ function makeDb(overrides: Partial<Record<string, jest.Mock>> = {}) {
 describe('UsageService', () => {
   let service: UsageService;
   let db: ReturnType<typeof makeDb>;
+  const credits = {
+    creditsForUsd: jest.fn().mockReturnValue(0),
+    debit: jest.fn(),
+  };
 
   beforeEach(async () => {
     db = makeDb();
@@ -34,6 +39,7 @@ describe('UsageService', () => {
       providers: [
         UsageService,
         { provide: DatabaseService, useValue: db },
+        { provide: CreditService, useValue: credits },
       ],
     }).compile();
 

@@ -3,7 +3,9 @@ import { auth } from "@/lib/auth";
 import { connectDB } from "@/lib/db";
 import Course from "@/models/Course";
 import Enrollment from "@/models/Enrollment";
+import User from "@/models/User";
 import { trackAnalyticsEvent } from "@/lib/analytics";
+import { grantCommonLabCredits } from "@/lib/credits";
 import type { SkillChallenge } from "@/types/skills";
 import type { Types } from "mongoose";
 
@@ -182,10 +184,15 @@ export async function POST(
     );
   }
 
-  const enrollment = await findOrCreateFreeSkillEnrollment({
-    userId: session.user.id,
-    course,
-  });
+  const [enrollment, user] = await Promise.all([
+    findOrCreateFreeSkillEnrollment({
+      userId: session.user.id,
+      course,
+    }),
+    User.findById(session.user.id)
+      .select("identityUserId identityWorkspaceId")
+      .lean<{ identityUserId?: string; identityWorkspaceId?: string }>(),
+  ]);
 
   if (!enrollment) {
     return NextResponse.json(
@@ -196,7 +203,9 @@ export async function POST(
 
   const completedChallenges = enrollment.completedChallenges ?? [];
   const alreadyCompleted = completedChallenges.includes(challenge.id);
-  const awaitsPracticalVerification = Boolean(challenge.practicalSignal);
+  const awaitsPracticalVerification = Boolean(
+    challenge.practicalSignal && !body.sandboxCompletion
+  );
   const shouldCompleteNow = !alreadyCompleted && !awaitsPracticalVerification;
   const streak = !shouldCompleteNow
     ? enrollment.streak ?? 0
@@ -266,12 +275,33 @@ export async function POST(
     request: req,
   });
 
+  const creditReward = challenge.sandbox?.creditReward || 0;
+  let creditGrant: Awaited<ReturnType<typeof grantCommonLabCredits>> | undefined;
+  if (shouldCompleteNow && creditReward > 0 && user?.identityUserId) {
+    creditGrant = await grantCommonLabCredits({
+      identityUserId: user.identityUserId,
+      workspaceId: user.identityWorkspaceId,
+      amount: creditReward,
+      eventType: "skill_sandbox_completed",
+      idempotencyKey: `commonlab:${course._id.toString()}:${session.user.id}:${challenge.id}:credits`,
+      description: `Completed ${challenge.title}`,
+      relatedCourseId: course._id.toString(),
+      relatedChallengeId: challenge.id,
+      agentId: body.sandboxCompletion?.agentId,
+      metadata: {
+        courseSlug: course.slug,
+        simulated: body.sandboxCompletion?.simulated,
+      },
+    });
+  }
+
   return NextResponse.json({
     completedChallenges: nextCompleted,
     points: nextPoints,
     streak,
     longestStreak: Math.max(enrollment.longestStreak ?? 0, streak),
     practicalSignals,
+    creditGrant,
   });
 }
 

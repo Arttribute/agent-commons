@@ -1554,6 +1554,7 @@ function TemplateList({
                   <option value="google_calendar">Google Calendar</option>
                   <option value="gmail">Gmail</option>
                   <option value="google_drive">Google Drive</option>
+                  <option value="google_sheets">Google Sheets</option>
                   <option value="github">GitHub</option>
                 </select>
               </label>

@@ -11,6 +11,7 @@ import {
   McpServer, McpResource, McpPrompt, McpConnectionType,
   Skill, SkillIndex, CreateSkillParams,
   UsageAggregation,
+  CreditBalance, CreditLedgerEntry, CreditWriteParams,
   AgentMemory, MemoryStats, MemoryType,
   CreateMemoryParams, UpdateMemoryParams,
   AgentWallet, WalletBalance, CreateWalletParams,
@@ -774,6 +775,42 @@ export class CommonsClient {
       /** Get aggregated token + cost usage for a session. */
       getSessionUsage: (sessionId: string): Promise<{ data: UsageAggregation }> =>
         this.request('GET', `/v1/usage/sessions/${sessionId}`),
+    };
+  }
+
+  // ── Credits ──────────────────────────────────────────────────────────────
+
+  get credits() {
+    return {
+      balance: (filter?: {
+        principalId?: string;
+        workspaceId?: string;
+      }): Promise<{ data: CreditBalance }> => {
+        const params = new URLSearchParams();
+        if (filter?.principalId) params.set('principalId', filter.principalId);
+        if (filter?.workspaceId) params.set('workspaceId', filter.workspaceId);
+        const qs = params.toString();
+        return this.request('GET', `/v1/credits/balance${qs ? `?${qs}` : ''}`);
+      },
+
+      ledger: (filter?: {
+        principalId?: string;
+        workspaceId?: string;
+        limit?: number;
+      }): Promise<{ data: CreditLedgerEntry[] }> => {
+        const params = new URLSearchParams();
+        if (filter?.principalId) params.set('principalId', filter.principalId);
+        if (filter?.workspaceId) params.set('workspaceId', filter.workspaceId);
+        if (filter?.limit) params.set('limit', String(filter.limit));
+        const qs = params.toString();
+        return this.request('GET', `/v1/credits/ledger${qs ? `?${qs}` : ''}`);
+      },
+
+      grant: (params: CreditWriteParams): Promise<{ data: CreditLedgerEntry }> =>
+        this.request('POST', '/v1/credits/grants', params),
+
+      debit: (params: CreditWriteParams): Promise<{ data: CreditLedgerEntry }> =>
+        this.request('POST', '/v1/credits/debits', params),
     };
   }
 }

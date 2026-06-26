@@ -256,6 +256,22 @@ const skillPack = {
             connectorKind: "gmail",
             simulated: true,
           },
+          {
+            id: "google-drive",
+            name: "Google Drive",
+            description:
+              "Use Drive files as context for summaries, planning, or retrieval tasks.",
+            connectorKind: "google_drive",
+            simulated: true,
+          },
+          {
+            id: "google-sheets",
+            name: "Google Sheets",
+            description:
+              "Use spreadsheet context for simple tables, tracking, and structured data checks.",
+            connectorKind: "google_sheets",
+            simulated: true,
+          },
         ],
         guideSteps: [
           {

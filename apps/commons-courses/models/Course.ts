@@ -424,7 +424,14 @@ const AgentSandboxToolTemplateSchema = new Schema(
     description: { type: String, trim: true },
     connectorKind: {
       type: String,
-      enum: ["google_calendar", "gmail", "google_drive", "github", "custom"],
+      enum: [
+        "google_calendar",
+        "gmail",
+        "google_drive",
+        "google_sheets",
+        "github",
+        "custom",
+      ],
       default: "custom",
     },
     simulated: { type: Boolean, default: true },

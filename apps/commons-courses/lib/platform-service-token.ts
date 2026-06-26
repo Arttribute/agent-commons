@@ -2,8 +2,10 @@ const cache = new Map<string, { value: string; expiresAt: number }>();
 
 export async function platformServiceToken(
   platform: "agent_commons" | "common_os",
+  scope = "activity:read",
 ): Promise<string | null> {
-  const cached = cache.get(platform);
+  const cacheKey = `${platform}:${scope}`;
+  const cached = cache.get(cacheKey);
   if (cached && cached.expiresAt > Date.now() + 30_000) return cached.value;
 
   const prefix = platform === "agent_commons" ? "AGENT_COMMONS" : "COMMON_OS";
@@ -23,7 +25,7 @@ export async function platformServiceToken(
       },
       body: new URLSearchParams({
         grant_type: "client_credentials",
-        scope: "activity:read",
+        scope,
         resource: "commons-platform",
       }),
     });
@@ -32,7 +34,7 @@ export async function platformServiceToken(
       access_token: string;
       expires_in?: number;
     };
-    cache.set(platform, {
+    cache.set(cacheKey, {
       value: token.access_token,
       expiresAt: Date.now() + (token.expires_in ?? 600) * 1000,
     });

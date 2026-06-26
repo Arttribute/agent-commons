@@ -40,7 +40,7 @@ configuration, completion evidence, and display metadata.
 
 ## Credit Ledger Direction
 
-The shared credit system should be a ledger, not a mutable balance field.
+The shared credit system is implemented as a ledger, not a mutable balance field.
 
 Recommended entries:
 
@@ -78,11 +78,54 @@ after token/cost calculation. The existing usage event stream remains the audit
 trail for model calls; the credit ledger becomes the commercial balance of
 record.
 
+Implemented platform API:
+
+- `GET /v1/credits/balance`
+- `GET /v1/credits/ledger`
+- `POST /v1/credits/grants`
+- `POST /v1/credits/debits`
+
+Writes require a management/service credential or a principal with
+`credits:write`. Reads are self-scoped unless the caller is a service or has
+`credits:read`.
+
+Important rollout flags:
+
+- `CREDIT_UNITS_PER_USD`: default `1000`
+- `CREDIT_DEBITS_ENABLED`: default off; set to `true` to debit usage events
+- `CREDIT_ALLOW_NEGATIVE_BALANCE`: default off
+
+## Pricing Model
+
+Use credits as the platform unit and keep local currencies outside the ledger.
+Recommended default:
+
+- 1 USD of platform value = 1000 credits.
+- Model usage debit = `ceil(costUsd * CREDIT_UNITS_PER_USD)`.
+- BYOK usage does not debit platform credits by default.
+- Tool, workflow, storage, and compute debits should use idempotent ledger
+  entries with source-specific event types.
+
+Paid courses should not automatically accept credits unless the educator has
+enabled credit acceptance for that course. That policy should define:
+
+- maximum percent of price payable by credits
+- educator settlement behavior
+- refund/reversal rules
+- whether promotional/system-granted credits are eligible
+
+Credit grants should remain system-controlled. Educators can sponsor credits
+through approved campaign or scholarship flows, but direct arbitrary educator
+minting should not exist.
+
 ## Next Backend Steps
 
-1. Add a shared credit ledger module to the platform API.
-2. Expose service-authenticated credit grant/debit endpoints.
-3. Add idempotency keys to CommonLab skill completion rewards.
-4. Connect Agent Commons usage recording to credit debits.
-5. Show one balance in both CommonLab and Agent Commons dashboards.
+1. Apply `apps/commons-api/migrations/add-credit-ledger.sql` in production.
+2. Seed initial learner balances or launch reward campaigns through
+   `/v1/credits/grants`.
+3. Show one balance in both CommonLab and Agent Commons dashboards.
+4. Add course-level credit acceptance settings for paid courses.
+5. Add Common OS compute debit event types.
 6. Add admin tools for grants, reversals, and audit review.
+7. Enable `CREDIT_DEBITS_ENABLED=true` after balances, monitoring, and support
+   workflows are ready.

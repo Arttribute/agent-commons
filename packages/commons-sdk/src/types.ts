@@ -555,6 +555,74 @@ export interface UsageAggregation {
   events: UsageEvent[];
 }
 
+// ─── Credits ─────────────────────────────────────────────────────────────────
+
+export type CreditDirection =
+  | 'grant'
+  | 'debit'
+  | 'adjustment'
+  | 'refund'
+  | 'expiration';
+
+export type CreditPlatform =
+  | 'agent_commons'
+  | 'commonlab'
+  | 'common_os'
+  | 'system';
+
+export interface CreditLedgerEntry {
+  entryId: string;
+  principalId: string;
+  principalType: 'user' | 'agent' | 'service';
+  workspaceId?: string | null;
+  amount: number;
+  currency: 'credits';
+  direction: CreditDirection;
+  eventType: string;
+  sourcePlatform: CreditPlatform;
+  idempotencyKey: string;
+  description?: string | null;
+  relatedCourseId?: string | null;
+  relatedChallengeId?: string | null;
+  agentId?: string | null;
+  sessionId?: string | null;
+  taskId?: string | null;
+  workflowId?: string | null;
+  usageEventId?: string | null;
+  metadata?: Record<string, unknown>;
+  createdBy?: string | null;
+  createdByType?: string | null;
+  expiresAt?: string | null;
+  voidedAt?: string | null;
+  createdAt: string;
+}
+
+export interface CreditBalance {
+  principalId: string;
+  workspaceId?: string | null;
+  balance: number;
+  currency: 'credits';
+}
+
+export interface CreditWriteParams {
+  principalId: string;
+  principalType?: 'user' | 'agent' | 'service';
+  workspaceId?: string | null;
+  amount: number;
+  eventType: string;
+  sourcePlatform: CreditPlatform;
+  idempotencyKey: string;
+  description?: string;
+  relatedCourseId?: string;
+  relatedChallengeId?: string;
+  agentId?: string;
+  sessionId?: string;
+  taskId?: string;
+  workflowId?: string;
+  usageEventId?: string;
+  metadata?: Record<string, unknown>;
+}
+
 // ─── Wallet ───────────────────────────────────────────────────────────────────
 
 export type WalletType = 'eoa' | 'erc4337' | 'external';

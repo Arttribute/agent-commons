@@ -8,6 +8,8 @@ import {
   integer,
   real,
   boolean as pgBoolean,
+  uniqueIndex,
+  index,
 } from 'drizzle-orm/pg-core';
 import { sql } from 'drizzle-orm';
 import { relations } from 'drizzle-orm';
@@ -1737,6 +1739,63 @@ export const skill = pgTable('skill', {
     .default(sql`timezone('utc', now())`)
     .notNull(),
 });
+
+/* ─────────────────────────  CREDIT LEDGER  ───────────────────────── */
+
+export const creditLedgerEntry = pgTable(
+  'credit_ledger_entry',
+  {
+    entryId: uuid('entry_id')
+      .default(sql`uuid_generate_v4()`)
+      .primaryKey(),
+
+    principalId: text('principal_id').notNull(),
+    principalType: text('principal_type').notNull().default('user'),
+    workspaceId: text('workspace_id'),
+
+    amount: integer('amount').notNull(),
+    currency: text('currency').notNull().default('credits'),
+    direction: text('direction').notNull(), // 'grant' | 'debit' | 'adjustment' | 'refund' | 'expiration'
+    eventType: text('event_type').notNull(),
+    sourcePlatform: text('source_platform').notNull(), // 'agent_commons' | 'commonlab' | 'common_os' | 'system'
+
+    idempotencyKey: text('idempotency_key').notNull(),
+    description: text('description'),
+
+    relatedCourseId: text('related_course_id'),
+    relatedChallengeId: text('related_challenge_id'),
+    agentId: text('agent_id'),
+    sessionId: uuid('session_id'),
+    taskId: uuid('task_id'),
+    workflowId: uuid('workflow_id'),
+    usageEventId: uuid('usage_event_id'),
+
+    metadata: jsonb('metadata').$type<Record<string, unknown>>().default({}),
+
+    createdBy: text('created_by'),
+    createdByType: text('created_by_type').default('service'),
+    expiresAt: timestamp('expires_at', { withTimezone: true }),
+    voidedAt: timestamp('voided_at', { withTimezone: true }),
+    voidReason: text('void_reason'),
+
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .default(sql`timezone('utc', now())`)
+      .notNull(),
+  },
+  (table) => ({
+    idempotencyKeyIdx: uniqueIndex(
+      'credit_ledger_entry_idempotency_key_idx',
+    ).on(table.idempotencyKey),
+    principalCreatedIdx: index('credit_ledger_entry_principal_created_idx').on(
+      table.principalId,
+      table.createdAt,
+    ),
+    workspaceCreatedIdx: index('credit_ledger_entry_workspace_created_idx').on(
+      table.workspaceId,
+      table.createdAt,
+    ),
+  }),
+);
 
 /* ─────────────────────────  API KEYS  ───────────────────────── */
 
