@@ -412,6 +412,10 @@ export const tool = pgTable('tool', {
     bodyTemplate?: any;
     authType?: 'none' | 'bearer' | 'api-key' | 'basic' | 'oauth2';
     authKeyName?: string; // Name of the key required (e.g., 'OPENAI_API_KEY')
+    oauthProviderKey?: string;
+    oauthTokenLocation?: 'header' | 'query' | 'body';
+    oauthTokenKey?: string;
+    oauthTokenPrefix?: string;
   }>(),
 
   // Input/Output mapping for workflows

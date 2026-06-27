@@ -10,6 +10,16 @@ import { findSkillPackBySlug } from "@/lib/skill-paths";
 import type { AgentSandboxConfig, SkillPack } from "@/types/skills";
 import type { Types } from "mongoose";
 
+const googleConnectorTools: Record<string, string[]> = {
+  google_calendar: [
+    "google_calendar_list_events",
+    "google_calendar_create_event",
+  ],
+  gmail: ["google_gmail_search_messages", "google_gmail_get_message"],
+  google_drive: ["google_drive_search_files"],
+  google_sheets: ["google_sheets_get_values"],
+};
+
 type SandboxCourse = {
   _id: Types.ObjectId;
   slug: string;
@@ -128,6 +138,12 @@ export async function POST(
   } as Parameters<typeof client.agents.create>[0] & Record<string, unknown>;
   const created = await client.agents.create(createPayload);
   const agentId = created.data.agentId;
+  const toolAssignments = await assignSelectedPlatformTools({
+    client,
+    agentId,
+    config: challenge.sandbox,
+    selectedToolIds: body.agent.tools || [],
+  });
 
   await trackAnalyticsEvent({
     eventType: challenge.sandbox.completionEventType || "agent_sandbox_completed",
@@ -141,6 +157,8 @@ export async function POST(
       simulated: false,
       selectedSkills: body.agent.skills || [],
       selectedTools: body.agent.tools || [],
+      assignedPlatformTools: toolAssignments.assigned,
+      toolAssignmentWarnings: toolAssignments.warnings,
       creditReward: challenge.sandbox.creditReward || 0,
     },
     request,
@@ -149,8 +167,51 @@ export async function POST(
   return NextResponse.json({
     agentId,
     simulated: false,
+    assignedTools: toolAssignments.assigned,
+    toolWarnings: toolAssignments.warnings,
     creditReward: challenge.sandbox.creditReward || 0,
   });
+}
+
+async function assignSelectedPlatformTools({
+  client,
+  agentId,
+  config,
+  selectedToolIds,
+}: {
+  client: NonNullable<ReturnType<typeof getAgentCommonsClient>>;
+  agentId: string;
+  config: AgentSandboxConfig;
+  selectedToolIds: string[];
+}) {
+  const selected = new Set(selectedToolIds);
+  const toolNames = new Set<string>();
+  for (const tool of config.toolTemplates || []) {
+    if (!selected.has(tool.id) || !tool.connectorKind) continue;
+    for (const name of googleConnectorTools[tool.connectorKind] || []) {
+      toolNames.add(name);
+    }
+  }
+
+  const assigned: string[] = [];
+  const warnings: string[] = [];
+  for (const toolName of toolNames) {
+    try {
+      const tool = await client.tools.get(toolName);
+      const toolId = tool.data.toolId;
+      await client.agents.addTool(agentId, {
+        toolId,
+        usageComments:
+          "Selected by a learner in a CommonLab agent creation sandbox.",
+      });
+      assigned.push(toolName);
+    } catch {
+      warnings.push(
+        `Could not attach ${toolName}. Run the Google Workspace tools migration in Agent Commons.`
+      );
+    }
+  }
+  return { assigned, warnings };
 }
 
 function validateSandboxAgent(

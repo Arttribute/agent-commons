@@ -285,18 +285,13 @@ export class AgentToolsController {
       apiSpec;
 
     // 1) Build final URL with query params
-    let finalUrl = `${baseUrl}${path}`;
+    let finalUrl = `${baseUrl}${this.replaceTemplate(path, parsedArgs)}`;
     const url = new URL(finalUrl);
     if (queryParams) {
       for (const [k, v] of Object.entries(queryParams)) {
-        const matched = v.match(/^\{(.+)\}$/);
-        if (matched) {
-          const argKey = matched[1];
-          if (parsedArgs[argKey] !== undefined) {
-            url.searchParams.set(k, parsedArgs[argKey].toString());
-          }
-        } else {
-          url.searchParams.set(k, v);
+        const value = this.replaceTemplate(v, parsedArgs);
+        if (value !== '') {
+          url.searchParams.set(k, value);
         }
       }
     }
@@ -348,7 +343,7 @@ export class AgentToolsController {
         // Get agent owner
         if (metadata.agentId) {
           const agent = await this.agent.getAgent({ agentId: metadata.agentId });
-          agentOwner = agent?.owner || undefined;
+          agentOwner = agent?.ownerUserId || agent?.owner || undefined;
         }
 
         // Inject OAuth token
@@ -378,6 +373,15 @@ export class AgentToolsController {
       );
     }
     return await response.json();
+  }
+
+  private replaceTemplate(template: string, args: Record<string, any>): string {
+    return template.replace(/\{([^}]+)\}/g, (_match, key) => {
+      const value = args[key];
+      return value === undefined || value === null
+        ? ''
+        : encodeURIComponent(String(value));
+    });
   }
 
   /**

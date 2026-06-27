@@ -180,6 +180,15 @@ export function AgentLearnerSandbox({
       level: "success",
       message: `Created Agent Commons agent ${payload.agentId}.`,
     });
+    if (payload.assignedTools?.length) {
+      addLog({
+        level: "success",
+        message: `Attached ${payload.assignedTools.length} real platform tool${payload.assignedTools.length === 1 ? "" : "s"}.`,
+      });
+    }
+    for (const warning of payload.toolWarnings || []) {
+      addLog({ level: "warning", message: warning });
+    }
     if (needsGoogleConnection) {
       addLog({
         level: "warning",

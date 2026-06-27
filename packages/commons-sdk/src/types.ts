@@ -49,6 +49,9 @@ export interface CreateAgentParams {
   instructions?: string;
   persona?: string;
   owner?: string;
+  ownerUserId?: string;
+  workspaceId?: string | null;
+  metadata?: Record<string, unknown>;
   modelProvider?: ModelProvider;
   modelId?: string;
   modelApiKey?: string;

@@ -107,6 +107,15 @@ export class OwnerGuard implements CanActivate {
     }
 
     if (
+      opts.table === 'agent' &&
+      principal?.principalType === 'service' &&
+      !['GET', 'HEAD'].includes(req.method.toUpperCase()) &&
+      principal.scopes?.includes('agents:write')
+    ) {
+      return true;
+    }
+
+    if (
       principal?.principalType === 'user' &&
       ((owner.ownerUserId &&
         owner.ownerUserId.toLowerCase() ===
