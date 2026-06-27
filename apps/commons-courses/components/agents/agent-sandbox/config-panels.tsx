@@ -37,7 +37,7 @@ export function IdentityPanel({
         <textarea
           value={systemPrompt}
           onChange={(event) => onPromptChange(event.target.value)}
-          className="mt-1.5 min-h-56 w-full resize-y rounded-lg border border-slate-200 px-3 py-2 text-sm leading-6 outline-none focus:border-slate-400"
+          className="mt-1.5 min-h-40 w-full resize-y rounded-lg border border-slate-200 px-3 py-2 text-sm leading-6 outline-none focus:border-slate-400"
         />
       </label>
       {reviewEnabled ? (
@@ -99,7 +99,7 @@ export function SkillsPanel({
                   onChange={(event) =>
                     onInstructionChange(skill.id, event.target.value)
                   }
-                  className="mt-1.5 min-h-36 w-full resize-y rounded-lg border border-slate-200 px-3 py-2 text-sm leading-6 outline-none focus:border-slate-400"
+                  className="mt-1.5 min-h-28 w-full resize-y rounded-lg border border-slate-200 px-3 py-2 text-sm leading-6 outline-none focus:border-slate-400"
                 />
               </label>
             ))}

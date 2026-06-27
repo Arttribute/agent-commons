@@ -141,6 +141,7 @@ export class OAuthFlowService {
       if (!stateRecord) {
         throw new BadRequestException('Invalid or expired state parameter');
       }
+      const redirectUri = stateRecord.redirectUri || params.redirectUri;
 
       // Get provider configuration
       const provider = await this.providerService.getProviderById(
@@ -156,7 +157,7 @@ export class OAuthFlowService {
         code: params.code,
         client_id: provider.clientId,
         client_secret: clientSecret,
-        redirect_uri: params.redirectUri,
+        redirect_uri: redirectUri,
         grant_type: 'authorization_code',
       });
 

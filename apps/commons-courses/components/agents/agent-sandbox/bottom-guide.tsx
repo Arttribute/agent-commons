@@ -2,7 +2,6 @@ import {
   CheckCircle2,
   ChevronRight,
   Coins,
-  ExternalLink,
   Loader2,
   Play,
   Save,
@@ -20,8 +19,6 @@ type BottomGuideProps = {
   createdAgentId?: string;
   syncing: boolean;
   canSync: boolean;
-  needsGoogleConnection: boolean;
-  googleConnectUrl: string;
   onOpenStep: () => void;
   onNextStep: () => void;
   onCreate: () => void;
@@ -40,8 +37,6 @@ export function BottomGuide({
   createdAgentId,
   syncing,
   canSync,
-  needsGoogleConnection,
-  googleConnectUrl,
   onOpenStep,
   onNextStep,
   onCreate,
@@ -77,17 +72,6 @@ export function BottomGuide({
           ) : null}
         </div>
         <div className="flex flex-wrap items-center justify-end gap-2">
-          {needsGoogleConnection ? (
-            <a
-              href={googleConnectUrl}
-              target="_blank"
-              rel="noreferrer"
-              className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-2 text-xs font-black text-slate-700"
-            >
-              <ExternalLink className="h-3.5 w-3.5" />
-              Google
-            </a>
-          ) : null}
           {guideLength ? (
             <button
               type="button"
@@ -97,19 +81,21 @@ export function BottomGuide({
               Next
             </button>
           ) : null}
-          <button
-            type="button"
-            onClick={onCreate}
-            disabled={!canCreate || creating || Boolean(createdAgentId)}
-            className="inline-flex items-center gap-2 rounded-lg bg-slate-950 px-4 py-2 text-xs font-black text-white disabled:cursor-not-allowed disabled:opacity-40"
-          >
-            {creating ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              <Play className="h-4 w-4" />
-            )}
-            {createdAgentId ? "Created" : "Create agent"}
-          </button>
+          {!createdAgentId ? (
+            <button
+              type="button"
+              onClick={onCreate}
+              disabled={!canCreate || creating}
+              className="inline-flex items-center gap-2 rounded-lg bg-slate-950 px-4 py-2 text-xs font-black text-white disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              {creating ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Play className="h-4 w-4" />
+              )}
+              Create agent
+            </button>
+          ) : null}
           {createdAgentId ? (
             <button
               type="button"
@@ -122,7 +108,7 @@ export function BottomGuide({
               ) : (
                 <Save className="h-4 w-4" />
               )}
-              Save
+              Save changes
             </button>
           ) : null}
         </div>

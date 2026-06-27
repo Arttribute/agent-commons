@@ -1,7 +1,8 @@
 'use client';
 
-import { Suspense, useState, useEffect } from 'react';
+import { Suspense, useState, useEffect, useCallback } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
+import { useSession } from 'next-auth/react';
 import { OAuthProvider } from '@/types/oauth';
 import { useToast } from '@/hooks/use-toast';
 
@@ -9,6 +10,7 @@ function OAuthConnectContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const { toast } = useToast();
+  const { status } = useSession();
   const [provider, setProvider] = useState<OAuthProvider | null>(null);
   const [loading, setLoading] = useState(true);
   const [connecting, setConnecting] = useState(false);
@@ -16,26 +18,12 @@ function OAuthConnectContent() {
   const providerKey = searchParams.get('provider');
   const returnUrl = searchParams.get('returnUrl') || '/studio';
 
-  useEffect(() => {
-    if (!providerKey) {
-      toast({
-        title: 'Error',
-        description: 'Missing provider parameter',
-        variant: 'destructive',
-      });
-      router.push(returnUrl);
-      return;
-    }
-
-    // Fetch provider details
-    fetchProvider(providerKey);
-  }, [providerKey]);
-
-  const fetchProvider = async (key: string) => {
+  const fetchProvider = useCallback(async (key: string) => {
     try {
       const res = await fetch(`/api/oauth/providers/${key}`);
       if (!res.ok) {
-        throw new Error('Failed to fetch provider');
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || 'Failed to fetch provider');
       }
       const data = await res.json();
       setProvider(data.provider);
@@ -50,23 +38,38 @@ function OAuthConnectContent() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [returnUrl, router, toast]);
+
+  useEffect(() => {
+    if (!providerKey) {
+      toast({
+        title: 'Error',
+        description: 'Missing provider parameter',
+        variant: 'destructive',
+      });
+      router.push(returnUrl);
+      return;
+    }
+
+    // Fetch provider details
+    fetchProvider(providerKey);
+  }, [fetchProvider, providerKey, returnUrl, router, toast]);
 
   const handleConnect = async () => {
     if (!providerKey || !provider) return;
+    if (status !== 'authenticated') {
+      router.push(`/login?callbackUrl=${encodeURIComponent(window.location.href)}`);
+      return;
+    }
 
     setConnecting(true);
 
     try {
-      // Get user's wallet address from context (you'll need to add this)
-      const ownerId = localStorage.getItem('walletAddress') || '';
-
       // Initiate OAuth flow
       const res = await fetch('/api/oauth/connect', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'x-initiator': ownerId,
         },
         body: JSON.stringify({
           providerKey,
@@ -76,7 +79,8 @@ function OAuthConnectContent() {
       });
 
       if (!res.ok) {
-        throw new Error('Failed to initiate OAuth flow');
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || 'Failed to initiate OAuth flow');
       }
 
       const data = await res.json();

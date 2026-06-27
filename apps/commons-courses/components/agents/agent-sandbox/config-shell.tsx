@@ -80,11 +80,11 @@ export function ConfigDrawer({
   return (
     <div
       className={cn(
-        "absolute inset-y-0 left-0 z-40 w-full border-r border-slate-200 bg-white shadow-xl transition-transform lg:relative lg:left-0 lg:z-30 lg:w-[min(420px,calc(100%-3.5rem))] lg:shadow-none",
+        "absolute inset-y-0 left-0 z-40 max-h-full w-full border-r border-slate-200 bg-white shadow-xl transition-transform lg:relative lg:left-0 lg:z-30 lg:w-[min(420px,calc(100%-3.5rem))] lg:shadow-none",
         open ? "translate-x-0" : "-translate-x-full lg:hidden"
       )}
     >
-      <div className="flex h-full flex-col">
+      <div className="flex h-full min-h-0 flex-col">
         <header className="flex items-center justify-between border-b border-slate-200 px-4 py-3">
           <div className="flex items-center gap-2">
             <Icon className="h-4 w-4 text-slate-500" />

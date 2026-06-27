@@ -1,7 +1,20 @@
 // app/api/oauth/[...path]/route.ts
 import { NextResponse } from 'next/server';
+import { auth } from '@/auth';
+import { backendAuthHeaders } from '@/lib/api-headers';
 
-const baseUrl = process.env.NEXT_PUBLIC_NEST_API_BASE_URL;
+const baseUrl =
+  process.env.NEST_API_BASE_URL ||
+  process.env.NEXT_PUBLIC_NEST_API_BASE_URL ||
+  process.env.AGENT_COMMONS_API_URL ||
+  process.env.NEXT_PUBLIC_AGENT_COMMONS_API_URL;
+
+function requireBaseUrl() {
+  if (!baseUrl) {
+    throw new Error('Agent Commons API base URL is not configured');
+  }
+  return baseUrl.replace(/\/$/, '');
+}
 
 function redactSecrets(value: string) {
   return value
@@ -46,12 +59,14 @@ export async function GET(
 
     // Build query string
     const queryString = searchParams.toString();
+    const apiBaseUrl = requireBaseUrl();
     const url = queryString
-      ? `${baseUrl}/v1/oauth/${path}?${queryString}`
-      : `${baseUrl}/v1/oauth/${path}`;
+      ? `${apiBaseUrl}/v1/oauth/${path}?${queryString}`
+      : `${apiBaseUrl}/v1/oauth/${path}`;
 
     // Forward headers from the original request
     const headers: Record<string, string> = {
+      ...(await backendAuthHeaders()),
       'Content-Type': 'application/json',
     };
 
@@ -71,7 +86,7 @@ export async function GET(
     if (res.status === 302 || res.status === 301) {
       const location = res.headers.get('location');
       if (location) {
-        return NextResponse.redirect(location);
+        return NextResponse.redirect(new URL(location, request.url));
       }
     }
 
@@ -98,17 +113,19 @@ export async function POST(
     const path = pathArray.join('/');
     const body = await request.json();
 
-    const url = `${baseUrl}/v1/oauth/${path}`;
+    const apiBaseUrl = requireBaseUrl();
+    const url = `${apiBaseUrl}/v1/oauth/${path}`;
+    const session = await auth();
+    const ownerId = request.headers.get('x-initiator') || session?.user?.id;
 
     // Forward headers from the original request
     const headers: Record<string, string> = {
+      ...(await backendAuthHeaders()),
       'Content-Type': 'application/json',
     };
 
-    // Copy important headers
-    const initiator = request.headers.get('x-initiator');
-    if (initiator) {
-      headers['x-initiator'] = initiator;
+    if (ownerId) {
+      headers['x-initiator'] = ownerId;
     }
 
     const res = await fetch(url, {
@@ -144,10 +161,12 @@ export async function PUT(
     const path = pathArray.join('/');
     const body = await request.json();
 
-    const url = `${baseUrl}/v1/oauth/${path}`;
+    const apiBaseUrl = requireBaseUrl();
+    const url = `${apiBaseUrl}/v1/oauth/${path}`;
 
     // Forward headers from the original request
     const headers: Record<string, string> = {
+      ...(await backendAuthHeaders()),
       'Content-Type': 'application/json',
     };
 
@@ -189,10 +208,12 @@ export async function DELETE(
     const { path: pathArray } = await params;
     const path = pathArray.join('/');
 
-    const url = `${baseUrl}/v1/oauth/${path}`;
+    const apiBaseUrl = requireBaseUrl();
+    const url = `${apiBaseUrl}/v1/oauth/${path}`;
 
     // Forward headers from the original request
     const headers: Record<string, string> = {
+      ...(await backendAuthHeaders()),
       'Content-Type': 'application/json',
     };
 

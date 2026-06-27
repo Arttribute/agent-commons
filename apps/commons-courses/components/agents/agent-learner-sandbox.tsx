@@ -170,9 +170,10 @@ export function AgentLearnerSandbox({
     if (!response.ok || !payload.agentId || payload.simulated) {
       addLog({
         level: "error",
-        message:
-          payload.error ||
-          "Agent Commons did not create a real agent. The lesson cannot continue with a mock agent.",
+        message: formatApiError(
+          payload,
+          "Agent Commons did not create a real agent. The lesson cannot continue with a mock agent."
+        ),
       });
       return;
     }
@@ -237,7 +238,10 @@ export function AgentLearnerSandbox({
     if (!response.ok) {
       addLog({
         level: "error",
-        message: payload.error || "Could not save this agent change yet.",
+        message: formatApiError(
+          payload,
+          "Could not save this agent change yet."
+        ),
       });
       return false;
     }
@@ -289,7 +293,7 @@ export function AgentLearnerSandbox({
     setSending(false);
 
     if (!response.ok) {
-      const error = payload.error || payload.message || "The agent run failed.";
+      const error = formatApiError(payload, "The agent run failed.");
       setMessages((current) => [
         ...current,
         { role: "assistant", content: `Run failed: ${error}` },
@@ -347,7 +351,7 @@ export function AgentLearnerSandbox({
     if (!response.ok) {
       addLog({
         level: "error",
-        message: payload.error || "Could not review this yet.",
+        message: formatApiError(payload, "Could not review this yet."),
       });
       return;
     }
@@ -382,7 +386,7 @@ export function AgentLearnerSandbox({
   }
 
   return (
-    <div className="relative flex min-h-0 flex-1 overflow-hidden rounded-xl border border-slate-200 bg-white text-slate-950">
+    <div className="relative flex h-full min-h-0 flex-1 overflow-hidden rounded-xl border border-slate-200 bg-white text-slate-950">
       <ConfigRail
         activePanel={activePanel}
         drawerOpen={drawerOpen}
@@ -459,7 +463,7 @@ export function AgentLearnerSandbox({
         ) : null}
       </ConfigDrawer>
 
-      <main className="flex min-w-0 flex-1 flex-col">
+      <main className="flex min-w-0 flex-1 flex-col overflow-hidden">
         <header className="flex items-center justify-between gap-3 border-b border-slate-200 px-4 py-3">
           <div className="min-w-0">
             <p className="truncate text-xs font-bold uppercase tracking-widest text-slate-500">
@@ -492,7 +496,7 @@ export function AgentLearnerSandbox({
           </div>
         </header>
 
-        <div className="flex min-h-0 flex-1">
+        <div className="relative flex min-h-0 flex-1 overflow-hidden">
           <ChatSurface
             messages={messages}
             sending={sending}
@@ -530,10 +534,31 @@ export function AgentLearnerSandbox({
           onSync={() => void syncAgent()}
           syncing={syncing}
           canSync={Boolean(createdAgentId) && !syncing}
-          needsGoogleConnection={needsGoogleConnection}
-          googleConnectUrl={googleConnectUrl}
         />
       </main>
     </div>
   );
+}
+
+function formatApiError(payload: unknown, fallback: string) {
+  if (!payload || typeof payload !== "object") return fallback;
+  const data = payload as {
+    error?: unknown;
+    message?: unknown;
+  };
+  const error = data.error;
+  if (typeof error === "string") return error;
+  if (error && typeof error === "object") {
+    const message =
+      typeof error.message === "string" && error.message.trim()
+        ? error.message
+        : fallback;
+    const requestId =
+      typeof error.requestId === "string" ? ` Request ${error.requestId}.` : "";
+    const type =
+      typeof error.type === "string" ? ` (${error.type})` : "";
+    return `${message}${type}.${requestId}`.trim();
+  }
+  if (typeof data.message === "string") return data.message;
+  return fallback;
 }

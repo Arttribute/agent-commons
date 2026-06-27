@@ -48,7 +48,7 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
             authorization: {
               params: {
                 scope:
-                  "openid email profile offline_access activity:read agents:read agents:write",
+                  "openid email profile offline_access activity:read agents:read agents:write agents:run",
                 resource: "commons-platform",
               },
             },
