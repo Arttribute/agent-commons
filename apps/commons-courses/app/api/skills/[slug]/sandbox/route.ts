@@ -88,22 +88,46 @@ export async function POST(
   }
 
   const client = getAgentCommonsClient();
-  let agentId: string | undefined;
-  let simulated = true;
 
-  if (client && user?.identityUserId) {
-    const instructions = buildInstructions(challenge.sandbox, body.agent);
-    const created = await client.agents.create({
-      name: body.agent.name.trim(),
-      persona: body.agent.persona?.trim(),
-      instructions,
-      owner: user.identityUserId,
-      modelProvider: "openai",
-      modelId: process.env.AGENT_LEARNER_SANDBOX_MODEL || "gpt-4o-mini",
-    });
-    agentId = created.data.agentId;
-    simulated = false;
+  if (!user?.identityUserId) {
+    return NextResponse.json(
+      {
+        error:
+          "Your CommonLab account is not linked to Commons Identity yet. Sign out and sign back in before creating an agent.",
+      },
+      { status: 409 }
+    );
   }
+
+  if (!client) {
+    return NextResponse.json(
+      {
+        error:
+          "Agent Commons API credentials are not configured, so this lesson cannot create a real platform agent yet.",
+      },
+      { status: 503 }
+    );
+  }
+
+  const instructions = buildInstructions(challenge.sandbox, body.agent);
+  const createPayload = {
+    name: body.agent.name.trim(),
+    persona: body.agent.persona?.trim(),
+    instructions,
+    owner: user.identityUserId,
+    ownerUserId: user.identityUserId,
+    workspaceId: user.identityWorkspaceId,
+    modelProvider: "openai",
+    modelId: process.env.AGENT_LEARNER_SANDBOX_MODEL || "gpt-4o-mini",
+    metadata: {
+      source: "commonlab_skill_sandbox",
+      courseSlug: course.slug,
+      skillSlug: slug,
+      challengeId: challenge.id,
+    },
+  } as Parameters<typeof client.agents.create>[0] & Record<string, unknown>;
+  const created = await client.agents.create(createPayload);
+  const agentId = created.data.agentId;
 
   await trackAnalyticsEvent({
     eventType: challenge.sandbox.completionEventType || "agent_sandbox_completed",
@@ -114,7 +138,7 @@ export async function POST(
     metadata: {
       challengeId: challenge.id,
       agentId,
-      simulated,
+      simulated: false,
       selectedSkills: body.agent.skills || [],
       selectedTools: body.agent.tools || [],
       creditReward: challenge.sandbox.creditReward || 0,
@@ -124,7 +148,7 @@ export async function POST(
 
   return NextResponse.json({
     agentId,
-    simulated,
+    simulated: false,
     creditReward: challenge.sandbox.creditReward || 0,
   });
 }
@@ -181,7 +205,7 @@ function buildInstructions(
     selectedSkills.length ? `\nSelected lesson skills:\n${selectedSkills.join("\n\n")}` : "",
     selectedTools.length ? `\nSelected lesson tools/connectors:\n${selectedTools.join("\n\n")}` : "",
     agent.taskTitle ? `\nFirst learner task: ${agent.taskTitle.trim()}` : "",
-    "This agent was created from a CommonLab learning sandbox. Be transparent when a tool is simulated or not connected yet.",
+    "This agent was created from a CommonLab learning sandbox. Use connected tools only when the user has explicitly connected and authorized them.",
   ]
     .filter(Boolean)
     .join("\n\n");

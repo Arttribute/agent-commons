@@ -1,0 +1,74 @@
+import { NextRequest, NextResponse } from "next/server";
+import { auth } from "@/lib/auth";
+import { platformServiceToken } from "@/lib/platform-service-token";
+import { connectDB } from "@/lib/db";
+import User from "@/models/User";
+
+type ChatBody = {
+  agentId?: string;
+  messages?: Array<{ role: "user" | "assistant" | "system"; content: string }>;
+  sessionId?: string;
+};
+
+export async function POST(request: NextRequest) {
+  const session = await auth();
+  if (!session?.user?.id) {
+    return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
+  }
+
+  const body = (await request.json()) as ChatBody;
+  if (!body.agentId || !body.messages?.length) {
+    return NextResponse.json(
+      { error: "agentId and messages are required." },
+      { status: 400 }
+    );
+  }
+
+  await connectDB();
+  const user = await User.findById(session.user.id)
+    .select("identityUserId")
+    .lean<{ identityUserId?: string }>();
+  if (!user?.identityUserId) {
+    return NextResponse.json(
+      { error: "Your account is not linked to Commons Identity yet." },
+      { status: 409 }
+    );
+  }
+
+  const baseUrl =
+    process.env.COMMONS_API_URL ||
+    process.env.AGENT_COMMONS_API_URL ||
+    process.env.NEXT_PUBLIC_AGENT_COMMONS_API_URL;
+  const token = await platformServiceToken("agent_commons", "agents:write");
+  if (!baseUrl || !token) {
+    return NextResponse.json(
+      { error: "Agent Commons chat is not configured yet." },
+      { status: 503 }
+    );
+  }
+
+  const response = await fetch(`${baseUrl.replace(/\/$/, "")}/v1/agents/run`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+      "x-initiator": user.identityUserId,
+    },
+    body: JSON.stringify({
+      agentId: body.agentId,
+      messages: body.messages,
+      sessionId: body.sessionId,
+      initiator: user.identityUserId,
+      initiatorId: user.identityUserId,
+    }),
+  });
+
+  const data = await response.json().catch(() => ({
+    error: response.statusText || "Agent run failed.",
+  }));
+  if (!response.ok) {
+    return NextResponse.json(data, { status: response.status });
+  }
+
+  return NextResponse.json({ data });
+}
