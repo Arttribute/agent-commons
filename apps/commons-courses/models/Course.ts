@@ -455,6 +455,29 @@ const AgentSandboxReviewSchema = new Schema(
   { _id: false }
 );
 
+const AgentSandboxIntroSchema = new Schema(
+  {
+    enabled: { type: Boolean, default: false },
+    eyebrow: { type: String, trim: true },
+    title: { type: String, trim: true },
+    body: { type: String, trim: true },
+    expectations: { type: [String], default: [] },
+    infoTitle: { type: String, trim: true },
+    infoBody: { type: String, trim: true },
+    startLabel: { type: String, trim: true },
+  },
+  { _id: false }
+);
+
+const AgentSandboxCompletionSchema = new Schema(
+  {
+    title: { type: String, trim: true },
+    body: { type: String, trim: true },
+    primaryActionLabel: { type: String, trim: true },
+  },
+  { _id: false }
+);
+
 const AgentSandboxConfigSchema = new Schema(
   {
     enabled: { type: Boolean, default: false },
@@ -465,6 +488,8 @@ const AgentSandboxConfigSchema = new Schema(
     },
     title: { type: String, trim: true },
     brief: { type: String, trim: true },
+    intro: AgentSandboxIntroSchema,
+    completion: AgentSandboxCompletionSchema,
     capabilities: {
       type: [String],
       enum: [

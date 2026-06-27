@@ -358,6 +358,29 @@ function createSkillPack(assetUrls) {
           title: "Build your first agent",
           brief:
             "<p>Create a study planning agent. The sandbox will guide you through identity, system prompt, skills, connectors, testing, and logs.</p>",
+          intro: {
+            enabled: true,
+            eyebrow: "Practice lab",
+            title: "Build your first real agent",
+            body:
+              "You are about to enter a guided Agent Commons sandbox. You will create a real agent, shape its behavior, add skills and tools, then test it in chat.",
+            expectations: [
+              "Create a clear agent identity and system prompt.",
+              "Use the AI review to improve the prompt and skill instructions.",
+              "Choose a Google connector that fits the study-planning task.",
+              "Send a test message and inspect the logs for success, warnings, or failures.",
+            ],
+            infoTitle: "What is the sandbox?",
+            infoBody:
+              "It is a controlled learning workspace that creates real Agent Commons agents on your account while keeping the lesson focused and guided.",
+            startLabel: "Proceed to sandbox",
+          },
+          completion: {
+            title: "Your first agent is live",
+            body:
+              "You created and tested a real Agent Commons agent. The agent remains available in your Agent Commons dashboard.",
+            primaryActionLabel: "Continue learning",
+          },
           capabilities: [
             "identity",
             "system_prompt",

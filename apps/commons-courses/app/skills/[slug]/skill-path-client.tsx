@@ -325,6 +325,7 @@ export default function SkillPathClient({ slug }: Props) {
                 <LockedState />
               ) : challenge.sandbox?.enabled ? (
                 <AgentLearnerSandbox
+                  key={challenge.id}
                   courseSlug={pack.skillSlug}
                   challengeId={challenge.id}
                   config={challenge.sandbox}
@@ -332,6 +333,13 @@ export default function SkillPathClient({ slug }: Props) {
                   authenticated={progress.authenticated}
                   signInHref={`/auth/signin?callbackUrl=${encodeURIComponent(pathname)}`}
                   onComplete={completeSandboxChallenge}
+                  onContinue={
+                    pack.challenges[currentIndex + 1]
+                      ? () => selectChallenge(pack.challenges[currentIndex + 1].id)
+                      : () => {
+                          window.location.href = "/skills";
+                        }
+                  }
                 />
               ) : mode === "quiz" ? (
                 <QuizView

@@ -13,6 +13,7 @@ import { ConfigDrawer, ConfigRail } from "./agent-sandbox/config-shell";
 import { BottomGuide } from "./agent-sandbox/bottom-guide";
 import { LogsPanel } from "./agent-sandbox/logs-panel";
 import { extractAssistantText } from "./agent-sandbox/extract-assistant-text";
+import { SandboxCompletion, SandboxIntro } from "./agent-sandbox/sandbox-framing";
 import type {
   ChatMessage,
   ConfigPanel,
@@ -34,6 +35,7 @@ type Props = {
     simulated: boolean;
     creditReward: number;
   }) => void;
+  onContinue?: () => void;
 };
 
 export function AgentLearnerSandbox({
@@ -44,7 +46,9 @@ export function AgentLearnerSandbox({
   authenticated,
   signInHref,
   onComplete,
+  onContinue,
 }: Props) {
+  const [introOpen, setIntroOpen] = useState(Boolean(config.intro?.enabled));
   const [agentName, setAgentName] = useState(
     config.starterAgent?.name || "Study Planner Agent"
   );
@@ -131,6 +135,31 @@ export function AgentLearnerSandbox({
     if (!promptReviewPassed) return "System prompt review required";
     return "Create the agent in Agent Commons";
   }, [completionSent, createdAgentId, promptReviewPassed]);
+
+  if (introOpen && !completed) {
+    return (
+      <div className="relative flex h-full min-h-0 flex-1 overflow-hidden rounded-xl border border-slate-200 bg-white text-slate-950">
+        <SandboxIntro
+          intro={config.intro}
+          title={config.title}
+          brief={config.brief}
+          onStart={() => setIntroOpen(false)}
+        />
+      </div>
+    );
+  }
+
+  if (completionSent) {
+    return (
+      <div className="relative flex h-full min-h-0 flex-1 overflow-hidden rounded-xl border border-slate-200 bg-white text-slate-950">
+        <SandboxCompletion
+          completion={config.completion}
+          creditReward={creditReward}
+          onContinue={onContinue}
+        />
+      </div>
+    );
+  }
 
   function addLog(log: SandboxLog) {
     setLogs((current) => [log, ...current].slice(0, 40));
@@ -549,14 +578,17 @@ function formatApiError(payload: unknown, fallback: string) {
   const error = data.error;
   if (typeof error === "string") return error;
   if (error && typeof error === "object") {
+    const details = error as Record<string, unknown>;
     const message =
-      typeof error.message === "string" && error.message.trim()
-        ? error.message
+      typeof details.message === "string" && details.message.trim()
+        ? details.message
         : fallback;
     const requestId =
-      typeof error.requestId === "string" ? ` Request ${error.requestId}.` : "";
+      typeof details.requestId === "string"
+        ? ` Request ${details.requestId}.`
+        : "";
     const type =
-      typeof error.type === "string" ? ` (${error.type})` : "";
+      typeof details.type === "string" ? ` (${details.type})` : "";
     return `${message}${type}.${requestId}`.trim();
   }
   if (typeof data.message === "string") return data.message;

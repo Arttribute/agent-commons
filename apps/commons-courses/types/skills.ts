@@ -58,6 +58,23 @@ export type AgentSandboxReviewConfig = {
   model?: string;
 };
 
+export type AgentSandboxIntroConfig = {
+  enabled?: boolean;
+  eyebrow?: string;
+  title?: string;
+  body?: string;
+  expectations?: string[];
+  infoTitle?: string;
+  infoBody?: string;
+  startLabel?: string;
+};
+
+export type AgentSandboxCompletionConfig = {
+  title?: string;
+  body?: string;
+  primaryActionLabel?: string;
+};
+
 export type AgentSandboxToolTemplate = {
   id: string;
   name: string;
@@ -83,6 +100,8 @@ export type AgentSandboxConfig = {
   mode: "simple" | "builder" | "full";
   title?: string;
   brief?: string;
+  intro?: AgentSandboxIntroConfig;
+  completion?: AgentSandboxCompletionConfig;
   capabilities: AgentSandboxCapability[];
   requiredCapabilities?: AgentSandboxCapability[];
   guideSteps: AgentSandboxGuideStep[];
