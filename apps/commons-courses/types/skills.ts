@@ -124,6 +124,7 @@ export type SkillPack = {
   enabled: boolean;
   title: string;
   subtitle?: string;
+  coverUrl?: string;
   learnerPromise?: string;
   challenges: SkillChallenge[];
 };

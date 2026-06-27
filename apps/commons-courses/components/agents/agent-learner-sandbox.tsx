@@ -279,6 +279,7 @@ export function AgentLearnerSandbox({
           <div className="flex flex-wrap gap-2">
             {visibleCapabilities.map((capability) => {
               const Icon = capabilityIcons[capability];
+              if (!Icon) return null;
               return (
                 <span
                   key={capability}

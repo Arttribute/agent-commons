@@ -368,7 +368,6 @@ function createSkillPack(assetUrls) {
             "chat",
             "logs",
             "credits",
-            "publish",
           ],
           requiredCapabilities: [
             "identity",
