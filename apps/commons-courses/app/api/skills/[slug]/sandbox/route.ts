@@ -36,6 +36,7 @@ type SandboxBody = {
     persona?: string;
     systemPrompt?: string;
     skills?: string[];
+    skillInstructions?: Record<string, string>;
     tools?: string[];
     taskTitle?: string;
     message?: string;
@@ -173,6 +174,88 @@ export async function POST(
   });
 }
 
+export async function PATCH(
+  request: NextRequest,
+  { params }: { params: Promise<{ slug: string }> }
+) {
+  const session = await auth();
+  if (!session?.user?.id) {
+    return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
+  }
+
+  const { slug } = await params;
+  const body = (await request.json()) as SandboxBody & { agentId?: string };
+  if (!body.agentId || !body.challengeId || !body.agent?.name || !body.agent.systemPrompt) {
+    return NextResponse.json(
+      { error: "agentId, challengeId, agent.name, and agent.systemPrompt are required." },
+      { status: 400 }
+    );
+  }
+
+  await connectDB();
+  const [user, course] = await Promise.all([
+    User.findById(session.user.id)
+      .select("identityUserId identityWorkspaceId")
+      .lean<{ identityUserId?: string; identityWorkspaceId?: string }>(),
+    Course.findOne({
+      published: true,
+      $or: [{ slug }, { "skillPack.slug": slug }, { "skillPacks.slug": slug }],
+    })
+      .select("_id title slug isFree skillPack skillPacks")
+      .lean<SandboxCourse | null>(),
+  ]);
+  const pack = course ? findSkillPackBySlug(course, slug) : null;
+  const challenge = pack?.challenges?.find(
+    (item) => item.id === body.challengeId
+  );
+  if (!course || !challenge?.sandbox?.enabled) {
+    return NextResponse.json({ error: "Sandbox challenge not found." }, { status: 404 });
+  }
+  if (!user?.identityUserId) {
+    return NextResponse.json(
+      { error: "Your CommonLab account is not linked to Commons Identity yet." },
+      { status: 409 }
+    );
+  }
+
+  const client = getAgentCommonsClient();
+  if (!client) {
+    return NextResponse.json(
+      { error: "Agent Commons API credentials are not configured." },
+      { status: 503 }
+    );
+  }
+
+  const agent = await client.agents.get(body.agentId);
+  const ownerUserId = (agent.data as { ownerUserId?: string }).ownerUserId;
+  const legacyOwner = (agent.data as { owner?: string }).owner;
+  if (ownerUserId !== user.identityUserId && legacyOwner !== user.identityUserId) {
+    return NextResponse.json(
+      { error: "This sandbox agent belongs to a different account." },
+      { status: 403 }
+    );
+  }
+
+  const instructions = buildInstructions(challenge.sandbox, body.agent);
+  await client.agents.update(body.agentId, {
+    name: body.agent.name.trim(),
+    persona: body.agent.persona?.trim(),
+    instructions,
+  });
+  const toolAssignments = await assignSelectedPlatformTools({
+    client,
+    agentId: body.agentId,
+    config: challenge.sandbox,
+    selectedToolIds: body.agent.tools || [],
+  });
+
+  return NextResponse.json({
+    agentId: body.agentId,
+    assignedTools: toolAssignments.assigned,
+    toolWarnings: toolAssignments.warnings,
+  });
+}
+
 async function assignSelectedPlatformTools({
   client,
   agentId,
@@ -195,10 +278,22 @@ async function assignSelectedPlatformTools({
 
   const assigned: string[] = [];
   const warnings: string[] = [];
+  const currentAssignments = await client.agents
+    .listTools(agentId)
+    .then((result) => result.data || [])
+    .catch(() => []);
+  const currentToolIds = new Set(
+    currentAssignments
+      .map((assignment) => (assignment as { toolId?: string }).toolId)
+      .filter(Boolean)
+  );
   for (const toolName of toolNames) {
     try {
       const tool = await client.tools.get(toolName);
       const toolId = tool.data.toolId;
+      if (currentToolIds.has(toolId)) {
+        continue;
+      }
       await client.agents.addTool(agentId, {
         toolId,
         usageComments:
@@ -218,22 +313,9 @@ function validateSandboxAgent(
   config: AgentSandboxConfig,
   agent: NonNullable<SandboxBody["agent"]>
 ) {
-  const required = new Set(config.requiredCapabilities || []);
   if ((agent.name?.trim().length || 0) < 2) return "Give the agent a clear name.";
   if ((agent.systemPrompt?.trim().length || 0) < 40) {
     return "Write a system prompt with at least 40 characters.";
-  }
-  if (required.has("skills") && !agent.skills?.length) {
-    return "Select at least one skill for this lesson.";
-  }
-  if (required.has("tools") && !agent.tools?.length) {
-    return "Select at least one tool or connector for this lesson.";
-  }
-  if (required.has("tasks") && !agent.taskTitle?.trim()) {
-    return "Create the first task for the agent.";
-  }
-  if (required.has("chat") && !agent.message?.trim()) {
-    return "Run the agent with a learner message.";
   }
   return "";
 }
@@ -251,7 +333,11 @@ function buildInstructions(
   const selectedSkills = (agent.skills || [])
     .map((id) => skillTemplates.get(id))
     .filter(Boolean)
-    .map((skill) => `Skill: ${skill!.name}\n${skill!.instructions}`);
+    .map((skill) => {
+      const instructions =
+        agent.skillInstructions?.[skill!.id]?.trim() || skill!.instructions;
+      return `Skill: ${skill!.name}\n${instructions}`;
+    });
   const selectedTools = (agent.tools || [])
     .map((id) => toolTemplates.get(id))
     .filter(Boolean)

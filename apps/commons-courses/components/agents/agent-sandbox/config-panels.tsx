@@ -8,44 +8,38 @@ import type { ReviewResult } from "./types";
 export function IdentityPanel({
   agentName,
   persona,
+  systemPrompt,
+  reviewEnabled,
+  review,
+  reviewing,
   onNameChange,
   onPersonaChange,
+  onPromptChange,
+  onReview,
 }: {
   agentName: string;
   persona: string;
+  systemPrompt: string;
+  reviewEnabled: boolean;
+  review?: ReviewResult;
+  reviewing: boolean;
   onNameChange: (value: string) => void;
   onPersonaChange: (value: string) => void;
+  onPromptChange: (value: string) => void;
+  onReview: () => void;
 }) {
   return (
     <div className="space-y-4">
       <Field label="Agent name" value={agentName} onChange={onNameChange} />
       <Field label="Role" value={persona} onChange={onPersonaChange} />
-    </div>
-  );
-}
-
-export function PromptPanel({
-  systemPrompt,
-  onChange,
-  reviewEnabled,
-  review,
-  reviewing,
-  onReview,
-}: {
-  systemPrompt: string;
-  onChange: (value: string) => void;
-  reviewEnabled: boolean;
-  review?: ReviewResult;
-  reviewing: boolean;
-  onReview: () => void;
-}) {
-  return (
-    <div className="space-y-3">
-      <textarea
-        value={systemPrompt}
-        onChange={(event) => onChange(event.target.value)}
-        className="min-h-72 w-full resize-y rounded-lg border border-slate-200 px-3 py-2 text-sm leading-6 outline-none focus:border-slate-400"
-      />
+      <label className="block">
+        <span className="text-xs font-bold text-slate-600">System prompt</span>
+        <textarea
+          value={systemPrompt}
+          onChange={(event) => onPromptChange(event.target.value)}
+          className="mt-1.5 min-h-56 w-full resize-y rounded-lg border border-slate-200 px-3 py-2 text-sm leading-6 outline-none focus:border-slate-400"
+        />
+      </label>
       {reviewEnabled ? (
         <ReviewBox
           targetLabel="system prompt"
@@ -61,7 +55,9 @@ export function PromptPanel({
 export function SkillsPanel({
   skills,
   selected,
+  skillInstructions,
   onChange,
+  onInstructionChange,
   reviewEnabled,
   review,
   reviewing,
@@ -69,7 +65,9 @@ export function SkillsPanel({
 }: {
   skills: AgentSandboxSkillTemplate[];
   selected: string[];
+  skillInstructions: Record<string, string>;
   onChange: (items: string[]) => void;
+  onInstructionChange: (id: string, value: string) => void;
   reviewEnabled: boolean;
   review?: ReviewResult;
   reviewing: boolean;
@@ -81,11 +79,32 @@ export function SkillsPanel({
         items={skills.map((skill) => ({
           id: skill.id,
           name: skill.name,
-          description: skill.instructions,
+          description:
+            skillInstructions[skill.id] || skill.instructions,
         }))}
         selected={selected}
         onChange={onChange}
       />
+      {selected.length ? (
+        <div className="space-y-3">
+          {skills
+            .filter((skill) => selected.includes(skill.id))
+            .map((skill) => (
+              <label key={skill.id} className="block">
+                <span className="text-xs font-bold text-slate-600">
+                  {skill.name} instructions
+                </span>
+                <textarea
+                  value={skillInstructions[skill.id] || skill.instructions}
+                  onChange={(event) =>
+                    onInstructionChange(skill.id, event.target.value)
+                  }
+                  className="mt-1.5 min-h-36 w-full resize-y rounded-lg border border-slate-200 px-3 py-2 text-sm leading-6 outline-none focus:border-slate-400"
+                />
+              </label>
+            ))}
+        </div>
+      ) : null}
       {reviewEnabled ? (
         <ReviewBox
           targetLabel="skills"

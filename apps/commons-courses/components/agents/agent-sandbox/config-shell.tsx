@@ -5,7 +5,6 @@ import {
   Bot,
   Hammer,
   PanelLeft,
-  ScrollText,
   Sparkles,
   Workflow,
   X,
@@ -15,7 +14,6 @@ import type { ConfigPanel } from "./types";
 
 export const panelMeta: Record<ConfigPanel, { label: string; icon: typeof Bot }> = {
   identity: { label: "Identity", icon: Bot },
-  prompt: { label: "System prompt", icon: ScrollText },
   skills: { label: "Skills", icon: Sparkles },
   tools: { label: "Tools", icon: Hammer },
   workflow: { label: "Workflow", icon: Workflow },

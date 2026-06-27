@@ -19,11 +19,11 @@ export type ChatMessage = {
   content: string;
 };
 
-export type ConfigPanel = "identity" | "prompt" | "skills" | "tools" | "workflow";
+export type ConfigPanel = "identity" | "skills" | "tools" | "workflow";
 
 export const targetToPanel: Partial<Record<AgentSandboxStepTarget, ConfigPanel>> = {
   identity: "identity",
-  system_prompt: "prompt",
+  system_prompt: "identity",
   skills: "skills",
   tools: "tools",
   connectors: "tools",

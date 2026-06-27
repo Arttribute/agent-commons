@@ -5,7 +5,6 @@ import { ExternalLink, PanelRight } from "lucide-react";
 import { ChatSurface } from "./agent-sandbox/chat-surface";
 import {
   IdentityPanel,
-  PromptPanel,
   SkillsPanel,
   ToolsPanel,
   WorkflowPanel,
@@ -60,15 +59,26 @@ export function AgentLearnerSandbox({
   const [selectedSkills, setSelectedSkills] = useState<string[]>(
     (config.skillTemplates || []).slice(0, 1).map((skill) => skill.id)
   );
+  const [skillInstructions, setSkillInstructions] = useState<
+    Record<string, string>
+  >(() =>
+    Object.fromEntries(
+      (config.skillTemplates || []).map((skill) => [
+        skill.id,
+        skill.instructions,
+      ])
+    )
+  );
   const [selectedTools, setSelectedTools] = useState<string[]>(
     (config.toolTemplates || []).slice(0, 1).map((tool) => tool.id)
   );
   const [taskTitle, setTaskTitle] = useState("Plan a realistic study week");
   const [activePanel, setActivePanel] = useState<ConfigPanel>("identity");
-  const [drawerOpen, setDrawerOpen] = useState(false);
+  const [drawerOpen, setDrawerOpen] = useState(true);
   const [logsOpen, setLogsOpen] = useState(true);
   const [guideIndex, setGuideIndex] = useState(0);
   const [creating, setCreating] = useState(false);
+  const [syncing, setSyncing] = useState(false);
   const [sending, setSending] = useState(false);
   const [reviewing, setReviewing] = useState<string | null>(null);
   const [reviews, setReviews] = useState<Record<string, ReviewResult>>({});
@@ -97,14 +107,15 @@ export function AgentLearnerSandbox({
   const guide = config.guideSteps || [];
   const activeStep = guide[guideIndex];
   const reviewTargets = config.review?.enabled ? config.review.targets || [] : [];
-  const reviewsPassed = reviewTargets.every((target) => reviews[target]?.passed);
+  const promptReviewPassed =
+    !reviewTargets.includes("system_prompt") || reviews.system_prompt?.passed;
   const needsGoogleConnection = selectedTools.some((toolId) => {
     const tool = config.toolTemplates?.find((item) => item.id === toolId);
     return tool?.connectorKind?.startsWith("google_") || tool?.connectorKind === "gmail";
   });
   const appUrl =
     process.env.NEXT_PUBLIC_AGENT_COMMONS_APP_URL || "https://www.agentcommons.io";
-  const googleConnectUrl = `${appUrl.replace(/\/$/, "")}/oauth/connect?provider=google_workspace&returnUrl=/studio`;
+  const googleConnectUrl = `${appUrl.replace(/\/$/, "")}/oauth/connect?provider=google_workspace&returnUrl=/studio/tools`;
   const agentStudioUrl = createdAgentId
     ? `${appUrl.replace(/\/$/, "")}/studio/agents/${createdAgentId}`
     : "";
@@ -112,16 +123,14 @@ export function AgentLearnerSandbox({
   const canCreate =
     agentName.trim().length > 1 &&
     systemPrompt.trim().length > 40 &&
-    selectedSkills.length > 0 &&
-    selectedTools.length > 0 &&
-    reviewsPassed;
+    promptReviewPassed;
 
   const statusLabel = useMemo(() => {
     if (completionSent) return "Completed";
     if (createdAgentId) return "Agent created. Test it in chat.";
-    if (!reviewsPassed && reviewTargets.length) return "AI review required";
+    if (!promptReviewPassed) return "System prompt review required";
     return "Create the agent in Agent Commons";
-  }, [completionSent, createdAgentId, reviewTargets.length, reviewsPassed]);
+  }, [completionSent, createdAgentId, promptReviewPassed]);
 
   function addLog(log: SandboxLog) {
     setLogs((current) => [log, ...current].slice(0, 40));
@@ -148,6 +157,7 @@ export function AgentLearnerSandbox({
           persona,
           systemPrompt,
           skills: selectedSkills,
+          skillInstructions,
           tools: selectedTools,
           taskTitle,
           message: chatInput,
@@ -198,6 +208,53 @@ export function AgentLearnerSandbox({
     }
   }
 
+  async function syncAgent(reason = "Saved agent changes.") {
+    if (requireAuth() || syncing || !createdAgentId) return false;
+    setSyncing(true);
+    addLog({ level: "info", message: "Saving changes to Agent Commons..." });
+
+    const response = await fetch(`/api/skills/${courseSlug}/sandbox`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        agentId: createdAgentId,
+        challengeId,
+        agent: {
+          name: agentName,
+          persona,
+          systemPrompt,
+          skills: selectedSkills,
+          skillInstructions,
+          tools: selectedTools,
+          taskTitle,
+          message: chatInput,
+        },
+      }),
+    });
+    const payload = await response.json().catch(() => ({}));
+    setSyncing(false);
+
+    if (!response.ok) {
+      addLog({
+        level: "error",
+        message: payload.error || "Could not save this agent change yet.",
+      });
+      return false;
+    }
+
+    addLog({ level: "success", message: reason });
+    if (payload.assignedTools?.length) {
+      addLog({
+        level: "success",
+        message: `Attached ${payload.assignedTools.length} new platform tool${payload.assignedTools.length === 1 ? "" : "s"}.`,
+      });
+    }
+    for (const warning of payload.toolWarnings || []) {
+      addLog({ level: "warning", message: warning });
+    }
+    return true;
+  }
+
   async function sendMessage() {
     if (requireAuth() || sending || !chatInput.trim()) return;
     if (!createdAgentId) {
@@ -207,6 +264,8 @@ export function AgentLearnerSandbox({
       });
       return;
     }
+    const synced = await syncAgent("Saved latest changes before chat.");
+    if (!synced) return;
 
     const userMessage: ChatMessage = { role: "user", content: chatInput.trim() };
     const nextMessages = [...messages, userMessage];
@@ -264,7 +323,10 @@ export function AgentLearnerSandbox({
         ? systemPrompt
         : (config.skillTemplates || [])
             .filter((skill) => selectedSkills.includes(skill.id))
-            .map((skill) => `${skill.name}\n${skill.instructions}`)
+            .map(
+              (skill) =>
+                `${skill.name}\n${skillInstructions[skill.id] || skill.instructions}`
+            )
             .join("\n\n");
     if (!content.trim()) return;
 
@@ -298,11 +360,25 @@ export function AgentLearnerSandbox({
   }
 
   function openGuideStep() {
-    const panel = activeStep?.target ? targetToPanel[activeStep.target] : undefined;
+    openGuideIndex(guideIndex);
+  }
+
+  function openGuideIndex(index: number) {
+    const step = guide[index];
+    const panel = step?.target ? targetToPanel[step.target] : undefined;
     if (panel) {
       setActivePanel(panel);
       setDrawerOpen(true);
     }
+  }
+
+  async function nextGuideStep() {
+    const nextIndex = (guideIndex + 1) % Math.max(guide.length, 1);
+    if (createdAgentId) {
+      await syncAgent("Saved changes before moving on.");
+    }
+    setGuideIndex(nextIndex);
+    openGuideIndex(nextIndex);
   }
 
   return (
@@ -326,14 +402,13 @@ export function AgentLearnerSandbox({
           <IdentityPanel
             agentName={agentName}
             persona={persona}
+            systemPrompt={systemPrompt}
+            reviewEnabled={reviewTargets.includes("system_prompt")}
+            review={reviews.system_prompt}
+            reviewing={reviewing === "system_prompt"}
             onNameChange={setAgentName}
             onPersonaChange={setPersona}
-          />
-        ) : null}
-        {activePanel === "prompt" ? (
-          <PromptPanel
-            systemPrompt={systemPrompt}
-            onChange={(value) => {
+            onPromptChange={(value) => {
               setSystemPrompt(value);
               setReviews((current) => {
                 const rest = { ...current };
@@ -341,9 +416,6 @@ export function AgentLearnerSandbox({
                 return rest;
               });
             }}
-            reviewEnabled={reviewTargets.includes("system_prompt")}
-            review={reviews.system_prompt}
-            reviewing={reviewing === "system_prompt"}
             onReview={() => reviewTarget("system_prompt")}
           />
         ) : null}
@@ -351,8 +423,17 @@ export function AgentLearnerSandbox({
           <SkillsPanel
             skills={config.skillTemplates || []}
             selected={selectedSkills}
+            skillInstructions={skillInstructions}
             onChange={(items) => {
               setSelectedSkills(items);
+              setReviews((current) => {
+                const rest = { ...current };
+                delete rest.skills;
+                return rest;
+              });
+            }}
+            onInstructionChange={(id, value) => {
+              setSkillInstructions((current) => ({ ...current, [id]: value }));
               setReviews((current) => {
                 const rest = { ...current };
                 delete rest.skills;
@@ -427,7 +508,7 @@ export function AgentLearnerSandbox({
             </aside>
           ) : null}
           {logsOpen ? (
-            <div className="absolute inset-x-14 bottom-[76px] z-20 max-h-72 overflow-hidden border-t border-slate-200 bg-white shadow-2xl lg:hidden">
+            <div className="absolute inset-x-14 bottom-[104px] z-20 max-h-56 overflow-hidden border-t border-slate-200 bg-white shadow-2xl lg:hidden">
               <LogsPanel logs={logs} />
             </div>
           ) : null}
@@ -444,10 +525,11 @@ export function AgentLearnerSandbox({
           creating={creating}
           createdAgentId={createdAgentId}
           onOpenStep={openGuideStep}
-          onNextStep={() =>
-            setGuideIndex((index) => (index + 1) % Math.max(guide.length, 1))
-          }
+          onNextStep={() => void nextGuideStep()}
           onCreate={createAgent}
+          onSync={() => void syncAgent()}
+          syncing={syncing}
+          canSync={Boolean(createdAgentId) && !syncing}
           needsGoogleConnection={needsGoogleConnection}
           googleConnectUrl={googleConnectUrl}
         />
