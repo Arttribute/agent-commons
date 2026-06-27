@@ -39,7 +39,8 @@ export async function POST(request: NextRequest) {
     process.env.COMMONS_API_URL ||
     process.env.AGENT_COMMONS_API_URL ||
     process.env.NEXT_PUBLIC_AGENT_COMMONS_API_URL;
-  const token = await platformServiceToken("agent_commons", "agents:write");
+  const token =
+    session.accessToken || (await platformServiceToken("agent_commons", "agents:write"));
   if (!baseUrl || !token) {
     return NextResponse.json(
       { error: "Agent Commons chat is not configured yet." },

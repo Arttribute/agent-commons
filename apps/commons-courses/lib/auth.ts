@@ -47,7 +47,8 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
             clientSecret: process.env.COMMONS_IDENTITY_CLIENT_SECRET,
             authorization: {
               params: {
-                scope: "openid email profile offline_access activity:read",
+                scope:
+                  "openid email profile offline_access activity:read agents:read agents:write",
                 resource: "commons-platform",
               },
             },
@@ -239,6 +240,11 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
         token.role = updatedRole;
       }
       if (account?.provider === "commons") {
+        token.accessToken = account.access_token;
+        token.refreshToken = account.refresh_token;
+        token.accessTokenExpiresAt = account.expires_at
+          ? account.expires_at * 1000
+          : undefined;
         const identity = await activateProduct(account.access_token);
         if (identity?.userId) {
           token.identityUserId = identity.userId;
@@ -272,6 +278,9 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
       }
       if (token?.identityUserId) {
         session.user.identityUserId = token.identityUserId as string;
+      }
+      if (token?.accessToken) {
+        session.accessToken = token.accessToken as string;
       }
       return session;
     },

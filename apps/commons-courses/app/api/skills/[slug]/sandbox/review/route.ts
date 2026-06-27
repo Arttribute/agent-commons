@@ -70,6 +70,7 @@ export async function POST(
     minScore: review.minScore || 70,
     model: review.model,
     context: body.context,
+    accessToken: session.accessToken,
   });
 
   return NextResponse.json({ data: result });
@@ -82,7 +83,11 @@ async function reviewWithAi(input: {
   minScore: number;
   model?: string;
   context?: ReviewBody["context"];
+  accessToken?: string;
 }) {
+  const agentCommonsReview = await reviewWithAgentCommons(input);
+  if (agentCommonsReview) return agentCommonsReview;
+
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) return deterministicReview(input);
 
@@ -125,6 +130,70 @@ async function reviewWithAi(input: {
   } catch {
     return deterministicReview(input);
   }
+}
+
+async function reviewWithAgentCommons(input: {
+  target: AgentSandboxReviewTarget;
+  content: string;
+  rubric: string;
+  minScore: number;
+  context?: ReviewBody["context"];
+  accessToken?: string;
+}) {
+  const reviewAgentId = process.env.SANDBOX_REVIEW_AGENT_ID;
+  const baseUrl =
+    process.env.COMMONS_API_URL ||
+    process.env.AGENT_COMMONS_API_URL ||
+    process.env.NEXT_PUBLIC_AGENT_COMMONS_API_URL;
+  if (!reviewAgentId || !baseUrl || !input.accessToken) return null;
+
+  try {
+    const response = await fetch(`${baseUrl.replace(/\/$/, "")}/v1/agents/run`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${input.accessToken}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        agentId: reviewAgentId,
+        messages: [
+          {
+            role: "user",
+            content: JSON.stringify({
+              instruction:
+                "Review this learner agent-building work. Return only JSON with score, passed, summary, strengths, improvements, and nextRevision.",
+              target: input.target,
+              minScore: input.minScore,
+              rubric: input.rubric,
+              context: input.context || {},
+              learnerContent: input.content,
+            }),
+          },
+        ],
+      }),
+    });
+    if (!response.ok) return null;
+    const data = await response.json();
+    const text = extractText(data);
+    const parsed = JSON.parse(text || "{}");
+    return normalizeReview(parsed, input);
+  } catch {
+    return null;
+  }
+}
+
+function extractText(value: unknown): string {
+  if (!value) return "";
+  if (typeof value === "string") return value;
+  if (Array.isArray(value)) return value.map(extractText).filter(Boolean).join("\n");
+  if (typeof value === "object") {
+    const record = value as Record<string, unknown>;
+    for (const key of ["content", "message", "text", "output", "response", "final"]) {
+      const text = extractText(record[key]);
+      if (text) return text;
+    }
+  }
+  return "";
 }
 
 function deterministicReview(input: {

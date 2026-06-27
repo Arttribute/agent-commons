@@ -98,7 +98,7 @@ export async function POST(
     return NextResponse.json({ error: validation }, { status: 422 });
   }
 
-  const client = getAgentCommonsClient();
+  const client = getAgentCommonsClient(session.accessToken);
 
   if (!user?.identityUserId) {
     return NextResponse.json(
@@ -114,7 +114,7 @@ export async function POST(
     return NextResponse.json(
       {
         error:
-          "Agent Commons API credentials are not configured, so this lesson cannot create a real platform agent yet.",
+          "Your session cannot reach Agent Commons yet. Sign out and sign back in so CommonLab can request agent permissions.",
       },
       { status: 503 }
     );
@@ -218,10 +218,10 @@ export async function PATCH(
     );
   }
 
-  const client = getAgentCommonsClient();
+  const client = getAgentCommonsClient(session.accessToken);
   if (!client) {
     return NextResponse.json(
-      { error: "Agent Commons API credentials are not configured." },
+      { error: "Your session cannot reach Agent Commons yet. Sign out and sign back in so CommonLab can request agent permissions." },
       { status: 503 }
     );
   }

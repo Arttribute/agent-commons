@@ -3,6 +3,7 @@ import type { LiveSchedule } from "@/lib/course-schedule";
 
 declare module "next-auth" {
   interface Session {
+    accessToken?: string;
     user: {
       id: string;
       role?: "learner" | "educator" | "admin";
