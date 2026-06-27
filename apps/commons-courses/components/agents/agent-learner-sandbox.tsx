@@ -382,7 +382,7 @@ export function AgentLearnerSandbox({
   }
 
   return (
-    <div className="relative flex h-[calc(100dvh-11rem)] min-h-[620px] overflow-hidden rounded-xl border border-slate-200 bg-white text-slate-950">
+    <div className="relative flex min-h-0 flex-1 overflow-hidden rounded-xl border border-slate-200 bg-white text-slate-950">
       <ConfigRail
         activePanel={activePanel}
         drawerOpen={drawerOpen}
