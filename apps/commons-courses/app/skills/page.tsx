@@ -209,12 +209,12 @@ export default function SkillsPage() {
                   href={`/skills/${pack.skillSlug}`}
                   className="group overflow-hidden rounded-xl border border-slate-200 bg-white transition-all hover:-translate-y-0.5 hover:border-slate-300 hover:shadow-lg"
                 >
-                  {pack.challenges[0]?.assetUrl ? (
+                  {(pack.coverUrl || pack.challenges[0]?.assetUrl) ? (
                     <div className="border-b border-slate-100 bg-white p-2">
                       {/* eslint-disable-next-line @next/next/no-img-element */}
                       <img
-                        src={pack.challenges[0].assetUrl}
-                        alt={pack.challenges[0].assetAlt || ""}
+                        src={pack.coverUrl || pack.challenges[0].assetUrl}
+                        alt={pack.coverUrl ? pack.title : (pack.challenges[0].assetAlt || "")}
                         className="h-auto w-full rounded-lg object-contain"
                       />
                     </div>

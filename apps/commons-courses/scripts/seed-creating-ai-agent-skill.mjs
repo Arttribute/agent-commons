@@ -96,6 +96,7 @@ function createSkillPack(assetUrls) {
     enabled: true,
     title: "Creating an AI Agent",
     subtitle: "Learn system prompts, skills, tools, and then build a beginner agent.",
+    coverUrl: assetUrls.cover,
     learnerPromise:
       "By the end, you will understand the parts of an AI agent and create one in the CommonLab agent sandbox.",
     challenges: [
