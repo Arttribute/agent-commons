@@ -74,8 +74,8 @@ export function AgentLearnerSandbox({
   );
   const [taskTitle, setTaskTitle] = useState("Plan a realistic study week");
   const [activePanel, setActivePanel] = useState<ConfigPanel>("identity");
-  const [drawerOpen, setDrawerOpen] = useState(true);
-  const [logsOpen, setLogsOpen] = useState(true);
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const [logsOpen, setLogsOpen] = useState(false);
   const [guideIndex, setGuideIndex] = useState(0);
   const [creating, setCreating] = useState(false);
   const [syncing, setSyncing] = useState(false);
@@ -508,8 +508,8 @@ export function AgentLearnerSandbox({
             </aside>
           ) : null}
           {logsOpen ? (
-            <div className="absolute inset-x-14 bottom-[104px] z-20 max-h-56 overflow-hidden border-t border-slate-200 bg-white shadow-2xl lg:hidden">
-              <LogsPanel logs={logs} />
+            <div className="absolute inset-y-0 right-0 z-40 w-full border-l border-slate-200 bg-white shadow-2xl lg:hidden">
+              <LogsPanel logs={logs} onClose={() => setLogsOpen(false)} />
             </div>
           ) : null}
         </div>

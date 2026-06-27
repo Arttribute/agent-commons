@@ -80,7 +80,7 @@ export function ConfigDrawer({
   return (
     <div
       className={cn(
-        "absolute inset-y-0 left-14 z-30 w-[min(420px,calc(100%-3.5rem))] border-r border-slate-200 bg-white shadow-xl transition-transform lg:relative lg:left-0 lg:shadow-none",
+        "absolute inset-y-0 left-0 z-40 w-full border-r border-slate-200 bg-white shadow-xl transition-transform lg:relative lg:left-0 lg:z-30 lg:w-[min(420px,calc(100%-3.5rem))] lg:shadow-none",
         open ? "translate-x-0" : "-translate-x-full lg:hidden"
       )}
     >
