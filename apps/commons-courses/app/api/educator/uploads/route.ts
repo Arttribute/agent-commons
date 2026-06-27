@@ -1,13 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
-import mongoose from "mongoose";
-import { getAppBaseUrl } from "@/lib/app-url";
-import { connectDB } from "@/lib/db";
 import { requireEducator } from "@/lib/educator-auth";
 import {
   isS3MediaStorageConfigured,
   uploadCourseMediaToS3,
 } from "@/lib/media-storage";
-import CourseMedia from "@/models/CourseMedia";
 
 const maxImageSize = 4 * 1024 * 1024;
 const allowedImageTypes = new Set(["image/jpeg", "image/png", "image/webp"]);
@@ -37,12 +33,7 @@ export async function POST(req: NextRequest) {
   const arrayBuffer = await file.arrayBuffer();
   const data = Buffer.from(arrayBuffer);
 
-  if (isS3MediaStorageConfigured()) {
-    const url = await uploadCourseMediaToS3({ file, data });
-    return NextResponse.json({ url, storage: "s3" });
-  }
-
-  if (process.env.NODE_ENV === "production") {
+  if (!isS3MediaStorageConfigured()) {
     return NextResponse.json(
       {
         error:
@@ -52,15 +43,6 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  await connectDB();
-  const media = await CourseMedia.create({
-    filename: file.name,
-    contentType: file.type,
-    size: file.size,
-    data,
-    uploadedBy: new mongoose.Types.ObjectId(authResult.session.userId),
-  });
-
-  const url = `${getAppBaseUrl()}/api/media/${media._id.toString()}`;
-  return NextResponse.json({ url, storage: "mongodb" });
+  const url = await uploadCourseMediaToS3({ file, data });
+  return NextResponse.json({ url, storage: "s3" });
 }

@@ -28,8 +28,11 @@ export async function PUT(
 
   const body = await req.json();
   const nextSlug = body.slug ? slugifyCourseTitle(body.slug) : result.course.slug;
+  const normalized = normalizeCourseBody(body);
+  if (normalized instanceof NextResponse) return normalized;
+
   result.course.set({
-    ...normalizeCourseInput(body),
+    ...normalized,
     slug: nextSlug,
   });
 
@@ -52,4 +55,15 @@ export async function DELETE(
 
   await result.course.deleteOne();
   return NextResponse.json({ success: true });
+}
+
+function normalizeCourseBody(body: unknown) {
+  try {
+    return normalizeCourseInput(body as Parameters<typeof normalizeCourseInput>[0]);
+  } catch (error) {
+    if (error instanceof Error && error.message.includes("stored in S3")) {
+      return NextResponse.json({ error: error.message }, { status: 400 });
+    }
+    throw error;
+  }
 }

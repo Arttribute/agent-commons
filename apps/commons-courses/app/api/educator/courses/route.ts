@@ -56,8 +56,11 @@ export async function POST(req: NextRequest) {
     );
   }
 
+  const normalized = normalizeCourseBody(body);
+  if (normalized instanceof NextResponse) return normalized;
+
   const course = await Course.create({
-    ...normalizeCourseInput(body),
+    ...normalized,
     slug,
     instructor: body.instructor || profile?.displayName || "CommonLab educator",
     longDescription:
@@ -76,4 +79,15 @@ export async function POST(req: NextRequest) {
   await indexCourseForSearch(course);
 
   return NextResponse.json({ course }, { status: 201 });
+}
+
+function normalizeCourseBody(body: unknown) {
+  try {
+    return normalizeCourseInput(body as Parameters<typeof normalizeCourseInput>[0]);
+  } catch (error) {
+    if (error instanceof Error && error.message.includes("stored in S3")) {
+      return NextResponse.json({ error: error.message }, { status: 400 });
+    }
+    throw error;
+  }
 }

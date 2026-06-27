@@ -1,6 +1,15 @@
 import fs from "node:fs";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
+import { PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
+import { awsCredentialsProvider } from "@vercel/oidc-aws-credentials-provider";
+import nextEnv from "@next/env";
 import mongoose from "mongoose";
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const appRoot = path.resolve(__dirname, "..");
+const { loadEnvConfig } = nextEnv;
+loadEnvConfig(appRoot);
 
 const envPaths = [
   path.join(process.cwd(), ".env.local"),
@@ -23,30 +32,13 @@ if (!uri) {
   throw new Error("MONGODB_URI is required. Run from the repo root or apps/commons-courses.");
 }
 
-const appBaseUrl =
-  process.env.COMMONLAB_PUBLIC_URL ||
-  process.env.NEXT_PUBLIC_BASE_URL ||
-  process.env.NEXT_PUBLIC_APP_URL ||
-  process.env.EMAIL_BASE_URL ||
-  (process.env.NEXTAUTH_URL?.startsWith("http://localhost")
-    ? undefined
-    : process.env.NEXTAUTH_URL) ||
-  "http://localhost:3000";
+const bucket = process.env.COURSE_MEDIA_S3_BUCKET;
+const region = process.env.COURSE_MEDIA_S3_REGION;
+const publicBaseUrl =
+  process.env.COURSE_MEDIA_CDN_URL || process.env.COURSE_MEDIA_PUBLIC_URL;
 
 const CourseSchema = new mongoose.Schema({}, { strict: false, timestamps: true });
-const CourseMediaSchema = new mongoose.Schema(
-  {
-    filename: { type: String, required: true, trim: true },
-    contentType: { type: String, required: true },
-    size: { type: Number, required: true, max: 4 * 1024 * 1024 },
-    data: { type: Buffer, required: true },
-  },
-  { timestamps: true }
-);
-
 const Course = mongoose.models.Course || mongoose.model("Course", CourseSchema);
-const CourseMedia =
-  mongoose.models.CourseMedia || mongoose.model("CourseMedia", CourseMediaSchema);
 
 const sourceDir = "/Users/bashybaranaba/Downloads/Creating an AI Agenmt";
 const skillSlug = "creating-an-ai-agent";
@@ -67,19 +59,35 @@ function rich(paragraphs) {
 async function upsertMedia(filename) {
   const filePath = path.join(sourceDir, filename);
   const data = fs.readFileSync(filePath);
-  const media = await CourseMedia.findOneAndUpdate(
-    { filename: `creating-ai-agent-${filename}` },
-    {
-      $set: {
-        filename: `creating-ai-agent-${filename}`,
-        contentType: "image/png",
-        size: data.byteLength,
-        data,
-      },
-    },
-    { new: true, upsert: true }
+  const key = `course-media/${targetCourseSlug}/${skillSlug}/${filename}`;
+  const client = createS3Client();
+
+  await client.send(
+    new PutObjectCommand({
+      Bucket: bucket,
+      Key: key,
+      Body: data,
+      ContentType: "image/png",
+      CacheControl: "public, max-age=31536000, immutable",
+    })
   );
-  return `${appBaseUrl.replace(/\/$/, "")}/api/media/${media._id.toString()}`;
+
+  return `${publicBaseUrl.replace(/\/+$/, "")}/${key}`;
+}
+
+function createS3Client() {
+  const roleArn = process.env.AWS_ROLE_ARN || process.env.COURSE_MEDIA_AWS_ROLE_ARN;
+  if (!roleArn) return new S3Client({ region });
+
+  return new S3Client({
+    region,
+    credentials: awsCredentialsProvider({
+      roleArn,
+      audience: "https://sts.amazonaws.com",
+      clientConfig: { region },
+      roleSessionName: "commonlab-course-media-seed",
+    }),
+  });
 }
 
 function createSkillPack(assetUrls) {
@@ -201,63 +209,8 @@ function createSkillPack(assetUrls) {
         ],
       },
       {
-        id: "agent-skills",
-        day: 3,
-        title: "The Know How: Agent Skills",
-        shortTitle: "Skills",
-        minutes: 8,
-        points: 80,
-        streakBoost: 1,
-        assetUrl: assetUrls.skills,
-        assetAlt: "A slide introducing agent skills as instructions for specific tasks.",
-        accentColor: "#A3E635",
-        audioCue: "focus",
-        hook: "Skills tell an agent how to perform a specific kind of task.",
-        lesson: rich([
-          "Now that we understand system prompts, the next concept is skills. A skill is a more specific set of instructions that tells the agent how to perform a particular kind of task.",
-          "While a system prompt gives the agent its general role, a skill gives the agent task-specific guidance. Skills are especially useful for repetitive tasks.",
-          "A spreadsheet skill might tell the agent to inspect file structure, check missing values, find duplicate rows, and verify totals before presenting a summary.",
-          "If you find yourself giving an agent the same prompt again and again, that prompt might need to become a skill.",
-        ]),
-        keyIdeas: [
-          "System prompts define the general agent.",
-          "Skills guide specific tasks.",
-          "Repeated prompts are good candidates for skills.",
-        ],
-        microTask:
-          "Think of one repeated task you would want your agent to perform reliably.",
-        questions: [
-          {
-            id: "q1",
-            prompt: "How is a skill different from a system prompt?",
-            options: [
-              "A skill gives task-specific guidance; a system prompt gives the general role",
-              "A skill replaces every tool",
-              "A system prompt can only be used once",
-              "Skills are only for visual design",
-            ],
-            answerIndex: 0,
-            explanation:
-              "Skills are focused instructions for a repeatable kind of work.",
-          },
-          {
-            id: "q2",
-            prompt: "When might a repeated prompt become a skill?",
-            options: [
-              "When you keep asking the agent to follow the same process",
-              "When you never want the agent to use instructions",
-              "Only after the agent fails",
-              "Only for paid courses",
-            ],
-            answerIndex: 0,
-            explanation:
-              "Skills help agents repeat good practice more reliably.",
-          },
-        ],
-      },
-      {
         id: "tools-and-connectors",
-        day: 4,
+        day: 3,
         title: "Giving Agents the Tools to Work",
         shortTitle: "Tools",
         minutes: 8,
@@ -307,6 +260,61 @@ function createSkillPack(assetUrls) {
             answerIndex: 0,
             explanation:
               "Scoped permissions make connected tool use safer and easier to understand.",
+          },
+        ],
+      },
+      {
+        id: "agent-skills",
+        day: 4,
+        title: "The Know How: Agent Skills",
+        shortTitle: "Skills",
+        minutes: 8,
+        points: 80,
+        streakBoost: 1,
+        assetUrl: assetUrls.skills,
+        assetAlt: "A slide introducing agent skills as instructions for specific tasks.",
+        accentColor: "#A3E635",
+        audioCue: "focus",
+        hook: "Skills tell an agent how to perform a specific kind of task.",
+        lesson: rich([
+          "Now that we understand system prompts and tools, the next concept is skills. A skill is a more specific set of instructions that tells the agent how to perform a particular kind of task.",
+          "While a system prompt gives the agent its general role, a skill gives the agent task-specific guidance. Skills are especially useful for repetitive tasks.",
+          "A spreadsheet skill might tell the agent to inspect file structure, check missing values, find duplicate rows, and verify totals before presenting a summary.",
+          "If you find yourself giving an agent the same prompt again and again, that prompt might need to become a skill.",
+        ]),
+        keyIdeas: [
+          "System prompts define the general agent.",
+          "Skills guide specific tasks.",
+          "Repeated prompts are good candidates for skills.",
+        ],
+        microTask:
+          "Think of one repeated task you would want your agent to perform reliably.",
+        questions: [
+          {
+            id: "q1",
+            prompt: "How is a skill different from a system prompt?",
+            options: [
+              "A skill gives task-specific guidance; a system prompt gives the general role",
+              "A skill replaces every tool",
+              "A system prompt can only be used once",
+              "Skills are only for visual design",
+            ],
+            answerIndex: 0,
+            explanation:
+              "Skills are focused instructions for a repeatable kind of work.",
+          },
+          {
+            id: "q2",
+            prompt: "When might a repeated prompt become a skill?",
+            options: [
+              "When you keep asking the agent to follow the same process",
+              "When you never want the agent to use instructions",
+              "Only after the agent fails",
+              "Only for paid courses",
+            ],
+            answerIndex: 0,
+            explanation:
+              "Skills help agents repeat good practice more reliably.",
           },
         ],
       },
@@ -486,6 +494,7 @@ function createSkillPack(assetUrls) {
 }
 
 async function main() {
+  assertConfigured();
   await mongoose.connect(uri);
 
   const course = await Course.findOne({ slug: targetCourseSlug });
@@ -521,6 +530,16 @@ async function main() {
   console.log(
     `Seeded ${skillPack.title} under ${targetCourseSlug}: /skills/${skillSlug}`
   );
+}
+
+function assertConfigured() {
+  const missing = [];
+  if (!bucket) missing.push("COURSE_MEDIA_S3_BUCKET");
+  if (!region) missing.push("COURSE_MEDIA_S3_REGION");
+  if (!publicBaseUrl) missing.push("COURSE_MEDIA_CDN_URL or COURSE_MEDIA_PUBLIC_URL");
+  if (missing.length) {
+    throw new Error(`Missing required env vars: ${missing.join(", ")}`);
+  }
 }
 
 main()

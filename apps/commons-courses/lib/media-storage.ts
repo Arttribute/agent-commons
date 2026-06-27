@@ -1,4 +1,5 @@
 import { PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
+import { awsCredentialsProvider } from "@vercel/oidc-aws-credentials-provider";
 
 type UploadArgs = {
   file: File;
@@ -34,7 +35,7 @@ export async function uploadCourseMediaToS3({
     `${crypto.randomUUID()}-${safeFilename(file.name)}`,
   ].join("/");
 
-  const client = new S3Client({ region });
+  const client = createCourseMediaS3Client(region);
   await client.send(
     new PutObjectCommand({
       Bucket: bucket,
@@ -46,6 +47,21 @@ export async function uploadCourseMediaToS3({
   );
 
   return `${publicBaseUrl.replace(/\/+$/, "")}/${key}`;
+}
+
+function createCourseMediaS3Client(region: string) {
+  const roleArn = process.env.AWS_ROLE_ARN || process.env.COURSE_MEDIA_AWS_ROLE_ARN;
+  if (!roleArn) return new S3Client({ region });
+
+  return new S3Client({
+    region,
+    credentials: awsCredentialsProvider({
+      roleArn,
+      audience: "https://sts.amazonaws.com",
+      clientConfig: { region },
+      roleSessionName: "commonlab-course-media",
+    }),
+  });
 }
 
 function safeFilename(filename: string) {

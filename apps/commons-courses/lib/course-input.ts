@@ -133,6 +133,11 @@ function normalizeCode(code?: string) {
 function normalizeImageUrl(value?: string) {
   const url = value?.trim();
   if (!url) return undefined;
+  if (/\/api\/media\//i.test(url)) {
+    throw new Error(
+      "Course media must be stored in S3. Re-upload this image before saving."
+    );
+  }
   return url;
 }
 
