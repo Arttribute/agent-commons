@@ -3,31 +3,29 @@ import { notFound } from "next/navigation";
 import { connectDB } from "@/lib/db";
 import { getAppBaseUrl } from "@/lib/app-url";
 import { stripRichTextHtml } from "@/lib/rich-text";
+import { findSkillPackBySlug } from "@/lib/skill-paths";
 import Course from "@/models/Course";
 import SkillPathClient from "./skill-path-client";
+import type { CourseSkillPack, SkillPack } from "@/types/skills";
 
 type Props = {
   params: Promise<{ slug: string }>;
 };
 
 type SkillCourse = {
+  _id: { toString(): string };
   title: string;
   slug: string;
   imageUrl?: string | null;
   bannerImageUrl?: string | null;
   previewImageUrl?: string | null;
-  skillPack?: {
-    enabled?: boolean;
-    title?: string;
-    subtitle?: string;
-    learnerPromise?: string;
-    challenges?: Array<{ assetUrl?: string }>;
-  };
+  skillPack?: SkillPack;
+  skillPacks?: SkillPack[];
 };
 
-function getSkillImageUrl(course: SkillCourse) {
+function getSkillImageUrl(course: SkillCourse, pack?: CourseSkillPack) {
   return (
-    course.skillPack?.challenges?.[0]?.assetUrl ||
+    pack?.challenges?.[0]?.assetUrl ||
     course.previewImageUrl ||
     course.bannerImageUrl ||
     course.imageUrl ||
@@ -38,13 +36,15 @@ function getSkillImageUrl(course: SkillCourse) {
 async function findSkillCourse(slug: string) {
   await connectDB();
   return (await Course.findOne({
-    slug,
     published: true,
-    "skillPack.enabled": true,
-    "skillPack.challenges.0": { $exists: true },
+    $or: [
+      { slug },
+      { "skillPack.slug": slug },
+      { "skillPacks.slug": slug },
+    ],
   })
     .select(
-      "title slug skillPack.title skillPack.subtitle skillPack.learnerPromise skillPack.enabled skillPack.challenges.assetUrl imageUrl bannerImageUrl previewImageUrl"
+      "title slug skillPack skillPacks imageUrl bannerImageUrl previewImageUrl"
     )
     .lean()) as SkillCourse | null;
 }
@@ -52,13 +52,14 @@ async function findSkillCourse(slug: string) {
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { slug } = await params;
   const course = await findSkillCourse(slug);
-  if (!course?.skillPack) return {};
+  const pack = course ? findSkillPackBySlug(course, slug) : null;
+  if (!course || !pack) return {};
 
-  const title = course.skillPack.title || course.title;
+  const title = pack.title || course.title;
   const description = stripRichTextHtml(
-    course.skillPack.learnerPromise || course.skillPack.subtitle
+    pack.learnerPromise || pack.subtitle
   );
-  const image = getSkillImageUrl(course);
+  const image = getSkillImageUrl(course, pack);
   const url = `${getAppBaseUrl()}/skills/${slug}`;
 
   return {
@@ -85,7 +86,8 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 export default async function SkillPathPage({ params }: Props) {
   const { slug } = await params;
   const course = await findSkillCourse(slug);
-  if (!course?.skillPack) notFound();
+  const pack = course ? findSkillPackBySlug(course, slug) : null;
+  if (!course || !pack) notFound();
 
   return <SkillPathClient slug={slug} />;
 }

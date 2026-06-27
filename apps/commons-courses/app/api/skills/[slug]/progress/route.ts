@@ -6,17 +6,17 @@ import Enrollment from "@/models/Enrollment";
 import User from "@/models/User";
 import { trackAnalyticsEvent } from "@/lib/analytics";
 import { grantCommonLabCredits } from "@/lib/credits";
-import type { SkillChallenge } from "@/types/skills";
+import { filterCompletedChallenges, findSkillPackBySlug } from "@/lib/skill-paths";
+import type { SkillPack } from "@/types/skills";
 import type { Types } from "mongoose";
 
 type CourseWithSkillPack = {
   _id: Types.ObjectId;
+  title: string;
   slug: string;
   isFree?: boolean;
-  skillPack?: {
-    enabled?: boolean;
-    challenges?: SkillChallenge[];
-  };
+  skillPack?: SkillPack;
+  skillPacks?: SkillPack[];
 };
 
 type SkillProgress = {
@@ -49,14 +49,14 @@ export async function GET(
   const { slug } = await params;
   await connectDB();
   const course = (await Course.findOne({
-    slug,
     published: true,
-    "skillPack.enabled": true,
+    $or: [{ slug }, { "skillPack.slug": slug }, { "skillPacks.slug": slug }],
   })
-    .select("_id isFree")
+    .select("_id title slug isFree skillPack skillPacks")
     .lean()) as CourseWithSkillPack | null;
+  const pack = course ? findSkillPackBySlug(course, slug) : null;
 
-  if (!course) {
+  if (!course || !pack) {
     return NextResponse.json({ error: "Skill pack not found." }, { status: 404 });
   }
 
@@ -81,9 +81,9 @@ export async function GET(
   return NextResponse.json({
     authenticated: true,
     enrolled: true,
-    completedChallenges: enrollment.completedChallenges ?? [],
+    completedChallenges: filterCompletedChallenges(enrollment.completedChallenges, pack),
     challengeAnswers: mapLikeToObject(enrollment.challengeAnswers),
-    points: enrollment.points ?? 0,
+    points: calculatePackPoints(enrollment.completedChallenges, pack),
     streak: enrollment.streak ?? 0,
     longestStreak: enrollment.longestStreak ?? 0,
     lastChallengeCompletedAt: enrollment.lastChallengeCompletedAt,
@@ -158,24 +158,24 @@ export async function POST(
 
   await connectDB();
   const course = (await Course.findOne({
-    slug,
     published: true,
-    "skillPack.enabled": true,
+    $or: [{ slug }, { "skillPack.slug": slug }, { "skillPacks.slug": slug }],
   })
-    .select("_id slug isFree skillPack")
+    .select("_id title slug isFree skillPack skillPacks")
     .lean()) as CourseWithSkillPack | null;
+  const pack = course ? findSkillPackBySlug(course, slug) : null;
 
-  const challenge = course?.skillPack?.challenges?.find(
+  const challenge = pack?.challenges?.find(
     (item) => item.id === body.challengeId
   );
-  if (!course || !challenge) {
+  if (!course || !pack || !challenge) {
     return NextResponse.json({ error: "Challenge not found." }, { status: 404 });
   }
 
   const allCorrect = challenge.sandbox?.enabled
     ? Boolean(body.sandboxCompletion)
     : challenge.questions.every(
-    (question) => body.answers?.[question.id] === question.answerIndex
+        (question) => body.answers?.[question.id] === question.answerIndex
       );
   if (!allCorrect) {
     return NextResponse.json(
@@ -218,6 +218,7 @@ export async function POST(
   const nextPoints = !shouldCompleteNow
     ? enrollment.points ?? 0
     : (enrollment.points ?? 0) + challenge.points;
+  const nextPackPoints = calculatePackPoints(nextCompleted, pack);
   const answerEntries = Object.fromEntries(
     Object.entries(body.answers || {}).map(([questionId, answer]) => [
       `${challenge.id}:${questionId}`,
@@ -234,7 +235,7 @@ export async function POST(
           id: challenge.practicalSignal.id,
           platform: challenge.practicalSignal.platform,
           eventType: challenge.practicalSignal.eventType,
-          status: "pending" as const,
+          status: body.sandboxCompletion ? ("verified" as const) : ("pending" as const),
         },
       ]
     : enrollment.practicalSignals ?? [];
@@ -296,8 +297,8 @@ export async function POST(
   }
 
   return NextResponse.json({
-    completedChallenges: nextCompleted,
-    points: nextPoints,
+    completedChallenges: filterCompletedChallenges(nextCompleted, pack),
+    points: nextPackPoints,
     streak,
     longestStreak: Math.max(enrollment.longestStreak ?? 0, streak),
     practicalSignals,
@@ -326,4 +327,12 @@ function mapLikeToObject(value?: Map<string, number> | Record<string, number>) {
   if (!value) return {};
   if (value instanceof Map) return Object.fromEntries(value);
   return value;
+}
+
+function calculatePackPoints(completedChallenges: string[] | undefined, pack: SkillPack) {
+  const completed = new Set(filterCompletedChallenges(completedChallenges, pack));
+  return pack.challenges.reduce(
+    (sum, challenge) => sum + (completed.has(challenge.id) ? challenge.points : 0),
+    0
+  );
 }

@@ -83,6 +83,7 @@ export type CourseInput = {
     }>;
   }>;
   skillPack?: SkillPack;
+  skillPacks?: SkillPack[];
   agents?: CourseAgentConfig[];
   published?: boolean;
   isMainFeatured?: boolean;
@@ -230,6 +231,24 @@ function normalizeSandboxConfig(input?: AgentSandboxConfig) {
           }))
           .filter((tool) => tool.name)
       : [],
+    review: input.review?.enabled
+      ? {
+          enabled: true,
+          targets: Array.isArray(input.review.targets)
+            ? input.review.targets.filter((target) =>
+                ["system_prompt", "skills"].includes(target)
+              )
+            : ["system_prompt"],
+          minScore:
+            typeof input.review.minScore === "number"
+              ? Math.max(0, Math.min(100, Math.floor(input.review.minScore)))
+              : 70,
+          rubric:
+            input.review.rubric?.trim() ||
+            "Score clarity, persona, goal, boundaries, tool-use safety, and whether the instructions are specific enough for a beginner agent.",
+          model: input.review.model?.trim() || undefined,
+        }
+      : undefined,
     creditReward:
       typeof input.creditReward === "number" && input.creditReward > 0
         ? Math.floor(input.creditReward)
@@ -244,6 +263,7 @@ function normalizeSkillPack(input?: SkillPack) {
   const challenges = Array.isArray(input.challenges) ? input.challenges : [];
 
   return {
+    slug: input.slug?.trim() || undefined,
     enabled: Boolean(input.enabled),
     title: input.title?.trim() || "Daily challenges",
     subtitle: input.subtitle?.trim() || undefined,
@@ -319,6 +339,29 @@ function normalizeSkillPack(input?: SkillPack) {
             ))
       ),
   };
+}
+
+function normalizeSkillPacks(input?: SkillPack[]) {
+  if (!Array.isArray(input)) return [];
+  const packs = input
+    .map((pack, index) => {
+      const normalized = normalizeSkillPack(pack);
+      if (!normalized) return null;
+      return {
+        ...normalized,
+        slug:
+          normalized.slug ||
+          normalized.title
+            ?.toLowerCase()
+            .replace(/[^a-z0-9]+/g, "-")
+            .replace(/^-|-$/g, "") ||
+          `skill-path-${index + 1}`,
+      };
+    });
+
+  return packs.filter(
+    (pack): pack is Exclude<(typeof packs)[number], null> => Boolean(pack)
+  );
 }
 
 function normalizeAccessCodes(
@@ -485,6 +528,7 @@ export function normalizeCourseInput(input: CourseInput) {
     previewImageUrl: normalizeImageUrl(input.previewImageUrl),
     modules,
     skillPack: normalizeSkillPack(input.skillPack),
+    skillPacks: normalizeSkillPacks(input.skillPacks),
     agents: normalizeCourseAgents(input.agents),
     modulesCount: modules.length,
     lessonsCount,

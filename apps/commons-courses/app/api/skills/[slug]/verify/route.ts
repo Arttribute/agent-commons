@@ -4,8 +4,10 @@ import { connectDB } from "@/lib/db";
 import Course from "@/models/Course";
 import Enrollment from "@/models/Enrollment";
 import User from "@/models/User";
-import type { SkillChallenge } from "@/types/skills";
 import { platformServiceToken } from "@/lib/platform-service-token";
+import { findSkillPackBySlug } from "@/lib/skill-paths";
+import type { SkillPack } from "@/types/skills";
+import type { Types } from "mongoose";
 
 type PlatformEvent = {
   eventId?: string;
@@ -86,14 +88,16 @@ export async function POST(
       .select("identityUserId")
       .lean<{ identityUserId?: string }>(),
     Course.findOne({
-      slug,
       published: true,
-      "skillPack.enabled": true,
+      $or: [{ slug }, { "skillPack.slug": slug }, { "skillPacks.slug": slug }],
     })
-      .select("_id skillPack.challenges")
+      .select("_id title slug skillPack skillPacks")
       .lean<{
-        _id: unknown;
-        skillPack?: { challenges?: SkillChallenge[] };
+        _id: Types.ObjectId;
+        title: string;
+        slug: string;
+        skillPack?: SkillPack;
+        skillPacks?: SkillPack[];
       }>(),
   ]);
 
@@ -120,7 +124,7 @@ export async function POST(
   }
 
   const requirements = new Map(
-    (course.skillPack?.challenges ?? [])
+    (findSkillPackBySlug(course, slug)?.challenges ?? [])
       .filter((challenge) => challenge.practicalSignal)
       .map((challenge) => [
         challenge.practicalSignal!.id,
@@ -157,7 +161,7 @@ export async function POST(
       continue;
     }
     verified.push(signal.id);
-    const challenge = (course.skillPack?.challenges ?? []).find(
+    const challenge = (findSkillPackBySlug(course, slug)?.challenges ?? []).find(
       (item) => item.practicalSignal?.id === signal.id,
     );
     if (

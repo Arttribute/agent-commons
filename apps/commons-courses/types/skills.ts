@@ -48,6 +48,16 @@ export type AgentSandboxGuideStep = {
   body: string;
 };
 
+export type AgentSandboxReviewTarget = "system_prompt" | "skills";
+
+export type AgentSandboxReviewConfig = {
+  enabled: boolean;
+  targets: AgentSandboxReviewTarget[];
+  minScore?: number;
+  rubric?: string;
+  model?: string;
+};
+
 export type AgentSandboxToolTemplate = {
   id: string;
   name: string;
@@ -83,6 +93,7 @@ export type AgentSandboxConfig = {
   };
   skillTemplates?: AgentSandboxSkillTemplate[];
   toolTemplates?: AgentSandboxToolTemplate[];
+  review?: AgentSandboxReviewConfig;
   creditReward?: number;
   completionEventType?: string;
 };
@@ -109,6 +120,7 @@ export type SkillChallenge = {
 };
 
 export type SkillPack = {
+  slug?: string;
   enabled: boolean;
   title: string;
   subtitle?: string;
@@ -119,6 +131,7 @@ export type SkillPack = {
 export type CourseSkillPack = SkillPack & {
   courseId: string;
   courseSlug: string;
+  skillSlug: string;
   courseTitle: string;
 };
 

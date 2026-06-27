@@ -70,7 +70,10 @@ export default function SkillPathClient({ slug }: Props) {
           fetch(`/api/skills/${slug}/progress`),
         ]);
         const skillsData = (await skillsRes.json()) as { packs?: CourseSkillPack[] };
-        const nextPack = skillsData.packs?.find((item) => item.courseSlug === slug) || null;
+        const nextPack =
+          skillsData.packs?.find(
+            (item) => item.skillSlug === slug || item.courseSlug === slug
+          ) || null;
         let nextProgress = progressRes.ok
           ? ({ ...emptyProgress, ...((await progressRes.json()) as Partial<SkillProgress>) })
           : { ...emptyProgress, authenticated: progressRes.status !== 401 };
@@ -186,7 +189,7 @@ export default function SkillPathClient({ slug }: Props) {
     if (!progress.authenticated) return;
     if (!allCorrect || saving || locked || completed) return;
     setSaving(true);
-    const res = await fetch(`/api/skills/${pack.courseSlug}/progress`, {
+    const res = await fetch(`/api/skills/${pack.skillSlug}/progress`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ challengeId: challenge.id, answers: selectedAnswers }),
@@ -219,7 +222,7 @@ export default function SkillPathClient({ slug }: Props) {
     const answers = Object.fromEntries(
       challenge.questions.map((question) => [question.id, question.answerIndex])
     );
-    const res = await fetch(`/api/skills/${pack.courseSlug}/progress`, {
+    const res = await fetch(`/api/skills/${pack.skillSlug}/progress`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -322,7 +325,7 @@ export default function SkillPathClient({ slug }: Props) {
                 <LockedState />
               ) : challenge.sandbox?.enabled ? (
                 <AgentLearnerSandbox
-                  courseSlug={pack.courseSlug}
+                  courseSlug={pack.skillSlug}
                   challengeId={challenge.id}
                   config={challenge.sandbox}
                   completed={completed}

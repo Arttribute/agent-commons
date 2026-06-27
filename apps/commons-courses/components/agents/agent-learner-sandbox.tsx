@@ -28,6 +28,15 @@ type SandboxLog = {
   message: string;
 };
 
+type ReviewResult = {
+  score: number;
+  passed: boolean;
+  summary: string;
+  strengths: string[];
+  improvements: string[];
+  nextRevision: string;
+};
+
 type Props = {
   courseSlug: string;
   challengeId: string;
@@ -99,6 +108,8 @@ export function AgentLearnerSandbox({
   );
   const [guideIndex, setGuideIndex] = useState(0);
   const [publishing, setPublishing] = useState(false);
+  const [reviewing, setReviewing] = useState<string | null>(null);
+  const [reviews, setReviews] = useState<Record<string, ReviewResult>>({});
   const [logs, setLogs] = useState<SandboxLog[]>([
     { level: "info", message: "Sandbox ready. Guided steps will highlight what to configure." },
   ]);
@@ -112,13 +123,16 @@ export function AgentLearnerSandbox({
     (capability) => capability !== "credits"
   );
   const required = new Set(config.requiredCapabilities || []);
+  const reviewTargets = config.review?.enabled ? config.review.targets || [] : [];
+  const reviewsPassed = reviewTargets.every((target) => reviews[target]?.passed);
   const canPublish =
     agentName.trim().length > 1 &&
     systemPrompt.trim().length > 40 &&
     (!required.has("skills") || selectedSkills.length > 0) &&
     (!required.has("tools") || selectedTools.length > 0) &&
     (!required.has("tasks") || taskTitle.trim().length > 2) &&
-    (!required.has("chat") || message.trim().length > 8);
+    (!required.has("chat") || message.trim().length > 8) &&
+    reviewsPassed;
 
   const simulatedRun = useMemo(
     () => [
@@ -196,6 +210,55 @@ export function AgentLearnerSandbox({
     });
   }
 
+  async function reviewTarget(target: "system_prompt" | "skills") {
+    if (!authenticated) {
+      window.location.href = signInHref;
+      return;
+    }
+    const content =
+      target === "system_prompt"
+        ? systemPrompt
+        : (config.skillTemplates || [])
+            .filter((skill) => selectedSkills.includes(skill.id))
+            .map((skill) => `${skill.name}\n${skill.instructions}`)
+            .join("\n\n");
+    if (!content.trim()) return;
+
+    setReviewing(target);
+    const response = await fetch(`/api/skills/${courseSlug}/sandbox/review`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        challengeId,
+        target,
+        content,
+        context: {
+          agentName,
+          persona,
+          selectedSkills,
+        },
+      }),
+    });
+    const payload = await response.json();
+    setReviewing(null);
+    if (!response.ok) {
+      setLogs((current) => [
+        { level: "error", message: payload.error || "Could not review this yet." },
+        ...current,
+      ]);
+      return;
+    }
+    const result = payload.data as ReviewResult;
+    setReviews((current) => ({ ...current, [target]: result }));
+    setLogs((current) => [
+      {
+        level: result.passed ? "success" : "warning",
+        message: `${target === "system_prompt" ? "System prompt" : "Skill"} review: ${result.score}/100. ${result.summary}`,
+      },
+      ...current,
+    ]);
+  }
+
   return (
     <div className="flex min-h-full flex-col gap-4">
       <div className="rounded-xl border border-slate-200 bg-white p-4">
@@ -268,9 +331,24 @@ export function AgentLearnerSandbox({
             >
               <textarea
                 value={systemPrompt}
-                onChange={(event) => setSystemPrompt(event.target.value)}
+                onChange={(event) => {
+                  setSystemPrompt(event.target.value);
+                  setReviews((current) => {
+                    const rest = { ...current };
+                    delete rest.system_prompt;
+                    return rest;
+                  });
+                }}
                 className="min-h-36 w-full resize-y rounded-lg border border-slate-200 px-3 py-2 text-sm leading-6 outline-none focus:border-slate-400"
               />
+              {reviewTargets.includes("system_prompt") ? (
+                <ReviewBox
+                  targetLabel="system prompt"
+                  result={reviews.system_prompt}
+                  loading={reviewing === "system_prompt"}
+                  onReview={() => reviewTarget("system_prompt")}
+                />
+              ) : null}
             </SandboxPanel>
           ) : null}
 
@@ -283,8 +361,23 @@ export function AgentLearnerSandbox({
                   description: skill.instructions,
                 }))}
                 selected={selectedSkills}
-                onChange={setSelectedSkills}
+                onChange={(items) => {
+                  setSelectedSkills(items);
+                  setReviews((current) => {
+                    const rest = { ...current };
+                    delete rest.skills;
+                    return rest;
+                  });
+                }}
               />
+              {reviewTargets.includes("skills") ? (
+                <ReviewBox
+                  targetLabel="skills"
+                  result={reviews.skills}
+                  loading={reviewing === "skills"}
+                  onReview={() => reviewTarget("skills")}
+                />
+              ) : null}
             </SandboxPanel>
           ) : null}
 
@@ -390,6 +483,11 @@ export function AgentLearnerSandbox({
               Configure the required parts to finish
             </>
           )}
+          {config.review?.enabled && !reviewsPassed ? (
+            <span className="text-xs font-semibold text-amber-700">
+              Complete the AI review before creating the agent.
+            </span>
+          ) : null}
         </div>
         <button
           type="button"
@@ -452,6 +550,70 @@ function Field({
         className="mt-1.5 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-slate-400"
       />
     </label>
+  );
+}
+
+function ReviewBox({
+  targetLabel,
+  result,
+  loading,
+  onReview,
+}: {
+  targetLabel: string;
+  result?: ReviewResult;
+  loading: boolean;
+  onReview: () => void;
+}) {
+  return (
+    <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50 p-3">
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <p className="text-xs font-black uppercase tracking-widest text-slate-500">
+            AI review
+          </p>
+          {result ? (
+            <p className="mt-1 text-sm font-bold text-slate-950">
+              {result.score}/100 - {result.passed ? "Ready" : "Revise"}
+            </p>
+          ) : (
+            <p className="mt-1 text-sm text-slate-600">
+              Get feedback before continuing.
+            </p>
+          )}
+        </div>
+        <button
+          type="button"
+          onClick={onReview}
+          disabled={loading}
+          className="inline-flex items-center gap-1.5 rounded-md bg-slate-950 px-3 py-2 text-xs font-black text-white disabled:opacity-50"
+        >
+          {loading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
+          Review {targetLabel}
+        </button>
+      </div>
+      {result ? (
+        <div className="mt-3 space-y-2 text-xs leading-5 text-slate-700">
+          <p>{result.summary}</p>
+          {result.strengths.length ? (
+            <p>
+              <span className="font-bold text-green-700">Strengths:</span>{" "}
+              {result.strengths.join(" ")}
+            </p>
+          ) : null}
+          {result.improvements.length ? (
+            <p>
+              <span className="font-bold text-amber-700">Improve:</span>{" "}
+              {result.improvements.join(" ")}
+            </p>
+          ) : null}
+          {result.nextRevision ? (
+            <p className="rounded-md bg-white px-2 py-1.5 font-semibold">
+              {result.nextRevision}
+            </p>
+          ) : null}
+        </div>
+      ) : null}
+    </div>
   );
 }
 

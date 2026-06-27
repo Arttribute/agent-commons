@@ -148,6 +148,7 @@ export interface ICourse extends Document {
   previewImageUrl?: string;
   modules: IModule[];
   skillPack?: SkillPack;
+  skillPacks?: SkillPack[];
   agents: CourseAgentConfig[];
   published: boolean;
   /** Pinned as the single hero feature on the landing page */
@@ -439,6 +440,21 @@ const AgentSandboxToolTemplateSchema = new Schema(
   { _id: false }
 );
 
+const AgentSandboxReviewSchema = new Schema(
+  {
+    enabled: { type: Boolean, default: false },
+    targets: {
+      type: [String],
+      enum: ["system_prompt", "skills"],
+      default: ["system_prompt"],
+    },
+    minScore: { type: Number, default: 70, min: 0, max: 100 },
+    rubric: { type: String, trim: true },
+    model: { type: String, trim: true },
+  },
+  { _id: false }
+);
+
 const AgentSandboxConfigSchema = new Schema(
   {
     enabled: { type: Boolean, default: false },
@@ -489,6 +505,7 @@ const AgentSandboxConfigSchema = new Schema(
     },
     skillTemplates: { type: [AgentSandboxSkillTemplateSchema], default: [] },
     toolTemplates: { type: [AgentSandboxToolTemplateSchema], default: [] },
+    review: AgentSandboxReviewSchema,
     creditReward: { type: Number, default: 0, min: 0 },
     completionEventType: {
       type: String,
@@ -529,6 +546,7 @@ const SkillChallengeSchema = new Schema(
 
 const SkillPackSchema = new Schema(
   {
+    slug: { type: String, trim: true },
     enabled: { type: Boolean, default: false },
     title: { type: String, trim: true },
     subtitle: { type: String, trim: true },
@@ -609,6 +627,7 @@ const CourseSchema = new Schema<ICourse>(
     previewImageUrl: String,
     modules: [ModuleSchema],
     skillPack: SkillPackSchema,
+    skillPacks: { type: [SkillPackSchema], default: [] },
     agents: {
       type: [CourseAgentSchema],
       default: getDefaultCourseAgents,

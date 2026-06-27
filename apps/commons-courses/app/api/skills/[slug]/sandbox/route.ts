@@ -6,16 +6,17 @@ import { trackAnalyticsEvent } from "@/lib/analytics";
 import Course from "@/models/Course";
 import Enrollment from "@/models/Enrollment";
 import User from "@/models/User";
-import type { AgentSandboxConfig, SkillChallenge } from "@/types/skills";
+import { findSkillPackBySlug } from "@/lib/skill-paths";
+import type { AgentSandboxConfig, SkillPack } from "@/types/skills";
 import type { Types } from "mongoose";
 
 type SandboxCourse = {
   _id: Types.ObjectId;
   slug: string;
+  title: string;
   isFree?: boolean;
-  skillPack?: {
-    challenges?: SkillChallenge[];
-  };
+  skillPack?: SkillPack;
+  skillPacks?: SkillPack[];
 };
 
 type SandboxBody = {
@@ -55,15 +56,15 @@ export async function POST(
       .select("identityUserId identityWorkspaceId")
       .lean<{ identityUserId?: string; identityWorkspaceId?: string }>(),
     Course.findOne({
-      slug,
       published: true,
-      "skillPack.enabled": true,
+      $or: [{ slug }, { "skillPack.slug": slug }, { "skillPacks.slug": slug }],
     })
-      .select("_id slug isFree skillPack.challenges")
+      .select("_id title slug isFree skillPack skillPacks")
       .lean<SandboxCourse | null>(),
   ]);
 
-  const challenge = course?.skillPack?.challenges?.find(
+  const pack = course ? findSkillPackBySlug(course, slug) : null;
+  const challenge = pack?.challenges?.find(
     (item) => item.id === body.challengeId
   );
   if (!course || !challenge?.sandbox?.enabled) {

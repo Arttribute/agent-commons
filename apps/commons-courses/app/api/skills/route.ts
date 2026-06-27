@@ -3,13 +3,15 @@ import { auth } from "@/lib/auth";
 import { connectDB } from "@/lib/db";
 import Course from "@/models/Course";
 import Enrollment from "@/models/Enrollment";
-import type { CourseSkillPack, SkillLeaderboardEntry } from "@/types/skills";
+import { getPublishedSkillPacks } from "@/lib/skill-paths";
+import type { CourseSkillPack, SkillLeaderboardEntry, SkillPack } from "@/types/skills";
 
 type CourseWithSkillPack = {
   _id: { toString(): string };
   title: string;
   slug: string;
-  skillPack?: Omit<CourseSkillPack, "courseId" | "courseSlug" | "courseTitle">;
+  skillPack?: SkillPack;
+  skillPacks?: SkillPack[];
 };
 
 export async function GET() {
@@ -18,21 +20,24 @@ export async function GET() {
 
   const courses = (await Course.find({
     published: true,
-    "skillPack.enabled": true,
-    "skillPack.challenges.0": { $exists: true },
+    $or: [
+      {
+        "skillPack.enabled": true,
+        "skillPack.challenges.0": { $exists: true },
+      },
+      {
+        "skillPacks.enabled": true,
+        "skillPacks.challenges.0": { $exists: true },
+      },
+    ],
   })
-    .select("title slug skillPack")
+    .select("title slug skillPack skillPacks")
     .sort({ updatedAt: -1 })
     .lean()) as unknown as CourseWithSkillPack[];
 
-  const packs: CourseSkillPack[] = courses
-    .filter((course) => course.skillPack)
-    .map((course) => ({
-      ...course.skillPack!,
-      courseId: course._id.toString(),
-      courseSlug: course.slug,
-      courseTitle: course.title,
-    }));
+  const packs: CourseSkillPack[] = courses.flatMap((course) =>
+    getPublishedSkillPacks(course)
+  );
 
   const skillCourseIds = courses.map((course) => course._id);
   const leaderboardRows = skillCourseIds.length

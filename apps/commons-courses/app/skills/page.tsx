@@ -62,12 +62,12 @@ export default function SkillsPage() {
 
         const progressEntries = await Promise.all(
           nextPacks.map(async (pack) => {
-            const progressRes = await fetch(`/api/skills/${pack.courseSlug}/progress`);
+            const progressRes = await fetch(`/api/skills/${pack.skillSlug}/progress`);
             if (!progressRes.ok) {
-              return [pack.courseSlug, { ...emptyProgress, authenticated: progressRes.status !== 401 }] as const;
+              return [pack.skillSlug, { ...emptyProgress, authenticated: progressRes.status !== 401 }] as const;
             }
             const progress = (await progressRes.json()) as Partial<SkillProgress>;
-            return [pack.courseSlug, { ...emptyProgress, ...progress }] as const;
+            return [pack.skillSlug, { ...emptyProgress, ...progress }] as const;
           })
         );
         if (!cancelled) setProgressBySlug(Object.fromEntries(progressEntries));
@@ -85,7 +85,7 @@ export default function SkillsPage() {
     () =>
       packs.map((pack) => ({
         pack,
-        progress: progressBySlug[pack.courseSlug] || emptyProgress,
+        progress: progressBySlug[pack.skillSlug] || emptyProgress,
       })),
     [packs, progressBySlug]
   );
@@ -205,8 +205,8 @@ export default function SkillsPage() {
 
               return (
                 <Link
-                  key={pack.courseSlug}
-                  href={`/skills/${pack.courseSlug}`}
+                  key={pack.skillSlug}
+                  href={`/skills/${pack.skillSlug}`}
                   className="group overflow-hidden rounded-xl border border-slate-200 bg-white transition-all hover:-translate-y-0.5 hover:border-slate-300 hover:shadow-lg"
                 >
                   {pack.challenges[0]?.assetUrl ? (

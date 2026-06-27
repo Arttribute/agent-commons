@@ -1437,6 +1437,10 @@ function SandboxConfigEditor({
               update({ toolTemplates: toolTemplates as SandboxToolTemplate[] })
             }
           />
+          <ReviewConfigEditor
+            value={sandbox.review}
+            onChange={(review) => update({ review })}
+          />
           <GuideStepEditor
             steps={sandbox.guideSteps || []}
             onChange={(guideSteps) => update({ guideSteps })}
@@ -1447,16 +1451,87 @@ function SandboxConfigEditor({
   );
 }
 
-function CheckboxList({
+function ReviewConfigEditor({
+  value,
+  onChange,
+}: {
+  value: AgentSandboxConfig["review"];
+  onChange: (review: NonNullable<AgentSandboxConfig["review"]>) => void;
+}) {
+  const review = value || {
+    enabled: false,
+    targets: ["system_prompt" as const],
+    minScore: 70,
+    rubric: "",
+    model: "",
+  };
+
+  return (
+    <div className="rounded-lg border border-slate-200 p-3">
+      <div className="mb-3 flex items-center justify-between gap-3">
+        <div>
+          <p className="text-sm font-black text-slate-950">AI reviewer</p>
+          <p className="mt-1 text-xs leading-5 text-slate-500">
+            Give learners quiz-like feedback on prompts or skills before they create the agent.
+          </p>
+        </div>
+        <Toggle
+          label="Enable"
+          checked={Boolean(review.enabled)}
+          onChange={(enabled) => onChange({ ...review, enabled })}
+        />
+      </div>
+      {review.enabled ? (
+        <div className="grid gap-3 md:grid-cols-2">
+          <CheckboxList
+            label="Review targets"
+            items={["system_prompt", "skills"]}
+            selected={review.targets || []}
+            onChange={(targets) =>
+              onChange({
+                ...review,
+                targets,
+              })
+            }
+          />
+          <div className="grid gap-3">
+            <Field
+              label="Passing score"
+              type="number"
+              value={String(review.minScore || 70)}
+              onChange={(minScore) =>
+                onChange({ ...review, minScore: Number(minScore) || 70 })
+              }
+            />
+            <Field
+              label="Review model"
+              value={review.model || ""}
+              onChange={(model) => onChange({ ...review, model })}
+            />
+          </div>
+          <div className="md:col-span-2">
+            <TextArea
+              label="Rubric"
+              value={review.rubric || ""}
+              onChange={(rubric) => onChange({ ...review, rubric })}
+            />
+          </div>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function CheckboxList<T extends string>({
   label,
   items,
   selected,
   onChange,
 }: {
   label: string;
-  items: AgentSandboxCapability[];
-  selected: AgentSandboxCapability[];
-  onChange: (items: AgentSandboxCapability[]) => void;
+  items: T[];
+  selected: T[];
+  onChange: (items: T[]) => void;
 }) {
   return (
     <div>
