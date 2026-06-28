@@ -73,17 +73,15 @@ export function createSandboxConfig(): AgentSandboxConfig {
         id: "identity",
         target: "identity",
         title: "Name the agent",
-        body:
-          "Give the agent a clear identity so you know what kind of helper you are building.",
+        body: "Give the agent a short, specific name so you know exactly what it is for.",
         targetSelector: '[data-sandbox-target="agent-name"]',
         placement: "right",
       },
       {
         id: "prompt",
         target: "system_prompt",
-        title: "Shape behavior",
-        body:
-          "Edit the system prompt so the agent has boundaries, tone, and a specific job.",
+        title: "Shape its behavior",
+        body: "Edit the system prompt to set the agent's tone, boundaries, and job. Be specific — vague prompts produce vague agents.",
         targetSelector: '[data-sandbox-target="system-prompt"]',
         placement: "right",
       },
@@ -91,26 +89,23 @@ export function createSandboxConfig(): AgentSandboxConfig {
         id: "skills",
         target: "skills",
         title: "Add a skill",
-        body:
-          "Choose a reusable instruction set that helps the agent repeat good practice.",
-        targetSelector: '[data-sandbox-target="skill-instructions"]',
+        body: "Skills are reusable instruction sets. Customize the instructions so the agent handles this task well.",
+        targetSelector: '[data-sandbox-target="skills"]',
         placement: "right",
       },
       {
         id: "tools",
         target: "tools",
         title: "Connect a tool",
-        body:
-          "Select a tool or connector so the agent can do more than write a response.",
+        body: "Select a connector so the agent can read real data, not just generate text.",
         targetSelector: '[data-sandbox-target="tools"]',
         placement: "right",
       },
       {
         id: "run",
         target: "chat",
-        title: "Run it",
-        body:
-          "Send the first task and inspect the logs for success, warnings, or failure.",
+        title: "Create and test it",
+        body: "Click \"Create agent\", then send a message to run your real Agent Commons agent and watch the logs.",
         targetSelector: '[data-sandbox-target="chat-input"]',
         placement: "top",
       },

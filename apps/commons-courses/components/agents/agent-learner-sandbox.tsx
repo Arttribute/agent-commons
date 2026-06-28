@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ExternalLink, Terminal } from "lucide-react";
+import { ExternalLink, Terminal, X } from "lucide-react";
 import { ChatSurface } from "./agent-sandbox/chat-surface";
 import {
   IdentityPanel,
@@ -97,6 +97,7 @@ export function AgentLearnerSandbox({
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [logsOpen, setLogsOpen] = useState(false);
   const [guideIndex, setGuideIndex] = useState(0);
+  const [guideVisible, setGuideVisible] = useState(true);
   const [creating, setCreating] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [sending, setSending] = useState(false);
@@ -185,44 +186,58 @@ export function AgentLearnerSandbox({
   }, []);
 
   useEffect(() => {
-    if (!activeStep) {
+    if (!activeStep || !guideVisible) {
       setHighlightRect(null);
       return;
     }
 
-    let animationFrame = 0;
-    const updateHighlight = () => {
-      const selector =
-        activeStep.targetSelector?.trim() || defaultGuideSelector(activeStep.target);
+    let frameId = 0;
+    let active = true;
+    const selector = activeStep.targetSelector?.trim() || defaultGuideSelector(activeStep.target);
+
+    const measure = () => {
+      if (!active) return;
       const target = selector ? document.querySelector(selector) : null;
-      if (!(target instanceof HTMLElement)) {
+      if (target instanceof HTMLElement) {
+        const r = target.getBoundingClientRect();
+        setHighlightRect({ top: r.top, left: r.left, width: r.width, height: r.height });
+      } else {
         setHighlightRect(null);
-        return;
       }
-      target.scrollIntoView({ block: "center", inline: "nearest", behavior: "smooth" });
-      const rect = target.getBoundingClientRect();
-      setHighlightRect({
-        top: rect.top,
-        left: rect.left,
-        width: rect.width,
-        height: rect.height,
-      });
+    };
+
+    // Poll for 600ms so the drawer slide-in animation completes before we lock position
+    const startMs = performance.now();
+    const tick = () => {
+      if (!active) return;
+      measure();
+      if (performance.now() - startMs < 600) frameId = requestAnimationFrame(tick);
+    };
+
+    const onViewUpdate = () => {
+      cancelAnimationFrame(frameId);
+      frameId = requestAnimationFrame(measure);
     };
 
     const timeout = window.setTimeout(() => {
-      updateHighlight();
-      animationFrame = window.requestAnimationFrame(updateHighlight);
-    }, 180);
-    window.addEventListener("resize", updateHighlight);
-    window.addEventListener("scroll", updateHighlight, true);
+      const target = selector ? document.querySelector(selector) : null;
+      if (target instanceof HTMLElement) {
+        target.scrollIntoView({ block: "nearest", inline: "nearest", behavior: "smooth" });
+      }
+      frameId = requestAnimationFrame(tick);
+    }, 100);
+
+    window.addEventListener("resize", onViewUpdate);
+    window.addEventListener("scroll", onViewUpdate, true);
 
     return () => {
+      active = false;
       window.clearTimeout(timeout);
-      if (animationFrame) window.cancelAnimationFrame(animationFrame);
-      window.removeEventListener("resize", updateHighlight);
-      window.removeEventListener("scroll", updateHighlight, true);
+      cancelAnimationFrame(frameId);
+      window.removeEventListener("resize", onViewUpdate);
+      window.removeEventListener("scroll", onViewUpdate, true);
     };
-  }, [activeStep, drawerOpen, logsOpen]);
+  }, [activeStep, guideVisible, drawerOpen, logsOpen]);
 
   if (introOpen && !completed) {
     return (
@@ -547,8 +562,13 @@ export function AgentLearnerSandbox({
   }
 
   async function nextGuideStep() {
-    const nextIndex = (guideIndex + 1) % Math.max(guide.length, 1);
+    const nextIndex = guideIndex + 1;
+    if (nextIndex >= guide.length) {
+      setGuideVisible(false);
+      return;
+    }
     setGuideIndex(nextIndex);
+    setGuideVisible(true);
     if (createdAgentId) {
       await syncAgent("Saved changes before moving on.", { guideIndex: nextIndex });
     }
@@ -643,11 +663,13 @@ export function AgentLearnerSandbox({
           activeStep={activeStep}
           guideIndex={guideIndex}
           guideLength={guide.length}
+          guideVisible={guideVisible}
           canCreate={canCreate}
           creating={creating}
           createdAgentId={createdAgentId}
           onOpenStep={openGuideStep}
           onNextStep={() => void nextGuideStep()}
+          onToggleGuide={() => setGuideVisible((v) => !v)}
           onCreate={createAgent}
           onSync={() => void syncAgent()}
           onFinish={() => void finishSandbox()}
@@ -657,13 +679,15 @@ export function AgentLearnerSandbox({
           canFinish={Boolean(createdAgentId) && hasUserMessage && !completionSent}
         />
       </main>
-      <GuideSpotlight
+      <GuideTour
         rect={highlightRect}
-        title={activeStep?.title}
-        body={activeStep?.body}
+        step={activeStep}
+        guideIndex={guideIndex}
+        guideLength={guide.length}
         placement={activeStep?.placement}
+        visible={guideVisible && Boolean(activeStep)}
         onNext={() => void nextGuideStep()}
-        visible={Boolean(activeStep)}
+        onDismiss={() => setGuideVisible(false)}
       />
     </div>
   );
@@ -869,87 +893,110 @@ function defaultGuideSelector(target?: string) {
   return target ? selectors[target] : "";
 }
 
-function GuideSpotlight({
+function GuideTour({
   rect,
-  title,
-  body,
+  step,
+  guideIndex,
+  guideLength,
   placement = "auto",
   visible,
   onNext,
+  onDismiss,
 }: {
   rect: HighlightRect | null;
-  title?: string;
-  body?: string;
+  step?: { title: string; body: string };
+  guideIndex: number;
+  guideLength: number;
   placement?: "top" | "right" | "bottom" | "left" | "auto";
   visible: boolean;
   onNext: () => void;
+  onDismiss: () => void;
 }) {
-  if (!visible || !rect || !title || !body) return null;
-  const gap = 12;
-  const resolvedPlacement =
-    placement === "auto" ? (rect.top > 180 ? "top" : "bottom") : placement;
-  const dialogStyle = guideDialogStyle(rect, resolvedPlacement, gap);
+  if (!visible || !rect || !step) return null;
+
+  const gap = 10;
+  const vw = window.innerWidth;
+  const vh = window.innerHeight;
+  const dialogW = 256;
+  const dialogH = 148;
+
+  const resolved: "top" | "right" | "bottom" | "left" =
+    placement === "auto"
+      ? rect.top + rect.height + gap + dialogH <= vh
+        ? "bottom"
+        : rect.top - gap - dialogH >= 0
+          ? "top"
+          : rect.left + rect.width + gap + dialogW <= vw
+            ? "right"
+            : "left"
+      : placement;
+
+  const style = tourDialogStyle(rect, resolved, gap, dialogW, dialogH, vw, vh);
+  const isLast = guideIndex + 1 >= guideLength;
 
   return (
     <div className="pointer-events-none fixed inset-0 z-50">
+      {/* Clean highlight ring — no dark backdrop overlay */}
       <div
-        className="absolute rounded-xl border-2 border-sky-500 shadow-[0_0_0_9999px_rgba(15,23,42,0.24)]"
+        className="pointer-events-none absolute rounded-lg border-2 border-sky-500 shadow-[0_0_0_4px_rgba(14,165,233,0.12)]"
         style={{
-          top: rect.top - 6,
-          left: rect.left - 6,
-          width: rect.width + 12,
-          height: rect.height + 12,
+          top: rect.top - 5,
+          left: rect.left - 5,
+          width: rect.width + 10,
+          height: rect.height + 10,
         }}
       />
+      {/* Floating tooltip */}
       <div
-        className="pointer-events-auto absolute w-[min(20rem,calc(100vw-2rem))] rounded-lg border border-slate-200 bg-white p-3 text-slate-950 shadow-xl"
-        style={dialogStyle}
+        className="pointer-events-auto absolute w-64 overflow-hidden rounded-xl border border-slate-200 bg-white text-slate-950 shadow-xl"
+        style={style}
       >
-        <p className="text-sm font-black">{title}</p>
-        <p className="mt-1 text-xs leading-5 text-slate-600">{body}</p>
-        <button
-          type="button"
-          onClick={onNext}
-          className="mt-3 rounded-lg bg-slate-950 px-3 py-1.5 text-xs font-black text-white"
-        >
-          Next
-        </button>
+        <div className="flex items-center justify-between border-b border-slate-100 px-3 py-2">
+          <span className="text-[10px] font-bold uppercase tracking-widest text-slate-400">
+            {guideIndex + 1} / {guideLength}
+          </span>
+          <button
+            type="button"
+            onClick={onDismiss}
+            className="rounded p-0.5 text-slate-400 hover:bg-slate-100 hover:text-slate-600"
+            aria-label="Hide guide"
+          >
+            <X className="h-3.5 w-3.5" />
+          </button>
+        </div>
+        <div className="px-3 py-2.5">
+          <p className="text-sm font-bold">{step.title}</p>
+          <p className="mt-1 text-xs leading-relaxed text-slate-500">{step.body}</p>
+        </div>
+        <div className="flex items-center justify-end border-t border-slate-100 px-3 py-2">
+          <button
+            type="button"
+            onClick={onNext}
+            className="rounded-lg bg-slate-950 px-3 py-1.5 text-xs font-bold text-white"
+          >
+            {isLast ? "Done" : "Next →"}
+          </button>
+        </div>
       </div>
     </div>
   );
 }
 
-function guideDialogStyle(
+function tourDialogStyle(
   rect: HighlightRect,
   placement: "top" | "right" | "bottom" | "left",
-  gap: number
+  gap: number,
+  dialogW: number,
+  dialogH: number,
+  vw: number,
+  vh: number
 ) {
-  const vw = window.innerWidth;
-  const vh = window.innerHeight;
-  const width = Math.min(320, vw - 32);
-  const clampX = (value: number) => Math.max(16, Math.min(value, vw - width - 16));
-  const clampY = (value: number) => Math.max(16, Math.min(value, vh - 160));
-
-  if (placement === "top") {
-    return {
-      left: clampX(rect.left + rect.width / 2 - width / 2),
-      top: clampY(rect.top - 150 - gap),
-    };
-  }
-  if (placement === "right") {
-    return {
-      left: clampX(rect.left + rect.width + gap),
-      top: clampY(rect.top),
-    };
-  }
-  if (placement === "left") {
-    return {
-      left: clampX(rect.left - width - gap),
-      top: clampY(rect.top),
-    };
-  }
-  return {
-    left: clampX(rect.left + rect.width / 2 - width / 2),
-    top: clampY(rect.top + rect.height + gap),
-  };
+  const clampX = (v: number) => Math.max(12, Math.min(v, vw - dialogW - 12));
+  const clampY = (v: number) => Math.max(12, Math.min(v, vh - dialogH - 12));
+  const cx = rect.left + rect.width / 2 - dialogW / 2;
+  const cy = rect.top + rect.height / 2 - dialogH / 2;
+  if (placement === "top") return { left: clampX(cx), top: clampY(rect.top - dialogH - gap) };
+  if (placement === "right") return { left: clampX(rect.left + rect.width + gap), top: clampY(cy) };
+  if (placement === "left") return { left: clampX(rect.left - dialogW - gap), top: clampY(cy) };
+  return { left: clampX(cx), top: clampY(rect.top + rect.height + gap) };
 }

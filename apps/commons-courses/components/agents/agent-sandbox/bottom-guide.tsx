@@ -2,6 +2,8 @@ import {
   CheckCircle2,
   ChevronRight,
   Coins,
+  Eye,
+  EyeOff,
   Loader2,
   Play,
   Save,
@@ -15,6 +17,7 @@ type BottomGuideProps = {
   activeStep?: { title: string; body: string };
   guideIndex: number;
   guideLength: number;
+  guideVisible: boolean;
   canCreate: boolean;
   creating: boolean;
   createdAgentId?: string;
@@ -24,6 +27,7 @@ type BottomGuideProps = {
   finishing: boolean;
   onOpenStep: () => void;
   onNextStep: () => void;
+  onToggleGuide: () => void;
   onCreate: () => void;
   onSync: () => void;
   onFinish: () => void;
@@ -36,6 +40,7 @@ export function BottomGuide({
   activeStep,
   guideIndex,
   guideLength,
+  guideVisible,
   canCreate,
   creating,
   createdAgentId,
@@ -45,6 +50,7 @@ export function BottomGuide({
   finishing,
   onOpenStep,
   onNextStep,
+  onToggleGuide,
   onCreate,
   onSync,
   onFinish,
@@ -71,15 +77,28 @@ export function BottomGuide({
               <span className="shrink-0 text-xs text-slate-400">
                 {guideIndex + 1}/{guideLength}
               </span>
-              <span className="min-w-0 truncate">
-                {activeStep.title}: {activeStep.body}
-              </span>
+              <span className="min-w-0 truncate">{activeStep.title}</span>
               <ChevronRight className="h-4 w-4 shrink-0 text-slate-400" />
             </button>
           ) : null}
         </div>
         <div className="flex flex-wrap items-center justify-end gap-2">
           {guideLength ? (
+            <button
+              type="button"
+              onClick={onToggleGuide}
+              className="rounded-lg border border-slate-200 p-2 text-slate-500 hover:bg-slate-50"
+              title={guideVisible ? "Hide guide" : "Show guide"}
+              aria-label={guideVisible ? "Hide guide" : "Show guide"}
+            >
+              {guideVisible ? (
+                <EyeOff className="h-4 w-4" />
+              ) : (
+                <Eye className="h-4 w-4" />
+              )}
+            </button>
+          ) : null}
+          {guideLength && !guideVisible ? (
             <button
               type="button"
               onClick={onNextStep}
@@ -105,7 +124,6 @@ export function BottomGuide({
           ) : null}
           {createdAgentId ? (
             <button
-              data-sandbox-target="finish-sandbox"
               type="button"
               onClick={onSync}
               disabled={!canSync || syncing}
@@ -121,6 +139,7 @@ export function BottomGuide({
           ) : null}
           {createdAgentId ? (
             <button
+              data-sandbox-target="finish-sandbox"
               type="button"
               onClick={onFinish}
               disabled={!canFinish || finishing}
