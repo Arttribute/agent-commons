@@ -294,7 +294,7 @@ app.get("/sign-in", (c) => {
   );
 });
 
-app.get("/native/sign-in/google", async (c) => {
+async function handleNativeGoogleSignIn(c: any) {
   const appId = nativeApp(c.req.query("app"));
   const returnTo = safeExternalReturnTo(c.req.query("return_to"), appId);
   const oauthQuery = validOAuthQuery(c.req.query("oauth_query"));
@@ -309,9 +309,12 @@ app.get("/native/sign-in/google", async (c) => {
       oauth_query: oauthQuery,
     },
   });
-});
+}
 
-app.post("/native/sign-in/email", async (c) => {
+app.get("/native/sign-in/google", handleNativeGoogleSignIn);
+app.get("/api/auth/native/sign-in/google", handleNativeGoogleSignIn);
+
+async function handleNativeEmailSignIn(c: any) {
   const form = await c.req.parseBody();
   const appId = nativeApp(String(form.app ?? ""));
   const returnTo = safeExternalReturnTo(String(form.return_to ?? ""), appId);
@@ -328,7 +331,10 @@ app.post("/native/sign-in/email", async (c) => {
       oauth_query: oauthQuery,
     },
   });
-});
+}
+
+app.post("/native/sign-in/email", handleNativeEmailSignIn);
+app.post("/api/auth/native/sign-in/email", handleNativeEmailSignIn);
 
 app.post("/native/sign-up/email", async (c) => {
   const form = await c.req.parseBody();

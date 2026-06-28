@@ -14,6 +14,7 @@ function OAuthConnectContent() {
   const [provider, setProvider] = useState<OAuthProviderDetails | null>(null);
   const [loading, setLoading] = useState(true);
   const [connecting, setConnecting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const providerKey = searchParams.get('provider');
   const returnUrl = searchParams.get('returnUrl') || '/studio';
@@ -67,14 +68,24 @@ function OAuthConnectContent() {
     fetchProvider(providerKey);
   }, [fetchProvider, providerKey, returnUrl, router, toast]);
 
+  useEffect(() => {
+    if (status !== 'unauthenticated') return;
+    window.sessionStorage.setItem('oauthReturnUrl', returnUrl);
+    if (toolLabel) window.sessionStorage.setItem('oauthProviderLabel', toolLabel);
+    const current = `${window.location.pathname}${window.location.search}`;
+    window.location.href = `/api/auth/native/start?direct=1&callbackUrl=${encodeURIComponent(current)}`;
+  }, [returnUrl, status, toolLabel]);
+
   const handleConnect = async () => {
     if (!providerKey || !provider) return;
     if (status !== 'authenticated') {
-      router.push(`/login?callbackUrl=${encodeURIComponent(window.location.href)}`);
+      const current = `${window.location.pathname}${window.location.search}`;
+      window.location.href = `/api/auth/native/start?direct=1&callbackUrl=${encodeURIComponent(current)}`;
       return;
     }
 
     setConnecting(true);
+    setError(null);
 
     try {
       window.sessionStorage.setItem('oauthReturnUrl', returnUrl);
@@ -97,7 +108,11 @@ function OAuthConnectContent() {
 
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
-        throw new Error(data.error || 'Failed to initiate OAuth flow');
+        const message =
+          typeof data.error === 'string'
+            ? data.error
+            : data.error?.message || data.message || 'Failed to initiate OAuth flow';
+        throw new Error(message);
       }
 
       const data = await res.json();
@@ -106,9 +121,11 @@ function OAuthConnectContent() {
       window.location.href = data.authorizationUrl;
     } catch (error) {
       console.error('Error connecting:', error);
+      const message = error instanceof Error ? error.message : 'Failed to connect to OAuth provider';
+      setError(message);
       toast({
         title: 'Error',
-        description: 'Failed to connect to OAuth provider',
+        description: message,
         variant: 'destructive',
       });
       setConnecting(false);
@@ -157,6 +174,18 @@ function OAuthConnectContent() {
               : provider.description ||
               `Connect your ${provider.displayName} account to enable tools that require access to your ${provider.displayName} data.`}
           </p>
+
+          {status === 'unauthenticated' && (
+            <div className="mb-6 rounded-lg border border-blue-200 bg-blue-50 p-4 text-left text-sm text-blue-900">
+              Preparing your secure connection...
+            </div>
+          )}
+
+          {error && (
+            <div className="mb-6 rounded-lg border border-red-200 bg-red-50 p-4 text-left text-sm text-red-900">
+              {error}
+            </div>
+          )}
 
           {/* Permissions */}
           <div className="bg-gray-50 dark:bg-gray-700 rounded-lg p-4 mb-6 text-left">

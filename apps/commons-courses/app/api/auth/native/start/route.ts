@@ -12,6 +12,9 @@ async function start(request: NextRequest, callbackUrl: string) {
       new URL("/auth/signin?authError=Could+not+start+sign-in", origin),
     );
   }
+  if (request.nextUrl.searchParams.get("direct") === "1") {
+    return NextResponse.redirect(authorizeUrl);
+  }
   const prepared = await fetch(authorizeUrl, {
     headers: { Accept: "application/json" },
     cache: "no-store",
