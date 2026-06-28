@@ -32,12 +32,14 @@ export function ChatSurface({
     chatEndRef.current?.scrollIntoView({ block: "end" });
   }, [chatEndRef, messages, sending, activityLabel]);
 
-  // Auto-resize the textarea up to ~4 lines
+  // Auto-resize: grow up to ~4 lines (~120px), then scroll
   useEffect(() => {
     const el = textareaRef.current;
     if (!el) return;
     el.style.height = "auto";
-    el.style.height = `${Math.min(el.scrollHeight, 160)}px`;
+    const next = Math.min(el.scrollHeight, 120);
+    el.style.height = `${next}px`;
+    el.style.overflowY = el.scrollHeight > 120 ? "auto" : "hidden";
   }, [chatInput]);
 
   const isEmpty = messages.length === 0 && !sending;
@@ -77,10 +79,22 @@ export function ChatSurface({
         </div>
       )}
 
-      {/* Input bar — unified rounded container, no hard border-t */}
+      {/* Input bar — single row when short, grows upward when multiline */}
       <div className="px-3 pb-3 pt-2">
         <div className="mx-auto max-w-3xl">
-          <div className="rounded-2xl border border-slate-200 bg-white shadow-sm transition-shadow focus-within:border-slate-300 focus-within:shadow-md">
+          <div className="flex items-end gap-2 rounded-2xl border border-slate-200 bg-white px-3 py-2.5 shadow-sm transition-shadow focus-within:border-slate-300 focus-within:shadow-md">
+            {/* Attachment button — same box size as send for aligned bottoms */}
+            <button
+              type="button"
+              disabled
+              title="File attachments coming soon"
+              aria-label="Attach file"
+              className="flex h-8 w-8 shrink-0 items-center justify-center text-slate-300"
+            >
+              <Paperclip className="h-4 w-4" />
+            </button>
+
+            {/* Auto-resizing textarea — starts as a single line */}
             <textarea
               ref={textareaRef}
               data-sandbox-target="chat-input"
@@ -98,34 +112,24 @@ export function ChatSurface({
                   ? "Message your agent…"
                   : "Create the agent before chatting…"
               }
-              className="w-full resize-none bg-transparent px-4 pb-1 pt-3.5 text-sm text-slate-900 outline-none placeholder:text-slate-400"
+              className="flex-1 resize-none bg-transparent py-1.5 text-sm text-slate-900 outline-none placeholder:text-slate-400"
             />
-            <div className="flex items-center gap-2 px-3 pb-2.5">
-              <button
-                type="button"
-                className="text-slate-300"
-                aria-label="Attach file"
-                disabled
-                title="File attachments coming soon"
-              >
-                <Paperclip className="h-4 w-4" />
-              </button>
-              <div className="flex-1" />
-              <button
-                data-sandbox-target="send-button"
-                type="button"
-                onClick={onSend}
-                disabled={!createdAgentId || sending || !chatInput.trim()}
-                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-slate-950 text-white transition-opacity disabled:cursor-not-allowed disabled:opacity-30"
-                aria-label="Send"
-              >
-                {sending ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : (
-                  <ArrowUp className="h-4 w-4" />
-                )}
-              </button>
-            </div>
+
+            {/* Send button */}
+            <button
+              data-sandbox-target="send-button"
+              type="button"
+              onClick={onSend}
+              disabled={!createdAgentId || sending || !chatInput.trim()}
+              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-slate-950 text-white transition-opacity disabled:cursor-not-allowed disabled:opacity-30"
+              aria-label="Send"
+            >
+              {sending ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <ArrowUp className="h-4 w-4" />
+              )}
+            </button>
           </div>
         </div>
       </div>
