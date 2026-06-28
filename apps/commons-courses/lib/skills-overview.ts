@@ -2,7 +2,8 @@ import { unstable_cache } from "next/cache";
 import Course from "@/models/Course";
 import Enrollment from "@/models/Enrollment";
 import { connectDB } from "@/lib/db";
-import { filterCompletedChallenges, getPublishedSkillPacks } from "@/lib/skill-paths";
+import { getProgressBySkillSlug, type SkillProgressSummary } from "@/lib/skill-progress";
+import { getPublishedSkillPacks } from "@/lib/skill-paths";
 import type { CourseSkillPack, SkillLeaderboardEntry, SkillPack } from "@/types/skills";
 import type { Types } from "mongoose";
 
@@ -14,36 +15,10 @@ type CourseWithSkillPack = {
   skillPacks?: SkillPack[];
 };
 
-export type SkillProgressSummary = {
-  authenticated: boolean;
-  enrolled: boolean;
-  completedChallenges: string[];
-  points: number;
-  streak: number;
-  longestStreak: number;
-};
-
-type EnrollmentProgress = {
-  courseId: Types.ObjectId;
-  completedChallenges?: string[];
-  points?: number;
-  streak?: number;
-  longestStreak?: number;
-};
-
 export type SkillsOverview = {
   packs: CourseSkillPack[];
   leaderboard: SkillLeaderboardEntry[];
   progressBySlug: Record<string, SkillProgressSummary>;
-};
-
-const emptyProgress: SkillProgressSummary = {
-  authenticated: false,
-  enrolled: false,
-  completedChallenges: [],
-  points: 0,
-  streak: 0,
-  longestStreak: 0,
 };
 
 export async function getSkillsOverview(user?: {
@@ -73,15 +48,10 @@ export async function getSkillsOverview(user?: {
     getPublishedSkillPacks(course)
   );
   const skillCourseIds = courses.map((course) => course._id);
-  const enrollmentsPromise =
-    user?.id && packs.length > 0
-      ? Enrollment.find({
-          userId: user.id,
-          courseId: { $in: skillCourseIds },
-        })
-          .select("courseId completedChallenges points streak longestStreak")
-          .lean()
-      : Promise.resolve([]);
+  const progressPromise = getProgressBySkillSlug({
+    userId: user?.id,
+    packs,
+  });
   const leaderboardPromise = skillCourseIds.length
     ? Enrollment.aggregate([
         {
@@ -177,10 +147,10 @@ export async function getSkillsOverview(user?: {
         { $limit: 10 },
       ])
     : Promise.resolve([]);
-  const [enrollments, leaderboardRows] = await Promise.all([
-    enrollmentsPromise,
+  const [progressBySlug, leaderboardRows] = await Promise.all([
+    progressPromise,
     leaderboardPromise,
-  ]) as [EnrollmentProgress[], SkillLeaderboardEntry[]];
+  ]) as [Record<string, SkillProgressSummary>, SkillLeaderboardEntry[]];
 
   const leaderboard = leaderboardRows.map((row) => ({
     ...row,
@@ -191,11 +161,7 @@ export async function getSkillsOverview(user?: {
   return {
     packs,
     leaderboard,
-    progressBySlug: buildProgressBySlug({
-      packs,
-      enrollments,
-      authenticated: Boolean(user?.id),
-    }),
+    progressBySlug,
   };
 }
 
@@ -204,45 +170,3 @@ export const getPublicSkillsOverview = unstable_cache(
   ["commonlab-public-skills-overview"],
   { revalidate: 60 }
 );
-
-function buildProgressBySlug({
-  packs,
-  enrollments,
-  authenticated,
-}: {
-  packs: CourseSkillPack[];
-  enrollments: EnrollmentProgress[];
-  authenticated: boolean;
-}) {
-  const progressBySlug: Record<string, SkillProgressSummary> = {};
-  const enrollmentByCourseId = new Map(
-    enrollments.map((enrollment) => [enrollment.courseId.toString(), enrollment])
-  );
-
-  for (const pack of packs) {
-    const enrollment = enrollmentByCourseId.get(pack.courseId);
-    progressBySlug[pack.skillSlug] = enrollment
-      ? {
-          authenticated: true,
-          enrolled: true,
-          completedChallenges: filterCompletedChallenges(
-            enrollment.completedChallenges,
-            pack
-          ),
-          points: calculatePackPoints(enrollment.completedChallenges, pack),
-          streak: enrollment.streak ?? 0,
-          longestStreak: enrollment.longestStreak ?? 0,
-        }
-      : { ...emptyProgress, authenticated };
-  }
-
-  return progressBySlug;
-}
-
-function calculatePackPoints(completedChallenges: string[] | undefined, pack: SkillPack) {
-  const completed = new Set(filterCompletedChallenges(completedChallenges, pack));
-  return pack.challenges.reduce(
-    (sum, challenge) => sum + (completed.has(challenge.id) ? challenge.points : 0),
-    0
-  );
-}

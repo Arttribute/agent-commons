@@ -1,7 +1,8 @@
 "use client";
 
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { useSession } from "next-auth/react";
 import {
   ArrowRight,
   BookOpen,
@@ -49,13 +50,57 @@ export function SkillsClient({
   leaderboard,
   progressBySlug,
 }: SkillsClientProps) {
+  const { status } = useSession();
+  const [hydratedProgress, setHydratedProgress] = useState(progressBySlug);
+  const [progressLoading, setProgressLoading] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    if (status === "unauthenticated") {
+      setHydratedProgress(progressBySlug);
+      setProgressLoading(false);
+      return;
+    }
+
+    if (status !== "authenticated") {
+      setProgressLoading(true);
+      return;
+    }
+
+    async function loadProgress() {
+      setProgressLoading(true);
+      try {
+        const res = await fetch("/api/skills/progress", {
+          cache: "no-store",
+        });
+        if (!res.ok) return;
+        const data = (await res.json()) as {
+          authenticated?: boolean;
+          progressBySlug?: Record<string, SkillProgress>;
+        };
+        if (!cancelled && data.authenticated) {
+          setHydratedProgress(data.progressBySlug ?? {});
+        }
+      } finally {
+        if (!cancelled) setProgressLoading(false);
+      }
+    }
+
+    loadProgress();
+    return () => {
+      cancelled = true;
+    };
+  }, [progressBySlug, status]);
+
+  const showPersonalLoading = status === "loading" || progressLoading;
   const cards = useMemo<SkillCard[]>(
     () =>
       packs.map((pack) => ({
         pack,
-        progress: progressBySlug[pack.skillSlug] || emptyProgress,
+        progress: hydratedProgress[pack.skillSlug] || emptyProgress,
       })),
-    [packs, progressBySlug]
+    [hydratedProgress, packs]
   );
 
   const totals = cards.reduce(
@@ -108,6 +153,7 @@ export function SkillsClient({
                 value={String(totals.streak)}
                 color="text-orange-500"
                 bg="bg-orange-50"
+                loading={showPersonalLoading}
               />
               <Stat
                 icon={Zap}
@@ -115,6 +161,7 @@ export function SkillsClient({
                 value={String(totals.points)}
                 color="text-sky-500"
                 bg="bg-sky-50"
+                loading={showPersonalLoading}
               />
               <Stat
                 icon={Trophy}
@@ -122,6 +169,7 @@ export function SkillsClient({
                 value={String(totals.earnedSkills)}
                 color="text-amber-500"
                 bg="bg-amber-50"
+                loading={showPersonalLoading}
               />
             </div>
             {totals.inProgress > 0 ? (
@@ -199,8 +247,10 @@ export function SkillsClient({
                     </p>
                     <div className="mt-5 h-2 overflow-hidden rounded-full bg-slate-100">
                       <div
-                        className="h-full rounded-full bg-slate-950 transition-all"
-                        style={{ width: `${pct}%` }}
+                        className={`h-full rounded-full transition-all ${
+                          showPersonalLoading ? "animate-pulse bg-slate-200" : "bg-slate-950"
+                        }`}
+                        style={{ width: showPersonalLoading ? "100%" : `${pct}%` }}
                       />
                     </div>
                     <div className="mt-5 flex items-center justify-between gap-3">
@@ -315,19 +365,25 @@ function Stat({
   value,
   color,
   bg,
+  loading = false,
 }: {
   icon: typeof Flame;
   label: string;
   value: string;
   color: string;
   bg: string;
+  loading?: boolean;
 }) {
   return (
     <div className="rounded-lg bg-white p-3">
       <div className={`mb-2 inline-flex rounded-md p-1.5 ${bg}`}>
         <Icon className={`h-4 w-4 ${color}`} />
       </div>
-      <p className="text-lg font-black text-slate-950">{value}</p>
+      {loading ? (
+        <div className="my-1 h-5 w-8 animate-pulse rounded bg-slate-100" />
+      ) : (
+        <p className="text-lg font-black text-slate-950">{value}</p>
+      )}
       <p className="text-xs text-slate-500">{label}</p>
     </div>
   );

@@ -8,6 +8,12 @@ async function start(request: NextRequest, callbackUrl: string) {
     redirectTo: new URL(callbackUrl, origin).toString(),
   });
   if (!authorizeUrl || authorizeUrl.includes("error=Configuration")) {
+    if (request.nextUrl.searchParams.get("format") === "json") {
+      return NextResponse.json(
+        { error: "Could not start sign-in" },
+        { status: 502 }
+      );
+    }
     return NextResponse.redirect(
       new URL("/auth/signin?authError=Could+not+start+sign-in", origin),
     );
@@ -28,9 +34,18 @@ async function start(request: NextRequest, callbackUrl: string) {
     ? new URL(preparedUrl, authorizeUrl).search.slice(1)
     : "";
   if ((!prepared.ok && !preparedUrl) || !oauthQuery) {
+    if (request.nextUrl.searchParams.get("format") === "json") {
+      return NextResponse.json(
+        { error: "Could not prepare sign-in" },
+        { status: 502 }
+      );
+    }
     return NextResponse.redirect(
       new URL("/auth/signin?authError=Could+not+prepare+sign-in", origin),
     );
+  }
+  if (request.nextUrl.searchParams.get("format") === "json") {
+    return NextResponse.json({ oauthQuery });
   }
   return NextResponse.redirect(
     new URL(
