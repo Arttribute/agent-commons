@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect } from "react";
-import { Loader2, MessageSquareText, Send } from "lucide-react";
+import { useEffect, useRef } from "react";
+import { ArrowUp, Loader2, Paperclip } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { ChatMessage } from "./types";
 
@@ -26,66 +26,107 @@ export function ChatSurface({
   onInputChange,
   onSend,
 }: ChatSurfaceProps) {
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ block: "end" });
   }, [chatEndRef, messages, sending, activityLabel]);
 
+  // Auto-resize the textarea up to ~4 lines
+  useEffect(() => {
+    const el = textareaRef.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${Math.min(el.scrollHeight, 160)}px`;
+  }, [chatInput]);
+
+  const isEmpty = messages.length === 0 && !sending;
+
   return (
     <section
-      className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-slate-50"
+      className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-white"
       data-sandbox-target="chat"
     >
-      <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4">
-        <div className="mx-auto flex max-w-3xl flex-col gap-3">
-          {messages.map((message, index) => (
-            <ChatBubble
-              key={`${message.role}-${index}`}
-              role={message.role}
-              content={message.content}
-            />
-          ))}
-          {sending ? (
-            <div className="flex items-center gap-2 text-sm font-semibold text-slate-500">
-              <Loader2 className="h-4 w-4 animate-spin" />
-              {activityLabel || "Agent is thinking"}
-            </div>
-          ) : null}
-          <div ref={chatEndRef} />
+      {/* Messages / empty state */}
+      {isEmpty ? (
+        <div className="flex min-h-0 flex-1 items-center justify-center px-4">
+          <p className="text-center text-sm text-slate-400">
+            {createdAgentId
+              ? "Send a message to start chatting with your agent"
+              : "Create the agent first, then chat here"}
+          </p>
         </div>
-      </div>
-      <div className="border-t border-slate-200 bg-white p-3">
-        <div className="mx-auto flex max-w-3xl gap-2">
-          <input
-            data-sandbox-target="chat-input"
-            value={chatInput}
-            onChange={(event) => onInputChange(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === "Enter" && !event.shiftKey) {
-                event.preventDefault();
-                onSend();
-              }
-            }}
-            placeholder={
-              createdAgentId
-                ? "Message your live agent..."
-                : "Create the agent before chatting..."
-            }
-            className="min-w-0 flex-1 rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-slate-400"
-          />
-          <button
-            data-sandbox-target="send-button"
-            type="button"
-            onClick={onSend}
-            disabled={!createdAgentId || sending || !chatInput.trim()}
-            className="inline-flex items-center justify-center rounded-lg bg-slate-950 px-4 py-2 text-white disabled:cursor-not-allowed disabled:opacity-40"
-            aria-label="Send"
-          >
+      ) : (
+        <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4">
+          <div className="mx-auto flex max-w-3xl flex-col gap-3">
+            {messages.map((message, index) => (
+              <ChatBubble
+                key={`${message.role}-${index}`}
+                role={message.role}
+                content={message.content}
+              />
+            ))}
             {sending ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              <Send className="h-4 w-4" />
-            )}
-          </button>
+              <div className="flex items-center gap-2 text-sm font-semibold text-slate-500">
+                <Loader2 className="h-4 w-4 animate-spin" />
+                {activityLabel || "Agent is thinking"}
+              </div>
+            ) : null}
+            <div ref={chatEndRef} />
+          </div>
+        </div>
+      )}
+
+      {/* Input bar — unified rounded container, no hard border-t */}
+      <div className="px-3 pb-3 pt-2">
+        <div className="mx-auto max-w-3xl">
+          <div className="rounded-2xl border border-slate-200 bg-white shadow-sm transition-shadow focus-within:border-slate-300 focus-within:shadow-md">
+            <textarea
+              ref={textareaRef}
+              data-sandbox-target="chat-input"
+              value={chatInput}
+              rows={1}
+              onChange={(e) => onInputChange(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && !e.shiftKey) {
+                  e.preventDefault();
+                  onSend();
+                }
+              }}
+              placeholder={
+                createdAgentId
+                  ? "Message your agent…"
+                  : "Create the agent before chatting…"
+              }
+              className="w-full resize-none bg-transparent px-4 pb-1 pt-3.5 text-sm text-slate-900 outline-none placeholder:text-slate-400"
+            />
+            <div className="flex items-center gap-2 px-3 pb-2.5">
+              <button
+                type="button"
+                className="text-slate-300"
+                aria-label="Attach file"
+                disabled
+                title="File attachments coming soon"
+              >
+                <Paperclip className="h-4 w-4" />
+              </button>
+              <div className="flex-1" />
+              <button
+                data-sandbox-target="send-button"
+                type="button"
+                onClick={onSend}
+                disabled={!createdAgentId || sending || !chatInput.trim()}
+                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-slate-950 text-white transition-opacity disabled:cursor-not-allowed disabled:opacity-30"
+                aria-label="Send"
+              >
+                {sending ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <ArrowUp className="h-4 w-4" />
+                )}
+              </button>
+            </div>
+          </div>
         </div>
       </div>
     </section>
@@ -98,18 +139,12 @@ function ChatBubble({ role, content }: ChatMessage) {
     <div className={cn("flex", assistant ? "justify-start" : "justify-end")}>
       <div
         className={cn(
-          "max-w-[85%] rounded-2xl px-4 py-3 text-sm leading-6 shadow-sm",
+          "max-w-[85%] rounded-2xl px-4 py-3 text-sm leading-6",
           assistant
-            ? "rounded-bl-md bg-white text-slate-800"
+            ? "rounded-bl-md bg-slate-100 text-slate-800"
             : "rounded-br-md bg-slate-950 text-white"
         )}
       >
-        {assistant ? (
-          <div className="mb-1 flex items-center gap-1.5 text-xs font-black text-slate-500">
-            <MessageSquareText className="h-3.5 w-3.5" />
-            Agent
-          </div>
-        ) : null}
         <p className="whitespace-pre-wrap">{content}</p>
       </div>
     </div>

@@ -112,13 +112,7 @@ export function AgentLearnerSandbox({
   const [chatInput, setChatInput] = useState(
     "Help me plan three focused study sessions this week."
   );
-  const [messages, setMessages] = useState<ChatMessage[]>([
-    {
-      role: "assistant",
-      content:
-        "Create the agent first. Then I will run as your real Agent Commons agent here.",
-    },
-  ]);
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [logs, setLogs] = useState<SandboxLog[]>([
     {
       level: "info",
@@ -303,13 +297,6 @@ export function AgentLearnerSandbox({
     if (requireAuth() || creating || !canCreate) return;
     setCreating(true);
     addLog({ level: "info", message: "Creating a real Agent Commons agent..." });
-    const createdMessages: ChatMessage[] = [
-      {
-        role: "assistant",
-        content:
-          "Agent created in Agent Commons. Send a message to test the live agent.",
-      },
-    ];
 
     const response = await fetch(`/api/skills/${courseSlug}/sandbox`, {
       method: "POST",
@@ -326,7 +313,7 @@ export function AgentLearnerSandbox({
           taskTitle,
           message: chatInput,
         },
-        sandboxState: buildSandboxState({ messages: createdMessages }),
+        sandboxState: buildSandboxState(),
       }),
     });
     const payload = await response.json().catch(() => ({}));
@@ -345,7 +332,6 @@ export function AgentLearnerSandbox({
 
     setCreatedAgentId(payload.agentId);
     setCreditReward(payload.creditReward || config.creditReward || 0);
-    setMessages(createdMessages);
     addLog({
       level: "success",
       message: `Created Agent Commons agent ${payload.agentId}.`,
@@ -616,7 +602,7 @@ export function AgentLearnerSandbox({
         <header className="flex items-center justify-between gap-3 border-b border-slate-200 px-4 py-3">
           <div className="min-w-0">
             <p className="truncate text-xs font-bold uppercase tracking-widest text-slate-500">
-              {createdAgentId ? `Agent ${createdAgentId}` : "Agent Commons sandbox"}
+              Agent Commons sandbox
             </p>
             <h2 className="truncate text-lg font-semibold">
               {agentName || "Untitled agent"}
