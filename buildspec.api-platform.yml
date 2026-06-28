@@ -9,14 +9,19 @@ phases:
       - set -euo pipefail
       - IMAGE_TAG="${CODEBUILD_RESOLVED_SOURCE_VERSION:-manual}-${CODEBUILD_BUILD_NUMBER}"
       - REGISTRY="${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com"
-      - IDENTITY_IMAGE="${REGISTRY}/${IDENTITY_ECR_REPOSITORY}:${IMAGE_TAG}"
       - GATEWAY_IMAGE="${REGISTRY}/${GATEWAY_ECR_REPOSITORY}:${IMAGE_TAG}"
+      - >-
+        IDENTITY_IMAGE="$(aws cloudformation describe-stacks
+        --stack-name commons-platform-services
+        --query 'Stacks[0].Parameters[?ParameterKey==`IdentityImageUri`].ParameterValue | [0]'
+        --output text --region "$AWS_REGION" 2>/dev/null || true)"
+      - if [[ -z "$IDENTITY_IMAGE" || "$IDENTITY_IMAGE" == "None" || "${DEPLOY_IDENTITY:-false}" == "true" ]]; then IDENTITY_IMAGE="${REGISTRY}/${IDENTITY_ECR_REPOSITORY}:${IMAGE_TAG}"; fi
       - aws ecr get-login-password --region "$AWS_REGION" | docker login --username AWS --password-stdin "$REGISTRY"
   build:
     commands:
-      - docker build --platform linux/amd64 -f apps/commons-identity/Dockerfile -t "$IDENTITY_IMAGE" .
+      - if [[ "${DEPLOY_IDENTITY:-false}" == "true" ]]; then docker build --platform linux/amd64 -f apps/commons-identity/Dockerfile -t "$IDENTITY_IMAGE" .; fi
       - docker build --platform linux/amd64 -f apps/commons-api-gateway/Dockerfile -t "$GATEWAY_IMAGE" .
-      - docker push "$IDENTITY_IMAGE"
+      - if [[ "${DEPLOY_IDENTITY:-false}" == "true" ]]; then docker push "$IDENTITY_IMAGE"; fi
       - docker push "$GATEWAY_IMAGE"
   post_build:
     commands:
