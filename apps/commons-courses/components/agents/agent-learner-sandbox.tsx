@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ExternalLink, Terminal, X } from "lucide-react";
+import { ExternalLink, Loader2 as SandboxLoader, Terminal, X } from "lucide-react";
 import { ChatSurface } from "./agent-sandbox/chat-surface";
 import {
   IdentityPanel,
@@ -94,6 +94,9 @@ export function AgentLearnerSandbox({
   );
   const [taskTitle, setTaskTitle] = useState("Plan a realistic study week");
   const [activePanel, setActivePanel] = useState<ConfigPanel>("identity");
+  // True while we check the server for a previously-saved sandbox state.
+  // Prevents flashing the intro screen before we know whether to skip it.
+  const [sandboxLoading, setSandboxLoading] = useState(authenticated);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [logsOpen, setLogsOpen] = useState(false);
   const [guideIndex, setGuideIndex] = useState(0);
@@ -154,18 +157,25 @@ export function AgentLearnerSandbox({
   const hasUserMessage = messages.some((message) => message.role === "user");
 
   useEffect(() => {
-    if (!authenticated) return;
+    if (!authenticated) {
+      setSandboxLoading(false);
+      return;
+    }
     let cancelled = false;
     async function loadSandboxState() {
-      const response = await fetch(
-        `/api/skills/${courseSlug}/sandbox?challengeId=${encodeURIComponent(challengeId)}`
-      ).catch(() => null);
-      if (!response?.ok) return;
-      const payload = (await response.json().catch(() => ({}))) as {
-        state?: SandboxResumeState | null;
-      };
-      if (cancelled || !payload.state) return;
-      applySandboxState(payload.state);
+      try {
+        const response = await fetch(
+          `/api/skills/${courseSlug}/sandbox?challengeId=${encodeURIComponent(challengeId)}`
+        ).catch(() => null);
+        if (!response?.ok) return;
+        const payload = (await response.json().catch(() => ({}))) as {
+          state?: SandboxResumeState | null;
+        };
+        if (cancelled || !payload.state) return;
+        applySandboxState(payload.state);
+      } finally {
+        if (!cancelled) setSandboxLoading(false);
+      }
     }
     void loadSandboxState();
     return () => {
@@ -257,6 +267,16 @@ export function AgentLearnerSandbox({
       window.removeEventListener("scroll", onViewUpdate, true);
     };
   }, [activeStep, guideVisible, drawerOpen, logsOpen, activePanel]);
+
+  // Hold the correct screen until server state is known — prevents the intro
+  // screen from flashing before we discover the user already has a saved agent.
+  if (sandboxLoading) {
+    return (
+      <div className="relative flex min-h-0 flex-1 items-center justify-center overflow-hidden rounded-xl border border-slate-200 bg-white">
+        <SandboxLoader className="h-5 w-5 animate-spin text-slate-300" />
+      </div>
+    );
+  }
 
   if (introOpen && !completed) {
     return (

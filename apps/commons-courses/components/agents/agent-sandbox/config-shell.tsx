@@ -1,6 +1,6 @@
 "use client";
 
-import type { ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import {
   Bot,
   Hammer,
@@ -77,11 +77,21 @@ export function ConfigDrawer({
   onClose: () => void;
   children: ReactNode;
 }) {
+  // Suppress the slide transition on initial mount. Without this, some browsers
+  // briefly render the drawer at transform:none then animate it off-screen,
+  // making the sandbox look squished for ~150ms on first load.
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => {
+    const id = window.requestAnimationFrame(() => setMounted(true));
+    return () => window.cancelAnimationFrame(id);
+  }, []);
+
   const Icon = panelMeta[panel].icon;
   return (
     <div
       className={cn(
-        "absolute inset-y-0 left-0 z-40 max-h-full w-full border-r border-slate-200 bg-white shadow-xl transition-transform lg:w-[min(420px,calc(100%-3.5rem))]",
+        "absolute inset-y-0 left-0 z-40 max-h-full w-full border-r border-slate-200 bg-white shadow-xl lg:w-[min(420px,calc(100%-3.5rem))]",
+        mounted && "transition-transform",
         open ? "translate-x-0" : "-translate-x-full"
       )}
     >
