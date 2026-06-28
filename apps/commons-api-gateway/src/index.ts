@@ -51,6 +51,76 @@ export function createGatewayApp() {
     c.json({ status: "ok", service: "commons-api-gateway" }),
   );
 
+  async function publicProxy(
+    c: any,
+    service: "agent-commons",
+    baseUrl: string | undefined,
+    targetPath: string,
+  ) {
+    if (!baseUrl) {
+      return c.json(
+        {
+          error: {
+            type: "service_unavailable",
+            message: `${service} is not configured`,
+            requestId: c.get("requestId"),
+          },
+        },
+        503,
+      );
+    }
+    const url = new URL(targetPath, `${baseUrl.replace(/\/$/, "")}/`);
+    const incoming = new URL(c.req.url);
+    url.search = incoming.search;
+    const headers = new Headers(c.req.raw.headers);
+    headers.delete("host");
+    headers.delete("content-length");
+    headers.delete("authorization");
+
+    const response = await fetch(url, {
+      method: c.req.method,
+      headers,
+      body:
+        c.req.method === "GET" || c.req.method === "HEAD"
+          ? undefined
+          : c.req.raw.body,
+      redirect: "manual",
+      duplex: "half",
+    } as RequestInit);
+    const outputHeaders = new Headers(response.headers);
+    outputHeaders.set("x-request-id", c.get("requestId"));
+    outputHeaders.set("x-commons-service", service);
+    return new Response(response.body, {
+      status: response.status,
+      headers: outputHeaders,
+    });
+  }
+
+  app.get("/v1/oauth/providers", (c) =>
+    publicProxy(
+      c,
+      "agent-commons",
+      process.env.AGENT_COMMONS_INTERNAL_URL,
+      c.req.path,
+    ),
+  );
+  app.get("/v1/oauth/providers/:providerKey", (c) =>
+    publicProxy(
+      c,
+      "agent-commons",
+      process.env.AGENT_COMMONS_INTERNAL_URL,
+      c.req.path,
+    ),
+  );
+  app.get("/v1/oauth/callback/:providerKey", (c) =>
+    publicProxy(
+      c,
+      "agent-commons",
+      process.env.AGENT_COMMONS_INTERNAL_URL,
+      c.req.path,
+    ),
+  );
+
   app.use("/v1/*", async (c, next) => {
     const principal = await authenticate(c.req.header("authorization"));
     if (!principal) {

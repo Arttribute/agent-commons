@@ -1,0 +1,76 @@
+name: Deploy commons-platform to AWS
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - apps/commons-api-gateway/**
+      - apps/commons-identity/**
+      - infra/aws/api-platform-*.yml
+      - buildspec.api-platform.yml
+      - package.json
+      - pnpm-lock.yaml
+      - pnpm-workspace.yaml
+      - .dockerignore
+      - .github/workflows/deploy-commons-platform-aws.yml
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-commons-platform-aws-production
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  deploy:
+    name: Build and deploy platform in AWS
+    runs-on: ubuntu-latest
+    environment: production
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v5
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - name: Package source
+        run: git archive --format=zip --output=source.zip HEAD
+
+      - name: Upload source to AWS
+        id: source
+        run: |
+          version_id=$(aws s3api put-object \
+            --bucket "${{ vars.AWS_SOURCE_BUCKET }}" \
+            --key commons-platform/source.zip \
+            --body source.zip \
+            --query VersionId --output text)
+          echo "version_id=$version_id" >> "$GITHUB_OUTPUT"
+
+      - name: Start CodeBuild deployment
+        id: build
+        run: |
+          build_id=$(aws codebuild start-build \
+            --project-name commons-platform-production \
+            --source-version "${{ steps.source.outputs.version_id }}" \
+            --query 'build.id' --output text)
+          echo "id=$build_id" >> "$GITHUB_OUTPUT"
+
+      - name: Wait for deployment
+        run: |
+          while true; do
+            status=$(aws codebuild batch-get-builds \
+              --ids "${{ steps.build.outputs.id }}" \
+              --query 'builds[0].buildStatus' --output text)
+            case "$status" in
+              SUCCEEDED) exit 0 ;;
+              FAILED|FAULT|STOPPED|TIMED_OUT) exit 1 ;;
+              *) sleep 15 ;;
+            esac
+          done
