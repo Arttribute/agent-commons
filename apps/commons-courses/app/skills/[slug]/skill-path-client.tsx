@@ -302,8 +302,8 @@ export default function SkillPathClient({ slug }: Props) {
             />
           </aside>
 
-          <section className="min-h-0 overflow-y-auto px-4 py-4 sm:px-6">
-            <div className="mx-auto flex min-h-full max-w-3xl flex-col">
+          <section className={cn("min-h-0 px-4 py-4 sm:px-6", !locked && challenge.sandbox?.enabled ? "flex flex-col overflow-hidden" : "overflow-y-auto")}>
+            <div className={cn("mx-auto max-w-3xl flex flex-col", !locked && challenge.sandbox?.enabled ? "min-h-0 flex-1" : "min-h-full")}>
               <div className="mb-3 flex items-center justify-between gap-3">
                 <div>
                   <p className="text-xs font-bold uppercase tracking-widest text-slate-500">

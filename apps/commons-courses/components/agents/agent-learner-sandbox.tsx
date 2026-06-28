@@ -262,7 +262,7 @@ export function AgentLearnerSandbox({
 
   if (introOpen && !completed) {
     return (
-      <div className="relative flex h-full min-h-0 flex-1 overflow-hidden rounded-xl border border-slate-200 bg-white text-slate-950">
+      <div className="relative flex min-h-0 flex-1 overflow-hidden rounded-xl border border-slate-200 bg-white text-slate-950">
         <SandboxIntro
           intro={config.intro}
           title={config.title}
@@ -275,7 +275,7 @@ export function AgentLearnerSandbox({
 
   if (completionSent) {
     return (
-      <div className="relative flex h-full min-h-0 flex-1 overflow-hidden rounded-xl border border-slate-200 bg-white text-slate-950">
+      <div className="relative flex min-h-0 flex-1 overflow-hidden rounded-xl border border-slate-200 bg-white text-slate-950">
         <SandboxCompletion
           completion={config.completion}
           creditReward={creditReward}
@@ -597,7 +597,7 @@ export function AgentLearnerSandbox({
   }
 
   return (
-    <div className="relative flex h-full min-h-0 flex-1 overflow-hidden rounded-xl border border-slate-200 bg-white text-slate-950">
+    <div className="relative flex min-h-0 flex-1 overflow-hidden rounded-xl border border-slate-200 bg-white text-slate-950">
       <ConfigRail
         activePanel={activePanel}
         drawerOpen={drawerOpen}

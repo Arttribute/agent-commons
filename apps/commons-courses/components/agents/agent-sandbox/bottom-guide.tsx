@@ -6,7 +6,6 @@ import {
   EyeOff,
   Loader2,
   Play,
-  Save,
   Check,
 } from "lucide-react";
 
@@ -127,14 +126,10 @@ export function BottomGuide({
               type="button"
               onClick={onSync}
               disabled={!canSync || syncing}
-              className="inline-flex items-center gap-2 rounded-lg border border-slate-200 px-4 py-2 text-xs font-black text-slate-700 disabled:cursor-not-allowed disabled:opacity-40"
+              className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-2 text-xs font-bold text-slate-600 disabled:cursor-not-allowed disabled:opacity-40"
             >
-              {syncing ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <Save className="h-4 w-4" />
-              )}
-              Save changes
+              {syncing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
+              Save
             </button>
           ) : null}
           {createdAgentId ? (
