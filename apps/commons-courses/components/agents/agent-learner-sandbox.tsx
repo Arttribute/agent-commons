@@ -1,13 +1,12 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type MutableRefObject } from "react";
 import { ExternalLink, Loader2 as SandboxLoader, Terminal, X } from "lucide-react";
 import { ChatSurface } from "./agent-sandbox/chat-surface";
 import {
   IdentityPanel,
   SkillsPanel,
   ToolsPanel,
-  WorkflowPanel,
 } from "./agent-sandbox/config-panels";
 import { ConfigDrawer, ConfigRail } from "./agent-sandbox/config-shell";
 import { BottomGuide } from "./agent-sandbox/bottom-guide";
@@ -65,19 +64,14 @@ export function AgentLearnerSandbox({
   onContinue,
 }: Props) {
   const [introOpen, setIntroOpen] = useState(Boolean(config.intro?.enabled));
-  const [agentName, setAgentName] = useState(
-    config.starterAgent?.name || "Study Planner Agent"
-  );
-  const [persona, setPersona] = useState(
-    config.starterAgent?.persona ||
-      "A friendly study planning coach for beginners"
-  );
+  const [agentName, setAgentName] = useState(config.starterAgent?.name || "");
+  const [persona, setPersona] = useState(config.starterAgent?.persona || "");
   const [systemPrompt, setSystemPrompt] = useState(
-    config.starterAgent?.systemPrompt ||
-      "You are a friendly study planning coach for beginners. Help learners turn goals into small weekly plans. Ask clarifying questions when details are missing. Be practical, concise, and encouraging."
+    config.starterAgent?.systemPrompt || ""
   );
   const [selectedSkills, setSelectedSkills] = useState<string[]>(
-    (config.skillTemplates || []).slice(0, 1).map((skill) => skill.id)
+    config.starterSkillIds ??
+      (config.skillTemplates || []).slice(0, 1).map((skill) => skill.id)
   );
   const [skillInstructions, setSkillInstructions] = useState<
     Record<string, string>
@@ -90,7 +84,8 @@ export function AgentLearnerSandbox({
     )
   );
   const [selectedTools, setSelectedTools] = useState<string[]>(
-    (config.toolTemplates || []).slice(0, 1).map((tool) => tool.id)
+    config.starterToolIds ??
+      (config.toolTemplates || []).slice(0, 1).map((tool) => tool.id)
   );
   const [taskTitle, setTaskTitle] = useState("Plan a realistic study week");
   const [activePanel, setActivePanel] = useState<ConfigPanel>("identity");
@@ -108,13 +103,17 @@ export function AgentLearnerSandbox({
   const [reviewing, setReviewing] = useState<string | null>(null);
   const [runActivity, setRunActivity] = useState<string | undefined>();
   const [highlightRect, setHighlightRect] = useState<HighlightRect | null>(null);
+  const highlightedElementRef = useRef<{
+    element: HTMLElement;
+    boxShadow: string;
+    position: string;
+    zIndex: string;
+  } | null>(null);
   const [reviews, setReviews] = useState<Record<string, ReviewResult>>({});
   const [createdAgentId, setCreatedAgentId] = useState<string | undefined>();
   const [completionSent, setCompletionSent] = useState(completed);
   const [creditReward, setCreditReward] = useState(config.creditReward || 0);
-  const [chatInput, setChatInput] = useState(
-    "Help me plan three focused study sessions this week."
-  );
+  const [chatInput, setChatInput] = useState("");
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [logs, setLogs] = useState<SandboxLog[]>([
     {
@@ -129,7 +128,9 @@ export function AgentLearnerSandbox({
   const activeStep = guide[guideIndex];
   const reviewTargets = config.review?.enabled ? config.review.targets || [] : [];
   const promptReviewPassed =
-    !reviewTargets.includes("system_prompt") || reviews.system_prompt?.passed;
+    config.review?.required === false ||
+    !reviewTargets.includes("system_prompt") ||
+    reviews.system_prompt?.passed;
   const needsGoogleConnection = selectedTools.some((toolId) => {
     const tool = config.toolTemplates?.find((item) => item.id === toolId);
     return tool?.connectorKind?.startsWith("google_") || tool?.connectorKind === "gmail";
@@ -144,6 +145,7 @@ export function AgentLearnerSandbox({
 
   const canCreate =
     agentName.trim().length > 1 &&
+    persona.trim().length > 1 &&
     systemPrompt.trim().length > 40 &&
     promptReviewPassed;
 
@@ -191,6 +193,7 @@ export function AgentLearnerSandbox({
 
   useEffect(() => {
     if (!activeStep || !guideVisible) {
+      clearGuideHighlight(highlightedElementRef);
       setHighlightRect(null);
       return;
     }
@@ -221,10 +224,22 @@ export function AgentLearnerSandbox({
         if (el instanceof HTMLElement) finalEl = el;
       }
 
+      applyGuideHighlight(finalEl, highlightedElementRef);
+
       if (finalEl) {
         const r = finalEl.getBoundingClientRect();
-        setHighlightRect({ top: r.top, left: r.left, width: r.width, height: r.height });
+        const isInViewport =
+          r.bottom > 0 &&
+          r.right > 0 &&
+          r.top < window.innerHeight &&
+          r.left < window.innerWidth;
+        setHighlightRect(
+          isInViewport
+            ? { top: r.top, left: r.left, width: r.width, height: r.height }
+            : null
+        );
       } else {
+        clearGuideHighlight(highlightedElementRef);
         setHighlightRect(null);
       }
     };
@@ -261,6 +276,7 @@ export function AgentLearnerSandbox({
 
     return () => {
       active = false;
+      clearGuideHighlight(highlightedElementRef);
       window.clearTimeout(timeout);
       cancelAnimationFrame(frameId);
       window.removeEventListener("resize", onViewUpdate);
@@ -286,18 +302,6 @@ export function AgentLearnerSandbox({
           title={config.title}
           brief={config.brief}
           onStart={() => setIntroOpen(false)}
-        />
-      </div>
-    );
-  }
-
-  if (completionSent) {
-    return (
-      <div className="relative flex min-h-0 flex-1 overflow-hidden rounded-xl border border-slate-200 bg-white text-slate-950">
-        <SandboxCompletion
-          completion={config.completion}
-          creditReward={creditReward}
-          onContinue={onContinue}
         />
       </div>
     );
@@ -606,6 +610,16 @@ export function AgentLearnerSandbox({
     openGuideIndex(nextIndex);
   }
 
+  async function previousGuideStep() {
+    const nextIndex = Math.max(guideIndex - 1, 0);
+    setGuideIndex(nextIndex);
+    setGuideVisible(true);
+    if (createdAgentId) {
+      await syncAgent("Saved changes before moving back.", { guideIndex: nextIndex });
+    }
+    openGuideIndex(nextIndex);
+  }
+
   return (
     <div className="relative flex min-h-0 flex-1 overflow-hidden rounded-xl border border-slate-200 bg-white text-slate-950">
       <ConfigRail
@@ -672,17 +686,22 @@ export function AgentLearnerSandbox({
             createdAgentId={createdAgentId}
             chatEndRef={chatEndRef}
             activityLabel={runActivity}
+            placeholder={config.placeholders?.chatInput}
             onInputChange={setChatInput}
             onSend={sendMessage}
           />
           {logsOpen ? (
-            <aside className="hidden min-h-0 w-72 shrink-0 overflow-hidden border-l border-slate-200 bg-white lg:block">
-              <LogsPanel logs={logs} />
-            </aside>
-          ) : null}
-          {logsOpen ? (
-            <div className="absolute inset-y-0 right-0 z-40 w-full border-l border-slate-200 bg-white shadow-2xl lg:hidden">
+            <div className="absolute inset-y-0 right-0 z-40 w-full max-w-sm border-l border-slate-200 bg-white shadow-2xl sm:w-96">
               <LogsPanel logs={logs} onClose={() => setLogsOpen(false)} />
+            </div>
+          ) : null}
+          {completionSent ? (
+            <div className="pointer-events-auto absolute inset-x-3 top-3 z-30 sm:inset-x-auto sm:right-3 sm:w-80">
+              <SandboxCompletion
+                completion={config.completion}
+                creditReward={creditReward}
+                onContinue={onContinue}
+              />
             </div>
           ) : null}
         </div>
@@ -699,6 +718,7 @@ export function AgentLearnerSandbox({
           creating={creating}
           createdAgentId={createdAgentId}
           onOpenStep={openGuideStep}
+          onPreviousStep={() => void previousGuideStep()}
           onNextStep={() => void nextGuideStep()}
           onToggleGuide={() => setGuideVisible((v) => !v)}
           onCreate={createAgent}
@@ -717,6 +737,7 @@ export function AgentLearnerSandbox({
         guideLength={guide.length}
         placement={activeStep?.placement}
         visible={guideVisible && Boolean(activeStep)}
+        onPrevious={() => void previousGuideStep()}
         onNext={() => void nextGuideStep()}
         onDismiss={() => setGuideVisible(false)}
       />
@@ -730,6 +751,7 @@ export function AgentLearnerSandbox({
           agentName={agentName}
           persona={persona}
           systemPrompt={systemPrompt}
+          placeholders={config.placeholders}
           reviewEnabled={reviewTargets.includes("system_prompt")}
           review={reviews.system_prompt}
           reviewing={reviewing === "system_prompt"}
@@ -753,6 +775,7 @@ export function AgentLearnerSandbox({
           skills={config.skillTemplates || []}
           selected={selectedSkills}
           skillInstructions={skillInstructions}
+          placeholder={config.placeholders?.skillInstructions}
           onChange={(items) => {
             setSelectedSkills(items);
             setReviews((current) => {
@@ -763,6 +786,16 @@ export function AgentLearnerSandbox({
           }}
           onInstructionChange={(id, value) => {
             setSkillInstructions((current) => ({ ...current, [id]: value }));
+            setReviews((current) => {
+              const rest = { ...current };
+              delete rest.skills;
+              return rest;
+            });
+          }}
+          onAddSkill={(value) => {
+            const id = `custom-skill-${Date.now()}`;
+            setSkillInstructions((current) => ({ ...current, [id]: value.trim() }));
+            setSelectedSkills([id]);
             setReviews((current) => {
               const rest = { ...current };
               delete rest.skills;
@@ -786,7 +819,7 @@ export function AgentLearnerSandbox({
         />
       );
     }
-    return <WorkflowPanel taskTitle={taskTitle} onTaskChange={setTaskTitle} />;
+    return null;
   }
 
   function buildSandboxState(
@@ -915,13 +948,58 @@ function defaultGuideSelector(target?: string) {
     skills: '[data-sandbox-target="skills"]',
     tools: '[data-sandbox-target="tools"]',
     connectors: '[data-sandbox-target="connect-google"]',
-    workflows: '[data-sandbox-target="workflows"]',
-    tasks: '[data-sandbox-target="first-task"]',
+    workflows: '[data-sandbox-target="chat-input"]',
+    tasks: '[data-sandbox-target="chat-input"]',
     chat: '[data-sandbox-target="chat-input"]',
     logs: '[data-sandbox-target="logs-panel"]',
     publish: '[data-sandbox-target="finish-sandbox"]',
   };
   return target ? selectors[target] : "";
+}
+
+function applyGuideHighlight(
+  element: HTMLElement | null,
+  ref: MutableRefObject<{
+    element: HTMLElement;
+    boxShadow: string;
+    position: string;
+    zIndex: string;
+  } | null>
+) {
+  if (!element) {
+    clearGuideHighlight(ref);
+    return;
+  }
+  if (ref.current?.element === element) return;
+  clearGuideHighlight(ref);
+  ref.current = {
+    element,
+    boxShadow: element.style.boxShadow,
+    position: element.style.position,
+    zIndex: element.style.zIndex,
+  };
+  if (getComputedStyle(element).position === "static") {
+    element.style.position = "relative";
+  }
+  element.style.zIndex = element.style.zIndex || "1";
+  element.style.boxShadow =
+    "0 0 0 2px rgba(15,23,42,0.88) inset, 0 0 0 4px rgba(14,165,233,0.16) inset";
+}
+
+function clearGuideHighlight(
+  ref: MutableRefObject<{
+    element: HTMLElement;
+    boxShadow: string;
+    position: string;
+    zIndex: string;
+  } | null>
+) {
+  const current = ref.current;
+  if (!current) return;
+  current.element.style.boxShadow = current.boxShadow;
+  current.element.style.position = current.position;
+  current.element.style.zIndex = current.zIndex;
+  ref.current = null;
 }
 
 function GuideTour({
@@ -931,6 +1009,7 @@ function GuideTour({
   guideLength,
   placement = "auto",
   visible,
+  onPrevious,
   onNext,
   onDismiss,
 }: {
@@ -940,10 +1019,12 @@ function GuideTour({
   guideLength: number;
   placement?: "top" | "right" | "bottom" | "left" | "auto";
   visible: boolean;
+  onPrevious: () => void;
   onNext: () => void;
   onDismiss: () => void;
 }) {
   if (!visible || !rect || !step) return null;
+  if (typeof window === "undefined") return null;
 
   const gap = 12;
   const vw = window.innerWidth;
@@ -951,8 +1032,6 @@ function GuideTour({
   const dialogW = 216;
   const dialogH = 132;
 
-  // On mobile the floating dialog causes clutter — just show the highlight ring.
-  // Step text is already visible in the BottomGuide bar.
   const isMobile = vw < 640;
 
   // Keep the dialog above the chat input row so it never covers the Send button
@@ -977,25 +1056,11 @@ function GuideTour({
   const style = isMobile ? {} : tourDialogStyle(rect, resolved, gap, dialogW, dialogH, vw, safeBottom);
   const isLast = guideIndex + 1 >= guideLength;
 
-  return (
-    <div className="pointer-events-none fixed inset-0 z-50">
-      {/* Highlight ring only — no dark backdrop */}
-      <div
-        className="pointer-events-none absolute rounded-lg border-2 border-sky-500 shadow-[0_0_0_4px_rgba(14,165,233,0.12)]"
-        style={{
-          top: rect.top - 5,
-          left: rect.left - 5,
-          width: rect.width + 10,
-          height: rect.height + 10,
-        }}
-      />
-      {/* Floating tooltip — desktop only */}
-      {!isMobile ? (
-        <div
-          className="pointer-events-auto absolute overflow-hidden rounded-xl border border-slate-200 bg-white text-slate-950 shadow-xl"
-          style={{ ...style, width: dialogW }}
-        >
-          <div className="flex items-center justify-between px-3 pt-2.5 pb-0">
+  if (isMobile) {
+    return (
+      <div className="pointer-events-none fixed inset-x-3 bottom-[82px] z-50">
+        <div className="pointer-events-auto rounded-xl border border-slate-200 bg-white/95 p-3 text-slate-950 shadow-xl backdrop-blur">
+          <div className="flex items-center justify-between gap-3">
             <span className="text-[10px] font-bold uppercase tracking-widest text-slate-400">
               {guideIndex + 1} / {guideLength}
             </span>
@@ -1008,21 +1073,71 @@ function GuideTour({
               <X className="h-3.5 w-3.5" />
             </button>
           </div>
-          <div className="px-3 pb-0 pt-1.5">
-            <p className="text-sm font-bold leading-snug">{step.title}</p>
-            <p className="mt-1 text-xs leading-relaxed text-slate-500">{step.body}</p>
-          </div>
-          <div className="flex items-center justify-end px-3 py-2.5">
+          <p className="mt-1.5 text-sm font-bold leading-snug">{step.title}</p>
+          <p className="mt-1 text-xs leading-relaxed text-slate-500">{step.body}</p>
+          <div className="mt-3 flex items-center justify-between gap-2">
             <button
               type="button"
-              onClick={onNext}
+              onClick={onPrevious}
+              disabled={guideIndex === 0}
+              className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-bold text-slate-700 disabled:opacity-35"
+            >
+              Back
+            </button>
+            <button
+              type="button"
+              onClick={isLast ? onDismiss : onNext}
               className="rounded-lg bg-slate-950 px-3 py-1.5 text-xs font-bold text-white"
             >
-              {isLast ? "Done" : "Next →"}
+              {isLast ? "Done" : "Next"}
             </button>
           </div>
         </div>
-      ) : null}
+      </div>
+    );
+  }
+
+  return (
+    <div className="pointer-events-none fixed inset-0 z-50">
+      <div
+        className="pointer-events-auto absolute overflow-hidden rounded-xl border border-slate-200 bg-white text-slate-950 shadow-xl"
+        style={{ ...style, width: dialogW }}
+      >
+        <div className="flex items-center justify-between px-3 pt-2.5 pb-0">
+          <span className="text-[10px] font-bold uppercase tracking-widest text-slate-400">
+            {guideIndex + 1} / {guideLength}
+          </span>
+          <button
+            type="button"
+            onClick={onDismiss}
+            className="rounded p-0.5 text-slate-400 hover:bg-slate-100 hover:text-slate-600"
+            aria-label="Hide guide"
+          >
+            <X className="h-3.5 w-3.5" />
+          </button>
+        </div>
+        <div className="px-3 pb-0 pt-1.5">
+          <p className="text-sm font-bold leading-snug">{step.title}</p>
+          <p className="mt-1 text-xs leading-relaxed text-slate-500">{step.body}</p>
+        </div>
+        <div className="flex items-center justify-between px-3 py-2.5">
+          <button
+            type="button"
+            onClick={onPrevious}
+            disabled={guideIndex === 0}
+            className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-bold text-slate-700 disabled:opacity-35"
+          >
+            Back
+          </button>
+          <button
+            type="button"
+            onClick={isLast ? onDismiss : onNext}
+            className="rounded-lg bg-slate-950 px-3 py-1.5 text-xs font-bold text-white"
+          >
+            {isLast ? "Done" : "Next"}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

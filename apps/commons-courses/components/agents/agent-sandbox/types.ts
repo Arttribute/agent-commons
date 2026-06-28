@@ -38,7 +38,7 @@ export type SandboxResumeState = {
   reviews?: Record<string, ReviewResult>;
 };
 
-export type ConfigPanel = "identity" | "skills" | "tools" | "workflow";
+export type ConfigPanel = "identity" | "skills" | "tools";
 
 export const targetToPanel: Partial<Record<AgentSandboxStepTarget, ConfigPanel>> = {
   identity: "identity",
@@ -46,6 +46,4 @@ export const targetToPanel: Partial<Record<AgentSandboxStepTarget, ConfigPanel>>
   skills: "skills",
   tools: "tools",
   connectors: "tools",
-  workflows: "workflow",
-  tasks: "workflow",
 };

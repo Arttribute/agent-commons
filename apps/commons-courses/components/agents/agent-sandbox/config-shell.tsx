@@ -6,7 +6,6 @@ import {
   Hammer,
   PanelLeft,
   Sparkles,
-  Workflow,
   X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -16,7 +15,6 @@ export const panelMeta: Record<ConfigPanel, { label: string; icon: typeof Bot }>
   identity: { label: "Identity", icon: Bot },
   skills: { label: "Skills", icon: Sparkles },
   tools: { label: "Tools", icon: Hammer },
-  workflow: { label: "Workflow", icon: Workflow },
 };
 
 export function ConfigRail({

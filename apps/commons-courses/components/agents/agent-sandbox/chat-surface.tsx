@@ -2,6 +2,7 @@
 
 import { useEffect, useRef } from "react";
 import { ArrowUp, Loader2, Paperclip } from "lucide-react";
+import { RichTextRenderer } from "@/components/rich-text-renderer";
 import { cn } from "@/lib/utils";
 import type { ChatMessage } from "./types";
 
@@ -12,6 +13,7 @@ type ChatSurfaceProps = {
   createdAgentId?: string;
   chatEndRef: React.RefObject<HTMLDivElement | null>;
   activityLabel?: string;
+  placeholder?: string;
   onInputChange: (value: string) => void;
   onSend: () => void;
 };
@@ -23,6 +25,7 @@ export function ChatSurface({
   createdAgentId,
   chatEndRef,
   activityLabel,
+  placeholder,
   onInputChange,
   onSend,
 }: ChatSurfaceProps) {
@@ -109,7 +112,7 @@ export function ChatSurface({
               }}
               placeholder={
                 createdAgentId
-                  ? "Message your agent…"
+                  ? placeholder || "Message your agent..."
                   : "Create the agent before chatting…"
               }
               className="flex-1 resize-none bg-transparent py-1.5 text-sm text-slate-900 outline-none placeholder:text-slate-400"
@@ -149,7 +152,14 @@ function ChatBubble({ role, content }: ChatMessage) {
             : "rounded-br-md bg-slate-950 text-white"
         )}
       >
-        <p className="whitespace-pre-wrap">{content}</p>
+        {assistant ? (
+          <RichTextRenderer
+            value={content}
+            className="text-sm leading-6 text-slate-800"
+          />
+        ) : (
+          <p className="whitespace-pre-wrap">{content}</p>
+        )}
       </div>
     </div>
   );

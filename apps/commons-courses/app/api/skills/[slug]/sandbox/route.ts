@@ -452,13 +452,14 @@ function buildInstructions(
     (config.toolTemplates || []).map((tool) => [tool.id, tool])
   );
   const selectedSkills = (agent.skills || [])
-    .map((id) => skillTemplates.get(id))
-    .filter(Boolean)
-    .map((skill) => {
+    .map((id) => {
+      const skill = skillTemplates.get(id);
       const instructions =
-        agent.skillInstructions?.[skill!.id]?.trim() || skill!.instructions;
-      return `Skill: ${skill!.name}\n${instructions}`;
-    });
+        agent.skillInstructions?.[id]?.trim() || skill?.instructions || "";
+      if (!instructions) return "";
+      return `Skill: ${skill?.name || customSkillTitle(instructions)}\n${instructions}`;
+    })
+    .filter(Boolean);
   const selectedTools = (agent.tools || [])
     .map((id) => toolTemplates.get(id))
     .filter(Boolean)
@@ -477,4 +478,13 @@ function buildInstructions(
   ]
     .filter(Boolean)
     .join("\n\n");
+}
+
+function customSkillTitle(value: string) {
+  const firstLine = value
+    .split("\n")
+    .map((line) => line.trim())
+    .find(Boolean);
+  if (!firstLine) return "Custom skill";
+  return firstLine.length > 48 ? `${firstLine.slice(0, 45)}...` : firstLine;
 }

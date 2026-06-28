@@ -55,6 +55,7 @@ export type AgentSandboxReviewTarget = "system_prompt" | "skills";
 export type AgentSandboxReviewConfig = {
   enabled: boolean;
   targets: AgentSandboxReviewTarget[];
+  required?: boolean;
   minScore?: number;
   rubric?: string;
   model?: string;
@@ -112,6 +113,15 @@ export type AgentSandboxConfig = {
     persona?: string;
     systemPrompt?: string;
   };
+  placeholders?: {
+    agentName?: string;
+    persona?: string;
+    systemPrompt?: string;
+    skillInstructions?: string;
+    chatInput?: string;
+  };
+  starterSkillIds?: string[];
+  starterToolIds?: string[];
   skillTemplates?: AgentSandboxSkillTemplate[];
   toolTemplates?: AgentSandboxToolTemplate[];
   review?: AgentSandboxReviewConfig;

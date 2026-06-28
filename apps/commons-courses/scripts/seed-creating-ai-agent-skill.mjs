@@ -36,6 +36,7 @@ const bucket = process.env.COURSE_MEDIA_S3_BUCKET;
 const region = process.env.COURSE_MEDIA_S3_REGION;
 const publicBaseUrl =
   process.env.COURSE_MEDIA_CDN_URL || process.env.COURSE_MEDIA_PUBLIC_URL;
+const skipMediaUpload = process.env.COURSE_MEDIA_SKIP_UPLOAD === "1";
 
 const CourseSchema = new mongoose.Schema({}, { strict: false, timestamps: true });
 const Course = mongoose.models.Course || mongoose.model("Course", CourseSchema);
@@ -58,8 +59,12 @@ function rich(paragraphs) {
 
 async function upsertMedia(filename) {
   const filePath = path.join(sourceDir, filename);
-  const data = fs.readFileSync(filePath);
   const key = `course-media/${targetCourseSlug}/${skillSlug}/${filename}`;
+  if (skipMediaUpload) {
+    return `${publicBaseUrl.replace(/\/+$/, "")}/${key}`;
+  }
+
+  const data = fs.readFileSync(filePath);
   const client = createS3Client();
 
   await client.send(
@@ -95,7 +100,7 @@ function createSkillPack(assetUrls) {
     slug: skillSlug,
     enabled: true,
     title: "Creating an AI Agent",
-    subtitle: "Learn system prompts, skills, tools, and then build a beginner agent.",
+    subtitle: "Learn system prompts, tools, skills, and then build a beginner agent.",
     coverUrl: assetUrls.cover,
     learnerPromise:
       "By the end, you will understand the parts of an AI agent and create one in the CommonLab agent sandbox.",
@@ -128,12 +133,12 @@ function createSkillPack(assetUrls) {
         questions: [
           {
             id: "q1",
-            prompt: "What does a system prompt mainly give an agent?",
+            prompt: "What does a system prompt mainly establish for an agent?",
             options: [
               "Identity, behavior, priorities, and rules",
-              "A billing account",
-              "A faster internet connection",
-              "A database table",
+              "The model's pre-training data and base intelligence",
+              "The external apps the agent can access",
+              "The conversation history from every previous user",
             ],
             answerIndex: 0,
             explanation:
@@ -141,12 +146,12 @@ function createSkillPack(assetUrls) {
           },
           {
             id: "q2",
-            prompt: "Why can the same LLM act like different agents?",
+            prompt: "Why can the same LLM act like a learning coach in one setup and a coding partner in another?",
             options: [
               "Different system prompts can shape different roles and behaviors",
-              "The model forgets its training every time",
-              "Agents do not use LLMs",
-              "Tools automatically rewrite every response",
+              "Each agent must use a different kind of language model",
+              "The user interface automatically changes the model's training",
+              "Connected tools decide the agent's personality before it responds",
             ],
             answerIndex: 0,
             explanation:
@@ -183,12 +188,12 @@ function createSkillPack(assetUrls) {
         questions: [
           {
             id: "q1",
-            prompt: "Which three parts make a system prompt clearer?",
+            prompt: "Which set best matches the slide's structure for a good system prompt?",
             options: [
               "Persona, goal, and boundaries",
-              "Logo, color, and font",
-              "Price, coupon, and checkout",
-              "Password, username, and email",
+              "Model, temperature, and token limit",
+              "Memory, data source, and output format",
+              "Name, greeting, and closing sentence",
             ],
             answerIndex: 0,
             explanation:
@@ -196,12 +201,12 @@ function createSkillPack(assetUrls) {
           },
           {
             id: "q2",
-            prompt: "Which boundary belongs in a legal information assistant prompt?",
+            prompt: "Which instruction is a useful boundary for a legal information assistant?",
             options: [
               "Do not present information as legal advice",
-              "Always make jokes before answering",
-              "Ignore jurisdiction when it matters",
-              "Promise a legal outcome",
+              "Answer confidently even when the jurisdiction is unclear",
+              "Prioritize speed over clarifying important context",
+              "Avoid mentioning limits because it may reduce trust",
             ],
             answerIndex: 0,
             explanation:
@@ -221,29 +226,29 @@ function createSkillPack(assetUrls) {
         assetAlt: "A slide explaining tools and configuration for agents.",
         accentColor: "#86EFAC",
         audioCue: "spark",
-        hook: "Skills guide the work. Tools do the work.",
+        hook: "Tools connect agents to apps, files, data, and services.",
         lesson: rich([
-          "Skills tell the agent how to do a task. Tools let the agent carry it out.",
-          "A tool is a capability the agent can use when it needs to do something beyond writing a response. It might search the web, read a file, analyze a spreadsheet, or run code.",
-          "Some tools connect the agent to external apps and services. Google Calendar can help it check schedules. Gmail can help it find or draft emails. Google Drive can help it find files. GitHub can help it inspect code and issues.",
-          "Connected tools let the agent work with the apps where your information already lives. Scoped permissions and limits keep tool use clear and safe.",
+          "A tool is a capability an agent can use when it needs to do something beyond writing a response.",
+          "Tools connect agents to the places where work happens: apps, files, data, services, and code environments. A tool might search the web, read a file, analyze a spreadsheet, run code, or call a connected service.",
+          "Configuration matters because a useful agent should not have unlimited access by default. Scoped permissions define what the agent is allowed to reach, and limits define how it should use that access.",
+          "For example, a calendar-connected agent might check approved availability before suggesting study times. The tool gives access; the configuration keeps that access clear, purposeful, and safe.",
         ]),
         keyIdeas: [
+          "Tools connect agents to apps, files, data, and services.",
           "Tools let agents act outside the chat response.",
-          "Connectors link agents to apps and services.",
-          "Permissions should be scoped to what the agent needs.",
+          "Scoped permissions and limits keep tool use clear and safe.",
         ],
         microTask:
           "Choose one tool your first agent should use and write why it needs that tool.",
         questions: [
           {
             id: "q1",
-            prompt: "What is the role of a tool?",
+            prompt: "What is the role of a tool in an agent setup?",
             options: [
               "To let an agent carry out actions beyond writing a response",
-              "To remove the need for instructions",
-              "To make quizzes disappear",
-              "To change the user's password",
+              "To define the agent's persona, goal, and boundaries",
+              "To guarantee the agent will always choose the right action",
+              "To replace the need for scoped permissions and limits",
             ],
             answerIndex: 0,
             explanation:
@@ -251,12 +256,12 @@ function createSkillPack(assetUrls) {
           },
           {
             id: "q2",
-            prompt: "Why should connector permissions be scoped?",
+            prompt: "Why should tool configuration include scoped permissions?",
             options: [
               "So the agent only gets the access it needs",
-              "So every agent can access everything",
-              "So the user never sees permissions",
-              "So tools run without limits",
+              "So the system prompt no longer has to define boundaries",
+              "So the agent can decide later which private data to access",
+              "So every connected service can be treated as equally low risk",
             ],
             answerIndex: 0,
             explanation:
@@ -279,7 +284,7 @@ function createSkillPack(assetUrls) {
         hook: "Skills tell an agent how to perform a specific kind of task.",
         lesson: rich([
           "Now that we understand system prompts and tools, the next concept is skills. A skill is a more specific set of instructions that tells the agent how to perform a particular kind of task.",
-          "While a system prompt gives the agent its general role, a skill gives the agent task-specific guidance. Skills are especially useful for repetitive tasks.",
+          "While a system prompt gives the agent its general role, a skill gives the agent task-specific guidance. Skills are especially useful for tasks that should be handled with a consistent process.",
           "A spreadsheet skill might tell the agent to inspect file structure, check missing values, find duplicate rows, and verify totals before presenting a summary.",
           "If you find yourself giving an agent the same prompt again and again, that prompt might need to become a skill.",
         ]),
@@ -296,9 +301,9 @@ function createSkillPack(assetUrls) {
             prompt: "How is a skill different from a system prompt?",
             options: [
               "A skill gives task-specific guidance; a system prompt gives the general role",
-              "A skill replaces every tool",
-              "A system prompt can only be used once",
-              "Skills are only for visual design",
+              "A skill decides who the agent is; a system prompt only stores examples",
+              "A skill gives access to apps; a system prompt runs the connected service",
+              "A skill is only useful when the agent has no repeated tasks",
             ],
             answerIndex: 0,
             explanation:
@@ -306,12 +311,12 @@ function createSkillPack(assetUrls) {
           },
           {
             id: "q2",
-            prompt: "When might a repeated prompt become a skill?",
+            prompt: "When is a repeated prompt a strong candidate to become a skill?",
             options: [
               "When you keep asking the agent to follow the same process",
-              "When you never want the agent to use instructions",
-              "Only after the agent fails",
-              "Only for paid courses",
+              "When the task is too vague to describe as a process",
+              "When you want the agent to ignore its general role",
+              "When tool permissions are broad enough to cover every case",
             ],
             answerIndex: 0,
             explanation:
@@ -334,12 +339,12 @@ function createSkillPack(assetUrls) {
         hook: "Now bring the pieces together in the agent sandbox.",
         lesson: rich([
           "You have learned the core pieces: a system prompt gives the agent identity and direction, skills give it repeatable know-how, and tools let it act through connected capabilities.",
-          "In this practice lab, create a simple study planning agent. Give it a clear persona, write a system prompt with a goal and boundaries, add a planning skill, choose at least one Google connector, and run a short test conversation.",
-          "The sandbox will review your system prompt and skill instructions before you create the agent, then show logs for success, warning, or failure states.",
+          "In this practice lab, create a simple study planning agent from a blank canvas. Give it a clear name and persona, write a system prompt with a goal and boundaries, add a planning skill, choose a useful connector, and run a short test conversation.",
+          "The sandbox can review your system prompt and skill instructions when you want feedback, but the important milestone is creating and testing the live agent.",
         ]),
         keyIdeas: [
           "Build the agent in small steps.",
-          "Use AI review feedback before publishing.",
+          "Use AI review feedback when it helps you refine the agent.",
           "Test the agent and read the logs.",
         ],
         microTask:
@@ -350,7 +355,7 @@ function createSkillPack(assetUrls) {
           eventType: "agent_sandbox_completed",
           label: "Create and test your first agent",
           description:
-            "Complete the guided sandbox by creating an agent, adding a reviewed system prompt and skill, choosing a connector, and testing the agent.",
+            "Complete the guided sandbox by creating an agent, writing a system prompt and skill, choosing a connector, and testing the agent.",
         },
         sandbox: {
           enabled: true,
@@ -363,12 +368,12 @@ function createSkillPack(assetUrls) {
             eyebrow: "Practice lab",
             title: "Build your first real agent",
             body:
-              "You are about to enter a guided Agent Commons sandbox. You will create a real agent, shape its behavior, add skills and tools, then test it in chat.",
+              "You are about to enter a guided Agent Commons sandbox. You will build a study-planning agent from empty fields, using short examples as placeholders while you decide what the agent should do.",
             expectations: [
-              "Create a clear agent identity and system prompt.",
-              "Use the AI review to improve the prompt and skill instructions.",
-              "Choose a Google connector that fits the study-planning task.",
-              "Send a test message and inspect the logs for success, warnings, or failures.",
+              "Give the agent a name, role, and system prompt in your own words.",
+              "Add or edit one skill that gives the agent a repeatable planning process.",
+              "Optionally run AI review to get feedback before creating the agent.",
+              "Create the agent, send a test message, and inspect the logs for success, warnings, or failures.",
             ],
             infoTitle: "What is the sandbox?",
             infoBody:
@@ -387,7 +392,6 @@ function createSkillPack(assetUrls) {
             "skills",
             "tools",
             "connectors",
-            "workflows",
             "chat",
             "logs",
             "credits",
@@ -400,13 +404,18 @@ function createSkillPack(assetUrls) {
             "chat",
             "logs",
           ],
-          starterAgent: {
-            name: "Study Planner Agent",
-            persona:
-              "A friendly study planning coach for beginners who explains things simply.",
+          placeholders: {
+            agentName: "Study Sprint Coach",
+            persona: "A practical study coach for busy beginners",
             systemPrompt:
-              "You are a friendly study planning coach for beginners. Help learners turn goals into small weekly plans. Ask clarifying questions when the goal is vague. Be encouraging, practical, and concise. Do not access private calendar or email information unless the learner has connected and approved the relevant tool.",
+              "You are a study planning agent. Help the learner turn one learning goal into a realistic weekly plan. Ask clarifying questions when details are missing. Be concise, encouraging, and careful with connected tools.",
+            skillInstructions:
+              "Ask for the learner's goal, deadline, available time, and confidence level. Break the work into small study sessions. Include one review session and one checkpoint.",
+            chatInput:
+              "Help me plan three focused study sessions for this week.",
           },
+          starterSkillIds: [],
+          starterToolIds: [],
           skillTemplates: [
             {
               id: "weekly-study-plan",
@@ -461,7 +470,7 @@ function createSkillPack(assetUrls) {
               target: "identity",
               title: "Name the agent",
               body:
-                "Create a clear name and persona so the agent has a role the learner can understand.",
+                "Start with a short name and role. The placeholders are examples only; write the agent you want to test.",
               targetSelector: '[data-sandbox-target="agent-name"]',
               placement: "right",
             },
@@ -470,8 +479,17 @@ function createSkillPack(assetUrls) {
               target: "system_prompt",
               title: "Write the system prompt",
               body:
-                "Include persona, goal, tone, boundaries, and tool-use safety. Run the AI review before moving on.",
+                "Describe the agent's job, tone, boundaries, and tool-use safety. You can review it with AI after writing, but review is optional.",
               targetSelector: '[data-sandbox-target="system-prompt"]',
+              placement: "right",
+            },
+            {
+              id: "prompt-review",
+              target: "system_prompt",
+              title: "Optional feedback",
+              body:
+                "Use AI review when you want a quick quality check. It can help you improve clarity, but it will not block agent creation in this lab.",
+              targetSelector: '[data-sandbox-target="review-box"]',
               placement: "right",
             },
             {
@@ -493,13 +511,13 @@ function createSkillPack(assetUrls) {
               placement: "right",
             },
             {
-              id: "workflow",
-              target: "workflows",
-              title: "Read the workflow",
+              id: "create",
+              target: "publish",
+              title: "Create the agent",
               body:
-                "Notice how prompt, skill, connector, action, and logs connect in order.",
-              targetSelector: '[data-sandbox-target="workflows"]',
-              placement: "right",
+                "Once the name, role, and system prompt are filled in, create the real Agent Commons agent from your configuration.",
+              targetSelector: '[data-sandbox-target="create-agent"]',
+              placement: "top",
             },
             {
               id: "test",
@@ -513,6 +531,7 @@ function createSkillPack(assetUrls) {
           ],
           review: {
             enabled: true,
+            required: false,
             targets: ["system_prompt", "skills"],
             minScore: 72,
             rubric:

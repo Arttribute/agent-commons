@@ -3,6 +3,7 @@ const allowedTags = new Set([
   "b",
   "blockquote",
   "br",
+  "code",
   "em",
   "h2",
   "h3",
@@ -12,6 +13,7 @@ const allowedTags = new Set([
   "mark",
   "ol",
   "p",
+  "pre",
   "strong",
   "u",
   "ul",
@@ -62,6 +64,63 @@ export function stripRichTextHtml(value?: string | null) {
     .trim();
 }
 
+export function markdownToRichTextHtml(value?: string | null) {
+  if (!value) return "";
+  const lines = value.replace(/\r\n/g, "\n").split("\n");
+  const html: string[] = [];
+  let list: "ul" | "ol" | null = null;
+
+  const closeList = () => {
+    if (!list) return;
+    html.push(`</${list}>`);
+    list = null;
+  };
+
+  for (const rawLine of lines) {
+    const line = rawLine.trim();
+    if (!line) {
+      closeList();
+      continue;
+    }
+
+    const heading = /^(#{2,4})\s+(.+)$/.exec(line);
+    if (heading) {
+      closeList();
+      const level = heading[1].length;
+      html.push(`<h${level}>${inlineMarkdown(heading[2])}</h${level}>`);
+      continue;
+    }
+
+    const unordered = /^[-*]\s+(.+)$/.exec(line);
+    if (unordered) {
+      if (list !== "ul") {
+        closeList();
+        html.push("<ul>");
+        list = "ul";
+      }
+      html.push(`<li>${inlineMarkdown(unordered[1])}</li>`);
+      continue;
+    }
+
+    const ordered = /^\d+[.)]\s+(.+)$/.exec(line);
+    if (ordered) {
+      if (list !== "ol") {
+        closeList();
+        html.push("<ol>");
+        list = "ol";
+      }
+      html.push(`<li>${inlineMarkdown(ordered[1])}</li>`);
+      continue;
+    }
+
+    closeList();
+    html.push(`<p>${inlineMarkdown(line)}</p>`);
+  }
+
+  closeList();
+  return sanitizeRichTextHtml(html.join(""));
+}
+
 function sanitizeAttributes(tag: string, rawAttrs: string) {
   const allowed = allowedAttributes[tag];
   if (!allowed) return "";
@@ -97,4 +156,21 @@ function isSafeHref(value: string) {
 
 function escapeAttribute(value: string) {
   return value.replace(/&/g, "&amp;").replace(/"/g, "&quot;");
+}
+
+function inlineMarkdown(value: string) {
+  const escaped = escapeHtml(value);
+  return escaped
+    .replace(/`([^`]+)`/g, "<code>$1</code>")
+    .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
+    .replace(/__([^_]+)__/g, "<strong>$1</strong>")
+    .replace(/\*([^*]+)\*/g, "<em>$1</em>")
+    .replace(/_([^_]+)_/g, "<em>$1</em>");
+}
+
+function escapeHtml(value: string) {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
 }

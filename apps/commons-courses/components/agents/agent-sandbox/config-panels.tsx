@@ -1,14 +1,28 @@
 "use client";
 
-import { CalendarDays, ExternalLink, FileText, Hammer, Loader2, Mail, Sparkles, Table2 } from "lucide-react";
+import { useState } from "react";
+import {
+  CalendarDays,
+  ExternalLink,
+  FileText,
+  Hammer,
+  Loader2,
+  Mail,
+  Plus,
+  Sparkles,
+  Table2,
+  X,
+} from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { AgentSandboxSkillTemplate, AgentSandboxToolTemplate } from "@/types/skills";
+import type { AgentSandboxConfig } from "@/types/skills";
 import type { ReviewResult } from "./types";
 
 export function IdentityPanel({
   agentName,
   persona,
   systemPrompt,
+  placeholders,
   reviewEnabled,
   review,
   reviewing,
@@ -20,6 +34,7 @@ export function IdentityPanel({
   agentName: string;
   persona: string;
   systemPrompt: string;
+  placeholders?: AgentSandboxConfig["placeholders"];
   reviewEnabled: boolean;
   review?: ReviewResult;
   reviewing: boolean;
@@ -33,12 +48,14 @@ export function IdentityPanel({
       <Field
         label="Agent name"
         value={agentName}
+        placeholder={placeholders?.agentName || "Study Coach"}
         onChange={onNameChange}
         target="agent-name"
       />
       <Field
         label="Role"
         value={persona}
+        placeholder={placeholders?.persona || "A calm planning coach for beginners"}
         onChange={onPersonaChange}
         target="agent-role"
       />
@@ -46,6 +63,10 @@ export function IdentityPanel({
         <span className="text-xs font-bold text-slate-600">System prompt</span>
         <textarea
           value={systemPrompt}
+          placeholder={
+            placeholders?.systemPrompt ||
+            "You are a helpful agent. Explain your goal, tone, boundaries, and when to use connected tools."
+          }
           onChange={(event) => onPromptChange(event.target.value)}
           className="mt-1.5 min-h-40 w-full resize-y rounded-lg border border-slate-200 px-3 py-2 text-sm leading-6 outline-none focus:border-slate-400"
         />
@@ -53,10 +74,9 @@ export function IdentityPanel({
       {reviewEnabled ? (
         <div data-sandbox-target="review-box">
           <ReviewBox
-          targetLabel="system prompt"
-          result={review}
-          loading={reviewing}
-          onReview={onReview}
+            result={review}
+            loading={reviewing}
+            onReview={onReview}
           />
         </div>
       ) : null}
@@ -68,8 +88,10 @@ export function SkillsPanel({
   skills,
   selected,
   skillInstructions,
+  placeholder,
   onChange,
   onInstructionChange,
+  onAddSkill,
   reviewEnabled,
   review,
   reviewing,
@@ -78,56 +100,115 @@ export function SkillsPanel({
   skills: AgentSandboxSkillTemplate[];
   selected: string[];
   skillInstructions: Record<string, string>;
+  placeholder?: string;
   onChange: (items: string[]) => void;
   onInstructionChange: (id: string, value: string) => void;
+  onAddSkill: (value: string) => void;
   reviewEnabled: boolean;
   review?: ReviewResult;
   reviewing: boolean;
   onReview: () => void;
 }) {
+  const [draft, setDraft] = useState("");
+  const selectedId = selected[0] || "";
+  const knownIds = new Set(skills.map((skill) => skill.id));
+  const selectedSkill =
+    skills.find((skill) => skill.id === selectedId) ||
+    (selectedId
+      ? {
+          id: selectedId,
+          name: customSkillTitle(skillInstructions[selectedId]),
+          instructions: skillInstructions[selectedId] || "",
+        }
+      : undefined);
+  const listItems = [
+    ...skills,
+    ...selected
+      .filter((id) => !knownIds.has(id))
+      .map((id) => ({
+        id,
+        name: customSkillTitle(skillInstructions[id]),
+        instructions: skillInstructions[id] || "",
+      })),
+  ];
+
   return (
     <div className="space-y-3" data-sandbox-target="skills">
-      <Picker
-        items={skills.map((skill) => ({
-          id: skill.id,
-          name: skill.name,
-          description:
-            skillInstructions[skill.id] || skill.instructions,
-        }))}
-        selected={selected}
-        onChange={onChange}
-      />
-      {selected.length ? (
-        <div className="space-y-3">
-          {skills
-            .filter((skill) => selected.includes(skill.id))
-            .map((skill) => (
-              <label
+      {listItems.length ? (
+        <div className="divide-y divide-slate-100 rounded-lg border border-slate-200 bg-white">
+          {listItems.map((skill) => {
+            const active = skill.id === selectedId;
+            const description = skillInstructions[skill.id] || skill.instructions;
+            return (
+              <button
                 key={skill.id}
-                className="block"
-                data-sandbox-target="skill-instructions"
+                type="button"
+                onClick={() => onChange(active ? [] : [skill.id])}
+                className={cn(
+                  "block w-full px-3 py-2.5 text-left transition-colors",
+                  active ? "bg-slate-950 text-white" : "hover:bg-slate-50"
+                )}
               >
-                <span className="text-xs font-bold text-slate-600">
-                  {skill.name} instructions
+                <span className="block truncate text-sm font-bold">{skill.name}</span>
+                <span
+                  className={cn(
+                    "mt-0.5 block truncate text-xs",
+                    active ? "text-white/65" : "text-slate-500"
+                  )}
+                >
+                  {oneLine(description) || "No description yet."}
                 </span>
-                <textarea
-                  value={skillInstructions[skill.id] || skill.instructions}
-                  onChange={(event) =>
-                    onInstructionChange(skill.id, event.target.value)
-                  }
-                  className="mt-1.5 min-h-28 w-full resize-y rounded-lg border border-slate-200 px-3 py-2 text-sm leading-6 outline-none focus:border-slate-400"
-                />
-              </label>
-            ))}
+              </button>
+            );
+          })}
         </div>
       ) : null}
+      {selectedSkill ? (
+        <label className="block" data-sandbox-target="skill-instructions">
+          <span className="flex items-center justify-between gap-2 text-xs font-bold text-slate-600">
+            <span className="truncate">{selectedSkill.name}</span>
+            <button
+              type="button"
+              onClick={() => onChange([])}
+              className="inline-flex items-center gap-1 rounded-md px-1.5 py-1 text-slate-500 hover:bg-slate-100"
+            >
+              <X className="h-3.5 w-3.5" />
+              Close
+            </button>
+          </span>
+          <textarea
+            value={skillInstructions[selectedSkill.id] || selectedSkill.instructions}
+            placeholder={placeholder || "Write the steps this agent should follow..."}
+            onChange={(event) =>
+              onInstructionChange(selectedSkill.id, event.target.value)
+            }
+            className="mt-1.5 min-h-44 w-full resize-y rounded-lg border border-slate-200 px-3 py-2 text-sm leading-6 outline-none focus:border-slate-400"
+          />
+        </label>
+      ) : (
+        <div data-sandbox-target="skill-instructions">
+          <textarea
+            value={draft}
+            onChange={(event) => setDraft(event.target.value)}
+            placeholder={placeholder || "Describe a skill this agent should use..."}
+            className="min-h-32 w-full resize-y rounded-lg border border-slate-200 px-3 py-2 text-sm leading-6 outline-none placeholder:text-slate-400 focus:border-slate-400"
+          />
+          <button
+            type="button"
+            onClick={() => {
+              onAddSkill(draft);
+              setDraft("");
+            }}
+            disabled={!draft.trim()}
+            className="mt-2 inline-flex items-center gap-1.5 rounded-lg bg-slate-950 px-3 py-2 text-xs font-bold text-white disabled:cursor-not-allowed disabled:opacity-35"
+          >
+            <Plus className="h-3.5 w-3.5" />
+            Add skill
+          </button>
+        </div>
+      )}
       {reviewEnabled ? (
-        <ReviewBox
-          targetLabel="skills"
-          result={review}
-          loading={reviewing}
-          onReview={onReview}
-        />
+        <ReviewBox result={review} loading={reviewing} onReview={onReview} />
       ) : null}
     </div>
   );
@@ -190,52 +271,16 @@ export function ToolsPanel({
   );
 }
 
-export function WorkflowPanel({
-  taskTitle,
-  onTaskChange,
-}: {
-  taskTitle: string;
-  onTaskChange: (value: string) => void;
-}) {
-  return (
-    <div className="space-y-4" data-sandbox-target="workflows">
-      <Field
-        label="First task"
-        value={taskTitle}
-        onChange={onTaskChange}
-        target="first-task"
-      />
-      <div className="grid gap-2 text-xs font-bold text-slate-700">
-        {[
-          "System prompt",
-          "Skill instructions",
-          "Connected tools",
-          "Agent response",
-          "Logs",
-        ].map((item, index) => (
-          <div
-            key={item}
-            className="flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2"
-          >
-            <span className="flex h-5 w-5 items-center justify-center rounded-full bg-white text-[10px]">
-              {index + 1}
-            </span>
-            {item}
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
 function Field({
   label,
   value,
+  placeholder,
   onChange,
   target,
 }: {
   label: string;
   value: string;
+  placeholder?: string;
   onChange: (value: string) => void;
   target?: string;
 }) {
@@ -244,6 +289,7 @@ function Field({
       <span className="text-xs font-bold text-slate-600">{label}</span>
       <input
         value={value}
+        placeholder={placeholder}
         onChange={(event) => onChange(event.target.value)}
         className="mt-1.5 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-slate-400"
       />
@@ -305,24 +351,20 @@ function googleToolIcon(connectorKind?: AgentSandboxToolTemplate["connectorKind"
 }
 
 function ReviewBox({
-  targetLabel,
   result,
   loading,
   onReview,
 }: {
-  targetLabel: string;
   result?: ReviewResult;
   loading: boolean;
   onReview: () => void;
 }) {
   return (
-    <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+    <div className="rounded-lg border border-slate-200 bg-white p-3">
       <div className="flex items-center justify-between gap-3">
         <div>
-          <p className="text-xs font-black uppercase tracking-widest text-slate-500">
-            AI review
-          </p>
-          <p className="mt-1 text-sm font-bold text-slate-950">
+          <p className="text-xs font-bold text-slate-500">AI review</p>
+          <p className="mt-0.5 text-sm font-semibold text-slate-950">
             {result
               ? `${result.score}/100 - ${result.passed ? "Ready" : "Revise"}`
               : "Not reviewed"}
@@ -332,14 +374,14 @@ function ReviewBox({
           type="button"
           onClick={onReview}
           disabled={loading}
-          className="inline-flex items-center gap-1.5 rounded-md bg-slate-950 px-3 py-2 text-xs font-black text-white disabled:opacity-50"
+          className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs font-bold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
         >
           {loading ? (
             <Loader2 className="h-3.5 w-3.5 animate-spin" />
           ) : (
             <Sparkles className="h-3.5 w-3.5" />
           )}
-          Review {targetLabel}
+          Review
         </button>
       </div>
       {result ? (
@@ -366,6 +408,16 @@ function ReviewBox({
       ) : null}
     </div>
   );
+}
+
+function oneLine(value?: string) {
+  return (value || "").replace(/\s+/g, " ").trim();
+}
+
+function customSkillTitle(value?: string) {
+  const firstLine = (value || "").split("\n").map((line) => line.trim()).find(Boolean);
+  if (!firstLine) return "Custom skill";
+  return firstLine.length > 42 ? `${firstLine.slice(0, 39)}...` : firstLine;
 }
 
 function Picker({

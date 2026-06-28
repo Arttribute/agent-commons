@@ -233,6 +233,22 @@ function normalizeSandboxConfig(input?: AgentSandboxConfig) {
           systemPrompt: input.starterAgent.systemPrompt?.trim() || undefined,
         }
       : undefined,
+    placeholders: input.placeholders
+      ? {
+          agentName: input.placeholders.agentName?.trim() || undefined,
+          persona: input.placeholders.persona?.trim() || undefined,
+          systemPrompt: input.placeholders.systemPrompt?.trim() || undefined,
+          skillInstructions:
+            input.placeholders.skillInstructions?.trim() || undefined,
+          chatInput: input.placeholders.chatInput?.trim() || undefined,
+        }
+      : undefined,
+    starterSkillIds: Array.isArray(input.starterSkillIds)
+      ? input.starterSkillIds.map((id) => id.trim()).filter(Boolean)
+      : undefined,
+    starterToolIds: Array.isArray(input.starterToolIds)
+      ? input.starterToolIds.map((id) => id.trim()).filter(Boolean)
+      : undefined,
     skillTemplates: Array.isArray(input.skillTemplates)
       ? input.skillTemplates
           .map((skill, index) => ({
@@ -267,6 +283,7 @@ function normalizeSandboxConfig(input?: AgentSandboxConfig) {
     review: input.review?.enabled
       ? {
           enabled: true,
+          required: input.review.required !== false,
           targets: Array.isArray(input.review.targets)
             ? input.review.targets.filter((target) =>
                 ["system_prompt", "skills"].includes(target)

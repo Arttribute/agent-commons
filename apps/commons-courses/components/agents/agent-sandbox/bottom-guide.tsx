@@ -2,6 +2,7 @@
 
 import {
   CheckCircle2,
+  ChevronLeft,
   ChevronRight,
   Coins,
   Eye,
@@ -26,6 +27,7 @@ type BottomGuideProps = {
   canFinish: boolean;
   finishing: boolean;
   onOpenStep: () => void;
+  onPreviousStep: () => void;
   onNextStep: () => void;
   onToggleGuide: () => void;
   onCreate: () => void;
@@ -49,12 +51,15 @@ export function BottomGuide({
   canFinish,
   finishing,
   onOpenStep,
+  onPreviousStep,
   onNextStep,
   onToggleGuide,
   onCreate,
   onSync,
   onFinish,
 }: BottomGuideProps) {
+  const isLast = guideIndex + 1 >= guideLength;
+
   return (
     <footer className="shrink-0 border-t border-slate-200 bg-white px-3 py-2">
       {/* Row 1 — status + guide toggle */}
@@ -114,18 +119,30 @@ export function BottomGuide({
 
         {/* Actions — shrink-0 so they never get squeezed out */}
         <div className="flex shrink-0 items-center gap-1.5">
+          {guideLength > 1 && guideIndex > 0 ? (
+            <button
+              type="button"
+              onClick={onPreviousStep}
+              className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs font-bold text-slate-700"
+            >
+              <ChevronLeft className="h-3.5 w-3.5" />
+              Back
+            </button>
+          ) : null}
+
           {guideLength && !guideVisible ? (
             <button
               type="button"
               onClick={onNextStep}
               className="rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs font-bold text-slate-700"
             >
-              Next
+              {isLast ? "Review" : "Next"}
             </button>
           ) : null}
 
           {!createdAgentId ? (
             <button
+              data-sandbox-target="create-agent"
               type="button"
               onClick={onCreate}
               disabled={!canCreate || creating}

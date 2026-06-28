@@ -310,7 +310,7 @@ export default function SkillPathClient({
           </div>
         </header>
 
-        <div className="mx-auto grid min-h-0 w-full max-w-6xl flex-1 grid-cols-1 gap-0 sm:grid-cols-[240px_minmax(0,1fr)]">
+        <div className="grid min-h-0 w-full flex-1 grid-cols-1 gap-0 sm:grid-cols-[240px_minmax(0,1fr)]">
           <aside className="hidden border-r border-slate-200 bg-slate-50 p-3 sm:block">
             <DailyPath
               pack={pack}
@@ -322,7 +322,7 @@ export default function SkillPathClient({
           </aside>
 
           <section className={cn("min-h-0 px-4 py-4 sm:px-6", !locked && challenge.sandbox?.enabled ? "flex flex-col overflow-hidden" : "overflow-y-auto")}>
-            <div className={cn("mx-auto max-w-3xl flex flex-col", !locked && challenge.sandbox?.enabled ? "min-h-0 flex-1" : "min-h-full")}>
+            <div className={cn("mx-auto flex w-full flex-col", !locked && challenge.sandbox?.enabled ? "min-h-0 max-w-none flex-1" : "min-h-full max-w-3xl")}>
               <div className="mb-3 flex items-center justify-between gap-3">
                 <div>
                   <p className="text-xs font-bold uppercase tracking-widest text-slate-500">
@@ -665,28 +665,55 @@ function DoneView({
   onNext: (id: string) => void;
 }) {
   return (
-    <div className="flex flex-1 flex-col items-center justify-center rounded-xl border border-slate-200 bg-slate-50 p-8 text-center">
-      <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-xl bg-[#B8F56D]">
-        <CheckCircle2 className="h-7 w-7 text-slate-950" />
+    <div className="flex flex-1 flex-col">
+      <div className="rounded-xl border border-green-200 bg-green-50 p-4">
+        <div className="flex items-start gap-3">
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-[#B8F56D]">
+            <CheckCircle2 className="h-5 w-5 text-slate-950" />
+          </div>
+          <div className="min-w-0">
+            <h2 className="text-lg font-semibold text-slate-950">
+              Daily challenge complete
+            </h2>
+            <p className="mt-1 text-sm leading-6 text-slate-600">
+              {feedback || `You earned ${challenge.points} points.`}
+            </p>
+          </div>
+        </div>
       </div>
-      <h2 className="text-2xl font-semibold text-slate-950">
-        Daily challenge complete
-      </h2>
-      <p className="mt-2 text-sm text-slate-600">
-        {feedback || `You earned ${challenge.points} points.`}
-      </p>
+
+      <div className="mt-4 rounded-xl border border-slate-200 bg-white p-4">
+        {challenge.hook ? (
+          <p className="mb-3 text-base font-semibold leading-7 text-slate-950">
+            {challenge.hook}
+          </p>
+        ) : null}
+        <RichTextRenderer value={challenge.lesson} />
+      </div>
+
+      <div className="mt-4 grid gap-2 sm:grid-cols-3">
+        {challenge.keyIdeas.map((idea) => (
+          <div
+            key={idea}
+            className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm leading-6 text-slate-700"
+          >
+            {idea}
+          </div>
+        ))}
+      </div>
+
       {nextChallenge ? (
         <button
           type="button"
           onClick={() => onNext(nextChallenge.id)}
-          className="mt-6 inline-flex items-center gap-2 rounded-lg bg-slate-950 px-5 py-3 text-sm font-bold text-white"
+          className="mt-6 inline-flex w-fit items-center gap-2 rounded-lg bg-slate-950 px-5 py-3 text-sm font-bold text-white"
         >
           Continue to next day <ArrowRight className="h-4 w-4" />
         </button>
       ) : (
         <Link
           href="/skills"
-          className="mt-6 inline-flex items-center gap-2 rounded-lg bg-slate-950 px-5 py-3 text-sm font-bold text-white"
+          className="mt-6 inline-flex w-fit items-center gap-2 rounded-lg bg-slate-950 px-5 py-3 text-sm font-bold text-white"
         >
           Back to skills <ArrowRight className="h-4 w-4" />
         </Link>

@@ -82,31 +82,33 @@ export function SandboxCompletion({
   onContinue?: () => void;
 }) {
   return (
-    <section className="grid h-full min-h-0 w-full place-items-center overflow-y-auto bg-white">
-      <div className="mx-auto flex w-full max-w-2xl flex-col items-center justify-center px-5 py-6 text-center">
-        <CheckCircle2 className="mx-auto h-10 w-10 text-green-600" />
-        <h2 className="mt-4 text-2xl font-semibold tracking-tight text-slate-950">
-          {completion?.title || "Agent sandbox complete"}
-        </h2>
-        <p className="mt-3 text-sm leading-6 text-slate-600">
-          {completion?.body ||
-            "Your agent was created, tested, and saved as part of this learning activity."}
-        </p>
-        {creditReward ? (
-          <p className="mt-3 text-sm font-black text-slate-950">
-            +{creditReward} credits queued
+    <section className="rounded-xl border border-green-200 bg-white/95 p-3 text-left shadow-xl backdrop-blur">
+      <div className="flex items-start gap-3">
+        <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0 text-green-600" />
+        <div className="min-w-0">
+          <h2 className="text-sm font-semibold tracking-tight text-slate-950">
+            {completion?.title || "Agent sandbox complete"}
+          </h2>
+          <p className="mt-1 text-xs leading-5 text-slate-600">
+            {completion?.body ||
+              "Your agent was created, tested, and saved as part of this learning activity."}
           </p>
-        ) : null}
-        {onContinue ? (
-          <button
-            type="button"
-            onClick={onContinue}
-            className="mx-auto mt-6 inline-flex items-center gap-2 rounded-lg bg-slate-950 px-4 py-2 text-sm font-black text-white"
-          >
-            {completion?.primaryActionLabel || "Continue"}
-            <ArrowRight className="h-4 w-4" />
-          </button>
-        ) : null}
+          {creditReward ? (
+            <p className="mt-1.5 text-xs font-black text-slate-950">
+              +{creditReward} credits queued
+            </p>
+          ) : null}
+          {onContinue ? (
+            <button
+              type="button"
+              onClick={onContinue}
+              className="mt-3 inline-flex items-center gap-1.5 rounded-lg bg-slate-950 px-3 py-1.5 text-xs font-black text-white"
+            >
+              {completion?.primaryActionLabel || "Continue"}
+              <ArrowRight className="h-3.5 w-3.5" />
+            </button>
+          ) : null}
+        </div>
       </div>
     </section>
   );
