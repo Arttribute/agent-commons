@@ -194,26 +194,27 @@ export function AgentLearnerSandbox({
     let frameId = 0;
     let active = true;
     const primarySelector = activeStep.targetSelector?.trim() || defaultGuideSelector(activeStep.target);
-    // When the drawer is closed (or the wrong panel is open), fall back to the
-    // corresponding rail icon so the highlight never ends up off-screen.
     const panel = targetToPanel[activeStep.target as keyof typeof targetToPanel];
     const railSelector = panel ? `[data-sandbox-target="rail-${panel}"]` : null;
 
+    // Use React state — not CSS position — to decide whether the primary element is
+    // currently accessible. This avoids a flicker on load where getBoundingClientRect
+    // fires before the CSS transform is applied and returns a stale on-screen position.
+    const primaryIsVisible = !panel || (drawerOpen && activePanel === panel);
+
     const measure = () => {
       if (!active) return;
-      const primaryEl = primarySelector ? document.querySelector(primarySelector) : null;
       let finalEl: HTMLElement | null = null;
 
-      if (primaryEl instanceof HTMLElement) {
-        const r = primaryEl.getBoundingClientRect();
-        // Element is on-screen when its left edge is within the viewport
-        if (r.left > -20 && r.width > 0) finalEl = primaryEl;
+      if (primaryIsVisible) {
+        const el = primarySelector ? document.querySelector(primarySelector) : null;
+        if (el instanceof HTMLElement && el.getBoundingClientRect().width > 0) finalEl = el;
       }
 
-      // Primary is off-screen (drawer closed / wrong panel) — highlight the rail icon instead
+      // Drawer is closed or showing a different panel — highlight the rail icon instead
       if (!finalEl && railSelector) {
-        const railEl = document.querySelector(railSelector);
-        if (railEl instanceof HTMLElement) finalEl = railEl;
+        const el = document.querySelector(railSelector);
+        if (el instanceof HTMLElement) finalEl = el;
       }
 
       if (finalEl) {
@@ -224,7 +225,11 @@ export function AgentLearnerSandbox({
       }
     };
 
-    // Poll for 600ms so the drawer slide-in animation completes before we lock position
+    // When the primary element is NOT accessible, snap the rail icon highlight
+    // into place immediately — no timeout — so there is zero flicker on load.
+    if (!primaryIsVisible) measure();
+
+    // Poll for 600ms so the drawer slide-in animation fully settles before locking position
     const startMs = performance.now();
     const tick = () => {
       if (!active) return;
@@ -238,11 +243,10 @@ export function AgentLearnerSandbox({
     };
 
     const timeout = window.setTimeout(() => {
-      const primaryEl = primarySelector ? document.querySelector(primarySelector) : null;
-      if (primaryEl instanceof HTMLElement) {
-        const r = primaryEl.getBoundingClientRect();
-        if (r.left > -20) {
-          primaryEl.scrollIntoView({ block: "nearest", inline: "nearest", behavior: "smooth" });
+      if (primaryIsVisible) {
+        const el = primarySelector ? document.querySelector(primarySelector) : null;
+        if (el instanceof HTMLElement) {
+          el.scrollIntoView({ block: "nearest", inline: "nearest", behavior: "smooth" });
         }
       }
       frameId = requestAnimationFrame(tick);
@@ -258,7 +262,7 @@ export function AgentLearnerSandbox({
       window.removeEventListener("resize", onViewUpdate);
       window.removeEventListener("scroll", onViewUpdate, true);
     };
-  }, [activeStep, guideVisible, drawerOpen, logsOpen]);
+  }, [activeStep, guideVisible, drawerOpen, logsOpen, activePanel]);
 
   if (introOpen && !completed) {
     return (
