@@ -405,6 +405,12 @@ const AgentSandboxGuideStepSchema = new Schema(
     },
     title: { type: String, required: true, trim: true },
     body: { type: String, required: true, trim: true },
+    targetSelector: { type: String, trim: true },
+    placement: {
+      type: String,
+      enum: ["top", "right", "bottom", "left", "auto"],
+      default: "auto",
+    },
   },
   { _id: false }
 );

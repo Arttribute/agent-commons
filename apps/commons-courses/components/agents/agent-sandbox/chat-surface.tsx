@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect } from "react";
 import { Loader2, MessageSquareText, Send } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { ChatMessage } from "./types";
@@ -10,6 +11,7 @@ type ChatSurfaceProps = {
   chatInput: string;
   createdAgentId?: string;
   chatEndRef: React.RefObject<HTMLDivElement | null>;
+  activityLabel?: string;
   onInputChange: (value: string) => void;
   onSend: () => void;
 };
@@ -20,11 +22,19 @@ export function ChatSurface({
   chatInput,
   createdAgentId,
   chatEndRef,
+  activityLabel,
   onInputChange,
   onSend,
 }: ChatSurfaceProps) {
+  useEffect(() => {
+    chatEndRef.current?.scrollIntoView({ block: "end" });
+  }, [chatEndRef, messages, sending, activityLabel]);
+
   return (
-    <section className="flex min-w-0 flex-1 flex-col bg-slate-50">
+    <section
+      className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-slate-50"
+      data-sandbox-target="chat"
+    >
       <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4">
         <div className="mx-auto flex max-w-3xl flex-col gap-3">
           {messages.map((message, index) => (
@@ -37,7 +47,7 @@ export function ChatSurface({
           {sending ? (
             <div className="flex items-center gap-2 text-sm font-semibold text-slate-500">
               <Loader2 className="h-4 w-4 animate-spin" />
-              Agent is thinking
+              {activityLabel || "Agent is thinking"}
             </div>
           ) : null}
           <div ref={chatEndRef} />
@@ -46,6 +56,7 @@ export function ChatSurface({
       <div className="border-t border-slate-200 bg-white p-3">
         <div className="mx-auto flex max-w-3xl gap-2">
           <input
+            data-sandbox-target="chat-input"
             value={chatInput}
             onChange={(event) => onInputChange(event.target.value)}
             onKeyDown={(event) => {
@@ -62,6 +73,7 @@ export function ChatSurface({
             className="min-w-0 flex-1 rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-slate-400"
           />
           <button
+            data-sandbox-target="send-button"
             type="button"
             onClick={onSend}
             disabled={!createdAgentId || sending || !chatInput.trim()}

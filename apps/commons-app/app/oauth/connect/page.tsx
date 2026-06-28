@@ -3,7 +3,7 @@
 import { Suspense, useState, useEffect, useCallback } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { useSession } from 'next-auth/react';
-import { OAuthProvider } from '@/types/oauth';
+import { OAuthProvider, OAuthProviderDetails } from '@/types/oauth';
 import { useToast } from '@/hooks/use-toast';
 
 function OAuthConnectContent() {
@@ -11,16 +11,28 @@ function OAuthConnectContent() {
   const router = useRouter();
   const { toast } = useToast();
   const { status } = useSession();
-  const [provider, setProvider] = useState<OAuthProvider | null>(null);
+  const [provider, setProvider] = useState<OAuthProviderDetails | null>(null);
   const [loading, setLoading] = useState(true);
   const [connecting, setConnecting] = useState(false);
 
   const providerKey = searchParams.get('provider');
   const returnUrl = searchParams.get('returnUrl') || '/studio';
+  const requestedScopes = searchParams.get('scopes');
+  const toolLabel = searchParams.get('label');
 
   const fetchProvider = useCallback(async (key: string) => {
     try {
-      const res = await fetch(`/api/oauth/providers/${key}`);
+      let res = await fetch(`/api/oauth/providers/${key}`);
+      if (!res.ok && key === 'google_workspace') {
+        const providersRes = await fetch('/api/oauth/providers');
+        const providersData = await providersRes.json().catch(() => ({}));
+        const alias = providersData.providers?.find((item: OAuthProvider) =>
+          ['google_workspace', 'google', 'google_oauth'].includes(item.providerKey)
+        );
+        if (alias?.providerKey && alias.providerKey !== key) {
+          res = await fetch(`/api/oauth/providers/${alias.providerKey}`);
+        }
+      }
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
         throw new Error(data.error || 'Failed to fetch provider');
@@ -65,6 +77,11 @@ function OAuthConnectContent() {
     setConnecting(true);
 
     try {
+      window.sessionStorage.setItem('oauthReturnUrl', returnUrl);
+      window.sessionStorage.setItem('oauthProviderLabel', toolLabel || provider.displayName);
+      const scopes = requestedScopes
+        ? requestedScopes.split(/\s+/).map((scope) => scope.trim()).filter(Boolean)
+        : provider.defaultScopes;
       // Initiate OAuth flow
       const res = await fetch('/api/oauth/connect', {
         method: 'POST',
@@ -72,9 +89,9 @@ function OAuthConnectContent() {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          providerKey,
-          scopes: provider.defaultScopes,
-          redirectUri: `${window.location.origin}/api/oauth/callback/${providerKey}`,
+          providerKey: provider.providerKey,
+          scopes,
+          redirectUri: `${window.location.origin}/api/oauth/callback/${provider.providerKey}`,
         }),
       });
 
@@ -130,12 +147,14 @@ function OAuthConnectContent() {
 
           {/* Title */}
           <h1 className="text-2xl font-bold text-gray-900 dark:text-white mb-2">
-            Connect {provider.displayName}
+            Connect {toolLabel || provider.displayName}
           </h1>
 
           {/* Description */}
           <p className="text-gray-600 dark:text-gray-400 mb-6">
-            {provider.description ||
+            {toolLabel
+              ? `Authorize the scopes needed for ${toolLabel}.`
+              : provider.description ||
               `Connect your ${provider.displayName} account to enable tools that require access to your ${provider.displayName} data.`}
           </p>
 
@@ -145,15 +164,24 @@ function OAuthConnectContent() {
               This will allow agents to:
             </h2>
             <ul className="text-sm text-gray-600 dark:text-gray-400 space-y-1">
-              {provider.defaultScopes.slice(0, 3).map((scope, index) => (
+              {(requestedScopes
+                ? requestedScopes.split(/\s+/).filter(Boolean)
+                : provider.defaultScopes
+              ).slice(0, 3).map((scope, index) => (
                 <li key={index} className="flex items-start">
                   <span className="mr-2">•</span>
                   <span className="break-all">{scope}</span>
                 </li>
               ))}
-              {provider.defaultScopes.length > 3 && (
+              {(requestedScopes
+                ? requestedScopes.split(/\s+/).filter(Boolean)
+                : provider.defaultScopes
+              ).length > 3 && (
                 <li className="text-gray-500 dark:text-gray-500 italic">
-                  and {provider.defaultScopes.length - 3} more...
+                  and {(requestedScopes
+                    ? requestedScopes.split(/\s+/).filter(Boolean)
+                    : provider.defaultScopes
+                  ).length - 3} more...
                 </li>
               )}
             </ul>
@@ -166,7 +194,7 @@ function OAuthConnectContent() {
               disabled={connecting}
               className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white font-semibold py-3 px-4 rounded-lg transition-colors"
             >
-              {connecting ? 'Connecting...' : `Connect ${provider.displayName}`}
+              {connecting ? 'Connecting...' : `Connect ${toolLabel || provider.displayName}`}
             </button>
 
             <button

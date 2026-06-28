@@ -46,6 +46,8 @@ export type AgentSandboxGuideStep = {
   target: AgentSandboxStepTarget;
   title: string;
   body: string;
+  targetSelector?: string;
+  placement?: "top" | "right" | "bottom" | "left" | "auto";
 };
 
 export type AgentSandboxReviewTarget = "system_prompt" | "skills";

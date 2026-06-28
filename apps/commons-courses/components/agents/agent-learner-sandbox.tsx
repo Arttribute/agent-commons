@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ExternalLink, PanelRight } from "lucide-react";
+import { ExternalLink, Terminal } from "lucide-react";
 import { ChatSurface } from "./agent-sandbox/chat-surface";
 import {
   IdentityPanel,
@@ -12,7 +12,6 @@ import {
 import { ConfigDrawer, ConfigRail } from "./agent-sandbox/config-shell";
 import { BottomGuide } from "./agent-sandbox/bottom-guide";
 import { LogsPanel } from "./agent-sandbox/logs-panel";
-import { extractAssistantText } from "./agent-sandbox/extract-assistant-text";
 import { SandboxCompletion, SandboxIntro } from "./agent-sandbox/sandbox-framing";
 import { formatApiError, logDotClass } from "./agent-sandbox/status-utils";
 import type {
@@ -24,6 +23,21 @@ import type {
 } from "./agent-sandbox/types";
 import { targetToPanel } from "./agent-sandbox/types";
 import type { AgentSandboxConfig } from "@/types/skills";
+
+type StreamEvent = {
+  type?: string;
+  content?: string;
+  message?: string;
+  toolName?: string;
+  payload?: Record<string, unknown>;
+};
+
+type HighlightRect = {
+  top: number;
+  left: number;
+  width: number;
+  height: number;
+};
 
 type Props = {
   courseSlug: string;
@@ -88,6 +102,8 @@ export function AgentLearnerSandbox({
   const [sending, setSending] = useState(false);
   const [finishing, setFinishing] = useState(false);
   const [reviewing, setReviewing] = useState<string | null>(null);
+  const [runActivity, setRunActivity] = useState<string | undefined>();
+  const [highlightRect, setHighlightRect] = useState<HighlightRect | null>(null);
   const [reviews, setReviews] = useState<Record<string, ReviewResult>>({});
   const [createdAgentId, setCreatedAgentId] = useState<string | undefined>();
   const [completionSent, setCompletionSent] = useState(completed);
@@ -122,7 +138,8 @@ export function AgentLearnerSandbox({
   });
   const appUrl =
     process.env.NEXT_PUBLIC_AGENT_COMMONS_APP_URL || "https://www.agentcommons.io";
-  const googleConnectUrl = `${appUrl.replace(/\/$/, "")}/oauth/connect?provider=google_workspace&returnUrl=/studio/tools`;
+  const [sandboxReturnUrl, setSandboxReturnUrl] = useState("");
+  const googleConnectUrl = `${appUrl.replace(/\/$/, "")}/oauth/connect?provider=google_workspace&returnUrl=${encodeURIComponent(sandboxReturnUrl || "/studio/tools")}`;
   const agentStudioUrl = createdAgentId
     ? `${appUrl.replace(/\/$/, "")}/studio/agents/${createdAgentId}`
     : "";
@@ -162,6 +179,50 @@ export function AgentLearnerSandbox({
   // State setters are stable; this should only reload when the sandbox identity changes.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [authenticated, challengeId, courseSlug]);
+
+  useEffect(() => {
+    setSandboxReturnUrl(window.location.href);
+  }, []);
+
+  useEffect(() => {
+    if (!activeStep) {
+      setHighlightRect(null);
+      return;
+    }
+
+    let animationFrame = 0;
+    const updateHighlight = () => {
+      const selector =
+        activeStep.targetSelector?.trim() || defaultGuideSelector(activeStep.target);
+      const target = selector ? document.querySelector(selector) : null;
+      if (!(target instanceof HTMLElement)) {
+        setHighlightRect(null);
+        return;
+      }
+      target.scrollIntoView({ block: "center", inline: "nearest", behavior: "smooth" });
+      const rect = target.getBoundingClientRect();
+      setHighlightRect({
+        top: rect.top,
+        left: rect.left,
+        width: rect.width,
+        height: rect.height,
+      });
+    };
+
+    const timeout = window.setTimeout(() => {
+      updateHighlight();
+      animationFrame = window.requestAnimationFrame(updateHighlight);
+    }, 180);
+    window.addEventListener("resize", updateHighlight);
+    window.addEventListener("scroll", updateHighlight, true);
+
+    return () => {
+      window.clearTimeout(timeout);
+      if (animationFrame) window.cancelAnimationFrame(animationFrame);
+      window.removeEventListener("resize", updateHighlight);
+      window.removeEventListener("scroll", updateHighlight, true);
+    };
+  }, [activeStep, drawerOpen, logsOpen]);
 
   if (introOpen && !completed) {
     return (
@@ -338,41 +399,82 @@ export function AgentLearnerSandbox({
     setMessages(nextMessages);
     setChatInput("");
     setSending(true);
+    setRunActivity("Agent is starting");
+    setMessages([...nextMessages, { role: "assistant", content: "" }]);
     addLog({ level: "info", message: "Running the real agent..." });
 
-    const response = await fetch(`/api/skills/${courseSlug}/sandbox/chat`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        agentId: createdAgentId,
-        messages: nextMessages.map((message) => ({
-          role: message.role,
-          content: message.content,
-        })),
-      }),
-    });
-    const payload = await response.json().catch(() => ({}));
-    setSending(false);
+    try {
+      const response = await fetch(`/api/skills/${courseSlug}/sandbox/chat`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          agentId: createdAgentId,
+          messages: nextMessages.map((message) => ({
+            role: message.role,
+            content: message.content,
+          })),
+        }),
+      });
 
-    if (!response.ok) {
-      const error = formatApiError(payload, "The agent run failed.");
+      if (!response.ok) {
+        const payload = await response.json().catch(() => ({}));
+        throw new Error(formatApiError(payload, "The agent run failed."));
+      }
+      if (!response.body) {
+        throw new Error("The agent stream did not return a readable response.");
+      }
+
+      let assistantText = "";
+      const appendAssistantText = (delta: string) => {
+        assistantText += delta;
+        setMessages((current) => replaceLastAssistant(current, assistantText));
+      };
+
+      for await (const event of readSseEvents(response.body)) {
+        if (event.type === "token" && event.content) {
+          appendAssistantText(event.content);
+          setRunActivity("Agent is responding");
+        } else if (event.type === "toolStart") {
+          const toolName = event.toolName || "tool";
+          setRunActivity(`Using ${toolName}`);
+          addLog({ level: "info", message: `Tool call started: ${toolName}.` });
+        } else if (event.type === "toolEnd") {
+          const toolName = event.toolName || "tool";
+          setRunActivity("Agent is continuing");
+          addLog({ level: "success", message: `Tool call finished: ${toolName}.` });
+        } else if (event.type === "final") {
+          const finalText = extractStreamFinalText(event);
+          if (finalText && !assistantText.trim()) {
+            appendAssistantText(finalText);
+          }
+        } else if (event.type === "error" || event.type === "failed") {
+          throw new Error(event.message || "The agent run failed.");
+        }
+      }
+
+      const completedMessages: ChatMessage[] = [
+        ...nextMessages,
+        {
+          role: "assistant",
+          content:
+            assistantText.trim() ||
+            "The agent finished without returning visible text.",
+        },
+      ];
+      setMessages(completedMessages);
+      addLog({ level: "success", message: "Agent returned a live response." });
+      void persistSandboxState({ messages: completedMessages, chatInput: "" });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "The agent run failed.";
       setMessages((current) => [
-        ...current,
-        { role: "assistant", content: `Run failed: ${error}` },
+        ...current.filter((item, index) => item.content || index < current.length - 1),
+        { role: "assistant", content: `Run failed: ${message}` },
       ]);
-      addLog({ level: "error", message: error });
-      return;
+      addLog({ level: "error", message });
+    } finally {
+      setSending(false);
+      setRunActivity(undefined);
     }
-
-    const assistantText = extractAssistantText(payload.data);
-    const completedMessages: ChatMessage[] = [
-      ...nextMessages,
-      { role: "assistant", content: assistantText },
-    ];
-    setMessages(completedMessages);
-    addLog({ level: "success", message: "Agent returned a live response." });
-    void persistSandboxState({ messages: completedMessages, chatInput: "" });
-    requestAnimationFrame(() => chatEndRef.current?.scrollIntoView({ block: "end" }));
   }
 
   async function finishSandbox() {
@@ -493,7 +595,7 @@ export function AgentLearnerSandbox({
               className="relative rounded-lg border border-slate-200 p-2 text-slate-600"
               aria-label="Toggle logs"
             >
-              <PanelRight className="h-4 w-4" />
+              <Terminal className="h-4 w-4" />
               {lastLog ? (
                 <span
                   className={logDotClass(lastLog.level)}
@@ -518,6 +620,7 @@ export function AgentLearnerSandbox({
             chatInput={chatInput}
             createdAgentId={createdAgentId}
             chatEndRef={chatEndRef}
+            activityLabel={runActivity}
             onInputChange={setChatInput}
             onSend={sendMessage}
           />
@@ -554,6 +657,14 @@ export function AgentLearnerSandbox({
           canFinish={Boolean(createdAgentId) && hasUserMessage && !completionSent}
         />
       </main>
+      <GuideSpotlight
+        rect={highlightRect}
+        title={activeStep?.title}
+        body={activeStep?.body}
+        placement={activeStep?.placement}
+        onNext={() => void nextGuideStep()}
+        visible={Boolean(activeStep)}
+      />
     </div>
   );
 
@@ -675,4 +786,170 @@ export function AgentLearnerSandbox({
     if (state.logs?.length) setLogs(state.logs);
     if (state.reviews) setReviews(state.reviews);
   }
+}
+
+function replaceLastAssistant(messages: ChatMessage[], content: string): ChatMessage[] {
+  const next = [...messages];
+  for (let index = next.length - 1; index >= 0; index -= 1) {
+    if (next[index].role === "assistant") {
+      next[index] = { ...next[index], content };
+      return next;
+    }
+  }
+  return [...next, { role: "assistant", content }];
+}
+
+async function* readSseEvents(stream: ReadableStream<Uint8Array>) {
+  const reader = stream.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) {
+      if (buffer.trim()) {
+        const event = parseSseFrame(buffer);
+        if (event && event.type !== "keepalive") yield event;
+      }
+      break;
+    }
+    buffer += decoder.decode(value, { stream: true });
+    const frames = buffer.split("\n\n");
+    buffer = frames.pop() || "";
+
+    for (const frame of frames) {
+      const event = parseSseFrame(frame);
+      if (event && event.type !== "keepalive") yield event;
+    }
+  }
+}
+
+function parseSseFrame(frame: string) {
+  const data = frame
+    .split("\n")
+    .filter((line) => line.startsWith("data:"))
+    .map((line) => line.slice(5).trim())
+    .join("\n");
+  if (!data || data === "[DONE]") return null;
+  try {
+    return JSON.parse(data) as StreamEvent;
+  } catch {
+    return null;
+  }
+}
+
+function extractStreamFinalText(event: StreamEvent) {
+  const payload = event.payload || {};
+  return (
+    event.content ||
+    stringValue(payload.content) ||
+    stringValue(payload.text) ||
+    stringValue(payload.message) ||
+    ""
+  );
+}
+
+function stringValue(value: unknown) {
+  return typeof value === "string" ? value : "";
+}
+
+function defaultGuideSelector(target?: string) {
+  const selectors: Record<string, string> = {
+    identity: '[data-sandbox-target="agent-name"]',
+    system_prompt: '[data-sandbox-target="system-prompt"]',
+    skills: '[data-sandbox-target="skills"]',
+    tools: '[data-sandbox-target="tools"]',
+    connectors: '[data-sandbox-target="connect-google"]',
+    workflows: '[data-sandbox-target="workflows"]',
+    tasks: '[data-sandbox-target="first-task"]',
+    chat: '[data-sandbox-target="chat-input"]',
+    logs: '[data-sandbox-target="logs-panel"]',
+    publish: '[data-sandbox-target="finish-sandbox"]',
+  };
+  return target ? selectors[target] : "";
+}
+
+function GuideSpotlight({
+  rect,
+  title,
+  body,
+  placement = "auto",
+  visible,
+  onNext,
+}: {
+  rect: HighlightRect | null;
+  title?: string;
+  body?: string;
+  placement?: "top" | "right" | "bottom" | "left" | "auto";
+  visible: boolean;
+  onNext: () => void;
+}) {
+  if (!visible || !rect || !title || !body) return null;
+  const gap = 12;
+  const resolvedPlacement =
+    placement === "auto" ? (rect.top > 180 ? "top" : "bottom") : placement;
+  const dialogStyle = guideDialogStyle(rect, resolvedPlacement, gap);
+
+  return (
+    <div className="pointer-events-none fixed inset-0 z-50">
+      <div
+        className="absolute rounded-xl border-2 border-sky-500 shadow-[0_0_0_9999px_rgba(15,23,42,0.24)]"
+        style={{
+          top: rect.top - 6,
+          left: rect.left - 6,
+          width: rect.width + 12,
+          height: rect.height + 12,
+        }}
+      />
+      <div
+        className="pointer-events-auto absolute w-[min(20rem,calc(100vw-2rem))] rounded-lg border border-slate-200 bg-white p-3 text-slate-950 shadow-xl"
+        style={dialogStyle}
+      >
+        <p className="text-sm font-black">{title}</p>
+        <p className="mt-1 text-xs leading-5 text-slate-600">{body}</p>
+        <button
+          type="button"
+          onClick={onNext}
+          className="mt-3 rounded-lg bg-slate-950 px-3 py-1.5 text-xs font-black text-white"
+        >
+          Next
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function guideDialogStyle(
+  rect: HighlightRect,
+  placement: "top" | "right" | "bottom" | "left",
+  gap: number
+) {
+  const vw = window.innerWidth;
+  const vh = window.innerHeight;
+  const width = Math.min(320, vw - 32);
+  const clampX = (value: number) => Math.max(16, Math.min(value, vw - width - 16));
+  const clampY = (value: number) => Math.max(16, Math.min(value, vh - 160));
+
+  if (placement === "top") {
+    return {
+      left: clampX(rect.left + rect.width / 2 - width / 2),
+      top: clampY(rect.top - 150 - gap),
+    };
+  }
+  if (placement === "right") {
+    return {
+      left: clampX(rect.left + rect.width + gap),
+      top: clampY(rect.top),
+    };
+  }
+  if (placement === "left") {
+    return {
+      left: clampX(rect.left - width - gap),
+      top: clampY(rect.top),
+    };
+  }
+  return {
+    left: clampX(rect.left + rect.width / 2 - width / 2),
+    top: clampY(rect.top + rect.height + gap),
+  };
 }

@@ -75,6 +75,8 @@ export function createSandboxConfig(): AgentSandboxConfig {
         title: "Name the agent",
         body:
           "Give the agent a clear identity so you know what kind of helper you are building.",
+        targetSelector: '[data-sandbox-target="agent-name"]',
+        placement: "right",
       },
       {
         id: "prompt",
@@ -82,6 +84,8 @@ export function createSandboxConfig(): AgentSandboxConfig {
         title: "Shape behavior",
         body:
           "Edit the system prompt so the agent has boundaries, tone, and a specific job.",
+        targetSelector: '[data-sandbox-target="system-prompt"]',
+        placement: "right",
       },
       {
         id: "skills",
@@ -89,6 +93,8 @@ export function createSandboxConfig(): AgentSandboxConfig {
         title: "Add a skill",
         body:
           "Choose a reusable instruction set that helps the agent repeat good practice.",
+        targetSelector: '[data-sandbox-target="skill-instructions"]',
+        placement: "right",
       },
       {
         id: "tools",
@@ -96,6 +102,8 @@ export function createSandboxConfig(): AgentSandboxConfig {
         title: "Connect a tool",
         body:
           "Select a tool or connector so the agent can do more than write a response.",
+        targetSelector: '[data-sandbox-target="tools"]',
+        placement: "right",
       },
       {
         id: "run",
@@ -103,6 +111,8 @@ export function createSandboxConfig(): AgentSandboxConfig {
         title: "Run it",
         body:
           "Send the first task and inspect the logs for success, warnings, or failure.",
+        targetSelector: '[data-sandbox-target="chat-input"]',
+        placement: "top",
       },
     ],
   };

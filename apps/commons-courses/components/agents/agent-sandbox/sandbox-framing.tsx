@@ -82,8 +82,8 @@ export function SandboxCompletion({
   onContinue?: () => void;
 }) {
   return (
-    <section className="flex h-full min-h-0 flex-col overflow-y-auto bg-white">
-      <div className="mx-auto flex min-h-full w-full max-w-2xl flex-col justify-center px-5 py-6 text-center">
+    <section className="grid h-full min-h-0 w-full place-items-center overflow-y-auto bg-white">
+      <div className="mx-auto flex w-full max-w-2xl flex-col items-center justify-center px-5 py-6 text-center">
         <CheckCircle2 className="mx-auto h-10 w-10 text-green-600" />
         <h2 className="mt-4 text-2xl font-semibold tracking-tight text-slate-950">
           {completion?.title || "Agent sandbox complete"}

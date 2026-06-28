@@ -1,22 +1,28 @@
 'use client';
 
-import { Suspense } from 'react';
+import { Suspense, useEffect, useState } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { XCircle, AlertTriangle } from 'lucide-react';
 
 function OAuthErrorContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
+  const [storedReturnUrl, setStoredReturnUrl] = useState<string | null>(null);
 
   const message = searchParams.get('message') || 'An unknown error occurred';
   const returnUrl = searchParams.get('returnUrl') || '/studio';
+  const destination = storedReturnUrl || returnUrl;
+
+  useEffect(() => {
+    setStoredReturnUrl(window.sessionStorage.getItem('oauthReturnUrl'));
+  }, []);
 
   const handleRetry = () => {
     router.back();
   };
 
   const handleGoHome = () => {
-    router.push(returnUrl);
+    router.push(destination);
   };
 
   return (

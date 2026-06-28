@@ -81,8 +81,12 @@ export class OAuthProviderService {
    * @returns Provider configuration
    */
   async getProvider(providerKey: string) {
+    const providerKeys = providerAliases(providerKey);
     const provider = await this.db.query.oauthProvider.findFirst({
-      where: (p: any) => eq(p.providerKey, providerKey),
+      where: (p: any) =>
+        providerKeys.length > 1
+          ? or(...providerKeys.map((key) => eq(p.providerKey, key)))
+          : eq(p.providerKey, providerKey),
     });
 
     if (!provider) {
@@ -404,4 +408,11 @@ export class OAuthProviderService {
       return false;
     }
   }
+}
+
+function providerAliases(providerKey: string) {
+  if (providerKey === 'google_workspace' || providerKey === 'google') {
+    return ['google_workspace', 'google', 'google_oauth'];
+  }
+  return [providerKey];
 }

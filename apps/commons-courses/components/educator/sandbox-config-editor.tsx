@@ -555,7 +555,7 @@ function GuideStepEditor({
         {steps.map((step, index) => (
           <div
             key={step.id || index}
-            className="grid gap-2 rounded-lg bg-slate-50 p-3 md:grid-cols-[1fr_1fr_auto]"
+            className="grid gap-2 rounded-lg bg-slate-50 p-3 md:grid-cols-[1fr_1fr_1fr_auto]"
           >
             <Field
               label="Title"
@@ -587,6 +587,27 @@ function GuideStepEditor({
                 ))}
               </select>
             </label>
+            <label>
+              <span className="text-sm font-bold text-slate-700">Dialog side</span>
+              <select
+                className="mt-2 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+                value={step.placement || "auto"}
+                onChange={(event) => {
+                  const next = [...steps];
+                  next[index] = {
+                    ...step,
+                    placement: event.target.value as NonNullable<typeof step.placement>,
+                  };
+                  onChange(next);
+                }}
+              >
+                {["auto", "top", "right", "bottom", "left"].map((placement) => (
+                  <option key={placement} value={placement}>
+                    {placement}
+                  </option>
+                ))}
+              </select>
+            </label>
             <button
               type="button"
               onClick={() => onChange(steps.filter((_, stepIndex) => stepIndex !== index))}
@@ -594,13 +615,24 @@ function GuideStepEditor({
             >
               Remove
             </button>
-            <div className="md:col-span-3">
+            <div className="md:col-span-4">
               <TextArea
                 label="Instruction"
                 value={step.body}
                 onChange={(body) => {
                   const next = [...steps];
                   next[index] = { ...step, body };
+                  onChange(next);
+                }}
+              />
+            </div>
+            <div className="md:col-span-4">
+              <Field
+                label="Optional CSS selector or [data-sandbox-target]"
+                value={step.targetSelector || ""}
+                onChange={(targetSelector) => {
+                  const next = [...steps];
+                  next[index] = { ...step, targetSelector };
                   onChange(next);
                 }}
               />

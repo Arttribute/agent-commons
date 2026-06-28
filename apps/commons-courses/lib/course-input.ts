@@ -195,6 +195,12 @@ function normalizeSandboxConfig(input?: AgentSandboxConfig) {
             target: sandboxTargets.includes(step.target) ? step.target : "identity",
             title: step.title?.trim() || `Step ${index + 1}`,
             body: step.body?.trim() || "",
+            targetSelector: step.targetSelector?.trim() || undefined,
+            placement: ["top", "right", "bottom", "left", "auto"].includes(
+              step.placement || ""
+            )
+              ? step.placement
+              : "auto",
           }))
           .filter((step) => step.body)
       : [],

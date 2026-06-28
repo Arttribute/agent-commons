@@ -8,10 +8,19 @@ function OAuthSuccessContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const [countdown, setCountdown] = useState(3);
+  const [storedReturnUrl, setStoredReturnUrl] = useState<string | null>(null);
+  const [storedProviderLabel, setStoredProviderLabel] = useState<string | null>(null);
 
   const connectionId = searchParams.get('connectionId');
   const provider = searchParams.get('provider');
   const returnUrl = searchParams.get('returnUrl') || '/studio';
+
+  useEffect(() => {
+    setStoredReturnUrl(window.sessionStorage.getItem('oauthReturnUrl'));
+    setStoredProviderLabel(window.sessionStorage.getItem('oauthProviderLabel'));
+  }, []);
+
+  const destination = storedReturnUrl || returnUrl;
 
   useEffect(() => {
     // Auto-redirect after 3 seconds
@@ -19,7 +28,9 @@ function OAuthSuccessContent() {
       setCountdown((prev) => {
         if (prev <= 1) {
           clearInterval(timer);
-          router.push(returnUrl);
+          window.sessionStorage.removeItem('oauthReturnUrl');
+          window.sessionStorage.removeItem('oauthProviderLabel');
+          router.push(destination);
           return 0;
         }
         return prev - 1;
@@ -27,10 +38,12 @@ function OAuthSuccessContent() {
     }, 1000);
 
     return () => clearInterval(timer);
-  }, [router, returnUrl]);
+  }, [router, destination]);
 
   const handleContinue = () => {
-    router.push(returnUrl);
+    window.sessionStorage.removeItem('oauthReturnUrl');
+    window.sessionStorage.removeItem('oauthProviderLabel');
+    router.push(destination);
   };
 
   return (
@@ -49,7 +62,9 @@ function OAuthSuccessContent() {
 
           {/* Description */}
           <p className="text-gray-600 dark:text-gray-400 mb-6">
-            {provider
+            {storedProviderLabel
+              ? `${storedProviderLabel} has been connected successfully.`
+              : provider
               ? `Your ${provider.replace('_', ' ')} account has been connected successfully.`
               : 'Your OAuth account has been connected successfully.'}
           </p>

@@ -56,6 +56,7 @@ export async function GET(
     const { path: pathArray } = await params;
     const path = pathArray.join('/');
     const { searchParams } = new URL(request.url);
+    const serviceAllowed = path.startsWith('providers') || path.startsWith('callback/');
 
     // Build query string
     const queryString = searchParams.toString();
@@ -66,7 +67,7 @@ export async function GET(
 
     // Forward headers from the original request
     const headers: Record<string, string> = {
-      ...(await backendAuthHeaders()),
+      ...(await backendAuthHeaders({ allowServiceKey: serviceAllowed })),
       'Content-Type': 'application/json',
     };
 

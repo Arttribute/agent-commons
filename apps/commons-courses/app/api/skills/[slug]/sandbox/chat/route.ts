@@ -48,11 +48,12 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const response = await fetch(`${baseUrl.replace(/\/$/, "")}/v1/agents/run`, {
+  const response = await fetch(`${baseUrl.replace(/\/$/, "")}/v1/agents/run/stream`, {
     method: "POST",
     headers: {
       Authorization: `Bearer ${token}`,
       "Content-Type": "application/json",
+      Accept: "text/event-stream",
       "x-initiator": user.identityUserId,
     },
     body: JSON.stringify({
@@ -64,12 +65,19 @@ export async function POST(request: NextRequest) {
     }),
   });
 
-  const data = await response.json().catch(() => ({
-    error: response.statusText || "Agent run failed.",
-  }));
   if (!response.ok) {
+    const data = await response.json().catch(() => ({
+      error: response.statusText || "Agent run failed.",
+    }));
     return NextResponse.json(data, { status: response.status });
   }
 
-  return NextResponse.json({ data });
+  return new Response(response.body, {
+    status: 200,
+    headers: {
+      "Content-Type": "text/event-stream",
+      "Cache-Control": "no-cache",
+      Connection: "keep-alive",
+    },
+  });
 }

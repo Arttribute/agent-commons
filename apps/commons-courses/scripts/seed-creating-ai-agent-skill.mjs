@@ -462,6 +462,8 @@ function createSkillPack(assetUrls) {
               title: "Name the agent",
               body:
                 "Create a clear name and persona so the agent has a role the learner can understand.",
+              targetSelector: '[data-sandbox-target="agent-name"]',
+              placement: "right",
             },
             {
               id: "prompt",
@@ -469,6 +471,8 @@ function createSkillPack(assetUrls) {
               title: "Write the system prompt",
               body:
                 "Include persona, goal, tone, boundaries, and tool-use safety. Run the AI review before moving on.",
+              targetSelector: '[data-sandbox-target="system-prompt"]',
+              placement: "right",
             },
             {
               id: "skills",
@@ -476,6 +480,8 @@ function createSkillPack(assetUrls) {
               title: "Add a skill",
               body:
                 "Choose or write a repeatable process the agent can follow for study planning.",
+              targetSelector: '[data-sandbox-target="skill-instructions"]',
+              placement: "right",
             },
             {
               id: "tools",
@@ -483,6 +489,8 @@ function createSkillPack(assetUrls) {
               title: "Choose connectors",
               body:
                 "Select a Google connector the agent would need. Keep permissions scoped to the learning task.",
+              targetSelector: '[data-sandbox-target="tools"]',
+              placement: "right",
             },
             {
               id: "workflow",
@@ -490,6 +498,8 @@ function createSkillPack(assetUrls) {
               title: "Read the workflow",
               body:
                 "Notice how prompt, skill, connector, action, and logs connect in order.",
+              targetSelector: '[data-sandbox-target="workflows"]',
+              placement: "right",
             },
             {
               id: "test",
@@ -497,6 +507,8 @@ function createSkillPack(assetUrls) {
               title: "Test the agent",
               body:
                 "Ask the agent to help plan a study week and check the logs for success, warning, or failure.",
+              targetSelector: '[data-sandbox-target="chat-input"]',
+              placement: "top",
             },
           ],
           review: {

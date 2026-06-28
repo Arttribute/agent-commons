@@ -105,6 +105,7 @@ export function BottomGuide({
           ) : null}
           {createdAgentId ? (
             <button
+              data-sandbox-target="finish-sandbox"
               type="button"
               onClick={onSync}
               disabled={!canSync || syncing}
