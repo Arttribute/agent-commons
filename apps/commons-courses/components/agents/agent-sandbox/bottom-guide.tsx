@@ -1,3 +1,5 @@
+"use client";
+
 import {
   CheckCircle2,
   ChevronRight,
@@ -6,7 +8,6 @@ import {
   EyeOff,
   Loader2,
   Play,
-  Check,
 } from "lucide-react";
 
 type BottomGuideProps = {
@@ -56,96 +57,115 @@ export function BottomGuide({
 }: BottomGuideProps) {
   return (
     <footer className="shrink-0 border-t border-slate-200 bg-white px-3 py-2">
-      <div className="grid w-full gap-2 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
-        <div className="min-w-0 overflow-hidden">
-          <div className="flex items-center gap-2 text-xs font-bold text-slate-500">
-            {completed ? (
-              <CheckCircle2 className="h-4 w-4 text-green-600" />
+      {/* Row 1 — status + guide toggle */}
+      <div className="flex min-w-0 items-center gap-2">
+        <div className="flex min-w-0 flex-1 items-center gap-1.5">
+          {completed ? (
+            <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-green-600" />
+          ) : (
+            <Coins className="h-3.5 w-3.5 shrink-0 text-amber-500" />
+          )}
+          <span className="min-w-0 truncate text-xs font-bold text-slate-500">
+            {statusLabel}
+          </span>
+          {creditReward ? (
+            <span className="shrink-0 text-xs font-bold text-slate-400">
+              +{creditReward}
+            </span>
+          ) : null}
+        </div>
+        {guideLength ? (
+          <button
+            type="button"
+            onClick={onToggleGuide}
+            className="shrink-0 rounded-lg border border-slate-200 p-1.5 text-slate-500 hover:bg-slate-50"
+            title={guideVisible ? "Hide guide" : "Show guide"}
+            aria-label={guideVisible ? "Hide guide" : "Show guide"}
+          >
+            {guideVisible ? (
+              <EyeOff className="h-3.5 w-3.5" />
             ) : (
-              <Coins className="h-4 w-4 text-amber-500" />
+              <Eye className="h-3.5 w-3.5" />
             )}
-            <span>{statusLabel}</span>
-            {creditReward ? <span>+{creditReward} credits</span> : null}
-          </div>
+          </button>
+        ) : null}
+      </div>
+
+      {/* Row 2 — step info + action buttons */}
+      <div className="mt-1.5 flex min-w-0 items-center gap-2">
+        {/* Step counter + title — truncates to give buttons room */}
+        <div className="min-w-0 flex-1">
           {activeStep ? (
             <button
               type="button"
               onClick={onOpenStep}
-              className="mt-1 flex w-full max-w-3xl items-center gap-2 text-left text-sm font-semibold text-slate-950"
+              className="flex w-full min-w-0 items-center gap-1.5 text-left"
             >
               <span className="shrink-0 text-xs text-slate-400">
                 {guideIndex + 1}/{guideLength}
               </span>
-              <span className="min-w-0 truncate">{activeStep.title}</span>
-              <ChevronRight className="h-4 w-4 shrink-0 text-slate-400" />
+              <span className="min-w-0 truncate text-xs font-semibold text-slate-800">
+                {activeStep.title}
+              </span>
+              <ChevronRight className="h-3.5 w-3.5 shrink-0 text-slate-300" />
             </button>
           ) : null}
         </div>
-        <div className="flex flex-wrap items-center justify-end gap-2">
-          {guideLength ? (
-            <button
-              type="button"
-              onClick={onToggleGuide}
-              className="rounded-lg border border-slate-200 p-2 text-slate-500 hover:bg-slate-50"
-              title={guideVisible ? "Hide guide" : "Show guide"}
-              aria-label={guideVisible ? "Hide guide" : "Show guide"}
-            >
-              {guideVisible ? (
-                <EyeOff className="h-4 w-4" />
-              ) : (
-                <Eye className="h-4 w-4" />
-              )}
-            </button>
-          ) : null}
+
+        {/* Actions — shrink-0 so they never get squeezed out */}
+        <div className="flex shrink-0 items-center gap-1.5">
           {guideLength && !guideVisible ? (
             <button
               type="button"
               onClick={onNextStep}
-              className="rounded-lg border border-slate-200 px-3 py-2 text-xs font-black text-slate-700"
+              className="rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs font-bold text-slate-700"
             >
               Next
             </button>
           ) : null}
+
           {!createdAgentId ? (
             <button
               type="button"
               onClick={onCreate}
               disabled={!canCreate || creating}
-              className="inline-flex items-center gap-2 rounded-lg bg-slate-950 px-4 py-2 text-xs font-black text-white disabled:cursor-not-allowed disabled:opacity-40"
+              className="inline-flex items-center gap-1.5 rounded-lg bg-slate-950 px-3 py-1.5 text-xs font-bold text-white disabled:cursor-not-allowed disabled:opacity-40"
             >
               {creating ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
               ) : (
-                <Play className="h-4 w-4" />
+                <Play className="h-3.5 w-3.5" />
               )}
-              Create agent
+              {/* Short label on mobile, full label on sm+ */}
+              <span className="sm:hidden">Create</span>
+              <span className="hidden sm:inline">Create agent</span>
             </button>
           ) : null}
+
           {createdAgentId ? (
             <button
               type="button"
               onClick={onSync}
               disabled={!canSync || syncing}
-              className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-2 text-xs font-bold text-slate-600 disabled:cursor-not-allowed disabled:opacity-40"
+              className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs font-bold text-slate-600 disabled:cursor-not-allowed disabled:opacity-40"
             >
               {syncing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
               Save
             </button>
           ) : null}
+
           {createdAgentId ? (
             <button
               data-sandbox-target="finish-sandbox"
               type="button"
               onClick={onFinish}
               disabled={!canFinish || finishing}
-              className="inline-flex items-center gap-2 rounded-lg bg-slate-950 px-4 py-2 text-xs font-black text-white disabled:cursor-not-allowed disabled:opacity-40"
+              className="inline-flex items-center gap-1.5 rounded-lg bg-slate-950 px-3 py-1.5 text-xs font-bold text-white disabled:cursor-not-allowed disabled:opacity-40"
             >
-              {finishing ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <Check className="h-4 w-4" />
-              )}
-              Finish sandbox
+              {finishing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
+              {/* Short label on mobile, full label on sm+ */}
+              <span className="sm:hidden">Finish</span>
+              <span className="hidden sm:inline">Finish sandbox</span>
             </button>
           ) : null}
         </div>
