@@ -2,6 +2,12 @@ import { auth } from "@/auth";
 
 const serviceTokenCache = new Map<string, { value: string; expiresAt: number }>();
 
+function envValue(name: string) {
+  const value = process.env[name]?.trim();
+  if (!value || value === '""' || value === "''") return undefined;
+  return value;
+}
+
 /**
  * Returns Authorization header for server-side requests to the backend API.
  * Uses NEST_API_SECRET_KEY — a server-side-only env var (no NEXT_PUBLIC_ prefix).
@@ -17,24 +23,24 @@ export async function backendAuthHeaders(options: { allowServiceKey?: boolean } 
     if (identityToken) return { Authorization: `Bearer ${identityToken}` };
 
     const serviceKey =
-      process.env.AGENT_COMMONS_API_KEY ||
-      process.env.COMMONS_API_KEY ||
-      process.env.NEST_API_SECRET_KEY;
+      envValue("AGENT_COMMONS_API_KEY") ||
+      envValue("COMMONS_API_KEY") ||
+      envValue("NEST_API_SECRET_KEY");
     if (serviceKey) return { Authorization: `Bearer ${serviceKey}` };
   }
   if (process.env.ALLOW_LEGACY_MANAGEMENT_AUTH !== "true") return {};
-  const key = process.env.NEST_API_SECRET_KEY;
+  const key = envValue("NEST_API_SECRET_KEY");
   return key ? { Authorization: `Bearer ${key}` } : {};
 }
 
 async function commonsIdentityServiceToken() {
-  const issuer = process.env.COMMONS_IDENTITY_ISSUER;
+  const issuer = envValue("COMMONS_IDENTITY_ISSUER");
   const clientId =
-    process.env.AGENT_COMMONS_SERVICE_CLIENT_ID ||
-    process.env.COMMONS_IDENTITY_CLIENT_ID;
+    envValue("AGENT_COMMONS_SERVICE_CLIENT_ID") ||
+    envValue("COMMONS_IDENTITY_CLIENT_ID");
   const clientSecret =
-    process.env.AGENT_COMMONS_SERVICE_CLIENT_SECRET ||
-    process.env.COMMONS_IDENTITY_CLIENT_SECRET;
+    envValue("AGENT_COMMONS_SERVICE_CLIENT_SECRET") ||
+    envValue("COMMONS_IDENTITY_CLIENT_SECRET");
   if (!issuer || !clientId || !clientSecret) return null;
 
   const cacheKey = `${issuer}:${clientId}`;
