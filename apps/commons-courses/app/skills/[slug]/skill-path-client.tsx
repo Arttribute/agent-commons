@@ -156,9 +156,8 @@ export default function SkillPathClient({
       <div className="min-h-screen bg-white">
         <Nav />
         <LoadingScreen
-          title="Opening your skill path"
-          subtitle="Your challenge deck is ready. We’re just checking your latest progress."
-          tone="sky"
+          title="Opening skill path"
+          subtitle="Checking your latest progress."
         />
       </div>
     );

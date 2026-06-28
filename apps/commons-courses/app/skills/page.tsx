@@ -1,10 +1,10 @@
-import { auth } from "@/lib/auth";
-import { getSkillsOverview } from "@/lib/skills-overview";
+import { getPublicSkillsOverview } from "@/lib/skills-overview";
 import { SkillsClient } from "./skills-client";
 
+export const revalidate = 60;
+
 export default async function SkillsPage() {
-  const session = await auth();
-  const overview = await getSkillsOverview(session?.user);
+  const overview = await getPublicSkillsOverview();
 
   return <SkillsClient {...overview} />;
 }

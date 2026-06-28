@@ -73,7 +73,6 @@ function CheckoutSignIn() {
             title="Opening your course"
             subtitle="Your payment is complete. We are linking your course access now."
             compact
-            tone="amber"
           />
         )}
       </div>

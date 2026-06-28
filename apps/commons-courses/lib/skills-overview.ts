@@ -1,3 +1,4 @@
+import { unstable_cache } from "next/cache";
 import Course from "@/models/Course";
 import Enrollment from "@/models/Enrollment";
 import { connectDB } from "@/lib/db";
@@ -197,6 +198,12 @@ export async function getSkillsOverview(user?: {
     }),
   };
 }
+
+export const getPublicSkillsOverview = unstable_cache(
+  async () => getSkillsOverview(),
+  ["commonlab-public-skills-overview"],
+  { revalidate: 60 }
+);
 
 function buildProgressBySlug({
   packs,
