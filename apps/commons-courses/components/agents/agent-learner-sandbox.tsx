@@ -945,6 +945,12 @@ function GuideTour({
   // Step text is already visible in the BottomGuide bar.
   const isMobile = vw < 640;
 
+  // Keep the dialog above the chat input row so it never covers the Send button
+  // or the message input. Query the actual send button position at render time.
+  const sendEl = document.querySelector('[data-sandbox-target="send-button"]');
+  const safeBottom =
+    sendEl instanceof HTMLElement ? sendEl.getBoundingClientRect().top - 8 : vh - 70;
+
   // Prefer side placement (right → left) to avoid covering the focused element
   // above or below. Fall back to bottom/top only when there truly is no side room.
   const resolved: "top" | "right" | "bottom" | "left" =
@@ -953,12 +959,12 @@ function GuideTour({
         ? "right"
         : rect.left - gap - dialogW >= 0
           ? "left"
-          : rect.top + rect.height + gap + dialogH <= vh
+          : rect.top + rect.height + gap + dialogH <= safeBottom
             ? "bottom"
             : "top"
       : placement;
 
-  const style = isMobile ? {} : tourDialogStyle(rect, resolved, gap, dialogW, dialogH, vw, vh);
+  const style = isMobile ? {} : tourDialogStyle(rect, resolved, gap, dialogW, dialogH, vw, safeBottom);
   const isLast = guideIndex + 1 >= guideLength;
 
   return (
@@ -1018,10 +1024,11 @@ function tourDialogStyle(
   dialogW: number,
   dialogH: number,
   vw: number,
-  vh: number
+  safeBottom: number
 ) {
   const clampX = (v: number) => Math.max(12, Math.min(v, vw - dialogW - 12));
-  const clampY = (v: number) => Math.max(12, Math.min(v, vh - dialogH - 12));
+  // Never let the dialog's bottom edge reach the chat input / send button row
+  const clampY = (v: number) => Math.max(12, Math.min(v, safeBottom - dialogH));
   const cx = rect.left + rect.width / 2 - dialogW / 2;
   const cy = rect.top + rect.height / 2 - dialogH / 2;
   if (placement === "top") return { left: clampX(cx), top: clampY(rect.top - dialogH - gap) };
