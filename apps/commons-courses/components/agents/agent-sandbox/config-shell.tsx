@@ -47,6 +47,7 @@ export function ConfigRail({
             <button
               key={panel}
               type="button"
+              data-sandbox-target={`rail-${panel}`}
               onClick={() => onOpenPanel(panel)}
               className={cn(
                 "rounded-lg p-2",

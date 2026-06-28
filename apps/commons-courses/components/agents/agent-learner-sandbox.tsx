@@ -193,13 +193,31 @@ export function AgentLearnerSandbox({
 
     let frameId = 0;
     let active = true;
-    const selector = activeStep.targetSelector?.trim() || defaultGuideSelector(activeStep.target);
+    const primarySelector = activeStep.targetSelector?.trim() || defaultGuideSelector(activeStep.target);
+    // When the drawer is closed (or the wrong panel is open), fall back to the
+    // corresponding rail icon so the highlight never ends up off-screen.
+    const panel = targetToPanel[activeStep.target as keyof typeof targetToPanel];
+    const railSelector = panel ? `[data-sandbox-target="rail-${panel}"]` : null;
 
     const measure = () => {
       if (!active) return;
-      const target = selector ? document.querySelector(selector) : null;
-      if (target instanceof HTMLElement) {
-        const r = target.getBoundingClientRect();
+      const primaryEl = primarySelector ? document.querySelector(primarySelector) : null;
+      let finalEl: HTMLElement | null = null;
+
+      if (primaryEl instanceof HTMLElement) {
+        const r = primaryEl.getBoundingClientRect();
+        // Element is on-screen when its left edge is within the viewport
+        if (r.left > -20 && r.width > 0) finalEl = primaryEl;
+      }
+
+      // Primary is off-screen (drawer closed / wrong panel) — highlight the rail icon instead
+      if (!finalEl && railSelector) {
+        const railEl = document.querySelector(railSelector);
+        if (railEl instanceof HTMLElement) finalEl = railEl;
+      }
+
+      if (finalEl) {
+        const r = finalEl.getBoundingClientRect();
         setHighlightRect({ top: r.top, left: r.left, width: r.width, height: r.height });
       } else {
         setHighlightRect(null);
@@ -220,9 +238,12 @@ export function AgentLearnerSandbox({
     };
 
     const timeout = window.setTimeout(() => {
-      const target = selector ? document.querySelector(selector) : null;
-      if (target instanceof HTMLElement) {
-        target.scrollIntoView({ block: "nearest", inline: "nearest", behavior: "smooth" });
+      const primaryEl = primarySelector ? document.querySelector(primarySelector) : null;
+      if (primaryEl instanceof HTMLElement) {
+        const r = primaryEl.getBoundingClientRect();
+        if (r.left > -20) {
+          primaryEl.scrollIntoView({ block: "nearest", inline: "nearest", behavior: "smooth" });
+        }
       }
       frameId = requestAnimationFrame(tick);
     }, 100);
