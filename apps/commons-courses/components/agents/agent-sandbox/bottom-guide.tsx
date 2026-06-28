@@ -5,6 +5,7 @@ import {
   Loader2,
   Play,
   Save,
+  Check,
 } from "lucide-react";
 
 type BottomGuideProps = {
@@ -19,10 +20,13 @@ type BottomGuideProps = {
   createdAgentId?: string;
   syncing: boolean;
   canSync: boolean;
+  canFinish: boolean;
+  finishing: boolean;
   onOpenStep: () => void;
   onNextStep: () => void;
   onCreate: () => void;
   onSync: () => void;
+  onFinish: () => void;
 };
 
 export function BottomGuide({
@@ -37,14 +41,17 @@ export function BottomGuide({
   createdAgentId,
   syncing,
   canSync,
+  canFinish,
+  finishing,
   onOpenStep,
   onNextStep,
   onCreate,
   onSync,
+  onFinish,
 }: BottomGuideProps) {
   return (
     <footer className="shrink-0 border-t border-slate-200 bg-white px-3 py-2">
-      <div className="grid gap-2 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
+      <div className="grid w-full gap-2 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
         <div className="min-w-0 overflow-hidden">
           <div className="flex items-center gap-2 text-xs font-bold text-slate-500">
             {completed ? (
@@ -109,6 +116,21 @@ export function BottomGuide({
                 <Save className="h-4 w-4" />
               )}
               Save changes
+            </button>
+          ) : null}
+          {createdAgentId ? (
+            <button
+              type="button"
+              onClick={onFinish}
+              disabled={!canFinish || finishing}
+              className="inline-flex items-center gap-2 rounded-lg bg-slate-950 px-4 py-2 text-xs font-black text-white disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              {finishing ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Check className="h-4 w-4" />
+              )}
+              Finish sandbox
             </button>
           ) : null}
         </div>

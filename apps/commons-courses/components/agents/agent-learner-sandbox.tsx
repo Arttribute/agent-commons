@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { ExternalLink, PanelRight } from "lucide-react";
 import { ChatSurface } from "./agent-sandbox/chat-surface";
 import {
@@ -14,11 +14,13 @@ import { BottomGuide } from "./agent-sandbox/bottom-guide";
 import { LogsPanel } from "./agent-sandbox/logs-panel";
 import { extractAssistantText } from "./agent-sandbox/extract-assistant-text";
 import { SandboxCompletion, SandboxIntro } from "./agent-sandbox/sandbox-framing";
+import { formatApiError, logDotClass } from "./agent-sandbox/status-utils";
 import type {
   ChatMessage,
   ConfigPanel,
   ReviewResult,
   SandboxLog,
+  SandboxResumeState,
 } from "./agent-sandbox/types";
 import { targetToPanel } from "./agent-sandbox/types";
 import type { AgentSandboxConfig } from "@/types/skills";
@@ -84,6 +86,7 @@ export function AgentLearnerSandbox({
   const [creating, setCreating] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [sending, setSending] = useState(false);
+  const [finishing, setFinishing] = useState(false);
   const [reviewing, setReviewing] = useState<string | null>(null);
   const [reviews, setReviews] = useState<Record<string, ReviewResult>>({});
   const [createdAgentId, setCreatedAgentId] = useState<string | undefined>();
@@ -135,6 +138,30 @@ export function AgentLearnerSandbox({
     if (!promptReviewPassed) return "System prompt review required";
     return "Create the agent in Agent Commons";
   }, [completionSent, createdAgentId, promptReviewPassed]);
+  const lastLog = logs[0];
+  const hasUserMessage = messages.some((message) => message.role === "user");
+
+  useEffect(() => {
+    if (!authenticated) return;
+    let cancelled = false;
+    async function loadSandboxState() {
+      const response = await fetch(
+        `/api/skills/${courseSlug}/sandbox?challengeId=${encodeURIComponent(challengeId)}`
+      ).catch(() => null);
+      if (!response?.ok) return;
+      const payload = (await response.json().catch(() => ({}))) as {
+        state?: SandboxResumeState | null;
+      };
+      if (cancelled || !payload.state) return;
+      applySandboxState(payload.state);
+    }
+    void loadSandboxState();
+    return () => {
+      cancelled = true;
+    };
+  // State setters are stable; this should only reload when the sandbox identity changes.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [authenticated, challengeId, courseSlug]);
 
   if (introOpen && !completed) {
     return (
@@ -175,6 +202,13 @@ export function AgentLearnerSandbox({
     if (requireAuth() || creating || !canCreate) return;
     setCreating(true);
     addLog({ level: "info", message: "Creating a real Agent Commons agent..." });
+    const createdMessages: ChatMessage[] = [
+      {
+        role: "assistant",
+        content:
+          "Agent created in Agent Commons. Send a message to test the live agent.",
+      },
+    ];
 
     const response = await fetch(`/api/skills/${courseSlug}/sandbox`, {
       method: "POST",
@@ -191,6 +225,7 @@ export function AgentLearnerSandbox({
           taskTitle,
           message: chatInput,
         },
+        sandboxState: buildSandboxState({ messages: createdMessages }),
       }),
     });
     const payload = await response.json().catch(() => ({}));
@@ -209,13 +244,7 @@ export function AgentLearnerSandbox({
 
     setCreatedAgentId(payload.agentId);
     setCreditReward(payload.creditReward || config.creditReward || 0);
-    setMessages([
-      {
-        role: "assistant",
-        content:
-          "Agent created in Agent Commons. Send a message to test the live agent.",
-      },
-    ]);
+    setMessages(createdMessages);
     addLog({
       level: "success",
       message: `Created Agent Commons agent ${payload.agentId}.`,
@@ -238,7 +267,10 @@ export function AgentLearnerSandbox({
     }
   }
 
-  async function syncAgent(reason = "Saved agent changes.") {
+  async function syncAgent(
+    reason = "Saved agent changes.",
+    statePatch?: Partial<SandboxResumeState>
+  ) {
     if (requireAuth() || syncing || !createdAgentId) return false;
     setSyncing(true);
     addLog({ level: "info", message: "Saving changes to Agent Commons..." });
@@ -259,6 +291,7 @@ export function AgentLearnerSandbox({
           taskTitle,
           message: chatInput,
         },
+        sandboxState: buildSandboxState(statePatch),
       }),
     });
     const payload = await response.json().catch(() => ({}));
@@ -332,21 +365,27 @@ export function AgentLearnerSandbox({
     }
 
     const assistantText = extractAssistantText(payload.data);
-    setMessages((current) => [
-      ...current,
+    const completedMessages: ChatMessage[] = [
+      ...nextMessages,
       { role: "assistant", content: assistantText },
-    ]);
+    ];
+    setMessages(completedMessages);
     addLog({ level: "success", message: "Agent returned a live response." });
+    void persistSandboxState({ messages: completedMessages, chatInput: "" });
     requestAnimationFrame(() => chatEndRef.current?.scrollIntoView({ block: "end" }));
+  }
 
-    if (!completionSent) {
-      setCompletionSent(true);
-      onComplete({
-        agentId: createdAgentId,
-        simulated: false,
-        creditReward,
-      });
-    }
+  async function finishSandbox() {
+    if (requireAuth() || finishing || !createdAgentId || !hasUserMessage) return;
+    setFinishing(true);
+    await syncAgent("Saved final sandbox state.", { completionSent: true });
+    setCompletionSent(true);
+    onComplete({
+      agentId: createdAgentId,
+      simulated: false,
+      creditReward,
+    });
+    setFinishing(false);
   }
 
   async function reviewTarget(target: "system_prompt" | "skills") {
@@ -407,10 +446,10 @@ export function AgentLearnerSandbox({
 
   async function nextGuideStep() {
     const nextIndex = (guideIndex + 1) % Math.max(guide.length, 1);
-    if (createdAgentId) {
-      await syncAgent("Saved changes before moving on.");
-    }
     setGuideIndex(nextIndex);
+    if (createdAgentId) {
+      await syncAgent("Saved changes before moving on.", { guideIndex: nextIndex });
+    }
     openGuideIndex(nextIndex);
   }
 
@@ -425,72 +464,6 @@ export function AgentLearnerSandbox({
           setDrawerOpen(true);
         }}
       />
-
-      <ConfigDrawer
-        open={drawerOpen}
-        panel={activePanel}
-        onClose={() => setDrawerOpen(false)}
-      >
-        {activePanel === "identity" ? (
-          <IdentityPanel
-            agentName={agentName}
-            persona={persona}
-            systemPrompt={systemPrompt}
-            reviewEnabled={reviewTargets.includes("system_prompt")}
-            review={reviews.system_prompt}
-            reviewing={reviewing === "system_prompt"}
-            onNameChange={setAgentName}
-            onPersonaChange={setPersona}
-            onPromptChange={(value) => {
-              setSystemPrompt(value);
-              setReviews((current) => {
-                const rest = { ...current };
-                delete rest.system_prompt;
-                return rest;
-              });
-            }}
-            onReview={() => reviewTarget("system_prompt")}
-          />
-        ) : null}
-        {activePanel === "skills" ? (
-          <SkillsPanel
-            skills={config.skillTemplates || []}
-            selected={selectedSkills}
-            skillInstructions={skillInstructions}
-            onChange={(items) => {
-              setSelectedSkills(items);
-              setReviews((current) => {
-                const rest = { ...current };
-                delete rest.skills;
-                return rest;
-              });
-            }}
-            onInstructionChange={(id, value) => {
-              setSkillInstructions((current) => ({ ...current, [id]: value }));
-              setReviews((current) => {
-                const rest = { ...current };
-                delete rest.skills;
-                return rest;
-              });
-            }}
-            reviewEnabled={reviewTargets.includes("skills")}
-            review={reviews.skills}
-            reviewing={reviewing === "skills"}
-            onReview={() => reviewTarget("skills")}
-          />
-        ) : null}
-        {activePanel === "tools" ? (
-          <ToolsPanel
-            tools={config.toolTemplates || []}
-            selected={selectedTools}
-            onChange={setSelectedTools}
-            googleConnectUrl={googleConnectUrl}
-          />
-        ) : null}
-        {activePanel === "workflow" ? (
-          <WorkflowPanel taskTitle={taskTitle} onTaskChange={setTaskTitle} />
-        ) : null}
-      </ConfigDrawer>
 
       <main className="flex min-w-0 flex-1 flex-col overflow-hidden">
         <header className="flex items-center justify-between gap-3 border-b border-slate-200 px-4 py-3">
@@ -517,15 +490,28 @@ export function AgentLearnerSandbox({
             <button
               type="button"
               onClick={() => setLogsOpen((value) => !value)}
-              className="rounded-lg border border-slate-200 p-2 text-slate-600"
+              className="relative rounded-lg border border-slate-200 p-2 text-slate-600"
               aria-label="Toggle logs"
             >
               <PanelRight className="h-4 w-4" />
+              {lastLog ? (
+                <span
+                  className={logDotClass(lastLog.level)}
+                  aria-hidden="true"
+                />
+              ) : null}
             </button>
           </div>
         </header>
 
         <div className="relative flex min-h-0 flex-1 overflow-hidden">
+          <ConfigDrawer
+            open={drawerOpen}
+            panel={activePanel}
+            onClose={() => setDrawerOpen(false)}
+          >
+            {renderConfigPanel()}
+          </ConfigDrawer>
           <ChatSurface
             messages={messages}
             sending={sending}
@@ -536,7 +522,7 @@ export function AgentLearnerSandbox({
             onSend={sendMessage}
           />
           {logsOpen ? (
-            <aside className="hidden w-72 shrink-0 border-l border-slate-200 bg-white lg:block">
+            <aside className="hidden min-h-0 w-72 shrink-0 overflow-hidden border-l border-slate-200 bg-white lg:block">
               <LogsPanel logs={logs} />
             </aside>
           ) : null}
@@ -561,36 +547,132 @@ export function AgentLearnerSandbox({
           onNextStep={() => void nextGuideStep()}
           onCreate={createAgent}
           onSync={() => void syncAgent()}
+          onFinish={() => void finishSandbox()}
           syncing={syncing}
           canSync={Boolean(createdAgentId) && !syncing}
+          finishing={finishing}
+          canFinish={Boolean(createdAgentId) && hasUserMessage && !completionSent}
         />
       </main>
     </div>
   );
-}
 
-function formatApiError(payload: unknown, fallback: string) {
-  if (!payload || typeof payload !== "object") return fallback;
-  const data = payload as {
-    error?: unknown;
-    message?: unknown;
-  };
-  const error = data.error;
-  if (typeof error === "string") return error;
-  if (error && typeof error === "object") {
-    const details = error as Record<string, unknown>;
-    const message =
-      typeof details.message === "string" && details.message.trim()
-        ? details.message
-        : fallback;
-    const requestId =
-      typeof details.requestId === "string"
-        ? ` Request ${details.requestId}.`
-        : "";
-    const type =
-      typeof details.type === "string" ? ` (${details.type})` : "";
-    return `${message}${type}.${requestId}`.trim();
+  function renderConfigPanel() {
+    if (activePanel === "identity") {
+      return (
+        <IdentityPanel
+          agentName={agentName}
+          persona={persona}
+          systemPrompt={systemPrompt}
+          reviewEnabled={reviewTargets.includes("system_prompt")}
+          review={reviews.system_prompt}
+          reviewing={reviewing === "system_prompt"}
+          onNameChange={setAgentName}
+          onPersonaChange={setPersona}
+          onPromptChange={(value) => {
+            setSystemPrompt(value);
+            setReviews((current) => {
+              const rest = { ...current };
+              delete rest.system_prompt;
+              return rest;
+            });
+          }}
+          onReview={() => reviewTarget("system_prompt")}
+        />
+      );
+    }
+    if (activePanel === "skills") {
+      return (
+        <SkillsPanel
+          skills={config.skillTemplates || []}
+          selected={selectedSkills}
+          skillInstructions={skillInstructions}
+          onChange={(items) => {
+            setSelectedSkills(items);
+            setReviews((current) => {
+              const rest = { ...current };
+              delete rest.skills;
+              return rest;
+            });
+          }}
+          onInstructionChange={(id, value) => {
+            setSkillInstructions((current) => ({ ...current, [id]: value }));
+            setReviews((current) => {
+              const rest = { ...current };
+              delete rest.skills;
+              return rest;
+            });
+          }}
+          reviewEnabled={reviewTargets.includes("skills")}
+          review={reviews.skills}
+          reviewing={reviewing === "skills"}
+          onReview={() => reviewTarget("skills")}
+        />
+      );
+    }
+    if (activePanel === "tools") {
+      return (
+        <ToolsPanel
+          tools={config.toolTemplates || []}
+          selected={selectedTools}
+          onChange={setSelectedTools}
+          googleConnectUrl={googleConnectUrl}
+        />
+      );
+    }
+    return <WorkflowPanel taskTitle={taskTitle} onTaskChange={setTaskTitle} />;
   }
-  if (typeof data.message === "string") return data.message;
-  return fallback;
+
+  function buildSandboxState(
+    patch: Partial<SandboxResumeState> = {}
+  ): SandboxResumeState {
+    return {
+      agentName,
+      persona,
+      systemPrompt,
+      selectedSkills,
+      skillInstructions,
+      selectedTools,
+      taskTitle,
+      activePanel,
+      guideIndex,
+      createdAgentId,
+      completionSent,
+      creditReward,
+      chatInput,
+      messages,
+      logs,
+      reviews,
+      ...patch,
+    };
+  }
+
+  async function persistSandboxState(patch: Partial<SandboxResumeState> = {}) {
+    if (!createdAgentId) return;
+    await syncAgent("Saved sandbox progress.", patch);
+  }
+
+  function applySandboxState(state: SandboxResumeState) {
+    if (state.agentName) setAgentName(state.agentName);
+    if (state.persona) setPersona(state.persona);
+    if (state.systemPrompt) setSystemPrompt(state.systemPrompt);
+    if (state.selectedSkills) setSelectedSkills(state.selectedSkills);
+    if (state.skillInstructions) setSkillInstructions(state.skillInstructions);
+    if (state.selectedTools) setSelectedTools(state.selectedTools);
+    if (state.taskTitle) setTaskTitle(state.taskTitle);
+    if (state.activePanel) setActivePanel(state.activePanel);
+    if (typeof state.guideIndex === "number") setGuideIndex(state.guideIndex);
+    if (state.createdAgentId) {
+      setCreatedAgentId(state.createdAgentId);
+      setIntroOpen(false);
+    }
+    if (typeof state.completionSent === "boolean") {
+      setCompletionSent(state.completionSent || completed);
+    }
+    if (typeof state.creditReward === "number") setCreditReward(state.creditReward);
+    if (typeof state.chatInput === "string") setChatInput(state.chatInput);
+    if (state.messages?.length) setMessages(state.messages);
+    if (state.logs?.length) setLogs(state.logs);
+    if (state.reviews) setReviews(state.reviews);
+  }
 }

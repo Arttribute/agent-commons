@@ -31,6 +31,7 @@ export interface IEnrollment extends Document {
   lastChallengeCompletedAt?: Date;
   completedChallenges: string[];
   challengeAnswers: Record<string, number>;
+  sandboxStates: Record<string, unknown>;
   practicalSignals: Array<{
     id: string;
     platform: "agent_commons" | "common_os" | "external";
@@ -82,6 +83,7 @@ const EnrollmentSchema = new Schema<IEnrollment>(
     lastChallengeCompletedAt: Date,
     completedChallenges: { type: [String], default: [] },
     challengeAnswers: { type: Map, of: Number, default: {} },
+    sandboxStates: { type: Map, of: Schema.Types.Mixed, default: {} },
     practicalSignals: {
       type: [
         {

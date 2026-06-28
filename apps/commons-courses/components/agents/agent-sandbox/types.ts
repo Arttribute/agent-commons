@@ -19,6 +19,25 @@ export type ChatMessage = {
   content: string;
 };
 
+export type SandboxResumeState = {
+  agentName?: string;
+  persona?: string;
+  systemPrompt?: string;
+  selectedSkills?: string[];
+  skillInstructions?: Record<string, string>;
+  selectedTools?: string[];
+  taskTitle?: string;
+  activePanel?: ConfigPanel;
+  guideIndex?: number;
+  createdAgentId?: string;
+  completionSent?: boolean;
+  creditReward?: number;
+  chatInput?: string;
+  messages?: ChatMessage[];
+  logs?: SandboxLog[];
+  reviews?: Record<string, ReviewResult>;
+};
+
 export type ConfigPanel = "identity" | "skills" | "tools" | "workflow";
 
 export const targetToPanel: Partial<Record<AgentSandboxStepTarget, ConfigPanel>> = {

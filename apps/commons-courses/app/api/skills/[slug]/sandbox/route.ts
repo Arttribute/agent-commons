@@ -41,7 +41,46 @@ type SandboxBody = {
     taskTitle?: string;
     message?: string;
   };
+  sandboxState?: Record<string, unknown>;
 };
+
+export async function GET(
+  request: NextRequest,
+  { params }: { params: Promise<{ slug: string }> }
+) {
+  const session = await auth();
+  if (!session?.user?.id) {
+    return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
+  }
+
+  const { slug } = await params;
+  const challengeId = request.nextUrl.searchParams.get("challengeId");
+  if (!challengeId) {
+    return NextResponse.json({ error: "challengeId is required." }, { status: 400 });
+  }
+
+  await connectDB();
+  const course = await findSandboxCourse(slug);
+  const pack = course ? findSkillPackBySlug(course, slug) : null;
+  const challenge = pack?.challenges?.find((item) => item.id === challengeId);
+  if (!course || !challenge?.sandbox?.enabled) {
+    return NextResponse.json({ error: "Sandbox challenge not found." }, { status: 404 });
+  }
+
+  const enrollment = await ensureSandboxEnrollment({
+    userId: session.user.id,
+    course,
+  });
+  if (!enrollment) {
+    return NextResponse.json(
+      { error: "Enroll in this course before using the sandbox." },
+      { status: 403 }
+    );
+  }
+
+  const state = mapLikeGet(enrollment.sandboxStates, challengeId) || null;
+  return NextResponse.json({ state });
+}
 
 export async function POST(
   request: NextRequest,
@@ -66,12 +105,7 @@ export async function POST(
     User.findById(session.user.id)
       .select("identityUserId identityWorkspaceId")
       .lean<{ identityUserId?: string; identityWorkspaceId?: string }>(),
-    Course.findOne({
-      published: true,
-      $or: [{ slug }, { "skillPack.slug": slug }, { "skillPacks.slug": slug }],
-    })
-      .select("_id title slug isFree skillPack skillPacks")
-      .lean<SandboxCourse | null>(),
+    findSandboxCourse(slug),
   ]);
 
   const pack = course ? findSkillPackBySlug(course, slug) : null;
@@ -82,14 +116,20 @@ export async function POST(
     return NextResponse.json({ error: "Sandbox challenge not found." }, { status: 404 });
   }
 
-  const enrollment = await Enrollment.findOne({
+  const enrollment = await ensureSandboxEnrollment({
     userId: session.user.id,
-    courseId: course._id,
-  }).select("_id");
+    course,
+  });
   if (!enrollment && !course.isFree) {
     return NextResponse.json(
       { error: "Enroll in this course before using the sandbox." },
       { status: 403 }
+    );
+  }
+  if (!enrollment) {
+    return NextResponse.json(
+      { error: "Could not create sandbox progress for this enrollment." },
+      { status: 500 }
     );
   }
 
@@ -165,6 +205,17 @@ export async function POST(
     request,
   });
 
+  await saveSandboxState({
+    enrollmentId: enrollment._id,
+    challengeId: challenge.id,
+    state: {
+      ...(body.sandboxState || {}),
+      createdAgentId: agentId,
+      creditReward: challenge.sandbox.creditReward || 0,
+      updatedAt: new Date().toISOString(),
+    },
+  });
+
   return NextResponse.json({
     agentId,
     simulated: false,
@@ -197,12 +248,7 @@ export async function PATCH(
     User.findById(session.user.id)
       .select("identityUserId identityWorkspaceId")
       .lean<{ identityUserId?: string; identityWorkspaceId?: string }>(),
-    Course.findOne({
-      published: true,
-      $or: [{ slug }, { "skillPack.slug": slug }, { "skillPacks.slug": slug }],
-    })
-      .select("_id title slug isFree skillPack skillPacks")
-      .lean<SandboxCourse | null>(),
+    findSandboxCourse(slug),
   ]);
   const pack = course ? findSkillPackBySlug(course, slug) : null;
   const challenge = pack?.challenges?.find(
@@ -249,11 +295,86 @@ export async function PATCH(
     selectedToolIds: body.agent.tools || [],
   });
 
+  const enrollment = await ensureSandboxEnrollment({
+    userId: session.user.id,
+    course,
+  });
+  if (enrollment && body.sandboxState) {
+    await saveSandboxState({
+      enrollmentId: enrollment._id,
+      challengeId: challenge.id,
+      state: {
+        ...body.sandboxState,
+        createdAgentId: body.agentId,
+        updatedAt: new Date().toISOString(),
+      },
+    });
+  }
+
   return NextResponse.json({
     agentId: body.agentId,
     assignedTools: toolAssignments.assigned,
     toolWarnings: toolAssignments.warnings,
   });
+}
+
+function findSandboxCourse(slug: string) {
+  return Course.findOne({
+    published: true,
+    $or: [{ slug }, { "skillPack.slug": slug }, { "skillPacks.slug": slug }],
+  })
+    .select("_id title slug isFree skillPack skillPacks")
+    .lean<SandboxCourse | null>();
+}
+
+async function ensureSandboxEnrollment({
+  userId,
+  course,
+}: {
+  userId: string;
+  course: SandboxCourse;
+}) {
+  const enrollment = await Enrollment.findOne({
+    userId,
+    courseId: course._id,
+  }).select("_id sandboxStates");
+  if (enrollment || !course.isFree) return enrollment;
+  return Enrollment.create({
+    userId,
+    courseId: course._id,
+    status: "active",
+    accessLevel: "full",
+    paymentStatus: "free",
+    accessSource: "free",
+  });
+}
+
+async function saveSandboxState({
+  enrollmentId,
+  challengeId,
+  state,
+}: {
+  enrollmentId: Types.ObjectId | string;
+  challengeId: string;
+  state: Record<string, unknown>;
+}) {
+  await Enrollment.updateOne(
+    { _id: enrollmentId },
+    {
+      $set: {
+        [`sandboxStates.${challengeId}`]: state,
+      },
+    }
+  );
+}
+
+function mapLikeGet(value: unknown, key: string) {
+  if (!value) return undefined;
+  if (value instanceof Map) return value.get(key);
+  if (typeof value === "object") {
+    return (value as Record<string, unknown>)[key];
+  }
+  return undefined;
 }
 
 async function assignSelectedPlatformTools({

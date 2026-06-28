@@ -10,7 +10,7 @@ export function LogsPanel({
   onClose?: () => void;
 }) {
   return (
-    <div className="flex h-full flex-col">
+    <div className="flex h-full min-h-0 flex-col overflow-hidden">
       <header className="flex items-center justify-between border-b border-slate-200 px-4 py-3">
         <p className="text-sm font-black">Logs</p>
         {onClose ? (
