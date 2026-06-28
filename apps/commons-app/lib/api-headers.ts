@@ -29,8 +29,12 @@ export async function backendAuthHeaders(options: { allowServiceKey?: boolean } 
 
 async function commonsIdentityServiceToken() {
   const issuer = process.env.COMMONS_IDENTITY_ISSUER;
-  const clientId = process.env.COMMONS_IDENTITY_CLIENT_ID;
-  const clientSecret = process.env.COMMONS_IDENTITY_CLIENT_SECRET;
+  const clientId =
+    process.env.AGENT_COMMONS_SERVICE_CLIENT_ID ||
+    process.env.COMMONS_IDENTITY_CLIENT_ID;
+  const clientSecret =
+    process.env.AGENT_COMMONS_SERVICE_CLIENT_SECRET ||
+    process.env.COMMONS_IDENTITY_CLIENT_SECRET;
   if (!issuer || !clientId || !clientSecret) return null;
 
   const cacheKey = `${issuer}:${clientId}`;
