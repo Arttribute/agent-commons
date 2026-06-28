@@ -935,29 +935,35 @@ function GuideTour({
 }) {
   if (!visible || !rect || !step) return null;
 
-  const gap = 10;
+  const gap = 12;
   const vw = window.innerWidth;
   const vh = window.innerHeight;
-  const dialogW = 256;
-  const dialogH = 148;
+  const dialogW = 216;
+  const dialogH = 132;
 
+  // On mobile the floating dialog causes clutter — just show the highlight ring.
+  // Step text is already visible in the BottomGuide bar.
+  const isMobile = vw < 640;
+
+  // Prefer side placement (right → left) to avoid covering the focused element
+  // above or below. Fall back to bottom/top only when there truly is no side room.
   const resolved: "top" | "right" | "bottom" | "left" =
     placement === "auto"
-      ? rect.top + rect.height + gap + dialogH <= vh
-        ? "bottom"
-        : rect.top - gap - dialogH >= 0
-          ? "top"
-          : rect.left + rect.width + gap + dialogW <= vw
-            ? "right"
-            : "left"
+      ? rect.left + rect.width + gap + dialogW <= vw
+        ? "right"
+        : rect.left - gap - dialogW >= 0
+          ? "left"
+          : rect.top + rect.height + gap + dialogH <= vh
+            ? "bottom"
+            : "top"
       : placement;
 
-  const style = tourDialogStyle(rect, resolved, gap, dialogW, dialogH, vw, vh);
+  const style = isMobile ? {} : tourDialogStyle(rect, resolved, gap, dialogW, dialogH, vw, vh);
   const isLast = guideIndex + 1 >= guideLength;
 
   return (
     <div className="pointer-events-none fixed inset-0 z-50">
-      {/* Clean highlight ring — no dark backdrop overlay */}
+      {/* Highlight ring only — no dark backdrop */}
       <div
         className="pointer-events-none absolute rounded-lg border-2 border-sky-500 shadow-[0_0_0_4px_rgba(14,165,233,0.12)]"
         style={{
@@ -967,38 +973,40 @@ function GuideTour({
           height: rect.height + 10,
         }}
       />
-      {/* Floating tooltip */}
-      <div
-        className="pointer-events-auto absolute w-64 overflow-hidden rounded-xl border border-slate-200 bg-white text-slate-950 shadow-xl"
-        style={style}
-      >
-        <div className="flex items-center justify-between border-b border-slate-100 px-3 py-2">
-          <span className="text-[10px] font-bold uppercase tracking-widest text-slate-400">
-            {guideIndex + 1} / {guideLength}
-          </span>
-          <button
-            type="button"
-            onClick={onDismiss}
-            className="rounded p-0.5 text-slate-400 hover:bg-slate-100 hover:text-slate-600"
-            aria-label="Hide guide"
-          >
-            <X className="h-3.5 w-3.5" />
-          </button>
+      {/* Floating tooltip — desktop only */}
+      {!isMobile ? (
+        <div
+          className="pointer-events-auto absolute overflow-hidden rounded-xl border border-slate-200 bg-white text-slate-950 shadow-xl"
+          style={{ ...style, width: dialogW }}
+        >
+          <div className="flex items-center justify-between px-3 pt-2.5 pb-0">
+            <span className="text-[10px] font-bold uppercase tracking-widest text-slate-400">
+              {guideIndex + 1} / {guideLength}
+            </span>
+            <button
+              type="button"
+              onClick={onDismiss}
+              className="rounded p-0.5 text-slate-400 hover:bg-slate-100 hover:text-slate-600"
+              aria-label="Hide guide"
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
+          </div>
+          <div className="px-3 pb-0 pt-1.5">
+            <p className="text-sm font-bold leading-snug">{step.title}</p>
+            <p className="mt-1 text-xs leading-relaxed text-slate-500">{step.body}</p>
+          </div>
+          <div className="flex items-center justify-end px-3 py-2.5">
+            <button
+              type="button"
+              onClick={onNext}
+              className="rounded-lg bg-slate-950 px-3 py-1.5 text-xs font-bold text-white"
+            >
+              {isLast ? "Done" : "Next →"}
+            </button>
+          </div>
         </div>
-        <div className="px-3 py-2.5">
-          <p className="text-sm font-bold">{step.title}</p>
-          <p className="mt-1 text-xs leading-relaxed text-slate-500">{step.body}</p>
-        </div>
-        <div className="flex items-center justify-end border-t border-slate-100 px-3 py-2">
-          <button
-            type="button"
-            onClick={onNext}
-            className="rounded-lg bg-slate-950 px-3 py-1.5 text-xs font-bold text-white"
-          >
-            {isLast ? "Done" : "Next →"}
-          </button>
-        </div>
-      </div>
+      ) : null}
     </div>
   );
 }

@@ -107,7 +107,7 @@ export function createSandboxConfig(): AgentSandboxConfig {
         title: "Create and test it",
         body: "Click \"Create agent\", then send a message to run your real Agent Commons agent and watch the logs.",
         targetSelector: '[data-sandbox-target="chat-input"]',
-        placement: "top",
+        placement: "auto",
       },
     ],
   };
