@@ -86,6 +86,7 @@ type CourseForm = {
   };
   modules: Module[];
   skillPack: SkillPack;
+  skillPacks: SkillPack[];
   agents: CourseAgentConfig[];
 };
 
@@ -165,9 +166,11 @@ const emptyCourse: CourseForm = {
     enabled: false,
     title: "Daily skill challenges",
     subtitle: "",
+    coverUrl: "",
     learnerPromise: "",
     challenges: [],
   },
+  skillPacks: [],
 };
 
 export function CourseEditor({
@@ -186,6 +189,7 @@ export function CourseEditor({
   );
   const [saving, setSaving] = useState(false);
   const [uploadingMedia, setUploadingMedia] = useState<string | null>(null);
+  const [selectedSkillPath, setSelectedSkillPath] = useState("primary");
   const [error, setError] = useState("");
   const [draftSavedAt, setDraftSavedAt] = useState<Date | null>(null);
   const isFullEditor = section === "all";
@@ -301,7 +305,14 @@ export function CourseEditor({
   }
 
   async function uploadMedia(
-    field: "imageUrl" | "bannerImageUrl" | "previewImageUrl" | `skillPack.${number}.assetUrl`,
+    field:
+      | "imageUrl"
+      | "bannerImageUrl"
+      | "previewImageUrl"
+      | "skillPack.coverUrl"
+      | `skillPack.${number}.assetUrl`
+      | `skillPacks.${number}.coverUrl`
+      | `skillPacks.${number}.${number}.assetUrl`,
     file?: File
   ) {
     if (!file) return;
@@ -322,11 +333,38 @@ export function CourseEditor({
       });
       return;
     }
-    if (field.startsWith("skillPack.")) {
+    if (field === "skillPack.coverUrl") {
+      setCourse((current) => ({
+        ...current,
+        skillPack: { ...current.skillPack, coverUrl: data.url },
+      }));
+    } else if (field.startsWith("skillPack.")) {
       const challengeIndex = Number(field.split(".")[1]);
       setCourse((current) =>
         updateSkillChallengeValue(current, challengeIndex, { assetUrl: data.url })
       );
+    } else if (field.startsWith("skillPacks.")) {
+      const [, packIndexText, maybeCoverOrChallenge, maybeField] = field.split(".");
+      const packIndex = Number(packIndexText);
+      if (maybeCoverOrChallenge === "coverUrl") {
+        setCourse((current) =>
+          updateSkillPackAt(current, packIndex, {
+            ...current.skillPacks[packIndex],
+            coverUrl: data.url,
+          })
+        );
+      } else if (maybeField === "assetUrl") {
+        const challengeIndex = Number(maybeCoverOrChallenge);
+        setCourse((current) =>
+          updateSkillPackAt(
+            current,
+            packIndex,
+            updateSkillPackChallenge(current.skillPacks[packIndex], challengeIndex, {
+              assetUrl: data.url,
+            })
+          )
+        );
+      }
     } else {
       setCourse((current) => ({ ...current, [field]: data.url }));
     }
@@ -823,12 +861,48 @@ export function CourseEditor({
       )}
 
       {show("skills") && (
-        <SkillPackEditor
-          skillPack={course.skillPack}
+        <SkillPathsEditor
+          primarySkillPack={course.skillPack}
+          skillPacks={course.skillPacks}
+          selectedSkillPath={selectedSkillPath}
           uploadingMedia={uploadingMedia}
-          onChange={(skillPack) => setCourse({ ...course, skillPack })}
-          onUpload={(challengeIndex, file) =>
+          onSelect={setSelectedSkillPath}
+          onChangePrimary={(skillPack) => setCourse({ ...course, skillPack })}
+          onChangeSkillPack={(packIndex, skillPack) =>
+            setCourse((current) => updateSkillPackAt(current, packIndex, skillPack))
+          }
+          onAddSkillPack={() => {
+            const nextPack = createSkillPack(course.skillPacks.length + 1);
+            setCourse({
+              ...course,
+              skillPacks: [...course.skillPacks, nextPack],
+            });
+            setSelectedSkillPath(`pack-${course.skillPacks.length}`);
+            toast({
+              title: "Skill path added",
+              description: "Save skill badges to publish this path.",
+              tone: "info",
+            });
+          }}
+          onRemoveSkillPack={(packIndex) => {
+            const nextSkillPacks = course.skillPacks.filter((_, index) => index !== packIndex);
+            setCourse({ ...course, skillPacks: nextSkillPacks });
+            setSelectedSkillPath("primary");
+            toast({
+              title: "Skill path removed",
+              description: "Save skill badges to apply this change.",
+              tone: "info",
+            });
+          }}
+          onUploadPrimaryCover={(file) => uploadMedia("skillPack.coverUrl", file)}
+          onUploadPrimaryChallenge={(challengeIndex, file) =>
             uploadMedia(`skillPack.${challengeIndex}.assetUrl`, file)
+          }
+          onUploadSkillPackCover={(packIndex, file) =>
+            uploadMedia(`skillPacks.${packIndex}.coverUrl`, file)
+          }
+          onUploadSkillPackChallenge={(packIndex, challengeIndex, file) =>
+            uploadMedia(`skillPacks.${packIndex}.${challengeIndex}.assetUrl`, file)
           }
         />
       )}
@@ -894,6 +968,7 @@ function hydrateCourse(course: CourseResponse): CourseForm {
       ...(course.skillPack || {}),
       challenges: course.skillPack?.challenges || [],
     },
+    skillPacks: Array.isArray(course.skillPacks) ? course.skillPacks : [],
     agents: course.agents?.length ? course.agents : emptyCourse.agents,
     installmentPlan: {
       ...emptyCourse.installmentPlan,
@@ -971,7 +1046,10 @@ function getSectionSnapshot(course: CourseForm, section: CourseEditorSection) {
     case "content":
       return payload.modules;
     case "skills":
-      return payload.skillPack;
+      return {
+        skillPack: payload.skillPack,
+        skillPacks: payload.skillPacks,
+      };
     case "collaborators":
       return {};
     case "all":
@@ -1027,11 +1105,15 @@ function SkillPackEditor({
   uploadingMedia,
   onChange,
   onUpload,
+  onUploadCover,
+  uploadPrefix = "skillPack",
 }: {
   skillPack: SkillPack;
   uploadingMedia: string | null;
   onChange: (skillPack: SkillPack) => void;
   onUpload: (challengeIndex: number, file?: File) => void;
+  onUploadCover: (file?: File) => void;
+  uploadPrefix?: string;
 }) {
   const challenges = skillPack.challenges || [];
 
@@ -1057,6 +1139,13 @@ function SkillPackEditor({
           onChange={(subtitle) => onChange({ ...skillPack, subtitle })}
         />
       </div>
+      <MediaField
+        label="Featured image URL"
+        value={skillPack.coverUrl || ""}
+        onChange={(coverUrl) => onChange({ ...skillPack, coverUrl })}
+        onUpload={onUploadCover}
+        uploading={uploadingMedia === `${uploadPrefix}.coverUrl`}
+      />
       <RichTextEditor
         label="Learner promise"
         value={skillPack.learnerPromise || ""}
@@ -1166,7 +1255,7 @@ function SkillPackEditor({
                   onChange(updateSkillPackChallenge(skillPack, challengeIndex, { assetUrl }))
                 }
                 onUpload={(file) => onUpload(challengeIndex, file)}
-                uploading={uploadingMedia === `skillPack.${challengeIndex}.assetUrl`}
+                uploading={uploadingMedia === `${uploadPrefix}.${challengeIndex}.assetUrl`}
               />
               <Field
                 label="Image alt text"
@@ -1278,6 +1367,158 @@ function SkillPackEditor({
   );
 }
 
+function SkillPathsEditor({
+  primarySkillPack,
+  skillPacks,
+  selectedSkillPath,
+  uploadingMedia,
+  onSelect,
+  onChangePrimary,
+  onChangeSkillPack,
+  onAddSkillPack,
+  onRemoveSkillPack,
+  onUploadPrimaryCover,
+  onUploadPrimaryChallenge,
+  onUploadSkillPackCover,
+  onUploadSkillPackChallenge,
+}: {
+  primarySkillPack: SkillPack;
+  skillPacks: SkillPack[];
+  selectedSkillPath: string;
+  uploadingMedia: string | null;
+  onSelect: (key: string) => void;
+  onChangePrimary: (skillPack: SkillPack) => void;
+  onChangeSkillPack: (packIndex: number, skillPack: SkillPack) => void;
+  onAddSkillPack: () => void;
+  onRemoveSkillPack: (packIndex: number) => void;
+  onUploadPrimaryCover: (file?: File) => void;
+  onUploadPrimaryChallenge: (challengeIndex: number, file?: File) => void;
+  onUploadSkillPackCover: (packIndex: number, file?: File) => void;
+  onUploadSkillPackChallenge: (
+    packIndex: number,
+    challengeIndex: number,
+    file?: File
+  ) => void;
+}) {
+  type SkillPathSummary = {
+    key: string;
+    label: string;
+    skillPack: SkillPack;
+    packIndex?: number;
+  };
+  const paths: SkillPathSummary[] = [
+    { key: "primary", label: "Primary", skillPack: primarySkillPack },
+    ...skillPacks.map((skillPack, index) => ({
+      key: `pack-${index}`,
+      label: `Path ${index + 2}`,
+      skillPack,
+      packIndex: index,
+    })),
+  ];
+  const selected =
+    paths.find((path) => path.key === selectedSkillPath) || paths[0];
+
+  return (
+    <div className="space-y-5">
+      <EditorPanel
+        title="Skill content"
+        description="Review course skill paths first, then open one path to edit its image, lessons, quiz, and sandbox."
+      >
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <h3 className="text-sm font-black text-slate-950">Skill paths</h3>
+            <p className="mt-1 text-xs leading-5 text-slate-500">
+              Featured images are used for social previews before challenge images.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={onAddSkillPack}
+            className="rounded-lg border border-slate-200 px-3 py-2 text-xs font-bold hover:bg-slate-50"
+          >
+            Add skill path
+          </button>
+        </div>
+
+        <div className="grid gap-3 md:grid-cols-2">
+          {paths.map((path) => {
+            const imageUrl = getSkillPackThumbnail(path.skillPack);
+            const active = path.key === selected.key;
+            return (
+              <button
+                key={path.key}
+                type="button"
+                onClick={() => onSelect(path.key)}
+                className={cn(
+                  "grid grid-cols-[96px_1fr] gap-3 rounded-lg border p-3 text-left transition-colors",
+                  active
+                    ? "border-slate-950 bg-slate-950 text-white"
+                    : "border-slate-200 bg-white text-slate-950 hover:bg-slate-50"
+                )}
+              >
+                <div className="aspect-[16/10] overflow-hidden rounded-md bg-slate-100">
+                  {imageUrl ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={imageUrl} alt="" className="h-full w-full object-cover" />
+                  ) : null}
+                </div>
+                <span className="min-w-0">
+                  <span className="block text-[11px] font-bold uppercase tracking-widest opacity-60">
+                    {path.label}
+                  </span>
+                  <span className="mt-1 block truncate text-sm font-black">
+                    {path.skillPack.title || "Untitled skill path"}
+                  </span>
+                  <span className="mt-1 block text-xs opacity-70">
+                    {(path.skillPack.challenges || []).length} daily challenges
+                  </span>
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      </EditorPanel>
+
+      {selected.key === "primary" ? (
+        <SkillPackEditor
+          skillPack={primarySkillPack}
+          uploadingMedia={uploadingMedia}
+          onChange={onChangePrimary}
+          onUpload={onUploadPrimaryChallenge}
+          onUploadCover={onUploadPrimaryCover}
+          uploadPrefix="skillPack"
+        />
+      ) : (
+        <div className="space-y-3">
+          <div className="flex justify-end">
+            <button
+              type="button"
+              onClick={() => onRemoveSkillPack(selected.packIndex ?? 0)}
+              className="rounded-lg border border-red-200 bg-white px-3 py-2 text-xs font-bold text-red-700 hover:bg-red-50"
+            >
+              Remove this skill path
+            </button>
+          </div>
+          <SkillPackEditor
+            skillPack={selected.skillPack}
+            uploadingMedia={uploadingMedia}
+            onChange={(skillPack) =>
+              onChangeSkillPack(selected.packIndex ?? 0, skillPack)
+            }
+            onUpload={(challengeIndex, file) =>
+              onUploadSkillPackChallenge(selected.packIndex ?? 0, challengeIndex, file)
+            }
+            onUploadCover={(file) =>
+              onUploadSkillPackCover(selected.packIndex ?? 0, file)
+            }
+            uploadPrefix={`skillPacks.${selected.packIndex ?? 0}`}
+          />
+        </div>
+      )}
+    </div>
+  );
+}
+
 function QuestionEditor({
   question,
   onChange,
@@ -1384,6 +1625,18 @@ function createSkillChallenge(index: number): SkillChallenge {
   };
 }
 
+function createSkillPack(index: number): SkillPack {
+  return {
+    slug: `skill-path-${index + 1}`,
+    enabled: false,
+    title: `Skill path ${index + 1}`,
+    subtitle: "",
+    coverUrl: "",
+    learnerPromise: "",
+    challenges: [createSkillChallenge(0)],
+  };
+}
+
 function createSkillQuestion(index: number): SkillQuestion {
   return {
     id: `q${index + 1}`,
@@ -1417,6 +1670,24 @@ function updateSkillChallengeValue(
     ...course,
     skillPack: updateSkillPackChallenge(course.skillPack, challengeIndex, patch),
   };
+}
+
+function updateSkillPackAt(
+  course: CourseForm,
+  packIndex: number,
+  skillPack: SkillPack
+): CourseForm {
+  const skillPacks = [...course.skillPacks];
+  skillPacks[packIndex] = skillPack;
+  return { ...course, skillPacks };
+}
+
+function getSkillPackThumbnail(skillPack: SkillPack) {
+  return (
+    skillPack.coverUrl ||
+    skillPack.challenges?.find((challenge) => challenge.assetUrl)?.assetUrl ||
+    ""
+  );
 }
 
 function updateQuestionList(

@@ -581,6 +581,7 @@ const SkillPackSchema = new Schema(
     enabled: { type: Boolean, default: false },
     title: { type: String, trim: true },
     subtitle: { type: String, trim: true },
+    coverUrl: { type: String, trim: true },
     learnerPromise: { type: String, trim: true },
     challenges: { type: [SkillChallengeSchema], default: [] },
   },

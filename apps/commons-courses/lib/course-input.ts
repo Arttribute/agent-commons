@@ -180,6 +180,28 @@ function normalizeSandboxConfig(input?: AgentSandboxConfig) {
     mode: ["simple", "builder", "full"].includes(input.mode) ? input.mode : "builder",
     title: input.title?.trim() || "Agent learner sandbox",
     brief: sanitizeRichTextHtml(input.brief) || undefined,
+    intro: input.intro
+      ? {
+          enabled: Boolean(input.intro.enabled),
+          eyebrow: input.intro.eyebrow?.trim() || undefined,
+          title: input.intro.title?.trim() || undefined,
+          body: input.intro.body?.trim() || undefined,
+          expectations: Array.isArray(input.intro.expectations)
+            ? input.intro.expectations.map((item) => item.trim()).filter(Boolean)
+            : [],
+          infoTitle: input.intro.infoTitle?.trim() || undefined,
+          infoBody: input.intro.infoBody?.trim() || undefined,
+          startLabel: input.intro.startLabel?.trim() || undefined,
+        }
+      : undefined,
+    completion: input.completion
+      ? {
+          title: input.completion.title?.trim() || undefined,
+          body: input.completion.body?.trim() || undefined,
+          primaryActionLabel:
+            input.completion.primaryActionLabel?.trim() || undefined,
+        }
+      : undefined,
     capabilities: capabilities.length
       ? capabilities
       : ["identity", "system_prompt", "skills", "tools", "chat", "logs"],
@@ -278,6 +300,7 @@ function normalizeSkillPack(input?: SkillPack) {
     enabled: Boolean(input.enabled),
     title: input.title?.trim() || "Daily challenges",
     subtitle: input.subtitle?.trim() || undefined,
+    coverUrl: normalizeImageUrl(input.coverUrl),
     learnerPromise: sanitizeRichTextHtml(input.learnerPromise) || undefined,
     challenges: challenges
       .map((challenge, index) => ({

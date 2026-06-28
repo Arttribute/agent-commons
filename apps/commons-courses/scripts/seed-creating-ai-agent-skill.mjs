@@ -528,6 +528,23 @@ function createSkillPack(assetUrls) {
   };
 }
 
+function createCourseModuleFromSkillPack(skillPack) {
+  return {
+    title: skillPack.title,
+    description:
+      skillPack.learnerPromise ||
+      "<p>Learn the pieces of an AI agent and finish by creating one in the guided sandbox.</p>",
+    lessons: skillPack.challenges.map((challenge) => ({
+      title: challenge.title,
+      duration: String(challenge.minutes || 5),
+      description: challenge.lesson,
+      assetUrl: challenge.assetUrl,
+      assetAlt: challenge.assetAlt,
+      isFree: challenge.day === 1,
+    })),
+  };
+}
+
 async function main() {
   assertConfigured();
   await mongoose.connect(uri);
@@ -551,12 +568,24 @@ async function main() {
     ...skillPacks.filter((pack) => pack?.slug !== skillSlug),
     skillPack,
   ];
+  const modules = Array.isArray(course.modules) ? course.modules : [];
+  const skillModule = createCourseModuleFromSkillPack(skillPack);
+  const nextModules = [
+    ...modules.filter((module) => module?.title !== skillModule.title),
+    skillModule,
+  ];
 
   await Course.updateOne(
     { _id: course._id },
     {
       $set: {
         skillPacks: nextSkillPacks,
+        modules: nextModules,
+        modulesCount: nextModules.length,
+        lessonsCount: nextModules.reduce(
+          (sum, module) => sum + (module.lessons?.length || 0),
+          0
+        ),
         updatedAt: new Date(),
       },
     }

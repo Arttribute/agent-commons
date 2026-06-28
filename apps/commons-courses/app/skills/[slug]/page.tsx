@@ -29,7 +29,8 @@ type SkillCourse = {
 
 function getSkillImageUrl(course: SkillCourse, pack?: CourseSkillPack) {
   return (
-    pack?.challenges?.[0]?.assetUrl ||
+    pack?.coverUrl ||
+    pack?.challenges?.find((challenge) => challenge.assetUrl)?.assetUrl ||
     course.previewImageUrl ||
     course.bannerImageUrl ||
     course.imageUrl ||
