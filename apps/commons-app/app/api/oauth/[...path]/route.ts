@@ -81,6 +81,7 @@ export async function GET(
       method: 'GET',
       headers,
       cache: 'no-store',
+      redirect: 'manual',
     });
 
     // Handle redirect responses (from OAuth callback)
