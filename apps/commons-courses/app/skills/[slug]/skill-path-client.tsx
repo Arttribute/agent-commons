@@ -10,12 +10,12 @@ import {
   CheckCircle2,
   ChevronLeft,
   Flame,
-  Loader2,
   Route,
   X,
   Zap,
 } from "lucide-react";
 import { Nav } from "@/components/nav";
+import { LoadingScreen } from "@/components/loading-screen";
 import { Confetti, type ConfettiRef } from "@/components/magicui/confetti";
 import { RichTextRenderer } from "@/components/rich-text-renderer";
 import { AgentLearnerSandbox } from "@/components/agents/agent-learner-sandbox";
@@ -24,6 +24,8 @@ import type { CourseSkillPack, SkillChallenge } from "@/types/skills";
 
 type Props = {
   slug: string;
+  initialPack: CourseSkillPack;
+  initialProgress: SkillProgress | null;
 };
 
 type SkillProgress = {
@@ -34,6 +36,7 @@ type SkillProgress = {
   points: number;
   streak: number;
   longestStreak: number;
+  practicalSignals?: Array<{ status: "pending" | "verified" }>;
 };
 
 const emptyProgress: SkillProgress = {
@@ -46,16 +49,22 @@ const emptyProgress: SkillProgress = {
   longestStreak: 0,
 };
 
-export default function SkillPathClient({ slug }: Props) {
+export default function SkillPathClient({
+  slug,
+  initialPack,
+  initialProgress,
+}: Props) {
   const pathname = usePathname();
-  const [pack, setPack] = useState<CourseSkillPack | null>(null);
-  const [progress, setProgress] = useState<SkillProgress>(emptyProgress);
+  const [pack] = useState<CourseSkillPack | null>(initialPack);
+  const [progress, setProgress] = useState<SkillProgress>(
+    initialProgress ?? emptyProgress
+  );
   const [selectedChallengeId, setSelectedChallengeId] = useState("");
   const [mode, setMode] = useState<"learn" | "quiz" | "done">("learn");
   const [questionIndex, setQuestionIndex] = useState(0);
   const [selectedAnswers, setSelectedAnswers] = useState<Record<string, number>>({});
   const [feedback, setFeedback] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const confettiRef = useRef<ConfettiRef>(null);
@@ -63,21 +72,31 @@ export default function SkillPathClient({ slug }: Props) {
   useEffect(() => {
     let cancelled = false;
     async function loadSkill() {
-      setLoading(true);
+      const shouldRefresh =
+        !initialProgress ||
+        initialProgress.practicalSignals?.some((signal) => signal.status === "pending");
+      if (!shouldRefresh) {
+        const firstOpen =
+          initialPack.challenges.find(
+            (challenge) =>
+              !(initialProgress ?? emptyProgress).completedChallenges.includes(
+                challenge.id
+              )
+          ) || initialPack.challenges[0];
+        setSelectedChallengeId((current) => current || firstOpen?.id || "");
+        return;
+      }
+
+      setLoading(!initialProgress);
       try {
-        const [skillsRes, progressRes] = await Promise.all([
-          fetch("/api/skills"),
-          fetch(`/api/skills/${slug}/progress`),
-        ]);
-        const skillsData = (await skillsRes.json()) as { packs?: CourseSkillPack[] };
-        const nextPack =
-          skillsData.packs?.find(
-            (item) => item.skillSlug === slug || item.courseSlug === slug
-          ) || null;
+        const progressRes = await fetch(`/api/skills/${slug}/progress`);
         let nextProgress = progressRes.ok
           ? ({ ...emptyProgress, ...((await progressRes.json()) as Partial<SkillProgress>) })
           : { ...emptyProgress, authenticated: progressRes.status !== 401 };
-        if (progressRes.ok && nextProgress.authenticated && nextProgress.enrolled) {
+        const hasPendingSignal = nextProgress.practicalSignals?.some(
+          (signal) => signal.status === "pending"
+        );
+        if (progressRes.ok && nextProgress.authenticated && nextProgress.enrolled && hasPendingSignal) {
           const verifyRes = await fetch(`/api/skills/${slug}/verify`, {
             method: "POST",
           });
@@ -93,12 +112,11 @@ export default function SkillPathClient({ slug }: Props) {
         }
 
         if (cancelled) return;
-        setPack(nextPack);
         setProgress(nextProgress);
         const firstOpen =
-          nextPack?.challenges.find(
+          initialPack.challenges.find(
             (challenge) => !nextProgress.completedChallenges.includes(challenge.id)
-          ) || nextPack?.challenges[0];
+          ) || initialPack.challenges[0];
         setSelectedChallengeId(firstOpen?.id || "");
       } finally {
         if (!cancelled) setLoading(false);
@@ -108,7 +126,7 @@ export default function SkillPathClient({ slug }: Props) {
     return () => {
       cancelled = true;
     };
-  }, [slug]);
+  }, [initialPack, initialProgress, slug]);
 
   const challenge = useMemo(
     () =>
@@ -137,9 +155,11 @@ export default function SkillPathClient({ slug }: Props) {
     return (
       <div className="min-h-screen bg-white">
         <Nav />
-        <div className="flex min-h-screen items-center justify-center pt-16">
-          <Loader2 className="h-5 w-5 animate-spin text-slate-400" />
-        </div>
+        <LoadingScreen
+          title="Opening your skill path"
+          subtitle="Your challenge deck is ready. We’re just checking your latest progress."
+          tone="sky"
+        />
       </div>
     );
   }

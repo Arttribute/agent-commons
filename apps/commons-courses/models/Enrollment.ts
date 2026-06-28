@@ -110,6 +110,7 @@ const EnrollmentSchema = new Schema<IEnrollment>(
 );
 
 EnrollmentSchema.index({ userId: 1, courseId: 1 }, { unique: true });
+EnrollmentSchema.index({ courseId: 1, status: 1, points: -1 });
 
 export default mongoose.models.Enrollment ||
   mongoose.model<IEnrollment>("Enrollment", EnrollmentSchema);

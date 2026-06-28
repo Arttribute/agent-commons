@@ -689,6 +689,11 @@ CourseSchema.pre("validate", function normalizeAgents(next) {
 
 CourseSchema.index({ "agents.id": 1 });
 CourseSchema.index({ "agents.agentCommonsAgentId": 1 });
+CourseSchema.index({ published: 1, updatedAt: -1, "skillPack.enabled": 1 });
+CourseSchema.index({ published: 1, updatedAt: -1, "skillPacks.enabled": 1 });
+CourseSchema.index({ published: 1, slug: 1 });
+CourseSchema.index({ published: 1, "skillPack.slug": 1 });
+CourseSchema.index({ published: 1, "skillPacks.slug": 1 });
 CourseSchema.index({ startDate: 1 });
 CourseSchema.index({ "collaborators.userId": 1 });
 CourseSchema.index({ "collaborators.email": 1 });

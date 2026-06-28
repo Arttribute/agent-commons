@@ -4,7 +4,8 @@ import { Suspense, useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { signIn } from "next-auth/react";
-import { FlaskConical, Loader2 } from "lucide-react";
+import { FlaskConical } from "lucide-react";
+import { LoadingScreen } from "@/components/loading-screen";
 
 function CheckoutSignIn() {
   const router = useRouter();
@@ -68,15 +69,12 @@ function CheckoutSignIn() {
             </Link>
           </>
         ) : (
-          <>
-            <Loader2 className="mx-auto mb-4 h-5 w-5 animate-spin text-slate-500" />
-            <h1 className="mb-2 text-2xl font-bold text-slate-900">
-              Opening your course
-            </h1>
-            <p className="text-sm text-slate-500">
-              Your payment is complete. We are linking your course access now.
-            </p>
-          </>
+          <LoadingScreen
+            title="Opening your course"
+            subtitle="Your payment is complete. We are linking your course access now."
+            compact
+            tone="amber"
+          />
         )}
       </div>
     </div>
