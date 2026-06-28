@@ -134,12 +134,16 @@ Resources:
                 Action:
                   - s3:PutObject
                   - s3:GetObject
-                Resource: !Sub ${SourceBucket.Arn}/agent-commons/*
+                Resource:
+                  - !Sub ${SourceBucket.Arn}/agent-commons/*
+                  - !Sub ${SourceBucket.Arn}/commons-platform/*
               - Effect: Allow
                 Action:
                   - codebuild:StartBuild
                   - codebuild:BatchGetBuilds
-                Resource: !GetAtt ApiBuildProject.Arn
+                Resource:
+                  - !GetAtt ApiBuildProject.Arn
+                  - !Sub arn:aws:codebuild:${AWS::Region}:${AWS::AccountId}:project/commons-platform-production
 
   CodeBuildRole:
     Type: AWS::IAM::Role
