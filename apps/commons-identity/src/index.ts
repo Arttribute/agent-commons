@@ -129,6 +129,8 @@ app.get("/health", (c) =>
   c.json({ status: "ok", service: "commons-identity", time: new Date().toISOString() }),
 );
 
+app.get("/api/auth/native/sign-in/google", handleNativeGoogleSignIn);
+app.post("/api/auth/native/sign-in/email", handleNativeEmailSignIn);
 app.on(["GET", "POST"], "/api/auth/*", (c) => authService.handler(c.req.raw));
 app.on(["GET", "POST"], "/.well-known/*", (c) => authService.handler(c.req.raw));
 app.route("/api/platform", createPlatformRouter(authService, database));
@@ -312,7 +314,6 @@ async function handleNativeGoogleSignIn(c: any) {
 }
 
 app.get("/native/sign-in/google", handleNativeGoogleSignIn);
-app.get("/api/auth/native/sign-in/google", handleNativeGoogleSignIn);
 
 async function handleNativeEmailSignIn(c: any) {
   const form = await c.req.parseBody();
@@ -334,7 +335,6 @@ async function handleNativeEmailSignIn(c: any) {
 }
 
 app.post("/native/sign-in/email", handleNativeEmailSignIn);
-app.post("/api/auth/native/sign-in/email", handleNativeEmailSignIn);
 
 app.post("/native/sign-up/email", async (c) => {
   const form = await c.req.parseBody();
