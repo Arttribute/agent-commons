@@ -35,6 +35,7 @@ import {
   OAuthProviderDto,
   OAuthConnectionDto,
 } from './dto/oauth.dto';
+import { Public } from '../modules/auth/public.decorator';
 
 function redirectOAuthError(res: Response, code = 'oauth_failed') {
   return res.redirect(`/oauth/error?code=${encodeURIComponent(code)}`);
@@ -66,6 +67,7 @@ export class OAuthController {
    * List all available OAuth providers
    */
   @Get('providers')
+  @Public()
   async listProviders(): Promise<ListOAuthProvidersResponseDto> {
     const providers = await this.providerService.listProviders();
 
@@ -91,6 +93,7 @@ export class OAuthController {
    * Get provider details including auth URL and scope groups
    */
   @Get('providers/:providerKey')
+  @Public()
   async getProvider(
     @Param('providerKey') providerKey: string,
   ): Promise<GetOAuthProviderResponseDto> {
@@ -169,6 +172,7 @@ export class OAuthController {
    * OAuth callback endpoint - exchanges code for tokens
    */
   @Get('callback/:providerKey')
+  @Public()
   async handleCallback(
     @Param('providerKey') providerKey: string,
     @Query() query: OAuthCallbackQueryDto,
