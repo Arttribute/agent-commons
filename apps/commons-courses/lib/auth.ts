@@ -14,6 +14,50 @@ const commonsIdentityEnabled =
   Boolean(process.env.COMMONS_IDENTITY_ISSUER) &&
   Boolean(process.env.COMMONS_IDENTITY_CLIENT_ID);
 
+type AuthToken = {
+  [key: string]: unknown;
+  accessToken?: string;
+  refreshToken?: string;
+  accessTokenExpiresAt?: number;
+  accessTokenError?: string;
+};
+
+async function refreshAccessToken(token: AuthToken) {
+  const issuer = process.env.COMMONS_IDENTITY_ISSUER;
+  if (!issuer || !token.refreshToken) return token;
+  try {
+    const response = await fetch(`${issuer}/oauth2/token`, {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
+        grant_type: "refresh_token",
+        refresh_token: token.refreshToken,
+        client_id: process.env.COMMONS_IDENTITY_CLIENT_ID ?? "",
+        ...(process.env.COMMONS_IDENTITY_CLIENT_SECRET
+          ? { client_secret: process.env.COMMONS_IDENTITY_CLIENT_SECRET }
+          : {}),
+      }),
+    });
+    if (!response.ok) {
+      return { ...token, accessTokenError: "RefreshAccessTokenError" };
+    }
+    const refreshed = (await response.json()) as {
+      access_token: string;
+      expires_in?: number;
+      refresh_token?: string;
+    };
+    return {
+      ...token,
+      accessToken: refreshed.access_token,
+      refreshToken: refreshed.refresh_token ?? token.refreshToken,
+      accessTokenExpiresAt: Date.now() + (refreshed.expires_in ?? 3600) * 1000,
+      accessTokenError: undefined,
+    };
+  } catch {
+    return { ...token, accessTokenError: "RefreshAccessTokenError" };
+  }
+}
+
 async function activateProduct(accessToken: unknown) {
   const issuer = process.env.COMMONS_IDENTITY_ISSUER;
   if (!issuer || typeof accessToken !== "string") return null;
@@ -59,10 +103,13 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
               name?: string;
               picture?: string;
               email_verified?: boolean;
+              workspace_id?: string;
             }) {
               return {
                 id: profile.sub,
                 identityUserId: profile.sub,
+                identityWorkspaceId: profile.workspace_id,
+                workspaceId: profile.workspace_id,
                 email: profile.email,
                 name: profile.name ?? profile.email?.split("@")[0],
                 image: profile.picture,
@@ -152,6 +199,12 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
         const identityUserId =
           (user as { identityUserId?: string }).identityUserId ??
           (profile as { sub?: string } | undefined)?.sub;
+        const identityWorkspaceId =
+          (user as { identityWorkspaceId?: string; workspaceId?: string })
+            .identityWorkspaceId ??
+          (user as { identityWorkspaceId?: string; workspaceId?: string })
+            .workspaceId ??
+          (profile as { workspace_id?: string } | undefined)?.workspace_id;
         if (!email || !identityUserId) return false;
 
         await connectDB();
@@ -163,10 +216,13 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
           if (!existing.emailVerifiedAt) existing.emailVerifiedAt = new Date();
           if (!existing.name && user.name) existing.name = user.name;
           if (user.image) existing.image = user.image;
+          if (identityWorkspaceId) existing.identityWorkspaceId = identityWorkspaceId;
           await existing.save();
           user.id = existing._id.toString();
           user.role = existing.role;
           user.identityUserId = identityUserId;
+          user.identityWorkspaceId = existing.identityWorkspaceId;
+          user.workspaceId = existing.identityWorkspaceId;
           return true;
         }
 
@@ -178,10 +234,13 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
           authProvider: "commons",
           emailVerifiedAt: new Date(),
           identityUserId,
+          identityWorkspaceId,
         });
         user.id = created._id.toString();
         user.role = created.role;
         user.identityUserId = identityUserId;
+        user.identityWorkspaceId = created.identityWorkspaceId;
+        user.workspaceId = created.identityWorkspaceId;
         return true;
       }
 
@@ -228,6 +287,12 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
         token.id = user.id;
         token.role = user.role;
         token.identityUserId = user.identityUserId;
+        token.identityWorkspaceId =
+          (user as { identityWorkspaceId?: string; workspaceId?: string })
+            .identityWorkspaceId ??
+          (user as { identityWorkspaceId?: string; workspaceId?: string })
+            .workspaceId;
+        token.workspaceId = token.identityWorkspaceId;
         if (user.image) token.picture = user.image;
         token.emailVerifiedAt = (user as { emailVerifiedAt?: Date }).emailVerifiedAt;
       }
@@ -248,6 +313,10 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
         const identity = await activateProduct(account.access_token);
         if (identity?.userId) {
           token.identityUserId = identity.userId;
+          if (identity.workspaceId) {
+            token.identityWorkspaceId = identity.workspaceId;
+            token.workspaceId = identity.workspaceId;
+          }
           if (token.email) {
             await connectDB();
             await User.updateOne(
@@ -255,6 +324,9 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
               {
                 $set: {
                   identityUserId: identity.userId,
+                  ...(identity.workspaceId
+                    ? { identityWorkspaceId: identity.workspaceId }
+                    : {}),
                   ...(identity.image ? { image: identity.image } : {}),
                 },
               },
@@ -262,6 +334,12 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
           }
         }
         if (identity?.image) token.picture = identity.image;
+      }
+      if (
+        token.accessTokenExpiresAt &&
+        Date.now() >= Number(token.accessTokenExpiresAt) - 30_000
+      ) {
+        return refreshAccessToken(token);
       }
       return token;
     },
@@ -279,8 +357,16 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
       if (token?.identityUserId) {
         session.user.identityUserId = token.identityUserId as string;
       }
+      if (token?.identityWorkspaceId || token?.workspaceId) {
+        session.user.identityWorkspaceId = (token.identityWorkspaceId ||
+          token.workspaceId) as string;
+        session.user.workspaceId = session.user.identityWorkspaceId;
+      }
       if (token?.accessToken) {
         session.accessToken = token.accessToken as string;
+      }
+      if (token?.accessTokenError) {
+        session.accessTokenError = token.accessTokenError as string;
       }
       return session;
     },

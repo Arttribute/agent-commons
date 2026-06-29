@@ -4,11 +4,14 @@ import type { LiveSchedule } from "@/lib/course-schedule";
 declare module "next-auth" {
   interface Session {
     accessToken?: string;
+    accessTokenError?: string;
     user: {
       id: string;
       role?: "learner" | "educator" | "admin";
       emailVerifiedAt?: string;
       identityUserId?: string;
+      identityWorkspaceId?: string;
+      workspaceId?: string;
     } & DefaultSession["user"];
   }
 
@@ -16,6 +19,8 @@ declare module "next-auth" {
     role?: "learner" | "educator" | "admin";
     emailVerifiedAt?: Date | string;
     identityUserId?: string;
+    identityWorkspaceId?: string;
+    workspaceId?: string;
   }
 }
 

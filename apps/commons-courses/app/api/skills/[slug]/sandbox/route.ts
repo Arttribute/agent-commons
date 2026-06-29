@@ -178,7 +178,16 @@ export async function POST(
     },
   } as Parameters<typeof client.agents.create>[0] & Record<string, unknown>;
   const created = await client.agents.create(createPayload);
-  const agentId = created.data.agentId;
+  const agentId = getCreatedAgentId(created.data);
+  if (!agentId) {
+    return NextResponse.json(
+      {
+        error:
+          "Agent Commons created a response without an agent id. The sandbox cannot continue until real agent creation is available.",
+      },
+      { status: 502 }
+    );
+  }
   const toolAssignments = await assignSelectedPlatformTools({
     client,
     agentId,
@@ -375,6 +384,13 @@ function mapLikeGet(value: unknown, key: string) {
     return (value as Record<string, unknown>)[key];
   }
   return undefined;
+}
+
+function getCreatedAgentId(agent: unknown) {
+  if (!agent || typeof agent !== "object") return "";
+  const record = agent as Record<string, unknown>;
+  const value = record.agentId ?? record.id ?? record._id;
+  return typeof value === "string" && value.trim() ? value : "";
 }
 
 async function assignSelectedPlatformTools({
