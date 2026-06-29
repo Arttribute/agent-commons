@@ -3,6 +3,10 @@ import { bearer, deviceAuthorization, jwt } from "better-auth/plugins";
 import bcrypt from "bcryptjs";
 import { createCommonsId } from "@/lib/ids";
 
+const AUTH_SESSION_VERSION = (
+  process.env.COMMONS_AUTH_SESSION_VERSION ?? "v2"
+).replace(/[^a-zA-Z0-9_-]/g, "-");
+
 type QueryableDatabase = {
   query: (
     text: string,
@@ -169,6 +173,7 @@ export function commonsAuthOptions(database: unknown) {
       },
     },
     advanced: {
+      cookiePrefix: `commons-identity-${AUTH_SESSION_VERSION}`,
       database: {
         generateId: ({ model }: { model: string }) => {
           if (model === "user" || model === "users") {

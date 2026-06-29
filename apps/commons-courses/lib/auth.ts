@@ -13,6 +13,9 @@ const authSecret = process.env.AUTH_SECRET || process.env.NEXTAUTH_SECRET;
 const commonsIdentityEnabled =
   Boolean(process.env.COMMONS_IDENTITY_ISSUER) &&
   Boolean(process.env.COMMONS_IDENTITY_CLIENT_ID);
+const AUTH_SESSION_VERSION = (
+  process.env.COMMONS_AUTH_SESSION_VERSION ?? "v2"
+).replace(/[^a-zA-Z0-9_-]/g, "-");
 
 type AuthToken = {
   [key: string]: unknown;
@@ -284,6 +287,7 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
     },
     async jwt({ token, user, trigger, session, account }) {
       if (user) {
+        token.authSessionVersion = AUTH_SESSION_VERSION;
         token.id = user.id;
         token.role = user.role;
         token.identityUserId = user.identityUserId;
@@ -305,6 +309,7 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
         token.role = updatedRole;
       }
       if (account?.provider === "commons") {
+        token.authSessionVersion = AUTH_SESSION_VERSION;
         token.accessToken = account.access_token;
         token.refreshToken = account.refresh_token;
         token.accessTokenExpiresAt = account.expires_at
@@ -344,6 +349,7 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
       return token;
     },
     session({ session, token }) {
+      session.authSessionVersion = token.authSessionVersion as string | undefined;
       if (token?.id) session.user.id = token.id as string;
       if (token?.role) {
         session.user.role = token.role as "learner" | "educator" | "admin";
@@ -375,4 +381,9 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
     signIn: "/auth/signin",
   },
   session: { strategy: "jwt" },
+  cookies: {
+    sessionToken: {
+      name: `authjs.common-courses.session-token.${AUTH_SESSION_VERSION}`,
+    },
+  },
 });

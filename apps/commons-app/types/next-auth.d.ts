@@ -2,6 +2,7 @@ import type { DefaultSession } from "next-auth";
 
 declare module "next-auth" {
   interface Session {
+    authSessionVersion?: string;
     accessToken?: string;
     accessTokenError?: string;
     user: {
@@ -18,6 +19,7 @@ declare module "next-auth" {
 
 declare module "next-auth/jwt" {
   interface JWT {
+    authSessionVersion?: string;
     identityUserId?: string;
     workspaceId?: string;
     accessToken?: string;

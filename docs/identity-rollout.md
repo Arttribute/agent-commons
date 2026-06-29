@@ -47,10 +47,25 @@ COMMONS_IDENTITY_ISSUER=https://auth.agentcommons.io/api/auth
 COMMONS_IDENTITY_CLIENT_ID=<application client id>
 COMMONS_IDENTITY_CLIENT_SECRET=<application client secret>
 AUTH_SECRET=<application session secret>
+COMMONS_AUTH_SESSION_VERSION=v2
 ```
 
 Courses verification and Common OS provisioning use client-credentials IDs and
 secrets created by `commons-identity oauth:bootstrap`.
+
+## Forced re-authentication
+
+Use `COMMONS_AUTH_SESSION_VERSION` as the controlled re-authentication switch
+for auth migrations or security events. Increasing this value changes the
+browser session cookie names used by Commons Identity, Agent Commons and
+CommonLab, so existing browser sessions are no longer recognized and users must
+sign in again through the current Commons Identity flow.
+
+This does not delete users, workspaces, enrollments, agents, OAuth clients or
+identity records. Keep the same value across Identity and all web applications
+in an environment. To repeat the process later, bump the version again, deploy
+the affected services together, and verify that a previously signed-in browser
+is redirected to sign in.
 
 ## Production order
 

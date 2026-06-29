@@ -1,6 +1,9 @@
 import NextAuth from "next-auth";
 
 const issuer = process.env.COMMONS_IDENTITY_ISSUER;
+const AUTH_SESSION_VERSION = (
+  process.env.COMMONS_AUTH_SESSION_VERSION ?? "v2"
+).replace(/[^a-zA-Z0-9_-]/g, "-");
 
 async function activateProduct(accessToken: unknown) {
   if (!issuer || typeof accessToken !== "string") return null;
@@ -94,10 +97,12 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
   callbacks: {
     async jwt({ token, user, account }) {
       if (user) {
+        token.authSessionVersion = AUTH_SESSION_VERSION;
         token.identityUserId = user.id;
         token.workspaceId = (user as { workspaceId?: string }).workspaceId;
       }
       if (account) {
+        token.authSessionVersion = AUTH_SESSION_VERSION;
         token.accessToken = account.access_token;
         token.refreshToken = account.refresh_token;
         token.accessTokenExpiresAt = account.expires_at
@@ -117,6 +122,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       return token;
     },
     session({ session, token }) {
+      session.authSessionVersion = token.authSessionVersion as string | undefined;
       session.user.id = String(token.identityUserId ?? token.sub ?? "");
       session.user.workspaceId = token.workspaceId as string | undefined;
       if (token.picture) session.user.image = String(token.picture);
@@ -127,4 +133,9 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
   },
   pages: { signIn: "/login" },
   session: { strategy: "jwt" },
+  cookies: {
+    sessionToken: {
+      name: `authjs.agent-commons.session-token.${AUTH_SESSION_VERSION}`,
+    },
+  },
 });

@@ -93,10 +93,12 @@ async function nativeAuthResponse(
         data.message ?? data.error ?? "Authentication failed",
       )}`;
   const headers = new Headers({ location: target });
+  const responseHeaders = response.headers as Headers &
+    Partial<{ getSetCookie(): string[] }>;
   const setCookies =
-    "getSetCookie" in response.headers
-      ? (response.headers as Headers & { getSetCookie(): string[] }).getSetCookie()
-      : [response.headers.get("set-cookie")].filter(
+    typeof responseHeaders.getSetCookie === "function"
+      ? responseHeaders.getSetCookie()
+      : [responseHeaders.get("set-cookie")].filter(
           (value): value is string => Boolean(value),
         );
   setCookies.forEach((cookie) => headers.append("set-cookie", cookie));
