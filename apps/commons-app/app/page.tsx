@@ -68,6 +68,19 @@ export default function Home() {
           </div>
         </div>
       </div>
+      <footer className="border-t border-border px-6 py-8 text-xs text-muted-foreground">
+        <div className="mx-auto flex max-w-6xl flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+          <span>© 2026 Agent Commons</span>
+          <div className="flex gap-6">
+            <Link href="/privacy" className="hover:text-foreground">
+              Privacy
+            </Link>
+            <Link href="/terms" className="hover:text-foreground">
+              Terms
+            </Link>
+          </div>
+        </div>
+      </footer>
     </div>
   );
 }

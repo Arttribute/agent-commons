@@ -3,7 +3,7 @@ import { LegalPage } from "../legal-page";
 import { termsOfService } from "../legal-content";
 
 export const metadata: Metadata = {
-  title: "Terms of Service",
+  title: "Terms of Service | Agent Commons",
   description: termsOfService.description,
 };
 
