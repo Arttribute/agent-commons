@@ -14,6 +14,12 @@ import { cn } from "@/lib/utils";
 import type { AgentSandboxSkillTemplate, AgentSandboxToolTemplate } from "@/types/skills";
 import type { AgentSandboxConfig } from "@/types/skills";
 import type { ReviewResult } from "./types";
+import {
+  siGmail,
+  siGoogledrive,
+  siGooglecalendar,
+  siGooglesheets,
+} from "simple-icons";
 
 export function IdentityPanel({
   agentName,
@@ -403,12 +409,36 @@ function googleToolScopes(connectorKind?: AgentSandboxToolTemplate["connectorKin
   return base;
 }
 
-/** Official colored Google product SVG icons */
+/** Renders an official brand icon from simple-icons inside a clean rounded container */
 function WorkspaceIcon({ kind }: { kind?: string }) {
-  if (kind === "gmail") return <GmailIcon />;
-  if (kind === "google_calendar") return <GoogleCalendarIcon />;
-  if (kind === "google_drive") return <GoogleDriveIcon />;
-  if (kind === "google_sheets") return <GoogleSheetsIcon />;
+  if (kind === "gmail") {
+    return (
+      <BrandIconBox color={`#${siGmail.hex}`} label={siGmail.title}>
+        <path d={siGmail.path} />
+      </BrandIconBox>
+    );
+  }
+  if (kind === "google_calendar") {
+    return (
+      <BrandIconBox color={`#${siGooglecalendar.hex}`} label={siGooglecalendar.title}>
+        <path d={siGooglecalendar.path} />
+      </BrandIconBox>
+    );
+  }
+  if (kind === "google_drive") {
+    return (
+      <BrandIconBox color={`#${siGoogledrive.hex}`} label={siGoogledrive.title}>
+        <path d={siGoogledrive.path} />
+      </BrandIconBox>
+    );
+  }
+  if (kind === "google_sheets") {
+    return (
+      <BrandIconBox color={`#${siGooglesheets.hex}`} label={siGooglesheets.title}>
+        <path d={siGooglesheets.path} />
+      </BrandIconBox>
+    );
+  }
 
   return (
     <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-slate-500">
@@ -417,107 +447,30 @@ function WorkspaceIcon({ kind }: { kind?: string }) {
   );
 }
 
-function GmailIcon() {
+function BrandIconBox({
+  color,
+  label,
+  children,
+}: {
+  color: string;
+  label: string;
+  children: React.ReactNode;
+}) {
   return (
-    <svg
-      width="36"
-      height="36"
-      viewBox="0 0 48 48"
-      xmlns="http://www.w3.org/2000/svg"
-      className="shrink-0"
-    >
-      {/* Left panel */}
-      <path fill="#EA4335" d="M6 40H14V24L2 16V36C2 38.21 3.79 40 6 40Z" />
-      {/* Right panel */}
-      <path fill="#4285F4" d="M34 40H42C44.21 40 46 38.21 46 36V16L34 24Z" />
-      {/* Top-right flap */}
-      <path fill="#FBBC04" d="M46 14C46 11.79 44.21 10 42 10H40.6L34 14.4V24L46 16V14Z" />
-      {/* Center M body */}
-      <path fill="#34A853" d="M14 24V12L24 19L34 12V24L24 31Z" />
-      {/* Top-left flap */}
-      <path fill="#EA4335" d="M2 14V16L14 24V12L11.4 10C9.13 8.67 6 10.24 6 13V14Z" />
-    </svg>
-  );
-}
-
-function GoogleCalendarIcon() {
-  return (
-    <svg
-      width="36"
-      height="36"
-      viewBox="0 0 48 48"
-      xmlns="http://www.w3.org/2000/svg"
-      className="shrink-0"
-    >
-      {/* White body */}
-      <rect x="4" y="8" width="40" height="38" rx="4" fill="white" stroke="#DADCE0" strokeWidth="1" />
-      {/* Blue header */}
-      <rect x="4" y="8" width="40" height="13" rx="4" fill="#4285F4" />
-      <rect x="4" y="17" width="40" height="4" fill="#4285F4" />
-      {/* Ring pegs */}
-      <rect x="14" y="3" width="4" height="11" rx="2" fill="#1565C0" />
-      <rect x="30" y="3" width="4" height="11" rx="2" fill="#1565C0" />
-      {/* Date */}
-      <text
-        x="24"
-        y="38"
-        textAnchor="middle"
-        fill="#3C4043"
-        fontSize="15"
-        fontWeight="700"
-        fontFamily="sans-serif"
+    <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-white shadow-sm ring-1 ring-slate-200">
+      <svg
+        role="img"
+        viewBox="0 0 24 24"
+        width="20"
+        height="20"
+        fill={color}
+        xmlns="http://www.w3.org/2000/svg"
+        aria-label={label}
       >
-        31
-      </text>
-    </svg>
-  );
-}
-
-function GoogleDriveIcon() {
-  return (
-    <svg
-      width="36"
-      height="36"
-      viewBox="0 0 24 24"
-      xmlns="http://www.w3.org/2000/svg"
-      className="shrink-0"
-    >
-      {/* Green: top arm */}
-      <path fill="#34A853" d="M12 2L7 11H17L12 2Z" />
-      {/* Blue: bottom-left arm */}
-      <path fill="#4285F4" d="M7 11L2 20H12L7 11Z" />
-      {/* Yellow: bottom-right arm */}
-      <path fill="#FBBC04" d="M17 11L12 20H22L17 11Z" />
-      {/* Center connector */}
-      <path fill="#1A73E8" d="M7 11L12 20H17L12 11Z" opacity="0.15" />
-    </svg>
-  );
-}
-
-function GoogleSheetsIcon() {
-  return (
-    <svg
-      width="36"
-      height="36"
-      viewBox="0 0 48 48"
-      xmlns="http://www.w3.org/2000/svg"
-      className="shrink-0"
-    >
-      {/* Page body */}
-      <path
-        fill="#0F9D58"
-        d="M10 4H32L42 14V44C42 46.21 40.21 48 38 48H10C7.79 48 6 46.21 6 44V8C6 5.79 7.79 4 10 4Z"
-      />
-      {/* Folded corner */}
-      <path fill="#087447" d="M32 4L42 14H32V4Z" />
-      {/* White grid — horizontal lines */}
-      <rect x="14" y="22" width="20" height="2" rx="0.5" fill="white" />
-      <rect x="14" y="28" width="20" height="2" rx="0.5" fill="white" />
-      <rect x="14" y="34" width="20" height="2" rx="0.5" fill="white" />
-      {/* White grid — vertical lines */}
-      <rect x="14" y="22" width="2" height="14" rx="0.5" fill="white" />
-      <rect x="23" y="22" width="2" height="14" rx="0.5" fill="white" />
-    </svg>
+        <title>{label}</title>
+        {children}
+      </svg>
+    </span>
   );
 }
 
