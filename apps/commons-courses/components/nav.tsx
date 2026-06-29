@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from "react";
 import type { ReactNode } from "react";
 import Link from "next/link";
-import { usePathname, useSearchParams } from "next/navigation";
+import { usePathname } from "next/navigation";
 import { useSession, signOut } from "next-auth/react";
 import {
   FlaskConical,
@@ -18,7 +18,6 @@ import { cn } from "@/lib/utils";
 export function Nav() {
   const { data: session } = useSession();
   const pathname = usePathname();
-  const searchParams = useSearchParams();
   const [scrolled, setScrolled] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
@@ -26,10 +25,8 @@ export function Nav() {
   const educatorLabel = "Educator console";
   const userName = session?.user?.name || session?.user?.email || "Account";
   const userInitial = userName.slice(0, 1).toUpperCase();
-  const search = searchParams.toString();
-  const currentPath = `${pathname}${search ? `?${search}` : ""}`;
   const authCallback =
-    pathname === "/" || pathname.startsWith("/auth/") ? "/dashboard" : currentPath;
+    pathname === "/" || pathname.startsWith("/auth/") ? "/dashboard" : pathname;
   const signInHref = `/auth/signin?callbackUrl=${encodeURIComponent(authCallback)}`;
   const signUpHref = `/auth/signup?callbackUrl=${encodeURIComponent(authCallback)}`;
 
