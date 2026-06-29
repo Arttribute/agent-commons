@@ -109,6 +109,8 @@ export function AgentLearnerSandbox({
     position: string;
     zIndex: string;
     borderRadius: string;
+    outline: string;
+    outlineOffset: string;
   } | null>(null);
   const [reviews, setReviews] = useState<Record<string, ReviewResult>>({});
   const [createdAgentId, setCreatedAgentId] = useState<string | undefined>();
@@ -951,7 +953,7 @@ function defaultGuideSelector(target?: string) {
     identity: '[data-sandbox-target="agent-name"]',
     system_prompt: '[data-sandbox-target="system-prompt"]',
     skills: '[data-sandbox-target="skills"]',
-    tools: '[data-sandbox-target="tools"]',
+    tools: '[data-sandbox-target="tool-google-calendar"]',
     connectors: '[data-sandbox-target="connect-google"]',
     workflows: '[data-sandbox-target="chat-input"]',
     tasks: '[data-sandbox-target="chat-input"]',
@@ -970,6 +972,8 @@ function applyGuideHighlight(
     position: string;
     zIndex: string;
     borderRadius: string;
+    outline: string;
+    outlineOffset: string;
   } | null>
 ) {
   if (!element) {
@@ -984,14 +988,18 @@ function applyGuideHighlight(
     position: element.style.position,
     zIndex: element.style.zIndex,
     borderRadius: element.style.borderRadius,
+    outline: element.style.outline,
+    outlineOffset: element.style.outlineOffset,
   };
   if (getComputedStyle(element).position === "static") {
     element.style.position = "relative";
   }
   element.style.zIndex = element.style.zIndex || "1";
   element.style.borderRadius = element.style.borderRadius || "0.75rem";
+  element.style.outline = "2px solid rgba(14,165,233,0.95)";
+  element.style.outlineOffset = "2px";
   element.style.boxShadow =
-    "0 0 0 2px rgba(15,23,42,0.88) inset, 0 0 0 4px rgba(14,165,233,0.16) inset";
+    "0 0 0 5px rgba(14,165,233,0.14)";
 }
 
 function clearGuideHighlight(
@@ -1001,6 +1009,8 @@ function clearGuideHighlight(
     position: string;
     zIndex: string;
     borderRadius: string;
+    outline: string;
+    outlineOffset: string;
   } | null>
 ) {
   const current = ref.current;
@@ -1009,6 +1019,8 @@ function clearGuideHighlight(
   current.element.style.position = current.position;
   current.element.style.zIndex = current.zIndex;
   current.element.style.borderRadius = current.borderRadius;
+  current.element.style.outline = current.outline;
+  current.element.style.outlineOffset = current.outlineOffset;
   ref.current = null;
 }
 

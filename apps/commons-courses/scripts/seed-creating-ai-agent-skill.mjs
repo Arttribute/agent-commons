@@ -506,7 +506,7 @@ function createSkillPack(assetUrls) {
               title: "Choose connectors",
               body:
                 "Select a Google connector the agent would need. Keep permissions scoped to the learning task.",
-              targetSelector: '[data-sandbox-target="tools"]',
+              targetSelector: '[data-sandbox-target="tool-google-calendar"]',
               placement: "right",
             },
             {

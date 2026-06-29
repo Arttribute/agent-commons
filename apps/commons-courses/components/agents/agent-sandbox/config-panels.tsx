@@ -48,9 +48,10 @@ export function IdentityPanel({
         onChange={onNameChange}
         target="agent-name"
       />
-      <label className="block" data-sandbox-target="system-prompt">
+      <label className="block">
         <span className="text-xs font-bold text-slate-600">System prompt</span>
         <textarea
+          data-sandbox-target="system-prompt"
           value={systemPrompt}
           placeholder={
             placeholders?.systemPrompt ||
@@ -153,7 +154,7 @@ export function SkillsPanel({
         </div>
       ) : null}
       {selectedSkill ? (
-        <label className="block" data-sandbox-target="skill-instructions">
+        <label className="block">
           <span className="flex items-center justify-between gap-2 text-xs font-bold text-slate-600">
             <span className="truncate">{selectedSkill.name}</span>
             <button
@@ -166,6 +167,7 @@ export function SkillsPanel({
             </button>
           </span>
           <textarea
+            data-sandbox-target="skill-instructions"
             value={skillInstructions[selectedSkill.id] || selectedSkill.instructions}
             placeholder={placeholder || "Write the steps this agent should follow..."}
             onChange={(event) =>
@@ -175,8 +177,9 @@ export function SkillsPanel({
           />
         </label>
       ) : (
-        <div data-sandbox-target="skill-instructions">
+        <div>
           <textarea
+            data-sandbox-target="skill-instructions"
             value={draft}
             onChange={(event) => setDraft(event.target.value)}
             placeholder={placeholder || "Describe a skill this agent should use..."}
@@ -238,6 +241,7 @@ export function ToolsPanel({
             return (
               <a
                 key={tool.id}
+                data-sandbox-target={`tool-${tool.id}`}
                 href={scopedGoogleConnectUrl(googleConnectUrl, tool)}
                 className="inline-flex w-full items-center justify-center gap-2 rounded-lg border border-slate-200 px-3 py-2 text-sm font-black text-slate-700 hover:bg-slate-50"
               >
@@ -249,6 +253,7 @@ export function ToolsPanel({
         {!tools.some((tool) => selected.includes(tool.id) && isGoogleTool(tool)) ? (
           <a
             href={googleConnectUrl}
+            data-sandbox-target="tool-google-calendar"
             className="inline-flex w-full items-center justify-center gap-2 rounded-lg border border-slate-200 px-3 py-2 text-sm font-black text-slate-700 hover:bg-slate-50"
           >
             <ExternalLink className="h-4 w-4" />
@@ -274,9 +279,10 @@ function Field({
   target?: string;
 }) {
   return (
-    <label className="block" data-sandbox-target={target}>
+    <label className="block">
       <span className="text-xs font-bold text-slate-600">{label}</span>
       <input
+        data-sandbox-target={target}
         value={value}
         placeholder={placeholder}
         onChange={(event) => onChange(event.target.value)}
@@ -438,6 +444,12 @@ function Picker({
           <button
             key={item.id}
             type="button"
+            data-sandbox-target={
+              item.id === "google-calendar" ||
+              item.connectorKind === "google_calendar"
+                ? "tool-google-calendar"
+                : undefined
+            }
             onClick={() =>
               onChange(
                 checked
