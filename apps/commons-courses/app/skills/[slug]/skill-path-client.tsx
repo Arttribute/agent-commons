@@ -702,22 +702,24 @@ function DoneView({
         ))}
       </div>
 
-      {nextChallenge ? (
-        <button
-          type="button"
-          onClick={() => onNext(nextChallenge.id)}
-          className="mt-6 inline-flex w-fit items-center gap-2 rounded-lg bg-slate-950 px-5 py-3 text-sm font-bold text-white"
-        >
-          Continue to next day <ArrowRight className="h-4 w-4" />
-        </button>
-      ) : (
-        <Link
-          href="/skills"
-          className="mt-6 inline-flex w-fit items-center gap-2 rounded-lg bg-slate-950 px-5 py-3 text-sm font-bold text-white"
-        >
-          Back to skills <ArrowRight className="h-4 w-4" />
-        </Link>
-      )}
+      <div className="sticky bottom-0 -mx-4 mt-4 flex border-t border-slate-100 bg-white/95 px-4 py-3 backdrop-blur sm:mt-auto sm:border-t-0 sm:bg-transparent sm:px-0 sm:backdrop-blur-none">
+        {nextChallenge ? (
+          <button
+            type="button"
+            onClick={() => onNext(nextChallenge.id)}
+            className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-slate-950 px-5 py-3 text-sm font-bold text-white sm:w-fit"
+          >
+            Continue to next day <ArrowRight className="h-4 w-4" />
+          </button>
+        ) : (
+          <Link
+            href="/skills"
+            className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-slate-950 px-5 py-3 text-sm font-bold text-white sm:w-fit"
+          >
+            Back to skills <ArrowRight className="h-4 w-4" />
+          </Link>
+        )}
+      </div>
     </div>
   );
 }

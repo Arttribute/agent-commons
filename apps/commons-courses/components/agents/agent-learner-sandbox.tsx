@@ -108,6 +108,7 @@ export function AgentLearnerSandbox({
     boxShadow: string;
     position: string;
     zIndex: string;
+    borderRadius: string;
   } | null>(null);
   const [reviews, setReviews] = useState<Record<string, ReviewResult>>({});
   const [createdAgentId, setCreatedAgentId] = useState<string | undefined>();
@@ -145,7 +146,6 @@ export function AgentLearnerSandbox({
 
   const canCreate =
     agentName.trim().length > 1 &&
-    persona.trim().length > 1 &&
     systemPrompt.trim().length > 40 &&
     promptReviewPassed;
 
@@ -301,7 +301,7 @@ export function AgentLearnerSandbox({
           intro={config.intro}
           title={config.title}
           brief={config.brief}
-          onStart={() => setIntroOpen(false)}
+          onStart={startSandboxInteraction}
         />
       </div>
     );
@@ -587,6 +587,13 @@ export function AgentLearnerSandbox({
     openGuideIndex(guideIndex);
   }
 
+  function startSandboxInteraction() {
+    setIntroOpen(false);
+    setGuideIndex(0);
+    setGuideVisible(true);
+    openGuideIndex(0);
+  }
+
   function openGuideIndex(index: number) {
     const step = guide[index];
     const panel = step?.target ? targetToPanel[step.target] : undefined;
@@ -749,14 +756,12 @@ export function AgentLearnerSandbox({
       return (
         <IdentityPanel
           agentName={agentName}
-          persona={persona}
           systemPrompt={systemPrompt}
           placeholders={config.placeholders}
           reviewEnabled={reviewTargets.includes("system_prompt")}
           review={reviews.system_prompt}
           reviewing={reviewing === "system_prompt"}
           onNameChange={setAgentName}
-          onPersonaChange={setPersona}
           onPromptChange={(value) => {
             setSystemPrompt(value);
             setReviews((current) => {
@@ -964,6 +969,7 @@ function applyGuideHighlight(
     boxShadow: string;
     position: string;
     zIndex: string;
+    borderRadius: string;
   } | null>
 ) {
   if (!element) {
@@ -977,11 +983,13 @@ function applyGuideHighlight(
     boxShadow: element.style.boxShadow,
     position: element.style.position,
     zIndex: element.style.zIndex,
+    borderRadius: element.style.borderRadius,
   };
   if (getComputedStyle(element).position === "static") {
     element.style.position = "relative";
   }
   element.style.zIndex = element.style.zIndex || "1";
+  element.style.borderRadius = element.style.borderRadius || "0.75rem";
   element.style.boxShadow =
     "0 0 0 2px rgba(15,23,42,0.88) inset, 0 0 0 4px rgba(14,165,233,0.16) inset";
 }
@@ -992,6 +1000,7 @@ function clearGuideHighlight(
     boxShadow: string;
     position: string;
     zIndex: string;
+    borderRadius: string;
   } | null>
 ) {
   const current = ref.current;
@@ -999,6 +1008,7 @@ function clearGuideHighlight(
   current.element.style.boxShadow = current.boxShadow;
   current.element.style.position = current.position;
   current.element.style.zIndex = current.zIndex;
+  current.element.style.borderRadius = current.borderRadius;
   ref.current = null;
 }
 

@@ -20,26 +20,22 @@ import type { ReviewResult } from "./types";
 
 export function IdentityPanel({
   agentName,
-  persona,
   systemPrompt,
   placeholders,
   reviewEnabled,
   review,
   reviewing,
   onNameChange,
-  onPersonaChange,
   onPromptChange,
   onReview,
 }: {
   agentName: string;
-  persona: string;
   systemPrompt: string;
   placeholders?: AgentSandboxConfig["placeholders"];
   reviewEnabled: boolean;
   review?: ReviewResult;
   reviewing: boolean;
   onNameChange: (value: string) => void;
-  onPersonaChange: (value: string) => void;
   onPromptChange: (value: string) => void;
   onReview: () => void;
 }) {
@@ -51,13 +47,6 @@ export function IdentityPanel({
         placeholder={placeholders?.agentName || "Study Coach"}
         onChange={onNameChange}
         target="agent-name"
-      />
-      <Field
-        label="Role"
-        value={persona}
-        placeholder={placeholders?.persona || "A calm planning coach for beginners"}
-        onChange={onPersonaChange}
-        target="agent-role"
       />
       <label className="block" data-sandbox-target="system-prompt">
         <span className="text-xs font-bold text-slate-600">System prompt</span>

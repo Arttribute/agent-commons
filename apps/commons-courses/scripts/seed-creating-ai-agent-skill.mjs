@@ -339,7 +339,7 @@ function createSkillPack(assetUrls) {
         hook: "Now bring the pieces together in the agent sandbox.",
         lesson: rich([
           "You have learned the core pieces: a system prompt gives the agent identity and direction, skills give it repeatable know-how, and tools let it act through connected capabilities.",
-          "In this practice lab, create a simple study planning agent from a blank canvas. Give it a clear name and persona, write a system prompt with a goal and boundaries, add a planning skill, choose a useful connector, and run a short test conversation.",
+          "In this practice lab, create a simple study planning agent from a blank canvas. Give it a clear name, write a system prompt with a goal and boundaries, add a planning skill, choose a useful connector, and run a short test conversation.",
           "The sandbox can review your system prompt and skill instructions when you want feedback, but the important milestone is creating and testing the live agent.",
         ]),
         keyIdeas: [
@@ -370,7 +370,7 @@ function createSkillPack(assetUrls) {
             body:
               "You are about to enter a guided Agent Commons sandbox. You will build a study-planning agent from empty fields, using short examples as placeholders while you decide what the agent should do.",
             expectations: [
-              "Give the agent a name, role, and system prompt in your own words.",
+              "Give the agent a name and system prompt in your own words.",
               "Add or edit one skill that gives the agent a repeatable planning process.",
               "Optionally run AI review to get feedback before creating the agent.",
               "Create the agent, send a test message, and inspect the logs for success, warnings, or failures.",
@@ -406,7 +406,6 @@ function createSkillPack(assetUrls) {
           ],
           placeholders: {
             agentName: "Study Sprint Coach",
-            persona: "A practical study coach for busy beginners",
             systemPrompt:
               "You are a study planning agent. Help the learner turn one learning goal into a realistic weekly plan. Ask clarifying questions when details are missing. Be concise, encouraging, and careful with connected tools.",
             skillInstructions:
@@ -470,7 +469,7 @@ function createSkillPack(assetUrls) {
               target: "identity",
               title: "Name the agent",
               body:
-                "Start with a short name and role. The placeholders are examples only; write the agent you want to test.",
+                "Start with a short, memorable name. The placeholder is only an example; write the agent you want to test.",
               targetSelector: '[data-sandbox-target="agent-name"]',
               placement: "right",
             },
@@ -515,7 +514,7 @@ function createSkillPack(assetUrls) {
               target: "publish",
               title: "Create the agent",
               body:
-                "Once the name, role, and system prompt are filled in, create the real Agent Commons agent from your configuration.",
+                "Once the name and system prompt are filled in, create the real Agent Commons agent from your configuration.",
               targetSelector: '[data-sandbox-target="create-agent"]',
               placement: "top",
             },
