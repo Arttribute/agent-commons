@@ -21,23 +21,23 @@ export function SandboxIntro({
 }: SandboxIntroProps) {
   const expectations = intro?.expectations?.filter(Boolean) || [];
   return (
-    <section className="flex h-full min-h-0 flex-col overflow-y-auto bg-white">
-      <div className="mx-auto flex min-h-full w-full max-w-3xl flex-col justify-center px-5 py-6">
-        <div className="mb-4 inline-flex w-fit items-center gap-2 rounded-full border border-slate-200 px-3 py-1 text-xs font-black uppercase tracking-widest text-slate-500">
+    <section className="flex h-full min-h-0 w-full flex-col bg-white">
+      <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4 sm:px-6">
+        <div className="inline-flex w-fit items-center gap-2 rounded-full border border-slate-200 px-3 py-1 text-xs font-black uppercase tracking-widest text-slate-500">
           <Info className="h-3.5 w-3.5" />
           {intro?.eyebrow || "Practice sandbox"}
         </div>
-        <h2 className="text-2xl font-semibold tracking-tight text-slate-950 sm:text-3xl">
+        <h2 className="mt-3 text-2xl font-semibold tracking-tight text-slate-950 sm:text-3xl">
           {intro?.title || title || "Build and test a real agent"}
         </h2>
-        <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-600">
+        <p className="mt-3 max-w-4xl text-sm leading-6 text-slate-600">
           {intro?.body ||
             brief ||
             "You will configure an Agent Commons agent, create it on the platform, then test it through a live chat interface."}
         </p>
 
         {intro?.infoBody ? (
-          <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm leading-6 text-slate-700">
+          <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm leading-6 text-slate-700">
             <p className="font-black text-slate-950">
               {intro.infoTitle || "What is this sandbox?"}
             </p>
@@ -46,7 +46,7 @@ export function SandboxIntro({
         ) : null}
 
         {expectations.length ? (
-          <div className="mt-5 grid gap-2">
+          <div className="mt-5 grid gap-2 lg:grid-cols-2">
             {expectations.map((item) => (
               <div
                 key={item}
@@ -58,11 +58,12 @@ export function SandboxIntro({
             ))}
           </div>
         ) : null}
-
+      </div>
+      <div className="sticky bottom-0 flex border-t border-slate-100 bg-white/95 px-4 py-3 backdrop-blur sm:px-6">
         <button
           type="button"
           onClick={onStart}
-          className="mt-6 inline-flex w-fit items-center gap-2 rounded-lg bg-slate-950 px-4 py-2 text-sm font-black text-white"
+          className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-slate-950 px-5 py-3 text-sm font-black text-white sm:w-fit"
         >
           {intro?.startLabel || "Proceed to sandbox"}
           <ArrowRight className="h-4 w-4" />
