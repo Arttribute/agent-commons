@@ -1,11 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { signIn } from "@/lib/auth";
+import { safeAuthCallback } from "@/lib/auth-callback";
 
 async function start(request: NextRequest, callbackUrl: string) {
   const origin = request.nextUrl.origin;
+  const safeCallbackUrl = safeAuthCallback(callbackUrl);
   const authorizeUrl = await signIn("commons", {
     redirect: false,
-    redirectTo: new URL(callbackUrl, origin).toString(),
+    redirectTo: new URL(safeCallbackUrl, origin).toString(),
   });
   if (!authorizeUrl || authorizeUrl.includes("error=Configuration")) {
     if (request.nextUrl.searchParams.get("format") === "json") {
@@ -15,7 +17,10 @@ async function start(request: NextRequest, callbackUrl: string) {
       );
     }
     return NextResponse.redirect(
-      new URL("/auth/signin?authError=Could+not+start+sign-in", origin),
+      new URL(
+        `/auth/signin?authError=Could+not+start+sign-in&callbackUrl=${encodeURIComponent(safeCallbackUrl)}`,
+        origin,
+      ),
     );
   }
   if (request.nextUrl.searchParams.get("direct") === "1") {
@@ -41,7 +46,10 @@ async function start(request: NextRequest, callbackUrl: string) {
       );
     }
     return NextResponse.redirect(
-      new URL("/auth/signin?authError=Could+not+prepare+sign-in", origin),
+      new URL(
+        `/auth/signin?authError=Could+not+prepare+sign-in&callbackUrl=${encodeURIComponent(safeCallbackUrl)}`,
+        origin,
+      ),
     );
   }
   if (request.nextUrl.searchParams.get("format") === "json") {
@@ -49,7 +57,7 @@ async function start(request: NextRequest, callbackUrl: string) {
   }
   return NextResponse.redirect(
     new URL(
-      `/auth/signin?oauth_query=${encodeURIComponent(oauthQuery)}&callbackUrl=${encodeURIComponent(callbackUrl)}`,
+      `/auth/signin?oauth_query=${encodeURIComponent(oauthQuery)}&callbackUrl=${encodeURIComponent(safeCallbackUrl)}`,
       origin,
     ),
   );

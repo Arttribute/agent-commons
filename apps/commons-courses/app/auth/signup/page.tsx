@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { FlaskConical, Sparkles, Trophy, Zap } from "lucide-react";
+import { safeAuthCallback } from "@/lib/auth-callback";
 import { SignUpClient } from "./signup-client";
 
 type Props = {
@@ -8,8 +9,7 @@ type Props = {
 
 export default async function SignUpPage({ searchParams }: Props) {
   const params = await searchParams;
-  const callbackUrl =
-    typeof params.callbackUrl === "string" ? params.callbackUrl : "/dashboard";
+  const callbackUrl = safeAuthCallback(params.callbackUrl);
   const oauthQuery =
     typeof params.oauth_query === "string" ? params.oauth_query : "";
   const identityUrl =

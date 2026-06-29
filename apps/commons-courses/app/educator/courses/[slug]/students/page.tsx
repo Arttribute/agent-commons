@@ -9,10 +9,12 @@ export default async function CourseStudentsPage({
 }: {
   params: Promise<{ slug: string }>;
 }) {
-  const session = await auth();
-  if (!session?.user?.id) redirect("/auth/signin");
-
   const { slug } = await params;
+  const session = await auth();
+  if (!session?.user?.id) {
+    redirect(`/auth/signin?callbackUrl=/educator/courses/${slug}/students`);
+  }
+
   const result = await requireEducatorCourse(slug);
   if (result.error) redirect("/educator");
 

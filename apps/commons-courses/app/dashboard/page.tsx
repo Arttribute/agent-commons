@@ -9,7 +9,7 @@ import { BookOpen, ArrowRight, Clock } from "lucide-react";
 
 export default async function DashboardPage() {
   const session = await auth();
-  if (!session) redirect("/auth/signin");
+  if (!session) redirect("/auth/signin?callbackUrl=/dashboard");
 
   await connectDB();
   const enrollments = await Enrollment.find({ userId: session.user.id })

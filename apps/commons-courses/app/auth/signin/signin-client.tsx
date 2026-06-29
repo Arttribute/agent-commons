@@ -77,7 +77,7 @@ export function SignInClient({
       )}
       <h1 className="mb-1 text-center text-2xl font-bold text-slate-900">Welcome back</h1>
       <p className="mb-8 text-center text-sm text-slate-500">
-        Pick up your streak, badges, and builder work.
+        Sign in to continue.
       </p>
       {(error || prepareError) && (
         <p className="mb-4 text-center text-sm text-red-600">
