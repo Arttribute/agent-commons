@@ -255,7 +255,7 @@ export function CourseEditor({
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
     });
-    const data = await res.json();
+    const data = await readJsonResponse<{ error?: string; course?: CourseResponse }>(res);
     setSaving(false);
     if (!res.ok) {
       setError(data.error || "Could not save course.");
@@ -929,6 +929,10 @@ export function CourseEditor({
       </div>
     </form>
   );
+}
+
+async function readJsonResponse<T>(res: Response): Promise<T> {
+  return res.json().catch(() => ({} as T));
 }
 
 function getSectionLabel(section: CourseEditorSection) {

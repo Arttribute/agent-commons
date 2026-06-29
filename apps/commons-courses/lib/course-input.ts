@@ -167,6 +167,42 @@ const sandboxTargets: AgentSandboxStepTarget[] = [
   "publish",
 ];
 
+function normalizePracticalSignal(
+  input?: SkillPack["challenges"][number]["practicalSignal"]
+) {
+  if (!input) return undefined;
+  const id = input.id?.trim();
+  const eventType = input.eventType?.trim();
+  const label = input.label?.trim();
+  if (!id || !eventType || !label) return undefined;
+
+  const rawPlatform = input.platform?.trim().toLowerCase();
+  const platform =
+    rawPlatform === "common_os" || rawPlatform === "common-os" || rawPlatform === "commonos"
+      ? "common_os"
+      : rawPlatform === "agent_commons" ||
+          rawPlatform === "agent-commons" ||
+          rawPlatform === "agentcommons" ||
+          rawPlatform === "commonlab"
+        ? "agent_commons"
+        : rawPlatform === "external"
+          ? "external"
+          : undefined;
+  if (!platform) return undefined;
+
+  return {
+    id,
+    platform,
+    eventType,
+    label,
+    description: input.description?.trim() || undefined,
+    points:
+      typeof input.points === "number" && input.points >= 0
+        ? Math.floor(input.points)
+        : undefined,
+  };
+}
+
 function normalizeSandboxConfig(input?: AgentSandboxConfig) {
   if (!input?.enabled) return undefined;
   const capabilities = Array.isArray(input.capabilities)
@@ -352,15 +388,7 @@ function normalizeSkillPack(input?: SkillPack) {
           ? challenge.keyIdeas.map((idea) => idea.trim()).filter(Boolean)
           : [],
         microTask: challenge.microTask?.trim() || undefined,
-        practicalSignal: challenge.practicalSignal
-          ? {
-              ...challenge.practicalSignal,
-              id: challenge.practicalSignal.id?.trim(),
-              eventType: challenge.practicalSignal.eventType?.trim(),
-              label: challenge.practicalSignal.label?.trim(),
-              description: challenge.practicalSignal.description?.trim() || undefined,
-            }
-          : undefined,
+        practicalSignal: normalizePracticalSignal(challenge.practicalSignal),
         sandbox: normalizeSandboxConfig(challenge.sandbox),
         questions: Array.isArray(challenge.questions)
           ? challenge.questions.map((question, questionIndex) => ({

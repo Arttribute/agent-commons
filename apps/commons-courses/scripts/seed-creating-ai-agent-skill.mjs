@@ -351,7 +351,7 @@ function createSkillPack(assetUrls) {
           "Create a study planner agent with one system prompt, one skill, and one connector.",
         practicalSignal: {
           id: "creating-ai-agent-sandbox-completed",
-          platform: "commonlab",
+          platform: "agent_commons",
           eventType: "agent_sandbox_completed",
           label: "Create and test your first agent",
           description:
