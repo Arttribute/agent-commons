@@ -281,9 +281,15 @@ function TaskBoardCard({
 export function TaskManagementView({
   userAddress,
   onRegisterCreate,
+  agentId,
+  hideAgentFilter = false,
+  preSelectedAgentId,
 }: {
   userAddress: string;
   onRegisterCreate?: (fn: () => void) => void;
+  agentId?: string;
+  hideAgentFilter?: boolean;
+  preSelectedAgentId?: string;
 }) {
   const router = useRouter();
   const [showCreateDialog, setShowCreateDialog] = useState(false);
@@ -301,7 +307,9 @@ export function TaskManagementView({
   }, [onRegisterCreate]);
 
   const { agents } = useAgents(userAddress);
-  const { tasks, loading, refresh } = useTasks({ ownerId: userAddress, ownerType: "user" });
+  const { tasks, loading, refresh } = useTasks(
+    agentId ? { agentId } : { ownerId: userAddress, ownerType: "user" }
+  );
 
   const agentMap = useMemo(
     () => new Map(agents.map((agent) => [agent.agentId, agent.name])),
@@ -322,7 +330,7 @@ export function TaskManagementView({
         } else if (statusFilter !== "all" && task.status !== statusFilter) {
           return false;
         }
-        if (selectedAgent !== "all" && task.agentId !== selectedAgent) return false;
+        if (!hideAgentFilter && selectedAgent !== "all" && task.agentId !== selectedAgent) return false;
         if (priorityFilter !== "all" && priorityFilterValue(task.priority) !== priorityFilter) return false;
         return true;
       })
@@ -335,7 +343,7 @@ export function TaskManagementView({
         }
         return (b.priority ?? 0) - (a.priority ?? 0);
       });
-  }, [tasks, statusFilter, selectedAgent, priorityFilter, ordering]);
+  }, [tasks, statusFilter, selectedAgent, priorityFilter, ordering, hideAgentFilter]);
 
   const groupedTasks = useMemo(() => {
     const groups = new Map<string, Task[]>();
@@ -361,7 +369,7 @@ export function TaskManagementView({
 
   const activeFilterCount = [
     statusFilter !== "active",
-    selectedAgent !== "all",
+    !hideAgentFilter && selectedAgent !== "all",
     priorityFilter !== "all",
   ].filter(Boolean).length;
 
@@ -458,25 +466,27 @@ export function TaskManagementView({
                     </DropdownMenuRadioGroup>
                   </DropdownMenuSubContent>
                 </DropdownMenuSub>
-                <DropdownMenuSub>
-                  <DropdownMenuSubTrigger>Agent</DropdownMenuSubTrigger>
-                  <DropdownMenuSubContent className="w-64">
-                    <DropdownMenuRadioGroup value={selectedAgent} onValueChange={setSelectedAgent}>
-                      <DropdownMenuRadioItem value="all">
-                        All agents
-                        <span className="ml-auto text-xs text-muted-foreground">{tasks.length}</span>
-                      </DropdownMenuRadioItem>
-                      {agents.map((agent) => (
-                        <DropdownMenuRadioItem key={agent.agentId} value={agent.agentId}>
-                          <span className="truncate">{agent.name}</span>
-                          <span className="ml-auto text-xs text-muted-foreground">
-                            {agentCounts.get(agent.agentId) ?? 0}
-                          </span>
+                {!hideAgentFilter && (
+                  <DropdownMenuSub>
+                    <DropdownMenuSubTrigger>Agent</DropdownMenuSubTrigger>
+                    <DropdownMenuSubContent className="w-64">
+                      <DropdownMenuRadioGroup value={selectedAgent} onValueChange={setSelectedAgent}>
+                        <DropdownMenuRadioItem value="all">
+                          All agents
+                          <span className="ml-auto text-xs text-muted-foreground">{tasks.length}</span>
                         </DropdownMenuRadioItem>
-                      ))}
-                    </DropdownMenuRadioGroup>
-                  </DropdownMenuSubContent>
-                </DropdownMenuSub>
+                        {agents.map((agent) => (
+                          <DropdownMenuRadioItem key={agent.agentId} value={agent.agentId}>
+                            <span className="truncate">{agent.name}</span>
+                            <span className="ml-auto text-xs text-muted-foreground">
+                              {agentCounts.get(agent.agentId) ?? 0}
+                            </span>
+                          </DropdownMenuRadioItem>
+                        ))}
+                      </DropdownMenuRadioGroup>
+                    </DropdownMenuSubContent>
+                  </DropdownMenuSub>
+                )}
                 <DropdownMenuSub>
                   <DropdownMenuSubTrigger>Priority</DropdownMenuSubTrigger>
                   <DropdownMenuSubContent className="w-48">
@@ -503,7 +513,7 @@ export function TaskManagementView({
                 )}
               </DropdownMenuContent>
             </DropdownMenu>
-            {selectedAgent !== "all" && (
+            {!hideAgentFilter && selectedAgent !== "all" && (
               <Badge variant="secondary" className="h-8 gap-1 rounded-md px-2">
                 Agent: {agentMap.get(selectedAgent) ?? "Unknown"}
                 <button type="button" onClick={() => setSelectedAgent("all")}>
@@ -685,6 +695,7 @@ export function TaskManagementView({
         open={showCreateDialog}
         onClose={() => setShowCreateDialog(false)}
         userAddress={userAddress}
+        preSelectedAgentId={preSelectedAgentId ?? agentId}
         onTaskCreated={refresh}
       />
     </div>
