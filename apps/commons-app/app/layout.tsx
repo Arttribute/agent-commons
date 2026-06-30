@@ -4,12 +4,12 @@ import "./globals.css";
 import Providers from "@/Providers"; // The file with your <PrivyProvider> from earlier
 import { AuthProvider } from "@/context/AuthContext";
 import { Analytics } from "@vercel/analytics/react";
-import { Space_Mono } from "next/font/google";
+import { Space_Grotesk } from "next/font/google";
 import { Toaster } from "@/components/ui/toaster";
 import { SidebarProvider } from "@/context/SidebarContext";
 
-const space_mono = Space_Mono({
-  weight: ["400", "700"],
+const spaceGrotesk = Space_Grotesk({
+  weight: ["400", "500", "600", "700"],
   subsets: ["latin"],
   display: "swap",
   fallback: ["Helvetica", "Arial", "sans-serif"],
@@ -37,7 +37,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" suppressHydrationWarning>
-      <body className={space_mono.className} suppressHydrationWarning>
+      <body className={spaceGrotesk.className} suppressHydrationWarning>
         <Providers>
           <AuthProvider>
             <SidebarProvider>
