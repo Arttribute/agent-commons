@@ -1,4 +1,5 @@
 import { auth } from "@/auth";
+import { normalizePrincipalId } from "@/lib/principal-id";
 
 const serviceTokenCache = new Map<string, { value: string; expiresAt: number }>();
 
@@ -13,24 +14,51 @@ function envValue(name: string) {
  * Uses NEST_API_SECRET_KEY — a server-side-only env var (no NEXT_PUBLIC_ prefix).
  * This file must only be imported from Next.js API routes, not client components.
  */
-export async function backendAuthHeaders(options: { allowServiceKey?: boolean } = {}): Promise<Record<string, string>> {
+export async function backendAuthHeaders(
+  options: { allowServiceKey?: boolean; preferServiceKey?: boolean } = {},
+): Promise<Record<string, string>> {
   const session = await auth();
-  if (session?.accessToken) {
-    return { Authorization: `Bearer ${session.accessToken}` };
-  }
-  if (options.allowServiceKey) {
-    const identityToken = await commonsIdentityServiceToken();
-    if (identityToken) return { Authorization: `Bearer ${identityToken}` };
+  const delegatedUserId = normalizePrincipalId(session?.user?.id);
+  const delegatedHeaders: Record<string, string> = delegatedUserId
+    ? { "x-initiator": delegatedUserId, "x-owner-id": delegatedUserId }
+    : {};
 
-    const serviceKey =
-      envValue("AGENT_COMMONS_API_KEY") ||
-      envValue("COMMONS_API_KEY") ||
-      envValue("NEST_API_SECRET_KEY");
-    if (serviceKey) return { Authorization: `Bearer ${serviceKey}` };
+  const serviceHeaders =
+    options.allowServiceKey || session?.user?.id
+      ? await backendServiceAuthHeaders()
+      : {};
+
+  if ((options.preferServiceKey || session?.user?.id) && serviceHeaders.Authorization) {
+    return { ...serviceHeaders, ...delegatedHeaders };
   }
+
+  if (session?.accessToken && !session.accessTokenError) {
+    return {
+      Authorization: `Bearer ${session.accessToken}`,
+      ...delegatedHeaders,
+    };
+  }
+
+  if (serviceHeaders.Authorization) {
+    return { ...serviceHeaders, ...delegatedHeaders };
+  }
+
   if (process.env.ALLOW_LEGACY_MANAGEMENT_AUTH !== "true") return {};
   const key = envValue("NEST_API_SECRET_KEY");
-  return key ? { Authorization: `Bearer ${key}` } : {};
+  return key ? { Authorization: `Bearer ${key}`, ...delegatedHeaders } : delegatedHeaders;
+}
+
+export async function backendServiceAuthHeaders(): Promise<Record<string, string>> {
+  const identityToken = await commonsIdentityServiceToken();
+  if (identityToken) return { Authorization: `Bearer ${identityToken}` };
+
+  const serviceKey =
+    envValue("AGENT_COMMONS_API_KEY") ||
+    envValue("COMMONS_API_KEY") ||
+    envValue("NEST_API_SECRET_KEY");
+  if (serviceKey) return { Authorization: `Bearer ${serviceKey}` };
+
+  return {};
 }
 
 async function commonsIdentityServiceToken() {
@@ -55,7 +83,8 @@ async function commonsIdentityServiceToken() {
     },
     body: new URLSearchParams({
       grant_type: "client_credentials",
-      scope: "oauth:read oauth:write agents:read agents:run",
+      scope:
+        "agents:read agents:write agents:run activity:read usage:read oauth:read oauth:write compute:read compute:write",
       resource: "commons-platform",
     }),
   }).catch(() => null);

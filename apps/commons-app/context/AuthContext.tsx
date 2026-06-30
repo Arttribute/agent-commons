@@ -1,7 +1,6 @@
 "use client";
 import React, { createContext, useContext, useEffect, useState } from "react";
 import {
-  signIn as commonsSignIn,
   signOut as commonsSignOut,
   useSession,
 } from "next-auth/react";
@@ -97,10 +96,11 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
   // 2) Provide login, logout, and refresh
   const login = async () => {
-    try {
-      await commonsSignIn("commons");
-    } catch (err) {
-      console.error("Login error:", err);
+    if (typeof window !== "undefined") {
+      const callbackUrl = `${window.location.pathname}${window.location.search}`;
+      window.location.assign(
+        `/api/auth/native/start?direct=1&callbackUrl=${encodeURIComponent(callbackUrl || "/agents")}`,
+      );
     }
   };
 

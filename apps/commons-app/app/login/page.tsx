@@ -15,6 +15,7 @@ export default async function LoginPage({ searchParams }: Props) {
   const oauthQuery =
     typeof params.oauth_query === "string" ? params.oauth_query : "";
   const error = typeof params.authError === "string" ? params.authError : "";
+  const authJsError = typeof params.error === "string" ? params.error : "";
   const registered = params.registered === "1";
   const identityUrl =
     process.env.COMMONS_IDENTITY_ISSUER?.replace(/\/api\/auth\/?$/, "") ??
@@ -39,7 +40,14 @@ export default async function LoginPage({ searchParams }: Props) {
           Check your email to verify your Agent Commons account.
         </p>
       )}
-      {error && <p className="mb-4 text-sm text-red-600">{error}</p>}
+      {(error || authJsError) && (
+        <p className="mb-4 text-sm text-red-600">
+          {error ||
+            (authJsError === "Configuration"
+              ? "Sign-in could not start because the server auth provider is not configured correctly."
+              : "Sign-in failed. Please try again.")}
+        </p>
+      )}
       <a
         className="mb-5 flex w-full items-center justify-center gap-2 rounded-md border px-4 py-3 font-semibold hover:bg-muted"
         href={`${identityUrl}/native/sign-in/google?app=agent-commons&oauth_query=${encodeURIComponent(oauthQuery)}&return_to=${encodeURIComponent(returnTo)}`}

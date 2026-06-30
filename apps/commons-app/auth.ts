@@ -1,6 +1,8 @@
 import NextAuth from "next-auth";
 
 const issuer = process.env.COMMONS_IDENTITY_ISSUER;
+const clientId = process.env.COMMONS_IDENTITY_CLIENT_ID;
+const clientSecret = process.env.COMMONS_IDENTITY_CLIENT_SECRET;
 const AUTH_SESSION_VERSION = (
   process.env.COMMONS_AUTH_SESSION_VERSION ?? "v2"
 ).replace(/[^a-zA-Z0-9_-]/g, "-");
@@ -58,15 +60,15 @@ async function refreshAccessToken(token: any) {
 export const { handlers, auth, signIn, signOut } = NextAuth({
   secret: process.env.AUTH_SECRET,
   trustHost: true,
-  providers: issuer
+  providers: issuer && clientId
     ? [
         {
           id: "commons",
           name: "Commons",
           type: "oidc",
           issuer,
-          clientId: process.env.COMMONS_IDENTITY_CLIENT_ID,
-          clientSecret: process.env.COMMONS_IDENTITY_CLIENT_SECRET,
+          clientId,
+          clientSecret,
           authorization: {
             params: {
               scope:
@@ -131,7 +133,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       return session;
     },
   },
-  pages: { signIn: "/login" },
+  pages: { signIn: "/login", error: "/login" },
   session: { strategy: "jwt" },
   cookies: {
     sessionToken: {

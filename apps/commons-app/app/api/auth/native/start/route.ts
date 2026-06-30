@@ -3,10 +3,33 @@ import { signIn } from "@/auth";
 
 async function start(request: NextRequest, callbackUrl: string) {
   const origin = request.nextUrl.origin;
-  const authorizeUrl = await signIn("commons", {
-    redirect: false,
-    redirectTo: new URL(callbackUrl, origin).toString(),
-  });
+  if (
+    !process.env.COMMONS_IDENTITY_ISSUER ||
+    !process.env.COMMONS_IDENTITY_CLIENT_ID
+  ) {
+    console.error("[auth/native/start] Commons Identity provider is not configured", {
+      hasIssuer: Boolean(process.env.COMMONS_IDENTITY_ISSUER),
+      hasClientId: Boolean(process.env.COMMONS_IDENTITY_CLIENT_ID),
+    });
+    return NextResponse.redirect(
+      new URL("/login?authError=Sign-in+is+not+configured", origin),
+    );
+  }
+
+  let authorizeUrl: string | undefined;
+  try {
+    authorizeUrl = await signIn("commons", {
+      redirect: false,
+      redirectTo: new URL(callbackUrl, origin).toString(),
+    });
+  } catch (error) {
+    console.error("[auth/native/start] Could not start Commons sign-in", {
+      message: error instanceof Error ? error.message : String(error),
+    });
+    return NextResponse.redirect(
+      new URL("/login?authError=Could+not+start+sign-in", origin),
+    );
+  }
   if (!authorizeUrl || authorizeUrl.includes("error=Configuration")) {
     return NextResponse.redirect(new URL("/login?authError=Could+not+start+sign-in", origin));
   }

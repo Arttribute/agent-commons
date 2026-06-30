@@ -67,10 +67,13 @@ export class OwnerGuard implements CanActivate {
 
     // Resolve caller identity
     const principal = (req as any).principal as ApiKeyPrincipal | undefined;
-    const callerId =
-      principal?.principalId ??
+    const delegatedCallerId =
       (req.headers['x-owner-id'] as string) ??
       (req.headers['x-initiator'] as string);
+    const callerId =
+      principal?.principalType === 'service'
+        ? delegatedCallerId ?? principal.principalId
+        : principal?.principalId ?? delegatedCallerId;
 
     if (!callerId) {
       throw new ForbiddenException('Owner identity required (x-owner-id or x-initiator header missing)');
@@ -124,6 +127,17 @@ export class OwnerGuard implements CanActivate {
           principal.workspaceId &&
           owner.workspaceId.toLowerCase() ===
             principal.workspaceId.toLowerCase()))
+    ) {
+      return true;
+    }
+
+    if (
+      principal?.principalType === 'service' &&
+      delegatedCallerId &&
+      ((owner.ownerUserId &&
+        owner.ownerUserId.toLowerCase() === delegatedCallerId.toLowerCase()) ||
+        (owner.legacyOwner &&
+          owner.legacyOwner.toLowerCase() === delegatedCallerId.toLowerCase()))
     ) {
       return true;
     }
