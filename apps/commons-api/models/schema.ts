@@ -30,6 +30,8 @@ export const agent = pgTable('agent', {
   workspaceId: text('workspace_id'),
   owner: text(),
   name: text().notNull(),
+  greeting: text(),
+  conversationStarters: jsonb('conversation_starters').$type<string[]>(),
   knowledgebase: jsonb('knowledgebase').$type<
     Array<{
       title: string;

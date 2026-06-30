@@ -164,6 +164,8 @@ function SetupView({
     persona: agent.persona || "",
     instructions: agent.instructions || "",
     description: agent.description || "",
+    greeting: agent.greeting || "",
+    conversationStarters: (agent.conversationStarters || []).join("\n"),
     a2aEnabled: Boolean((agent as any).a2aEnabled),
     modelProvider: (agent as any).modelProvider || "openai",
     modelId: (agent as any).modelId || "",
@@ -182,6 +184,8 @@ function SetupView({
       persona: agent.persona || "",
       instructions: agent.instructions || "",
       description: agent.description || "",
+      greeting: agent.greeting || "",
+      conversationStarters: (agent.conversationStarters || []).join("\n"),
       a2aEnabled: Boolean((agent as any).a2aEnabled),
       modelProvider: (agent as any).modelProvider || "openai",
       modelId: (agent as any).modelId || "",
@@ -200,6 +204,10 @@ function SetupView({
     try {
       const payload = {
         ...form,
+        conversationStarters: form.conversationStarters
+          .split("\n")
+          .map((starter) => starter.trim())
+          .filter(Boolean),
         temperature: Number(form.temperature),
         maxTokens: Number(form.maxTokens),
         topP: Number(form.topP),
@@ -277,6 +285,26 @@ function SetupView({
             <div className="grid gap-1.5">
               <Label>Persona</Label>
               <Textarea className="min-h-24" value={form.persona} disabled={!isOwner} onChange={(e) => setForm((f) => ({ ...f, persona: e.target.value }))} />
+            </div>
+            <div className="grid gap-1.5">
+              <Label>Greeting</Label>
+              <Textarea
+                className="min-h-20"
+                value={form.greeting}
+                disabled={!isOwner}
+                onChange={(e) => setForm((f) => ({ ...f, greeting: e.target.value }))}
+                placeholder="A short optional message shown before the first user message."
+              />
+            </div>
+            <div className="grid gap-1.5">
+              <Label>Conversation starters</Label>
+              <Textarea
+                className="min-h-24"
+                value={form.conversationStarters}
+                disabled={!isOwner}
+                onChange={(e) => setForm((f) => ({ ...f, conversationStarters: e.target.value }))}
+                placeholder={"One starter per line"}
+              />
             </div>
             <div className="grid gap-1.5">
               <Label>System prompt</Label>

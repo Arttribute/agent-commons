@@ -113,7 +113,11 @@ export default function SessionInterfaceImproved({
   );
   const [spaces, setSpaces] = useState<any[]>(session?.spaces || []);
 
-  const { messages } = useAgentContext();
+  const { messages, setInputText } = useAgentContext();
+  const greeting = (agent as any)?.greeting as string | undefined;
+  const conversationStarters = Array.isArray((agent as any)?.conversationStarters)
+    ? ((agent as any).conversationStarters as string[]).filter(Boolean)
+    : [];
 
   const groupedItems = useMemo(() => {
     type Item =
@@ -250,6 +254,31 @@ export default function SessionInterfaceImproved({
         <div className="container mx-auto max-w-2xl mb-20" ref={scrollRef}>
           {isLoadingSession && messages.length === 0 ? (
             <ChatLoadingIndicator />
+          ) : messages.length === 0 && (greeting || conversationStarters.length > 0) ? (
+            <div className="flex min-h-[45vh] flex-col justify-center py-8">
+              <div className="space-y-4">
+                {greeting && (
+                  <div className="rounded-lg border border-border bg-muted/30 p-4">
+                    <p className="text-sm leading-6 text-foreground">{greeting}</p>
+                  </div>
+                )}
+                {conversationStarters.length > 0 && (
+                  <div className="grid gap-2 sm:grid-cols-2">
+                    {conversationStarters.map((starter) => (
+                      <button
+                        key={starter}
+                        type="button"
+                        className="rounded-lg border border-border px-3 py-2 text-left text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                        onClick={() => setInputText(starter)}
+                      >
+                        {starter}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+              <div ref={bottomRef} />
+            </div>
           ) : (
             <>
               {groupedItems.map((item, index) => {

@@ -14,6 +14,8 @@ interface Agent {
     owner?: string;
     instructions?: string;
     persona?: string;
+    greeting?: string;
+    conversationStarters?: string[];
     avatar?: string;
     modelProvider: ModelProvider;
     modelId: string;
@@ -32,7 +34,12 @@ interface CreateAgentParams {
     name: string;
     instructions?: string;
     persona?: string;
+    greeting?: string;
+    conversationStarters?: string[];
     owner?: string;
+    ownerUserId?: string;
+    workspaceId?: string | null;
+    metadata?: Record<string, unknown>;
     modelProvider?: ModelProvider;
     modelId?: string;
     modelApiKey?: string;
@@ -469,6 +476,58 @@ interface UsageAggregation {
     totalCostUsd: number;
     callCount: number;
     events: UsageEvent[];
+}
+type CreditDirection = 'grant' | 'debit' | 'adjustment' | 'refund' | 'expiration';
+type CreditPlatform = 'agent_commons' | 'commonlab' | 'common_os' | 'system';
+interface CreditLedgerEntry {
+    entryId: string;
+    principalId: string;
+    principalType: 'user' | 'agent' | 'service';
+    workspaceId?: string | null;
+    amount: number;
+    currency: 'credits';
+    direction: CreditDirection;
+    eventType: string;
+    sourcePlatform: CreditPlatform;
+    idempotencyKey: string;
+    description?: string | null;
+    relatedCourseId?: string | null;
+    relatedChallengeId?: string | null;
+    agentId?: string | null;
+    sessionId?: string | null;
+    taskId?: string | null;
+    workflowId?: string | null;
+    usageEventId?: string | null;
+    metadata?: Record<string, unknown>;
+    createdBy?: string | null;
+    createdByType?: string | null;
+    expiresAt?: string | null;
+    voidedAt?: string | null;
+    createdAt: string;
+}
+interface CreditBalance {
+    principalId: string;
+    workspaceId?: string | null;
+    balance: number;
+    currency: 'credits';
+}
+interface CreditWriteParams {
+    principalId: string;
+    principalType?: 'user' | 'agent' | 'service';
+    workspaceId?: string | null;
+    amount: number;
+    eventType: string;
+    sourcePlatform: CreditPlatform;
+    idempotencyKey: string;
+    description?: string;
+    relatedCourseId?: string;
+    relatedChallengeId?: string;
+    agentId?: string;
+    sessionId?: string;
+    taskId?: string;
+    workflowId?: string;
+    usageEventId?: string;
+    metadata?: Record<string, unknown>;
 }
 type WalletType = 'eoa' | 'erc4337' | 'external';
 interface AgentWallet {
@@ -1037,6 +1096,27 @@ declare class CommonsClient {
         /** Get aggregated token + cost usage for a session. */
         getSessionUsage: (sessionId: string) => Promise<{
             data: UsageAggregation;
+        }>;
+    };
+    get credits(): {
+        balance: (filter?: {
+            principalId?: string;
+            workspaceId?: string;
+        }) => Promise<{
+            data: CreditBalance;
+        }>;
+        ledger: (filter?: {
+            principalId?: string;
+            workspaceId?: string;
+            limit?: number;
+        }) => Promise<{
+            data: CreditLedgerEntry[];
+        }>;
+        grant: (params: CreditWriteParams) => Promise<{
+            data: CreditLedgerEntry;
+        }>;
+        debit: (params: CreditWriteParams) => Promise<{
+            data: CreditLedgerEntry;
         }>;
     };
 }

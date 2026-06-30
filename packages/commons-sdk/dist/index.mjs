@@ -430,6 +430,28 @@ var CommonsClient = class {
       getSessionUsage: (sessionId) => this.request("GET", `/v1/usage/sessions/${sessionId}`)
     };
   }
+  // ── Credits ──────────────────────────────────────────────────────────────
+  get credits() {
+    return {
+      balance: (filter) => {
+        const params = new URLSearchParams();
+        if (filter?.principalId) params.set("principalId", filter.principalId);
+        if (filter?.workspaceId) params.set("workspaceId", filter.workspaceId);
+        const qs = params.toString();
+        return this.request("GET", `/v1/credits/balance${qs ? `?${qs}` : ""}`);
+      },
+      ledger: (filter) => {
+        const params = new URLSearchParams();
+        if (filter?.principalId) params.set("principalId", filter.principalId);
+        if (filter?.workspaceId) params.set("workspaceId", filter.workspaceId);
+        if (filter?.limit) params.set("limit", String(filter.limit));
+        const qs = params.toString();
+        return this.request("GET", `/v1/credits/ledger${qs ? `?${qs}` : ""}`);
+      },
+      grant: (params) => this.request("POST", "/v1/credits/grants", params),
+      debit: (params) => this.request("POST", "/v1/credits/debits", params)
+    };
+  }
 };
 var CommonsError = class extends Error {
   constructor(message, status, data) {

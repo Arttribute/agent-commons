@@ -29,6 +29,8 @@ export interface Agent {
   owner?: string;
   instructions?: string;
   persona?: string;
+  greeting?: string;
+  conversationStarters?: string[];
   avatar?: string;
   modelProvider: ModelProvider;
   modelId: string;
@@ -48,6 +50,8 @@ export interface CreateAgentParams {
   name: string;
   instructions?: string;
   persona?: string;
+  greeting?: string;
+  conversationStarters?: string[];
   owner?: string;
   ownerUserId?: string;
   workspaceId?: string | null;

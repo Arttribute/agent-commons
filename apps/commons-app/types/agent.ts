@@ -25,6 +25,8 @@ export interface CommonAgent {
   avatar?: string;
   persona: string;
   instructions: string;
+  greeting?: string;
+  conversationStarters?: string[];
   description?: string;
   address: string;
   mode: AgentMode;
