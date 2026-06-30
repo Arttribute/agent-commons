@@ -19,7 +19,6 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
-import AppBar from "@/components/layout/app-bar";
 import { useTaskStream } from "@/hooks/use-tasks";
 import type { Task } from "@agent-commons/sdk";
 
@@ -27,6 +26,7 @@ import type { Task } from "@agent-commons/sdk";
 
 const statusColors: Record<string, string> = {
   pending: "bg-muted text-muted-foreground",
+  started: "bg-blue-100 text-blue-700",
   running: "bg-blue-100 text-blue-700",
   completed: "bg-green-100 text-green-700",
   failed: "bg-red-100 text-red-700",
@@ -35,6 +35,7 @@ const statusColors: Record<string, string> = {
 
 const statusIcons: Record<string, React.ElementType> = {
   pending: Circle,
+  started: Clock,
   running: Clock,
   completed: CheckCircle2,
   failed: XCircle,
@@ -245,26 +246,20 @@ export default function TaskDetailPage({
 
   if (loading) {
     return (
-      <div>
-        <AppBar />
-        <div className="mt-12">
-          <PageSkeleton />
-        </div>
+      <div className="h-full overflow-y-auto">
+        <PageSkeleton />
       </div>
     );
   }
 
   if (!task) {
     return (
-      <div>
-        <AppBar />
-        <div className="mt-12 flex flex-col items-center justify-center h-64 gap-4">
+      <div className="flex h-full flex-col items-center justify-center gap-4">
           <p className="text-muted-foreground text-sm">Task not found.</p>
           <Button variant="outline" size="sm" onClick={() => router.push("/studio/tasks")}>
             <ArrowLeft className="h-4 w-4 mr-2" />
             Back to Tasks
           </Button>
-        </div>
       </div>
     );
   }
@@ -273,9 +268,8 @@ export default function TaskDetailPage({
   const t = task as any; // access extra fields safely
 
   return (
-    <div>
-      <AppBar />
-      <div className="mt-12 max-w-5xl mx-auto px-6 py-6 space-y-6">
+    <div className="h-full overflow-y-auto">
+      <div className="max-w-5xl mx-auto px-6 py-6 space-y-6">
 
         {/* ── Header ── */}
         <div className="flex items-start justify-between gap-4 flex-wrap">

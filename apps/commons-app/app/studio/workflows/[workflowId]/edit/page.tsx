@@ -10,13 +10,20 @@ import { WorkflowCanvasProvider } from "@/components/workflows/editor/workflow-c
 import { TestPanel } from "@/components/workflows/editor/test-panel";
 import { useAuth } from "@/context/AuthContext";
 import { normalizePrincipalId } from "@/lib/principal-id";
-import { Loader2 } from "lucide-react";
+import { ArrowLeft, Loader2 } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { useRouter } from "next/navigation";
+import { useWorkflows } from "@/hooks/use-workflows";
+import { StudioEntitySwitcher } from "@/components/studio/studio-entity-switcher";
 
 export default function WorkflowEditorPage() {
   const params = useParams();
+  const router = useRouter();
   const workflowId = params.workflowId as string;
   const { authState } = useAuth();
   const { walletAddress } = authState;
+  const userId = normalizePrincipalId(walletAddress);
+  const { workflows } = useWorkflows(userId, "user");
 
   const { loadWorkflow, workflow, undo, redo, saveWorkflow, reset } =
     useWorkflowStore();
@@ -69,7 +76,7 @@ export default function WorkflowEditorPage() {
         window.history.replaceState(
           {},
           "",
-          `/studio/workflows/${workflow.workflowId}/edit`
+          `/studio/workflows/${workflow.workflowId}`
         );
       }
     } catch (error) {
@@ -112,7 +119,7 @@ export default function WorkflowEditorPage() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-screen">
+      <div className="flex h-full items-center justify-center">
         <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
       </div>
     );
@@ -120,21 +127,47 @@ export default function WorkflowEditorPage() {
 
   if (!workflow) {
     return (
-      <div className="flex items-center justify-center h-screen">
+      <div className="flex h-full items-center justify-center">
         <p className="text-muted-foreground">Workflow not found</p>
       </div>
     );
   }
 
   return (
-    <div className="flex flex-col h-screen bg-background">
+    <div className="flex h-full min-w-0 flex-col bg-background">
+      <div className="flex items-center justify-between gap-3 border-b border-border/70 px-4 py-2">
+        <div className="flex min-w-0 items-center gap-2">
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-8 w-8 shrink-0"
+            onClick={() => router.push("/studio/workflows")}
+            aria-label="Back to workflows"
+          >
+            <ArrowLeft className="h-4 w-4" />
+          </Button>
+          <StudioEntitySwitcher
+            type="workflow"
+            currentId={workflowId}
+            currentName={workflow.name}
+            items={workflows.map((item: any) => ({
+              id: item.workflowId,
+              name: item.name,
+              description: item.description,
+            }))}
+          />
+        </div>
+        <span className="hidden text-xs text-muted-foreground sm:block">
+          Workflow editor
+        </span>
+      </div>
       {/* Top toolbar */}
       <EditorToolbar />
 
       {/* Main editor area */}
-      <div className="flex flex-1 overflow-hidden">
+      <div className="flex min-h-0 flex-1 overflow-hidden">
         {/* Left sidebar - Tools */}
-        <ToolSidebar userId={normalizePrincipalId(walletAddress)} />
+        <ToolSidebar userId={userId} />
 
         {/* Center - Canvas */}
         <WorkflowCanvasProvider />

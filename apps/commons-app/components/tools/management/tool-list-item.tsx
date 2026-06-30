@@ -22,6 +22,7 @@ import { Badge } from "@/components/ui/badge";
 
 interface ToolListItemProps {
   tool: Tool;
+  onOpen?: (tool: Tool) => void;
   onEdit: (tool: Tool) => void;
   onDelete: (tool: Tool) => void;
   onManageKeys: (tool: Tool) => void;
@@ -42,6 +43,7 @@ const visibilityColors = {
 
 export function ToolListItem({
   tool,
+  onOpen,
   onEdit,
   onDelete,
   onManageKeys,
@@ -50,7 +52,10 @@ export function ToolListItem({
   const VisibilityIcon = visibilityIcons[tool.visibility];
 
   return (
-    <div className="border border-border rounded-lg p-4 hover:border-foreground/30 transition-colors bg-background">
+    <div
+      className="cursor-pointer rounded-lg border border-border bg-background p-4 transition-colors hover:border-foreground/30 hover:bg-muted/20"
+      onClick={() => onOpen?.(tool)}
+    >
       <div className="flex items-start justify-between mb-2">
         <div className="flex-1">
           <div className="flex items-center gap-2 mb-1">
@@ -71,25 +76,28 @@ export function ToolListItem({
         </div>
 
         <DropdownMenu>
-          <DropdownMenuTrigger className="hover:bg-accent rounded p-1">
+          <DropdownMenuTrigger
+            className="hover:bg-accent rounded p-1"
+            onClick={(event) => event.stopPropagation()}
+          >
             <MoreVertical className="h-5 w-5 text-muted-foreground" />
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-48">
-            <DropdownMenuItem onClick={() => onEdit(tool)}>
+            <DropdownMenuItem onClick={(event) => { event.stopPropagation(); onEdit(tool); }}>
               <Edit className="h-4 w-4 mr-2" />
               Edit Tool
             </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => onManageKeys(tool)}>
+            <DropdownMenuItem onClick={(event) => { event.stopPropagation(); onManageKeys(tool); }}>
               <Key className="h-4 w-4 mr-2" />
               Manage Keys
             </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => onManagePermissions(tool)}>
+            <DropdownMenuItem onClick={(event) => { event.stopPropagation(); onManagePermissions(tool); }}>
               <Users className="h-4 w-4 mr-2" />
               Permissions
             </DropdownMenuItem>
             <DropdownMenuSeparator />
             <DropdownMenuItem
-              onClick={() => onDelete(tool)}
+              onClick={(event) => { event.stopPropagation(); onDelete(tool); }}
               className="text-red-600 focus:text-red-600"
             >
               <Trash2 className="h-4 w-4 mr-2" />

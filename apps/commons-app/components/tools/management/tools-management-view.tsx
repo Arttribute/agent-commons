@@ -248,6 +248,7 @@ export function ToolsManagementView({ userAddress }: ToolsManagementViewProps) {
             <ToolListItem
               key={tool.toolId}
               tool={tool}
+              onOpen={(item) => router.push(`/studio/tools/${item.toolId}`)}
               onEdit={setEditTool}
               onDelete={setDeleteTool}
               onManageKeys={setKeysTool}

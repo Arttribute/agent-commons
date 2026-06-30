@@ -1,186 +1,377 @@
 "use client";
 
-import { useState, useMemo, useCallback, useEffect } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import type { ElementType } from "react";
 import { useRouter } from "next/navigation";
-import { Loader2, Plus, Calendar, CheckCircle2, Circle, XCircle, Clock, Play, Trash2, MoreVertical, RefreshCw, LayoutGrid, GitBranch } from "lucide-react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  AlertCircle,
+  Calendar,
+  CheckCircle2,
+  ChevronDown,
+  Circle,
+  Clock,
+  Filter,
+  LayoutGrid,
+  List,
+  Loader2,
+  MoreHorizontal,
+  Play,
+  Plus,
+  RefreshCw,
+  SlidersHorizontal,
+  Trash2,
+  UserRound,
+  X,
+  XCircle,
+} from "lucide-react";
+import { formatDistanceToNow } from "date-fns";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
+  DropdownMenuCheckboxItem,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { CreateTaskDialog } from "./create-task-dialog";
-import { useTasks } from "@/hooks/use-tasks";
 import { useAgents } from "@/hooks/use-agents";
+import { useTasks } from "@/hooks/use-tasks";
+import { cn } from "@/lib/utils";
 import type { Task } from "@agent-commons/sdk";
-import ReactFlow, {
-  Background,
-  Controls,
-  Handle,
-  Position,
-  type NodeProps,
-  type Node,
-  type Edge,
-} from "reactflow";
-import "reactflow/dist/style.css";
 
-const statusColors: Record<Task["status"], string> = {
-  pending: "bg-muted text-muted-foreground",
-  started: "bg-blue-100 text-blue-700",
-  running: "bg-blue-100 text-blue-700",
-  completed: "bg-green-100 text-green-700",
-  failed: "bg-red-100 text-red-700",
-  cancelled: "bg-orange-100 text-orange-700",
+type ViewMode = "list" | "board";
+type StatusFilter = "all" | "active" | Task["status"];
+type PriorityFilter = "all" | "none" | "high" | "medium" | "low";
+type GroupBy = "status" | "agent" | "priority";
+type Ordering = "priority" | "created" | "scheduled";
+
+const statusConfig: Record<string, { label: string; icon: ElementType; className: string }> = {
+  pending: {
+    label: "Todo",
+    icon: Circle,
+    className: "text-slate-500",
+  },
+  started: {
+    label: "Started",
+    icon: Clock,
+    className: "text-blue-600",
+  },
+  running: {
+    label: "In Progress",
+    icon: Clock,
+    className: "text-amber-600",
+  },
+  completed: {
+    label: "Done",
+    icon: CheckCircle2,
+    className: "text-emerald-600",
+  },
+  failed: {
+    label: "Failed",
+    icon: AlertCircle,
+    className: "text-red-600",
+  },
+  cancelled: {
+    label: "Canceled",
+    icon: XCircle,
+    className: "text-muted-foreground",
+  },
 };
 
-const statusIcons: Record<Task["status"], React.ElementType> = {
-  pending: Circle,
-  started: Clock,
-  running: Clock,
-  completed: CheckCircle2,
-  failed: XCircle,
-  cancelled: XCircle,
-};
+const statusOrder = ["running", "started", "pending", "completed", "failed", "cancelled"];
 
-// ── Dependency graph ─────────────────────────────────────────────────────────
+function priorityLabel(priority?: number | null) {
+  if (!priority || priority <= 0) return "No priority";
+  if (priority >= 3) return "High";
+  if (priority === 2) return "Medium";
+  return "Low";
+}
 
-const statusNodeColors: Record<Task["status"], string> = {
-  pending:   "border-muted-foreground/40 bg-muted/30",
-  started:   "border-blue-400 bg-blue-50",
-  running:   "border-blue-400 bg-blue-50",
-  completed: "border-green-500 bg-green-50",
-  failed:    "border-red-400 bg-red-50",
-  cancelled: "border-orange-400 bg-orange-50",
-};
+function priorityFilterValue(priority?: number | null): PriorityFilter {
+  if (!priority || priority <= 0) return "none";
+  if (priority >= 3) return "high";
+  if (priority === 2) return "medium";
+  return "low";
+}
 
-function TaskNode({ data }: NodeProps) {
-  const { task, agentName } = data as { task: Task; agentName: string };
-  const StatusIcon = statusIcons[task.status];
+function taskDate(task: Task) {
+  const t = task as Task & { scheduledFor?: string; nextRunAt?: string };
+  return t.scheduledFor || t.nextRunAt || task.createdAt;
+}
+
+function relativeDate(value?: string | null) {
+  if (!value) return "No date";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "No date";
+  return formatDistanceToNow(date, { addSuffix: true });
+}
+
+function StatusDot({ status }: { status: Task["status"] }) {
+  const config = statusConfig[status] ?? statusConfig.pending;
+  const Icon = config.icon;
+  return <Icon className={cn("h-4 w-4", config.className)} />;
+}
+
+function TaskActions({
+  task,
+  isActing,
+  onExecute,
+  onCancel,
+  onDelete,
+}: {
+  task: Task;
+  isActing: boolean;
+  onExecute: (taskId: string) => void;
+  onCancel: (taskId: string) => void;
+  onDelete: (taskId: string) => void;
+}) {
   return (
-    <div className={`rounded-lg border-2 px-3 py-2 text-xs w-44 shadow-sm ${statusNodeColors[task.status]}`}>
-      <Handle type="target" position={Position.Top} className="!bg-border" />
-      <div className="flex items-center gap-1.5 mb-0.5">
-        <StatusIcon className="h-3 w-3 shrink-0" />
-        <span className="font-semibold truncate">{task.title}</span>
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild onClick={(event) => event.stopPropagation()}>
+        <Button variant="ghost" size="icon" className="h-7 w-7">
+          {isActing ? (
+            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+          ) : (
+            <MoreHorizontal className="h-3.5 w-3.5" />
+          )}
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end">
+        {task.status === "pending" && (
+          <DropdownMenuItem
+            onClick={(event) => {
+              event.stopPropagation();
+              onExecute(task.taskId);
+            }}
+          >
+            <Play className="h-4 w-4" />
+            Execute
+          </DropdownMenuItem>
+        )}
+        {task.status === "running" && (
+          <DropdownMenuItem
+            onClick={(event) => {
+              event.stopPropagation();
+              onCancel(task.taskId);
+            }}
+          >
+            <XCircle className="h-4 w-4" />
+            Cancel
+          </DropdownMenuItem>
+        )}
+        <DropdownMenuSeparator />
+        <DropdownMenuItem
+          className="text-destructive focus:text-destructive"
+          onClick={(event) => {
+            event.stopPropagation();
+            onDelete(task.taskId);
+          }}
+        >
+          <Trash2 className="h-4 w-4" />
+          Delete
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
+function TaskRow({
+  task,
+  agentName,
+  isActing,
+  onOpen,
+  onExecute,
+  onCancel,
+  onDelete,
+}: {
+  task: Task;
+  agentName: string;
+  isActing: boolean;
+  onOpen: (taskId: string) => void;
+  onExecute: (taskId: string) => void;
+  onCancel: (taskId: string) => void;
+  onDelete: (taskId: string) => void;
+}) {
+  return (
+    <button
+      type="button"
+      className="grid min-h-11 w-full grid-cols-[26px_minmax(220px,1fr)_170px_120px_110px_34px] items-center gap-2 rounded-md px-3 text-left text-sm hover:bg-muted/60"
+      onClick={() => onOpen(task.taskId)}
+    >
+      <StatusDot status={task.status} />
+      <span className="min-w-0">
+        <span className="block truncate font-medium">{task.title}</span>
+        {task.description && (
+          <span className="block truncate text-xs text-muted-foreground">
+            {task.description}
+          </span>
+        )}
+      </span>
+      <span className="truncate text-xs text-muted-foreground">{agentName}</span>
+      <span className="text-xs text-muted-foreground">{priorityLabel(task.priority)}</span>
+      <span className="text-xs text-muted-foreground">{relativeDate(taskDate(task))}</span>
+      <TaskActions
+        task={task}
+        isActing={isActing}
+        onExecute={onExecute}
+        onCancel={onCancel}
+        onDelete={onDelete}
+      />
+    </button>
+  );
+}
+
+function TaskBoardCard({
+  task,
+  agentName,
+  isActing,
+  onOpen,
+  onExecute,
+  onCancel,
+  onDelete,
+}: {
+  task: Task;
+  agentName: string;
+  isActing: boolean;
+  onOpen: (taskId: string) => void;
+  onExecute: (taskId: string) => void;
+  onCancel: (taskId: string) => void;
+  onDelete: (taskId: string) => void;
+}) {
+  return (
+    <div
+      className="cursor-pointer rounded-lg border border-border bg-card p-3 shadow-sm transition-colors hover:bg-muted/30"
+      onClick={() => onOpen(task.taskId)}
+    >
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0">
+          <p className="truncate text-xs text-muted-foreground">{task.taskId.slice(0, 8)}</p>
+          <h3 className="mt-1 line-clamp-2 text-sm font-medium leading-5">{task.title}</h3>
+        </div>
+        <TaskActions
+          task={task}
+          isActing={isActing}
+          onExecute={onExecute}
+          onCancel={onCancel}
+          onDelete={onDelete}
+        />
       </div>
-      <span className="text-muted-foreground truncate block">{agentName}</span>
-      <Handle type="source" position={Position.Bottom} className="!bg-border" />
+      <div className="mt-3 flex flex-wrap items-center gap-1.5">
+        <Badge variant="outline" className="h-6 gap-1 rounded-md text-xs">
+          <UserRound className="h-3 w-3" />
+          {agentName}
+        </Badge>
+        <Badge variant="secondary" className="h-6 rounded-md text-xs">
+          {priorityLabel(task.priority)}
+        </Badge>
+      </div>
+      <p className="mt-3 text-xs text-muted-foreground">{relativeDate(taskDate(task))}</p>
     </div>
   );
 }
 
-const nodeTypes = { task: TaskNode };
-
-function TaskDependencyGraph({ tasks, agentMap }: { tasks: Task[]; agentMap: Map<string, string> }) {
-  // Layout: topological levels with simple column placement
-  const { nodes, edges } = useMemo(() => {
-    const depMap = new Map<string, string[]>();
-    for (const t of tasks) depMap.set(t.taskId, (t as any).dependsOn ?? []);
-
-    // Kahn's algorithm to assign levels
-    const inDegree = new Map<string, number>();
-    for (const t of tasks) inDegree.set(t.taskId, 0);
-    for (const [id, deps] of depMap)
-      for (const dep of deps)
-        if (inDegree.has(dep)) inDegree.set(id, (inDegree.get(id) ?? 0) + 1);
-
-    const levels = new Map<string, number>();
-    const queue = tasks.filter((t) => (inDegree.get(t.taskId) ?? 0) === 0).map((t) => t.taskId);
-    for (const id of queue) levels.set(id, 0);
-
-    while (queue.length) {
-      const id = queue.shift()!;
-      const level = levels.get(id) ?? 0;
-      for (const [child, deps] of depMap) {
-        if (deps.includes(id)) {
-          const newLevel = Math.max(levels.get(child) ?? 0, level + 1);
-          levels.set(child, newLevel);
-          inDegree.set(child, (inDegree.get(child) ?? 1) - 1);
-          if ((inDegree.get(child) ?? 0) <= 0) queue.push(child);
-        }
-      }
-    }
-
-    // Group by level to compute x positions
-    const byLevel = new Map<number, string[]>();
-    for (const [id, level] of levels) {
-      if (!byLevel.has(level)) byLevel.set(level, []);
-      byLevel.get(level)!.push(id);
-    }
-
-    const HGAP = 200, VGAP = 120;
-    const nodes: Node[] = tasks.map((t) => {
-      const level = levels.get(t.taskId) ?? 0;
-      const peers = byLevel.get(level) ?? [];
-      const col = peers.indexOf(t.taskId);
-      const totalW = peers.length * HGAP;
-      return {
-        id: t.taskId,
-        type: "task",
-        position: { x: col * HGAP - totalW / 2 + 400, y: level * VGAP + 20 },
-        data: { task: t, agentName: agentMap.get(t.agentId) ?? "Unknown" },
-      };
-    });
-
-    const edges: Edge[] = [];
-    for (const [id, deps] of depMap)
-      for (const dep of deps)
-        if (levels.has(dep))
-          edges.push({ id: `${dep}-${id}`, source: dep, target: id, animated: false, style: { stroke: "hsl(var(--border))" } });
-
-    return { nodes, edges };
-  }, [tasks, agentMap]);
-
-  return (
-    <div className="h-[520px] rounded-lg border border-border overflow-hidden">
-      <ReactFlow nodes={nodes} edges={edges} nodeTypes={nodeTypes} fitView fitViewOptions={{ padding: 0.2 }}>
-        <Background gap={16} color="hsl(var(--muted-foreground)/0.1)" />
-        <Controls showInteractive={false} />
-      </ReactFlow>
-    </div>
-  );
-}
-
-// ── Main view ─────────────────────────────────────────────────────────────────
-
-export function TaskManagementView({ userAddress, onRegisterCreate }: { userAddress: string; onRegisterCreate?: (fn: () => void) => void }) {
+export function TaskManagementView({
+  userAddress,
+  onRegisterCreate,
+}: {
+  userAddress: string;
+  onRegisterCreate?: (fn: () => void) => void;
+}) {
   const router = useRouter();
-  const [filterStatus, setFilterStatus] = useState<string>("all");
-  const [selectedAgent, setSelectedAgent] = useState<string>("all");
   const [showCreateDialog, setShowCreateDialog] = useState(false);
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>("active");
+  const [selectedAgent, setSelectedAgent] = useState("all");
+  const [priorityFilter, setPriorityFilter] = useState<PriorityFilter>("all");
+  const [viewMode, setViewMode] = useState<ViewMode>("list");
+  const [groupBy, setGroupBy] = useState<GroupBy>("status");
+  const [ordering, setOrdering] = useState<Ordering>("priority");
+  const [showEmptyColumns, setShowEmptyColumns] = useState(false);
+  const [actionLoading, setActionLoading] = useState<string | null>(null);
 
   useEffect(() => {
     onRegisterCreate?.(() => setShowCreateDialog(true));
   }, [onRegisterCreate]);
-  const [actionLoading, setActionLoading] = useState<string | null>(null);
-  const [viewMode, setViewMode] = useState<"grid" | "graph">("grid");
 
   const { agents } = useAgents(userAddress);
   const { tasks, loading, refresh } = useTasks({ ownerId: userAddress, ownerType: "user" });
 
   const agentMap = useMemo(
-    () => new Map(agents.map((a) => [a.agentId, a.name])),
-    [agents],
+    () => new Map(agents.map((agent) => [agent.agentId, agent.name])),
+    [agents]
   );
 
-  const filteredTasks = tasks.filter((t) => {
-    if (filterStatus !== "all" && t.status !== filterStatus) return false;
-    if (selectedAgent !== "all" && t.agentId !== selectedAgent) return false;
-    return true;
-  });
+  const agentCounts = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const task of tasks) counts.set(task.agentId, (counts.get(task.agentId) ?? 0) + 1);
+    return counts;
+  }, [tasks]);
 
-  const handleExecute = async (taskId: string) => {
+  const filteredTasks = useMemo(() => {
+    return tasks
+      .filter((task) => {
+        if (statusFilter === "active") {
+          if (["completed", "failed", "cancelled"].includes(task.status)) return false;
+        } else if (statusFilter !== "all" && task.status !== statusFilter) {
+          return false;
+        }
+        if (selectedAgent !== "all" && task.agentId !== selectedAgent) return false;
+        if (priorityFilter !== "all" && priorityFilterValue(task.priority) !== priorityFilter) return false;
+        return true;
+      })
+      .sort((a, b) => {
+        if (ordering === "created") {
+          return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+        }
+        if (ordering === "scheduled") {
+          return new Date(taskDate(b) || 0).getTime() - new Date(taskDate(a) || 0).getTime();
+        }
+        return (b.priority ?? 0) - (a.priority ?? 0);
+      });
+  }, [tasks, statusFilter, selectedAgent, priorityFilter, ordering]);
+
+  const groupedTasks = useMemo(() => {
+    const groups = new Map<string, Task[]>();
+    for (const task of filteredTasks) {
+      const key =
+        groupBy === "agent"
+          ? agentMap.get(task.agentId) ?? "Unknown agent"
+          : groupBy === "priority"
+            ? priorityLabel(task.priority)
+            : task.status;
+      groups.set(key, [...(groups.get(key) ?? []), task]);
+    }
+
+    if (groupBy === "status") {
+      const ordered = statusOrder
+        .filter((status) => groups.has(status) || showEmptyColumns)
+        .map((status) => [status, groups.get(status) ?? []] as const);
+      return ordered;
+    }
+
+    return Array.from(groups.entries()).sort(([a], [b]) => a.localeCompare(b));
+  }, [filteredTasks, groupBy, agentMap, showEmptyColumns]);
+
+  const activeFilterCount = [
+    statusFilter !== "active",
+    selectedAgent !== "all",
+    priorityFilter !== "all",
+  ].filter(Boolean).length;
+
+  const clearFilters = () => {
+    setStatusFilter("active");
+    setSelectedAgent("all");
+    setPriorityFilter("all");
+  };
+
+  const handleExecute = useCallback(async (taskId: string) => {
     setActionLoading(taskId);
     try {
       await fetch(`/api/tasks/${taskId}/execute`, { method: "POST" });
@@ -188,9 +379,9 @@ export function TaskManagementView({ userAddress, onRegisterCreate }: { userAddr
     } finally {
       setActionLoading(null);
     }
-  };
+  }, [refresh]);
 
-  const handleCancel = async (taskId: string) => {
+  const handleCancel = useCallback(async (taskId: string) => {
     setActionLoading(taskId);
     try {
       await fetch(`/api/tasks/${taskId}/cancel`, { method: "POST" });
@@ -198,9 +389,9 @@ export function TaskManagementView({ userAddress, onRegisterCreate }: { userAddr
     } finally {
       setActionLoading(null);
     }
-  };
+  }, [refresh]);
 
-  const handleDelete = async (taskId: string) => {
+  const handleDelete = useCallback(async (taskId: string) => {
     if (!confirm("Delete this task?")) return;
     setActionLoading(taskId);
     try {
@@ -209,207 +400,286 @@ export function TaskManagementView({ userAddress, onRegisterCreate }: { userAddr
     } finally {
       setActionLoading(null);
     }
-  };
+  }, [refresh]);
 
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center h-64">
-        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-      </div>
-    );
-  }
+  const openTask = (taskId: string) => router.push(`/studio/tasks/${taskId}`);
 
   return (
-    <div className="space-y-4">
-      {/* Filters */}
-      <div className="flex items-center justify-between gap-4 flex-wrap">
-        <div className="flex items-center gap-3 flex-wrap">
-          <Tabs value={filterStatus} onValueChange={setFilterStatus}>
-            <TabsList>
-              <TabsTrigger value="all">All</TabsTrigger>
-              <TabsTrigger value="pending">Pending</TabsTrigger>
-              <TabsTrigger value="running">Running</TabsTrigger>
-              <TabsTrigger value="completed">Completed</TabsTrigger>
-              <TabsTrigger value="failed">Failed</TabsTrigger>
-            </TabsList>
-          </Tabs>
-
-          <Select value={selectedAgent} onValueChange={setSelectedAgent}>
-            <SelectTrigger className="w-[180px]">
-              <SelectValue placeholder="All Agents" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All Agents</SelectItem>
-              {agents.map((a) => (
-                <SelectItem key={a.agentId} value={a.agentId}>
-                  {a.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-
-        <div className="flex items-center gap-2">
-          {/* View mode toggle */}
-          <div className="flex border border-border rounded-md overflow-hidden">
+    <div className="flex h-full min-w-0 flex-col bg-background">
+      <div className="border-b border-border/70 px-4 py-3">
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex min-w-0 items-center gap-2">
             <Button
-              variant={viewMode === "grid" ? "secondary" : "ghost"}
+              variant={statusFilter === "all" ? "secondary" : "outline"}
               size="sm"
-              className="h-8 rounded-none px-2.5"
-              onClick={() => setViewMode("grid")}
+              className="h-8 rounded-md"
+              onClick={() => setStatusFilter("all")}
             >
-              <LayoutGrid className="h-3.5 w-3.5" />
+              All tasks
             </Button>
             <Button
-              variant={viewMode === "graph" ? "secondary" : "ghost"}
+              variant={statusFilter === "active" ? "secondary" : "outline"}
               size="sm"
-              className="h-8 rounded-none px-2.5"
-              onClick={() => setViewMode("graph")}
+              className="h-8 rounded-md"
+              onClick={() => setStatusFilter("active")}
             >
-              <GitBranch className="h-3.5 w-3.5" />
+              Active
+            </Button>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" size="sm" className="h-8 rounded-md">
+                  <Filter className="h-3.5 w-3.5" />
+                  Filters
+                  {activeFilterCount > 0 && (
+                    <Badge variant="secondary" className="ml-1 h-5 rounded-md px-1.5 text-[10px]">
+                      {activeFilterCount}
+                    </Badge>
+                  )}
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start" className="w-64">
+                <DropdownMenuLabel className="text-xs text-muted-foreground">
+                  Add Filter
+                </DropdownMenuLabel>
+                <DropdownMenuSub>
+                  <DropdownMenuSubTrigger>Status</DropdownMenuSubTrigger>
+                  <DropdownMenuSubContent className="w-48">
+                    <DropdownMenuRadioGroup
+                      value={statusFilter}
+                      onValueChange={(value) => setStatusFilter(value as StatusFilter)}
+                    >
+                      <DropdownMenuRadioItem value="active">Active</DropdownMenuRadioItem>
+                      <DropdownMenuRadioItem value="all">All</DropdownMenuRadioItem>
+                      {statusOrder.map((status) => (
+                        <DropdownMenuRadioItem key={status} value={status}>
+                          {statusConfig[status]?.label ?? status}
+                        </DropdownMenuRadioItem>
+                      ))}
+                    </DropdownMenuRadioGroup>
+                  </DropdownMenuSubContent>
+                </DropdownMenuSub>
+                <DropdownMenuSub>
+                  <DropdownMenuSubTrigger>Agent</DropdownMenuSubTrigger>
+                  <DropdownMenuSubContent className="w-64">
+                    <DropdownMenuRadioGroup value={selectedAgent} onValueChange={setSelectedAgent}>
+                      <DropdownMenuRadioItem value="all">
+                        All agents
+                        <span className="ml-auto text-xs text-muted-foreground">{tasks.length}</span>
+                      </DropdownMenuRadioItem>
+                      {agents.map((agent) => (
+                        <DropdownMenuRadioItem key={agent.agentId} value={agent.agentId}>
+                          <span className="truncate">{agent.name}</span>
+                          <span className="ml-auto text-xs text-muted-foreground">
+                            {agentCounts.get(agent.agentId) ?? 0}
+                          </span>
+                        </DropdownMenuRadioItem>
+                      ))}
+                    </DropdownMenuRadioGroup>
+                  </DropdownMenuSubContent>
+                </DropdownMenuSub>
+                <DropdownMenuSub>
+                  <DropdownMenuSubTrigger>Priority</DropdownMenuSubTrigger>
+                  <DropdownMenuSubContent className="w-48">
+                    <DropdownMenuRadioGroup
+                      value={priorityFilter}
+                      onValueChange={(value) => setPriorityFilter(value as PriorityFilter)}
+                    >
+                      <DropdownMenuRadioItem value="all">All priorities</DropdownMenuRadioItem>
+                      <DropdownMenuRadioItem value="high">High</DropdownMenuRadioItem>
+                      <DropdownMenuRadioItem value="medium">Medium</DropdownMenuRadioItem>
+                      <DropdownMenuRadioItem value="low">Low</DropdownMenuRadioItem>
+                      <DropdownMenuRadioItem value="none">No priority</DropdownMenuRadioItem>
+                    </DropdownMenuRadioGroup>
+                  </DropdownMenuSubContent>
+                </DropdownMenuSub>
+                {activeFilterCount > 0 && (
+                  <>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem onClick={clearFilters}>
+                      <X className="h-4 w-4" />
+                      Clear filters
+                    </DropdownMenuItem>
+                  </>
+                )}
+              </DropdownMenuContent>
+            </DropdownMenu>
+            {selectedAgent !== "all" && (
+              <Badge variant="secondary" className="h-8 gap-1 rounded-md px-2">
+                Agent: {agentMap.get(selectedAgent) ?? "Unknown"}
+                <button type="button" onClick={() => setSelectedAgent("all")}>
+                  <X className="h-3 w-3" />
+                </button>
+              </Badge>
+            )}
+          </div>
+
+          <div className="flex shrink-0 items-center gap-2">
+            <div className="flex rounded-md border border-border bg-muted/40 p-0.5">
+              <Button
+                variant={viewMode === "list" ? "secondary" : "ghost"}
+                size="icon"
+                className="h-7 w-8 rounded"
+                onClick={() => setViewMode("list")}
+                aria-label="List view"
+              >
+                <List className="h-4 w-4" />
+              </Button>
+              <Button
+                variant={viewMode === "board" ? "secondary" : "ghost"}
+                size="icon"
+                className="h-7 w-8 rounded"
+                onClick={() => setViewMode("board")}
+                aria-label="Board view"
+              >
+                <LayoutGrid className="h-4 w-4" />
+              </Button>
+            </div>
+
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" size="icon" className="h-8 w-8">
+                  <SlidersHorizontal className="h-4 w-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-64">
+                <DropdownMenuLabel>View options</DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                <DropdownMenuSub>
+                  <DropdownMenuSubTrigger>
+                    Group
+                    <span className="ml-auto text-xs capitalize text-muted-foreground">{groupBy}</span>
+                  </DropdownMenuSubTrigger>
+                  <DropdownMenuSubContent>
+                    <DropdownMenuRadioGroup
+                      value={groupBy}
+                      onValueChange={(value) => setGroupBy(value as GroupBy)}
+                    >
+                      <DropdownMenuRadioItem value="status">Status</DropdownMenuRadioItem>
+                      <DropdownMenuRadioItem value="agent">Agent</DropdownMenuRadioItem>
+                      <DropdownMenuRadioItem value="priority">Priority</DropdownMenuRadioItem>
+                    </DropdownMenuRadioGroup>
+                  </DropdownMenuSubContent>
+                </DropdownMenuSub>
+                <DropdownMenuSub>
+                  <DropdownMenuSubTrigger>
+                    Order
+                    <span className="ml-auto text-xs capitalize text-muted-foreground">{ordering}</span>
+                  </DropdownMenuSubTrigger>
+                  <DropdownMenuSubContent>
+                    <DropdownMenuRadioGroup
+                      value={ordering}
+                      onValueChange={(value) => setOrdering(value as Ordering)}
+                    >
+                      <DropdownMenuRadioItem value="priority">Priority</DropdownMenuRadioItem>
+                      <DropdownMenuRadioItem value="created">Created</DropdownMenuRadioItem>
+                      <DropdownMenuRadioItem value="scheduled">Scheduled</DropdownMenuRadioItem>
+                    </DropdownMenuRadioGroup>
+                  </DropdownMenuSubContent>
+                </DropdownMenuSub>
+                <DropdownMenuCheckboxItem
+                  checked={showEmptyColumns}
+                  onCheckedChange={(checked) => setShowEmptyColumns(checked === true)}
+                >
+                  Show empty status groups
+                </DropdownMenuCheckboxItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+
+            <Button variant="ghost" size="icon" className="h-8 w-8" onClick={refresh}>
+              <RefreshCw className="h-4 w-4" />
+            </Button>
+            <Button size="sm" className="h-8 gap-1.5" onClick={() => setShowCreateDialog(true)}>
+              <Plus className="h-3.5 w-3.5" />
+              New
             </Button>
           </div>
-          <Button variant="ghost" size="sm" onClick={refresh}>
-            <RefreshCw className="h-4 w-4" />
-          </Button>
-          <Button size="sm" className="gap-2" onClick={() => setShowCreateDialog(true)}>
-            <Plus className="h-4 w-4" />
-            Create Task
-          </Button>
         </div>
       </div>
 
-      {/* Graph view */}
-      {viewMode === "graph" && (
-        filteredTasks.length === 0 ? (
-          <div className="flex flex-col items-center justify-center h-64 rounded-lg border border-dashed text-center">
-            <GitBranch className="h-10 w-10 text-muted-foreground/30 mb-3" />
-            <p className="text-sm text-muted-foreground">No tasks to visualize</p>
+      <div className="min-h-0 flex-1 overflow-auto px-4 py-3">
+        {loading ? (
+          <div className="flex h-64 items-center justify-center">
+            <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+          </div>
+        ) : filteredTasks.length === 0 ? (
+          <div className="flex h-64 flex-col items-center justify-center rounded-lg border border-dashed border-border text-center">
+            <Calendar className="mb-3 h-10 w-10 text-muted-foreground/40" />
+            <p className="text-sm font-medium">No tasks found</p>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Adjust filters or create a new task.
+            </p>
+          </div>
+        ) : viewMode === "list" ? (
+          <div className="min-w-[820px] space-y-3">
+            <div className="grid grid-cols-[26px_minmax(220px,1fr)_170px_120px_110px_34px] gap-2 px-3 text-[11px] font-medium uppercase text-muted-foreground">
+              <span />
+              <span>Task</span>
+              <span>Agent</span>
+              <span>Priority</span>
+              <span>Date</span>
+              <span />
+            </div>
+            {groupedTasks.map(([group, items]) => {
+              const label = groupBy === "status" ? statusConfig[group]?.label ?? group : group;
+              return (
+                <section key={group} className="space-y-1">
+                  <div className="flex h-9 items-center gap-2 rounded-md bg-muted/45 px-3 text-sm font-medium">
+                    {groupBy === "status" && <StatusDot status={group as Task["status"]} />}
+                    <span>{label}</span>
+                    <span className="text-muted-foreground">{items.length}</span>
+                    <ChevronDown className="ml-auto h-4 w-4 text-muted-foreground" />
+                  </div>
+                  {items.map((task) => (
+                    <TaskRow
+                      key={task.taskId}
+                      task={task}
+                      agentName={agentMap.get(task.agentId) ?? "Unknown agent"}
+                      isActing={actionLoading === task.taskId}
+                      onOpen={openTask}
+                      onExecute={handleExecute}
+                      onCancel={handleCancel}
+                      onDelete={handleDelete}
+                    />
+                  ))}
+                </section>
+              );
+            })}
           </div>
         ) : (
-          <TaskDependencyGraph tasks={filteredTasks} agentMap={agentMap} />
-        )
-      )}
-
-      {/* Tasks Grid */}
-      {viewMode === "grid" && filteredTasks.length === 0 ? (
-        <Card>
-          <CardContent className="flex flex-col items-center justify-center h-64 text-center">
-            <Calendar className="h-12 w-12 text-muted-foreground mb-3" />
-            <h3 className="text-lg font-semibold mb-1">No tasks found</h3>
-            <p className="text-sm text-muted-foreground mb-4">
-              {filterStatus !== "all" || selectedAgent !== "all"
-                ? "Try adjusting your filters"
-                : "Create your first task to get started"}
-            </p>
-            <Button size="sm" onClick={() => setShowCreateDialog(true)}>
-              <Plus className="h-4 w-4 mr-2" />
-              Create Task
-            </Button>
-          </CardContent>
-        </Card>
-      ) : viewMode === "grid" ? (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {filteredTasks.map((task) => {
-            const StatusIcon = statusIcons[task.status];
-            const agentName = agents.find((a) => a.agentId === task.agentId)?.name ?? "Unknown";
-            const isActing = actionLoading === task.taskId;
-
-            return (
-              <Card
-                key={task.taskId}
-                className="hover:shadow-md transition-shadow cursor-pointer"
-                onClick={() => router.push(`/studio/tasks/${task.taskId}`)}
-              >
-                <CardHeader className="pb-3">
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="flex-1 min-w-0">
-                      <CardTitle className="text-sm font-semibold line-clamp-1">
-                        {task.title}
-                      </CardTitle>
-                      <p className="text-xs text-muted-foreground mt-0.5">{agentName}</p>
-                    </div>
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="h-7 w-7 p-0 shrink-0"
-                          disabled={isActing}
-                          onClick={(e) => e.stopPropagation()}
-                        >
-                          {isActing ? (
-                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                          ) : (
-                            <MoreVertical className="h-3.5 w-3.5" />
-                          )}
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end">
-                        {task.status === "pending" && (
-                          <DropdownMenuItem onClick={(e) => { e.stopPropagation(); handleExecute(task.taskId); }}>
-                            <Play className="h-4 w-4 mr-2" />
-                            Execute
-                          </DropdownMenuItem>
-                        )}
-                        {task.status === "running" && (
-                          <DropdownMenuItem onClick={(e) => { e.stopPropagation(); handleCancel(task.taskId); }}>
-                            <XCircle className="h-4 w-4 mr-2" />
-                            Cancel
-                          </DropdownMenuItem>
-                        )}
-                        <DropdownMenuItem
-                          onClick={(e) => { e.stopPropagation(); handleDelete(task.taskId); }}
-                          className="text-destructive"
-                        >
-                          <Trash2 className="h-4 w-4 mr-2" />
-                          Delete
-                        </DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
+          <div className="flex min-w-[920px] gap-3">
+            {groupedTasks.map(([group, items]) => {
+              const label = groupBy === "status" ? statusConfig[group]?.label ?? group : group;
+              return (
+                <section
+                  key={group}
+                  className="flex max-h-full min-w-[280px] flex-1 flex-col rounded-lg bg-muted/25"
+                >
+                  <div className="flex h-11 items-center gap-2 px-3 text-sm font-medium">
+                    {groupBy === "status" && <StatusDot status={group as Task["status"]} />}
+                    <span>{label}</span>
+                    <span className="text-muted-foreground">{items.length}</span>
+                    <MoreHorizontal className="ml-auto h-4 w-4 text-muted-foreground" />
                   </div>
-                </CardHeader>
-
-                <CardContent className="space-y-2">
-                  {task.description && (
-                    <p className="text-xs text-muted-foreground line-clamp-2">{task.description}</p>
-                  )}
-
-                  <div className="flex items-center gap-1.5 flex-wrap">
-                    <Badge className={`text-xs ${statusColors[task.status]}`}>
-                      <StatusIcon className="h-3 w-3 mr-1" />
-                      {task.status}
-                    </Badge>
-                    {task.isRecurring && (
-                      <Badge variant="outline" className="text-xs">Recurring</Badge>
-                    )}
-                    {task.executionMode === "workflow" && (
-                      <Badge variant="outline" className="text-xs">Workflow</Badge>
-                    )}
-                    {(task.priority ?? 0) > 0 && (
-                      <Badge variant="outline" className="text-xs">P{task.priority}</Badge>
-                    )}
+                  <div className="min-h-0 flex-1 space-y-2 overflow-y-auto px-2 pb-3">
+                    {items.map((task) => (
+                      <TaskBoardCard
+                        key={task.taskId}
+                        task={task}
+                        agentName={agentMap.get(task.agentId) ?? "Unknown agent"}
+                        isActing={actionLoading === task.taskId}
+                        onOpen={openTask}
+                        onExecute={handleExecute}
+                        onCancel={handleCancel}
+                        onDelete={handleDelete}
+                      />
+                    ))}
                   </div>
-
-                  {(task as any).scheduledFor && task.status === "pending" ? (
-                    <p className="text-xs text-blue-600 font-medium">
-                      Scheduled: {new Date((task as any).scheduledFor).toLocaleString()}
-                    </p>
-                  ) : (task as any).nextRunAt && task.isRecurring ? (
-                    <p className="text-xs text-muted-foreground">
-                      Next run: {new Date((task as any).nextRunAt).toLocaleString()}
-                    </p>
-                  ) : (
-                    <p className="text-xs text-muted-foreground">
-                      {new Date(task.createdAt).toLocaleDateString()}
-                    </p>
-                  )}
-                </CardContent>
-              </Card>
-            );
-          })}
-        </div>
-      ) : null}
+                </section>
+              );
+            })}
+          </div>
+        )}
+      </div>
 
       <CreateTaskDialog
         open={showCreateDialog}

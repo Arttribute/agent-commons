@@ -1,12 +1,24 @@
 // components/layout/DashboardBar.tsx
 import { FC, ReactNode } from "react";
 import { useRouter } from "next/navigation";
-import { Sparkles, Earth, Folder, MessageSquare, Wallet, ScrollText, BarChart2 } from "lucide-react";
+import {
+  Bot,
+  BriefcaseBusiness,
+  Earth,
+  Folder,
+  MessageSquare,
+  ScrollText,
+  Wallet,
+  Wrench,
+  Workflow,
+  Zap,
+  BarChart2,
+} from "lucide-react";
 import Image from "next/image";
 import { Button } from "@/components/ui/button";
 
 interface DashboardBarProps {
-  // values: 'studio' | 'spaces' | 'files' | 'sessions' | 'wallets'
+  // values: studio section keys plus the global dashboard sections
   activeTab: string;
   rightSlot?: ReactNode;
 }
@@ -17,13 +29,17 @@ export const DashboardBar: FC<DashboardBarProps> = ({ activeTab, rightSlot }) =>
   const nav = (path: string) => router.push(path);
 
   const navItems = [
-    { key: "studio",   label: "Studio",   icon: Sparkles,      path: "/studio/agents" },
-    { key: "sessions", label: "Sessions", icon: MessageSquare, path: "/sessions" },
-    { key: "wallets",  label: "Wallets",  icon: Wallet,        path: "/wallets" },
-    { key: "logs",     label: "Logs",     icon: ScrollText,    path: "/logs" },
-    { key: "usage",    label: "Usage",    icon: BarChart2,     path: "/usage" },
-    { key: "spaces",   label: "Spaces",   icon: Earth,         path: "/spaces" },
-    { key: "files",    label: "Files",    icon: Folder,        path: "/files" },
+    { key: "agents",    label: "Agents",    icon: Bot,               path: "/studio/agents" },
+    { key: "tools",     label: "Tools",     icon: Wrench,            path: "/studio/tools" },
+    { key: "tasks",     label: "Tasks",     icon: BriefcaseBusiness, path: "/studio/tasks" },
+    { key: "workflows", label: "Workflows", icon: Workflow,          path: "/studio/workflows" },
+    { key: "skills",    label: "Skills",    icon: Zap,               path: "/studio/skills" },
+    { key: "sessions",  label: "Sessions",  icon: MessageSquare,     path: "/sessions" },
+    { key: "wallets",   label: "Wallets",   icon: Wallet,            path: "/wallets" },
+    { key: "logs",      label: "Logs",      icon: ScrollText,        path: "/logs" },
+    { key: "usage",     label: "Usage",     icon: BarChart2,         path: "/usage" },
+    { key: "spaces",    label: "Spaces",    icon: Earth,             path: "/spaces" },
+    { key: "files",     label: "Files",     icon: Folder,            path: "/files" },
   ];
 
   return (

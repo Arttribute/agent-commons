@@ -5,9 +5,10 @@ import { usePathname, useRouter } from "next/navigation";
 import Link from "next/link";
 import { cn } from "@/lib/utils";
 import {
+  Bot,
+  BriefcaseBusiness,
   PanelLeft,
   PanelRight,
-  Sparkles,
   Earth,
   Folder,
   Search,
@@ -16,6 +17,9 @@ import {
   Wallet,
   ScrollText,
   BarChart2,
+  Wrench,
+  Workflow,
+  Zap,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -31,17 +35,26 @@ export function DashboardSideBar({ username }: { username: string }) {
   const [search, setSearch] = useState("");
 
   const { sessions, isLoading } = useUserSessions(username);
+  const isLockedDetailRoute = useMemo(() => {
+    if (!pathname) return false;
+    return /^\/studio\/(agents|tools|workflows|skills)\/[^/]+/.test(pathname);
+  }, [pathname]);
+  const sidebarOpen = isOpen && !isLockedDetailRoute;
 
   const activeSection = useMemo(() => {
-    if (!pathname) return "studio";
-    if (pathname.startsWith("/studio")) return "studio";
+    if (!pathname) return "agents";
+    if (pathname.startsWith("/studio/agents")) return "agents";
+    if (pathname.startsWith("/studio/tools")) return "tools";
+    if (pathname.startsWith("/studio/tasks")) return "tasks";
+    if (pathname.startsWith("/studio/workflows")) return "workflows";
+    if (pathname.startsWith("/studio/skills")) return "skills";
     if (pathname.startsWith("/sessions")) return "sessions";
     if (pathname.startsWith("/wallets")) return "wallets";
     if (pathname.startsWith("/logs")) return "logs";
     if (pathname.startsWith("/usage")) return "usage";
     if (pathname.startsWith("/spaces")) return "spaces";
     if (pathname.startsWith("/files")) return "files";
-    return "studio";
+    return "agents";
   }, [pathname]);
 
   const filteredSessions = useMemo(() => {
@@ -55,11 +68,11 @@ export function DashboardSideBar({ username }: { username: string }) {
     <div
       className={cn(
         "h-[calc(100vh-50px)] bg-background border-r border-border flex flex-col transition-all duration-300",
-        isOpen ? "w-[260px] min-w-[260px]" : "w-[60px] min-w-[60px]"
+        sidebarOpen ? "w-[260px] min-w-[260px]" : "w-[60px] min-w-[60px]"
       )}
     >
       <div className="px-3 pt-4">
-        {isOpen ? (
+        {sidebarOpen ? (
           <div>
             <DashboardBar
               activeTab={activeSection}
@@ -76,23 +89,37 @@ export function DashboardSideBar({ username }: { username: string }) {
           </div>
         ) : (
           <div className="px-2 flex flex-col gap-4 items-center">
-            <button
-              onClick={() => setIsOpen(true)}
-              className="text-muted-foreground hover:text-foreground"
-              aria-label="Expand sidebar"
-              title="Open sidebar"
-            >
-              <PanelLeft className="h-5 w-5" />
-            </button>
+            {isLockedDetailRoute ? (
+              <div
+                className="text-muted-foreground/50"
+                aria-label="Sidebar locked while viewing detail"
+                title="Return to the list to expand the sidebar"
+              >
+                <PanelLeft className="h-5 w-5" />
+              </div>
+            ) : (
+              <button
+                onClick={() => setIsOpen(true)}
+                className="text-muted-foreground hover:text-foreground"
+                aria-label="Expand sidebar"
+                title="Open sidebar"
+              >
+                <PanelLeft className="h-5 w-5" />
+              </button>
+            )}
             <div className="flex flex-col items-center gap-3 mt-2">
               {[
-                { key: "studio",   icon: Sparkles,      path: "/studio/agents", label: "Studio" },
-                { key: "sessions", icon: MessageSquare, path: "/sessions",      label: "Sessions" },
-                { key: "wallets",  icon: Wallet,        path: "/wallets",       label: "Wallets" },
-                { key: "logs",     icon: ScrollText,    path: "/logs",          label: "Logs" },
-                { key: "usage",    icon: BarChart2,     path: "/usage",         label: "Usage" },
-                { key: "spaces",   icon: Earth,         path: "/spaces",        label: "Spaces" },
-                { key: "files",    icon: Folder,        path: "/files",         label: "Files" },
+                { key: "agents",    icon: Bot,               path: "/studio/agents",    label: "Agents" },
+                { key: "tools",     icon: Wrench,            path: "/studio/tools",     label: "Tools" },
+                { key: "tasks",     icon: BriefcaseBusiness, path: "/studio/tasks",     label: "Tasks" },
+                { key: "workflows", icon: Workflow,          path: "/studio/workflows", label: "Workflows" },
+                { key: "skills",    icon: Zap,               path: "/studio/skills",    label: "Skills" },
+                { key: "sessions",  icon: MessageSquare,     path: "/sessions",         label: "Sessions" },
+                { key: "wallets",   icon: Wallet,            path: "/wallets",          label: "Wallets" },
+                { key: "logs",      icon: ScrollText,        path: "/logs",             label: "Logs" },
+                { key: "usage",     icon: BarChart2,         path: "/usage",            label: "Usage" },
+                { key: "spaces",    icon: Earth,             path: "/spaces",           label: "Spaces" },
+                { key: "files",     icon: Folder,            path: "/files",            label: "Files" },
               ].map(({ key, icon: Icon, path, label }) => (
                 <button
                   key={key}
@@ -113,7 +140,7 @@ export function DashboardSideBar({ username }: { username: string }) {
       </div>
 
       {/* Sessions list — only when expanded */}
-      {isOpen && (
+      {sidebarOpen && (
         <div className="flex-1 overflow-hidden flex flex-col min-h-0 mt-4">
           {/* Search */}
           <div className="px-3 pb-2">

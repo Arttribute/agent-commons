@@ -2,9 +2,8 @@
 
 import { use, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
-import { Calendar } from "lucide-react";
+import { ArrowLeft, Calendar } from "lucide-react";
 
-import AppBar from "@/components/layout/app-bar";
 import AgentTools from "@/components/tools/agent-tools";
 import AgentIdentity from "@/components/agents/agent-identity";
 import SessionInterface from "@/components/sessions/session-interface";
@@ -22,10 +21,13 @@ import AgentFinances from "@/components/finances/agent-finances";
 import { AgentAutonomy } from "@/components/agents/agent-autonomy";
 import { AgentMcpSection } from "@/components/mcp/agent-mcp-section";
 import { normalizePrincipalId } from "@/lib/principal-id";
+import { useAgents } from "@/hooks/use-agents";
+import { StudioEntitySwitcher } from "@/components/studio/studio-entity-switcher";
+import { useRouter } from "next/navigation";
 
 function AgentPageSkeleton() {
   return (
-    <div className="grid grid-cols-9 gap-0 h-[calc(100vh-48px)]">
+    <div className="grid h-full grid-cols-9 gap-0">
       <div className="col-span-2 border-r p-3 space-y-3">
         <Skeleton className="h-28 w-full" />
         <Skeleton className="h-8 w-full" />
@@ -52,8 +54,10 @@ export default function AgentStudioPage({
   params: Promise<{ agent: string }>;
 }) {
   const { agent: agentId } = use(params);
+  const router = useRouter();
   const { authState } = useAuth();
   const userAddress = normalizePrincipalId(authState.walletAddress);
+  const { agents } = useAgents(userAddress || undefined);
 
   const [agent, setAgent] = useState<CommonAgent | null>(null);
   const [loading, setLoading] = useState(true);
@@ -116,23 +120,44 @@ export default function AgentStudioPage({
   }, [agentId, userAddress]);
 
   if (loading) return (
-    <div>
-      <AppBar />
-      <div className="mt-12"><AgentPageSkeleton /></div>
-    </div>
+    <AgentPageSkeleton />
   );
 
   if (!agent) return (
-    <div className="flex h-screen items-center justify-center text-muted-foreground text-sm">
+    <div className="flex h-full items-center justify-center text-muted-foreground text-sm">
       Agent not found
     </div>
   );
 
   return (
-    <div>
-      <AppBar />
+    <div className="flex h-full min-w-0 flex-col bg-background">
+      <div className="flex items-center justify-between gap-3 border-b border-border/70 px-4 py-2">
+        <div className="flex min-w-0 items-center gap-2">
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-8 w-8 shrink-0"
+            onClick={() => router.push("/studio/agents")}
+            aria-label="Back to agents"
+          >
+            <ArrowLeft className="h-4 w-4" />
+          </Button>
+          <StudioEntitySwitcher
+            type="agent"
+            currentId={agentId}
+            currentName={agent.name}
+            items={agents.map((item) => ({
+              id: item.agentId,
+              name: item.name,
+            }))}
+          />
+        </div>
+        <span className="hidden text-xs text-muted-foreground sm:block">
+          Agent workspace
+        </span>
+      </div>
 
-      <div className="grid grid-cols-9 gap-0 mt-12 h-[calc(100vh-48px)] bg-background">
+      <div className="grid min-h-0 flex-1 grid-cols-9 gap-0 bg-background">
         {/* ── Left sidebar ── */}
         <div className="col-span-2 border-r border-border overflow-y-auto">
           <div className="flex flex-col gap-2 p-3">

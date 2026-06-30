@@ -10,7 +10,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Button } from "@/components/ui/button";
-import { MoreVertical, Edit, Copy, Trash2, Play } from "lucide-react";
+import { MoreVertical, Edit, Copy, Trash2 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { formatDistanceToNow } from "date-fns";
 
@@ -33,7 +33,7 @@ export function WorkflowCard({
       : "recently";
 
   const handleEdit = () => {
-    router.push(`/studio/workflows/${workflow.workflowId}/edit`);
+    router.push(`/studio/workflows/${workflow.workflowId}`);
   };
 
   return (

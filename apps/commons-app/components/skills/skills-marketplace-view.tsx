@@ -1,9 +1,10 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect } from "react";
 import { Loader2, Sparkles, Search, Plus, Trash2, Globe, Lock } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useSkills } from "@/hooks/use-skills";
+import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -51,16 +52,21 @@ const EMPTY_FORM: CreateSkillForm = {
 function SkillCard({
   skill,
   onDelete,
+  onOpen,
   isOwner,
 }: {
   skill: Skill;
   onDelete: (id: string) => void;
+  onOpen: (id: string) => void;
   isOwner: boolean;
 }) {
   const [expanded, setExpanded] = useState(false);
 
   return (
-    <div className="border border-border/60 rounded-lg p-4 bg-card hover:border-border transition-colors">
+    <div
+      className="cursor-pointer rounded-lg border border-border/60 bg-card p-4 transition-colors hover:border-border hover:bg-muted/20"
+      onClick={() => onOpen(skill.skillId)}
+    >
       <div className="flex items-start justify-between gap-2">
         <div className="flex items-center gap-2 min-w-0">
           {skill.icon ? (
@@ -84,7 +90,10 @@ function SkillCard({
               variant="ghost"
               size="icon"
               className="h-6 w-6"
-              onClick={() => onDelete(skill.skillId)}
+              onClick={(event) => {
+                event.stopPropagation();
+                onDelete(skill.skillId);
+              }}
             >
               <Trash2 className="h-3 w-3" />
             </Button>
@@ -112,7 +121,10 @@ function SkillCard({
 
       <button
         className="text-[11px] text-primary mt-2 hover:underline"
-        onClick={() => setExpanded((v) => !v)}
+        onClick={(event) => {
+          event.stopPropagation();
+          setExpanded((v) => !v);
+        }}
       >
         {expanded ? "Hide instructions" : "View instructions"}
       </button>
@@ -136,6 +148,7 @@ function SkillCard({
 }
 
 export function SkillsMarketplaceView({ userAddress, onRegisterCreate }: SkillsMarketplaceViewProps) {
+  const router = useRouter();
   const [tab, setTab] = useState<"platform" | "mine">("platform");
   const [search, setSearch] = useState("");
   const [showCreate, setShowCreate] = useState(false);
@@ -156,7 +169,6 @@ export function SkillsMarketplaceView({ userAddress, onRegisterCreate }: SkillsM
   const {
     skills: platformSkills,
     loading: loadingPlatform,
-    refresh: refreshPlatform,
   } = useSkills(platformFilter);
 
   const {
@@ -284,6 +296,7 @@ export function SkillsMarketplaceView({ userAddress, onRegisterCreate }: SkillsM
               key={skill.skillId}
               skill={skill}
               onDelete={handleDelete}
+              onOpen={(id) => router.push(`/studio/skills/${id}`)}
               isOwner={skill.ownerId === userAddress}
             />
           ))}
