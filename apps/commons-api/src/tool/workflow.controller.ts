@@ -49,8 +49,15 @@ export class WorkflowController {
       category?: string;
       tags?: string[];
     },
+    @Req() req: Request,
   ) {
-    return this.workflowService.createWorkflow(body);
+    const principal = (req as any).principal;
+    return this.workflowService.createWorkflow({
+      ...body,
+      ...(principal?.principalType === 'user'
+        ? { ownerId: principal.principalId, ownerType: 'user' as const }
+        : {}),
+    });
   }
 
   /**
@@ -62,7 +69,16 @@ export class WorkflowController {
     @Query('ownerId') ownerId?: string,
     @Query('ownerType') ownerType?: 'user' | 'agent',
     @Query('limit') limit?: number,
+    @Req() req?: Request,
   ) {
+    const principal = (req as any)?.principal;
+    if (principal?.principalType === 'user') {
+      return this.workflowService.listWorkflows(
+        principal.principalId,
+        'user',
+      );
+    }
+
     if (!ownerId || !ownerType) {
       throw new BadRequestException('ownerId and ownerType are required');
     }

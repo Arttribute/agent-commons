@@ -58,8 +58,15 @@ export class TaskController {
       createdBy: string;
       createdByType: 'user' | 'agent';
     },
+    @Req() req: Request,
   ) {
-    const task = await this.taskExecution.createTask(body);
+    const principal = (req as any).principal;
+    const task = await this.taskExecution.createTask({
+      ...body,
+      ...(principal?.principalType === 'user'
+        ? { createdBy: principal.principalId, createdByType: 'user' as const }
+        : {}),
+    });
     // createTask() already calls scheduler.scheduleRun() — immediate tasks get
     // scheduledFor=now() so the scheduler picks them up within 15 s.
     return { data: task };
@@ -77,7 +84,17 @@ export class TaskController {
     @Query('agentId') agentId?: string,
     @Query('ownerId') ownerId?: string,
     @Query('ownerType') ownerType?: 'user' | 'agent',
+    @Req() req?: Request,
   ) {
+    const principal = (req as any)?.principal;
+    if (!sessionId && !agentId && principal?.principalType === 'user') {
+      const tasks = await this.taskExecution.listTasksByOwner(
+        principal.principalId,
+        'user',
+      );
+      return { data: tasks };
+    }
+
     if (sessionId) {
       const tasks = await this.taskExecution.listSessionTasks(sessionId);
       return { data: tasks };

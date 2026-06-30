@@ -1,6 +1,9 @@
 import { CommonsClient } from "@agent-commons/sdk";
 
-export function getAgentCommonsClient(accessToken?: string | null) {
+export function getAgentCommonsClient(
+  accessToken?: string | null,
+  initiator?: string | null,
+) {
   const baseUrl =
     process.env.AGENT_COMMONS_API_URL ||
     process.env.NEXT_PUBLIC_AGENT_COMMONS_API_URL ||
@@ -14,5 +17,6 @@ export function getAgentCommonsClient(accessToken?: string | null) {
   return new CommonsClient({
     baseUrl,
     apiKey,
+    initiator: initiator || undefined,
   });
 }

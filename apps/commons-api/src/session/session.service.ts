@@ -242,7 +242,7 @@ export class SessionService {
    * @returns Array of session objects with selected fields.
    */
   public async getSessionsByInitiator(props: { initiator: string }) {
-    const { initiator } = props;
+    const initiator = props.initiator.toLowerCase();
     const sessions = await this.db.query.session.findMany({
       where: (s) => eq(s.initiator, initiator),
       columns: {
@@ -262,7 +262,8 @@ export class SessionService {
     agentId: string;
     initiator: string;
   }) {
-    const { agentId, initiator } = props;
+    const { agentId } = props;
+    const initiator = props.initiator.toLowerCase();
     const sessions = await this.db.query.session.findMany({
       where: (s) => and(eq(s.agentId, agentId), eq(s.initiator, initiator)),
       columns: {

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { backendAuthHeaders } from "@/lib/api-headers";
+import { requireCurrentCommonsUser } from "@/lib/current-user";
 
 const baseUrl = process.env.NEXT_PUBLIC_NEST_API_BASE_URL;
 
@@ -9,11 +10,12 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "Server base URL not configured" }, { status: 500 });
   }
   const { searchParams } = new URL(request.url);
+  const { user, response } = await requireCurrentCommonsUser();
+  if (!user) return response;
   const params = new URLSearchParams();
-  ["ownerId", "ownerType"].forEach((k) => {
-    const v = searchParams.get(k);
-    if (v) params.set(k, v);
-  });
+  const ownerType = searchParams.get("ownerType") === "agent" ? "agent" : "user";
+  params.set("ownerId", ownerType === "user" ? user.userId : searchParams.get("ownerId") || "");
+  params.set("ownerType", ownerType);
   try {
     const res = await fetch(`${baseUrl}/v1/mcp/tools?${params.toString()}`, {
       cache: "no-store",

@@ -74,8 +74,15 @@ export class AgentController {
   async runAgentOnce(
     @Body() body: RunBody & { initiator?: string; initiatorId?: string },
     @Headers('x-initiator') initiatorHeader: string,
+    @Req() req: any,
   ) {
-    const initiator = initiatorHeader || body.initiator || body.initiatorId || '';
+    const principal = req.principal as
+      | { principalId: string; principalType: 'user' | 'agent' | 'service' }
+      | undefined;
+    const initiator =
+      principal?.principalType === 'user'
+        ? principal.principalId
+        : initiatorHeader || body.initiator || body.initiatorId || '';
     // collect only the final message; use lastValueFrom
     const { lastValueFrom } = await import('rxjs');
     return lastValueFrom(
@@ -92,9 +99,16 @@ export class AgentController {
   runAgentStream(
     @Body() body: RunBody & { initiator?: string; initiatorId?: string },
     @Headers('x-initiator') initiatorHeader: string,
+    @Req() req: any,
   ) {
     // Accept initiator from header (SDK / proxied web requests) or body (direct callers).
-    const initiator = initiatorHeader || body.initiator || body.initiatorId || '';
+    const principal = req.principal as
+      | { principalId: string; principalType: 'user' | 'agent' | 'service' }
+      | undefined;
+    const initiator =
+      principal?.principalType === 'user'
+        ? principal.principalId
+        : initiatorHeader || body.initiator || body.initiatorId || '';
     return this.agent
       .runAgent({ ...body, stream: true, initiator })
       .pipe(map((data) => ({ data })));

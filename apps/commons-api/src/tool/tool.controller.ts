@@ -9,7 +9,9 @@ import {
   Put,
   Delete,
   Query,
+  Req,
 } from '@nestjs/common';
+import { Request } from 'express';
 import { ToolService } from './tool.service';
 import { ChatCompletionTool } from 'openai/resources/chat/completions.mjs';
 
@@ -34,8 +36,15 @@ export class ToolController {
       rating?: number;
       version?: string;
     },
+    @Req() req: Request,
   ) {
-    const created = await this.toolService.createTool(body);
+    const principal = (req as any).principal;
+    const created = await this.toolService.createTool({
+      ...body,
+      ...(principal?.principalType === 'user'
+        ? { owner: principal.principalId, ownerType: 'user' as const }
+        : {}),
+    });
     return { data: created };
   }
 
@@ -58,10 +67,17 @@ export class ToolController {
     @Query('owner') owner?: string,
     @Query('ownerType') ownerType?: 'user' | 'agent' | 'platform',
     @Query('visibility') visibility?: 'public' | 'private' | 'platform',
+    @Req() req?: Request,
   ) {
+    const principal = (req as any)?.principal;
+    const sharedListing =
+      ownerType === 'platform' ||
+      visibility === 'platform' ||
+      visibility === 'public';
+    const forceUserOwner = principal?.principalType === 'user' && !sharedListing;
     const tools = await this.toolService.getAllTools({
-      owner,
-      ownerType,
+      owner: forceUserOwner ? principal.principalId : owner,
+      ownerType: forceUserOwner ? 'user' : ownerType,
       visibility,
     });
     return { data: tools };

@@ -1,4 +1,5 @@
-import { Controller, Get, Post, Body, Param, BadRequestException } from '@nestjs/common';
+import { Controller, Get, Post, Body, Param, BadRequestException, Req } from '@nestjs/common';
+import { Request } from 'express';
 import { SessionService } from './session.service';
 
 @Controller({ version: '1', path: 'sessions' })
@@ -12,12 +13,17 @@ export class SessionController {
   @Post()
   async createSession(
     @Body() body: { agentId: string; initiator?: string; title?: string; source?: string },
+    @Req() req: Request,
   ) {
     if (!body.agentId) throw new BadRequestException('agentId is required');
+    const principal = (req as any).principal;
     const session = await this.sessionService.createSession({
       value: {
         agentId: body.agentId,
-        initiator: body.initiator,
+        initiator:
+          principal?.principalType === 'user'
+            ? principal.principalId
+            : body.initiator,
         title: body.title,
         // Accept 'cli' | 'web' from the caller; default to 'web' if not provided
         initiatorType: body.source === 'cli' ? 'cli' : (body.source ?? 'web'),

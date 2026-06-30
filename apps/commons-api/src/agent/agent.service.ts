@@ -1644,8 +1644,12 @@ export class AgentService implements OnModuleInit {
     return this.db.query.agent.findMany({
       where: (t) =>
         workspaceId
-          ? or(eq(t.ownerUserId, userId), eq(t.workspaceId, workspaceId))
-          : eq(t.ownerUserId, userId),
+          ? or(
+              eq(t.ownerUserId, userId),
+              eq(t.owner, userId),
+              eq(t.workspaceId, workspaceId),
+            )
+          : or(eq(t.ownerUserId, userId), eq(t.owner, userId)),
     });
   }
 

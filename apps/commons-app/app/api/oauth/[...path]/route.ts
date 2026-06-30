@@ -1,7 +1,7 @@
 // app/api/oauth/[...path]/route.ts
 import { NextResponse } from 'next/server';
-import { auth } from '@/auth';
 import { backendAuthHeaders } from '@/lib/api-headers';
+import { getCurrentCommonsUser, requireCurrentCommonsUser } from '@/lib/current-user';
 
 const baseUrl =
   process.env.NEST_API_BASE_URL ||
@@ -57,9 +57,15 @@ export async function GET(
     const path = pathArray.join('/');
     const { searchParams } = new URL(request.url);
     const serviceAllowed = path.startsWith('providers') || path.startsWith('callback/');
+    const user = await getCurrentCommonsUser();
 
     // Build query string
-    const queryString = searchParams.toString();
+    const forwardedParams = new URLSearchParams(searchParams);
+    if (path === 'connections' && user?.userId) {
+      forwardedParams.set('ownerId', user.userId);
+      forwardedParams.set('ownerType', 'user');
+    }
+    const queryString = forwardedParams.toString();
     const apiBaseUrl = requireBaseUrl();
     const url = queryString
       ? `${apiBaseUrl}/v1/oauth/${path}?${queryString}`
@@ -72,9 +78,8 @@ export async function GET(
     };
 
     // Copy important headers
-    const initiator = request.headers.get('x-initiator');
-    if (initiator) {
-      headers['x-initiator'] = initiator;
+    if (user?.userId) {
+      headers['x-initiator'] = user.userId;
     }
 
     const res = await fetch(url, {
@@ -114,11 +119,11 @@ export async function POST(
     const { path: pathArray } = await params;
     const path = pathArray.join('/');
     const body = await request.json();
+    const { user, response } = await requireCurrentCommonsUser();
+    if (!user) return response;
 
     const apiBaseUrl = requireBaseUrl();
     const url = `${apiBaseUrl}/v1/oauth/${path}`;
-    const session = await auth();
-    const ownerId = request.headers.get('x-initiator') || session?.user?.id;
 
     // Forward headers from the original request
     const headers: Record<string, string> = {
@@ -126,14 +131,12 @@ export async function POST(
       'Content-Type': 'application/json',
     };
 
-    if (ownerId) {
-      headers['x-initiator'] = ownerId;
-    }
+    headers['x-initiator'] = user.userId;
 
     const res = await fetch(url, {
       method: 'POST',
       headers,
-      body: JSON.stringify(body),
+      body: JSON.stringify({ ...body, ownerId: user.userId, ownerType: 'user' }),
     });
 
     if (!res.ok) {
@@ -162,6 +165,8 @@ export async function PUT(
     const { path: pathArray } = await params;
     const path = pathArray.join('/');
     const body = await request.json();
+    const { user, response } = await requireCurrentCommonsUser();
+    if (!user) return response;
 
     const apiBaseUrl = requireBaseUrl();
     const url = `${apiBaseUrl}/v1/oauth/${path}`;
@@ -173,10 +178,7 @@ export async function PUT(
     };
 
     // Copy important headers
-    const initiator = request.headers.get('x-initiator');
-    if (initiator) {
-      headers['x-initiator'] = initiator;
-    }
+    headers['x-initiator'] = user.userId;
 
     const res = await fetch(url, {
       method: 'PUT',
@@ -209,6 +211,8 @@ export async function DELETE(
   try {
     const { path: pathArray } = await params;
     const path = pathArray.join('/');
+    const { user, response } = await requireCurrentCommonsUser();
+    if (!user) return response;
 
     const apiBaseUrl = requireBaseUrl();
     const url = `${apiBaseUrl}/v1/oauth/${path}`;
@@ -220,10 +224,7 @@ export async function DELETE(
     };
 
     // Copy important headers
-    const initiator = request.headers.get('x-initiator');
-    if (initiator) {
-      headers['x-initiator'] = initiator;
-    }
+    headers['x-initiator'] = user.userId;
 
     const res = await fetch(url, {
       method: 'DELETE',

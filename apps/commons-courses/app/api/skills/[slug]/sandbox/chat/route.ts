@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { platformServiceToken } from "@/lib/platform-service-token";
 import { connectDB } from "@/lib/db";
-import User from "@/models/User";
+import { getCommonsPrincipal } from "@/lib/commons-principal";
 
 type ChatBody = {
   agentId?: string;
@@ -25,10 +25,8 @@ export async function POST(request: NextRequest) {
   }
 
   await connectDB();
-  const user = await User.findById(session.user.id)
-    .select("identityUserId")
-    .lean<{ identityUserId?: string }>();
-  if (!user?.identityUserId) {
+  const principal = await getCommonsPrincipal(session);
+  if (!principal?.identityUserId) {
     return NextResponse.json(
       { error: "Your account is not linked to Commons Identity yet." },
       { status: 409 }
@@ -54,14 +52,14 @@ export async function POST(request: NextRequest) {
       Authorization: `Bearer ${token}`,
       "Content-Type": "application/json",
       Accept: "text/event-stream",
-      "x-initiator": user.identityUserId,
+      "x-initiator": principal.identityUserId,
     },
     body: JSON.stringify({
       agentId: body.agentId,
       messages: body.messages,
       sessionId: body.sessionId,
-      initiator: user.identityUserId,
-      initiatorId: user.identityUserId,
+      initiator: principal.identityUserId,
+      initiatorId: principal.identityUserId,
     }),
   });
 

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { backendAuthHeaders } from "@/lib/api-headers";
+import { requireCurrentCommonsUser } from "@/lib/current-user";
 
 const baseUrl = process.env.NEXT_PUBLIC_NEST_API_BASE_URL;
 
@@ -11,14 +12,9 @@ export async function GET(request: NextRequest) {
       { status: 500 }
     );
   }
-  const { searchParams } = new URL(request.url);
-  const initiatorId = searchParams.get("initiatorId");
-  if (!initiatorId) {
-    return NextResponse.json(
-      { error: "initiatorId is required" },
-      { status: 400 }
-    );
-  }
+  const { user, response } = await requireCurrentCommonsUser();
+  if (!user) return response;
+  const initiatorId = user.userId;
   const url = `${baseUrl}/v1/sessions/user/${encodeURIComponent(initiatorId)}`;
   try {
     const res = await fetch(url, { cache: "no-store", headers: await backendAuthHeaders() });

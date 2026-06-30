@@ -142,7 +142,11 @@ export class OAuthController {
     @Req() req: Request,
   ): Promise<InitiateOAuthFlowResponseDto> {
     // Get owner from request (should be set by auth middleware)
-    const ownerId = req.headers['x-initiator'] as string;
+    const principal = (req as any).principal;
+    const ownerId =
+      principal?.principalType === 'user'
+        ? principal.principalId
+        : (req.headers['x-initiator'] as string);
 
     if (!ownerId) {
       throw new HttpException(
@@ -220,10 +224,16 @@ export class OAuthController {
   async listConnections(
     @Query('ownerId') ownerId: string,
     @Query('ownerType') ownerType: 'user' | 'agent' = 'user',
+    @Req() req: Request,
   ): Promise<ListOAuthConnectionsResponseDto> {
+    const principal = (req as any).principal;
+    const effectiveOwnerId =
+      principal?.principalType === 'user' ? principal.principalId : ownerId;
+    const effectiveOwnerType =
+      principal?.principalType === 'user' ? 'user' : ownerType;
     const connections = await this.connectionService.listConnections({
-      ownerId,
-      ownerType: ownerType as any,
+      ownerId: effectiveOwnerId,
+      ownerType: effectiveOwnerType as any,
     });
 
     // Fetch provider info for each connection

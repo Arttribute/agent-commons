@@ -2,10 +2,10 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { connectDB } from "@/lib/db";
 import { getAgentCommonsClient } from "@/lib/agent-commons";
+import { getCommonsPrincipal } from "@/lib/commons-principal";
 import { trackAnalyticsEvent } from "@/lib/analytics";
 import Course from "@/models/Course";
 import Enrollment from "@/models/Enrollment";
-import User from "@/models/User";
 import { findSkillPackBySlug } from "@/lib/skill-paths";
 import type { AgentSandboxConfig, SkillPack } from "@/types/skills";
 import type { Types } from "mongoose";
@@ -101,10 +101,8 @@ export async function POST(
   }
 
   await connectDB();
-  const [user, course] = await Promise.all([
-    User.findById(session.user.id)
-      .select("identityUserId identityWorkspaceId")
-      .lean<{ identityUserId?: string; identityWorkspaceId?: string }>(),
+  const [principal, course] = await Promise.all([
+    getCommonsPrincipal(session),
     findSandboxCourse(slug),
   ]);
 
@@ -138,9 +136,7 @@ export async function POST(
     return NextResponse.json({ error: validation }, { status: 422 });
   }
 
-  const client = getAgentCommonsClient(session.accessToken);
-
-  if (!user?.identityUserId) {
+  if (!principal?.identityUserId) {
     return NextResponse.json(
       {
         error:
@@ -149,6 +145,8 @@ export async function POST(
       { status: 409 }
     );
   }
+
+  const client = getAgentCommonsClient(session.accessToken, principal.identityUserId);
 
   if (!client) {
     return NextResponse.json(
@@ -165,9 +163,9 @@ export async function POST(
     name: body.agent.name.trim(),
     persona: body.agent.persona?.trim(),
     instructions,
-    owner: user.identityUserId,
-    ownerUserId: user.identityUserId,
-    workspaceId: user.identityWorkspaceId,
+    owner: principal.identityUserId,
+    ownerUserId: principal.identityUserId,
+    workspaceId: principal.identityWorkspaceId,
     modelProvider: "openai",
     modelId: process.env.AGENT_LEARNER_SANDBOX_MODEL || "gpt-4o-mini",
     metadata: {
@@ -253,10 +251,8 @@ export async function PATCH(
   }
 
   await connectDB();
-  const [user, course] = await Promise.all([
-    User.findById(session.user.id)
-      .select("identityUserId identityWorkspaceId")
-      .lean<{ identityUserId?: string; identityWorkspaceId?: string }>(),
+  const [principal, course] = await Promise.all([
+    getCommonsPrincipal(session),
     findSandboxCourse(slug),
   ]);
   const pack = course ? findSkillPackBySlug(course, slug) : null;
@@ -266,14 +262,14 @@ export async function PATCH(
   if (!course || !challenge?.sandbox?.enabled) {
     return NextResponse.json({ error: "Sandbox challenge not found." }, { status: 404 });
   }
-  if (!user?.identityUserId) {
+  if (!principal?.identityUserId) {
     return NextResponse.json(
       { error: "Your CommonLab account is not linked to Commons Identity yet." },
       { status: 409 }
     );
   }
 
-  const client = getAgentCommonsClient(session.accessToken);
+  const client = getAgentCommonsClient(session.accessToken, principal.identityUserId);
   if (!client) {
     return NextResponse.json(
       { error: "Your session cannot reach Agent Commons yet. Sign out and sign back in so CommonLab can request agent permissions." },
@@ -284,7 +280,10 @@ export async function PATCH(
   const agent = await client.agents.get(body.agentId);
   const ownerUserId = (agent.data as { ownerUserId?: string }).ownerUserId;
   const legacyOwner = (agent.data as { owner?: string }).owner;
-  if (ownerUserId !== user.identityUserId && legacyOwner !== user.identityUserId) {
+  if (
+    ownerUserId !== principal.identityUserId &&
+    legacyOwner !== principal.identityUserId
+  ) {
     return NextResponse.json(
       { error: "This sandbox agent belongs to a different account." },
       { status: 403 }

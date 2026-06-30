@@ -1,5 +1,6 @@
 import { NextRequest } from "next/server";
 import { backendAuthHeaders } from "@/lib/api-headers";
+import { requireCurrentCommonsUser } from "@/lib/current-user";
 
 const baseUrl = process.env.NEXT_PUBLIC_NEST_API_BASE_URL;
 
@@ -9,11 +10,13 @@ export async function POST(request: NextRequest) {
     return new Response(JSON.stringify({ error: "Server base URL not configured" }), { status: 500 });
   }
 
-  const body = await request.json();
+  const { user, response } = await requireCurrentCommonsUser();
+  if (!user) {
+    return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401 });
+  }
 
-  // Extract initiator from body and forward as x-initiator header to backend.
-  // The SDK sends it as a header; the web app sends it in the body — normalise both here.
-  const initiator: string | undefined = body.initiator ?? body.initiatorId;
+  const body = await request.json();
+  const ownedBody = { ...body, initiator: user.userId, initiatorId: user.userId };
 
   const upstream = await fetch(`${baseUrl}/v1/agents/run/stream`, {
     method: "POST",
@@ -21,9 +24,9 @@ export async function POST(request: NextRequest) {
       "Content-Type": "application/json",
       Accept: "text/event-stream",
       ...await backendAuthHeaders(),
-      ...(initiator ? { "x-initiator": initiator } : {}),
+      "x-initiator": user.userId,
     },
-    body: JSON.stringify(body),
+    body: JSON.stringify(ownedBody),
   });
 
   if (!upstream.ok) {
