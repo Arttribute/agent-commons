@@ -290,7 +290,7 @@ export class WorkflowExecutorService {
           const nodeId: string = node.id;
           if (completedNodes.has(nodeId) || skippedNodes.has(nodeId)) continue;
           const cnt = incomingCount.get(nodeId)!;
-          if (cnt.live === 0 && cnt.dead === cnt.total) {
+          if (cnt.total > 0 && cnt.live === 0 && cnt.dead === cnt.total) {
             // All incoming edges are dead → skip this node
             fullyDead.push(nodeId);
           } else if (cnt.live === 0) {

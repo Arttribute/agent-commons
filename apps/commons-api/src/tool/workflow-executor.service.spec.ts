@@ -195,6 +195,36 @@ describe('WorkflowExecutorService', () => {
 
   /* ── graph walker: frontier & dead-edge propagation ─────────────────── */
   describe('graph walker internals', () => {
+    it('executes source nodes with no incoming edges', async () => {
+      const definition = {
+        workflowId: 'wf-1',
+        nodes: [
+          { id: 'input', type: 'input' },
+          { id: 'output', type: 'output' },
+        ],
+        edges: [
+          { id: 'input-output', source: 'input', target: 'output' },
+        ],
+      };
+
+      await (service as any).executeGraphWalker(
+        'exec-1',
+        definition,
+        undefined,
+        undefined,
+        { country: 'Finland' },
+      );
+
+      const completedUpdate = db._updateSet.mock.calls
+        .map(([value]) => value)
+        .find((value) => value.status === 'completed');
+
+      expect(completedUpdate).toBeDefined();
+      expect(completedUpdate.outputData).toEqual({ country: 'Finland' });
+      expect(completedUpdate.nodeResults.input.status).toBe('success');
+      expect(completedUpdate.nodeResults.output.status).toBe('success');
+    });
+
     it('propagateSkip marks a node and its descendants as skipped', () => {
       const nodes = [
         { id: 'A' }, { id: 'B' }, { id: 'C' },

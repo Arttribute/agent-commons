@@ -1173,7 +1173,7 @@ interface WorkflowTemplateBuild {
 }
 declare function listWorkflowTemplates(): readonly [{
     readonly name: "country-weather-brief";
-    readonly description: "Tool-only workflow using REST Countries and Open-Meteo.";
+    readonly description: "Tool-only workflow using countries.dev and Open-Meteo.";
 }, {
     readonly name: "agent-research-summary";
     readonly description: "Multi-tool workflow with an agent_processor summarization step.";

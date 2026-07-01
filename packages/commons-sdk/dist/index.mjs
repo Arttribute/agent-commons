@@ -494,7 +494,7 @@ function listWorkflowTemplates() {
   return [
     {
       name: "country-weather-brief",
-      description: "Tool-only workflow using REST Countries and Open-Meteo."
+      description: "Tool-only workflow using countries.dev and Open-Meteo."
     },
     {
       name: "agent-research-summary",
@@ -525,9 +525,9 @@ function buildWorkflowTemplate(templateName, ctx) {
 function sharedTools(ctx) {
   const countryLookup = functionTool({
     name: toolName(ctx.prefix, "country_lookup"),
-    displayName: "REST Countries lookup",
-    description: "Look up country metadata by country name using REST Countries.",
-    tags: ["template", "rest-countries", "public-api"],
+    displayName: "countries.dev country search",
+    description: "Look up country metadata by country name using countries.dev.",
+    tags: ["template", "countries-dev", "public-api"],
     properties: {
       country: {
         type: "string",
@@ -537,11 +537,8 @@ function sharedTools(ctx) {
     required: ["country"],
     apiSpec: {
       method: "GET",
-      baseUrl: "https://restcountries.com",
-      path: "/v3.1/name/{country}",
-      queryParams: {
-        fields: "name,capital,latlng,population,region,subregion,languages,currencies,timezones"
-      },
+      baseUrl: "https://countries.dev",
+      path: "/name/{country}",
       authType: "none"
     }
   });
@@ -590,24 +587,27 @@ function sharedTools(ctx) {
       authType: "none"
     }
   });
-  const numberTrivia = functionTool({
-    name: toolName(ctx.prefix, "number_trivia"),
-    displayName: "Numbers API trivia",
-    description: "Return a harmless trivia fact for a number using Numbers API.",
-    tags: ["template", "numbers-api", "public-api"],
+  const exchangeRate = functionTool({
+    name: toolName(ctx.prefix, "frankfurter_exchange_rate"),
+    displayName: "Frankfurter exchange rate",
+    description: "Get a current exchange rate from USD to another currency using Frankfurter.",
+    tags: ["template", "frankfurter", "public-api", "exchange-rate"],
     properties: {
-      number: { type: "number", description: "Any integer." }
+      to: { type: "string", description: 'Target ISO 4217 currency code, for example "JPY".' }
     },
-    required: ["number"],
+    required: ["to"],
     apiSpec: {
       method: "GET",
-      baseUrl: "http://numbersapi.com",
-      path: "/{number}/trivia",
-      queryParams: { json: "true" },
+      baseUrl: "https://api.frankfurter.dev",
+      path: "/v1/latest",
+      queryParams: {
+        from: "USD",
+        to: "{to}"
+      },
       authType: "none"
     }
   });
-  return { countryLookup, weatherForecast, openLibrarySearch, numberTrivia };
+  return { countryLookup, weatherForecast, openLibrarySearch, exchangeRate };
 }
 function countryWeatherDefinition(toolIds) {
   return {
@@ -638,8 +638,8 @@ function countryWeatherDefinition(toolIds) {
         source: "country",
         target: "output",
         mapping: {
-          "0.name.common": "country",
-          "0.capital.0": "capital",
+          "0.name": "country",
+          "0.capital": "capital",
           "0.region": "region",
           "0.population": "population"
         }
@@ -725,21 +725,21 @@ function multiAgentFieldReport(ctx) {
     tools: [
       { key: "countryLookup", payload: tools.countryLookup },
       { key: "weatherForecast", payload: tools.weatherForecast },
-      { key: "numberTrivia", payload: tools.numberTrivia }
+      { key: "exchangeRate", payload: tools.exchangeRate }
     ],
     buildDefinition: (toolIds, buildCtx) => ({
       nodes: [
         { id: "input", type: "input", position: { x: 0, y: 120 } },
         { id: "country", type: "tool", toolId: toolIds.countryLookup, position: { x: 230, y: 20 } },
         { id: "weather", type: "tool", toolId: toolIds.weatherForecast, position: { x: 500, y: 20 } },
-        { id: "trivia", type: "tool", toolId: toolIds.numberTrivia, position: { x: 230, y: 240 } },
+        { id: "exchange-rate", type: "tool", toolId: toolIds.exchangeRate, position: { x: 230, y: 240 } },
         {
           id: "researcher",
           type: "agent_processor",
           position: { x: 760, y: 80 },
           config: {
             agentId: buildCtx.agentId,
-            prompt: "Draft a compact field report from the country, weather, and trivia data. Use clear sections and do not invent facts."
+            prompt: "Draft a compact field report from the country, weather, and exchange-rate data. Use clear sections and do not invent facts."
           }
         },
         {
@@ -756,17 +756,17 @@ function multiAgentFieldReport(ctx) {
       edges: [
         { id: "input-country", source: "input", target: "country", mapping: { country: "country" } },
         { id: "country-weather", source: "country", target: "weather", mapping: { "0.latlng.0": "latitude", "0.latlng.1": "longitude" } },
-        { id: "input-trivia", source: "input", target: "trivia", mapping: { number: "number" } },
+        { id: "country-exchange-rate", source: "country", target: "exchange-rate", mapping: { "0.currencies.0.code": "to" } },
         { id: "country-researcher", source: "country", target: "researcher", mapping: { "0": "countryData" } },
         { id: "weather-researcher", source: "weather", target: "researcher", mapping: { current: "weather" } },
-        { id: "trivia-researcher", source: "trivia", target: "researcher", mapping: { text: "numberTrivia" } },
+        { id: "exchange-rate-researcher", source: "exchange-rate", target: "researcher", mapping: { rates: "exchangeRates", base: "exchangeRateBase", date: "exchangeRateDate" } },
         { id: "researcher-reviewer", source: "researcher", target: "reviewer", mapping: { result: "draftReport" } },
         { id: "reviewer-output", source: "reviewer", target: "output", mapping: { result: "finalReport" } }
       ],
       startNodeId: "input",
       endNodeId: "output"
     }),
-    sampleInput: { country: "Japan", number: 42 }
+    sampleInput: { country: "Japan" }
   };
 }
 function workflowInvocationSmoke(ctx) {
