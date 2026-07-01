@@ -2,6 +2,18 @@ import { auth } from "@/auth";
 import { normalizePrincipalId } from "@/lib/principal-id";
 
 const serviceTokenCache = new Map<string, { value: string; expiresAt: number }>();
+const SERVICE_TOKEN_SCOPE =
+  "agents:read agents:write agents:run activity:read usage:read oauth:read oauth:write compute:read compute:write";
+
+type BackendAuthHeaderOptions = {
+  allowServiceKey?: boolean;
+  preferServiceKey?: boolean;
+  allowLegacyServiceKey?: boolean;
+};
+
+type ServiceAuthHeaderOptions = {
+  allowLegacyKey?: boolean;
+};
 
 function envValue(name: string) {
   const value = process.env[name]?.trim();
@@ -10,37 +22,43 @@ function envValue(name: string) {
 }
 
 /**
- * Returns Authorization header for server-side requests to the backend API.
- * Uses NEST_API_SECRET_KEY — a server-side-only env var (no NEXT_PUBLIC_ prefix).
+ * Returns Authorization headers for server-side requests to the backend API.
+ * Signed-in users should use their Commons identity token first. Service
+ * credentials are fallback/daemon credentials and should not mask a valid user
+ * session, especially when the public API gateway rejects legacy keys.
  * This file must only be imported from Next.js API routes, not client components.
  */
 export async function backendAuthHeaders(
-  options: { allowServiceKey?: boolean; preferServiceKey?: boolean } = {},
+  options: BackendAuthHeaderOptions = {},
 ): Promise<Record<string, string>> {
   const session = await auth();
   const delegatedUserId = normalizePrincipalId(session?.user?.id);
   const delegatedHeaders: Record<string, string> = delegatedUserId
     ? { "x-initiator": delegatedUserId, "x-owner-id": delegatedUserId }
     : {};
+  const userHeaders =
+    session?.accessToken && !session.accessTokenError
+      ? { Authorization: `Bearer ${session.accessToken}` }
+      : null;
+  const canUseServiceCredential = Boolean(
+    options.allowServiceKey || options.preferServiceKey || session?.user?.id,
+  );
 
-  const serviceHeaders =
-    options.allowServiceKey || session?.user?.id
-      ? await backendServiceAuthHeaders()
-      : {};
-
-  if ((options.preferServiceKey || session?.user?.id) && serviceHeaders.Authorization) {
-    return { ...serviceHeaders, ...delegatedHeaders };
+  if (!options.preferServiceKey && userHeaders) {
+    return { ...userHeaders, ...delegatedHeaders };
   }
 
-  if (session?.accessToken && !session.accessTokenError) {
-    return {
-      Authorization: `Bearer ${session.accessToken}`,
-      ...delegatedHeaders,
-    };
+  if (canUseServiceCredential) {
+    const serviceHeaders = await backendServiceAuthHeaders({
+      allowLegacyKey: options.allowLegacyServiceKey ?? !userHeaders,
+    });
+    if (serviceHeaders.Authorization) {
+      return { ...serviceHeaders, ...delegatedHeaders };
+    }
   }
 
-  if (serviceHeaders.Authorization) {
-    return { ...serviceHeaders, ...delegatedHeaders };
+  if (userHeaders) {
+    return { ...userHeaders, ...delegatedHeaders };
   }
 
   if (process.env.ALLOW_LEGACY_MANAGEMENT_AUTH !== "true") return {};
@@ -48,9 +66,13 @@ export async function backendAuthHeaders(
   return key ? { Authorization: `Bearer ${key}`, ...delegatedHeaders } : delegatedHeaders;
 }
 
-export async function backendServiceAuthHeaders(): Promise<Record<string, string>> {
+export async function backendServiceAuthHeaders(
+  options: ServiceAuthHeaderOptions = {},
+): Promise<Record<string, string>> {
   const identityToken = await commonsIdentityServiceToken();
   if (identityToken) return { Authorization: `Bearer ${identityToken}` };
+
+  if (options.allowLegacyKey === false) return {};
 
   const serviceKey =
     envValue("AGENT_COMMONS_API_KEY") ||
@@ -83,8 +105,7 @@ async function commonsIdentityServiceToken() {
     },
     body: new URLSearchParams({
       grant_type: "client_credentials",
-      scope:
-        "agents:read agents:write agents:run activity:read usage:read oauth:read oauth:write compute:read compute:write",
+      scope: SERVICE_TOKEN_SCOPE,
       resource: "commons-platform",
     }),
   }).catch(() => null);
