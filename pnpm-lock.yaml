@@ -347,8 +347,8 @@ importers:
   apps/commons-app:
     dependencies:
       '@agent-commons/sdk':
-        specifier: workspace:*
-        version: link:../../packages/commons-sdk
+        specifier: ^0.2.1
+        version: 0.2.1
       '@hookform/resolvers':
         specifier: ^3.10.0
         version: 3.10.0(react-hook-form@7.54.2(react@19.0.0))
@@ -834,6 +834,9 @@ packages:
 
   '@agent-commons/sdk@0.1.13':
     resolution: {integrity: sha512-QGCJfwRtM8H+20armIInFGX+lj8iqtPAskN6YyF8WBkzlCcrEGh1y7uywvOAJ+jQWpz5grF286FnmtEw+jCYUA==}
+
+  '@agent-commons/sdk@0.2.1':
+    resolution: {integrity: sha512-Z36iuSsWCbcMmyUYh+twMk8eyrH09bEyVYmBdOKyzBaqsBn4cJsNRgKfiRHCH8DVqZOxK75nC9luIZaDnt1qwg==}
 
   '@ai-sdk/provider-utils@2.2.7':
     resolution: {integrity: sha512-kM0xS3GWg3aMChh9zfeM+80vEZfXzR3JEUBdycZLtbRZ2TRT8xOj3WodGHPb06sUK5yD7pAXC/P7ctsi2fvUGQ==}
@@ -15848,6 +15851,8 @@ snapshots:
   '@adraffy/ens-normalize@1.11.0': {}
 
   '@agent-commons/sdk@0.1.13': {}
+
+  '@agent-commons/sdk@0.2.1': {}
 
   '@ai-sdk/provider-utils@2.2.7(zod@3.25.76)':
     dependencies:
