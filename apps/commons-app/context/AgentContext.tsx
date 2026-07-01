@@ -7,6 +7,7 @@ import {
   useContext,
   useState,
   useCallback,
+  useRef,
   type ReactNode,
 } from "react";
 
@@ -27,6 +28,11 @@ interface AgentContextType {
   clearMessages: () => void;
   sessions: any[];
   setSessions: React.Dispatch<React.SetStateAction<any[]>>;
+  addSession: (session: any) => void;
+  updateSessionTitle: (sessionId: string, title: string) => void;
+  streamingTitleSessionId: string | null;
+  streamingTitleText: string;
+  startTitleStream: (sessionId: string, targetTitle: string) => void;
   inputText: string;
   setInputText: React.Dispatch<React.SetStateAction<string>>;
 }
@@ -37,6 +43,9 @@ export const AgentProvider = ({ children }: { children: ReactNode }) => {
   const [messages, setMessages] = useState<Message[]>([]);
   const [sessions, setSessions] = useState<any[]>([]);
   const [inputText, setInputText] = useState<string>("");
+  const [streamingTitleSessionId, setStreamingTitleSessionId] = useState<string | null>(null);
+  const [streamingTitleText, setStreamingTitleText] = useState<string>("");
+  const titleIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const addMessage = useCallback((newMessage: Message) => {
     setMessages((prevMessages) => [...prevMessages, newMessage]);
@@ -87,6 +96,39 @@ export const AgentProvider = ({ children }: { children: ReactNode }) => {
     });
   }, []);
 
+  const addSession = useCallback((session: any) => {
+    setSessions((prev) => {
+      if (prev.some((s) => s.sessionId === session.sessionId)) return prev;
+      return [session, ...prev];
+    });
+  }, []);
+
+  const updateSessionTitle = useCallback((sessionId: string, title: string) => {
+    setSessions((prev) =>
+      prev.map((s) => (s.sessionId === sessionId ? { ...s, title } : s))
+    );
+  }, []);
+
+  const startTitleStream = useCallback((sessionId: string, targetTitle: string) => {
+    if (titleIntervalRef.current) clearInterval(titleIntervalRef.current);
+    setStreamingTitleSessionId(sessionId);
+    setStreamingTitleText("");
+
+    let index = 0;
+    titleIntervalRef.current = setInterval(() => {
+      index += 1;
+      setStreamingTitleText(targetTitle.slice(0, index));
+      if (index >= targetTitle.length) {
+        clearInterval(titleIntervalRef.current!);
+        titleIntervalRef.current = null;
+        setStreamingTitleSessionId(null);
+        setSessions((prev) =>
+          prev.map((s) => (s.sessionId === sessionId ? { ...s, title: targetTitle } : s))
+        );
+      }
+    }, 35);
+  }, []);
+
   return (
     <AgentContext.Provider
       value={{
@@ -98,6 +140,11 @@ export const AgentProvider = ({ children }: { children: ReactNode }) => {
         clearMessages,
         sessions,
         setSessions,
+        addSession,
+        updateSessionTitle,
+        streamingTitleSessionId,
+        streamingTitleText,
+        startTitleStream,
         inputText,
         setInputText,
       }}

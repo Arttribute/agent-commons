@@ -38,7 +38,7 @@ interface SessionInterfaceImprovedProps {
   agentId: string;
   sessionId: string;
   userId?: string;
-  onSessionCreated?: (sessionId: string) => void;
+  onSessionCreated?: (sessionId: string, title?: string) => void;
   isLoadingSession?: boolean;
   isRedirecting?: boolean;
 }

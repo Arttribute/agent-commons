@@ -10,15 +10,11 @@ import { WorkflowCanvasProvider } from "@/components/workflows/editor/workflow-c
 import { TestPanel } from "@/components/workflows/editor/test-panel";
 import { useAuth } from "@/context/AuthContext";
 import { normalizePrincipalId } from "@/lib/principal-id";
-import { ArrowLeft, Loader2 } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { useRouter } from "next/navigation";
+import { Loader2 } from "lucide-react";
 import { useWorkflows } from "@/hooks/use-workflows";
-import { StudioEntitySwitcher } from "@/components/studio/studio-entity-switcher";
 
 export default function WorkflowEditorPage() {
   const params = useParams();
-  const router = useRouter();
   const workflowId = params.workflowId as string;
   const { authState } = useAuth();
   const { walletAddress } = authState;
@@ -135,34 +131,15 @@ export default function WorkflowEditorPage() {
 
   return (
     <div className="flex h-full min-w-0 flex-col bg-background">
-      <div className="flex items-center justify-between gap-3 border-b border-border/70 px-4 py-2">
-        <div className="flex min-w-0 items-center gap-2">
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-8 w-8 shrink-0"
-            onClick={() => router.push("/studio/workflows")}
-            aria-label="Back to workflows"
-          >
-            <ArrowLeft className="h-4 w-4" />
-          </Button>
-          <StudioEntitySwitcher
-            type="workflow"
-            currentId={workflowId}
-            currentName={workflow.name}
-            items={workflows.map((item: any) => ({
-              id: item.workflowId,
-              name: item.name,
-              description: item.description,
-            }))}
-          />
-        </div>
-        <span className="hidden text-xs text-muted-foreground sm:block">
-          Workflow editor
-        </span>
-      </div>
-      {/* Top toolbar */}
-      <EditorToolbar />
+      <EditorToolbar
+        currentId={workflowId}
+        currentName={workflow.name}
+        workflows={workflows.map((item: any) => ({
+          id: item.workflowId,
+          name: item.name,
+          description: item.description,
+        }))}
+      />
 
       {/* Main editor area */}
       <div className="flex min-h-0 flex-1 overflow-hidden">

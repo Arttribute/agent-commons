@@ -4,6 +4,7 @@ import Link from "next/link";
 import { cn } from "@/lib/utils";
 import { formatDistanceToNow } from "date-fns";
 import { MessageSquare } from "lucide-react";
+import { useAgentContext } from "@/context/AgentContext";
 
 interface Session {
   sessionId: string;
@@ -18,6 +19,8 @@ interface SessionsListProps {
 }
 
 export default function SessionsList({ sessions, currentSessionId }: SessionsListProps) {
+  const { streamingTitleSessionId, streamingTitleText } = useAgentContext();
+
   if (sessions.length === 0) {
     return (
       <div className="py-6 text-center">
@@ -31,6 +34,10 @@ export default function SessionsList({ sessions, currentSessionId }: SessionsLis
     <div className="space-y-0.5">
       {sessions.map((session) => {
         const isActive = session.sessionId === currentSessionId;
+        const isStreaming = session.sessionId === streamingTitleSessionId;
+        const displayTitle = isStreaming
+          ? streamingTitleText || "..."
+          : session.title || "New session";
         const timeAgo = session.createdAt
           ? formatDistanceToNow(new Date(session.createdAt), { addSuffix: true })
           : null;
@@ -48,8 +55,11 @@ export default function SessionsList({ sessions, currentSessionId }: SessionsLis
                   : "text-muted-foreground hover:bg-accent/50 hover:text-foreground"
               )}
             >
-              <p className="text-sm truncate w-full font-medium leading-tight">
-                {session.title || "New session"}
+              <p className="text-sm truncate w-full font-medium leading-tight flex items-center gap-0.5">
+                {displayTitle}
+                {isStreaming && (
+                  <span className="inline-block w-0.5 h-3.5 bg-current ml-0.5 animate-pulse shrink-0" />
+                )}
               </p>
               {timeAgo && (
                 <p className="text-[10px] text-muted-foreground mt-0.5 truncate">

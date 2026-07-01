@@ -16,7 +16,7 @@ export default function ChatInputBox({
   sessionId: string;
   userId: string;
   disabled?: boolean;
-  onSessionCreated?: (sessionId: string) => void;
+  onSessionCreated?: (sessionId: string, title?: string) => void;
 }) {
   const accumulatedRef = useRef("");
   const { addMessage, updateStreamingMessage, finalizeStreamingMessage, inputText, setInputText } =
@@ -31,7 +31,7 @@ export default function ChatInputBox({
       const content = payload?.content ?? payload?.data?.content ?? "";
       finalizeStreamingMessage(content, payload?.metadata);
       if (payload?.sessionId && payload.sessionId !== sessionId) {
-        onSessionCreated?.(payload.sessionId);
+        onSessionCreated?.(payload.sessionId, payload.title ?? "");
       }
     },
     onToolStart: (toolName) => {

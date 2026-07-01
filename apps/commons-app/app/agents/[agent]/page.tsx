@@ -13,10 +13,9 @@ export default function PublicAgentPage() {
   const params = useParams();
   const router = useRouter();
   const { agent: agentId } = params as { agent: string };
-  const { messages, setMessages, clearMessages, sessions, setSessions } = useAgentContext();
+  const { clearMessages, sessions, setSessions, addSession, startTitleStream } = useAgentContext();
 
   const [agent, setAgent] = useState<any>(null);
-  const [session, setSession] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [isRedirecting, setIsRedirecting] = useState(false);
 
@@ -70,12 +69,19 @@ export default function PublicAgentPage() {
       />
       <SessionInterface
         agent={agent}
-        session={session}
+        session={null}
         agentId={agentId}
         userId={userAddress}
-        sessionId={session?.sessionId || ""}
+        sessionId=""
         isRedirecting={isRedirecting}
-        onSessionCreated={(newSessionId) => {
+        onSessionCreated={(newSessionId, title) => {
+          addSession({
+            sessionId: newSessionId,
+            agentId,
+            title: "",
+            createdAt: new Date().toISOString(),
+          });
+          if (title) startTitleStream(newSessionId, title);
           setIsRedirecting(true);
           router.replace(`/agents/${agentId}/${newSessionId}`);
         }}

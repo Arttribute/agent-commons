@@ -1,13 +1,26 @@
 "use client";
 
-import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { useWorkflowStore } from "@/lib/workflows/workflow-store";
-import { Undo2, Redo2, Save, Loader2, CheckCircle2, ArrowLeft, GitBranch } from "lucide-react";
+import { Undo2, Redo2, Save, Loader2, CheckCircle2, ArrowLeft } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
-import { Badge } from "@/components/ui/badge";
+import { StudioEntitySwitcher } from "@/components/studio/studio-entity-switcher";
 
-export function EditorToolbar() {
+type WorkflowItem = {
+  id: string;
+  name: string;
+  description?: string | null;
+};
+
+type EditorToolbarProps = {
+  currentId: string;
+  currentName: string;
+  workflows: WorkflowItem[];
+};
+
+export function EditorToolbar({ currentId, currentName, workflows }: EditorToolbarProps) {
+  const router = useRouter();
   const {
     undo,
     redo,
@@ -16,7 +29,6 @@ export function EditorToolbar() {
     saveWorkflow,
     isSaving,
     lastSaved,
-    workflow,
   } = useWorkflowStore();
 
   const handleSave = async () => {
@@ -29,29 +41,27 @@ export function EditorToolbar() {
 
   return (
     <div className="h-12 border-b border-border bg-background px-3 flex items-center justify-between shrink-0">
-      {/* Left: back + name */}
-      <div className="flex items-center gap-3 min-w-0">
-        <Link href="/studio/workflows">
-          <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0">
-            <ArrowLeft className="h-4 w-4" />
-          </Button>
-        </Link>
-        <div className="flex items-center gap-2 min-w-0">
-          <GitBranch className="h-4 w-4 text-muted-foreground shrink-0" />
-          <span className="text-sm font-medium truncate max-w-[280px]">
-            {workflow?.name || "Untitled Workflow"}
-          </span>
-          {workflow?.isPublic && (
-            <Badge variant="secondary" className="text-[10px] px-1.5 py-0 shrink-0">
-              Public
-            </Badge>
-          )}
-        </div>
+      {/* Left: back + workflow switcher */}
+      <div className="flex items-center gap-2 min-w-0">
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-8 w-8 shrink-0"
+          onClick={() => router.push("/studio/workflows")}
+          aria-label="Back to workflows"
+        >
+          <ArrowLeft className="h-4 w-4" />
+        </Button>
+        <StudioEntitySwitcher
+          type="workflow"
+          currentId={currentId}
+          currentName={currentName}
+          items={workflows}
+        />
       </div>
 
-      {/* Right: actions */}
+      {/* Right: save status + undo/redo + save */}
       <div className="flex items-center gap-1">
-        {/* Save status */}
         <div className="flex items-center gap-1.5 text-xs text-muted-foreground mr-2">
           {isSaving ? (
             <>

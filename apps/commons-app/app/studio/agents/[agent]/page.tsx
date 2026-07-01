@@ -380,6 +380,7 @@ function SessionsView({
   onSelectSession: (sessionId: string) => void;
   onCreateSession: () => void;
 }) {
+  const { streamingTitleSessionId, streamingTitleText } = useAgentContext();
   const [search, setSearch] = useState("");
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -415,7 +416,16 @@ function SessionsView({
                 className={cn("mb-1 w-full rounded-md px-3 py-2 text-left hover:bg-muted", selectedSession?.sessionId === session.sessionId && "bg-accent text-accent-foreground")}
                 onClick={() => onSelectSession(session.sessionId)}
               >
-                <p className="truncate text-sm font-medium">{session.title || "New session"}</p>
+                {(() => {
+                  const isStreaming = session.sessionId === streamingTitleSessionId;
+                  const displayTitle = isStreaming ? (streamingTitleText || "...") : (session.title || "New session");
+                  return (
+                    <p className="truncate text-sm font-medium flex items-center gap-0.5">
+                      {displayTitle}
+                      {isStreaming && <span className="inline-block w-0.5 h-3.5 bg-current ml-0.5 animate-pulse shrink-0" />}
+                    </p>
+                  );
+                })()}
                 <p className="mt-0.5 text-xs text-muted-foreground">{relative(session.createdAt)} · {shortId(session.sessionId)}</p>
               </button>
             ))}
@@ -1403,7 +1413,7 @@ export default function AgentStudioPage({ params }: { params: Promise<{ agent: s
   const { authState } = useAuth();
   const userAddress = normalizePrincipalId(authState.walletAddress);
   const { agents } = useAgents(userAddress || undefined);
-  const { setMessages, clearMessages } = useAgentContext();
+  const { setMessages, clearMessages, startTitleStream } = useAgentContext();
 
   const [activeSection, setActiveSection] = useState<SectionKey>("new-session");
   const [agent, setAgent] = useState<CommonAgent | null>(null);
@@ -1462,29 +1472,6 @@ export default function AgentStudioPage({ params }: { params: Promise<{ agent: s
     }
   }, [clearMessages, setMessages]);
 
-  const createSession = useCallback(async () => {
-    if (!agentId || !userAddress) return;
-    setLoadingSession(true);
-    clearMessages();
-    try {
-      const res = await fetch("/api/sessions", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ agentId, initiator: userAddress }),
-      });
-      const data = await res.json();
-      const session = data.data ?? null;
-      if (session) {
-        setSelectedSession(session);
-        setSessions((prev) => [session, ...prev.filter((item) => item.sessionId !== session.sessionId)]);
-        setActiveSection("new-session");
-        setMessages([]);
-      }
-    } finally {
-      setLoadingSession(false);
-    }
-  }, [agentId, userAddress, clearMessages, setMessages]);
-
   useEffect(() => { loadAgent(); }, [loadAgent]);
   useEffect(() => { loadSessions(); }, [loadSessions]);
   useEffect(() => { loadTasks(); }, [loadTasks]);
@@ -1496,8 +1483,11 @@ export default function AgentStudioPage({ params }: { params: Promise<{ agent: s
   }, [sessions, selectedSession, activeSection, loadSession]);
 
   useEffect(() => {
-    if (activeSection === "new-session") createSession();
-  }, [activeSection, createSession]);
+    if (activeSection === "new-session") {
+      clearMessages();
+      setSelectedSession(null);
+    }
+  }, [activeSection, clearMessages]);
 
   if (loading) return <AgentPageSkeleton />;
   if (!agent) {
@@ -1509,9 +1499,25 @@ export default function AgentStudioPage({ params }: { params: Promise<{ agent: s
       case "setup":
         return <SetupView agent={agent} isOwner={isOwner} onSaved={setAgent} />;
       case "new-session":
-        return <SessionInterface agent={agent} session={selectedSession} agentId={agentId} sessionId={selectedSession?.sessionId || ""} userId={userAddress} height="calc(100vh - 180px)" isLoadingSession={loadingSession} onSessionCreated={(sessionId) => loadSession(sessionId)} />;
+        return (
+          <SessionInterface
+            agent={agent}
+            session={selectedSession}
+            agentId={agentId}
+            sessionId={selectedSession?.sessionId || ""}
+            userId={userAddress}
+            height="calc(100vh - 180px)"
+            isLoadingSession={loadingSession}
+            onSessionCreated={(sessionId, title) => {
+              const newSession = { sessionId, agentId, title: "", createdAt: new Date().toISOString() };
+              setSessions((prev) => [newSession, ...prev.filter((s) => s.sessionId !== sessionId)]);
+              if (title) startTitleStream(sessionId, title);
+              setSelectedSession({ sessionId, tasks: [], childSessions: [], spaces: [] });
+            }}
+          />
+        );
       case "sessions":
-        return <SessionsView agent={agent} sessions={sessions} selectedSession={selectedSession} userAddress={userAddress} loadingSession={loadingSession} onSelectSession={loadSession} onCreateSession={createSession} />;
+        return <SessionsView agent={agent} sessions={sessions} selectedSession={selectedSession} userAddress={userAddress} loadingSession={loadingSession} onSelectSession={loadSession} onCreateSession={() => setActiveSection("new-session")} />;
       case "tasks":
         return <TaskManagementView userAddress={userAddress} agentId={agentId} hideAgentFilter preSelectedAgentId={agentId} />;
       case "tools":
