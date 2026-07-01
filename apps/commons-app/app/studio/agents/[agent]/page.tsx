@@ -389,9 +389,9 @@ function SessionsView({
   }, [sessions, search]);
 
   return (
-    <div className="grid h-full min-h-0 grid-cols-[320px_minmax(0,1fr)]">
-      <aside className="min-h-0 border-r border-border bg-muted/15">
-        <div className="border-b border-border/70 p-3">
+    <div className="grid h-full min-h-0 grid-cols-[320px_minmax(0,1fr)] overflow-hidden">
+      <aside className="flex min-h-0 flex-col overflow-hidden border-r border-border bg-muted/15">
+        <div className="shrink-0 border-b border-border/70 p-3">
           <div className="flex items-center justify-between gap-2">
             <h2 className="text-sm font-medium">Sessions</h2>
             <Button size="sm" variant="outline" className="h-8 gap-1.5" onClick={onCreateSession}>
@@ -404,7 +404,7 @@ function SessionsView({
             <Input className="h-8 pl-8" placeholder="Search sessions" value={search} onChange={(e) => setSearch(e.target.value)} />
           </div>
         </div>
-        <ScrollArea className="h-[calc(100vh-158px)]">
+        <ScrollArea className="min-h-0 flex-1">
           <div className="p-2">
             {filtered.length === 0 ? (
               <div className="rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground">No sessions found.</div>
@@ -422,9 +422,9 @@ function SessionsView({
           </div>
         </ScrollArea>
       </aside>
-      <div className="min-h-0">
+      <div className="min-h-0 overflow-hidden">
         {selectedSession ? (
-          <SessionInterface agent={agent} session={selectedSession} agentId={agent.agentId} sessionId={selectedSession.sessionId} userId={userAddress} height="calc(100vh - 180px)" isLoadingSession={loadingSession} />
+          <SessionInterface agent={agent} session={selectedSession} agentId={agent.agentId} sessionId={selectedSession.sessionId} userId={userAddress} height="100%" isLoadingSession={loadingSession} />
         ) : (
           <div className="flex h-full items-center justify-center text-sm text-muted-foreground">Select a session to view its conversation.</div>
         )}
@@ -451,9 +451,9 @@ function ToolsView({ agentId, agentTools, setAgentTools }: { agentId: string; ag
   }, [agentTools, statusFilter]);
 
   return (
-    <div className="grid h-full min-h-0 grid-cols-[340px_minmax(0,1fr)]">
-      <aside className="min-h-0 border-r border-border bg-muted/15">
-        <div className="border-b border-border/70 p-4">
+    <div className="grid h-full min-h-0 grid-cols-[340px_minmax(0,1fr)] overflow-hidden">
+      <aside className="flex min-h-0 flex-col overflow-hidden border-r border-border bg-muted/15">
+        <div className="shrink-0 border-b border-border/70 p-4">
           <div className="flex items-center justify-between gap-2">
             <h2 className="text-sm font-medium">Tools</h2>
             <AgentTools agentTools={agentTools} setAgentTools={setAgentTools} agentId={agentId} />
@@ -476,7 +476,7 @@ function ToolsView({ agentId, agentTools, setAgentTools }: { agentId: string; ag
             ))}
           </div>
         </div>
-        <ScrollArea className="h-[calc(100vh-150px)]">
+        <ScrollArea className="min-h-0 flex-1">
           <div className="p-2">
             {filteredTools.length === 0 ? (
               <div className="rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground">No tools in this filter.</div>
@@ -1532,8 +1532,8 @@ export default function AgentStudioPage({ params }: { params: Promise<{ agent: s
   };
 
   return (
-    <div className="flex h-full min-h-0 flex-col bg-background">
-      <div className="flex items-center justify-between gap-3 border-b border-border/70 px-4 py-2">
+    <div className="flex h-full min-h-0 flex-col overflow-hidden bg-background">
+      <div className="flex shrink-0 items-center justify-between gap-3 border-b border-border/70 px-4 py-2">
         <div className="flex min-w-0 items-center gap-2">
           <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0" onClick={() => router.push("/studio/agents")} aria-label="Back to agents">
             <ArrowLeft className="h-4 w-4" />
@@ -1543,9 +1543,9 @@ export default function AgentStudioPage({ params }: { params: Promise<{ agent: s
         <Badge variant="outline" className="hidden rounded-md sm:inline-flex">{shortId(agentId)}</Badge>
       </div>
 
-      <div className="grid min-h-0 flex-1 grid-cols-[280px_minmax(0,1fr)]">
-        <aside className="min-h-0 border-r border-border bg-muted/10">
-          <div className="border-b border-border/70 p-4">
+      <div className="grid min-h-0 flex-1 grid-cols-[280px_minmax(0,1fr)] overflow-hidden">
+        <aside className="flex min-h-0 flex-col overflow-hidden border-r border-border bg-muted/10">
+          <div className="shrink-0 border-b border-border/70 p-4">
             <div className="flex items-center gap-3">
               {agent.avatar ? <img src={agent.avatar} alt="" className="h-11 w-11 rounded-full border object-cover" /> : <RandomAvatar size={44} username={agent.name || "agent"} />}
               <div className="min-w-0">
@@ -1554,7 +1554,7 @@ export default function AgentStudioPage({ params }: { params: Promise<{ agent: s
               </div>
             </div>
           </div>
-          <ScrollArea className="h-[calc(100vh-120px)]">
+          <ScrollArea className="min-h-0 flex-1">
             <nav className="space-y-1 p-2">
               {sections.map(({ key, label, icon: Icon }) => (
                 <button
@@ -1571,7 +1571,7 @@ export default function AgentStudioPage({ params }: { params: Promise<{ agent: s
             </nav>
           </ScrollArea>
         </aside>
-        <main className="min-h-0 min-w-0">{renderSection()}</main>
+        <main className="h-full min-h-0 min-w-0 overflow-y-auto overscroll-contain">{renderSection()}</main>
       </div>
     </div>
   );
