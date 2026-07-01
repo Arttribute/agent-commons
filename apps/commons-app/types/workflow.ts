@@ -1,5 +1,16 @@
 import { WorkflowDataType } from "@/lib/workflows/type-mapping";
 
+export type WorkflowNodeType =
+  | "tool"
+  | "agent_processor"
+  | "workflow"
+  | "input"
+  | "output"
+  | "condition"
+  | "transform"
+  | "loop"
+  | "human_approval";
+
 export interface Workflow {
   workflowId: string;
   name: string;
@@ -17,7 +28,7 @@ export interface Workflow {
 export interface WorkflowNode {
   nodeId: string;
   workflowId: string;
-  nodeType: "tool" | "agent_processor" | "input" | "output";
+  nodeType: WorkflowNodeType;
   config: {
     toolName?: string;
     inputs?: Record<string, any>;
@@ -66,16 +77,22 @@ export interface WorkflowExecution {
 // React Flow types
 export interface ReactFlowNode {
   id: string;
-  type: "tool" | "input" | "output";
+  type: WorkflowNodeType;
   position: { x: number; y: number };
   data: {
     label: string;
     toolId?: string;
     toolName?: string;
+    agentId?: string;
+    workflowId?: string;
+    description?: string;
+    icon?: string;
+    accent?: string;
     inputs?: Array<{ name: string; type: WorkflowDataType; required?: boolean }>;
     outputs?: Array<{ name: string; type: WorkflowDataType }>;
-    nodeType?: "tool" | "agent_processor" | "input" | "output";
+    nodeType?: WorkflowNodeType;
     config?: Record<string, any>;
+    schema?: any;
   };
 }
 

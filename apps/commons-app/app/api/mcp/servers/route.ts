@@ -43,10 +43,21 @@ export async function POST(request: NextRequest) {
       ownerId: ownerType === "user" ? user.userId : body.ownerId,
       ownerType,
     };
-    const res = await fetch(`${baseUrl}/v1/mcp/servers`, {
+    const params = new URLSearchParams({
+      ownerId: ownedBody.ownerId,
+      ownerType,
+    });
+    const res = await fetch(`${baseUrl}/v1/mcp/servers?${params.toString()}`, {
       method: "POST",
       headers: { "Content-Type": "application/json", ...await backendAuthHeaders() },
-      body: JSON.stringify(ownedBody),
+      body: JSON.stringify({
+        name: ownedBody.name,
+        description: ownedBody.description,
+        connectionType: ownedBody.connectionType,
+        connectionConfig: ownedBody.connectionConfig,
+        isPublic: ownedBody.isPublic,
+        tags: ownedBody.tags,
+      }),
     });
     const data = await res.json().catch(() => ({ error: "Bad JSON" }));
     return NextResponse.json(data, { status: res.status });

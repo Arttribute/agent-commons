@@ -41,6 +41,45 @@ export interface CommonTool {
     goalId: string;
   }): Promise<{ success: boolean }>;
 
+  /**
+   * Search the live web using the platform search provider.
+   */
+  webSearch(props: {
+    query: string;
+    count?: number;
+    freshness?: 'day' | 'week' | 'month' | 'year';
+    safeSearch?: 'off' | 'moderate' | 'strict';
+  }): Promise<{
+    query: string;
+    provider: string;
+    results: Array<{
+      title: string;
+      url: string;
+      description?: string;
+      publishedAt?: string;
+    }>;
+  }>;
+
+  /**
+   * Run an expanded web search pass for research workflows.
+   */
+  deepSearch(props: {
+    query: string;
+    focus?: string;
+    maxResults?: number;
+    includeSources?: boolean;
+  }): Promise<{
+    query: string;
+    focus?: string;
+    summary: string;
+    sources: Array<{
+      title: string;
+      url: string;
+      description?: string;
+      publishedAt?: string;
+    }>;
+  }>;
+
   createTask(props: {
     agentId: string;
     sessionId: string;
@@ -373,6 +412,97 @@ export class CommonToolService implements CommonTool {
   async recomputeGoalProgress(props: { goalId: string }) {
     await this.goals.recomputeProgress(props.goalId);
     return { success: true };
+  }
+
+  async webSearch(props: {
+    query: string;
+    count?: number;
+    freshness?: 'day' | 'week' | 'month' | 'year';
+    safeSearch?: 'off' | 'moderate' | 'strict';
+  }) {
+    const query = props.query?.trim();
+    if (!query) {
+      throw new BadRequestException('webSearch requires a non-empty query');
+    }
+
+    const apiKey = process.env.BRAVE_SEARCH_API_KEY;
+    if (!apiKey) {
+      throw new BadRequestException(
+        'webSearch is not configured. Set BRAVE_SEARCH_API_KEY to enable live web search.',
+      );
+    }
+
+    const count = Math.max(1, Math.min(props.count ?? 8, 20));
+    const freshnessMap = {
+      day: 'pd',
+      week: 'pw',
+      month: 'pm',
+      year: 'py',
+    } as const;
+
+    const url = new URL('https://api.search.brave.com/res/v1/web/search');
+    url.searchParams.set('q', query);
+    url.searchParams.set('count', String(count));
+    url.searchParams.set('safesearch', props.safeSearch ?? 'moderate');
+    if (props.freshness) {
+      url.searchParams.set('freshness', freshnessMap[props.freshness]);
+    }
+
+    const response = await fetch(url.toString(), {
+      headers: {
+        Accept: 'application/json',
+        'X-Subscription-Token': apiKey,
+      },
+    });
+
+    if (!response.ok) {
+      throw new BadRequestException(
+        `webSearch provider returned ${response.status} ${response.statusText}`,
+      );
+    }
+
+    const data: any = await response.json();
+    const results = (data.web?.results ?? []).map((item: any) => ({
+      title: item.title,
+      url: item.url,
+      description: item.description,
+      publishedAt: item.age,
+    }));
+
+    return {
+      query,
+      provider: 'brave',
+      results,
+    };
+  }
+
+  async deepSearch(props: {
+    query: string;
+    focus?: string;
+    maxResults?: number;
+    includeSources?: boolean;
+  }) {
+    const query = props.focus
+      ? `${props.query.trim()} ${props.focus.trim()}`
+      : props.query.trim();
+
+    const search = await this.webSearch({
+      query,
+      count: Math.max(5, Math.min(props.maxResults ?? 12, 20)),
+      safeSearch: 'moderate',
+    });
+
+    const summary =
+      search.results.length > 0
+        ? `Found ${search.results.length} relevant sources for "${props.query}". Use the returned source list for citation-aware synthesis.`
+        : `No web results were returned for "${props.query}".`;
+
+    return {
+      query: props.query,
+      focus: props.focus,
+      summary,
+      sources: props.includeSources === false ? [] : search.results,
+    };
   }
 
   async speakInSpace(props: {

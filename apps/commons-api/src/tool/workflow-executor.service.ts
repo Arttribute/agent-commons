@@ -15,6 +15,7 @@ interface NodeExecutionContext {
   nodeId: string;
   nodeType: string;
   toolId?: string;
+  workflowId?: string;
   inputs: Record<string, any>;
   config?: Record<string, any>;
 }
@@ -74,8 +75,14 @@ export class WorkflowExecutorService {
     taskId?: string;
     inputData?: Record<string, any>;
     userId?: string;
+    workflowDepth?: number;
   }): Promise<string> {
     const { workflowId, agentId, sessionId, taskId, inputData, userId } = params;
+    const workflowDepth = params.workflowDepth ?? 0;
+    if (workflowDepth > 2) {
+      throw new Error('Nested workflow depth limit exceeded');
+    }
+
     const workflow = await this.db.query.workflow.findFirst({
       where: (w) => eq(w.workflowId, workflowId),
     });
@@ -98,8 +105,9 @@ export class WorkflowExecutorService {
     this.logger.log(`Started workflow execution ${execution.executionId} for workflow ${workflowId}`);
 
     const timeoutMs = workflow.timeoutMs || 300_000;
+    const definition = { ...(workflow.definition as any), workflowId };
     const executionPromise = this.executeGraphWalker(
-      execution.executionId, workflow.definition, agentId, userId, inputData || {},
+      execution.executionId, definition, agentId, userId, inputData || {}, undefined, undefined, workflowDepth,
     );
     const timeoutPromise = new Promise<never>((_, reject) =>
       setTimeout(() => reject(new Error(`Workflow execution timeout after ${timeoutMs}ms`)), timeoutMs),
@@ -161,7 +169,7 @@ export class WorkflowExecutorService {
     this.executeGraphWalker(
       executionId, workflow.definition, execution.agentId ?? undefined,
       undefined, execution.inputData as Record<string, any> || {},
-      resumeOutputs, pausedAtNode,
+      resumeOutputs, pausedAtNode, 0,
     ).catch(async (error) => {
       this.logger.error(`Resumed execution ${executionId} failed: ${error.message}`);
       await this.db.update(schema.workflowExecution)
@@ -211,6 +219,7 @@ export class WorkflowExecutorService {
     inputData: Record<string, any>,
     resumeOutputs?: Record<string, any>,
     resumeFromNode?: string,
+    workflowDepth: number = 0,
   ): Promise<void> {
     const startTime = Date.now();
     const { nodes, edges } = definition;
@@ -325,9 +334,17 @@ export class WorkflowExecutorService {
           }
 
           return this.dispatchNode(
-            { nodeId, nodeType: node.type || 'tool', toolId: node.toolId, inputs: nodeInputs, config: node.config },
+            {
+              nodeId,
+              nodeType: node.type || 'tool',
+              toolId: node.toolId,
+              workflowId: definition.workflowId,
+              inputs: nodeInputs,
+              config: node.config,
+            },
             agentId,
             userId,
+            workflowDepth,
           );
         }));
 
@@ -440,6 +457,7 @@ export class WorkflowExecutorService {
     context: NodeExecutionContext,
     agentId: string | undefined,
     userId?: string,
+    workflowDepth: number = 0,
   ): Promise<NodeExecutionResult> {
     const startTime = Date.now();
     const duration = () => Date.now() - startTime;
@@ -466,6 +484,9 @@ export class WorkflowExecutorService {
 
         case 'agent_processor':
           return await this.executeAgentProcessorNode(nodeId, inputs, config, agentId, duration);
+
+        case 'workflow':
+          return await this.executeWorkflowNode(context, agentId, userId, workflowDepth, duration);
 
         case 'human_approval':
           return await this.executeHumanApprovalNode(nodeId, inputs, config, duration);
@@ -610,6 +631,119 @@ export class WorkflowExecutorService {
       });
       this.logger.error(`Agent processor node ${nodeId} (agent=${targetAgentId}) failed [retryable=${err.retryable}]: ${err.message}`);
       return { nodeId, status: 'error', error: err.message, duration: duration() };
+    }
+  }
+
+  private async executeWorkflowNode(
+    context: NodeExecutionContext,
+    agentId: string | undefined,
+    userId: string | undefined,
+    workflowDepth: number,
+    duration: () => number,
+  ): Promise<NodeExecutionResult> {
+    const targetWorkflowId: string | undefined =
+      context.config?.workflowId ?? context.toolId;
+
+    if (!targetWorkflowId) {
+      return {
+        nodeId: context.nodeId,
+        status: 'error',
+        error: 'workflow node requires config.workflowId',
+        duration: duration(),
+      };
+    }
+
+    if (targetWorkflowId === context.workflowId) {
+      return {
+        nodeId: context.nodeId,
+        status: 'error',
+        error: 'workflow node cannot call its own workflow',
+        duration: duration(),
+      };
+    }
+
+    if (workflowDepth >= 2) {
+      return {
+        nodeId: context.nodeId,
+        status: 'error',
+        error: 'nested workflow depth limit exceeded',
+        duration: duration(),
+      };
+    }
+
+    try {
+      const executionId = await this.executeWorkflow({
+        workflowId: targetWorkflowId,
+        agentId,
+        inputData: context.inputs,
+        userId,
+        workflowDepth: workflowDepth + 1,
+      });
+
+      const timeoutMs = context.config?.timeoutMs ?? 60_000;
+      const startedAt = Date.now();
+
+      while (Date.now() - startedAt < timeoutMs) {
+        const execution = await this.getExecutionStatus(executionId);
+        if (execution.status === 'completed') {
+          return {
+            nodeId: context.nodeId,
+            status: 'success',
+            output: {
+              executionId,
+              workflowId: targetWorkflowId,
+              status: execution.status,
+              result: execution.outputData,
+            },
+            duration: duration(),
+          };
+        }
+
+        if (execution.status === 'failed' || execution.status === 'cancelled') {
+          return {
+            nodeId: context.nodeId,
+            status: 'error',
+            error: execution.errorMessage ?? `Workflow ${targetWorkflowId} failed`,
+            duration: duration(),
+          };
+        }
+
+        if (execution.status === 'awaiting_approval') {
+          return {
+            nodeId: context.nodeId,
+            status: 'success',
+            output: {
+              executionId,
+              workflowId: targetWorkflowId,
+              status: execution.status,
+              pausedAtNode: execution.pausedAtNode,
+              approvalToken: execution.approvalToken,
+            },
+            duration: duration(),
+          };
+        }
+
+        await new Promise((resolve) => setTimeout(resolve, 500));
+      }
+
+      return {
+        nodeId: context.nodeId,
+        status: 'success',
+        output: {
+          executionId,
+          workflowId: targetWorkflowId,
+          status: 'running',
+          message: 'Nested workflow is still running',
+        },
+        duration: duration(),
+      };
+    } catch (e: any) {
+      return {
+        nodeId: context.nodeId,
+        status: 'error',
+        error: `Workflow node failed: ${e.message}`,
+        duration: duration(),
+      };
     }
   }
 

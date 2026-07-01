@@ -24,16 +24,22 @@ import {
 import {
   extractTypedParameters,
   extractOutputParameters,
-  mapJsonSchemaType,
 } from "@/lib/workflows/type-mapping";
-import { ToolNode } from "./nodes/tool-node";
 import { InputNode } from "./nodes/input-node";
 import { OutputNode } from "./nodes/output-node";
+import { StepNode } from "./nodes/step-node";
 import { ColoredEdge } from "./edges/colored-edge";
 import { useToast } from "@/hooks/use-toast";
+import type { WorkflowNodeType } from "@/types/workflow";
 
 const nodeTypes = {
-  tool: ToolNode,
+  tool: StepNode,
+  agent_processor: StepNode,
+  workflow: StepNode,
+  condition: StepNode,
+  transform: StepNode,
+  loop: StepNode,
+  human_approval: StepNode,
   input: InputNode,
   output: OutputNode,
 };
@@ -41,6 +47,57 @@ const nodeTypes = {
 const edgeTypes = {
   colored: ColoredEdge,
 };
+
+function portsForNodeType(type: WorkflowNodeType) {
+  switch (type) {
+    case "input":
+      return { inputs: [], outputs: [{ name: "value", type: "any" as const, required: false }] };
+    case "output":
+      return { inputs: [{ name: "value", type: "any" as const, required: false }], outputs: [] };
+    case "agent_processor":
+      return {
+        inputs: [{ name: "data", type: "any" as const, required: false }],
+        outputs: [{ name: "result", type: "object" as const }],
+      };
+    case "workflow":
+      return {
+        inputs: [{ name: "input", type: "any" as const, required: false }],
+        outputs: [
+          { name: "result", type: "object" as const },
+          { name: "executionId", type: "string" as const },
+        ],
+      };
+    case "condition":
+      return {
+        inputs: [{ name: "value", type: "any" as const, required: false }],
+        outputs: [
+          { name: "true", type: "boolean" as const },
+          { name: "false", type: "boolean" as const },
+        ],
+      };
+    case "transform":
+      return {
+        inputs: [{ name: "value", type: "any" as const, required: false }],
+        outputs: [{ name: "result", type: "object" as const }],
+      };
+    case "loop":
+      return {
+        inputs: [{ name: "items", type: "array" as const, required: false }],
+        outputs: [{ name: "results", type: "array" as const }],
+      };
+    case "human_approval":
+      return {
+        inputs: [{ name: "value", type: "any" as const, required: false }],
+        outputs: [
+          { name: "approved", type: "boolean" as const },
+          { name: "approvalData", type: "object" as const },
+        ],
+      };
+    case "tool":
+    default:
+      return { inputs: [], outputs: [] };
+  }
+}
 
 export function WorkflowCanvas() {
   const { nodes, edges, setNodes, setEdges, addNode, updateNode } =
@@ -152,30 +209,36 @@ export function WorkflowCanvas() {
         let inputs: any[] = [];
         let outputs: any[] = [];
 
-        if (nodeData.type === "tool" && nodeData.schema) {
+        const nodeType = (nodeData.nodeType || nodeData.type || "tool") as WorkflowNodeType;
+
+        if (nodeType === "tool" && nodeData.schema) {
           // Extract typed parameters using the type mapping utility
           inputs = extractTypedParameters(nodeData.schema);
 
           // Extract output parameters (may include flattened object properties)
           outputs = extractOutputParameters(nodeData.schema);
-        } else if (nodeData.type === "input") {
-          outputs = [{ name: "value", type: "any", required: false }];
-        } else if (nodeData.type === "output") {
-          inputs = [{ name: "value", type: "any", required: false }];
+        } else {
+          const defaults = portsForNodeType(nodeType);
+          inputs = defaults.inputs;
+          outputs = defaults.outputs;
         }
 
         const newNode = {
-          id: `${nodeData.type}-${Date.now()}`,
-          type: nodeData.type,
+          id: `${nodeType}-${Date.now()}`,
+          type: nodeType,
           position,
           data: {
             label: nodeData.label,
             toolId: nodeData.toolId,
             toolName: nodeData.toolName,
+            agentId: nodeData.agentId,
+            workflowId: nodeData.workflowId,
+            description: nodeData.description,
             inputs,
             outputs,
-            nodeType: nodeData.type,
-            config: {},
+            nodeType,
+            config: nodeData.config || {},
+            schema: nodeData.schema,
           },
         };
 
@@ -227,6 +290,18 @@ export function WorkflowCanvas() {
                 return "#10b981";
               case "output":
                 return "#8b5cf6";
+              case "agent_processor":
+                return "#0891b2";
+              case "workflow":
+                return "#4f46e5";
+              case "condition":
+                return "#d97706";
+              case "transform":
+                return "#c026d3";
+              case "loop":
+                return "#e11d48";
+              case "human_approval":
+                return "#059669";
               case "tool":
                 return "#3b82f6";
               default:

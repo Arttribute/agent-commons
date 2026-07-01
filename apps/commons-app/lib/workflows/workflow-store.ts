@@ -5,6 +5,7 @@ import {
   ReactFlowEdge,
   WorkflowNode,
   WorkflowEdge,
+  WorkflowNodeType,
 } from "@/types/workflow";
 import { validateDAG, ValidationResult } from "./workflow-validator";
 
@@ -62,6 +63,63 @@ interface WorkflowEditorState {
 }
 
 const MAX_HISTORY = 50;
+
+function getDefaultPortsForNodeType(type: WorkflowNodeType) {
+  switch (type) {
+    case "input":
+      return {
+        inputs: [],
+        outputs: [{ name: "value", type: "any" as const, required: false }],
+      };
+    case "output":
+      return {
+        inputs: [{ name: "value", type: "any" as const, required: false }],
+        outputs: [],
+      };
+    case "agent_processor":
+      return {
+        inputs: [{ name: "data", type: "any" as const, required: false }],
+        outputs: [{ name: "result", type: "object" as const }],
+      };
+    case "workflow":
+      return {
+        inputs: [{ name: "input", type: "any" as const, required: false }],
+        outputs: [
+          { name: "result", type: "object" as const },
+          { name: "executionId", type: "string" as const },
+        ],
+      };
+    case "condition":
+      return {
+        inputs: [{ name: "value", type: "any" as const, required: false }],
+        outputs: [
+          { name: "true", type: "boolean" as const },
+          { name: "false", type: "boolean" as const },
+        ],
+      };
+    case "transform":
+      return {
+        inputs: [{ name: "value", type: "any" as const, required: false }],
+        outputs: [{ name: "result", type: "object" as const }],
+      };
+    case "loop":
+      return {
+        inputs: [{ name: "items", type: "array" as const, required: false }],
+        outputs: [{ name: "results", type: "array" as const }],
+      };
+    case "human_approval":
+      return {
+        inputs: [{ name: "value", type: "any" as const, required: false }],
+        outputs: [
+          { name: "approved", type: "boolean" as const },
+          { name: "approvalData", type: "object" as const },
+        ],
+      };
+    case "tool":
+    default:
+      return { inputs: [], outputs: [] };
+  }
+}
 
 export const useWorkflowStore = create<WorkflowEditorState>((set, get) => ({
   // Initial state
@@ -264,11 +322,17 @@ export const useWorkflowStore = create<WorkflowEditorState>((set, get) => ({
         endNodeId,
         nodes: nodes.map((node) => ({
           id: node.id,
-          type: node.type as "tool" | "agent_processor" | "input" | "output",
+          type: node.type as WorkflowNodeType,
           toolId: node.data.toolId || node.data.toolName, // Use toolId (UUID) if available, fallback to toolName for legacy nodes
           toolName: node.data.toolName,
+          agentId: node.data.agentId,
+          workflowId: node.data.workflowId,
           position: node.position,
-          config: node.data.config || {},
+          config: {
+            ...(node.data.agentId ? { agentId: node.data.agentId } : {}),
+            ...(node.data.workflowId ? { workflowId: node.data.workflowId } : {}),
+            ...(node.data.config || {}),
+          },
           label: node.data.label,
         })),
         edges: edges.map((edge) => ({
@@ -316,15 +380,20 @@ export const useWorkflowStore = create<WorkflowEditorState>((set, get) => ({
       const workflow = data.data ?? data;
       const definition = workflow.definition || { nodes: [], edges: [] };
 
-      // Fetch all tools (both static and platform tools) to restore schemas
-      const [staticRes, platformRes] = await Promise.all([
+      // Fetch catalog/static tools to restore schemas and reusable node metadata
+      const [catalogRes, staticRes, platformRes] = await Promise.all([
+        fetch("/api/tools/catalog").catch(() => null),
         fetch("/api/tools/static").catch(() => null),
         fetch("/api/tools?ownerType=platform").catch(() => null),
       ]);
+      const catalogData = catalogRes ? await catalogRes.json().catch(() => ({ items: [] })) : { items: [] };
       const staticToolsData = staticRes ? await staticRes.json().catch(() => ({ data: [] })) : { data: [] };
       const platformToolsData = platformRes ? await platformRes.json().catch(() => ({ data: [] })) : { data: [] };
 
-      const allTools = [...(staticToolsData.data || []), ...(platformToolsData.data || [])];
+      const catalogTools = (catalogData.items || [])
+        .map((item: any) => item.tool)
+        .filter(Boolean);
+      const allTools = [...catalogTools, ...(staticToolsData.data || []), ...(platformToolsData.data || [])];
       const toolMap = new Map(allTools.map((tool: any) => [tool.toolId, tool]));
 
       // Convert backend nodes to React Flow nodes
@@ -333,7 +402,8 @@ export const useWorkflowStore = create<WorkflowEditorState>((set, get) => ({
         let outputs: any[] = [];
 
         // For tool nodes, restore inputs/outputs from tool schema
-        if (node.type === "tool" && node.toolId) {
+        const nodeType = (node.type || "tool") as WorkflowNodeType;
+        if (nodeType === "tool" && node.toolId) {
           const tool = toolMap.get(node.toolId);
           if (tool && tool.schema) {
             // Re-import the type mapping utilities
@@ -341,23 +411,25 @@ export const useWorkflowStore = create<WorkflowEditorState>((set, get) => ({
             inputs = extractTypedParameters(tool.schema);
             outputs = extractOutputParameters(tool.schema);
           }
-        } else if (node.type === "input") {
-          outputs = [{ name: "value", type: "any", required: false }];
-        } else if (node.type === "output") {
-          inputs = [{ name: "value", type: "any", required: false }];
+        } else {
+          const defaults = getDefaultPortsForNodeType(nodeType);
+          inputs = defaults.inputs;
+          outputs = defaults.outputs;
         }
 
         return {
           id: node.id,
-          type: node.type,
+          type: nodeType,
           position: node.position || { x: 0, y: 0 },
           data: {
             label: node.label || node.toolName || node.type,
             toolId: node.toolId,
             toolName: node.toolName,
+            agentId: node.agentId || node.config?.agentId,
+            workflowId: node.workflowId || node.config?.workflowId,
             inputs,
             outputs,
-            nodeType: node.type,
+            nodeType,
             config: node.config,
             schema: toolMap.get(node.toolId)?.schema, // Store schema for future reference
           },
