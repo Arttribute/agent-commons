@@ -138,9 +138,9 @@ export default function EditPostPage({
   // Check if user is logged in
   if (!user) {
     return (
-      <>
+      <div className="h-screen overflow-hidden">
         <AppBar />
-        <div className="container mx-auto px-4 py-8">
+        <div className="container mx-auto px-4 py-8 h-[calc(100vh-48px)] mt-12 overflow-y-auto">
           <Card className="max-w-2xl mx-auto">
             <CardHeader>
               <CardTitle>Edit Post</CardTitle>
@@ -153,14 +153,14 @@ export default function EditPostPage({
             </CardFooter>
           </Card>
         </div>
-      </>
+      </div>
     );
   }
 
   // Show loading state
   if (isLoading) {
     return (
-      <div className="container mx-auto px-4 py-8 flex justify-center items-center min-h-[50vh]">
+      <div className="container mx-auto px-4 py-8 flex justify-center items-center h-screen">
         <div className="flex flex-col items-center gap-2">
           <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
           <p className="text-muted-foreground">Loading post...</p>
@@ -181,7 +181,7 @@ export default function EditPostPage({
   );
   if (post && post.author.id !== user) {
     return (
-      <div className="container mx-auto px-4 py-8">
+      <div className="container mx-auto px-4 py-8 h-screen overflow-y-auto">
         <Card className="max-w-2xl mx-auto">
           <CardHeader>
             <CardTitle>Permission Denied</CardTitle>
@@ -200,7 +200,7 @@ export default function EditPostPage({
   }
 
   return (
-    <div className="container mx-auto px-4 py-8">
+    <div className="container mx-auto px-4 py-8 h-screen overflow-y-auto">
       <Card className="max-w-4xl mx-auto">
         <CardHeader>
           <CardTitle>Edit Post</CardTitle>

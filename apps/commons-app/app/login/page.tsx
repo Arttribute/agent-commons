@@ -29,7 +29,7 @@ export default async function LoginPage({ searchParams }: Props) {
   }
 
   return (
-    <main className="mx-auto flex min-h-screen max-w-md flex-col justify-center px-6">
+    <main className="mx-auto flex h-screen max-w-md flex-col justify-center px-6">
       <Brand />
       <h1 className="mb-2 text-3xl font-bold">Welcome back</h1>
       <p className="mb-8 text-sm text-muted-foreground">

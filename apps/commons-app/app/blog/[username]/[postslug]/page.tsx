@@ -87,9 +87,9 @@ export default async function BlogPostPage({
     const comments: any[] = []; // no comments for fallback
 
     return (
-      <>
+      <div className="h-screen overflow-hidden">
         <AppBar />
-        <div className="container mx-auto px-4 py-8 mt-16 lg:max-w-4xl">
+        <div className="container mx-auto px-4 py-8 mt-16 lg:max-w-4xl h-[calc(100vh-64px)] overflow-y-auto">
           <div className="grid grid-cols-1  gap-8">
             <div>
               <article className="max-w-none">
@@ -189,7 +189,7 @@ export default async function BlogPostPage({
             </div>
           </div>
         </div>
-      </>
+      </div>
     );
   }
 
@@ -200,9 +200,9 @@ export default async function BlogPostPage({
   const isUpdated = post.updatedAt !== post.publishedAt;
 
   return (
-    <>
+    <div className="h-screen overflow-hidden">
       <AppBar />
-      <div className="container mx-auto px-4 py-8 mt-16 lg:max-w-4xl">
+      <div className="container mx-auto px-4 py-8 mt-16 lg:max-w-4xl h-[calc(100vh-64px)] overflow-y-auto">
         <div className="grid grid-cols-1  gap-8">
           <div>
             <article className="max-w-none">
@@ -320,6 +320,6 @@ export default async function BlogPostPage({
           <div className="space-y-6"></div>
         </div>
       </div>
-    </>
+    </div>
   );
 }

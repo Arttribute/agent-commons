@@ -320,11 +320,11 @@ export default function SettingsPage() {
   const [section, setSection] = useState<Section>("profile");
 
   return (
-    <div className="min-h-screen bg-background">
+    <div className="h-screen overflow-hidden bg-background">
       <AppBar />
       <div className="mt-12 flex">
         <DashboardSideBar username={walletAddress} />
-        <div className="flex-1 min-w-0 flex">
+        <div className="flex-1 min-w-0 overflow-y-auto flex">
           {/* Settings nav */}
           <div className="w-48 border-r border-border shrink-0 pt-6 px-3">
             <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wide px-2 mb-2">Settings</p>

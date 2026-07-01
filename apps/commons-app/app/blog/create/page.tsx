@@ -103,7 +103,7 @@ export default function CreatePostPage() {
 
   if (!user) {
     return (
-      <div className="container mx-auto px-4 py-8">
+      <div className="container mx-auto px-4 py-8 h-screen overflow-y-auto">
         <Card className="max-w-2xl mx-auto">
           <CardHeader>
             <CardTitle>Create a Post</CardTitle>
@@ -120,9 +120,9 @@ export default function CreatePostPage() {
   }
 
   return (
-    <>
+    <div className="h-screen overflow-hidden">
       <AppBar />
-      <div className="container mx-auto px-4 py-8">
+      <div className="container mx-auto px-4 py-8 h-[calc(100vh-48px)] mt-12 overflow-y-auto">
         <Card className="max-w-4xl mx-auto">
           <CardHeader>
             <CardTitle>Create a New Post</CardTitle>
@@ -247,6 +247,6 @@ export default function CreatePostPage() {
           </CardFooter>
         </Card>
       </div>
-    </>
+    </div>
   );
 }

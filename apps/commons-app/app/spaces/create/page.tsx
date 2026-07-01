@@ -14,9 +14,9 @@ export default function CreateSpacePage() {
   const router = useRouter();
 
   return (
-    <>
+    <div className="h-screen overflow-hidden">
       <AppBar />
-      <div className="flex justify-center  mt-20">
+      <div className="flex justify-center mt-20 h-[calc(100vh-80px)] overflow-y-auto">
         <div className="w-full max-w-lg">
           <CreateSpaceForm
             creatorId={humanId}
@@ -30,6 +30,6 @@ export default function CreateSpacePage() {
           />
         </div>
       </div>
-    </>
+    </div>
   );
 }

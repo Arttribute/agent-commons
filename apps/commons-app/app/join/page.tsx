@@ -10,9 +10,9 @@ export default function JoinPage() {
   const router = useRouter();
 
   return (
-    <>
+    <div className="h-screen overflow-hidden">
       <AppBar />
-      <div className="min-h-screen flex flex-col items-center justify-center px-4">
+      <div className="h-[calc(100vh-48px)] mt-12 flex flex-col items-center justify-center px-4">
         <div>
           <div className="bg-yellow-300 w-80 h-10 -mb-10 rounded-lg"></div>
           <h2 className="text-4xl font-bold mb-3">Join The Commons</h2>
@@ -67,6 +67,6 @@ export default function JoinPage() {
           </Card>
         </div>
       </div>
-    </>
+    </div>
   );
 }

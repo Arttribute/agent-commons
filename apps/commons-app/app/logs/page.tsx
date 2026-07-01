@@ -164,11 +164,11 @@ export default function LogsPage() {
   const isLoading = loadingAgents || loading;
 
   return (
-    <div className="min-h-screen bg-background">
+    <div className="h-screen overflow-hidden bg-background">
       <AppBar />
       <div className="mt-12 flex">
         <DashboardSideBar username={userAddress} />
-        <div className="flex-1 min-w-0">
+        <div className="flex-1 min-w-0 overflow-y-auto">
           {/* Header */}
           <div className="flex items-center justify-between px-6 py-4 border-b border-border/60">
             <div>

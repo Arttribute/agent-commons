@@ -52,12 +52,12 @@ export default function SpacesPage() {
   const ownedAgentCount = agentIds.length;
 
   return (
-    <div>
+    <div className="h-screen overflow-hidden">
       <AppBar />
       <div className="mt-12">
         <div className="flex bg-background">
           <DashboardSideBar username={humanId || "wallet"} />
-          <div className="w-full p-4 space-y-6">
+          <div className="w-full p-4 space-y-6 overflow-y-auto">
             <div className="flex items-center justify-between px-4 pt-4">
               <div>
                 <div className="">

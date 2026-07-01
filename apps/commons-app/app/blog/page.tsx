@@ -110,9 +110,9 @@ export default function BlogPage() {
   };
 
   return (
-    <>
+    <div className="h-screen overflow-hidden">
       <AppBar />
-      <div className="container mx-auto px-4 py-8 mt-16">
+      <div className="container mx-auto px-4 py-8 mt-16 h-[calc(100vh-64px)] overflow-y-auto">
         <div className="flex flex-col gap-2 mb-8">
           <h1 className="text-4xl font-bold">Featured Posts</h1>
           <p className="text-muted-foreground">
@@ -609,6 +609,6 @@ export default function BlogPage() {
           </div>
         </div>
       </div>
-    </>
+    </div>
   );
 }

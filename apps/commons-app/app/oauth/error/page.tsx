@@ -26,7 +26,7 @@ function OAuthErrorContent() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-900 p-4">
+    <div className="h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-900 p-4">
       <div className="max-w-md w-full bg-white dark:bg-gray-800 rounded-lg shadow-lg p-8">
         <div className="text-center">
           {/* Error Icon */}
@@ -110,7 +110,7 @@ function OAuthErrorContent() {
 
 export default function OAuthErrorPage() {
   return (
-    <Suspense fallback={<div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-900">Loading...</div>}>
+    <Suspense fallback={<div className="h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-900">Loading...</div>}>
       <OAuthErrorContent />
     </Suspense>
   );

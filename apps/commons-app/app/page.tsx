@@ -16,7 +16,7 @@ const GithubIcon = (
 );
 export default function Home() {
   return (
-    <div>
+    <div className="h-screen overflow-y-auto">
       <AppBar />
       <div className="relative flex h-[600px] w-full flex-col items-center rounded-lg bg-background">
         <div className="container max-w-6xl grid grid-cols-12 mt-12 h-full items-center z-10 gap-8">

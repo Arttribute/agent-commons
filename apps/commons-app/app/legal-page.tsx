@@ -10,7 +10,7 @@ export function LegalPage({
   current: "privacy" | "terms";
 }) {
   return (
-    <div className="min-h-screen bg-background text-foreground">
+    <div className="h-screen overflow-y-auto bg-background text-foreground">
       <AppBar />
       <main className="mx-auto max-w-4xl px-6 pb-24 pt-28 lg:px-8">
         <div className="mb-10 border-b border-border pb-8">

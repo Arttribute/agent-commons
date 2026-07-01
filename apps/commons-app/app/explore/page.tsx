@@ -65,9 +65,9 @@ export default function ExplorePage() {
   );
 
   return (
-    <div>
+    <div className="h-screen overflow-hidden">
       <AppBar />
-      <div className="min-h-screen mt-12 px-4 py-8 max-w-7xl mx-auto">
+      <div className="h-[calc(100vh-48px)] mt-12 px-4 py-8 max-w-7xl mx-auto overflow-y-auto">
         <div className="mb-8">
           <h1 className="text-2xl font-bold">Explore</h1>
           <p className="text-sm text-muted-foreground mt-1">

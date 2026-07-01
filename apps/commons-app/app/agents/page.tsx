@@ -13,7 +13,7 @@ export default function AgentsPage() {
   const { agents, loading } = useAgents(userAddress || undefined);
 
   return (
-    <div>
+    <div className="h-screen overflow-hidden">
       <AppBar />
       <div className="mt-12 h-[calc(100vh-48px)]">
         {loading ? (

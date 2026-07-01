@@ -14,7 +14,7 @@ export default function StudioLayout({
   const userAddress = normalizePrincipalId(authState.walletAddress);
 
   return (
-    <div className="min-h-screen bg-background">
+    <div className="h-screen overflow-hidden bg-background">
       <AppBar />
       <div className="mt-12 flex">
         <DashboardSideBar username={userAddress} />
