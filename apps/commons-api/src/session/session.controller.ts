@@ -38,20 +38,6 @@ export class SessionController {
     return { data: sessions };
   }
 
-  @Get(':id')
-  async getSessionWithContent(@Param('id') id: string) {
-    const session = await this.sessionService.getSessionWithContent({ id });
-    return { data: session };
-  }
-
-  @Get(':id/full')
-  async getSessionWithGoalsAndTasks(@Param('id') id: string) {
-    const session = await this.sessionService.getSessionWithGoalsAndTasks({
-      id,
-    });
-    return { data: session };
-  }
-
   @Get('user/:initiator')
   async getSessionsByInitiator(@Param('initiator') initiator: string) {
     const sessions = await this.sessionService.getSessionsByInitiator({ initiator });
@@ -68,5 +54,19 @@ export class SessionController {
       initiator,
     });
     return { data: sessions };
+  }
+
+  @Get(':id/full')
+  async getSessionWithGoalsAndTasks(@Param('id') id: string) {
+    const session = await this.sessionService.getSessionWithGoalsAndTasks({
+      id,
+    });
+    return { data: session };
+  }
+
+  @Get(':id')
+  async getSessionWithContent(@Param('id') id: string) {
+    const session = await this.sessionService.getSessionWithContent({ id });
+    return { data: session };
   }
 }

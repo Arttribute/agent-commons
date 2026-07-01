@@ -13,8 +13,10 @@ export function useUserSessions(userAddress: string) {
       const res = await fetch(
         `/api/sessions/user?initiatorId=${encodeURIComponent(userAddress)}`
       );
-      if (!res.ok) throw new Error("Failed to fetch sessions");
       const data = await res.json();
+      if (!res.ok) {
+        throw new Error(formatSessionFetchError(res.status, data));
+      }
       setSessions(data.data || []);
     } catch (err) {
       console.error("Error fetching user sessions:", err);
@@ -28,4 +30,13 @@ export function useUserSessions(userAddress: string) {
   }, [fetchSessions]);
 
   return { sessions, isLoading };
+}
+
+function formatSessionFetchError(status: number, data: any) {
+  const message =
+    data?.error?.message ||
+    data?.error ||
+    data?.message ||
+    "Failed to fetch sessions";
+  return `Failed to fetch sessions (${status}): ${message}`;
 }

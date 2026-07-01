@@ -18,11 +18,10 @@ export function useSessions(agentId: string, userAddress: string) {
         `/api/sessions/list?agentId=${agentId}&initiatorId=${userAddress}`
       );
 
-      if (!res.ok) {
-        throw new Error("Failed to fetch sessions");
-      }
-
       const data = await res.json();
+      if (!res.ok) {
+        throw new Error(formatSessionFetchError(res.status, data));
+      }
       setSessions(data.data || []);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unknown error");
@@ -46,4 +45,13 @@ export function useSessions(agentId: string, userAddress: string) {
     error,
     refetchSessions,
   };
+}
+
+function formatSessionFetchError(status: number, data: any) {
+  const message =
+    data?.error?.message ||
+    data?.error ||
+    data?.message ||
+    "Failed to fetch sessions";
+  return `Failed to fetch sessions (${status}): ${message}`;
 }
