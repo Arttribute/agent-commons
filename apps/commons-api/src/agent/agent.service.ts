@@ -1702,6 +1702,7 @@ export class AgentService implements OnModuleInit {
   async getAgentTools(agentId: string) {
     return this.db.query.agentTool.findMany({
       where: (t) => eq(t.agentId, agentId),
+      with: { tool: true },
     });
   }
   async addAgentTool(
@@ -1713,7 +1714,26 @@ export class AgentService implements OnModuleInit {
       .insert(schema.agentTool)
       .values({ agentId, toolId, usageComments })
       .returning();
-    return inserted;
+    const withTool = await this.db.query.agentTool.findFirst({
+      where: (t) => eq(t.id, inserted.id),
+      with: { tool: true },
+    });
+    return withTool ?? inserted;
+  }
+  async updateAgentTool(
+    id: string,
+    updates: { usageComments?: string; isEnabled?: boolean; config?: Record<string, any> },
+  ) {
+    const [updated] = await this.db
+      .update(schema.agentTool)
+      .set({ ...updates, updatedAt: new Date() })
+      .where(eq(schema.agentTool.id, id))
+      .returning();
+    const withTool = await this.db.query.agentTool.findFirst({
+      where: (t) => eq(t.id, updated.id),
+      with: { tool: true },
+    });
+    return withTool ?? updated;
   }
   async removeAgentTool(id: string) {
     await this.db.delete(schema.agentTool).where(eq(schema.agentTool.id, id));

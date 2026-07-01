@@ -5,6 +5,7 @@ import {
   Delete,
   Get,
   Param,
+  Patch,
   Post,
   Put,
   Query,
@@ -301,6 +302,14 @@ export class AgentController {
       body.toolId,
       body.usageComments,
     );
+    return { data: tool };
+  }
+  @Patch('tools/:id')
+  async updateAgentTool(
+    @Param('id') id: string,
+    @Body() body: { usageComments?: string; isEnabled?: boolean; config?: Record<string, any> },
+  ) {
+    const tool = await this.agent.updateAgentTool(id, body);
     return { data: tool };
   }
   @Delete('tools/:id')

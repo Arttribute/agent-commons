@@ -15,20 +15,25 @@ import {
   ChevronRight,
   Clock3,
   Copy,
+  ExternalLink,
   FileText,
   Gauge,
   ImageIcon,
+  Link2,
   Loader2,
   MessageSquare,
+  PlugZap,
   Plus,
   RefreshCw,
   Save,
   Search,
   Settings2,
+  ShieldCheck,
   Sparkles,
   TerminalSquare,
   Wallet,
   Wrench,
+  X,
   XCircle,
   Zap,
 } from "lucide-react";
@@ -55,6 +60,7 @@ import { StudioEntitySwitcher } from "@/components/studio/studio-entity-switcher
 import { TaskManagementView } from "@/components/tasks/task-management-view";
 import AgentTools from "@/components/tools/agent-tools";
 import { CostDashboard } from "@/components/usage/cost-dashboard";
+import type { ToolCatalogItem } from "@/lib/tools/catalog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -444,24 +450,123 @@ function SessionsView({
 }
 
 function ToolsView({ agentId, agentTools, setAgentTools }: { agentId: string; agentTools: any[]; setAgentTools: (tools: any[]) => void }) {
-  const [selectedToolId, setSelectedToolId] = useState<string | null>(null);
+  const router = useRouter();
+  const [catalog, setCatalog] = useState<ToolCatalogItem[]>([]);
+  const [loadingCatalog, setLoadingCatalog] = useState(false);
+  const [selectedItemId, setSelectedItemId] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState<"all" | "connected" | "not-connected">("all");
+  const [toggling, setToggling] = useState<string | null>(null);
+  const [savingConfig, setSavingConfig] = useState(false);
+  const [usageComments, setUsageComments] = useState("");
+  const [isEnabled, setIsEnabled] = useState(true);
 
-  const selectedTool = useMemo(() => {
-    if (agentTools.length === 0) return null;
-    return agentTools.find((tool) => (tool.id ?? tool.toolId ?? tool.name) === selectedToolId) ?? agentTools[0];
-  }, [agentTools, selectedToolId]);
+  useEffect(() => {
+    setLoadingCatalog(true);
+    fetch("/api/tools/catalog", { cache: "no-store" })
+      .then((r) => r.json())
+      .then((d) => {
+        // Show everything except agent-processors and workflow-invocation items
+        const items: ToolCatalogItem[] = (d.items ?? []).filter(
+          (i: ToolCatalogItem) => i.category !== "agents" && i.category !== "workflows",
+        );
+        setCatalog(items);
+      })
+      .catch(() => {})
+      .finally(() => setLoadingCatalog(false));
+  }, []);
 
-  const filteredTools = useMemo(() => {
-    if (statusFilter === "all") return agentTools;
-    return agentTools.filter((tool) => {
-      const connected = !["disabled", "disconnected", "error"].includes(String(tool.status || "").toLowerCase());
-      return statusFilter === "connected" ? connected : !connected;
+  // An item is "connected to this agent" when it has a toolId and an assignment exists
+  const getAssignment = (item: ToolCatalogItem) =>
+    agentTools.find((t) => t.toolId === item.tool?.toolId);
+
+  const isConnected = (item: ToolCatalogItem): boolean => {
+    if (item.tool?.toolId) return Boolean(getAssignment(item));
+    // OAuth/MCP: connected at platform level
+    return item.status === "connected";
+  };
+
+  const filteredCatalog = useMemo(() => {
+    return catalog.filter((item) => {
+      if (statusFilter === "connected") return isConnected(item);
+      if (statusFilter === "not-connected") return !isConnected(item);
+      return true;
     });
-  }, [agentTools, statusFilter]);
+  }, [catalog, agentTools, statusFilter]);
+
+  const selectedItem = useMemo(() => {
+    if (!selectedItemId) return filteredCatalog[0] ?? null;
+    return catalog.find((i) => i.id === selectedItemId) ?? filteredCatalog[0] ?? null;
+  }, [catalog, filteredCatalog, selectedItemId]);
+
+  // Sync local config state when selection changes
+  useEffect(() => {
+    if (!selectedItem) return;
+    const assignment = getAssignment(selectedItem);
+    setUsageComments(assignment?.usageComments ?? "");
+    setIsEnabled(assignment?.isEnabled ?? true);
+  }, [selectedItem?.id, agentTools]);
+
+  const connect = async (item: ToolCatalogItem) => {
+    if (!item.tool?.toolId) return;
+    setToggling(item.id);
+    try {
+      const res = await fetch(`/api/agents/${agentId}/tools`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ toolId: item.tool.toolId }),
+      });
+      const data = await res.json();
+      if (data?.data) setAgentTools([...agentTools, data.data]);
+    } finally {
+      setToggling(null);
+    }
+  };
+
+  const disconnect = async (item: ToolCatalogItem) => {
+    const assignment = getAssignment(item);
+    if (!assignment) return;
+    setToggling(item.id);
+    try {
+      await fetch(`/api/agents/tools/${assignment.id}`, { method: "DELETE" });
+      setAgentTools(agentTools.filter((t) => t.id !== assignment.id));
+    } finally {
+      setToggling(null);
+    }
+  };
+
+  const saveConfig = async () => {
+    if (!selectedItem) return;
+    const assignment = getAssignment(selectedItem);
+    if (!assignment) return;
+    setSavingConfig(true);
+    try {
+      const res = await fetch(`/api/agents/tools/${assignment.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ usageComments, isEnabled }),
+      });
+      const data = await res.json();
+      if (data?.data) {
+        setAgentTools(agentTools.map((t) => (t.id === assignment.id ? data.data : t)));
+      }
+    } finally {
+      setSavingConfig(false);
+    }
+  };
+
+  const isAssignable = (item: ToolCatalogItem) => Boolean(item.tool?.toolId);
+
+  const iconForCategory: Record<string, React.ElementType> = {
+    google_workspace: ShieldCheck,
+    oauth: Link2,
+    mcp_api: PlugZap,
+    system: Wrench,
+    custom: Wrench,
+  };
 
   return (
     <div className="grid h-full min-h-0 grid-cols-[340px_minmax(0,1fr)] overflow-hidden">
+      {/* ── Left panel ─────────────────────────────────────────── */}
       <aside className="flex min-h-0 flex-col overflow-hidden border-r border-border bg-muted/15">
         <div className="shrink-0 border-b border-border/70 p-4">
           <div className="flex items-center justify-between gap-2">
@@ -469,90 +574,228 @@ function ToolsView({ agentId, agentTools, setAgentTools }: { agentId: string; ag
             <AgentTools agentTools={agentTools} setAgentTools={setAgentTools} agentId={agentId} />
           </div>
           <div className="mt-3 flex gap-1">
-            {[
-              ["all", "All"],
-              ["connected", "Connected"],
-              ["not-connected", "Not connected"],
-            ].map(([value, label]) => (
+            {(["all", "connected", "not-connected"] as const).map((value) => (
               <Button
                 key={value}
                 variant={statusFilter === value ? "secondary" : "ghost"}
                 size="sm"
-                className="h-8 rounded-md"
-                onClick={() => setStatusFilter(value as typeof statusFilter)}
+                className="h-8 rounded-md capitalize"
+                onClick={() => setStatusFilter(value)}
               >
-                {label}
+                {value === "not-connected" ? "Not connected" : value.charAt(0).toUpperCase() + value.slice(1)}
               </Button>
             ))}
           </div>
         </div>
         <ScrollArea className="min-h-0 flex-1">
-          <div className="p-2">
-            {filteredTools.length === 0 ? (
-              <div className="rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground">No tools in this filter.</div>
-            ) : filteredTools.map((tool) => {
-              const id = tool.id ?? tool.toolId ?? tool.name;
-              const active = selectedTool && (selectedTool.id ?? selectedTool.toolId ?? selectedTool.name) === id;
-              return (
-                <button
-                  key={id}
-                  type="button"
-                  className={cn("mb-1 flex w-full items-center gap-3 rounded-md px-3 py-2 text-left hover:bg-muted", active && "bg-accent text-accent-foreground")}
-                  onClick={() => setSelectedToolId(id)}
-                >
-                  <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-border bg-background">
-                    <Wrench className="h-4 w-4" />
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-medium">{tool.displayName || tool.name || tool.toolId || "Tool"}</p>
-                    <p className="truncate text-xs text-muted-foreground">{tool.category || tool.status || "Configured"}</p>
-                  </div>
-                </button>
-              );
-            })}
-          </div>
+          {loadingCatalog ? (
+            <div className="flex items-center justify-center p-8">
+              <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+            </div>
+          ) : (
+            <div className="p-2">
+              {filteredCatalog.length === 0 ? (
+                <div className="rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground">
+                  No tools in this filter.
+                </div>
+              ) : (
+                filteredCatalog.map((item) => {
+                  const active = selectedItem?.id === item.id;
+                  const connected = isConnected(item);
+                  const Icon = iconForCategory[item.category] ?? Wrench;
+                  return (
+                    <button
+                      key={item.id}
+                      type="button"
+                      className={cn(
+                        "mb-1 flex w-full items-center gap-3 rounded-md px-3 py-2 text-left hover:bg-muted",
+                        active && "bg-accent text-accent-foreground",
+                      )}
+                      onClick={() => setSelectedItemId(item.id)}
+                    >
+                      <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-border bg-background">
+                        <Icon className="h-4 w-4" />
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-sm font-medium">{item.displayName}</p>
+                        <p className="truncate text-xs text-muted-foreground">{item.categoryLabel}</p>
+                      </div>
+                      {connected && (
+                        <div className="h-2 w-2 shrink-0 rounded-full bg-emerald-500" />
+                      )}
+                    </button>
+                  );
+                })
+              )}
+            </div>
+          )}
         </ScrollArea>
       </aside>
+
+      {/* ── Right panel ─────────────────────────────────────────── */}
       <div className="min-h-0 overflow-auto">
-        <SectionHeader title={selectedTool ? (selectedTool.displayName || selectedTool.name || "Tool") : "Tools"} subtitle="Connector configuration, status, and permission posture for this agent." />
-        <div className="mx-auto max-w-4xl space-y-4 p-5">
-          {!selectedTool ? (
-            <div className="rounded-lg border border-dashed p-12 text-center text-sm text-muted-foreground">Connect a tool to configure how this agent can use it.</div>
-          ) : (
-            <>
-              <div className="grid gap-3 md:grid-cols-3">
-                <Stat label="Status" value={selectedTool.status || "enabled"} />
-                <Stat label="Tool ID" value={shortId(selectedTool.toolId || selectedTool.id || selectedTool.name)} />
-                <Stat label="Permission" value={selectedTool.permission || "Needs approval"} />
+        {!selectedItem ? (
+          <>
+            <SectionHeader title="Tools" subtitle="Select a tool from the list to configure it for this agent." />
+            <div className="flex items-center justify-center p-12">
+              <div className="rounded-lg border border-dashed p-12 text-center text-sm text-muted-foreground">
+                Connect a tool to configure how this agent can use it.
               </div>
-              <Panel title="Details">
-                <div className="space-y-3">
-                  <p className="text-sm text-muted-foreground">{selectedTool.description || selectedTool.tool?.description || "No description available."}</p>
-                  <div className="rounded-lg border border-border bg-muted/30 p-3">
-                    <p className="text-xs font-medium text-muted-foreground">Configuration</p>
-                    <pre className="mt-2 max-h-56 overflow-auto whitespace-pre-wrap break-words text-xs">
-                      {JSON.stringify(selectedTool.config || selectedTool.configuration || selectedTool.tool || selectedTool, null, 2)}
-                    </pre>
+            </div>
+          </>
+        ) : (
+          <>
+            <SectionHeader
+              title={selectedItem.displayName}
+              subtitle={selectedItem.categoryLabel + " · " + selectedItem.connectionMode}
+            />
+            <div className="mx-auto max-w-4xl space-y-4 p-5">
+              {/* Status + meta */}
+              <div className="grid gap-3 md:grid-cols-3">
+                <Stat
+                  label="Status"
+                  value={isConnected(selectedItem) ? (isAssignable(selectedItem) ? "Connected to agent" : "Platform connected") : "Not connected"}
+                />
+                <Stat label="Category" value={selectedItem.categoryLabel} />
+                <Stat label="Connection type" value={selectedItem.connectionMode} />
+              </div>
+
+              {/* Description */}
+              <Panel title="About this tool">
+                <p className="text-sm leading-6 text-muted-foreground">{selectedItem.description}</p>
+                {selectedItem.tags.length > 0 && (
+                  <div className="mt-3 flex flex-wrap gap-1.5">
+                    {selectedItem.tags.map((tag) => (
+                      <Badge key={tag} variant="secondary" className="text-xs">{tag}</Badge>
+                    ))}
                   </div>
-                </div>
+                )}
+                {selectedItem.documentationUrl && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="mt-3"
+                    onClick={() => window.open(selectedItem.documentationUrl, "_blank")}
+                  >
+                    <ExternalLink className="h-3.5 w-3.5" />
+                    Documentation
+                  </Button>
+                )}
               </Panel>
-              <Panel title="Tool permissions">
-                <div className="space-y-2">
-                  {["Read-only actions", "Write/delete actions", "External side effects"].map((group, index) => (
-                    <div key={group} className="flex items-center justify-between rounded-md border border-border px-3 py-2">
+
+              {/* Assignable tools (custom / system) — per-agent config */}
+              {isAssignable(selectedItem) && isConnected(selectedItem) && (
+                <Panel title="Agent configuration">
+                  <div className="space-y-4">
+                    <div className="flex items-center justify-between gap-3">
                       <div>
-                        <p className="text-sm font-medium">{group}</p>
-                        <p className="text-xs text-muted-foreground">{index === 0 ? "Allowed with approval by default." : "Requires approval before execution."}</p>
+                        <p className="text-sm font-medium">Enabled for this agent</p>
+                        <p className="text-xs text-muted-foreground">When disabled the agent cannot invoke this tool.</p>
                       </div>
-                      <Badge variant="secondary" className="rounded-md">Needs approval</Badge>
+                      <Switch
+                        checked={isEnabled}
+                        onCheckedChange={setIsEnabled}
+                      />
                     </div>
-                  ))}
-                </div>
-              </Panel>
-            </>
-          )}
-          <AgentMcpSection agentId={agentId} />
-        </div>
+                    <div className="space-y-1.5">
+                      <Label className="text-xs">Usage instructions</Label>
+                      <Textarea
+                        placeholder="Describe when and how this agent should use this tool…"
+                        className="resize-none text-sm"
+                        rows={3}
+                        value={usageComments}
+                        onChange={(e) => setUsageComments(e.target.value)}
+                      />
+                      <p className="text-xs text-muted-foreground">These instructions are passed to the agent at runtime alongside the tool definition.</p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Button size="sm" onClick={saveConfig} disabled={savingConfig}>
+                        {savingConfig ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
+                        Save
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="text-destructive hover:text-destructive"
+                        onClick={() => disconnect(selectedItem)}
+                        disabled={toggling === selectedItem.id}
+                      >
+                        {toggling === selectedItem.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <X className="h-3.5 w-3.5" />}
+                        Disconnect
+                      </Button>
+                    </div>
+                  </div>
+                </Panel>
+              )}
+
+              {/* Assignable tools — not yet connected */}
+              {isAssignable(selectedItem) && !isConnected(selectedItem) && (
+                <Panel title="Connect to this agent">
+                  <div className="flex items-center justify-between gap-4">
+                    <p className="text-sm text-muted-foreground">
+                      Connect this tool to make it available for the agent to invoke during sessions.
+                    </p>
+                    <Button
+                      size="sm"
+                      onClick={() => connect(selectedItem)}
+                      disabled={toggling === selectedItem.id}
+                    >
+                      {toggling === selectedItem.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <PlugZap className="h-3.5 w-3.5" />}
+                      Connect
+                    </Button>
+                  </div>
+                </Panel>
+              )}
+
+              {/* OAuth / MCP tools — platform-level connection */}
+              {!isAssignable(selectedItem) && (
+                <Panel title={isConnected(selectedItem) ? "Connection status" : "Setup required"}>
+                  {isConnected(selectedItem) ? (
+                    <div className="flex items-start gap-3">
+                      <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600" />
+                      <div className="space-y-1">
+                        <p className="text-sm font-medium">Platform connected</p>
+                        <p className="text-sm text-muted-foreground">
+                          This {selectedItem.connectionMode === "oauth" ? "OAuth" : "MCP"} connection is active at the platform level and available to all agents. No per-agent setup is needed.
+                        </p>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="mt-2"
+                          onClick={() => router.push("/studio/tools")}
+                        >
+                          <Settings2 className="h-3.5 w-3.5" />
+                          Manage in Tools
+                        </Button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="flex items-start gap-3">
+                      <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-500" />
+                      <div className="space-y-1">
+                        <p className="text-sm font-medium">Not connected</p>
+                        <p className="text-sm text-muted-foreground">
+                          This {selectedItem.connectionMode === "oauth" ? "OAuth integration" : "MCP server"} must be configured at the platform level before agents can use it.
+                        </p>
+                        <Button
+                          size="sm"
+                          className="mt-2"
+                          onClick={() => router.push("/studio/tools")}
+                        >
+                          <ExternalLink className="h-3.5 w-3.5" />
+                          Set up in Tools
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+                </Panel>
+              )}
+
+              {/* MCP servers for this agent */}
+              <AgentMcpSection agentId={agentId} />
+            </div>
+          </>
+        )}
       </div>
     </div>
   );
