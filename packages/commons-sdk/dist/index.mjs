@@ -599,10 +599,10 @@ function sharedTools(ctx) {
     apiSpec: {
       method: "GET",
       baseUrl: "https://api.frankfurter.dev",
-      path: "/v1/latest",
+      path: "/v2/rates",
       queryParams: {
-        from: "USD",
-        to: "{to}"
+        base: "USD",
+        quotes: "{to}"
       },
       authType: "none"
     }
@@ -759,7 +759,7 @@ function multiAgentFieldReport(ctx) {
         { id: "country-exchange-rate", source: "country", target: "exchange-rate", mapping: { "0.currencies.0.code": "to" } },
         { id: "country-researcher", source: "country", target: "researcher", mapping: { "0": "countryData" } },
         { id: "weather-researcher", source: "weather", target: "researcher", mapping: { current: "weather" } },
-        { id: "exchange-rate-researcher", source: "exchange-rate", target: "researcher", mapping: { rates: "exchangeRates", base: "exchangeRateBase", date: "exchangeRateDate" } },
+        { id: "exchange-rate-researcher", source: "exchange-rate", target: "researcher", mapping: { "0": "exchangeRate" } },
         { id: "researcher-reviewer", source: "researcher", target: "reviewer", mapping: { result: "draftReport" } },
         { id: "reviewer-output", source: "reviewer", target: "output", mapping: { result: "finalReport" } }
       ],
