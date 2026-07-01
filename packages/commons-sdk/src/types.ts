@@ -148,6 +148,8 @@ export interface Workflow {
 }
 
 export interface WorkflowDefinition {
+  startNodeId?: string;
+  endNodeId?: string;
   nodes: WorkflowNode[];
   edges: WorkflowEdge[];
   outputMapping?: Record<string, string>;
@@ -161,6 +163,7 @@ export type WorkflowNodeType =
   | 'transform'    // field mapping via config.mapping; no tool call
   | 'loop'         // iterates config.iterations times or over config.itemsPath array
   | 'agent_processor' // runs an LLM inference step via config.agentId
+  | 'workflow'     // invokes another saved workflow
   | 'human_approval'; // pauses execution until approved/rejected
 
 export interface WorkflowNode {
@@ -261,10 +264,32 @@ export interface CreateToolParams {
   displayName?: string;
   description?: string;
   schema: any;
+  apiSpec?: {
+    baseUrl: string;
+    path: string;
+    method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE' | string;
+    headers?: Record<string, string>;
+    queryParams?: Record<string, string>;
+    bodyTemplate?: any;
+    authType?: 'none' | 'bearer' | 'api-key' | 'basic' | 'oauth2' | string;
+    authKeyName?: string;
+    oauthProviderKey?: string;
+    oauthScopes?: string[];
+    oauthTokenLocation?: 'header' | 'query' | 'body';
+    oauthTokenKey?: string;
+    oauthTokenPrefix?: string;
+  };
+  category?: string;
+  icon?: string;
+  inputSchema?: any;
+  outputSchema?: any;
   owner?: string;
   ownerType?: 'user' | 'agent';
   visibility?: 'private' | 'public' | 'platform';
   tags?: string[];
+  version?: string;
+  rateLimitPerMinute?: number;
+  rateLimitPerHour?: number;
 }
 
 // ─── Tool Key ─────────────────────────────────────────────────────────────────

@@ -1,9 +1,60 @@
 import { Command } from 'commander';
+import { readFileSync } from 'fs';
 import { loadConfig, makeClient } from '../config.js';
 import { c, sym, table, detail, section, relativeTime, spin, printError, jsonOut } from '../ui.js';
 
 export function toolsCommand(): Command {
   const cmd = new Command('tools').description('Discover and manage tools');
+
+  // ── list ────────────────────────────────────────────────────────────────────
+  cmd
+    .command('create')
+    .description('Create a tool from a JSON file')
+    .requiredOption('--file <path>', 'Path to a JSON tool definition')
+    .option('--json', 'Output as JSON')
+    .action(async (opts) => {
+      const cfg = loadConfig();
+      if (!cfg.initiator) {
+        console.error(c.error('No initiator set. Run `agc login` first.'));
+        process.exit(1);
+      }
+
+      let payload: any;
+      try {
+        payload = JSON.parse(readFileSync(opts.file, 'utf8'));
+      } catch (error: any) {
+        console.error(c.error(`Could not read tool file: ${error.message}`));
+        process.exit(1);
+      }
+
+      if (!payload.name || !payload.schema) {
+        console.error(c.error('Tool file must include at least "name" and "schema".'));
+        process.exit(1);
+      }
+
+      const spinner = spin('Creating tool…');
+      try {
+        const client = makeClient();
+        const res = await client.tools.create({
+          ...payload,
+          owner: cfg.initiator,
+          ownerType: payload.ownerType ?? 'user',
+        });
+        const tool = (res as any)?.data ?? res;
+        spinner.stop();
+        if (opts.json) return jsonOut(tool);
+        console.log(`\n${sym.ok} Tool created`);
+        detail([
+          ['Tool ID', c.id(tool.toolId)],
+          ['Name', tool.name],
+          ['Visibility', tool.visibility ?? payload.visibility ?? 'private'],
+        ]);
+      } catch (err) {
+        spinner.stop();
+        printError(err);
+        process.exit(1);
+      }
+    });
 
   // ── list ────────────────────────────────────────────────────────────────────
   cmd

@@ -815,8 +815,50 @@ ${sym.ok} Session created`);
 
 // src/commands/tools.ts
 var import_commander4 = require("commander");
+var import_fs3 = require("fs");
 function toolsCommand() {
   const cmd = new import_commander4.Command("tools").description("Discover and manage tools");
+  cmd.command("create").description("Create a tool from a JSON file").requiredOption("--file <path>", "Path to a JSON tool definition").option("--json", "Output as JSON").action(async (opts) => {
+    const cfg = loadConfig();
+    if (!cfg.initiator) {
+      console.error(c.error("No initiator set. Run `agc login` first."));
+      process.exit(1);
+    }
+    let payload;
+    try {
+      payload = JSON.parse((0, import_fs3.readFileSync)(opts.file, "utf8"));
+    } catch (error) {
+      console.error(c.error(`Could not read tool file: ${error.message}`));
+      process.exit(1);
+    }
+    if (!payload.name || !payload.schema) {
+      console.error(c.error('Tool file must include at least "name" and "schema".'));
+      process.exit(1);
+    }
+    const spinner = spin("Creating tool\u2026");
+    try {
+      const client = makeClient();
+      const res = await client.tools.create({
+        ...payload,
+        owner: cfg.initiator,
+        ownerType: payload.ownerType ?? "user"
+      });
+      const tool = res?.data ?? res;
+      spinner.stop();
+      if (opts.json) return jsonOut(tool);
+      console.log(`
+${sym.ok} Tool created`);
+      detail([
+        ["Tool ID", c.id(tool.toolId)],
+        ["Name", tool.name],
+        ["Visibility", tool.visibility ?? payload.visibility ?? "private"]
+      ]);
+    } catch (err) {
+      spinner.stop();
+      printError(err);
+      process.exit(1);
+    }
+  });
   cmd.command("list").description("List available tools").option("--owner <id>", "Filter by owner ID").option("--json", "Output as JSON").action(async (opts) => {
     const cfg = loadConfig();
     const spinner = spin("Fetching tools\u2026");
@@ -914,8 +956,37 @@ ${sym.ok} ${c.label(toolName)}`);
 
 // src/commands/workflow.ts
 var import_commander5 = require("commander");
+var import_fs4 = require("fs");
+var import_sdk2 = require("@agent-commons/sdk");
 function workflowCommand() {
   const cmd = new import_commander5.Command("workflow").description("Run and monitor workflows").alias("wf");
+  async function createTemplateWorkflow(params) {
+    const client = makeClient();
+    const template = (0, import_sdk2.buildWorkflowTemplate)(params.templateName, params.ctx);
+    const toolIds = {};
+    const createdTools = [];
+    for (const tool of template.tools) {
+      const created = await client.tools.create({
+        ...tool.payload,
+        owner: params.ctx.ownerId,
+        ownerType: "user"
+      });
+      const createdTool = created?.data ?? created;
+      toolIds[tool.key] = createdTool.toolId;
+      createdTools.push(createdTool);
+    }
+    const workflow = await client.workflows.create({
+      name: template.name,
+      description: template.description,
+      ownerId: params.ctx.ownerId,
+      ownerType: "user",
+      isPublic: params.isPublic,
+      category: template.category,
+      tags: template.tags,
+      definition: template.buildDefinition(toolIds, params.ctx)
+    });
+    return { template, workflow, createdTools };
+  }
   cmd.command("list").description("List workflows owned by the current initiator").option("--json", "Output as JSON").action(async (opts) => {
     const cfg = loadConfig();
     if (!cfg.initiator) {
@@ -939,6 +1010,166 @@ function workflowCommand() {
         })),
         ["ID", "Name", "Nodes", "Public", "Created"]
       );
+    } catch (err) {
+      spinner.stop();
+      printError(err);
+      process.exit(1);
+    }
+  });
+  cmd.command("create").description("Create a workflow from a JSON file").requiredOption("--file <path>", "Path to a workflow payload or definition JSON file").option("--name <name>", "Workflow name").option("--description <text>", "Workflow description").option("--public", "Make workflow public").option("--json", "Output as JSON").action(async (opts) => {
+    const cfg = loadConfig();
+    if (!cfg.initiator) {
+      console.error(c.error("No initiator set. Run `agc login` first."));
+      process.exit(1);
+    }
+    let fileJson;
+    try {
+      fileJson = JSON.parse((0, import_fs4.readFileSync)(opts.file, "utf8"));
+    } catch (error) {
+      console.error(c.error(`Could not read workflow file: ${error.message}`));
+      process.exit(1);
+    }
+    const definition = fileJson.definition ?? fileJson;
+    if (!Array.isArray(definition.nodes) || !Array.isArray(definition.edges)) {
+      console.error(c.error('Workflow file must include a definition with "nodes" and "edges".'));
+      process.exit(1);
+    }
+    const spinner = spin("Creating workflow\u2026");
+    try {
+      const client = makeClient();
+      const workflow = await client.workflows.create({
+        name: opts.name ?? fileJson.name ?? "CLI Workflow",
+        description: opts.description ?? fileJson.description,
+        definition,
+        ownerId: cfg.initiator,
+        ownerType: "user",
+        isPublic: opts.public ?? fileJson.isPublic,
+        category: fileJson.category,
+        tags: fileJson.tags
+      });
+      spinner.stop();
+      if (opts.json) return jsonOut(workflow);
+      console.log(`
+${sym.ok} Workflow created`);
+      detail([
+        ["Workflow ID", c.id(workflow.workflowId)],
+        ["Name", workflow.name],
+        ["Nodes", String((workflow.definition?.nodes ?? []).length)]
+      ]);
+    } catch (err) {
+      spinner.stop();
+      printError(err);
+      process.exit(1);
+    }
+  });
+  const templates = cmd.command("templates").description("Create workflows from built-in templates");
+  templates.command("list").description("List built-in workflow templates").option("--json", "Output as JSON").action((opts) => {
+    const rows = (0, import_sdk2.listWorkflowTemplates)();
+    if (opts.json) return jsonOut(rows);
+    section(`Workflow Templates (${rows.length})`);
+    table(
+      rows.map((template) => ({
+        Name: template.name,
+        Description: template.description
+      })),
+      ["Name", "Description"]
+    );
+  });
+  templates.command("create <templateName>").description("Create a workflow template and its required API tools").option("--prefix <prefix>", "Stable prefix for generated tool/workflow names").option("--agent <agentId>", "Agent ID for agent_processor nodes").option("--reviewer-agent <agentId>", "Second agent ID for multi-agent templates").option("--child-workflow <workflowId>", "Child workflow ID for workflow-invocation-smoke").option("--public", "Make workflow public").option("--run", "Run the workflow after creating it").option("--input <json>", "Run input JSON; defaults to template sample input").option("--json", "Output as JSON").action(async (templateNameRaw, opts) => {
+    const cfg = loadConfig();
+    if (!cfg.initiator) {
+      console.error(c.error("No initiator set. Run `agc login` first."));
+      process.exit(1);
+    }
+    const templateNames = (0, import_sdk2.listWorkflowTemplates)().map((item) => item.name);
+    if (!templateNames.includes(templateNameRaw)) {
+      console.error(c.error(`Unknown template "${templateNameRaw}".`));
+      console.error(c.dim(`Available: ${templateNames.join(", ")}`));
+      process.exit(1);
+    }
+    const templateName = templateNameRaw;
+    const needsAgent = templateName === "agent-research-summary" || templateName === "multi-agent-field-report";
+    const agentId = opts.agent ?? cfg.defaultAgentId;
+    if (needsAgent && !agentId) {
+      console.error(c.error("This template requires --agent <agentId> or a configured defaultAgentId."));
+      process.exit(1);
+    }
+    const prefix = opts.prefix ?? `cli_${templateName.replace(/[^a-z0-9]+/gi, "_")}_${Date.now().toString(36)}`;
+    const spinner = spin("Creating workflow template\u2026");
+    try {
+      let childWorkflowId = opts.childWorkflow;
+      let childResult;
+      if (templateName === "workflow-invocation-smoke" && !childWorkflowId) {
+        const childCtx = {
+          ownerId: cfg.initiator,
+          prefix: `${prefix}_child`
+        };
+        childResult = await createTemplateWorkflow({
+          templateName: "country-weather-brief",
+          ctx: childCtx,
+          isPublic: opts.public
+        });
+        childWorkflowId = childResult.workflow.workflowId;
+      }
+      const ctx = {
+        ownerId: cfg.initiator,
+        prefix,
+        agentId,
+        reviewerAgentId: opts.reviewerAgent,
+        childWorkflowId
+      };
+      const result = await createTemplateWorkflow({
+        templateName,
+        ctx,
+        isPublic: opts.public
+      });
+      let execution;
+      if (opts.run) {
+        let inputData = result.template.sampleInput;
+        if (opts.input) {
+          try {
+            inputData = JSON.parse(opts.input);
+          } catch {
+            throw new Error("--input must be valid JSON");
+          }
+        }
+        execution = await makeClient().workflows.execute(result.workflow.workflowId, {
+          agentId,
+          inputData,
+          userId: cfg.initiator
+        });
+      }
+      spinner.stop();
+      const output = { ...result, child: childResult, execution };
+      if (opts.json) return jsonOut(output);
+      console.log(`
+${sym.ok} Workflow template created`);
+      if (childResult) {
+        detail([
+          ["Child workflow", c.id(childResult.workflow.workflowId)],
+          ["Parent workflow", c.id(result.workflow.workflowId)],
+          ["Template", templateName]
+        ]);
+      } else {
+        detail([
+          ["Workflow ID", c.id(result.workflow.workflowId)],
+          ["Template", templateName],
+          ["Tools created", String(result.createdTools.length)]
+        ]);
+      }
+      if (execution) {
+        console.log(`
+${sym.ok} Execution started: ${c.id(execution.executionId)}`);
+        console.log(`   Status: ${statusBadge(execution.status)}`);
+        const resultData = execution.result ?? execution.outputData;
+        if (resultData !== void 0) {
+          console.log("\n" + c.label("Result"));
+          console.log("  " + JSON.stringify(resultData, null, 2).replace(/\n/g, "\n  "));
+        }
+      } else {
+        console.log(c.dim(`
+  Run it with: agc workflow run ${result.workflow.workflowId} --input '${JSON.stringify(result.template.sampleInput)}'`));
+      }
     } catch (err) {
       spinner.stop();
       printError(err);
@@ -1317,7 +1548,7 @@ var import_commander7 = require("commander");
 var readline3 = __toESM(require("readline"));
 
 // src/local-tools.ts
-var import_fs3 = require("fs");
+var import_fs5 = require("fs");
 var import_path3 = require("path");
 var import_child_process2 = require("child_process");
 var readline2 = __toESM(require("readline"));
@@ -1335,7 +1566,7 @@ function buildDirSnapshot(dir, maxDepth = 2) {
     if (lines.length >= 300) return;
     let entries;
     try {
-      entries = (0, import_fs3.readdirSync)(d, { withFileTypes: true });
+      entries = (0, import_fs5.readdirSync)(d, { withFileTypes: true });
     } catch {
       return;
     }
@@ -1365,11 +1596,11 @@ function readFileForContext(rootDir, filePath) {
     for (const pat of [/\/\.ssh\//, /\/\.aws\//, /\/\.env$/, /\/\.env\./, /id_rsa/, /id_ed25519/]) {
       if (pat.test(abs)) return `[error: sensitive path blocked]`;
     }
-    if (!(0, import_fs3.existsSync)(abs)) return `[error: file not found: ${filePath}]`;
-    const stat = (0, import_fs3.statSync)(abs);
+    if (!(0, import_fs5.existsSync)(abs)) return `[error: file not found: ${filePath}]`;
+    const stat = (0, import_fs5.statSync)(abs);
     if (stat.isDirectory()) return `[error: "${filePath}" is a directory \u2014 use list_directory]`;
     if (stat.size > 1e5) return `[truncated \u2014 file too large (${Math.round(stat.size / 1024)} KB). Use cli_read_file for full content]`;
-    return (0, import_fs3.readFileSync)(abs, "utf8");
+    return (0, import_fs5.readFileSync)(abs, "utf8");
   } catch (err) {
     return `[error reading file: ${err?.message}]`;
   }
@@ -1481,11 +1712,11 @@ var AGC_HOOK_MARKER = "# agc-session:";
 var HOOK_BACKUP_SUFFIX = ".agc-backup";
 function findGitDir(rootDir) {
   const gitPath = (0, import_path3.join)(rootDir, ".git");
-  if (!(0, import_fs3.existsSync)(gitPath)) return null;
-  const s = (0, import_fs3.statSync)(gitPath);
+  if (!(0, import_fs5.existsSync)(gitPath)) return null;
+  const s = (0, import_fs5.statSync)(gitPath);
   if (s.isDirectory()) return gitPath;
   if (s.isFile()) {
-    const content = (0, import_fs3.readFileSync)(gitPath, "utf8");
+    const content = (0, import_fs5.readFileSync)(gitPath, "utf8");
     const match = content.match(/^gitdir:\s*(.+)$/m);
     if (match) return match[1].trim();
   }
@@ -1495,17 +1726,17 @@ function installGitHook(rootDir, sessionId, agentId, agentName) {
   const gitDir = findGitDir(rootDir);
   if (!gitDir) return;
   const hooksDir = (0, import_path3.join)(gitDir, "hooks");
-  (0, import_fs3.mkdirSync)(hooksDir, { recursive: true });
+  (0, import_fs5.mkdirSync)(hooksDir, { recursive: true });
   const hookPath = (0, import_path3.join)(hooksDir, "prepare-commit-msg");
-  if ((0, import_fs3.existsSync)(hookPath)) {
-    const existing = (0, import_fs3.readFileSync)(hookPath, "utf8");
+  if ((0, import_fs5.existsSync)(hookPath)) {
+    const existing = (0, import_fs5.readFileSync)(hookPath, "utf8");
     if (!existing.includes(AGC_HOOK_MARKER)) {
-      (0, import_fs3.writeFileSync)(hookPath + HOOK_BACKUP_SUFFIX, existing, { mode: 493 });
+      (0, import_fs5.writeFileSync)(hookPath + HOOK_BACKUP_SUFFIX, existing, { mode: 493 });
     }
   }
   const identity = agentName ? `${agentName} (agc)` : agentId ? `agc/${agentId}` : "agc agent";
   const trailer = `Co-Authored-By: ${identity} <agc-agent@users.noreply.github.com>`;
-  const chainLine = (0, import_fs3.existsSync)(hookPath + HOOK_BACKUP_SUFFIX) ? `
+  const chainLine = (0, import_fs5.existsSync)(hookPath + HOOK_BACKUP_SUFFIX) ? `
 # chain pre-existing hook
 "$(dirname "$0")/prepare-commit-msg${HOOK_BACKUP_SUFFIX}" "$@" 2>/dev/null || true
 ` : "";
@@ -1519,21 +1750,21 @@ TRAILER="${trailer}"
 grep -qF "$TRAILER" "$COMMIT_MSG_FILE" 2>/dev/null && exit 0
 printf '\\n%s\\n' "$TRAILER" >> "$COMMIT_MSG_FILE"
 `;
-  (0, import_fs3.writeFileSync)(hookPath, hook, { mode: 493 });
+  (0, import_fs5.writeFileSync)(hookPath, hook, { mode: 493 });
 }
 function removeGitHook(rootDir) {
   const gitDir = findGitDir(rootDir);
   if (!gitDir) return;
   const hookPath = (0, import_path3.join)(gitDir, "hooks", "prepare-commit-msg");
-  if (!(0, import_fs3.existsSync)(hookPath)) return;
-  const content = (0, import_fs3.readFileSync)(hookPath, "utf8");
+  if (!(0, import_fs5.existsSync)(hookPath)) return;
+  const content = (0, import_fs5.readFileSync)(hookPath, "utf8");
   if (!content.includes(AGC_HOOK_MARKER)) return;
   const backupPath = hookPath + HOOK_BACKUP_SUFFIX;
-  if ((0, import_fs3.existsSync)(backupPath)) {
-    (0, import_fs3.writeFileSync)(hookPath, (0, import_fs3.readFileSync)(backupPath, "utf8"), { mode: 493 });
-    (0, import_fs3.unlinkSync)(backupPath);
+  if ((0, import_fs5.existsSync)(backupPath)) {
+    (0, import_fs5.writeFileSync)(hookPath, (0, import_fs5.readFileSync)(backupPath, "utf8"), { mode: 493 });
+    (0, import_fs5.unlinkSync)(backupPath);
   } else {
-    (0, import_fs3.unlinkSync)(hookPath);
+    (0, import_fs5.unlinkSync)(hookPath);
   }
 }
 function safePath(root, userPath) {
@@ -1636,7 +1867,7 @@ function extractViaCommand(cmd, cmdArgs) {
 }
 async function extractPdfText(abs) {
   try {
-    const buffer = (0, import_fs3.readFileSync)(abs);
+    const buffer = (0, import_fs5.readFileSync)(abs);
     const data = await pdfParse(buffer);
     const text2 = data.text?.trim();
     if (text2) {
@@ -1664,8 +1895,8 @@ async function toolReadFile(args, cfg) {
   if (!userPath) throw new Error('read_file requires a "path" argument');
   const abs = safePath(cfg.rootDir, userPath);
   assertNotSensitive(abs);
-  if (!(0, import_fs3.existsSync)(abs)) throw new Error(`File not found: ${userPath}`);
-  const stat = (0, import_fs3.statSync)(abs);
+  if (!(0, import_fs5.existsSync)(abs)) throw new Error(`File not found: ${userPath}`);
+  const stat = (0, import_fs5.statSync)(abs);
   if (stat.isDirectory()) throw new Error(`"${userPath}" is a directory, not a file`);
   const ext = (0, import_path3.extname)(abs).toLowerCase();
   if (PDF_EXTS.has(ext)) {
@@ -1680,7 +1911,7 @@ async function toolReadFile(args, cfg) {
     throw new Error(`Cannot read binary file "${userPath}" (${ext} format). Only text, PDF, and Office documents are supported.`);
   }
   if (stat.size > 5e5) throw new Error(`File too large to read (${Math.round(stat.size / 1024)} KB). Max 500 KB.`);
-  return (0, import_fs3.readFileSync)(abs, "utf8");
+  return (0, import_fs5.readFileSync)(abs, "utf8");
 }
 async function toolWriteFile(args, cfg) {
   const { path: userPath, content } = args;
@@ -1694,16 +1925,16 @@ async function toolWriteFile(args, cfg) {
     "write_file"
   );
   if (!ok) return "User denied write operation.";
-  (0, import_fs3.mkdirSync)((0, import_path3.dirname)(abs), { recursive: true });
-  (0, import_fs3.writeFileSync)(abs, content, "utf8");
+  (0, import_fs5.mkdirSync)((0, import_path3.dirname)(abs), { recursive: true });
+  (0, import_fs5.writeFileSync)(abs, content, "utf8");
   return `Written ${String(content).length} bytes to ${userPath}`;
 }
 async function toolListDirectory(args, cfg) {
   const userPath = args.path ?? ".";
   const abs = safePath(cfg.rootDir, userPath);
   assertNotSensitive(abs);
-  if (!(0, import_fs3.existsSync)(abs)) throw new Error(`Directory not found: ${userPath}`);
-  const entries = (0, import_fs3.readdirSync)(abs, { withFileTypes: true });
+  if (!(0, import_fs5.existsSync)(abs)) throw new Error(`Directory not found: ${userPath}`);
+  const entries = (0, import_fs5.readdirSync)(abs, { withFileTypes: true });
   const lines = entries.map((e) => {
     const type = e.isDirectory() ? "d" : e.isSymbolicLink() ? "l" : "f";
     return `[${type}] ${e.name}`;
@@ -1723,7 +1954,7 @@ async function toolSearchFiles(args, cfg) {
   function walk(dir, depth = 0) {
     if (results.length >= 50 || depth > 10) return;
     try {
-      for (const entry of (0, import_fs3.readdirSync)(dir, { withFileTypes: true })) {
+      for (const entry of (0, import_fs5.readdirSync)(dir, { withFileTypes: true })) {
         if (entry.name.startsWith(".") && depth > 0) continue;
         const full = (0, import_path3.join)(dir, entry.name);
         const rel = (0, import_path3.relative)(cfg.rootDir, full);
@@ -2126,18 +2357,18 @@ ${sym.fail} ${c.error(event.message ?? "Error")}`);
 // src/commands/chat.ts
 var import_commander8 = require("commander");
 var readline4 = __toESM(require("readline"));
-var import_fs4 = require("fs");
+var import_fs6 = require("fs");
 var import_path4 = require("path");
 var import_os3 = require("os");
 var SESSIONS_DIR = (0, import_path4.join)((0, import_os3.homedir)(), ".agc", "sessions");
 function ensureSessionsDir() {
-  if (!(0, import_fs4.existsSync)(SESSIONS_DIR)) (0, import_fs4.mkdirSync)(SESSIONS_DIR, { recursive: true });
+  if (!(0, import_fs6.existsSync)(SESSIONS_DIR)) (0, import_fs6.mkdirSync)(SESSIONS_DIR, { recursive: true });
 }
 function appendSessionLog(sessionId, record) {
   try {
     ensureSessionsDir();
     const file = (0, import_path4.join)(SESSIONS_DIR, `${sessionId}.jsonl`);
-    (0, import_fs4.appendFileSync)(file, JSON.stringify(record) + "\n", { mode: 384 });
+    (0, import_fs6.appendFileSync)(file, JSON.stringify(record) + "\n", { mode: 384 });
   } catch {
   }
 }

@@ -1,4 +1,5 @@
 export { CommonsClient, CommonsError } from './client';
+export { buildWorkflowTemplate, listWorkflowTemplates } from './workflow-templates';
 export type {
   Agent, CreateAgentParams,
   Session,
@@ -27,3 +28,9 @@ export type {
   ApiKey, CreatedApiKey, CreateApiKeyParams, ApiKeyPrincipalType,
   CommonsClientConfig,
 } from './types';
+export type {
+  WorkflowTemplateBuild,
+  WorkflowTemplateContext,
+  WorkflowTemplateName,
+  WorkflowTemplateTool,
+} from './workflow-templates';

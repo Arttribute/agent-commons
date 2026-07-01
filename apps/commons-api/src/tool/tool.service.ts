@@ -21,12 +21,21 @@ export class ToolService {
   async createTool(params: {
     name: string;
     schema: ChatCompletionTool; // The JSON function spec from OpenAI
+    displayName?: string;
+    description?: string;
+    apiSpec?: InferSelectModel<typeof schema.tool>['apiSpec'];
+    category?: string;
+    icon?: string;
+    inputSchema?: InferSelectModel<typeof schema.tool>['inputSchema'];
+    outputSchema?: InferSelectModel<typeof schema.tool>['outputSchema'];
     owner?: string;
     ownerType?: 'user' | 'agent' | 'platform';
     visibility?: 'public' | 'private' | 'platform';
     tags?: string[];
     rating?: number;
     version?: string;
+    rateLimitPerMinute?: number;
+    rateLimitPerHour?: number;
   }) {
     // Validate that name doesn't exist already
     const existing = await this.db.query.tool.findFirst({
@@ -40,13 +49,23 @@ export class ToolService {
       .insert(schema.tool)
       .values({
         name: params.name,
+        displayName: params.displayName,
+        description:
+          params.description || params.schema.function?.description || '',
         schema: params.schema,
+        apiSpec: params.apiSpec,
+        inputSchema: params.inputSchema,
+        outputSchema: params.outputSchema,
         owner: params.owner,
         ownerType: params.ownerType,
         visibility: params.visibility || 'private',
+        category: params.category,
         tags: params.tags,
+        icon: params.icon,
         rating: params.rating,
         version: params.version,
+        rateLimitPerMinute: params.rateLimitPerMinute,
+        rateLimitPerHour: params.rateLimitPerHour,
       })
       .returning();
 
@@ -129,19 +148,42 @@ export class ToolService {
   async updateToolByName(params: {
     name: string;
     schema?: ChatCompletionTool;
+    displayName?: string;
+    description?: string;
+    apiSpec?: InferSelectModel<typeof schema.tool>['apiSpec'];
+    category?: string;
+    icon?: string;
+    inputSchema?: InferSelectModel<typeof schema.tool>['inputSchema'];
+    outputSchema?: InferSelectModel<typeof schema.tool>['outputSchema'];
     visibility?: 'public' | 'private' | 'platform';
     tags?: string[];
     rating?: number;
     version?: string;
+    rateLimitPerMinute?: number;
+    rateLimitPerHour?: number;
   }) {
     const [updated] = await this.db
       .update(schema.tool)
       .set({
         ...(params.schema && { schema: params.schema }),
+        ...(params.displayName !== undefined && { displayName: params.displayName }),
+        ...(params.description !== undefined && { description: params.description }),
+        ...(params.apiSpec !== undefined && { apiSpec: params.apiSpec }),
+        ...(params.category !== undefined && { category: params.category }),
+        ...(params.icon !== undefined && { icon: params.icon }),
+        ...(params.inputSchema !== undefined && { inputSchema: params.inputSchema }),
+        ...(params.outputSchema !== undefined && { outputSchema: params.outputSchema }),
         ...(params.visibility && { visibility: params.visibility }),
         ...(params.tags && { tags: params.tags }),
         ...(params.rating && { rating: params.rating }),
         ...(params.version && { version: params.version }),
+        ...(params.rateLimitPerMinute !== undefined && {
+          rateLimitPerMinute: params.rateLimitPerMinute,
+        }),
+        ...(params.rateLimitPerHour !== undefined && {
+          rateLimitPerHour: params.rateLimitPerHour,
+        }),
+        updatedAt: new Date(),
       })
       .where(eq(schema.tool.name, params.name))
       .returning();

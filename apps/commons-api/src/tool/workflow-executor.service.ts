@@ -906,12 +906,11 @@ export class WorkflowExecutorService {
     parsedArgs: Record<string, any>,
   ): Promise<any> {
     const { method, baseUrl, path, headers, queryParams, bodyTemplate } = apiSpec;
-    const url = new URL(`${baseUrl}${path}`);
+    const url = new URL(`${baseUrl}${this.replaceTemplate(path, parsedArgs)}`);
     if (queryParams) {
       for (const [k, v] of Object.entries(queryParams)) {
-        const m = v.match(/^\{(.+)\}$/);
-        if (m) { if (parsedArgs[m[1]] !== undefined) url.searchParams.set(k, parsedArgs[m[1]].toString()); }
-        else url.searchParams.set(k, v);
+        const value = this.replaceTemplate(v, parsedArgs);
+        if (value !== '') url.searchParams.set(k, value);
       }
     }
     let requestBody: any;
@@ -926,6 +925,15 @@ export class WorkflowExecutorService {
     });
     if (!response.ok) throw new Error(`Dynamic API error: ${response.status} ${response.statusText}`);
     return await response.json();
+  }
+
+  private replaceTemplate(template: string, args: Record<string, any>): string {
+    return template.replace(/\{([^}]+)\}/g, (_match, key) => {
+      const value = args[key];
+      return value === undefined || value === null
+        ? ''
+        : encodeURIComponent(String(value));
+    });
   }
 
   private buildBodyFromTemplate(template: any, args: Record<string, any>): any {

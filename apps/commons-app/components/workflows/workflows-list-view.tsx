@@ -1,10 +1,10 @@
 "use client";
 
-import { Workflow } from "@/types/workflow";
 import { WorkflowCard } from "./workflow-card";
 import { Loader2, Workflow as WorkflowIcon } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useWorkflows } from "@/hooks/use-workflows";
+import { WorkflowTemplatesPanel } from "./workflow-templates-panel";
 
 
 interface WorkflowsListViewProps {
@@ -51,32 +51,41 @@ export function WorkflowsListView({ userAddress }: WorkflowsListViewProps) {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-32">
-        <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
-      </div>
+      <>
+        <WorkflowTemplatesPanel />
+        <div className="flex items-center justify-center h-32">
+          <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+        </div>
+      </>
     );
   }
 
   if (workflows.length === 0) {
     return (
-      <div className="flex flex-col items-center justify-center py-16 text-center">
-        <WorkflowIcon className="h-10 w-10 text-muted-foreground/30 mb-3" />
-        <p className="text-sm font-medium text-muted-foreground">No workflows yet</p>
-        <p className="text-xs text-muted-foreground/60 mt-1">Create your first workflow to get started</p>
-      </div>
+      <>
+        <WorkflowTemplatesPanel onCreated={refresh} />
+        <div className="flex flex-col items-center justify-center py-16 text-center">
+          <WorkflowIcon className="h-10 w-10 text-muted-foreground/30 mb-3" />
+          <p className="text-sm font-medium text-muted-foreground">No workflows yet</p>
+          <p className="text-xs text-muted-foreground/60 mt-1">Create a workflow or start from a template</p>
+        </div>
+      </>
     );
   }
 
   return (
-    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-      {workflows.map((workflow: any) => (
-        <WorkflowCard
-          key={workflow.workflowId}
-          workflow={workflow}
-          onDelete={handleDelete}
-          onDuplicate={handleDuplicate}
-        />
-      ))}
-    </div>
+    <>
+      <WorkflowTemplatesPanel onCreated={refresh} />
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        {workflows.map((workflow: any) => (
+          <WorkflowCard
+            key={workflow.workflowId}
+            workflow={workflow}
+            onDelete={handleDelete}
+            onDuplicate={handleDuplicate}
+          />
+        ))}
+      </div>
+    </>
   );
 }

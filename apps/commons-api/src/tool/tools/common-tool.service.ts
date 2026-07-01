@@ -20,6 +20,8 @@ import { OpenAIService } from '~/modules/openai/openai.service';
 import { PinataService } from '~/pinata/pinata.service';
 import { ToolSchema } from '~/tool/dto/tool.dto';
 import { SpaceTtsService } from '~/space/space-tts.service';
+import { ModuleRef } from '@nestjs/core';
+import { WorkflowExecutorService } from '~/tool/workflow-executor.service';
 
 const graphqlRequest = import('graphql-request');
 
@@ -40,6 +42,27 @@ export interface CommonTool {
   recomputeGoalProgress(props: {
     goalId: string;
   }): Promise<{ success: boolean }>;
+
+  /**
+   * Execute a saved workflow as an agent-callable platform tool.
+   */
+  runWorkflow(props: {
+    workflowId: string;
+    inputData?: Record<string, any>;
+    agentId?: string;
+    sessionId?: string;
+    taskId?: string;
+    userId?: string;
+    waitForCompletion?: boolean;
+    timeoutMs?: number;
+  }): Promise<{
+    executionId: string;
+    workflowId: string;
+    status: string;
+    outputData?: any;
+    nodeResults?: Record<string, any>;
+    errorMessage?: string;
+  }>;
 
   /**
    * Search the live web using the platform search provider.
@@ -391,6 +414,7 @@ export class CommonToolService implements CommonTool {
     private spaceTts: SpaceTtsService,
     private skillService: SkillService,
     private modelProviderFactory: ModelProviderFactory,
+    private moduleRef: ModuleRef,
   ) {}
 
   async createGoal(props: CreateGoalDto) {
@@ -412,6 +436,71 @@ export class CommonToolService implements CommonTool {
   async recomputeGoalProgress(props: { goalId: string }) {
     await this.goals.recomputeProgress(props.goalId);
     return { success: true };
+  }
+
+  async runWorkflow(props: {
+    workflowId: string;
+    inputData?: Record<string, any>;
+    agentId?: string;
+    sessionId?: string;
+    taskId?: string;
+    userId?: string;
+    waitForCompletion?: boolean;
+    timeoutMs?: number;
+  }) {
+    if (!props.workflowId?.trim()) {
+      throw new BadRequestException('runWorkflow requires workflowId');
+    }
+
+    const workflowExecutor = this.moduleRef.get(WorkflowExecutorService, {
+      strict: false,
+    });
+
+    const executionId = await workflowExecutor.executeWorkflow({
+      workflowId: props.workflowId,
+      agentId: props.agentId,
+      sessionId: props.sessionId,
+      taskId: props.taskId,
+      inputData: props.inputData ?? {},
+      userId: props.userId,
+      workflowDepth: 1,
+    });
+
+    if (!props.waitForCompletion) {
+      return {
+        executionId,
+        workflowId: props.workflowId,
+        status: 'running',
+      };
+    }
+
+    const startedAt = Date.now();
+    const timeoutMs = Math.max(1000, Math.min(props.timeoutMs ?? 60_000, 300_000));
+    while (Date.now() - startedAt < timeoutMs) {
+      const execution = await workflowExecutor.getExecutionStatus(executionId);
+      if (
+        execution.status === 'completed' ||
+        execution.status === 'failed' ||
+        execution.status === 'cancelled' ||
+        execution.status === 'awaiting_approval'
+      ) {
+        return {
+          executionId,
+          workflowId: props.workflowId,
+          status: execution.status,
+          outputData: execution.outputData,
+          nodeResults: execution.nodeResults as Record<string, any> | undefined,
+          errorMessage: execution.errorMessage ?? undefined,
+        };
+      }
+      await new Promise((resolve) => setTimeout(resolve, 500));
+    }
+
+    return {
+      executionId,
+      workflowId: props.workflowId,
+      status: 'running',
+    };
   }
 
   async webSearch(props: {

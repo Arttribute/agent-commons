@@ -109,11 +109,13 @@ interface Workflow {
     createdAt: string;
 }
 interface WorkflowDefinition {
+    startNodeId?: string;
+    endNodeId?: string;
     nodes: WorkflowNode[];
     edges: WorkflowEdge[];
     outputMapping?: Record<string, string>;
 }
-type WorkflowNodeType = 'tool' | 'input' | 'output' | 'condition' | 'transform' | 'loop' | 'agent_processor' | 'human_approval';
+type WorkflowNodeType = 'tool' | 'input' | 'output' | 'condition' | 'transform' | 'loop' | 'agent_processor' | 'workflow' | 'human_approval';
 interface WorkflowNode {
     id: string;
     type: WorkflowNodeType | string;
@@ -205,10 +207,32 @@ interface CreateToolParams {
     displayName?: string;
     description?: string;
     schema: any;
+    apiSpec?: {
+        baseUrl: string;
+        path: string;
+        method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE' | string;
+        headers?: Record<string, string>;
+        queryParams?: Record<string, string>;
+        bodyTemplate?: any;
+        authType?: 'none' | 'bearer' | 'api-key' | 'basic' | 'oauth2' | string;
+        authKeyName?: string;
+        oauthProviderKey?: string;
+        oauthScopes?: string[];
+        oauthTokenLocation?: 'header' | 'query' | 'body';
+        oauthTokenKey?: string;
+        oauthTokenPrefix?: string;
+    };
+    category?: string;
+    icon?: string;
+    inputSchema?: any;
+    outputSchema?: any;
     owner?: string;
     ownerType?: 'user' | 'agent';
     visibility?: 'private' | 'public' | 'platform';
     tags?: string[];
+    version?: string;
+    rateLimitPerMinute?: number;
+    rateLimitPerHour?: number;
 }
 interface ToolKey {
     keyId: string;
@@ -1126,4 +1150,40 @@ declare class CommonsError extends Error {
     constructor(message: string, status: number, data?: unknown | undefined);
 }
 
-export { type A2AArtifact, type A2ADataPart, type A2AFilePart, type A2AMessage, type A2AMessagePart, type A2ASendTaskParams, type A2ASkill, type A2ATask, type A2ATaskState, type A2ATextPart, type Agent, type AgentCard, type AgentMemory, type AgentWallet, type ApiKey, type ApiKeyPrincipalType, type ChatMessage, CommonsClient, type CommonsClientConfig, CommonsError, type CreateAgentParams, type CreateApiKeyParams, type CreateMemoryParams, type CreateSkillParams, type CreateTaskParams, type CreateToolKeyParams, type CreateToolParams, type CreateWalletParams, type CreatedApiKey, type McpConnectionType, type McpPrompt, type McpResource, type McpServer, type MemorySourceType, type MemoryStats, type MemoryType, type ModelConfig, type ModelProvider, type RunParams, type Session, type Skill, type SkillIndex, type StreamEvent, type StreamEventType, type Task, type Tool, type ToolKey, type ToolPermission, type UpdateMemoryParams, type UsageAggregation, type UsageEvent, type WalletBalance, type WalletType, type Workflow, type WorkflowDefinition, type WorkflowEdge, type WorkflowExecution, type WorkflowNode, type WorkflowNodeType };
+type WorkflowTemplateName = 'country-weather-brief' | 'agent-research-summary' | 'multi-agent-field-report' | 'workflow-invocation-smoke';
+interface WorkflowTemplateContext {
+    ownerId: string;
+    prefix: string;
+    agentId?: string;
+    reviewerAgentId?: string;
+    childWorkflowId?: string;
+}
+interface WorkflowTemplateTool {
+    key: string;
+    payload: CreateToolParams;
+}
+interface WorkflowTemplateBuild {
+    name: string;
+    description: string;
+    tags: string[];
+    category: string;
+    tools: WorkflowTemplateTool[];
+    buildDefinition: (toolIds: Record<string, string>, ctx: WorkflowTemplateContext) => WorkflowDefinition;
+    sampleInput: Record<string, any>;
+}
+declare function listWorkflowTemplates(): readonly [{
+    readonly name: "country-weather-brief";
+    readonly description: "Tool-only workflow using REST Countries and Open-Meteo.";
+}, {
+    readonly name: "agent-research-summary";
+    readonly description: "Multi-tool workflow with an agent_processor summarization step.";
+}, {
+    readonly name: "multi-agent-field-report";
+    readonly description: "Multi-tool workflow with two agent_processor nodes.";
+}, {
+    readonly name: "workflow-invocation-smoke";
+    readonly description: "Parent workflow that invokes another workflow as a workflow node.";
+}];
+declare function buildWorkflowTemplate(templateName: WorkflowTemplateName, ctx: WorkflowTemplateContext): WorkflowTemplateBuild;
+
+export { type A2AArtifact, type A2ADataPart, type A2AFilePart, type A2AMessage, type A2AMessagePart, type A2ASendTaskParams, type A2ASkill, type A2ATask, type A2ATaskState, type A2ATextPart, type Agent, type AgentCard, type AgentMemory, type AgentWallet, type ApiKey, type ApiKeyPrincipalType, type ChatMessage, CommonsClient, type CommonsClientConfig, CommonsError, type CreateAgentParams, type CreateApiKeyParams, type CreateMemoryParams, type CreateSkillParams, type CreateTaskParams, type CreateToolKeyParams, type CreateToolParams, type CreateWalletParams, type CreatedApiKey, type McpConnectionType, type McpPrompt, type McpResource, type McpServer, type MemorySourceType, type MemoryStats, type MemoryType, type ModelConfig, type ModelProvider, type RunParams, type Session, type Skill, type SkillIndex, type StreamEvent, type StreamEventType, type Task, type Tool, type ToolKey, type ToolPermission, type UpdateMemoryParams, type UsageAggregation, type UsageEvent, type WalletBalance, type WalletType, type Workflow, type WorkflowDefinition, type WorkflowEdge, type WorkflowExecution, type WorkflowNode, type WorkflowNodeType, type WorkflowTemplateBuild, type WorkflowTemplateContext, type WorkflowTemplateName, type WorkflowTemplateTool, buildWorkflowTemplate, listWorkflowTemplates };

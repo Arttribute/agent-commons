@@ -29,12 +29,21 @@ export class ToolController {
     body: {
       name: string;
       schema: ChatCompletionTool;
+      displayName?: string;
+      description?: string;
+      apiSpec?: any;
+      category?: string;
+      icon?: string;
+      inputSchema?: any;
+      outputSchema?: any;
       owner?: string;
       ownerType?: 'user' | 'agent' | 'platform';
       visibility?: 'public' | 'private' | 'platform';
       tags?: string[];
       rating?: number;
       version?: string;
+      rateLimitPerMinute?: number;
+      rateLimitPerHour?: number;
     },
     @Req() req: Request,
   ) {
@@ -103,10 +112,19 @@ export class ToolController {
     @Body()
     body: {
       schema?: ChatCompletionTool;
+      displayName?: string;
+      description?: string;
+      apiSpec?: any;
+      category?: string;
+      icon?: string;
+      inputSchema?: any;
+      outputSchema?: any;
       visibility?: 'public' | 'private' | 'platform';
       tags?: string[];
       rating?: number;
       version?: string;
+      rateLimitPerMinute?: number;
+      rateLimitPerHour?: number;
     },
   ) {
     const updated = await this.toolService.updateToolByName({
