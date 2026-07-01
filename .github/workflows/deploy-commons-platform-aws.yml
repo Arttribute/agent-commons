@@ -59,6 +59,7 @@ jobs:
           build_id=$(aws codebuild start-build \
             --project-name commons-platform-production \
             --source-version "${{ steps.source.outputs.version_id }}" \
+            --environment-variables-override name=DEPLOY_IDENTITY,value=true,type=PLAINTEXT \
             --query 'build.id' --output text)
           echo "id=$build_id" >> "$GITHUB_OUTPUT"
 

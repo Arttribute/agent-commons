@@ -3,7 +3,7 @@ import { normalizePrincipalId } from "@/lib/principal-id";
 
 const serviceTokenCache = new Map<string, { value: string; expiresAt: number }>();
 const SERVICE_TOKEN_SCOPE =
-  "agents:read agents:write agents:run activity:read usage:read oauth:read oauth:write compute:read compute:write";
+  "agents:create agents:read agents:write agents:run activity:read usage:read compute:read compute:write";
 
 type BackendAuthHeaderOptions = {
   allowServiceKey?: boolean;
@@ -88,12 +88,8 @@ export async function backendServiceAuthHeaders(
 
 async function commonsIdentityServiceToken() {
   const issuer = envValue("COMMONS_IDENTITY_ISSUER");
-  const clientId =
-    envValue("AGENT_COMMONS_SERVICE_CLIENT_ID") ||
-    envValue("COMMONS_IDENTITY_CLIENT_ID");
-  const clientSecret =
-    envValue("AGENT_COMMONS_SERVICE_CLIENT_SECRET") ||
-    envValue("COMMONS_IDENTITY_CLIENT_SECRET");
+  const clientId = envValue("AGENT_COMMONS_SERVICE_CLIENT_ID");
+  const clientSecret = envValue("AGENT_COMMONS_SERVICE_CLIENT_SECRET");
   if (!issuer || !clientId || !clientSecret) return null;
 
   const cacheKey = `${issuer}:${clientId}`;
@@ -113,7 +109,16 @@ async function commonsIdentityServiceToken() {
     }),
   }).catch(() => null);
 
-  if (!response?.ok) return null;
+  if (!response?.ok) {
+    if (response) {
+      const body = await response.text().catch(() => "");
+      console.error("Commons identity service token request failed", {
+        status: response.status,
+        body: body.slice(0, 240),
+      });
+    }
+    return null;
+  }
   const token = (await response.json().catch(() => null)) as {
     access_token?: string;
     expires_in?: number;

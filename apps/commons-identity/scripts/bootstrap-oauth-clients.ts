@@ -25,6 +25,12 @@ const clients: ClientInput[] = [
     clientUri: process.env.AGENT_COMMONS_APP_URL ?? "http://localhost:3000",
   },
   {
+    key: "agentCommonsService",
+    name: "Agent Commons Service",
+    redirectUris: ["https://invalid.local/service"],
+    serviceAccountId: "svc_agent_commons",
+  },
+  {
     key: "courses",
     name: "Commons Courses",
     redirectUris: [
