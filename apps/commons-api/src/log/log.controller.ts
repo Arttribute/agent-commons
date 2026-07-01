@@ -5,6 +5,22 @@ import { LogService } from './log.service';
 export class LogController {
   constructor(private readonly logService: LogService) {}
 
+  /** GET /v1/logs/agents/:agentId/observability?from=<iso>&to=<iso>&limit=<n> */
+  @Get('agents/:agentId/observability')
+  async getAgentObservability(
+    @Param('agentId') agentId: string,
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+    @Query('limit') limit?: string,
+  ) {
+    return this.logService.getAgentObservability({
+      agentId,
+      from,
+      to,
+      limit,
+    });
+  }
+
   /** GET /v1/logs/agents/:agentId?limit=<n>&sessionId=<id> */
   @Get('agents/:agentId')
   async getAgentLogs(

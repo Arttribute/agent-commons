@@ -3,15 +3,20 @@
 import { use, useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
+  Activity,
+  AlertTriangle,
   ArrowLeft,
   BarChart3,
   Bot,
   Brain,
   CalendarCheck,
   Check,
+  CheckCircle2,
   ChevronRight,
+  Clock3,
   Copy,
   FileText,
+  Gauge,
   ImageIcon,
   Loader2,
   MessageSquare,
@@ -24,9 +29,21 @@ import {
   TerminalSquare,
   Wallet,
   Wrench,
+  XCircle,
   Zap,
 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
+import {
+  Area,
+  AreaChart,
+  CartesianGrid,
+  Line,
+  LineChart,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from "recharts";
 import RandomAvatar from "@/components/account/random-avatar";
 import { AgentAutonomy } from "@/components/agents/agent-autonomy";
 import { AgentMcpSection } from "@/components/mcp/agent-mcp-section";
@@ -65,7 +82,7 @@ type SectionKey =
   | "tools"
   | "skills"
   | "artefacts"
-  | "telemetry"
+  | "observability"
   | "usage"
   | "memory"
   | "wallet";
@@ -78,7 +95,7 @@ const sections: Array<{ key: SectionKey; label: string; icon: typeof Bot }> = [
   { key: "tools", label: "Tools", icon: Wrench },
   { key: "skills", label: "Skills", icon: Sparkles },
   { key: "artefacts", label: "Artefacts", icon: FileText },
-  { key: "telemetry", label: "Telemetry", icon: TerminalSquare },
+  { key: "observability", label: "Observability", icon: TerminalSquare },
   { key: "usage", label: "Usage", icon: BarChart3 },
   { key: "memory", label: "Memory", icon: Brain },
   { key: "wallet", label: "Wallet", icon: Wallet },
@@ -658,52 +675,601 @@ function ArtefactsView({ sessions, tasks }: { sessions: any[]; tasks: any[] }) {
   );
 }
 
-function TelemetryView({ agentId }: { agentId: string }) {
-  const [logs, setLogs] = useState<any[]>([]);
+type ObservabilityRange = "1h" | "12h" | "24h" | "7d" | "30d";
+
+type ObservabilityLog = {
+  id: string;
+  logId: string;
+  action: string;
+  status: string;
+  message: string;
+  timestamp: string;
+  createdAt: string;
+  responseTimeMs: number;
+  sessionId?: string | null;
+  tools?: Array<{ name: string; status: string; summary?: string; duration?: number }>;
+};
+
+type ObservabilityToolCall = {
+  id: string;
+  logId?: string;
+  source: string;
+  toolId?: string;
+  toolName: string;
+  status: string;
+  durationMs: number;
+  startedAt: string;
+  completedAt?: string | null;
+  sessionId?: string | null;
+  summary?: string | null;
+  errorMessage?: string | null;
+  rateLimitHit?: boolean;
+  inputArgs?: Record<string, any> | null;
+  outputData?: any;
+};
+
+type ObservabilityPayload = {
+  summary: {
+    totalEvents: number;
+    successfulEvents: number;
+    failedEvents: number;
+    warnings: number;
+    successRate: number;
+    errorRate: number;
+    toolCalls: number;
+    failedToolCalls: number;
+    rateLimitedToolCalls: number;
+    avgResponseTimeMs: number;
+    p95ResponseTimeMs: number;
+    avgToolDurationMs: number;
+    p95ToolDurationMs: number;
+    usage: {
+      calls: number;
+      totalTokens: number;
+      totalCostUsd: number;
+      avgDurationMs: number;
+    };
+    tasks: {
+      total: number;
+      completed: number;
+      failed: number;
+      running: number;
+      pending: number;
+      cancelled: number;
+      avgDurationMs: number;
+      p95DurationMs: number;
+    };
+  };
+  timeline: Array<{
+    bucket: string;
+    events: number;
+    successes: number;
+    failures: number;
+    warnings: number;
+    toolCalls: number;
+    failedToolCalls: number;
+    avgResponseTimeMs: number;
+    tokens: number;
+    costUsd: number;
+    tasksCompleted: number;
+    tasksFailed: number;
+  }>;
+  logs: ObservabilityLog[];
+  toolCalls: ObservabilityToolCall[];
+  embeddedToolCalls: ObservabilityToolCall[];
+  toolRollups: Array<{
+    id: string;
+    name: string;
+    calls: number;
+    successes: number;
+    failures: number;
+    warnings: number;
+    rateLimited: number;
+    successRate: number;
+    avgDurationMs: number;
+    p95DurationMs: number;
+    lastCalledAt: string;
+  }>;
+  usage: {
+    models: Array<{
+      provider: string;
+      modelId: string;
+      calls: number;
+      totalTokens: number;
+      costUsd: number;
+      avgDurationMs: number;
+    }>;
+  };
+  tasks: {
+    recent: Array<{
+      taskId: string;
+      title: string;
+      status: string;
+      progress?: number | null;
+      durationMs?: number | null;
+      errorMessage?: string | null;
+      summary?: string | null;
+      updatedAt: string;
+    }>;
+  };
+};
+
+const observabilityRanges: Array<{ value: ObservabilityRange; label: string }> = [
+  { value: "1h", label: "1 hour" },
+  { value: "12h", label: "12 hours" },
+  { value: "24h", label: "24 hours" },
+  { value: "7d", label: "7 days" },
+  { value: "30d", label: "30 days" },
+];
+
+function observabilityWindow(range: ObservabilityRange) {
+  const to = new Date();
+  const from = new Date(to);
+  const hoursByRange: Record<ObservabilityRange, number> = {
+    "1h": 1,
+    "12h": 12,
+    "24h": 24,
+    "7d": 24 * 7,
+    "30d": 24 * 30,
+  };
+  from.setHours(to.getHours() - hoursByRange[range]);
+  return { from: from.toISOString(), to: to.toISOString() };
+}
+
+function formatMs(value?: number | null) {
+  if (!value) return "n/a";
+  if (value < 1000) return `${Math.round(value)} ms`;
+  return `${(value / 1000).toFixed(value < 10_000 ? 1 : 0)} s`;
+}
+
+function formatCost(value?: number | null) {
+  if (!value) return "$0.00";
+  if (value < 0.01) return `$${value.toFixed(4)}`;
+  return `$${value.toFixed(2)}`;
+}
+
+function compactNumber(value?: number | null) {
+  return new Intl.NumberFormat("en", { notation: "compact", maximumFractionDigits: 1 }).format(value || 0);
+}
+
+function compactTime(value: string) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  return date.toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+}
+
+function statusIsBad(status?: string) {
+  return ["error", "failed", "timeout", "unauthorized", "cancelled"].includes(String(status || "").toLowerCase());
+}
+
+function statusIsBusy(status?: string) {
+  return ["pending", "running", "started"].includes(String(status || "").toLowerCase());
+}
+
+function observabilityStatusClass(status?: string) {
+  if (statusIsBad(status)) return "border-red-200 bg-red-50 text-red-700 dark:border-red-900/70 dark:bg-red-950/40 dark:text-red-300";
+  if (String(status).toLowerCase() === "warning") return "border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-900/70 dark:bg-amber-950/40 dark:text-amber-300";
+  if (statusIsBusy(status)) return "border-blue-200 bg-blue-50 text-blue-700 dark:border-blue-900/70 dark:bg-blue-950/40 dark:text-blue-300";
+  return "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900/70 dark:bg-emerald-950/40 dark:text-emerald-300";
+}
+
+function ObservabilityStat({
+  label,
+  value,
+  detail,
+  icon: Icon,
+  tone = "neutral",
+}: {
+  label: string;
+  value: string | number;
+  detail: string;
+  icon: typeof Activity;
+  tone?: "neutral" | "good" | "warn" | "bad";
+}) {
+  const iconClass = {
+    neutral: "bg-muted text-muted-foreground",
+    good: "bg-emerald-50 text-emerald-600 dark:bg-emerald-950/40 dark:text-emerald-300",
+    warn: "bg-amber-50 text-amber-600 dark:bg-amber-950/40 dark:text-amber-300",
+    bad: "bg-red-50 text-red-600 dark:bg-red-950/40 dark:text-red-300",
+  }[tone];
+  return (
+    <div className="rounded-lg border border-border bg-background p-3">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="text-xs text-muted-foreground">{label}</p>
+          <p className="mt-1 truncate text-xl font-semibold tracking-tight">{value}</p>
+        </div>
+        <span className={cn("flex h-8 w-8 shrink-0 items-center justify-center rounded-md", iconClass)}>
+          <Icon className="h-4 w-4" />
+        </span>
+      </div>
+      <p className="mt-2 truncate text-xs text-muted-foreground">{detail}</p>
+    </div>
+  );
+}
+
+function EmptyObservabilityState({ text }: { text: string }) {
+  return (
+    <div className="flex h-48 items-center justify-center rounded-lg border border-dashed border-border text-sm text-muted-foreground">
+      {text}
+    </div>
+  );
+}
+
+function ObservabilityView({ agentId }: { agentId: string }) {
+  const [range, setRange] = useState<ObservabilityRange>("24h");
+  const [searchTerm, setSearchTerm] = useState("");
+  const [statusFilter, setStatusFilter] = useState("all");
+  const [payload, setPayload] = useState<ObservabilityPayload | null>(null);
+  const [selectedLogId, setSelectedLogId] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await fetch(`/api/logs/agents/${agentId}?limit=100`);
+      const dates = observabilityWindow(range);
+      const params = new URLSearchParams({ ...dates, limit: "300" });
+      const res = await fetch(`/api/agents/${agentId}/observability?${params.toString()}`);
       const data = await res.json();
-      setLogs(data.data ?? data.logs ?? []);
+      const nextPayload = (data.data ?? data) as ObservabilityPayload;
+      setPayload(nextPayload);
+      setSelectedLogId((current) => {
+        if (current && nextPayload.logs?.some((log) => log.id === current)) return current;
+        return nextPayload.logs?.[0]?.id ?? null;
+      });
     } finally {
       setLoading(false);
     }
-  }, [agentId]);
+  }, [agentId, range]);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    load();
+  }, [load]);
 
-  const toolCalls = logs.reduce((sum, log) => sum + (Array.isArray(log.tools) ? log.tools.length : 0), 0);
-  const errors = logs.filter((log) => ["error", "failed"].includes(String(log.status || "").toLowerCase())).length;
-  const avgLatency = logs.length ? Math.round(logs.reduce((sum, log) => sum + Number(log.response_time || log.responseTime || 0), 0) / logs.length) : 0;
+  const summary = payload?.summary;
+  const logs = payload?.logs ?? [];
+  const toolCalls = payload?.toolCalls?.length ? payload.toolCalls : payload?.embeddedToolCalls ?? [];
+  const selectedLog = logs.find((log) => log.id === selectedLogId) ?? logs[0] ?? null;
+  const chartData = (payload?.timeline ?? []).map((point) => ({
+    ...point,
+    time: compactTime(point.bucket),
+  }));
+
+  const filteredLogs = useMemo(() => {
+    const needle = searchTerm.trim().toLowerCase();
+    return logs.filter((log) => {
+      const status = String(log.status || "info").toLowerCase();
+      if (statusFilter !== "all" && statusFilter !== status) return false;
+      if (!needle) return true;
+      return `${log.action} ${log.message} ${log.sessionId ?? ""} ${status}`.toLowerCase().includes(needle);
+    });
+  }, [logs, searchTerm, statusFilter]);
+
+  const selectedLogTools = selectedLog?.tools ?? [];
+  const recentTasks = payload?.tasks?.recent ?? [];
+  const failedTasks = recentTasks.filter((task) => statusIsBad(task.status)).slice(0, 4);
+  const modelRollups = payload?.usage?.models ?? [];
+  const toolRollups = payload?.toolRollups ?? [];
 
   return (
     <div className="min-h-0 overflow-auto">
-      <SectionHeader title="Telemetry" subtitle="Recent execution logs, tool activity, and health signals for this agent." />
-      <div className="mx-auto max-w-5xl space-y-4 p-5">
-        <div className="grid gap-3 md:grid-cols-4">
-          <Stat label="Events" value={logs.length} />
-          <Stat label="Tool calls" value={toolCalls} />
-          <Stat label="Errors" value={errors} />
-          <Stat label="Avg latency" value={avgLatency ? `${avgLatency} ms` : "n/a"} />
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border/70 px-5 py-4">
+        <div>
+          <h1 className="text-xl font-semibold tracking-tight">Observability</h1>
+          <p className="mt-1 text-sm text-muted-foreground">Understand agent health, performance, tool behavior, and execution failures.</p>
         </div>
-        <Panel title="Recent activity" action={<Button variant="ghost" size="icon" className="h-8 w-8" onClick={load}><RefreshCw className={cn("h-4 w-4", loading && "animate-spin")} /></Button>}>
-          {logs.length === 0 ? (
-            <div className="rounded-lg border border-dashed p-8 text-center text-sm text-muted-foreground">No telemetry events found.</div>
-          ) : (
-            <div className="space-y-2">
-              {logs.map((log, index) => (
-                <div key={log.log_id ?? log.id ?? index} className="rounded-lg border border-border p-3">
-                  <div className="flex items-center justify-between gap-3">
-                    <p className="truncate text-sm font-medium">{log.action || log.eventType || log.message || "Agent event"}</p>
-                    <Badge variant={String(log.status).toLowerCase() === "error" ? "destructive" : "secondary"} className="rounded-md">{log.status || "ok"}</Badge>
+        <div className="flex items-center gap-2">
+          <Select value={range} onValueChange={(value) => setRange(value as ObservabilityRange)}>
+            <SelectTrigger className="h-9 w-[140px]">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {observabilityRanges.map((item) => (
+                <SelectItem key={item.value} value={item.value}>{item.label}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Button variant="outline" size="icon" className="h-9 w-9" onClick={load}>
+            <RefreshCw className={cn("h-4 w-4", loading && "animate-spin")} />
+          </Button>
+        </div>
+      </div>
+
+      <div className="space-y-4 p-5">
+        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
+          <ObservabilityStat
+            label="Event health"
+            value={`${summary?.successRate ?? 0}%`}
+            detail={`${summary?.successfulEvents ?? 0} passed · ${summary?.failedEvents ?? 0} failed`}
+            icon={CheckCircle2}
+            tone={(summary?.failedEvents ?? 0) > 0 ? "warn" : "good"}
+          />
+          <ObservabilityStat
+            label="Failures"
+            value={summary?.failedEvents ?? 0}
+            detail={`${summary?.errorRate ?? 0}% error rate · ${summary?.warnings ?? 0} warnings`}
+            icon={AlertTriangle}
+            tone={(summary?.failedEvents ?? 0) > 0 ? "bad" : "neutral"}
+          />
+          <ObservabilityStat
+            label="Latency"
+            value={formatMs(summary?.avgResponseTimeMs)}
+            detail={`P95 ${formatMs(summary?.p95ResponseTimeMs)}`}
+            icon={Clock3}
+          />
+          <ObservabilityStat
+            label="Tool calls"
+            value={summary?.toolCalls ?? 0}
+            detail={`${summary?.failedToolCalls ?? 0} failed · ${summary?.rateLimitedToolCalls ?? 0} rate limited`}
+            icon={Wrench}
+            tone={(summary?.failedToolCalls ?? 0) > 0 ? "warn" : "neutral"}
+          />
+          <ObservabilityStat
+            label="Usage"
+            value={formatCost(summary?.usage?.totalCostUsd)}
+            detail={`${compactNumber(summary?.usage?.totalTokens)} tokens · ${summary?.usage?.calls ?? 0} calls`}
+            icon={Gauge}
+          />
+        </div>
+
+        <div className="grid gap-4 xl:grid-cols-[minmax(0,1.35fr)_minmax(340px,0.65fr)]">
+          <Panel title="Activity trend">
+            {chartData.length ? (
+              <div className="h-64">
+                <ResponsiveContainer width="100%" height="100%">
+                  <AreaChart data={chartData} margin={{ top: 8, right: 12, bottom: 0, left: 0 }}>
+                    <defs>
+                      <linearGradient id="eventsFill" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="hsl(var(--primary))" stopOpacity={0.28} />
+                        <stop offset="95%" stopColor="hsl(var(--primary))" stopOpacity={0} />
+                      </linearGradient>
+                    </defs>
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="hsl(var(--border))" />
+                    <XAxis dataKey="time" tick={{ fontSize: 11 }} tickLine={false} axisLine={false} minTickGap={32} />
+                    <YAxis tick={{ fontSize: 11 }} tickLine={false} axisLine={false} width={34} />
+                    <Tooltip contentStyle={{ background: "hsl(var(--background))", border: "1px solid hsl(var(--border))", borderRadius: 8 }} />
+                    <Area type="monotone" dataKey="events" name="Events" stroke="hsl(var(--primary))" fill="url(#eventsFill)" strokeWidth={2} />
+                    <Line type="monotone" dataKey="failures" name="Failures" stroke="#ef4444" strokeWidth={2} dot={false} />
+                    <Line type="monotone" dataKey="warnings" name="Warnings" stroke="#f59e0b" strokeWidth={2} dot={false} />
+                  </AreaChart>
+                </ResponsiveContainer>
+              </div>
+            ) : (
+              <EmptyObservabilityState text="No activity in this time range." />
+            )}
+          </Panel>
+
+          <Panel title="Latency and tools">
+            {chartData.length ? (
+              <div className="h-64">
+                <ResponsiveContainer width="100%" height="100%">
+                  <LineChart data={chartData} margin={{ top: 8, right: 12, bottom: 0, left: 0 }}>
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="hsl(var(--border))" />
+                    <XAxis dataKey="time" tick={{ fontSize: 11 }} tickLine={false} axisLine={false} minTickGap={32} />
+                    <YAxis tick={{ fontSize: 11 }} tickLine={false} axisLine={false} width={42} />
+                    <Tooltip contentStyle={{ background: "hsl(var(--background))", border: "1px solid hsl(var(--border))", borderRadius: 8 }} />
+                    <Line type="monotone" dataKey="avgResponseTimeMs" name="Avg response ms" stroke="#2563eb" strokeWidth={2} dot={false} />
+                    <Line type="monotone" dataKey="toolCalls" name="Tool calls" stroke="#10b981" strokeWidth={2} dot={false} />
+                  </LineChart>
+                </ResponsiveContainer>
+              </div>
+            ) : (
+              <EmptyObservabilityState text="No latency samples yet." />
+            )}
+          </Panel>
+        </div>
+
+        <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+          <Panel title="Tool behavior">
+            {toolRollups.length ? (
+              <div className="space-y-3">
+                {toolRollups.slice(0, 6).map((tool) => (
+                  <div key={tool.id} className="rounded-lg border border-border bg-muted/20 p-3">
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-medium">{tool.name}</p>
+                        <p className="mt-1 text-xs text-muted-foreground">{tool.calls} calls · avg {formatMs(tool.avgDurationMs)} · P95 {formatMs(tool.p95DurationMs)}</p>
+                      </div>
+                      <Badge variant="outline" className={cn("rounded-md", tool.failures ? observabilityStatusClass("warning") : observabilityStatusClass("success"))}>
+                        {tool.successRate}% pass
+                      </Badge>
+                    </div>
+                    <div className="mt-3 grid h-2 overflow-hidden rounded-full bg-muted">
+                      <div
+                        className="h-2 rounded-full bg-emerald-500"
+                        style={{ width: `${Math.max(4, Math.min(100, tool.successRate))}%` }}
+                      />
+                    </div>
                   </div>
-                  {log.message && <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">{log.message}</p>}
-                  <p className="mt-2 text-xs text-muted-foreground">{relative(log.created_at || log.createdAt || log.timestamp)} {log.session_id ? `· ${shortId(log.session_id)}` : ""}</p>
+                ))}
+              </div>
+            ) : (
+              <EmptyObservabilityState text="No tool calls have been captured for this range." />
+            )}
+          </Panel>
+
+          <Panel title="Task and model signals">
+            <div className="grid gap-3 sm:grid-cols-3">
+              <Stat label="Completed tasks" value={summary?.tasks?.completed ?? 0} />
+              <Stat label="Failed tasks" value={summary?.tasks?.failed ?? 0} />
+              <Stat label="Task P95" value={formatMs(summary?.tasks?.p95DurationMs)} />
+            </div>
+            <div className="mt-4 grid gap-4 lg:grid-cols-2">
+              <div className="space-y-2">
+                <p className="text-xs font-medium uppercase text-muted-foreground">Model activity</p>
+                {modelRollups.length ? modelRollups.slice(0, 4).map((model) => (
+                  <div key={`${model.provider}:${model.modelId}`} className="rounded-md border border-border bg-muted/20 px-3 py-2">
+                    <div className="flex items-center justify-between gap-3 text-sm">
+                      <span className="truncate font-medium">{model.modelId}</span>
+                      <span className="text-muted-foreground">{model.calls} calls</span>
+                    </div>
+                    <p className="mt-1 text-xs text-muted-foreground">{compactNumber(model.totalTokens)} tokens · {formatCost(model.costUsd)} · avg {formatMs(model.avgDurationMs)}</p>
+                  </div>
+                )) : (
+                  <p className="rounded-md border border-dashed p-4 text-sm text-muted-foreground">No usage events in this range.</p>
+                )}
+              </div>
+              <div className="space-y-2">
+                <p className="text-xs font-medium uppercase text-muted-foreground">Recent failures</p>
+                {failedTasks.length ? failedTasks.map((task) => (
+                  <div key={task.taskId} className="rounded-md border border-red-200 bg-red-50/60 px-3 py-2 text-sm dark:border-red-900/60 dark:bg-red-950/20">
+                    <p className="truncate font-medium">{task.title}</p>
+                    <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">{task.errorMessage || task.summary || "Task failed without a recorded message."}</p>
+                  </div>
+                )) : (
+                  <p className="rounded-md border border-dashed p-4 text-sm text-muted-foreground">No task failures found.</p>
+                )}
+              </div>
+            </div>
+          </Panel>
+        </div>
+
+        <div className="grid min-h-[520px] gap-4 xl:grid-cols-[minmax(0,1fr)_380px]">
+          <Panel
+            title="Execution logs"
+            action={
+              <div className="flex items-center gap-2">
+                <Select value={statusFilter} onValueChange={setStatusFilter}>
+                  <SelectTrigger className="h-8 w-[128px]">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All statuses</SelectItem>
+                    <SelectItem value="success">Success</SelectItem>
+                    <SelectItem value="warning">Warning</SelectItem>
+                    <SelectItem value="error">Error</SelectItem>
+                    <SelectItem value="failed">Failed</SelectItem>
+                    <SelectItem value="running">Running</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            }
+          >
+            <div className="relative mb-3">
+              <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+              <Input
+                value={searchTerm}
+                onChange={(event) => setSearchTerm(event.target.value)}
+                placeholder="Search action, message, session, or status..."
+                className="h-9 pl-8"
+              />
+            </div>
+            <ScrollArea className="h-[420px] pr-3">
+              {filteredLogs.length ? (
+                <div className="space-y-2">
+                  {filteredLogs.map((log) => (
+                    <button
+                      key={log.id}
+                      type="button"
+                      onClick={() => setSelectedLogId(log.id)}
+                      className={cn(
+                        "w-full rounded-lg border border-border bg-background p-3 text-left transition hover:bg-muted/40",
+                        selectedLog?.id === log.id && "border-primary/50 bg-primary/5"
+                      )}
+                    >
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="min-w-0">
+                          <p className="truncate text-sm font-medium">{log.action || "Agent event"}</p>
+                          <p className="mt-1 line-clamp-1 text-xs text-muted-foreground">{log.message || "No message recorded"}</p>
+                        </div>
+                        <Badge variant="outline" className={cn("shrink-0 rounded-md", observabilityStatusClass(log.status))}>{log.status}</Badge>
+                      </div>
+                      <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
+                        <span>{compactTime(log.createdAt)}</span>
+                        <span>{formatMs(log.responseTimeMs)}</span>
+                        {log.sessionId && <span>Session {shortId(log.sessionId)}</span>}
+                        {!!log.tools?.length && <span>{log.tools.length} tool events</span>}
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              ) : (
+                <EmptyObservabilityState text={loading ? "Loading observability data..." : "No logs match the current filters."} />
+              )}
+            </ScrollArea>
+          </Panel>
+
+          <Panel title="Event inspector">
+            {selectedLog ? (
+              <div className="space-y-4">
+                <div>
+                  <div className="flex items-center justify-between gap-3">
+                    <Badge variant="outline" className={cn("rounded-md", observabilityStatusClass(selectedLog.status))}>
+                      {statusIsBad(selectedLog.status) ? <XCircle className="mr-1 h-3 w-3" /> : <CheckCircle2 className="mr-1 h-3 w-3" />}
+                      {selectedLog.status}
+                    </Badge>
+                    <span className="text-xs text-muted-foreground">{relative(selectedLog.createdAt)}</span>
+                  </div>
+                  <h3 className="mt-3 text-base font-semibold">{selectedLog.action || "Agent event"}</h3>
+                  <p className="mt-2 text-sm text-muted-foreground">{selectedLog.message || "No message was recorded for this event."}</p>
+                </div>
+
+                <div className="grid gap-2 text-sm">
+                  <div className="flex items-center justify-between rounded-md bg-muted/30 px-3 py-2">
+                    <span className="text-muted-foreground">Response time</span>
+                    <span className="font-medium">{formatMs(selectedLog.responseTimeMs)}</span>
+                  </div>
+                  <div className="flex items-center justify-between rounded-md bg-muted/30 px-3 py-2">
+                    <span className="text-muted-foreground">Log ID</span>
+                    <span className="font-mono text-xs">{shortId(selectedLog.logId)}</span>
+                  </div>
+                  {selectedLog.sessionId && (
+                    <div className="flex items-center justify-between rounded-md bg-muted/30 px-3 py-2">
+                      <span className="text-muted-foreground">Session</span>
+                      <span className="font-mono text-xs">{shortId(selectedLog.sessionId)}</span>
+                    </div>
+                  )}
+                </div>
+
+                <div>
+                  <p className="mb-2 text-xs font-medium uppercase text-muted-foreground">Tools in this event</p>
+                  {selectedLogTools.length ? (
+                    <div className="space-y-2">
+                      {selectedLogTools.map((tool, index) => (
+                        <div key={`${tool.name}-${index}`} className="rounded-md border border-border p-2">
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="truncate text-sm font-medium">{tool.name}</span>
+                            <Badge variant="outline" className={cn("rounded-md", observabilityStatusClass(tool.status))}>{tool.status}</Badge>
+                          </div>
+                          <p className="mt-1 text-xs text-muted-foreground">{tool.summary || `${formatMs(tool.duration)} recorded duration`}</p>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="rounded-md border border-dashed p-3 text-sm text-muted-foreground">No embedded tool data on this log.</p>
+                  )}
+                </div>
+
+                <div>
+                  <p className="mb-2 text-xs font-medium uppercase text-muted-foreground">Raw event</p>
+                  <pre className="max-h-44 overflow-auto rounded-md border border-border bg-muted/30 p-3 text-xs">
+                    {JSON.stringify(selectedLog, null, 2)}
+                  </pre>
+                </div>
+              </div>
+            ) : (
+              <EmptyObservabilityState text="Select a log to inspect it." />
+            )}
+          </Panel>
+        </div>
+
+        <Panel title="Detailed tool calls">
+          {toolCalls.length ? (
+            <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
+              {toolCalls.slice(0, 12).map((tool) => (
+                <div key={tool.id} className="rounded-lg border border-border bg-muted/20 p-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="truncate text-sm font-medium">{tool.toolName}</p>
+                    <Badge variant="outline" className={cn("rounded-md", observabilityStatusClass(tool.status))}>{tool.status}</Badge>
+                  </div>
+                  <p className="mt-2 text-xs text-muted-foreground">{compactTime(tool.startedAt)} · {formatMs(tool.durationMs)}</p>
+                  {tool.errorMessage && <p className="mt-2 line-clamp-2 text-xs text-red-600 dark:text-red-300">{tool.errorMessage}</p>}
+                  {tool.summary && <p className="mt-2 line-clamp-2 text-xs text-muted-foreground">{tool.summary}</p>}
                 </div>
               ))}
             </div>
+          ) : (
+            <EmptyObservabilityState text="No detailed tool execution rows found yet." />
           )}
         </Panel>
       </div>
@@ -954,8 +1520,8 @@ export default function AgentStudioPage({ params }: { params: Promise<{ agent: s
         return <SkillsView agentId={agentId} />;
       case "artefacts":
         return <ArtefactsView sessions={sessions} tasks={tasks} />;
-      case "telemetry":
-        return <TelemetryView agentId={agentId} />;
+      case "observability":
+        return <ObservabilityView agentId={agentId} />;
       case "usage":
         return <UsageView agentId={agentId} />;
       case "memory":
