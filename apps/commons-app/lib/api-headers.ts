@@ -8,6 +8,7 @@ const SERVICE_TOKEN_SCOPE =
 type BackendAuthHeaderOptions = {
   allowServiceKey?: boolean;
   preferServiceKey?: boolean;
+  preferUserToken?: boolean;
   allowLegacyServiceKey?: boolean;
 };
 
@@ -23,9 +24,10 @@ function envValue(name: string) {
 
 /**
  * Returns Authorization headers for server-side requests to the backend API.
- * Signed-in users should use their Commons identity token first. Service
- * credentials are fallback/daemon credentials and should not mask a valid user
- * session, especially when the public API gateway rejects legacy keys.
+ * Signed-in app proxy requests prefer a Commons service identity with explicit
+ * user delegation headers. That keeps backend ownership filtering on the stable
+ * app-proxy path while preventing legacy service keys from masking a valid user
+ * session when the public API gateway rejects them.
  * This file must only be imported from Next.js API routes, not client components.
  */
 export async function backendAuthHeaders(
@@ -36,6 +38,7 @@ export async function backendAuthHeaders(
   const delegatedHeaders: Record<string, string> = delegatedUserId
     ? { "x-initiator": delegatedUserId, "x-owner-id": delegatedUserId }
     : {};
+  const hasUserSession = Boolean(session?.user?.id);
   const userHeaders =
     session?.accessToken && !session.accessTokenError
       ? { Authorization: `Bearer ${session.accessToken}` }
@@ -44,13 +47,13 @@ export async function backendAuthHeaders(
     options.allowServiceKey || options.preferServiceKey || session?.user?.id,
   );
 
-  if (!options.preferServiceKey && userHeaders) {
+  if (options.preferUserToken && userHeaders) {
     return { ...userHeaders, ...delegatedHeaders };
   }
 
   if (canUseServiceCredential) {
     const serviceHeaders = await backendServiceAuthHeaders({
-      allowLegacyKey: options.allowLegacyServiceKey ?? !userHeaders,
+      allowLegacyKey: options.allowLegacyServiceKey ?? !hasUserSession,
     });
     if (serviceHeaders.Authorization) {
       return { ...serviceHeaders, ...delegatedHeaders };
