@@ -1,5 +1,7 @@
 -- Agent computers: per-agent CommonOS pod runtime configuration, instances, and events.
 
+SET search_path = public, extensions;
+
 CREATE TABLE IF NOT EXISTS agent_computer_config (
   config_id uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
   agent_id text NOT NULL REFERENCES agent(agent_id) ON DELETE CASCADE,
