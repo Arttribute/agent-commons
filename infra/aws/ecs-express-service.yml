@@ -97,6 +97,16 @@ Resources:
             ValueFrom: !Sub "${RuntimeSecretArn}:API_AUTH_REQUIRED::"
           - Name: OWNER_AUTH_REQUIRED
             ValueFrom: !Sub "${RuntimeSecretArn}:OWNER_AUTH_REQUIRED::"
+          - Name: COMMON_OS_API_URL
+            ValueFrom: !Sub "${RuntimeSecretArn}:COMMON_OS_API_URL::"
+          - Name: COMMON_OS_API_KEY
+            ValueFrom: !Sub "${RuntimeSecretArn}:COMMON_OS_API_KEY::"
+          - Name: COMMON_OS_FLEET_ID
+            ValueFrom: !Sub "${RuntimeSecretArn}:COMMON_OS_FLEET_ID::"
+          - Name: COMMON_OS_COMPUTER_API
+            ValueFrom: !Sub "${RuntimeSecretArn}:COMMON_OS_COMPUTER_API::"
+          - Name: COMMON_OS_API_BASE_PATH
+            ValueFrom: !Sub "${RuntimeSecretArn}:COMMON_OS_API_BASE_PATH::"
       ScalingTarget:
         MinTaskCount: 1
         MaxTaskCount: 4
