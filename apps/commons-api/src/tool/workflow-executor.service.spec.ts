@@ -250,4 +250,19 @@ describe('WorkflowExecutorService', () => {
       expect(incomingCount.get('B')!.live).toBe(0);
     });
   });
+
+  describe('dynamic API tools', () => {
+    it('throws a clear error when a path template argument is missing', async () => {
+      await expect(
+        (service as any).invokeDynamicTool(
+          {
+            method: 'GET',
+            baseUrl: 'https://example.com',
+            path: '/countries/{country}',
+          },
+          {},
+        ),
+      ).rejects.toThrow('Missing required dynamic API parameter: country');
+    });
+  });
 });

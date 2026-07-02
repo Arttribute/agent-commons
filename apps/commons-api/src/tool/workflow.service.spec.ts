@@ -256,6 +256,70 @@ describe('WorkflowService', () => {
         }),
       ).rejects.toThrow(BadRequestException);
     });
+
+    it('should preserve existing precise edge mappings over generic editor mappings', async () => {
+      const existingWorkflow = {
+        ...mockWorkflowData,
+        definition: {
+          ...mockWorkflowData.definition,
+          edges: [
+            {
+              id: 'e1',
+              source: 'node1',
+              target: 'node2',
+              sourceHandle: 'country',
+              targetHandle: 'country',
+              mapping: { country: 'country' },
+            },
+          ],
+        },
+      };
+      const incomingDefinition = {
+        ...existingWorkflow.definition,
+        edges: [
+          {
+            id: 'e1',
+            source: 'node1',
+            target: 'node2',
+            mapping: { output: 'input' },
+          },
+        ],
+      };
+      mockDb.query.workflow.findFirst.mockResolvedValue(existingWorkflow);
+
+      await service.updateWorkflow('workflow-123', {
+        definition: incomingDefinition,
+      });
+
+      expect(mockDb.set).toHaveBeenCalledWith(
+        expect.objectContaining({
+          definition: expect.objectContaining({
+            edges: [
+              expect.objectContaining({
+                id: 'e1',
+                mapping: { country: 'country' },
+                sourceHandle: 'country',
+                targetHandle: 'country',
+              }),
+            ],
+          }),
+        }),
+      );
+    });
+  });
+
+  describe('webhook triggers', () => {
+    it('should store only a hashed webhook token', async () => {
+      mockDb.query.workflow.findFirst.mockResolvedValue(mockWorkflowData);
+
+      const result = await service.rotateWebhookToken('workflow-123');
+      const updatePayload = mockDb.set.mock.calls.at(-1)?.[0];
+
+      expect(result.token).toBeTruthy();
+      expect(updatePayload.triggerType).toBe('webhook');
+      expect(updatePayload.triggerConfig.webhookSecretHash).toHaveLength(64);
+      expect(updatePayload.triggerConfig.webhookSecretHash).not.toBe(result.token);
+    });
   });
 
   describe('deleteWorkflow', () => {

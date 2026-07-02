@@ -106,6 +106,7 @@ export interface ReactFlowEdge {
   data: {
     dataType: string;
     color: string;
+    mapping?: Record<string, string>;
   };
 }
 

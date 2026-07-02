@@ -25,6 +25,7 @@ import { cn } from "@/lib/utils";
 
 interface LogEntry {
   id: string;
+  source: "agent" | "workflow";
   action: string;
   status: string;
   message: string;
@@ -32,6 +33,8 @@ interface LogEntry {
   responseTime: number;
   agent: string;
   agentName?: string;
+  workflowId?: string;
+  workflowName?: string;
   sessionId: string;
   tools: { name: string; status: string; summary?: string; duration?: number }[];
 }
@@ -41,6 +44,18 @@ function StatusIcon({ status }: { status: string }) {
   if (status === "error") return <XCircle className="h-3.5 w-3.5 text-red-500 flex-shrink-0" />;
   if (status === "warning") return <AlertTriangle className="h-3.5 w-3.5 text-yellow-500 flex-shrink-0" />;
   return <Clock className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />;
+}
+
+function normalizeWorkflowStatus(status: string) {
+  if (status === "completed") return "success";
+  if (status === "failed" || status === "cancelled") return "error";
+  if (status === "awaiting_approval") return "warning";
+  return "pending";
+}
+
+function elapsedMs(startedAt?: string, completedAt?: string) {
+  if (!startedAt || !completedAt) return 0;
+  return Math.max(0, new Date(completedAt).getTime() - new Date(startedAt).getTime());
 }
 
 function LogRow({ log }: { log: LogEntry }) {
@@ -63,6 +78,11 @@ function LogRow({ log }: { log: LogEntry }) {
             {log.agentName && (
               <span className="text-[10px] text-muted-foreground bg-muted px-1.5 py-0.5 rounded">
                 {log.agentName}
+              </span>
+            )}
+            {log.workflowName && (
+              <span className="text-[10px] text-muted-foreground bg-muted px-1.5 py-0.5 rounded">
+                {log.workflowName}
               </span>
             )}
             {log.sessionId && (
@@ -116,27 +136,70 @@ export default function LogsPage() {
   const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [sourceFilter, setSourceFilter] = useState<string>("all");
   const [selectedAgent, setSelectedAgent] = useState<string>("all");
 
   const fetchAllLogs = useCallback(async () => {
-    if (!agents.length) return;
     setLoading(true);
     try {
-      const results = await Promise.allSettled(
-        agents.map((a: any) =>
+      const agentResults = agents.length
+        ? await Promise.allSettled(
+          agents.map((a: any) =>
           fetch(`/api/logs/agents/${a.agentId}?limit=100`)
             .then((r) => r.json())
             .then((d) =>
               (d.data ?? []).map((l: LogEntry) => ({
                 ...l,
+                source: "agent" as const,
                 agentName: a.name || a.agentId.slice(0, 8),
               }))
             )
+          )
+        )
+        : [];
+
+      const workflowList = await fetch("/api/workflows", { cache: "no-store" })
+        .then((r) => r.ok ? r.json() : [])
+        .catch(() => []);
+      const workflows = Array.isArray(workflowList) ? workflowList : workflowList.data ?? [];
+      const workflowResults = await Promise.allSettled(
+        workflows.slice(0, 30).map((workflow: any) =>
+          fetch(`/api/workflows/${workflow.workflowId}/executions?limit=50`)
+            .then((r) => r.json())
+            .then((executions) => (Array.isArray(executions) ? executions : executions.data ?? [])
+              .map((execution: any) => {
+                const nodes = Object.entries(execution.nodeResults || execution.stepResults || {});
+                return {
+                  id: execution.executionId,
+                  source: "workflow" as const,
+                  action: "Workflow run",
+                  status: normalizeWorkflowStatus(execution.status),
+                  message: execution.errorMessage || execution.error || execution.status,
+                  timestamp: execution.startedAt || execution.createdAt || new Date().toISOString(),
+                  responseTime: elapsedMs(execution.startedAt, execution.completedAt),
+                  agent: execution.agentId || "",
+                  workflowId: workflow.workflowId,
+                  workflowName: workflow.name,
+                  sessionId: execution.sessionId || "",
+                  tools: nodes.map(([nodeId, step]: [string, any]) => ({
+                    name: nodeId,
+                    status: step.status === "success" ? "success" : step.status === "error" ? "error" : "warning",
+                    summary: step.error,
+                    duration: step.duration,
+                  })),
+                } satisfies LogEntry;
+              }))
         )
       );
-      const all: LogEntry[] = results
+
+      const all: LogEntry[] = agentResults
         .filter((r) => r.status === "fulfilled")
         .flatMap((r) => (r as PromiseFulfilledResult<LogEntry[]>).value);
+      all.push(
+        ...workflowResults
+          .filter((r) => r.status === "fulfilled")
+          .flatMap((r) => (r as PromiseFulfilledResult<LogEntry[]>).value)
+      );
       all.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
       setLogs(all);
     } finally {
@@ -148,13 +211,15 @@ export default function LogsPage() {
 
   const filtered = logs.filter((l) => {
     if (statusFilter !== "all" && l.status !== statusFilter) return false;
-    if (selectedAgent !== "all" && l.agent !== selectedAgent) return false;
+    if (sourceFilter !== "all" && l.source !== sourceFilter) return false;
+    if (selectedAgent !== "all" && l.source === "agent" && l.agent !== selectedAgent) return false;
     if (search.trim()) {
       const q = search.toLowerCase();
       return (
         l.action.toLowerCase().includes(q) ||
         l.message.toLowerCase().includes(q) ||
         l.agentName?.toLowerCase().includes(q) ||
+        l.workflowName?.toLowerCase().includes(q) ||
         false
       );
     }
@@ -174,7 +239,7 @@ export default function LogsPage() {
             <div>
               <h1 className="text-xl font-semibold tracking-tight">Logs</h1>
               <p className="text-sm text-muted-foreground mt-0.5">
-                Agent activity — tool calls, sessions, errors
+                Agent and workflow activity
               </p>
             </div>
             <div className="relative">
@@ -203,6 +268,21 @@ export default function LogsPage() {
                 )}
               >
                 {s === "all" ? "All" : s.charAt(0).toUpperCase() + s.slice(1)}
+              </button>
+            ))}
+            <div className="w-px h-4 bg-border" />
+            {["all", "agent", "workflow"].map((source) => (
+              <button
+                key={source}
+                onClick={() => setSourceFilter(source)}
+                className={cn(
+                  "px-2.5 py-1 rounded text-xs font-medium transition-colors",
+                  sourceFilter === source
+                    ? "bg-foreground text-background"
+                    : "bg-muted text-muted-foreground hover:text-foreground"
+                )}
+              >
+                {source === "all" ? "All sources" : source === "agent" ? "Agents" : "Workflows"}
               </button>
             ))}
             <div className="w-px h-4 bg-border" />

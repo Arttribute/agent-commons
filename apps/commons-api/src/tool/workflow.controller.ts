@@ -8,6 +8,7 @@ import {
   Body,
   Query,
   BadRequestException,
+  NotFoundException,
   Sse,
   Req,
   UseGuards,
@@ -101,6 +102,65 @@ export class WorkflowController {
       tags: tags ? tags.split(',') : undefined,
       limit: limit ? parseInt(limit.toString()) : 50,
     });
+  }
+
+  /**
+   * Execute a workflow through its webhook trigger.
+   * POST /v1/workflows/webhooks/:token
+   */
+  @Post('webhooks/:token')
+  async executeWebhook(
+    @Param('token') token: string,
+    @Body() body: any,
+    @Query() query: Record<string, any>,
+    @Req() req: Request,
+  ) {
+    return this.workflowService.executeWebhook({
+      token,
+      payload: body,
+      query,
+      headers: req.headers,
+    });
+  }
+
+  /**
+   * Get webhook trigger metadata without exposing the webhook token.
+   * GET /v1/workflows/:id/webhook
+   */
+  @Get(':id/webhook')
+  @UseGuards(OwnerGuard)
+  @OwnerOnly({ table: 'workflow', idParam: 'id' })
+  async getWebhookConfiguration(@Param('id') workflowId: string) {
+    return this.workflowService.getWebhookConfiguration(workflowId);
+  }
+
+  /**
+   * Rotate the webhook trigger token. The raw token is returned once.
+   * POST /v1/workflows/:id/webhook-token
+   */
+  @Post(':id/webhook-token')
+  @UseGuards(OwnerGuard)
+  @OwnerOnly({ table: 'workflow', idParam: 'id' })
+  async rotateWebhookToken(
+    @Param('id') workflowId: string,
+    @Req() req: Request,
+  ) {
+    const result = await this.workflowService.rotateWebhookToken(workflowId);
+    return {
+      ...result,
+      webhookUrl: this.buildWebhookUrl(req, result.token),
+    };
+  }
+
+  /**
+   * Disable webhook trigger access for a workflow.
+   * DELETE /v1/workflows/:id/webhook-token
+   */
+  @Delete(':id/webhook-token')
+  @UseGuards(OwnerGuard)
+  @OwnerOnly({ table: 'workflow', idParam: 'id' })
+  async disableWebhook(@Param('id') workflowId: string) {
+    return this.workflowService.disableWebhook(workflowId);
   }
 
   /**
@@ -371,5 +431,18 @@ export class WorkflowController {
         clearInterval(poll);
       };
     });
+  }
+
+  private buildWebhookUrl(req: Request, token: string) {
+    const forwardedProto = req.headers['x-forwarded-proto'];
+    const proto = Array.isArray(forwardedProto)
+      ? forwardedProto[0]
+      : forwardedProto || req.protocol || 'https';
+    const host = req.headers['x-forwarded-host'] || req.headers.host;
+    if (!host) {
+      throw new NotFoundException('Unable to resolve webhook host');
+    }
+    const resolvedHost = Array.isArray(host) ? host[0] : host;
+    return `${proto}://${resolvedHost}/v1/workflows/webhooks/${token}`;
   }
 }

@@ -906,6 +906,13 @@ export class WorkflowExecutorService {
     parsedArgs: Record<string, any>,
   ): Promise<any> {
     const { method, baseUrl, path, headers, queryParams, bodyTemplate } = apiSpec;
+    this.assertTemplateInputs(path, parsedArgs);
+    if (queryParams) {
+      for (const value of Object.values(queryParams)) {
+        this.assertTemplateInputs(value, parsedArgs);
+      }
+    }
+
     const url = new URL(`${baseUrl}${this.replaceTemplate(path, parsedArgs)}`);
     if (queryParams) {
       for (const [k, v] of Object.entries(queryParams)) {
@@ -925,6 +932,18 @@ export class WorkflowExecutorService {
     });
     if (!response.ok) throw new Error(`Dynamic API error: ${response.status} ${response.statusText}`);
     return await response.json();
+  }
+
+  private assertTemplateInputs(template: string, args: Record<string, any>): void {
+    const missing = Array.from(template.matchAll(/\{([^}]+)\}/g))
+      .map((match) => match[1])
+      .filter((key) => args[key] === undefined || args[key] === null || args[key] === '');
+
+    if (missing.length) {
+      throw new Error(
+        `Missing required dynamic API parameter${missing.length > 1 ? 's' : ''}: ${missing.join(', ')}`,
+      );
+    }
   }
 
   private replaceTemplate(template: string, args: Record<string, any>): string {

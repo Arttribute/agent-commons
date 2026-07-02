@@ -795,7 +795,9 @@ export const workflow = pgTable('workflow', {
   triggerType: text('trigger_type').default('manual'), // 'manual' | 'scheduled' | 'webhook'
   triggerConfig: jsonb('trigger_config').$type<{
     cronExpression?: string; // For scheduled triggers
-    webhookUrl?: string; // For webhook triggers
+    webhookSecretHash?: string; // SHA-256 hash of the bearer token in the webhook URL
+    webhookCreatedAt?: string;
+    webhookLastInvokedAt?: string;
     eventType?: string; // For event-based triggers
   }>(),
 

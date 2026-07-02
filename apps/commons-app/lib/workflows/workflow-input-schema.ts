@@ -33,6 +33,34 @@ export function extractWorkflowInputSchema(workflowDefinition: {
 
   // If start node is an input node, extract its schema
   if (startNode.type === "input") {
+    const outgoing = (workflowDefinition.edges || []).filter((edge: any) => edge.source === startNode.id);
+    const mappedParameters = new Map<string, TypedParameter>();
+
+    outgoing.forEach((edge: any) => {
+      const targetNode = nodes.find((node: any) => node.id === edge.target);
+      const targetInputs = targetNode?.data?.inputs || [];
+
+      Object.entries(edge.data?.mapping || edge.mapping || {}).forEach(([sourcePath, targetField]) => {
+        if (!sourcePath || sourcePath === "output" || sourcePath.includes(".")) return;
+
+        const targetInput = targetInputs.find((input: any) => input.name === targetField);
+        mappedParameters.set(sourcePath, {
+          name: sourcePath,
+          type: targetInput?.type || "string",
+          required: targetInput?.required ?? true,
+          description: targetInput?.description || `Workflow input for ${targetField}`,
+        });
+      });
+    });
+
+    if (mappedParameters.size > 0) {
+      return {
+        parameters: Array.from(mappedParameters.values()),
+        startNodeId: startNode.id,
+        startNodeLabel: startNode.data?.label || "Input",
+      };
+    }
+
     return {
       parameters: [
         {

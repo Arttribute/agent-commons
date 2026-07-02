@@ -335,16 +335,24 @@ export const useWorkflowStore = create<WorkflowEditorState>((set, get) => ({
           },
           label: node.data.label,
         })),
-        edges: edges.map((edge) => ({
-          id: edge.id,
-          source: edge.source,
-          target: edge.target,
-          sourceHandle: edge.sourceHandle,
-          targetHandle: edge.targetHandle,
-          mapping: edge.data?.dataType
-            ? { [edge.sourceHandle || "output"]: edge.targetHandle || "input" }
-            : {},
-        })),
+        edges: edges.map((edge) => {
+          const preservedMapping =
+            edge.data?.mapping && Object.keys(edge.data.mapping).length > 0
+              ? edge.data.mapping
+              : undefined;
+
+          return {
+            id: edge.id,
+            source: edge.source,
+            target: edge.target,
+            sourceHandle: edge.sourceHandle,
+            targetHandle: edge.targetHandle,
+            mapping: preservedMapping ??
+              (edge.sourceHandle && edge.targetHandle
+                ? { [edge.sourceHandle]: edge.targetHandle }
+                : {}),
+          };
+        }),
       };
 
       // Save to backend
@@ -438,16 +446,19 @@ export const useWorkflowStore = create<WorkflowEditorState>((set, get) => ({
 
       // Convert backend edges to React Flow edges
       const edges: ReactFlowEdge[] = (definition.edges || []).map((edge: any) => {
+        const mappingEntries = Object.entries(edge.mapping || {});
+        const firstMapping = mappingEntries[0] as [string, string] | undefined;
         return {
           id: edge.id,
           source: edge.source,
           target: edge.target,
           sourceHandle: edge.sourceHandle,
-          targetHandle: edge.targetHandle,
+          targetHandle: edge.targetHandle ?? firstMapping?.[1],
           type: "colored",
           data: {
             dataType: "any",
             color: "#6b7280",
+            mapping: edge.mapping || {},
           },
         };
       });

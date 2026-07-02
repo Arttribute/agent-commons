@@ -11,6 +11,9 @@ import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Textarea } from "@/components/ui/textarea";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { WorkflowRunsPanel } from "./workflow-runs-panel";
+import { WorkflowIntegrationsPanel } from "./workflow-integrations-panel";
 import {
   Accordion,
   AccordionContent,
@@ -207,20 +210,30 @@ export function TestPanel({ workflowId }: TestPanelProps) {
   };
 
   return (
-    <div className="w-80 border-l border-border bg-background flex flex-col h-full shrink-0">
+    <div className="w-[420px] border-l border-border bg-background flex flex-col h-full shrink-0">
       {/* Header */}
       <div className="px-4 py-3 border-b border-border flex items-center gap-2">
         <FlaskConical className="h-4 w-4 text-muted-foreground" />
         <div>
-          <h3 className="text-sm font-semibold">Test Run</h3>
+          <h3 className="text-sm font-semibold">Workflow Console</h3>
           <p className="text-[11px] text-muted-foreground">
-            {inputSchema ? `Entry: ${inputSchema.startNodeLabel}` : "Run with sample inputs"}
+            {inputSchema ? `Entry: ${inputSchema.startNodeLabel}` : "Run and inspect workflow activity"}
           </p>
         </div>
       </div>
 
-      <ScrollArea className="flex-1">
-        <div className="p-4 space-y-4">
+      <Tabs defaultValue="run" className="flex min-h-0 flex-1 flex-col">
+        <div className="border-b border-border px-3 py-2">
+          <TabsList className="grid h-8 w-full grid-cols-3">
+            <TabsTrigger value="run" className="text-xs">Run</TabsTrigger>
+            <TabsTrigger value="logs" className="text-xs">Logs</TabsTrigger>
+            <TabsTrigger value="integrations" className="text-xs">Integrations</TabsTrigger>
+          </TabsList>
+        </div>
+
+        <TabsContent value="run" className="m-0 min-h-0 flex-1">
+          <ScrollArea className="h-full">
+            <div className="p-4 space-y-4">
           {/* Inputs */}
           {inputSchema && inputSchema.parameters.length > 0 ? (
             <div className="space-y-3">
@@ -367,8 +380,21 @@ export function TestPanel({ workflowId }: TestPanelProps) {
               </div>
             </div>
           )}
-        </div>
-      </ScrollArea>
+            </div>
+          </ScrollArea>
+        </TabsContent>
+
+        <TabsContent value="logs" className="m-0 min-h-0 flex-1">
+          <WorkflowRunsPanel
+            workflowId={workflowId}
+            refreshKey={`${execution?.executionId ?? ""}:${execution?.status ?? ""}`}
+          />
+        </TabsContent>
+
+        <TabsContent value="integrations" className="m-0 min-h-0 flex-1">
+          <WorkflowIntegrationsPanel workflowId={workflowId} />
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }

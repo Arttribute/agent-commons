@@ -5,6 +5,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { eq, and, or } from 'drizzle-orm';
+import { createHash, randomBytes, timingSafeEqual } from 'crypto';
 import { DatabaseService } from '../modules/database';
 import { ToolLoaderService } from './tool-loader.service';
 import { WorkflowExecutorService } from './workflow-executor.service';
@@ -44,6 +45,13 @@ export interface WorkflowDefinition {
   endNodeId: string;
   nodes: WorkflowNode[];
   edges: WorkflowEdge[];
+}
+
+export interface WorkflowWebhookConfig {
+  webhookSecretHash?: string;
+  webhookCreatedAt?: string;
+  webhookLastInvokedAt?: string;
+  eventType?: string;
 }
 
 /**
@@ -470,10 +478,16 @@ export class WorkflowService {
       tags?: string[];
     },
   ) {
+    let existingWorkflow: any | undefined;
+
     // Validate definition if provided
     if (updates.definition) {
-      const workflow = await this.getWorkflow(workflowId);
-      await this.validateWorkflow(updates.definition, workflow.ownerId);
+      existingWorkflow = await this.getWorkflow(workflowId);
+      updates.definition = this.preservePreciseEdgeMappings(
+        existingWorkflow.definition as WorkflowDefinition,
+        updates.definition,
+      );
+      await this.validateWorkflow(updates.definition, existingWorkflow.ownerId);
     }
 
     const [updated] = await this.db
@@ -495,6 +509,205 @@ export class WorkflowService {
     this.logger.log(`Updated workflow ${workflowId}`);
 
     return updated;
+  }
+
+  async getWebhookConfiguration(workflowId: string) {
+    const workflow = await this.getWorkflow(workflowId);
+    const triggerConfig = (workflow.triggerConfig || {}) as WorkflowWebhookConfig;
+
+    return {
+      workflowId,
+      enabled: workflow.triggerType === 'webhook' && Boolean(triggerConfig.webhookSecretHash),
+      createdAt: triggerConfig.webhookCreatedAt,
+      lastInvokedAt: triggerConfig.webhookLastInvokedAt,
+    };
+  }
+
+  async rotateWebhookToken(workflowId: string) {
+    const workflow = await this.getWorkflow(workflowId);
+    const token = randomBytes(32).toString('base64url');
+    const triggerConfig = {
+      ...((workflow.triggerConfig || {}) as WorkflowWebhookConfig),
+      webhookSecretHash: this.hashWebhookToken(token),
+      webhookCreatedAt: new Date().toISOString(),
+    };
+
+    await this.db
+      .update(schema.workflow)
+      .set({
+        triggerType: 'webhook',
+        triggerConfig,
+        updatedAt: new Date(),
+      })
+      .where(eq(schema.workflow.workflowId, workflowId));
+
+    this.logger.log(`Rotated webhook token for workflow ${workflowId}`);
+
+    return {
+      workflowId,
+      token,
+      enabled: true,
+      createdAt: triggerConfig.webhookCreatedAt,
+    };
+  }
+
+  async disableWebhook(workflowId: string) {
+    const workflow = await this.getWorkflow(workflowId);
+    const {
+      webhookSecretHash: _secret,
+      webhookCreatedAt: _createdAt,
+      webhookLastInvokedAt: _lastInvokedAt,
+      ...triggerConfig
+    } = ((workflow.triggerConfig || {}) as WorkflowWebhookConfig);
+
+    await this.db
+      .update(schema.workflow)
+      .set({
+        triggerType: 'manual',
+        triggerConfig,
+        updatedAt: new Date(),
+      })
+      .where(eq(schema.workflow.workflowId, workflowId));
+
+    this.logger.log(`Disabled webhook for workflow ${workflowId}`);
+
+    return { workflowId, enabled: false };
+  }
+
+  async executeWebhook(params: {
+    token: string;
+    payload: any;
+    query?: Record<string, any>;
+    headers?: Record<string, any>;
+  }) {
+    const tokenHash = this.hashWebhookToken(params.token);
+    const workflows = await this.db.query.workflow.findMany({
+      where: (w: any) => eq(w.triggerType, 'webhook'),
+    });
+    const workflow = workflows.find((candidate: any) => {
+      const triggerConfig = (candidate.triggerConfig || {}) as WorkflowWebhookConfig;
+      return this.compareWebhookHashes(tokenHash, triggerConfig.webhookSecretHash);
+    });
+
+    if (!workflow) {
+      throw new NotFoundException('Workflow webhook not found');
+    }
+
+    const receivedAt = new Date().toISOString();
+    const inputData = this.buildWebhookInput(params.payload, {
+      query: params.query || {},
+      headers: this.sanitizeWebhookHeaders(params.headers || {}),
+      receivedAt,
+    });
+    const triggerConfig = {
+      ...((workflow.triggerConfig || {}) as WorkflowWebhookConfig),
+      webhookLastInvokedAt: receivedAt,
+    };
+
+    await this.db
+      .update(schema.workflow)
+      .set({
+        triggerConfig,
+        lastExecutedAt: new Date(),
+        updatedAt: new Date(),
+      })
+      .where(eq(schema.workflow.workflowId, workflow.workflowId));
+
+    const executionId = await this.workflowExecutor.executeWorkflow({
+      workflowId: workflow.workflowId,
+      inputData,
+      userId: workflow.ownerType === 'user' ? workflow.ownerId : undefined,
+    });
+    const execution = await this.workflowExecutor.getExecutionStatus(executionId);
+
+    return {
+      accepted: true,
+      executionId,
+      workflowId: workflow.workflowId,
+      status: execution.status,
+      startedAt: execution.startedAt,
+    };
+  }
+
+  private hashWebhookToken(token: string): string {
+    return createHash('sha256').update(token).digest('hex');
+  }
+
+  private compareWebhookHashes(actualHash: string, expectedHash?: string): boolean {
+    if (!expectedHash) return false;
+    const actual = Buffer.from(actualHash, 'hex');
+    const expected = Buffer.from(expectedHash, 'hex');
+    if (actual.length !== expected.length) return false;
+    return timingSafeEqual(actual, expected);
+  }
+
+  private sanitizeWebhookHeaders(headers: Record<string, any>) {
+    const allowList = new Set([
+      'content-type',
+      'user-agent',
+      'x-forwarded-for',
+      'x-real-ip',
+      'x-request-id',
+      'x-vercel-id',
+    ]);
+
+    return Object.fromEntries(
+      Object.entries(headers)
+        .map(([key, value]) => [key.toLowerCase(), value])
+        .filter(([key]) => allowList.has(key)),
+    );
+  }
+
+  private buildWebhookInput(payload: any, webhook: Record<string, any>) {
+    if (payload && typeof payload === 'object' && !Array.isArray(payload)) {
+      const inputData = 'inputData' in payload ? payload.inputData : payload;
+      if (inputData && typeof inputData === 'object' && !Array.isArray(inputData)) {
+        return { ...inputData, _webhook: webhook };
+      }
+      return { body: inputData, _webhook: webhook };
+    }
+
+    return { body: payload, _webhook: webhook };
+  }
+
+  private preservePreciseEdgeMappings(
+    existingDefinition: WorkflowDefinition | undefined,
+    nextDefinition: WorkflowDefinition,
+  ): WorkflowDefinition {
+    if (!existingDefinition?.edges?.length || !nextDefinition?.edges?.length) {
+      return nextDefinition;
+    }
+
+    const existingEdgesById = new Map(
+      existingDefinition.edges.map((edge) => [edge.id, edge]),
+    );
+
+    return {
+      ...nextDefinition,
+      edges: nextDefinition.edges.map((edge) => {
+        const existing = existingEdgesById.get(edge.id);
+        if (!existing?.mapping || !Object.keys(existing.mapping).length) {
+          return edge;
+        }
+
+        const mapping = edge.mapping || {};
+        const mappingEntries = Object.entries(mapping);
+        const isGenericEditorMapping =
+          mappingEntries.length === 0 ||
+          (mappingEntries.length === 1 &&
+            mappingEntries[0][0] === 'output' &&
+            mappingEntries[0][1] === 'input');
+
+        if (!isGenericEditorMapping) return edge;
+
+        return {
+          ...edge,
+          mapping: existing.mapping,
+          sourceHandle: edge.sourceHandle ?? existing.sourceHandle,
+          targetHandle: edge.targetHandle ?? existing.targetHandle,
+        };
+      }),
+    };
   }
 
   /**

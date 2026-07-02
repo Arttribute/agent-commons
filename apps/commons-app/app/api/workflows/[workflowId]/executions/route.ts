@@ -5,13 +5,15 @@ const baseUrl = process.env.NEXT_PUBLIC_NEST_API_BASE_URL;
 
 // GET /api/workflows/:workflowId/executions
 export async function GET(
-  _req: NextRequest,
+  req: NextRequest,
   { params }: { params: Promise<{ workflowId: string }> }
 ) {
   if (!baseUrl) return NextResponse.json({ error: "Server base URL not configured" }, { status: 500 });
   const { workflowId } = await params;
   try {
-    const res = await fetch(`${baseUrl}/v1/workflows/${workflowId}/executions`, {
+    const limit = req.nextUrl.searchParams.get("limit");
+    const qs = limit ? `?limit=${encodeURIComponent(limit)}` : "";
+    const res = await fetch(`${baseUrl}/v1/workflows/${workflowId}/executions${qs}`, {
       cache: "no-store",
       headers: await backendAuthHeaders(),
     });
