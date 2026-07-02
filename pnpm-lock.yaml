@@ -185,6 +185,9 @@ importers:
       mammoth:
         specifier: ^1.12.0
         version: 1.12.0
+      multer:
+        specifier: 1.4.5-lts.2
+        version: 1.4.5-lts.2
       onnxruntime-node:
         specifier: 1.21.0
         version: 1.21.0
