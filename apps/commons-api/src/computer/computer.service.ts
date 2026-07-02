@@ -28,6 +28,8 @@ const ACTIVE_STATUSES: ComputerStatus[] = [
   'running',
   'idle',
 ];
+const UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 type ComputerConfig = typeof schema.agentComputerConfig.$inferSelect;
 type ComputerInstance = typeof schema.agentComputerInstance.$inferSelect;
@@ -161,6 +163,7 @@ export class ComputerService {
   }) {
     const agent = await this.assertAgent(args.agentId);
     const config = await this.getConfig(args.agentId);
+    const sessionId = args.sessionId?.trim() || undefined;
     if (!config.enabled) {
       throw new BadRequestException(
         'Computer use is disabled for this agent. Enable it in the agent Computer settings first.',
@@ -170,6 +173,9 @@ export class ComputerService {
       throw new BadRequestException(
         'This agent is not allowed to start computers automatically.',
       );
+    }
+    if (sessionId) {
+      await this.assertSessionForAgent(args.agentId, sessionId);
     }
 
     const lifecycle =
@@ -190,7 +196,7 @@ export class ComputerService {
         await this.recordEvent({
           computerId: reusable.computerId,
           agentId: args.agentId,
-          sessionId: args.sessionId,
+          sessionId,
           eventType: 'computer.reused',
           actorId: args.actorId,
           actorType: args.actorType,
@@ -218,7 +224,7 @@ export class ComputerService {
       .values({
         computerId,
         agentId: args.agentId,
-        sessionId: args.sessionId as any,
+        sessionId: sessionId as any,
         ownerUserId: agent.ownerUserId,
         workspaceId: agent.workspaceId,
         name,
@@ -243,7 +249,7 @@ export class ComputerService {
     await this.recordEvent({
       computerId,
       agentId: args.agentId,
-      sessionId: args.sessionId,
+      sessionId,
       eventType: 'computer.provisioning',
       actorId: args.actorId,
       actorType: args.actorType,
@@ -274,7 +280,7 @@ export class ComputerService {
       await this.recordEvent({
         computerId,
         agentId: args.agentId,
-        sessionId: args.sessionId,
+        sessionId,
         eventType: 'computer.error',
         actorId: args.actorId,
         actorType: args.actorType,
@@ -793,6 +799,20 @@ export class ComputerService {
     });
     if (!agent) throw new NotFoundException('Agent not found');
     return agent;
+  }
+
+  private async assertSessionForAgent(agentId: string, sessionId: string) {
+    if (!UUID_RE.test(sessionId)) {
+      throw new BadRequestException('sessionId must be a valid UUID');
+    }
+    const session = await this.db.query.session.findFirst({
+      where: (t) => and(eq(t.sessionId, sessionId as any), eq(t.agentId, agentId)),
+    });
+    if (!session) {
+      throw new BadRequestException(
+        'sessionId must reference an existing session for this agent',
+      );
+    }
   }
 
   private normalizeConfigPatch(
