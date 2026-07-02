@@ -17,7 +17,7 @@ import { Request } from 'express';
 import { Observable } from 'rxjs';
 import { WorkflowService } from './workflow.service';
 import { WorkflowExecutorService } from './workflow-executor.service';
-import { OwnerGuard, OwnerOnly } from '~/modules/auth';
+import { OwnerGuard, OwnerOnly, Public } from '~/modules/auth';
 
 /**
  * WorkflowController
@@ -108,6 +108,7 @@ export class WorkflowController {
    * Execute a workflow through its webhook trigger.
    * POST /v1/workflows/webhooks/:token
    */
+  @Public()
   @Post('webhooks/:token')
   async executeWebhook(
     @Param('token') token: string,
