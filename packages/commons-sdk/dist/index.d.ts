@@ -30,6 +30,91 @@ interface Agent {
     externalUrl?: string;
     createdAt: string;
 }
+type AgentComputerLifecycle = 'persistent' | 'ephemeral';
+type AgentComputerStatus = 'provisioning' | 'starting' | 'running' | 'idle' | 'stopping' | 'stopped' | 'terminated' | 'failed' | 'error' | 'unavailable';
+interface AgentComputerConfig {
+    configId: string;
+    agentId: string;
+    enabled: boolean;
+    defaultMode: AgentComputerLifecycle;
+    autoStart: boolean;
+    allowAgentStart: boolean;
+    allowUserSelect: boolean;
+    allowBrowser: boolean;
+    allowTerminal: boolean;
+    allowFilesystem: boolean;
+    networkAccess: 'standard' | 'restricted' | 'disabled' | string;
+    maxPersistentComputers: number;
+    maxEphemeralComputers: number;
+    maxConcurrentComputers: number;
+    idleTtlMinutes: number;
+    sessionTtlMinutes: number;
+    image?: string | null;
+    cpuLimit?: string | null;
+    memoryLimit?: string | null;
+    storageLimit?: string | null;
+    region?: string | null;
+    provider: string;
+    metadata?: Record<string, any> | null;
+    createdAt: string;
+    updatedAt: string;
+}
+interface AgentComputerInstance {
+    computerId: string;
+    agentId: string;
+    sessionId?: string | null;
+    ownerUserId?: string | null;
+    workspaceId?: string | null;
+    name: string;
+    lifecycle: AgentComputerLifecycle;
+    status: AgentComputerStatus;
+    provider: string;
+    cloudProvider?: string | null;
+    region?: string | null;
+    namespaceId?: string | null;
+    podName?: string | null;
+    image?: string | null;
+    cpuLimit?: string | null;
+    memoryLimit?: string | null;
+    storageLimit?: string | null;
+    workspaceRoot?: string | null;
+    workspaceSnapshot?: string | null;
+    browser?: {
+        status?: 'off' | 'starting' | 'on' | 'error';
+        url?: string | null;
+        title?: string | null;
+        screenshot?: string | null;
+        lastAction?: string | null;
+        error?: string | null;
+        updatedAt?: string | null;
+    } | null;
+    terminal?: {
+        lastCommand?: string | null;
+        lastExitCode?: number | null;
+        lastOutput?: string | null;
+        updatedAt?: string | null;
+    } | null;
+    metadata?: Record<string, any> | null;
+    lastActivityAt?: string | null;
+    expiresAt?: string | null;
+    startedAt?: string | null;
+    stoppedAt?: string | null;
+    errorMessage?: string | null;
+    createdAt: string;
+    updatedAt: string;
+}
+interface AgentComputerEvent {
+    eventId: string;
+    computerId: string;
+    agentId: string;
+    sessionId?: string | null;
+    eventType: string;
+    actorType: string;
+    actorId?: string | null;
+    summary?: string | null;
+    payload?: Record<string, any> | null;
+    createdAt: string;
+}
 interface CreateAgentParams {
     name: string;
     instructions?: string;
@@ -69,6 +154,11 @@ interface RunParams {
     messages: ChatMessage[];
     sessionId?: string;
     initiatorId?: string;
+    computerRequest?: {
+        enabled: boolean;
+        computerIds?: string[];
+        lifecycle?: AgentComputerLifecycle;
+    };
     /** Uploaded file references. Raw file bytes must be uploaded separately. */
     attachments?: Array<{
         fileId: string;
@@ -718,6 +808,56 @@ declare class CommonsClient {
         /** Remove a preferred agent connection by its record ID. */
         removePreferredConnection: (id: string) => Promise<{
             success: boolean;
+        }>;
+        getComputerConfig: (agentId: string) => Promise<{
+            data: AgentComputerConfig;
+        }>;
+        updateComputerConfig: (agentId: string, params: Partial<AgentComputerConfig>) => Promise<{
+            data: AgentComputerConfig;
+        }>;
+        listComputers: (agentId: string, filter?: {
+            sessionId?: string;
+            includeTerminated?: boolean;
+        }) => Promise<{
+            data: AgentComputerInstance[];
+        }>;
+        startComputer: (agentId: string, params: {
+            sessionId?: string;
+            lifecycle?: "persistent" | "ephemeral";
+            name?: string;
+            reason?: string;
+        }) => Promise<{
+            data: AgentComputerInstance;
+        }>;
+        getComputer: (agentId: string, computerId: string) => Promise<{
+            data: AgentComputerInstance;
+        }>;
+        refreshComputer: (agentId: string, computerId: string) => Promise<{
+            data: AgentComputerInstance;
+        }>;
+        stopComputer: (agentId: string, computerId: string) => Promise<{
+            data: AgentComputerInstance;
+        }>;
+        readComputerFile: (agentId: string, computerId: string, path: string) => Promise<{
+            data: {
+                path: string;
+                content: string;
+            };
+        }>;
+        runComputerCommand: (agentId: string, computerId: string, params: {
+            command: string;
+            cwd?: string;
+            timeoutSeconds?: number;
+        }) => Promise<{
+            data: any;
+        }>;
+        openComputerBrowser: (agentId: string, computerId: string, params: {
+            url: string;
+        }) => Promise<{
+            data: any;
+        }>;
+        listComputerEvents: (agentId: string, computerId: string, limit?: number) => Promise<{
+            data: AgentComputerEvent[];
         }>;
         /**
          * List available TTS voices for a provider.

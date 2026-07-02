@@ -140,6 +140,185 @@ export const agentWallet = pgTable('agent_wallet', {
     .notNull(),
 });
 
+/* ─────────────────────────  AGENT COMPUTER  ───────────────────────── */
+
+export const agentComputerConfig = pgTable(
+  'agent_computer_config',
+  {
+    configId: uuid('config_id')
+      .default(sql`uuid_generate_v4()`)
+      .primaryKey(),
+
+    agentId: text('agent_id')
+      .notNull()
+      .references(() => agent.agentId, { onDelete: 'cascade' }),
+
+    enabled: pgBoolean('enabled').default(false).notNull(),
+    defaultMode: text('default_mode').default('ephemeral').notNull(),
+    autoStart: pgBoolean('auto_start').default(false).notNull(),
+    allowAgentStart: pgBoolean('allow_agent_start').default(true).notNull(),
+    allowUserSelect: pgBoolean('allow_user_select').default(true).notNull(),
+    allowBrowser: pgBoolean('allow_browser').default(true).notNull(),
+    allowTerminal: pgBoolean('allow_terminal').default(true).notNull(),
+    allowFilesystem: pgBoolean('allow_filesystem').default(true).notNull(),
+    networkAccess: text('network_access').default('standard').notNull(),
+
+    maxPersistentComputers: integer('max_persistent_computers')
+      .default(1)
+      .notNull(),
+    maxEphemeralComputers: integer('max_ephemeral_computers')
+      .default(2)
+      .notNull(),
+    maxConcurrentComputers: integer('max_concurrent_computers')
+      .default(2)
+      .notNull(),
+    idleTtlMinutes: integer('idle_ttl_minutes').default(60).notNull(),
+    sessionTtlMinutes: integer('session_ttl_minutes').default(180).notNull(),
+
+    image: text('image'),
+    cpuLimit: text('cpu_limit').default('2'),
+    memoryLimit: text('memory_limit').default('4Gi'),
+    storageLimit: text('storage_limit').default('5Gi'),
+    region: text('region'),
+    provider: text('provider').default('commonos').notNull(),
+
+    metadata: jsonb('metadata').$type<Record<string, any>>(),
+
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .default(sql`timezone('utc', now())`)
+      .notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true })
+      .default(sql`timezone('utc', now())`)
+      .notNull(),
+  },
+  (table) => ({
+    agentIdx: uniqueIndex('idx_agent_computer_config_agent').on(
+      table.agentId,
+    ),
+  }),
+);
+
+export const agentComputerInstance = pgTable(
+  'agent_computer_instance',
+  {
+    computerId: uuid('computer_id')
+      .default(sql`uuid_generate_v4()`)
+      .primaryKey(),
+
+    agentId: text('agent_id')
+      .notNull()
+      .references(() => agent.agentId, { onDelete: 'cascade' }),
+    sessionId: uuid('session_id').references(() => session.sessionId, {
+      onDelete: 'set null',
+    }),
+
+    ownerUserId: text('owner_user_id'),
+    workspaceId: text('workspace_id'),
+    name: text('name').notNull(),
+    lifecycle: text('lifecycle').default('ephemeral').notNull(),
+    status: text('status').default('provisioning').notNull(),
+
+    provider: text('provider').default('commonos').notNull(),
+    cloudProvider: text('cloud_provider'),
+    region: text('region'),
+    namespaceId: text('namespace_id'),
+    podName: text('pod_name'),
+    commonOsFleetId: text('common_os_fleet_id'),
+    commonOsAgentId: text('common_os_agent_id'),
+
+    image: text('image'),
+    cpuLimit: text('cpu_limit'),
+    memoryLimit: text('memory_limit'),
+    storageLimit: text('storage_limit'),
+    workspaceRoot: text('workspace_root').default('/mnt/shared'),
+    workspaceSnapshot: text('workspace_snapshot'),
+
+    browser: jsonb('browser').$type<{
+      status?: 'off' | 'starting' | 'on' | 'error';
+      url?: string | null;
+      title?: string | null;
+      screenshot?: string | null;
+      lastAction?: string | null;
+      error?: string | null;
+      updatedAt?: string | null;
+    }>(),
+    terminal: jsonb('terminal').$type<{
+      lastCommand?: string | null;
+      lastExitCode?: number | null;
+      lastOutput?: string | null;
+      updatedAt?: string | null;
+    }>(),
+
+    metadata: jsonb('metadata').$type<Record<string, any>>(),
+    lastActivityAt: timestamp('last_activity_at', { withTimezone: true }),
+    expiresAt: timestamp('expires_at', { withTimezone: true }),
+    startedAt: timestamp('started_at', { withTimezone: true }),
+    stoppedAt: timestamp('stopped_at', { withTimezone: true }),
+    errorMessage: text('error_message'),
+
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .default(sql`timezone('utc', now())`)
+      .notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true })
+      .default(sql`timezone('utc', now())`)
+      .notNull(),
+  },
+  (table) => ({
+    agentStatusIdx: index('idx_agent_computer_instance_agent_status').on(
+      table.agentId,
+      table.status,
+    ),
+    sessionIdx: index('idx_agent_computer_instance_session').on(
+      table.sessionId,
+      table.createdAt,
+    ),
+    commonOsIdx: index('idx_agent_computer_instance_commonos').on(
+      table.commonOsAgentId,
+    ),
+  }),
+);
+
+export const agentComputerEvent = pgTable(
+  'agent_computer_event',
+  {
+    eventId: uuid('event_id')
+      .default(sql`uuid_generate_v4()`)
+      .primaryKey(),
+
+    computerId: uuid('computer_id')
+      .notNull()
+      .references(() => agentComputerInstance.computerId, {
+        onDelete: 'cascade',
+      }),
+    agentId: text('agent_id')
+      .notNull()
+      .references(() => agent.agentId, { onDelete: 'cascade' }),
+    sessionId: uuid('session_id').references(() => session.sessionId, {
+      onDelete: 'set null',
+    }),
+
+    eventType: text('event_type').notNull(),
+    actorType: text('actor_type').default('agent').notNull(),
+    actorId: text('actor_id'),
+    summary: text('summary'),
+    payload: jsonb('payload').$type<Record<string, any>>(),
+
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .default(sql`timezone('utc', now())`)
+      .notNull(),
+  },
+  (table) => ({
+    computerIdx: index('idx_agent_computer_event_computer').on(
+      table.computerId,
+      table.createdAt,
+    ),
+    sessionIdx: index('idx_agent_computer_event_session').on(
+      table.sessionId,
+      table.createdAt,
+    ),
+  }),
+);
+
 /* ─────────────────────────  SESSION  ───────────────────────── */
 
 export const session = pgTable('session', {

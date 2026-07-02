@@ -1,4 +1,4 @@
-import { FileText, ImageIcon, Table2 } from "lucide-react";
+import { FileText, ImageIcon, Monitor, Table2 } from "lucide-react";
 
 interface InitiatorMessageProps {
   message: string;
@@ -11,16 +11,30 @@ interface InitiatorMessageProps {
       kind?: string;
       sizeBytes?: number;
     }>;
+    computerRequest?: {
+      enabled: boolean;
+      lifecycle?: "persistent" | "ephemeral";
+    };
   };
 }
 
 export default function InitiatorMessage({ message, metadata }: InitiatorMessageProps) {
   const attachments = metadata?.attachments ?? [];
+  const computerRequest = metadata?.computerRequest?.enabled ? metadata.computerRequest : null;
   return (
     <div className="flex justify-end my-3">
       <div className="max-w-[80%] rounded-2xl rounded-tr-sm bg-indigo-600 px-4 py-2.5">
-        {attachments.length > 0 && (
+        {(attachments.length > 0 || computerRequest) && (
           <div className="mb-2 flex flex-wrap justify-end gap-1.5">
+            {computerRequest && (
+              <span className="flex max-w-full items-center gap-1.5 rounded-md bg-white/15 px-2 py-1 text-xs text-white">
+                <Monitor className="h-3.5 w-3.5 shrink-0" />
+                <span>Agent computer</span>
+                <span className="shrink-0 text-white/70">
+                  {computerRequest.lifecycle === "persistent" ? "Persistent" : "Ephemeral"}
+                </span>
+              </span>
+            )}
             {attachments.map((attachment) => (
               <AttachmentPill key={attachment.fileId} attachment={attachment} />
             ))}

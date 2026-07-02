@@ -10,8 +10,7 @@ import remarkGfm from "remark-gfm";
 import rehypeRaw from "rehype-raw";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
-import { Copy, Check } from "lucide-react";
-import { Bot } from "lucide-react";
+import { Bot, Check, Copy, FileText, Globe2, Monitor, TerminalSquare } from "lucide-react";
 
 interface ToolCall {
   name: string;
@@ -42,8 +41,9 @@ export default function AgentOutput({
   className,
   isStreaming,
 }: AgentOutputProps) {
+  const computerToolCalls = getComputerToolCalls(metadata?.toolCalls ?? []);
 
-  if (!content && !isStreaming) {
+  if (!content && !isStreaming && computerToolCalls.length === 0) {
     return (
       <div
         className={cn(
@@ -179,6 +179,7 @@ export default function AgentOutput({
       >
         {content}
       </ReactMarkdown>
+      <ComputerArtifacts toolCalls={computerToolCalls} />
       {isStreaming && (
         <span className="inline-block w-1.5 h-4 bg-indigo-400 rounded-sm animate-pulse ml-0.5 align-middle" />
       )}
@@ -186,6 +187,104 @@ export default function AgentOutput({
       </div>
     </div>
   );
+}
+
+function getComputerToolCalls(toolCalls: ToolCall[]) {
+  const names = new Set([
+    "startAgentComputer",
+    "listAgentComputers",
+    "runComputerCommand",
+    "readComputerFile",
+    "openComputerBrowser",
+  ]);
+  return toolCalls.filter((call) => names.has(call.name));
+}
+
+function ComputerArtifacts({ toolCalls }: { toolCalls: ToolCall[] }) {
+  if (!toolCalls.length) return null;
+
+  return (
+    <div className="not-prose mt-3 space-y-2">
+      {toolCalls.map((call, index) => {
+        const result = unwrapToolResult(call.result);
+        const { icon: Icon, title, detail, body } = describeComputerCall(call, result);
+        return (
+          <div
+            key={`${call.name}-${index}`}
+            className="rounded-md border border-border bg-muted/30 p-3 text-sm"
+          >
+            <div className="flex items-center gap-2">
+              <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-background text-muted-foreground">
+                <Icon className="h-4 w-4" />
+              </span>
+              <div className="min-w-0">
+                <p className="truncate font-medium text-foreground">{title}</p>
+                {detail && <p className="truncate text-xs text-muted-foreground">{detail}</p>}
+              </div>
+            </div>
+            {body && (
+              <pre className="mt-2 max-h-48 overflow-auto rounded-md bg-background p-2 text-xs leading-relaxed text-foreground">
+                {body}
+              </pre>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function unwrapToolResult(result: any) {
+  if (result?.data !== undefined) return result.data;
+  if (result?.toolData !== undefined) return result.toolData;
+  return result ?? {};
+}
+
+function describeComputerCall(call: ToolCall, result: any) {
+  if (call.name === "runComputerCommand") {
+    return {
+      icon: TerminalSquare,
+      title: "Terminal command",
+      detail: call.args?.command ?? result?.command ?? "Command executed",
+      body: truncateOutput(result?.response ?? result?.error ?? result?.output ?? ""),
+    };
+  }
+  if (call.name === "readComputerFile") {
+    return {
+      icon: FileText,
+      title: "File read",
+      detail: result?.path ?? call.args?.path ?? "Workspace file",
+      body: truncateOutput(result?.content ?? ""),
+    };
+  }
+  if (call.name === "openComputerBrowser") {
+    return {
+      icon: Globe2,
+      title: "Browser opened",
+      detail: result?.browser?.url ?? call.args?.url ?? "Browser updated",
+      body: truncateOutput(result?.response ?? result?.error ?? ""),
+    };
+  }
+  if (call.name === "listAgentComputers") {
+    const count = Array.isArray(result) ? result.length : 0;
+    return {
+      icon: Monitor,
+      title: "Computers listed",
+      detail: `${count} computer${count === 1 ? "" : "s"}`,
+      body: "",
+    };
+  }
+  return {
+    icon: Monitor,
+    title: "Computer started",
+    detail: [result?.name, result?.status, result?.lifecycle].filter(Boolean).join(" · "),
+    body: result?.errorMessage ? String(result.errorMessage) : "",
+  };
+}
+
+function truncateOutput(value: unknown) {
+  const text = typeof value === "string" ? value : value ? JSON.stringify(value, null, 2) : "";
+  return text.length > 2400 ? `${text.slice(0, 2400)}\n...` : text;
 }
 
 interface CodeBlockProps {

@@ -16,6 +16,7 @@ import {
   CreateMemoryParams, UpdateMemoryParams,
   AgentWallet, WalletBalance, CreateWalletParams,
   ApiKey, CreatedApiKey, CreateApiKeyParams, ApiKeyPrincipalType,
+  AgentComputerConfig, AgentComputerInstance, AgentComputerEvent,
 } from './types';
 
 export class CommonsClient {
@@ -166,6 +167,85 @@ export class CommonsClient {
       /** Remove a preferred agent connection by its record ID. */
       removePreferredConnection: (id: string): Promise<{ success: boolean }> =>
         this.request('DELETE', `/v1/agents/preferred-connections/${id}`),
+
+      // ── Computers ────────────────────────────────────────────────────────
+
+      getComputerConfig: (agentId: string): Promise<{ data: AgentComputerConfig }> =>
+        this.request('GET', `/v1/agents/${agentId}/computer/config`),
+
+      updateComputerConfig: (
+        agentId: string,
+        params: Partial<AgentComputerConfig>,
+      ): Promise<{ data: AgentComputerConfig }> =>
+        this.request('PUT', `/v1/agents/${agentId}/computer/config`, params),
+
+      listComputers: (
+        agentId: string,
+        filter?: { sessionId?: string; includeTerminated?: boolean },
+      ): Promise<{ data: AgentComputerInstance[] }> => {
+        const qs = new URLSearchParams();
+        if (filter?.sessionId) qs.set('sessionId', filter.sessionId);
+        if (filter?.includeTerminated) qs.set('includeTerminated', 'true');
+        const query = qs.toString();
+        return this.request('GET', `/v1/agents/${agentId}/computers${query ? `?${query}` : ''}`);
+      },
+
+      startComputer: (
+        agentId: string,
+        params: {
+          sessionId?: string;
+          lifecycle?: 'persistent' | 'ephemeral';
+          name?: string;
+          reason?: string;
+        },
+      ): Promise<{ data: AgentComputerInstance }> =>
+        this.request('POST', `/v1/agents/${agentId}/computers`, params),
+
+      getComputer: (
+        agentId: string,
+        computerId: string,
+      ): Promise<{ data: AgentComputerInstance }> =>
+        this.request('GET', `/v1/agents/${agentId}/computers/${computerId}`),
+
+      refreshComputer: (
+        agentId: string,
+        computerId: string,
+      ): Promise<{ data: AgentComputerInstance }> =>
+        this.request('POST', `/v1/agents/${agentId}/computers/${computerId}/refresh`),
+
+      stopComputer: (
+        agentId: string,
+        computerId: string,
+      ): Promise<{ data: AgentComputerInstance }> =>
+        this.request('POST', `/v1/agents/${agentId}/computers/${computerId}/stop`),
+
+      readComputerFile: (
+        agentId: string,
+        computerId: string,
+        path: string,
+      ): Promise<{ data: { path: string; content: string } }> =>
+        this.request('GET', `/v1/agents/${agentId}/computers/${computerId}/files/read?path=${encodeURIComponent(path)}`),
+
+      runComputerCommand: (
+        agentId: string,
+        computerId: string,
+        params: { command: string; cwd?: string; timeoutSeconds?: number },
+      ): Promise<{ data: any }> =>
+        this.request('POST', `/v1/agents/${agentId}/computers/${computerId}/commands`, params),
+
+      openComputerBrowser: (
+        agentId: string,
+        computerId: string,
+        params: { url: string },
+      ): Promise<{ data: any }> =>
+        this.request('POST', `/v1/agents/${agentId}/computers/${computerId}/browser/open`, params),
+
+      listComputerEvents: (
+        agentId: string,
+        computerId: string,
+        limit?: number,
+      ): Promise<{ data: AgentComputerEvent[] }> =>
+        this.request('GET', `/v1/agents/${agentId}/computers/${computerId}/events${limit ? `?limit=${limit}` : ''}`),
 
       // ── TTS Voices ───────────────────────────────────────────────────────
 

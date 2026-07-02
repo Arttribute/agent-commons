@@ -21,6 +21,7 @@ import { SkillModule } from '../skill/skill.module';
 import { OwnerGuard } from '~/modules/auth';
 import { EthereumToolService } from './tools/ethereum-tool.service';
 import { FilesModule } from '~/files';
+import { ComputerModule } from '~/computer';
 
 @Module({
   imports: [
@@ -33,6 +34,7 @@ import { FilesModule } from '~/files';
     McpModule,
     SkillModule,
     FilesModule,
+    ComputerModule,
   ],
   controllers: [
     ToolController,

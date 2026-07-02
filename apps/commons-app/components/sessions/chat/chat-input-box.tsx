@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { ArrowUp, FileText, ImageIcon, Loader2, Plus, Table2, X } from "lucide-react";
+import { ArrowUp, FileText, ImageIcon, Loader2, Monitor, Plus, Table2, X } from "lucide-react";
 import { useAgentContext } from "@/context/AgentContext";
 import { useAgentStream } from "@/hooks/use-agent-stream";
 import { cn } from "@/lib/utils";
@@ -17,6 +17,12 @@ type UploadedAttachment = {
   textPreview?: string | null;
   error?: string;
   previewUrl?: string;
+};
+
+type ComputerConfigState = {
+  enabled?: boolean;
+  allowUserSelect?: boolean;
+  defaultMode?: "persistent" | "ephemeral";
 };
 
 export default function ChatInputBox({
@@ -38,6 +44,8 @@ export default function ChatInputBox({
   const [attachments, setAttachments] = useState<UploadedAttachment[]>([]);
   const [isDragging, setIsDragging] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [computerConfig, setComputerConfig] = useState<ComputerConfigState | null>(null);
+  const [computerEnabled, setComputerEnabled] = useState(false);
   const { addMessage, updateStreamingMessage, finalizeStreamingMessage, inputText, setInputText } =
     useAgentContext();
 
@@ -72,14 +80,47 @@ export default function ChatInputBox({
 
   const isLoading = streaming || disabled;
   const isUploading = attachments.some((attachment) => attachment.status === "uploading");
+  const canUseComputer = Boolean(computerConfig?.enabled && computerConfig?.allowUserSelect);
   const uploadedAttachments = attachments.filter(
     (attachment) => attachment.status === "uploaded" && attachment.fileId
   );
+
+  useEffect(() => {
+    let cancelled = false;
+    async function loadComputerConfig() {
+      try {
+        const response = await fetch(`/api/agents/${agentId}/computer/config`, {
+          cache: "no-store",
+        });
+        if (!response.ok) return;
+        const payload = await response.json();
+        if (!cancelled) setComputerConfig(payload?.data ?? null);
+      } catch {
+        if (!cancelled) setComputerConfig(null);
+      }
+    }
+    loadComputerConfig();
+    return () => {
+      cancelled = true;
+    };
+  }, [agentId]);
+
+  useEffect(() => {
+    if (computerConfig && (!computerConfig.enabled || !computerConfig.allowUserSelect)) {
+      setComputerEnabled(false);
+    }
+  }, [computerConfig]);
 
   const handleSend = async () => {
     if ((!inputText.trim() && uploadedAttachments.length === 0) || isLoading || isUploading) return;
 
     const userMessage = inputText.trim() || "Please review the attached file(s).";
+    const computerRequest = computerEnabled
+      ? {
+          enabled: true,
+          lifecycle: computerConfig?.defaultMode === "persistent" ? "persistent" as const : "ephemeral" as const,
+        }
+      : undefined;
     const messageAttachments = uploadedAttachments.map((attachment) => ({
       fileId: attachment.fileId!,
       name: attachment.name,
@@ -92,12 +133,13 @@ export default function ChatInputBox({
     previewUrlsRef.current.forEach((previewUrl) => URL.revokeObjectURL(previewUrl));
     previewUrlsRef.current.clear();
     setAttachments([]);
+    setComputerEnabled(false);
     accumulatedRef.current = "";
 
     addMessage({
       role: "human",
       content: userMessage,
-      metadata: { attachments: messageAttachments },
+      metadata: { attachments: messageAttachments, computerRequest },
       timestamp: new Date().toISOString(),
     });
 
@@ -117,6 +159,7 @@ export default function ChatInputBox({
       attachments: messageAttachments.map((attachment) => ({
         fileId: attachment.fileId,
       })),
+      computerRequest,
     });
   };
 
@@ -255,8 +298,29 @@ export default function ChatInputBox({
           event.target.value = "";
         }}
       />
-      {attachments.length > 0 && (
+      {(computerEnabled || attachments.length > 0) && (
         <div className="flex flex-wrap gap-2 px-3 pt-3">
+          {computerEnabled && (
+            <div className="flex max-w-full items-center gap-2 rounded-lg border border-border bg-muted/50 px-2 py-1.5 text-xs">
+              <span className="flex h-7 w-7 items-center justify-center rounded-md bg-background text-muted-foreground">
+                <Monitor className="h-4 w-4" />
+              </span>
+              <span className="min-w-0">
+                <span className="block max-w-44 truncate text-foreground">Agent computer</span>
+                <span className="block text-muted-foreground">
+                  {computerConfig?.defaultMode === "persistent" ? "Persistent" : "Ephemeral"}
+                </span>
+              </span>
+              <button
+                type="button"
+                onClick={() => setComputerEnabled(false)}
+                className="rounded-md p-1 text-muted-foreground hover:bg-background hover:text-foreground"
+                title="Remove"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          )}
           {attachments.map((attachment) => (
             <AttachmentChip
               key={attachment.localId}
@@ -300,6 +364,23 @@ export default function ChatInputBox({
               >
                 <Plus className="h-4 w-4" />
                 <span>Add photos & files</span>
+              </button>
+              <button
+                type="button"
+                onMouseDown={(event) => event.preventDefault()}
+                onClick={() => {
+                  if (!canUseComputer) return;
+                  setComputerEnabled((enabled) => !enabled);
+                  setMenuOpen(false);
+                }}
+                disabled={!canUseComputer}
+                className={cn(
+                  "flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-sm text-popover-foreground hover:bg-muted",
+                  !canUseComputer && "cursor-not-allowed opacity-50 hover:bg-transparent"
+                )}
+              >
+                <Monitor className="h-4 w-4" />
+                <span>{canUseComputer ? "Agent computer" : "Agent computer unavailable"}</span>
               </button>
             </div>
           )}

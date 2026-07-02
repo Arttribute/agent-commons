@@ -1,7 +1,7 @@
 "use client";
 
 import { useRef, useEffect, useState, useMemo, useCallback } from "react";
-import { ChevronDown, Loader2 } from "lucide-react";
+import { ChevronDown, Loader2, Monitor } from "lucide-react";
 import ExecutionWidget from "@/components/sessions/chat/execution-widget";
 import ChatInputBox from "./chat/chat-input-box";
 import InitiatorMessage from "./chat/initiator-message";
@@ -9,6 +9,13 @@ import AgentOutput from "./chat/agent-output";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import type { CommonAgent } from "@/types/agent";
 import { Card } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
+import {
+  AgentComputerPanel,
+  hasActiveComputer,
+  type AgentComputer,
+} from "@/components/computers/agent-computer-panel";
 import { useAgentContext } from "@/context/AgentContext";
 
 interface Message {
@@ -34,6 +41,11 @@ interface Message {
       response?: any;
       sessionId?: string;
     }>;
+    computerRequest?: {
+      enabled: boolean;
+      computerIds?: string[];
+      lifecycle?: "persistent" | "ephemeral";
+    };
   };
   isStreaming?: boolean;
 }
@@ -119,6 +131,8 @@ export default function SessionInterfaceImproved({
     session?.childSessions || []
   );
   const [spaces, setSpaces] = useState<any[]>(session?.spaces || []);
+  const [computerDrawerOpen, setComputerDrawerOpen] = useState(false);
+  const [sessionComputers, setSessionComputers] = useState<AgentComputer[]>([]);
 
   const { messages, setInputText } = useAgentContext();
   const greeting = (agent as any)?.greeting as string | undefined;
@@ -200,6 +214,26 @@ export default function SessionInterfaceImproved({
     }
   }, [sessionId]);
 
+  const fetchSessionComputers = useCallback(async () => {
+    if (!agentId) return;
+    try {
+      const query = sessionId ? `?sessionId=${encodeURIComponent(sessionId)}` : "";
+      const res = await fetch(`/api/agents/${agentId}/computers${query}`, {
+        cache: "no-store",
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setSessionComputers(data?.data ?? []);
+      }
+    } catch {
+      // Computer status is a lightweight hint here; the drawer can refresh itself.
+    }
+  }, [agentId, sessionId]);
+
+  useEffect(() => {
+    fetchSessionComputers();
+  }, [fetchSessionComputers, messages.length, isStreaming]);
+
   // Poll tasks while any task is active (started/in_progress), stop when all terminal
   const pollIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
@@ -245,14 +279,43 @@ export default function SessionInterfaceImproved({
           return current;
         });
       });
+      fetchSessionComputers();
     }
-  }, [isStreaming, fetchTasks, startTaskPolling]);
+  }, [isStreaming, fetchTasks, fetchSessionComputers, startTaskPolling]);
 
   // Clean up polling on unmount
   useEffect(() => () => stopTaskPolling(), [stopTaskPolling]);
 
   return (
-    <div className="flex-1 overflow-y-auto py-4">
+    <div className="relative flex-1 overflow-y-auto py-4">
+      <Sheet open={computerDrawerOpen} onOpenChange={setComputerDrawerOpen}>
+        <SheetTrigger asChild>
+          <Button
+            type="button"
+            variant="outline"
+            size="icon"
+            className="absolute right-4 top-4 z-10 h-9 w-9 rounded-md bg-background/95 shadow-sm backdrop-blur"
+            title="Agent computer"
+            aria-label="Agent computer"
+            onClick={() => fetchSessionComputers()}
+          >
+            <Monitor className="h-4 w-4" />
+            {hasActiveComputer(sessionComputers) && (
+              <span className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-red-500 ring-2 ring-background" />
+            )}
+          </Button>
+        </SheetTrigger>
+        <SheetContent
+          side="right"
+          className="flex w-[min(100vw,980px)] max-w-none flex-col gap-0 p-0 sm:max-w-none"
+        >
+          <AgentComputerPanel
+            agentId={agentId}
+            sessionId={sessionId || undefined}
+            className="h-full"
+          />
+        </SheetContent>
+      </Sheet>
       <ScrollArea
         className="overflow-y-auto"
         scrollHideDelay={100}

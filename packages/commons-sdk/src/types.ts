@@ -46,6 +46,107 @@ export interface Agent {
   createdAt: string;
 }
 
+// ─── Agent Computers ───────────────────────────────────────────────────────
+
+export type AgentComputerLifecycle = 'persistent' | 'ephemeral';
+export type AgentComputerStatus =
+  | 'provisioning'
+  | 'starting'
+  | 'running'
+  | 'idle'
+  | 'stopping'
+  | 'stopped'
+  | 'terminated'
+  | 'failed'
+  | 'error'
+  | 'unavailable';
+
+export interface AgentComputerConfig {
+  configId: string;
+  agentId: string;
+  enabled: boolean;
+  defaultMode: AgentComputerLifecycle;
+  autoStart: boolean;
+  allowAgentStart: boolean;
+  allowUserSelect: boolean;
+  allowBrowser: boolean;
+  allowTerminal: boolean;
+  allowFilesystem: boolean;
+  networkAccess: 'standard' | 'restricted' | 'disabled' | string;
+  maxPersistentComputers: number;
+  maxEphemeralComputers: number;
+  maxConcurrentComputers: number;
+  idleTtlMinutes: number;
+  sessionTtlMinutes: number;
+  image?: string | null;
+  cpuLimit?: string | null;
+  memoryLimit?: string | null;
+  storageLimit?: string | null;
+  region?: string | null;
+  provider: string;
+  metadata?: Record<string, any> | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface AgentComputerInstance {
+  computerId: string;
+  agentId: string;
+  sessionId?: string | null;
+  ownerUserId?: string | null;
+  workspaceId?: string | null;
+  name: string;
+  lifecycle: AgentComputerLifecycle;
+  status: AgentComputerStatus;
+  provider: string;
+  cloudProvider?: string | null;
+  region?: string | null;
+  namespaceId?: string | null;
+  podName?: string | null;
+  image?: string | null;
+  cpuLimit?: string | null;
+  memoryLimit?: string | null;
+  storageLimit?: string | null;
+  workspaceRoot?: string | null;
+  workspaceSnapshot?: string | null;
+  browser?: {
+    status?: 'off' | 'starting' | 'on' | 'error';
+    url?: string | null;
+    title?: string | null;
+    screenshot?: string | null;
+    lastAction?: string | null;
+    error?: string | null;
+    updatedAt?: string | null;
+  } | null;
+  terminal?: {
+    lastCommand?: string | null;
+    lastExitCode?: number | null;
+    lastOutput?: string | null;
+    updatedAt?: string | null;
+  } | null;
+  metadata?: Record<string, any> | null;
+  lastActivityAt?: string | null;
+  expiresAt?: string | null;
+  startedAt?: string | null;
+  stoppedAt?: string | null;
+  errorMessage?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface AgentComputerEvent {
+  eventId: string;
+  computerId: string;
+  agentId: string;
+  sessionId?: string | null;
+  eventType: string;
+  actorType: string;
+  actorId?: string | null;
+  summary?: string | null;
+  payload?: Record<string, any> | null;
+  createdAt: string;
+}
+
 export interface CreateAgentParams {
   name: string;
   instructions?: string;
@@ -89,6 +190,11 @@ export interface RunParams {
   messages: ChatMessage[];
   sessionId?: string;
   initiatorId?: string;
+  computerRequest?: {
+    enabled: boolean;
+    computerIds?: string[];
+    lifecycle?: AgentComputerLifecycle;
+  };
   /** Uploaded file references. Raw file bytes must be uploaded separately. */
   attachments?: Array<{ fileId: string }>;
   /** Extra text injected into the agent's system prompt. Used by the CLI to deliver the local tools manifest. */

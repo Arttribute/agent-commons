@@ -17,6 +17,7 @@ import { UsageModule } from '~/modules/usage';
 import { MemoryModule } from '~/memory/memory.module';
 import { WalletModule } from '~/wallet/wallet.module';
 import { FilesModule } from '~/files';
+import { ComputerModule } from '~/computer';
 
 @Module({
   imports: [
@@ -31,6 +32,7 @@ import { FilesModule } from '~/files';
     MemoryModule,
     WalletModule,
     FilesModule,
+    ComputerModule,
   ],
   controllers: [AgentController, AgentToolsController],
   providers: [AgentService, HeartbeatService, ResourceService, EmbeddingService, OwnerGuard],

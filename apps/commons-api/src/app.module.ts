@@ -28,6 +28,7 @@ import { X402Module } from './modules/x402';
 import { ActivityModule } from './activity/activity.module';
 import { CreditModule } from './credit';
 import { FilesModule } from './files';
+import { ComputerModule } from './computer';
 
 @Module({
   imports: [
@@ -54,6 +55,7 @@ import { FilesModule } from './files';
     UsageModule,
     CreditModule,
     FilesModule,
+    ComputerModule,
     MemoryModule,
     WalletModule,
     LogModule,

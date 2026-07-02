@@ -81,6 +81,24 @@ var CommonsClient = class {
       addPreferredConnection: (agentId, params) => this.request("POST", `/v1/agents/${agentId}/preferred-connections`, params),
       /** Remove a preferred agent connection by its record ID. */
       removePreferredConnection: (id) => this.request("DELETE", `/v1/agents/preferred-connections/${id}`),
+      // ── Computers ────────────────────────────────────────────────────────
+      getComputerConfig: (agentId) => this.request("GET", `/v1/agents/${agentId}/computer/config`),
+      updateComputerConfig: (agentId, params) => this.request("PUT", `/v1/agents/${agentId}/computer/config`, params),
+      listComputers: (agentId, filter) => {
+        const qs = new URLSearchParams();
+        if (filter?.sessionId) qs.set("sessionId", filter.sessionId);
+        if (filter?.includeTerminated) qs.set("includeTerminated", "true");
+        const query = qs.toString();
+        return this.request("GET", `/v1/agents/${agentId}/computers${query ? `?${query}` : ""}`);
+      },
+      startComputer: (agentId, params) => this.request("POST", `/v1/agents/${agentId}/computers`, params),
+      getComputer: (agentId, computerId) => this.request("GET", `/v1/agents/${agentId}/computers/${computerId}`),
+      refreshComputer: (agentId, computerId) => this.request("POST", `/v1/agents/${agentId}/computers/${computerId}/refresh`),
+      stopComputer: (agentId, computerId) => this.request("POST", `/v1/agents/${agentId}/computers/${computerId}/stop`),
+      readComputerFile: (agentId, computerId, path) => this.request("GET", `/v1/agents/${agentId}/computers/${computerId}/files/read?path=${encodeURIComponent(path)}`),
+      runComputerCommand: (agentId, computerId, params) => this.request("POST", `/v1/agents/${agentId}/computers/${computerId}/commands`, params),
+      openComputerBrowser: (agentId, computerId, params) => this.request("POST", `/v1/agents/${agentId}/computers/${computerId}/browser/open`, params),
+      listComputerEvents: (agentId, computerId, limit) => this.request("GET", `/v1/agents/${agentId}/computers/${computerId}/events${limit ? `?limit=${limit}` : ""}`),
       // ── TTS Voices ───────────────────────────────────────────────────────
       /**
        * List available TTS voices for a provider.

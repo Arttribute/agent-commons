@@ -23,6 +23,7 @@ import { SpaceTtsService } from '~/space/space-tts.service';
 import { ModuleRef } from '@nestjs/core';
 import { WorkflowExecutorService } from '~/tool/workflow-executor.service';
 import { FilesService } from '~/files';
+import { ComputerService } from '~/computer';
 
 const graphqlRequest = import('graphql-request');
 
@@ -278,6 +279,55 @@ export interface CommonTool {
   }): Promise<any>;
 
   /**
+   * Start or reuse an isolated CommonOS computer for this agent.
+   */
+  startAgentComputer(props: {
+    agentId: string;
+    sessionId?: string;
+    lifecycle?: 'persistent' | 'ephemeral';
+    name?: string;
+    reason?: string;
+  }): Promise<any>;
+
+  /**
+   * List this agent's active computers.
+   */
+  listAgentComputers(props: {
+    agentId: string;
+    sessionId?: string;
+    includeTerminated?: boolean;
+  }): Promise<any>;
+
+  /**
+   * Run a terminal command on an agent computer.
+   */
+  runComputerCommand(props: {
+    agentId: string;
+    computerId: string;
+    command: string;
+    cwd?: string;
+    timeoutSeconds?: number;
+  }): Promise<any>;
+
+  /**
+   * Read a file from an agent computer workspace.
+   */
+  readComputerFile(props: {
+    agentId: string;
+    computerId: string;
+    path: string;
+  }): Promise<any>;
+
+  /**
+   * Open a URL in an agent computer browser.
+   */
+  openComputerBrowser(props: {
+    agentId: string;
+    computerId: string;
+    url: string;
+  }): Promise<any>;
+
+  /**
    * Create a new shared space for multi-agent communication
    */
   createSpace(props: {
@@ -457,6 +507,7 @@ export class CommonToolService implements CommonTool {
     @Inject(forwardRef(() => PinataService))
     private pinataService: PinataService,
     private files: FilesService,
+    private computers: ComputerService,
     @Inject(forwardRef(() => SpaceService))
     private space: SpaceService,
     @Inject(forwardRef(() => SpaceTtsService))
@@ -1190,6 +1241,62 @@ export class CommonToolService implements CommonTool {
       sessionId: props.sessionId,
       ownerId: props.agentId,
       ownerType: 'agent',
+    });
+  }
+
+  async startAgentComputer(props: {
+    agentId: string;
+    sessionId?: string;
+    lifecycle?: 'persistent' | 'ephemeral';
+    name?: string;
+    reason?: string;
+  }) {
+    return this.computers.startComputer({
+      ...props,
+      actorId: props.agentId,
+      actorType: 'agent',
+    });
+  }
+
+  async listAgentComputers(props: {
+    agentId: string;
+    sessionId?: string;
+    includeTerminated?: boolean;
+  }) {
+    return this.computers.listInstances(props);
+  }
+
+  async runComputerCommand(props: {
+    agentId: string;
+    computerId: string;
+    command: string;
+    cwd?: string;
+    timeoutSeconds?: number;
+  }) {
+    return this.computers.runCommand({
+      ...props,
+      actorId: props.agentId,
+      actorType: 'agent',
+    });
+  }
+
+  async readComputerFile(props: {
+    agentId: string;
+    computerId: string;
+    path: string;
+  }) {
+    return this.computers.readFile(props);
+  }
+
+  async openComputerBrowser(props: {
+    agentId: string;
+    computerId: string;
+    url: string;
+  }) {
+    return this.computers.openBrowser({
+      ...props,
+      actorId: props.agentId,
+      actorType: 'agent',
     });
   }
 

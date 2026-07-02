@@ -59,6 +59,7 @@ import { MemoryService } from '~/memory/memory.service';
 import { WalletService } from '~/wallet/wallet.service';
 import { ActivityService } from '~/activity/activity.service';
 import { FilesService } from '~/files';
+import { ComputerService } from '~/computer';
 
 const got = import('got');
 
@@ -95,6 +96,7 @@ export class AgentService implements OnModuleInit {
     private walletService: WalletService,
     private activityService: ActivityService,
     private filesService: FilesService,
+    private computerService: ComputerService,
     @Inject(forwardRef(() => TaskService)) private tasks: TaskService,
     @Inject(forwardRef(() => TaskExecutionService))
     private taskExecution: TaskExecutionService,
@@ -247,6 +249,7 @@ export class AgentService implements OnModuleInit {
     childSessionsInfo: string,
     memoryBlock = '',
     sessionTasks: Array<{ taskId: string; title: string; status: string; description?: string | null; summary?: string | null; createdAt?: Date | null }> = [],
+    computerBlock = '',
   ): string {
     const currentTime = new Date();
 
@@ -276,6 +279,7 @@ export class AgentService implements OnModuleInit {
       Session ID: ${sessionId}
       ${memoryBlock}
       ${taskBlock}
+      ${computerBlock}
       ${childSessionsInfo}
 
       ## AUTONOMOUS EXECUTION CONTRACT
@@ -328,6 +332,16 @@ export class AgentService implements OnModuleInit {
       - **createSpreadsheetFile** — create an .xlsx spreadsheet from rows and store it as a file attachment. Return the fileId to the user.
       - Treat fileId values as the durable handles for follow-up work. Do not ask the user to paste file contents that are available through readUploadedFile.
 
+      ### Computers
+      Agent computers are isolated CommonOS pod runtimes with a filesystem, terminal, and browser. Use them only when the user asks for computer-backed work or when the work materially requires a runtime, filesystem, browser, long-running process, app execution, or generated files.
+      - **startAgentComputer** — start or reuse a persistent/ephemeral computer for this agent.
+      - **listAgentComputers** — inspect active computers before starting more.
+      - **runComputerCommand** — run terminal work through the selected computer.
+      - **readComputerFile** — read files from the computer workspace.
+      - **openComputerBrowser** — open a URL in the computer browser and refresh browser state.
+      - Prefer an existing active computer that matches the session. Do not start extra computers unless isolation or concurrency is useful.
+      - Keep terminal commands task-scoped, avoid secret exfiltration, and report created files, screenshots, URLs, and command results clearly.
+
       ### Goals
       Goals track high-level objectives across multiple tasks.
       - **createGoal** — define a goal with milestones. **updateGoalProgress** — update progress. **recomputeGoalProgress** — recalculate from task completions.
@@ -363,13 +377,14 @@ export class AgentService implements OnModuleInit {
 
   /* ─────────────────────────  SESSION BOOTSTRAP  ───────────────────────── */
   private async createAgentSession(agentId: string, sessionId: string, firstUserMessage = '') {
-    const [agent, childSessions, memoryBlock, sessionTasks] = await Promise.all([
+    const [agent, childSessions, memoryBlock, sessionTasks, computerBlock] = await Promise.all([
       this.getAgent({ agentId }),
       this.getChildSessions(sessionId),
       firstUserMessage
         ? this.memoryService.buildMemoryBlock(agentId, firstUserMessage).catch(() => '')
         : Promise.resolve(''),
       this.taskExecution.listSessionTasks(sessionId).catch(() => []),
+      this.computerService.buildComputerPrompt(agentId, sessionId).catch(() => ''),
     ]);
     const childSessionsInfo =
       childSessions.length > 0
@@ -379,7 +394,7 @@ export class AgentService implements OnModuleInit {
     const messages: ChatCompletionMessageParam[] = [
       {
         role: 'system',
-        content: this.buildSystemPrompt(agent, sessionId, childSessionsInfo, memoryBlock, sessionTasks),
+        content: this.buildSystemPrompt(agent, sessionId, childSessionsInfo, memoryBlock, sessionTasks, computerBlock),
       },
     ];
 
@@ -522,6 +537,12 @@ export class AgentService implements OnModuleInit {
     cliTools?: Array<{ name: string; description: string; parameters: Record<string, unknown> }>;
     /** Uploaded chat file references. Raw bytes are never passed into LangGraph state. */
     attachments?: Array<{ fileId: string }>;
+    /** User selected computer usage for this chat turn. */
+    computerRequest?: {
+      enabled: boolean;
+      computerIds?: string[];
+      lifecycle?: 'persistent' | 'ephemeral';
+    };
   }): Observable<any> {
     return new Observable<any>((subscriber) => {
       // Keep SSE connection alive through proxies
@@ -1118,13 +1139,14 @@ export class AgentService implements OnModuleInit {
             // Fetch agent and inject fresh persona/instructions for existing sessions
             const firstMsg = props.messages?.find((m) => m.role === 'user');
             const firstUserText = this.contentToText(firstMsg?.content);
-            const [agent, childSessions, memoryBlock, sessionTasks] = await Promise.all([
+            const [agent, childSessions, memoryBlock, sessionTasks, computerBlock] = await Promise.all([
               this.getAgent({ agentId }),
               this.getChildSessions(currentSessionId),
               firstUserText
                 ? this.memoryService.buildMemoryBlock(agentId, firstUserText).catch(() => '')
                 : Promise.resolve(''),
               this.taskExecution.listSessionTasks(currentSessionId).catch(() => []),
+              this.computerService.buildComputerPrompt(agentId, currentSessionId).catch(() => ''),
             ]);
             const childSessionsInfo =
               childSessions.length > 0
@@ -1134,7 +1156,7 @@ export class AgentService implements OnModuleInit {
             messages.push({
               type: 'system',
               role: 'system',
-              content: this.buildSystemPrompt(agent, currentSessionId, childSessionsInfo, memoryBlock, sessionTasks),
+              content: this.buildSystemPrompt(agent, currentSessionId, childSessionsInfo, memoryBlock, sessionTasks, computerBlock),
             } as any);
 
             if (
@@ -1236,7 +1258,21 @@ export class AgentService implements OnModuleInit {
           ).catch(() => '');
 
           // Build the extra content to append to the system prompt (memory + CLI context)
-          const extraSystemContent = [memoryBlock, props.cliContext].filter(Boolean).join('\n\n');
+          const computerSelectionBlock = props.computerRequest?.enabled
+            ? [
+                '## USER COMPUTER SELECTION',
+                'The user explicitly selected Agent Computer for this turn.',
+                props.computerRequest.computerIds?.length
+                  ? `Selected computer IDs: ${props.computerRequest.computerIds.join(', ')}`
+                  : 'No specific computer was selected. Use an active suitable computer or call startAgentComputer before computer-backed work.',
+                props.computerRequest.lifecycle
+                  ? `Requested lifecycle: ${props.computerRequest.lifecycle}`
+                  : '',
+                'Use the computer tools when the request requires files, terminal commands, browser work, app execution, screenshots, or generated artifacts.',
+              ].filter(Boolean).join('\n')
+            : '';
+
+          const extraSystemContent = [memoryBlock, props.cliContext, computerSelectionBlock].filter(Boolean).join('\n\n');
 
           if (extraSystemContent) {
             // Append to the existing system message, or push a new one
@@ -1469,6 +1505,10 @@ export class AgentService implements OnModuleInit {
                   attachments: isCurrentAttachmentTurn
                     ? attachmentContext?.attachments
                     : undefined,
+                  computerRequest:
+                    role === 'human' || role === 'user'
+                      ? props.computerRequest
+                      : undefined,
                 },
               };
             });
@@ -1560,6 +1600,7 @@ export class AgentService implements OnModuleInit {
               metadata: {
                 toolCalls,
                 agentCalls: resolvedAgentCalls,
+                computerRequest: props.computerRequest,
               },
             },
           });

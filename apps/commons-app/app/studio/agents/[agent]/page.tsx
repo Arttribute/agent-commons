@@ -22,6 +22,7 @@ import {
   Link2,
   Loader2,
   MessageSquare,
+  Monitor,
   PlugZap,
   Plus,
   RefreshCw,
@@ -55,6 +56,7 @@ import { AgentMcpSection } from "@/components/mcp/agent-mcp-section";
 import { AddToAgentBalance } from "@/components/finances/add-to-agent-balance";
 import { AgentTransactions } from "@/components/finances/agent-transactions";
 import { AgentMemoryView } from "@/components/memory/agent-memory-view";
+import { AgentComputerPanel } from "@/components/computers/agent-computer-panel";
 import SessionInterface from "@/components/sessions/session-interface";
 import { StudioEntitySwitcher } from "@/components/studio/studio-entity-switcher";
 import { TaskManagementView } from "@/components/tasks/task-management-view";
@@ -84,6 +86,7 @@ type SectionKey =
   | "setup"
   | "new-session"
   | "sessions"
+  | "computer"
   | "tasks"
   | "tools"
   | "skills"
@@ -97,6 +100,7 @@ const sections: Array<{ key: SectionKey; label: string; icon: typeof Bot }> = [
   { key: "setup", label: "Agent setup", icon: Settings2 },
   { key: "new-session", label: "New session", icon: Plus },
   { key: "sessions", label: "Sessions", icon: MessageSquare },
+  { key: "computer", label: "Computer", icon: Monitor },
   { key: "tasks", label: "Tasks", icon: CalendarCheck },
   { key: "tools", label: "Tools", icon: Wrench },
   { key: "skills", label: "Skills", icon: Sparkles },
@@ -1761,6 +1765,8 @@ export default function AgentStudioPage({ params }: { params: Promise<{ agent: s
         );
       case "sessions":
         return <SessionsView agent={agent} sessions={sessions} selectedSession={selectedSession} userAddress={userAddress} loadingSession={loadingSession} onSelectSession={loadSession} onCreateSession={() => setActiveSection("new-session")} />;
+      case "computer":
+        return <AgentComputerPanel agentId={agentId} showConfig className="h-full" />;
       case "tasks":
         return <TaskManagementView userAddress={userAddress} agentId={agentId} hideAgentFilter preSelectedAgentId={agentId} />;
       case "tools":

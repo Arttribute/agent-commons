@@ -32,6 +32,11 @@ interface RunBody {
   cliContext?: string;
   cliTools?: Array<{ name: string; description: string; parameters: Record<string, unknown> }>;
   attachments?: Array<{ fileId: string }>;
+  computerRequest?: {
+    enabled: boolean;
+    computerIds?: string[];
+    lifecycle?: 'persistent' | 'ephemeral';
+  };
 }
 
 @Controller({ version: '1', path: 'agents' })
