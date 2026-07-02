@@ -16,6 +16,7 @@ import { OwnerGuard } from '~/modules/auth';
 import { UsageModule } from '~/modules/usage';
 import { MemoryModule } from '~/memory/memory.module';
 import { WalletModule } from '~/wallet/wallet.module';
+import { FilesModule } from '~/files';
 
 @Module({
   imports: [
@@ -29,6 +30,7 @@ import { WalletModule } from '~/wallet/wallet.module';
     UsageModule,
     MemoryModule,
     WalletModule,
+    FilesModule,
   ],
   controllers: [AgentController, AgentToolsController],
   providers: [AgentService, HeartbeatService, ResourceService, EmbeddingService, OwnerGuard],

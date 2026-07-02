@@ -31,6 +31,7 @@ interface RunBody {
   sessionId?: string;
   cliContext?: string;
   cliTools?: Array<{ name: string; description: string; parameters: Record<string, unknown> }>;
+  attachments?: Array<{ fileId: string }>;
 }
 
 @Controller({ version: '1', path: 'agents' })

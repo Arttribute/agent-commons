@@ -27,6 +27,7 @@ import { LogModule } from './log/log.module';
 import { X402Module } from './modules/x402';
 import { ActivityModule } from './activity/activity.module';
 import { CreditModule } from './credit';
+import { FilesModule } from './files';
 
 @Module({
   imports: [
@@ -52,6 +53,7 @@ import { CreditModule } from './credit';
     SkillModule,
     UsageModule,
     CreditModule,
+    FilesModule,
     MemoryModule,
     WalletModule,
     LogModule,

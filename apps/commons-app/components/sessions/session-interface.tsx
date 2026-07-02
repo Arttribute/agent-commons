@@ -16,6 +16,13 @@ interface Message {
   content: string;
   timestamp: string;
   metadata?: {
+    attachments?: Array<{
+      fileId: string;
+      name: string;
+      mimeType: string;
+      kind?: string;
+      sizeBytes?: number;
+    }>;
     toolCalls?: Array<{
       name: string;
       args: any;
@@ -290,6 +297,7 @@ export default function SessionInterfaceImproved({
                         key={index}
                         message={message.content}
                         timestamp={message.timestamp}
+                        metadata={message.metadata}
                       />
                     );
                   }

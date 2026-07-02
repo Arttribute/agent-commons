@@ -207,6 +207,92 @@ export const session = pgTable('session', {
     .notNull(),
 });
 
+/* ─────────────────────────  FILE ATTACHMENTS  ───────────────────────── */
+
+export const fileAttachment = pgTable(
+  'file_attachment',
+  {
+    fileId: uuid('file_id')
+      .default(sql`uuid_generate_v4()`)
+      .primaryKey(),
+
+    agentId: text('agent_id').references(() => agent.agentId, {
+      onDelete: 'set null',
+    }),
+    sessionId: uuid('session_id').references(() => session.sessionId, {
+      onDelete: 'set null',
+    }),
+
+    ownerId: text('owner_id'),
+    ownerType: text('owner_type').default('user').notNull(),
+    workspaceId: text('workspace_id'),
+
+    storageBucket: text('storage_bucket').notNull(),
+    storagePath: text('storage_path').notNull(),
+    originalName: text('original_name').notNull(),
+    mimeType: text('mime_type').notNull(),
+    kind: text('kind').notNull(),
+    sizeBytes: integer('size_bytes').notNull(),
+    sha256: text('sha256').notNull(),
+
+    status: text('status').default('ready').notNull(),
+    textStoragePath: text('text_storage_path'),
+    textPreview: text('text_preview'),
+    extractedTextChars: integer('extracted_text_chars').default(0).notNull(),
+    extractionError: text('extraction_error'),
+    metadata: jsonb('metadata').$type<Record<string, any>>(),
+
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .default(sql`timezone('utc', now())`)
+      .notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true })
+      .default(sql`timezone('utc', now())`)
+      .notNull(),
+  },
+  (table) => ({
+    agentSessionIdx: index('idx_file_attachment_agent_session').on(
+      table.agentId,
+      table.sessionId,
+    ),
+    ownerIdx: index('idx_file_attachment_owner').on(
+      table.ownerId,
+      table.createdAt,
+    ),
+    shaIdx: index('idx_file_attachment_sha256').on(table.sha256),
+  }),
+);
+
+export const fileArtifact = pgTable(
+  'file_artifact',
+  {
+    artifactId: uuid('artifact_id')
+      .default(sql`uuid_generate_v4()`)
+      .primaryKey(),
+
+    fileId: uuid('file_id')
+      .notNull()
+      .references(() => fileAttachment.fileId, { onDelete: 'cascade' }),
+
+    kind: text('kind').notNull(),
+    storageBucket: text('storage_bucket').notNull(),
+    storagePath: text('storage_path').notNull(),
+    mimeType: text('mime_type').notNull(),
+    sizeBytes: integer('size_bytes').notNull(),
+    pageNumber: integer('page_number'),
+    width: integer('width'),
+    height: integer('height'),
+    metadata: jsonb('metadata').$type<Record<string, any>>(),
+
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .default(sql`timezone('utc', now())`)
+      .notNull(),
+  },
+  (table) => ({
+    fileIdx: index('idx_file_artifact_file').on(table.fileId),
+    kindIdx: index('idx_file_artifact_kind').on(table.fileId, table.kind),
+  }),
+);
+
 /* ─────────────────────────  GOAL (DEPRECATED - TO BE REMOVED)  ───────────────────────── */
 // DEPRECATED: Goals abstraction is being removed. Tasks now handle everything directly.
 // This table will be dropped in the next migration.

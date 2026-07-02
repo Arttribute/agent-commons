@@ -58,6 +58,7 @@ import { extractTokenUsageFromLLMResult } from '~/modules/usage/token-usage.util
 import { MemoryService } from '~/memory/memory.service';
 import { WalletService } from '~/wallet/wallet.service';
 import { ActivityService } from '~/activity/activity.service';
+import { FilesService } from '~/files';
 
 const got = import('got');
 
@@ -93,6 +94,7 @@ export class AgentService implements OnModuleInit {
     private memoryService: MemoryService,
     private walletService: WalletService,
     private activityService: ActivityService,
+    private filesService: FilesService,
     @Inject(forwardRef(() => TaskService)) private tasks: TaskService,
     @Inject(forwardRef(() => TaskExecutionService))
     private taskExecution: TaskExecutionService,
@@ -318,7 +320,13 @@ export class AgentService implements OnModuleInit {
       - **findResources** — search by query and type. **getResourceWithId** — fetch a specific resource.
       - **createResource** — publish a new resource (document, dataset, image, tool schema, etc.).
       - **generateImage** — create an image with DALL·E 3 and pin it to IPFS.
-      - **uploadFileToIPFS** — pin any base64-encoded file to IPFS via Pinata.
+      - **uploadFileToIPFS** — legacy/resource-publishing path for explicitly pinning base64-encoded files to IPFS via Pinata. Do not use this for normal chat attachments.
+
+      ### Uploaded files
+      Users can attach files to chat turns. The chat history contains file IDs and compact previews, never raw file bytes or base64.
+      - **readUploadedFile** — read extracted text from an uploaded file in bounded chunks. Use offset/nextOffset for large files. Set includeImageUrls for images or rendered PDF pages when visual inspection is needed.
+      - **createSpreadsheetFile** — create an .xlsx spreadsheet from rows and store it as a file attachment. Return the fileId to the user.
+      - Treat fileId values as the durable handles for follow-up work. Do not ask the user to paste file contents that are available through readUploadedFile.
 
       ### Goals
       Goals track high-level objectives across multiple tasks.
@@ -512,6 +520,8 @@ export class AgentService implements OnModuleInit {
      * adding a new pod-local tool never requires a commons-api change.
      */
     cliTools?: Array<{ name: string; description: string; parameters: Record<string, unknown> }>;
+    /** Uploaded chat file references. Raw bytes are never passed into LangGraph state. */
+    attachments?: Array<{ fileId: string }>;
   }): Observable<any> {
     return new Observable<any>((subscriber) => {
       // Keep SSE connection alive through proxies
@@ -1086,11 +1096,7 @@ export class AgentService implements OnModuleInit {
           let messages: Messages = [];
           if (isNewSession) {
             const firstMsg = props.messages?.find((m) => m.role === 'user');
-            const firstUserText = typeof firstMsg?.content === 'string'
-              ? firstMsg.content
-              : Array.isArray(firstMsg?.content)
-                ? (firstMsg.content as any[]).filter((c: any) => c.type === 'text').map((c: any) => c.text).join(' ')
-                : '';
+            const firstUserText = this.contentToText(firstMsg?.content);
             const boot = await this.createAgentSession(
               agentId,
               currentSessionId,
@@ -1111,11 +1117,7 @@ export class AgentService implements OnModuleInit {
 
             // Fetch agent and inject fresh persona/instructions for existing sessions
             const firstMsg = props.messages?.find((m) => m.role === 'user');
-            const firstUserText = typeof firstMsg?.content === 'string'
-              ? firstMsg.content
-              : Array.isArray(firstMsg?.content)
-                ? (firstMsg.content as any[]).filter((c: any) => c.type === 'text').map((c: any) => c.text).join(' ')
-                : '';
+            const firstUserText = this.contentToText(firstMsg?.content);
             const [agent, childSessions, memoryBlock, sessionTasks] = await Promise.all([
               this.getAgent({ agentId }),
               this.getChildSessions(currentSessionId),
@@ -1194,9 +1196,28 @@ export class AgentService implements OnModuleInit {
             } as any);
           }
 
+          const attachmentContext = props.attachments?.length
+            ? await this.filesService.getAttachmentSummaries(props.attachments, {
+                agentId,
+                sessionId: currentSessionId,
+                ownerId: initiator,
+                includeImageParts: this.supportsImageInputs(
+                  agent.modelProvider,
+                  agent.modelId,
+                ),
+                maxImageParts: Number(
+                  process.env.AGENT_FILE_PROMPT_IMAGE_PARTS ?? 4,
+                ),
+              })
+            : null;
+
           if (props.messages?.length) {
+            const incomingMessages = this.attachFilesToIncomingMessages(
+              props.messages,
+              attachmentContext,
+            );
             messages.push(
-              ...(props.messages.map((m) => ({
+              ...(incomingMessages.map((m) => ({
                 ...m,
                 type: m.role,
                 content: m.content ?? '',
@@ -1206,7 +1227,9 @@ export class AgentService implements OnModuleInit {
 
           // ── Inject relevant memories into the system prompt ───────────────
           const latestUserMsg =
-            props.messages?.findLast((m) => m.role === 'user')?.content as string | undefined;
+            this.contentToText(
+              props.messages?.findLast((m) => m.role === 'user')?.content,
+            ) || undefined;
           const memoryBlock = await this.memoryService.buildMemoryBlock(
             agentId,
             latestUserMsg ?? '',
@@ -1411,7 +1434,7 @@ export class AgentService implements OnModuleInit {
               );
               if (firstUserMessage?.content) {
                 sessionTitle = await this.generateSessionTitle(
-                  firstUserMessage.content as string,
+                  this.contentToText(firstUserMessage.content),
                 );
               }
             }
@@ -1425,22 +1448,30 @@ export class AgentService implements OnModuleInit {
             );
 
             // Create new history entries from the current agent run
-            const newHistoryEntries = messageHistories.map((m) => ({
-              role: m.toDict().type,
-              content:
-                typeof m.content === 'string'
-                  ? m.content
-                  : JSON.stringify(m.content),
-              timestamp: new Date().toISOString(),
-              metadata: {
-                toolCalls:
-                  m.toDict().type === 'assistant' ? toolCalls : undefined,
-                agentCalls:
-                  m.toDict().type === 'assistant'
-                    ? resolvedAgentCalls
+            const newHistoryEntries = messageHistories.map((m) => {
+              const role = m.toDict().type;
+              const rawContent = this.serializeHistoryContent(m.content);
+              const content = this.stripAttachmentManifest(rawContent);
+              const isCurrentAttachmentTurn =
+                (role === 'human' || role === 'user') &&
+                Boolean(attachmentContext?.attachments?.length) &&
+                rawContent.includes('## Uploaded Files');
+              return {
+                role,
+                content,
+                timestamp: new Date().toISOString(),
+                metadata: {
+                  toolCalls: role === 'assistant' ? toolCalls : undefined,
+                  agentCalls:
+                    role === 'assistant'
+                      ? resolvedAgentCalls
+                      : undefined,
+                  attachments: isCurrentAttachmentTurn
+                    ? attachmentContext?.attachments
                     : undefined,
-              },
-            }));
+                },
+              };
+            });
 
             // Merge and sort by timestamp to maintain chronological order
             const mergedHistory = [
@@ -1548,10 +1579,9 @@ export class AgentService implements OnModuleInit {
               })
               .map((m: any) => ({
                 role: m.getType?.() === 'human' || m.type === 'human' ? 'user' : 'assistant',
-                content:
-                  typeof m.content === 'string'
-                    ? m.content
-                    : JSON.stringify(m.content),
+                content: this.stripAttachmentManifest(
+                  this.serializeHistoryContent(m.content),
+                ),
               }));
 
             if (historyForConsolidation.length >= 2) {
@@ -1571,6 +1601,103 @@ export class AgentService implements OnModuleInit {
       run();
       return () => clearInterval(keepalive);
     });
+  }
+
+  private attachFilesToIncomingMessages(
+    incoming: ChatCompletionMessageParam[],
+    attachmentContext: Awaited<
+      ReturnType<FilesService['getAttachmentSummaries']>
+    > | null,
+  ): ChatCompletionMessageParam[] {
+    if (!attachmentContext?.text) return incoming;
+
+    const lastUserIndex = incoming.findLastIndex((m) => m.role === 'user');
+    if (lastUserIndex < 0) return incoming;
+
+    return incoming.map((message, index) => {
+      if (index !== lastUserIndex) return message;
+      const imageParts = attachmentContext.imageParts ?? [];
+      return {
+        ...message,
+        content: this.appendAttachmentContext(
+          message.content,
+          attachmentContext.text,
+          imageParts,
+        ) as any,
+      };
+    });
+  }
+
+  private appendAttachmentContext(
+    content: ChatCompletionMessageParam['content'],
+    attachmentText: string,
+    imageParts: Array<{ type: 'image_url'; image_url: { url: string } }>,
+  ) {
+    const suffix = `\n\n${attachmentText}`;
+    if (Array.isArray(content)) {
+      const next = [...content] as any[];
+      const textIndex = next.findLastIndex((part) => part?.type === 'text');
+      if (textIndex >= 0) {
+        next[textIndex] = {
+          ...next[textIndex],
+          text: `${next[textIndex].text ?? ''}${suffix}`,
+        };
+      } else {
+        next.push({ type: 'text', text: attachmentText });
+      }
+      return [...next, ...imageParts];
+    }
+
+    const text = `${typeof content === 'string' ? content : ''}${suffix}`;
+    if (!imageParts.length) return text;
+    return [{ type: 'text', text }, ...imageParts];
+  }
+
+  private contentToText(content: unknown): string {
+    if (!content) return '';
+    if (typeof content === 'string') return content;
+    if (Array.isArray(content)) {
+      return content
+        .map((part: any) => {
+          if (part?.type === 'text') return part.text ?? '';
+          if (part?.type === 'image_url') return '[image attachment]';
+          return '';
+        })
+        .filter(Boolean)
+        .join('\n');
+    }
+    return String(content);
+  }
+
+  private serializeHistoryContent(content: unknown): string {
+    if (typeof content === 'string') return content;
+    if (Array.isArray(content)) {
+      return content
+        .map((part: any) => {
+          if (part?.type === 'text') return part.text ?? '';
+          if (part?.type === 'image_url') return '[image attachment omitted from history]';
+          return '';
+        })
+        .filter(Boolean)
+        .join('\n');
+    }
+    return content == null ? '' : JSON.stringify(content);
+  }
+
+  private stripAttachmentManifest(content: string): string {
+    const marker = '\n\n## Uploaded Files';
+    const index = content.indexOf(marker);
+    if (index < 0) return content;
+    return content.slice(0, index).trimEnd();
+  }
+
+  private supportsImageInputs(provider?: string | null, modelId?: string | null) {
+    const normalizedProvider = (provider || 'openai').toLowerCase();
+    const normalizedModel = (modelId || '').toLowerCase();
+    if (normalizedProvider === 'openai') return true;
+    if (normalizedProvider === 'anthropic') return true;
+    if (normalizedProvider === 'google') return true;
+    return normalizedModel.includes('vision') || normalizedModel.includes('4o');
   }
 
   private async generateSessionTitle(userMessage: string): Promise<string> {

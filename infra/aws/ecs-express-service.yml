@@ -61,6 +61,18 @@ Resources:
             ValueFrom: !Sub "${RuntimeSecretArn}:SUPABASE_URL::"
           - Name: SUPABASE_KEY
             ValueFrom: !Sub "${RuntimeSecretArn}:SUPABASE_KEY::"
+          - Name: AGENT_FILES_S3_BUCKET
+            ValueFrom: !Sub "${RuntimeSecretArn}:AGENT_FILES_S3_BUCKET::"
+          - Name: AGENT_FILES_S3_REGION
+            ValueFrom: !Sub "${RuntimeSecretArn}:AGENT_FILES_S3_REGION::"
+          - Name: AGENT_FILES_S3_PREFIX
+            ValueFrom: !Sub "${RuntimeSecretArn}:AGENT_FILES_S3_PREFIX::"
+          - Name: AGENT_FILES_AWS_ROLE_ARN
+            ValueFrom: !Sub "${RuntimeSecretArn}:AGENT_FILES_AWS_ROLE_ARN::"
+          - Name: AGENT_FILES_S3_ENDPOINT
+            ValueFrom: !Sub "${RuntimeSecretArn}:AGENT_FILES_S3_ENDPOINT::"
+          - Name: AGENT_FILES_S3_FORCE_PATH_STYLE
+            ValueFrom: !Sub "${RuntimeSecretArn}:AGENT_FILES_S3_FORCE_PATH_STYLE::"
           - Name: COINBASE_API_KEY_NAME
             ValueFrom: !Sub "${RuntimeSecretArn}:COINBASE_API_KEY_NAME::"
           - Name: COINBASE_API_KEY_SECRET

@@ -19,7 +19,12 @@ export function useAgentStream(initiator: string, options: UseAgentStreamOptions
   useEffect(() => { optionsRef.current = options; });
 
   const stream = useCallback(
-    async (params: { agentId: string; messages: ChatMessage[]; sessionId?: string }) => {
+    async (params: {
+      agentId: string;
+      messages: ChatMessage[];
+      sessionId?: string;
+      attachments?: Array<{ fileId: string }>;
+    }) => {
       setStreaming(true);
       setError(null);
       abortRef.current = false;

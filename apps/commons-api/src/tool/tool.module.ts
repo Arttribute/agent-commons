@@ -20,6 +20,7 @@ import { McpModule } from '../mcp/mcp.module';
 import { SkillModule } from '../skill/skill.module';
 import { OwnerGuard } from '~/modules/auth';
 import { EthereumToolService } from './tools/ethereum-tool.service';
+import { FilesModule } from '~/files';
 
 @Module({
   imports: [
@@ -31,6 +32,7 @@ import { EthereumToolService } from './tools/ethereum-tool.service';
     forwardRef(() => SpaceModule),
     McpModule,
     SkillModule,
+    FilesModule,
   ],
   controllers: [
     ToolController,

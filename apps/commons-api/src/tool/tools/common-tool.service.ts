@@ -22,6 +22,7 @@ import { ToolSchema } from '~/tool/dto/tool.dto';
 import { SpaceTtsService } from '~/space/space-tts.service';
 import { ModuleRef } from '@nestjs/core';
 import { WorkflowExecutorService } from '~/tool/workflow-executor.service';
+import { FilesService } from '~/files';
 
 const graphqlRequest = import('graphql-request');
 
@@ -230,6 +231,53 @@ export interface CommonTool {
   }>;
 
   /**
+   * Read an uploaded chat file by ID. Returns extracted text in bounded chunks
+   * and optional signed image/PDF-page artifact URLs. It never returns raw file
+   * bytes or base64.
+   */
+  readUploadedFile(props: {
+    fileId: string;
+    offset?: number;
+    maxChars?: number;
+    includeImageUrls?: boolean;
+    pageNumber?: number;
+    agentId: string;
+    sessionId?: string;
+  }): Promise<{
+    fileId: string;
+    name: string;
+    mimeType: string;
+    kind: string;
+    content: string;
+    offset: number;
+    nextOffset: number | null;
+    totalChars: number;
+    truncated: boolean;
+    artifacts: Array<{
+      artifactId: string;
+      kind: string;
+      mimeType: string;
+      pageNumber?: number | null;
+      width?: number | null;
+      height?: number | null;
+      url?: string;
+    }>;
+  }>;
+
+  /**
+   * Create an .xlsx spreadsheet and store it as an agent file attachment.
+   */
+  createSpreadsheetFile(props: {
+    fileName: string;
+    sheets: Array<{
+      name: string;
+      rows: Array<Record<string, any> | any[]>;
+    }>;
+    agentId: string;
+    sessionId?: string;
+  }): Promise<any>;
+
+  /**
    * Create a new shared space for multi-agent communication
    */
   createSpace(props: {
@@ -408,6 +456,7 @@ export class CommonToolService implements CommonTool {
     private openAI: OpenAIService,
     @Inject(forwardRef(() => PinataService))
     private pinataService: PinataService,
+    private files: FilesService,
     @Inject(forwardRef(() => SpaceService))
     private space: SpaceService,
     @Inject(forwardRef(() => SpaceTtsService))
@@ -1103,6 +1152,45 @@ export class CommonToolService implements CommonTool {
     return {
       ipfsUrl: gatewayUrl,
     };
+  }
+
+  async readUploadedFile(props: {
+    fileId: string;
+    offset?: number;
+    maxChars?: number;
+    includeImageUrls?: boolean;
+    pageNumber?: number;
+    agentId: string;
+    sessionId?: string;
+  }) {
+    return this.files.readFileForAgent({
+      fileId: props.fileId,
+      agentId: props.agentId,
+      sessionId: props.sessionId,
+      offset: props.offset,
+      maxChars: props.maxChars,
+      includeImageUrls: props.includeImageUrls,
+      pageNumber: props.pageNumber,
+    });
+  }
+
+  async createSpreadsheetFile(props: {
+    fileName: string;
+    sheets: Array<{
+      name: string;
+      rows: Array<Record<string, any> | any[]>;
+    }>;
+    agentId: string;
+    sessionId?: string;
+  }) {
+    return this.files.createSpreadsheetFile({
+      fileName: props.fileName,
+      sheets: props.sheets,
+      agentId: props.agentId,
+      sessionId: props.sessionId,
+      ownerId: props.agentId,
+      ownerType: 'agent',
+    });
   }
 
   async equipResourceTool(props: {

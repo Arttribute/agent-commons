@@ -61,6 +61,28 @@ Resources:
         IgnorePublicAcls: true
         RestrictPublicBuckets: true
 
+  AgentFilesBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub agent-commons-files-${AWS::AccountId}-${AWS::Region}
+      VersioningConfiguration:
+        Status: Enabled
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      LifecycleConfiguration:
+        Rules:
+          - Id: ExpireIncompleteMultipartUploads
+            Status: Enabled
+            AbortIncompleteMultipartUpload:
+              DaysAfterInitiation: 7
+
   GitHubOidcProvider:
     Type: AWS::IAM::OIDCProvider
     Condition: CreateGitHubOidcProvider
@@ -92,6 +114,20 @@ Resources:
               - Effect: Allow
                 Action: secretsmanager:GetSecretValue
                 Resource: !Ref ApiRuntimeSecret
+        - PolicyName: AgentFilesS3Access
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:ListBucket
+                Resource: !GetAtt AgentFilesBucket.Arn
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:PutObject
+                  - s3:DeleteObject
+                Resource: !Sub ${AgentFilesBucket.Arn}/*
 
   InfrastructureRole:
     Type: AWS::IAM::Role
@@ -257,5 +293,7 @@ Outputs:
     Value: !Ref ApiRuntimeSecret
   SourceBucketName:
     Value: !Ref SourceBucket
+  AgentFilesBucketName:
+    Value: !Ref AgentFilesBucket
   CodeBuildProjectName:
     Value: !Ref ApiBuildProject

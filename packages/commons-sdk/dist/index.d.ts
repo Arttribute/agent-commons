@@ -69,6 +69,10 @@ interface RunParams {
     messages: ChatMessage[];
     sessionId?: string;
     initiatorId?: string;
+    /** Uploaded file references. Raw file bytes must be uploaded separately. */
+    attachments?: Array<{
+        fileId: string;
+    }>;
     /** Extra text injected into the agent's system prompt. Used by the CLI to deliver the local tools manifest. */
     cliContext?: string;
     /** Caller-owned function catalog executed through cli_tool_request events. */
@@ -80,7 +84,15 @@ interface RunParams {
 }
 interface ChatMessage {
     role: 'user' | 'assistant' | 'system' | 'tool';
-    content: string;
+    content: string | Array<{
+        type: 'text';
+        text: string;
+    } | {
+        type: 'image_url';
+        image_url: {
+            url: string;
+        };
+    } | Record<string, any>>;
     tool_call_id?: string;
     name?: string;
 }
