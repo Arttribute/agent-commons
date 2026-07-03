@@ -342,6 +342,8 @@ export const session = pgTable('session', {
     topP?: number;
     presencePenalty?: number;
     frequencyPenalty?: number;
+    reasoningEffort?: 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh';
+    verbosity?: 'low' | 'medium' | 'high';
   }>(),
 
   query: jsonb('query').$type<{

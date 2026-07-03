@@ -19,6 +19,8 @@ export interface ModelConfig {
   temperature?: number;
   maxTokens?: number;
   topP?: number;
+  reasoningEffort?: 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh';
+  verbosity?: 'low' | 'medium' | 'high';
 }
 
 // ─── Agent ────────────────────────────────────────────────────────────────────
@@ -222,6 +224,7 @@ export interface ChatMessage {
 
 export type StreamEventType =
   | 'token'
+  | 'tool'
   | 'toolStart'
   | 'toolEnd'
   | 'agent_step'
@@ -236,14 +239,24 @@ export type StreamEventType =
 
 export interface StreamEvent {
   type: StreamEventType;
+  phase?: 'commentary' | 'final_answer' | string;
   role?: string;
   content?: string;
+  stage?: string;
+  status?: 'queued' | 'running' | 'completed' | 'failed' | string;
+  name?: string;
   toolName?: string;
+  tool?: string;
   input?: string;
+  args?: any;
   output?: any;
+  result?: any;
+  requestId?: string;
   timestamp?: string;
+  sessionId?: string;
   payload?: any;
   message?: string;
+  detail?: string;
 }
 
 // ─── Workflow ─────────────────────────────────────────────────────────────────

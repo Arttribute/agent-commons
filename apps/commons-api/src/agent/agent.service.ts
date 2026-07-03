@@ -50,7 +50,7 @@ import { LogService } from '~/log/log.service';
 import { TaskService } from '~/task/task.service';
 import { TaskExecutionService } from '~/task/task-execution.service';
 import { ToolLoaderService } from '~/tool/tool-loader.service';
-import { Observable, of } from 'rxjs';
+import { Observable } from 'rxjs';
 import { SpaceToolsService } from '~/space/space-tools.service';
 import { UsageService } from '~/modules/usage/usage.service';
 import { calculateCost } from '~/modules/model-provider/model-registry';
@@ -64,6 +64,20 @@ import { ComputerService } from '~/computer';
 const got = import('got');
 
 const app = typia.llm.application<CommonTool, 'chatgpt'>();
+
+type StreamStatusState = 'queued' | 'running' | 'completed' | 'failed';
+type RunComputerRequest = {
+  enabled: boolean;
+  computerIds?: string[];
+  lifecycle?: 'persistent' | 'ephemeral';
+};
+
+const ACTIVE_COMPUTER_RUN_STATUSES = new Set([
+  'provisioning',
+  'starting',
+  'running',
+  'idle',
+]);
 
 @Injectable()
 export class AgentService implements OnModuleInit {
@@ -564,23 +578,54 @@ export class AgentService implements OnModuleInit {
           turnCount = 0, // default 0
           maxTurns = 3, // default 3
         } = props;
+        let currentSessionId = sessionId;
+        let computerRequest: RunComputerRequest | undefined =
+          props.computerRequest;
+        let computerPreparationBlock = '';
+        const emitStatus = (
+          stage: string,
+          status: StreamStatusState,
+          message: string,
+          detail?: string,
+          payload?: Record<string, any>,
+        ) => {
+          if (!stream) return;
+          subscriber.next({
+            type: 'status',
+            phase: 'commentary',
+            stage,
+            status,
+            message,
+            detail,
+            payload,
+            sessionId: currentSessionId,
+            timestamp: new Date().toISOString(),
+          });
+        };
+
+        emitStatus('request', 'running', 'Starting agent run');
 
         if (turnCount >= maxTurns) {
-          return of({
+          subscriber.next({
             type: 'final',
+            phase: 'final_answer',
             payload: {
               sessionId,
               info: `Max turns (${maxTurns}) reached – no further replies.`,
             },
           });
+          clearInterval(keepalive);
+          subscriber.complete();
+          return;
         }
 
         try {
           const agent = await this.getAgent({ agentId });
+          emitStatus('agent', 'completed', `Loaded ${agent.name ?? 'agent'}`);
 
-          let currentSessionId = sessionId;
           let isNewSession = false;
           if (!currentSessionId) {
+            emitStatus('session', 'running', 'Opening a new conversation');
             if (!spaceId) {
               const newSession = await this.session.createSession({
                 value: {
@@ -604,8 +649,13 @@ export class AgentService implements OnModuleInit {
               });
               currentSessionId = newSession.sessionId;
               isNewSession = true;
+              emitStatus('session', 'completed', 'Conversation ready', undefined, {
+                sessionId: currentSessionId,
+                isNewSession,
+              });
             } else {
               // In a space: reuse or create a single agent-space session
+              emitStatus('session', 'running', 'Opening the space conversation');
               const { session: spSession, created } =
                 await this.session.getOrCreateAgentSpaceSession({
                   agentId,
@@ -625,10 +675,132 @@ export class AgentService implements OnModuleInit {
                 });
               currentSessionId = spSession.sessionId;
               isNewSession = created;
+              emitStatus('session', 'completed', 'Space conversation ready', undefined, {
+                sessionId: currentSessionId,
+                isNewSession,
+              });
             }
+          } else {
+            emitStatus('session', 'completed', 'Resuming this conversation', undefined, {
+              sessionId: currentSessionId,
+              isNewSession,
+            });
+          }
+
+          if (computerRequest?.enabled) {
+            const selectedComputerIds = [
+              ...new Set((computerRequest.computerIds ?? []).filter(Boolean)),
+            ];
+            emitStatus(
+              'computer',
+              'running',
+              selectedComputerIds.length
+                ? 'Using the selected agent computer'
+                : 'Preparing an agent computer for this turn',
+              computerRequest.lifecycle
+                ? `${computerRequest.lifecycle} runtime`
+                : undefined,
+              {
+                computerIds: selectedComputerIds,
+                lifecycle: computerRequest.lifecycle,
+              },
+            );
+
+            if (!selectedComputerIds.length) {
+              try {
+                const activeComputers = await this.computerService.listInstances({
+                  agentId,
+                  sessionId: currentSessionId,
+                  includeTerminated: false,
+                });
+                const reusable = activeComputers.find((computer: any) =>
+                  ACTIVE_COMPUTER_RUN_STATUSES.has(String(computer.status)),
+                );
+
+                if (reusable?.computerId) {
+                  selectedComputerIds.push(reusable.computerId);
+                  emitStatus(
+                    'computer',
+                    'completed',
+                    'Reusing an active agent computer',
+                    reusable.name ?? reusable.computerId,
+                    {
+                      computerId: reusable.computerId,
+                      status: reusable.status,
+                      lifecycle: reusable.lifecycle,
+                    },
+                  );
+                } else {
+                  const started = await this.computerService.startComputer({
+                    agentId,
+                    sessionId: currentSessionId,
+                    lifecycle: computerRequest.lifecycle,
+                    actorId: initiator,
+                    actorType: 'user',
+                    reason: 'Selected from the chat composer',
+                  });
+                  const failed = ['failed', 'error', 'unavailable'].includes(
+                    String(started?.status),
+                  );
+                  if (started?.computerId && !failed) {
+                    selectedComputerIds.push(started.computerId);
+                  }
+                  emitStatus(
+                    'computer',
+                    failed ? 'failed' : 'completed',
+                    failed
+                      ? 'Agent computer could not be started'
+                      : 'Agent computer is ready',
+                    started?.errorMessage ?? started?.name ?? started?.computerId,
+                    {
+                      computerId: started?.computerId,
+                      status: started?.status,
+                      lifecycle: started?.lifecycle,
+                    },
+                  );
+                  if (failed) {
+                    computerPreparationBlock = [
+                      '## COMPUTER PREPARATION',
+                      'The user selected Agent Computer for this turn, but the runtime could not be prepared.',
+                      `Reason: ${started?.errorMessage ?? 'Unknown computer provisioning error'}`,
+                      'Explain the limitation and continue without claiming computer access.',
+                    ].join('\n');
+                  }
+                }
+              } catch (error) {
+                const message =
+                  error instanceof Error ? error.message : String(error);
+                computerPreparationBlock = [
+                  '## COMPUTER PREPARATION',
+                  'The user selected Agent Computer for this turn, but the runtime could not be prepared.',
+                  `Reason: ${message}`,
+                  'Explain the limitation and continue without claiming computer access.',
+                ].join('\n');
+                emitStatus(
+                  'computer',
+                  'failed',
+                  'Agent computer could not be prepared',
+                  message,
+                );
+              }
+            } else {
+              emitStatus(
+                'computer',
+                'completed',
+                'Agent computer selection ready',
+                selectedComputerIds.join(', '),
+                { computerIds: selectedComputerIds },
+              );
+            }
+
+            computerRequest = {
+              ...computerRequest,
+              computerIds: selectedComputerIds,
+            };
           }
 
           // ✅ Load tools using centralized ToolLoaderService
+          emitStatus('tools', 'running', 'Loading available tools');
           const staticDefs = map(app.functions, (_) => ({
             type: 'function',
             function: {
@@ -663,6 +835,14 @@ export class AgentService implements OnModuleInit {
             spaceToolDefs: spaceToolDefs,
             endpoint: `http://localhost:${process.env.PORT}/v1/agents/tools`,
           });
+          emitStatus(
+            'tools',
+            'completed',
+            'Tools loaded',
+            `${toolDefs.length + spaceToolDefs.length} callable tool${
+              toolDefs.length + spaceToolDefs.length === 1 ? '' : 's'
+            }`,
+          );
 
           const toolUsage: {
             name: string;
@@ -686,6 +866,7 @@ export class AgentService implements OnModuleInit {
           const callbackHandler = BaseCallbackHandler.fromMethods({
             handleLLMStart: async (_llm: any, _prompts: string[], runId: string) => {
               if (runId) llmRunStartedAt.set(runId, performance.now());
+              emitStatus('model', 'running', 'Thinking');
             },
             handleLLMNewToken: async (token: string) => {
               if (stream) {
@@ -700,15 +881,19 @@ export class AgentService implements OnModuleInit {
             handleToolStart: async (tool: any, input: string) => {
               subscriber.next({
                 type: 'toolStart',
+                phase: 'commentary',
                 toolName: tool.name,
                 input,
+                sessionId: currentSessionId,
                 timestamp: new Date().toISOString(),
               });
             },
             handleToolEnd: async (output: any) => {
               subscriber.next({
                 type: 'toolEnd',
+                phase: 'commentary',
                 output,
+                sessionId: currentSessionId,
                 timestamp: new Date().toISOString(),
               });
             },
@@ -719,6 +904,12 @@ export class AgentService implements OnModuleInit {
                 ? Math.round(performance.now() - llmRunStartedAt.get(runId)!)
                 : undefined;
               if (runId) llmRunStartedAt.delete(runId);
+              emitStatus(
+                'model',
+                'completed',
+                'Finished a reasoning step',
+                durationMs ? `${durationMs} ms` : undefined,
+              );
 
               if (!usage) {
                 console.log(JSON.stringify({
@@ -787,6 +978,7 @@ export class AgentService implements OnModuleInit {
           });
 
           // ── Build LLM from agent/session model config (provider-agnostic) ──
+          emitStatus('model', 'running', 'Configuring model');
           const sessionRecord = await this.session.getSession({ id: currentSessionId });
           const decryptedApiKey = agent.modelApiKey
             ? this.decryptApiKey(agent.modelApiKey)
@@ -843,6 +1035,12 @@ export class AgentService implements OnModuleInit {
             strict: false,
             callbacks: [callbackHandler],
           });
+          emitStatus(
+            'model',
+            'completed',
+            'Model ready',
+            `${usageContext.provider}/${usageContext.modelId}`,
+          );
 
           const makeRunner = (def: ChatCompletionTool & { endpoint: string }) =>
             tool(
@@ -896,7 +1094,10 @@ export class AgentService implements OnModuleInit {
 
                 subscriber.next({
                   type: 'tool',
+                  phase: 'commentary',
                   ...callObj,
+                  toolName: fn,
+                  sessionId: currentSessionId,
                 });
 
                 return { toolData: data };
@@ -935,7 +1136,15 @@ export class AgentService implements OnModuleInit {
               tool(
                 async (args) => {
                   const requestId = uuidv4();
-                  subscriber.next({ type: 'cli_tool_request', requestId, tool: name, args });
+                  subscriber.next({
+                    type: 'cli_tool_request',
+                    phase: 'commentary',
+                    requestId,
+                    tool: name,
+                    args,
+                    sessionId: currentSessionId,
+                    timestamp: new Date().toISOString(),
+                  });
                   return new Promise<string>((resolve) => {
                     // Keepalive pings prevent GCP from closing the idle SSE stream
                     const pingInterval = setInterval(() => {
@@ -1116,6 +1325,7 @@ export class AgentService implements OnModuleInit {
 
           let messages: Messages = [];
           if (isNewSession) {
+            emitStatus('context', 'running', 'Preparing conversation context');
             const firstMsg = props.messages?.find((m) => m.role === 'user');
             const firstUserText = this.contentToText(firstMsg?.content);
             const boot = await this.createAgentSession(
@@ -1130,7 +1340,9 @@ export class AgentService implements OnModuleInit {
                 content: m.content ?? '',
               })) as any[]),
             );
+            emitStatus('context', 'completed', 'Conversation context ready');
           } else {
+            emitStatus('context', 'running', 'Loading conversation context');
             // ✅ For existing sessions, load the full history including agent_speech entries
             const currentSession = await this.session.getSession({
               id: currentSessionId,
@@ -1158,6 +1370,7 @@ export class AgentService implements OnModuleInit {
               role: 'system',
               content: this.buildSystemPrompt(agent, currentSessionId, childSessionsInfo, memoryBlock, sessionTasks, computerBlock),
             } as any);
+            emitStatus('context', 'completed', 'Conversation context ready');
 
             if (
               currentSession?.history &&
@@ -1219,18 +1432,50 @@ export class AgentService implements OnModuleInit {
           }
 
           const attachmentContext = props.attachments?.length
-            ? await this.filesService.getAttachmentSummaries(props.attachments, {
-                agentId,
-                sessionId: currentSessionId,
-                ownerId: initiator,
-                includeImageParts: this.supportsImageInputs(
-                  agent.modelProvider,
-                  agent.modelId,
-                ),
-                maxImageParts: Number(
-                  process.env.AGENT_FILE_PROMPT_IMAGE_PARTS ?? 4,
-                ),
-              })
+            ? await (async () => {
+                emitStatus(
+                  'files',
+                  'running',
+                  `Reading ${props.attachments?.length ?? 0} uploaded file${
+                    props.attachments?.length === 1 ? '' : 's'
+                  }`,
+                  'Preparing text previews and visual artifacts',
+                );
+                const summaries = await this.filesService.getAttachmentSummaries(
+                  props.attachments!,
+                  {
+                    agentId,
+                    sessionId: currentSessionId,
+                    ownerId: initiator,
+                    includeImageParts: this.supportsImageInputs(
+                      agent.modelProvider,
+                      agent.modelId,
+                    ),
+                    maxImageParts: Number(
+                      process.env.AGENT_FILE_PROMPT_IMAGE_PARTS ?? 4,
+                    ),
+                  },
+                );
+                emitStatus(
+                  'files',
+                  'completed',
+                  `Prepared ${summaries.attachments.length} uploaded file${
+                    summaries.attachments.length === 1 ? '' : 's'
+                  }`,
+                  summaries.attachments.map((file) => file.name).join(', '),
+                  {
+                    attachments: summaries.attachments.map((file) => ({
+                      fileId: file.fileId,
+                      name: file.name,
+                      kind: file.kind,
+                      status: file.status,
+                      extractedTextChars: file.extractedTextChars,
+                    })),
+                    imageParts: summaries.imageParts.length,
+                  },
+                );
+                return summaries;
+              })()
             : null;
 
           if (props.messages?.length) {
@@ -1258,21 +1503,21 @@ export class AgentService implements OnModuleInit {
           ).catch(() => '');
 
           // Build the extra content to append to the system prompt (memory + CLI context)
-          const computerSelectionBlock = props.computerRequest?.enabled
+          const computerSelectionBlock = computerRequest?.enabled
             ? [
                 '## USER COMPUTER SELECTION',
                 'The user explicitly selected Agent Computer for this turn.',
-                props.computerRequest.computerIds?.length
-                  ? `Selected computer IDs: ${props.computerRequest.computerIds.join(', ')}`
+                computerRequest.computerIds?.length
+                  ? `Selected computer IDs: ${computerRequest.computerIds.join(', ')}`
                   : 'No specific computer was selected. Use an active suitable computer or call startAgentComputer before computer-backed work.',
-                props.computerRequest.lifecycle
-                  ? `Requested lifecycle: ${props.computerRequest.lifecycle}`
+                computerRequest.lifecycle
+                  ? `Requested lifecycle: ${computerRequest.lifecycle}`
                   : '',
                 'Use the computer tools when the request requires files, terminal commands, browser work, app execution, screenshots, or generated artifacts.',
               ].filter(Boolean).join('\n')
             : '';
 
-          const extraSystemContent = [memoryBlock, props.cliContext, computerSelectionBlock].filter(Boolean).join('\n\n');
+          const extraSystemContent = [memoryBlock, props.cliContext, computerSelectionBlock, computerPreparationBlock].filter(Boolean).join('\n\n');
 
           if (extraSystemContent) {
             // Append to the existing system message, or push a new one
@@ -1283,7 +1528,7 @@ export class AgentService implements OnModuleInit {
               const sys = messages[sysIdx] as any;
               messages[sysIdx] = {
                 ...sys,
-                content: `${sys.content}${extraSystemContent}`,
+                content: `${sys.content}\n\n${extraSystemContent}`,
               };
             } else {
               messages.push({
@@ -1314,9 +1559,31 @@ export class AgentService implements OnModuleInit {
             );
 
             if (nextTask) {
+              emitStatus(
+                'task',
+                'running',
+                nextTask.title
+                  ? `Working on ${nextTask.title}`
+                  : 'Working on the next task',
+                nextTask.taskId,
+                {
+                  taskId: nextTask.taskId,
+                  executionMode: nextTask.executionMode,
+                  workflowId: nextTask.workflowId,
+                },
+              );
               if (nextTask.executionMode === 'workflow' && nextTask.workflowId) {
                 // Execute workflow task fully
                 await this.taskExecution.executeTask(nextTask.taskId);
+                emitStatus(
+                  'task',
+                  'completed',
+                  nextTask.title
+                    ? `Workflow task finished: ${nextTask.title}`
+                    : 'Workflow task finished',
+                  nextTask.taskId,
+                  { taskId: nextTask.taskId },
+                );
 
                 // Continue to check for next task
                 continue;
@@ -1389,6 +1656,15 @@ export class AgentService implements OnModuleInit {
                   })
                   .where(eq(schema.task.taskId, nextTask.taskId));
                 this.logger.log(`Auto-completed task ${nextTask.taskId} after agent response`);
+                emitStatus(
+                  'task',
+                  'completed',
+                  nextTask.title
+                    ? `Completed ${nextTask.title}`
+                    : 'Task completed',
+                  nextTask.taskId,
+                  { taskId: nextTask.taskId },
+                );
               }
             }
 
@@ -1477,6 +1753,7 @@ export class AgentService implements OnModuleInit {
 
             // Get existing history to preserve agent_speech entries added by other agents
             const existingHistory = (currentSession.history as any[]) || [];
+            emitStatus('session', 'running', 'Saving conversation');
 
             // Extract agent_speech entries that should be preserved
             const agentSpeechEntries = existingHistory.filter(
@@ -1507,7 +1784,7 @@ export class AgentService implements OnModuleInit {
                     : undefined,
                   computerRequest:
                     role === 'human' || role === 'user'
-                      ? props.computerRequest
+                      ? computerRequest
                       : undefined,
                 },
               };
@@ -1556,6 +1833,9 @@ export class AgentService implements OnModuleInit {
                 updatedAt: new Date(),
               },
             });
+            emitStatus('session', 'completed', 'Conversation saved', undefined, {
+              sessionId: currentSessionId,
+            });
           }
 
           const last = messages.at(-1)!;
@@ -1585,6 +1865,7 @@ export class AgentService implements OnModuleInit {
 
           subscriber.next({
             type: 'final',
+            phase: 'final_answer',
             payload: {
               ...lastMessage,
               sessionId: currentSessionId,
@@ -1600,7 +1881,7 @@ export class AgentService implements OnModuleInit {
               metadata: {
                 toolCalls,
                 agentCalls: resolvedAgentCalls,
-                computerRequest: props.computerRequest,
+                computerRequest,
               },
             },
           });
@@ -1635,7 +1916,19 @@ export class AgentService implements OnModuleInit {
           }
         } catch (err) {
           clearInterval(keepalive);
-          subscriber.error(err);
+          const message = err instanceof Error ? err.message : String(err);
+          if (stream) {
+            subscriber.next({
+              type: 'error',
+              phase: 'final_answer',
+              message,
+              sessionId: currentSessionId,
+              timestamp: new Date().toISOString(),
+            });
+            subscriber.complete();
+          } else {
+            subscriber.error(err);
+          }
         }
       };
 

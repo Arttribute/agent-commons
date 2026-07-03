@@ -107,7 +107,11 @@ export class ComputerService {
         const filters = [
           eq(t.agentId, args.agentId),
           args.sessionId
-            ? or(eq(t.sessionId, args.sessionId), isNull(t.sessionId))
+            ? or(
+                eq(t.sessionId, args.sessionId),
+                isNull(t.sessionId),
+                eq(t.lifecycle, 'persistent'),
+              )
             : undefined,
           !args.includeTerminated
             ? sql`${t.status} not in ('terminated', 'stopped')`
@@ -132,7 +136,11 @@ export class ComputerService {
         const filters = [
           eq(t.agentId, args.agentId),
           args.sessionId
-            ? or(eq(t.sessionId, args.sessionId), isNull(t.sessionId))
+            ? or(
+                eq(t.sessionId, args.sessionId),
+                isNull(t.sessionId),
+                eq(t.lifecycle, 'persistent'),
+              )
             : undefined,
           !args.includeTerminated
             ? sql`${t.status} not in ('terminated', 'stopped')`
@@ -242,6 +250,7 @@ export class ComputerService {
         metadata: {
           reason: args.reason,
           provisioner: 'commonos',
+          commonOsSessionId: sessionId ?? computerId,
         },
       })
       .returning();
@@ -409,6 +418,7 @@ export class ComputerService {
   async sendInstruction(args: {
     agentId: string;
     computerId: string;
+    sessionId?: string;
     instruction: string;
     eventType: string;
     summary: string;
@@ -420,6 +430,11 @@ export class ComputerService {
     if (!computer.commonOsAgentId) {
       throw new BadRequestException('Computer is not linked to a CommonOS runtime');
     }
+    const instructionSessionId =
+      args.sessionId ??
+      computer.sessionId ??
+      (computer.metadata as any)?.commonOsSessionId ??
+      computer.computerId;
 
     const sent = await this.commonOsComputerRequest<any>(
       'POST',
@@ -429,14 +444,14 @@ export class ComputerService {
         : undefined,
       {
         content: args.instruction,
-        sessionId: (computer.metadata as any)?.commonOsSessionId,
+        sessionId: instructionSessionId,
       },
     );
 
     await this.recordEvent({
       computerId: computer.computerId,
       agentId: computer.agentId,
-      sessionId: computer.sessionId ?? undefined,
+      sessionId: instructionSessionId,
       eventType: args.eventType,
       actorId: args.actorId,
       actorType: args.actorType,
@@ -460,7 +475,7 @@ export class ComputerService {
     await this.recordEvent({
       computerId: computer.computerId,
       agentId: computer.agentId,
-      sessionId: computer.sessionId ?? undefined,
+      sessionId: instructionSessionId,
       eventType: `${args.eventType}.result`,
       actorId: args.actorId,
       actorType: args.actorType,
@@ -474,6 +489,7 @@ export class ComputerService {
   async runCommand(args: {
     agentId: string;
     computerId: string;
+    sessionId?: string;
     command: string;
     cwd?: string;
     timeoutSeconds?: number;
@@ -505,6 +521,7 @@ export class ComputerService {
     const result = await this.sendInstruction({
       agentId: args.agentId,
       computerId: args.computerId,
+      sessionId: args.sessionId,
       instruction,
       eventType: 'terminal.command',
       summary: command.slice(0, 180),
@@ -532,6 +549,7 @@ export class ComputerService {
   async openBrowser(args: {
     agentId: string;
     computerId: string;
+    sessionId?: string;
     url: string;
     actorId?: string;
     actorType?: 'user' | 'agent' | 'service';
@@ -543,6 +561,7 @@ export class ComputerService {
     const result = await this.sendInstruction({
       agentId: args.agentId,
       computerId: args.computerId,
+      sessionId: args.sessionId,
       instruction: [
         'Use this computer browser.',
         `Open ${url}.`,

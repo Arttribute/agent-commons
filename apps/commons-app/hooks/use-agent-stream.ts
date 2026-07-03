@@ -5,8 +5,12 @@ import { parseEventStream } from "@/lib/sse";
 
 interface UseAgentStreamOptions {
   onToken?: (token: string) => void;
+  onStatus?: (event: StreamEvent) => void;
+  onTool?: (event: StreamEvent) => void;
   onToolStart?: (toolName: string, input: string) => void;
-  onToolEnd?: (output: any) => void;
+  onToolEnd?: (output: any, event: StreamEvent) => void;
+  onCliToolRequest?: (event: StreamEvent) => void;
+  onAgentStep?: (event: StreamEvent) => void;
   onFinal?: (payload: any) => void;
   onError?: (message: string) => void;
 }
@@ -49,7 +53,13 @@ export function useAgentStream(initiator: string, options: UseAgentStreamOptions
         for await (const event of parseEventStream<StreamEvent>(res)) {
           if (abortRef.current) break;
           handleEvent(event, optionsRef.current);
-          if (event.type === "final" || event.type === "error") break;
+          if (
+            event.type === "final" ||
+            event.type === "completed" ||
+            event.type === "failed" ||
+            event.type === "cancelled" ||
+            event.type === "error"
+          ) break;
         }
       } catch (err: unknown) {
         const msg = err instanceof Error ? err.message : "Unknown error";
@@ -72,14 +82,33 @@ function handleEvent(event: StreamEvent, options: UseAgentStreamOptions) {
     case "token":
       if (event.content) options.onToken?.(event.content);
       break;
+    case "status":
+      options.onStatus?.(event);
+      break;
+    case "tool":
+      options.onTool?.(event);
+      break;
     case "toolStart":
       options.onToolStart?.(event.toolName ?? "", event.input ?? "");
       break;
     case "toolEnd":
-      options.onToolEnd?.(event.output);
+      options.onToolEnd?.(event.output, event);
+      break;
+    case "cli_tool_request":
+      options.onCliToolRequest?.(event);
+      break;
+    case "agent_step":
+      options.onAgentStep?.(event);
       break;
     case "final":
       options.onFinal?.(event.payload);
+      break;
+    case "completed":
+      options.onFinal?.(event.payload ?? event);
+      break;
+    case "failed":
+    case "cancelled":
+      options.onError?.(event.message ?? event.type);
       break;
     case "error":
       options.onError?.(event.message ?? "Unknown error");

@@ -78,6 +78,8 @@ export class ModelProviderFactory {
       topP: sessionModel.topP ?? agentConfig?.topP,
       presencePenalty: sessionModel.presencePenalty ?? agentConfig?.presencePenalty,
       frequencyPenalty: sessionModel.frequencyPenalty ?? agentConfig?.frequencyPenalty,
+      reasoningEffort: sessionModel.reasoningEffort ?? agentConfig?.reasoningEffort,
+      verbosity: sessionModel.verbosity ?? agentConfig?.verbosity,
     });
   }
 

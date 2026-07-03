@@ -19,11 +19,24 @@ type Message = {
   isStreaming?: boolean;
 };
 
+export type StreamActivity = {
+  id: string;
+  stage?: string;
+  title: string;
+  detail?: string;
+  status: "queued" | "running" | "completed" | "failed";
+  kind?: "status" | "tool" | "computer" | "file" | "model" | "task";
+  toolName?: string;
+  timestamp?: string;
+  payload?: any;
+};
+
 interface AgentContextType {
   messages: Message[];
   setMessages: React.Dispatch<React.SetStateAction<Message[]>>;
   addMessage: (newMessage: Message) => void;
   updateStreamingMessage: (content: string) => void;
+  upsertStreamingActivity: (activity: StreamActivity) => void;
   finalizeStreamingMessage: (content: string, metadata?: any) => void;
   clearMessages: () => void;
   sessions: any[];
@@ -78,16 +91,63 @@ export const AgentProvider = ({ children }: { children: ReactNode }) => {
     });
   }, []);
 
+  const upsertStreamingActivity = useCallback((activity: StreamActivity) => {
+    setMessages((prevMessages) => {
+      const lastMessage = prevMessages[prevMessages.length - 1];
+      const targetMessage =
+        lastMessage && lastMessage.isStreaming
+          ? lastMessage
+          : {
+              role: "ai",
+              content: "",
+              metadata: {},
+              timestamp: new Date().toISOString(),
+              isStreaming: true,
+            };
+      const currentActivity = Array.isArray(targetMessage.metadata?.activity)
+        ? targetMessage.metadata.activity
+        : [];
+      const existingIndex = currentActivity.findIndex(
+        (item: StreamActivity) => item.id === activity.id
+      );
+      const nextActivity =
+        existingIndex >= 0
+          ? currentActivity.map((item: StreamActivity, index: number) =>
+              index === existingIndex ? { ...item, ...activity } : item
+            )
+          : [...currentActivity, activity];
+      const nextMessage = {
+        ...targetMessage,
+        metadata: {
+          ...(targetMessage.metadata ?? {}),
+          activity: nextActivity,
+        },
+      };
+
+      if (lastMessage && lastMessage.isStreaming) {
+        return [...prevMessages.slice(0, -1), nextMessage];
+      }
+      return [...prevMessages, nextMessage];
+    });
+  }, []);
+
   const finalizeStreamingMessage = useCallback((content: string, metadata?: any) => {
     setMessages((prevMessages) => {
       const lastMessage = prevMessages[prevMessages.length - 1];
       if (lastMessage && lastMessage.isStreaming) {
+        const mergedMetadata = {
+          ...(lastMessage.metadata ?? {}),
+          ...(metadata ?? {}),
+          activity:
+            metadata?.activity ??
+            lastMessage.metadata?.activity,
+        };
         return [
           ...prevMessages.slice(0, -1),
           {
             ...lastMessage,
             content: content,
-            metadata: metadata || lastMessage.metadata,
+            metadata: mergedMetadata,
             isStreaming: false
           },
         ];
@@ -136,6 +196,7 @@ export const AgentProvider = ({ children }: { children: ReactNode }) => {
         setMessages,
         addMessage,
         updateStreamingMessage,
+        upsertStreamingActivity,
         finalizeStreamingMessage,
         clearMessages,
         sessions,

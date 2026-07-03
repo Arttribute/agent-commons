@@ -10,7 +10,21 @@ import remarkGfm from "remark-gfm";
 import rehypeRaw from "rehype-raw";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
-import { Bot, Check, Copy, FileText, Globe2, Monitor, TerminalSquare } from "lucide-react";
+import type { StreamActivity } from "@/context/AgentContext";
+import {
+  AlertCircle,
+  Bot,
+  Brain,
+  Check,
+  CheckCircle2,
+  CircleDashed,
+  Copy,
+  FileText,
+  Globe2,
+  Monitor,
+  TerminalSquare,
+  Wrench,
+} from "lucide-react";
 
 interface ToolCall {
   name: string;
@@ -28,6 +42,7 @@ interface AgentCall {
 interface AgentOutputProps {
   content: string;
   metadata?: {
+    activity?: StreamActivity[];
     toolCalls?: ToolCall[];
     agentCalls?: AgentCall[];
   };
@@ -42,8 +57,9 @@ export default function AgentOutput({
   isStreaming,
 }: AgentOutputProps) {
   const computerToolCalls = getComputerToolCalls(metadata?.toolCalls ?? []);
+  const activities = metadata?.activity ?? [];
 
-  if (!content && !isStreaming && computerToolCalls.length === 0) {
+  if (!content && !isStreaming && computerToolCalls.length === 0 && activities.length === 0) {
     return (
       <div
         className={cn(
@@ -61,132 +77,191 @@ export default function AgentOutput({
           <Bot className="h-3.5 w-3.5 text-indigo-500" />
         </div>
         <div className="flex-1 min-w-0">
-      <ReactMarkdown
-        remarkPlugins={[remarkGfm]}
-        rehypePlugins={[rehypeRaw]}
-        components={{
-          h1: ({ node, ...props }) => (
-            <h1
-              className="text-2xl font-bold mt-4 mb-2 pb-1 border-b"
-              {...props}
-            />
-          ),
-          h2: ({ node, ...props }) => (
-            <h2 className="text-xl font-bold mt-3 mb-2" {...props} />
-          ),
-          h3: ({ node, ...props }) => (
-            <h3 className="text-lg font-bold mt-2 mb-1" {...props} />
-          ),
-          h4: ({ node, ...props }) => (
-            <h4 className=" font-bold mt-2 mb-1" {...props} />
-          ),
-          p: ({ node, ...props }) => (
-            <p className="text-sm my-2 leading-relaxed" {...props} />
-          ),
-          ul: ({ node, ...props }) => (
-            <ul className="text-sm my-2 ml-1 list-disc" {...props} />
-          ),
-          ol: ({ node, ...props }) => (
-            <ol className="text-sm my-2 ml-1 list-decimal" {...props} />
-          ),
-          li: ({ node, ...props }) => (
-            <li className="text-sm my-1" {...props} />
-          ),
-          blockquote: ({ node, ...props }) => (
-            <blockquote
-              className="text-sm border-l-4 border-muted pl-4 italic my-4"
-              {...props}
-            />
-          ),
-          code({
-            inline,
-            className,
-            children,
-            ...props
-          }: {
-            inline?: boolean;
-            className?: string;
-            children?: React.ReactNode;
-          }) {
-            const match = /language-(\w+)/.exec(className || "");
-            const language = match ? match[1] : "";
-            const isExecutable =
-              language === "js" ||
-              language === "javascript" ||
-              language === "typescript";
+          <ActivityTimeline activities={activities} />
+          <ReactMarkdown
+            remarkPlugins={[remarkGfm]}
+            rehypePlugins={[rehypeRaw]}
+            components={{
+              h1: ({ node, ...props }) => (
+                <h1
+                  className="text-2xl font-bold mt-4 mb-2 pb-1 border-b"
+                  {...props}
+                />
+              ),
+              h2: ({ node, ...props }) => (
+                <h2 className="text-xl font-bold mt-3 mb-2" {...props} />
+              ),
+              h3: ({ node, ...props }) => (
+                <h3 className="text-lg font-bold mt-2 mb-1" {...props} />
+              ),
+              h4: ({ node, ...props }) => (
+                <h4 className=" font-bold mt-2 mb-1" {...props} />
+              ),
+              p: ({ node, ...props }) => (
+                <p className="text-sm my-2 leading-relaxed" {...props} />
+              ),
+              ul: ({ node, ...props }) => (
+                <ul className="text-sm my-2 ml-1 list-disc" {...props} />
+              ),
+              ol: ({ node, ...props }) => (
+                <ol className="text-sm my-2 ml-1 list-decimal" {...props} />
+              ),
+              li: ({ node, ...props }) => (
+                <li className="text-sm my-1" {...props} />
+              ),
+              blockquote: ({ node, ...props }) => (
+                <blockquote
+                  className="text-sm border-l-4 border-muted pl-4 italic my-4"
+                  {...props}
+                />
+              ),
+              code({
+                inline,
+                className,
+                children,
+                ...props
+              }: {
+                inline?: boolean;
+                className?: string;
+                children?: React.ReactNode;
+              }) {
+                const match = /language-(\w+)/.exec(className || "");
+                const language = match ? match[1] : "";
+                const isExecutable =
+                  language === "js" ||
+                  language === "javascript" ||
+                  language === "typescript";
 
-            return !inline && match ? (
-              <CodeBlock
-                language={language}
-                code={String(children).replace(/\n$/, "")}
-              >
-                {/* {isExecutable && (
-                  <div
-                    ref={codeExecutorRef}
-                    className="mt-2 p-4 bg-muted rounded-md font-mono text-sm"
-                    data-code-output="true"
+                return !inline && match ? (
+                  <CodeBlock
+                    language={language}
+                    code={String(children).replace(/\n$/, "")}
                   >
-                    <div className="text-muted-foreground">
-                      Output will appear here when you run the code
-                    </div>
+                    {/* {isExecutable && (
+                      <div
+                        ref={codeExecutorRef}
+                        className="mt-2 p-4 bg-muted rounded-md font-mono text-sm"
+                        data-code-output="true"
+                      >
+                        <div className="text-muted-foreground">
+                          Output will appear here when you run the code
+                        </div>
+                      </div>
+                    )} */}
+                  </CodeBlock>
+                ) : (
+                  <code className="rounded text-sm font-mono " {...props}>
+                    {children}
+                  </code>
+                );
+              },
+              img({ node, ...props }) {
+                return (
+                  <img
+                    className="rounded-md my-6 max-w-full h-auto"
+                    {...props}
+                    loading="lazy"
+                  />
+                );
+              },
+              a({ node, ...props }) {
+                return (
+                  <a
+                    className="text-primary underline underline-offset-4 hover:text-primary/80 transition-colors"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    {...props}
+                  />
+                );
+              },
+              table({ node, ...props }) {
+                return (
+                  <div className="my-6 overflow-x-auto">
+                    <table className="border-collapse w-full" {...props} />
                   </div>
-                )} */}
-              </CodeBlock>
-            ) : (
-              <code className="rounded text-sm font-mono " {...props}>
-                {children}
-              </code>
-            );
-          },
-          img({ node, ...props }) {
-            return (
-              <img
-                className="rounded-md my-6 max-w-full h-auto"
-                {...props}
-                loading="lazy"
-              />
-            );
-          },
-          a({ node, ...props }) {
-            return (
-              <a
-                className="text-primary underline underline-offset-4 hover:text-primary/80 transition-colors"
-                target="_blank"
-                rel="noopener noreferrer"
-                {...props}
-              />
-            );
-          },
-          table({ node, ...props }) {
-            return (
-              <div className="my-6 overflow-x-auto">
-                <table className="border-collapse w-full" {...props} />
-              </div>
-            );
-          },
-          th({ node, ...props }) {
-            return (
-              <th
-                className="border border-border px-4 py-2 bg-muted font-bold text-left"
-                {...props}
-              />
-            );
-          },
-          td({ node, ...props }) {
-            return <td className="border border-border px-4 py-2" {...props} />;
-          },
-        }}
-      >
-        {content}
-      </ReactMarkdown>
-      <ComputerArtifacts toolCalls={computerToolCalls} />
-      {isStreaming && (
-        <span className="inline-block w-1.5 h-4 bg-indigo-400 rounded-sm animate-pulse ml-0.5 align-middle" />
-      )}
+                );
+              },
+              th({ node, ...props }) {
+                return (
+                  <th
+                    className="border border-border px-4 py-2 bg-muted font-bold text-left"
+                    {...props}
+                  />
+                );
+              },
+              td({ node, ...props }) {
+                return <td className="border border-border px-4 py-2" {...props} />;
+              },
+            }}
+          >
+            {content}
+          </ReactMarkdown>
+          <ComputerArtifacts toolCalls={computerToolCalls} />
+          {isStreaming && (
+            <span className="inline-block w-1.5 h-4 bg-indigo-400 rounded-sm animate-pulse ml-0.5 align-middle" />
+          )}
         </div>
       </div>
     </div>
   );
+}
+
+function ActivityTimeline({ activities }: { activities: StreamActivity[] }) {
+  if (!activities.length) return null;
+
+  const visible = activities.slice(-8);
+  return (
+    <div className="not-prose mb-3 space-y-1.5">
+      {visible.map((activity) => {
+        const Icon = iconForActivity(activity);
+        return (
+          <div
+            key={activity.id}
+            className={cn(
+              "flex items-start gap-2 rounded-md border border-border/70 bg-muted/25 px-3 py-2 text-xs",
+              activity.status === "failed" && "border-destructive/30 bg-destructive/5"
+            )}
+          >
+            <span
+              className={cn(
+                "mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-md bg-background text-muted-foreground",
+                activity.status === "running" && "text-indigo-500",
+                activity.status === "completed" && "text-emerald-600",
+                activity.status === "failed" && "text-destructive"
+              )}
+            >
+              <Icon
+                className={cn(
+                  "h-3.5 w-3.5",
+                  activity.status === "running" && "animate-pulse"
+                )}
+              />
+            </span>
+            <span className="min-w-0 flex-1">
+              <span className="block truncate font-medium text-foreground">
+                {activity.title}
+              </span>
+              {activity.detail ? (
+                <span className="mt-0.5 block truncate text-muted-foreground">
+                  {activity.detail}
+                </span>
+              ) : null}
+            </span>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function iconForActivity(activity: StreamActivity) {
+  if (activity.status === "failed") return AlertCircle;
+  if (activity.status === "completed") return CheckCircle2;
+  if (activity.kind === "computer") return Monitor;
+  if (activity.kind === "file") return FileText;
+  if (activity.kind === "model") return Brain;
+  if (activity.kind === "tool") return Wrench;
+  return CircleDashed;
 }
 
 function getComputerToolCalls(toolCalls: ToolCall[]) {

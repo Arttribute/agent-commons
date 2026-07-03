@@ -11,6 +11,7 @@ import {
   Query,
   Sse,
   Headers,
+  Header,
   Req,
   UseGuards,
 } from '@nestjs/common';
@@ -103,6 +104,8 @@ export class AgentController {
 
   @Post('run/stream')
   @Sse('run/stream')
+  @Header('X-Accel-Buffering', 'no')
+  @Header('Cache-Control', 'no-cache, no-transform')
   runAgentStream(
     @Body() body: RunBody & { initiator?: string; initiatorId?: string },
     @Headers('x-initiator') initiatorHeader: string,

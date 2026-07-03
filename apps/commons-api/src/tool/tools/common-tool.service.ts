@@ -304,6 +304,7 @@ export interface CommonTool {
   runComputerCommand(props: {
     agentId: string;
     computerId: string;
+    sessionId?: string;
     command: string;
     cwd?: string;
     timeoutSeconds?: number;
@@ -324,6 +325,7 @@ export interface CommonTool {
   openComputerBrowser(props: {
     agentId: string;
     computerId: string;
+    sessionId?: string;
     url: string;
   }): Promise<any>;
 
@@ -1250,9 +1252,10 @@ export class CommonToolService implements CommonTool {
     lifecycle?: 'persistent' | 'ephemeral';
     name?: string;
     reason?: string;
-  }) {
+  }, metadata?: { sessionId?: string }) {
     return this.computers.startComputer({
       ...props,
+      sessionId: props.sessionId ?? metadata?.sessionId,
       actorId: props.agentId,
       actorType: 'agent',
     });
@@ -1262,19 +1265,24 @@ export class CommonToolService implements CommonTool {
     agentId: string;
     sessionId?: string;
     includeTerminated?: boolean;
-  }) {
-    return this.computers.listInstances(props);
+  }, metadata?: { sessionId?: string }) {
+    return this.computers.listInstances({
+      ...props,
+      sessionId: props.sessionId ?? metadata?.sessionId,
+    });
   }
 
   async runComputerCommand(props: {
     agentId: string;
     computerId: string;
+    sessionId?: string;
     command: string;
     cwd?: string;
     timeoutSeconds?: number;
-  }) {
+  }, metadata?: { sessionId?: string }) {
     return this.computers.runCommand({
       ...props,
+      sessionId: props.sessionId ?? metadata?.sessionId,
       actorId: props.agentId,
       actorType: 'agent',
     });
@@ -1291,10 +1299,12 @@ export class CommonToolService implements CommonTool {
   async openComputerBrowser(props: {
     agentId: string;
     computerId: string;
+    sessionId?: string;
     url: string;
-  }) {
+  }, metadata?: { sessionId?: string }) {
     return this.computers.openBrowser({
       ...props,
+      sessionId: props.sessionId ?? metadata?.sessionId,
       actorId: props.agentId,
       actorType: 'agent',
     });

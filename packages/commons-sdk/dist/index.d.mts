@@ -7,6 +7,8 @@ interface ModelConfig {
     temperature?: number;
     maxTokens?: number;
     topP?: number;
+    reasoningEffort?: 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh';
+    verbosity?: 'low' | 'medium' | 'high';
 }
 interface Agent {
     agentId: string;
@@ -186,17 +188,27 @@ interface ChatMessage {
     tool_call_id?: string;
     name?: string;
 }
-type StreamEventType = 'token' | 'toolStart' | 'toolEnd' | 'agent_step' | 'final' | 'completed' | 'failed' | 'cancelled' | 'status' | 'keepalive' | 'cli_tool_request' | 'error';
+type StreamEventType = 'token' | 'tool' | 'toolStart' | 'toolEnd' | 'agent_step' | 'final' | 'completed' | 'failed' | 'cancelled' | 'status' | 'keepalive' | 'cli_tool_request' | 'error';
 interface StreamEvent {
     type: StreamEventType;
+    phase?: 'commentary' | 'final_answer' | string;
     role?: string;
     content?: string;
+    stage?: string;
+    status?: 'queued' | 'running' | 'completed' | 'failed' | string;
+    name?: string;
     toolName?: string;
+    tool?: string;
     input?: string;
+    args?: any;
     output?: any;
+    result?: any;
+    requestId?: string;
     timestamp?: string;
+    sessionId?: string;
     payload?: any;
     message?: string;
+    detail?: string;
 }
 interface Workflow {
     workflowId: string;

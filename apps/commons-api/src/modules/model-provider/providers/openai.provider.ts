@@ -31,6 +31,16 @@ export function buildOpenAIModel(config: ModelConfig): ChatOpenAI {
     throw new Error('Custom model providers require modelBaseUrl');
   }
   const isGpt5 = config.provider === 'openai' && config.modelId.startsWith('gpt-5');
+  const reasoningEffort = isGpt5
+    ? normalizeReasoningEffort(
+        config.reasoningEffort ?? process.env.AGENT_OPENAI_REASONING_EFFORT,
+      )
+    : undefined;
+  const verbosity = isGpt5
+    ? normalizeVerbosity(
+        config.verbosity ?? process.env.AGENT_OPENAI_TEXT_VERBOSITY,
+      )
+    : undefined;
 
   return new ChatOpenAI({
     model: config.modelId,
@@ -43,7 +53,25 @@ export function buildOpenAIModel(config: ModelConfig): ChatOpenAI {
     topP: isGpt5 ? undefined : config.topP,
     presencePenalty: isGpt5 ? undefined : config.presencePenalty,
     frequencyPenalty: isGpt5 ? undefined : config.frequencyPenalty,
+    reasoning: reasoningEffort ? { effort: reasoningEffort } : undefined,
+    verbosity,
     streaming: true,
     configuration: baseURL ? { baseURL } : undefined,
   });
+}
+
+function normalizeReasoningEffort(value?: string) {
+  if (!value) return undefined;
+  const normalized = value.toLowerCase();
+  return ['none', 'minimal', 'low', 'medium', 'high', 'xhigh'].includes(normalized)
+    ? (normalized as 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh')
+    : undefined;
+}
+
+function normalizeVerbosity(value?: string) {
+  if (!value) return undefined;
+  const normalized = value.toLowerCase();
+  return ['low', 'medium', 'high'].includes(normalized)
+    ? (normalized as 'low' | 'medium' | 'high')
+    : undefined;
 }

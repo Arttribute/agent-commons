@@ -19,6 +19,8 @@ export interface ModelConfig {
   topP?: number;
   presencePenalty?: number;
   frequencyPenalty?: number;
+  reasoningEffort?: 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh';
+  verbosity?: 'low' | 'medium' | 'high';
 }
 
 export interface StreamEvent {

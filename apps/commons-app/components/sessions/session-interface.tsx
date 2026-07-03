@@ -234,6 +234,14 @@ export default function SessionInterfaceImproved({
     fetchSessionComputers();
   }, [fetchSessionComputers, messages.length, isStreaming]);
 
+  useEffect(() => {
+    if (!isStreaming) return;
+    const interval = setInterval(() => {
+      fetchSessionComputers();
+    }, 3000);
+    return () => clearInterval(interval);
+  }, [fetchSessionComputers, isStreaming]);
+
   // Poll tasks while any task is active (started/in_progress), stop when all terminal
   const pollIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
