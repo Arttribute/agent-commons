@@ -396,6 +396,7 @@ export function AgentComputerPanel({
               {selectedComputer ? (
                 <ComputerRuntime
                   agentId={agentId}
+                  sessionId={sessionId}
                   computer={selectedComputer}
                   activeTab={activeTab}
                   autoRefresh={autoRefresh}
@@ -418,6 +419,7 @@ export function AgentComputerPanel({
 
 function ComputerRuntime({
   agentId,
+  sessionId,
   computer,
   activeTab,
   autoRefresh,
@@ -426,6 +428,7 @@ function ComputerRuntime({
   onStop,
 }: {
   agentId: string;
+  sessionId?: string;
   computer: AgentComputer;
   activeTab?: ComputerRuntimeTab;
   autoRefresh?: boolean;
@@ -456,10 +459,10 @@ function ComputerRuntime({
         <FilesView agentId={agentId} computer={computer} />
       </TabsContent>
       <TabsContent value="browser" className="min-h-0 flex-1 p-0">
-        <BrowserView agentId={agentId} computer={computer} onRefresh={onRefresh} />
+        <BrowserView agentId={agentId} sessionId={sessionId} computer={computer} onRefresh={onRefresh} />
       </TabsContent>
       <TabsContent value="terminal" className="min-h-0 flex-1 p-0">
-        <TerminalView agentId={agentId} computer={computer} autoRefresh={autoRefresh} eventsKey={eventsKey} onRefresh={onRefresh} />
+        <TerminalView agentId={agentId} sessionId={sessionId} computer={computer} autoRefresh={autoRefresh} eventsKey={eventsKey} onRefresh={onRefresh} />
       </TabsContent>
     </Tabs>
   );
@@ -545,7 +548,7 @@ function FilesView({ agentId, computer }: { agentId: string; computer: AgentComp
   );
 }
 
-function BrowserView({ agentId, computer, onRefresh }: { agentId: string; computer: AgentComputer; onRefresh: () => void }) {
+function BrowserView({ agentId, sessionId, computer, onRefresh }: { agentId: string; sessionId?: string; computer: AgentComputer; onRefresh: () => void }) {
   const [url, setUrl] = useState(computer.browser?.url ?? "");
   const [opening, setOpening] = useState(false);
 
@@ -560,7 +563,7 @@ function BrowserView({ agentId, computer, onRefresh }: { agentId: string; comput
       await fetch(`/api/agents/${agentId}/computers/${computer.computerId}/browser/open`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ url }),
+        body: JSON.stringify({ url, sessionId }),
       });
       onRefresh();
     } finally {
@@ -602,12 +605,14 @@ function BrowserView({ agentId, computer, onRefresh }: { agentId: string; comput
 
 function TerminalView({
   agentId,
+  sessionId,
   computer,
   eventsKey,
   autoRefresh,
   onRefresh,
 }: {
   agentId: string;
+  sessionId?: string;
   computer: AgentComputer;
   eventsKey: string;
   autoRefresh?: boolean;
@@ -640,7 +645,7 @@ function TerminalView({
       await fetch(`/api/agents/${agentId}/computers/${computer.computerId}/commands`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ command, timeoutSeconds: 120 }),
+        body: JSON.stringify({ command, sessionId, timeoutSeconds: 120 }),
       });
       setCommand("");
       await loadEvents();

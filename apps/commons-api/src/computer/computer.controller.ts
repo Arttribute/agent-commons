@@ -124,6 +124,7 @@ export class ComputerController {
     body: {
       command: string;
       cwd?: string;
+      sessionId?: string;
       timeoutSeconds?: number;
     },
     @Req() req: Request,
@@ -134,6 +135,7 @@ export class ComputerController {
       computerId,
       command: body.command,
       cwd: body.cwd,
+      sessionId: body.sessionId,
       timeoutSeconds: body.timeoutSeconds,
       actorId: principal?.principalId ?? (req.headers['x-initiator'] as string),
       actorType: principal?.principalType ?? 'user',
@@ -146,13 +148,14 @@ export class ComputerController {
   async openBrowser(
     @Param('agentId') agentId: string,
     @Param('computerId') computerId: string,
-    @Body() body: { url: string },
+    @Body() body: { url: string; sessionId?: string },
     @Req() req: Request,
   ) {
     const principal = (req as any).principal;
     const data = await this.computers.openBrowser({
       agentId,
       computerId,
+      sessionId: body.sessionId,
       url: body.url,
       actorId: principal?.principalId ?? (req.headers['x-initiator'] as string),
       actorType: principal?.principalType ?? 'user',

@@ -439,11 +439,9 @@ export class ComputerService {
     if (!computer.commonOsAgentId) {
       throw new BadRequestException('Computer is not linked to a CommonOS runtime');
     }
-    const instructionSessionId =
-      args.sessionId ??
-      computer.sessionId ??
-      (computer.metadata as any)?.commonOsSessionId ??
-      computer.computerId;
+    const agentCommonsSessionId = args.sessionId ?? computer.sessionId ?? undefined;
+    const commonOsSessionId =
+      agentCommonsSessionId ?? (computer.metadata as any)?.commonOsSessionId;
 
     const sent = await this.commonOsComputerRequest<any>(
       'POST',
@@ -453,14 +451,14 @@ export class ComputerService {
         : undefined,
       {
         content: args.instruction,
-        sessionId: instructionSessionId,
+        ...(commonOsSessionId ? { sessionId: commonOsSessionId } : {}),
       },
     );
 
     await this.recordEvent({
       computerId: computer.computerId,
       agentId: computer.agentId,
-      sessionId: instructionSessionId,
+      sessionId: agentCommonsSessionId,
       eventType: args.eventType,
       actorId: args.actorId,
       actorType: args.actorType,
@@ -468,6 +466,7 @@ export class ComputerService {
       payload: {
         instruction: args.instruction,
         commonOsMessageId: sent?._id,
+        commonOsSessionId: sent?.sessionId ?? commonOsSessionId ?? null,
       },
     });
 
@@ -484,7 +483,7 @@ export class ComputerService {
     await this.recordEvent({
       computerId: computer.computerId,
       agentId: computer.agentId,
-      sessionId: instructionSessionId,
+      sessionId: agentCommonsSessionId,
       eventType: `${args.eventType}.result`,
       actorId: args.actorId,
       actorType: args.actorType,
