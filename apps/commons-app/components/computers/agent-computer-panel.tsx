@@ -92,6 +92,8 @@ type ComputerEvent = {
   createdAt: string;
 };
 
+export type ComputerRuntimeTab = "files" | "browser" | "terminal";
+
 type FsNode = {
   name: string;
   isDir: boolean;
@@ -103,11 +105,17 @@ export function AgentComputerPanel({
   agentId,
   sessionId,
   showConfig = false,
+  selectedComputerId,
+  activeTab,
+  autoRefresh = false,
   className,
 }: {
   agentId: string;
   sessionId?: string;
   showConfig?: boolean;
+  selectedComputerId?: string;
+  activeTab?: ComputerRuntimeTab;
+  autoRefresh?: boolean;
   className?: string;
 }) {
   const [config, setConfig] = useState<ComputerConfig | null>(null);
@@ -143,21 +151,44 @@ export function AgentComputerPanel({
       setDraft(configPayload.data);
       const nextComputers = computersPayload.data ?? [];
       setComputers(nextComputers);
-      setSelectedId((current) =>
-        current && nextComputers.some((computer: AgentComputer) => computer.computerId === current)
-          ? current
-          : nextComputers[0]?.computerId ?? null,
-      );
+      setSelectedId((current) => {
+        if (
+          selectedComputerId &&
+          nextComputers.some((computer: AgentComputer) => computer.computerId === selectedComputerId)
+        ) {
+          return selectedComputerId;
+        }
+        if (
+          current &&
+          nextComputers.some((computer: AgentComputer) => computer.computerId === current)
+        ) {
+          return current;
+        }
+        return nextComputers[0]?.computerId ?? null;
+      });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Computer load failed");
     } finally {
       setLoading(false);
     }
-  }, [agentId, sessionId]);
+  }, [agentId, selectedComputerId, sessionId]);
 
   useEffect(() => {
     load();
   }, [load]);
+
+  useEffect(() => {
+    if (!selectedComputerId) return;
+    setSelectedId(selectedComputerId);
+  }, [selectedComputerId]);
+
+  useEffect(() => {
+    if (!autoRefresh) return;
+    const interval = setInterval(() => {
+      load();
+    }, 2500);
+    return () => clearInterval(interval);
+  }, [autoRefresh, load]);
 
   const saveConfig = async () => {
     if (!draft) return;
@@ -366,6 +397,8 @@ export function AgentComputerPanel({
                 <ComputerRuntime
                   agentId={agentId}
                   computer={selectedComputer}
+                  activeTab={activeTab}
+                  autoRefresh={autoRefresh}
                   eventsKey={computers.map((computer) => computer.updatedAt).join("|")}
                   onRefresh={load}
                   onStop={() => stopComputer(selectedComputer.computerId)}
@@ -386,18 +419,28 @@ export function AgentComputerPanel({
 function ComputerRuntime({
   agentId,
   computer,
+  activeTab,
+  autoRefresh,
   eventsKey,
   onRefresh,
   onStop,
 }: {
   agentId: string;
   computer: AgentComputer;
+  activeTab?: ComputerRuntimeTab;
+  autoRefresh?: boolean;
   eventsKey: string;
   onRefresh: () => void;
   onStop: () => void;
 }) {
+  const [tab, setTab] = useState<ComputerRuntimeTab>(activeTab ?? "files");
+
+  useEffect(() => {
+    if (activeTab) setTab(activeTab);
+  }, [activeTab]);
+
   return (
-    <Tabs defaultValue="files" className="flex h-full min-h-0 flex-col">
+    <Tabs value={tab} onValueChange={(value) => setTab(value as ComputerRuntimeTab)} className="flex h-full min-h-0 flex-col">
       <div className="flex items-center justify-between gap-2 border-b border-border/70 px-3 py-2">
         <TabsList className="h-8">
           <TabsTrigger value="files" className="h-7 gap-1.5"><Folder className="h-3.5 w-3.5" />Files</TabsTrigger>
@@ -416,7 +459,7 @@ function ComputerRuntime({
         <BrowserView agentId={agentId} computer={computer} onRefresh={onRefresh} />
       </TabsContent>
       <TabsContent value="terminal" className="min-h-0 flex-1 p-0">
-        <TerminalView agentId={agentId} computer={computer} eventsKey={eventsKey} onRefresh={onRefresh} />
+        <TerminalView agentId={agentId} computer={computer} autoRefresh={autoRefresh} eventsKey={eventsKey} onRefresh={onRefresh} />
       </TabsContent>
     </Tabs>
   );
@@ -506,6 +549,10 @@ function BrowserView({ agentId, computer, onRefresh }: { agentId: string; comput
   const [url, setUrl] = useState(computer.browser?.url ?? "");
   const [opening, setOpening] = useState(false);
 
+  useEffect(() => {
+    setUrl(computer.browser?.url ?? "");
+  }, [computer.browser?.url]);
+
   const open = async () => {
     if (!url.trim()) return;
     setOpening(true);
@@ -557,11 +604,13 @@ function TerminalView({
   agentId,
   computer,
   eventsKey,
+  autoRefresh,
   onRefresh,
 }: {
   agentId: string;
   computer: AgentComputer;
   eventsKey: string;
+  autoRefresh?: boolean;
   onRefresh: () => void;
 }) {
   const [command, setCommand] = useState("");
@@ -577,6 +626,12 @@ function TerminalView({
   useEffect(() => {
     loadEvents();
   }, [loadEvents, eventsKey]);
+
+  useEffect(() => {
+    if (!autoRefresh) return;
+    const interval = setInterval(loadEvents, 2500);
+    return () => clearInterval(interval);
+  }, [autoRefresh, loadEvents]);
 
   const run = async () => {
     if (!command.trim()) return;

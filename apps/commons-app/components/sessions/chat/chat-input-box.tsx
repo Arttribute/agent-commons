@@ -65,7 +65,14 @@ export default function ChatInputBox({
       updateStreamingMessage(accumulatedRef.current);
     },
     onStatus: (event) => {
-      upsertStreamingActivity(statusEventToActivity(event));
+      const activity = statusEventToActivity(event);
+      if (activity) upsertStreamingActivity(activity);
+      if (event.stage === "computer") {
+        notifyComputerActivity({
+          tab: "files",
+          computerId: event.payload?.computerId,
+        });
+      }
     },
     onFinal: (payload) => {
       const content = payload?.content ?? payload?.data?.content ?? accumulatedRef.current;
@@ -78,6 +85,12 @@ export default function ChatInputBox({
       const activityId = `tool:${toolName || "tool"}:${++activitySequenceRef.current}`;
       const queue = runningToolActivitiesRef.current.get(toolName) ?? [];
       runningToolActivitiesRef.current.set(toolName, [...queue, activityId]);
+      if (isComputerTool(toolName)) {
+        notifyComputerActivity({
+          tab: computerTabForTool(toolName),
+          input,
+        });
+      }
       upsertStreamingActivity({
         id: activityId,
         kind: isComputerTool(toolName) ? "computer" : "tool",
@@ -94,6 +107,12 @@ export default function ChatInputBox({
       const queue = runningToolActivitiesRef.current.get(toolName) ?? [];
       const activityId = queue.shift() ?? `tool:${toolName}:${++activitySequenceRef.current}`;
       runningToolActivitiesRef.current.set(toolName, queue);
+      if (isComputerTool(toolName)) {
+        notifyComputerActivity({
+          tab: computerTabForTool(toolName),
+          computerId: extractComputerId(event.output ?? event.result ?? event.payload),
+        });
+      }
       upsertStreamingActivity({
         id: activityId,
         kind: isComputerTool(toolName) ? "computer" : "tool",
@@ -558,6 +577,9 @@ function formatBytes(bytes: number) {
 
 function statusEventToActivity(event: StreamEvent) {
   const stage = event.stage ?? "status";
+  if (["request", "agent", "session", "tools", "context"].includes(stage)) {
+    return null;
+  }
   const status = normalizeActivityStatus(event.status);
   return {
     id: `status:${stage}:${event.payload?.taskId ?? event.payload?.computerId ?? ""}`,
@@ -650,4 +672,28 @@ function isComputerTool(toolName: string) {
     "readComputerFile",
     "openComputerBrowser",
   ].includes(toolName);
+}
+
+function computerTabForTool(toolName: string): "files" | "browser" | "terminal" {
+  if (toolName === "openComputerBrowser") return "browser";
+  if (toolName === "runComputerCommand") return "terminal";
+  return "files";
+}
+
+function extractComputerId(value: unknown): string | undefined {
+  const data = (value as any)?.data ?? (value as any)?.toolData ?? value;
+  const computerId =
+    (data as any)?.computerId ??
+    (data as any)?.computer?.computerId ??
+    (data as any)?.payload?.computerId;
+  return typeof computerId === "string" ? computerId : undefined;
+}
+
+function notifyComputerActivity(detail: {
+  tab?: "files" | "browser" | "terminal";
+  computerId?: string;
+  input?: unknown;
+}) {
+  if (typeof window === "undefined") return;
+  window.dispatchEvent(new CustomEvent("agent-computer-activity", { detail }));
 }

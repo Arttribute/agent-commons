@@ -15,6 +15,7 @@ import {
   AgentComputerPanel,
   hasActiveComputer,
   type AgentComputer,
+  type ComputerRuntimeTab,
 } from "@/components/computers/agent-computer-panel";
 import { useAgentContext } from "@/context/AgentContext";
 
@@ -133,6 +134,8 @@ export default function SessionInterfaceImproved({
   const [spaces, setSpaces] = useState<any[]>(session?.spaces || []);
   const [computerDrawerOpen, setComputerDrawerOpen] = useState(false);
   const [sessionComputers, setSessionComputers] = useState<AgentComputer[]>([]);
+  const [computerRuntimeTab, setComputerRuntimeTab] = useState<ComputerRuntimeTab>("files");
+  const [preferredComputerId, setPreferredComputerId] = useState<string | null>(null);
 
   const { messages, setInputText } = useAgentContext();
   const greeting = (agent as any)?.greeting as string | undefined;
@@ -242,6 +245,21 @@ export default function SessionInterfaceImproved({
     return () => clearInterval(interval);
   }, [fetchSessionComputers, isStreaming]);
 
+  useEffect(() => {
+    const handleComputerActivity = (event: Event) => {
+      const detail = (event as CustomEvent<{
+        tab?: ComputerRuntimeTab;
+        computerId?: string;
+      }>).detail;
+      if (detail?.tab) setComputerRuntimeTab(detail.tab);
+      if (detail?.computerId) setPreferredComputerId(detail.computerId);
+      setComputerDrawerOpen(true);
+      fetchSessionComputers();
+    };
+    window.addEventListener("agent-computer-activity", handleComputerActivity);
+    return () => window.removeEventListener("agent-computer-activity", handleComputerActivity);
+  }, [fetchSessionComputers]);
+
   // Poll tasks while any task is active (started/in_progress), stop when all terminal
   const pollIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
@@ -320,6 +338,9 @@ export default function SessionInterfaceImproved({
           <AgentComputerPanel
             agentId={agentId}
             sessionId={sessionId || undefined}
+            selectedComputerId={preferredComputerId ?? undefined}
+            activeTab={computerRuntimeTab}
+            autoRefresh={computerDrawerOpen || Boolean(isStreaming)}
             className="h-full"
           />
         </SheetContent>

@@ -17,6 +17,7 @@ import {
   Brain,
   Check,
   CheckCircle2,
+  ChevronDown,
   CircleDashed,
   Copy,
   FileText,
@@ -43,6 +44,7 @@ interface AgentOutputProps {
   content: string;
   metadata?: {
     activity?: StreamActivity[];
+    durationMs?: number;
     toolCalls?: ToolCall[];
     agentCalls?: AgentCall[];
   };
@@ -58,6 +60,7 @@ export default function AgentOutput({
 }: AgentOutputProps) {
   const computerToolCalls = getComputerToolCalls(metadata?.toolCalls ?? []);
   const activities = metadata?.activity ?? [];
+  const durationMs = metadata?.durationMs;
 
   if (!content && !isStreaming && computerToolCalls.length === 0 && activities.length === 0) {
     return (
@@ -77,7 +80,11 @@ export default function AgentOutput({
           <Bot className="h-3.5 w-3.5 text-indigo-500" />
         </div>
         <div className="flex-1 min-w-0">
-          <ActivityTimeline activities={activities} />
+          <ActivityTimeline
+            activities={activities}
+            durationMs={durationMs}
+            isStreaming={Boolean(isStreaming)}
+          />
           <ReactMarkdown
             remarkPlugins={[remarkGfm]}
             rehypePlugins={[rehypeRaw]}
@@ -206,50 +213,108 @@ export default function AgentOutput({
   );
 }
 
-function ActivityTimeline({ activities }: { activities: StreamActivity[] }) {
-  if (!activities.length) return null;
+function ActivityTimeline({
+  activities,
+  durationMs,
+  isStreaming,
+}: {
+  activities: StreamActivity[];
+  durationMs?: number;
+  isStreaming: boolean;
+}) {
+  const visible = activities.filter((activity) => !isRoutineActivity(activity));
+  if (!visible.length && (!durationMs || isStreaming)) return null;
 
-  const visible = activities.slice(-8);
+  if (isStreaming) {
+    const current =
+      [...visible].reverse().find((activity) => activity.status === "running") ??
+      visible[visible.length - 1];
+    if (!current) return null;
+    return (
+      <div className="not-prose mb-3">
+        <ActivityRow activity={current} compact />
+      </div>
+    );
+  }
+
+  return <CompletedActivitySummary activities={visible} durationMs={durationMs} />;
+}
+
+function CompletedActivitySummary({
+  activities,
+  durationMs,
+}: {
+  activities: StreamActivity[];
+  durationMs?: number;
+}) {
+  const [open, setOpen] = useState(false);
+  const label = `Worked for ${formatDuration(durationMs, activities)}`;
+  const visible = activities.slice(-12);
   return (
-    <div className="not-prose mb-3 space-y-1.5">
-      {visible.map((activity) => {
-        const Icon = iconForActivity(activity);
-        return (
-          <div
-            key={activity.id}
-            className={cn(
-              "flex items-start gap-2 rounded-md border border-border/70 bg-muted/25 px-3 py-2 text-xs",
-              activity.status === "failed" && "border-destructive/30 bg-destructive/5"
-            )}
-          >
-            <span
-              className={cn(
-                "mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-md bg-background text-muted-foreground",
-                activity.status === "running" && "text-indigo-500",
-                activity.status === "completed" && "text-emerald-600",
-                activity.status === "failed" && "text-destructive"
-              )}
-            >
-              <Icon
-                className={cn(
-                  "h-3.5 w-3.5",
-                  activity.status === "running" && "animate-pulse"
-                )}
-              />
-            </span>
-            <span className="min-w-0 flex-1">
-              <span className="block truncate font-medium text-foreground">
-                {activity.title}
-              </span>
-              {activity.detail ? (
-                <span className="mt-0.5 block truncate text-muted-foreground">
-                  {activity.detail}
-                </span>
-              ) : null}
-            </span>
-          </div>
-        );
-      })}
+    <div className="not-prose mb-3">
+      <button
+        type="button"
+        className="inline-flex h-7 items-center gap-1.5 rounded-md border border-border/70 bg-muted/25 px-2.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+        onClick={() => setOpen((value) => !value)}
+      >
+        <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" />
+        <span>{label}</span>
+        {visible.length > 0 && (
+          <ChevronDown className={cn("h-3.5 w-3.5 transition-transform", open && "rotate-180")} />
+        )}
+      </button>
+      {open && visible.length > 0 && (
+        <div className="mt-2 space-y-1.5">
+          {visible.map((activity) => (
+            <ActivityRow key={activity.id} activity={activity} />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ActivityRow({
+  activity,
+  compact = false,
+}: {
+  activity: StreamActivity;
+  compact?: boolean;
+}) {
+  const Icon = iconForActivity(activity);
+  return (
+    <div
+      className={cn(
+        "flex items-start gap-2 rounded-md border border-border/70 bg-muted/25 px-3 py-2 text-xs",
+        compact && "inline-flex max-w-full",
+        activity.status === "failed" && "border-destructive/30 bg-destructive/5"
+      )}
+    >
+      <span
+        className={cn(
+          "mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-md bg-background text-muted-foreground",
+          activity.status === "running" && "text-indigo-500",
+          activity.status === "completed" && "text-emerald-600",
+          activity.status === "failed" && "text-destructive"
+        )}
+      >
+        <Icon
+          className={cn(
+            "h-3.5 w-3.5",
+            activity.status === "running" && "animate-pulse"
+          )}
+        />
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className="block truncate font-medium text-foreground">
+          {activity.title}
+        </span>
+        {activity.detail ? (
+          <span className="mt-0.5 block truncate text-muted-foreground">
+            {activity.detail}
+          </span>
+        ) : null}
+      </span>
     </div>
   );
 }
@@ -262,6 +327,29 @@ function iconForActivity(activity: StreamActivity) {
   if (activity.kind === "model") return Brain;
   if (activity.kind === "tool") return Wrench;
   return CircleDashed;
+}
+
+function isRoutineActivity(activity: StreamActivity) {
+  return ["request", "agent", "session", "tools", "context"].includes(activity.stage ?? "");
+}
+
+function formatDuration(durationMs: number | undefined, activities: StreamActivity[]) {
+  const fallbackMs = estimateDurationFromActivities(activities);
+  const ms = durationMs && durationMs > 0 ? durationMs : fallbackMs;
+  if (!ms || ms < 1000) return "a moment";
+  const seconds = Math.max(1, Math.round(ms / 1000));
+  if (seconds < 60) return `${seconds}s`;
+  const minutes = Math.floor(seconds / 60);
+  const remaining = seconds % 60;
+  return remaining ? `${minutes}m ${remaining}s` : `${minutes}m`;
+}
+
+function estimateDurationFromActivities(activities: StreamActivity[]) {
+  const times = activities
+    .map((activity) => activity.timestamp ? new Date(activity.timestamp).getTime() : NaN)
+    .filter((value) => Number.isFinite(value));
+  if (times.length < 2) return undefined;
+  return Math.max(...times) - Math.min(...times);
 }
 
 function getComputerToolCalls(toolCalls: ToolCall[]) {

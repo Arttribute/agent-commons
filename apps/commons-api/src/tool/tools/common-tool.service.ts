@@ -282,7 +282,7 @@ export interface CommonTool {
    * Start or reuse an isolated CommonOS computer for this agent.
    */
   startAgentComputer(props: {
-    agentId: string;
+    agentId?: string;
     sessionId?: string;
     lifecycle?: 'persistent' | 'ephemeral';
     name?: string;
@@ -293,7 +293,7 @@ export interface CommonTool {
    * List this agent's active computers.
    */
   listAgentComputers(props: {
-    agentId: string;
+    agentId?: string;
     sessionId?: string;
     includeTerminated?: boolean;
   }): Promise<any>;
@@ -302,7 +302,7 @@ export interface CommonTool {
    * Run a terminal command on an agent computer.
    */
   runComputerCommand(props: {
-    agentId: string;
+    agentId?: string;
     computerId: string;
     sessionId?: string;
     command: string;
@@ -314,7 +314,7 @@ export interface CommonTool {
    * Read a file from an agent computer workspace.
    */
   readComputerFile(props: {
-    agentId: string;
+    agentId?: string;
     computerId: string;
     path: string;
   }): Promise<any>;
@@ -323,7 +323,7 @@ export interface CommonTool {
    * Open a URL in an agent computer browser.
    */
   openComputerBrowser(props: {
-    agentId: string;
+    agentId?: string;
     computerId: string;
     sessionId?: string;
     url: string;
@@ -518,6 +518,17 @@ export class CommonToolService implements CommonTool {
     private modelProviderFactory: ModelProviderFactory,
     private moduleRef: ModuleRef,
   ) {}
+
+  private requireToolAgentId(
+    agentId?: string,
+    metadata?: { agentId?: string },
+  ) {
+    const resolved = agentId ?? metadata?.agentId;
+    if (!resolved) {
+      throw new BadRequestException('agentId is required for this tool');
+    }
+    return resolved;
+  }
 
   async createGoal(props: CreateGoalDto) {
     return await this.goals.create(props);
@@ -1247,65 +1258,74 @@ export class CommonToolService implements CommonTool {
   }
 
   async startAgentComputer(props: {
-    agentId: string;
+    agentId?: string;
     sessionId?: string;
     lifecycle?: 'persistent' | 'ephemeral';
     name?: string;
     reason?: string;
-  }, metadata?: { sessionId?: string }) {
+  }, metadata?: { agentId?: string; sessionId?: string }) {
+    const agentId = this.requireToolAgentId(props.agentId, metadata);
     return this.computers.startComputer({
       ...props,
+      agentId,
       sessionId: props.sessionId ?? metadata?.sessionId,
-      actorId: props.agentId,
+      actorId: agentId,
       actorType: 'agent',
     });
   }
 
   async listAgentComputers(props: {
-    agentId: string;
+    agentId?: string;
     sessionId?: string;
     includeTerminated?: boolean;
-  }, metadata?: { sessionId?: string }) {
+  }, metadata?: { agentId?: string; sessionId?: string }) {
+    const agentId = this.requireToolAgentId(props.agentId, metadata);
     return this.computers.listInstances({
       ...props,
+      agentId,
       sessionId: props.sessionId ?? metadata?.sessionId,
     });
   }
 
   async runComputerCommand(props: {
-    agentId: string;
+    agentId?: string;
     computerId: string;
     sessionId?: string;
     command: string;
     cwd?: string;
     timeoutSeconds?: number;
-  }, metadata?: { sessionId?: string }) {
+  }, metadata?: { agentId?: string; sessionId?: string }) {
+    const agentId = this.requireToolAgentId(props.agentId, metadata);
     return this.computers.runCommand({
       ...props,
+      agentId,
       sessionId: props.sessionId ?? metadata?.sessionId,
-      actorId: props.agentId,
+      actorId: agentId,
       actorType: 'agent',
     });
   }
 
   async readComputerFile(props: {
-    agentId: string;
+    agentId?: string;
     computerId: string;
     path: string;
-  }) {
-    return this.computers.readFile(props);
+  }, metadata?: { agentId?: string }) {
+    const agentId = this.requireToolAgentId(props.agentId, metadata);
+    return this.computers.readFile({ ...props, agentId });
   }
 
   async openComputerBrowser(props: {
-    agentId: string;
+    agentId?: string;
     computerId: string;
     sessionId?: string;
     url: string;
-  }, metadata?: { sessionId?: string }) {
+  }, metadata?: { agentId?: string; sessionId?: string }) {
+    const agentId = this.requireToolAgentId(props.agentId, metadata);
     return this.computers.openBrowser({
       ...props,
+      agentId,
       sessionId: props.sessionId ?? metadata?.sessionId,
-      actorId: props.agentId,
+      actorId: agentId,
       actorType: 'agent',
     });
   }

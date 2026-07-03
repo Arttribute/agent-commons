@@ -184,8 +184,16 @@ export class AgentToolsController {
 
       if (staticService) {
         // 4a) Call the static method
+        const staticArgs =
+          args && typeof args === 'object'
+            ? {
+                ...args,
+                agentId: args.agentId ?? metadata.agentId,
+                sessionId: args.sessionId ?? metadata.sessionId,
+              }
+            : args;
         // @ts-expect-error because we know it's a function
-        const data = await staticService[functionName](args, metadata);
+        const data = await staticService[functionName](staticArgs, metadata);
         await this.logToolSuccess(executionLogId, startTime, data);
         return data;
       }

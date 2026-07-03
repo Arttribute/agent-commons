@@ -582,6 +582,7 @@ export class AgentService implements OnModuleInit {
         let computerRequest: RunComputerRequest | undefined =
           props.computerRequest;
         let computerPreparationBlock = '';
+        let computerUnavailable = false;
         const emitStatus = (
           stage: string,
           status: StreamStatusState,
@@ -759,22 +760,24 @@ export class AgentService implements OnModuleInit {
                     },
                   );
                   if (failed) {
+                    computerUnavailable = true;
                     computerPreparationBlock = [
                       '## COMPUTER PREPARATION',
                       'The user selected Agent Computer for this turn, but the runtime could not be prepared.',
                       `Reason: ${started?.errorMessage ?? 'Unknown computer provisioning error'}`,
-                      'Explain the limitation and continue without claiming computer access.',
+                      'Explain the limitation and continue without claiming computer access. Do not call computer tools again this turn unless the user changes the computer settings.',
                     ].join('\n');
                   }
                 }
               } catch (error) {
                 const message =
                   error instanceof Error ? error.message : String(error);
+                computerUnavailable = true;
                 computerPreparationBlock = [
                   '## COMPUTER PREPARATION',
                   'The user selected Agent Computer for this turn, but the runtime could not be prepared.',
                   `Reason: ${message}`,
-                  'Explain the limitation and continue without claiming computer access.',
+                  'Explain the limitation and continue without claiming computer access. Do not call computer tools again this turn unless the user changes the computer settings.',
                 ].join('\n');
                 emitStatus(
                   'computer',
@@ -1048,42 +1051,49 @@ export class AgentService implements OnModuleInit {
                 const fn = config.toolCall?.name ?? 'unknown';
                 const t0 = performance.now();
                 const got_ = await got;
-                const data = await got_.default
-                  .post(
-                    `http://localhost:${process.env.PORT}/v1/agents/tools`,
-                    {
-                      json: {
-                        args,
-                        toolCall: config.toolCall,
-                        metadata: {
-                          agentId,
-                          sessionId: currentSessionId,
-                          spaceId,
+                let data: any;
+                let status: 'success' | 'error' = 'success';
+                try {
+                  data = await got_.default
+                    .post(
+                      `http://localhost:${process.env.PORT}/v1/agents/tools`,
+                      {
+                        json: {
+                          args,
+                          toolCall: config.toolCall,
+                          metadata: {
+                            agentId,
+                            sessionId: currentSessionId,
+                            spaceId,
+                          },
                         },
+                        headers: { 'Content-Type': 'application/json' },
                       },
-                      headers: { 'Content-Type': 'application/json' },
-                    },
-                  )
-                  .json<any>()
-                  .catch((e: any) => {
-                    toolUsage.push({
-                      name: fn,
-                      status: 'error',
-                      duration: performance.now() - t0,
-                    });
-                    throw e;
-                  });
+                    )
+                    .json<any>();
+                } catch (error: any) {
+                  status = 'error';
+                  const responseBody = error?.response?.body;
+                  data = {
+                    error:
+                      responseBody?.error ??
+                      responseBody?.message ??
+                      error?.message ??
+                      String(error),
+                    statusCode: error?.response?.statusCode,
+                  };
+                }
 
                 toolUsage.push({
                   name: fn,
-                  status: 'success',
+                  status,
                   duration: performance.now() - t0,
                 });
 
                 const callObj = {
                   role: 'tool',
                   name: fn,
-                  status: 'success',
+                  status,
                   duration: performance.now() - t0,
                   args,
                   result: data,
@@ -1100,6 +1110,12 @@ export class AgentService implements OnModuleInit {
                   sessionId: currentSessionId,
                 });
 
+                if (status === 'error') {
+                  return {
+                    toolData: data,
+                    error: data.error,
+                  };
+                }
                 return { toolData: data };
               },
               {
@@ -1503,17 +1519,22 @@ export class AgentService implements OnModuleInit {
           ).catch(() => '');
 
           // Build the extra content to append to the system prompt (memory + CLI context)
+          const computerSelectionDetail = computerUnavailable
+            ? 'Computer runtime is unavailable for this turn. Do not call computer tools.'
+            : computerRequest?.computerIds?.length
+              ? `Selected computer IDs: ${computerRequest.computerIds.join(', ')}`
+              : 'No specific computer was selected. Use an active suitable computer or call startAgentComputer before computer-backed work.';
           const computerSelectionBlock = computerRequest?.enabled
             ? [
                 '## USER COMPUTER SELECTION',
                 'The user explicitly selected Agent Computer for this turn.',
-                computerRequest.computerIds?.length
-                  ? `Selected computer IDs: ${computerRequest.computerIds.join(', ')}`
-                  : 'No specific computer was selected. Use an active suitable computer or call startAgentComputer before computer-backed work.',
-                computerRequest.lifecycle
+                computerSelectionDetail,
+                !computerUnavailable && computerRequest.lifecycle
                   ? `Requested lifecycle: ${computerRequest.lifecycle}`
                   : '',
-                'Use the computer tools when the request requires files, terminal commands, browser work, app execution, screenshots, or generated artifacts.',
+                computerUnavailable
+                  ? ''
+                  : 'Use the computer tools when the request requires files, terminal commands, browser work, app execution, screenshots, or generated artifacts.',
               ].filter(Boolean).join('\n')
             : '';
 
@@ -1720,7 +1741,58 @@ export class AgentService implements OnModuleInit {
 
           const resolvedAgentCalls = await Promise.all(agentCalls);
 
-          let sessionTitle = 'New Session';
+          const last = messages.at(-1)!;
+          const finalText =
+            typeof last === 'object' &&
+            last !== null &&
+            'content' in last &&
+            typeof last.content === 'string'
+              ? last.content
+              : typeof last === 'object' && 'content' in last
+                ? compact(
+                    map((last as any).content, (_) => get(_, 'text')),
+                  ).join('\n')
+                : '';
+          const lastMessage = finalResult?.messages?.at(-1)?.toDict() ?? {};
+          const firstUserMessage = props.messages?.find(
+            (m) => m.role === 'user',
+          );
+          const runDurationMs = Math.round(performance.now() - tStart);
+          let sessionTitle =
+            isNewSession && firstUserMessage?.content
+              ? this.generateFallbackSessionTitle(
+                  this.contentToText(firstUserMessage.content),
+                )
+              : 'New Session';
+          const buildFinalPayload = (title = sessionTitle) => ({
+            ...lastMessage,
+            sessionId: currentSessionId,
+            title: title ?? 'New Session',
+            traceId,
+            durationMs: runDurationMs,
+            usage: {
+              inputTokens: usageTotals.inputTokens,
+              outputTokens: usageTotals.outputTokens,
+              cachedTokens: usageTotals.cachedTokens,
+              totalTokens: usageTotals.inputTokens + usageTotals.outputTokens,
+              costUsd: usageTotals.costUsd,
+            },
+            metadata: {
+              toolCalls,
+              agentCalls: resolvedAgentCalls,
+              computerRequest,
+              durationMs: runDurationMs,
+            },
+          });
+
+          if (stream) {
+            subscriber.next({
+              type: 'final',
+              phase: 'final_answer',
+              payload: buildFinalPayload(),
+            });
+          }
+
           if (currentSessionId) {
             const messageHistories =
               finalResult?.messages?.filter((m) => {
@@ -1741,9 +1813,6 @@ export class AgentService implements OnModuleInit {
             }
 
             if (isNewSession && props.messages?.length) {
-              const firstUserMessage = props.messages.find(
-                (m) => m.role === 'user',
-              );
               if (firstUserMessage?.content) {
                 sessionTitle = await this.generateSessionTitle(
                   this.contentToText(firstUserMessage.content),
@@ -1838,19 +1907,6 @@ export class AgentService implements OnModuleInit {
             });
           }
 
-          const last = messages.at(-1)!;
-          const finalText =
-            typeof last === 'object' &&
-            last !== null &&
-            'content' in last &&
-            typeof last.content === 'string'
-              ? last.content
-              : typeof last === 'object' && 'content' in last
-                ? compact(
-                    map((last as any).content, (_) => get(_, 'text')),
-                  ).join('\n')
-                : '';
-
           await this.logService.createLogEntry({
             agentId,
             sessionId: currentSessionId,
@@ -1861,30 +1917,13 @@ export class AgentService implements OnModuleInit {
             tools: toolUsage,
           });
 
-          const lastMessage = finalResult?.messages?.at(-1)?.toDict() ?? {};
-
-          subscriber.next({
-            type: 'final',
-            phase: 'final_answer',
-            payload: {
-              ...lastMessage,
-              sessionId: currentSessionId,
-              title: sessionTitle ?? 'New Session',
-              traceId,
-              usage: {
-                inputTokens:  usageTotals.inputTokens,
-                outputTokens: usageTotals.outputTokens,
-                cachedTokens: usageTotals.cachedTokens,
-                totalTokens:  usageTotals.inputTokens + usageTotals.outputTokens,
-                costUsd:      usageTotals.costUsd,
-              },
-              metadata: {
-                toolCalls,
-                agentCalls: resolvedAgentCalls,
-                computerRequest,
-              },
-            },
-          });
+          if (!stream) {
+            subscriber.next({
+              type: 'final',
+              phase: 'final_answer',
+              payload: buildFinalPayload(sessionTitle),
+            });
+          }
 
           clearInterval(keepalive);
           subscriber.complete();
@@ -2032,6 +2071,15 @@ export class AgentService implements OnModuleInit {
     if (normalizedProvider === 'anthropic') return true;
     if (normalizedProvider === 'google') return true;
     return normalizedModel.includes('vision') || normalizedModel.includes('4o');
+  }
+
+  private generateFallbackSessionTitle(userMessage: string): string {
+    const cleaned = userMessage
+      .replace(/\s+/g, ' ')
+      .replace(/## Uploaded Files.*$/i, '')
+      .trim();
+    const words = cleaned.split(' ').filter(Boolean).slice(0, 6);
+    return words.join(' ') || 'New Conversation';
   }
 
   private async generateSessionTitle(userMessage: string): Promise<string> {
