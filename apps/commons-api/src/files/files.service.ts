@@ -809,30 +809,53 @@ export class FilesService {
       process.env.AWS_REGION ||
       process.env.AWS_DEFAULT_REGION ||
       'us-east-1';
-    const roleArn =
-      process.env.AGENT_FILES_AWS_ROLE_ARN ||
-      process.env.AWS_ROLE_ARN;
     const sharedConfig = {
       region,
       endpoint: process.env.AGENT_FILES_S3_ENDPOINT,
       forcePathStyle: process.env.AGENT_FILES_S3_FORCE_PATH_STYLE === 'true',
     };
-    if (roleArn) {
-      this.s3Client = new S3Client({
-        ...sharedConfig,
-        credentials: awsCredentialsProvider({
-          roleArn,
-          audience: 'https://sts.amazonaws.com',
-          clientConfig: { region },
-          roleSessionName: 'agent-commons-files',
-        }),
-      });
-      return this.s3Client;
-    }
+    const credentials = this.s3Credentials(region);
     this.s3Client = new S3Client({
       ...sharedConfig,
+      ...(credentials ? { credentials } : {}),
     });
     return this.s3Client;
+  }
+
+  private s3Credentials(region: string) {
+    const accessKeyId = process.env.AGENT_FILES_AWS_ACCESS_KEY_ID;
+    const secretAccessKey = process.env.AGENT_FILES_AWS_SECRET_ACCESS_KEY;
+    if (accessKeyId || secretAccessKey) {
+      if (!accessKeyId || !secretAccessKey) {
+        throw new BadRequestException(
+          'Set both AGENT_FILES_AWS_ACCESS_KEY_ID and AGENT_FILES_AWS_SECRET_ACCESS_KEY, or neither.',
+        );
+      }
+      return {
+        accessKeyId,
+        secretAccessKey,
+        sessionToken: process.env.AGENT_FILES_AWS_SESSION_TOKEN,
+      };
+    }
+
+    const roleArn =
+      process.env.AGENT_FILES_AWS_ROLE_ARN ||
+      process.env.AWS_ROLE_ARN;
+    if (!roleArn) return undefined;
+
+    if (hasVercelOidcEnvironment()) {
+      return awsCredentialsProvider({
+        roleArn,
+        audience: 'https://sts.amazonaws.com',
+        clientConfig: { region },
+        roleSessionName: 'agent-commons-files',
+      });
+    }
+
+    this.logger.warn(
+      'AGENT_FILES_AWS_ROLE_ARN/AWS_ROLE_ARN is set, but Vercel OIDC is not available. Falling back to the default AWS credential provider chain.',
+    );
+    return undefined;
   }
 
   private bucketName() {
@@ -994,6 +1017,15 @@ function formatBytes(bytes: number) {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function hasVercelOidcEnvironment() {
+  return Boolean(
+    process.env.VERCEL ||
+      process.env.VERCEL_OIDC_TOKEN ||
+      process.env.VERCEL_OIDC_TOKEN_FILE ||
+      process.env.VERCEL_PROJECT_ID,
+  );
 }
 
 async function streamToString(body: any): Promise<string> {

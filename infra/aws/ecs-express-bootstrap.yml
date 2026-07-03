@@ -114,6 +114,19 @@ Resources:
               - Effect: Allow
                 Action: secretsmanager:GetSecretValue
                 Resource: !Ref ApiRuntimeSecret
+
+  ApiTaskRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: agent-commons-api-task
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
         - PolicyName: AgentFilesS3Access
           PolicyDocument:
             Version: "2012-10-17"
@@ -247,6 +260,7 @@ Resources:
                 Action: iam:PassRole
                 Resource:
                   - !GetAtt TaskExecutionRole.Arn
+                  - !GetAtt ApiTaskRole.Arn
                   - !GetAtt InfrastructureRole.Arn
 
   ApiBuildProject:
@@ -272,10 +286,18 @@ Resources:
             Value: !Ref ApiRepository
           - Name: TASK_EXECUTION_ROLE_ARN
             Value: !GetAtt TaskExecutionRole.Arn
+          - Name: TASK_ROLE_ARN
+            Value: !GetAtt ApiTaskRole.Arn
           - Name: INFRASTRUCTURE_ROLE_ARN
             Value: !GetAtt InfrastructureRole.Arn
           - Name: RUNTIME_SECRET_ARN
             Value: !Ref ApiRuntimeSecret
+          - Name: AGENT_FILES_S3_BUCKET
+            Value: !Ref AgentFilesBucket
+          - Name: AGENT_FILES_S3_REGION
+            Value: !Ref AWS::Region
+          - Name: AGENT_FILES_S3_PREFIX
+            Value: agent-commons-files
       TimeoutInMinutes: 60
 
 Outputs:
@@ -287,6 +309,8 @@ Outputs:
     Value: !GetAtt GitHubDeployRole.Arn
   TaskExecutionRoleArn:
     Value: !GetAtt TaskExecutionRole.Arn
+  TaskRoleArn:
+    Value: !GetAtt ApiTaskRole.Arn
   InfrastructureRoleArn:
     Value: !GetAtt InfrastructureRole.Arn
   RuntimeSecretArn:

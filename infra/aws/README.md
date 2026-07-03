@@ -22,14 +22,23 @@ environment; branch protection remains enforced by the workflow trigger.
 
 Copy the stack outputs into GitHub's `production` environment as variables:
 
-| GitHub variable               | CloudFormation output   |
-| ----------------------------- | ----------------------- |
-| `AWS_REGION`                  | `AwsRegion`             |
-| `AWS_ECR_REPOSITORY`          | `EcrRepository`         |
-| `AWS_DEPLOY_ROLE_ARN`         | `GitHubDeployRoleArn`   |
-| `AWS_TASK_EXECUTION_ROLE_ARN` | `TaskExecutionRoleArn`  |
-| `AWS_INFRASTRUCTURE_ROLE_ARN` | `InfrastructureRoleArn` |
-| `AWS_RUNTIME_SECRET_ARN`      | `RuntimeSecretArn`      |
+| GitHub variable         | CloudFormation output   |
+| ----------------------- | ----------------------- |
+| `AWS_REGION`            | `AwsRegion`             |
+| `AWS_DEPLOY_ROLE_ARN`   | `GitHubDeployRoleArn`   |
+| `AWS_SOURCE_BUCKET`     | `SourceBucketName`      |
+| `AWS_CODEBUILD_PROJECT` | `CodeBuildProjectName`  |
+
+The service deployment itself receives `TaskRoleArn`, `AgentFilesBucketName`,
+`TaskExecutionRoleArn`, `InfrastructureRoleArn`, `RuntimeSecretArn`, and the
+region from the bootstrap stack through CodeBuild environment variables. The
+running API uses the ECS task role for S3 access; do not store AWS access keys
+or `AGENT_FILES_AWS_ROLE_ARN` in the production runtime secret for agent file
+uploads.
+
+If uploads fail with `Could not load credentials from any providers`, redeploy
+this bootstrap stack first so the API task role and CodeBuild environment are
+created, then run the `Deploy commons-api to AWS` workflow again.
 
 ## Runtime secrets
 

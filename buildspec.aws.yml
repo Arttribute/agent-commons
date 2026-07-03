@@ -27,8 +27,12 @@ phases:
         --parameter-overrides
         ImageUri="$IMAGE_URI"
         ExecutionRoleArn="$TASK_EXECUTION_ROLE_ARN"
+        TaskRoleArn="$TASK_ROLE_ARN"
         InfrastructureRoleArn="$INFRASTRUCTURE_ROLE_ARN"
         RuntimeSecretArn="$RUNTIME_SECRET_ARN"
+        AgentFilesS3Bucket="$AGENT_FILES_S3_BUCKET"
+        AgentFilesS3Region="$AGENT_FILES_S3_REGION"
+        AgentFilesS3Prefix="$AGENT_FILES_S3_PREFIX"
         --region "$AWS_REGION"
       - ENDPOINT=$(aws cloudformation describe-stacks --stack-name agent-commons-api-service --query 'Stacks[0].Outputs[?OutputKey==`Endpoint`].OutputValue' --output text --region "$AWS_REGION")
       - ENDPOINT="https://${ENDPOINT#https://}"

@@ -6,10 +6,19 @@ Parameters:
     Type: String
   ExecutionRoleArn:
     Type: String
+  TaskRoleArn:
+    Type: String
   InfrastructureRoleArn:
     Type: String
   RuntimeSecretArn:
     Type: String
+  AgentFilesS3Bucket:
+    Type: String
+  AgentFilesS3Region:
+    Type: String
+  AgentFilesS3Prefix:
+    Type: String
+    Default: agent-commons-files
 
 Resources:
   ApiService:
@@ -18,6 +27,7 @@ Resources:
       ServiceName: agent-commons-api-production
       Cluster: default
       ExecutionRoleArn: !Ref ExecutionRoleArn
+      TaskRoleArn: !Ref TaskRoleArn
       InfrastructureRoleArn: !Ref InfrastructureRoleArn
       Cpu: "1024"
       Memory: "2048"
@@ -34,6 +44,12 @@ Resources:
             Value: info
           - Name: PORT
             Value: "8080"
+          - Name: AGENT_FILES_S3_BUCKET
+            Value: !Ref AgentFilesS3Bucket
+          - Name: AGENT_FILES_S3_REGION
+            Value: !Ref AgentFilesS3Region
+          - Name: AGENT_FILES_S3_PREFIX
+            Value: !Ref AgentFilesS3Prefix
         Secrets:
           - Name: APP_KEY
             ValueFrom: !Sub "${RuntimeSecretArn}:APP_KEY::"
@@ -61,18 +77,6 @@ Resources:
             ValueFrom: !Sub "${RuntimeSecretArn}:SUPABASE_URL::"
           - Name: SUPABASE_KEY
             ValueFrom: !Sub "${RuntimeSecretArn}:SUPABASE_KEY::"
-          - Name: AGENT_FILES_S3_BUCKET
-            ValueFrom: !Sub "${RuntimeSecretArn}:AGENT_FILES_S3_BUCKET::"
-          - Name: AGENT_FILES_S3_REGION
-            ValueFrom: !Sub "${RuntimeSecretArn}:AGENT_FILES_S3_REGION::"
-          - Name: AGENT_FILES_S3_PREFIX
-            ValueFrom: !Sub "${RuntimeSecretArn}:AGENT_FILES_S3_PREFIX::"
-          - Name: AGENT_FILES_AWS_ROLE_ARN
-            ValueFrom: !Sub "${RuntimeSecretArn}:AGENT_FILES_AWS_ROLE_ARN::"
-          - Name: AGENT_FILES_S3_ENDPOINT
-            ValueFrom: !Sub "${RuntimeSecretArn}:AGENT_FILES_S3_ENDPOINT::"
-          - Name: AGENT_FILES_S3_FORCE_PATH_STYLE
-            ValueFrom: !Sub "${RuntimeSecretArn}:AGENT_FILES_S3_FORCE_PATH_STYLE::"
           - Name: COINBASE_API_KEY_NAME
             ValueFrom: !Sub "${RuntimeSecretArn}:COINBASE_API_KEY_NAME::"
           - Name: COINBASE_API_KEY_SECRET
