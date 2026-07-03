@@ -392,7 +392,7 @@ export const fileAttachment = pgTable(
   'file_attachment',
   {
     fileId: uuid('file_id')
-      .default(sql`uuid_generate_v4()`)
+      .default(sql`gen_random_uuid()`)
       .primaryKey(),
 
     agentId: text('agent_id').references(() => agent.agentId, {
@@ -445,7 +445,7 @@ export const fileArtifact = pgTable(
   'file_artifact',
   {
     artifactId: uuid('artifact_id')
-      .default(sql`uuid_generate_v4()`)
+      .default(sql`gen_random_uuid()`)
       .primaryKey(),
 
     fileId: uuid('file_id')

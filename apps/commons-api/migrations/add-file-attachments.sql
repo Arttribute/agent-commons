@@ -5,7 +5,7 @@
 BEGIN;
 
 CREATE TABLE IF NOT EXISTS file_attachment (
-  file_id uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
+  file_id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   agent_id text REFERENCES agent(agent_id) ON DELETE SET NULL,
   session_id uuid REFERENCES session(session_id) ON DELETE SET NULL,
   owner_id text,
@@ -36,7 +36,7 @@ CREATE INDEX IF NOT EXISTS idx_file_attachment_sha256
   ON file_attachment(sha256);
 
 CREATE TABLE IF NOT EXISTS file_artifact (
-  artifact_id uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
+  artifact_id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   file_id uuid NOT NULL REFERENCES file_attachment(file_id) ON DELETE CASCADE,
   kind text NOT NULL,
   storage_bucket text NOT NULL,
