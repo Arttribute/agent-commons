@@ -1522,7 +1522,10 @@ export class AgentService implements OnModuleInit {
           const computerSelectionDetail = computerUnavailable
             ? 'Computer runtime is unavailable for this turn. Do not call computer tools.'
             : computerRequest?.computerIds?.length
-              ? `Selected computer IDs: ${computerRequest.computerIds.join(', ')}`
+              ? [
+                  `Selected computer IDs: ${computerRequest.computerIds.join(', ')}`,
+                  'When using runComputerCommand, readComputerFile, or openComputerBrowser, pass one of these IDs as computerId.',
+                ].join('\n')
               : 'No specific computer was selected. Use an active suitable computer or call startAgentComputer before computer-backed work.';
           const computerSelectionBlock = computerRequest?.enabled
             ? [
@@ -1847,6 +1850,10 @@ export class AgentService implements OnModuleInit {
                   agentCalls:
                     role === 'assistant'
                       ? resolvedAgentCalls
+                      : undefined,
+                  durationMs:
+                    role === 'assistant'
+                      ? runDurationMs
                       : undefined,
                   attachments: isCurrentAttachmentTurn
                     ? attachmentContext?.attachments

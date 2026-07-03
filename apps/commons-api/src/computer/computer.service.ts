@@ -398,8 +398,17 @@ export class ComputerService {
     return updated;
   }
 
-  async readFile(args: { agentId: string; computerId: string; path: string }) {
-    const computer = await this.getInstance(args.agentId, args.computerId);
+  async readFile(args: {
+    agentId: string;
+    computerId?: string;
+    sessionId?: string;
+    path: string;
+  }) {
+    const computer = await this.resolveComputerForTool({
+      agentId: args.agentId,
+      computerId: args.computerId,
+      sessionId: args.sessionId,
+    });
     if (!computer.commonOsAgentId) {
       throw new BadRequestException('Computer is not linked to a CommonOS runtime');
     }
@@ -488,7 +497,7 @@ export class ComputerService {
 
   async runCommand(args: {
     agentId: string;
-    computerId: string;
+    computerId?: string;
     sessionId?: string;
     command: string;
     cwd?: string;
@@ -518,9 +527,15 @@ export class ComputerService {
       '```',
     ].join('\n');
 
-    const result = await this.sendInstruction({
+    const computer = await this.resolveComputerForTool({
       agentId: args.agentId,
       computerId: args.computerId,
+      sessionId: args.sessionId,
+    });
+
+    const result = await this.sendInstruction({
+      agentId: args.agentId,
+      computerId: computer.computerId,
       sessionId: args.sessionId,
       instruction,
       eventType: 'terminal.command',
@@ -541,14 +556,14 @@ export class ComputerService {
         },
         updatedAt: new Date(),
       })
-      .where(eq(schema.agentComputerInstance.computerId, args.computerId));
+      .where(eq(schema.agentComputerInstance.computerId, computer.computerId));
 
     return result;
   }
 
   async openBrowser(args: {
     agentId: string;
-    computerId: string;
+    computerId?: string;
     sessionId?: string;
     url: string;
     actorId?: string;
@@ -558,9 +573,15 @@ export class ComputerService {
     if (!/^https?:\/\//i.test(url) && !/^http:\/\/localhost[:/]/i.test(url)) {
       throw new BadRequestException('url must start with http:// or https://');
     }
-    const result = await this.sendInstruction({
+    const computerForTool = await this.resolveComputerForTool({
       agentId: args.agentId,
       computerId: args.computerId,
+      sessionId: args.sessionId,
+    });
+
+    const result = await this.sendInstruction({
+      agentId: args.agentId,
+      computerId: computerForTool.computerId,
       sessionId: args.sessionId,
       instruction: [
         'Use this computer browser.',
@@ -573,7 +594,7 @@ export class ComputerService {
       actorId: args.actorId,
       actorType: args.actorType,
     });
-    const computer = await this.refreshInstance(args.computerId, {
+    const computer = await this.refreshInstance(computerForTool.computerId, {
       silent: true,
     });
     return { ...result, browser: computer.browser };
@@ -784,6 +805,41 @@ export class ComputerService {
       );
     }
     return response.json() as Promise<T>;
+  }
+
+  private async resolveComputerForTool(args: {
+    agentId: string;
+    computerId?: string | null;
+    sessionId?: string | null;
+  }): Promise<ComputerInstance> {
+    const requestedId = args.computerId?.trim();
+    if (requestedId) {
+      return this.getInstance(args.agentId, requestedId);
+    }
+
+    const computers = await this.listInstances({
+      agentId: args.agentId,
+      sessionId: args.sessionId ?? undefined,
+      includeTerminated: false,
+    });
+    const usable = computers.filter(
+      (computer) =>
+        ACTIVE_STATUSES.includes(computer.status as ComputerStatus) &&
+        Boolean(computer.commonOsAgentId),
+    );
+    const sessionScoped = args.sessionId
+      ? usable.filter((computer) => computer.sessionId === args.sessionId)
+      : [];
+    const persistent = usable.filter(
+      (computer) => computer.lifecycle === 'persistent',
+    );
+    const selected = sessionScoped[0] ?? persistent[0] ?? usable[0];
+    if (!selected) {
+      throw new BadRequestException(
+        'No active agent computer is available for this session. Start or select an agent computer first.',
+      );
+    }
+    return selected;
   }
 
   private async enforceLimits(

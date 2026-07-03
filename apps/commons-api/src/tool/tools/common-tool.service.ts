@@ -303,7 +303,7 @@ export interface CommonTool {
    */
   runComputerCommand(props: {
     agentId?: string;
-    computerId: string;
+    computerId?: string;
     sessionId?: string;
     command: string;
     cwd?: string;
@@ -315,7 +315,8 @@ export interface CommonTool {
    */
   readComputerFile(props: {
     agentId?: string;
-    computerId: string;
+    computerId?: string;
+    sessionId?: string;
     path: string;
   }): Promise<any>;
 
@@ -324,7 +325,7 @@ export interface CommonTool {
    */
   openComputerBrowser(props: {
     agentId?: string;
-    computerId: string;
+    computerId?: string;
     sessionId?: string;
     url: string;
   }): Promise<any>;
@@ -1289,7 +1290,7 @@ export class CommonToolService implements CommonTool {
 
   async runComputerCommand(props: {
     agentId?: string;
-    computerId: string;
+    computerId?: string;
     sessionId?: string;
     command: string;
     cwd?: string;
@@ -1307,16 +1308,21 @@ export class CommonToolService implements CommonTool {
 
   async readComputerFile(props: {
     agentId?: string;
-    computerId: string;
+    computerId?: string;
+    sessionId?: string;
     path: string;
-  }, metadata?: { agentId?: string }) {
+  }, metadata?: { agentId?: string; sessionId?: string }) {
     const agentId = this.requireToolAgentId(props.agentId, metadata);
-    return this.computers.readFile({ ...props, agentId });
+    return this.computers.readFile({
+      ...props,
+      agentId,
+      sessionId: props.sessionId ?? metadata?.sessionId,
+    });
   }
 
   async openComputerBrowser(props: {
     agentId?: string;
-    computerId: string;
+    computerId?: string;
     sessionId?: string;
     url: string;
   }, metadata?: { agentId?: string; sessionId?: string }) {

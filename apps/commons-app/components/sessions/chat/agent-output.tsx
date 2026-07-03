@@ -31,6 +31,8 @@ interface ToolCall {
   name: string;
   args: any;
   result?: any;
+  status?: "success" | "error" | string;
+  timestamp?: string;
 }
 
 interface AgentCall {
@@ -59,7 +61,7 @@ export default function AgentOutput({
   isStreaming,
 }: AgentOutputProps) {
   const computerToolCalls = getComputerToolCalls(metadata?.toolCalls ?? []);
-  const activities = metadata?.activity ?? [];
+  const activities = normalizeActivities(metadata?.activity, metadata?.toolCalls);
   const durationMs = metadata?.durationMs;
 
   if (!content && !isStreaming && computerToolCalls.length === 0 && activities.length === 0) {
@@ -331,6 +333,54 @@ function iconForActivity(activity: StreamActivity) {
 
 function isRoutineActivity(activity: StreamActivity) {
   return ["request", "agent", "session", "tools", "context"].includes(activity.stage ?? "");
+}
+
+function normalizeActivities(
+  activities: StreamActivity[] | undefined,
+  toolCalls: ToolCall[] | undefined,
+) {
+  if (Array.isArray(activities) && activities.length > 0) return activities;
+  if (!Array.isArray(toolCalls) || toolCalls.length === 0) return [];
+  return toolCalls.map((call, index) => {
+    const result = unwrapToolResult(call.result);
+    const isComputer = getComputerToolCalls([call]).length > 0;
+    return {
+      id: `persisted-tool:${call.name}:${index}`,
+      stage: "tool",
+      title: titleForToolCall(call.name, call.status ?? result?.status),
+      detail: detailForToolCall(call, result),
+      status: call.status === "error" || result?.error ? "failed" : "completed",
+      kind: isComputer ? "computer" : "tool",
+      toolName: call.name,
+      timestamp: call.timestamp,
+      payload: result,
+    } satisfies StreamActivity;
+  });
+}
+
+function titleForToolCall(name: string, status?: string) {
+  const failed = status === "error" || status === "failed";
+  if (name === "startAgentComputer") return failed ? "Agent computer failed" : "Agent computer ready";
+  if (name === "listAgentComputers") return "Checked agent computers";
+  if (name === "runComputerCommand") return failed ? "Terminal command failed" : "Ran terminal command";
+  if (name === "readComputerFile") return failed ? "File read failed" : "Read computer file";
+  if (name === "openComputerBrowser") return failed ? "Browser action failed" : "Updated browser";
+  if (name === "readUploadedFile") return failed ? "File read failed" : "Read uploaded file";
+  if (name === "runWorkflow") return failed ? "Workflow failed" : "Ran workflow";
+  return failed ? `Failed ${name}` : `Used ${name}`;
+}
+
+function detailForToolCall(call: ToolCall, result: any) {
+  if (call.name === "runComputerCommand") return call.args?.command ?? result?.command;
+  if (call.name === "readComputerFile" || call.name === "readUploadedFile") {
+    return result?.path ?? result?.name ?? call.args?.path ?? call.args?.fileId;
+  }
+  if (call.name === "openComputerBrowser") return result?.browser?.url ?? call.args?.url;
+  if (call.name === "startAgentComputer") {
+    return [result?.name, result?.status, result?.lifecycle].filter(Boolean).join(" · ") || result?.computerId;
+  }
+  if (call.name === "runWorkflow") return result?.workflowId ?? call.args?.workflowId;
+  return result?.error ?? call.args?.reason ?? "";
 }
 
 function formatDuration(durationMs: number | undefined, activities: StreamActivity[]) {
