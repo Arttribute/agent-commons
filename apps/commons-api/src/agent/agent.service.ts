@@ -1524,7 +1524,9 @@ export class AgentService implements OnModuleInit {
             : computerRequest?.computerIds?.length
               ? [
                   `Selected computer IDs: ${computerRequest.computerIds.join(', ')}`,
+                  'These selected computers are available to you now through the computer tools. Treat the selected computer as your assigned runtime for this turn.',
                   'When using runComputerCommand, readComputerFile, or openComputerBrowser, pass one of these IDs as computerId.',
+                  'Do not tell the user you lack computer access while a selected computer ID is present. If a command/browser/file operation is needed, call the computer tool and report the actual tool result. If the tool fails, report that failure with evidence.',
                 ].join('\n')
               : 'No specific computer was selected. Use an active suitable computer or call startAgentComputer before computer-backed work.';
           const computerSelectionBlock = computerRequest?.enabled
@@ -1537,7 +1539,10 @@ export class AgentService implements OnModuleInit {
                   : '',
                 computerUnavailable
                   ? ''
-                  : 'Use the computer tools when the request requires files, terminal commands, browser work, app execution, screenshots, or generated artifacts.',
+                  : [
+                      'For requests that involve creating/running software, localhost apps, terminal commands, browser inspection, generated files, screenshots, or workspace artifacts, you must perform the work with the computer tools instead of giving local setup instructions.',
+                      'For a Next.js/localhost task, use runComputerCommand to create/edit/run the app, then use openComputerBrowser or another verification command to confirm it is working before responding.',
+                    ].join('\n'),
               ].filter(Boolean).join('\n')
             : '';
 
