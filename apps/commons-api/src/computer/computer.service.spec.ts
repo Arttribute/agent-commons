@@ -66,6 +66,26 @@ describe('ComputerService', () => {
     ).rejects.toBeInstanceOf(BadRequestException);
   });
 
+  it('rejects a selected computer that belongs to another session', async () => {
+    jest.spyOn(service, 'getInstance').mockResolvedValue({
+      computerId: '11111111-1111-4111-8111-111111111111',
+      agentId: 'agent_1',
+      sessionId: '22222222-2222-4222-8222-222222222222',
+      lifecycle: 'ephemeral',
+      status: 'running',
+      commonOsAgentId: 'commonos_agent_1',
+    } as any);
+
+    await expect(
+      service.runCommand({
+        agentId: 'agent_1',
+        computerId: '11111111-1111-4111-8111-111111111111',
+        sessionId: '33333333-3333-4333-8333-333333333333',
+        command: 'pwd',
+      }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+  });
+
   it('does not use the computer id as an Agent Commons session id for unscoped commands', async () => {
     const computer = {
       computerId: '11111111-1111-4111-8111-111111111111',

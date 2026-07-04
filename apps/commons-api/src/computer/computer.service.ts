@@ -436,6 +436,7 @@ export class ComputerService {
     actorType?: 'user' | 'agent' | 'service';
   }) {
     const computer = await this.getInstance(args.agentId, args.computerId);
+    this.assertComputerSessionCompatible(computer, args.sessionId);
     if (!computer.commonOsAgentId) {
       throw new BadRequestException('Computer is not linked to a CommonOS runtime');
     }
@@ -813,7 +814,12 @@ export class ComputerService {
   }): Promise<ComputerInstance> {
     const requestedId = args.computerId?.trim();
     if (requestedId) {
-      return this.getInstance(args.agentId, requestedId);
+      const computer = await this.getInstance(args.agentId, requestedId);
+      this.assertComputerSessionCompatible(
+        computer,
+        args.sessionId ?? undefined,
+      );
+      return computer;
     }
 
     const computers = await this.listInstances({
@@ -838,7 +844,27 @@ export class ComputerService {
         'No active agent computer is available for this session. Start or select an agent computer first.',
       );
     }
+    this.assertComputerSessionCompatible(
+      selected,
+      args.sessionId ?? undefined,
+    );
     return selected;
+  }
+
+  private assertComputerSessionCompatible(
+    computer: ComputerInstance,
+    sessionId?: string | null,
+  ) {
+    const requestedSessionId = sessionId?.trim();
+    if (
+      requestedSessionId &&
+      computer.sessionId &&
+      String(computer.sessionId) !== requestedSessionId
+    ) {
+      throw new BadRequestException(
+        'Computer belongs to a different session. Use a computer from this chat session or start a new one.',
+      );
+    }
   }
 
   private async enforceLimits(
