@@ -364,6 +364,14 @@ export class CommonsClient {
       delete: (taskId: string): Promise<{ success: boolean }> =>
         this.request('DELETE', `/v1/tasks/${taskId}`),
 
+      /** Edit human-facing task details (title/description/priority). */
+      update: (taskId: string, params: { title?: string; description?: string; priority?: number }): Promise<{ data: Task }> =>
+        this.request('PATCH', `/v1/tasks/${taskId}`, params),
+
+      /** Reschedule a task's upcoming run and/or resize its estimated duration. */
+      reschedule: (taskId: string, params: { scheduledFor?: Date; estimatedDuration?: number }): Promise<{ data: Task; rescheduledRun: { runId: string; created: boolean } | null }> =>
+        this.request('PATCH', `/v1/tasks/${taskId}/schedule`, params),
+
       /** Stream task status updates via SSE. Returns an async generator. */
       stream: (taskId: string): AsyncGenerator<StreamEvent> =>
         this._streamSse(`/v1/tasks/${taskId}/stream`),

@@ -339,6 +339,14 @@ export interface Task {
   workflowId?: string;
   cronExpression?: string;
   isRecurring?: boolean;
+  scheduledFor?: string;
+  nextRunAt?: string;
+  lastRunAt?: string;
+  actualStart?: string;
+  actualEnd?: string;
+  estimatedDuration?: number;
+  dependsOn?: string[];
+  metadata?: Record<string, any>;
   priority?: number;
   timeoutMs?: number;
   progress?: number;
@@ -348,6 +356,7 @@ export interface Task {
   createdBy: string;
   createdByType: 'user' | 'agent';
   createdAt: string;
+  updatedAt?: string;
 }
 
 export interface CreateTaskParams {

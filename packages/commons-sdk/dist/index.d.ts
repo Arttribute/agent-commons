@@ -274,6 +274,14 @@ interface Task {
     workflowId?: string;
     cronExpression?: string;
     isRecurring?: boolean;
+    scheduledFor?: string;
+    nextRunAt?: string;
+    lastRunAt?: string;
+    actualStart?: string;
+    actualEnd?: string;
+    estimatedDuration?: number;
+    dependsOn?: string[];
+    metadata?: Record<string, any>;
     priority?: number;
     timeoutMs?: number;
     progress?: number;
@@ -283,6 +291,7 @@ interface Task {
     createdBy: string;
     createdByType: 'user' | 'agent';
     createdAt: string;
+    updatedAt?: string;
 }
 interface CreateTaskParams {
     agentId: string;
@@ -956,6 +965,25 @@ declare class CommonsClient {
         }>;
         delete: (taskId: string) => Promise<{
             success: boolean;
+        }>;
+        /** Edit human-facing task details (title/description/priority). */
+        update: (taskId: string, params: {
+            title?: string;
+            description?: string;
+            priority?: number;
+        }) => Promise<{
+            data: Task;
+        }>;
+        /** Reschedule a task's upcoming run and/or resize its estimated duration. */
+        reschedule: (taskId: string, params: {
+            scheduledFor?: Date;
+            estimatedDuration?: number;
+        }) => Promise<{
+            data: Task;
+            rescheduledRun: {
+                runId: string;
+                created: boolean;
+            } | null;
         }>;
         /** Stream task status updates via SSE. Returns an async generator. */
         stream: (taskId: string) => AsyncGenerator<StreamEvent>;

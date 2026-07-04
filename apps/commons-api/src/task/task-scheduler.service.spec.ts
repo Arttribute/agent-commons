@@ -1,4 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
+import { ConflictException } from '@nestjs/common';
 import { TaskSchedulerService } from './task-scheduler.service';
 import { DatabaseService } from '../modules/database/database.service';
 import { TaskExecutionService } from './task-execution.service';
@@ -192,6 +193,50 @@ describe('TaskSchedulerService', () => {
 
       expect(scheduleSpy).toHaveBeenCalledWith(
         expect.objectContaining({ taskId: 'task-1', triggeredBy: 'cron' }),
+      );
+    });
+  });
+
+  /* ── rescheduleUpcomingRun ─────────────────────────────────────────────── */
+  describe('rescheduleUpcomingRun()', () => {
+    it('updates the existing pending run scheduledFor and returns created=false', async () => {
+      db.query.scheduledTaskRun.findFirst = jest.fn().mockResolvedValue({
+        runId: 'run-1', taskId: 'task-1', status: 'pending', scheduledFor: new Date(),
+      });
+      const newTime = new Date(Date.now() + 3_600_000);
+
+      const result = await service.rescheduleUpcomingRun('task-1', newTime);
+
+      expect(result).toEqual({ runId: 'run-1', created: false });
+      expect(db.update).toHaveBeenCalled();
+      expect(db._updateSet).toHaveBeenCalledWith(expect.objectContaining({ scheduledFor: newTime }));
+    });
+
+    it('throws ConflictException when the active run is already running', async () => {
+      db.query.scheduledTaskRun.findFirst = jest.fn().mockResolvedValue({
+        runId: 'run-1', taskId: 'task-1', status: 'running', scheduledFor: new Date(),
+      });
+
+      await expect(
+        service.rescheduleUpcomingRun('task-1', new Date()),
+      ).rejects.toThrow(ConflictException);
+      expect(db.update).not.toHaveBeenCalled();
+    });
+
+    it('creates a new pending run and returns created=true when none is active', async () => {
+      db.query.scheduledTaskRun.findFirst = jest.fn().mockResolvedValue(null);
+      const newTime = new Date(Date.now() + 3_600_000);
+
+      const insertValues = jest.fn().mockReturnValue({
+        returning: jest.fn().mockResolvedValue([{ runId: 'run-new' }]),
+      });
+      db.insert = jest.fn().mockReturnValue({ values: insertValues });
+
+      const result = await service.rescheduleUpcomingRun('task-1', newTime);
+
+      expect(result).toEqual({ runId: 'run-new', created: true });
+      expect(insertValues).toHaveBeenCalledWith(
+        expect.objectContaining({ taskId: 'task-1', scheduledFor: newTime, triggeredBy: 'manual', status: 'pending' }),
       );
     });
   });

@@ -32,10 +32,12 @@ interface CreateTaskDialogProps {
   onClose: () => void;
   userAddress: string;
   preSelectedAgentId?: string;
+  /** Prefills "Schedule For" (datetime-local format) — e.g. from a calendar slot click. */
+  initialScheduledFor?: string;
   onTaskCreated?: () => void;
 }
 
-const EMPTY_FORM = (preSelectedAgentId?: string) => ({
+const EMPTY_FORM = (preSelectedAgentId?: string, initialScheduledFor?: string) => ({
   title: "",
   description: "",
   agentId: preSelectedAgentId || "",
@@ -49,7 +51,7 @@ const EMPTY_FORM = (preSelectedAgentId?: string) => ({
   isRecurring: false,
   cronExpression: "",
   recurringSessionMode: "same" as "same" | "new",
-  scheduledFor: "",
+  scheduledFor: initialScheduledFor ?? "",
 });
 
 export function CreateTaskDialog({
@@ -57,12 +59,13 @@ export function CreateTaskDialog({
   onClose,
   userAddress,
   preSelectedAgentId,
+  initialScheduledFor,
   onTaskCreated,
 }: CreateTaskDialogProps) {
   const [loading, setLoading] = useState(false);
   const [sessions, setSessions] = useState<Session[]>([]);
   const [tools, setTools] = useState<any[]>([]);
-  const [formData, setFormData] = useState(EMPTY_FORM(preSelectedAgentId));
+  const [formData, setFormData] = useState(EMPTY_FORM(preSelectedAgentId, initialScheduledFor));
 
   const { agents } = useAgents(userAddress);
   const { workflows } = useWorkflows(userAddress, "user");
@@ -70,11 +73,10 @@ export function CreateTaskDialog({
   useEffect(() => {
     if (open) {
       fetch("/api/tools").then((r) => r.json()).then((d) => setTools(d.data ?? [])).catch(() => {});
-      if (preSelectedAgentId) {
-        setFormData((prev) => ({ ...prev, agentId: preSelectedAgentId }));
-      }
+      setFormData(EMPTY_FORM(preSelectedAgentId, initialScheduledFor));
     }
-  }, [open, userAddress, preSelectedAgentId]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
 
   useEffect(() => {
     if (!formData.agentId) return;

@@ -1,5 +1,5 @@
-import { Injectable, Logger, OnModuleDestroy, OnModuleInit, forwardRef, Inject } from '@nestjs/common';
-import { and, eq, lte, lt, inArray } from 'drizzle-orm';
+import { Injectable, Logger, OnModuleDestroy, OnModuleInit, forwardRef, Inject, ConflictException } from '@nestjs/common';
+import { and, eq, lte, lt, inArray, asc } from 'drizzle-orm';
 import { DatabaseService } from '../modules/database';
 import { TaskExecutionService } from './task-execution.service';
 import * as schema from '../../models/schema';
@@ -97,6 +97,41 @@ export class TaskSchedulerService implements OnModuleInit, OnModuleDestroy {
     } catch (error: any) {
       this.logger.error(`Catchup failed: ${error.message}`);
     }
+  }
+
+  /**
+   * Reschedule the upcoming run for a task (used when a user drags a task's
+   * calendar event to a new day/time). Updates the active `scheduled_task_run`
+   * row in place so the poller picks it up at the new time; self-heals by
+   * creating one if none exists (e.g. an orphaned task with no active run).
+   */
+  async rescheduleUpcomingRun(
+    taskId: string,
+    scheduledFor: Date,
+  ): Promise<{ runId: string; created: boolean }> {
+    const activeRun = await this.db.query.scheduledTaskRun.findFirst({
+      where: (r: any) => and(eq(r.taskId, taskId), inArray(r.status, ['pending', 'running'])),
+      orderBy: (r: any) => [asc(r.scheduledFor)],
+    });
+
+    if (activeRun?.status === 'running') {
+      throw new ConflictException('Task run is currently executing and cannot be rescheduled');
+    }
+
+    if (activeRun) {
+      await this.db
+        .update(schema.scheduledTaskRun)
+        .set({ scheduledFor })
+        .where(eq(schema.scheduledTaskRun.runId, activeRun.runId));
+      return { runId: activeRun.runId, created: false };
+    }
+
+    this.logger.warn(`No pending scheduled_task_run for task ${taskId}; creating one at reschedule time`);
+    const [created] = await this.db
+      .insert(schema.scheduledTaskRun)
+      .values({ taskId, scheduledFor, triggeredBy: 'manual', status: 'pending' })
+      .returning();
+    return { runId: created.runId, created: true };
   }
 
   /** Compute the next run time from a cron expression */

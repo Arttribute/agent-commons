@@ -56,7 +56,47 @@ export function useTasks(filter: { sessionId?: string; agentId?: string; ownerId
     }
   }, []);
 
-  return { tasks, loading, error, refresh: load, createTask, cancelTask };
+  const updateTask = useCallback(async (
+    taskId: string,
+    patch: { title?: string; description?: string; priority?: number },
+  ): Promise<Task | null> => {
+    try {
+      const res = await fetch(`/api/tasks/${taskId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(patch),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message || data.error || "Failed to update task");
+      setTasks((p) => p.map((t) => (t.taskId === taskId ? data.data : t)));
+      return data.data as Task;
+    } catch (err: any) {
+      setError(err.message);
+      return null;
+    }
+  }, []);
+
+  const rescheduleTask = useCallback(async (
+    taskId: string,
+    patch: { scheduledFor?: Date; estimatedDuration?: number },
+  ): Promise<Task | null> => {
+    try {
+      const res = await fetch(`/api/tasks/${taskId}/schedule`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(patch),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message || data.error || "Failed to reschedule task");
+      setTasks((p) => p.map((t) => (t.taskId === taskId ? data.data : t)));
+      return data.data as Task;
+    } catch (err: any) {
+      setError(err.message);
+      return null;
+    }
+  }, []);
+
+  return { tasks, loading, error, refresh: load, createTask, cancelTask, updateTask, rescheduleTask };
 }
 
 export function useTaskStream(taskId: string | undefined) {

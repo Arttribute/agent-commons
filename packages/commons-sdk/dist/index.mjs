@@ -152,6 +152,10 @@ var CommonsClient = class {
       execute: (taskId) => this.request("POST", `/v1/tasks/${taskId}/execute`),
       cancel: (taskId) => this.request("POST", `/v1/tasks/${taskId}/cancel`),
       delete: (taskId) => this.request("DELETE", `/v1/tasks/${taskId}`),
+      /** Edit human-facing task details (title/description/priority). */
+      update: (taskId, params) => this.request("PATCH", `/v1/tasks/${taskId}`, params),
+      /** Reschedule a task's upcoming run and/or resize its estimated duration. */
+      reschedule: (taskId, params) => this.request("PATCH", `/v1/tasks/${taskId}/schedule`, params),
       /** Stream task status updates via SSE. Returns an async generator. */
       stream: (taskId) => this._streamSse(`/v1/tasks/${taskId}/stream`)
     };

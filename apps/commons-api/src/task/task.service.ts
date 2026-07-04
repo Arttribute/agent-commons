@@ -1,4 +1,4 @@
-import { Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException, BadRequestException } from '@nestjs/common';
 import { DatabaseService } from '~/modules/database/database.service';
 import * as schema from '#/models/schema';
 import { and, eq, not, sql } from 'drizzle-orm';
@@ -118,6 +118,37 @@ export class TaskService {
       .update(schema.task)
       .set({ status: 'started', actualStart: new Date() })
       .where(eq(schema.task.taskId, taskId));
+  }
+
+  /** Human-facing edit of title/description/priority (calendar edit dialog). */
+  async updateDetails(
+    taskId: string,
+    patch: { title?: string; description?: string; priority?: number },
+  ) {
+    const existing = await this.db.query.task.findFirst({
+      where: (t: any) => eq(t.taskId, taskId),
+      columns: { taskId: true },
+    });
+    if (!existing) throw new NotFoundException('Task not found');
+
+    if (patch.title !== undefined && !patch.title.trim()) {
+      throw new BadRequestException('title cannot be empty');
+    }
+    if (patch.priority !== undefined && !Number.isInteger(patch.priority)) {
+      throw new BadRequestException('priority must be an integer');
+    }
+
+    await this.db
+      .update(schema.task)
+      .set({
+        ...(patch.title !== undefined && { title: patch.title }),
+        ...(patch.description !== undefined && { description: patch.description }),
+        ...(patch.priority !== undefined && { priority: patch.priority }),
+        updatedAt: new Date(),
+      })
+      .where(eq(schema.task.taskId, taskId));
+
+    return this.get(taskId);
   }
 
   //update task progress: if  task has reached its finality either competed or failed, always provide the actualEnd date, summary and resultContent

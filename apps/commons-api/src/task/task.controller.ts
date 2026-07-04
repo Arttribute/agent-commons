@@ -3,6 +3,7 @@ import {
   Get,
   Post,
   Put,
+  Patch,
   Delete,
   Body,
   Param,
@@ -162,6 +163,36 @@ export class TaskController {
         body.metadata,
       ),
     };
+  }
+
+  /**
+   * Edit human-facing task details (title/description/priority)
+   * PATCH /v1/tasks/:taskId
+   */
+  @Patch(':taskId')
+  @UseGuards(OwnerGuard)
+  @OwnerOnly({ table: 'task', idParam: 'taskId' })
+  async updateTaskDetails(
+    @Param('taskId') taskId: string,
+    @Body() body: { title?: string; description?: string; priority?: number },
+  ) {
+    return { data: await this.tasks.updateDetails(taskId, body) };
+  }
+
+  /**
+   * Reschedule a task's upcoming run and/or resize its estimated duration
+   * (calendar view drag-to-reschedule / resize).
+   * PATCH /v1/tasks/:taskId/schedule
+   */
+  @Patch(':taskId/schedule')
+  @UseGuards(OwnerGuard)
+  @OwnerOnly({ table: 'task', idParam: 'taskId' })
+  async rescheduleTask(
+    @Param('taskId') taskId: string,
+    @Body() body: { scheduledFor?: Date; estimatedDuration?: number },
+  ) {
+    const result = await this.taskExecution.rescheduleTask(taskId, body);
+    return { data: result.task, rescheduledRun: result.rescheduledRun };
   }
 
   /**

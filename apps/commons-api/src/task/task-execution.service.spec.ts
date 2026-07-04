@@ -1,5 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { NotFoundException, BadRequestException } from '@nestjs/common';
+import { NotFoundException, BadRequestException, ConflictException } from '@nestjs/common';
 import { TaskExecutionService, buildTaskPrompt } from './task-execution.service';
 import { DatabaseService } from '../modules/database/database.service';
 import { WorkflowService } from '../tool/workflow.service';
@@ -45,6 +45,7 @@ function makeScheduler() {
   return {
     getNextRunTime: jest.fn().mockReturnValue(null),
     scheduleRun: jest.fn().mockResolvedValue(undefined),
+    rescheduleUpcomingRun: jest.fn().mockResolvedValue({ runId: 'run-1', created: false }),
   };
 }
 
@@ -194,6 +195,90 @@ describe('TaskExecutionService', () => {
       db.query.workflowExecution = { findMany: jest.fn().mockResolvedValue([]) } as any;
       const result = await service.cancelTask('task-1');
       expect(result.success).toBe(true);
+    });
+  });
+
+  /* ── rescheduleTask ──────────────────────────────────────────────────── */
+  describe('rescheduleTask()', () => {
+    const pendingOneTime = {
+      taskId: 'task-1', status: 'pending', isRecurring: false, cronExpression: null,
+    };
+    const recurringCompleted = {
+      taskId: 'task-1', status: 'completed', isRecurring: true, cronExpression: '0 * * * *',
+    };
+
+    it('updates scheduledFor and nextRunAt for a one-time task, and calls the scheduler', async () => {
+      db.query.task.findFirst = jest.fn().mockResolvedValue(pendingOneTime);
+      const newTime = new Date(Date.now() + 3_600_000);
+
+      const result = await service.rescheduleTask('task-1', { scheduledFor: newTime });
+
+      expect(db.update).toHaveBeenCalled();
+      const setArgs = (db.update as jest.Mock).mock.results[0].value.set.mock.calls[0][0];
+      expect(setArgs).toEqual(expect.objectContaining({ scheduledFor: newTime, nextRunAt: newTime }));
+      expect(scheduler.rescheduleUpcomingRun).toHaveBeenCalledWith('task-1', newTime);
+      expect(result.rescheduledRun).toEqual({ runId: 'run-1', created: false });
+    });
+
+    it('updates only nextRunAt for a recurring task in its steady-state completed status', async () => {
+      db.query.task.findFirst = jest.fn().mockResolvedValue(recurringCompleted);
+      const newTime = new Date(Date.now() + 3_600_000);
+
+      await service.rescheduleTask('task-1', { scheduledFor: newTime });
+
+      const setArgs = (db.update as jest.Mock).mock.results[0].value.set.mock.calls[0][0];
+      expect(setArgs).toEqual(expect.objectContaining({ nextRunAt: newTime }));
+      expect(setArgs.scheduledFor).toBeUndefined();
+    });
+
+    it('throws ConflictException when task is running', async () => {
+      db.query.task.findFirst = jest.fn().mockResolvedValue({ ...pendingOneTime, status: 'running' });
+      await expect(
+        service.rescheduleTask('task-1', { scheduledFor: new Date() }),
+      ).rejects.toThrow(ConflictException);
+      expect(db.update).not.toHaveBeenCalled();
+    });
+
+    it('throws BadRequestException when task is cancelled', async () => {
+      db.query.task.findFirst = jest.fn().mockResolvedValue({ ...pendingOneTime, status: 'cancelled' });
+      await expect(
+        service.rescheduleTask('task-1', { scheduledFor: new Date() }),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('throws BadRequestException for a finished non-recurring task', async () => {
+      db.query.task.findFirst = jest.fn().mockResolvedValue({ ...pendingOneTime, status: 'completed' });
+      await expect(
+        service.rescheduleTask('task-1', { scheduledFor: new Date() }),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('allows duration-only updates without touching the scheduler', async () => {
+      db.query.task.findFirst = jest.fn().mockResolvedValue(pendingOneTime);
+
+      await service.rescheduleTask('task-1', { estimatedDuration: 30 * 60_000 });
+
+      expect(scheduler.rescheduleUpcomingRun).not.toHaveBeenCalled();
+      const setArgs = (db.update as jest.Mock).mock.results[0].value.set.mock.calls[0][0];
+      expect(setArgs).toEqual(expect.objectContaining({ estimatedDuration: 30 * 60_000 }));
+    });
+
+    it('rejects an estimatedDuration below the minimum', async () => {
+      db.query.task.findFirst = jest.fn().mockResolvedValue(pendingOneTime);
+      await expect(
+        service.rescheduleTask('task-1', { estimatedDuration: 1000 }),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('throws BadRequestException when neither param is provided', async () => {
+      await expect(service.rescheduleTask('task-1', {})).rejects.toThrow(BadRequestException);
+    });
+
+    it('throws NotFoundException for an unknown task', async () => {
+      db.query.task.findFirst = jest.fn().mockResolvedValue(null);
+      await expect(
+        service.rescheduleTask('missing', { scheduledFor: new Date() }),
+      ).rejects.toThrow(NotFoundException);
     });
   });
 

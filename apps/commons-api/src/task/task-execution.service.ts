@@ -2,6 +2,7 @@ import {
   Injectable,
   Logger,
   BadRequestException,
+  ConflictException,
   NotFoundException,
   forwardRef,
   Inject,
@@ -137,6 +138,73 @@ export class TaskExecutionService {
     });
 
     return task;
+  }
+
+  /**
+   * Reschedule a task's upcoming run and/or resize its estimated duration —
+   * used by the calendar view's drag-to-reschedule and resize interactions.
+   */
+  async rescheduleTask(
+    taskId: string,
+    params: { scheduledFor?: Date; estimatedDuration?: number },
+  ): Promise<{
+    task: typeof schema.task.$inferSelect;
+    rescheduledRun: { runId: string; created: boolean } | null;
+  }> {
+    if (params.scheduledFor === undefined && params.estimatedDuration === undefined) {
+      throw new BadRequestException('Nothing to update');
+    }
+
+    const task = await this.db.query.task.findFirst({
+      where: (t: any) => eq(t.taskId, taskId),
+    });
+    if (!task) throw new NotFoundException('Task not found');
+
+    if (params.estimatedDuration !== undefined) {
+      const MIN_DURATION_MS = 15 * 60_000;
+      if (!Number.isFinite(params.estimatedDuration) || params.estimatedDuration < MIN_DURATION_MS) {
+        throw new BadRequestException(`estimatedDuration must be at least ${MIN_DURATION_MS}ms`);
+      }
+    }
+
+    let scheduledFor: Date | undefined;
+    if (params.scheduledFor !== undefined) {
+      scheduledFor = new Date(params.scheduledFor);
+
+      if (task.status === 'running' || task.status === 'started') {
+        throw new ConflictException('Task is currently executing and cannot be rescheduled');
+      }
+      if (task.status === 'cancelled') {
+        throw new BadRequestException('Cannot reschedule a cancelled task');
+      }
+      if (!task.isRecurring && ['completed', 'failed'].includes(task.status)) {
+        throw new BadRequestException('Cannot reschedule a task that has already finished');
+      }
+      if (task.isRecurring && !task.cronExpression) {
+        throw new BadRequestException('Recurring task is missing a cron expression');
+      }
+    }
+
+    await this.db
+      .update(schema.task)
+      .set({
+        ...(scheduledFor && task.isRecurring && { nextRunAt: scheduledFor }),
+        ...(scheduledFor && !task.isRecurring && { scheduledFor, nextRunAt: scheduledFor }),
+        ...(params.estimatedDuration !== undefined && { estimatedDuration: params.estimatedDuration }),
+        updatedAt: new Date(),
+      })
+      .where(eq(schema.task.taskId, taskId));
+
+    let rescheduledRun: { runId: string; created: boolean } | null = null;
+    if (scheduledFor) {
+      rescheduledRun = await this.scheduler.rescheduleUpcomingRun(taskId, scheduledFor);
+    }
+
+    const updated = await this.db.query.task.findFirst({
+      where: (t: any) => eq(t.taskId, taskId),
+    });
+
+    return { task: updated!, rescheduledRun };
   }
 
   // ── Execution ─────────────────────────────────────────────────────────────

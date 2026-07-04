@@ -1,15 +1,10 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import type { ElementType } from "react";
 import { useRouter } from "next/navigation";
 import {
-  AlertCircle,
   Calendar,
-  CheckCircle2,
   ChevronDown,
-  Circle,
-  Clock,
   Filter,
   LayoutGrid,
   List,
@@ -24,7 +19,7 @@ import {
   X,
   XCircle,
 } from "lucide-react";
-import { formatDistanceToNow } from "date-fns";
+import { format, formatDistanceToNow } from "date-fns";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -42,51 +37,18 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { CreateTaskDialog } from "./create-task-dialog";
+import { TaskCalendarView } from "./calendar/task-calendar-view";
+import { statusConfig, statusOrder } from "./status-config";
 import { useAgents } from "@/hooks/use-agents";
 import { useTasks } from "@/hooks/use-tasks";
 import { cn } from "@/lib/utils";
 import type { Task } from "@agent-commons/sdk";
 
-type ViewMode = "list" | "board";
+type ViewMode = "list" | "board" | "calendar";
 type StatusFilter = "all" | "active" | Task["status"];
 type PriorityFilter = "all" | "none" | "high" | "medium" | "low";
 type GroupBy = "status" | "agent" | "priority";
 type Ordering = "priority" | "created" | "scheduled";
-
-const statusConfig: Record<string, { label: string; icon: ElementType; className: string }> = {
-  pending: {
-    label: "Todo",
-    icon: Circle,
-    className: "text-slate-500",
-  },
-  started: {
-    label: "Started",
-    icon: Clock,
-    className: "text-blue-600",
-  },
-  running: {
-    label: "In Progress",
-    icon: Clock,
-    className: "text-amber-600",
-  },
-  completed: {
-    label: "Done",
-    icon: CheckCircle2,
-    className: "text-emerald-600",
-  },
-  failed: {
-    label: "Failed",
-    icon: AlertCircle,
-    className: "text-red-600",
-  },
-  cancelled: {
-    label: "Canceled",
-    icon: XCircle,
-    className: "text-muted-foreground",
-  },
-};
-
-const statusOrder = ["running", "started", "pending", "completed", "failed", "cancelled"];
 
 function priorityLabel(priority?: number | null) {
   if (!priority || priority <= 0) return "No priority";
@@ -293,6 +255,7 @@ export function TaskManagementView({
 }) {
   const router = useRouter();
   const [showCreateDialog, setShowCreateDialog] = useState(false);
+  const [createPrefillDate, setCreatePrefillDate] = useState<string | undefined>(undefined);
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("active");
   const [selectedAgent, setSelectedAgent] = useState("all");
   const [priorityFilter, setPriorityFilter] = useState<PriorityFilter>("all");
@@ -307,7 +270,7 @@ export function TaskManagementView({
   }, [onRegisterCreate]);
 
   const { agents } = useAgents(userAddress);
-  const { tasks, loading, refresh } = useTasks(
+  const { tasks, loading, refresh, updateTask, rescheduleTask } = useTasks(
     agentId ? { agentId } : { ownerId: userAddress, ownerType: "user" }
   );
 
@@ -411,6 +374,11 @@ export function TaskManagementView({
   }, [refresh]);
 
   const openTask = (taskId: string) => router.push(`/studio/tasks/${taskId}`);
+
+  const openCreateAt = useCallback((date: Date) => {
+    setCreatePrefillDate(format(date, "yyyy-MM-dd'T'HH:mm"));
+    setShowCreateDialog(true);
+  }, []);
 
   return (
     <div className="flex h-full min-w-0 flex-col bg-background">
@@ -543,6 +511,15 @@ export function TaskManagementView({
               >
                 <LayoutGrid className="h-4 w-4" />
               </Button>
+              <Button
+                variant={viewMode === "calendar" ? "secondary" : "ghost"}
+                size="icon"
+                className="h-7 w-8 rounded"
+                onClick={() => setViewMode("calendar")}
+                aria-label="Calendar view"
+              >
+                <Calendar className="h-4 w-4" />
+              </Button>
             </div>
 
             <DropdownMenu>
@@ -606,11 +583,29 @@ export function TaskManagementView({
         </div>
       </div>
 
-      <div className="min-h-0 flex-1 overflow-auto px-4 py-3">
+      <div
+        className={cn(
+          "min-h-0 flex-1",
+          viewMode === "calendar" ? "flex flex-col overflow-hidden" : "overflow-auto px-4 py-3",
+        )}
+      >
         {loading ? (
           <div className="flex h-64 items-center justify-center">
             <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
           </div>
+        ) : viewMode === "calendar" ? (
+          <TaskCalendarView
+            tasks={filteredTasks}
+            agentMap={agentMap}
+            actionLoading={actionLoading}
+            onOpenTask={openTask}
+            onExecute={handleExecute}
+            onCancel={handleCancel}
+            onDelete={handleDelete}
+            onCreateAt={openCreateAt}
+            rescheduleTask={rescheduleTask}
+            updateTask={updateTask}
+          />
         ) : filteredTasks.length === 0 ? (
           <div className="flex h-64 flex-col items-center justify-center rounded-lg border border-dashed border-border text-center">
             <Calendar className="mb-3 h-10 w-10 text-muted-foreground/40" />
@@ -693,9 +688,13 @@ export function TaskManagementView({
 
       <CreateTaskDialog
         open={showCreateDialog}
-        onClose={() => setShowCreateDialog(false)}
+        onClose={() => {
+          setShowCreateDialog(false);
+          setCreatePrefillDate(undefined);
+        }}
         userAddress={userAddress}
         preSelectedAgentId={preSelectedAgentId ?? agentId}
+        initialScheduledFor={createPrefillDate}
         onTaskCreated={refresh}
       />
     </div>

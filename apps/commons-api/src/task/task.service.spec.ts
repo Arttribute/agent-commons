@@ -1,7 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { TaskService } from './task.service';
 import { DatabaseService } from '~/modules/database/database.service';
-import { NotFoundException } from '@nestjs/common';
+import { NotFoundException, BadRequestException } from '@nestjs/common';
 
 describe('TaskService', () => {
   let service: TaskService;
@@ -328,6 +328,41 @@ describe('TaskService', () => {
           actualStart: expect.any(Date),
         }),
       );
+    });
+  });
+
+  describe('updateDetails', () => {
+    it('updates only the provided fields', async () => {
+      mockDb.query.task.findFirst.mockResolvedValue(mockTask);
+
+      await service.updateDetails('task-123', { title: 'New title', priority: 2 });
+
+      expect(mockDb.update).toHaveBeenCalled();
+      expect(mockDb.set).toHaveBeenCalledWith(
+        expect.objectContaining({ title: 'New title', priority: 2 }),
+      );
+      expect(mockDb.set.mock.calls[0][0]).not.toHaveProperty('description');
+    });
+
+    it('throws NotFoundException for an unknown task', async () => {
+      mockDb.query.task.findFirst.mockResolvedValue(null);
+      await expect(
+        service.updateDetails('missing', { title: 'x' }),
+      ).rejects.toThrow(NotFoundException);
+    });
+
+    it('rejects an empty title', async () => {
+      mockDb.query.task.findFirst.mockResolvedValue(mockTask);
+      await expect(
+        service.updateDetails('task-123', { title: '   ' }),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('rejects a non-integer priority', async () => {
+      mockDb.query.task.findFirst.mockResolvedValue(mockTask);
+      await expect(
+        service.updateDetails('task-123', { priority: 1.5 }),
+      ).rejects.toThrow(BadRequestException);
     });
   });
 
