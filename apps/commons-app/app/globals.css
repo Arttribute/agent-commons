@@ -122,4 +122,65 @@ body {
       var(--brand-cyan)
     );
   }
+
+  /* Floating panel chrome for editor overlays (palette rail, toolbar, console) */
+  .floating-panel {
+    @apply rounded-2xl border border-border/70 bg-background/95 shadow-lg backdrop-blur-sm;
+  }
+}
+
+/* React Flow overrides
+   ─────────────────────
+   "input" and "output" are built-in React Flow node type names, so its
+   stylesheet gives them a dark 1px box even when a custom component renders
+   the node. Strip that chrome — StepNode draws its own tile. */
+.react-flow__node-input,
+.react-flow__node-output {
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  padding: 0;
+  width: auto;
+  box-shadow: none;
+  text-align: unset;
+  color: inherit;
+  font-size: inherit;
+}
+.react-flow__node-input.selectable:hover,
+.react-flow__node-output.selectable:hover,
+.react-flow__node-input.selectable.selected,
+.react-flow__node-output.selectable.selected {
+  box-shadow: none;
+}
+
+/* Match the floating-panel look and follow the app theme (incl. dark mode) */
+.react-flow__controls {
+  overflow: hidden;
+  border-radius: 0.75rem;
+  border: 1px solid hsl(var(--border) / 0.7);
+  box-shadow: 0 4px 12px rgb(0 0 0 / 0.08);
+}
+.react-flow__controls-button {
+  background: hsl(var(--background));
+  border-bottom: 1px solid hsl(var(--border) / 0.7);
+}
+.react-flow__controls-button:hover {
+  background: hsl(var(--muted));
+}
+.react-flow__controls-button svg {
+  fill: hsl(var(--foreground));
+}
+.react-flow__minimap {
+  overflow: hidden;
+  border-radius: 0.75rem;
+  border: 1px solid hsl(var(--border) / 0.7);
+  box-shadow: 0 4px 12px rgb(0 0 0 / 0.08);
+  background: hsl(var(--background));
+}
+.react-flow__minimap-mask {
+  fill: hsl(var(--muted) / 0.7);
+}
+.react-flow__attribution {
+  background: transparent;
+  color: hsl(var(--muted-foreground) / 0.6);
 }

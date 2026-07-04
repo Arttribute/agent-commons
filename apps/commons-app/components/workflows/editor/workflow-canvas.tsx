@@ -172,7 +172,8 @@ export function WorkflowCanvas() {
         return;
       }
 
-      // Create colored edge
+      // Create colored edge — carries both port colors so the edge can
+      // render a source→target gradient.
       const newEdge = {
         ...connection,
         id: `${connection.source}-${connection.target}-${Date.now()}`,
@@ -180,6 +181,8 @@ export function WorkflowCanvas() {
         data: {
           dataType: sourceType,
           color: getEdgeColor(sourceType, targetType),
+          sourceColor: getEdgeColor(sourceType),
+          targetColor: getEdgeColor(targetType),
         },
       };
 
@@ -262,7 +265,7 @@ export function WorkflowCanvas() {
   );
 
   return (
-    <div className="flex-1 h-full" onDrop={onDrop} onDragOver={onDragOver}>
+    <div className="h-full w-full" onDrop={onDrop} onDragOver={onDragOver}>
       <ReactFlow
         nodes={nodes}
         edges={edges}
@@ -284,6 +287,10 @@ export function WorkflowCanvas() {
         <Controls />
         <MiniMap
           nodeColor={(node) => getNodeTheme(node.type).dot}
+          // Sits beside the zoom controls so the floating console never
+          // covers it.
+          position="bottom-left"
+          style={{ marginLeft: 56 }}
           pannable
           zoomable
         />

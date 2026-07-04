@@ -130,7 +130,11 @@ export default function WorkflowEditorPage() {
   }
 
   return (
-    <div className="flex h-full min-w-0 flex-col bg-background">
+    // Full-bleed canvas; all editor chrome floats above it so the canvas
+    // gets the entire viewport.
+    <div className="relative h-full min-w-0 overflow-hidden bg-background">
+      <WorkflowCanvasProvider />
+
       <EditorToolbar
         currentId={workflowId}
         currentName={workflow.name}
@@ -141,17 +145,9 @@ export default function WorkflowEditorPage() {
         }))}
       />
 
-      {/* Main editor area */}
-      <div className="flex min-h-0 flex-1 overflow-hidden">
-        {/* Left sidebar - Tools */}
-        <ToolSidebar userId={userId} />
+      <ToolSidebar userId={userId} />
 
-        {/* Center - Canvas */}
-        <WorkflowCanvasProvider />
-
-        {/* Right sidebar - Test panel */}
-        <TestPanel workflowId={workflowId} />
-      </div>
+      <TestPanel workflowId={workflowId} />
     </div>
   );
 }

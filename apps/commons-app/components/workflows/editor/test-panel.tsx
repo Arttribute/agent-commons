@@ -26,7 +26,8 @@ import {
   CheckCircle2,
   XCircle,
   AlertCircle,
-  FlaskConical,
+  PanelRightClose,
+  SquareTerminal,
 } from "lucide-react";
 import {
   extractWorkflowInputSchema,
@@ -44,6 +45,7 @@ export function TestPanel({ workflowId }: TestPanelProps) {
   const [execution, setExecution] = useState<WorkflowExecution | null>(null);
   const [pendingExecutionId, setPendingExecutionId] = useState<string | undefined>();
   const [loading, setLoading] = useState(false);
+  const [open, setOpen] = useState(false);
   const { nodes, edges } = useWorkflowStore();
 
   const { execution: streamExecution, done: streamDone } = useWorkflowExecutionStream(
@@ -209,21 +211,56 @@ export function TestPanel({ workflowId }: TestPanelProps) {
     }
   };
 
+  const running = loading || !!pendingExecutionId;
+
+  // Run from the always-visible button: open the console so results are
+  // in view, then execute.
+  const handleRunClick = () => {
+    setOpen(true);
+    handleRun();
+  };
+
   return (
-    <div className="w-[420px] border-l border-border bg-background flex flex-col h-full shrink-0">
-      {/* Header */}
-      <div className="px-4 py-3 border-b border-border flex items-center gap-2">
-        <FlaskConical className="h-4 w-4 text-muted-foreground" />
-        <div>
-          <h3 className="text-sm font-semibold">Workflow Console</h3>
-          <p className="text-[11px] text-muted-foreground">
-            {inputSchema ? `Entry: ${inputSchema.startNodeLabel}` : "Run and inspect workflow activity"}
-          </p>
-        </div>
+    <div className="pointer-events-none absolute inset-y-3 right-3 z-20 flex w-[380px] flex-col items-end gap-2">
+      {/* Command cluster — Run is always one click away */}
+      <div className="floating-panel pointer-events-auto flex items-center gap-1 p-1.5">
+        <Button
+          onClick={handleRunClick}
+          disabled={running || !inputSchema}
+          className="h-9 gap-2 rounded-xl px-4"
+        >
+          {running ? (
+            <>
+              <Loader2 className="h-4 w-4 animate-spin" />
+              {loading ? "Starting…" : "Running…"}
+            </>
+          ) : (
+            <>
+              <Play className="h-4 w-4" />
+              Run workflow
+            </>
+          )}
+        </Button>
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-9 w-9 rounded-xl"
+          onClick={() => setOpen((current) => !current)}
+          aria-label={open ? "Hide console" : "Show console"}
+          title={open ? "Hide console" : "Show console"}
+        >
+          {open ? (
+            <PanelRightClose className="h-4 w-4" />
+          ) : (
+            <SquareTerminal className="h-4 w-4" />
+          )}
+        </Button>
       </div>
 
+      {open && (
+      <div className="floating-panel pointer-events-auto flex min-h-0 w-full flex-1 flex-col overflow-hidden">
       <Tabs defaultValue="run" className="flex min-h-0 flex-1 flex-col">
-        <div className="border-b border-border px-3 py-2">
+        <div className="border-b border-border/70 p-1.5">
           <TabsList className="grid h-8 w-full grid-cols-3">
             <TabsTrigger value="run" className="text-xs">Run</TabsTrigger>
             <TabsTrigger value="logs" className="text-xs">Logs</TabsTrigger>
@@ -237,7 +274,12 @@ export function TestPanel({ workflowId }: TestPanelProps) {
           {/* Inputs */}
           {inputSchema && inputSchema.parameters.length > 0 ? (
             <div className="space-y-3">
-              <p className="text-xs font-semibold">Parameters</p>
+              <div className="flex items-center justify-between gap-2">
+                <p className="text-xs font-semibold">Parameters</p>
+                <p className="truncate text-[10px] text-muted-foreground">
+                  Entry: {inputSchema.startNodeLabel}
+                </p>
+              </div>
               {inputSchema.parameters.map((p) => (
                 <div key={p.name}>{renderField(p)}</div>
               ))}
@@ -249,26 +291,6 @@ export function TestPanel({ workflowId }: TestPanelProps) {
               </p>
             </div>
           )}
-
-          {/* Run button */}
-          <Button
-            onClick={handleRun}
-            disabled={loading || !!pendingExecutionId || !inputSchema}
-            className="w-full gap-2"
-            size="sm"
-          >
-            {loading || pendingExecutionId ? (
-              <>
-                <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                {loading ? "Starting…" : "Running…"}
-              </>
-            ) : (
-              <>
-                <Play className="h-3.5 w-3.5" />
-                Run Workflow
-              </>
-            )}
-          </Button>
 
           {/* Results */}
           {execution && (
@@ -395,6 +417,8 @@ export function TestPanel({ workflowId }: TestPanelProps) {
           <WorkflowIntegrationsPanel workflowId={workflowId} />
         </TabsContent>
       </Tabs>
+      </div>
+      )}
     </div>
   );
 }

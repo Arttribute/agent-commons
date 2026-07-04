@@ -2,12 +2,20 @@
 
 import { useEffect, useMemo, useState } from "react";
 import type { DragEvent } from "react";
-import { Loader2, Search } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
+import { Bot, Hammer, Search, Shapes, Workflow, Wrench, X } from "lucide-react";
 import type { ToolCatalogItem, WorkflowPaletteKind } from "@/lib/tools/catalog";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Button } from "@/components/ui/button";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import { getNodeTheme } from "./nodes/node-theme";
 import { getBrandIcon, type BrandIcon } from "./nodes/brand-icons";
@@ -39,6 +47,21 @@ interface PaletteNode {
   };
 }
 
+type GroupKey = "flow" | "system" | "custom" | "agents" | "workflows";
+
+const GROUPS: Array<{
+  key: GroupKey;
+  label: string;
+  icon: LucideIcon;
+  empty: string;
+}> = [
+  { key: "flow", label: "Flow control", icon: Shapes, empty: "No flow nodes" },
+  { key: "system", label: "Platform tools", icon: Wrench, empty: "No platform tools" },
+  { key: "custom", label: "Custom tools", icon: Hammer, empty: "No custom tools yet" },
+  { key: "agents", label: "Agents", icon: Bot, empty: "No agents yet" },
+  { key: "workflows", label: "Workflows", icon: Workflow, empty: "No workflows yet" },
+];
+
 function DragItem({ node }: { node: PaletteNode }) {
   const theme = getNodeTheme(node.nodeType);
   const Icon = theme.icon;
@@ -52,7 +75,7 @@ function DragItem({ node }: { node: PaletteNode }) {
     <div
       draggable
       onDragStart={onDragStart}
-      className="group flex cursor-grab select-none items-start gap-2.5 rounded-lg border border-border bg-background p-2.5 transition-colors hover:border-foreground/25 hover:bg-muted/35 active:cursor-grabbing"
+      className="group flex cursor-grab select-none items-start gap-2.5 rounded-xl border border-transparent bg-transparent p-2 transition-colors hover:border-border hover:bg-muted/40 active:cursor-grabbing"
     >
       <div
         className={cn(
@@ -207,10 +230,21 @@ export function ToolSidebar({ userId }: ToolSidebarProps) {
   const [items, setItems] = useState<ToolCatalogItem[]>([]);
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(true);
+  const [activeGroup, setActiveGroup] = useState<GroupKey | null>(null);
 
   useEffect(() => {
     loadCatalog();
   }, [userId]);
+
+  // Esc dismisses the open flyout
+  useEffect(() => {
+    if (!activeGroup) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setActiveGroup(null);
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [activeGroup]);
 
   const loadCatalog = async () => {
     setLoading(true);
@@ -225,91 +259,119 @@ export function ToolSidebar({ userId }: ToolSidebarProps) {
     }
   };
 
-  const query = search.trim().toLowerCase();
-  const filteredFlowNodes = flowNodes.filter((node) =>
-    !query ||
-    node.label.toLowerCase().includes(query) ||
-    node.description?.toLowerCase().includes(query),
-  );
-
   const paletteGroups = useMemo(() => {
     const paletteItems = items
       .map(catalogToPaletteNode)
       .filter(Boolean) as PaletteNode[];
 
-    const visible = paletteItems.filter((node) =>
-      !query ||
-      node.label.toLowerCase().includes(query) ||
-      node.description?.toLowerCase().includes(query) ||
-      node.badge?.toLowerCase().includes(query),
-    );
-
     return {
-      system: visible.filter((node) => node.badge === "system"),
-      custom: visible.filter((node) => node.badge === "custom"),
-      agents: visible.filter((node) => node.badge === "agent"),
-      workflows: visible.filter((node) => node.badge === "workflow"),
-    };
-  }, [items, query]);
+      flow: flowNodes,
+      system: paletteItems.filter((node) => node.badge === "system"),
+      custom: paletteItems.filter((node) => node.badge === "custom"),
+      agents: paletteItems.filter((node) => node.badge === "agent"),
+      workflows: paletteItems.filter((node) => node.badge === "workflow"),
+    } satisfies Record<GroupKey, PaletteNode[]>;
+  }, [items]);
 
-  const renderGroup = (title: string, nodes: PaletteNode[], empty: string) => (
-    <div className="space-y-1.5">
-      <p className="px-0.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-        {title}
-      </p>
-      {loading ? (
-        <div className="space-y-1.5">
-          {[...Array(2)].map((_, index) => (
-            <Skeleton key={index} className="h-12 w-full rounded-lg" />
-          ))}
-        </div>
-      ) : nodes.length === 0 ? (
-        <p className="py-3 text-center text-xs text-muted-foreground">{empty}</p>
-      ) : (
-        nodes.map((node) => <DragItem key={node.id} node={node} />)
-      )}
-    </div>
-  );
+  const group = GROUPS.find((entry) => entry.key === activeGroup);
+  const query = search.trim().toLowerCase();
+  const visibleNodes = activeGroup
+    ? paletteGroups[activeGroup].filter(
+        (node) =>
+          !query ||
+          node.label.toLowerCase().includes(query) ||
+          node.description?.toLowerCase().includes(query)
+      )
+    : [];
+
+  const openGroup = (key: GroupKey) => {
+    setSearch("");
+    setActiveGroup((current) => (current === key ? null : key));
+  };
 
   return (
-    <div className="flex h-full w-72 shrink-0 flex-col border-r border-border bg-background">
-      <div className="border-b border-border px-3 pb-3 pt-3">
-        <div className="mb-2 flex items-center justify-between">
-          <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-          Workflow nodes
-          </p>
-          {loading && <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />}
-        </div>
-        <div className="relative">
-          <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-muted-foreground" />
-          <Input
-            placeholder="Search nodes..."
-            value={search}
-            onChange={(event) => setSearch(event.target.value)}
-            className="h-8 pl-8 text-xs"
-          />
-        </div>
+    <TooltipProvider delayDuration={150}>
+      {/* Icon rail — one button per node group */}
+      <div
+        className="floating-panel absolute left-3 top-1/2 z-20 flex -translate-y-1/2 flex-col gap-1 p-1.5"
+        role="toolbar"
+        aria-label="Workflow nodes"
+        aria-orientation="vertical"
+      >
+        {GROUPS.map((entry) => (
+          <Tooltip key={entry.key}>
+            <TooltipTrigger asChild>
+              <button
+                type="button"
+                onClick={() => openGroup(entry.key)}
+                aria-pressed={activeGroup === entry.key}
+                className={cn(
+                  "flex h-9 w-9 items-center justify-center rounded-xl transition-colors",
+                  activeGroup === entry.key
+                    ? "bg-foreground text-background"
+                    : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                )}
+              >
+                <entry.icon className="h-4 w-4" />
+              </button>
+            </TooltipTrigger>
+            <TooltipContent side="right" sideOffset={10}>
+              {entry.label}
+            </TooltipContent>
+          </Tooltip>
+        ))}
       </div>
 
-      <ScrollArea className="flex-1">
-        <div className="space-y-5 p-3">
-          <div className="space-y-1.5">
-            <p className="px-0.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-              Flow control
+      {/* Flyout with the selected group's nodes */}
+      {group && (
+        <div className="floating-panel absolute left-[4.25rem] top-1/2 z-20 flex max-h-[75%] w-64 -translate-y-1/2 flex-col overflow-hidden p-1.5">
+          <div className="flex items-center justify-between gap-2 px-1 pb-1.5 pt-0.5">
+            <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+              {group.label}
             </p>
-            {filteredFlowNodes.length === 0 ? (
-              <p className="py-3 text-center text-xs text-muted-foreground">No flow nodes</p>
-            ) : (
-              filteredFlowNodes.map((node) => <DragItem key={node.id} node={node} />)
-            )}
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-6 w-6 rounded-lg"
+              onClick={() => setActiveGroup(null)}
+              aria-label="Close panel"
+            >
+              <X className="h-3.5 w-3.5" />
+            </Button>
           </div>
 
-          {renderGroup("Platform tools", paletteGroups.system, "No platform tools")}
-          {renderGroup("Custom tools", paletteGroups.custom, "No custom tools")}
-          {renderGroup("Agent processors", paletteGroups.agents, "No agents")}
-          {renderGroup("Workflow invocations", paletteGroups.workflows, "No workflows")}
+          <div className="relative px-0.5 pb-1.5">
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              placeholder={`Search ${group.label.toLowerCase()}…`}
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              className="h-8 rounded-lg pl-8 text-xs"
+              autoFocus
+            />
+          </div>
+
+          <ScrollArea className="min-h-0 flex-1">
+            <div className="space-y-0.5 p-0.5">
+              {loading && group.key !== "flow" ? (
+                [...Array(3)].map((_, index) => (
+                  <Skeleton key={index} className="h-12 w-full rounded-xl" />
+                ))
+              ) : visibleNodes.length === 0 ? (
+                <p className="py-6 text-center text-xs text-muted-foreground">
+                  {query ? "No matches" : group.empty}
+                </p>
+              ) : (
+                visibleNodes.map((node) => <DragItem key={node.id} node={node} />)
+              )}
+            </div>
+          </ScrollArea>
+
+          <p className="px-1 pb-0.5 pt-1.5 text-[10px] text-muted-foreground/70">
+            Drag a node onto the canvas
+          </p>
         </div>
-      </ScrollArea>
-    </div>
+      )}
+    </TooltipProvider>
   );
 }
