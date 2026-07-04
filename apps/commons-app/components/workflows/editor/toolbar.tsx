@@ -3,7 +3,7 @@
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { useWorkflowStore } from "@/lib/workflows/workflow-store";
-import { Undo2, Redo2, Save, Loader2, CheckCircle2, ArrowLeft } from "lucide-react";
+import { Undo2, Redo2, Save, Loader2, ArrowLeft } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { StudioEntitySwitcher } from "@/components/studio/studio-entity-switcher";
 
@@ -58,30 +58,6 @@ export function EditorToolbar({ currentId, currentName, workflows }: EditorToolb
         items={workflows}
       />
 
-      {/* Save status — compact, detail on hover */}
-      <span
-        className="flex items-center gap-1 whitespace-nowrap px-1.5 text-[11px] text-muted-foreground"
-        title={
-          isSaving
-            ? "Saving…"
-            : lastSaved
-              ? `Saved ${formatDistanceToNow(lastSaved, { addSuffix: true })}`
-              : undefined
-        }
-      >
-        {isSaving ? (
-          <>
-            <Loader2 className="h-3.5 w-3.5 animate-spin" />
-            <span>Saving…</span>
-          </>
-        ) : lastSaved ? (
-          <>
-            <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500" />
-            <span>{formatDistanceToNow(lastSaved)} ago</span>
-          </>
-        ) : null}
-      </span>
-
       <div className="mx-0.5 h-5 w-px bg-border" />
 
       <Button
@@ -111,9 +87,17 @@ export function EditorToolbar({ currentId, currentName, workflows }: EditorToolb
         onClick={handleSave}
         disabled={isSaving}
         className="h-9 gap-1.5 rounded-xl"
-        title="Save (⌘S)"
+        title={
+          lastSaved
+            ? `Saved ${formatDistanceToNow(lastSaved, { addSuffix: true })} (⌘S)`
+            : "Save (⌘S)"
+        }
       >
-        <Save className="h-3.5 w-3.5" />
+        {isSaving ? (
+          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+        ) : (
+          <Save className="h-3.5 w-3.5" />
+        )}
         Save
       </Button>
     </div>
