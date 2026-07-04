@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useMemo, DragEvent } from "react";
+import { useCallback, DragEvent } from "react";
 import ReactFlow, {
   Background,
   Controls,
@@ -25,9 +25,8 @@ import {
   extractTypedParameters,
   extractOutputParameters,
 } from "@/lib/workflows/type-mapping";
-import { InputNode } from "./nodes/input-node";
-import { OutputNode } from "./nodes/output-node";
 import { StepNode } from "./nodes/step-node";
+import { getNodeTheme } from "./nodes/node-theme";
 import { ColoredEdge } from "./edges/colored-edge";
 import { useToast } from "@/hooks/use-toast";
 import type { WorkflowNodeType } from "@/types/workflow";
@@ -40,8 +39,8 @@ const nodeTypes = {
   transform: StepNode,
   loop: StepNode,
   human_approval: StepNode,
-  input: InputNode,
-  output: OutputNode,
+  input: StepNode,
+  output: StepNode,
 };
 
 const edgeTypes = {
@@ -284,30 +283,7 @@ export function WorkflowCanvas() {
         <Background gap={15} size={1} />
         <Controls />
         <MiniMap
-          nodeColor={(node) => {
-            switch (node.type) {
-              case "input":
-                return "#10b981";
-              case "output":
-                return "#8b5cf6";
-              case "agent_processor":
-                return "#0891b2";
-              case "workflow":
-                return "#4f46e5";
-              case "condition":
-                return "#d97706";
-              case "transform":
-                return "#c026d3";
-              case "loop":
-                return "#e11d48";
-              case "human_approval":
-                return "#059669";
-              case "tool":
-                return "#3b82f6";
-              default:
-                return "#6b7280";
-            }
-          }}
+          nodeColor={(node) => getNodeTheme(node.type).dot}
           pannable
           zoomable
         />

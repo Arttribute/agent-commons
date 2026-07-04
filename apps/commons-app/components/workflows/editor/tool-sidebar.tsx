@@ -1,26 +1,16 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import type { DragEvent, ReactNode } from "react";
-import {
-  ArrowDownToLine,
-  ArrowUpFromLine,
-  Bot,
-  CheckSquare,
-  GitBranch,
-  Loader2,
-  Repeat2,
-  Replace,
-  Search,
-  Workflow,
-  Wrench,
-} from "lucide-react";
+import type { DragEvent } from "react";
+import { Loader2, Search } from "lucide-react";
 import type { ToolCatalogItem, WorkflowPaletteKind } from "@/lib/tools/catalog";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
+import { getNodeTheme } from "./nodes/node-theme";
+import { getBrandIcon, type BrandIcon } from "./nodes/brand-icons";
 
 interface ToolSidebarProps {
   userId: string;
@@ -31,8 +21,10 @@ interface PaletteNode {
   label: string;
   description?: string;
   badge?: string;
-  icon: ReactNode;
-  accentClass: string;
+  /** Node-theme key that supplies the icon + accent chip */
+  nodeType: WorkflowPaletteKind;
+  /** Recognizable service mark, when the tool maps to one */
+  brand?: BrandIcon;
   dragData: {
     type: WorkflowPaletteKind;
     nodeType?: WorkflowPaletteKind;
@@ -48,6 +40,9 @@ interface PaletteNode {
 }
 
 function DragItem({ node }: { node: PaletteNode }) {
+  const theme = getNodeTheme(node.nodeType);
+  const Icon = theme.icon;
+
   const onDragStart = (event: DragEvent) => {
     event.dataTransfer.setData("application/reactflow", JSON.stringify(node.dragData));
     event.dataTransfer.effectAllowed = "move";
@@ -59,8 +54,21 @@ function DragItem({ node }: { node: PaletteNode }) {
       onDragStart={onDragStart}
       className="group flex cursor-grab select-none items-start gap-2.5 rounded-lg border border-border bg-background p-2.5 transition-colors hover:border-foreground/25 hover:bg-muted/35 active:cursor-grabbing"
     >
-      <div className={cn("mt-0.5 shrink-0 rounded-md p-1.5", node.accentClass)}>
-        {node.icon}
+      <div
+        className={cn(
+          "mt-0.5 shrink-0 rounded-md p-1.5",
+          node.brand ? "border border-border bg-background" : theme.chip
+        )}
+      >
+        {node.brand ? (
+          <node.brand.icon
+            size={14}
+            color={node.brand.monochrome ? "currentColor" : node.brand.hex}
+            className={node.brand.monochrome ? "text-foreground" : undefined}
+          />
+        ) : (
+          <Icon className="h-3.5 w-3.5" />
+        )}
       </div>
       <div className="min-w-0 flex-1">
         <p className="truncate text-xs font-medium text-foreground">{node.label}</p>
@@ -84,24 +92,21 @@ const flowNodes: PaletteNode[] = [
     id: "flow:input",
     label: "Input",
     description: "Workflow entry point",
-    icon: <ArrowDownToLine className="h-3.5 w-3.5 text-emerald-600" />,
-    accentClass: "bg-emerald-50",
+    nodeType: "input",
     dragData: { type: "input", label: "Input" },
   },
   {
     id: "flow:output",
     label: "Output",
     description: "Workflow exit point",
-    icon: <ArrowUpFromLine className="h-3.5 w-3.5 text-violet-600" />,
-    accentClass: "bg-violet-50",
+    nodeType: "output",
     dragData: { type: "output", label: "Output" },
   },
   {
     id: "flow:condition",
     label: "Condition",
     description: "Branch on a boolean expression",
-    icon: <GitBranch className="h-3.5 w-3.5 text-amber-700" />,
-    accentClass: "bg-amber-50",
+    nodeType: "condition",
     dragData: {
       type: "condition",
       label: "Condition",
@@ -112,8 +117,7 @@ const flowNodes: PaletteNode[] = [
     id: "flow:transform",
     label: "Transform",
     description: "Map fields between steps",
-    icon: <Replace className="h-3.5 w-3.5 text-fuchsia-700" />,
-    accentClass: "bg-fuchsia-50",
+    nodeType: "transform",
     dragData: {
       type: "transform",
       label: "Transform",
@@ -124,8 +128,7 @@ const flowNodes: PaletteNode[] = [
     id: "flow:loop",
     label: "Loop",
     description: "Iterate over an array",
-    icon: <Repeat2 className="h-3.5 w-3.5 text-rose-700" />,
-    accentClass: "bg-rose-50",
+    nodeType: "loop",
     dragData: {
       type: "loop",
       label: "Loop",
@@ -136,8 +139,7 @@ const flowNodes: PaletteNode[] = [
     id: "flow:approval",
     label: "Human Approval",
     description: "Pause until a person approves",
-    icon: <CheckSquare className="h-3.5 w-3.5 text-emerald-700" />,
-    accentClass: "bg-emerald-50",
+    nodeType: "human_approval",
     dragData: {
       type: "human_approval",
       label: "Human Approval",
@@ -155,8 +157,7 @@ function catalogToPaletteNode(item: ToolCatalogItem): PaletteNode | null {
       label: item.displayName,
       description: item.description,
       badge: "agent",
-      icon: <Bot className="h-3.5 w-3.5 text-cyan-700" />,
-      accentClass: "bg-cyan-50",
+      nodeType: "agent_processor",
       dragData: {
         type: "agent_processor",
         label: item.displayName,
@@ -173,8 +174,7 @@ function catalogToPaletteNode(item: ToolCatalogItem): PaletteNode | null {
       label: item.displayName,
       description: item.description,
       badge: "workflow",
-      icon: <Workflow className="h-3.5 w-3.5 text-indigo-700" />,
-      accentClass: "bg-indigo-50",
+      nodeType: "workflow",
       dragData: {
         type: "workflow",
         label: item.displayName,
@@ -190,8 +190,8 @@ function catalogToPaletteNode(item: ToolCatalogItem): PaletteNode | null {
     label: item.displayName,
     description: item.description,
     badge: item.category === "custom" ? "custom" : item.category === "system" ? "system" : item.categoryLabel,
-    icon: <Wrench className="h-3.5 w-3.5 text-blue-600" />,
-    accentClass: item.category === "custom" ? "bg-orange-50 [&_svg]:text-orange-600" : "bg-blue-50",
+    nodeType: "tool",
+    brand: getBrandIcon(item.workflowNode.toolName, item.displayName) ?? undefined,
     dragData: {
       type: "tool",
       label: item.displayName,

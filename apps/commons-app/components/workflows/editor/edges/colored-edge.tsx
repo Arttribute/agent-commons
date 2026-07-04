@@ -40,7 +40,8 @@ export const ColoredEdge = memo(
           markerEnd={markerEnd}
           style={{
             stroke: color,
-            strokeWidth: 2,
+            strokeWidth: 1.75,
+            opacity: 0.85,
           }}
         />
         {dataType !== "any" && (
@@ -53,13 +54,11 @@ export const ColoredEdge = memo(
               }}
               className="nodrag nopan"
             >
-              <div
-                className="px-2 py-0.5 rounded text-xs font-medium bg-white border shadow-sm"
-                style={{
-                  borderColor: color,
-                  color: color,
-                }}
-              >
+              <div className="flex items-center gap-1 rounded-full border border-border/70 bg-background/95 px-2 py-0.5 text-[10px] font-medium text-muted-foreground shadow-sm backdrop-blur-sm">
+                <span
+                  className="h-1.5 w-1.5 rounded-full"
+                  style={{ backgroundColor: color }}
+                />
                 {dataType}
               </div>
             </div>

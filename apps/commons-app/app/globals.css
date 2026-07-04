@@ -8,8 +8,14 @@ body {
   overflow: hidden;
 }
 
-body {
-  font-family: Arial, Helvetica, sans-serif;
+/* Agent Commons brand accents — pastel highlights used across the app */
+:root {
+  --brand-yellow: #fde68a;
+  --brand-pink: #f9a8d4;
+  --brand-mint: #86efac;
+  --brand-cyan: #67e8f9;
+  --brand-blue: #93c5fd;
+  --brand-lilac: #c4b5fd;
 }
 
 @layer base {
@@ -38,7 +44,7 @@ body {
     --chart-3: 197 37% 24%;
     --chart-4: 43 74% 66%;
     --chart-5: 27 87% 67%;
-    --radius: 0.5rem;
+    --radius: 0.625rem;
   }
   .dark {
     --background: 0 0% 3.9%;
@@ -74,5 +80,46 @@ body {
   }
   body {
     @apply bg-background text-foreground;
+  }
+}
+
+@layer utilities {
+  /* Slide-deck style highlight pill behind a word or heading.
+     Always dark text on a pastel wash so it reads the same in both themes. */
+  .hl {
+    color: #18181b;
+    border-radius: 0.4em;
+    padding: 0.08em 0.38em;
+    -webkit-box-decoration-break: clone;
+    box-decoration-break: clone;
+  }
+  .hl-yellow {
+    background-color: var(--brand-yellow);
+  }
+  .hl-pink {
+    background-color: var(--brand-pink);
+  }
+  .hl-mint {
+    background-color: var(--brand-mint);
+  }
+  .hl-cyan {
+    background-color: var(--brand-cyan);
+  }
+  .hl-blue {
+    background-color: var(--brand-blue);
+  }
+  .hl-lilac {
+    background-color: var(--brand-lilac);
+  }
+
+  /* Logo gradient — for thin accent bars and rings, use sparingly */
+  .brand-gradient {
+    background-image: linear-gradient(
+      100deg,
+      var(--brand-yellow),
+      var(--brand-pink),
+      var(--brand-mint),
+      var(--brand-cyan)
+    );
   }
 }

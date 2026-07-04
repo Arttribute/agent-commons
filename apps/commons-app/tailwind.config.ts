@@ -40,6 +40,14 @@ export default {
   				DEFAULT: 'hsl(var(--destructive))',
   				foreground: 'hsl(var(--destructive-foreground))'
   			},
+  			brand: {
+  				yellow: 'var(--brand-yellow)',
+  				pink: 'var(--brand-pink)',
+  				mint: 'var(--brand-mint)',
+  				cyan: 'var(--brand-cyan)',
+  				blue: 'var(--brand-blue)',
+  				lilac: 'var(--brand-lilac)'
+  			},
   			border: 'hsl(var(--border))',
   			input: 'hsl(var(--input))',
   			ring: 'hsl(var(--ring))',

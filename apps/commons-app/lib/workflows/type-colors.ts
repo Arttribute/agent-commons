@@ -72,8 +72,9 @@ export function validateTypeCompatibility(
 export function getHandleStyle(type: string): React.CSSProperties {
   return {
     background: getEdgeColor(type),
-    width: 10,
-    height: 10,
-    border: "2px solid white",
+    width: 11,
+    height: 11,
+    border: "2px solid hsl(var(--background))",
+    boxShadow: "0 0 0 1px rgb(0 0 0 / 0.08)",
   };
 }
