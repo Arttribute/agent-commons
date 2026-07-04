@@ -518,6 +518,7 @@ export class ComputerService {
     const instruction = [
       'Use the CommonOS pod terminal for this computer.',
       'Run exactly this shell command and return stdout, stderr, and exit code.',
+      'If this command starts a dev server or another long-running process, keep it running and return the process id plus recent logs instead of waiting forever.',
       'Do not run unrelated commands unless needed to report a precise failure.',
       `Working directory: ${cwd}`,
       `Timeout seconds: ${timeoutSeconds}`,

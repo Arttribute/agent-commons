@@ -1541,7 +1541,8 @@ export class AgentService implements OnModuleInit {
                   ? ''
                   : [
                       'For requests that involve creating/running software, localhost apps, terminal commands, browser inspection, generated files, screenshots, or workspace artifacts, you must perform the work with the computer tools instead of giving local setup instructions.',
-                      'For a Next.js/localhost task, use runComputerCommand to create/edit/run the app, then use openComputerBrowser or another verification command to confirm it is working before responding.',
+                      'For a Next.js/localhost task, use runComputerCommand for finite setup/edit/install/build commands, start the dev server with runComputerCommand, then use openComputerBrowser or another verification command to confirm it is working before responding.',
+                      'Do not wait for long-running dev servers to exit. Once server startup logs or a localhost health check confirm it is running, continue with browser verification.',
                     ].join('\n'),
               ].filter(Boolean).join('\n')
             : '';
