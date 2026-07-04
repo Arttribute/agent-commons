@@ -136,10 +136,19 @@ export function TimeGrid({
                 ))}
 
                 {isToday(day) && (
-                  <div
-                    className="absolute inset-x-0 z-20 h-px bg-red-500"
-                    style={{ top: (minutesSinceMidnight(new Date()) / (24 * 60)) * TOTAL_HEIGHT }}
-                  />
+                  <>
+                    <div
+                      className="pointer-events-none absolute inset-x-0 top-0 z-0 bg-muted/10"
+                      style={{ height: (minutesSinceMidnight(new Date()) / (24 * 60)) * TOTAL_HEIGHT }}
+                    />
+                    <div
+                      className="absolute inset-x-0 z-20 h-px bg-red-500"
+                      style={{ top: (minutesSinceMidnight(new Date()) / (24 * 60)) * TOTAL_HEIGHT }}
+                    />
+                  </>
+                )}
+                {day.getTime() < startOfDay(new Date()).getTime() && (
+                  <div className="pointer-events-none absolute inset-0 z-0 cursor-not-allowed bg-muted/10" />
                 )}
 
                 {positioned.map((event) => {

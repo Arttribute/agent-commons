@@ -25,6 +25,15 @@ export interface TaskExecutionResult {
   duration: number;
 }
 
+/** Grace window so "schedule for now" requests aren't rejected by request latency/clock skew. */
+const PAST_SCHEDULE_TOLERANCE_MS = 60_000;
+
+function assertNotInPast(date: Date) {
+  if (date.getTime() < Date.now() - PAST_SCHEDULE_TOLERANCE_MS) {
+    throw new BadRequestException('scheduledFor cannot be in the past');
+  }
+}
+
 /**
  * Handles task execution with support for:
  * - Dependency resolution
@@ -88,6 +97,7 @@ export class TaskExecutionService {
     const scheduledForDate = params.scheduledFor
       ? new Date(params.scheduledFor)
       : undefined;
+    if (scheduledForDate) assertNotInPast(scheduledForDate);
 
     let nextRunAt: Date | undefined;
     if (params.cronExpression && params.isRecurring) {
@@ -170,6 +180,7 @@ export class TaskExecutionService {
     let scheduledFor: Date | undefined;
     if (params.scheduledFor !== undefined) {
       scheduledFor = new Date(params.scheduledFor);
+      assertNotInPast(scheduledFor);
 
       if (task.status === 'running' || task.status === 'started') {
         throw new ConflictException('Task is currently executing and cannot be rescheduled');

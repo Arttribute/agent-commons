@@ -116,6 +116,19 @@ describe('TaskExecutionService', () => {
       expect(call.triggeredBy).toBe('cron');
     });
 
+    it('rejects a scheduledFor in the past', async () => {
+      await expect(
+        service.createTask({ ...base, scheduledFor: new Date(Date.now() - 10 * 60_000) }),
+      ).rejects.toThrow(BadRequestException);
+      expect(scheduler.scheduleRun).not.toHaveBeenCalled();
+    });
+
+    it('accepts a scheduledFor within the past-tolerance grace window', async () => {
+      await expect(
+        service.createTask({ ...base, scheduledFor: new Date(Date.now() - 5_000) }),
+      ).resolves.toBeDefined();
+    });
+
     it('rejects if a dependency task does not exist', async () => {
       db.query.task.findFirst = jest.fn().mockResolvedValue(null);
       await expect(
@@ -229,6 +242,14 @@ describe('TaskExecutionService', () => {
       const setArgs = (db.update as jest.Mock).mock.results[0].value.set.mock.calls[0][0];
       expect(setArgs).toEqual(expect.objectContaining({ nextRunAt: newTime }));
       expect(setArgs.scheduledFor).toBeUndefined();
+    });
+
+    it('rejects a scheduledFor in the past', async () => {
+      db.query.task.findFirst = jest.fn().mockResolvedValue(pendingOneTime);
+      await expect(
+        service.rescheduleTask('task-1', { scheduledFor: new Date(Date.now() - 10 * 60_000) }),
+      ).rejects.toThrow(BadRequestException);
+      expect(db.update).not.toHaveBeenCalled();
     });
 
     it('throws ConflictException when task is running', async () => {

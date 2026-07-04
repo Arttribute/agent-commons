@@ -68,6 +68,10 @@ export function TaskCalendarView({
     setAnchorDate((d) => (view === "month" ? addMonths(d, 1) : view === "week" ? addDays(d, 7) : addDays(d, 1)));
 
   const handleReschedule = async (taskId: string, newStart: Date) => {
+    if (newStart.getTime() < Date.now()) {
+      toast({ title: "Can't schedule a task in the past", variant: "destructive" });
+      return;
+    }
     const result = await rescheduleTask(taskId, { scheduledFor: newStart });
     if (!result) {
       toast({
@@ -76,6 +80,14 @@ export function TaskCalendarView({
         variant: "destructive",
       });
     }
+  };
+
+  const handleSlotClick = (date: Date) => {
+    if (date.getTime() < Date.now()) {
+      toast({ title: "Can't schedule a task in the past", variant: "destructive" });
+      return;
+    }
+    onCreateAt(date);
   };
 
   const handleResize = async (taskId: string, newDurationMs: number) => {
@@ -112,7 +124,7 @@ export function TaskCalendarView({
           <MonthView
             anchorDate={anchorDate}
             events={events}
-            onSlotClick={onCreateAt}
+            onSlotClick={handleSlotClick}
             onEventClick={setSelectedTaskId}
             onReschedule={handleReschedule}
           />
@@ -121,7 +133,7 @@ export function TaskCalendarView({
           <WeekView
             anchorDate={anchorDate}
             events={events}
-            onSlotClick={onCreateAt}
+            onSlotClick={handleSlotClick}
             onEventClick={setSelectedTaskId}
             onReschedule={handleReschedule}
             onResize={handleResize}
@@ -131,7 +143,7 @@ export function TaskCalendarView({
           <DayView
             anchorDate={anchorDate}
             events={events}
-            onSlotClick={onCreateAt}
+            onSlotClick={handleSlotClick}
             onEventClick={setSelectedTaskId}
             onReschedule={handleReschedule}
             onResize={handleResize}

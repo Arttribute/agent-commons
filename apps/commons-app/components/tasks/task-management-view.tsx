@@ -256,7 +256,7 @@ export function TaskManagementView({
   const router = useRouter();
   const [showCreateDialog, setShowCreateDialog] = useState(false);
   const [createPrefillDate, setCreatePrefillDate] = useState<string | undefined>(undefined);
-  const [statusFilter, setStatusFilter] = useState<StatusFilter>("active");
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [selectedAgent, setSelectedAgent] = useState("all");
   const [priorityFilter, setPriorityFilter] = useState<PriorityFilter>("all");
   const [viewMode, setViewMode] = useState<ViewMode>("list");
@@ -331,13 +331,13 @@ export function TaskManagementView({
   }, [filteredTasks, groupBy, agentMap, showEmptyColumns]);
 
   const activeFilterCount = [
-    statusFilter !== "active",
+    statusFilter !== "all",
     !hideAgentFilter && selectedAgent !== "all",
     priorityFilter !== "all",
   ].filter(Boolean).length;
 
   const clearFilters = () => {
-    setStatusFilter("active");
+    setStatusFilter("all");
     setSelectedAgent("all");
     setPriorityFilter("all");
   };

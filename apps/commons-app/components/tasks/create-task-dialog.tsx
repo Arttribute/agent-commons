@@ -37,6 +37,11 @@ interface CreateTaskDialogProps {
   onTaskCreated?: () => void;
 }
 
+function toDatetimeLocal(date: Date) {
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
+
 const EMPTY_FORM = (preSelectedAgentId?: string, initialScheduledFor?: string) => ({
   title: "",
   description: "",
@@ -88,6 +93,12 @@ export function CreateTaskDialog({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    if (!formData.isRecurring && formData.scheduledFor && new Date(formData.scheduledFor).getTime() < Date.now()) {
+      alert("Schedule time must be in the future.");
+      return;
+    }
+
     setLoading(true);
 
     try {
@@ -428,6 +439,7 @@ export function CreateTaskDialog({
                   <Input
                     id="scheduledFor"
                     type="datetime-local"
+                    min={toDatetimeLocal(new Date())}
                     value={formData.scheduledFor}
                     onChange={(e) =>
                       setFormData({ ...formData, scheduledFor: e.target.value })

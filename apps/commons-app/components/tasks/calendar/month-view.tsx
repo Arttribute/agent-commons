@@ -19,6 +19,7 @@ import {
   isToday,
   setHours,
   setMinutes,
+  startOfDay,
   startOfMonth,
   startOfWeek,
 } from "date-fns";
@@ -133,14 +134,16 @@ function DayCell({
   const [showMore, setShowMore] = useState(false);
   const visible = events.slice(0, MAX_VISIBLE_CHIPS);
   const overflow = events.length - visible.length;
+  const isPastDay = !isToday(day) && day.getTime() < startOfDay(new Date()).getTime();
 
   return (
     <div
       className={cn(
         "flex h-28 min-h-28 flex-col gap-0.5 overflow-hidden border-b border-r border-border/50 p-1",
         !isCurrentMonth && "bg-muted/20",
+        isPastDay && "cursor-not-allowed bg-muted/10",
       )}
-      onClick={() => onSlotClick(setMinutes(setHours(day, DEFAULT_SLOT_HOUR), 0))}
+      onClick={() => !isPastDay && onSlotClick(setMinutes(setHours(day, DEFAULT_SLOT_HOUR), 0))}
     >
       <div className="flex items-center justify-between">
         <span
