@@ -6,7 +6,6 @@ import type { LucideIcon } from "lucide-react";
 import { Bot, Hammer, Search, Shapes, Workflow, Wrench, X } from "lucide-react";
 import type { ToolCatalogItem, WorkflowPaletteKind } from "@/lib/tools/catalog";
 import { Input } from "@/components/ui/input";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
@@ -351,7 +350,7 @@ export function ToolSidebar({ userId }: ToolSidebarProps) {
             />
           </div>
 
-          <ScrollArea className="min-h-0 flex-1">
+          <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
             <div className="space-y-0.5 p-0.5">
               {loading && group.key !== "flow" ? (
                 [...Array(3)].map((_, index) => (
@@ -365,7 +364,7 @@ export function ToolSidebar({ userId }: ToolSidebarProps) {
                 visibleNodes.map((node) => <DragItem key={node.id} node={node} />)
               )}
             </div>
-          </ScrollArea>
+          </div>
 
           <p className="px-1 pb-0.5 pt-1.5 text-[10px] text-muted-foreground/70">
             Drag a node onto the canvas

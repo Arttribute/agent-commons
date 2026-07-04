@@ -1,8 +1,10 @@
 "use client";
 
-import { useCallback, DragEvent } from "react";
+import { useCallback, useState, DragEvent } from "react";
+import { Map } from "lucide-react";
 import ReactFlow, {
   Background,
+  ControlButton,
   Controls,
   MiniMap,
   applyNodeChanges,
@@ -102,6 +104,7 @@ export function WorkflowCanvas() {
   const { nodes, edges, setNodes, setEdges, addNode, updateNode } =
     useWorkflowStore();
   const { toast } = useToast();
+  const [showMiniMap, setShowMiniMap] = useState(false);
 
   const onNodesChange = useCallback(
     (changes: NodeChange[]) => {
@@ -284,16 +287,25 @@ export function WorkflowCanvas() {
         }}
       >
         <Background gap={15} size={1} />
-        <Controls />
-        <MiniMap
-          nodeColor={(node) => getNodeTheme(node.type).dot}
-          // Sits beside the zoom controls so the floating console never
-          // covers it.
-          position="bottom-left"
-          style={{ marginLeft: 56 }}
-          pannable
-          zoomable
-        />
+        <Controls>
+          <ControlButton
+            onClick={() => setShowMiniMap((current) => !current)}
+            title={showMiniMap ? "Hide minimap" : "Show minimap"}
+            aria-pressed={showMiniMap}
+          >
+            <Map />
+          </ControlButton>
+        </Controls>
+        {/* Hidden by default — toggled from the controls stack */}
+        {showMiniMap && (
+          <MiniMap
+            nodeColor={(node) => getNodeTheme(node.type).dot}
+            position="bottom-right"
+            style={{ width: 160, height: 110 }}
+            pannable
+            zoomable
+          />
+        )}
       </ReactFlow>
     </div>
   );

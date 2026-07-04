@@ -260,7 +260,7 @@ export function TestPanel({ workflowId }: TestPanelProps) {
       {open && (
       <div className="floating-panel pointer-events-auto flex min-h-0 w-full flex-1 flex-col overflow-hidden">
       <Tabs defaultValue="run" className="flex min-h-0 flex-1 flex-col">
-        <div className="border-b border-border/70 p-1.5">
+        <div className="border-b border-border p-1.5">
           <TabsList className="grid h-8 w-full grid-cols-3">
             <TabsTrigger value="run" className="text-xs">Run</TabsTrigger>
             <TabsTrigger value="logs" className="text-xs">Logs</TabsTrigger>
