@@ -188,7 +188,7 @@ interface ChatMessage {
     tool_call_id?: string;
     name?: string;
 }
-type StreamEventType = 'token' | 'tool' | 'toolStart' | 'toolEnd' | 'agent_step' | 'final' | 'completed' | 'failed' | 'cancelled' | 'status' | 'keepalive' | 'cli_tool_request' | 'error';
+type StreamEventType = 'token' | 'tool' | 'toolProgress' | 'toolStart' | 'toolEnd' | 'agent_step' | 'final' | 'completed' | 'failed' | 'cancelled' | 'status' | 'keepalive' | 'cli_tool_request' | 'error';
 interface StreamEvent {
     type: StreamEventType;
     phase?: 'commentary' | 'final_answer' | string;
@@ -199,6 +199,7 @@ interface StreamEvent {
     name?: string;
     toolName?: string;
     tool?: string;
+    toolCallId?: string;
     input?: string;
     args?: any;
     output?: any;

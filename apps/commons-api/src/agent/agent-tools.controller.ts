@@ -65,6 +65,8 @@ export class AgentToolsController {
         privateKey?: string;
         sessionId?: string;
         spaceId?: string;
+        runId?: string;
+        toolCallId?: string;
       };
     },
   ) {

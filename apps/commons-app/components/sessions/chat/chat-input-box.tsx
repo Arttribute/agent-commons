@@ -42,6 +42,7 @@ export default function ChatInputBox({
   const accumulatedRef = useRef("");
   const activitySequenceRef = useRef(0);
   const runningToolActivitiesRef = useRef<Map<string, string[]>>(new Map());
+  const progressActivityIdsRef = useRef<Set<string>>(new Set());
   const fileInputRef = useRef<HTMLInputElement>(null);
   const previewUrlsRef = useRef<Set<string>>(new Set());
   const [attachments, setAttachments] = useState<UploadedAttachment[]>([]);
@@ -107,6 +108,7 @@ export default function ChatInputBox({
       const queue = runningToolActivitiesRef.current.get(toolName) ?? [];
       const activityId = queue.shift() ?? `tool:${toolName}:${++activitySequenceRef.current}`;
       runningToolActivitiesRef.current.set(toolName, queue);
+      const progressActivityId = progressActivityIdForEvent(event);
       if (isComputerTool(toolName)) {
         notifyComputerActivity({
           tab: computerTabForTool(toolName),
@@ -124,6 +126,33 @@ export default function ChatInputBox({
         timestamp: event.timestamp ?? new Date().toISOString(),
         payload: event,
       });
+      if (isComputerTool(toolName) && progressActivityIdsRef.current.has(progressActivityId)) {
+        progressActivityIdsRef.current.delete(progressActivityId);
+        upsertStreamingActivity({
+          id: progressActivityId,
+          kind: "computer",
+          stage: event.stage ?? "tool",
+          toolName,
+          title: describeToolTitle(toolName, event.status === "error" ? "failed" : "completed"),
+          detail: summarizeToolResult(event.output ?? event.result ?? event.payload),
+          status: event.status === "error" ? "failed" : "completed",
+          timestamp: event.timestamp ?? new Date().toISOString(),
+          payload: event,
+        });
+      }
+    },
+    onToolProgress: (event) => {
+      const toolName = event.toolName ?? event.tool ?? event.name ?? event.payload?.toolName ?? "tool";
+      const activity = toolProgressEventToActivity(event);
+      progressActivityIdsRef.current.add(activity.id);
+      if (isComputerTool(toolName) || activity.kind === "computer") {
+        notifyComputerActivity({
+          tab: computerTabForTool(toolName),
+          computerId: event.payload?.computerId ?? extractComputerId(event.payload),
+          input: event.payload?.summary ?? event.detail,
+        });
+      }
+      upsertStreamingActivity(activity);
     },
     onToolEnd: (output, event) => {
       const toolName = event.toolName ?? "tool";
@@ -591,6 +620,40 @@ function statusEventToActivity(event: StreamEvent) {
     timestamp: event.timestamp ?? new Date().toISOString(),
     payload: event.payload,
   } as const;
+}
+
+function toolProgressEventToActivity(event: StreamEvent) {
+  const toolName = event.toolName ?? event.tool ?? event.name ?? event.payload?.toolName ?? "tool";
+  const stage = event.stage ?? (isComputerTool(toolName) ? "computer" : "tool");
+  const status = normalizeActivityStatus(event.status);
+  const titleStatus =
+    status === "failed" ? "failed" : status === "completed" ? "completed" : "running";
+  return {
+    id: progressActivityIdForEvent(event),
+    kind: isComputerTool(toolName) || stage.includes("computer") ? "computer" : "tool",
+    stage,
+    toolName,
+    title: event.message ?? describeToolTitle(toolName, titleStatus),
+    detail:
+      event.detail ??
+      event.payload?.responsePreview ??
+      event.payload?.summary ??
+      event.payload?.commonOsStatus,
+    status,
+    timestamp: event.timestamp ?? new Date().toISOString(),
+    payload: event.payload,
+  } as const;
+}
+
+function progressActivityIdForEvent(event: StreamEvent) {
+  const key =
+    event.payload?.toolCallId ??
+    event.toolCallId ??
+    event.payload?.progressId ??
+    event.payload?.commonOsMessageId ??
+    event.payload?.computerId ??
+    `${event.toolName ?? event.tool ?? event.name ?? "tool"}:${event.stage ?? "progress"}`;
+  return `tool-progress:${key}`;
 }
 
 function normalizeActivityStatus(status: unknown): "queued" | "running" | "completed" | "failed" {

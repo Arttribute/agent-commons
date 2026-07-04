@@ -7,6 +7,7 @@ interface UseAgentStreamOptions {
   onToken?: (token: string) => void;
   onStatus?: (event: StreamEvent) => void;
   onTool?: (event: StreamEvent) => void;
+  onToolProgress?: (event: StreamEvent) => void;
   onToolStart?: (toolName: string, input: string) => void;
   onToolEnd?: (output: any, event: StreamEvent) => void;
   onCliToolRequest?: (event: StreamEvent) => void;
@@ -87,6 +88,9 @@ function handleEvent(event: StreamEvent, options: UseAgentStreamOptions) {
       break;
     case "tool":
       options.onTool?.(event);
+      break;
+    case "toolProgress":
+      options.onToolProgress?.(event);
       break;
     case "toolStart":
       options.onToolStart?.(event.toolName ?? "", event.input ?? "");

@@ -8,6 +8,10 @@ import { and, desc, eq, inArray, isNull, or, sql } from 'drizzle-orm';
 import { v4 as uuidv4 } from 'uuid';
 import * as schema from '#/models/schema';
 import { DatabaseService } from '~/modules/database/database.service';
+import {
+  agentRunProgress,
+  type AgentRunProgressEvent,
+} from '~/agent/run-progress';
 
 type ComputerLifecycle = 'persistent' | 'ephemeral';
 type ComputerStatus =
@@ -52,6 +56,11 @@ type CommonOsAgent = {
   browser?: ComputerInstance['browser'] | null;
   runtime?: Record<string, any> | null;
   startedAt?: string | null;
+};
+
+type CommonOsInstructionProgress = {
+  status?: string;
+  elapsedMs: number;
 };
 
 @Injectable()
@@ -168,6 +177,8 @@ export class ComputerService {
     actorId?: string;
     actorType?: 'user' | 'agent' | 'service';
     reason?: string;
+    runId?: string;
+    toolCallId?: string;
   }) {
     const agent = await this.assertAgent(args.agentId);
     const config = await this.getConfig(args.agentId);
@@ -188,6 +199,18 @@ export class ComputerService {
 
     const lifecycle =
       args.lifecycle ?? (config.defaultMode as ComputerLifecycle) ?? 'ephemeral';
+    this.emitComputerToolProgress(args.runId, {
+      toolName: 'startAgentComputer',
+      stage: 'computer',
+      status: 'running',
+      message: 'Preparing an agent computer',
+      detail: `${lifecycle} runtime`,
+      payload: {
+        lifecycle,
+        sessionId,
+        toolCallId: args.toolCallId,
+      },
+    });
     await this.enforceLimits(args.agentId, lifecycle, config);
 
     if (lifecycle === 'persistent') {
@@ -210,6 +233,20 @@ export class ComputerService {
           actorType: args.actorType,
           summary: 'Persistent computer reused',
           payload: { reason: args.reason },
+        });
+        this.emitComputerToolProgress(args.runId, {
+          toolName: 'startAgentComputer',
+          stage: 'computer',
+          status: 'completed',
+          message: 'Reusing an active agent computer',
+          detail: reusable.name ?? reusable.computerId,
+          payload: {
+            progressId: reusable.computerId,
+            computerId: reusable.computerId,
+            status: reusable.status,
+            lifecycle: reusable.lifecycle,
+            toolCallId: args.toolCallId,
+          },
         });
         return this.refreshInstance(reusable.computerId, { silent: true });
       }
@@ -266,6 +303,39 @@ export class ComputerService {
       payload: { lifecycle, name },
     });
 
+    this.emitComputerToolProgress(args.runId, {
+      toolName: 'startAgentComputer',
+      stage: 'computer',
+      status: 'running',
+      message: 'Requesting agent computer runtime',
+      detail: name,
+      payload: {
+        progressId: computerId,
+        computerId,
+        lifecycle,
+        name,
+        toolCallId: args.toolCallId,
+      },
+    });
+    const stopProvisioningHeartbeat = this.startRunProgressHeartbeat(
+      args.runId,
+      () => ({
+        type: 'toolProgress',
+        toolName: 'startAgentComputer',
+        stage: 'computer',
+        status: 'running',
+        message: 'Booting agent computer',
+        detail: `${lifecycle} runtime - ${this.formatElapsed(Date.now() - now.getTime())}`,
+        payload: {
+          progressId: computerId,
+          computerId,
+          lifecycle,
+          name,
+          toolCallId: args.toolCallId,
+        },
+      }),
+    );
+
     try {
       const provisioned = await this.deployWithCommonOs({
         agent,
@@ -274,8 +344,25 @@ export class ComputerService {
         lifecycle,
         name,
       });
+      stopProvisioningHeartbeat();
+      this.emitComputerToolProgress(args.runId, {
+        toolName: 'startAgentComputer',
+        stage: 'computer',
+        status: 'completed',
+        message: 'Agent computer is ready',
+        detail: provisioned.name ?? provisioned.computerId,
+        payload: {
+          progressId: provisioned.computerId,
+          computerId: provisioned.computerId,
+          commonOsAgentId: provisioned.commonOsAgentId,
+          status: provisioned.status,
+          lifecycle: provisioned.lifecycle,
+          toolCallId: args.toolCallId,
+        },
+      });
       return provisioned;
     } catch (err: any) {
+      stopProvisioningHeartbeat();
       const message = err instanceof Error ? err.message : String(err);
       const [failed] = await this.db
         .update(schema.agentComputerInstance)
@@ -295,6 +382,20 @@ export class ComputerService {
         actorType: args.actorType,
         summary: 'Computer provisioning failed',
         payload: { error: message },
+      });
+      this.emitComputerToolProgress(args.runId, {
+        toolName: 'startAgentComputer',
+        stage: 'computer',
+        status: 'failed',
+        message: 'Agent computer could not be started',
+        detail: message,
+        payload: {
+          progressId: computerId,
+          computerId,
+          lifecycle,
+          error: message,
+          toolCallId: args.toolCallId,
+        },
       });
       return failed;
     }
@@ -434,6 +535,8 @@ export class ComputerService {
     waitMs?: number;
     actorId?: string;
     actorType?: 'user' | 'agent' | 'service';
+    runId?: string;
+    toolCallId?: string;
   }) {
     const computer = await this.getInstance(args.agentId, args.computerId);
     this.assertComputerSessionCompatible(computer, args.sessionId);
@@ -443,18 +546,78 @@ export class ComputerService {
     const agentCommonsSessionId = args.sessionId ?? computer.sessionId ?? undefined;
     const commonOsSessionId =
       agentCommonsSessionId ?? (computer.metadata as any)?.commonOsSessionId;
+    const progressId = uuidv4();
+    const toolName = this.toolNameForComputerEvent(args.eventType);
+    const stage = this.stageForComputerEvent(args.eventType);
 
-    const sent = await this.commonOsComputerRequest<any>(
-      'POST',
-      `/computers/${computer.commonOsAgentId}/instructions`,
-      this.commonOsFleetId()
-        ? `/fleets/${this.commonOsFleetId()}/agents/${computer.commonOsAgentId}/human-message`
-        : undefined,
-      {
-        content: args.instruction,
-        ...(commonOsSessionId ? { sessionId: commonOsSessionId } : {}),
+    this.emitComputerToolProgress(args.runId, {
+      toolName,
+      stage,
+      status: 'running',
+      message: this.runningMessageForComputerEvent(args.eventType),
+      detail: args.summary,
+      payload: {
+        progressId,
+        computerId: computer.computerId,
+        eventType: args.eventType,
+        summary: args.summary,
+        toolCallId: args.toolCallId,
       },
+    });
+    const submitStartedAt = Date.now();
+    const stopSubmitHeartbeat = this.startRunProgressHeartbeat(
+      args.runId,
+      () => ({
+        type: 'toolProgress',
+        toolName,
+        stage,
+        status: 'running',
+        message: this.submittingMessageForComputerEvent(args.eventType),
+        detail: `${args.summary} - ${this.formatElapsed(Date.now() - submitStartedAt)}`,
+        payload: {
+          progressId,
+          computerId: computer.computerId,
+          eventType: args.eventType,
+          summary: args.summary,
+          toolCallId: args.toolCallId,
+        },
+      }),
     );
+
+    let sent: any;
+    try {
+      sent = await this.commonOsComputerRequest<any>(
+        'POST',
+        `/computers/${computer.commonOsAgentId}/instructions`,
+        this.commonOsFleetId()
+          ? `/fleets/${this.commonOsFleetId()}/agents/${computer.commonOsAgentId}/human-message`
+          : undefined,
+        {
+          content: args.instruction,
+          ...(commonOsSessionId ? { sessionId: commonOsSessionId } : {}),
+        },
+      );
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.emitComputerToolProgress(args.runId, {
+        toolName,
+        stage,
+        status: 'failed',
+        message: this.failedMessageForComputerEvent(args.eventType),
+        detail: message,
+        payload: {
+          progressId,
+          computerId: computer.computerId,
+          eventType: args.eventType,
+          summary: args.summary,
+          error: message,
+          toolCallId: args.toolCallId,
+        },
+      });
+      throw error;
+    } finally {
+      stopSubmitHeartbeat();
+    }
 
     await this.recordEvent({
       computerId: computer.computerId,
@@ -470,11 +633,46 @@ export class ComputerService {
         commonOsSessionId: sent?.sessionId ?? commonOsSessionId ?? null,
       },
     });
+    this.emitComputerToolProgress(args.runId, {
+      toolName,
+      stage,
+      status: 'running',
+      message: this.acceptedMessageForComputerEvent(args.eventType),
+      detail: args.summary,
+      payload: {
+        progressId,
+        computerId: computer.computerId,
+        commonOsMessageId: sent?._id,
+        commonOsSessionId: sent?.sessionId ?? commonOsSessionId ?? null,
+        eventType: args.eventType,
+        summary: args.summary,
+        toolCallId: args.toolCallId,
+      },
+    });
 
     const response = await this.pollCommonOsMessage(
       computer.commonOsAgentId,
       sent?._id,
       args.waitMs ?? 180_000,
+      (progress) => {
+        this.emitComputerToolProgress(args.runId, {
+          toolName,
+          stage,
+          status: 'running',
+          message: this.waitingMessageForComputerEvent(args.eventType),
+          detail: `${args.summary} - ${progress.status ?? 'pending'} - ${this.formatElapsed(progress.elapsedMs)}`,
+          payload: {
+            progressId,
+            computerId: computer.computerId,
+            commonOsMessageId: sent?._id,
+            commonOsSessionId: sent?.sessionId ?? commonOsSessionId ?? null,
+            commonOsStatus: progress.status,
+            eventType: args.eventType,
+            summary: args.summary,
+            toolCallId: args.toolCallId,
+          },
+        });
+      },
     );
     await this.touchComputer(computer.computerId);
     await this.refreshInstance(computer.computerId, { silent: true }).catch(
@@ -492,6 +690,28 @@ export class ComputerService {
       payload: response,
     });
 
+    const failed = response.status === 'failed' || response.status === 'timeout';
+    this.emitComputerToolProgress(args.runId, {
+      toolName,
+      stage,
+      status: failed ? 'failed' : 'completed',
+      message: failed
+        ? this.failedMessageForComputerEvent(args.eventType)
+        : this.completedMessageForComputerEvent(args.eventType),
+      detail: this.summarizeComputerResponse(response) ?? args.summary,
+      payload: {
+        progressId,
+        computerId: computer.computerId,
+        commonOsMessageId: sent?._id,
+        status: response.status,
+        responsePreview: this.summarizeComputerResponse(response),
+        error: response.error ?? null,
+        eventType: args.eventType,
+        summary: args.summary,
+        toolCallId: args.toolCallId,
+      },
+    });
+
     return response;
   }
 
@@ -504,6 +724,8 @@ export class ComputerService {
     timeoutSeconds?: number;
     actorId?: string;
     actorType?: 'user' | 'agent' | 'service';
+    runId?: string;
+    toolCallId?: string;
   }) {
     const command = args.command.trim();
     if (!command) throw new BadRequestException('command is required');
@@ -544,6 +766,8 @@ export class ComputerService {
       waitMs: (timeoutSeconds + 120) * 1000,
       actorId: args.actorId,
       actorType: args.actorType,
+      runId: args.runId,
+      toolCallId: args.toolCallId,
     });
 
     await this.db
@@ -569,6 +793,8 @@ export class ComputerService {
     url: string;
     actorId?: string;
     actorType?: 'user' | 'agent' | 'service';
+    runId?: string;
+    toolCallId?: string;
   }) {
     const url = args.url.trim();
     if (!/^https?:\/\//i.test(url) && !/^http:\/\/localhost[:/]/i.test(url)) {
@@ -594,6 +820,8 @@ export class ComputerService {
       waitMs: 180_000,
       actorId: args.actorId,
       actorType: args.actorType,
+      runId: args.runId,
+      toolCallId: args.toolCallId,
     });
     const computer = await this.refreshInstance(computerForTool.computerId, {
       silent: true,
@@ -641,6 +869,114 @@ export class ComputerService {
       'Active computers:',
       lines,
     ].join('\n');
+  }
+
+  private emitComputerToolProgress(
+    runId: string | undefined,
+    event: Omit<AgentRunProgressEvent, 'type'> & {
+      type?: AgentRunProgressEvent['type'];
+    },
+  ) {
+    agentRunProgress.emit(runId, {
+      ...event,
+      type: event.type ?? 'toolProgress',
+    });
+  }
+
+  private startRunProgressHeartbeat(
+    runId: string | undefined,
+    buildEvent: () => AgentRunProgressEvent,
+    intervalMs = 5_000,
+  ) {
+    if (!runId) return () => undefined;
+    const interval = setInterval(() => {
+      agentRunProgress.emit(runId, buildEvent());
+    }, intervalMs);
+    return () => clearInterval(interval);
+  }
+
+  private toolNameForComputerEvent(eventType: string) {
+    if (eventType === 'terminal.command') return 'runComputerCommand';
+    if (eventType === 'browser.open') return 'openComputerBrowser';
+    return 'startAgentComputer';
+  }
+
+  private stageForComputerEvent(eventType: string) {
+    if (eventType === 'terminal.command') return 'computer_terminal';
+    if (eventType === 'browser.open') return 'computer_browser';
+    return 'computer';
+  }
+
+  private runningMessageForComputerEvent(eventType: string) {
+    if (eventType === 'terminal.command') return 'Running terminal command';
+    if (eventType === 'browser.open') return 'Opening browser';
+    return 'Using agent computer';
+  }
+
+  private submittingMessageForComputerEvent(eventType: string) {
+    if (eventType === 'terminal.command') {
+      return 'Sending terminal command to agent computer';
+    }
+    if (eventType === 'browser.open') {
+      return 'Sending browser action to agent computer';
+    }
+    return 'Sending instruction to agent computer';
+  }
+
+  private acceptedMessageForComputerEvent(eventType: string) {
+    if (eventType === 'terminal.command') {
+      return 'Terminal command accepted';
+    }
+    if (eventType === 'browser.open') {
+      return 'Browser action accepted';
+    }
+    return 'Computer instruction accepted';
+  }
+
+  private waitingMessageForComputerEvent(eventType: string) {
+    if (eventType === 'terminal.command') {
+      return 'Terminal command still running';
+    }
+    if (eventType === 'browser.open') {
+      return 'Browser action still running';
+    }
+    return 'Computer instruction still running';
+  }
+
+  private completedMessageForComputerEvent(eventType: string) {
+    if (eventType === 'terminal.command') {
+      return 'Terminal command finished';
+    }
+    if (eventType === 'browser.open') {
+      return 'Browser updated';
+    }
+    return 'Computer instruction completed';
+  }
+
+  private failedMessageForComputerEvent(eventType: string) {
+    if (eventType === 'terminal.command') {
+      return 'Terminal command failed';
+    }
+    if (eventType === 'browser.open') {
+      return 'Browser action failed';
+    }
+    return 'Computer instruction failed';
+  }
+
+  private summarizeComputerResponse(response: any) {
+    const text = String(response?.error ?? response?.response ?? '').trim();
+    if (!text) return undefined;
+    return text.replace(/\s+/g, ' ').slice(0, 220);
+  }
+
+  private formatElapsed(ms: number) {
+    const seconds = Math.max(1, Math.round(ms / 1000));
+    if (seconds < 60) return `${seconds}s elapsed`;
+    const minutes = Math.floor(seconds / 60);
+    const remaining = seconds % 60;
+    return remaining
+      ? `${minutes}m ${remaining}s elapsed`
+      : `${minutes}m elapsed`;
   }
 
   private async deployWithCommonOs(args: {
@@ -719,11 +1055,14 @@ export class ComputerService {
     commonOsAgentId: string,
     messageId: string | undefined,
     waitMs: number,
+    onProgress?: (progress: CommonOsInstructionProgress) => void,
   ) {
     if (!messageId) {
       return { status: 'submitted', response: null, error: null };
     }
     const started = Date.now();
+    let lastProgressAt = 0;
+    let lastStatus = '';
     while (Date.now() - started < Math.min(waitMs, 720_000)) {
       const list = await this.commonOsComputerRequest<any[]>(
         'GET',
@@ -733,6 +1072,19 @@ export class ComputerService {
           : undefined,
       );
       const message = list.find((item) => item._id === messageId);
+      const status = String(message?.status ?? 'pending');
+      const now = Date.now();
+      if (
+        onProgress &&
+        (status !== lastStatus || now - lastProgressAt >= 5_000)
+      ) {
+        lastStatus = status;
+        lastProgressAt = now;
+        onProgress({
+          status,
+          elapsedMs: now - started,
+        });
+      }
       if (message?.response || message?.status === 'failed') {
         return {
           status: message.status,

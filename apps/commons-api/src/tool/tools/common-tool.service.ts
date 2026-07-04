@@ -27,6 +27,13 @@ import { ComputerService } from '~/computer';
 
 const graphqlRequest = import('graphql-request');
 
+type ToolExecutionMetadata = {
+  agentId?: string;
+  sessionId?: string;
+  runId?: string;
+  toolCallId?: string;
+};
+
 export interface CommonTool {
   createGoal(props: CreateGoalDto): Promise<any>;
   /** Text-to-speech for an agent inside a space */
@@ -1264,7 +1271,7 @@ export class CommonToolService implements CommonTool {
     lifecycle?: 'persistent' | 'ephemeral';
     name?: string;
     reason?: string;
-  }, metadata?: { agentId?: string; sessionId?: string }) {
+  }, metadata?: ToolExecutionMetadata) {
     const agentId = this.requireToolAgentId(props.agentId, metadata);
     return this.computers.startComputer({
       ...props,
@@ -1272,6 +1279,8 @@ export class CommonToolService implements CommonTool {
       sessionId: props.sessionId ?? metadata?.sessionId,
       actorId: agentId,
       actorType: 'agent',
+      runId: metadata?.runId,
+      toolCallId: metadata?.toolCallId,
     });
   }
 
@@ -1279,7 +1288,7 @@ export class CommonToolService implements CommonTool {
     agentId?: string;
     sessionId?: string;
     includeTerminated?: boolean;
-  }, metadata?: { agentId?: string; sessionId?: string }) {
+  }, metadata?: ToolExecutionMetadata) {
     const agentId = this.requireToolAgentId(props.agentId, metadata);
     return this.computers.listInstances({
       ...props,
@@ -1295,7 +1304,7 @@ export class CommonToolService implements CommonTool {
     command: string;
     cwd?: string;
     timeoutSeconds?: number;
-  }, metadata?: { agentId?: string; sessionId?: string }) {
+  }, metadata?: ToolExecutionMetadata) {
     const agentId = this.requireToolAgentId(props.agentId, metadata);
     return this.computers.runCommand({
       ...props,
@@ -1303,6 +1312,8 @@ export class CommonToolService implements CommonTool {
       sessionId: props.sessionId ?? metadata?.sessionId,
       actorId: agentId,
       actorType: 'agent',
+      runId: metadata?.runId,
+      toolCallId: metadata?.toolCallId,
     });
   }
 
@@ -1311,7 +1322,7 @@ export class CommonToolService implements CommonTool {
     computerId?: string;
     sessionId?: string;
     path: string;
-  }, metadata?: { agentId?: string; sessionId?: string }) {
+  }, metadata?: ToolExecutionMetadata) {
     const agentId = this.requireToolAgentId(props.agentId, metadata);
     return this.computers.readFile({
       ...props,
@@ -1325,7 +1336,7 @@ export class CommonToolService implements CommonTool {
     computerId?: string;
     sessionId?: string;
     url: string;
-  }, metadata?: { agentId?: string; sessionId?: string }) {
+  }, metadata?: ToolExecutionMetadata) {
     const agentId = this.requireToolAgentId(props.agentId, metadata);
     return this.computers.openBrowser({
       ...props,
@@ -1333,6 +1344,8 @@ export class CommonToolService implements CommonTool {
       sessionId: props.sessionId ?? metadata?.sessionId,
       actorId: agentId,
       actorType: 'agent',
+      runId: metadata?.runId,
+      toolCallId: metadata?.toolCallId,
     });
   }
 

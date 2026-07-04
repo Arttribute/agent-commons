@@ -225,6 +225,7 @@ export interface ChatMessage {
 export type StreamEventType =
   | 'token'
   | 'tool'
+  | 'toolProgress'
   | 'toolStart'
   | 'toolEnd'
   | 'agent_step'
@@ -247,6 +248,7 @@ export interface StreamEvent {
   name?: string;
   toolName?: string;
   tool?: string;
+  toolCallId?: string;
   input?: string;
   args?: any;
   output?: any;

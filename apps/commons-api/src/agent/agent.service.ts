@@ -60,6 +60,7 @@ import { WalletService } from '~/wallet/wallet.service';
 import { ActivityService } from '~/activity/activity.service';
 import { FilesService } from '~/files';
 import { ComputerService } from '~/computer';
+import { agentRunProgress } from './run-progress';
 
 const got = import('got');
 
@@ -561,6 +562,7 @@ export class AgentService implements OnModuleInit {
     return new Observable<any>((subscriber) => {
       // Keep SSE connection alive through proxies
       const keepalive = setInterval(() => subscriber.next({ type: 'keepalive' }), 15_000);
+      let unsubscribeProgress: () => void = () => undefined;
 
       const run = async () => {
         const tStart = performance.now();
@@ -603,6 +605,14 @@ export class AgentService implements OnModuleInit {
             timestamp: new Date().toISOString(),
           });
         };
+        unsubscribeProgress = agentRunProgress.subscribe(traceId, (event) => {
+          if (!stream) return;
+          subscriber.next({
+            ...event,
+            sessionId: event.sessionId ?? currentSessionId,
+            timestamp: event.timestamp ?? new Date().toISOString(),
+          });
+        });
 
         emitStatus('request', 'running', 'Starting agent run');
 
@@ -616,6 +626,7 @@ export class AgentService implements OnModuleInit {
             },
           });
           clearInterval(keepalive);
+          unsubscribeProgress();
           subscriber.complete();
           return;
         }
@@ -739,6 +750,7 @@ export class AgentService implements OnModuleInit {
                     actorId: initiator,
                     actorType: 'user',
                     reason: 'Selected from the chat composer',
+                    runId: traceId,
                   });
                   const failed = ['failed', 'error', 'unavailable'].includes(
                     String(started?.status),
@@ -1065,6 +1077,8 @@ export class AgentService implements OnModuleInit {
                             agentId,
                             sessionId: currentSessionId,
                             spaceId,
+                            runId: traceId,
+                            toolCallId: config.toolCall?.id,
                           },
                         },
                         headers: { 'Content-Type': 'application/json' },
@@ -1097,6 +1111,7 @@ export class AgentService implements OnModuleInit {
                   duration: performance.now() - t0,
                   args,
                   result: data,
+                  toolCallId: config.toolCall?.id,
                   timestamp: new Date().toISOString(),
                 };
 
@@ -1939,6 +1954,7 @@ export class AgentService implements OnModuleInit {
           }
 
           clearInterval(keepalive);
+          unsubscribeProgress();
           subscriber.complete();
 
           // ── Memory consolidation (fire-and-forget after stream closes) ──
@@ -1968,6 +1984,7 @@ export class AgentService implements OnModuleInit {
           }
         } catch (err) {
           clearInterval(keepalive);
+          unsubscribeProgress();
           const message = err instanceof Error ? err.message : String(err);
           if (stream) {
             subscriber.next({
@@ -1985,7 +2002,10 @@ export class AgentService implements OnModuleInit {
       };
 
       run();
-      return () => clearInterval(keepalive);
+      return () => {
+        clearInterval(keepalive);
+        unsubscribeProgress();
+      };
     });
   }
 
