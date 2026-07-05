@@ -1,7 +1,8 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Loader2, Sparkles, Search, Plus, Trash2, Globe, Lock } from "lucide-react";
+import { Loader2, Sparkles, Search, Trash2, Globe, Lock } from "lucide-react";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
 import { useSkills } from "@/hooks/use-skills";
 import { useRouter } from "next/navigation";
@@ -60,86 +61,60 @@ function SkillCard({
   onOpen: (id: string) => void;
   isOwner: boolean;
 }) {
-  const [expanded, setExpanded] = useState(false);
+  const VisibilityIcon = skill.isPublic ? Globe : Lock;
 
   return (
     <div
-      className="cursor-pointer rounded-lg border border-border/60 bg-card p-4 transition-colors hover:border-border hover:bg-muted/20"
+      className="group flex h-full cursor-pointer flex-col rounded-xl border border-border bg-background p-4 transition-all hover:-translate-y-0.5 hover:shadow-md"
       onClick={() => onOpen(skill.skillId)}
     >
-      <div className="flex items-start justify-between gap-2">
-        <div className="flex items-center gap-2 min-w-0">
-          {skill.icon ? (
-            <span className="text-xl leading-none shrink-0">{skill.icon}</span>
-          ) : (
-            <Sparkles className="h-4 w-4 text-muted-foreground shrink-0" />
+      <div className="flex items-center justify-between gap-2">
+        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-amber-100 text-lg dark:bg-amber-300/15">
+          {skill.icon || (
+            <Sparkles className="h-4 w-4 text-amber-900 dark:text-amber-200" strokeWidth={1.9} />
           )}
-          <div className="min-w-0">
-            <p className="text-sm font-medium truncate">{skill.name}</p>
-            <p className="text-xs text-muted-foreground font-mono">{skill.slug}</p>
-          </div>
-        </div>
-        <div className="flex items-center gap-1.5 shrink-0">
-          {skill.isPublic ? (
-            <Globe className="h-3 w-3 text-muted-foreground" />
-          ) : (
-            <Lock className="h-3 w-3 text-muted-foreground" />
-          )}
+        </span>
+        <div className="flex shrink-0 items-center gap-1">
+          <VisibilityIcon
+            className="h-3.5 w-3.5 text-muted-foreground/60"
+            aria-label={skill.isPublic ? "Public" : "Private"}
+          />
           {isOwner && (
             <Button
               variant="ghost"
               size="icon"
-              className="h-6 w-6"
+              className="h-7 w-7 opacity-0 transition-opacity focus-visible:opacity-100 group-hover:opacity-100"
               onClick={(event) => {
                 event.stopPropagation();
                 onDelete(skill.skillId);
               }}
+              aria-label="Delete skill"
             >
-              <Trash2 className="h-3 w-3" />
+              <Trash2 className="h-3.5 w-3.5" />
             </Button>
           )}
         </div>
       </div>
 
-      <p className="text-xs text-muted-foreground mt-2 line-clamp-2">{skill.description}</p>
+      <h3 className="mt-3 truncate text-sm font-semibold text-foreground">{skill.name}</h3>
+      <p className="mt-1 line-clamp-2 min-h-[2rem] text-xs leading-4 text-muted-foreground">
+        {skill.description}
+      </p>
 
-      {skill.tags.length > 0 && (
-        <div className="flex flex-wrap gap-1 mt-2">
-          {skill.tags.map((tag) => (
-            <Badge key={tag} variant="secondary" className="text-[10px] px-1.5 py-0">
+      <div className="mt-auto flex items-center justify-between gap-2 pt-3">
+        <div className="flex min-w-0 flex-wrap gap-1">
+          {skill.tags.slice(0, 3).map((tag) => (
+            <Badge key={tag} variant="secondary" className="h-4 px-1.5 text-[10px] font-normal">
               {tag}
             </Badge>
           ))}
+          {skill.tags.length > 3 && (
+            <Badge variant="outline" className="h-4 px-1.5 text-[10px] font-normal text-muted-foreground">
+              +{skill.tags.length - 3}
+            </Badge>
+          )}
         </div>
-      )}
-
-      {skill.tools.length > 0 && (
-        <p className="text-[11px] text-muted-foreground/70 mt-2">
-          Tools: {skill.tools.join(", ")}
-        </p>
-      )}
-
-      <button
-        className="text-[11px] text-primary mt-2 hover:underline"
-        onClick={(event) => {
-          event.stopPropagation();
-          setExpanded((v) => !v);
-        }}
-      >
-        {expanded ? "Hide instructions" : "View instructions"}
-      </button>
-
-      {expanded && (
-        <pre className="text-[11px] text-muted-foreground mt-2 whitespace-pre-wrap bg-muted/40 rounded p-2 max-h-48 overflow-y-auto font-mono">
-          {skill.instructions}
-        </pre>
-      )}
-
-      <div className="flex items-center justify-between mt-3 pt-2 border-t border-border/40">
-        <span className="text-[10px] text-muted-foreground/60">
-          v{skill.version} · {skill.source}
-        </span>
-        <span className="text-[10px] text-muted-foreground/60">
+        <span className="shrink-0 text-[11px] text-muted-foreground">
           {skill.usageCount} uses
         </span>
       </div>
@@ -239,37 +214,27 @@ export function SkillsMarketplaceView({ userAddress, onRegisterCreate }: SkillsM
 
   return (
     <div>
-      {/* Toolbar */}
-      <div className="flex items-center gap-3 mb-4">
-        <div className="flex border border-border/60 rounded-md overflow-hidden text-xs">
-          <button
-            className={`px-3 py-1.5 transition-colors ${tab === "platform" ? "bg-primary text-primary-foreground" : "hover:bg-muted"}`}
-            onClick={() => setTab("platform")}
-          >
-            Platform Skills
-          </button>
-          <button
-            className={`px-3 py-1.5 transition-colors ${tab === "mine" ? "bg-primary text-primary-foreground" : "hover:bg-muted"}`}
-            onClick={() => setTab("mine")}
-          >
-            My Skills
-          </button>
-        </div>
-
-        <div className="relative flex-1 max-w-xs">
-          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+      {/* Toolbar — creating a skill lives in the page header */}
+      <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="relative w-full max-w-xs">
+          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <Input
-            className="pl-8 h-8 text-xs"
+            className="h-9 pl-9"
             placeholder="Search skills…"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
           />
         </div>
-
-        <Button size="sm" className="h-8 gap-1.5" onClick={() => setShowCreate(true)}>
-          <Plus className="h-3.5 w-3.5" />
-          New Skill
-        </Button>
+        <Tabs value={tab} onValueChange={(value) => setTab(value as "platform" | "mine")}>
+          <TabsList className="h-9">
+            <TabsTrigger value="platform" className="text-xs">
+              Platform
+            </TabsTrigger>
+            <TabsTrigger value="mine" className="text-xs">
+              My skills
+            </TabsTrigger>
+          </TabsList>
+        </Tabs>
       </div>
 
       {/* Content */}

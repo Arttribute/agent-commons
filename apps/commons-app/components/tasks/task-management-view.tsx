@@ -3,19 +3,22 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
+  Bot,
   Calendar,
-  ChevronDown,
+  Check,
   Filter,
   LayoutGrid,
   List,
   Loader2,
+  Minus,
   MoreHorizontal,
   Play,
   Plus,
-  RefreshCw,
+  SignalHigh,
+  SignalLow,
+  SignalMedium,
   SlidersHorizontal,
   Trash2,
-  UserRound,
   X,
   XCircle,
 } from "lucide-react";
@@ -76,10 +79,68 @@ function relativeDate(value?: string | null) {
   return formatDistanceToNow(date, { addSuffix: true });
 }
 
+/** Compact Linear-style date ("Sep 2"); full detail lives in the title attr */
+function shortDate(value?: string | null) {
+  if (!value) return "—";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "—";
+  return format(date, "MMM d");
+}
+
 function StatusDot({ status }: { status: Task["status"] }) {
   const config = statusConfig[status] ?? statusConfig.pending;
   const Icon = config.icon;
-  return <Icon className={cn("h-4 w-4", config.className)} />;
+  return <Icon className={cn("h-4 w-4 shrink-0", config.className)} />;
+}
+
+const PRIORITY_OPTIONS = [
+  { key: "high", label: "High", icon: SignalHigh, className: "text-orange-500", value: 3 },
+  { key: "medium", label: "Medium", icon: SignalMedium, className: "text-amber-500", value: 2 },
+  { key: "low", label: "Low", icon: SignalLow, className: "text-sky-500", value: 1 },
+  { key: "none", label: "No priority", icon: Minus, className: "text-muted-foreground/60", value: 0 },
+] as const;
+
+/** Linear-style priority glyph; click to quick-edit */
+function PriorityControl({
+  priority,
+  onChange,
+}: {
+  priority?: number | null;
+  onChange: (priority: number) => void;
+}) {
+  const current =
+    PRIORITY_OPTIONS.find((option) => option.key === priorityFilterValue(priority)) ??
+    PRIORITY_OPTIONS[3];
+
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild onClick={(event) => event.stopPropagation()}>
+        <button
+          type="button"
+          className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md transition-colors hover:bg-muted"
+          title={`Priority: ${current.label}`}
+          aria-label="Change priority"
+        >
+          <current.icon className={cn("h-3.5 w-3.5", current.className)} />
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="start" className="w-40">
+        {PRIORITY_OPTIONS.map((option) => (
+          <DropdownMenuItem
+            key={option.key}
+            onClick={(event) => {
+              event.stopPropagation();
+              onChange(option.value);
+            }}
+          >
+            <option.icon className={cn("h-3.5 w-3.5", option.className)} />
+            {option.label}
+            {option.key === current.key && <Check className="ml-auto h-3.5 w-3.5" />}
+          </DropdownMenuItem>
+        ))}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
 }
 
 function TaskActions({
@@ -98,7 +159,11 @@ function TaskActions({
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild onClick={(event) => event.stopPropagation()}>
-        <Button variant="ghost" size="icon" className="h-7 w-7">
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-7 w-7 shrink-0 opacity-0 transition-opacity focus-visible:opacity-100 group-hover:opacity-100 data-[state=open]:opacity-100"
+        >
           {isActing ? (
             <Loader2 className="h-3.5 w-3.5 animate-spin" />
           ) : (
@@ -153,6 +218,7 @@ function TaskRow({
   onExecute,
   onCancel,
   onDelete,
+  onSetPriority,
 }: {
   task: Task;
   agentName: string;
@@ -161,25 +227,37 @@ function TaskRow({
   onExecute: (taskId: string) => void;
   onCancel: (taskId: string) => void;
   onDelete: (taskId: string) => void;
+  onSetPriority: (taskId: string, priority: number) => void;
 }) {
+  const date = taskDate(task);
   return (
-    <button
-      type="button"
-      className="grid min-h-11 w-full grid-cols-[26px_minmax(220px,1fr)_170px_120px_110px_34px] items-center gap-2 rounded-md px-3 text-left text-sm hover:bg-muted/60"
+    <div
+      role="button"
+      tabIndex={0}
+      className="group flex h-9 w-full cursor-pointer items-center gap-2 rounded-md px-2 text-sm transition-colors hover:bg-muted/60 focus-visible:bg-muted/60 focus-visible:outline-none"
       onClick={() => onOpen(task.taskId)}
+      onKeyDown={(event) => {
+        if (event.key === "Enter") onOpen(task.taskId);
+      }}
     >
+      <PriorityControl
+        priority={task.priority}
+        onChange={(priority) => onSetPriority(task.taskId, priority)}
+      />
       <StatusDot status={task.status} />
-      <span className="min-w-0">
-        <span className="block truncate font-medium">{task.title}</span>
-        {task.description && (
-          <span className="block truncate text-xs text-muted-foreground">
-            {task.description}
-          </span>
-        )}
+      <span className="min-w-0 flex-1 truncate font-medium" title={task.description || task.title}>
+        {task.title}
       </span>
-      <span className="truncate text-xs text-muted-foreground">{agentName}</span>
-      <span className="text-xs text-muted-foreground">{priorityLabel(task.priority)}</span>
-      <span className="text-xs text-muted-foreground">{relativeDate(taskDate(task))}</span>
+      <span className="hidden shrink-0 items-center gap-1 rounded-full border border-border/70 px-2 py-0.5 text-[11px] text-muted-foreground sm:flex">
+        <Bot className="h-3 w-3" />
+        <span className="max-w-[120px] truncate">{agentName}</span>
+      </span>
+      <span
+        className="w-14 shrink-0 text-right text-xs text-muted-foreground"
+        title={relativeDate(date)}
+      >
+        {shortDate(date)}
+      </span>
       <TaskActions
         task={task}
         isActing={isActing}
@@ -187,7 +265,7 @@ function TaskRow({
         onCancel={onCancel}
         onDelete={onDelete}
       />
-    </button>
+    </div>
   );
 }
 
@@ -199,6 +277,7 @@ function TaskBoardCard({
   onExecute,
   onCancel,
   onDelete,
+  onSetPriority,
 }: {
   task: Task;
   agentName: string;
@@ -207,17 +286,16 @@ function TaskBoardCard({
   onExecute: (taskId: string) => void;
   onCancel: (taskId: string) => void;
   onDelete: (taskId: string) => void;
+  onSetPriority: (taskId: string, priority: number) => void;
 }) {
+  const date = taskDate(task);
   return (
     <div
-      className="cursor-pointer rounded-lg border border-border bg-card p-3 shadow-sm transition-colors hover:bg-muted/30"
+      className="group cursor-pointer rounded-xl border border-border bg-background p-3 transition-all hover:shadow-sm"
       onClick={() => onOpen(task.taskId)}
     >
       <div className="flex items-start justify-between gap-2">
-        <div className="min-w-0">
-          <p className="truncate text-xs text-muted-foreground">{task.taskId.slice(0, 8)}</p>
-          <h3 className="mt-1 line-clamp-2 text-sm font-medium leading-5">{task.title}</h3>
-        </div>
+        <h3 className="line-clamp-2 text-sm font-medium leading-5">{task.title}</h3>
         <TaskActions
           task={task}
           isActing={isActing}
@@ -226,16 +304,22 @@ function TaskBoardCard({
           onDelete={onDelete}
         />
       </div>
-      <div className="mt-3 flex flex-wrap items-center gap-1.5">
-        <Badge variant="outline" className="h-6 gap-1 rounded-md text-xs">
-          <UserRound className="h-3 w-3" />
-          {agentName}
-        </Badge>
-        <Badge variant="secondary" className="h-6 rounded-md text-xs">
-          {priorityLabel(task.priority)}
-        </Badge>
+      <div className="mt-2.5 flex items-center gap-1.5">
+        <PriorityControl
+          priority={task.priority}
+          onChange={(priority) => onSetPriority(task.taskId, priority)}
+        />
+        <span className="flex min-w-0 items-center gap-1 rounded-full border border-border/70 px-2 py-0.5 text-[11px] text-muted-foreground">
+          <Bot className="h-3 w-3 shrink-0" />
+          <span className="truncate">{agentName}</span>
+        </span>
+        <span
+          className="ml-auto shrink-0 text-[11px] text-muted-foreground"
+          title={relativeDate(date)}
+        >
+          {shortDate(date)}
+        </span>
       </div>
-      <p className="mt-3 text-xs text-muted-foreground">{relativeDate(taskDate(task))}</p>
     </div>
   );
 }
@@ -372,6 +456,13 @@ export function TaskManagementView({
       setActionLoading(null);
     }
   }, [refresh]);
+
+  const handleSetPriority = useCallback(
+    async (taskId: string, priority: number) => {
+      await updateTask(taskId, { priority });
+    },
+    [updateTask]
+  );
 
   const openTask = (taskId: string) => router.push(`/studio/tasks/${taskId}`);
 
@@ -572,13 +663,14 @@ export function TaskManagementView({
               </DropdownMenuContent>
             </DropdownMenu>
 
-            <Button variant="ghost" size="icon" className="h-8 w-8" onClick={refresh}>
-              <RefreshCw className="h-4 w-4" />
-            </Button>
-            <Button size="sm" className="h-8 gap-1.5" onClick={() => setShowCreateDialog(true)}>
-              <Plus className="h-3.5 w-3.5" />
-              New
-            </Button>
+            {/* The studio page header owns task creation; only show a button
+                when no external trigger was registered (e.g. agent page). */}
+            {!onRegisterCreate && (
+              <Button size="sm" className="h-8 gap-1.5" onClick={() => setShowCreateDialog(true)}>
+                <Plus className="h-3.5 w-3.5" />
+                New task
+              </Button>
+            )}
           </div>
         </div>
       </div>
@@ -615,24 +707,15 @@ export function TaskManagementView({
             </p>
           </div>
         ) : viewMode === "list" ? (
-          <div className="min-w-[820px] space-y-3">
-            <div className="grid grid-cols-[26px_minmax(220px,1fr)_170px_120px_110px_34px] gap-2 px-3 text-[11px] font-medium uppercase text-muted-foreground">
-              <span />
-              <span>Task</span>
-              <span>Agent</span>
-              <span>Priority</span>
-              <span>Date</span>
-              <span />
-            </div>
+          <div className="mx-auto w-full max-w-4xl space-y-4">
             {groupedTasks.map(([group, items]) => {
               const label = groupBy === "status" ? statusConfig[group]?.label ?? group : group;
               return (
-                <section key={group} className="space-y-1">
-                  <div className="flex h-9 items-center gap-2 rounded-md bg-muted/45 px-3 text-sm font-medium">
+                <section key={group} className="space-y-0.5">
+                  <div className="flex h-8 items-center gap-2 rounded-md bg-muted/40 px-2.5 text-xs font-medium">
                     {groupBy === "status" && <StatusDot status={group as Task["status"]} />}
                     <span>{label}</span>
                     <span className="text-muted-foreground">{items.length}</span>
-                    <ChevronDown className="ml-auto h-4 w-4 text-muted-foreground" />
                   </div>
                   {items.map((task) => (
                     <TaskRow
@@ -644,6 +727,7 @@ export function TaskManagementView({
                       onExecute={handleExecute}
                       onCancel={handleCancel}
                       onDelete={handleDelete}
+                      onSetPriority={handleSetPriority}
                     />
                   ))}
                 </section>
@@ -676,6 +760,7 @@ export function TaskManagementView({
                         onExecute={handleExecute}
                         onCancel={handleCancel}
                         onDelete={handleDelete}
+                        onSetPriority={handleSetPriority}
                       />
                     ))}
                   </div>

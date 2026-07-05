@@ -7,12 +7,12 @@ import { statusConfig } from "../status-config";
 import type { CalendarEvent } from "./types";
 
 const BLOCK_CLASS: Record<string, string> = {
-  pending: "bg-slate-500/10 border-slate-500/30",
-  started: "bg-blue-500/10 border-blue-500/30",
-  running: "bg-amber-500/10 border-amber-500/30",
-  completed: "bg-emerald-500/10 border-emerald-500/30",
-  failed: "bg-red-500/10 border-red-500/30",
-  cancelled: "bg-muted border-border",
+  pending: "bg-slate-500/10 border-slate-500/30 border-l-slate-500",
+  started: "bg-blue-500/10 border-blue-500/30 border-l-blue-500",
+  running: "bg-amber-500/10 border-amber-500/30 border-l-amber-500",
+  completed: "bg-emerald-500/10 border-emerald-500/30 border-l-emerald-500",
+  failed: "bg-red-500/10 border-red-500/30 border-l-red-500",
+  cancelled: "bg-muted border-border border-l-muted-foreground/40",
 };
 
 export function EventBlock({
@@ -57,16 +57,17 @@ export function EventBlock({
         zIndex: move.isDragging ? 50 : 10,
       }}
       className={cn(
-        "overflow-hidden rounded-md border px-1.5 py-1 text-left text-[11px] leading-4",
+        "overflow-hidden rounded-md border border-l-2 px-1.5 py-1 text-left text-[11px] leading-4",
         BLOCK_CLASS[event.status] ?? BLOCK_CLASS.pending,
         event.isHistorical && "opacity-60",
         event.isDraggable ? "cursor-grab active:cursor-grabbing" : "cursor-pointer",
         move.isDragging && "shadow-md ring-1 ring-border",
       )}
+      title={`${event.title} · ${config.label}`}
     >
       <div className="flex items-center gap-1 truncate">
         {event.isRecurring && <Repeat className="h-2.5 w-2.5 shrink-0 text-muted-foreground" />}
-        <span className={cn("truncate font-medium", config.className)}>{event.title}</span>
+        <span className="truncate font-medium text-foreground">{event.title}</span>
       </div>
 
       {event.isResizable && (

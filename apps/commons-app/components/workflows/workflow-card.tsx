@@ -1,23 +1,88 @@
 "use client";
 
-import { Workflow } from "@/types/workflow";
-import { Card } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
+import { Workflow, ReactFlowNode } from "@/types/workflow";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Button } from "@/components/ui/button";
 import { MoreVertical, Edit, Copy, Trash2 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { formatDistanceToNow } from "date-fns";
+import { getBrandIcon } from "@/lib/brand-icons";
+import { getNodeTheme } from "@/components/workflows/editor/nodes/node-theme";
+import { cn } from "@/lib/utils";
+
+/** The list API returns full rows, including the canvas definition */
+type WorkflowListItem = Workflow & {
+  definition?: { nodes?: ReactFlowNode[] };
+};
 
 interface WorkflowCardProps {
-  workflow: Workflow;
+  workflow: WorkflowListItem;
   onDelete?: (workflowId: string) => void;
   onDuplicate?: (workflowId: string) => void;
+}
+
+/**
+ * Make-style visual summary: the workflow's steps as a stack of overlapping
+ * icon coins (brand marks for recognizable tools, themed tiles otherwise),
+ * with a "+N" coin for the rest.
+ */
+function NodeCoinStack({ nodes }: { nodes: ReactFlowNode[] }) {
+  const steps = nodes.filter((node) => node.type !== "input" && node.type !== "output");
+  const shown = steps.slice(0, 4);
+  const extra = steps.length - shown.length;
+
+  if (steps.length === 0) {
+    return (
+      <div className="flex h-9 items-center text-[11px] text-muted-foreground/70">
+        Empty canvas
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex items-center">
+      {shown.map((node, index) => {
+        const brand =
+          node.type === "tool" || node.data?.nodeType === "tool"
+            ? getBrandIcon(node.data?.toolName, node.data?.label)
+            : null;
+        const theme = getNodeTheme(node.data?.nodeType ?? node.type);
+        const Icon = theme.icon;
+        return (
+          <div
+            key={node.id ?? index}
+            title={node.data?.label}
+            className={cn(
+              "flex h-9 w-9 items-center justify-center rounded-full ring-2 ring-background",
+              index > 0 && "-ml-2",
+              brand ? "border border-border bg-white dark:bg-zinc-900" : theme.tile
+            )}
+          >
+            {brand ? (
+              <brand.icon
+                size={16}
+                color={brand.monochrome ? "currentColor" : brand.hex}
+                className={brand.monochrome ? "text-foreground" : undefined}
+              />
+            ) : (
+              <Icon className="h-4 w-4" strokeWidth={1.9} />
+            )}
+          </div>
+        );
+      })}
+      {extra > 0 && (
+        <div className="-ml-2 flex h-9 w-9 items-center justify-center rounded-full bg-muted text-[11px] font-medium text-muted-foreground ring-2 ring-background">
+          +{extra}
+        </div>
+      )}
+    </div>
+  );
 }
 
 export function WorkflowCard({
@@ -31,47 +96,33 @@ export function WorkflowCard({
     updatedAt && !Number.isNaN(updatedAt.getTime())
       ? formatDistanceToNow(updatedAt, { addSuffix: true })
       : "recently";
+  const nodes = workflow.definition?.nodes ?? [];
 
   const handleEdit = () => {
     router.push(`/studio/workflows/${workflow.workflowId}`);
   };
 
   return (
-    <Card
-      className="p-4 hover:shadow-md transition-shadow cursor-pointer"
+    <div
+      className="group flex h-full cursor-pointer flex-col rounded-xl border border-border bg-background p-4 transition-all hover:-translate-y-0.5 hover:shadow-md"
       onClick={handleEdit}
     >
-      <div className="flex items-start justify-between">
-        <div className="flex-1">
-          <div className="flex items-center gap-2 mb-2">
-            <h3 className="font-semibold text-lg">{workflow.name}</h3>
-            <Badge variant={workflow.isActive ? "default" : "secondary"}>
-              {workflow.isActive ? "Active" : "Inactive"}
-            </Badge>
-          </div>
-
-          {workflow.description && (
-            <p className="text-sm text-muted-foreground mb-3 line-clamp-2">
-              {workflow.description}
-            </p>
-          )}
-
-          <div className="flex items-center gap-4 text-xs text-muted-foreground">
-            <span>
-              Updated {updatedLabel}
-            </span>
-          </div>
-        </div>
-
+      <div className="flex items-center justify-between gap-2">
+        <NodeCoinStack nodes={nodes} />
         <DropdownMenu>
           <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
-            <Button variant="ghost" size="sm">
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-7 w-7 shrink-0 opacity-0 transition-opacity focus-visible:opacity-100 group-hover:opacity-100"
+              aria-label="Workflow actions"
+            >
               <MoreVertical className="h-4 w-4" />
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
             <DropdownMenuItem onClick={handleEdit}>
-              <Edit className="h-4 w-4 mr-2" />
+              <Edit className="h-4 w-4" />
               Edit
             </DropdownMenuItem>
             <DropdownMenuItem
@@ -80,22 +131,43 @@ export function WorkflowCard({
                 onDuplicate?.(workflow.workflowId);
               }}
             >
-              <Copy className="h-4 w-4 mr-2" />
+              <Copy className="h-4 w-4" />
               Duplicate
             </DropdownMenuItem>
+            <DropdownMenuSeparator />
             <DropdownMenuItem
               onClick={(e) => {
                 e.stopPropagation();
                 onDelete?.(workflow.workflowId);
               }}
-              className="text-destructive"
+              className="text-destructive focus:text-destructive"
             >
-              <Trash2 className="h-4 w-4 mr-2" />
+              <Trash2 className="h-4 w-4" />
               Delete
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
       </div>
-    </Card>
+
+      <h3 className="mt-3 truncate text-sm font-semibold text-foreground">
+        {workflow.name}
+      </h3>
+      <p className="mt-1 line-clamp-2 min-h-[2rem] text-xs leading-4 text-muted-foreground">
+        {workflow.description || "No description"}
+      </p>
+
+      <div className="mt-auto flex items-center justify-between gap-2 pt-3 text-[11px] text-muted-foreground">
+        <span className="flex items-center gap-1.5">
+          <span
+            className={cn(
+              "h-1.5 w-1.5 rounded-full",
+              workflow.isActive ? "bg-emerald-500" : "bg-muted-foreground/40"
+            )}
+          />
+          {workflow.isActive ? "Active" : "Paused"}
+        </span>
+        <span className="truncate">Updated {updatedLabel}</span>
+      </div>
+    </div>
   );
 }
