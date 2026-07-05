@@ -74,6 +74,8 @@ export interface ToolCatalogItem {
   documentationUrl?: string;
   authProviderKey?: string;
   oauthScopes?: string[];
+  /** Scopes actually granted on the live OAuth connection, when one exists */
+  grantedScopes?: string[];
   connectUrl?: string;
   mcpTemplate?: McpServerTemplate;
   tool?: Tool;
@@ -105,6 +107,18 @@ function hasConnection(
   keys: string[],
 ): boolean {
   return connections.some((connection) => keys.includes(connection.providerKey));
+}
+
+function grantedScopesFor(
+  connections: OAuthConnection[],
+  keys: string[],
+): string[] {
+  const scopes = new Set<string>();
+  for (const connection of connections) {
+    if (!keys.includes(connection.providerKey)) continue;
+    for (const scope of connection.scopes ?? []) scopes.add(scope);
+  }
+  return [...scopes];
 }
 
 function oauthStatus(
@@ -476,6 +490,7 @@ export function buildToolCatalog(params: {
       documentationUrl: item.docs,
       authProviderKey: googleProviderKey,
       oauthScopes: [...item.scopes],
+      grantedScopes: grantedScopesFor(connections, GOOGLE_PROVIDER_ALIASES),
       connectUrl,
     };
   });
@@ -507,6 +522,7 @@ export function buildToolCatalog(params: {
       documentationUrl: item.docs,
       authProviderKey: providerKey,
       oauthScopes: [...item.scopes],
+      grantedScopes: grantedScopesFor(connections, [...item.providerKeys]),
       connectUrl,
     };
   });

@@ -3,45 +3,16 @@
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
-  AlertCircle,
-  ArrowRight,
-  Bot,
-  Brain,
-  CalendarDays,
-  CheckCircle2,
-  ClipboardList,
-  Clock3,
-  CreditCard,
-  Database,
+  ChevronRight,
   ExternalLink,
-  FileText,
-  FolderOpen,
-  FolderTree,
-  Github,
-  Globe2,
   KeyRound,
-  ListChecks,
-  ListTodo,
   Loader2,
-  Mail,
-  MessageSquare,
-  MessagesSquare,
   MoreVertical,
-  Palette,
-  PanelTopOpen,
   Pencil,
   PlugZap,
-  Presentation,
-  RefreshCw,
   Search,
-  Settings2,
-  ShieldCheck,
-  Table2,
   Trash2,
   Users,
-  UsersRound,
-  Workflow,
-  Wrench,
 } from "lucide-react";
 import type { Tool } from "@/types/tool";
 import type { ToolCatalogItem } from "@/lib/tools/catalog";
@@ -49,13 +20,22 @@ import { EditToolDialog } from "@/components/tools/management/edit-tool-dialog";
 import { ManageKeysDialog } from "@/components/tools/management/manage-keys-dialog";
 import { ManagePermissionsDialog } from "@/components/tools/management/manage-permissions-dialog";
 import { McpServersView } from "@/components/mcp/mcp-servers-view";
+import { ToolIcon } from "@/components/tools/catalog/tool-icon";
+import { ScopePermissions } from "@/components/tools/catalog/scope-permissions";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import { useToast } from "@/hooks/use-toast";
 import {
   AlertDialog,
@@ -80,87 +60,39 @@ interface ToolsManagementViewProps {
   userAddress: string;
 }
 
-const categoryOrder = [
-  "google_workspace",
-  "oauth",
-  "mcp_api",
-  "system",
-  "custom",
-  "agents",
-  "workflows",
-] as const;
-
-const categoryCopy: Record<string, { title: string; description: string }> = {
-  google_workspace: {
-    title: "Google Workspace OAuth tools",
-    description: "Visible first because these are the everyday tools agents need most.",
-  },
-  oauth: {
-    title: "OAuth applications",
-    description: "Connected with user consent and scoped account access.",
-  },
-  mcp_api: {
-    title: "MCP/API integrations",
-    description: "Verified and commonly used integrations for external systems.",
-  },
-  system: {
-    title: "Platform tools",
-    description: "Platform-supported capabilities that can be added to agents and workflows.",
-  },
-  custom: {
-    title: "Custom tools",
-    description: "Private and shared tools created in this workspace.",
-  },
-  agents: {
-    title: "Agent processors",
-    description: "Use an agent as a reasoning or delegation step in a workflow.",
-  },
-  workflows: {
-    title: "Workflow invocations",
-    description: "Reusable workflows that can be called from larger automations.",
-  },
-};
-
-const iconMap: Record<string, React.ElementType> = {
-  AlertCircle,
-  Bot,
-  Brain,
-  CalendarDays,
-  ClipboardList,
-  Clock3,
-  CreditCard,
-  Database,
-  FileText,
-  FolderOpen,
-  FolderTree,
-  Github,
-  Globe2,
-  ListChecks,
-  ListTodo,
-  Mail,
-  MessageSquare,
-  MessagesSquare,
-  Palette,
-  PanelTopOpen,
-  PlugZap,
-  Presentation,
-  Search,
-  Table2,
-  UsersRound,
-  Workflow,
-  Wrench,
-};
-
-const categoryFilters = [
+/** One tab row. Apps = OAuth-connected services; agents/workflows have their own pages. */
+const FILTERS = [
   { value: "all", label: "All" },
-  { value: "google_workspace", label: "Google" },
-  { value: "oauth", label: "OAuth" },
-  { value: "mcp_api", label: "MCP/API" },
-  { value: "system", label: "Platform" },
+  { value: "apps", label: "Apps" },
+  { value: "mcp", label: "MCP" },
+  { value: "platform", label: "Platform" },
   { value: "custom", label: "Custom" },
-  { value: "agents", label: "Agents" },
-  { value: "workflows", label: "Workflows" },
 ] as const;
+
+type FilterValue = (typeof FILTERS)[number]["value"];
+
+function filterOf(item: ToolCatalogItem): FilterValue | null {
+  switch (item.category) {
+    case "google_workspace":
+    case "oauth":
+      return "apps";
+    case "mcp_api":
+      return "mcp";
+    case "system":
+      return "platform";
+    case "custom":
+      return "custom";
+    default:
+      return null; // agents & workflows live on their own pages
+  }
+}
+
+const sectionTitles: Record<Exclude<FilterValue, "all">, string> = {
+  apps: "Apps",
+  mcp: "MCP integrations",
+  platform: "Platform tools",
+  custom: "Custom tools",
+};
 
 function itemMatches(item: ToolCatalogItem, query: string) {
   const value = query.trim().toLowerCase();
@@ -177,127 +109,83 @@ function itemMatches(item: ToolCatalogItem, query: string) {
     .some((text) => String(text).toLowerCase().includes(value));
 }
 
-function statusClass(status: ToolCatalogItem["status"]) {
-  switch (status) {
-    case "connected":
-      return "border-emerald-200 bg-emerald-50 text-emerald-700";
-    case "available":
-      return "border-blue-200 bg-blue-50 text-blue-700";
-    case "needs_configuration":
-      return "border-amber-200 bg-amber-50 text-amber-700";
-    case "coming_soon":
-      return "border-border bg-muted text-muted-foreground";
-  }
-}
-
-function CatalogCard({
+function ToolRow({
   item,
-  onAction,
-  onOpen,
+  onSelect,
   onEdit,
   onDelete,
   onManageKeys,
   onManagePermissions,
-  actionLoading,
 }: {
   item: ToolCatalogItem;
-  onAction: (item: ToolCatalogItem) => void;
-  onOpen: (item: ToolCatalogItem) => void;
+  onSelect: (item: ToolCatalogItem) => void;
   onEdit: (tool: Tool) => void;
   onDelete: (tool: Tool) => void;
   onManageKeys: (tool: Tool) => void;
   onManagePermissions: (tool: Tool) => void;
-  actionLoading?: boolean;
 }) {
-  const Icon = iconMap[item.icon] ?? Wrench;
-  const customTool = item.category === "custom" && item.tool;
+  const customTool = item.category === "custom" ? item.tool : undefined;
 
   return (
-    <div className="group flex min-h-[174px] flex-col rounded-lg border border-border bg-background p-4 transition-colors hover:border-foreground/25">
-      <div className="flex items-start gap-3">
-        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md border border-border bg-muted/50">
-          <Icon className="h-5 w-5 text-foreground" />
-        </div>
-        <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-2">
-            <h3 className="truncate text-sm font-semibold">{item.displayName}</h3>
-            {item.verified && <ShieldCheck className="h-3.5 w-3.5 shrink-0 text-emerald-600" />}
-          </div>
-          <p className="mt-1 line-clamp-2 text-xs leading-5 text-muted-foreground">
-            {item.description}
-          </p>
-        </div>
-        {customTool && (
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0">
-                <MoreVertical className="h-4 w-4" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-44">
-              <DropdownMenuItem onClick={() => onOpen(item)}>
-                <ExternalLink className="h-4 w-4" />
-                Open
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => onEdit(customTool)}>
-                <Pencil className="h-4 w-4" />
-                Edit
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => onManageKeys(customTool)}>
-                <KeyRound className="h-4 w-4" />
-                Keys
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => onManagePermissions(customTool)}>
-                <Users className="h-4 w-4" />
-                Permissions
-              </DropdownMenuItem>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem
-                className="text-destructive focus:text-destructive"
-                onClick={() => onDelete(customTool)}
-              >
-                <Trash2 className="h-4 w-4" />
-                Delete
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-        )}
+    <div
+      role="button"
+      tabIndex={0}
+      onClick={() => onSelect(item)}
+      onKeyDown={(event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          onSelect(item);
+        }
+      }}
+      className="group flex cursor-pointer items-center gap-3 rounded-xl px-3 py-2.5 text-left transition-colors hover:bg-muted/60 focus-visible:bg-muted/60 focus-visible:outline-none"
+    >
+      <ToolIcon item={item} showConnected />
+      <div className="min-w-0 flex-1">
+        <p className="truncate text-sm font-medium text-foreground">
+          {item.displayName}
+        </p>
+        <p className="truncate text-xs text-muted-foreground">
+          {item.description}
+        </p>
       </div>
-
-      <div className="mt-3 flex flex-wrap gap-1.5">
-        <Badge variant="outline" className={cn("h-5 text-[10px]", statusClass(item.status))}>
-          {item.status === "connected" && <CheckCircle2 className="mr-1 h-3 w-3" />}
-          {item.statusLabel}
-        </Badge>
-        <Badge variant="secondary" className="h-5 text-[10px]">
-          {item.connectionMode}
-        </Badge>
-        {item.tags.slice(0, 2).map((tag) => (
-          <Badge key={tag} variant="outline" className="h-5 text-[10px] text-muted-foreground">
-            {tag}
-          </Badge>
-        ))}
-      </div>
-
-      <div className="mt-auto flex items-center justify-between gap-3 pt-4">
-        <button
-          className="inline-flex items-center gap-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
-          onClick={() => onOpen(item)}
-        >
-          View details
-          <ArrowRight className="h-3 w-3" />
-        </button>
-        <Button
-          size="sm"
-          variant={item.status === "connected" ? "outline" : "default"}
-          className="h-8"
-          onClick={() => onAction(item)}
-          disabled={actionLoading || item.status === "coming_soon"}
-        >
-          {actionLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
-          {item.actionLabel}
-        </Button>
-      </div>
+      {customTool && (
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-7 w-7 shrink-0 opacity-0 transition-opacity focus-visible:opacity-100 group-hover:opacity-100"
+              onClick={(event) => event.stopPropagation()}
+              aria-label="Tool actions"
+            >
+              <MoreVertical className="h-4 w-4" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="w-44">
+            <DropdownMenuItem onClick={() => onEdit(customTool)}>
+              <Pencil className="h-4 w-4" />
+              Edit
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => onManageKeys(customTool)}>
+              <KeyRound className="h-4 w-4" />
+              Keys
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => onManagePermissions(customTool)}>
+              <Users className="h-4 w-4" />
+              Permissions
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem
+              className="text-destructive focus:text-destructive"
+              onClick={() => onDelete(customTool)}
+            >
+              <Trash2 className="h-4 w-4" />
+              Delete
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      )}
+      <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground/40 transition-colors group-hover:text-muted-foreground" />
     </div>
   );
 }
@@ -446,68 +334,83 @@ function McpQuickConnectDialog({
   );
 }
 
-function DetailsDialog({
+function ToolDetailsDialog({
   item,
   open,
   onOpenChange,
+  onAction,
+  actionLoading,
 }: {
   item: ToolCatalogItem | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  onAction: (item: ToolCatalogItem) => void;
+  actionLoading?: boolean;
 }) {
   if (!item) return null;
-  const Icon = iconMap[item.icon] ?? Wrench;
+
+  const isOauth = item.connectionMode === "oauth";
+  const connected = item.status === "connected";
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-xl">
         <DialogHeader>
           <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-md border border-border bg-muted">
-              <Icon className="h-5 w-5" />
-            </div>
-            <div>
-              <DialogTitle>{item.displayName}</DialogTitle>
-              <DialogDescription>{item.categoryLabel}</DialogDescription>
+            <ToolIcon item={item} size="lg" showConnected />
+            <div className="min-w-0">
+              <DialogTitle className="truncate">{item.displayName}</DialogTitle>
+              <DialogDescription className="flex items-center gap-1.5">
+                {item.categoryLabel}
+                <span aria-hidden>·</span>
+                <span className={cn(connected && "text-emerald-600 dark:text-emerald-400")}>
+                  {item.statusLabel}
+                </span>
+              </DialogDescription>
             </div>
           </div>
         </DialogHeader>
-        <div className="space-y-4">
+        <div className="space-y-5">
           <p className="text-sm leading-6 text-muted-foreground">{item.description}</p>
-          {item.oauthScopes?.length ? (
-            <div>
-              <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                Requested scopes
-              </p>
-              <ScrollArea className="max-h-32 rounded-md border border-border bg-muted/25 p-3">
-                <div className="space-y-1">
-                  {item.oauthScopes.map((scope) => (
-                    <code key={scope} className="block break-all text-xs text-muted-foreground">
-                      {scope}
-                    </code>
-                  ))}
-                </div>
-              </ScrollArea>
-            </div>
-          ) : null}
-          <div className="flex flex-wrap gap-2">
-            <Badge variant="outline" className={statusClass(item.status)}>
-              {item.statusLabel}
-            </Badge>
-            {item.tags.map((tag) => (
-              <Badge key={tag} variant="secondary">
-                {tag}
+
+          {isOauth ? (
+            <ScopePermissions item={item} returnUrl="/studio/tools" />
+          ) : (
+            <div className="flex flex-wrap items-center gap-1.5">
+              <Badge variant="secondary" className="text-xs">
+                {item.connectionMode}
               </Badge>
-            ))}
-          </div>
-          {item.documentationUrl && (
-            <Button variant="outline" size="sm" asChild>
-              <a href={item.documentationUrl} target="_blank" rel="noreferrer">
-                <ExternalLink className="h-4 w-4" />
-                Documentation
-              </a>
-            </Button>
+              {item.tags.slice(0, 4).map((tag) => (
+                <Badge key={tag} variant="outline" className="text-xs text-muted-foreground">
+                  {tag}
+                </Badge>
+              ))}
+            </div>
           )}
+
+          <div className="flex items-center justify-between gap-3">
+            {item.documentationUrl ? (
+              <Button variant="ghost" size="sm" className="text-muted-foreground" asChild>
+                <a href={item.documentationUrl} target="_blank" rel="noreferrer">
+                  <ExternalLink className="h-3.5 w-3.5" />
+                  Documentation
+                </a>
+              </Button>
+            ) : (
+              <span />
+            )}
+            {!isOauth && (
+              <Button
+                size="sm"
+                variant={connected ? "outline" : "default"}
+                onClick={() => onAction(item)}
+                disabled={actionLoading || item.status === "coming_soon"}
+              >
+                {actionLoading && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+                {item.actionLabel}
+              </Button>
+            )}
+          </div>
         </div>
       </DialogContent>
     </Dialog>
@@ -517,11 +420,10 @@ function DetailsDialog({
 export function ToolsManagementView({ userAddress }: ToolsManagementViewProps) {
   const router = useRouter();
   const { toast } = useToast();
-  const [activeSubTab, setActiveSubTab] = useState("catalog");
   const [items, setItems] = useState<ToolCatalogItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
-  const [categoryFilter, setCategoryFilter] = useState<string>("all");
+  const [filter, setFilter] = useState<FilterValue>("all");
   const [actionLoadingId, setActionLoadingId] = useState<string | null>(null);
   const [quickConnectItem, setQuickConnectItem] = useState<ToolCatalogItem | null>(null);
   const [detailsItem, setDetailsItem] = useState<ToolCatalogItem | null>(null);
@@ -553,40 +455,33 @@ export function ToolsManagementView({ userAddress }: ToolsManagementViewProps) {
     if (userAddress) loadCatalog();
   }, [userAddress]);
 
-  const filteredItems = useMemo(() => {
-    return items.filter((item) => {
-      const matchesCategory = categoryFilter === "all" || item.category === categoryFilter;
-      return matchesCategory && itemMatches(item, searchQuery);
-    });
-  }, [items, categoryFilter, searchQuery]);
-
-  const groupedItems = useMemo(() => {
-    const groups = new Map<string, ToolCatalogItem[]>();
-    for (const category of categoryOrder) groups.set(category, []);
-    for (const item of filteredItems) {
-      groups.set(item.category, [...(groups.get(item.category) ?? []), item]);
+  const grouped = useMemo(() => {
+    const groups: Record<Exclude<FilterValue, "all">, ToolCatalogItem[]> = {
+      apps: [],
+      mcp: [],
+      platform: [],
+      custom: [],
+    };
+    for (const item of items) {
+      const group = filterOf(item);
+      if (!group || group === "all") continue;
+      if (!itemMatches(item, searchQuery)) continue;
+      groups[group].push(item);
     }
     return groups;
-  }, [filteredItems]);
+  }, [items, searchQuery]);
 
-  const stats = useMemo(() => {
-    return {
-      connected: items.filter((item) => item.status === "connected").length,
-      oauth: items.filter((item) => item.connectionMode === "oauth").length,
-      mcp: items.filter((item) => item.connectionMode === "mcp").length,
-      custom: items.filter((item) => item.category === "custom").length,
-    };
-  }, [items]);
+  const visibleSections = (
+    filter === "all"
+      ? (Object.keys(sectionTitles) as Array<Exclude<FilterValue, "all">>)
+      : [filter as Exclude<FilterValue, "all">]
+  ).filter((section) => grouped[section].length > 0);
 
   const handleAction = async (item: ToolCatalogItem) => {
-    if (item.connectionMode === "oauth" && item.connectUrl) {
-      router.push(item.connectUrl);
-      return;
-    }
-
     if (item.connectionMode === "mcp" && item.mcpTemplate) {
       const needsValues = Boolean(item.mcpTemplate.requiredEnv?.length || item.mcpTemplate.env);
       if (needsValues) {
+        setDetailsItem(null);
         setQuickConnectItem(item);
         return;
       }
@@ -619,6 +514,7 @@ export function ToolsManagementView({ userAddress }: ToolsManagementViewProps) {
           await fetch(`/api/mcp/servers/${serverId}/sync`, { method: "POST" });
         }
         toast({ title: "MCP server connected", description: `${item.displayName} is ready.` });
+        setDetailsItem(null);
         await loadCatalog();
       } catch (error: any) {
         toast({
@@ -634,36 +530,7 @@ export function ToolsManagementView({ userAddress }: ToolsManagementViewProps) {
 
     if (item.tool?.toolId) {
       router.push(`/studio/tools/${item.tool.toolId}`);
-      return;
     }
-
-    if (item.agent?.agentId) {
-      router.push(`/studio/agents/${item.agent.agentId}`);
-      return;
-    }
-
-    if (item.workflow?.workflowId) {
-      router.push(`/studio/workflows/${item.workflow.workflowId}/edit`);
-      return;
-    }
-
-    setDetailsItem(item);
-  };
-
-  const handleOpen = (item: ToolCatalogItem) => {
-    if (item.tool?.toolId) {
-      router.push(`/studio/tools/${item.tool.toolId}`);
-      return;
-    }
-    if (item.agent?.agentId) {
-      router.push(`/studio/agents/${item.agent.agentId}`);
-      return;
-    }
-    if (item.workflow?.workflowId) {
-      router.push(`/studio/workflows/${item.workflow.workflowId}/edit`);
-      return;
-    }
-    setDetailsItem(item);
   };
 
   const handleSaveTool = async (updates: Partial<Tool>) => {
@@ -695,114 +562,94 @@ export function ToolsManagementView({ userAddress }: ToolsManagementViewProps) {
   };
 
   return (
-    <Tabs value={activeSubTab} onValueChange={setActiveSubTab} className="w-full">
-      <div className="mb-5 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-        <TabsList className="w-fit border border-border bg-muted">
-          <TabsTrigger value="catalog">Tool Catalog</TabsTrigger>
-          <TabsTrigger value="mcp-servers">MCP Servers</TabsTrigger>
-        </TabsList>
-        {activeSubTab === "catalog" && (
-          <div className="flex items-center gap-2">
-            <Button variant="outline" size="sm" onClick={loadCatalog}>
-              <RefreshCw className="h-4 w-4" />
-              Refresh
-            </Button>
-            <Button size="sm" onClick={() => router.push("/tools/create")}>
-              <PlugZap className="h-4 w-4" />
-              Create Tool
-            </Button>
-          </div>
-        )}
+    <div className="mx-auto w-full max-w-4xl">
+      {/* Search + one row of filters */}
+      <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="relative w-full max-w-xs">
+          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            placeholder="Search tools…"
+            value={searchQuery}
+            onChange={(event) => setSearchQuery(event.target.value)}
+            className="h-9 pl-9"
+          />
+        </div>
+        <Tabs value={filter} onValueChange={(value) => setFilter(value as FilterValue)}>
+          <TabsList className="h-9">
+            {FILTERS.map((entry) => (
+              <TabsTrigger key={entry.value} value={entry.value} className="text-xs">
+                {entry.label}
+              </TabsTrigger>
+            ))}
+          </TabsList>
+        </Tabs>
       </div>
 
-      <TabsContent value="catalog" className="mt-0">
-        <div className="mb-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-          {[
-            { label: "Connected", value: stats.connected, icon: CheckCircle2 },
-            { label: "OAuth tools", value: stats.oauth, icon: ShieldCheck },
-            { label: "MCP/API integrations", value: stats.mcp, icon: Settings2 },
-            { label: "Custom tools", value: stats.custom, icon: PlugZap },
-          ].map((stat) => (
-            <div key={stat.label} className="rounded-lg border border-border bg-background p-3">
-              <div className="flex items-center justify-between">
-                <span className="text-xs text-muted-foreground">{stat.label}</span>
-                <stat.icon className="h-4 w-4 text-muted-foreground" />
+      {loading ? (
+        <div className="space-y-2 py-2">
+          {[...Array(6)].map((_, index) => (
+            <div key={index} className="flex items-center gap-3 px-3 py-2.5">
+              <Skeleton className="h-10 w-10 rounded-xl" />
+              <div className="flex-1 space-y-1.5">
+                <Skeleton className="h-3.5 w-40" />
+                <Skeleton className="h-3 w-72" />
               </div>
-              <div className="mt-2 text-2xl font-semibold tracking-tight">{stat.value}</div>
             </div>
           ))}
         </div>
-
-        <div className="mb-5 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-          <div className="relative max-w-xl flex-1">
-            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              placeholder="Search tools, providers, agents, workflows..."
-              value={searchQuery}
-              onChange={(event) => setSearchQuery(event.target.value)}
-              className="pl-9"
-            />
-          </div>
-          <Tabs value={categoryFilter} onValueChange={setCategoryFilter} className="overflow-x-auto">
-            <TabsList className="border border-border bg-muted">
-              {categoryFilters.map((filter) => (
-                <TabsTrigger key={filter.value} value={filter.value}>
-                  {filter.label}
-                </TabsTrigger>
-              ))}
-            </TabsList>
-          </Tabs>
+      ) : visibleSections.length === 0 ? (
+        <div className="rounded-xl border border-dashed border-border py-14 text-center">
+          <p className="text-sm font-medium">No tools found</p>
+          <p className="mt-1 text-xs text-muted-foreground">
+            {filter === "custom" && !searchQuery
+              ? "Create a custom tool to see it here."
+              : "Try a broader search or a different filter."}
+          </p>
+          {filter === "custom" && !searchQuery && (
+            <Button
+              variant="outline"
+              size="sm"
+              className="mt-4"
+              onClick={() => router.push("/tools/create")}
+            >
+              <PlugZap className="h-3.5 w-3.5" />
+              Create tool
+            </Button>
+          )}
         </div>
+      ) : (
+        <div className="space-y-7">
+          {visibleSections.map((section) => (
+            <section key={section}>
+              {(filter === "all" || visibleSections.length > 1) && (
+                <p className="mb-1 px-3 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                  {sectionTitles[section]}
+                </p>
+              )}
+              <div className="grid grid-cols-1 gap-x-6 md:grid-cols-2">
+                {grouped[section].map((item) => (
+                  <ToolRow
+                    key={item.id}
+                    item={item}
+                    onSelect={setDetailsItem}
+                    onEdit={setEditTool}
+                    onDelete={setDeleteTool}
+                    onManageKeys={setKeysTool}
+                    onManagePermissions={setPermissionsTool}
+                  />
+                ))}
+              </div>
+            </section>
+          ))}
 
-        {loading ? (
-          <div className="flex h-64 items-center justify-center">
-            <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-          </div>
-        ) : filteredItems.length === 0 ? (
-          <div className="rounded-lg border border-dashed border-border py-14 text-center">
-            <p className="text-sm font-medium">No tools match your filters</p>
-            <p className="mt-1 text-xs text-muted-foreground">Try a broader search or clear the category filter.</p>
-          </div>
-        ) : (
-          <div className="space-y-8">
-            {categoryOrder.map((category) => {
-              const sectionItems = groupedItems.get(category) ?? [];
-              if (sectionItems.length === 0) return null;
-              const copy = categoryCopy[category];
-              return (
-                <section key={category} className="space-y-3">
-                  <div className="flex items-end justify-between gap-4">
-                    <div>
-                      <h2 className="text-sm font-semibold tracking-tight">{copy.title}</h2>
-                      <p className="mt-0.5 text-xs text-muted-foreground">{copy.description}</p>
-                    </div>
-                    <span className="text-xs text-muted-foreground">{sectionItems.length}</span>
-                  </div>
-                  <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
-                    {sectionItems.map((item) => (
-                      <CatalogCard
-                        key={item.id}
-                        item={item}
-                        onAction={handleAction}
-                        onOpen={handleOpen}
-                        onEdit={setEditTool}
-                        onDelete={setDeleteTool}
-                        onManageKeys={setKeysTool}
-                        onManagePermissions={setPermissionsTool}
-                        actionLoading={actionLoadingId === item.id}
-                      />
-                    ))}
-                  </div>
-                </section>
-              );
-            })}
-          </div>
-        )}
-      </TabsContent>
-
-      <TabsContent value="mcp-servers" className="mt-0">
-        <McpServersView ownerId={userAddress} ownerType="user" />
-      </TabsContent>
+          {/* Connected MCP servers are managed inline on the MCP view */}
+          {filter === "mcp" && (
+            <section className="border-t border-border/70 pt-6">
+              <McpServersView ownerId={userAddress} ownerType="user" />
+            </section>
+          )}
+        </div>
+      )}
 
       <McpQuickConnectDialog
         item={quickConnectItem}
@@ -810,10 +657,12 @@ export function ToolsManagementView({ userAddress }: ToolsManagementViewProps) {
         onOpenChange={(open) => !open && setQuickConnectItem(null)}
         onConnected={loadCatalog}
       />
-      <DetailsDialog
+      <ToolDetailsDialog
         item={detailsItem}
         open={!!detailsItem}
         onOpenChange={(open) => !open && setDetailsItem(null)}
+        onAction={handleAction}
+        actionLoading={!!detailsItem && actionLoadingId === detailsItem.id}
       />
 
       <EditToolDialog
@@ -853,6 +702,6 @@ export function ToolsManagementView({ userAddress }: ToolsManagementViewProps) {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-    </Tabs>
+    </div>
   );
 }

@@ -19,7 +19,6 @@ import {
   FileText,
   Gauge,
   ImageIcon,
-  Link2,
   Loader2,
   MessageSquare,
   Monitor,
@@ -29,7 +28,6 @@ import {
   Save,
   Search,
   Settings2,
-  ShieldCheck,
   Sparkles,
   TerminalSquare,
   Wallet,
@@ -60,7 +58,8 @@ import { AgentComputerPanel } from "@/components/computers/agent-computer-panel"
 import SessionInterface from "@/components/sessions/session-interface";
 import { StudioEntitySwitcher } from "@/components/studio/studio-entity-switcher";
 import { TaskManagementView } from "@/components/tasks/task-management-view";
-import AgentTools from "@/components/tools/agent-tools";
+import { ToolIcon } from "@/components/tools/catalog/tool-icon";
+import { ScopePermissions } from "@/components/tools/catalog/scope-permissions";
 import { CostDashboard } from "@/components/usage/cost-dashboard";
 import type { ToolCatalogItem } from "@/lib/tools/catalog";
 import { Badge } from "@/components/ui/badge";
@@ -560,13 +559,7 @@ function ToolsView({ agentId, agentTools, setAgentTools }: { agentId: string; ag
 
   const isAssignable = (item: ToolCatalogItem) => Boolean(item.tool?.toolId);
 
-  const iconForCategory: Record<string, React.ElementType> = {
-    google_workspace: ShieldCheck,
-    oauth: Link2,
-    mcp_api: PlugZap,
-    system: Wrench,
-    custom: Wrench,
-  };
+  const connectedCount = catalog.filter(isConnected).length;
 
   return (
     <div className="grid h-full min-h-0 grid-cols-[340px_minmax(0,1fr)] overflow-hidden">
@@ -575,7 +568,9 @@ function ToolsView({ agentId, agentTools, setAgentTools }: { agentId: string; ag
         <div className="shrink-0 border-b border-border/70 p-4">
           <div className="flex items-center justify-between gap-2">
             <h2 className="text-sm font-medium">Tools</h2>
-            <AgentTools agentTools={agentTools} setAgentTools={setAgentTools} agentId={agentId} />
+            <Badge variant="secondary" className="h-5 px-1.5 text-[11px] font-normal">
+              {connectedCount} connected
+            </Badge>
           </div>
           <div className="mt-3 flex gap-1">
             {(["all", "connected", "not-connected"] as const).map((value) => (
@@ -606,26 +601,23 @@ function ToolsView({ agentId, agentTools, setAgentTools }: { agentId: string; ag
                 filteredCatalog.map((item) => {
                   const active = selectedItem?.id === item.id;
                   const connected = isConnected(item);
-                  const Icon = iconForCategory[item.category] ?? Wrench;
                   return (
                     <button
                       key={item.id}
                       type="button"
                       className={cn(
-                        "mb-1 flex w-full items-center gap-3 rounded-md px-3 py-2 text-left hover:bg-muted",
+                        "mb-0.5 flex w-full items-center gap-3 rounded-lg px-2.5 py-2 text-left transition-colors hover:bg-muted",
                         active && "bg-accent text-accent-foreground",
                       )}
                       onClick={() => setSelectedItemId(item.id)}
                     >
-                      <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-border bg-background">
-                        <Icon className="h-4 w-4" />
-                      </div>
+                      <ToolIcon item={item} size="sm" />
                       <div className="min-w-0 flex-1">
                         <p className="truncate text-sm font-medium">{item.displayName}</p>
                         <p className="truncate text-xs text-muted-foreground">{item.categoryLabel}</p>
                       </div>
                       {connected && (
-                        <div className="h-2 w-2 shrink-0 rounded-full bg-emerald-500" />
+                        <div className="h-2 w-2 shrink-0 rounded-full bg-emerald-500" title="Connected" />
                       )}
                     </button>
                   );
@@ -651,19 +643,17 @@ function ToolsView({ agentId, agentTools, setAgentTools }: { agentId: string; ag
           <>
             <SectionHeader
               title={selectedItem.displayName}
-              subtitle={selectedItem.categoryLabel + " · " + selectedItem.connectionMode}
+              subtitle={
+                selectedItem.categoryLabel +
+                " · " +
+                (isConnected(selectedItem)
+                  ? isAssignable(selectedItem)
+                    ? "Connected to this agent"
+                    : "Connected"
+                  : "Not connected")
+              }
             />
             <div className="mx-auto max-w-4xl space-y-4 p-5">
-              {/* Status + meta */}
-              <div className="grid gap-3 md:grid-cols-3">
-                <Stat
-                  label="Status"
-                  value={isConnected(selectedItem) ? (isAssignable(selectedItem) ? "Connected to agent" : "Platform connected") : "Not connected"}
-                />
-                <Stat label="Category" value={selectedItem.categoryLabel} />
-                <Stat label="Connection type" value={selectedItem.connectionMode} />
-              </div>
-
               {/* Description */}
               <Panel title="About this tool">
                 <p className="text-sm leading-6 text-muted-foreground">{selectedItem.description}</p>
@@ -751,16 +741,26 @@ function ToolsView({ agentId, agentTools, setAgentTools }: { agentId: string; ag
                 </Panel>
               )}
 
-              {/* OAuth / MCP tools — platform-level connection */}
-              {!isAssignable(selectedItem) && (
+              {/* OAuth tools — scoped permissions, Claude-connectors style */}
+              {!isAssignable(selectedItem) && selectedItem.connectionMode === "oauth" && (
+                <div className="rounded-lg border border-border bg-background p-4">
+                  <ScopePermissions
+                    item={selectedItem}
+                    returnUrl={`/studio/agents/${agentId}`}
+                  />
+                </div>
+              )}
+
+              {/* MCP tools — platform-level connection */}
+              {!isAssignable(selectedItem) && selectedItem.connectionMode !== "oauth" && (
                 <Panel title={isConnected(selectedItem) ? "Connection status" : "Setup required"}>
                   {isConnected(selectedItem) ? (
                     <div className="flex items-start gap-3">
                       <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600" />
                       <div className="space-y-1">
-                        <p className="text-sm font-medium">Platform connected</p>
+                        <p className="text-sm font-medium">Connected</p>
                         <p className="text-sm text-muted-foreground">
-                          This {selectedItem.connectionMode === "oauth" ? "OAuth" : "MCP"} connection is active at the platform level and available to all agents. No per-agent setup is needed.
+                          This MCP connection is active and available to your agents.
                         </p>
                         <Button
                           variant="outline"
@@ -779,7 +779,7 @@ function ToolsView({ agentId, agentTools, setAgentTools }: { agentId: string; ag
                       <div className="space-y-1">
                         <p className="text-sm font-medium">Not connected</p>
                         <p className="text-sm text-muted-foreground">
-                          This {selectedItem.connectionMode === "oauth" ? "OAuth integration" : "MCP server"} must be configured at the platform level before agents can use it.
+                          This MCP server must be configured before agents can use it.
                         </p>
                         <Button
                           size="sm"

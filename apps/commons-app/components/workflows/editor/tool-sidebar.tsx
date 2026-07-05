@@ -17,7 +17,7 @@ import {
 } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import { getNodeTheme } from "./nodes/node-theme";
-import { getBrandIcon, type BrandIcon } from "./nodes/brand-icons";
+import { getBrandIcon, type BrandIcon } from "@/lib/brand-icons";
 
 interface ToolSidebarProps {
   userId: string;

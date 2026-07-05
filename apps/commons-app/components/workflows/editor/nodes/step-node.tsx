@@ -7,7 +7,7 @@ import { getHandleStyle } from "@/lib/workflows/type-colors";
 import { getTypeColor, WorkflowDataType } from "@/lib/workflows/type-mapping";
 import type { WorkflowNodeType } from "@/types/workflow";
 import { getNodeTheme } from "./node-theme";
-import { getBrandIcon } from "./brand-icons";
+import { getBrandIcon } from "@/lib/brand-icons";
 
 interface StepNodeData {
   label: string;
