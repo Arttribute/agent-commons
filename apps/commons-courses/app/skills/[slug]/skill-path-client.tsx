@@ -360,7 +360,7 @@ export default function SkillPathClient({
                         }
                   }
                 />
-              ) : mode === "quiz" ? (
+              ) : mode === "quiz" && challenge.questions.length ? (
                 <QuizView
                   challenge={challenge}
                   questionIndex={questionIndex}
@@ -410,7 +410,10 @@ export default function SkillPathClient({
                   challenge={challenge}
                   authenticated={progress.authenticated}
                   signInHref={`/auth/signin?callbackUrl=${encodeURIComponent(pathname)}`}
+                  hasQuiz={challenge.questions.length > 0}
+                  saving={saving}
                   onStartQuiz={() => setMode("quiz")}
+                  onComplete={completeChallenge}
                 />
               )}
             </div>
@@ -455,12 +458,18 @@ function LessonView({
   challenge,
   authenticated,
   signInHref,
+  hasQuiz,
+  saving,
   onStartQuiz,
+  onComplete,
 }: {
   challenge: SkillChallenge;
   authenticated: boolean;
   signInHref: string;
+  hasQuiz: boolean;
+  saving: boolean;
   onStartQuiz: () => void;
+  onComplete: () => void;
 }) {
   return (
     <div className="flex flex-1 flex-col">
@@ -503,13 +512,23 @@ function LessonView({
           >
             Sign in to save streak <ArrowRight className="h-4 w-4" />
           </Link>
-        ) : (
+        ) : hasQuiz ? (
           <button
             type="button"
             onClick={onStartQuiz}
             className="inline-flex items-center justify-center gap-2 rounded-lg bg-slate-950 px-5 py-3 text-sm font-bold text-white"
           >
             I am ready for the quiz <ArrowRight className="h-4 w-4" />
+          </button>
+        ) : (
+          <button
+            type="button"
+            onClick={onComplete}
+            disabled={saving}
+            className="inline-flex items-center justify-center gap-2 rounded-lg bg-slate-950 px-5 py-3 text-sm font-bold text-white disabled:opacity-40"
+          >
+            {saving ? "Saving..." : "Complete lesson"}{" "}
+            <ArrowRight className="h-4 w-4" />
           </button>
         )}
       </div>

@@ -308,7 +308,7 @@ async function draftWithOpenAI(input: {
           educatorInstructions: input.instructions,
           materialText: input.materialText,
           outputShape:
-            "Return JSON with title, tagline, description, longDescription, duration, level, modules, skillPack, and notes. Skill challenges need lesson HTML, keyIdeas, and 2 quiz questions unless the challenge has a sandbox.",
+            "Return JSON with title, tagline, description, longDescription, duration, level, modules, skillPack, and notes. Skill challenges usually need lesson HTML, keyIdeas, and 2 quiz questions. Pure orientation or introduction challenges may have 0 quiz questions. If an introduction is combined with the first substantive concept, quiz only the taught concept, not the orientation.",
         }),
       },
       ...input.images.map((image) => ({
@@ -350,6 +350,7 @@ function copilotSystemPrompt() {
     "Match the source material closely. Do not introduce concepts that are not supported by the material or educator instructions.",
     "Respect learner intelligence: make ideas clear without dumbing them down, avoid filler repetition, and use consistent terminology.",
     "Use standard learning design: short introductions, meaningful examples, key ideas, challenging quizzes, and practical sandbox tasks when relevant.",
+    "Do not force a quiz on a pure introduction or orientation. A short intro can also be combined with the first substantive concept when that creates a smoother learning path.",
     "Return only valid JSON.",
   ].join("\n");
 }
@@ -518,10 +519,12 @@ function normalizeSkillPackDraft(input: SkillPack | undefined, fallbackTitle: st
             )
         : [],
     }))
-    .map((challenge) => ({
+    .map((challenge, index) => ({
       ...challenge,
       questions:
-        challenge.sandbox?.enabled || challenge.questions.length
+        challenge.sandbox?.enabled ||
+        challenge.questions.length ||
+        isOrientationOnlyChallenge(challenge, index)
           ? challenge.questions
           : defaultQuestions(challenge.title),
     }))
@@ -541,6 +544,28 @@ function normalizeSkillPackDraft(input: SkillPack | undefined, fallbackTitle: st
       ? normalizedChallenges
       : fallbackChallenges("").slice(0, 3),
   };
+}
+
+function isOrientationOnlyChallenge(
+  challenge: Pick<
+    SkillPack["challenges"][number],
+    "title" | "shortTitle" | "hook" | "lesson"
+  >,
+  index: number
+) {
+  if (index !== 0) return false;
+  const title = `${challenge.title || ""} ${challenge.shortTitle || ""}`.toLowerCase();
+  const text = `${title} ${challenge.hook || ""} ${challenge.lesson || ""}`.toLowerCase();
+  const hasIntroTitle =
+    /\b(intro|introduction|orientation|overview|welcome|map)\b/.test(title) ||
+    title.includes("what makes") ||
+    title.includes("start here") ||
+    title.includes("getting started");
+  const hasConceptTitle =
+    /\b(scheduled|routine|cron|workflow|components?|trigger|node|edge|memory|computer|workspace|sandbox)\b/.test(
+      title
+    );
+  return !hasConceptTitle && (hasIntroTitle || text.includes("this path"));
 }
 
 function defaultQuestions(topic: string): SkillPack["challenges"][number]["questions"] {

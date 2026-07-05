@@ -122,65 +122,9 @@ function createSkillPack(assetUrls) {
       {
         id: "powerful-agent-map",
         day: 1,
-        title: "What Makes an Agent Powerful",
-        shortTitle: "Power map",
-        minutes: 6,
-        points: 70,
-        streakBoost: 1,
-        assetUrl: assetUrls.cover,
-        assetAlt: "Title slide: Make your AI Agent Powerful.",
-        accentColor: "#8BE7F0",
-        audioCue: "spark",
-        hook:
-          "A useful first agent can answer and act. A powerful agent can also keep time, follow a process, remember useful context, and work in a scoped environment.",
-        lesson: rich([
-          "In the previous path, you created your first agent by shaping its identity, system prompt, skills, and tools. This path builds on that foundation.",
-          "The next question is not just what the agent can say. It is how the agent can keep working reliably. That is where scheduled tasks, workflows, memory, and agent computers come in.",
-          "We will use one example throughout: a learning-report agent. It can check progress on a routine schedule, follow a workflow, keep useful memory organized, and use a scoped computer workspace for files and lightweight commands.",
-          "The goal is to make the agent more capable without making its behavior mysterious. Each added capability should have a clear job and a clear limit.",
-        ]),
-        keyIdeas: [
-          "Powerful agents keep time, follow process, remember context, and work safely.",
-          "Extra capability should come with clear scope.",
-          "The same learning-report example will carry through the path.",
-        ],
-        microTask:
-          "Name one routine your agent should handle without waiting for a fresh prompt every time.",
-        questions: [
-          {
-            id: "q1",
-            prompt: "Which set best matches this path's focus?",
-            options: [
-              "Scheduled tasks, workflows, memory, and agent computers",
-              "Only naming the agent and choosing a profile picture",
-              "Replacing the system prompt with a longer greeting",
-              "Removing tools so the agent only writes responses",
-            ],
-            answerIndex: 0,
-            explanation:
-              "This path adds capability around time, process, memory, and a safe workspace.",
-          },
-          {
-            id: "q2",
-            prompt: "Why should each added capability have a clear scope?",
-            options: [
-              "So the agent knows what the capability is for and what its limits are",
-              "So the agent can ignore its system prompt",
-              "So every task becomes fully automatic without review",
-              "So learners never need to inspect logs or outputs",
-            ],
-            answerIndex: 0,
-            explanation:
-              "Scope keeps powerful behavior understandable and easier to test.",
-          },
-        ],
-      },
-      {
-        id: "scheduled-routine-tasks",
-        day: 2,
-        title: "Scheduled and Routine Tasks",
+        title: "Make Your Agent Powerful with Scheduled Tasks",
         shortTitle: "Scheduled tasks",
-        minutes: 7,
+        minutes: 9,
         points: 80,
         streakBoost: 1,
         assetUrl: assetUrls.scheduledTasks,
@@ -188,16 +132,19 @@ function createSkillPack(assetUrls) {
         accentColor: "#8BE7F0",
         audioCue: "focus",
         hook:
-          "Scheduled tasks let an agent run useful instructions at a set time or interval.",
+          "A powerful agent does more than answer one prompt. It can also keep time, follow a process, remember useful context, and work in a scoped environment.",
         lesson: rich([
-          "A cron job is a scheduled instruction. It tells a system to run a task at a set time or interval. For agents, that means some work can start without the user opening a new chat first.",
+          "In the previous path, you created your first agent by shaping its identity, system prompt, skills, and tools. This path builds on that foundation.",
+          "The next question is not just what the agent can say. It is how the agent can keep working reliably. That is where scheduled tasks, workflows, memory, and agent computers come in.",
+          "We will use one example throughout: a learning-report agent. It can check progress on a routine schedule, follow a workflow, keep useful memory organized, and use a scoped computer workspace for files and lightweight commands.",
+          "Start with the timekeeping part. A cron job is a scheduled instruction. It tells a system to run a task at a set time or interval. For agents, that means some work can start without the user opening a new chat first.",
           "Our learning-report agent might run every Friday afternoon. The scheduled instruction could say: review this week's learning notes, summarize progress, and prepare three next steps.",
           "The important detail is that the schedule and the instruction work together. A schedule without a clear task is just a timer. A task without a schedule still needs someone to start it.",
           "Scheduled tasks are best for routines: reminders, check-ins, recurring summaries, monitoring, and repeated preparation.",
         ]),
         keyIdeas: [
+          "Powerful agents can keep time, follow process, remember context, and work safely.",
           "A cron job is a scheduled instruction.",
-          "Scheduled tasks run at a set time or interval.",
           "Routine work needs both timing and a clear instruction.",
         ],
         microTask:
@@ -233,7 +180,7 @@ function createSkillPack(assetUrls) {
       },
       {
         id: "workflow-automation",
-        day: 3,
+        day: 2,
         title: "Workflow Automation",
         shortTitle: "Workflows",
         minutes: 8,
@@ -289,7 +236,7 @@ function createSkillPack(assetUrls) {
       },
       {
         id: "workflow-components",
-        day: 4,
+        day: 3,
         title: "Workflow Components",
         shortTitle: "Components",
         minutes: 8,
@@ -338,7 +285,7 @@ function createSkillPack(assetUrls) {
       },
       {
         id: "organizing-agent-memory",
-        day: 5,
+        day: 4,
         title: "Organizing Agent Memory",
         shortTitle: "Memory",
         minutes: 9,
@@ -394,6 +341,63 @@ function createSkillPack(assetUrls) {
         ],
       },
       {
+        id: "give-agent-computer",
+        day: 5,
+        title: "Give Your Agent a Computer",
+        shortTitle: "Computer",
+        minutes: 8,
+        points: 90,
+        streakBoost: 1,
+        assetUrl: assetUrls.computer,
+        assetAlt:
+          "Give Your Agent A Computer slide explaining persistent workspace and meaningful isolation.",
+        accentColor: "#6EE7D8",
+        audioCue: "focus",
+        hook:
+          "An agent computer gives long-running work a persistent, isolated place to happen.",
+        lesson: rich([
+          "A persistent workspace is a dedicated workspace for long-running tasks and projects. It gives the agent somewhere stable to keep files, scripts, and project state while work continues over time.",
+          "Meaningful isolation is a separate, scoped environment where the agent can work safely. The point is not to give the agent unlimited access. The point is to give it a clear workspace with boundaries.",
+          "For the learning-report agent, the computer workspace might hold weekly notes, a report template, and a small checklist file. The agent can inspect those files while preparing a report.",
+          "In a learning sandbox, a full production machine would be too heavy. A lightweight runtime, closer to a safe online code editor, is enough for practicing the concept.",
+        ]),
+        keyIdeas: [
+          "A persistent workspace supports long-running tasks and projects.",
+          "Meaningful isolation gives the agent a separate, scoped environment.",
+          "A learning sandbox can simulate the workspace without running a full production machine.",
+        ],
+        microTask:
+          "Name two files a learning-report agent should keep in its scoped workspace.",
+        questions: [
+          {
+            id: "q1",
+            prompt: "What is a persistent workspace?",
+            options: [
+              "A dedicated workspace for long-running tasks and projects",
+              "A one-time chat message that disappears after a response",
+              "A workflow edge that connects two steps",
+              "A memory type for current session context only",
+            ],
+            answerIndex: 0,
+            explanation:
+              "The slide defines persistent workspace as a dedicated workspace for long-running tasks and projects.",
+          },
+          {
+            id: "q2",
+            prompt: "What does meaningful isolation provide?",
+            options: [
+              "A separate, scoped environment where the agent can work safely",
+              "Unlimited access to every system and file",
+              "A replacement for scheduled tasks",
+              "A way to skip workflow design",
+            ],
+            answerIndex: 0,
+            explanation:
+              "Meaningful isolation keeps the agent's workspace separate and scoped.",
+          },
+        ],
+      },
+      {
         id: "power-up-agent-sandbox",
         day: 6,
         title: "Power Up an Agent in the Sandbox",
@@ -408,7 +412,7 @@ function createSkillPack(assetUrls) {
         hook:
           "Now combine scheduled tasks, workflow automation, organized memory, and a scoped computer workspace.",
         lesson: rich([
-          "A persistent workspace is a dedicated workspace for long-running tasks and projects. Meaningful isolation is a separate, scoped environment where the agent can work safely.",
+          "You have now seen the separate power-ups: scheduled tasks, workflows, memory, and a scoped computer workspace. The final step is to make them work together coherently.",
           "In this sandbox, you will design a learning-report agent with a scheduled task, workflow, memory records, and a lightweight computer workspace. The computer is intentionally small and simulated for learning, similar to a safe online code editor rather than a full production machine.",
           "Create the agent when the configuration makes sense, run one chat test, and inspect the logs. The goal is not to make the biggest possible agent. The goal is to make a more capable agent whose behavior you can still explain.",
         ]),
