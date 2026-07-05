@@ -38,6 +38,11 @@ type SandboxBody = {
     skills?: string[];
     skillInstructions?: Record<string, string>;
     tools?: string[];
+    tasks?: string[];
+    workflowId?: string;
+    memoryEntries?: Record<string, string>;
+    computerCommand?: string;
+    computerOutput?: string;
     taskTitle?: string;
     message?: string;
   };
@@ -205,6 +210,8 @@ export async function POST(
       simulated: false,
       selectedSkills: body.agent.skills || [],
       selectedTools: body.agent.tools || [],
+      selectedTasks: body.agent.tasks || [],
+      selectedWorkflowId: body.agent.workflowId,
       assignedPlatformTools: toolAssignments.assigned,
       toolAssignmentWarnings: toolAssignments.warnings,
       creditReward: challenge.sandbox.creditReward || 0,
@@ -482,12 +489,57 @@ function buildInstructions(
       const connector = tool!.connectorKind ? ` (${tool!.connectorKind})` : "";
       return `Tool: ${tool!.name}${connector}\n${tool!.description || "Use this tool when it is relevant."}`;
     });
+  const taskTemplates = new Map(
+    (config.taskTemplates || []).map((task) => [task.id, task])
+  );
+  const selectedTasks = (agent.tasks || [])
+    .map((id) => taskTemplates.get(id))
+    .filter(Boolean)
+    .map((task) =>
+      [
+        `Scheduled task: ${task!.title}`,
+        `Schedule: ${task!.schedule}`,
+        task!.description ? `Instruction: ${task!.description}` : "",
+      ]
+        .filter(Boolean)
+        .join("\n")
+    );
+  const workflow = (config.workflowTemplates || []).find(
+    (item) => item.id === agent.workflowId
+  );
+  const memoryEntries = Object.entries(agent.memoryEntries || {})
+    .map(([id, value]) => {
+      const template = (config.memoryTemplates || []).find((item) => item.id === id);
+      const label = template
+        ? `${template.label} (${template.type} memory)`
+        : `Memory ${id}`;
+      return value.trim() ? `${label}: ${value.trim()}` : "";
+    })
+    .filter(Boolean);
+  const computer = config.computerTemplate;
+  const computerLines = computer
+    ? [
+        `Workspace: ${computer.workspaceName || "Sandbox workspace"}`,
+        `Isolation: ${computer.isolationMode || "Scoped learning sandbox"}`,
+        computer.files?.length
+          ? `Available files: ${computer.files.map((file) => file.path).join(", ")}`
+          : "",
+        agent.computerCommand ? `Last command: ${agent.computerCommand}` : "",
+        agent.computerOutput ? `Last command output:\n${agent.computerOutput}` : "",
+      ].filter(Boolean)
+    : [];
 
   return [
     agent.systemPrompt?.trim(),
     agent.persona ? `Agent role: ${agent.persona.trim()}` : "",
     selectedSkills.length ? `\nSelected lesson skills:\n${selectedSkills.join("\n\n")}` : "",
     selectedTools.length ? `\nSelected lesson tools/connectors:\n${selectedTools.join("\n\n")}` : "",
+    selectedTasks.length ? `\nScheduled routine tasks:\n${selectedTasks.join("\n\n")}` : "",
+    workflow
+      ? `\nWorkflow automation:\nWorkflow: ${workflow.name}\nTrigger: ${workflow.trigger}\nNodes:\n${workflow.nodes.map((node, index) => `${index + 1}. ${node}`).join("\n")}\nEdges:\n${workflow.edges.join("\n")}`
+      : "",
+    memoryEntries.length ? `\nOrganized agent memory:\n${memoryEntries.join("\n")}` : "",
+    computerLines.length ? `\nAgent computer workspace:\n${computerLines.join("\n")}` : "",
     agent.taskTitle ? `\nFirst learner task: ${agent.taskTitle.trim()}` : "",
     "This agent was created from a CommonLab learning sandbox. Use connected tools only when the user has explicitly connected and authorized them.",
   ]

@@ -3,9 +3,13 @@
 import { useEffect, useState, type ReactNode } from "react";
 import {
   Bot,
+  CalendarClock,
+  Database,
   Hammer,
+  Monitor,
   PanelLeft,
   Sparkles,
+  Workflow,
   X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -15,6 +19,10 @@ export const panelMeta: Record<ConfigPanel, { label: string; icon: typeof Bot }>
   identity: { label: "Identity", icon: Bot },
   skills: { label: "Skills", icon: Sparkles },
   tools: { label: "Tools", icon: Hammer },
+  tasks: { label: "Tasks", icon: CalendarClock },
+  workflows: { label: "Workflow", icon: Workflow },
+  memory: { label: "Memory", icon: Database },
+  computer: { label: "Computer", icon: Monitor },
 };
 
 export function ConfigRail({

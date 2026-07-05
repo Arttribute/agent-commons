@@ -149,6 +149,8 @@ const sandboxCapabilities: AgentSandboxCapability[] = [
   "connectors",
   "tasks",
   "workflows",
+  "memory",
+  "computer",
   "chat",
   "logs",
   "credits",
@@ -162,6 +164,8 @@ const sandboxTargets: AgentSandboxStepTarget[] = [
   "connectors",
   "tasks",
   "workflows",
+  "memory",
+  "computer",
   "chat",
   "logs",
   "publish",
@@ -285,6 +289,9 @@ function normalizeSandboxConfig(input?: AgentSandboxConfig) {
     starterToolIds: Array.isArray(input.starterToolIds)
       ? input.starterToolIds.map((id) => id.trim()).filter(Boolean)
       : undefined,
+    starterTaskIds: Array.isArray(input.starterTaskIds)
+      ? input.starterTaskIds.map((id) => id.trim()).filter(Boolean)
+      : undefined,
     skillTemplates: Array.isArray(input.skillTemplates)
       ? input.skillTemplates
           .map((skill, index) => ({
@@ -316,6 +323,64 @@ function normalizeSandboxConfig(input?: AgentSandboxConfig) {
           }))
           .filter((tool) => tool.name)
       : [],
+    taskTemplates: Array.isArray(input.taskTemplates)
+      ? input.taskTemplates
+          .map((task, index) => ({
+            id: task.id?.trim() || `task-${index + 1}`,
+            title: task.title?.trim() || "",
+            schedule: task.schedule?.trim() || "",
+            description: task.description?.trim() || undefined,
+          }))
+          .filter((task) => task.title && task.schedule)
+      : [],
+    workflowTemplates: Array.isArray(input.workflowTemplates)
+      ? input.workflowTemplates
+          .map((workflow, index) => ({
+            id: workflow.id?.trim() || `workflow-${index + 1}`,
+            name: workflow.name?.trim() || "",
+            trigger: workflow.trigger?.trim() || "",
+            nodes: Array.isArray(workflow.nodes)
+              ? workflow.nodes.map((node) => node.trim()).filter(Boolean)
+              : [],
+            edges: Array.isArray(workflow.edges)
+              ? workflow.edges.map((edge) => edge.trim()).filter(Boolean)
+              : [],
+            description: workflow.description?.trim() || undefined,
+          }))
+          .filter((workflow) => workflow.name && workflow.trigger)
+      : [],
+    memoryTemplates: Array.isArray(input.memoryTemplates)
+      ? input.memoryTemplates
+          .map((memory, index) => ({
+            id: memory.id?.trim() || `memory-${index + 1}`,
+            type: ["working", "semantic", "episodic", "procedural"].includes(
+              memory.type || ""
+            )
+              ? memory.type
+              : ("working" as const),
+            label: memory.label?.trim() || "",
+            content: memory.content?.trim() || "",
+          }))
+          .filter((memory) => memory.label && memory.content)
+      : [],
+    computerTemplate: input.computerTemplate
+      ? {
+          workspaceName:
+            input.computerTemplate.workspaceName?.trim() || undefined,
+          isolationMode:
+            input.computerTemplate.isolationMode?.trim() || undefined,
+          files: Array.isArray(input.computerTemplate.files)
+            ? input.computerTemplate.files
+                .map((file) => ({
+                  path: file.path?.trim() || "",
+                  content: file.content || "",
+                }))
+                .filter((file) => file.path)
+            : [],
+          starterCommand:
+            input.computerTemplate.starterCommand?.trim() || undefined,
+        }
+      : undefined,
     review: input.review?.enabled
       ? {
           enabled: true,

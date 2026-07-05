@@ -2,16 +2,28 @@
 
 import { useState } from "react";
 import {
+  CalendarClock,
   Check,
+  Database,
   ExternalLink,
   Hammer,
   Loader2,
+  Monitor,
+  Play,
   Plus,
   Sparkles,
+  Workflow,
   X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import type { AgentSandboxSkillTemplate, AgentSandboxToolTemplate } from "@/types/skills";
+import type {
+  AgentSandboxComputerTemplate,
+  AgentSandboxMemoryTemplate,
+  AgentSandboxSkillTemplate,
+  AgentSandboxTaskTemplate,
+  AgentSandboxToolTemplate,
+  AgentSandboxWorkflowTemplate,
+} from "@/types/skills";
 import type { AgentSandboxConfig } from "@/types/skills";
 import type { ReviewResult } from "./types";
 import {
@@ -336,6 +348,297 @@ export function ToolsPanel({
   );
 }
 
+export function TasksPanel({
+  tasks,
+  selected,
+  onChange,
+}: {
+  tasks: AgentSandboxTaskTemplate[];
+  selected: string[];
+  onChange: (items: string[]) => void;
+}) {
+  return (
+    <div className="space-y-3" data-sandbox-target="tasks">
+      {tasks.length === 0 ? (
+        <p className="rounded-lg border border-dashed border-slate-300 p-3 text-sm text-slate-500">
+          No scheduled tasks configured for this lesson.
+        </p>
+      ) : (
+        <div className="divide-y divide-slate-100 overflow-hidden rounded-xl border border-slate-200">
+          {tasks.map((task) => {
+            const checked = selected.includes(task.id);
+            return (
+              <button
+                key={task.id}
+                type="button"
+                data-sandbox-target={`task-${task.id}`}
+                onClick={() =>
+                  onChange(
+                    checked
+                      ? selected.filter((id) => id !== task.id)
+                      : [...selected, task.id]
+                  )
+                }
+                className={cn(
+                  "flex w-full items-start gap-3 px-3 py-3 text-left transition-colors",
+                  checked ? "bg-slate-50" : "bg-white hover:bg-slate-50"
+                )}
+              >
+                <span className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-slate-600">
+                  <CalendarClock className="h-4 w-4" />
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="block text-sm font-bold text-slate-900">
+                    {task.title}
+                  </span>
+                  <span className="mt-0.5 block text-xs font-semibold text-slate-500">
+                    {task.schedule}
+                  </span>
+                  {task.description ? (
+                    <span className="mt-1 block text-xs leading-5 text-slate-500">
+                      {task.description}
+                    </span>
+                  ) : null}
+                </span>
+                <CheckCircle checked={checked} />
+              </button>
+            );
+          })}
+        </div>
+      )}
+      <p className="text-xs leading-5 text-slate-500">
+        Scheduled tasks are instructions that tell the agent when a routine
+        should run. This sandbox records the design without starting a real
+        background job.
+      </p>
+    </div>
+  );
+}
+
+export function WorkflowPanel({
+  workflows,
+  selectedId,
+  result,
+  onSelect,
+  onRun,
+}: {
+  workflows: AgentSandboxWorkflowTemplate[];
+  selectedId?: string;
+  result: string[];
+  onSelect: (id: string) => void;
+  onRun: () => void;
+}) {
+  const selected = workflows.find((workflow) => workflow.id === selectedId) || workflows[0];
+
+  return (
+    <div className="space-y-3" data-sandbox-target="workflows">
+      {workflows.length === 0 ? (
+        <p className="rounded-lg border border-dashed border-slate-300 p-3 text-sm text-slate-500">
+          No workflow configured for this lesson.
+        </p>
+      ) : (
+        <>
+          <div className="divide-y divide-slate-100 overflow-hidden rounded-xl border border-slate-200">
+            {workflows.map((workflow) => {
+              const active = workflow.id === selected?.id;
+              return (
+                <button
+                  key={workflow.id}
+                  type="button"
+                  onClick={() => onSelect(workflow.id)}
+                  className={cn(
+                    "flex w-full items-center gap-3 px-3 py-2.5 text-left",
+                    active ? "bg-slate-50" : "bg-white hover:bg-slate-50"
+                  )}
+                >
+                  <Workflow className="h-4 w-4 shrink-0 text-slate-500" />
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-sm font-bold text-slate-900">
+                      {workflow.name}
+                    </span>
+                    <span className="mt-0.5 block truncate text-xs text-slate-500">
+                      Trigger: {workflow.trigger}
+                    </span>
+                  </span>
+                  <CheckCircle checked={active} />
+                </button>
+              );
+            })}
+          </div>
+          {selected ? (
+            <div className="rounded-xl border border-slate-200 bg-white p-3">
+              <p className="text-xs font-bold uppercase tracking-widest text-slate-400">
+                Workflow components
+              </p>
+              {selected.description ? (
+                <p className="mt-2 text-sm leading-6 text-slate-600">
+                  {selected.description}
+                </p>
+              ) : null}
+              <div className="mt-3 space-y-2">
+                <ComponentRow label="Trigger" value={selected.trigger} tone="rose" />
+                {selected.nodes.map((node, index) => (
+                  <ComponentRow
+                    key={`${node}-${index}`}
+                    label={`Node ${index + 1}`}
+                    value={node}
+                    tone="lime"
+                  />
+                ))}
+                {selected.edges.map((edge, index) => (
+                  <ComponentRow
+                    key={`${edge}-${index}`}
+                    label={`Edge ${index + 1}`}
+                    value={edge}
+                    tone="amber"
+                  />
+                ))}
+              </div>
+              <button
+                type="button"
+                data-sandbox-target="workflow-run"
+                onClick={onRun}
+                className="mt-3 inline-flex items-center gap-2 rounded-lg bg-slate-950 px-3 py-2 text-xs font-bold text-white"
+              >
+                <Play className="h-3.5 w-3.5" />
+                Run simulation
+              </button>
+            </div>
+          ) : null}
+          {result.length ? (
+            <div className="rounded-xl border border-slate-200 bg-slate-950 p-3 font-mono text-xs leading-5 text-slate-100">
+              {result.map((line) => (
+                <div key={line}>{line}</div>
+              ))}
+            </div>
+          ) : null}
+        </>
+      )}
+    </div>
+  );
+}
+
+export function MemoryPanel({
+  memories,
+  entries,
+  onChange,
+}: {
+  memories: AgentSandboxMemoryTemplate[];
+  entries: Record<string, string>;
+  onChange: (id: string, value: string) => void;
+}) {
+  return (
+    <div className="space-y-3" data-sandbox-target="memory">
+      {memories.length === 0 ? (
+        <p className="rounded-lg border border-dashed border-slate-300 p-3 text-sm text-slate-500">
+          No memory records configured for this lesson.
+        </p>
+      ) : (
+        memories.map((memory) => (
+          <label
+            key={memory.id}
+            data-sandbox-target={`memory-${memory.type}`}
+            className="block rounded-xl border border-slate-200 bg-white p-3"
+          >
+            <span className="flex items-center justify-between gap-2">
+              <span className="inline-flex items-center gap-2 text-sm font-bold text-slate-900">
+                <Database className="h-4 w-4 text-slate-500" />
+                {memory.label}
+              </span>
+              <span className={memoryBadgeClass(memory.type)}>
+                {memory.type} memory
+              </span>
+            </span>
+            <textarea
+              value={entries[memory.id] ?? memory.content}
+              onChange={(event) => onChange(memory.id, event.target.value)}
+              className="mt-3 min-h-24 w-full resize-y rounded-lg border border-slate-200 px-3 py-2 text-sm leading-6 outline-none focus:border-slate-400"
+            />
+          </label>
+        ))
+      )}
+    </div>
+  );
+}
+
+export function ComputerPanel({
+  template,
+  command,
+  output,
+  onCommandChange,
+  onRun,
+}: {
+  template?: AgentSandboxComputerTemplate;
+  command: string;
+  output: string;
+  onCommandChange: (value: string) => void;
+  onRun: () => void;
+}) {
+  const files = template?.files || [];
+
+  return (
+    <div className="space-y-3" data-sandbox-target="computer">
+      <div className="rounded-xl border border-slate-200 bg-white p-3">
+        <div className="flex items-start gap-3">
+          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-slate-600">
+            <Monitor className="h-4 w-4" />
+          </span>
+          <div className="min-w-0">
+            <p className="text-sm font-bold text-slate-900">
+              {template?.workspaceName || "Sandbox workspace"}
+            </p>
+            <p className="mt-1 text-xs leading-5 text-slate-500">
+              {template?.isolationMode ||
+                "A scoped workspace for safe, lightweight practice."}
+            </p>
+          </div>
+        </div>
+      </div>
+
+      {files.length ? (
+        <div className="overflow-hidden rounded-xl border border-slate-200">
+          {files.map((file) => (
+            <details key={file.path} className="border-b border-slate-100 last:border-b-0">
+              <summary className="cursor-pointer bg-white px-3 py-2 text-sm font-bold text-slate-800">
+                {file.path}
+              </summary>
+              <pre className="max-h-44 overflow-auto bg-slate-50 p-3 text-xs leading-5 text-slate-600">
+                {file.content}
+              </pre>
+            </details>
+          ))}
+        </div>
+      ) : null}
+
+      <div className="rounded-xl border border-slate-200 bg-white p-3">
+        <label className="block">
+          <span className="text-xs font-bold text-slate-600">Command</span>
+          <input
+            data-sandbox-target="computer-command"
+            value={command}
+            placeholder={template?.starterCommand || "ls"}
+            onChange={(event) => onCommandChange(event.target.value)}
+            className="mt-1.5 w-full rounded-lg border border-slate-200 px-3 py-2 font-mono text-sm outline-none focus:border-slate-400"
+          />
+        </label>
+        <button
+          type="button"
+          onClick={onRun}
+          className="mt-3 inline-flex items-center gap-2 rounded-lg bg-slate-950 px-3 py-2 text-xs font-bold text-white"
+        >
+          <Play className="h-3.5 w-3.5" />
+          Run command
+        </button>
+        {output ? (
+          <pre className="mt-3 max-h-56 overflow-auto rounded-lg bg-slate-950 p-3 font-mono text-xs leading-5 text-slate-100">
+            {output}
+          </pre>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
 function Field({
   label,
   value,
@@ -361,6 +664,55 @@ function Field({
       />
     </label>
   );
+}
+
+function CheckCircle({ checked }: { checked: boolean }) {
+  return (
+    <span
+      className={cn(
+        "flex h-5 w-5 shrink-0 items-center justify-center rounded-full border-2 transition-colors",
+        checked ? "border-slate-900 bg-slate-900" : "border-slate-300 bg-white"
+      )}
+    >
+      {checked ? <Check className="h-3 w-3 text-white" strokeWidth={3} /> : null}
+    </span>
+  );
+}
+
+function ComponentRow({
+  label,
+  value,
+  tone,
+}: {
+  label: string;
+  value: string;
+  tone: "rose" | "lime" | "amber";
+}) {
+  const toneClass =
+    tone === "rose"
+      ? "bg-rose-100 text-rose-800"
+      : tone === "lime"
+        ? "bg-lime-100 text-lime-800"
+        : "bg-amber-100 text-amber-800";
+
+  return (
+    <div className="flex items-start gap-2 rounded-lg border border-slate-100 bg-slate-50 p-2">
+      <span className={cn("rounded px-2 py-1 text-[11px] font-black", toneClass)}>
+        {label}
+      </span>
+      <span className="min-w-0 flex-1 text-xs leading-5 text-slate-600">
+        {value}
+      </span>
+    </div>
+  );
+}
+
+function memoryBadgeClass(type: AgentSandboxMemoryTemplate["type"]) {
+  const base = "rounded px-2 py-1 text-[11px] font-black";
+  if (type === "working") return `${base} bg-pink-100 text-pink-800`;
+  if (type === "semantic") return `${base} bg-cyan-100 text-cyan-800`;
+  if (type === "episodic") return `${base} bg-lime-100 text-lime-800`;
+  return `${base} bg-amber-100 text-amber-800`;
 }
 
 function isGoogleTool(tool: AgentSandboxToolTemplate) {

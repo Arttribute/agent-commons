@@ -16,6 +16,7 @@ import {
   CreditCard,
   LayoutDashboard,
   Rocket,
+  Sparkles,
   Users,
 } from "lucide-react";
 
@@ -80,6 +81,12 @@ export default async function EducatorDashboardPage() {
               Analytics
             </Link>
             <Link
+              href="/educator/copilot"
+              className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-bold text-slate-700 hover:bg-slate-50"
+            >
+              AI copilot
+            </Link>
+            <Link
               href="/educator/settings"
               className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-bold text-slate-700 hover:bg-slate-50"
             >
@@ -100,7 +107,7 @@ export default async function EducatorDashboardPage() {
           <Metric icon={CreditCard} label="Completed sales" value={gross.toLocaleString()} />
         </div>
 
-        <section className="mb-8 grid gap-4 md:grid-cols-3">
+        <section className="mb-8 grid gap-4 md:grid-cols-4">
           <FormatCard
             icon={BookOpen}
             title="Courses"
@@ -114,6 +121,13 @@ export default async function EducatorDashboardPage() {
             body="Attach atomic daily challenges to courses so learners can earn skills and keep streaks."
             href="/educator/skills"
             action="Manage skills"
+          />
+          <FormatCard
+            icon={Sparkles}
+            title="AI copilot"
+            body="Upload course material and create a draft course or skill path for review."
+            href="/educator/copilot"
+            action="Create with AI"
           />
           <FormatCard
             icon={Rocket}

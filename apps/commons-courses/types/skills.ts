@@ -25,6 +25,8 @@ export type AgentSandboxCapability =
   | "connectors"
   | "tasks"
   | "workflows"
+  | "memory"
+  | "computer"
   | "chat"
   | "logs"
   | "credits";
@@ -37,6 +39,8 @@ export type AgentSandboxStepTarget =
   | "connectors"
   | "tasks"
   | "workflows"
+  | "memory"
+  | "computer"
   | "chat"
   | "logs"
   | "publish";
@@ -98,6 +102,47 @@ export type AgentSandboxSkillTemplate = {
   instructions: string;
 };
 
+export type AgentSandboxTaskTemplate = {
+  id: string;
+  title: string;
+  schedule: string;
+  description?: string;
+};
+
+export type AgentSandboxWorkflowTemplate = {
+  id: string;
+  name: string;
+  trigger: string;
+  nodes: string[];
+  edges: string[];
+  description?: string;
+};
+
+export type AgentSandboxMemoryType =
+  | "working"
+  | "semantic"
+  | "episodic"
+  | "procedural";
+
+export type AgentSandboxMemoryTemplate = {
+  id: string;
+  type: AgentSandboxMemoryType;
+  label: string;
+  content: string;
+};
+
+export type AgentSandboxComputerFile = {
+  path: string;
+  content: string;
+};
+
+export type AgentSandboxComputerTemplate = {
+  workspaceName?: string;
+  isolationMode?: string;
+  files?: AgentSandboxComputerFile[];
+  starterCommand?: string;
+};
+
 export type AgentSandboxConfig = {
   enabled: boolean;
   mode: "simple" | "builder" | "full";
@@ -122,8 +167,13 @@ export type AgentSandboxConfig = {
   };
   starterSkillIds?: string[];
   starterToolIds?: string[];
+  starterTaskIds?: string[];
   skillTemplates?: AgentSandboxSkillTemplate[];
   toolTemplates?: AgentSandboxToolTemplate[];
+  taskTemplates?: AgentSandboxTaskTemplate[];
+  workflowTemplates?: AgentSandboxWorkflowTemplate[];
+  memoryTemplates?: AgentSandboxMemoryTemplate[];
+  computerTemplate?: AgentSandboxComputerTemplate;
   review?: AgentSandboxReviewConfig;
   creditReward?: number;
   completionEventType?: string;

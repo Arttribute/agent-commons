@@ -4,9 +4,13 @@ import { useEffect, useMemo, useRef, useState, type MutableRefObject } from "rea
 import { ExternalLink, Loader2 as SandboxLoader, Terminal, X } from "lucide-react";
 import { ChatSurface } from "./agent-sandbox/chat-surface";
 import {
+  ComputerPanel,
   IdentityPanel,
+  MemoryPanel,
   SkillsPanel,
+  TasksPanel,
   ToolsPanel,
+  WorkflowPanel,
 } from "./agent-sandbox/config-panels";
 import { ConfigDrawer, ConfigRail } from "./agent-sandbox/config-shell";
 import { BottomGuide } from "./agent-sandbox/bottom-guide";
@@ -87,6 +91,27 @@ export function AgentLearnerSandbox({
     config.starterToolIds ??
       (config.toolTemplates || []).slice(0, 1).map((tool) => tool.id)
   );
+  const [selectedTasks, setSelectedTasks] = useState<string[]>(
+    config.starterTaskIds ??
+      (config.taskTemplates || []).slice(0, 1).map((task) => task.id)
+  );
+  const [selectedWorkflowId, setSelectedWorkflowId] = useState(
+    config.workflowTemplates?.[0]?.id || ""
+  );
+  const [workflowResult, setWorkflowResult] = useState<string[]>([]);
+  const [memoryEntries, setMemoryEntries] = useState<Record<string, string>>(
+    () =>
+      Object.fromEntries(
+        (config.memoryTemplates || []).map((memory) => [
+          memory.id,
+          memory.content,
+        ])
+      )
+  );
+  const [computerCommand, setComputerCommand] = useState(
+    config.computerTemplate?.starterCommand || "ls"
+  );
+  const [computerOutput, setComputerOutput] = useState("");
   const [taskTitle, setTaskTitle] = useState("Plan a realistic study week");
   const [activePanel, setActivePanel] = useState<ConfigPanel>("identity");
   // True while we check the server for a previously-saved sandbox state.
@@ -336,6 +361,11 @@ export function AgentLearnerSandbox({
           skills: selectedSkills,
           skillInstructions,
           tools: selectedTools,
+          tasks: selectedTasks,
+          workflowId: selectedWorkflowId,
+          memoryEntries,
+          computerCommand,
+          computerOutput,
           taskTitle,
           message: chatInput,
         },
@@ -401,6 +431,11 @@ export function AgentLearnerSandbox({
           skills: selectedSkills,
           skillInstructions,
           tools: selectedTools,
+          tasks: selectedTasks,
+          workflowId: selectedWorkflowId,
+          memoryEntries,
+          computerCommand,
+          computerOutput,
           taskTitle,
           message: chatInput,
         },
@@ -826,7 +861,87 @@ export function AgentLearnerSandbox({
         />
       );
     }
+    if (activePanel === "tasks") {
+      return (
+        <TasksPanel
+          tasks={config.taskTemplates || []}
+          selected={selectedTasks}
+          onChange={setSelectedTasks}
+        />
+      );
+    }
+    if (activePanel === "workflows") {
+      return (
+        <WorkflowPanel
+          workflows={config.workflowTemplates || []}
+          selectedId={selectedWorkflowId}
+          result={workflowResult}
+          onSelect={setSelectedWorkflowId}
+          onRun={runWorkflowSimulation}
+        />
+      );
+    }
+    if (activePanel === "memory") {
+      return (
+        <MemoryPanel
+          memories={config.memoryTemplates || []}
+          entries={memoryEntries}
+          onChange={(id, value) =>
+            setMemoryEntries((current) => ({ ...current, [id]: value }))
+          }
+        />
+      );
+    }
+    if (activePanel === "computer") {
+      return (
+        <ComputerPanel
+          template={config.computerTemplate}
+          command={computerCommand}
+          output={computerOutput}
+          onCommandChange={setComputerCommand}
+          onRun={runComputerCommand}
+        />
+      );
+    }
     return null;
+  }
+
+  function runWorkflowSimulation() {
+    const workflow =
+      config.workflowTemplates?.find((item) => item.id === selectedWorkflowId) ||
+      config.workflowTemplates?.[0];
+    if (!workflow) return;
+    const lines = [
+      `trigger -> ${workflow.trigger}`,
+      ...workflow.nodes.map((node, index) => `node ${index + 1} -> ${node}`),
+      ...workflow.edges.map((edge, index) => `edge ${index + 1} -> ${edge}`),
+      "simulation -> completed inside the learning sandbox",
+    ];
+    setWorkflowResult(lines);
+    addLog({ level: "success", message: `Simulated workflow: ${workflow.name}.` });
+  }
+
+  function runComputerCommand() {
+    const files = config.computerTemplate?.files || [];
+    const command = computerCommand.trim() || config.computerTemplate?.starterCommand || "ls";
+    let output = "";
+    if (command === "ls" || command === "ls .") {
+      output = files.map((file) => file.path).join("\n") || "workspace is empty";
+    } else if (command.startsWith("cat ")) {
+      const target = command.slice(4).trim();
+      const file = files.find((item) => item.path === target);
+      output = file?.content || `cat: ${target}: no such file in sandbox workspace`;
+    } else if (command === "pwd") {
+      output = `/${config.computerTemplate?.workspaceName || "sandbox-workspace"}`;
+    } else {
+      output = [
+        `$ ${command}`,
+        "Command accepted by the lightweight sandbox runtime.",
+        "This practice environment is scoped and simulated for learning.",
+      ].join("\n");
+    }
+    setComputerOutput(output);
+    addLog({ level: "success", message: `Ran lightweight computer command: ${command}.` });
   }
 
   function buildSandboxState(
@@ -839,6 +954,12 @@ export function AgentLearnerSandbox({
       selectedSkills,
       skillInstructions,
       selectedTools,
+      selectedTasks,
+      selectedWorkflowId,
+      workflowResult,
+      memoryEntries,
+      computerCommand,
+      computerOutput,
       taskTitle,
       activePanel,
       guideIndex,
@@ -865,6 +986,18 @@ export function AgentLearnerSandbox({
     if (state.selectedSkills) setSelectedSkills(state.selectedSkills);
     if (state.skillInstructions) setSkillInstructions(state.skillInstructions);
     if (state.selectedTools) setSelectedTools(state.selectedTools);
+    if (state.selectedTasks) setSelectedTasks(state.selectedTasks);
+    if (typeof state.selectedWorkflowId === "string") {
+      setSelectedWorkflowId(state.selectedWorkflowId);
+    }
+    if (state.workflowResult) setWorkflowResult(state.workflowResult);
+    if (state.memoryEntries) setMemoryEntries(state.memoryEntries);
+    if (typeof state.computerCommand === "string") {
+      setComputerCommand(state.computerCommand);
+    }
+    if (typeof state.computerOutput === "string") {
+      setComputerOutput(state.computerOutput);
+    }
     if (state.taskTitle) setTaskTitle(state.taskTitle);
     if (state.activePanel) setActivePanel(state.activePanel);
     if (typeof state.guideIndex === "number") setGuideIndex(state.guideIndex);
@@ -955,8 +1088,10 @@ function defaultGuideSelector(target?: string) {
     skills: '[data-sandbox-target="skills"]',
     tools: '[data-sandbox-target="tool-google-calendar"]',
     connectors: '[data-sandbox-target="connect-google"]',
-    workflows: '[data-sandbox-target="chat-input"]',
-    tasks: '[data-sandbox-target="chat-input"]',
+    workflows: '[data-sandbox-target="workflows"]',
+    tasks: '[data-sandbox-target="tasks"]',
+    memory: '[data-sandbox-target="memory"]',
+    computer: '[data-sandbox-target="computer"]',
     chat: '[data-sandbox-target="chat-input"]',
     logs: '[data-sandbox-target="logs-panel"]',
     publish: '[data-sandbox-target="finish-sandbox"]',

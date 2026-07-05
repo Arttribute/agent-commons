@@ -397,6 +397,8 @@ const AgentSandboxGuideStepSchema = new Schema(
         "connectors",
         "tasks",
         "workflows",
+        "memory",
+        "computer",
         "chat",
         "logs",
         "publish",
@@ -442,6 +444,60 @@ const AgentSandboxToolTemplateSchema = new Schema(
       default: "custom",
     },
     simulated: { type: Boolean, default: true },
+  },
+  { _id: false }
+);
+
+const AgentSandboxTaskTemplateSchema = new Schema(
+  {
+    id: { type: String, required: true, trim: true },
+    title: { type: String, required: true, trim: true },
+    schedule: { type: String, required: true, trim: true },
+    description: { type: String, trim: true },
+  },
+  { _id: false }
+);
+
+const AgentSandboxWorkflowTemplateSchema = new Schema(
+  {
+    id: { type: String, required: true, trim: true },
+    name: { type: String, required: true, trim: true },
+    trigger: { type: String, required: true, trim: true },
+    nodes: { type: [String], default: [] },
+    edges: { type: [String], default: [] },
+    description: { type: String, trim: true },
+  },
+  { _id: false }
+);
+
+const AgentSandboxMemoryTemplateSchema = new Schema(
+  {
+    id: { type: String, required: true, trim: true },
+    type: {
+      type: String,
+      enum: ["working", "semantic", "episodic", "procedural"],
+      required: true,
+    },
+    label: { type: String, required: true, trim: true },
+    content: { type: String, required: true, trim: true },
+  },
+  { _id: false }
+);
+
+const AgentSandboxComputerFileSchema = new Schema(
+  {
+    path: { type: String, required: true, trim: true },
+    content: { type: String, required: true },
+  },
+  { _id: false }
+);
+
+const AgentSandboxComputerTemplateSchema = new Schema(
+  {
+    workspaceName: { type: String, trim: true },
+    isolationMode: { type: String, trim: true },
+    files: { type: [AgentSandboxComputerFileSchema], default: [] },
+    starterCommand: { type: String, trim: true },
   },
   { _id: false }
 );
@@ -506,6 +562,8 @@ const AgentSandboxConfigSchema = new Schema(
         "connectors",
         "tasks",
         "workflows",
+        "memory",
+        "computer",
         "chat",
         "logs",
         "credits",
@@ -522,6 +580,8 @@ const AgentSandboxConfigSchema = new Schema(
         "connectors",
         "tasks",
         "workflows",
+        "memory",
+        "computer",
         "chat",
         "logs",
         "credits",
@@ -536,6 +596,14 @@ const AgentSandboxConfigSchema = new Schema(
     },
     skillTemplates: { type: [AgentSandboxSkillTemplateSchema], default: [] },
     toolTemplates: { type: [AgentSandboxToolTemplateSchema], default: [] },
+    starterTaskIds: { type: [String], default: undefined },
+    taskTemplates: { type: [AgentSandboxTaskTemplateSchema], default: [] },
+    workflowTemplates: {
+      type: [AgentSandboxWorkflowTemplateSchema],
+      default: [],
+    },
+    memoryTemplates: { type: [AgentSandboxMemoryTemplateSchema], default: [] },
+    computerTemplate: AgentSandboxComputerTemplateSchema,
     review: AgentSandboxReviewSchema,
     creditReward: { type: Number, default: 0, min: 0 },
     completionEventType: {

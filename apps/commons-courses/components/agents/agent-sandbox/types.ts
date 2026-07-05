@@ -26,6 +26,12 @@ export type SandboxResumeState = {
   selectedSkills?: string[];
   skillInstructions?: Record<string, string>;
   selectedTools?: string[];
+  selectedTasks?: string[];
+  selectedWorkflowId?: string;
+  workflowResult?: string[];
+  memoryEntries?: Record<string, string>;
+  computerCommand?: string;
+  computerOutput?: string;
   taskTitle?: string;
   activePanel?: ConfigPanel;
   guideIndex?: number;
@@ -38,7 +44,14 @@ export type SandboxResumeState = {
   reviews?: Record<string, ReviewResult>;
 };
 
-export type ConfigPanel = "identity" | "skills" | "tools";
+export type ConfigPanel =
+  | "identity"
+  | "skills"
+  | "tools"
+  | "tasks"
+  | "workflows"
+  | "memory"
+  | "computer";
 
 export const targetToPanel: Partial<Record<AgentSandboxStepTarget, ConfigPanel>> = {
   identity: "identity",
@@ -46,4 +59,8 @@ export const targetToPanel: Partial<Record<AgentSandboxStepTarget, ConfigPanel>>
   skills: "skills",
   tools: "tools",
   connectors: "tools",
+  tasks: "tasks",
+  workflows: "workflows",
+  memory: "memory",
+  computer: "computer",
 };
