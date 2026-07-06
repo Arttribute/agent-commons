@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getAgentCommonsClient } from "@/lib/agent-commons";
 import { normalizeCourseInput, type CourseInput } from "@/lib/course-input";
+import { ensureEducatorCopilotProfile } from "@/lib/educator-copilot-agent";
 import {
   extractMaterial,
   formatMaterialContext,
@@ -70,6 +70,7 @@ export async function POST(req: NextRequest) {
     instructions,
     materialText,
     images,
+    session: authResult.session,
   });
 
   if (mode === "skill_path") {
@@ -241,6 +242,7 @@ async function createDraft(input: {
   instructions: string;
   materialText: string;
   images: MaterialExtract[];
+  session: NonNullable<Awaited<ReturnType<typeof requireEducator>>["session"]>;
 }): Promise<CopilotDraft> {
   const agentDraft = await draftWithAgentCommons(input);
   if (agentDraft) return agentDraft;
@@ -251,14 +253,24 @@ async function createDraft(input: {
   return fallbackDraft(input);
 }
 
+/**
+ * Draft with the educator's own copilot agent so studio output follows the
+ * same personal instructions and remembered preferences as the side chat.
+ */
 async function draftWithAgentCommons(input: {
   mode: CopilotMode;
   instructions: string;
   materialText: string;
+  session: NonNullable<Awaited<ReturnType<typeof requireEducator>>["session"]>;
 }) {
-  const client = getAgentCommonsClient();
-  const agentId = process.env.EDUCATOR_COPILOT_AGENT_ID;
-  if (!client || !agentId || !input.materialText.trim()) return null;
+  if (!input.materialText.trim()) return null;
+  const { profile, client, agentReady } = await ensureEducatorCopilotProfile({
+    id: input.session.userId,
+    email: input.session.email,
+    role: input.session.role,
+  });
+  const agentId = profile.agentId;
+  if (!client || !agentReady || !agentId) return null;
 
   try {
     const result = await client.run.once({

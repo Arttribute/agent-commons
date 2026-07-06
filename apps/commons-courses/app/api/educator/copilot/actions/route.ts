@@ -1,14 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireEducator } from "@/lib/educator-auth";
-import { applyEducatorCopilotAction } from "@/lib/educator-copilot-runtime";
-import EducatorCopilotPreference from "@/models/EducatorCopilotPreference";
+import { applyEducatorCopilotAction } from "@/lib/educator-copilot-tools";
 import EducatorCopilotSession from "@/models/EducatorCopilotSession";
-import type {
-  EducatorCopilotAction,
-  EducatorCopilotActionMode,
-} from "@/types/educator-copilot";
-
-type CopilotPreferenceDoc = { actionMode?: EducatorCopilotActionMode } | null;
+import type { EducatorCopilotAction } from "@/types/educator-copilot";
 
 export async function POST(req: NextRequest) {
   const result = await requireEducator();
@@ -55,12 +49,12 @@ export async function POST(req: NextRequest) {
   if (!found) {
     return NextResponse.json({ error: "Action not found." }, { status: 404 });
   }
-
-  const preference = (await EducatorCopilotPreference.findOneAndUpdate(
-    { userId: result.session.userId },
-    { $setOnInsert: { actionMode: "manual" } },
-    { new: true, upsert: true }
-  ).lean()) as CopilotPreferenceDoc;
+  if (found.action.status !== "proposed") {
+    return NextResponse.json(
+      { error: `This action is already ${found.action.status}.` },
+      { status: 409 }
+    );
+  }
 
   const nextAction =
     body.decision === "reject"
@@ -76,7 +70,6 @@ export async function POST(req: NextRequest) {
             role: result.session.role,
           },
           action: found.action,
-          actionMode: preference?.actionMode || "manual",
         });
 
   sessionMessages[found.messageIndex].actions![found.actionIndex] = nextAction;

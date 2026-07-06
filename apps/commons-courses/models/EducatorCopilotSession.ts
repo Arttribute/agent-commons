@@ -4,6 +4,7 @@ import type {
   EducatorCopilotActionMode,
   EducatorCopilotAttachment,
   EducatorCopilotPageContext,
+  EducatorCopilotToolActivity,
 } from "@/types/educator-copilot";
 
 export interface IEducatorCopilotMessage {
@@ -13,6 +14,17 @@ export interface IEducatorCopilotMessage {
   createdAt: Date;
   attachments?: EducatorCopilotAttachment[];
   actions?: EducatorCopilotAction[];
+  activity?: EducatorCopilotToolActivity[];
+}
+
+/** Full extracted text of an uploaded file, kept so the agent can re-read it later in the session. */
+export interface IEducatorCopilotMaterial {
+  name: string;
+  type: string;
+  size: number;
+  text: string;
+  fileId?: string;
+  uploadedAt: Date;
 }
 
 export interface IEducatorCopilotSession extends Document {
@@ -22,6 +34,9 @@ export interface IEducatorCopilotSession extends Document {
   currentPath?: string;
   pageContext?: EducatorCopilotPageContext;
   messages: IEducatorCopilotMessage[];
+  materials: IEducatorCopilotMaterial[];
+  /** Agent Commons session id backing this chat (holds the model-side history). */
+  agentSessionId?: string;
   archived: boolean;
   createdAt: Date;
   updatedAt: Date;
@@ -35,6 +50,19 @@ const CopilotMessageSchema = new Schema<IEducatorCopilotMessage>(
     createdAt: { type: Date, default: Date.now },
     attachments: { type: [Schema.Types.Mixed], default: [] },
     actions: { type: [Schema.Types.Mixed], default: [] },
+    activity: { type: [Schema.Types.Mixed], default: [] },
+  },
+  { _id: false }
+);
+
+const CopilotMaterialSchema = new Schema<IEducatorCopilotMaterial>(
+  {
+    name: { type: String, required: true },
+    type: { type: String, required: true },
+    size: { type: Number, required: true },
+    text: { type: String, default: "" },
+    fileId: { type: String },
+    uploadedAt: { type: Date, default: Date.now },
   },
   { _id: false }
 );
@@ -51,6 +79,8 @@ const EducatorCopilotSessionSchema = new Schema<IEducatorCopilotSession>(
     currentPath: { type: String, trim: true },
     pageContext: { type: Schema.Types.Mixed },
     messages: { type: [CopilotMessageSchema], default: [] },
+    materials: { type: [CopilotMaterialSchema], default: [] },
+    agentSessionId: { type: String, trim: true },
     archived: { type: Boolean, default: false },
   },
   { timestamps: true }

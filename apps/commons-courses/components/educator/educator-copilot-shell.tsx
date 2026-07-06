@@ -4,27 +4,39 @@ import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "re
 import { usePathname, useRouter } from "next/navigation";
 import {
   Bot,
+  BookOpen,
+  Brain,
   Check,
   ChevronRight,
   FileText,
+  FilePlus2,
   History,
   Highlighter,
+  Layers,
   LoaderCircle,
-  MessageSquare,
+  Navigation,
   Paperclip,
+  PenLine,
+  Plug,
   Plus,
   Send,
   Settings,
   Sparkles,
+  Trash2,
   X,
 } from "lucide-react";
+import { RichTextRenderer } from "@/components/rich-text-renderer";
 import { cn } from "@/lib/utils";
 import type {
   EducatorCopilotAction,
   EducatorCopilotActionMode,
+  EducatorCopilotConnector,
+  EducatorCopilotMemory,
   EducatorCopilotMessage,
   EducatorCopilotPageContext,
+  EducatorCopilotProfile,
   EducatorCopilotSessionSummary,
+  EducatorCopilotToolActivity,
 } from "@/types/educator-copilot";
 
 type SessionDetail = EducatorCopilotSessionSummary & {
@@ -32,12 +44,19 @@ type SessionDetail = EducatorCopilotSessionSummary & {
 };
 
 type CopilotStreamEvent = {
-  type: "status" | "token" | "toolStart" | "toolEnd" | "error" | "final";
+  type: "status" | "token" | "activity" | "error" | "final";
   content?: string;
   message?: string | (EducatorCopilotMessage & { actions?: EducatorCopilotAction[] });
   session?: SessionDetail;
-  toolName?: string;
+  activity?: EducatorCopilotToolActivity;
 };
+
+const QUICK_PROMPTS = [
+  "Give me a snapshot of all my courses and students",
+  "What needs my attention this week?",
+  "Help me improve a lesson in this course",
+  "Draft a new module from a file I upload",
+];
 
 export function EducatorCopilotShell() {
   const router = useRouter();
@@ -46,17 +65,21 @@ export function EducatorCopilotShell() {
   const [panel, setPanel] = useState<"chat" | "sessions" | "settings">("chat");
   const [sessions, setSessions] = useState<EducatorCopilotSessionSummary[]>([]);
   const [activeSession, setActiveSession] = useState<SessionDetail | null>(null);
-  const [actionMode, setActionMode] = useState<EducatorCopilotActionMode>("manual");
+  const [profile, setProfile] = useState<EducatorCopilotProfile | null>(null);
   const [input, setInput] = useState("");
   const [files, setFiles] = useState<File[]>([]);
   const [loading, setLoading] = useState(false);
   const [booted, setBooted] = useState(false);
   const [localNotice, setLocalNotice] = useState<string | null>(null);
   const [streamStatus, setStreamStatus] = useState<string | null>(null);
+  const [streamActivity, setStreamActivity] = useState<EducatorCopilotToolActivity[]>([]);
   const autoApplied = useRef(new Set<string>());
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const scrollRef = useRef<HTMLDivElement | null>(null);
 
+  const actionMode: EducatorCopilotActionMode = profile?.actionMode || "manual";
   const messages = useMemo(() => activeSession?.messages || [], [activeSession?.messages]);
+
   const updateLocalAction = useCallback(
     (
       actionId: string,
@@ -109,6 +132,7 @@ export function EducatorCopilotShell() {
 
   useEffect(() => {
     loadSessions();
+    loadProfile();
   }, []);
 
   useEffect(() => {
@@ -116,6 +140,10 @@ export function EducatorCopilotShell() {
       current ? { ...current, currentPath: pathname || current.currentPath } : current
     );
   }, [pathname]);
+
+  useEffect(() => {
+    scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
+  }, [messages, streamActivity, loading]);
 
   useEffect(() => {
     if (actionMode !== "auto") return;
@@ -138,10 +166,20 @@ export function EducatorCopilotShell() {
       if (!res.ok) return;
       const data = await res.json();
       setSessions(data.sessions || []);
-      setActionMode(data.preference?.actionMode || "manual");
       setBooted(true);
     } catch {
       setBooted(true);
+    }
+  }
+
+  async function loadProfile() {
+    try {
+      const res = await fetch("/api/educator/copilot/profile");
+      if (!res.ok) return;
+      const data = await res.json();
+      setProfile(data.profile || null);
+    } catch {
+      // Profile stays null; mode defaults to manual.
     }
   }
 
@@ -179,17 +217,17 @@ export function EducatorCopilotShell() {
   }
 
   async function updateActionMode(nextMode: EducatorCopilotActionMode) {
-    setActionMode(nextMode);
-    await fetch("/api/educator/copilot/preferences", {
+    setProfile((current) => (current ? { ...current, actionMode: nextMode } : current));
+    await fetch("/api/educator/copilot/profile", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ actionMode: nextMode }),
-    });
+    }).catch(() => {});
   }
 
-  async function sendMessage(event: FormEvent) {
+  async function sendMessage(event: FormEvent, presetText?: string) {
     event.preventDefault();
-    const content = input.trim();
+    const content = (presetText ?? input).trim();
     const selectedFiles = files;
     if ((!content && selectedFiles.length === 0) || loading) return;
 
@@ -231,7 +269,8 @@ export function EducatorCopilotShell() {
     setFiles([]);
     setLoading(true);
     setLocalNotice(null);
-    setStreamStatus("Starting...");
+    setStreamStatus("Starting…");
+    setStreamActivity([]);
 
     try {
       const formData = new FormData();
@@ -261,13 +300,22 @@ export function EducatorCopilotShell() {
           setActiveSession((current) =>
             current ? replaceLastAssistant(current, assistantText) : current
           );
-          setStreamStatus("Responding...");
+          setStreamStatus(null);
         } else if (streamEvent.type === "status" && streamEvent.content) {
           setStreamStatus(streamEvent.content);
-        } else if (streamEvent.type === "toolStart") {
-          setStreamStatus(`Using ${streamEvent.toolName || "tool"}...`);
-        } else if (streamEvent.type === "toolEnd") {
-          setStreamStatus("Continuing...");
+        } else if (streamEvent.type === "activity" && streamEvent.activity) {
+          const incoming = streamEvent.activity;
+          setStreamActivity((current) => {
+            if (incoming.status === "running") return [...current, incoming];
+            const index = current.findLastIndex(
+              (item) => item.tool === incoming.tool && item.status === "running"
+            );
+            if (index === -1) return [...current, incoming];
+            const next = [...current];
+            next[index] = incoming;
+            return next;
+          });
+          setStreamStatus(incoming.status === "running" ? incoming.label : null);
         } else if (streamEvent.type === "error") {
           setLocalNotice(
             typeof streamEvent.message === "string"
@@ -286,7 +334,8 @@ export function EducatorCopilotShell() {
               : null;
           if (
             finalMessage?.actions?.some(
-              (action: EducatorCopilotAction) => action.status === "applied"
+              (action: EducatorCopilotAction) =>
+                action.status === "applied" && action.safety === "content_write"
             )
           ) {
             router.refresh();
@@ -298,6 +347,7 @@ export function EducatorCopilotShell() {
     } finally {
       setLoading(false);
       setStreamStatus(null);
+      setStreamActivity([]);
     }
   }
 
@@ -333,8 +383,8 @@ export function EducatorCopilotShell() {
   const emptyState = useMemo(
     () =>
       pathname?.includes("/educator/courses/")
-        ? "Ask me to revise a lesson, find a course view, summarize this course, or guide you around the page."
-        : "Ask me about your courses, materials, students, analytics, or where to go next.",
+        ? "I can see this course. Ask me to revise lessons, summarize students, explain analytics, or guide you around this page."
+        : "Ask about any of your courses, students, or materials — or upload a file and we'll build content from it.",
     [pathname]
   );
 
@@ -371,11 +421,18 @@ export function EducatorCopilotShell() {
           <aside className="flex h-full w-full max-w-md flex-col border-l border-slate-200 bg-white shadow-xl">
             <header className="border-b border-slate-100 p-4">
               <div className="flex items-start justify-between gap-3">
-                <div>
-                  <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-slate-400">
-                    Educator copilot
+                <div className="min-w-0">
+                  <p className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-[0.2em] text-slate-400">
+                    {profile?.copilotName || "Educator copilot"}
+                    <span
+                      title={profile?.agentReady ? "Connected" : "Limited mode"}
+                      className={cn(
+                        "inline-block h-1.5 w-1.5 rounded-full",
+                        profile?.agentReady ? "bg-emerald-500" : "bg-amber-400"
+                      )}
+                    />
                   </p>
-                  <h2 className="mt-1 text-base font-bold text-slate-950">
+                  <h2 className="mt-1 truncate text-base font-bold text-slate-950">
                     {activeSession?.title || "Course assistant"}
                   </h2>
                 </div>
@@ -409,9 +466,24 @@ export function EducatorCopilotShell() {
                 <button
                   type="button"
                   onClick={() => updateActionMode(actionMode === "auto" ? "manual" : "auto")}
-                  title="Toggle Manual/Auto mode"
-                  className="ml-auto rounded-md border border-slate-200 px-2 py-1 text-xs font-bold text-slate-500 hover:border-slate-950 hover:text-slate-950"
+                  title={
+                    actionMode === "auto"
+                      ? "Auto: safe actions run without approval. Click for Manual."
+                      : "Manual: you approve every action. Click for Auto."
+                  }
+                  className={cn(
+                    "ml-auto inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-xs font-bold transition",
+                    actionMode === "auto"
+                      ? "border-emerald-600 bg-emerald-50 text-emerald-700"
+                      : "border-slate-200 text-slate-500 hover:border-slate-950 hover:text-slate-950"
+                  )}
                 >
+                  <span
+                    className={cn(
+                      "inline-block h-1.5 w-1.5 rounded-full",
+                      actionMode === "auto" ? "bg-emerald-500" : "bg-slate-400"
+                    )}
+                  />
                   {actionMode === "auto" ? "Auto" : "Manual"}
                 </button>
               </div>
@@ -426,33 +498,55 @@ export function EducatorCopilotShell() {
                 onArchive={archiveSession}
               />
             ) : panel === "settings" ? (
-              <SettingsPanel actionMode={actionMode} onChange={updateActionMode} />
+              <SettingsPanel
+                profile={profile}
+                onProfileChange={setProfile}
+                onModeChange={updateActionMode}
+              />
             ) : (
               <>
-                <div className="flex-1 overflow-y-auto p-4">
+                <div ref={scrollRef} className="flex-1 overflow-y-auto p-4">
                   {messages.length === 0 ? (
-                    <div className="mt-10 text-center">
+                    <div className="mt-8 text-center">
                       <Sparkles className="mx-auto mb-3 h-5 w-5 text-slate-400" />
                       <p className="text-sm font-semibold text-slate-800">
-                        Work from this exact educator view.
+                        Your workspace, one question away.
                       </p>
                       <p className="mx-auto mt-1 max-w-xs text-sm leading-6 text-slate-500">
                         {emptyState}
                       </p>
+                      <div className="mx-auto mt-5 flex max-w-xs flex-col gap-2">
+                        {QUICK_PROMPTS.map((prompt) => (
+                          <button
+                            key={prompt}
+                            type="button"
+                            onClick={(event) => sendMessage(event, prompt)}
+                            className="rounded-lg border border-slate-200 px-3 py-2 text-left text-xs font-semibold text-slate-600 transition hover:border-slate-950 hover:text-slate-950"
+                          >
+                            {prompt}
+                          </button>
+                        ))}
+                      </div>
                     </div>
                   ) : (
                     <div className="space-y-3">
-                      {messages.map((message) => (
+                      {messages.map((message, index) => (
                         <MessageBubble
                           key={message.id}
                           message={message}
+                          isStreamingTarget={
+                            loading &&
+                            index === messages.length - 1 &&
+                            message.role === "assistant"
+                          }
+                          liveActivity={streamActivity}
                           onDecision={decideAction}
                         />
                       ))}
-                      {loading ? (
+                      {loading && streamStatus ? (
                         <div className="mr-10 inline-flex items-center gap-2 rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-500">
                           <LoaderCircle className="h-4 w-4 animate-spin" />
-                          {streamStatus || "Thinking..."}
+                          {streamStatus}
                         </div>
                       ) : null}
                     </div>
@@ -490,11 +584,16 @@ export function EducatorCopilotShell() {
                     </div>
                   ) : null}
                   <div className="flex items-end gap-2 rounded-lg border border-slate-200 bg-white p-2">
-                    <MessageSquare className="mt-2 h-4 w-4 flex-shrink-0 text-slate-400" />
                     <textarea
                       value={input}
                       onChange={(event) => setInput(event.target.value)}
-                      placeholder="Ask for help with this course, page, or material..."
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter" && !event.shiftKey) {
+                          event.preventDefault();
+                          event.currentTarget.form?.requestSubmit();
+                        }
+                      }}
+                      placeholder="Ask about your courses, students, or this page…"
                       rows={2}
                       className="max-h-28 min-h-10 flex-1 resize-none border-0 bg-transparent text-sm outline-none placeholder:text-slate-400"
                     />
@@ -542,11 +641,16 @@ export function EducatorCopilotShell() {
 
 function MessageBubble({
   message,
+  isStreamingTarget,
+  liveActivity,
   onDecision,
 }: {
   message: EducatorCopilotMessage;
+  isStreamingTarget: boolean;
+  liveActivity: EducatorCopilotToolActivity[];
   onDecision: (action: EducatorCopilotAction, decision: "approve" | "reject") => void;
 }) {
+  const activity = isStreamingTarget ? liveActivity : message.activity || [];
   return (
     <div
       className={cn(
@@ -556,7 +660,45 @@ function MessageBubble({
           : "mr-6 border border-slate-200 bg-white text-slate-700"
       )}
     >
-      {message.content ? <p className="whitespace-pre-wrap">{message.content}</p> : null}
+      {activity.length ? (
+        <div className="mb-2 flex flex-wrap gap-1.5">
+          {activity.map((item, index) => (
+            <span
+              key={`${item.tool}-${index}`}
+              className={cn(
+                "inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-semibold",
+                item.status === "running"
+                  ? "border-sky-200 bg-sky-50 text-sky-700"
+                  : item.status === "error"
+                    ? "border-rose-200 bg-rose-50 text-rose-600"
+                    : "border-slate-200 bg-slate-50 text-slate-500"
+              )}
+            >
+              {item.status === "running" ? (
+                <LoaderCircle className="h-3 w-3 animate-spin" />
+              ) : (
+                <Check className="h-3 w-3" />
+              )}
+              {item.label}
+            </span>
+          ))}
+        </div>
+      ) : null}
+      {message.content ? (
+        message.role === "assistant" ? (
+          <RichTextRenderer
+            value={message.content}
+            className="space-y-2 text-sm leading-6 [&_h2]:text-base [&_h3]:text-sm [&_h4]:text-sm"
+          />
+        ) : (
+          <p className="whitespace-pre-wrap">{message.content}</p>
+        )
+      ) : isStreamingTarget ? (
+        <span className="inline-flex items-center gap-2 text-slate-400">
+          <LoaderCircle className="h-3.5 w-3.5 animate-spin" />
+          Working…
+        </span>
+      ) : null}
       {message.attachments?.length ? (
         <div className="mt-2 space-y-1">
           {message.attachments.map((attachment, index) => (
@@ -571,6 +713,11 @@ function MessageBubble({
             >
               <FileText className="h-3.5 w-3.5 flex-shrink-0" />
               <span className="truncate">{attachment.name}</span>
+              {attachment.status === "uploaded" ? (
+                <span className="ml-auto text-[10px] font-bold uppercase tracking-wide opacity-70">
+                  synced
+                </span>
+              ) : null}
             </div>
           ))}
         </div>
@@ -586,6 +733,27 @@ function MessageBubble({
   );
 }
 
+function actionIcon(action: EducatorCopilotAction) {
+  switch (action.type) {
+    case "highlight":
+      return <Highlighter className="mt-0.5 h-4 w-4 text-sky-600" />;
+    case "navigate":
+      return <Navigation className="mt-0.5 h-4 w-4 text-slate-500" />;
+    case "add_module":
+      return <Layers className="mt-0.5 h-4 w-4 text-violet-600" />;
+    case "add_lesson":
+      return <FilePlus2 className="mt-0.5 h-4 w-4 text-violet-600" />;
+    case "update_course_overview":
+      return <BookOpen className="mt-0.5 h-4 w-4 text-amber-600" />;
+    case "update_course_lesson":
+    case "update_module":
+    case "update_skill_challenge":
+      return <PenLine className="mt-0.5 h-4 w-4 text-amber-600" />;
+    default:
+      return <ChevronRight className="mt-0.5 h-4 w-4 text-slate-500" />;
+  }
+}
+
 function ActionCard({
   action,
   onDecision,
@@ -597,18 +765,14 @@ function ActionCard({
   return (
     <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
       <div className="flex items-start gap-2">
-        {action.type === "highlight" ? (
-          <Highlighter className="mt-0.5 h-4 w-4 text-sky-600" />
-        ) : (
-          <ChevronRight className="mt-0.5 h-4 w-4 text-slate-500" />
-        )}
+        {actionIcon(action)}
         <div className="min-w-0 flex-1">
           <p className="text-sm font-black text-slate-950">{action.label}</p>
           {action.reason ? (
             <p className="mt-1 text-xs leading-5 text-slate-500">{action.reason}</p>
           ) : null}
           {action.preview ? (
-            <p className="mt-2 rounded-md bg-white px-2 py-1.5 text-xs leading-5 text-slate-600">
+            <p className="mt-2 max-h-40 overflow-y-auto whitespace-pre-wrap rounded-md bg-white px-2 py-1.5 text-xs leading-5 text-slate-600">
               {action.preview}
             </p>
           ) : null}
@@ -673,7 +837,7 @@ function SessionsPanel({
         Previous sessions
       </p>
       {!booted ? (
-        <p className="text-sm text-slate-500">Loading sessions...</p>
+        <p className="text-sm text-slate-500">Loading sessions…</p>
       ) : sessions.length === 0 ? (
         <p className="text-sm leading-6 text-slate-500">No previous copilot sessions yet.</p>
       ) : (
@@ -682,7 +846,7 @@ function SessionsPanel({
             <div
               key={session.id}
               className={cn(
-                "rounded-lg border p-3",
+                "group rounded-lg border p-3",
                 activeId === session.id ? "border-slate-950" : "border-slate-200"
               )}
             >
@@ -695,7 +859,8 @@ function SessionsPanel({
                   {session.title}
                 </p>
                 <p className="mt-1 text-xs text-slate-500">
-                  {new Date(session.updatedAt).toLocaleString()}
+                  {relativeTime(session.updatedAt)}
+                  {session.currentPath ? ` · ${session.currentPath}` : ""}
                 </p>
               </button>
               <button
@@ -713,36 +878,389 @@ function SessionsPanel({
   );
 }
 
+// ── Settings ─────────────────────────────────────────────────────────────────
+
+type ModelOptionItem = { provider?: string; modelId?: string; name?: string };
+
 function SettingsPanel({
-  actionMode,
-  onChange,
+  profile,
+  onProfileChange,
+  onModeChange,
 }: {
-  actionMode: EducatorCopilotActionMode;
-  onChange: (mode: EducatorCopilotActionMode) => void;
+  profile: EducatorCopilotProfile | null;
+  onProfileChange: (profile: EducatorCopilotProfile) => void;
+  onModeChange: (mode: EducatorCopilotActionMode) => void;
 }) {
+  const [models, setModels] = useState<ModelOptionItem[]>([]);
+  const [memories, setMemories] = useState<EducatorCopilotMemory[]>([]);
+  const [memoriesAvailable, setMemoriesAvailable] = useState(true);
+  const [connectors, setConnectors] = useState<EducatorCopilotConnector[]>([]);
+  const [connectorsAvailable, setConnectorsAvailable] = useState(true);
+  const [copilotName, setCopilotName] = useState(profile?.copilotName || "");
+  const [instructions, setInstructions] = useState(profile?.customInstructions || "");
+  const [modelChoice, setModelChoice] = useState(
+    profile?.modelProvider && profile?.modelId
+      ? `${profile.modelProvider}::${profile.modelId}`
+      : ""
+  );
+  const [saving, setSaving] = useState(false);
+  const [savedTick, setSavedTick] = useState(false);
+  const [newMemory, setNewMemory] = useState("");
+  const [connectorForm, setConnectorForm] = useState({ name: "", url: "" });
+  const [connectorBusy, setConnectorBusy] = useState(false);
+  const [notice, setNotice] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const [profileRes, memoriesRes, connectorsRes] = await Promise.all([
+          fetch("/api/educator/copilot/profile?full=1"),
+          fetch("/api/educator/copilot/memories"),
+          fetch("/api/educator/copilot/connectors"),
+        ]);
+        if (cancelled) return;
+        if (profileRes.ok) {
+          const data = await profileRes.json();
+          if (data.profile) {
+            onProfileChange(data.profile);
+            setCopilotName(data.profile.copilotName || "");
+            setInstructions(data.profile.customInstructions || "");
+            setModelChoice(
+              data.profile.modelProvider && data.profile.modelId
+                ? `${data.profile.modelProvider}::${data.profile.modelId}`
+                : ""
+            );
+          }
+          setModels(data.models || []);
+        }
+        if (memoriesRes.ok) {
+          const data = await memoriesRes.json();
+          setMemories(data.memories || []);
+          setMemoriesAvailable(data.available !== false);
+        }
+        if (connectorsRes.ok) {
+          const data = await connectorsRes.json();
+          setConnectors(data.connectors || []);
+          setConnectorsAvailable(data.available !== false);
+        }
+      } catch {
+        // Sections render their unavailable states.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  async function savePersonalization() {
+    setSaving(true);
+    setNotice(null);
+    try {
+      const [provider, modelId] = modelChoice ? modelChoice.split("::") : ["", ""];
+      const res = await fetch("/api/educator/copilot/profile", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          copilotName,
+          customInstructions: instructions,
+          modelProvider: provider,
+          modelId,
+        }),
+      });
+      const data = await res.json();
+      if (res.ok && data.profile) {
+        onProfileChange(data.profile);
+        setSavedTick(true);
+        window.setTimeout(() => setSavedTick(false), 2000);
+      } else {
+        setNotice(data.error || "Could not save settings.");
+      }
+    } catch {
+      setNotice("Could not save settings.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function addMemory() {
+    const content = newMemory.trim();
+    if (!content) return;
+    const res = await fetch("/api/educator/copilot/memories", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ content }),
+    });
+    const data = await res.json();
+    if (res.ok && data.memory) {
+      setMemories((current) => [data.memory, ...current]);
+      setNewMemory("");
+    } else {
+      setNotice(data.error || "Could not save the note.");
+    }
+  }
+
+  async function deleteMemory(id: string) {
+    setMemories((current) => current.filter((memory) => memory.id !== id));
+    await fetch(`/api/educator/copilot/memories?id=${encodeURIComponent(id)}`, {
+      method: "DELETE",
+    }).catch(() => {});
+  }
+
+  async function addConnector() {
+    if (!connectorForm.name.trim() || !connectorForm.url.trim()) return;
+    setConnectorBusy(true);
+    setNotice(null);
+    try {
+      const res = await fetch("/api/educator/copilot/connectors", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: connectorForm.name.trim(),
+          url: connectorForm.url.trim(),
+        }),
+      });
+      const data = await res.json();
+      if (res.ok && data.connector) {
+        setConnectors((current) => [data.connector, ...current]);
+        setConnectorForm({ name: "", url: "" });
+        if (data.connector.status === "error") {
+          setNotice(data.connector.lastError || "The connector could not connect.");
+        }
+      } else {
+        setNotice(data.error || "Could not add the connector.");
+      }
+    } finally {
+      setConnectorBusy(false);
+    }
+  }
+
+  async function removeConnector(id: string) {
+    setConnectors((current) => current.filter((connector) => connector.id !== id));
+    await fetch(`/api/educator/copilot/connectors?id=${encodeURIComponent(id)}`, {
+      method: "DELETE",
+    }).catch(() => {});
+  }
+
+  const actionMode = profile?.actionMode || "manual";
+
   return (
-    <div className="flex-1 overflow-y-auto p-4">
-      <p className="mb-3 text-xs font-black uppercase tracking-widest text-slate-500">
-        Copilot settings
-      </p>
-      <div className="space-y-3">
-        <ModeOption
-          checked={actionMode === "manual"}
-          title="Manual approval"
-          body="The copilot proposes actions. You approve edits, navigation, and highlights."
-          onClick={() => onChange("manual")}
+    <div className="flex-1 space-y-6 overflow-y-auto p-4">
+      <section>
+        <p className="mb-3 text-xs font-black uppercase tracking-widest text-slate-500">
+          Action mode
+        </p>
+        <div className="space-y-3">
+          <ModeOption
+            checked={actionMode === "manual"}
+            title="Manual approval"
+            body="The copilot proposes actions. You approve edits, navigation, and highlights."
+            onClick={() => onModeChange("manual")}
+          />
+          <ModeOption
+            checked={actionMode === "auto"}
+            title="Guarded auto mode"
+            body="Safe navigation/highlights and content edits run automatically. Sensitive actions stay blocked."
+            onClick={() => onModeChange("auto")}
+          />
+        </div>
+        <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50 p-3 text-xs leading-5 text-slate-600">
+          In every mode, the copilot cannot delete records, publish or unpublish courses,
+          touch payments or payouts, change collaborators, alter student records, or send
+          email. Those actions simply do not exist for it.
+        </div>
+      </section>
+
+      <section>
+        <p className="mb-3 text-xs font-black uppercase tracking-widest text-slate-500">
+          Personalization
+        </p>
+        <label className="mb-1 block text-xs font-bold text-slate-600">Copilot name</label>
+        <input
+          value={copilotName}
+          onChange={(event) => setCopilotName(event.target.value)}
+          placeholder="Educator Copilot"
+          className="mb-3 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-slate-950"
         />
-        <ModeOption
-          checked={actionMode === "auto"}
-          title="Guarded auto mode"
-          body="Safe navigation/highlights and approved content-write surfaces can run automatically. Sensitive actions stay blocked."
-          onClick={() => onChange("auto")}
+        <label className="mb-1 block text-xs font-bold text-slate-600">
+          Instructions for your copilot
+        </label>
+        <textarea
+          value={instructions}
+          onChange={(event) => setInstructions(event.target.value)}
+          placeholder={
+            "e.g. Write in UK English. My lessons follow hook → concept → practice. Keep quizzes to 3 questions. Always suggest a discussion prompt."
+          }
+          rows={5}
+          className="mb-3 w-full resize-none rounded-lg border border-slate-200 px-3 py-2 text-sm leading-6 outline-none focus:border-slate-950"
         />
-      </div>
-      <div className="mt-5 rounded-lg border border-slate-200 bg-slate-50 p-3 text-xs leading-5 text-slate-600">
-        The copilot cannot delete records, publish courses, modify payments, change
-        collaborators, alter student records, or send email.
-      </div>
+        <label className="mb-1 block text-xs font-bold text-slate-600">Model</label>
+        <select
+          value={modelChoice}
+          onChange={(event) => setModelChoice(event.target.value)}
+          className="mb-3 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-slate-950"
+        >
+          <option value="">Platform default{profile?.effectiveModel && !modelChoice ? ` (${profile.effectiveModel})` : ""}</option>
+          {models
+            .filter((model) => model.provider && model.modelId)
+            .map((model) => (
+              <option
+                key={`${model.provider}::${model.modelId}`}
+                value={`${model.provider}::${model.modelId}`}
+              >
+                {model.provider} / {model.name || model.modelId}
+              </option>
+            ))}
+        </select>
+        <button
+          type="button"
+          onClick={savePersonalization}
+          disabled={saving}
+          className="inline-flex items-center gap-2 rounded-md bg-slate-950 px-3 py-2 text-xs font-bold text-white disabled:opacity-50"
+        >
+          {saving ? <LoaderCircle className="h-3.5 w-3.5 animate-spin" /> : savedTick ? <Check className="h-3.5 w-3.5" /> : null}
+          {savedTick ? "Saved" : "Save personalization"}
+        </button>
+      </section>
+
+      <section>
+        <p className="mb-1 flex items-center gap-1.5 text-xs font-black uppercase tracking-widest text-slate-500">
+          <Brain className="h-3.5 w-3.5" /> Memory
+        </p>
+        <p className="mb-3 text-xs leading-5 text-slate-500">
+          What your copilot has learned about you and your teaching. It also saves
+          preferences automatically as you work together.
+        </p>
+        {!memoriesAvailable ? (
+          <p className="rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-500">
+            Memory becomes available once the copilot is connected.
+          </p>
+        ) : (
+          <>
+            <div className="mb-2 flex gap-2">
+              <input
+                value={newMemory}
+                onChange={(event) => setNewMemory(event.target.value)}
+                placeholder="Teach it something, e.g. 'My tone is playful but precise'"
+                className="flex-1 rounded-lg border border-slate-200 px-3 py-2 text-xs outline-none focus:border-slate-950"
+              />
+              <button
+                type="button"
+                onClick={addMemory}
+                className="rounded-md border border-slate-200 px-2.5 text-xs font-bold text-slate-600 hover:border-slate-950 hover:text-slate-950"
+              >
+                Add
+              </button>
+            </div>
+            {memories.length === 0 ? (
+              <p className="text-xs text-slate-400">Nothing saved yet.</p>
+            ) : (
+              <ul className="space-y-1.5">
+                {memories.map((memory) => (
+                  <li
+                    key={memory.id}
+                    className="group flex items-start gap-2 rounded-lg border border-slate-200 px-3 py-2 text-xs leading-5 text-slate-600"
+                  >
+                    <span className="flex-1">{memory.content}</span>
+                    <button
+                      type="button"
+                      aria-label="Forget this"
+                      title="Forget this"
+                      onClick={() => deleteMemory(memory.id)}
+                      className="rounded p-0.5 text-slate-300 hover:text-rose-600"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </>
+        )}
+      </section>
+
+      <section>
+        <p className="mb-1 flex items-center gap-1.5 text-xs font-black uppercase tracking-widest text-slate-500">
+          <Plug className="h-3.5 w-3.5" /> Connectors
+        </p>
+        <p className="mb-3 text-xs leading-5 text-slate-500">
+          Give your copilot extra tools via MCP servers — for example a Google Drive /
+          Workspace MCP endpoint. Connected tools become available in every chat.
+        </p>
+        {!connectorsAvailable ? (
+          <p className="rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-500">
+            Connectors become available once the copilot is connected.
+          </p>
+        ) : (
+          <>
+            <div className="mb-2 space-y-2">
+              <input
+                value={connectorForm.name}
+                onChange={(event) =>
+                  setConnectorForm((current) => ({ ...current, name: event.target.value }))
+                }
+                placeholder="Name, e.g. Google Drive"
+                className="w-full rounded-lg border border-slate-200 px-3 py-2 text-xs outline-none focus:border-slate-950"
+              />
+              <div className="flex gap-2">
+                <input
+                  value={connectorForm.url}
+                  onChange={(event) =>
+                    setConnectorForm((current) => ({ ...current, url: event.target.value }))
+                  }
+                  placeholder="MCP server URL (https://…)"
+                  className="flex-1 rounded-lg border border-slate-200 px-3 py-2 text-xs outline-none focus:border-slate-950"
+                />
+                <button
+                  type="button"
+                  onClick={addConnector}
+                  disabled={connectorBusy}
+                  className="rounded-md border border-slate-200 px-2.5 text-xs font-bold text-slate-600 hover:border-slate-950 hover:text-slate-950 disabled:opacity-50"
+                >
+                  {connectorBusy ? <LoaderCircle className="h-3.5 w-3.5 animate-spin" /> : "Connect"}
+                </button>
+              </div>
+            </div>
+            {connectors.length === 0 ? (
+              <p className="text-xs text-slate-400">No connectors yet.</p>
+            ) : (
+              <ul className="space-y-1.5">
+                {connectors.map((connector) => (
+                  <li
+                    key={connector.id}
+                    className="flex items-center gap-2 rounded-lg border border-slate-200 px-3 py-2 text-xs text-slate-600"
+                  >
+                    <span
+                      className={cn(
+                        "inline-block h-1.5 w-1.5 flex-shrink-0 rounded-full",
+                        connector.status === "connected" ? "bg-emerald-500" : "bg-amber-400"
+                      )}
+                    />
+                    <span className="flex-1 truncate font-semibold">{connector.name}</span>
+                    {typeof connector.toolsDiscovered === "number" ? (
+                      <span className="text-slate-400">{connector.toolsDiscovered} tools</span>
+                    ) : null}
+                    <button
+                      type="button"
+                      aria-label="Remove connector"
+                      title="Remove connector"
+                      onClick={() => removeConnector(connector.id)}
+                      className="rounded p-0.5 text-slate-300 hover:text-rose-600"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </>
+        )}
+      </section>
+
+      {notice ? (
+        <p className="rounded-lg bg-rose-50 px-3 py-2 text-xs text-rose-700">{notice}</p>
+      ) : null}
     </div>
   );
 }
@@ -956,6 +1474,19 @@ function replaceLastAssistant(session: SessionDetail, content: string): SessionD
       },
     ],
   };
+}
+
+function relativeTime(value: string) {
+  const date = new Date(value);
+  const diffMs = Date.now() - date.getTime();
+  const minutes = Math.round(diffMs / 60000);
+  if (minutes < 1) return "just now";
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.round(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.round(hours / 24);
+  if (days < 7) return `${days}d ago`;
+  return date.toLocaleDateString();
 }
 
 async function* readSseEvents(stream: ReadableStream<Uint8Array>) {

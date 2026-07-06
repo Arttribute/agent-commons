@@ -12,54 +12,82 @@ export type EducatorCopilotActionSafety =
   | "content_write"
   | "sensitive_blocked";
 
+type ActionBase = {
+  id: string;
+  label: string;
+  reason?: string;
+  preview?: string;
+  status: EducatorCopilotActionStatus;
+  safety: EducatorCopilotActionSafety;
+  result?: string;
+};
+
+export type EducatorCopilotLessonDraft = {
+  title: string;
+  duration?: string;
+  description?: string;
+  assetUrl?: string;
+  assetAlt?: string;
+  isFree?: boolean;
+};
+
 export type EducatorCopilotAction =
-  | {
-      id: string;
+  | (ActionBase & {
       type: "navigate";
-      label: string;
       href: string;
-      reason?: string;
-      preview?: string;
-      status: EducatorCopilotActionStatus;
-      safety: EducatorCopilotActionSafety;
-      result?: string;
-    }
-  | {
-      id: string;
+    })
+  | (ActionBase & {
       type: "highlight";
-      label: string;
       selector: string;
-      reason?: string;
-      preview?: string;
-      status: EducatorCopilotActionStatus;
-      safety: EducatorCopilotActionSafety;
-      result?: string;
-    }
-  | {
-      id: string;
+    })
+  | (ActionBase & {
       type: "update_course_lesson";
-      label: string;
       courseSlug: string;
       moduleIndex: number;
       lessonIndex: number;
+      patch: Partial<EducatorCopilotLessonDraft>;
+    })
+  | (ActionBase & {
+      type: "add_lesson";
+      courseSlug: string;
+      moduleIndex: number;
+      lesson: EducatorCopilotLessonDraft;
+    })
+  | (ActionBase & {
+      type: "add_module";
+      courseSlug: string;
+      module: {
+        title: string;
+        description?: string;
+        assignment?: string;
+        lessons: EducatorCopilotLessonDraft[];
+      };
+      position?: number;
+    })
+  | (ActionBase & {
+      type: "update_module";
+      courseSlug: string;
+      moduleIndex: number;
       patch: {
         title?: string;
-        duration?: string;
         description?: string;
-        assetUrl?: string;
-        assetAlt?: string;
-        isFree?: boolean;
+        assignment?: string;
       };
-      preview?: string;
-      reason?: string;
-      status: EducatorCopilotActionStatus;
-      safety: EducatorCopilotActionSafety;
-      result?: string;
-    }
-  | {
-      id: string;
+    })
+  | (ActionBase & {
+      type: "update_course_overview";
+      courseSlug: string;
+      patch: {
+        tagline?: string;
+        description?: string;
+        longDescription?: string;
+        level?: "beginner" | "intermediate" | "advanced";
+        duration?: string;
+        tags?: string[];
+      };
+    })
+  | (ActionBase & {
       type: "update_skill_challenge";
-      label: string;
       courseSlug: string;
       skillPackSlug?: string;
       challengeId: string;
@@ -71,12 +99,13 @@ export type EducatorCopilotAction =
         keyIdeas?: string[];
         microTask?: string;
       };
-      preview?: string;
-      reason?: string;
-      status: EducatorCopilotActionStatus;
-      safety: EducatorCopilotActionSafety;
-      result?: string;
-    };
+    });
+
+export type EducatorCopilotToolActivity = {
+  tool: string;
+  label: string;
+  status: "running" | "done" | "error";
+};
 
 export type EducatorCopilotMessage = {
   id: string;
@@ -85,6 +114,7 @@ export type EducatorCopilotMessage = {
   createdAt: string;
   attachments?: EducatorCopilotAttachment[];
   actions?: EducatorCopilotAction[];
+  activity?: EducatorCopilotToolActivity[];
 };
 
 export type EducatorCopilotAttachment = {
@@ -118,4 +148,33 @@ export type EducatorCopilotSessionSummary = {
   currentPath?: string;
   updatedAt: string;
   createdAt: string;
+};
+
+export type EducatorCopilotProfile = {
+  actionMode: EducatorCopilotActionMode;
+  agentId?: string;
+  agentReady: boolean;
+  copilotName: string;
+  customInstructions?: string;
+  modelProvider?: string;
+  modelId?: string;
+  effectiveModel?: string;
+};
+
+export type EducatorCopilotMemory = {
+  id: string;
+  type?: string;
+  content: string;
+  importance?: number;
+  createdAt?: string;
+};
+
+export type EducatorCopilotConnector = {
+  id: string;
+  name: string;
+  description?: string;
+  connectionType: string;
+  status?: string;
+  toolsDiscovered?: number;
+  lastError?: string | null;
 };
