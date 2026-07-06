@@ -114,10 +114,10 @@ function createSkillPack(assetUrls) {
     enabled: true,
     title: "Make Your Agent Powerful",
     subtitle:
-      "Build agent capability one clear concept at a time.",
+      "Learn the systems that help agents do more useful work.",
     coverUrl: assetUrls.cover,
     learnerPromise:
-      "By the end, you will know how to add scheduled tasks, workflow automation, organized memory, and a scoped agent computer without losing clarity.",
+      "By the end, you will know how scheduled tasks, workflow automation, memory, and agent computers make agents more useful.",
     challenges: [
       {
         id: "powerful-agent-map",
@@ -132,19 +132,19 @@ function createSkillPack(assetUrls) {
         accentColor: "#8BE7F0",
         audioCue: "focus",
         hook:
-          "A scheduled task lets an agent start routine work at a set time or interval.",
+          "A scheduled task gives the agent a routine.",
         lesson: rich([
-          "In the previous path, you shaped a basic agent with identity, instructions, skills, and tools. This path builds on that foundation at a steady pace.",
-          "We will add one new capability at a time. The first capability is scheduling: giving the agent a clear time to begin routine work.",
-          "A cron job is a scheduled instruction. It runs a task at a set time or interval. For an agent, that means useful work can start without a fresh prompt every time.",
-          "Our learning-report agent might run every Friday afternoon. The scheduled instruction could say: review this week's learning notes, summarize progress, and prepare three next steps.",
-          "The schedule and the instruction need each other. A schedule without a clear instruction is just a timer. An instruction without a schedule still needs someone to start it.",
-          "Scheduled tasks are useful for routines: reminders, check-ins, recurring summaries, monitoring, and repeated preparation.",
+          "So far, you have looked at how to create an agent. You looked at the system prompt, tools, and skills.",
+          "Those pieces give the agent an identity, capabilities, and a way of working.",
+          "A useful next step is giving the agent a routine. A scheduled task tells the agent when to do something.",
+          "It might check a report every morning. It might send a reminder every Friday. It might summarize new updates at the end of each day.",
+          "In technical terms, this can be done with tasks and cron jobs. A cron job is a scheduled instruction that runs at a specific time or interval.",
+          "Instead of waiting for a new prompt every time, the agent can keep up with the routine.",
         ]),
         keyIdeas: [
-          "A scheduled task tells the agent when to begin routine work.",
-          "A cron job is a scheduled instruction.",
-          "A useful routine needs timing and a clear instruction.",
+          "A scheduled task tells the agent when to do something.",
+          "A cron job runs at a specific time or interval.",
+          "Routines help the agent keep up without a fresh prompt every time.",
         ],
         microTask:
           "Write one scheduled instruction for the learning-report agent. Include when it should run and what it should do.",
@@ -190,17 +190,17 @@ function createSkillPack(assetUrls) {
         accentColor: "#7DBCEA",
         audioCue: "spark",
         hook:
-          "Workflow automation connects steps so routine work can move from start to result.",
+          "Workflow automation gives the agent a structured process to follow.",
         lesson: rich([
-          "An automated workflow is a self-running pipeline. It connects steps, data, decisions, and actions.",
-          "Think of the pipeline as the route work follows. One step may collect information. Another step may decide what matters. A later step may take action.",
-          "For the learning-report agent, the workflow could start after the weekly schedule runs. It gathers learning notes, summarizes progress, checks whether anything is missing, and prepares a report.",
-          "A workflow is stronger than a loose checklist because the path is visible. You can inspect where the task started, which steps ran, and what result came out.",
+          "An agent becomes more capable when it can move through a process instead of handling each step as a separate request.",
+          "That is where workflow automation comes in. An automated workflow is a self-running pipeline of connected steps, data, decisions, and actions.",
+          "For example, the agent might collect information, check what is missing, use a tool, update a file, and send a summary.",
+          "The workflow connects those steps together. It helps the agent move from start to result without treating every step as a new task.",
         ]),
         keyIdeas: [
           "An automated workflow is a self-running pipeline.",
           "Workflows connect steps, data, decisions, and actions.",
-          "A visible workflow is easier to inspect and improve.",
+          "A workflow helps the agent move through a process.",
         ],
         microTask:
           "Sketch a four-step workflow for the learning-report agent using short step names.",
@@ -246,12 +246,14 @@ function createSkillPack(assetUrls) {
         accentColor: "#86EFAC",
         audioCue: "focus",
         hook:
-          "A workflow becomes easier to reason about when you can name the trigger, node, and edge.",
+          "A workflow has parts that define how work starts, what happens, and where it goes next.",
         lesson: rich([
-          "A trigger starts the workflow. It might be a schedule, a form submission, a file upload, or another event.",
-          "A node is a step in the workflow. In our learning-report example, one node might collect notes, another might summarize progress, and another might draft next steps.",
-          "An edge is the path that connects steps. Edges show how the workflow moves from one node to another.",
-          "Trigger, node, and edge are simple terms, but they make workflow design sharper. You can ask: what starts this, what steps must happen, and how are those steps connected?",
+          "A trigger initiates the workflow. It can be a scheduled time, a new message, a file upload, or a manual action.",
+          "A node is a step within the workflow. A node may check information, use a tool, make a decision, or request approval.",
+          "An edge defines the connection between nodes. It guides the workflow on what should happen next.",
+          "The path between nodes can be straightforward: do this action, then that action. It can also be conditional.",
+          "If the information is complete, the workflow proceeds. If something is missing, it asks for clarification. If approval is required, it pauses for human input.",
+          "A workflow is more than a list of tasks. It is a connected process that helps the agent move from start to finish.",
         ]),
         keyIdeas: [
           "Trigger starts the workflow.",
@@ -295,13 +297,15 @@ function createSkillPack(assetUrls) {
         accentColor: "#86EFAC",
         audioCue: "focus",
         hook:
-          "Agent memory is easier to use when each kind of memory has a clear job.",
+          "Memory helps the agent work with continuity instead of starting from scratch.",
         lesson: rich([
-          "Working memory is current session context. It helps the agent track what is happening right now.",
-          "Semantic memory stores facts and knowledge. For the learning-report agent, this might include the learner's course name or the meaning of a rubric term.",
-          "Episodic memory stores events and experiences. It can record that the learner struggled with workflow components last week or completed a practice lab yesterday.",
-          "Procedural memory stores behaviors and methods. It tells the agent how to do a kind of work, such as how to prepare a concise weekly report.",
-          "Organized memory keeps these jobs separate. The agent can treat current context, facts, events, and methods differently.",
+          "Without memory, the agent starts from scratch each time. It may forget what you prefer, what already happened, or how a task should be done.",
+          "A good memory system organizes different kinds of context.",
+          "Working memory is current session context. It is what the agent is using right now.",
+          "Semantic memory stores facts and knowledge.",
+          "Episodic memory stores events and experiences.",
+          "Procedural memory stores behaviors and methods.",
+          "Memory is not just saving old conversations. It is organizing useful context so the agent can work with more continuity.",
         ]),
         keyIdeas: [
           "Working memory is current session context.",
@@ -353,17 +357,19 @@ function createSkillPack(assetUrls) {
         accentColor: "#6EE7D8",
         audioCue: "focus",
         hook:
-          "An agent computer gives the agent a scoped place to work with files and project state.",
+          "An agent computer gives the agent its own environment for real work.",
         lesson: rich([
-          "A persistent workspace is a dedicated workspace for long-running tasks and projects. It gives the agent a stable place to keep files, scripts, and project state.",
-          "Meaningful isolation is a separate, scoped environment where the agent can work safely. The goal is not unlimited access. The goal is a clear workspace with boundaries.",
-          "For the learning-report agent, the computer workspace might hold weekly notes, a report template, and a small checklist file. The agent can inspect those files while preparing a report.",
-          "In a learning sandbox, a full production machine would be too heavy. A lightweight runtime, closer to a safe online code editor, is enough for practicing the concept.",
+          "Giving an agent a computer does not just mean giving it more tools. It means giving it a real environment where it can work.",
+          "This matters because real work often takes more than one message. The agent may need to return to the same project, inspect files again, or continue from where it stopped.",
+          "A persistent workspace gives the agent a dedicated place for long-running tasks and projects. It can keep track of files, browser work, and task state over time.",
+          "The workspace also needs meaningful isolation. The agent should not take over your own computer or your own accounts.",
+          "It should work inside a separate, scoped environment. That gives the agent room to work, with clear limits around what it can access or change.",
+          "In this learning sandbox, the computer is lightweight. It works more like a safe online code editor than a full production machine.",
         ]),
         keyIdeas: [
-          "A persistent workspace supports long-running tasks and projects.",
-          "Meaningful isolation gives the agent a separate, scoped environment.",
-          "A learning sandbox can simulate the workspace without running a full production machine.",
+          "An agent computer gives the agent an environment where it can work.",
+          "A persistent workspace helps the agent continue long-running tasks.",
+          "Meaningful isolation keeps that work separate and scoped.",
         ],
         microTask:
           "Name two files a learning-report agent should keep in its scoped workspace.",

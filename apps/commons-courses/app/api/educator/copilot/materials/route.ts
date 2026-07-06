@@ -350,6 +350,7 @@ function copilotSystemPrompt() {
     "Match the source material closely. Do not introduce concepts that are not supported by the material or educator instructions.",
     "Respect learner intelligence: make ideas clear without dumbing them down, avoid filler repetition, and use consistent terminology.",
     "Pace the learning carefully. Introduce one main concept at a time, then build on it.",
+    "Do not announce the teaching strategy in learner-facing text. Do not write phrases like 'at a steady pace' or 'one concept at a time' in the course content; make the structure itself do that work.",
     "Use clean, simple sentence structure while keeping field-specific technical terms.",
     "Use clear titles that stand on their own. Avoid ambiguous labels such as 'Components' when 'Workflow Components' is the accurate term.",
     "Use standard learning design: short introductions, meaningful examples, key ideas, challenging quizzes, and practical sandbox tasks when relevant.",
