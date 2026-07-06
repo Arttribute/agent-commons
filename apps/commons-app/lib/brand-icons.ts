@@ -53,6 +53,8 @@ const BRAND_MATCHERS: Array<{ pattern: RegExp; brand: BrandIcon }> = [
   { pattern: /postgres/, brand: { icon: SiPostgresql, hex: SiPostgresqlHex } },
   { pattern: /\blinear\b/, brand: { icon: SiLinear, hex: SiLinearHex } },
   { pattern: /stripe/, brand: { icon: SiStripe, hex: SiStripeHex } },
+  // Slack and Canva marks aren't in simple-icons (trademark removals) —
+  // those tools fall back to the node-type icon.
 ];
 
 /**

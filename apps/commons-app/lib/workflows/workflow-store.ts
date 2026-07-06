@@ -8,7 +8,7 @@ import {
   WorkflowNodeType,
 } from "@/types/workflow";
 import { validateDAG, ValidationResult } from "./workflow-validator";
-import { findGoogleWorkspaceOp } from "./google-workspace-nodes";
+import { findAppWorkflowOp } from "./app-nodes";
 
 
 interface HistoryState {
@@ -29,6 +29,9 @@ interface WorkflowEditorState {
   // UI state
   isSaving: boolean;
   lastSaved: Date | null;
+  /** Node whose details panel is open (explicitly opened from the node) */
+  detailsNodeId: string | null;
+  setDetailsNodeId: (nodeId: string | null) => void;
 
   // Actions
   setWorkflow: (workflow: Workflow | null) => void;
@@ -131,8 +134,11 @@ export const useWorkflowStore = create<WorkflowEditorState>((set, get) => ({
   future: [],
   isSaving: false,
   lastSaved: null,
+  detailsNodeId: null,
 
   setWorkflow: (workflow) => set({ workflow }),
+
+  setDetailsNodeId: (nodeId) => set({ detailsNodeId: nodeId }),
 
   setNodes: (nodes) => {
     const current = get();
@@ -196,6 +202,7 @@ export const useWorkflowStore = create<WorkflowEditorState>((set, get) => ({
       ),
       past: newPast,
       future: [],
+      ...(current.detailsNodeId === nodeId ? { detailsNodeId: null } : {}),
     });
   },
 
@@ -415,15 +422,15 @@ export const useWorkflowStore = create<WorkflowEditorState>((set, get) => ({
         let restoredSchema: any = undefined;
         if (nodeType === "tool" && (node.toolId || node.toolName)) {
           const tool = node.toolId ? toolMap.get(node.toolId) : undefined;
-          // Google Workspace ops are defined client-side and have no tool row
-          const googleOp = tool ? undefined : findGoogleWorkspaceOp(node.toolId, node.toolName);
-          const schema = tool?.schema ?? googleOp?.schema;
+          // App integration ops are defined client-side and have no tool row
+          const appOp = tool ? undefined : findAppWorkflowOp(node.toolId, node.toolName);
+          const schema = tool?.schema ?? appOp?.schema;
           if (schema) {
             restoredSchema = schema;
             // Re-import the type mapping utilities
             const { extractTypedParameters, extractOutputParameters } = await import("./type-mapping");
             inputs = extractTypedParameters(schema);
-            outputs = googleOp ? [...googleOp.outputs] : extractOutputParameters(schema);
+            outputs = appOp ? [...appOp.outputs] : extractOutputParameters(schema);
           }
         } else {
           const defaults = getDefaultPortsForNodeType(nodeType);
@@ -492,6 +499,7 @@ export const useWorkflowStore = create<WorkflowEditorState>((set, get) => ({
       future: [],
       isSaving: false,
       lastSaved: null,
+      detailsNodeId: null,
     });
   },
 }));

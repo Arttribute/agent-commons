@@ -6,7 +6,7 @@ import type { LucideIcon } from "lucide-react";
 import { Bot, Grip, Hammer, Search, Shapes, Workflow, Wrench, X } from "lucide-react";
 import Link from "next/link";
 import type { ToolCatalogItem, WorkflowPaletteKind } from "@/lib/tools/catalog";
-import { GOOGLE_WORKSPACE_OPS } from "@/lib/workflows/google-workspace-nodes";
+import { APP_SERVICES, APP_WORKFLOW_OPS } from "@/lib/workflows/app-nodes";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -50,7 +50,7 @@ interface PaletteNode {
   };
 }
 
-type GroupKey = "flow" | "google" | "system" | "custom" | "agents" | "workflows";
+type GroupKey = "flow" | "apps" | "system" | "custom" | "agents" | "workflows";
 
 const GROUPS: Array<{
   key: GroupKey;
@@ -59,14 +59,14 @@ const GROUPS: Array<{
   empty: string;
 }> = [
   { key: "flow", label: "Flow control", icon: Shapes, empty: "No flow nodes" },
-  { key: "google", label: "Google Workspace", icon: Grip, empty: "No Google Workspace tools" },
+  { key: "apps", label: "Apps", icon: Grip, empty: "No app tools" },
   { key: "system", label: "Platform tools", icon: Wrench, empty: "No platform tools" },
   { key: "custom", label: "Custom tools", icon: Hammer, empty: "No custom tools yet" },
   { key: "agents", label: "Agents", icon: Bot, empty: "No agents yet" },
   { key: "workflows", label: "Workflows", icon: Workflow, empty: "No workflows yet" },
 ];
 
-function DragItem({ node }: { node: PaletteNode }) {
+function DragItem({ node, hideBadge }: { node: PaletteNode; hideBadge?: boolean }) {
   const theme = getNodeTheme(node.nodeType);
   const Icon = theme.icon;
 
@@ -104,7 +104,7 @@ function DragItem({ node }: { node: PaletteNode }) {
             {node.description}
           </p>
         )}
-        {node.badge && (
+        {node.badge && !hideBadge && (
           <Badge variant="secondary" className="mt-1 h-4 px-1.5 py-0 text-[10px]">
             {node.badge}
           </Badge>
@@ -175,9 +175,9 @@ const flowNodes: PaletteNode[] = [
   },
 ];
 
-// Google Workspace ops are defined client-side (lib/workflows/google-workspace-nodes)
-// because the catalog only lists Workspace at the service level for OAuth setup.
-const googleNodes: PaletteNode[] = GOOGLE_WORKSPACE_OPS.map((op) => ({
+// App integration ops are defined client-side (lib/workflows/app-nodes)
+// because the catalog only lists apps at the service level for connection setup.
+const appNodes: PaletteNode[] = APP_WORKFLOW_OPS.map((op) => ({
   id: op.id,
   label: op.label,
   description: op.description,
@@ -292,7 +292,7 @@ export function ToolSidebar({ userId }: ToolSidebarProps) {
 
     return {
       flow: flowNodes,
-      google: googleNodes,
+      apps: appNodes,
       system: paletteItems.filter((node) => node.badge === "system"),
       custom: paletteItems.filter((node) => node.badge === "custom"),
       agents: paletteItems.filter((node) => node.badge === "agent"),
@@ -300,13 +300,20 @@ export function ToolSidebar({ userId }: ToolSidebarProps) {
     } satisfies Record<GroupKey, PaletteNode[]>;
   }, [items]);
 
-  const googleConnected = useMemo(
-    () =>
-      items.some(
-        (item) => item.category === "google_workspace" && item.status === "connected"
-      ),
-    [items]
-  );
+  // Per-service connection state, matched against the studio/tools catalog
+  // (catalog cards are service-level: "Gmail", "Linear", "Notion MCP", …)
+  const serviceConnected = useMemo(() => {
+    const map = new Map<string, boolean>();
+    for (const service of APP_SERVICES) {
+      map.set(
+        service,
+        items.some(
+          (item) => item.status === "connected" && item.displayName.startsWith(service)
+        )
+      );
+    }
+    return map;
+  }, [items]);
 
   const group = GROUPS.find((entry) => entry.key === activeGroup);
   const query = search.trim().toLowerCase();
@@ -387,22 +394,9 @@ export function ToolSidebar({ userId }: ToolSidebarProps) {
             />
           </div>
 
-          {group.key === "google" && !loading && !googleConnected && (
-            <div className="mx-0.5 mb-1.5 rounded-lg border border-amber-200/80 bg-amber-50 px-2 py-1.5 dark:border-amber-300/20 dark:bg-amber-300/10">
-              <p className="text-[10.5px] leading-snug text-amber-700 dark:text-amber-300">
-                Google Workspace isn&apos;t connected yet. Nodes can be added now,
-                but runs will need a connection —{" "}
-                <Link href="/studio/tools" className="font-semibold underline underline-offset-2">
-                  connect in Tools
-                </Link>
-                .
-              </p>
-            </div>
-          )}
-
           <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
             <div className="space-y-0.5 p-0.5">
-              {loading && group.key !== "flow" && group.key !== "google" ? (
+              {loading && group.key !== "flow" && group.key !== "apps" ? (
                 [...Array(3)].map((_, index) => (
                   <Skeleton key={index} className="h-12 w-full rounded-xl" />
                 ))
@@ -410,15 +404,57 @@ export function ToolSidebar({ userId }: ToolSidebarProps) {
                 <p className="py-6 text-center text-xs text-muted-foreground">
                   {query ? "No matches" : group.empty}
                 </p>
+              ) : group.key === "apps" ? (
+                // Grouped by service, with a connection indicator per section
+                APP_SERVICES.map((service) => {
+                  const sectionNodes = visibleNodes.filter(
+                    (node) => node.badge === service
+                  );
+                  if (sectionNodes.length === 0) return null;
+                  const connected = serviceConnected.get(service) ?? false;
+                  return (
+                    <div key={service}>
+                      <div className="flex items-center gap-1.5 px-1.5 pb-0.5 pt-2 first:pt-0.5">
+                        <span
+                          className={cn(
+                            "h-1.5 w-1.5 shrink-0 rounded-full",
+                            connected ? "bg-emerald-500" : "bg-amber-400"
+                          )}
+                          title={
+                            connected
+                              ? "Connected"
+                              : "Not connected — set up in Studio → Tools"
+                          }
+                        />
+                        <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                          {service}
+                        </p>
+                      </div>
+                      {sectionNodes.map((node) => (
+                        <DragItem key={node.id} node={node} hideBadge />
+                      ))}
+                    </div>
+                  );
+                })
               ) : (
                 visibleNodes.map((node) => <DragItem key={node.id} node={node} />)
               )}
             </div>
           </div>
 
-          <p className="px-1 pb-0.5 pt-1.5 text-[10px] text-muted-foreground/70">
-            Drag a node onto the canvas
-          </p>
+          <div className="flex items-center justify-between gap-2 px-1 pb-0.5 pt-1.5">
+            <p className="text-[10px] text-muted-foreground/70">
+              Drag a node onto the canvas
+            </p>
+            {group.key === "apps" && (
+              <Link
+                href="/studio/tools"
+                className="shrink-0 text-[10px] font-medium text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
+              >
+                Manage connections
+              </Link>
+            )}
+          </div>
         </div>
       )}
     </TooltipProvider>

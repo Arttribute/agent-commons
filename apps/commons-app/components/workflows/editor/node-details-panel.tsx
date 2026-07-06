@@ -1,10 +1,11 @@
 "use client";
 
-import { useMemo } from "react";
+import { useLayoutEffect, useMemo, useRef, useState } from "react";
 import { MoveDownLeft, MoveUpRight, X } from "lucide-react";
+import { useStore, useViewport } from "reactflow";
 import { useWorkflowStore } from "@/lib/workflows/workflow-store";
 import { getTypeColor, type WorkflowDataType } from "@/lib/workflows/type-mapping";
-import type { ReactFlowNode, WorkflowNodeType } from "@/types/workflow";
+import type { WorkflowNodeType } from "@/types/workflow";
 import { getNodeTheme } from "./nodes/node-theme";
 import { getBrandIcon } from "@/lib/brand-icons";
 import { Button } from "@/components/ui/button";
@@ -38,6 +39,18 @@ const NODE_TYPE_BLURBS: Partial<Record<WorkflowNodeType, string>> = {
 
 /** Config keys already surfaced elsewhere in the panel */
 const HIDDEN_CONFIG_KEYS = new Set(["toolId", "toolName"]);
+
+/** StepNode geometry — the node column is 148px wide with a centered 64px tile */
+const TILE_LEFT = (148 - 64) / 2;
+const TILE_WIDTH = 64;
+
+const PANEL_WIDTH = 336;
+const PANEL_GAP = 14;
+const PANE_MARGIN = 8;
+
+function clamp(value: number, min: number, max: number) {
+  return Math.max(min, Math.min(max, value));
+}
 
 function formatConfigValue(value: unknown): string {
   if (value == null) return "—";
@@ -86,17 +99,21 @@ function PortList({
             const unconnectedRequired = port.required && port.connections.length === 0;
             return (
               <div key={port.name} className="rounded-lg px-1.5 py-1.5 hover:bg-muted/40">
-                <div className="flex items-center gap-1.5">
+                <div className="flex min-w-0 items-center gap-1.5">
                   <span
                     className="h-2 w-2 shrink-0 rounded-full ring-2 ring-background"
                     style={{ backgroundColor: getTypeColor(port.type) }}
                   />
-                  <code className="text-[11px] font-medium text-foreground">{port.name}</code>
-                  <span className="text-[10px] text-muted-foreground/70">{port.type}</span>
+                  <code className="truncate text-[11px] font-medium text-foreground">
+                    {port.name}
+                  </code>
+                  <span className="shrink-0 text-[10px] text-muted-foreground/70">
+                    {port.type}
+                  </span>
                   {port.required && (
                     <span
                       className={cn(
-                        "rounded px-1 text-[9px] font-semibold uppercase tracking-wide",
+                        "shrink-0 rounded px-1 text-[9px] font-semibold uppercase tracking-wide",
                         unconnectedRequired
                           ? "bg-amber-100 text-amber-700 dark:bg-amber-300/15 dark:text-amber-300"
                           : "bg-muted text-muted-foreground"
@@ -108,17 +125,17 @@ function PortList({
                 </div>
 
                 {port.description && (
-                  <p className="mt-0.5 pl-3.5 text-[10.5px] leading-snug text-muted-foreground">
+                  <p className="mt-0.5 break-words pl-3.5 text-[10.5px] leading-snug text-muted-foreground">
                     {port.description}
                   </p>
                 )}
 
-                <div className="mt-0.5 pl-3.5">
+                <div className="mt-0.5 min-w-0 pl-3.5">
                   {port.connections.length > 0 ? (
                     port.connections.map((connection, index) => (
                       <p
                         key={index}
-                        className="flex items-center gap-1 text-[10.5px] font-medium text-emerald-600 dark:text-emerald-400"
+                        className="flex min-w-0 items-center gap-1 text-[10.5px] font-medium text-emerald-600 dark:text-emerald-400"
                       >
                         {direction === "in" ? (
                           <MoveDownLeft className="h-3 w-3 shrink-0" />
@@ -159,19 +176,37 @@ function PortList({
 }
 
 /**
- * Floating inspector for the selected canvas node: what the step does,
- * which parameters flow in and out, and what they're wired to right now.
+ * Floating inspector for a canvas node, opened explicitly from the node's
+ * hover card. Anchors beside the node, follows it through drag/pan/zoom,
+ * and stays inside the visible canvas. Must render inside the React Flow
+ * provider — it reads the live viewport transform.
  */
 export function NodeDetailsPanel() {
   const nodes = useWorkflowStore((state) => state.nodes);
   const edges = useWorkflowStore((state) => state.edges);
-  const setNodes = useWorkflowStore((state) => state.setNodes);
+  const detailsNodeId = useWorkflowStore((state) => state.detailsNodeId);
+  const setDetailsNodeId = useWorkflowStore((state) => state.setDetailsNodeId);
 
-  const selectedNodes = useMemo(
-    () => nodes.filter((node) => (node as ReactFlowNode & { selected?: boolean }).selected),
-    [nodes]
-  );
-  const node = selectedNodes.length === 1 ? selectedNodes[0] : null;
+  const viewport = useViewport();
+  const paneWidth = useStore((state) => state.width);
+  const paneHeight = useStore((state) => state.height);
+
+  // Measure real height so bottom-edge clamping tracks the content
+  const panelRef = useRef<HTMLDivElement>(null);
+  const [panelHeight, setPanelHeight] = useState(280);
+  useLayoutEffect(() => {
+    const element = panelRef.current;
+    if (!element) return;
+    const measure = () => setPanelHeight(element.offsetHeight);
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [detailsNodeId]);
+
+  const node = detailsNodeId
+    ? nodes.find((candidate) => candidate.id === detailsNodeId) ?? null
+    : null;
 
   const details = useMemo(() => {
     if (!node) return null;
@@ -237,11 +272,32 @@ export function NodeDetailsPanel() {
   const brand =
     details.nodeType === "tool" ? getBrandIcon(node.data.toolName, node.data.label) : null;
 
-  const deselect = () =>
-    setNodes(nodes.map((candidate) => ({ ...candidate, selected: false })));
+  // Anchor beside the node's icon tile: right of it when there's room,
+  // otherwise flip left; always clamped to the visible pane.
+  const { x: translateX, y: translateY, zoom } = viewport;
+  const tileLeft = (node.position.x + TILE_LEFT) * zoom + translateX;
+  const tileRight = (node.position.x + TILE_LEFT + TILE_WIDTH) * zoom + translateX;
+  const nodeTop = node.position.y * zoom + translateY;
+
+  let left = tileRight + PANEL_GAP;
+  if (left + PANEL_WIDTH > paneWidth - PANE_MARGIN) {
+    left = tileLeft - PANEL_GAP - PANEL_WIDTH;
+  }
+  left = clamp(left, PANE_MARGIN, Math.max(PANE_MARGIN, paneWidth - PANEL_WIDTH - PANE_MARGIN));
+
+  const maxHeight = Math.min(380, paneHeight - PANE_MARGIN * 2);
+  const top = clamp(
+    nodeTop,
+    PANE_MARGIN,
+    Math.max(PANE_MARGIN, paneHeight - Math.min(panelHeight, maxHeight) - PANE_MARGIN)
+  );
 
   return (
-    <div className="floating-panel absolute bottom-3 left-1/2 z-20 flex max-h-[46%] w-[400px] -translate-x-1/2 flex-col overflow-hidden">
+    <div
+      ref={panelRef}
+      className="floating-panel absolute z-20 flex flex-col overflow-hidden"
+      style={{ left, top, width: PANEL_WIDTH, maxHeight }}
+    >
       {/* Header */}
       <div className="flex items-center gap-2.5 border-b border-border/70 px-3 py-2.5">
         <div
@@ -262,10 +318,10 @@ export function NodeDetailsPanel() {
         </div>
         <div className="min-w-0 flex-1">
           <p className="truncate text-sm font-semibold text-foreground">{node.data.label}</p>
-          <div className="flex items-center gap-1.5">
+          <div className="flex min-w-0 items-center gap-1.5">
             <span
               className={cn(
-                "rounded px-1.5 py-px text-[9px] font-semibold uppercase tracking-wide",
+                "shrink-0 rounded px-1.5 py-px text-[9px] font-semibold uppercase tracking-wide",
                 theme.chip
               )}
             >
@@ -282,7 +338,7 @@ export function NodeDetailsPanel() {
           variant="ghost"
           size="icon"
           className="h-7 w-7 shrink-0 rounded-lg"
-          onClick={deselect}
+          onClick={() => setDetailsNodeId(null)}
           aria-label="Close node details"
         >
           <X className="h-3.5 w-3.5" />
@@ -292,7 +348,7 @@ export function NodeDetailsPanel() {
       {/* Body */}
       <div className="min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-contain px-2.5 py-2.5">
         {details.description && (
-          <p className="px-1 text-[11.5px] leading-relaxed text-muted-foreground">
+          <p className="break-words px-1 text-[11.5px] leading-relaxed text-muted-foreground">
             {details.description}
           </p>
         )}
@@ -319,7 +375,7 @@ export function NodeDetailsPanel() {
               {details.configEntries.map(([key, value]) => (
                 <div key={key} className="flex items-baseline gap-2 rounded-lg px-1.5 py-1">
                   <code className="shrink-0 text-[11px] font-medium text-foreground">{key}</code>
-                  <span className="min-w-0 truncate text-[11px] text-muted-foreground">
+                  <span className="min-w-0 break-words text-[11px] text-muted-foreground">
                     {formatConfigValue(value)}
                   </span>
                 </div>

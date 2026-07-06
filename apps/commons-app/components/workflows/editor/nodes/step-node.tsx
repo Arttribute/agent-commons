@@ -2,7 +2,9 @@
 
 import { memo } from "react";
 import { Handle, Position, NodeProps } from "reactflow";
+import { PanelRightOpen } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useWorkflowStore } from "@/lib/workflows/workflow-store";
 import { getHandleStyle } from "@/lib/workflows/type-colors";
 import { getTypeColor, WorkflowDataType } from "@/lib/workflows/type-mapping";
 import type { WorkflowNodeType } from "@/types/workflow";
@@ -23,7 +25,8 @@ function handleTop(index: number, count: number) {
   return `${((index + 1) / (count + 1)) * 100}%`;
 }
 
-export const StepNode = memo(({ data, selected, type }: NodeProps<StepNodeData>) => {
+export const StepNode = memo(({ id, data, selected, type }: NodeProps<StepNodeData>) => {
+  const setDetailsNodeId = useWorkflowStore((state) => state.setDetailsNodeId);
   const nodeType = data.nodeType || (type as WorkflowNodeType) || "tool";
   const theme = getNodeTheme(nodeType);
   const Icon = theme.icon;
@@ -111,41 +114,57 @@ export const StepNode = memo(({ data, selected, type }: NodeProps<StepNodeData>)
         {theme.label}
       </p>
 
-      {/* Port legend — appears on hover or selection, never blocks the canvas */}
-      {hasPorts && (
-        <div
+      {/* Summary card — appears on hover or selection. The card itself never
+          blocks the canvas; only the Details button takes pointer events. */}
+      <div
+        className={cn(
+          "pointer-events-none mt-1.5 flex max-w-[200px] flex-col gap-0.5 rounded-lg border border-border/70 bg-background/95 px-2 py-1.5 shadow-sm backdrop-blur-sm transition-opacity duration-150",
+          selected ? "opacity-100" : "opacity-0 group-hover:opacity-100"
+        )}
+      >
+        {inputs.map((input, index) => (
+          <div key={`legend-in-${index}`} className="flex items-center gap-1.5">
+            <span
+              className="h-1.5 w-1.5 shrink-0 rounded-full"
+              style={{ backgroundColor: getTypeColor(input.type) }}
+            />
+            <span className="truncate text-[10px] text-muted-foreground">
+              {input.name}
+              {input.required && <span className="text-destructive">*</span>}
+              <span className="text-muted-foreground/50"> in</span>
+            </span>
+          </div>
+        ))}
+        {outputs.map((output, index) => (
+          <div key={`legend-out-${index}`} className="flex items-center gap-1.5">
+            <span
+              className="h-1.5 w-1.5 shrink-0 rounded-full"
+              style={{ backgroundColor: getTypeColor(output.type) }}
+            />
+            <span className="truncate text-[10px] text-muted-foreground">
+              {output.name}
+              <span className="text-muted-foreground/50"> out</span>
+            </span>
+          </div>
+        ))}
+
+        {/* Explicit entry point for the node inspector — clicking the node
+            itself only selects/drags, so this is the one way in. */}
+        <button
+          type="button"
+          onClick={(event) => {
+            event.stopPropagation();
+            setDetailsNodeId(id);
+          }}
           className={cn(
-            "pointer-events-none mt-1.5 flex max-w-[200px] flex-col gap-0.5 rounded-lg border border-border/70 bg-background/95 px-2 py-1.5 shadow-sm backdrop-blur-sm transition-opacity duration-150",
-            selected ? "opacity-100" : "opacity-0 group-hover:opacity-100"
+            "nodrag nopan pointer-events-auto flex w-full items-center justify-center gap-1 rounded-md py-1 text-[10px] font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground",
+            hasPorts && "mt-1 border-t border-border/60 pt-1.5"
           )}
         >
-          {inputs.map((input, index) => (
-            <div key={`legend-in-${index}`} className="flex items-center gap-1.5">
-              <span
-                className="h-1.5 w-1.5 shrink-0 rounded-full"
-                style={{ backgroundColor: getTypeColor(input.type) }}
-              />
-              <span className="truncate text-[10px] text-muted-foreground">
-                {input.name}
-                {input.required && <span className="text-destructive">*</span>}
-                <span className="text-muted-foreground/50"> in</span>
-              </span>
-            </div>
-          ))}
-          {outputs.map((output, index) => (
-            <div key={`legend-out-${index}`} className="flex items-center gap-1.5">
-              <span
-                className="h-1.5 w-1.5 shrink-0 rounded-full"
-                style={{ backgroundColor: getTypeColor(output.type) }}
-              />
-              <span className="truncate text-[10px] text-muted-foreground">
-                {output.name}
-                <span className="text-muted-foreground/50"> out</span>
-              </span>
-            </div>
-          ))}
-        </div>
-      )}
+          <PanelRightOpen className="h-3 w-3" />
+          Details
+        </button>
+      </div>
     </div>
   );
 });

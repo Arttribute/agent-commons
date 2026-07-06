@@ -29,6 +29,7 @@ import {
 } from "@/lib/workflows/type-mapping";
 import { StepNode } from "./nodes/step-node";
 import { getNodeTheme } from "./nodes/node-theme";
+import { NodeDetailsPanel } from "./node-details-panel";
 import { ColoredEdge } from "./edges/colored-edge";
 import { useToast } from "@/hooks/use-toast";
 import type { WorkflowNodeType } from "@/types/workflow";
@@ -101,7 +102,7 @@ function portsForNodeType(type: WorkflowNodeType) {
 }
 
 export function WorkflowCanvas() {
-  const { nodes, edges, setNodes, setEdges, addNode, updateNode } =
+  const { nodes, edges, setNodes, setEdges, addNode, updateNode, setDetailsNodeId } =
     useWorkflowStore();
   const { toast } = useToast();
   const [showMiniMap, setShowMiniMap] = useState(false);
@@ -271,7 +272,7 @@ export function WorkflowCanvas() {
   );
 
   return (
-    <div className="h-full w-full" onDrop={onDrop} onDragOver={onDragOver}>
+    <div className="relative h-full w-full" onDrop={onDrop} onDragOver={onDragOver}>
       <ReactFlow
         nodes={nodes}
         edges={edges}
@@ -279,6 +280,7 @@ export function WorkflowCanvas() {
         onEdgesChange={onEdgesChange}
         onConnect={onConnect}
         onNodeDragStop={onNodeDragStop}
+        onPaneClick={() => setDetailsNodeId(null)}
         nodeTypes={nodeTypes}
         edgeTypes={edgeTypes}
         fitView
@@ -310,6 +312,10 @@ export function WorkflowCanvas() {
           />
         )}
       </ReactFlow>
+
+      {/* Anchored node inspector — needs the flow's viewport, so it lives
+          inside the provider rather than with the page-level overlays */}
+      <NodeDetailsPanel />
     </div>
   );
 }
