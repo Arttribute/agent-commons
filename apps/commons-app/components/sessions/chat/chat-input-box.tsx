@@ -42,6 +42,7 @@ export default function ChatInputBox({
   const accumulatedRef = useRef("");
   const activitySequenceRef = useRef(0);
   const runningToolActivitiesRef = useRef<Map<string, string[]>>(new Map());
+  const activityArgsRef = useRef<Map<string, any>>(new Map());
   const progressActivityIdsRef = useRef<Set<string>>(new Set());
   const fileInputRef = useRef<HTMLInputElement>(null);
   const previewUrlsRef = useRef<Set<string>>(new Set());
@@ -86,6 +87,8 @@ export default function ChatInputBox({
       const activityId = `tool:${toolName || "tool"}:${++activitySequenceRef.current}`;
       const queue = runningToolActivitiesRef.current.get(toolName) ?? [];
       runningToolActivitiesRef.current.set(toolName, [...queue, activityId]);
+      const parsedArgs = safeParseArgs(input);
+      if (parsedArgs) activityArgsRef.current.set(activityId, parsedArgs);
       if (isComputerTool(toolName)) {
         notifyComputerActivity({
           tab: computerTabForTool(toolName),
@@ -98,9 +101,10 @@ export default function ChatInputBox({
         stage: "tool",
         toolName,
         title: describeToolTitle(toolName, "running"),
-        detail: summarizeToolInput(input),
+        detail: computerToolDetail(toolName, parsedArgs) ?? summarizeToolInput(input),
         status: "running",
         timestamp: new Date().toISOString(),
+        payload: parsedArgs ? { args: parsedArgs } : undefined,
       });
     },
     onTool: (event) => {
@@ -124,7 +128,7 @@ export default function ChatInputBox({
         detail: summarizeToolResult(event.output ?? event.result ?? event.payload),
         status: event.status === "error" ? "failed" : "completed",
         timestamp: event.timestamp ?? new Date().toISOString(),
-        payload: event,
+        payload: { ...event, args: activityArgsRef.current.get(activityId) },
       });
       if (isComputerTool(toolName) && progressActivityIdsRef.current.has(progressActivityId)) {
         progressActivityIdsRef.current.delete(progressActivityId);
@@ -168,6 +172,7 @@ export default function ChatInputBox({
         detail: summarizeToolResult(output),
         status: "completed",
         timestamp: event.timestamp ?? new Date().toISOString(),
+        payload: { output, args: activityArgsRef.current.get(activityId) },
       });
     },
     onCliToolRequest: (event) => {
@@ -273,6 +278,7 @@ export default function ChatInputBox({
     setComputerEnabled(false);
     accumulatedRef.current = "";
     runningToolActivitiesRef.current.clear();
+    activityArgsRef.current.clear();
 
     addMessage({
       role: "human",
@@ -725,6 +731,27 @@ function summarizeToolResult(result: unknown) {
 function truncateSingleLine(value: string, maxLength: number) {
   const text = value.replace(/\s+/g, " ").trim();
   return text.length > maxLength ? `${text.slice(0, maxLength - 1)}...` : text;
+}
+
+function safeParseArgs(input: unknown): any {
+  if (input == null) return undefined;
+  if (typeof input === "object") return input;
+  if (typeof input !== "string" || !input.trim()) return undefined;
+  try {
+    const parsed = JSON.parse(input);
+    return typeof parsed === "object" && parsed !== null ? parsed : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/** Human-readable detail for computer tools (the command/path/url itself). */
+function computerToolDetail(toolName: string, args: any): string | undefined {
+  if (!args) return undefined;
+  if (toolName === "runComputerCommand" && typeof args.command === "string") return args.command;
+  if (toolName === "readComputerFile" && typeof args.path === "string") return args.path;
+  if (toolName === "openComputerBrowser" && typeof args.url === "string") return args.url;
+  return undefined;
 }
 
 function isComputerTool(toolName: string) {

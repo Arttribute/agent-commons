@@ -246,7 +246,19 @@ export default function SessionInterfaceImproved({
   }, [fetchSessionComputers, isStreaming]);
 
   useEffect(() => {
+    // Computer activity keeps the drawer state fresh but no longer forces it
+    // open — the inline mini computer window in the chat covers the live view.
     const handleComputerActivity = (event: Event) => {
+      const detail = (event as CustomEvent<{
+        tab?: ComputerRuntimeTab;
+        computerId?: string;
+      }>).detail;
+      if (detail?.tab) setComputerRuntimeTab(detail.tab);
+      if (detail?.computerId) setPreferredComputerId(detail.computerId);
+      fetchSessionComputers();
+    };
+    // Clicking the mini computer window opens the full drawer on the right tab.
+    const handleComputerOpen = (event: Event) => {
       const detail = (event as CustomEvent<{
         tab?: ComputerRuntimeTab;
         computerId?: string;
@@ -257,7 +269,11 @@ export default function SessionInterfaceImproved({
       fetchSessionComputers();
     };
     window.addEventListener("agent-computer-activity", handleComputerActivity);
-    return () => window.removeEventListener("agent-computer-activity", handleComputerActivity);
+    window.addEventListener("agent-computer-open", handleComputerOpen);
+    return () => {
+      window.removeEventListener("agent-computer-activity", handleComputerActivity);
+      window.removeEventListener("agent-computer-open", handleComputerOpen);
+    };
   }, [fetchSessionComputers]);
 
   // Poll tasks while any task is active (started/in_progress), stop when all terminal
@@ -403,6 +419,7 @@ export default function SessionInterfaceImproved({
                         content={message.content}
                         metadata={message.metadata}
                         isStreaming={message.isStreaming}
+                        computers={sessionComputers}
                       />
                     );
                   }
