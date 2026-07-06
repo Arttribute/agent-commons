@@ -194,8 +194,10 @@ function createSkillPack(assetUrls) {
         lesson: rich([
           "An agent becomes more capable when it can move through a process instead of handling each step as a separate request.",
           "That is where workflow automation comes in. An automated workflow is a self-running pipeline of connected steps, data, decisions, and actions.",
-          "For example, the agent might collect information, check what is missing, use a tool, update a file, and send a summary.",
-          "The workflow connects those steps together. It helps the agent move from start to result without treating every step as a new task.",
+          "For example, a new form response might update a spreadsheet. That update can start the workflow.",
+          "The agent reads the new spreadsheet row, checks whether the entry is complete, and decides what should happen next.",
+          "If the entry is complete, the agent updates another data store, sends an email update, and writes a short summary. If something is missing, it can ask for clarification before continuing.",
+          "The workflow connects the data sources, decisions, and actions. It helps the agent move from new input to finished output without treating every step as a separate task.",
         ]),
         keyIdeas: [
           "An automated workflow is a self-running pipeline.",
@@ -203,7 +205,7 @@ function createSkillPack(assetUrls) {
           "A workflow helps the agent move through a process.",
         ],
         microTask:
-          "Sketch a four-step workflow for the learning-report agent using short step names.",
+          "Sketch a workflow that starts with a form response, reads a spreadsheet row, makes one decision, updates another data store, and sends an email summary.",
         questions: [
           {
             id: "q1",
@@ -220,16 +222,16 @@ function createSkillPack(assetUrls) {
           },
           {
             id: "q2",
-            prompt: "Why is workflow visibility useful?",
+            prompt: "Which example best shows workflow automation?",
             options: [
-              "You can inspect where work started, what ran, and what came out",
-              "It guarantees no step can ever fail",
-              "It removes the need for a clear trigger",
-              "It turns every task into a one-step task",
+              "A form response updates a spreadsheet, the agent reads it, updates another data store, sends an email, and writes a summary",
+              "The agent answers one isolated question and stops",
+              "A timer runs without an instruction or output",
+              "A task name is saved without connected steps",
             ],
             answerIndex: 0,
             explanation:
-              "Visible steps make workflow behavior easier to test and improve.",
+              "Workflow automation connects data sources, decisions, and actions across a process.",
           },
         ],
       },
@@ -248,8 +250,8 @@ function createSkillPack(assetUrls) {
         hook:
           "A workflow has parts that define how work starts, what happens, and where it goes next.",
         lesson: rich([
-          "A trigger initiates the workflow. It can be a scheduled time, a new message, a file upload, or a manual action.",
-          "A node is a step within the workflow. A node may check information, use a tool, make a decision, or request approval.",
+          "A trigger initiates the workflow. In the spreadsheet example, the trigger is the new form response that updates the spreadsheet.",
+          "A node is a step within the workflow. One node may read the new row. Another node may check whether the entry is complete. Another node may update the second data store.",
           "An edge defines the connection between nodes. It guides the workflow on what should happen next.",
           "The path between nodes can be straightforward: do this action, then that action. It can also be conditional.",
           "If the information is complete, the workflow proceeds. If something is missing, it asks for clarification. If approval is required, it pauses for human input.",
@@ -261,7 +263,7 @@ function createSkillPack(assetUrls) {
           "Edge is the path that connects steps.",
         ],
         microTask:
-          "Label one trigger, three nodes, and two edges for the learning-report workflow.",
+          "Label one trigger, three nodes, and two edges for the form-response workflow.",
         questions: [
           {
             id: "q1",
@@ -299,19 +301,20 @@ function createSkillPack(assetUrls) {
         hook:
           "Memory helps the agent work with continuity instead of starting from scratch.",
         lesson: rich([
-          "Without memory, the agent starts from scratch each time. It may forget what you prefer, what already happened, or how a task should be done.",
+          "Without memory, the agent starts from scratch across sessions and tasks. It may forget what you prefer, what already happened, or how a task should be done.",
+          "A memory system lets the agent carry useful context across different interactions. It can remember stable facts, learn from past experiences, and reuse methods that worked before.",
           "A good memory system organizes different kinds of context.",
           "Working memory is current session context. It is what the agent is using right now.",
-          "Semantic memory stores facts and knowledge.",
-          "Episodic memory stores events and experiences.",
-          "Procedural memory stores behaviors and methods.",
-          "Memory is not just saving old conversations. It is organizing useful context so the agent can work with more continuity.",
+          "Semantic memory stores facts and knowledge the agent may need again in a later session.",
+          "Episodic memory stores events and experiences from previous interactions.",
+          "Procedural memory stores behaviors and methods the agent can reuse across tasks.",
+          "Memory is not just saving old conversations. It is organizing useful context so the agent can learn from experience and work with more continuity.",
         ]),
         keyIdeas: [
           "Working memory is current session context.",
-          "Semantic memory is facts and knowledge.",
-          "Episodic memory is events and experiences.",
-          "Procedural memory is behaviors and methods.",
+          "Semantic memory stores facts and knowledge across sessions.",
+          "Episodic memory stores events and experiences from past interactions.",
+          "Procedural memory stores reusable behaviors and methods.",
         ],
         microTask:
           "Sort one example detail into working, semantic, episodic, or procedural memory.",
@@ -330,7 +333,7 @@ function createSkillPack(assetUrls) {
           },
           {
             id: "q2",
-            prompt: "Which memory type best stores behaviors and methods?",
+            prompt: "Which memory type helps an agent reuse a method across tasks?",
             options: [
               "Procedural memory",
               "Working memory",
@@ -339,7 +342,7 @@ function createSkillPack(assetUrls) {
             ],
             answerIndex: 0,
             explanation:
-              "Procedural memory stores behaviors and methods the agent can reuse.",
+              "Procedural memory stores behaviors and methods the agent can reuse across tasks.",
           },
         ],
       },
@@ -360,7 +363,7 @@ function createSkillPack(assetUrls) {
           "An agent computer gives the agent its own environment for real work.",
         lesson: rich([
           "Giving an agent a computer does not just mean giving it more tools. It means giving it a real environment where it can work.",
-          "This matters because real work often takes more than one message. The agent may need to return to the same project, inspect files again, or continue from where it stopped.",
+          "Real work often takes more than one message. The agent may need to return to the same project, inspect files again, or continue from where it stopped.",
           "A persistent workspace gives the agent a dedicated place for long-running tasks and projects. It can keep track of files, browser work, and task state over time.",
           "The workspace also needs meaningful isolation. The agent should not take over your own computer or your own accounts.",
           "It should work inside a separate, scoped environment. That gives the agent room to work, with clear limits around what it can access or change.",
