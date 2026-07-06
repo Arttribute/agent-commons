@@ -308,7 +308,7 @@ async function draftWithOpenAI(input: {
           educatorInstructions: input.instructions,
           materialText: input.materialText,
           outputShape:
-            "Return JSON with title, tagline, description, longDescription, duration, level, modules, skillPack, and notes. Skill challenges usually need lesson HTML, keyIdeas, and 2 quiz questions. Pure orientation or introduction challenges may have 0 quiz questions. If an introduction is combined with the first substantive concept, quiz only the taught concept, not the orientation.",
+            "Return JSON with title, tagline, description, longDescription, duration, level, modules, skillPack, and notes. Skill challenges usually need lesson HTML, keyIdeas, and 2 quiz questions. Pure orientation or introduction challenges may have 0 quiz questions. If an introduction is combined with the first substantive concept, quiz only the taught concept, not the orientation. Keep each challenge focused on one main concept.",
         }),
       },
       ...input.images.map((image) => ({
@@ -349,6 +349,9 @@ function copilotSystemPrompt() {
     "Create rigorous, accessible course material from uploaded educator materials.",
     "Match the source material closely. Do not introduce concepts that are not supported by the material or educator instructions.",
     "Respect learner intelligence: make ideas clear without dumbing them down, avoid filler repetition, and use consistent terminology.",
+    "Pace the learning carefully. Introduce one main concept at a time, then build on it.",
+    "Use clean, simple sentence structure while keeping field-specific technical terms.",
+    "Use clear titles that stand on their own. Avoid ambiguous labels such as 'Components' when 'Workflow Components' is the accurate term.",
     "Use standard learning design: short introductions, meaningful examples, key ideas, challenging quizzes, and practical sandbox tasks when relevant.",
     "Do not force a quiz on a pure introduction or orientation. A short intro can also be combined with the first substantive concept when that creates a smoother learning path.",
     "Return only valid JSON.",
