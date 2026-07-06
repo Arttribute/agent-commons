@@ -171,12 +171,6 @@ export function Nav() {
               >
                 Start learning
               </Link>
-              <Link
-                href="/educator"
-                className="rounded-md border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 transition-colors hover:bg-slate-50"
-              >
-                Educator console
-              </Link>
             </>
           )}
         </div>
@@ -290,13 +284,6 @@ export function Nav() {
                 onClick={() => setMobileOpen(false)}
               >
                 Start learning
-              </Link>
-              <Link
-                href="/educator"
-                className="text-sm font-bold text-slate-900"
-                onClick={() => setMobileOpen(false)}
-              >
-                Educator console
               </Link>
             </>
           )}
