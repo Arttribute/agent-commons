@@ -16,6 +16,16 @@ interface UseAgentStreamOptions {
   onError?: (message: string) => void;
 }
 
+/** Events that mean the run is over and no reconnect should be attempted. */
+const TERMINAL_EVENT_TYPES = new Set(["final", "completed", "failed", "cancelled", "error"]);
+
+/** Consecutive failed reconnects (no events received) before giving up. */
+const MAX_RESUME_ATTEMPTS = 8;
+
+type ResumableStreamEvent = StreamEvent & { seq?: number; runId?: string };
+
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
 export function useAgentStream(initiator: string, options: UseAgentStreamOptions = {}) {
   const [streaming, setStreaming] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -39,6 +49,28 @@ export function useAgentStream(initiator: string, options: UseAgentStreamOptions
       setError(null);
       abortRef.current = false;
 
+      // The proxy route runs on Vercel, which caps how long a single request
+      // can live — far below how long an agent run can take. Every event from
+      // the backend carries the runId and a monotonic seq, so when the stream
+      // is cut before a terminal event we re-attach through the resume route
+      // and continue from the last seq we saw.
+      let runId: string | null = null;
+      let lastSeq = 0;
+      let finished = false;
+
+      const consume = async (res: Response) => {
+        for await (const event of parseEventStream<ResumableStreamEvent>(res)) {
+          if (abortRef.current) return;
+          if (event.runId) runId = event.runId;
+          if (typeof event.seq === "number" && event.seq > lastSeq) lastSeq = event.seq;
+          handleEvent(event, optionsRef.current);
+          if (TERMINAL_EVENT_TYPES.has(event.type)) {
+            finished = true;
+            return;
+          }
+        }
+      };
+
       try {
         const res = await fetch("/api/agents/run/stream", {
           method: "POST",
@@ -51,16 +83,43 @@ export function useAgentStream(initiator: string, options: UseAgentStreamOptions
           throw new Error(err.message ?? "Stream request failed");
         }
 
-        for await (const event of parseEventStream<StreamEvent>(res)) {
+        try {
+          await consume(res);
+        } catch (err) {
+          if (!runId) throw err; // nothing to resume — surface the failure
+        }
+
+        let attempts = 0;
+        while (!finished && !abortRef.current && runId) {
+          attempts += 1;
+          if (attempts > MAX_RESUME_ATTEMPTS) {
+            throw new Error("Lost connection to the agent run after multiple reconnect attempts.");
+          }
+          await sleep(Math.min(500 * attempts, 4000));
           if (abortRef.current) break;
-          handleEvent(event, optionsRef.current);
-          if (
-            event.type === "final" ||
-            event.type === "completed" ||
-            event.type === "failed" ||
-            event.type === "cancelled" ||
-            event.type === "error"
-          ) break;
+
+          let resumeRes: Response;
+          try {
+            resumeRes = await fetch("/api/agents/run/stream/resume", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ runId, after: lastSeq }),
+            });
+          } catch {
+            continue; // transient network failure — retry
+          }
+          if (resumeRes.status === 404 || resumeRes.status === 410) {
+            throw new Error("The agent run is no longer available to resume.");
+          }
+          if (!resumeRes.ok) continue;
+
+          const seqBefore = lastSeq;
+          try {
+            await consume(resumeRes);
+          } catch {
+            // stream dropped again mid-read — loop and re-attach
+          }
+          if (lastSeq > seqBefore) attempts = 0; // made progress; reset backoff
         }
       } catch (err: unknown) {
         const msg = err instanceof Error ? err.message : "Unknown error";

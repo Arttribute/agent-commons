@@ -4,6 +4,7 @@ import {
   Controller,
   Delete,
   Get,
+  NotFoundException,
   Param,
   Patch,
   Post,
@@ -15,8 +16,10 @@ import {
   Req,
   UseGuards,
 } from '@nestjs/common';
+import { v4 as uuidv4 } from 'uuid';
 import { AgentService } from './agent.service';
 import { HeartbeatService } from './heartbeat.service';
+import { RunStreamRegistry } from './run-stream.registry';
 import { TypedBody } from '@nestia/core';
 import * as schema from '#/models/schema';
 import { InferInsertModel } from 'drizzle-orm';
@@ -45,6 +48,7 @@ export class AgentController {
   constructor(
     private readonly agent: AgentService,
     private readonly heartbeat: HeartbeatService,
+    private readonly runStreams: RunStreamRegistry,
   ) {}
 
   @Post()
@@ -119,9 +123,35 @@ export class AgentController {
       principal?.principalType === 'user'
         ? principal.principalId
         : initiatorHeader || body.initiator || body.initiatorId || '';
-    return this.agent
-      .runAgent({ ...body, stream: true, initiator })
+    // Route the run through the registry so its lifetime is decoupled from
+    // this SSE connection: proxies (Vercel, Cloud Run) cap connection duration
+    // well below how long a run can take, and clients re-attach via
+    // POST /v1/agents/runs/:runId/stream using the runId from `run_started`.
+    const runId = uuidv4();
+    return this.runStreams
+      .start(runId, this.agent.runAgent({ ...body, stream: true, initiator }))
       .pipe(map((data) => ({ data })));
+  }
+
+  /**
+   * Re-attach to an in-flight (or recently finished) streaming run. Replays
+   * buffered events with seq > body.after, then continues live to completion.
+   */
+  @Post('runs/:runId/stream')
+  @Sse('runs/:runId/stream')
+  @Header('X-Accel-Buffering', 'no')
+  @Header('Cache-Control', 'no-cache, no-transform')
+  resumeAgentRunStream(
+    @Param('runId') runId: string,
+    @Body() body: { after?: number },
+  ) {
+    const stream$ = this.runStreams.attach(runId, Number(body?.after) || 0);
+    if (!stream$) {
+      throw new NotFoundException(
+        `Run "${runId}" is not resumable (unknown or expired).`,
+      );
+    }
+    return stream$.pipe(map((data) => ({ data })));
   }
 
   /**

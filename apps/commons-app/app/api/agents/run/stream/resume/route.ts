@@ -4,26 +4,31 @@ import { requireCurrentCommonsUser } from "@/lib/current-user";
 
 const baseUrl = process.env.NEXT_PUBLIC_NEST_API_BASE_URL;
 
-// Vercel hard-caps function duration, so long agent runs will outlive this
-// connection; the client re-attaches via /api/agents/run/stream/resume.
+// Vercel hard-caps function duration; the client keeps calling this route to
+// re-attach until the run emits a terminal event.
 // 300s is the Fluid-compute Hobby max — raise to 800 on Pro if desired.
 export const maxDuration = 300;
 
-// POST /api/agents/run/stream — proxies SSE to backend, auth via server-side key only
+// POST /api/agents/run/stream/resume — re-attaches to an in-flight backend run.
+// Body: { runId: string; after?: number } (after = last seen event seq).
 export async function POST(request: NextRequest) {
   if (!baseUrl) {
     return new Response(JSON.stringify({ error: "Server base URL not configured" }), { status: 500 });
   }
 
-  const { user, response } = await requireCurrentCommonsUser();
+  const { user } = await requireCurrentCommonsUser();
   if (!user) {
     return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401 });
   }
 
-  const body = await request.json();
-  const ownedBody = { ...body, initiator: user.userId, initiatorId: user.userId };
+  const body = await request.json().catch(() => ({}));
+  const runId = typeof body?.runId === "string" ? body.runId : "";
+  if (!runId) {
+    return new Response(JSON.stringify({ error: "runId is required" }), { status: 400 });
+  }
+  const after = Number(body?.after) || 0;
 
-  const upstream = await fetch(`${baseUrl}/v1/agents/run/stream`, {
+  const upstream = await fetch(`${baseUrl}/v1/agents/runs/${encodeURIComponent(runId)}/stream`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -31,7 +36,7 @@ export async function POST(request: NextRequest) {
       ...await backendAuthHeaders(),
       "x-initiator": user.userId,
     },
-    body: JSON.stringify(ownedBody),
+    body: JSON.stringify({ after }),
   });
 
   if (!upstream.ok) {
@@ -39,7 +44,6 @@ export async function POST(request: NextRequest) {
     return new Response(JSON.stringify(err), { status: upstream.status });
   }
 
-  // Forward the SSE stream directly to the browser
   return new Response(upstream.body, {
     status: 200,
     headers: {

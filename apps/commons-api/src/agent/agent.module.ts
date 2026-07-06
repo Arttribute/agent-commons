@@ -2,6 +2,7 @@ import { forwardRef, Module } from '@nestjs/common';
 import { AgentController } from './agent.controller';
 import { AgentService } from './agent.service';
 import { HeartbeatService } from './heartbeat.service';
+import { RunStreamRegistry } from './run-stream.registry';
 import { ToolModule } from '../tool';
 import { TaskModule } from '../task';
 import { AgentToolsController } from './agent-tools.controller';
@@ -35,7 +36,7 @@ import { ComputerModule } from '~/computer';
     ComputerModule,
   ],
   controllers: [AgentController, AgentToolsController],
-  providers: [AgentService, HeartbeatService, ResourceService, EmbeddingService, OwnerGuard],
-  exports: [AgentService, HeartbeatService],
+  providers: [AgentService, HeartbeatService, RunStreamRegistry, ResourceService, EmbeddingService, OwnerGuard],
+  exports: [AgentService, HeartbeatService, RunStreamRegistry],
 })
 export class AgentModule {}

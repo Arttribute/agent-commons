@@ -188,9 +188,13 @@ interface ChatMessage {
     tool_call_id?: string;
     name?: string;
 }
-type StreamEventType = 'token' | 'tool' | 'toolProgress' | 'toolStart' | 'toolEnd' | 'agent_step' | 'final' | 'completed' | 'failed' | 'cancelled' | 'status' | 'keepalive' | 'cli_tool_request' | 'error';
+type StreamEventType = 'token' | 'tool' | 'toolProgress' | 'toolStart' | 'toolEnd' | 'agent_step' | 'run_started' | 'final' | 'completed' | 'failed' | 'cancelled' | 'status' | 'keepalive' | 'cli_tool_request' | 'error';
 interface StreamEvent {
     type: StreamEventType;
+    /** Identifies the run; pass to POST /v1/agents/runs/:runId/stream to resume a dropped stream. */
+    runId?: string;
+    /** Monotonic per-run sequence number; resume with `after: <last seen seq>` to avoid duplicates. */
+    seq?: number;
     phase?: 'commentary' | 'final_answer' | string;
     role?: string;
     content?: string;
