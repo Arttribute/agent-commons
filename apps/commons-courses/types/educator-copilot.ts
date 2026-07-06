@@ -83,7 +83,17 @@ export type EducatorCopilotMessage = {
   role: "user" | "assistant";
   content: string;
   createdAt: string;
+  attachments?: EducatorCopilotAttachment[];
   actions?: EducatorCopilotAction[];
+};
+
+export type EducatorCopilotAttachment = {
+  name: string;
+  type: string;
+  size: number;
+  textPreview?: string;
+  fileId?: string;
+  status?: "uploaded" | "extracted" | "failed";
 };
 
 export type EducatorCopilotPageContext = {

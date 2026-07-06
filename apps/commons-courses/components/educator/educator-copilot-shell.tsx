@@ -6,10 +6,12 @@ import {
   Bot,
   Check,
   ChevronRight,
+  FileText,
   History,
   Highlighter,
   LoaderCircle,
   MessageSquare,
+  Paperclip,
   Plus,
   Send,
   Settings,
@@ -29,6 +31,14 @@ type SessionDetail = EducatorCopilotSessionSummary & {
   messages: EducatorCopilotMessage[];
 };
 
+type CopilotStreamEvent = {
+  type: "status" | "token" | "toolStart" | "toolEnd" | "error" | "final";
+  content?: string;
+  message?: string | (EducatorCopilotMessage & { actions?: EducatorCopilotAction[] });
+  session?: SessionDetail;
+  toolName?: string;
+};
+
 export function EducatorCopilotShell() {
   const router = useRouter();
   const pathname = usePathname();
@@ -38,10 +48,13 @@ export function EducatorCopilotShell() {
   const [activeSession, setActiveSession] = useState<SessionDetail | null>(null);
   const [actionMode, setActionMode] = useState<EducatorCopilotActionMode>("manual");
   const [input, setInput] = useState("");
+  const [files, setFiles] = useState<File[]>([]);
   const [loading, setLoading] = useState(false);
   const [booted, setBooted] = useState(false);
   const [localNotice, setLocalNotice] = useState<string | null>(null);
+  const [streamStatus, setStreamStatus] = useState<string | null>(null);
   const autoApplied = useRef(new Set<string>());
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const messages = useMemo(() => activeSession?.messages || [], [activeSession?.messages]);
   const updateLocalAction = useCallback(
@@ -177,13 +190,29 @@ export function EducatorCopilotShell() {
   async function sendMessage(event: FormEvent) {
     event.preventDefault();
     const content = input.trim();
-    if (!content || loading) return;
+    const selectedFiles = files;
+    if ((!content && selectedFiles.length === 0) || loading) return;
 
     const optimisticUser: EducatorCopilotMessage = {
       id: `local-${Date.now()}`,
       role: "user",
-      content,
+      content:
+        content ||
+        `Uploaded ${selectedFiles.length} file${selectedFiles.length === 1 ? "" : "s"}.`,
       createdAt: new Date().toISOString(),
+      attachments: selectedFiles.map((file) => ({
+        name: file.name,
+        type: file.type || "application/octet-stream",
+        size: file.size,
+        status: "extracted",
+      })),
+    };
+    const optimisticAssistant: EducatorCopilotMessage = {
+      id: `local-assistant-${Date.now()}`,
+      role: "assistant",
+      content: "",
+      createdAt: new Date().toISOString(),
+      actions: [],
     };
     const nextSession: SessionDetail = activeSession || {
       id: "",
@@ -196,36 +225,79 @@ export function EducatorCopilotShell() {
     };
     setActiveSession({
       ...nextSession,
-      messages: [...nextSession.messages, optimisticUser],
+      messages: [...nextSession.messages, optimisticUser, optimisticAssistant],
     });
     setInput("");
+    setFiles([]);
     setLoading(true);
     setLocalNotice(null);
+    setStreamStatus("Starting...");
 
     try {
+      const formData = new FormData();
+      if (activeSession?.id) formData.append("sessionId", activeSession.id);
+      formData.append("message", content);
+      formData.append("pageContext", JSON.stringify(collectPageContext()));
+      for (const file of selectedFiles) formData.append("files", file, file.name);
       const res = await fetch("/api/educator/copilot/chat", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          sessionId: activeSession?.id || undefined,
-          message: content,
-          pageContext: collectPageContext(),
-        }),
+        headers: { Accept: "text/event-stream" },
+        body: formData,
       });
-      const data = await res.json();
       if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
         setLocalNotice(data.error || "The copilot could not respond.");
         return;
       }
-      setActiveSession(data.session);
-      setSessions((current) => upsertSession(current, summarizeSession(data.session)));
-      if (data.message?.actions?.some((action: EducatorCopilotAction) => action.status === "applied")) {
-        router.refresh();
+      if (!res.body) {
+        setLocalNotice("The copilot stream could not be opened.");
+        return;
+      }
+
+      let assistantText = "";
+      for await (const streamEvent of readSseEvents(res.body)) {
+        if (streamEvent.type === "token" && streamEvent.content) {
+          assistantText += streamEvent.content;
+          setActiveSession((current) =>
+            current ? replaceLastAssistant(current, assistantText) : current
+          );
+          setStreamStatus("Responding...");
+        } else if (streamEvent.type === "status" && streamEvent.content) {
+          setStreamStatus(streamEvent.content);
+        } else if (streamEvent.type === "toolStart") {
+          setStreamStatus(`Using ${streamEvent.toolName || "tool"}...`);
+        } else if (streamEvent.type === "toolEnd") {
+          setStreamStatus("Continuing...");
+        } else if (streamEvent.type === "error") {
+          setLocalNotice(
+            typeof streamEvent.message === "string"
+              ? streamEvent.message
+              : "The copilot could not respond."
+          );
+        } else if (streamEvent.type === "final" && streamEvent.session) {
+          const finalSession = streamEvent.session;
+          setActiveSession(finalSession);
+          setSessions((current) =>
+            upsertSession(current, summarizeSession(finalSession))
+          );
+          const finalMessage =
+            streamEvent.message && typeof streamEvent.message === "object"
+              ? streamEvent.message
+              : null;
+          if (
+            finalMessage?.actions?.some(
+              (action: EducatorCopilotAction) => action.status === "applied"
+            )
+          ) {
+            router.refresh();
+          }
+        }
       }
     } catch {
       setLocalNotice("The copilot could not be reached. Please try again.");
     } finally {
       setLoading(false);
+      setStreamStatus(null);
     }
   }
 
@@ -334,9 +406,14 @@ export function EducatorCopilotShell() {
                 >
                   <Settings className="h-4 w-4" />
                 </IconButton>
-                <div className="ml-auto rounded-md border border-slate-200 px-2 py-1 text-xs font-bold text-slate-500">
+                <button
+                  type="button"
+                  onClick={() => updateActionMode(actionMode === "auto" ? "manual" : "auto")}
+                  title="Toggle Manual/Auto mode"
+                  className="ml-auto rounded-md border border-slate-200 px-2 py-1 text-xs font-bold text-slate-500 hover:border-slate-950 hover:text-slate-950"
+                >
                   {actionMode === "auto" ? "Auto" : "Manual"}
-                </div>
+                </button>
               </div>
             </header>
 
@@ -375,7 +452,7 @@ export function EducatorCopilotShell() {
                       {loading ? (
                         <div className="mr-10 inline-flex items-center gap-2 rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-500">
                           <LoaderCircle className="h-4 w-4 animate-spin" />
-                          Thinking...
+                          {streamStatus || "Thinking..."}
                         </div>
                       ) : null}
                     </div>
@@ -387,6 +464,31 @@ export function EducatorCopilotShell() {
                   ) : null}
                 </div>
                 <form onSubmit={sendMessage} className="border-t border-slate-100 p-3">
+                  {files.length ? (
+                    <div className="mb-2 flex flex-wrap gap-2">
+                      {files.map((file, index) => (
+                        <span
+                          key={`${file.name}-${index}`}
+                          className="inline-flex max-w-full items-center gap-1 rounded-md border border-slate-200 bg-slate-50 px-2 py-1 text-xs font-semibold text-slate-600"
+                        >
+                          <FileText className="h-3.5 w-3.5 flex-shrink-0" />
+                          <span className="max-w-40 truncate">{file.name}</span>
+                          <button
+                            type="button"
+                            aria-label={`Remove ${file.name}`}
+                            onClick={() =>
+                              setFiles((current) =>
+                                current.filter((_, fileIndex) => fileIndex !== index)
+                              )
+                            }
+                            className="rounded text-slate-400 hover:text-rose-600"
+                          >
+                            <X className="h-3 w-3" />
+                          </button>
+                        </span>
+                      ))}
+                    </div>
+                  ) : null}
                   <div className="flex items-end gap-2 rounded-lg border border-slate-200 bg-white p-2">
                     <MessageSquare className="mt-2 h-4 w-4 flex-shrink-0 text-slate-400" />
                     <textarea
@@ -396,9 +498,32 @@ export function EducatorCopilotShell() {
                       rows={2}
                       className="max-h-28 min-h-10 flex-1 resize-none border-0 bg-transparent text-sm outline-none placeholder:text-slate-400"
                     />
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      multiple
+                      accept=".pdf,.png,.jpg,.jpeg,.webp,.md,.markdown,.txt,.csv,.json,application/pdf,image/png,image/jpeg,image/webp,text/*"
+                      className="hidden"
+                      onChange={(event) => {
+                        setFiles((current) => [
+                          ...current,
+                          ...Array.from(event.target.files || []),
+                        ].slice(0, 8));
+                        event.currentTarget.value = "";
+                      }}
+                    />
+                    <button
+                      type="button"
+                      aria-label="Attach files"
+                      title="Attach files"
+                      onClick={() => fileInputRef.current?.click()}
+                      className="rounded-md border border-slate-200 p-2 text-slate-500 hover:bg-slate-50"
+                    >
+                      <Paperclip className="h-4 w-4" />
+                    </button>
                     <button
                       type="submit"
-                      disabled={loading || input.trim().length === 0}
+                      disabled={loading || (input.trim().length === 0 && files.length === 0)}
                       aria-label="Send message"
                       className="rounded-md bg-slate-950 p-2 text-white disabled:opacity-40"
                     >
@@ -431,7 +556,25 @@ function MessageBubble({
           : "mr-6 border border-slate-200 bg-white text-slate-700"
       )}
     >
-      <p className="whitespace-pre-wrap">{message.content}</p>
+      {message.content ? <p className="whitespace-pre-wrap">{message.content}</p> : null}
+      {message.attachments?.length ? (
+        <div className="mt-2 space-y-1">
+          {message.attachments.map((attachment, index) => (
+            <div
+              key={`${attachment.name}-${index}`}
+              className={cn(
+                "flex items-center gap-2 rounded-md px-2 py-1 text-xs",
+                message.role === "user"
+                  ? "bg-white/10 text-white/85"
+                  : "bg-slate-50 text-slate-600"
+              )}
+            >
+              <FileText className="h-3.5 w-3.5 flex-shrink-0" />
+              <span className="truncate">{attachment.name}</span>
+            </div>
+          ))}
+        </div>
+      ) : null}
       {message.actions?.length ? (
         <div className="mt-3 space-y-2">
           {message.actions.map((action) => (
@@ -791,4 +934,65 @@ function upsertSession(
   next: EducatorCopilotSessionSummary
 ) {
   return [next, ...sessions.filter((session) => session.id !== next.id)].slice(0, 30);
+}
+
+function replaceLastAssistant(session: SessionDetail, content: string): SessionDetail {
+  const messages = [...session.messages];
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    if (messages[index].role === "assistant") {
+      messages[index] = { ...messages[index], content };
+      return { ...session, messages };
+    }
+  }
+  return {
+    ...session,
+    messages: [
+      ...messages,
+      {
+        id: `local-assistant-${Date.now()}`,
+        role: "assistant",
+        content,
+        createdAt: new Date().toISOString(),
+      },
+    ],
+  };
+}
+
+async function* readSseEvents(stream: ReadableStream<Uint8Array>) {
+  const reader = stream.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) {
+      if (buffer.trim()) {
+        const event = parseSseFrame(buffer);
+        if (event) yield event;
+      }
+      break;
+    }
+    buffer += decoder.decode(value, { stream: true });
+    const frames = buffer.split("\n\n");
+    buffer = frames.pop() || "";
+
+    for (const frame of frames) {
+      const event = parseSseFrame(frame);
+      if (event) yield event;
+    }
+  }
+}
+
+function parseSseFrame(frame: string): CopilotStreamEvent | null {
+  const data = frame
+    .split("\n")
+    .filter((line) => line.startsWith("data:"))
+    .map((line) => line.slice(5).trim())
+    .join("\n");
+  if (!data || data === "[DONE]") return null;
+  try {
+    return JSON.parse(data) as CopilotStreamEvent;
+  } catch {
+    return null;
+  }
 }

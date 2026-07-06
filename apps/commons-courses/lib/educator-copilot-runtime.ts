@@ -1,5 +1,6 @@
 import { randomUUID } from "crypto";
 import { Types } from "mongoose";
+import { getAgentCommonsClient } from "@/lib/agent-commons";
 import { buildManagedCoursesFilter } from "@/lib/educator-auth";
 import { EDUCATOR_COPILOT_PEDAGOGY, EDUCATOR_COPILOT_SAFETY } from "@/lib/educator-copilot-policy";
 import { indexCourseForSearch } from "@/lib/search-indexers";
@@ -7,6 +8,7 @@ import Assignment from "@/models/Assignment";
 import Course from "@/models/Course";
 import Enrollment from "@/models/Enrollment";
 import Submission from "@/models/Submission";
+import type { MaterialExtract } from "@/lib/copilot-materials";
 import type {
   EducatorCopilotAction,
   EducatorCopilotActionMode,
@@ -24,6 +26,13 @@ type CopilotMessageInput = {
   role: "user" | "assistant";
   content: string;
 };
+
+type CopilotStreamEvent =
+  | { type: "status"; content: string }
+  | { type: "token"; content: string }
+  | { type: "toolStart"; toolName?: string }
+  | { type: "toolEnd"; toolName?: string }
+  | { type: "error"; message: string };
 
 type ManagedCourse = {
   _id: Types.ObjectId;
@@ -73,10 +82,12 @@ export async function buildEducatorCopilotContext({
   user,
   pageContext,
   message,
+  materials,
 }: {
   user: SessionUser;
   pageContext?: EducatorCopilotPageContext;
   message?: string;
+  materials?: MaterialExtract[];
 }) {
   const filter =
     user.role === "admin"
@@ -193,6 +204,12 @@ export async function buildEducatorCopilotContext({
       "grade_or_return_submission",
     ],
     query: message,
+    uploadedMaterials: (materials || []).map((item) => ({
+      name: item.name,
+      type: item.type,
+      size: item.size,
+      textPreview: truncate(item.text, 1600),
+    })),
   };
 }
 
@@ -202,21 +219,97 @@ export async function generateEducatorCopilotTurn({
   messages,
   pageContext,
   actionMode,
+  materials,
 }: {
   user: SessionUser;
   message: string;
   messages: CopilotMessageInput[];
   pageContext?: EducatorCopilotPageContext;
   actionMode: EducatorCopilotActionMode;
+  materials?: MaterialExtract[];
 }) {
-  const context = await buildEducatorCopilotContext({ user, pageContext, message });
-  const draft = await draftWithOpenAI({
+  const context = await buildEducatorCopilotContext({
+    user,
+    pageContext,
+    message,
+    materials,
+  });
+  const draft =
+    (await draftStructuredWithAgentCommons({
+      message,
+      messages,
+      context,
+      actionMode,
+      materials,
+    })) ||
+    (await draftWithOpenAI({
+      message,
+      messages,
+      context,
+      actionMode,
+    }));
+  const normalized = normalizeDraft(draft, context, message);
+  return normalized;
+}
+
+export async function streamEducatorCopilotTurn({
+  user,
+  message,
+  messages,
+  pageContext,
+  actionMode,
+  materials,
+  agentFileIds,
+  sessionId,
+  onEvent,
+}: {
+  user: SessionUser;
+  message: string;
+  messages: CopilotMessageInput[];
+  pageContext?: EducatorCopilotPageContext;
+  actionMode: EducatorCopilotActionMode;
+  materials?: MaterialExtract[];
+  agentFileIds?: string[];
+  sessionId?: string;
+  onEvent: (event: CopilotStreamEvent) => void | Promise<void>;
+}) {
+  const context = await buildEducatorCopilotContext({
+    user,
+    pageContext,
+    message,
+    materials,
+  });
+  const streamedReply = await streamReplyWithAgentCommons({
+    user,
     message,
     messages,
     context,
     actionMode,
+    materials,
+    agentFileIds,
+    sessionId,
+    onEvent,
   });
-  const normalized = normalizeDraft(draft, context, message);
+
+  const draft =
+    (await draftStructuredWithAgentCommons({
+      message,
+      messages,
+      context,
+      actionMode,
+      materials,
+      streamedReply,
+    })) ||
+    (await draftWithOpenAI({
+      message,
+      messages,
+      context,
+      actionMode,
+    }));
+  const normalized = normalizeDraft(draft, context, message, streamedReply);
+  if (!streamedReply.trim()) {
+    await streamText(normalized.reply, onEvent);
+  }
   return normalized;
 }
 
@@ -390,6 +483,227 @@ function summarizeStudent(row: StudentSnapshot) {
   };
 }
 
+async function streamReplyWithAgentCommons({
+  user,
+  message,
+  messages,
+  context,
+  actionMode,
+  materials,
+  agentFileIds,
+  sessionId,
+  onEvent,
+}: {
+  user: SessionUser;
+  message: string;
+  messages: CopilotMessageInput[];
+  context: unknown;
+  actionMode: EducatorCopilotActionMode;
+  materials?: MaterialExtract[];
+  agentFileIds?: string[];
+  sessionId?: string;
+  onEvent: (event: CopilotStreamEvent) => void | Promise<void>;
+}) {
+  const client = getAgentCommonsClient();
+  const agentId = process.env.EDUCATOR_COPILOT_AGENT_ID;
+  if (!client || !agentId) return "";
+
+  let reply = "";
+  try {
+    await onEvent({ type: "status", content: "Starting copilot session" });
+    for await (const event of client.agents.stream({
+      agentId,
+      sessionId,
+      initiatorId: user.id,
+      attachments: (agentFileIds || []).map((fileId) => ({ fileId })),
+      messages: [
+        {
+          role: "system",
+          content: buildStreamingSystemPrompt(actionMode),
+        },
+        {
+          role: "user",
+          content: buildAgentCommonsUserContent({
+            message,
+            messages,
+            context,
+            materials,
+          }) as never,
+        },
+      ],
+    } as never)) {
+      if (event.type === "token" && event.content) {
+        reply += event.content;
+        await onEvent({ type: "token", content: event.content });
+      } else if (event.type === "toolStart") {
+        await onEvent({
+          type: "toolStart",
+          toolName: event.toolName || (event as { tool?: string }).tool,
+        });
+      } else if (event.type === "toolEnd") {
+        await onEvent({
+          type: "toolEnd",
+          toolName: event.toolName || (event as { tool?: string }).tool,
+        });
+      } else if (event.type === "status") {
+        await onEvent({
+          type: "status",
+          content:
+            (event as { status?: string }).status ||
+            event.content ||
+            event.message ||
+            "Working...",
+        });
+      } else if (event.type === "final") {
+        const finalText = extractFinalText(event);
+        if (finalText && !reply.trim()) {
+          reply = finalText;
+          await onEvent({ type: "token", content: finalText });
+        }
+      } else if (event.type === "error") {
+        await onEvent({
+          type: "error",
+          message: event.content || "The Agent Commons run failed.",
+        });
+      }
+    }
+  } catch {
+    return "";
+  }
+  return reply.trim();
+}
+
+async function draftStructuredWithAgentCommons({
+  message,
+  messages,
+  context,
+  actionMode,
+  materials,
+  streamedReply,
+}: {
+  message: string;
+  messages: CopilotMessageInput[];
+  context: unknown;
+  actionMode: EducatorCopilotActionMode;
+  materials?: MaterialExtract[];
+  streamedReply?: string;
+}) {
+  const client = getAgentCommonsClient();
+  const agentId = process.env.EDUCATOR_COPILOT_AGENT_ID;
+  if (!client || !agentId) return null;
+
+  try {
+    const result = await client.run.once({
+      agentId,
+      messages: [
+        {
+          role: "system",
+          content: buildSystemPrompt(actionMode),
+        },
+        {
+          role: "user",
+          content: JSON.stringify({
+            educatorContext: context,
+            recentMessages: messages.slice(-10),
+            currentMessage: message,
+            streamedReply,
+            uploadedMaterials: summarizeMaterialsForModel(materials),
+            outputShape: {
+              reply: "string",
+              actions:
+                "optional array of navigate, highlight, update_course_lesson, or update_skill_challenge actions",
+              sessionTitle: "optional short title",
+            },
+          }),
+        },
+      ],
+    });
+    const text = extractText(result);
+    return JSON.parse(text || "{}") as unknown;
+  } catch {
+    return null;
+  }
+}
+
+function buildAgentCommonsUserContent({
+  message,
+  messages,
+  context,
+  materials,
+}: {
+  message: string;
+  messages: CopilotMessageInput[];
+  context: unknown;
+  materials?: MaterialExtract[];
+}) {
+  const imageParts = (materials || [])
+    .filter((item) => item.imageDataUrl)
+    .slice(0, 4)
+    .map((item) => ({
+      type: "image_url" as const,
+      image_url: { url: item.imageDataUrl || "" },
+    }));
+
+  const text = JSON.stringify({
+    educatorContext: context,
+    recentMessages: messages.slice(-10),
+    currentMessage: message,
+    uploadedMaterials: summarizeMaterialsForModel(materials),
+  });
+
+  return imageParts.length
+    ? [{ type: "text" as const, text }, ...imageParts]
+    : text;
+}
+
+function summarizeMaterialsForModel(materials?: MaterialExtract[]) {
+  return (materials || []).map((item) => ({
+    name: item.name,
+    type: item.type,
+    size: item.size,
+    text: truncate(item.text, 12000),
+  }));
+}
+
+async function streamText(
+  text: string,
+  onEvent: (event: CopilotStreamEvent) => void | Promise<void>
+) {
+  const chunks = text.match(/.{1,80}(\s|$)/g) || [text];
+  for (const chunk of chunks) {
+    await onEvent({ type: "token", content: chunk });
+  }
+}
+
+function extractFinalText(event: unknown) {
+  const record = event && typeof event === "object" ? (event as Record<string, unknown>) : {};
+  const payload =
+    record.payload && typeof record.payload === "object"
+      ? (record.payload as Record<string, unknown>)
+      : {};
+  return (
+    cleanString(record.content) ||
+    cleanString(payload.content) ||
+    cleanString(payload.text) ||
+    cleanString(payload.message) ||
+    ""
+  );
+}
+
+function extractText(value: unknown): string {
+  if (!value) return "";
+  if (typeof value === "string") return value;
+  if (Array.isArray(value)) return value.map(extractText).filter(Boolean).join("\n");
+  if (typeof value === "object") {
+    const record = value as Record<string, unknown>;
+    for (const key of ["content", "message", "text", "output", "response", "final"]) {
+      const text = extractText(record[key]);
+      if (text) return text;
+    }
+  }
+  return "";
+}
+
 async function draftWithOpenAI({
   message,
   messages,
@@ -451,6 +765,8 @@ function buildSystemPrompt(actionMode: EducatorCopilotActionMode) {
     "You are the CommonLab educator copilot.",
     "You are embedded across the educator console. Use the supplied educatorContext, currentView, navigationMap, courses, materials, and student/course summaries.",
     "Be concrete, organized, and concise. Prefer short sections and direct next actions.",
+    "Never answer a concrete question with a generic capability statement. If the educator asks how many students they have, calculate from context. If they ask which courses they have, list the courses. If they ask to open a course, return a navigate action. If they ask to edit a course, identify the course and navigate them to the strongest editing view.",
+    "Handle typos and casual phrasing. Match course names fuzzily against the supplied course list.",
     "You can help create and edit course material, improve lessons, inspect course structure, navigate the educator UI, and explain analytics or student/course summaries that are present in context.",
     "When a user asks to go somewhere, return a navigate action with an href from the navigationMap.",
     "When a user asks where something is on the page, use currentView.uiMap selectors for highlight actions when possible.",
@@ -462,20 +778,65 @@ function buildSystemPrompt(actionMode: EducatorCopilotActionMode) {
   ].join("\n\n");
 }
 
-function normalizeDraft(draft: unknown, context: unknown, message: string) {
+function buildStreamingSystemPrompt(actionMode: EducatorCopilotActionMode) {
+  return [
+    "You are the CommonLab educator copilot, embedded in the educator side panel.",
+    "Respond naturally and professionally. Do not expose raw JSON.",
+    "Use uploaded files, current page context, course context, learner summaries, and recent messages when relevant.",
+    "Never answer a concrete question with a generic capability statement. If the educator asks how many students they have, calculate from context. If they ask which courses they have, list them. If they ask to open or edit a course, identify the course and say what you are doing.",
+    "When files are attached, read them closely and synthesize what is useful for the educator's current request.",
+    "You may suggest edits, navigation, and page guidance in normal language. The app will turn safe actions into action cards separately.",
+    `Current action mode: ${actionMode}. Sensitive operations remain blocked even in auto mode.`,
+    EDUCATOR_COPILOT_PEDAGOGY,
+    EDUCATOR_COPILOT_SAFETY,
+  ].join("\n\n");
+}
+
+function normalizeDraft(
+  draft: unknown,
+  context: unknown,
+  message: string,
+  streamedReply?: string
+) {
   const record = draft && typeof draft === "object" ? (draft as Record<string, unknown>) : {};
-  const reply =
+  const deterministicReply = fallbackReply(context, message);
+  const modelReply =
     typeof record.reply === "string" && record.reply.trim()
       ? record.reply.trim()
-      : fallbackReply(context, message);
-  const actions = Array.isArray(record.actions)
+      : streamedReply?.trim() || "";
+  const reply =
+    modelReply && !shouldReplaceGenericReply(modelReply, message)
+      ? modelReply
+      : deterministicReply;
+  const normalizedActions = Array.isArray(record.actions)
     ? record.actions.map(normalizeAction).filter(Boolean)
     : [];
+  const actions = normalizedActions.length
+    ? normalizedActions
+    : fallbackActions(context, message);
   const sessionTitle =
     typeof record.sessionTitle === "string" && record.sessionTitle.trim()
       ? record.sessionTitle.trim().slice(0, 80)
       : summarizeSessionTitle(message);
   return { reply, actions: actions as EducatorCopilotAction[], sessionTitle };
+}
+
+function shouldReplaceGenericReply(reply: string, message: string) {
+  const text = normalizeForMatch(message);
+  const answer = normalizeForMatch(reply);
+  const isConcrete =
+    isStudentCountQuestion(text) ||
+    isCourseListQuestion(text) ||
+    isOpenRequest(text) ||
+    isEditRequest(text);
+  if (!isConcrete) return false;
+  return (
+    answer.includes("i can help with") ||
+    answer.includes("i can help edit") ||
+    answer.includes("tell me which course") ||
+    answer.includes("i can see") ||
+    answer.includes("available in your context")
+  );
 }
 
 function normalizeAction(input: unknown): EducatorCopilotAction | null {
@@ -648,32 +1009,217 @@ async function findManagedCourse(user: SessionUser, slug: string) {
 }
 
 function fallbackReply(context: unknown, message: string) {
-  const text = message.toLowerCase();
-  const ctx = context as {
-    navigationMap?: Array<{ label: string; href: string }>;
-    currentCourse?: { title?: string };
-    courses?: Array<{ title?: string }>;
-  };
-  const navMatch = ctx.navigationMap?.find((item) =>
-    text.includes(item.label.toLowerCase())
+  const text = normalizeForMatch(message);
+  const ctx = context as CopilotContextView;
+  const courses = ctx.courses || [];
+  const courseMatch = findCourseMatch(message, courses);
+  const totalStudents = courses.reduce(
+    (sum, course) => sum + Number(course.metrics?.students || 0),
+    0
   );
-  if (navMatch) {
-    return `I can take you to ${navMatch.label}.`;
+
+  if (isStudentCountQuestion(text)) {
+    if (!courses.length) return "You do not have any managed courses in this workspace yet.";
+    const courseLines = courses.map(
+      (course) => `${course.title}: ${Number(course.metrics?.students || 0)} students`
+    );
+    return [`You have ${totalStudents} students across ${courses.length} courses.`, ...courseLines]
+      .join("\n");
   }
-  if (text.includes("edit") || text.includes("improve")) {
+
+  if (isCourseListQuestion(text)) {
+    if (!courses.length) return "You do not have any managed courses yet.";
     return [
-      "I can help edit course lessons and skill challenges from this view.",
-      ctx.currentCourse?.title
-        ? `I can use the current course context for "${ctx.currentCourse.title}".`
-        : "Tell me which course, lesson, or skill challenge you want to revise.",
+      `You have ${courses.length} managed courses:`,
+      ...courses.map((course) => {
+        const students = Number(course.metrics?.students || 0);
+        const status = course.published ? "published" : "draft";
+        return `${course.title} (${status}, ${students} students)`;
+      }),
+    ].join("\n");
+  }
+
+  if (isOpenRequest(text) && courseMatch) {
+    return `Opening ${courseMatch.title}.`;
+  }
+
+  if (isEditRequest(text)) {
+    if (courseMatch) {
+      return [
+        `I found ${courseMatch.title}.`,
+        "I can help edit its lessons and skill challenges from the course content view.",
+      ].join(" ");
+    }
+    if (ctx.currentCourse?.title) {
+      return `I can help edit ${ctx.currentCourse.title}. Tell me the lesson or skill challenge you want to change, or describe the change you want.`;
+    }
+    return [
+      "Which course should we edit?",
+      courses.length ? `I can see: ${courses.map((course) => course.title).join(", ")}.` : "",
+    ]
+      .filter(Boolean)
+      .join(" ");
+  }
+
+  if (ctx.uploadedMaterials?.length) {
+    const names = ctx.uploadedMaterials.map((item) => item.name).join(", ");
+    return `I read the attached material: ${names}. Tell me whether you want a summary, lesson edits, quiz improvements, or a new skill path draft from it.`;
+  }
+
+  if (courseMatch) {
+    return [
+      `${courseMatch.title} is one of your managed courses.`,
+      `${Number(courseMatch.metrics?.students || 0)} students are enrolled.`,
+      courseMatch.modules?.length
+        ? `It has ${courseMatch.modules.length} module(s).`
+        : "It does not have modules in the current context.",
     ].join(" ");
   }
-  return [
-    "I can help with course materials, lesson edits, student/course summaries, navigation, and educator operations available in your context.",
-    ctx.courses?.length ? `I can see ${ctx.courses.length} managed course(s).` : "",
-  ]
-    .filter(Boolean)
-    .join(" ");
+
+  return courses.length
+    ? `I can see ${courses.length} managed courses: ${courses
+        .map((course) => course.title)
+        .join(", ")}.`
+    : "I do not see any managed courses in your educator context yet.";
+}
+
+function fallbackActions(context: unknown, message: string): EducatorCopilotAction[] {
+  const text = normalizeForMatch(message);
+  const ctx = context as CopilotContextView;
+  const courses = ctx.courses || [];
+  const courseMatch = findCourseMatch(message, courses);
+  if (!courseMatch) return [];
+
+  if (isOpenRequest(text)) {
+    return [
+      {
+        id: randomUUID(),
+        type: "navigate",
+        label: `Open ${courseMatch.title}`,
+        href: `/educator/courses/${courseMatch.slug}`,
+        reason: "The educator asked to open this course.",
+        status: "proposed",
+        safety: "client_safe",
+      },
+    ];
+  }
+
+  if (isEditRequest(text)) {
+    return [
+      {
+        id: randomUUID(),
+        type: "navigate",
+        label: `Edit ${courseMatch.title}`,
+        href: `/educator/courses/${courseMatch.slug}/content`,
+        reason: "The educator asked to edit this course.",
+        status: "proposed",
+        safety: "client_safe",
+      },
+    ];
+  }
+
+  return [];
+}
+
+type CopilotContextView = {
+  currentCourse?: CopilotCourseView | null;
+  courses?: CopilotCourseView[];
+  uploadedMaterials?: Array<{ name: string }>;
+};
+
+type CopilotCourseView = {
+  title: string;
+  slug: string;
+  published?: boolean;
+  metrics?: Record<string, number>;
+  modules?: Array<{ title: string }>;
+};
+
+function isStudentCountQuestion(text: string) {
+  return (
+    /\bhow many\b/.test(text) &&
+    /\b(student|students|stident|stidents|learner|learners)\b/.test(text)
+  );
+}
+
+function isCourseListQuestion(text: string) {
+  return (
+    /\b(what|which|list|show)\b/.test(text) &&
+    /\b(course|courses)\b/.test(text)
+  );
+}
+
+function isOpenRequest(text: string) {
+  return /\b(open|go to|take me|show me|view)\b/.test(text);
+}
+
+function isEditRequest(text: string) {
+  return /\b(edit|revise|improve|update|change|fix)\b/.test(text);
+}
+
+function findCourseMatch(message: string, courses: CopilotCourseView[]) {
+  const query = normalizeForMatch(message)
+    .replace(/\b(open|go to|take me|show me|view|edit|revise|improve|update|change|fix|course|couse|the|up)\b/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!query) return null;
+  let best: { course: CopilotCourseView; score: number } | null = null;
+  for (const course of courses) {
+    const title = normalizeForMatch(course.title);
+    const slug = normalizeForMatch(course.slug.replace(/-/g, " "));
+    const score = Math.max(matchScore(query, title), matchScore(query, slug));
+    if (!best || score > best.score) best = { course, score };
+  }
+  return best && best.score >= 0.38 ? best.course : null;
+}
+
+function matchScore(query: string, target: string) {
+  if (!query || !target) return 0;
+  if (target.includes(query) || query.includes(target)) return 1;
+  const queryTerms = new Set(query.split(/\s+/).filter((term) => term.length > 1));
+  const targetTerms = new Set(target.split(/\s+/).filter((term) => term.length > 1));
+  if (!queryTerms.size || !targetTerms.size) return 0;
+  let hits = 0;
+  for (const term of queryTerms) {
+    for (const targetTerm of targetTerms) {
+      if (
+        targetTerm === term ||
+        targetTerm.includes(term) ||
+        term.includes(targetTerm) ||
+        levenshtein(term, targetTerm) <= 2
+      ) {
+        hits += 1;
+        break;
+      }
+    }
+  }
+  return hits / Math.max(queryTerms.size, targetTerms.size);
+}
+
+function normalizeForMatch(value: string) {
+  return value
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .replace(/\bai\b/g, "ai")
+    .trim();
+}
+
+function levenshtein(a: string, b: string) {
+  const matrix = Array.from({ length: a.length + 1 }, (_, index) => [index]);
+  for (let index = 1; index <= b.length; index += 1) matrix[0][index] = index;
+  for (let row = 1; row <= a.length; row += 1) {
+    for (let col = 1; col <= b.length; col += 1) {
+      matrix[row][col] =
+        a[row - 1] === b[col - 1]
+          ? matrix[row - 1][col - 1]
+          : Math.min(
+              matrix[row - 1][col - 1] + 1,
+              matrix[row][col - 1] + 1,
+              matrix[row - 1][col] + 1
+            );
+    }
+  }
+  return matrix[a.length][b.length];
 }
 
 function extractCourseSlug(path: string) {

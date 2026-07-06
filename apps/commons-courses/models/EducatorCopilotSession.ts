@@ -2,6 +2,7 @@ import mongoose, { Schema, Document } from "mongoose";
 import type {
   EducatorCopilotAction,
   EducatorCopilotActionMode,
+  EducatorCopilotAttachment,
   EducatorCopilotPageContext,
 } from "@/types/educator-copilot";
 
@@ -10,6 +11,7 @@ export interface IEducatorCopilotMessage {
   role: "user" | "assistant";
   content: string;
   createdAt: Date;
+  attachments?: EducatorCopilotAttachment[];
   actions?: EducatorCopilotAction[];
 }
 
@@ -31,6 +33,7 @@ const CopilotMessageSchema = new Schema<IEducatorCopilotMessage>(
     role: { type: String, enum: ["user", "assistant"], required: true },
     content: { type: String, required: true },
     createdAt: { type: Date, default: Date.now },
+    attachments: { type: [Schema.Types.Mixed], default: [] },
     actions: { type: [Schema.Types.Mixed], default: [] },
   },
   { _id: false }

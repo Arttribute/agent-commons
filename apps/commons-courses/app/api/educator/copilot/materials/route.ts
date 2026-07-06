@@ -1,7 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
-import zlib from "node:zlib";
 import { getAgentCommonsClient } from "@/lib/agent-commons";
 import { normalizeCourseInput, type CourseInput } from "@/lib/course-input";
+import {
+  extractMaterial,
+  formatMaterialContext,
+  type MaterialExtract,
+} from "@/lib/copilot-materials";
 import { requireEducator, buildManagedCoursesFilter, slugifyCourseTitle } from "@/lib/educator-auth";
 import { EDUCATOR_COPILOT_PEDAGOGY } from "@/lib/educator-copilot-policy";
 import { indexCourseForSearch } from "@/lib/search-indexers";
@@ -10,13 +14,6 @@ import EducatorProfile from "@/models/EducatorProfile";
 import type { SkillPack } from "@/types/skills";
 
 type CopilotMode = "course" | "skill_path";
-
-type MaterialExtract = {
-  name: string;
-  type: string;
-  text: string;
-  imageDataUrl?: string;
-};
 
 type CopilotDraft = {
   title?: string;
@@ -62,11 +59,10 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const materials = await Promise.all(files.map(extractMaterial));
-  const materialText = materials
-    .map((item) => `File: ${item.name}\n${item.text}`)
-    .join("\n\n")
-    .slice(0, maxTextChars);
+  const materials = await Promise.all(
+    files.map((file) => extractMaterial(file, { maxTextChars }))
+  );
+  const materialText = formatMaterialContext(materials, maxTextChars);
   const images = materials.filter((item) => item.imageDataUrl).slice(0, 4);
 
   const draft = await createDraft({
@@ -644,97 +640,6 @@ function moduleFromSkillPack(skillPack: SkillPack) {
   };
 }
 
-async function extractMaterial(file: File): Promise<MaterialExtract> {
-  const buffer = Buffer.from(await file.arrayBuffer());
-  const type = file.type || guessMimeType(file.name);
-
-  if (type.startsWith("image/")) {
-    return {
-      name: file.name,
-      type,
-      text: `Image uploaded: ${file.name}`,
-      imageDataUrl: `data:${type};base64,${buffer.toString("base64")}`,
-    };
-  }
-
-  if (type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf")) {
-    const text = extractLoosePdfText(buffer);
-    return {
-      name: file.name,
-      type,
-      text:
-        text ||
-        "PDF uploaded, but no extractable text was found. If this PDF is image-only, upload slide images as well for stronger AI drafting.",
-    };
-  }
-
-  if (
-    type.startsWith("text/") ||
-    /\.(md|markdown|txt|csv|json)$/i.test(file.name)
-  ) {
-    return {
-      name: file.name,
-      type,
-      text: buffer.toString("utf8").slice(0, maxTextChars),
-    };
-  }
-
-  return {
-    name: file.name,
-    type,
-    text: `Uploaded unsupported file type ${type}. Use text, PDF, or image files for best results.`,
-  };
-}
-
-function extractLoosePdfText(buffer: Buffer) {
-  const raw = buffer.toString("latin1");
-  const chunks = [raw];
-  let offset = 0;
-  while (true) {
-    const streamIndex = raw.indexOf("stream", offset);
-    if (streamIndex === -1) break;
-    const endIndex = raw.indexOf("endstream", streamIndex);
-    if (endIndex === -1) break;
-    const header = raw.slice(Math.max(0, streamIndex - 400), streamIndex);
-    if (header.includes("FlateDecode")) {
-      let start = streamIndex + "stream".length;
-      if (raw[start] === "\r" && raw[start + 1] === "\n") start += 2;
-      else if (raw[start] === "\n") start += 1;
-      let end = endIndex;
-      while (end > start && (raw[end - 1] === "\n" || raw[end - 1] === "\r")) end -= 1;
-      try {
-        chunks.push(zlib.inflateSync(buffer.subarray(start, end)).toString("utf8"));
-      } catch {
-        // Ignore compressed streams that are not text streams.
-      }
-    }
-    offset = endIndex + "endstream".length;
-  }
-
-  const text = chunks
-    .flatMap((chunk) => extractPdfStrings(chunk))
-    .join("\n")
-    .replace(/[^\S\r\n]+/g, " ")
-    .replace(/\n{3,}/g, "\n\n")
-    .trim();
-  return text.slice(0, maxTextChars);
-}
-
-function extractPdfStrings(value: string) {
-  const matches = value.match(/\((?:\\.|[^\\)]){2,}\)/g) || [];
-  return matches
-    .map((item) =>
-      item
-        .slice(1, -1)
-        .replace(/\\n/g, "\n")
-        .replace(/\\r/g, "\n")
-        .replace(/\\t/g, " ")
-        .replace(/\\([()\\])/g, "$1")
-    )
-    .filter((item) => /[A-Za-z]{3}/.test(item))
-    .slice(0, 600);
-}
-
 async function uniqueCourseSlug(title: string) {
   const base = slugifyCourseTitle(title) || "course-draft";
   let slug = base;
@@ -802,11 +707,4 @@ function extractTopicLines(text: string) {
         .filter((line) => line.length >= 5 && line.length <= 64)
     )
   );
-}
-
-function guessMimeType(name: string) {
-  if (/\.pdf$/i.test(name)) return "application/pdf";
-  if (/\.(png|jpg|jpeg|webp)$/i.test(name)) return "image/*";
-  if (/\.(md|markdown|txt|csv|json)$/i.test(name)) return "text/plain";
-  return "application/octet-stream";
 }
