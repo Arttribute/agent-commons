@@ -2,7 +2,6 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { Activity, BadgePercent, BookOpen, CreditCard, Users } from "lucide-react";
 import { Nav } from "@/components/nav";
-import { GeneralAgentDrawer } from "@/components/agents/general-agent-drawer";
 import { auth } from "@/lib/auth";
 import { connectDB } from "@/lib/db";
 import { buildManagedCoursesFilter } from "@/lib/educator-auth";
@@ -34,18 +33,6 @@ export default async function EducatorAnalyticsPage() {
   return (
     <div className="min-h-screen bg-white">
       <Nav />
-      <GeneralAgentDrawer
-        context={{
-          page: "educator.analytics",
-          title: "Analytics",
-          visibleText: [
-            `${courses.length} courses`,
-            `${summary.totals.courseViews} course views`,
-            `${summary.totals.completedPayments} completed payments`,
-            `${summary.totals.stalePendingPayments} likely abandoned payments`,
-          ].join("\n"),
-        }}
-      />
       <main className="mx-auto max-w-6xl px-4 pb-16 pt-24 sm:px-6 lg:px-8">
         <Link href="/educator" className="text-sm font-bold text-slate-500">
           Back to educator console

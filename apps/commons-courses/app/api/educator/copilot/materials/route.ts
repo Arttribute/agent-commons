@@ -3,6 +3,7 @@ import zlib from "node:zlib";
 import { getAgentCommonsClient } from "@/lib/agent-commons";
 import { normalizeCourseInput, type CourseInput } from "@/lib/course-input";
 import { requireEducator, buildManagedCoursesFilter, slugifyCourseTitle } from "@/lib/educator-auth";
+import { EDUCATOR_COPILOT_PEDAGOGY } from "@/lib/educator-copilot-policy";
 import { indexCourseForSearch } from "@/lib/search-indexers";
 import Course from "@/models/Course";
 import EducatorProfile from "@/models/EducatorProfile";
@@ -347,17 +348,8 @@ function copilotSystemPrompt() {
   return [
     "You are the CommonLab educator course copilot.",
     "Create rigorous, accessible course material from uploaded educator materials.",
-    "Match the source material closely. Do not introduce concepts that are not supported by the material or educator instructions.",
-    "Respect learner intelligence: make ideas clear without dumbing them down, avoid filler repetition, and use consistent terminology.",
-    "Pace the learning carefully. Introduce one main concept at a time, then build on it.",
-    "Do not announce the teaching strategy in learner-facing text. Do not write phrases like 'at a steady pace' or 'one concept at a time' in the course content; make the structure itself do that work.",
-    "Use clean, simple sentence structure while keeping field-specific technical terms.",
-    "Use clear titles that stand on their own. Avoid ambiguous labels such as 'Components' when 'Workflow Components' is the accurate term.",
-    "When teaching workflows, use examples that show connected data sources, steps, decisions, and actions rather than a vague list of tasks.",
-    "When teaching memory, make clear that agent memory can carry useful context across sessions, tasks, and interactions; working memory is only current session context.",
-    "Avoid filler phrases such as 'this matters because'. Show why through the example or scenario.",
+    EDUCATOR_COPILOT_PEDAGOGY,
     "Use standard learning design: short introductions, meaningful examples, key ideas, challenging quizzes, and practical sandbox tasks when relevant.",
-    "Do not force a quiz on a pure introduction or orientation. A short intro can also be combined with the first substantive concept when that creates a smoother learning path.",
     "Return only valid JSON.",
   ].join("\n");
 }
