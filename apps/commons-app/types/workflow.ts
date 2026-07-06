@@ -79,6 +79,8 @@ export interface ReactFlowNode {
   id: string;
   type: WorkflowNodeType;
   position: { x: number; y: number };
+  /** Set by React Flow when the node is selected on the canvas */
+  selected?: boolean;
   data: {
     label: string;
     toolId?: string;

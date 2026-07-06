@@ -220,8 +220,11 @@ export function WorkflowCanvas() {
           // Extract typed parameters using the type mapping utility
           inputs = extractTypedParameters(nodeData.schema);
 
-          // Extract output parameters (may include flattened object properties)
-          outputs = extractOutputParameters(nodeData.schema);
+          // Prefer explicit outputs from the palette (e.g. Google Workspace
+          // ops declare their return shape); fall back to schema heuristics.
+          outputs = nodeData.outputs?.length
+            ? nodeData.outputs
+            : extractOutputParameters(nodeData.schema);
         } else {
           const defaults = portsForNodeType(nodeType);
           inputs = defaults.inputs;

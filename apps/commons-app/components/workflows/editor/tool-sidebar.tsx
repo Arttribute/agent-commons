@@ -3,8 +3,10 @@
 import { useEffect, useMemo, useState } from "react";
 import type { DragEvent } from "react";
 import type { LucideIcon } from "lucide-react";
-import { Bot, Hammer, Search, Shapes, Workflow, Wrench, X } from "lucide-react";
+import { Bot, Grip, Hammer, Search, Shapes, Workflow, Wrench, X } from "lucide-react";
+import Link from "next/link";
 import type { ToolCatalogItem, WorkflowPaletteKind } from "@/lib/tools/catalog";
+import { GOOGLE_WORKSPACE_OPS } from "@/lib/workflows/google-workspace-nodes";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -43,10 +45,12 @@ interface PaletteNode {
     workflowId?: string;
     schema?: any;
     config?: Record<string, any>;
+    /** Explicit output ports, for tools whose return shape is known */
+    outputs?: Array<{ name: string; type: string; description?: string }>;
   };
 }
 
-type GroupKey = "flow" | "system" | "custom" | "agents" | "workflows";
+type GroupKey = "flow" | "google" | "system" | "custom" | "agents" | "workflows";
 
 const GROUPS: Array<{
   key: GroupKey;
@@ -55,6 +59,7 @@ const GROUPS: Array<{
   empty: string;
 }> = [
   { key: "flow", label: "Flow control", icon: Shapes, empty: "No flow nodes" },
+  { key: "google", label: "Google Workspace", icon: Grip, empty: "No Google Workspace tools" },
   { key: "system", label: "Platform tools", icon: Wrench, empty: "No platform tools" },
   { key: "custom", label: "Custom tools", icon: Hammer, empty: "No custom tools yet" },
   { key: "agents", label: "Agents", icon: Bot, empty: "No agents yet" },
@@ -170,6 +175,28 @@ const flowNodes: PaletteNode[] = [
   },
 ];
 
+// Google Workspace ops are defined client-side (lib/workflows/google-workspace-nodes)
+// because the catalog only lists Workspace at the service level for OAuth setup.
+const googleNodes: PaletteNode[] = GOOGLE_WORKSPACE_OPS.map((op) => ({
+  id: op.id,
+  label: op.label,
+  description: op.description,
+  badge: op.service,
+  nodeType: "tool",
+  brand: getBrandIcon(op.toolName, op.service) ?? undefined,
+  dragData: {
+    type: "tool",
+    // Keep the full service name in the label — StepNode resolves its brand
+    // icon from toolName/label, and "Drive" alone wouldn't match the matcher.
+    label: `${op.service} · ${op.label}`,
+    description: op.description,
+    toolId: op.id,
+    toolName: op.toolName,
+    schema: op.schema,
+    outputs: op.outputs,
+  },
+}));
+
 function catalogToPaletteNode(item: ToolCatalogItem): PaletteNode | null {
   if (!item.workflowNode) return null;
 
@@ -265,12 +292,21 @@ export function ToolSidebar({ userId }: ToolSidebarProps) {
 
     return {
       flow: flowNodes,
+      google: googleNodes,
       system: paletteItems.filter((node) => node.badge === "system"),
       custom: paletteItems.filter((node) => node.badge === "custom"),
       agents: paletteItems.filter((node) => node.badge === "agent"),
       workflows: paletteItems.filter((node) => node.badge === "workflow"),
     } satisfies Record<GroupKey, PaletteNode[]>;
   }, [items]);
+
+  const googleConnected = useMemo(
+    () =>
+      items.some(
+        (item) => item.category === "google_workspace" && item.status === "connected"
+      ),
+    [items]
+  );
 
   const group = GROUPS.find((entry) => entry.key === activeGroup);
   const query = search.trim().toLowerCase();
@@ -279,7 +315,8 @@ export function ToolSidebar({ userId }: ToolSidebarProps) {
         (node) =>
           !query ||
           node.label.toLowerCase().includes(query) ||
-          node.description?.toLowerCase().includes(query)
+          node.description?.toLowerCase().includes(query) ||
+          node.badge?.toLowerCase().includes(query)
       )
     : [];
 
@@ -350,9 +387,22 @@ export function ToolSidebar({ userId }: ToolSidebarProps) {
             />
           </div>
 
+          {group.key === "google" && !loading && !googleConnected && (
+            <div className="mx-0.5 mb-1.5 rounded-lg border border-amber-200/80 bg-amber-50 px-2 py-1.5 dark:border-amber-300/20 dark:bg-amber-300/10">
+              <p className="text-[10.5px] leading-snug text-amber-700 dark:text-amber-300">
+                Google Workspace isn&apos;t connected yet. Nodes can be added now,
+                but runs will need a connection —{" "}
+                <Link href="/studio/tools" className="font-semibold underline underline-offset-2">
+                  connect in Tools
+                </Link>
+                .
+              </p>
+            </div>
+          )}
+
           <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
             <div className="space-y-0.5 p-0.5">
-              {loading && group.key !== "flow" ? (
+              {loading && group.key !== "flow" && group.key !== "google" ? (
                 [...Array(3)].map((_, index) => (
                   <Skeleton key={index} className="h-12 w-full rounded-xl" />
                 ))

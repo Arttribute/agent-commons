@@ -7,6 +7,7 @@ import { useAutoSave } from "@/lib/workflows/auto-save-hook";
 import { EditorToolbar } from "@/components/workflows/editor/toolbar";
 import { ToolSidebar } from "@/components/workflows/editor/tool-sidebar";
 import { WorkflowCanvasProvider } from "@/components/workflows/editor/workflow-canvas";
+import { NodeDetailsPanel } from "@/components/workflows/editor/node-details-panel";
 import { TestPanel } from "@/components/workflows/editor/test-panel";
 import { useAuth } from "@/context/AuthContext";
 import { normalizePrincipalId } from "@/lib/principal-id";
@@ -146,6 +147,8 @@ export default function WorkflowEditorPage() {
       />
 
       <ToolSidebar userId={userId} />
+
+      <NodeDetailsPanel />
 
       <TestPanel workflowId={workflowId} />
     </div>
