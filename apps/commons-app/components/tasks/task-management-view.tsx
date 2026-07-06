@@ -117,11 +117,11 @@ function PriorityControl({
       <DropdownMenuTrigger asChild onClick={(event) => event.stopPropagation()}>
         <button
           type="button"
-          className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md transition-colors hover:bg-muted"
+          className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md transition-colors hover:bg-muted"
           title={`Priority: ${current.label}`}
           aria-label="Change priority"
         >
-          <current.icon className={cn("h-3.5 w-3.5", current.className)} />
+          <current.icon className={cn("h-[18px] w-[18px]", current.className)} strokeWidth={2.5} />
         </button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" className="w-40">
@@ -133,7 +133,7 @@ function PriorityControl({
               onChange(option.value);
             }}
           >
-            <option.icon className={cn("h-3.5 w-3.5", option.className)} />
+            <option.icon className={cn("h-4 w-4", option.className)} strokeWidth={2.5} />
             {option.label}
             {option.key === current.key && <Check className="ml-auto h-3.5 w-3.5" />}
           </DropdownMenuItem>
@@ -234,7 +234,7 @@ function TaskRow({
     <div
       role="button"
       tabIndex={0}
-      className="group flex h-9 w-full cursor-pointer items-center gap-2 rounded-md px-2 text-sm transition-colors hover:bg-muted/60 focus-visible:bg-muted/60 focus-visible:outline-none"
+      className="group flex h-10 w-full cursor-pointer items-center gap-2.5 border-b border-border/50 px-4 text-sm transition-colors hover:bg-muted/60 focus-visible:bg-muted/60 focus-visible:outline-none"
       onClick={() => onOpen(task.taskId)}
       onKeyDown={(event) => {
         if (event.key === "Enter") onOpen(task.taskId);
@@ -622,22 +622,24 @@ export function TaskManagementView({
               <DropdownMenuContent align="end" className="w-64">
                 <DropdownMenuLabel>View options</DropdownMenuLabel>
                 <DropdownMenuSeparator />
-                <DropdownMenuSub>
-                  <DropdownMenuSubTrigger>
-                    Group
-                    <span className="ml-auto text-xs capitalize text-muted-foreground">{groupBy}</span>
-                  </DropdownMenuSubTrigger>
-                  <DropdownMenuSubContent>
-                    <DropdownMenuRadioGroup
-                      value={groupBy}
-                      onValueChange={(value) => setGroupBy(value as GroupBy)}
-                    >
-                      <DropdownMenuRadioItem value="status">Status</DropdownMenuRadioItem>
-                      <DropdownMenuRadioItem value="agent">Agent</DropdownMenuRadioItem>
-                      <DropdownMenuRadioItem value="priority">Priority</DropdownMenuRadioItem>
-                    </DropdownMenuRadioGroup>
-                  </DropdownMenuSubContent>
-                </DropdownMenuSub>
+                {viewMode === "board" && (
+                  <DropdownMenuSub>
+                    <DropdownMenuSubTrigger>
+                      Group
+                      <span className="ml-auto text-xs capitalize text-muted-foreground">{groupBy}</span>
+                    </DropdownMenuSubTrigger>
+                    <DropdownMenuSubContent>
+                      <DropdownMenuRadioGroup
+                        value={groupBy}
+                        onValueChange={(value) => setGroupBy(value as GroupBy)}
+                      >
+                        <DropdownMenuRadioItem value="status">Status</DropdownMenuRadioItem>
+                        <DropdownMenuRadioItem value="agent">Agent</DropdownMenuRadioItem>
+                        <DropdownMenuRadioItem value="priority">Priority</DropdownMenuRadioItem>
+                      </DropdownMenuRadioGroup>
+                    </DropdownMenuSubContent>
+                  </DropdownMenuSub>
+                )}
                 <DropdownMenuSub>
                   <DropdownMenuSubTrigger>
                     Order
@@ -654,12 +656,14 @@ export function TaskManagementView({
                     </DropdownMenuRadioGroup>
                   </DropdownMenuSubContent>
                 </DropdownMenuSub>
-                <DropdownMenuCheckboxItem
-                  checked={showEmptyColumns}
-                  onCheckedChange={(checked) => setShowEmptyColumns(checked === true)}
-                >
-                  Show empty status groups
-                </DropdownMenuCheckboxItem>
+                {viewMode === "board" && (
+                  <DropdownMenuCheckboxItem
+                    checked={showEmptyColumns}
+                    onCheckedChange={(checked) => setShowEmptyColumns(checked === true)}
+                  >
+                    Show empty status groups
+                  </DropdownMenuCheckboxItem>
+                )}
               </DropdownMenuContent>
             </DropdownMenu>
 
@@ -678,7 +682,11 @@ export function TaskManagementView({
       <div
         className={cn(
           "min-h-0 flex-1",
-          viewMode === "calendar" ? "flex flex-col overflow-hidden" : "overflow-auto px-4 py-3",
+          viewMode === "calendar"
+            ? "flex flex-col overflow-hidden"
+            : viewMode === "list"
+              ? "overflow-auto"
+              : "overflow-auto px-4 py-3",
         )}
       >
         {loading ? (
@@ -699,7 +707,12 @@ export function TaskManagementView({
             updateTask={updateTask}
           />
         ) : filteredTasks.length === 0 ? (
-          <div className="flex h-64 flex-col items-center justify-center rounded-lg border border-dashed border-border text-center">
+          <div
+            className={cn(
+              "flex h-64 flex-col items-center justify-center rounded-lg border border-dashed border-border text-center",
+              viewMode === "list" && "m-4",
+            )}
+          >
             <Calendar className="mb-3 h-10 w-10 text-muted-foreground/40" />
             <p className="text-sm font-medium">No tasks found</p>
             <p className="mt-1 text-xs text-muted-foreground">
@@ -707,32 +720,20 @@ export function TaskManagementView({
             </p>
           </div>
         ) : viewMode === "list" ? (
-          <div className="mx-auto w-full max-w-4xl space-y-4">
-            {groupedTasks.map(([group, items]) => {
-              const label = groupBy === "status" ? statusConfig[group]?.label ?? group : group;
-              return (
-                <section key={group} className="space-y-0.5">
-                  <div className="flex h-8 items-center gap-2 rounded-md bg-muted/40 px-2.5 text-xs font-medium">
-                    {groupBy === "status" && <StatusDot status={group as Task["status"]} />}
-                    <span>{label}</span>
-                    <span className="text-muted-foreground">{items.length}</span>
-                  </div>
-                  {items.map((task) => (
-                    <TaskRow
-                      key={task.taskId}
-                      task={task}
-                      agentName={agentMap.get(task.agentId) ?? "Unknown agent"}
-                      isActing={actionLoading === task.taskId}
-                      onOpen={openTask}
-                      onExecute={handleExecute}
-                      onCancel={handleCancel}
-                      onDelete={handleDelete}
-                      onSetPriority={handleSetPriority}
-                    />
-                  ))}
-                </section>
-              );
-            })}
+          <div className="w-full">
+            {filteredTasks.map((task) => (
+              <TaskRow
+                key={task.taskId}
+                task={task}
+                agentName={agentMap.get(task.agentId) ?? "Unknown agent"}
+                isActing={actionLoading === task.taskId}
+                onOpen={openTask}
+                onExecute={handleExecute}
+                onCancel={handleCancel}
+                onDelete={handleDelete}
+                onSetPriority={handleSetPriority}
+              />
+            ))}
           </div>
         ) : (
           <div className="flex min-w-[920px] gap-3">
