@@ -65,7 +65,7 @@ export function MiniComputer({
     () => buildScenes(activities, toolCalls),
     [activities, toolCalls],
   );
-  const { mode, wallpaper, tokens } = useComputerTheme();
+  const { mode, wallpaper, tokens, codeTheme } = useComputerTheme();
   const light = mode === "light";
 
   const [index, setIndex] = useState(scenes.length - 1);
@@ -139,15 +139,18 @@ export function MiniComputer({
         </span>
       </div>
 
-      {/* Screen */}
-      <div className="relative h-56" style={wallpaper}>
-        {scene.kind === "terminal" && <TerminalFace scene={scene} live={running} />}
-        {scene.kind === "editor" && <EditorFace scene={scene} />}
-        {scene.kind === "browser" && (
-          <BrowserFace scene={scene} computer={computer} mode={mode} tokens={tokens} />
-        )}
-        {scene.kind === "desktop" && (
+      {/* Screen — a scaled desktop; app scenes float as a window over the wallpaper. */}
+      <div className="relative h-72 overflow-hidden" style={wallpaper}>
+        {scene.kind === "desktop" ? (
           <DesktopFace scene={scene} computer={computer} mode={mode} tokens={tokens} />
+        ) : (
+          <div className="absolute inset-3 overflow-hidden rounded-xl ring-1 ring-black/10 shadow-lg">
+            {scene.kind === "terminal" && <TerminalFace scene={scene} live={running} />}
+            {scene.kind === "editor" && <EditorFace scene={scene} codeTheme={codeTheme} />}
+            {scene.kind === "browser" && (
+              <BrowserFace scene={scene} computer={computer} mode={mode} tokens={tokens} />
+            )}
+          </div>
         )}
       </div>
 
@@ -195,7 +198,7 @@ function TerminalFace({
 }) {
   const output = tailLines(scene.output ?? "", 7);
   return (
-    <div className="flex h-full flex-col bg-zinc-950/80 p-3 font-mono text-[11px] leading-5">
+    <div className="flex h-full flex-col bg-zinc-950 p-3 font-mono text-[11px] leading-5">
       <div className="flex items-start gap-1.5">
         <span className="shrink-0 text-emerald-400">$</span>
         <span className="break-all text-zinc-100">{scene.command}</span>
@@ -217,24 +220,31 @@ function TerminalFace({
   );
 }
 
-function EditorFace({ scene }: { scene: Extract<Scene, { kind: "editor" }> }) {
-  const lines = scene.code.split("\n").slice(0, 9);
+function EditorFace({
+  scene,
+  codeTheme,
+}: {
+  scene: Extract<Scene, { kind: "editor" }>;
+  codeTheme: ComputerMode;
+}) {
+  const lines = scene.code.split("\n").slice(0, 12);
   const name = scene.path?.split("/").pop() ?? "untitled";
+  const dark = codeTheme === "dark";
   return (
-    <div className="flex h-full flex-col bg-zinc-950/80 font-mono text-[11px] leading-5">
-      <div className="flex h-7 items-center gap-2 border-b border-white/[0.06] bg-zinc-900/60 px-2">
-        <span className="flex items-center gap-1.5 rounded-t border-b-2 border-indigo-400 px-2 py-1 text-zinc-200">
-          <FileCode2 className="h-3 w-3 text-indigo-300" />
+    <div className={cn("flex h-full flex-col font-mono text-[11px] leading-5", dark ? "bg-zinc-950" : "bg-white")}>
+      <div className={cn("flex h-7 items-center gap-2 border-b px-2", dark ? "border-white/[0.06] bg-zinc-900/60" : "border-zinc-200 bg-zinc-100")}>
+        <span className={cn("flex items-center gap-1.5 rounded-t border-b-2 border-indigo-400 px-2 py-1", dark ? "text-zinc-200" : "text-zinc-700")}>
+          <FileCode2 className="h-3 w-3 text-indigo-400" />
           {name}
         </span>
       </div>
       <div className="flex min-h-0 flex-1 overflow-hidden px-1 py-1.5">
-        <div className="select-none pr-3 text-right text-zinc-700">
+        <div className={cn("select-none pr-3 text-right", dark ? "text-zinc-700" : "text-zinc-300")}>
           {lines.map((_, i) => (
             <div key={i}>{i + 1}</div>
           ))}
         </div>
-        <pre className="min-w-0 flex-1 overflow-hidden whitespace-pre text-zinc-300">
+        <pre className={cn("min-w-0 flex-1 overflow-hidden whitespace-pre", dark ? "text-zinc-300" : "text-zinc-600")}>
           {lines.join("\n")}
         </pre>
       </div>

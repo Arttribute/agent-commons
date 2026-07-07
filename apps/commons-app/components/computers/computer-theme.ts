@@ -190,10 +190,11 @@ function readAppearance(): AppearanceId {
   return APPEARANCES.some((a) => a.id === value) ? (value as AppearanceId) : "light";
 }
 
-function readCodeTheme(): CodeTheme {
-  if (typeof window === "undefined") return "dark";
+/** The code editor follows the computer mode unless the user pins a theme. */
+function readCodeOverride(): CodeTheme | null {
+  if (typeof window === "undefined") return null;
   const value = window.localStorage.getItem(CODE_THEME_KEY);
-  return value === "light" ? "light" : "dark";
+  return value === "light" || value === "dark" ? value : null;
 }
 
 export type UseComputerTheme = {
@@ -209,14 +210,14 @@ export type UseComputerTheme = {
 
 export function useComputerTheme(): UseComputerTheme {
   const [appearanceId, setAppearanceId] = useState<AppearanceId>("light");
-  const [codeTheme, setCodeThemeState] = useState<CodeTheme>("dark");
+  const [codeOverride, setCodeOverride] = useState<CodeTheme | null>(null);
 
   useEffect(() => {
     setAppearanceId(readAppearance());
-    setCodeThemeState(readCodeTheme());
+    setCodeOverride(readCodeOverride());
     const sync = () => {
       setAppearanceId(readAppearance());
-      setCodeThemeState(readCodeTheme());
+      setCodeOverride(readCodeOverride());
     };
     window.addEventListener(SYNC_EVENT, sync);
     window.addEventListener("storage", sync);
@@ -237,7 +238,7 @@ export function useComputerTheme(): UseComputerTheme {
   }, []);
 
   const setCodeTheme = useCallback((theme: CodeTheme) => {
-    setCodeThemeState(theme);
+    setCodeOverride(theme);
     try {
       window.localStorage.setItem(CODE_THEME_KEY, theme);
     } catch {
@@ -247,6 +248,8 @@ export function useComputerTheme(): UseComputerTheme {
   }, []);
 
   const appearance = APPEARANCES.find((a) => a.id === appearanceId) ?? APPEARANCES[0];
+  // Default the editor to match the computer; a saved preference wins.
+  const codeTheme = codeOverride ?? appearance.mode;
 
   return {
     appearanceId,
