@@ -71,16 +71,16 @@ export function AgentSidebarSwitcher({
       <PopoverTrigger asChild>
         <button
           type="button"
-          className="flex w-full items-center gap-3 rounded-lg px-1.5 py-1.5 text-left transition-colors hover:bg-muted"
+          className="flex w-full items-center gap-2.5 rounded-lg px-2 py-1.5 text-left transition-colors hover:bg-muted"
         >
-          <AgentAvatar agent={current} size={44} />
+          <AgentAvatar agent={current} size={38} />
           <div className="min-w-0 flex-1">
-            <p className="truncate text-sm font-semibold">{current.name}</p>
+            <p className="truncate text-sm font-semibold leading-tight">{current.name}</p>
             <p className="truncate text-xs text-muted-foreground">
               {current.modelId || "No model selected"}
             </p>
           </div>
-          <ChevronsUpDown className="h-4 w-4 shrink-0 text-muted-foreground" />
+          <ChevronsUpDown className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
         </button>
       </PopoverTrigger>
       <PopoverContent align="start" className="w-[288px] p-0">

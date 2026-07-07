@@ -48,7 +48,6 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import RandomAvatar from "@/components/account/random-avatar";
 import { AgentAutonomy } from "@/components/agents/agent-autonomy";
 import { AgentMcpSection } from "@/components/mcp/agent-mcp-section";
 import { AddToAgentBalance } from "@/components/finances/add-to-agent-balance";
@@ -1789,59 +1788,55 @@ export default function AgentStudioPage({ params }: { params: Promise<{ agent: s
   };
 
   return (
-    <div className="flex h-full min-h-0 flex-col overflow-hidden bg-background">
-      <div className="flex shrink-0 items-center justify-between gap-3 border-b border-border/70 px-4 py-2">
-        <div className="flex min-w-0 items-center gap-2">
-          <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0" onClick={() => router.push("/studio/agents")} aria-label="Back to agents">
-            <ArrowLeft className="h-4 w-4" />
-          </Button>
-          {agent.avatar ? (
-            <img src={agent.avatar} alt="" className="h-7 w-7 shrink-0 rounded-full border object-cover" />
-          ) : (
-            <RandomAvatar size={28} username={agent.name || "agent"} />
-          )}
-          <span className="truncate text-sm font-medium">{agent.name}</span>
-        </div>
-        <Badge variant="outline" className="hidden rounded-md sm:inline-flex">{shortId(agentId)}</Badge>
-      </div>
-
-      <div className="grid min-h-0 flex-1 grid-cols-[280px_minmax(0,1fr)] overflow-hidden">
-        <aside className="flex min-h-0 flex-col overflow-hidden border-r border-border bg-muted/10">
-          <div className="shrink-0 border-b border-border/70 p-3">
-            <AgentSidebarSwitcher
-              current={{
-                id: agentId,
-                name: agent.name,
-                avatar: agent.avatar,
-                modelId: (agent as any).modelId,
-              }}
-              items={agents.map((item) => ({
-                id: item.agentId,
-                name: item.name,
-                avatar: (item as any).avatar,
-                modelId: (item as any).modelId,
-              }))}
-            />
+    <div className="grid h-full min-h-0 grid-cols-[280px_minmax(0,1fr)] overflow-hidden bg-background">
+      <aside className="flex min-h-0 flex-col overflow-hidden border-r border-border bg-muted/10">
+        <div className="shrink-0 border-b border-border/70 p-3">
+          <div className="flex items-center gap-1.5">
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-8 w-8 shrink-0"
+              onClick={() => router.push("/studio/agents")}
+              aria-label="Back to agents"
+            >
+              <ArrowLeft className="h-4 w-4" />
+            </Button>
+            <div className="min-w-0 flex-1">
+              <AgentSidebarSwitcher
+                current={{
+                  id: agentId,
+                  name: agent.name,
+                  avatar: agent.avatar,
+                  modelId: (agent as any).modelId,
+                }}
+                items={agents.map((item) => ({
+                  id: item.agentId,
+                  name: item.name,
+                  avatar: (item as any).avatar,
+                  modelId: (item as any).modelId,
+                }))}
+              />
+            </div>
           </div>
-          <ScrollArea className="min-h-0 flex-1">
-            <nav className="space-y-1 p-2">
-              {sections.map(({ key, label, icon: Icon }) => (
-                <button
-                  key={key}
-                  type="button"
-                  className={cn("flex h-9 w-full items-center gap-2 rounded-md px-2 text-left text-sm text-muted-foreground hover:bg-muted hover:text-foreground", activeSection === key && "bg-accent text-accent-foreground")}
-                  onClick={() => setActiveSection(key)}
-                >
-                  <Icon className="h-4 w-4 shrink-0" />
-                  <span className="min-w-0 flex-1 truncate">{label}</span>
-                  {activeSection === key && <ChevronRight className="h-3.5 w-3.5" />}
-                </button>
-              ))}
-            </nav>
-          </ScrollArea>
-        </aside>
-        <main className="h-full min-h-0 min-w-0 overflow-y-auto overscroll-contain">{renderSection()}</main>
-      </div>
+        </div>
+        <ScrollArea className="min-h-0 flex-1">
+          <nav className="space-y-1 p-2">
+            {sections.map(({ key, label, icon: Icon }) => (
+              <button
+                key={key}
+                type="button"
+                className={cn("flex h-9 w-full items-center gap-2 rounded-md px-2 text-left text-sm text-muted-foreground hover:bg-muted hover:text-foreground", activeSection === key && "bg-accent text-accent-foreground")}
+                onClick={() => setActiveSection(key)}
+              >
+                <Icon className="h-4 w-4 shrink-0" />
+                <span className="min-w-0 flex-1 truncate">{label}</span>
+                {activeSection === key && <ChevronRight className="h-3.5 w-3.5" />}
+              </button>
+            ))}
+          </nav>
+        </ScrollArea>
+      </aside>
+      <main className="h-full min-h-0 min-w-0 overflow-y-auto overscroll-contain">{renderSection()}</main>
     </div>
   );
 }
