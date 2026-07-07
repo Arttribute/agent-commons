@@ -1,6 +1,5 @@
 "use client";
 
-import AppBar from "@/components/layout/app-bar";
 import { DashboardSideBar } from "@/components/layout/dashboard-side-bar";
 import { useAuth } from "@/context/AuthContext";
 import { useEffect, useMemo, useState } from "react";
@@ -53,9 +52,8 @@ export default function SpacesPage() {
 
   return (
     <div className="h-screen overflow-hidden">
-      <AppBar />
-      <div className="mt-12">
-        <div className="flex bg-background">
+      <div className="h-screen">
+        <div className="flex h-screen bg-background">
           <DashboardSideBar username={humanId || "wallet"} />
           <div className="w-full p-4 space-y-6 overflow-y-auto">
             <div className="flex items-center justify-between px-4 pt-4">

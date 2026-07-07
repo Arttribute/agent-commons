@@ -6,14 +6,13 @@ import {
   BriefcaseBusiness,
   Earth,
   Folder,
-  MessageSquare,
   ScrollText,
-  Wallet,
   Wrench,
   Workflow,
   Zap,
   BarChart2,
 } from "lucide-react";
+import Link from "next/link";
 import Image from "next/image";
 import { Button } from "@/components/ui/button";
 
@@ -34,8 +33,6 @@ export const DashboardBar: FC<DashboardBarProps> = ({ activeTab, rightSlot }) =>
     { key: "tasks",     label: "Tasks",     icon: BriefcaseBusiness, path: "/studio/tasks" },
     { key: "workflows", label: "Workflows", icon: Workflow,          path: "/studio/workflows" },
     { key: "skills",    label: "Skills",    icon: Zap,               path: "/studio/skills" },
-    { key: "sessions",  label: "Sessions",  icon: MessageSquare,     path: "/sessions" },
-    { key: "wallets",   label: "Wallets",   icon: Wallet,            path: "/wallets" },
     { key: "logs",      label: "Logs",      icon: ScrollText,        path: "/logs" },
     { key: "usage",     label: "Usage",     icon: BarChart2,         path: "/usage" },
     { key: "spaces",    label: "Spaces",    icon: Earth,             path: "/spaces" },
@@ -44,19 +41,18 @@ export const DashboardBar: FC<DashboardBarProps> = ({ activeTab, rightSlot }) =>
 
   return (
     <div className="w-full">
-      <div className="flex justify-between items-center mb-2 px-1">
-        <div className="rounded-full border border-border p-[1px] bg-background">
-          <div className="rounded-full border">
-            <Image
-              src="/ac-icon.svg"
-              alt="Agent Commons Logo"
-              width={20}
-              height={20}
-              className="object-cover rounded-full"
-            />
-          </div>
-        </div>
-        <div>{rightSlot}</div>
+      <div className="flex h-7 justify-between items-center mb-3 px-1">
+        <Link href="/studio/agents" className="flex items-center" aria-label="Agent Commons">
+          <Image
+            src="/logo.jpg"
+            alt="Agent Commons"
+            width={112}
+            height={28}
+            priority
+            className="h-5 w-auto rounded-[4px] object-contain"
+          />
+        </Link>
+        <div className="flex items-center">{rightSlot}</div>
       </div>
       <div className="flex flex-col gap-1">
         {navItems.map(({ key, label, icon: Icon, path }) => (

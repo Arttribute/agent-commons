@@ -1,14 +1,12 @@
 "use client";
 
-import AppBar from "@/components/layout/app-bar";
 import { DashboardSideBar } from "@/components/layout/dashboard-side-bar";
 
 export default function FilesPage() {
   return (
     <div>
-      <AppBar />
-      <div className="mt-12 bg-slate-50">
-        <div className="flex">
+      <div className="bg-slate-50">
+        <div className="flex h-screen">
           <DashboardSideBar username={"userAddress"} />
           <div className="w-full p-4">
             <div className="flex items-center justify-between">

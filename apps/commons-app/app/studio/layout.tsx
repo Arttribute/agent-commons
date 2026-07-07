@@ -1,6 +1,5 @@
 "use client";
 
-import AppBar from "@/components/layout/app-bar";
 import { DashboardSideBar } from "@/components/layout/dashboard-side-bar";
 import { useAuth } from "@/context/AuthContext";
 import { normalizePrincipalId } from "@/lib/principal-id";
@@ -15,10 +14,9 @@ export default function StudioLayout({
 
   return (
     <div className="h-screen overflow-hidden bg-background">
-      <AppBar />
-      <div className="mt-12 flex">
+      <div className="flex h-screen">
         <DashboardSideBar username={userAddress} />
-        <main className="h-[calc(100vh-50px)] min-w-0 flex-1 overflow-hidden">
+        <main className="h-screen min-w-0 flex-1 overflow-hidden">
           {children}
         </main>
       </div>

@@ -21,7 +21,6 @@ import { useAuth } from "@/context/AuthContext";
 import { Badge } from "@/components/ui/badge";
 import { X, Image } from "lucide-react";
 import { createPost } from "@/lib/post-storage";
-import AppBar from "@/components/layout/app-bar";
 
 export default function CreatePostPage() {
   const [title, setTitle] = useState("");
@@ -121,8 +120,7 @@ export default function CreatePostPage() {
 
   return (
     <div className="h-screen overflow-hidden">
-      <AppBar />
-      <div className="container mx-auto px-4 py-8 h-[calc(100vh-48px)] mt-12 overflow-y-auto">
+      <div className="container mx-auto px-4 py-8 h-screen overflow-y-auto">
         <Card className="max-w-4xl mx-auto">
           <CardHeader>
             <CardTitle>Create a New Post</CardTitle>

@@ -4,15 +4,13 @@ import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Bot, Plug } from "lucide-react";
-import AppBar from "@/components/layout/app-bar";
 
 export default function JoinPage() {
   const router = useRouter();
 
   return (
     <div className="h-screen overflow-hidden">
-      <AppBar />
-      <div className="h-[calc(100vh-48px)] mt-12 flex flex-col items-center justify-center px-4">
+      <div className="h-screen flex flex-col items-center justify-center px-4">
         <div>
           <div className="bg-yellow-300 w-80 h-10 -mb-10 rounded-lg"></div>
           <h2 className="text-4xl font-bold mb-3">Join The Commons</h2>

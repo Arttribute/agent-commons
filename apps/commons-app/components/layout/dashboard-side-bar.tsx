@@ -14,7 +14,6 @@ import {
   Search,
   Loader2,
   MessageSquare,
-  Wallet,
   ScrollText,
   BarChart2,
   Wrench,
@@ -24,6 +23,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { DashboardBar } from "./dashboard-bar";
+import { SidebarAccount } from "./sidebar-account";
 import { useSidebar } from "@/context/SidebarContext";
 import { useUserSessions } from "@/hooks/sessions/use-user-sessions";
 import { formatDistanceToNow } from "date-fns";
@@ -48,8 +48,6 @@ export function DashboardSideBar({ username }: { username: string }) {
     if (pathname.startsWith("/studio/tasks")) return "tasks";
     if (pathname.startsWith("/studio/workflows")) return "workflows";
     if (pathname.startsWith("/studio/skills")) return "skills";
-    if (pathname.startsWith("/sessions")) return "sessions";
-    if (pathname.startsWith("/wallets")) return "wallets";
     if (pathname.startsWith("/logs")) return "logs";
     if (pathname.startsWith("/usage")) return "usage";
     if (pathname.startsWith("/spaces")) return "spaces";
@@ -67,7 +65,7 @@ export function DashboardSideBar({ username }: { username: string }) {
   return (
     <div
       className={cn(
-        "h-[calc(100vh-50px)] bg-background border-r border-border flex flex-col transition-all duration-300",
+        "h-screen bg-background border-r border-border flex flex-col transition-all duration-300",
         sidebarOpen ? "w-[260px] min-w-[260px]" : "w-[60px] min-w-[60px]"
       )}
     >
@@ -114,8 +112,6 @@ export function DashboardSideBar({ username }: { username: string }) {
                 { key: "tasks",     icon: BriefcaseBusiness, path: "/studio/tasks",     label: "Tasks" },
                 { key: "workflows", icon: Workflow,          path: "/studio/workflows", label: "Workflows" },
                 { key: "skills",    icon: Zap,               path: "/studio/skills",    label: "Skills" },
-                { key: "sessions",  icon: MessageSquare,     path: "/sessions",         label: "Sessions" },
-                { key: "wallets",   icon: Wallet,            path: "/wallets",          label: "Wallets" },
                 { key: "logs",      icon: ScrollText,        path: "/logs",             label: "Logs" },
                 { key: "usage",     icon: BarChart2,         path: "/usage",            label: "Usage" },
                 { key: "spaces",    icon: Earth,             path: "/spaces",           label: "Spaces" },
@@ -222,6 +218,16 @@ export function DashboardSideBar({ username }: { username: string }) {
           </ScrollArea>
         </div>
       )}
+
+      {/* Account — pinned to bottom */}
+      <div
+        className={cn(
+          "mt-auto border-t border-border",
+          sidebarOpen ? "p-2" : "flex justify-center px-1.5 py-2"
+        )}
+      >
+        <SidebarAccount collapsed={!sidebarOpen} />
+      </div>
     </div>
   );
 }

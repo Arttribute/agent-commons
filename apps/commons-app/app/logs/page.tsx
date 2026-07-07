@@ -2,7 +2,6 @@
 
 import { useAuth } from "@/context/AuthContext";
 import { normalizePrincipalId } from "@/lib/principal-id";
-import AppBar from "@/components/layout/app-bar";
 import { DashboardSideBar } from "@/components/layout/dashboard-side-bar";
 import { useAgents } from "@/hooks/use-agents";
 import { useState, useEffect, useCallback } from "react";
@@ -230,8 +229,7 @@ export default function LogsPage() {
 
   return (
     <div className="h-screen overflow-hidden bg-background">
-      <AppBar />
-      <div className="mt-12 flex">
+      <div className="flex h-screen">
         <DashboardSideBar username={userAddress} />
         <div className="flex-1 min-w-0 overflow-y-auto">
           {/* Header */}

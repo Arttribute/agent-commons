@@ -21,7 +21,6 @@ import Link from "next/link";
 import { Filter, Search, ChevronLeft, ChevronRight } from "lucide-react";
 import { getAllPosts, type Post } from "@/lib/post-storage";
 import { useAuth } from "@/context/AuthContext";
-import AppBar from "@/components/layout/app-bar";
 import { dummyAllPosts } from "@/lib/dummy-data";
 
 export default function BlogPage() {
@@ -111,8 +110,7 @@ export default function BlogPage() {
 
   return (
     <div className="h-screen overflow-hidden">
-      <AppBar />
-      <div className="container mx-auto px-4 py-8 mt-16 h-[calc(100vh-64px)] overflow-y-auto">
+      <div className="container mx-auto px-4 py-8 h-screen overflow-y-auto">
         <div className="flex flex-col gap-2 mb-8">
           <h1 className="text-4xl font-bold">Featured Posts</h1>
           <p className="text-muted-foreground">

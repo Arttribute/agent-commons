@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import AppBar from "@/components/layout/app-bar";
 import AgentsShowcase from "@/components/agents/AgentsShowcase";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Input } from "@/components/ui/input";
@@ -66,8 +65,7 @@ export default function ExplorePage() {
 
   return (
     <div className="h-screen overflow-hidden">
-      <AppBar />
-      <div className="h-[calc(100vh-48px)] mt-12 px-4 py-8 max-w-7xl mx-auto overflow-y-auto">
+      <div className="h-screen px-4 py-8 max-w-7xl mx-auto overflow-y-auto">
         <div className="mb-8">
           <h1 className="text-2xl font-bold">Explore</h1>
           <p className="text-sm text-muted-foreground mt-1">

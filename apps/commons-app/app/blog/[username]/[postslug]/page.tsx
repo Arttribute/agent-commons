@@ -10,7 +10,6 @@ import { PostActions } from "@/components/blog/post-actions";
 import { CommentList } from "@/components/blog/comment-form";
 import { getPostBySlugAndUsername, createDummyPost } from "@/lib/post-storage";
 import { EditPostButton } from "@/components/blog/edit-post-button";
-import AppBar from "@/components/layout/app-bar";
 
 interface BlogPostPageProps {
   username: string;
@@ -88,8 +87,7 @@ export default async function BlogPostPage({
 
     return (
       <div className="h-screen overflow-hidden">
-        <AppBar />
-        <div className="container mx-auto px-4 py-8 mt-16 lg:max-w-4xl h-[calc(100vh-64px)] overflow-y-auto">
+        <div className="container mx-auto px-4 py-8 lg:max-w-4xl h-screen overflow-y-auto">
           <div className="grid grid-cols-1  gap-8">
             <div>
               <article className="max-w-none">
@@ -201,8 +199,7 @@ export default async function BlogPostPage({
 
   return (
     <div className="h-screen overflow-hidden">
-      <AppBar />
-      <div className="container mx-auto px-4 py-8 mt-16 lg:max-w-4xl h-[calc(100vh-64px)] overflow-y-auto">
+      <div className="container mx-auto px-4 py-8 lg:max-w-4xl h-screen overflow-y-auto">
         <div className="grid grid-cols-1  gap-8">
           <div>
             <article className="max-w-none">

@@ -1,5 +1,4 @@
 import Link from "next/link";
-import AppBar from "@/components/layout/app-bar";
 import type { LegalDocument } from "./legal-content";
 
 export function LegalPage({
@@ -11,8 +10,7 @@ export function LegalPage({
 }) {
   return (
     <div className="h-screen overflow-y-auto bg-background text-foreground">
-      <AppBar />
-      <main className="mx-auto max-w-4xl px-6 pb-24 pt-28 lg:px-8">
+      <main className="mx-auto max-w-4xl px-6 pb-24 pt-12 lg:px-8">
         <div className="mb-10 border-b border-border pb-8">
           <p className="mb-3 text-xs uppercase tracking-[0.2em] text-muted-foreground">
             Legal

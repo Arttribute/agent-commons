@@ -23,7 +23,6 @@ import { Badge } from "@/components/ui/badge";
 import { X, Image, Loader2 } from "lucide-react";
 import { getPostBySlugAndUsername, updatePost } from "@/lib/post-storage";
 import { notFound } from "next/navigation";
-import AppBar from "@/components/layout/app-bar";
 
 interface EditPostPageProps {
   username: string;
@@ -139,8 +138,7 @@ export default function EditPostPage({
   if (!user) {
     return (
       <div className="h-screen overflow-hidden">
-        <AppBar />
-        <div className="container mx-auto px-4 py-8 h-[calc(100vh-48px)] mt-12 overflow-y-auto">
+        <div className="container mx-auto px-4 py-8 h-screen overflow-y-auto">
           <Card className="max-w-2xl mx-auto">
             <CardHeader>
               <CardTitle>Edit Post</CardTitle>

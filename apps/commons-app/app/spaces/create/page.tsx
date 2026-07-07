@@ -1,11 +1,8 @@
 "use client";
 
-import AppBar from "@/components/layout/app-bar";
-import { DashboardSideBar } from "@/components/layout/dashboard-side-bar";
 import { useAuth } from "@/context/AuthContext";
 import { CreateSpaceForm } from "@/components/spaces/create-space-form";
 import { useRouter } from "next/navigation";
-import Image from "next/image";
 
 export default function CreateSpacePage() {
   const { authState } = useAuth();
@@ -15,8 +12,7 @@ export default function CreateSpacePage() {
 
   return (
     <div className="h-screen overflow-hidden">
-      <AppBar />
-      <div className="flex justify-center mt-20 h-[calc(100vh-80px)] overflow-y-auto">
+      <div className="flex justify-center pt-16 h-screen overflow-y-auto">
         <div className="w-full max-w-lg">
           <CreateSpaceForm
             creatorId={humanId}

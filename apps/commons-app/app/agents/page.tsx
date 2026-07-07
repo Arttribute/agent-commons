@@ -1,7 +1,6 @@
 "use client";
 
 import { useAuth } from "@/context/AuthContext";
-import AppBar from "@/components/layout/app-bar";
 import AgentsShowcase from "@/components/agents/AgentsShowcase";
 import { useAgents } from "@/hooks/use-agents";
 import { Loader2 } from "lucide-react";
@@ -14,8 +13,7 @@ export default function AgentsPage() {
 
   return (
     <div className="h-screen overflow-hidden">
-      <AppBar />
-      <div className="mt-12 h-[calc(100vh-48px)]">
+      <div className="h-screen">
         {loading ? (
           <div className="flex items-center justify-center h-full">
             <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
