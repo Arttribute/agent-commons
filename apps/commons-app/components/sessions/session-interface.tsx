@@ -10,13 +10,13 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import type { CommonAgent } from "@/types/agent";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import {
-  AgentComputerPanel,
   hasActiveComputer,
   type AgentComputer,
   type ComputerRuntimeTab,
-} from "@/components/computers/agent-computer-panel";
+} from "@/components/computers/computer-types";
+import { AgentComputerSurface } from "@/components/computers/agent-computer-surface";
+import { cn } from "@/lib/utils";
 import { useAgentContext } from "@/context/AgentContext";
 
 interface Message {
@@ -137,7 +137,7 @@ export default function SessionInterfaceImproved({
     session?.childSessions || []
   );
   const [spaces, setSpaces] = useState<any[]>(session?.spaces || []);
-  const [computerDrawerOpen, setComputerDrawerOpen] = useState(false);
+  const [computerOpen, setComputerOpen] = useState(false);
   const [sessionComputers, setSessionComputers] = useState<AgentComputer[]>([]);
   const [computerRuntimeTab, setComputerRuntimeTab] = useState<ComputerRuntimeTab>("files");
   const [preferredComputerId, setPreferredComputerId] = useState<string | null>(null);
@@ -270,7 +270,7 @@ export default function SessionInterfaceImproved({
       }>).detail;
       if (detail?.tab) setComputerRuntimeTab(detail.tab);
       if (detail?.computerId) setPreferredComputerId(detail.computerId);
-      setComputerDrawerOpen(true);
+      setComputerOpen(true);
       fetchSessionComputers();
     };
     window.addEventListener("agent-computer-activity", handleComputerActivity);
@@ -334,9 +334,14 @@ export default function SessionInterfaceImproved({
   useEffect(() => () => stopTaskPolling(), [stopTaskPolling]);
 
   return (
-    <div className="relative flex-1 overflow-y-auto py-4">
-      <Sheet open={computerDrawerOpen} onOpenChange={setComputerDrawerOpen}>
-        <SheetTrigger asChild>
+    <div className="relative flex min-w-0 flex-1 overflow-hidden">
+      <div
+        className={cn(
+          "relative min-w-0 overflow-y-auto py-4",
+          computerOpen ? "flex-1" : "w-full",
+        )}
+      >
+        {!computerOpen && (
           <Button
             type="button"
             variant="outline"
@@ -344,28 +349,17 @@ export default function SessionInterfaceImproved({
             className="absolute right-4 top-4 z-10 h-9 w-9 rounded-md bg-background/95 shadow-sm backdrop-blur"
             title="Agent computer"
             aria-label="Agent computer"
-            onClick={() => fetchSessionComputers()}
+            onClick={() => {
+              setComputerOpen(true);
+              fetchSessionComputers();
+            }}
           >
             <Monitor className="h-4 w-4" />
             {hasActiveComputer(sessionComputers) && (
               <span className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-red-500 ring-2 ring-background" />
             )}
           </Button>
-        </SheetTrigger>
-        <SheetContent
-          side="right"
-          className="flex w-[min(100vw,980px)] max-w-none flex-col gap-0 p-0 sm:max-w-none"
-        >
-          <AgentComputerPanel
-            agentId={agentId}
-            sessionId={sessionId || undefined}
-            selectedComputerId={preferredComputerId ?? undefined}
-            activeTab={computerRuntimeTab}
-            autoRefresh={computerDrawerOpen || Boolean(isStreaming)}
-            className="h-full"
-          />
-        </SheetContent>
-      </Sheet>
+        )}
       <ScrollArea
         className="overflow-y-auto"
         scrollHideDelay={100}
@@ -458,6 +452,18 @@ export default function SessionInterfaceImproved({
         childSessions={childSessions}
         spaces={spaces}
       />
+      </div>
+
+      {computerOpen && (
+        <AgentComputerSurface
+          agentId={agentId}
+          sessionId={sessionId || undefined}
+          selectedComputerId={preferredComputerId ?? undefined}
+          activeTab={computerRuntimeTab}
+          autoRefresh={computerOpen || Boolean(isStreaming)}
+          onClose={() => setComputerOpen(false)}
+        />
+      )}
     </div>
   );
 }

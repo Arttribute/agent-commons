@@ -12,7 +12,7 @@ import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import type { StreamActivity } from "@/context/AgentContext";
 import { MiniComputer } from "@/components/computers/mini-computer";
-import type { AgentComputer } from "@/components/computers/agent-computer-panel";
+import type { AgentComputer } from "@/components/computers/computer-types";
 import {
   AlertCircle,
   Bot,

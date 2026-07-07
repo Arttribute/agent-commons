@@ -53,7 +53,7 @@ import { AgentMcpSection } from "@/components/mcp/agent-mcp-section";
 import { AddToAgentBalance } from "@/components/finances/add-to-agent-balance";
 import { AgentTransactions } from "@/components/finances/agent-transactions";
 import { AgentMemoryView } from "@/components/memory/agent-memory-view";
-import { AgentComputerPanel } from "@/components/computers/agent-computer-panel";
+import { AgentComputerSurface } from "@/components/computers/agent-computer-surface";
 import SessionInterface from "@/components/sessions/session-interface";
 import { AgentSidebarSwitcher } from "@/components/studio/agent-sidebar-switcher";
 import AgentAvatarUploader from "@/components/agents/agent-avatar-uploader";
@@ -1785,7 +1785,7 @@ export default function AgentStudioPage({ params }: { params: Promise<{ agent: s
       case "sessions":
         return <SessionsView agent={agent} sessions={sessions} selectedSession={selectedSession} userAddress={userAddress} loadingSession={loadingSession} onSelectSession={loadSession} onCreateSession={() => setActiveSection("new-session")} />;
       case "computer":
-        return <AgentComputerPanel agentId={agentId} showConfig className="h-full" />;
+        return <AgentComputerSurface agentId={agentId} embedded className="h-full" />;
       case "tasks":
         return <TaskManagementView userAddress={userAddress} agentId={agentId} hideAgentFilter preSelectedAgentId={agentId} />;
       case "tools":

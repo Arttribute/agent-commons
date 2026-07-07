@@ -11,7 +11,8 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { StreamActivity } from "@/context/AgentContext";
-import type { AgentComputer, ComputerRuntimeTab } from "@/components/computers/agent-computer-panel";
+import type { AgentComputer, ComputerRuntimeTab } from "@/components/computers/computer-types";
+import { WALLPAPER } from "@/components/computers/desktop-window";
 
 /**
  * MiniComputer — a small computer-window rendered inline in chat messages that
@@ -42,16 +43,6 @@ const COMPUTER_TOOLS = new Set([
   "readComputerFile",
   "openComputerBrowser",
 ]);
-
-/** Aurora wallpaper — zinc base with indigo/violet glow, minimal modern-unix feel. */
-const WALLPAPER: React.CSSProperties = {
-  background: [
-    "radial-gradient(120% 90% at 12% 0%, rgba(99,102,241,0.30), transparent 46%)",
-    "radial-gradient(110% 80% at 88% 12%, rgba(168,85,247,0.18), transparent 52%)",
-    "radial-gradient(100% 100% at 50% 105%, rgba(56,189,248,0.14), transparent 58%)",
-    "#09090b",
-  ].join(", "),
-};
 
 export function MiniComputer({
   activities,
