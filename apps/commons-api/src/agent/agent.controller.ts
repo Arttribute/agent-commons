@@ -15,11 +15,16 @@ import {
   Header,
   Req,
   UseGuards,
+  UseInterceptors,
+  UploadedFile,
 } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
+import { memoryStorage } from 'multer';
 import { v4 as uuidv4 } from 'uuid';
 import { AgentService } from './agent.service';
 import { HeartbeatService } from './heartbeat.service';
 import { RunStreamRegistry } from './run-stream.registry';
+import { PinataService } from '~/pinata/pinata.service';
 import { TypedBody } from '@nestia/core';
 import * as schema from '#/models/schema';
 import { InferInsertModel } from 'drizzle-orm';
@@ -49,6 +54,7 @@ export class AgentController {
     private readonly agent: AgentService,
     private readonly heartbeat: HeartbeatService,
     private readonly runStreams: RunStreamRegistry,
+    private readonly pinata: PinataService,
   ) {}
 
   @Post()
@@ -260,6 +266,46 @@ export class AgentController {
     const updated = await this.agent.updateAgent(agentId, body);
     if (!updated) {
       throw new BadRequestException('Unable to update agent');
+    }
+    return { data: omit(updated, ['wallet', 'modelApiKey']) };
+  }
+
+  // Upload a new profile image for the agent (stored on IPFS via Pinata) and
+  // persist the resulting public gateway URL on the agent's `avatar` field.
+  @Post(':agentId/avatar')
+  @UseGuards(OwnerGuard)
+  @OwnerOnly({ table: 'agent' })
+  @UseInterceptors(
+    FileInterceptor('file', {
+      storage: memoryStorage(),
+      limits: { fileSize: 10 * 1024 * 1024 },
+    }),
+  )
+  async uploadAgentAvatar(
+    @Param('agentId') agentId: string,
+    @UploadedFile() file: Express.Multer.File,
+  ) {
+    if (!file) {
+      throw new BadRequestException('No image file was uploaded');
+    }
+    if (!file.mimetype?.startsWith('image/')) {
+      throw new BadRequestException('Profile image must be an image file');
+    }
+
+    const result = await this.pinata.uploadFile(
+      file.buffer,
+      file.originalname || 'agent-avatar',
+      file.mimetype,
+    );
+    const cid = result?.IpfsHash;
+    if (!cid) {
+      throw new BadRequestException('Failed to upload profile image');
+    }
+
+    const url = `https://${process.env.GATEWAY_URL ?? 'gateway.pinata.cloud'}/ipfs/${cid}`;
+    const updated = await this.agent.updateAgent(agentId, { avatar: url });
+    if (!updated) {
+      throw new BadRequestException('Unable to update agent profile image');
     }
     return { data: omit(updated, ['wallet', 'modelApiKey']) };
   }

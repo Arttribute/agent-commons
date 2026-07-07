@@ -19,6 +19,7 @@ import { MemoryModule } from '~/memory/memory.module';
 import { WalletModule } from '~/wallet/wallet.module';
 import { FilesModule } from '~/files';
 import { ComputerModule } from '~/computer';
+import { PinataModule } from '~/pinata/pinata.module';
 
 @Module({
   imports: [
@@ -34,6 +35,7 @@ import { ComputerModule } from '~/computer';
     WalletModule,
     FilesModule,
     ComputerModule,
+    PinataModule,
   ],
   controllers: [AgentController, AgentToolsController],
   providers: [AgentService, HeartbeatService, RunStreamRegistry, ResourceService, EmbeddingService, OwnerGuard],

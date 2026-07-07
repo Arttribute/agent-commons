@@ -56,7 +56,8 @@ import { AgentTransactions } from "@/components/finances/agent-transactions";
 import { AgentMemoryView } from "@/components/memory/agent-memory-view";
 import { AgentComputerPanel } from "@/components/computers/agent-computer-panel";
 import SessionInterface from "@/components/sessions/session-interface";
-import { StudioEntitySwitcher } from "@/components/studio/studio-entity-switcher";
+import { AgentSidebarSwitcher } from "@/components/studio/agent-sidebar-switcher";
+import AgentAvatarUploader from "@/components/agents/agent-avatar-uploader";
 import { TaskManagementView } from "@/components/tasks/task-management-view";
 import { ToolIcon } from "@/components/tools/catalog/tool-icon";
 import { ScopePermissions } from "@/components/tools/catalog/scope-permissions";
@@ -270,27 +271,27 @@ function SetupView({
             </Button>
           }
         >
-          <div className="grid gap-4 md:grid-cols-[120px_minmax(0,1fr)]">
-            <div className="flex flex-col items-center gap-2">
-              {form.avatar ? (
-                <img src={form.avatar} alt="" className="h-20 w-20 rounded-full border object-cover" />
-              ) : (
-                <RandomAvatar size={80} username={form.name || "agent"} />
-              )}
+          <div className="grid gap-4 md:grid-cols-[140px_minmax(0,1fr)]">
+            <div className="flex flex-col items-center gap-3 pt-1">
+              <AgentAvatarUploader
+                agentId={agent.agentId}
+                name={form.name}
+                avatarUrl={form.avatar}
+                size={96}
+                disabled={!isOwner}
+                onUploaded={(url, updated) => {
+                  setForm((f) => ({ ...f, avatar: url }));
+                  if (updated) onSaved(updated as CommonAgent);
+                }}
+              />
               <Badge variant={form.a2aEnabled ? "default" : "secondary"} className="rounded-md">
                 {form.a2aEnabled ? "Discoverable" : "Private"}
               </Badge>
             </div>
             <div className="grid gap-4">
-              <div className="grid gap-3 md:grid-cols-2">
-                <div className="grid gap-1.5">
-                  <Label>Name</Label>
-                  <Input value={form.name} disabled={!isOwner} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} />
-                </div>
-                <div className="grid gap-1.5">
-                  <Label>Profile image URL</Label>
-                  <Input value={form.avatar} disabled={!isOwner} onChange={(e) => setForm((f) => ({ ...f, avatar: e.target.value }))} />
-                </div>
+              <div className="grid gap-1.5">
+                <Label>Name</Label>
+                <Input value={form.name} disabled={!isOwner} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} />
               </div>
               <div className="grid gap-1.5">
                 <Label>Description</Label>
@@ -1794,21 +1795,33 @@ export default function AgentStudioPage({ params }: { params: Promise<{ agent: s
           <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0" onClick={() => router.push("/studio/agents")} aria-label="Back to agents">
             <ArrowLeft className="h-4 w-4" />
           </Button>
-          <StudioEntitySwitcher type="agent" currentId={agentId} currentName={agent.name} items={agents.map((item) => ({ id: item.agentId, name: item.name }))} />
+          {agent.avatar ? (
+            <img src={agent.avatar} alt="" className="h-7 w-7 shrink-0 rounded-full border object-cover" />
+          ) : (
+            <RandomAvatar size={28} username={agent.name || "agent"} />
+          )}
+          <span className="truncate text-sm font-medium">{agent.name}</span>
         </div>
         <Badge variant="outline" className="hidden rounded-md sm:inline-flex">{shortId(agentId)}</Badge>
       </div>
 
       <div className="grid min-h-0 flex-1 grid-cols-[280px_minmax(0,1fr)] overflow-hidden">
         <aside className="flex min-h-0 flex-col overflow-hidden border-r border-border bg-muted/10">
-          <div className="shrink-0 border-b border-border/70 p-4">
-            <div className="flex items-center gap-3">
-              {agent.avatar ? <img src={agent.avatar} alt="" className="h-11 w-11 rounded-full border object-cover" /> : <RandomAvatar size={44} username={agent.name || "agent"} />}
-              <div className="min-w-0">
-                <p className="truncate text-sm font-semibold">{agent.name}</p>
-                <p className="truncate text-xs text-muted-foreground">{(agent as any).modelId || "No model selected"}</p>
-              </div>
-            </div>
+          <div className="shrink-0 border-b border-border/70 p-3">
+            <AgentSidebarSwitcher
+              current={{
+                id: agentId,
+                name: agent.name,
+                avatar: agent.avatar,
+                modelId: (agent as any).modelId,
+              }}
+              items={agents.map((item) => ({
+                id: item.agentId,
+                name: item.name,
+                avatar: (item as any).avatar,
+                modelId: (item as any).modelId,
+              }))}
+            />
           </div>
           <ScrollArea className="min-h-0 flex-1">
             <nav className="space-y-1 p-2">
