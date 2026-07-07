@@ -1,24 +1,15 @@
 "use client";
 
-import type { CSSProperties, ReactNode } from "react";
+import type { ReactNode } from "react";
 import { cn } from "@/lib/utils";
+import type { ComputerMode } from "@/components/computers/computer-theme";
 
 /**
  * Shared desktop chrome for the agent computer surface. Keeps the full-size
  * computer panel visually consistent with the inline <MiniComputer /> — same
- * aurora wallpaper, same mac-style traffic lights and window framing — so the
- * two read as the same machine at two zoom levels.
+ * mac-style traffic lights and window framing — while adapting to the computer's
+ * light or dark appearance.
  */
-
-/** Aurora wallpaper — zinc base with indigo/violet glow, minimal modern-unix feel. */
-export const WALLPAPER: CSSProperties = {
-  background: [
-    "radial-gradient(120% 90% at 12% 0%, rgba(99,102,241,0.30), transparent 46%)",
-    "radial-gradient(110% 80% at 88% 12%, rgba(168,85,247,0.18), transparent 52%)",
-    "radial-gradient(100% 100% at 50% 105%, rgba(56,189,248,0.14), transparent 58%)",
-    "#09090b",
-  ].join(", "),
-};
 
 type TrafficAction = {
   onClick?: () => void;
@@ -32,11 +23,13 @@ type TrafficAction = {
  */
 export function TrafficLights({
   className,
+  tone = "dark",
   close,
   minimize,
   zoom,
 }: {
   className?: string;
+  tone?: ComputerMode;
   close?: TrafficAction;
   minimize?: TrafficAction;
   zoom?: TrafficAction;
@@ -47,9 +40,9 @@ export function TrafficLights({
       className={cn("group/lights flex items-center gap-1.5", className)}
       onClick={(event) => event.stopPropagation()}
     >
-      <Light color="red" action={close} interactive={interactive} />
-      <Light color="amber" action={minimize} interactive={interactive} />
-      <Light color="emerald" action={zoom} interactive={interactive} />
+      <Light color="red" action={close} interactive={interactive} tone={tone} />
+      <Light color="amber" action={minimize} interactive={interactive} tone={tone} />
+      <Light color="emerald" action={zoom} interactive={interactive} tone={tone} />
     </span>
   );
 }
@@ -58,27 +51,28 @@ function Light({
   color,
   action,
   interactive,
+  tone,
 }: {
   color: "red" | "amber" | "emerald";
   action?: TrafficAction;
   interactive: boolean;
+  tone: ComputerMode;
 }) {
   const live = {
     red: "bg-[#ff5f57]",
     amber: "bg-[#febc2e]",
     emerald: "bg-[#28c840]",
   }[color];
+  const idle = tone === "light" ? "bg-zinc-300" : "bg-zinc-700";
   const idleHover = {
-    red: "bg-zinc-700 transition-colors group-hover/lights:bg-[#ff5f57]",
-    amber: "bg-zinc-700 transition-colors group-hover/lights:bg-[#febc2e]",
-    emerald: "bg-zinc-700 transition-colors group-hover/lights:bg-[#28c840]",
+    red: `${idle} transition-colors group-hover/lights:bg-[#ff5f57]`,
+    amber: `${idle} transition-colors group-hover/lights:bg-[#febc2e]`,
+    emerald: `${idle} transition-colors group-hover/lights:bg-[#28c840]`,
   }[color];
 
   if (!action) {
     return (
-      <span
-        className={cn("h-3 w-3 rounded-full ring-1 ring-black/10", interactive ? live : idleHover)}
-      />
+      <span className={cn("h-3 w-3 rounded-full ring-1 ring-black/10", interactive ? live : idleHover)} />
     );
   }
 
@@ -92,12 +86,27 @@ function Light({
         live,
       )}
     >
-      <span className="opacity-0 transition-opacity group-hover/lights:opacity-100">
-        {action.glyph}
-      </span>
+      <span className="opacity-0 transition-opacity group-hover/lights:opacity-100">{action.glyph}</span>
     </button>
   );
 }
+
+const FRAME_TONES: Record<ComputerMode, { frame: string; titlebar: string; title: string; accentRing: string }> = {
+  dark: {
+    frame:
+      "border-white/10 bg-zinc-900/80 shadow-[0_24px_70px_-12px_rgba(0,0,0,0.75)] ring-1 ring-black/40 backdrop-blur-xl",
+    titlebar: "border-white/[0.08] bg-zinc-900/80",
+    title: "text-zinc-400",
+    accentRing: "ring-indigo-400/20",
+  },
+  light: {
+    frame:
+      "border-zinc-200/80 bg-white/95 shadow-[0_24px_60px_-18px_rgba(15,23,42,0.30)] ring-1 ring-black/5 backdrop-blur-xl",
+    titlebar: "border-zinc-200/80 bg-zinc-50/90",
+    title: "text-zinc-500",
+    accentRing: "ring-indigo-300/40",
+  },
+};
 
 /**
  * A floating application window laid over the desktop wallpaper — mac/linux
@@ -108,9 +117,11 @@ export function WindowFrame({
   title,
   icon,
   toolbar,
+  actions,
   children,
   className,
   bodyClassName,
+  tone = "dark",
   onClose,
   onZoom,
   accent = false,
@@ -118,32 +129,37 @@ export function WindowFrame({
   title: ReactNode;
   icon?: ReactNode;
   toolbar?: ReactNode;
+  actions?: ReactNode;
   children: ReactNode;
   className?: string;
   bodyClassName?: string;
+  tone?: ComputerMode;
   onClose?: () => void;
   onZoom?: () => void;
   accent?: boolean;
 }) {
+  const t = FRAME_TONES[tone];
   return (
     <div
       className={cn(
-        "flex min-h-0 flex-col overflow-hidden rounded-xl border border-white/10 bg-zinc-900/80 shadow-[0_24px_70px_-12px_rgba(0,0,0,0.75)] backdrop-blur-xl ring-1 ring-black/40",
-        accent && "ring-indigo-400/20",
+        "flex min-h-0 flex-col overflow-hidden rounded-xl border",
+        t.frame,
+        accent && t.accentRing,
         className,
       )}
     >
-      <div className="flex h-9 shrink-0 items-center gap-2 border-b border-white/[0.08] bg-zinc-900/80 px-3">
+      <div className={cn("flex h-9 shrink-0 items-center gap-2 border-b px-3", t.titlebar)}>
         <TrafficLights
+          tone={tone}
           close={onClose ? { onClick: onClose, title: "Close" } : undefined}
           zoom={onZoom ? { onClick: onZoom, title: "Zoom" } : undefined}
           minimize={onClose || onZoom ? { title: "Minimise" } : undefined}
         />
-        <div className="flex min-w-0 flex-1 items-center justify-center gap-1.5 text-[11px] font-medium text-zinc-400">
+        <div className={cn("flex min-w-0 flex-1 items-center justify-center gap-1.5 text-[11px] font-medium", t.title)}>
           {icon}
           <span className="truncate">{title}</span>
         </div>
-        <span className="w-[52px] shrink-0" />
+        <span className="flex w-[52px] shrink-0 items-center justify-end">{actions}</span>
       </div>
       {toolbar}
       <div className={cn("min-h-0 flex-1 overflow-hidden", bodyClassName)}>{children}</div>

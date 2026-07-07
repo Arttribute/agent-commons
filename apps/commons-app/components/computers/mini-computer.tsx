@@ -12,7 +12,11 @@ import {
 import { cn } from "@/lib/utils";
 import type { StreamActivity } from "@/context/AgentContext";
 import type { AgentComputer, ComputerRuntimeTab } from "@/components/computers/computer-types";
-import { WALLPAPER } from "@/components/computers/desktop-window";
+import {
+  useComputerTheme,
+  type ComputerMode,
+  type ComputerTokens,
+} from "@/components/computers/computer-theme";
 
 /**
  * MiniComputer — a small computer-window rendered inline in chat messages that
@@ -61,6 +65,8 @@ export function MiniComputer({
     () => buildScenes(activities, toolCalls),
     [activities, toolCalls],
   );
+  const { mode, wallpaper, tokens } = useComputerTheme();
+  const light = mode === "light";
 
   const [index, setIndex] = useState(scenes.length - 1);
   const [pinned, setPinned] = useState(false);
@@ -107,64 +113,65 @@ export function MiniComputer({
       }}
       title="Open agent computer"
       className={cn(
-        "not-prose group my-3 w-full max-w-xl cursor-pointer select-none overflow-hidden rounded-xl border border-zinc-800/90 bg-zinc-950 text-left shadow-md transition-shadow hover:shadow-lg hover:ring-1 hover:ring-indigo-400/40",
+        "not-prose group my-3 w-full max-w-xl cursor-pointer select-none overflow-hidden rounded-xl border text-left shadow-md transition-shadow hover:shadow-lg hover:ring-1 hover:ring-indigo-400/40",
+        light ? "border-zinc-200 bg-white" : "border-zinc-800/90 bg-zinc-950",
         className,
       )}
     >
       {/* Titlebar */}
-      <div className="flex h-8 items-center gap-2 border-b border-white/[0.06] bg-zinc-900/90 px-3">
+      <div className={cn("flex h-8 items-center gap-2 border-b px-3", tokens.topBar)}>
         <span className="flex items-center gap-1.5">
-          <span className="h-2.5 w-2.5 rounded-full bg-zinc-700 transition-colors group-hover:bg-red-400/80" />
-          <span className="h-2.5 w-2.5 rounded-full bg-zinc-700 transition-colors group-hover:bg-amber-400/80" />
-          <span className="h-2.5 w-2.5 rounded-full bg-zinc-700 transition-colors group-hover:bg-emerald-400/80" />
+          <span className={cn("h-2.5 w-2.5 rounded-full transition-colors group-hover:bg-red-400/80", light ? "bg-zinc-300" : "bg-zinc-700")} />
+          <span className={cn("h-2.5 w-2.5 rounded-full transition-colors group-hover:bg-amber-400/80", light ? "bg-zinc-300" : "bg-zinc-700")} />
+          <span className={cn("h-2.5 w-2.5 rounded-full transition-colors group-hover:bg-emerald-400/80", light ? "bg-zinc-300" : "bg-zinc-700")} />
         </span>
-        <span className="min-w-0 flex-1 truncate text-center font-mono text-[11px] text-zinc-400">
+        <span className={cn("min-w-0 flex-1 truncate text-center font-mono text-[11px]", tokens.textDim)}>
           {titleForScene(scene, computer)}
         </span>
         <span className="flex items-center gap-2">
           <span
             className={cn(
               "h-1.5 w-1.5 rounded-full",
-              running ? "animate-pulse bg-emerald-400" : "bg-zinc-600",
+              running ? "animate-pulse bg-emerald-400" : light ? "bg-zinc-300" : "bg-zinc-600",
             )}
           />
-          <Maximize2 className="h-3 w-3 text-zinc-600 transition-colors group-hover:text-zinc-300" />
+          <Maximize2 className={cn("h-3 w-3 transition-colors", light ? "text-zinc-400 group-hover:text-zinc-600" : "text-zinc-600 group-hover:text-zinc-300")} />
         </span>
       </div>
 
       {/* Screen */}
-      <div className="relative h-56" style={WALLPAPER}>
+      <div className="relative h-56" style={wallpaper}>
         {scene.kind === "terminal" && <TerminalFace scene={scene} live={running} />}
         {scene.kind === "editor" && <EditorFace scene={scene} />}
         {scene.kind === "browser" && (
-          <BrowserFace scene={scene} computer={computer} />
+          <BrowserFace scene={scene} computer={computer} mode={mode} tokens={tokens} />
         )}
         {scene.kind === "desktop" && (
-          <DesktopFace scene={scene} computer={computer} />
+          <DesktopFace scene={scene} computer={computer} mode={mode} tokens={tokens} />
         )}
       </div>
 
       {/* Footer — scene stepper */}
       {scenes.length > 1 && (
         <div
-          className="flex h-7 items-center justify-between border-t border-white/[0.06] bg-zinc-900/90 px-2"
+          className={cn("flex h-7 items-center justify-between border-t px-2", tokens.topBar)}
           onClick={(event) => event.stopPropagation()}
         >
           <button
             type="button"
-            className="rounded p-0.5 text-zinc-500 hover:bg-white/5 hover:text-zinc-200 disabled:opacity-30"
+            className={cn("rounded p-0.5 disabled:opacity-30", tokens.iconBtn)}
             disabled={index <= 0}
             onClick={() => step(-1)}
             aria-label="Previous action"
           >
             <ChevronLeft className="h-3.5 w-3.5" />
           </button>
-          <span className="font-mono text-[10px] text-zinc-500">
+          <span className={cn("font-mono text-[10px]", tokens.textDim)}>
             {index + 1} / {scenes.length}
           </span>
           <button
             type="button"
-            className="rounded p-0.5 text-zinc-500 hover:bg-white/5 hover:text-zinc-200 disabled:opacity-30"
+            className={cn("rounded p-0.5 disabled:opacity-30", tokens.iconBtn)}
             disabled={index >= scenes.length - 1}
             onClick={() => step(1)}
             aria-label="Next action"
@@ -238,21 +245,31 @@ function EditorFace({ scene }: { scene: Extract<Scene, { kind: "editor" }> }) {
 function BrowserFace({
   scene,
   computer,
+  mode,
+  tokens,
 }: {
   scene: Extract<Scene, { kind: "browser" }>;
   computer?: AgentComputer | null;
+  mode: ComputerMode;
+  tokens: ComputerTokens;
 }) {
   const url = scene.url ?? computer?.browser?.url ?? "";
   const screenshot = computer?.browser?.screenshot ?? null;
+  const light = mode === "light";
   return (
-    <div className="flex h-full flex-col bg-zinc-950/70">
-      <div className="flex h-7 items-center gap-2 border-b border-white/[0.06] bg-zinc-900/60 px-2">
-        <Globe2 className="h-3 w-3 shrink-0 text-zinc-500" />
-        <span className="min-w-0 flex-1 truncate rounded-md bg-zinc-950/80 px-2 py-0.5 font-mono text-[10px] text-zinc-400">
+    <div className={cn("flex h-full flex-col", light ? "bg-white/80" : "bg-zinc-950/70")}>
+      <div className={cn("flex h-7 items-center gap-2 border-b px-2", tokens.toolbar)}>
+        <Globe2 className={cn("h-3 w-3 shrink-0", tokens.textDim)} />
+        <span
+          className={cn(
+            "min-w-0 flex-1 truncate rounded-md px-2 py-0.5 font-mono text-[10px]",
+            light ? "bg-zinc-100 text-zinc-500" : "bg-zinc-950/80 text-zinc-400",
+          )}
+        >
           {url || "about:blank"}
         </span>
       </div>
-      <div className="min-h-0 flex-1 overflow-hidden">
+      <div className={cn("min-h-0 flex-1 overflow-hidden", light ? "bg-zinc-50" : "")}>
         {screenshot ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img
@@ -262,8 +279,8 @@ function BrowserFace({
           />
         ) : (
           <div className="flex h-full flex-col items-center justify-center gap-1.5 px-6 text-center">
-            <Globe2 className="h-6 w-6 text-zinc-600" />
-            <p className="line-clamp-2 text-xs text-zinc-400">
+            <Globe2 className={cn("h-6 w-6", tokens.textDim)} />
+            <p className={cn("line-clamp-2 text-xs", tokens.textDim)}>
               {scene.title ?? (scene.status === "running" ? "Loading page..." : hostOf(url) || "Browser session")}
             </p>
           </div>
@@ -276,19 +293,24 @@ function BrowserFace({
 function DesktopFace({
   scene,
   computer,
+  mode,
+  tokens,
 }: {
   scene: Extract<Scene, { kind: "desktop" }>;
   computer?: AgentComputer | null;
+  mode: ComputerMode;
+  tokens: ComputerTokens;
 }) {
   const status = computer?.status ?? (scene.status === "running" ? "starting" : "ready");
   const booting = ["provisioning", "starting"].includes(status) || scene.status === "running";
+  const light = mode === "light";
   return (
     <div className="flex h-full flex-col items-center justify-center gap-2 px-6 text-center">
-      <Monitor className={cn("h-7 w-7 text-zinc-300/90", booting && "animate-pulse")} />
-      <p className="font-mono text-xs lowercase text-zinc-200">
+      <Monitor className={cn("h-7 w-7", light ? "text-zinc-500" : "text-zinc-300/90", booting && "animate-pulse")} />
+      <p className={cn("font-mono text-xs lowercase", tokens.text)}>
         {computer?.name ?? scene.label}
       </p>
-      <p className="font-mono text-[10px] lowercase text-zinc-400">
+      <p className={cn("font-mono text-[10px] lowercase", tokens.textDim)}>
         {scene.status === "failed" ? scene.detail ?? "failed to start" : status}
       </p>
     </div>
