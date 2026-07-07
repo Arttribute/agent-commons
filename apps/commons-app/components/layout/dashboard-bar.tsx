@@ -41,7 +41,7 @@ export const DashboardBar: FC<DashboardBarProps> = ({ activeTab, rightSlot }) =>
 
   return (
     <div className="w-full">
-      <div className="flex h-10 justify-between items-center mb-3 px-1">
+      <div className="flex h-8 justify-between items-center mb-3 px-1">
         <Link href="/studio/agents" className="flex items-center" aria-label="Agent Commons">
           <Image
             src="/logo.jpg"
@@ -49,7 +49,7 @@ export const DashboardBar: FC<DashboardBarProps> = ({ activeTab, rightSlot }) =>
             width={131}
             height={60}
             priority
-            className="h-10 w-auto rounded-md object-contain"
+            className="h-8 w-auto rounded-md object-contain"
           />
         </Link>
         <div className="flex items-center">{rightSlot}</div>

@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import Link from "next/link";
+import Image from "next/image";
 import { cn } from "@/lib/utils";
 import {
   Bot,
@@ -88,13 +89,20 @@ export function DashboardSideBar({ username }: { username: string }) {
         ) : (
           <div className="px-2 flex flex-col gap-4 items-center">
             {isLockedDetailRoute ? (
-              <div
-                className="text-muted-foreground/50"
-                aria-label="Sidebar locked while viewing detail"
-                title="Return to the list to expand the sidebar"
+              <Link
+                href="/studio/agents"
+                aria-label="Agent Commons"
+                title="Agent Commons"
+                className="rounded-full ring-1 ring-border overflow-hidden"
               >
-                <PanelLeft className="h-5 w-5" />
-              </div>
+                <Image
+                  src="/ac-icon.svg"
+                  alt="Agent Commons"
+                  width={32}
+                  height={32}
+                  className="h-8 w-8 rounded-full object-cover"
+                />
+              </Link>
             ) : (
               <button
                 onClick={() => setIsOpen(true)}
