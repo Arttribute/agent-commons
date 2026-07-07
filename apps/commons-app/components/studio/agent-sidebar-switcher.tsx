@@ -73,9 +73,9 @@ export function AgentSidebarSwitcher({
           type="button"
           className="flex w-full items-center gap-2.5 rounded-lg px-2 py-1.5 text-left transition-colors hover:bg-muted"
         >
-          <AgentAvatar agent={current} size={38} />
+          <AgentAvatar agent={current} size={28} />
           <div className="min-w-0 flex-1">
-            <p className="truncate text-sm font-semibold leading-tight">{current.name}</p>
+            <p className="truncate text-sm font-medium leading-tight">{current.name}</p>
             <p className="truncate text-xs text-muted-foreground">
               {current.modelId || "No model selected"}
             </p>
