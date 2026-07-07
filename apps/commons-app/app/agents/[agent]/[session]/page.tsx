@@ -8,6 +8,7 @@ import { SessionsSideBar } from "@/components/sessions/sessions-side-bar";
 import { useAgentContext } from "@/context/AgentContext";
 import { Skeleton } from "@/components/ui/skeleton";
 import { normalizePrincipalId } from "@/lib/principal-id";
+import { normalizeSessionHistory } from "@/lib/session-history";
 
 function SessionPageSkeleton() {
   return (
@@ -75,7 +76,7 @@ export default function AgentSessionPage() {
 
         setAgent(agentRes.ok ? (agentData.data ?? null) : null);
         setSession(sessionRes.ok ? (sessionData.data ?? null) : null);
-        setMessages(sessionData.data?.history || []);
+        setMessages(normalizeSessionHistory(sessionData.data?.history));
 
         if (lastAgentIdRef.current !== agentId && userAddress) {
           lastAgentIdRef.current = agentId;

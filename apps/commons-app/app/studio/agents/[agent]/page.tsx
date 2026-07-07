@@ -76,6 +76,7 @@ import { useSkills } from "@/hooks/use-skills";
 import { useAgentWallet } from "@/hooks/use-wallet";
 import { cn } from "@/lib/utils";
 import { normalizePrincipalId } from "@/lib/principal-id";
+import { normalizeSessionHistory } from "@/lib/session-history";
 import { useAuth } from "@/context/AuthContext";
 import { useAgentContext } from "@/context/AgentContext";
 import type { CommonAgent } from "@/types/agent";
@@ -1713,7 +1714,7 @@ export default function AgentStudioPage({ params }: { params: Promise<{ agent: s
       const data = await res.json();
       const session = data.data ?? null;
       setSelectedSession(session);
-      setMessages(session?.history || []);
+      setMessages(normalizeSessionHistory(session?.history));
     } finally {
       setLoadingSession(false);
     }

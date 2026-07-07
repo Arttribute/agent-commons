@@ -366,7 +366,10 @@ function normalizeActivities(
       kind: isComputer ? "computer" : "tool",
       toolName: call.name,
       timestamp: call.timestamp,
-      payload: result,
+      // Mirror the live streaming payload shape ({ args, output }) so the mini
+      // computer's scene builder reconstructs terminal/browser/editor faces
+      // identically whether the run is streaming or reloaded from history.
+      payload: { args: call.args, output: call.result },
     } satisfies StreamActivity;
   });
 }
@@ -437,11 +440,13 @@ function pickComputer(
   if (!computers?.length) return null;
   for (let i = activities.length - 1; i >= 0; i -= 1) {
     const payload = activities[i].payload;
+    const out = payload?.output ?? payload?.result ?? payload;
+    const unwrapped = out?.data ?? out?.toolData ?? out;
     const id =
       payload?.computerId ??
-      payload?.output?.data?.computerId ??
-      payload?.output?.computerId ??
-      payload?.payload?.computerId;
+      unwrapped?.computerId ??
+      unwrapped?.computer?.computerId ??
+      payload?.args?.computerId;
     const match = computers.find((computer) => computer.computerId === id);
     if (match) return match;
   }

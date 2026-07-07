@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button";
 import { ArrowLeft } from "lucide-react";
 import { CommonAgent } from "@/types/agent";
 import { Card } from "@/components/ui/card";
+import { normalizeSessionHistory } from "@/lib/session-history";
 
 
 interface Message {
@@ -85,7 +86,7 @@ export default function AgentMessaging({
         const json = await res.json();
         const { data } = json;
         if (data?.history) {
-          setMessages(data.history);
+          setMessages(normalizeSessionHistory(data.history) as Message[]);
         }
       } catch (err) {
         console.error("Error fetching session:", err);

@@ -1853,37 +1853,56 @@ export class AgentService implements OnModuleInit {
               (entry: any) => entry.metadata?.source === 'agent_speech',
             );
 
+            // History is rebuilt from the full checkpointer thread on every
+            // save, so entries from earlier runs must inherit the metadata
+            // (toolCalls, durationMs, attachments...) persisted for them
+            // before — otherwise each turn would wipe the previous turns'
+            // metadata. Prior entries align as an in-order prefix because both
+            // saves serialize the same thread through the same pipeline.
+            const previousEntries = existingHistory.filter(
+              (entry: any) => entry.metadata?.source !== 'agent_speech',
+            );
+            let previousIndex = 0;
+
+            const entryRoles = messageHistories.map((m) => m.toDict().type);
+            const lastAiIndex = entryRoles.lastIndexOf('ai');
+            const lastHumanIndex = entryRoles.lastIndexOf('human');
+
             // Create new history entries from the current agent run
-            const newHistoryEntries = messageHistories.map((m) => {
-              const role = m.toDict().type;
+            const newHistoryEntries = messageHistories.map((m, index) => {
+              const role = entryRoles[index];
               const rawContent = this.serializeHistoryContent(m.content);
               const content = this.stripAttachmentManifest(rawContent);
               const isCurrentAttachmentTurn =
-                (role === 'human' || role === 'user') &&
+                index === lastHumanIndex &&
                 Boolean(attachmentContext?.attachments?.length) &&
                 rawContent.includes('## Uploaded Files');
+
+              const previous = previousEntries[previousIndex];
+              const inherited =
+                previous &&
+                previous.role === role &&
+                previous.content === content
+                  ? (previousIndex += 1, previous)
+                  : undefined;
+
+              const fresh: Record<string, any> = {};
+              if (index === lastAiIndex) {
+                if (toolCalls.length) fresh.toolCalls = toolCalls;
+                if (resolvedAgentCalls.length)
+                  fresh.agentCalls = resolvedAgentCalls;
+                fresh.durationMs = runDurationMs;
+              }
+              if (isCurrentAttachmentTurn)
+                fresh.attachments = attachmentContext?.attachments;
+              if (index === lastHumanIndex && computerRequest)
+                fresh.computerRequest = computerRequest;
+
               return {
                 role,
                 content,
-                timestamp: new Date().toISOString(),
-                metadata: {
-                  toolCalls: role === 'assistant' ? toolCalls : undefined,
-                  agentCalls:
-                    role === 'assistant'
-                      ? resolvedAgentCalls
-                      : undefined,
-                  durationMs:
-                    role === 'assistant'
-                      ? runDurationMs
-                      : undefined,
-                  attachments: isCurrentAttachmentTurn
-                    ? attachmentContext?.attachments
-                    : undefined,
-                  computerRequest:
-                    role === 'human' || role === 'user'
-                      ? computerRequest
-                      : undefined,
-                },
+                timestamp: inherited?.timestamp ?? new Date().toISOString(),
+                metadata: { ...(inherited?.metadata ?? {}), ...fresh },
               };
             });
 
