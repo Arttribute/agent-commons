@@ -31,6 +31,8 @@ const StudioPage: NextPage = () => {
   const registerSkillCreate = useCallback((fn: () => void) => { skillCreateRef.current = fn; }, []);
   const taskCreateRef = useRef<(() => void) | null>(null);
   const registerTaskCreate = useCallback((fn: () => void) => { taskCreateRef.current = fn; }, []);
+  // The launcher's footprint, so the floating agents can keep clear of it.
+  const composerRef = useRef<HTMLDivElement>(null);
 
   const { agents, loading: loadingAgents } = useAgents(
     activeTab === "agents" ? userAddress : undefined
@@ -78,9 +80,11 @@ const StudioPage: NextPage = () => {
                 <AgentsShowcase agents={agents} />
               ) : (
                 <>
-                  <AgentsShowcase agents={agents} />
+                  {/* Rendered before the showcase so composerRef is attached by
+                      the time the showcase measures it to route avatars clear.
+                      z-index (not DOM order) keeps the composer above them. */}
                   <div className="pointer-events-none absolute inset-0 z-20 flex items-center justify-center px-4">
-                    <div className="pointer-events-auto w-full max-w-2xl">
+                    <div ref={composerRef} className="pointer-events-auto w-full max-w-2xl">
                       <div className="mb-3 text-center">
                         <h2 className="text-lg font-semibold tracking-tight">
                           Start a session
@@ -100,6 +104,7 @@ const StudioPage: NextPage = () => {
                       />
                     </div>
                   </div>
+                  <AgentsShowcase agents={agents} avoidRef={composerRef} />
                 </>
               )}
             </div>
