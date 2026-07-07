@@ -21,16 +21,29 @@ export type SwitcherAgent = {
 };
 
 /**
- * The studio agent sidebar identity block, doubling as a switcher: it shows the
- * current agent's avatar, name and model, and opens a searchable popover to jump
- * between the user's other agents.
+ * The studio agent switcher: shows the current agent's avatar/name and opens a
+ * searchable popover to jump between the user's other agents.
+ *
+ * Two shapes share one popover:
+ * - default (sidebar): a full identity block with the agent's model line.
+ * - `compact`: a small inline pill, for embedding next to other controls.
+ *
+ * By default selecting an agent navigates to its studio page. Pass `onSelect`
+ * to use it as a controlled picker (e.g. choosing which agent to start a
+ * session with) — then no navigation happens.
  */
 export function AgentSidebarSwitcher({
   current,
   items,
+  compact = false,
+  onSelect,
+  placeholder = "No model selected",
 }: {
   current: SwitcherAgent;
   items: SwitcherAgent[];
+  compact?: boolean;
+  onSelect?: (id: string) => void;
+  placeholder?: string;
 }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
@@ -48,25 +61,43 @@ export function AgentSidebarSwitcher({
 
   const openAgent = (id: string) => {
     setOpen(false);
-    if (id !== current.id) router.push(`/studio/agents/${id}`);
+    if (id === current.id) return;
+    if (onSelect) {
+      onSelect(id);
+      return;
+    }
+    router.push(`/studio/agents/${id}`);
   };
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
-        <button
-          type="button"
-          className="flex w-full items-center gap-2.5 rounded-lg px-2 py-1.5 text-left transition-colors hover:bg-muted"
-        >
-          <AgentAvatar name={current.name} src={current.avatar} size={28} />
-          <div className="min-w-0 flex-1">
-            <p className="truncate text-sm font-medium leading-tight">{current.name}</p>
-            <p className="truncate text-xs text-muted-foreground">
-              {current.modelId || "No model selected"}
-            </p>
-          </div>
-          <ChevronsUpDown className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-        </button>
+        {compact ? (
+          <button
+            type="button"
+            className="flex max-w-full items-center gap-2 rounded-full border border-border bg-background px-2.5 py-1 text-left transition-colors hover:bg-muted"
+          >
+            <AgentAvatar name={current.name} src={current.avatar} size={22} />
+            <span className="min-w-0 truncate text-sm font-medium leading-none">
+              {current.name || "Select agent"}
+            </span>
+            <ChevronsUpDown className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+          </button>
+        ) : (
+          <button
+            type="button"
+            className="flex w-full items-center gap-2.5 rounded-lg px-2 py-1.5 text-left transition-colors hover:bg-muted"
+          >
+            <AgentAvatar name={current.name} src={current.avatar} size={28} />
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-sm font-medium leading-tight">{current.name}</p>
+              <p className="truncate text-xs text-muted-foreground">
+                {current.modelId || placeholder}
+              </p>
+            </div>
+            <ChevronsUpDown className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+          </button>
+        )}
       </PopoverTrigger>
       <PopoverContent align="start" className="w-[288px] p-0">
         <div className="border-b border-border p-2">

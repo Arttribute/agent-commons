@@ -1,6 +1,6 @@
 "use client";
 
-import { use, useCallback, useEffect, useMemo, useState } from "react";
+import { use, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   Activity,
@@ -1661,7 +1661,17 @@ export default function AgentStudioPage({ params }: { params: Promise<{ agent: s
   const { authState } = useAuth();
   const userAddress = normalizePrincipalId(authState.walletAddress);
   const { agents } = useAgents(userAddress || undefined);
-  const { setMessages, clearMessages, startTitleStream } = useAgentContext();
+  const { setMessages, clearMessages, startTitleStream, pendingPrompt, setPendingPrompt } = useAgentContext();
+
+  // A message typed on the agents overview is handed off via context and
+  // auto-sent into a fresh session here. Capture it once on mount, then clear
+  // the one-shot signal so it can't fire again on a later visit.
+  const [autoPrompt, setAutoPrompt] = useState<string | null>(() => pendingPrompt);
+  const hadAutoPromptRef = useRef<boolean>(Boolean(pendingPrompt));
+  useEffect(() => {
+    if (pendingPrompt) setPendingPrompt(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const [activeSection, setActiveSection] = useState<SectionKey>("new-session");
   const [agent, setAgent] = useState<CommonAgent | null>(null);
@@ -1730,11 +1740,17 @@ export default function AgentStudioPage({ params }: { params: Promise<{ agent: s
     }
   }, [sessions, selectedSession, activeSection, loadSession]);
 
+  const newSessionInitRef = useRef(false);
   useEffect(() => {
-    if (activeSection === "new-session") {
-      clearMessages();
-      setSelectedSession(null);
+    if (activeSection !== "new-session") return;
+    // On the very first mount, preserve the handed-off prompt so the input can
+    // auto-send it instead of being cleared out from under the launch.
+    if (!newSessionInitRef.current) {
+      newSessionInitRef.current = true;
+      if (hadAutoPromptRef.current) return;
     }
+    clearMessages();
+    setSelectedSession(null);
   }, [activeSection, clearMessages]);
 
   if (loading) return <AgentPageSkeleton />;
@@ -1756,6 +1772,8 @@ export default function AgentStudioPage({ params }: { params: Promise<{ agent: s
             userId={userAddress}
             height="calc(100vh - 180px)"
             isLoadingSession={loadingSession}
+            initialPrompt={autoPrompt}
+            onInitialPromptSent={() => setAutoPrompt(null)}
             onSessionCreated={(sessionId, title) => {
               const newSession = { sessionId, agentId, title: "", createdAt: new Date().toISOString() };
               setSessions((prev) => [newSession, ...prev.filter((s) => s.sessionId !== sessionId)]);

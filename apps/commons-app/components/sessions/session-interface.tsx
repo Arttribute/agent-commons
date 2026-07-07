@@ -61,6 +61,9 @@ interface SessionInterfaceImprovedProps {
   onSessionCreated?: (sessionId: string, title?: string) => void;
   isLoadingSession?: boolean;
   isRedirecting?: boolean;
+  /** A message to auto-send once on mount (handed off from the agents launcher). */
+  initialPrompt?: string | null;
+  onInitialPromptSent?: () => void;
 }
 
 function ExpandableToolCard({ tools }: { tools: Message[] }) {
@@ -122,6 +125,8 @@ export default function SessionInterfaceImproved({
   onSessionCreated,
   isLoadingSession = false,
   isRedirecting = false,
+  initialPrompt,
+  onInitialPromptSent,
 }: SessionInterfaceImprovedProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -442,6 +447,8 @@ export default function SessionInterfaceImproved({
           userId={userId || ""}
           onSessionCreated={onSessionCreated}
           disabled={isRedirecting || isLoadingSession}
+          initialPrompt={initialPrompt}
+          onInitialPromptSent={onInitialPromptSent}
         />
       </div>
 

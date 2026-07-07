@@ -4,6 +4,7 @@ import { useParams, usePathname } from "next/navigation";
 import type { NextPage } from "next";
 import { useMemo, useState, useCallback, useRef } from "react";
 import AgentsShowcase from "@/components/agents/AgentsShowcase";
+import { StudioAgentLauncher } from "@/components/studio/agent-launcher";
 import { ToolsManagementView } from "@/components/tools/management/tools-management-view";
 import { WorkflowsListView } from "@/components/workflows/workflows-list-view";
 import { CreateWorkflowDialog } from "@/components/workflows/create-workflow-dialog";
@@ -61,7 +62,49 @@ const StudioPage: NextPage = () => {
             <SkillsMarketplaceView userAddress={userAddress} onRegisterCreate={registerSkillCreate} />
           </div>
         );
+      // Only the real /studio/agents route mounts the launcher — it depends on
+      // the AgentProvider from that route's layout. The default fallback (for
+      // unknown /studio/<x> segments served without that provider) renders just
+      // the plain showcase.
       case "agents":
+        return (
+          <div className="p-4 sm:p-6">
+            <div className="relative h-[calc(100vh-170px)]">
+              {loadingAgents ? (
+                <div className="flex h-full items-center justify-center">
+                  <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+                </div>
+              ) : agents.length === 0 ? (
+                <AgentsShowcase agents={agents} />
+              ) : (
+                <>
+                  <AgentsShowcase agents={agents} />
+                  <div className="pointer-events-none absolute inset-0 z-20 flex items-center justify-center px-4">
+                    <div className="pointer-events-auto w-full max-w-2xl">
+                      <div className="mb-3 text-center">
+                        <h2 className="text-lg font-semibold tracking-tight">
+                          Start a session
+                        </h2>
+                        <p className="mt-1 text-sm text-muted-foreground">
+                          Message an agent to spin up a new session instantly.
+                        </p>
+                      </div>
+                      <StudioAgentLauncher
+                        agents={agents.map((a) => ({
+                          agentId: a.agentId,
+                          name: a.name,
+                          avatar: (a as any).avatar,
+                          modelId: (a as any).modelId,
+                        }))}
+                        userAddress={userAddress}
+                      />
+                    </div>
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+        );
       default:
         return (
           <div className="p-4 sm:p-6">

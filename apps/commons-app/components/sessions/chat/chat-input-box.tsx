@@ -32,13 +32,33 @@ export default function ChatInputBox({
   userId,
   disabled,
   onSessionCreated,
+  onLaunch,
+  initialPrompt,
+  onInitialPromptSent,
+  footerLeft,
+  placeholder = "Ask me something...",
 }: {
   agentId: string;
   sessionId: string;
   userId: string;
   disabled?: boolean;
   onSessionCreated?: (sessionId: string, title?: string) => void;
+  /**
+   * Launch mode: when provided, submitting hands the typed message to this
+   * callback instead of streaming inline. Used by the agents overview launcher
+   * to route into an agent's new-session view. Streaming/attachment chrome is
+   * suppressed so the box reads as a lightweight composer.
+   */
+  onLaunch?: (text: string) => void;
+  /** Auto-send this message once on mount (destination of a launch). */
+  initialPrompt?: string | null;
+  /** Called after {@link initialPrompt} has been auto-sent. */
+  onInitialPromptSent?: () => void;
+  /** Replaces the "+" attachments menu in the footer (e.g. an agent selector). */
+  footerLeft?: React.ReactNode;
+  placeholder?: string;
 }) {
+  const isLaunchMode = Boolean(onLaunch);
   const accumulatedRef = useRef("");
   const activitySequenceRef = useRef(0);
   const runningToolActivitiesRef = useRef<Map<string, string[]>>(new Map());
@@ -228,6 +248,7 @@ export default function ChatInputBox({
   );
 
   useEffect(() => {
+    if (isLaunchMode || !agentId) return;
     let cancelled = false;
     async function loadComputerConfig() {
       try {
@@ -245,7 +266,7 @@ export default function ChatInputBox({
     return () => {
       cancelled = true;
     };
-  }, [agentId]);
+  }, [agentId, isLaunchMode]);
 
   useEffect(() => {
     if (computerConfig && (!computerConfig.enabled || !computerConfig.allowUserSelect)) {
@@ -253,10 +274,20 @@ export default function ChatInputBox({
     }
   }, [computerConfig]);
 
-  const handleSend = async () => {
-    if ((!inputText.trim() && uploadedAttachments.length === 0) || isLoading || isUploading) return;
+  const handleSend = async (overrideText?: string) => {
+    const baseText = (overrideText ?? inputText).trim();
+    if ((!baseText && uploadedAttachments.length === 0) || isLoading || isUploading) return;
 
-    const userMessage = inputText.trim() || "Please review the attached file(s).";
+    const userMessage = baseText || "Please review the attached file(s).";
+
+    // Launch mode: hand off the message and let the caller route into the
+    // destination agent's session instead of streaming here.
+    if (onLaunch) {
+      setInputText("");
+      onLaunch(userMessage);
+      return;
+    }
+
     const computerRequest = computerEnabled
       ? {
           enabled: true,
@@ -307,6 +338,17 @@ export default function ChatInputBox({
     });
   };
 
+  // Auto-send a handed-off prompt exactly once (arriving from the launcher).
+  const autoSentRef = useRef(false);
+  useEffect(() => {
+    if (isLaunchMode || autoSentRef.current) return;
+    if (!initialPrompt || !initialPrompt.trim()) return;
+    autoSentRef.current = true;
+    handleSend(initialPrompt);
+    onInitialPromptSent?.();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialPrompt]);
+
   const openFilePicker = () => {
     if (isLoading) return;
     setMenuOpen(false);
@@ -314,7 +356,7 @@ export default function ChatInputBox({
   };
 
   const uploadFiles = async (files: FileList | File[]) => {
-    if (isLoading) return;
+    if (isLoading || isLaunchMode) return;
     const selected = Array.from(files).filter((file) => file.size > 0);
     if (!selected.length) return;
 
@@ -475,7 +517,7 @@ export default function ChatInputBox({
         </div>
       )}
       <textarea
-        placeholder="Ask me something..."
+        placeholder={placeholder}
         className="text-sm w-full h-16 p-3 rounded-2xl resize-none focus:outline-none bg-transparent placeholder:text-muted-foreground/60"
         value={inputText}
         onChange={(e) => setInputText(e.target.value)}
@@ -488,6 +530,9 @@ export default function ChatInputBox({
         disabled={isLoading}
       />
       <div className="flex justify-between items-center px-2 pb-2">
+        {footerLeft ? (
+          <div className="min-w-0">{footerLeft}</div>
+        ) : (
         <div className="relative">
           <button
             type="button"
@@ -529,8 +574,9 @@ export default function ChatInputBox({
             </div>
           )}
         </div>
+        )}
         <button
-          onClick={handleSend}
+          onClick={() => handleSend()}
           disabled={(!inputText.trim() && uploadedAttachments.length === 0) || !!isLoading || isUploading}
           className="bg-foreground rounded-lg p-1.5 text-background transition-opacity disabled:opacity-40 hover:opacity-80"
         >

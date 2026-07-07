@@ -48,6 +48,14 @@ interface AgentContextType {
   startTitleStream: (sessionId: string, targetTitle: string) => void;
   inputText: string;
   setInputText: React.Dispatch<React.SetStateAction<string>>;
+  /**
+   * One-shot message handed off when a session is launched from the agents
+   * overview. The destination agent's new-session view reads it once, sends it,
+   * then clears it. Persists across the /studio/agents → /studio/agents/[id]
+   * navigation because the AgentProvider wraps both routes.
+   */
+  pendingPrompt: string | null;
+  setPendingPrompt: React.Dispatch<React.SetStateAction<string | null>>;
 }
 
 const AgentContext = createContext<AgentContextType | undefined>(undefined);
@@ -56,6 +64,7 @@ export const AgentProvider = ({ children }: { children: ReactNode }) => {
   const [messages, setMessages] = useState<Message[]>([]);
   const [sessions, setSessions] = useState<any[]>([]);
   const [inputText, setInputText] = useState<string>("");
+  const [pendingPrompt, setPendingPrompt] = useState<string | null>(null);
   const [streamingTitleSessionId, setStreamingTitleSessionId] = useState<string | null>(null);
   const [streamingTitleText, setStreamingTitleText] = useState<string>("");
   const titleIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -208,6 +217,8 @@ export const AgentProvider = ({ children }: { children: ReactNode }) => {
         startTitleStream,
         inputText,
         setInputText,
+        pendingPrompt,
+        setPendingPrompt,
       }}
     >
       {children}
