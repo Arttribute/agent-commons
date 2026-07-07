@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Check, ChevronsUpDown, Search } from "lucide-react";
-import RandomAvatar from "@/components/account/random-avatar";
+import { AgentAvatar } from "@/components/agents/agent-avatar";
 import { Input } from "@/components/ui/input";
 import {
   Popover,
@@ -19,21 +19,6 @@ export type SwitcherAgent = {
   avatar?: string | null;
   modelId?: string | null;
 };
-
-function AgentAvatar({ agent, size }: { agent: SwitcherAgent; size: number }) {
-  if (agent.avatar) {
-    return (
-      // eslint-disable-next-line @next/next/no-img-element
-      <img
-        src={agent.avatar}
-        alt=""
-        className="shrink-0 rounded-full border object-cover"
-        style={{ width: size, height: size }}
-      />
-    );
-  }
-  return <RandomAvatar size={size} username={agent.name || "agent"} />;
-}
 
 /**
  * The studio agent sidebar identity block, doubling as a switcher: it shows the
@@ -73,7 +58,7 @@ export function AgentSidebarSwitcher({
           type="button"
           className="flex w-full items-center gap-2.5 rounded-lg px-2 py-1.5 text-left transition-colors hover:bg-muted"
         >
-          <AgentAvatar agent={current} size={28} />
+          <AgentAvatar name={current.name} src={current.avatar} size={28} />
           <div className="min-w-0 flex-1">
             <p className="truncate text-sm font-medium leading-tight">{current.name}</p>
             <p className="truncate text-xs text-muted-foreground">
@@ -112,7 +97,7 @@ export function AgentSidebarSwitcher({
                   )}
                   onClick={() => openAgent(item.id)}
                 >
-                  <AgentAvatar agent={item} size={28} />
+                  <AgentAvatar name={item.name} src={item.avatar} size={28} />
                   <span className="min-w-0 flex-1">
                     <span className="block truncate text-sm font-medium">{item.name}</span>
                     {item.modelId && (

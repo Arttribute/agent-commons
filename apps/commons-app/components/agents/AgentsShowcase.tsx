@@ -1,7 +1,6 @@
 "use client";
 
 import React, { useMemo } from "react";
-import Image from "next/image";
 import { motion } from "framer-motion";
 import Link from "next/link";
 import {
@@ -9,14 +8,14 @@ import {
   HoverCardContent,
   HoverCardTrigger,
 } from "@/components/ui/hover-card";
-import RandomPixelAvatar from "@/components/account/random-avatar";
+import { AgentAvatar } from "@/components/agents/agent-avatar";
 import { DotPattern } from "@/components/magicui/dot-pattern";
 import { cn } from "@/lib/utils";
 
 interface Agent {
   agentId: string;
   name: string;
-  profileImage?: string;
+  avatar?: string;
   persona?: string;
   description?: string;
 }
@@ -135,17 +134,12 @@ export default function AgentsShowcase({ agents = [] }: { agents: Agent[] }) {
                     className="w-16 h-16 rounded-full overflow-hidden shadow-md hover:shadow-xl transition p-0.5 border border-border z-20"
                     aria-label={agent.name}
                   >
-                    {agent.profileImage ? (
-                      <Image
-                        src={agent.profileImage}
-                        alt={agent.name}
-                        width={100}
-                        height={100}
-                        className="object-cover rounded-full w-full h-full"
-                      />
-                    ) : (
-                      <RandomPixelAvatar username={agent.agentId} size={58} />
-                    )}
+                    <AgentAvatar
+                      name={agent.name}
+                      src={agent.avatar}
+                      size={58}
+                      bordered={false}
+                    />
                   </button>
                 </Link>
               </motion.div>

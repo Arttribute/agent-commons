@@ -2,7 +2,7 @@
 
 import { useRef, useState } from "react";
 import { Camera, Loader2 } from "lucide-react";
-import RandomAvatar from "@/components/account/random-avatar";
+import { AgentAvatar } from "@/components/agents/agent-avatar";
 import { cn } from "@/lib/utils";
 
 interface AgentAvatarUploaderProps {
@@ -77,17 +77,7 @@ export default function AgentAvatarUploader({
   return (
     <div className="flex flex-col items-center gap-2">
       <div className="relative" style={{ width: size, height: size }}>
-        {displayUrl ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
-            src={displayUrl}
-            alt={name}
-            className="h-full w-full rounded-full border object-cover"
-            style={{ width: size, height: size }}
-          />
-        ) : (
-          <RandomAvatar size={size} username={name || "agent"} />
-        )}
+        <AgentAvatar name={name} src={displayUrl} size={size} />
 
         {uploading && (
           <div className="absolute inset-0 flex items-center justify-center rounded-full bg-background/60">
