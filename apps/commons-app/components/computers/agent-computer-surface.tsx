@@ -52,6 +52,7 @@ import {
   type FsNode,
 } from "@/components/computers/computer-types";
 import { TrafficLights, WindowFrame } from "@/components/computers/desktop-window";
+import { MacFileIcon, MacFolderIcon } from "@/components/computers/mac-icons";
 import {
   APPEARANCES,
   useComputerTheme,
@@ -1294,7 +1295,7 @@ function FilesWindow({
               {computer.workspaceSnapshot ? "This folder is empty" : "Workspace appears once the computer starts working."}
             </div>
           ) : (
-            <div className="grid grid-cols-[repeat(auto-fill,minmax(84px,1fr))] gap-1 p-3">
+            <div className="grid grid-cols-[repeat(auto-fill,minmax(94px,1fr))] gap-1 p-4">
               {nodes.map((node) => {
                 const fullPath = "/" + [...path, node.name].join("/");
                 return (
@@ -1303,17 +1304,21 @@ function FilesWindow({
                     type="button"
                     onClick={() => (node.isDir ? setPath([...path, node.name]) : onOpenFile(fullPath))}
                     className={cn(
-                      "group flex flex-col items-center gap-1.5 rounded-lg border border-transparent p-2 text-center",
-                      light ? "hover:border-zinc-200 hover:bg-zinc-100/70" : "hover:border-white/10 hover:bg-white/[0.04]",
+                      "group flex flex-col items-center gap-1 rounded-lg border border-transparent px-2 py-2.5 text-center",
+                      light ? "hover:border-zinc-200 hover:bg-white/70" : "hover:border-white/10 hover:bg-white/[0.04]",
                     )}
                     title={node.name}
                   >
-                    {node.isDir ? (
-                      <FolderClosed className="h-9 w-9 text-indigo-400/85 drop-shadow-sm" />
-                    ) : (
-                      <FileCode2 className="h-9 w-9 text-sky-500/80 drop-shadow-sm" />
-                    )}
-                    <span className={cn("line-clamp-2 max-w-full break-all text-[11px]", tokens.text)}>{node.name}</span>
+                    <span className="flex h-12 items-center justify-center">
+                      {node.isDir ? (
+                        <MacFolderIcon className="h-11 w-auto" />
+                      ) : (
+                        <MacFileIcon name={node.name} className="h-12 w-auto" />
+                      )}
+                    </span>
+                    <span className={cn("line-clamp-2 max-w-full break-all text-[11px] leading-tight", tokens.text)}>
+                      {node.name}
+                    </span>
                   </button>
                 );
               })}

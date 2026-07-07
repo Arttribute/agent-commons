@@ -68,13 +68,12 @@ const DARK_WALLPAPER: CSSProperties = {
   ].join(", "),
 };
 
-/** Soft neutral daylight — calm off-white with the faintest cool bloom. */
+/** Clear sky — a calm sky-blue gradient fading to near-white at the horizon. */
 const LIGHT_WALLPAPER: CSSProperties = {
   background: [
-    "radial-gradient(120% 90% at 12% 0%, rgba(129,140,248,0.12), transparent 46%)",
-    "radial-gradient(110% 85% at 88% 8%, rgba(196,181,253,0.12), transparent 52%)",
-    "radial-gradient(100% 100% at 50% 108%, rgba(147,197,253,0.14), transparent 58%)",
-    "#f5f6f9",
+    "radial-gradient(130% 95% at 50% -12%, rgba(56,189,248,0.60), transparent 55%)",
+    "radial-gradient(120% 85% at 85% 4%, rgba(59,130,246,0.32), transparent 52%)",
+    "linear-gradient(180deg, #d6ecff 0%, #e7f4ff 45%, #f2f9ff 100%)",
   ].join(", "),
 };
 
@@ -101,10 +100,10 @@ const SAND_WALLPAPER: CSSProperties = {
 export const APPEARANCES: Appearance[] = [
   {
     id: "light",
-    label: "Daylight",
+    label: "Sky",
     mode: "light",
     wallpaper: LIGHT_WALLPAPER,
-    swatch: "linear-gradient(135deg, #eef2ff, #f5f6f9 55%, #e0e7ff)",
+    swatch: "linear-gradient(160deg, #7dd3fc, #bae6fd 50%, #e0f2fe)",
   },
   {
     id: "mist",
@@ -150,7 +149,7 @@ const LIGHT_TOKENS: ComputerTokens = {
   input: "border-zinc-200 bg-white text-zinc-900 placeholder:text-zinc-400",
   toggleRow: "border-zinc-200 bg-white",
   mutedPanel: "border-zinc-200 bg-zinc-50",
-  vignette: "bg-[radial-gradient(circle_at_top,rgba(255,255,255,0.5),transparent_60%)]",
+  vignette: "bg-[radial-gradient(circle_at_bottom,rgba(255,255,255,0.45),transparent_55%)]",
 };
 
 const DARK_TOKENS: ComputerTokens = {
