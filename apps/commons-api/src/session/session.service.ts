@@ -216,6 +216,38 @@ export class SessionService {
     return sessionEntry;
   }
 
+  /**
+   * Rename a session's title. Returns the updated session (minimal columns).
+   */
+  public async renameSession(props: { id: string; title: string }) {
+    const { id, title } = props;
+    const [updated] = await this.db
+      .update(schema.session)
+      .set({ title, updatedAt: new Date() })
+      .where(eq(schema.session.sessionId, id))
+      .returning();
+    if (!updated) throw new NotFoundException(`Session with ID ${id} not found`);
+    return updated;
+  }
+
+  /**
+   * Delete a session (and detach any child sessions that referenced it as
+   * their parent so we don't leave dangling parentSessionId pointers).
+   */
+  public async deleteSession(props: { id: string }) {
+    const { id } = props;
+    await this.db
+      .update(schema.session)
+      .set({ parentSessionId: null })
+      .where(eq(schema.session.parentSessionId, id));
+    const [deleted] = await this.db
+      .delete(schema.session)
+      .where(eq(schema.session.sessionId, id))
+      .returning({ sessionId: schema.session.sessionId });
+    if (!deleted) throw new NotFoundException(`Session with ID ${id} not found`);
+    return deleted;
+  }
+
   public async getFullSession(props: { id: string }) {
     const session = await this.getSession(props);
     if (!session) return null;

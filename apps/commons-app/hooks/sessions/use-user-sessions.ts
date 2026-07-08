@@ -29,7 +29,7 @@ export function useUserSessions(userAddress: string) {
     fetchSessions();
   }, [fetchSessions]);
 
-  return { sessions, isLoading };
+  return { sessions, setSessions, isLoading, refetch: fetchSessions };
 }
 
 function formatSessionFetchError(status: number, data: any) {
