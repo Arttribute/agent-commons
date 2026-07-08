@@ -107,7 +107,7 @@ export function GlobalSearch({ open, onOpenChange }: GlobalSearchProps) {
   return (
     <CommandDialog open={open} onOpenChange={onOpenChange}>
       <CommandInput placeholder="Search agents, sessions, tools, tasks, workflows…" />
-      <CommandList>
+      <CommandList className="max-h-[60vh]">
         <CommandEmpty>
           {loading ? (
             <span className="flex items-center justify-center gap-2 text-muted-foreground">

@@ -157,15 +157,11 @@ export function DashboardSideBar({ username }: { username: string }) {
         )}
       </div>
 
-      {/* Search + sessions — only when expanded */}
+      {/* Sessions — only when expanded */}
       {sidebarOpen && (
-        <div className="flex-1 overflow-hidden flex flex-col min-h-0 mt-4">
-          <div className="px-3 pb-3">
-            <SearchTrigger />
-          </div>
-
+        <div className="flex-1 overflow-hidden flex flex-col min-h-0 mt-5 px-3">
           {/* Label */}
-          <div className="px-3 py-1 flex items-center justify-between">
+          <div className="px-2 py-1 flex items-center justify-between">
             <span className="text-xs font-medium text-muted-foreground">
               Recents
             </span>
@@ -174,9 +170,9 @@ export function DashboardSideBar({ username }: { username: string }) {
             )}
           </div>
 
-          <ScrollArea className="flex-1 px-2">
+          <ScrollArea className="flex-1">
             {isLoading ? (
-              <div className="space-y-1 px-1">
+              <div className="space-y-1 py-1 px-2">
                 {[...Array(5)].map((_, i) => (
                   <div
                     key={i}

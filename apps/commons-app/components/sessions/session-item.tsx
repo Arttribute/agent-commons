@@ -6,7 +6,7 @@ import { cn } from "@/lib/utils";
 import {
   Bot,
   Terminal,
-  MoreHorizontal,
+  MoreVertical,
   Pencil,
   Link2,
   Trash2,
@@ -152,14 +152,9 @@ export function SessionItem({
           <button
             aria-label="Session actions"
             onClick={(e) => e.stopPropagation()}
-            className={cn(
-              "shrink-0 rounded-md p-1 text-muted-foreground transition-opacity hover:bg-accent hover:text-foreground",
-              variant === "sidebar" &&
-                !menuOpen &&
-                "opacity-0 group-hover:opacity-100 focus-visible:opacity-100"
-            )}
+            className="shrink-0 rounded-md p-1 text-muted-foreground transition-colors hover:bg-background/80 hover:text-foreground data-[state=open]:bg-background/80 data-[state=open]:text-foreground"
           >
-            <MoreHorizontal className="h-4 w-4" />
+            <MoreVertical className="h-4 w-4" />
           </button>
         </DropdownMenuTrigger>
         <DropdownMenuContent
@@ -248,7 +243,7 @@ export function SessionItem({
   ) : (
     <span
       className={cn(
-        "flex min-w-0 items-center gap-1 truncate leading-tight",
+        "flex min-w-0 items-center gap-1 truncate leading-tight text-foreground",
         variant === "sidebar" ? "text-sm" : "text-sm font-medium"
       )}
     >
@@ -308,10 +303,8 @@ export function SessionItem({
       onClick={navigate}
       onKeyDown={(e) => e.key === "Enter" && navigate()}
       className={cn(
-        "group flex cursor-pointer items-center gap-1 rounded-md px-2 py-1.5 transition-colors",
-        isActive
-          ? "bg-accent text-accent-foreground"
-          : "text-muted-foreground hover:bg-accent/50 hover:text-foreground"
+        "group flex cursor-pointer items-center gap-1 rounded-md px-2 py-2 transition-colors",
+        isActive ? "bg-accent" : "hover:bg-accent/60"
       )}
     >
       <div className="min-w-0 flex-1">{titleNode}</div>

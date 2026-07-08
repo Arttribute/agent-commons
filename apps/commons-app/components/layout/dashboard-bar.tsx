@@ -1,4 +1,6 @@
 // components/layout/DashboardBar.tsx
+"use client";
+
 import { FC, ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import {
@@ -13,6 +15,7 @@ import {
 import Link from "next/link";
 import Image from "next/image";
 import { Button } from "@/components/ui/button";
+import { SearchTrigger } from "@/components/search/search-trigger";
 
 interface DashboardBarProps {
   // values: studio section keys plus the global dashboard sections
@@ -51,6 +54,7 @@ export const DashboardBar: FC<DashboardBarProps> = ({ activeTab, rightSlot }) =>
         <div className="flex items-center">{rightSlot}</div>
       </div>
       <div className="flex flex-col gap-1">
+        <SearchTrigger />
         {navItems.map(({ key, label, icon: Icon, path }) => (
           <Button
             key={key}
