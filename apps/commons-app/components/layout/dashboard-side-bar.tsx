@@ -10,16 +10,15 @@ import {
   BriefcaseBusiness,
   PanelLeft,
   PanelRight,
-  Earth,
-  Folder,
+  LibraryBig,
   Loader2,
-  ScrollText,
   Wrench,
   Workflow,
 } from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { DashboardBar } from "./dashboard-bar";
 import { SidebarAccount } from "./sidebar-account";
+import { SidebarMoreMenu } from "./sidebar-more-menu";
 import { SearchTrigger } from "@/components/search/search-trigger";
 import SessionsList from "@/components/sessions/sessions-list";
 import { useSidebar } from "@/context/SidebarContext";
@@ -51,9 +50,9 @@ export function DashboardSideBar({ username }: { username: string }) {
     if (pathname.startsWith("/studio/tools")) return "tools";
     if (pathname.startsWith("/studio/tasks")) return "tasks";
     if (pathname.startsWith("/studio/workflows")) return "workflows";
+    if (pathname.startsWith("/library")) return "library";
     if (pathname.startsWith("/logs")) return "logs";
     if (pathname.startsWith("/spaces")) return "spaces";
-    if (pathname.startsWith("/files")) return "files";
     return "agents";
   }, [pathname]);
 
@@ -135,9 +134,7 @@ export function DashboardSideBar({ username }: { username: string }) {
                 { key: "tools",     icon: Wrench,            path: "/studio/tools",     label: "Tools" },
                 { key: "tasks",     icon: BriefcaseBusiness, path: "/studio/tasks",     label: "Tasks" },
                 { key: "workflows", icon: Workflow,          path: "/studio/workflows", label: "Workflows" },
-                { key: "logs",      icon: ScrollText,        path: "/logs",             label: "Logs" },
-                { key: "spaces",    icon: Earth,             path: "/spaces",           label: "Spaces" },
-                { key: "files",     icon: Folder,            path: "/files",            label: "Files" },
+                { key: "library",   icon: LibraryBig,        path: "/library",          label: "Library" },
               ].map(({ key, icon: Icon, path, label }) => (
                 <button
                   key={key}
@@ -152,6 +149,7 @@ export function DashboardSideBar({ username }: { username: string }) {
                   <Icon className="h-5 w-5" />
                 </button>
               ))}
+              <SidebarMoreMenu collapsed activeSection={activeSection} />
             </div>
           </div>
         )}

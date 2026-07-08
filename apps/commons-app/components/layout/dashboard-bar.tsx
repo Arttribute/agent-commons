@@ -6,9 +6,7 @@ import { useRouter } from "next/navigation";
 import {
   Bot,
   BriefcaseBusiness,
-  Earth,
-  Folder,
-  ScrollText,
+  LibraryBig,
   Wrench,
   Workflow,
 } from "lucide-react";
@@ -16,6 +14,7 @@ import Link from "next/link";
 import Image from "next/image";
 import { Button } from "@/components/ui/button";
 import { SearchTrigger } from "@/components/search/search-trigger";
+import { SidebarMoreMenu } from "./sidebar-more-menu";
 
 interface DashboardBarProps {
   // values: studio section keys plus the global dashboard sections
@@ -33,9 +32,7 @@ export const DashboardBar: FC<DashboardBarProps> = ({ activeTab, rightSlot }) =>
     { key: "tools",     label: "Tools",     icon: Wrench,            path: "/studio/tools" },
     { key: "tasks",     label: "Tasks",     icon: BriefcaseBusiness, path: "/studio/tasks" },
     { key: "workflows", label: "Workflows", icon: Workflow,          path: "/studio/workflows" },
-    { key: "logs",      label: "Logs",      icon: ScrollText,        path: "/logs" },
-    { key: "spaces",    label: "Spaces",    icon: Earth,             path: "/spaces" },
-    { key: "files",     label: "Files",     icon: Folder,            path: "/files" },
+    { key: "library",   label: "Library",   icon: LibraryBig,        path: "/library" },
   ];
 
   return (
@@ -68,6 +65,7 @@ export const DashboardBar: FC<DashboardBarProps> = ({ activeTab, rightSlot }) =>
             <span>{label}</span>
           </Button>
         ))}
+        <SidebarMoreMenu activeSection={activeTab} />
       </div>
     </div>
   );

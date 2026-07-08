@@ -1,24 +1,37 @@
 "use client";
 
 import { DashboardSideBar } from "@/components/layout/dashboard-side-bar";
+import { useAuth } from "@/context/AuthContext";
+import { normalizePrincipalId } from "@/lib/principal-id";
+import { LibraryBig } from "lucide-react";
 
-export default function FilesPage() {
+export default function LibraryPage() {
+  const { authState } = useAuth();
+  const userAddress = normalizePrincipalId(authState.walletAddress);
+
   return (
-    <div>
-      <div className="bg-slate-50">
-        <div className="flex h-screen">
-          <DashboardSideBar username={"userAddress"} />
-          <div className="w-full p-4">
-            <div className="flex items-center justify-between">
-              <h1 className="text-2xl font-semibold">Files</h1>
-            </div>
-            <p className="text-sm text-muted-foreground mb-3">
-              Coming soon: files and folders connected to your account.
+    <div className="h-screen overflow-hidden bg-background">
+      <div className="flex h-screen">
+        <DashboardSideBar username={userAddress} />
+
+        <div className="flex-1 min-w-0 overflow-y-auto">
+          <div className="px-6 py-4 border-b border-border/60 bg-background">
+            <h1 className="text-xl font-semibold tracking-tight">Library</h1>
+            <p className="text-sm text-muted-foreground mt-0.5">
+              Files, documents, and collections connected to your account.
             </p>
-            <div className="rounded-md border p-6 text-sm text-muted-foreground">
-              {
-                " Placeholder content. We'll show your connected storage providers and file browser here."
-              }
+          </div>
+
+          <div className="px-6 py-4">
+            <div className="flex flex-col items-center justify-center gap-3 rounded-lg border border-dashed border-border py-16 text-center">
+              <LibraryBig className="h-8 w-8 text-muted-foreground/40" />
+              <p className="text-sm text-muted-foreground">
+                Your library is coming soon
+              </p>
+              <p className="max-w-sm text-xs text-muted-foreground/60">
+                Connected storage providers and a file browser for everything
+                your agents create and use will live here.
+              </p>
             </div>
           </div>
         </div>

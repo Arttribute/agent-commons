@@ -76,9 +76,6 @@ export function SearchTrigger({
     >
       <Search className="h-4 w-4 shrink-0" />
       <span className="flex-1 text-left">Search</span>
-      <kbd className="pointer-events-none hidden select-none items-center gap-0.5 rounded border border-border bg-background px-1.5 font-mono text-[10px] text-muted-foreground sm:inline-flex">
-        {modKey}K
-      </kbd>
     </button>
   );
 }

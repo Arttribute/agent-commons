@@ -18,8 +18,8 @@ import {
   BriefcaseBusiness,
   Workflow,
   Earth,
-  Folder,
-  ScrollText,
+  LibraryBig,
+  Logs,
   Wallet,
   Loader2,
 } from "lucide-react";
@@ -41,8 +41,8 @@ const NAV_ITEMS = [
   { label: "Tasks", path: "/studio/tasks", icon: BriefcaseBusiness, keywords: "tasks queue" },
   { label: "Workflows", path: "/studio/workflows", icon: Workflow, keywords: "workflows automation" },
   { label: "Spaces", path: "/spaces", icon: Earth, keywords: "spaces rooms live" },
-  { label: "Files", path: "/files", icon: Folder, keywords: "files documents" },
-  { label: "Logs", path: "/logs", icon: ScrollText, keywords: "logs activity" },
+  { label: "Library", path: "/library", icon: LibraryBig, keywords: "library files documents collections" },
+  { label: "Logs", path: "/logs", icon: Logs, keywords: "logs activity" },
   { label: "Wallets", path: "/wallets", icon: Wallet, keywords: "wallets usdc payments" },
 ];
 
