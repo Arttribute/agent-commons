@@ -3,44 +3,45 @@
 import { useAuth } from "@/context/AuthContext";
 import { DashboardSideBar } from "@/components/layout/dashboard-side-bar";
 import { useUserSessions } from "@/hooks/sessions/use-user-sessions";
-import Link from "next/link";
-import { formatDistanceToNow } from "date-fns";
-import {
-  MessageSquare,
-  Loader2,
-  Search,
-  Terminal,
-  Globe,
-  Clock,
-  Bot,
-} from "lucide-react";
-import { Input } from "@/components/ui/input";
+import { useSessionMutations } from "@/hooks/sessions/use-session-mutations";
+import SessionsList from "@/components/sessions/sessions-list";
+import { MessageSquare, Loader2, Terminal, Globe } from "lucide-react";
+import { SearchTrigger } from "@/components/search/search-trigger";
 import { useState, useMemo } from "react";
-import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import { normalizePrincipalId } from "@/lib/principal-id";
 
 export default function SessionsPage() {
   const { authState } = useAuth();
   const userAddress = normalizePrincipalId(authState.walletAddress);
-  const { sessions, isLoading } = useUserSessions(userAddress);
-  const [search, setSearch] = useState("");
+  const { sessions, setSessions, isLoading } = useUserSessions(userAddress);
+  const { renameSession, deleteSession } = useSessionMutations();
   const [filter, setFilter] = useState<"all" | "cli" | "web">("all");
 
   const filtered = useMemo(() => {
     let list = sessions;
     if (filter === "cli") list = list.filter((s) => s.initiatorType === "cli" || s.source === "cli");
     if (filter === "web") list = list.filter((s) => s.initiatorType !== "cli" && s.source !== "cli");
-    if (search.trim()) {
-      const q = search.toLowerCase();
-      list = list.filter(
-        (s) =>
-          (s.title || "New session").toLowerCase().includes(q) ||
-          s.agentId?.toLowerCase().includes(q)
-      );
-    }
     return list;
-  }, [sessions, filter, search]);
+  }, [sessions, filter]);
+
+  const handleRename = async (sessionId: string, title: string) => {
+    const prev = sessions;
+    setSessions((list) =>
+      list.map((s) => (s.sessionId === sessionId ? { ...s, title } : s))
+    );
+    const ok = await renameSession(sessionId, title);
+    if (!ok) setSessions(prev);
+    return ok;
+  };
+
+  const handleDelete = async (sessionId: string) => {
+    const prev = sessions;
+    setSessions((list) => list.filter((s) => s.sessionId !== sessionId));
+    const ok = await deleteSession(sessionId);
+    if (!ok) setSessions(prev);
+    return ok;
+  };
 
   return (
     <div className="h-screen overflow-hidden bg-background">
@@ -56,16 +57,8 @@ export default function SessionsPage() {
                 All conversations across your agents — including CLI runs
               </p>
             </div>
-            <div className="flex items-center gap-2">
-              <div className="relative">
-                <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
-                <Input
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                  placeholder="Search sessions..."
-                  className="h-8 pl-8 text-sm w-64"
-                />
-              </div>
+            <div className="w-64">
+              <SearchTrigger />
             </div>
           </div>
 
@@ -102,66 +95,20 @@ export default function SessionsPage() {
             ) : filtered.length === 0 ? (
               <div className="flex flex-col items-center justify-center h-40 gap-3">
                 <MessageSquare className="h-8 w-8 text-muted-foreground/30" />
-                <p className="text-sm text-muted-foreground">
-                  {search ? "No sessions match your search" : "No sessions yet"}
+                <p className="text-sm text-muted-foreground">No sessions yet</p>
+                <p className="text-xs text-muted-foreground/60">
+                  Start a conversation with an agent or run{" "}
+                  <code className="bg-muted px-1 py-0.5 rounded text-[11px]">agc chat</code> in
+                  the terminal
                 </p>
-                {!search && (
-                  <p className="text-xs text-muted-foreground/60">
-                    Start a conversation with an agent or run{" "}
-                    <code className="bg-muted px-1 py-0.5 rounded text-[11px]">agc chat</code> in
-                    the terminal
-                  </p>
-                )}
               </div>
             ) : (
-              <div className="grid gap-2">
-                {filtered.map((session) => {
-                  const isCli = session.initiatorType === "cli" || session.source === "cli";
-                  const timeAgo = session.createdAt
-                    ? formatDistanceToNow(new Date(session.createdAt), { addSuffix: true })
-                    : null;
-                  return (
-                    <Link
-                      key={session.sessionId}
-                      href={`/agents/${session.agentId}/${session.sessionId}`}
-                    >
-                      <div className="group flex items-center justify-between p-4 rounded-lg border border-border bg-card hover:border-foreground/20 hover:bg-accent/40 transition-all">
-                        <div className="flex items-center gap-3 min-w-0">
-                          <div className="flex-shrink-0 h-8 w-8 rounded-full bg-muted flex items-center justify-center">
-                            {isCli ? (
-                              <Terminal className="h-4 w-4 text-muted-foreground" />
-                            ) : (
-                              <Bot className="h-4 w-4 text-muted-foreground" />
-                            )}
-                          </div>
-                          <div className="min-w-0">
-                            <p className="text-sm font-medium truncate">
-                              {session.title || "New session"}
-                            </p>
-                            <p className="text-xs text-muted-foreground truncate mt-0.5">
-                              Agent: {session.agentId}
-                            </p>
-                          </div>
-                        </div>
-                        <div className="flex items-center gap-3 flex-shrink-0 ml-4">
-                          {isCli && (
-                            <Badge variant="outline" className="text-[10px] gap-1">
-                              <Terminal className="h-2.5 w-2.5" />
-                              CLI
-                            </Badge>
-                          )}
-                          {timeAgo && (
-                            <span className="flex items-center gap-1 text-xs text-muted-foreground">
-                              <Clock className="h-3 w-3" />
-                              {timeAgo}
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                    </Link>
-                  );
-                })}
-              </div>
+              <SessionsList
+                sessions={filtered}
+                variant="card"
+                onRename={handleRename}
+                onDelete={handleDelete}
+              />
             )}
           </div>
         </div>

@@ -55,6 +55,9 @@ import { AgentTransactions } from "@/components/finances/agent-transactions";
 import { AgentMemoryView } from "@/components/memory/agent-memory-view";
 import { AgentComputerSurface } from "@/components/computers/agent-computer-surface";
 import SessionInterface from "@/components/sessions/session-interface";
+import SessionsList from "@/components/sessions/sessions-list";
+import { SearchTrigger } from "@/components/search/search-trigger";
+import { useSessionMutations } from "@/hooks/sessions/use-session-mutations";
 import { AgentSidebarSwitcher } from "@/components/studio/agent-sidebar-switcher";
 import AgentAvatarUploader from "@/components/agents/agent-avatar-uploader";
 import { TaskManagementView } from "@/components/tasks/task-management-view";
@@ -381,6 +384,8 @@ function SessionsView({
   loadingSession,
   onSelectSession,
   onCreateSession,
+  onRenameSession,
+  onDeleteSession,
 }: {
   agent: CommonAgent;
   sessions: any[];
@@ -389,15 +394,10 @@ function SessionsView({
   loadingSession: boolean;
   onSelectSession: (sessionId: string) => void;
   onCreateSession: () => void;
+  onRenameSession: (sessionId: string, title: string) => Promise<boolean>;
+  onDeleteSession: (sessionId: string) => Promise<boolean>;
 }) {
   const { streamingTitleSessionId, streamingTitleText } = useAgentContext();
-  const [search, setSearch] = useState("");
-  const filtered = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    return sessions
-      .filter((session) => !q || (session.title || "New session").toLowerCase().includes(q) || session.sessionId.toLowerCase().includes(q))
-      .sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
-  }, [sessions, search]);
 
   return (
     <div className="grid h-full min-h-0 grid-cols-[320px_minmax(0,1fr)] overflow-hidden">
@@ -410,35 +410,22 @@ function SessionsView({
               New
             </Button>
           </div>
-          <div className="relative mt-3">
-            <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
-            <Input className="h-8 pl-8" placeholder="Search sessions" value={search} onChange={(e) => setSearch(e.target.value)} />
+          <div className="mt-3">
+            <SearchTrigger />
           </div>
         </div>
         <ScrollArea className="min-h-0 flex-1">
           <div className="p-2">
-            {filtered.length === 0 ? (
-              <div className="rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground">No sessions found.</div>
-            ) : filtered.map((session) => (
-              <button
-                key={session.sessionId}
-                type="button"
-                className={cn("mb-1 w-full rounded-md px-3 py-2 text-left hover:bg-muted", selectedSession?.sessionId === session.sessionId && "bg-accent text-accent-foreground")}
-                onClick={() => onSelectSession(session.sessionId)}
-              >
-                {(() => {
-                  const isStreaming = session.sessionId === streamingTitleSessionId;
-                  const displayTitle = isStreaming ? (streamingTitleText || "...") : (session.title || "New session");
-                  return (
-                    <p className="truncate text-sm font-medium flex items-center gap-0.5">
-                      {displayTitle}
-                      {isStreaming && <span className="inline-block w-0.5 h-3.5 bg-current ml-0.5 animate-pulse shrink-0" />}
-                    </p>
-                  );
-                })()}
-                <p className="mt-0.5 text-xs text-muted-foreground">{relative(session.createdAt)} · {shortId(session.sessionId)}</p>
-              </button>
-            ))}
+            <SessionsList
+              sessions={sessions}
+              currentSessionId={selectedSession?.sessionId}
+              onSelect={onSelectSession}
+              onRename={onRenameSession}
+              onDelete={onDeleteSession}
+              streamingTitleSessionId={streamingTitleSessionId}
+              streamingTitleText={streamingTitleText}
+              emptyLabel="No sessions found."
+            />
           </div>
         </ScrollArea>
       </aside>
@@ -1681,6 +1668,28 @@ export default function AgentStudioPage({ params }: { params: Promise<{ agent: s
   const [selectedSession, setSelectedSession] = useState<any>(null);
   const [loadingSession, setLoadingSession] = useState(false);
   const [tasks, setTasks] = useState<any[]>([]);
+  const { renameSession, deleteSession } = useSessionMutations();
+
+  const handleRenameSession = useCallback(async (sessionId: string, title: string) => {
+    const prev = sessions;
+    setSessions((list) => list.map((s) => (s.sessionId === sessionId ? { ...s, title } : s)));
+    setSelectedSession((cur: any) => (cur?.sessionId === sessionId ? { ...cur, title } : cur));
+    const ok = await renameSession(sessionId, title);
+    if (!ok) setSessions(prev);
+    return ok;
+  }, [sessions, renameSession]);
+
+  const handleDeleteSession = useCallback(async (sessionId: string) => {
+    const prev = sessions;
+    setSessions((list) => list.filter((s) => s.sessionId !== sessionId));
+    const ok = await deleteSession(sessionId);
+    if (!ok) {
+      setSessions(prev);
+    } else {
+      setSelectedSession((cur: any) => (cur?.sessionId === sessionId ? null : cur));
+    }
+    return ok;
+  }, [sessions, deleteSession]);
 
   const isOwner = Boolean(userAddress && agent && ((agent as any).ownerUserId === userAddress || agent.owner === userAddress));
 
@@ -1783,7 +1792,7 @@ export default function AgentStudioPage({ params }: { params: Promise<{ agent: s
           />
         );
       case "sessions":
-        return <SessionsView agent={agent} sessions={sessions} selectedSession={selectedSession} userAddress={userAddress} loadingSession={loadingSession} onSelectSession={loadSession} onCreateSession={() => setActiveSection("new-session")} />;
+        return <SessionsView agent={agent} sessions={sessions} selectedSession={selectedSession} userAddress={userAddress} loadingSession={loadingSession} onSelectSession={loadSession} onCreateSession={() => setActiveSection("new-session")} onRenameSession={handleRenameSession} onDeleteSession={handleDeleteSession} />;
       case "computer":
         return <AgentComputerSurface agentId={agentId} embedded className="h-full" />;
       case "tasks":

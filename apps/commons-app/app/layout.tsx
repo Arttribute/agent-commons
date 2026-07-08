@@ -7,6 +7,7 @@ import { Analytics } from "@vercel/analytics/react";
 import { Space_Grotesk } from "next/font/google";
 import { Toaster } from "@/components/ui/toaster";
 import { SidebarProvider } from "@/context/SidebarContext";
+import { GlobalSearchProvider } from "@/context/SearchContext";
 
 const spaceGrotesk = Space_Grotesk({
   weight: ["400", "500", "600", "700"],
@@ -41,8 +42,10 @@ export default function RootLayout({
         <Providers>
           <AuthProvider>
             <SidebarProvider>
-              {children}
-              <Toaster />
+              <GlobalSearchProvider>
+                {children}
+                <Toaster />
+              </GlobalSearchProvider>
             </SidebarProvider>
           </AuthProvider>
         </Providers>

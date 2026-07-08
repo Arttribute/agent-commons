@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import Link from "next/link";
 import Image from "next/image";
@@ -12,33 +12,38 @@ import {
   PanelRight,
   Earth,
   Folder,
-  Search,
   Loader2,
-  MessageSquare,
   ScrollText,
   Wrench,
   Workflow,
 } from "lucide-react";
-import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { DashboardBar } from "./dashboard-bar";
 import { SidebarAccount } from "./sidebar-account";
+import { SearchTrigger } from "@/components/search/search-trigger";
+import SessionsList from "@/components/sessions/sessions-list";
 import { useSidebar } from "@/context/SidebarContext";
 import { useUserSessions } from "@/hooks/sessions/use-user-sessions";
-import { formatDistanceToNow } from "date-fns";
+import { useSessionMutations } from "@/hooks/sessions/use-session-mutations";
 
 export function DashboardSideBar({ username }: { username: string }) {
   const { isOpen, setIsOpen } = useSidebar();
   const pathname = usePathname();
   const router = useRouter();
-  const [search, setSearch] = useState("");
 
-  const { sessions, isLoading } = useUserSessions(username);
+  const { sessions, setSessions, isLoading } = useUserSessions(username);
+  const { renameSession, deleteSession } = useSessionMutations();
+
   const isLockedDetailRoute = useMemo(() => {
     if (!pathname) return false;
     return /^\/studio\/(agents|tools|workflows|skills)\/[^/]+/.test(pathname);
   }, [pathname]);
   const sidebarOpen = isOpen && !isLockedDetailRoute;
+
+  const currentSessionId = useMemo(() => {
+    const m = pathname?.match(/^\/agents\/[^/]+\/([^/]+)/);
+    return m?.[1];
+  }, [pathname]);
 
   const activeSection = useMemo(() => {
     if (!pathname) return "agents";
@@ -52,12 +57,23 @@ export function DashboardSideBar({ username }: { username: string }) {
     return "agents";
   }, [pathname]);
 
-  const filteredSessions = useMemo(() => {
-    if (!search.trim()) return sessions;
-    return sessions.filter((s) =>
-      (s.title || "New session").toLowerCase().includes(search.toLowerCase())
+  const handleRename = async (sessionId: string, title: string) => {
+    const prev = sessions;
+    setSessions((list) =>
+      list.map((s) => (s.sessionId === sessionId ? { ...s, title } : s))
     );
-  }, [sessions, search]);
+    const ok = await renameSession(sessionId, title);
+    if (!ok) setSessions(prev);
+    return ok;
+  };
+
+  const handleDelete = async (sessionId: string) => {
+    const prev = sessions;
+    setSessions((list) => list.filter((s) => s.sessionId !== sessionId));
+    const ok = await deleteSession(sessionId);
+    if (!ok) setSessions(prev);
+    return ok;
+  };
 
   return (
     <div
@@ -111,6 +127,7 @@ export function DashboardSideBar({ username }: { username: string }) {
               </button>
             )}
             <div className="flex flex-col items-center gap-3 mt-2">
+              <SearchTrigger collapsed />
               {[
                 { key: "agents",    icon: Bot,               path: "/studio/agents",    label: "Agents" },
                 { key: "tools",     icon: Wrench,            path: "/studio/tools",     label: "Tools" },
@@ -138,26 +155,17 @@ export function DashboardSideBar({ username }: { username: string }) {
         )}
       </div>
 
-      {/* Sessions list — only when expanded */}
+      {/* Search + sessions — only when expanded */}
       {sidebarOpen && (
         <div className="flex-1 overflow-hidden flex flex-col min-h-0 mt-4">
-          {/* Search */}
-          <div className="px-3 pb-2">
-            <div className="relative">
-              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3 w-3 text-muted-foreground pointer-events-none" />
-              <Input
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                placeholder="Search sessions..."
-                className="h-7 pl-7 text-xs bg-muted/50 border-0 focus-visible:ring-1"
-              />
-            </div>
+          <div className="px-3 pb-3">
+            <SearchTrigger />
           </div>
 
           {/* Label */}
           <div className="px-3 py-1 flex items-center justify-between">
-            <span className="text-[11px] font-medium text-muted-foreground uppercase tracking-wide">
-              Recent Sessions
+            <span className="text-xs font-medium text-muted-foreground">
+              Recents
             </span>
             {isLoading && (
               <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />
@@ -170,53 +178,18 @@ export function DashboardSideBar({ username }: { username: string }) {
                 {[...Array(5)].map((_, i) => (
                   <div
                     key={i}
-                    className="h-9 rounded-md bg-muted animate-pulse"
+                    className="h-8 rounded-md bg-muted animate-pulse"
                     style={{ opacity: 1 - i * 0.15 }}
                   />
                 ))}
               </div>
-            ) : filteredSessions.length === 0 ? (
-              <div className="py-6 text-center">
-                <MessageSquare className="h-5 w-5 text-muted-foreground/40 mx-auto mb-2" />
-                <p className="text-xs text-muted-foreground">No sessions yet</p>
-              </div>
             ) : (
-              <div className="space-y-0.5">
-                {filteredSessions.map((session) => {
-                  const isActive = pathname?.includes(session.sessionId);
-                  const createdAt = session.createdAt
-                    ? new Date(session.createdAt)
-                    : null;
-                  const timeAgo =
-                    createdAt && !Number.isNaN(createdAt.getTime())
-                      ? formatDistanceToNow(createdAt, { addSuffix: true })
-                      : null;
-                  return (
-                    <Link
-                      key={session.sessionId}
-                      href={`/agents/${session.agentId}/${session.sessionId}`}
-                    >
-                      <div
-                        className={cn(
-                          "group px-2 py-2 rounded-md cursor-pointer transition-colors",
-                          isActive
-                            ? "bg-accent text-accent-foreground"
-                            : "text-muted-foreground hover:bg-accent/50 hover:text-foreground"
-                        )}
-                      >
-                        <p className="text-sm truncate font-medium leading-tight">
-                          {session.title || "New session"}
-                        </p>
-                        {timeAgo && (
-                          <p className="text-[10px] text-muted-foreground mt-0.5 truncate">
-                            {timeAgo}
-                          </p>
-                        )}
-                      </div>
-                    </Link>
-                  );
-                })}
-              </div>
+              <SessionsList
+                sessions={sessions}
+                currentSessionId={currentSessionId}
+                onRename={handleRename}
+                onDelete={handleDelete}
+              />
             )}
           </ScrollArea>
         </div>

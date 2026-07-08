@@ -3,12 +3,14 @@
 import { useState } from "react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
-import { PanelLeft, PlusCircle, Loader2, Bot, Search } from "lucide-react";
+import { PanelLeft, PlusCircle, Loader2, Bot } from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import SessionsList from "@/components/sessions/sessions-list";
+import { SearchTrigger } from "@/components/search/search-trigger";
 import { useRouter } from "next/navigation";
+import { useAgentContext } from "@/context/AgentContext";
+import { useSessionMutations } from "@/hooks/sessions/use-session-mutations";
 
 export function SessionsSideBar({
   username,
@@ -24,14 +26,32 @@ export function SessionsSideBar({
   isLoadingSessions?: boolean;
 }) {
   const [isOpen, setIsOpen] = useState(true);
-  const [search, setSearch] = useState("");
   const router = useRouter();
+  const { setSessions, streamingTitleSessionId, streamingTitleText } =
+    useAgentContext();
+  const { renameSession, deleteSession } = useSessionMutations();
 
-  const filteredSessions = search.trim()
-    ? sessions.filter((s) =>
-        (s.title || "New session").toLowerCase().includes(search.toLowerCase())
-      )
-    : sessions;
+  const handleRename = async (sessionId: string, title: string) => {
+    const prev = sessions;
+    setSessions((list) =>
+      list.map((s) => (s.sessionId === sessionId ? { ...s, title } : s))
+    );
+    const ok = await renameSession(sessionId, title);
+    if (!ok) setSessions(prev);
+    return ok;
+  };
+
+  const handleDelete = async (sessionId: string) => {
+    const prev = sessions;
+    setSessions((list) => list.filter((s) => s.sessionId !== sessionId));
+    const ok = await deleteSession(sessionId);
+    if (!ok) {
+      setSessions(prev);
+    } else if (sessionId === currentSessionId) {
+      router.push(`/agents/${agentId}`);
+    }
+    return ok;
+  };
 
   return (
     <div
@@ -65,44 +85,40 @@ export function SessionsSideBar({
         )}
       </div>
 
-      {/* New session button */}
-      <div className="px-2 py-2">
-        <Button
-          variant="outline"
-          size="sm"
-          className="w-full gap-2 justify-center"
-          onClick={() => router.push(`/agents/${agentId}`)}
-        >
-          {isOpen ? (
-            <>
-              <PlusCircle className="h-3.5 w-3.5" />
-              New Session
-            </>
-          ) : (
+      {/* Search + New session */}
+      {isOpen ? (
+        <div className="px-2 py-2 space-y-2">
+          <SearchTrigger />
+          <Button
+            variant="outline"
+            size="sm"
+            className="w-full gap-2 justify-center"
+            onClick={() => router.push(`/agents/${agentId}`)}
+          >
+            <PlusCircle className="h-3.5 w-3.5" />
+            New Session
+          </Button>
+        </div>
+      ) : (
+        <div className="px-2 py-2 flex flex-col items-center gap-3">
+          <SearchTrigger collapsed />
+          <button
+            className="text-muted-foreground hover:text-foreground"
+            aria-label="New Session"
+            title="New Session"
+            onClick={() => router.push(`/agents/${agentId}`)}
+          >
             <PlusCircle className="h-4 w-4" />
-          )}
-        </Button>
-      </div>
+          </button>
+        </div>
+      )}
 
       {/* Sessions list */}
       {isOpen && (
         <div className="flex-1 overflow-hidden flex flex-col min-h-0">
-          {/* Search bar */}
-          <div className="px-2 pb-2">
-            <div className="relative">
-              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3 w-3 text-muted-foreground pointer-events-none" />
-              <Input
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                placeholder="Search sessions..."
-                className="h-7 pl-7 text-xs bg-muted/50 border-0 focus-visible:ring-1"
-              />
-            </div>
-          </div>
-
           <div className="px-3 py-1 flex items-center justify-between">
-            <span className="text-[11px] font-medium text-muted-foreground uppercase tracking-wide">
-              Recent
+            <span className="text-xs font-medium text-muted-foreground">
+              Recents
             </span>
             {isLoadingSessions && (
               <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />
@@ -115,13 +131,20 @@ export function SessionsSideBar({
                 {[...Array(5)].map((_, i) => (
                   <div
                     key={i}
-                    className="h-9 rounded-md bg-muted animate-pulse"
+                    className="h-8 rounded-md bg-muted animate-pulse"
                     style={{ opacity: 1 - i * 0.15 }}
                   />
                 ))}
               </div>
             ) : (
-              <SessionsList sessions={filteredSessions} currentSessionId={currentSessionId} />
+              <SessionsList
+                sessions={sessions}
+                currentSessionId={currentSessionId}
+                onRename={handleRename}
+                onDelete={handleDelete}
+                streamingTitleSessionId={streamingTitleSessionId}
+                streamingTitleText={streamingTitleText}
+              />
             )}
           </ScrollArea>
         </div>
