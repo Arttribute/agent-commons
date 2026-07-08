@@ -18,7 +18,6 @@ import {
   ScrollText,
   Wrench,
   Workflow,
-  Zap,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -47,7 +46,6 @@ export function DashboardSideBar({ username }: { username: string }) {
     if (pathname.startsWith("/studio/tools")) return "tools";
     if (pathname.startsWith("/studio/tasks")) return "tasks";
     if (pathname.startsWith("/studio/workflows")) return "workflows";
-    if (pathname.startsWith("/studio/skills")) return "skills";
     if (pathname.startsWith("/logs")) return "logs";
     if (pathname.startsWith("/spaces")) return "spaces";
     if (pathname.startsWith("/files")) return "files";
@@ -92,17 +90,15 @@ export function DashboardSideBar({ username }: { username: string }) {
                 aria-label="Agent Commons"
                 title="Agent Commons"
               >
-                <div className="rounded-full border border-border p-[1px] bg-background">
-                  <div className="rounded-full border">
-                    <Image
-                      src="/ac-icon.svg"
-                      alt="Agent Commons Logo"
-                      width={32}
-                      height={32}
-                      className="object-cover rounded-full"
-                    />
-                  </div>
-                </div>
+                <span className="block h-10 w-10 overflow-hidden rounded-full border border-border bg-background">
+                  <Image
+                    src="/ac-icon.svg"
+                    alt="Agent Commons Logo"
+                    width={40}
+                    height={40}
+                    className="h-full w-full object-cover"
+                  />
+                </span>
               </Link>
             ) : (
               <button
@@ -120,7 +116,6 @@ export function DashboardSideBar({ username }: { username: string }) {
                 { key: "tools",     icon: Wrench,            path: "/studio/tools",     label: "Tools" },
                 { key: "tasks",     icon: BriefcaseBusiness, path: "/studio/tasks",     label: "Tasks" },
                 { key: "workflows", icon: Workflow,          path: "/studio/workflows", label: "Workflows" },
-                { key: "skills",    icon: Zap,               path: "/studio/skills",    label: "Skills" },
                 { key: "logs",      icon: ScrollText,        path: "/logs",             label: "Logs" },
                 { key: "spaces",    icon: Earth,             path: "/spaces",           label: "Spaces" },
                 { key: "files",     icon: Folder,            path: "/files",            label: "Files" },

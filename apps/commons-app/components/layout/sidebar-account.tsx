@@ -128,7 +128,7 @@ export function SidebarAccount({ collapsed = false }: { collapsed?: boolean }) {
       </Popover>
 
       <Dialog open={settingsOpen} onOpenChange={setSettingsOpen}>
-        <DialogContent className="flex h-[600px] max-h-[85vh] max-w-3xl flex-col gap-0 overflow-hidden p-0 sm:max-w-3xl">
+        <DialogContent className="flex h-[600px] max-h-[85vh] w-[95vw] max-w-4xl flex-col gap-0 overflow-hidden p-0 sm:max-w-4xl">
           <DialogHeader className="shrink-0 border-b border-border px-6 py-4">
             <DialogTitle>Account</DialogTitle>
           </DialogHeader>

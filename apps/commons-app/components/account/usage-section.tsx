@@ -23,37 +23,46 @@ interface UsageData {
   callCount: number;
 }
 
+/** Compact number: 7.5M, 754.6B, etc. */
 function fmt(n: number): string {
-  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
-  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`;
+  const abs = Math.abs(n);
+  if (abs >= 1_000_000_000_000) return `${(n / 1_000_000_000_000).toFixed(1)}T`;
+  if (abs >= 1_000_000_000) return `${(n / 1_000_000_000).toFixed(1)}B`;
+  if (abs >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
+  if (abs >= 1_000) return `${(n / 1_000).toFixed(1)}K`;
   return String(n);
+}
+
+/** Full value for hover tooltips. */
+function exact(n: number): string {
+  return n.toLocaleString();
 }
 
 function StatCard({
   label,
   value,
+  title,
   icon: Icon,
   sub,
-  tint,
 }: {
   label: string;
   value: string;
+  title: string;
   icon: React.ElementType;
   sub?: string;
-  tint: string;
 }) {
   return (
     <div className="rounded-xl border border-border bg-card p-4">
       <div className="mb-2 flex items-center justify-between">
         <span className="text-xs text-muted-foreground">{label}</span>
-        <span
-          className="flex h-6 w-6 items-center justify-center rounded-md"
-          style={{ backgroundColor: tint }}
-        >
-          <Icon className="h-3.5 w-3.5 text-zinc-900" />
-        </span>
+        <Icon className="h-4 w-4 text-muted-foreground" />
       </div>
-      <p className="text-2xl font-semibold tracking-tight">{value}</p>
+      <p
+        title={title}
+        className="truncate text-2xl font-semibold tabular-nums tracking-tight"
+      >
+        {value}
+      </p>
       {sub && <p className="mt-1 text-xs text-muted-foreground">{sub}</p>}
     </div>
   );
@@ -166,23 +175,23 @@ export function UsageSection({ walletAddress }: { walletAddress: string }) {
         <StatCard
           label="Total tokens"
           value={fmt(totals.tokens)}
+          title={exact(totals.tokens)}
           icon={Zap}
           sub="across all agents"
-          tint="var(--brand-cyan)"
         />
         <StatCard
           label="Total cost"
           value={`$${totals.cost.toFixed(4)}`}
+          title={`$${totals.cost.toFixed(6)}`}
           icon={DollarSign}
           sub="USD"
-          tint="var(--brand-mint)"
         />
         <StatCard
           label="LLM calls"
           value={fmt(totals.calls)}
+          title={exact(totals.calls)}
           icon={TrendingUp}
           sub="total requests"
-          tint="var(--brand-lilac)"
         />
       </div>
 
@@ -198,7 +207,7 @@ export function UsageSection({ walletAddress }: { walletAddress: string }) {
         </div>
       ) : (
         <div className="overflow-x-auto rounded-xl border border-border">
-          <table className="w-full min-w-[540px] text-sm">
+          <table className="w-full min-w-[560px] text-sm">
             <thead>
               <tr className="border-b border-border bg-muted/40">
                 <th className="px-4 py-2.5 text-left text-xs font-medium text-muted-foreground">
@@ -235,24 +244,34 @@ export function UsageSection({ walletAddress }: { walletAddress: string }) {
                     </p>
                   </td>
                   <td className="px-3 py-3 text-right text-xs tabular-nums">
-                    {fmt(row.callCount)}
+                    <span title={exact(row.callCount)}>
+                      {fmt(row.callCount)}
+                    </span>
                   </td>
                   <td className="px-3 py-3 text-right text-xs tabular-nums text-muted-foreground">
-                    {fmt(row.totalInputTokens)}
+                    <span title={exact(row.totalInputTokens)}>
+                      {fmt(row.totalInputTokens)}
+                    </span>
                   </td>
                   <td className="px-3 py-3 text-right text-xs tabular-nums text-muted-foreground">
-                    {fmt(row.totalOutputTokens)}
+                    <span title={exact(row.totalOutputTokens)}>
+                      {fmt(row.totalOutputTokens)}
+                    </span>
                   </td>
                   <td className="px-3 py-3 text-right text-xs font-medium tabular-nums">
-                    {fmt(row.totalTokens)}
+                    <span title={exact(row.totalTokens)}>
+                      {fmt(row.totalTokens)}
+                    </span>
                   </td>
                   <td className="px-3 py-3 text-right text-xs font-medium tabular-nums">
-                    ${row.totalCostUsd.toFixed(4)}
+                    <span title={`$${row.totalCostUsd.toFixed(6)}`}>
+                      ${row.totalCostUsd.toFixed(4)}
+                    </span>
                   </td>
                   <td className="px-4 py-3">
                     <div className="h-1.5 overflow-hidden rounded-full bg-muted">
                       <div
-                        className="brand-gradient h-full rounded-full"
+                        className="h-full rounded-full bg-foreground/70"
                         style={{
                           width: `${(row.totalCostUsd / maxCost) * 100}%`,
                         }}

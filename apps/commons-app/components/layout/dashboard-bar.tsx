@@ -9,7 +9,6 @@ import {
   ScrollText,
   Wrench,
   Workflow,
-  Zap,
 } from "lucide-react";
 import Link from "next/link";
 import Image from "next/image";
@@ -31,7 +30,6 @@ export const DashboardBar: FC<DashboardBarProps> = ({ activeTab, rightSlot }) =>
     { key: "tools",     label: "Tools",     icon: Wrench,            path: "/studio/tools" },
     { key: "tasks",     label: "Tasks",     icon: BriefcaseBusiness, path: "/studio/tasks" },
     { key: "workflows", label: "Workflows", icon: Workflow,          path: "/studio/workflows" },
-    { key: "skills",    label: "Skills",    icon: Zap,               path: "/studio/skills" },
     { key: "logs",      label: "Logs",      icon: ScrollText,        path: "/logs" },
     { key: "spaces",    label: "Spaces",    icon: Earth,             path: "/spaces" },
     { key: "files",     label: "Files",     icon: Folder,            path: "/files" },

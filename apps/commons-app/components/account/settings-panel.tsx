@@ -469,15 +469,12 @@ export function SettingsPanel({
                 key={s}
                 onClick={() => setSection(s)}
                 className={cn(
-                  "relative flex w-full items-center gap-2.5 rounded-md px-2 py-2 text-sm transition-colors",
+                  "flex w-full items-center gap-2.5 rounded-md px-2 py-2 text-sm transition-colors",
                   active
                     ? "bg-accent font-medium text-accent-foreground"
                     : "text-muted-foreground hover:bg-accent/50 hover:text-foreground",
                 )}
               >
-                {active && (
-                  <span className="brand-gradient absolute left-0 top-1/2 h-4 w-0.5 -translate-y-1/2 rounded-full" />
-                )}
                 <Icon className="h-4 w-4 flex-shrink-0" />
                 {SECTION_LABELS[s]}
               </button>
