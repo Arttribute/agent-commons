@@ -93,15 +93,18 @@ export function DashboardSideBar({ username }: { username: string }) {
                 href="/studio/agents"
                 aria-label="Agent Commons"
                 title="Agent Commons"
-                className="rounded-full ring-1 ring-border overflow-hidden"
               >
-                <Image
-                  src="/ac-icon.svg"
-                  alt="Agent Commons"
-                  width={32}
-                  height={32}
-                  className="h-8 w-8 rounded-full object-cover"
-                />
+                <div className="rounded-full border border-border p-[1px] bg-background">
+                  <div className="rounded-full border">
+                    <Image
+                      src="/ac-icon.svg"
+                      alt="Agent Commons Logo"
+                      width={20}
+                      height={20}
+                      className="object-cover rounded-full"
+                    />
+                  </div>
+                </div>
               </Link>
             ) : (
               <button
