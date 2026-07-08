@@ -90,12 +90,12 @@ export function DashboardSideBar({ username }: { username: string }) {
                 aria-label="Agent Commons"
                 title="Agent Commons"
               >
-                <span className="block h-10 w-10 overflow-hidden rounded-full border border-border bg-background">
+                <span className="block h-8 w-8 overflow-hidden rounded-full border border-border bg-background">
                   <Image
                     src="/ac-icon.svg"
                     alt="Agent Commons Logo"
-                    width={40}
-                    height={40}
+                    width={32}
+                    height={32}
                     className="h-full w-full object-cover"
                   />
                 </span>
