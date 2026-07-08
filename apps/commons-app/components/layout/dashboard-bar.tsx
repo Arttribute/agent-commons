@@ -10,7 +10,6 @@ import {
   Wrench,
   Workflow,
   Zap,
-  BarChart2,
 } from "lucide-react";
 import Link from "next/link";
 import Image from "next/image";
@@ -34,7 +33,6 @@ export const DashboardBar: FC<DashboardBarProps> = ({ activeTab, rightSlot }) =>
     { key: "workflows", label: "Workflows", icon: Workflow,          path: "/studio/workflows" },
     { key: "skills",    label: "Skills",    icon: Zap,               path: "/studio/skills" },
     { key: "logs",      label: "Logs",      icon: ScrollText,        path: "/logs" },
-    { key: "usage",     label: "Usage",     icon: BarChart2,         path: "/usage" },
     { key: "spaces",    label: "Spaces",    icon: Earth,             path: "/spaces" },
     { key: "files",     label: "Files",     icon: Folder,            path: "/files" },
   ];

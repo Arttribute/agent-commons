@@ -22,7 +22,7 @@ import {
   SettingsPanel,
   type SettingsSection,
 } from "@/components/account/settings-panel";
-import { Settings, KeyRound, LogOut, LogIn, ChevronsUpDown } from "lucide-react";
+import { UserRound, LogOut, LogIn, ChevronsUpDown } from "lucide-react";
 
 export function SidebarAccount({ collapsed = false }: { collapsed?: boolean }) {
   const router = useRouter();
@@ -62,8 +62,7 @@ export function SidebarAccount({ collapsed = false }: { collapsed?: boolean }) {
     icon: React.ElementType;
     onClick: () => void;
   }[] = [
-    { label: "Settings", icon: Settings, onClick: () => openSettings("profile") },
-    { label: "API keys", icon: KeyRound, onClick: () => openSettings("api-keys") },
+    { label: "Account", icon: UserRound, onClick: () => openSettings("profile") },
   ];
 
   return (
@@ -129,15 +128,15 @@ export function SidebarAccount({ collapsed = false }: { collapsed?: boolean }) {
       </Popover>
 
       <Dialog open={settingsOpen} onOpenChange={setSettingsOpen}>
-        <DialogContent className="max-w-3xl gap-0 overflow-hidden p-0 sm:max-w-3xl">
-          <DialogHeader className="border-b border-border px-6 py-4">
-            <DialogTitle>Settings</DialogTitle>
+        <DialogContent className="flex h-[600px] max-h-[85vh] max-w-3xl flex-col gap-0 overflow-hidden p-0 sm:max-w-3xl">
+          <DialogHeader className="shrink-0 border-b border-border px-6 py-4">
+            <DialogTitle>Account</DialogTitle>
           </DialogHeader>
           <SettingsPanel
             key={settingsSection}
             walletAddress={principalId}
             initialSection={settingsSection}
-            className="h-[520px]"
+            className="min-h-0 flex-1"
           />
         </DialogContent>
       </Dialog>

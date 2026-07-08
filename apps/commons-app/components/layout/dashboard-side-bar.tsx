@@ -16,7 +16,6 @@ import {
   Loader2,
   MessageSquare,
   ScrollText,
-  BarChart2,
   Wrench,
   Workflow,
   Zap,
@@ -50,7 +49,6 @@ export function DashboardSideBar({ username }: { username: string }) {
     if (pathname.startsWith("/studio/workflows")) return "workflows";
     if (pathname.startsWith("/studio/skills")) return "skills";
     if (pathname.startsWith("/logs")) return "logs";
-    if (pathname.startsWith("/usage")) return "usage";
     if (pathname.startsWith("/spaces")) return "spaces";
     if (pathname.startsWith("/files")) return "files";
     return "agents";
@@ -99,8 +97,8 @@ export function DashboardSideBar({ username }: { username: string }) {
                     <Image
                       src="/ac-icon.svg"
                       alt="Agent Commons Logo"
-                      width={20}
-                      height={20}
+                      width={32}
+                      height={32}
                       className="object-cover rounded-full"
                     />
                   </div>
@@ -124,7 +122,6 @@ export function DashboardSideBar({ username }: { username: string }) {
                 { key: "workflows", icon: Workflow,          path: "/studio/workflows", label: "Workflows" },
                 { key: "skills",    icon: Zap,               path: "/studio/skills",    label: "Skills" },
                 { key: "logs",      icon: ScrollText,        path: "/logs",             label: "Logs" },
-                { key: "usage",     icon: BarChart2,         path: "/usage",            label: "Usage" },
                 { key: "spaces",    icon: Earth,             path: "/spaces",           label: "Spaces" },
                 { key: "files",     icon: Folder,            path: "/files",            label: "Files" },
               ].map(({ key, icon: Icon, path, label }) => (
