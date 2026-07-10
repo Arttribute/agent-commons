@@ -141,13 +141,18 @@ export default function ChatInputBox({
           computerId: extractComputerId(event.output ?? event.result ?? event.payload),
         });
       }
+      const completionDetail = describeToolActivityDetail(
+        toolName,
+        activityArgsRef.current.get(activityId),
+        event.output ?? event.result ?? event.payload
+      );
       upsertStreamingActivity({
         id: activityId,
         kind: isComputerTool(toolName) ? "computer" : "tool",
         stage: "tool",
         toolName,
         title: describeToolTitle(toolName, event.status === "error" ? "failed" : "completed"),
-        detail: summarizeToolResult(event.output ?? event.result ?? event.payload),
+        detail: completionDetail,
         status: event.status === "error" ? "failed" : "completed",
         timestamp: event.timestamp ?? new Date().toISOString(),
         payload: { ...event, args: activityArgsRef.current.get(activityId) },
@@ -160,7 +165,7 @@ export default function ChatInputBox({
           stage: event.stage ?? "tool",
           toolName,
           title: describeToolTitle(toolName, event.status === "error" ? "failed" : "completed"),
-          detail: summarizeToolResult(event.output ?? event.result ?? event.payload),
+          detail: completionDetail,
           status: event.status === "error" ? "failed" : "completed",
           timestamp: event.timestamp ?? new Date().toISOString(),
           payload: event,
@@ -191,7 +196,7 @@ export default function ChatInputBox({
         stage: "tool",
         toolName,
         title: describeToolTitle(toolName, "completed"),
-        detail: summarizeToolResult(output),
+        detail: describeToolActivityDetail(toolName, activityArgsRef.current.get(activityId), output),
         status: "completed",
         timestamp: event.timestamp ?? new Date().toISOString(),
         payload: { output, args: activityArgsRef.current.get(activityId) },
@@ -799,19 +804,64 @@ function summarizeToolInput(input: unknown) {
   return truncateSingleLine(text, 180);
 }
 
+/**
+ * Generic acknowledgements some tools return as their status/response.
+ * They tell the user nothing, so they never qualify as a step detail.
+ */
+const LOW_SIGNAL_DETAILS = new Set([
+  "responded",
+  "response",
+  "success",
+  "successful",
+  "ok",
+  "okay",
+  "done",
+  "completed",
+  "complete",
+  "finished",
+  "true",
+  "false",
+]);
+
 function summarizeToolResult(result: unknown) {
   if (!result) return undefined;
   const data = (result as any)?.data ?? (result as any)?.toolData ?? result;
-  const detail =
-    (data as any)?.name ??
-    (data as any)?.path ??
-    (data as any)?.summary ??
-    (data as any)?.status ??
-    (data as any)?.response ??
-    (typeof data === "string" ? data : undefined);
-  if (detail) return truncateSingleLine(String(detail), 180);
+  const candidates = [
+    (data as any)?.name,
+    (data as any)?.path,
+    (data as any)?.summary,
+    (data as any)?.command,
+    (data as any)?.url ?? (data as any)?.browser?.url,
+    (data as any)?.title,
+    (data as any)?.message,
+    (data as any)?.stdout,
+    (data as any)?.output,
+    (data as any)?.text,
+    (data as any)?.response,
+    (data as any)?.status,
+    typeof data === "string" ? data : undefined,
+  ];
+  for (const candidate of candidates) {
+    if (typeof candidate !== "string" && typeof candidate !== "number") continue;
+    const text = String(candidate).trim();
+    if (!text || LOW_SIGNAL_DETAILS.has(text.toLowerCase())) continue;
+    return truncateSingleLine(text, 180);
+  }
   if ((data as any)?.computerId) return truncateSingleLine(String((data as any).computerId), 180);
-  return truncateSingleLine(JSON.stringify(data), 180);
+  return undefined;
+}
+
+/**
+ * Detail line for a finished tool step: prefer what the tool actually did
+ * (the command / path / url it was called with), then a meaningful result
+ * summary, then the raw input as a last resort.
+ */
+function describeToolActivityDetail(toolName: string, args: any, output: unknown) {
+  return (
+    computerToolDetail(toolName, args) ??
+    summarizeToolResult(output) ??
+    summarizeToolInput(args)
+  );
 }
 
 function truncateSingleLine(value: string, maxLength: number) {

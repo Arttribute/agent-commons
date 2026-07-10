@@ -220,7 +220,7 @@ export default function AgentOutput({
             {content}
           </ReactMarkdown>
           {isStreaming && Boolean(content) && (
-            <span className="ml-0.5 inline-block h-4 w-1.5 animate-pulse rounded-sm bg-muted-foreground/40 align-middle" />
+            <span className="ml-0.5 inline-block h-4 w-1.5 animate-pulse rounded-sm bg-indigo-400 align-middle" />
           )}
         </div>
       </div>
@@ -252,16 +252,84 @@ function ActivityTimeline({
         </div>
       ) : null;
     }
-    return (
-      <div className="not-prose mb-3">
-        <ActivityList activities={visible.slice(-8)} thinking={thinking} />
-      </div>
-    );
+    return <StreamingSteps activities={visible} thinking={thinking} />;
   }
 
   // A plain reply with no real steps gets no chrome at all.
   if (!visible.length) return null;
   return <CompletedActivitySummary activities={visible} durationMs={durationMs} />;
+}
+
+/**
+ * While a run is in flight only the current step shows — one shimmering line.
+ * Clicking it expands to the full timeline of earlier steps; clicking
+ * anywhere in the expanded list collapses it again.
+ */
+function StreamingSteps({
+  activities,
+  thinking,
+}: {
+  activities: StreamActivity[];
+  thinking: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+  const current = thinking
+    ? undefined
+    : ([...activities].reverse().find((activity) => activity.status === "running") ??
+      activities[activities.length - 1]);
+  const hasHistory = activities.length > (current ? 1 : 0);
+
+  return (
+    <div className="not-prose mb-3">
+      <button
+        type="button"
+        onClick={() => setOpen((value) => !value)}
+        aria-expanded={open}
+        className="block w-full cursor-pointer text-left"
+        title={open ? "Hide steps" : hasHistory ? "Show all steps" : undefined}
+      >
+        {open ? (
+          <ActivityList activities={activities} thinking={thinking} />
+        ) : (
+          <span className="flex items-center gap-2.5">
+            {(() => {
+              const Icon = current ? iconForActivity(current) : CircleDashed;
+              const running = !current || current.status === "running";
+              return (
+                <>
+                  <Icon
+                    className={cn(
+                      "h-3.5 w-3.5 shrink-0",
+                      current?.status === "failed"
+                        ? "text-red-500"
+                        : "text-muted-foreground/70"
+                    )}
+                  />
+                  <span
+                    className={cn(
+                      "min-w-0 flex-1 truncate text-[13px] leading-5",
+                      running ? "text-shimmer" : "text-muted-foreground"
+                    )}
+                  >
+                    {current?.title ?? "Thinking…"}
+                    {current?.detail ? (
+                      <span className={running ? undefined : "text-muted-foreground/60"}>
+                        {" "}
+                        · {current.detail}
+                      </span>
+                    ) : null}
+                  </span>
+                  {hasHistory && (
+                    <ChevronDown className="h-3 w-3 shrink-0 text-muted-foreground/50" />
+                  )}
+                </>
+              );
+            })()}
+          </span>
+        )}
+      </button>
+    </div>
+  );
 }
 
 function CompletedActivitySummary({
