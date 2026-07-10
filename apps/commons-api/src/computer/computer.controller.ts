@@ -22,7 +22,7 @@ export class ComputerController {
   @Get('computer/config')
   async getConfig(@Param('agentId') agentId: string) {
     const data = await this.computers.getConfig(agentId);
-    return { data };
+    return { data: this.computers.toPublicConfig(data) };
   }
 
   @Put('computer/config')
@@ -31,24 +31,27 @@ export class ComputerController {
     @Body() body: Record<string, any>,
   ) {
     const data = await this.computers.updateConfig(agentId, body as any);
-    return { data };
+    return { data: this.computers.toPublicConfig(data) };
   }
 
   /** Return the agent's one durable computer, including sleeping state. */
   @Get('computer')
   async getAssignedComputer(@Param('agentId') agentId: string) {
+    const config = await this.computers.getConfig(agentId);
     const [computer] = await this.computers.listInstances({
       agentId,
       includeTerminated: true,
     });
-    return { data: computer ?? null };
+    return {
+      data: this.computers.toPublicComputer(computer ?? null, config),
+    };
   }
 
   @Post('computer/wake')
   @RateLimit({ limit: 20, windowMs: 60_000, keyStrategy: 'user' })
   async wakeAssignedComputer(
     @Param('agentId') agentId: string,
-    @Body() body: { reason?: string; sessionId?: string },
+    @Body() body: { reason?: string; sessionId?: string } = {},
     @Req() req: Request,
   ) {
     const principal = (req as any).principal;
@@ -59,7 +62,12 @@ export class ComputerController {
       actorId: principal?.principalId ?? (req.headers['x-initiator'] as string),
       actorType: principal?.principalType ?? 'user',
     });
-    return { data };
+    return {
+      data: this.computers.toPublicComputer(
+        data,
+        await this.computers.getConfig(agentId),
+      ),
+    };
   }
 
   @Post('computer/sleep')
@@ -73,13 +81,19 @@ export class ComputerController {
       actorId: principal?.principalId ?? (req.headers['x-initiator'] as string),
       actorType: principal?.principalType ?? 'user',
     });
-    return { data };
+    return {
+      data: this.computers.toPublicComputer(
+        data,
+        await this.computers.getConfig(agentId),
+      ),
+    };
   }
 
   @Post('computer/restart')
   @RateLimit({ limit: 10, windowMs: 60_000, keyStrategy: 'user' })
   async restartAssignedComputer(
     @Param('agentId') agentId: string,
+    @Body() body: { reason?: string } = {},
     @Req() req: Request,
   ) {
     const principal = (req as any).principal;
@@ -87,8 +101,27 @@ export class ComputerController {
       agentId,
       actorId: principal?.principalId ?? (req.headers['x-initiator'] as string),
       actorType: principal?.principalType ?? 'user',
+      reason: body.reason,
     });
-    return { data };
+    return {
+      data: this.computers.toPublicComputer(
+        data,
+        await this.computers.getConfig(agentId),
+      ),
+    };
+  }
+
+  @Post('computer/resize')
+  @RateLimit({ limit: 10, windowMs: 60_000, keyStrategy: 'user' })
+  async resizeAssignedComputer(
+    @Param('agentId') agentId: string,
+    @Body() body: Record<string, any>,
+  ) {
+    const config = await this.computers.updateConfig(agentId, body as any);
+    const computer = await this.computers.getAssignedComputer(agentId);
+    return {
+      data: this.computers.toPublicComputer(computer, config),
+    };
   }
 
   @Get('computer/files/read')
@@ -118,6 +151,17 @@ export class ComputerController {
       actorType: principal?.principalType ?? 'user',
     });
     return { data };
+  }
+
+  @Post('computer/exec')
+  @RateLimit({ limit: 30, windowMs: 60_000, keyStrategy: 'user' })
+  async execAssignedComputerCommand(
+    @Param('agentId') agentId: string,
+    @Body()
+    body: { command: string; cwd?: string; timeoutSeconds?: number },
+    @Req() req: Request,
+  ) {
+    return this.runAssignedComputerCommand(agentId, body, req);
   }
 
   @Post('computer/browser/open')

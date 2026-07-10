@@ -163,6 +163,36 @@ export class ComputerService {
     return created;
   }
 
+  toPublicConfig(config: ComputerConfig) {
+    return {
+      ...config,
+      persistence: 'persistent' as const,
+      autoWake: config.autoStart,
+      allowAgentUse: config.allowAgentStart,
+      resources: this.publicResources(config),
+    };
+  }
+
+  toPublicComputer(computer: ComputerInstance | null, config: ComputerConfig) {
+    if (!computer) return null;
+    const sleeping =
+      computer.desiredState === 'stopped' || computer.status === 'stopped';
+    return {
+      ...computer,
+      enabled: config.enabled,
+      persistence: 'persistent' as const,
+      desiredState: !config.enabled
+        ? ('disabled' as const)
+        : sleeping
+          ? ('sleeping' as const)
+          : ('running' as const),
+      status: sleeping ? ('sleeping' as const) : computer.status,
+      resources: this.publicResources(computer),
+      runtimeId: computer.commonOsAgentId,
+      sleptAt: computer.stoppedAt,
+    };
+  }
+
   async updateConfig(
     agentId: string,
     patch: Partial<typeof schema.agentComputerConfig.$inferInsert>,
@@ -182,12 +212,14 @@ export class ComputerService {
 
     const computer = await this.getAssignedComputer(agentId);
     if (computer) {
-      if (!updated.enabled && ACTIVE_STATUSES.includes(computer.status as ComputerStatus)) {
-        await this.stopComputer({
-          agentId,
-          computerId: computer.computerId,
-          actorType: 'service',
-        });
+      if (!updated.enabled) {
+        if (ACTIVE_STATUSES.includes(computer.status as ComputerStatus)) {
+          await this.stopComputer({
+            agentId,
+            computerId: computer.computerId,
+            actorType: 'service',
+          });
+        }
       } else {
         await this.applyConfigToComputer(computer, updated);
       }
@@ -277,22 +309,35 @@ export class ComputerService {
       },
     });
     let computer = await this.getAssignedComputer(args.agentId);
-    if (computer && ACTIVE_STATUSES.includes(computer.status as ComputerStatus)) {
-      await this.recordEvent({
-        computerId: computer.computerId,
-        agentId: args.agentId,
-        sessionId,
-        eventType: 'computer.attached',
-        actorId: args.actorId,
-        actorType: args.actorType,
-        summary: 'Persistent computer attached',
-        payload: { reason: args.reason },
-      });
+    if (
+      computer &&
+      ACTIVE_STATUSES.includes(computer.status as ComputerStatus)
+    ) {
       const refreshed = await this.refreshInstance(computer.computerId, {
         silent: true,
       }).catch(() => computer!);
-      this.emitComputerReady(args.runId, refreshed, args.toolCallId, 'Agent computer attached');
-      return refreshed;
+      if (ACTIVE_STATUSES.includes(refreshed.status as ComputerStatus)) {
+        await this.recordEvent({
+          computerId: computer.computerId,
+          agentId: args.agentId,
+          sessionId,
+          eventType: 'computer.attached',
+          actorId: args.actorId,
+          actorType: args.actorType,
+          summary: 'Persistent computer attached',
+          payload: { reason: args.reason },
+        });
+        this.emitComputerReady(
+          args.runId,
+          refreshed,
+          args.toolCallId,
+          'Agent computer attached',
+        );
+        return refreshed;
+      }
+      // The local row can lag an asynchronous pod failure. Continue into the
+      // wake path with the refreshed state so a failed runtime is replaceable.
+      computer = refreshed;
     }
 
     const now = new Date();
@@ -397,6 +442,8 @@ export class ComputerService {
           undefined,
           {
             desiredState: 'running',
+            resourceProfile: config.resourceProfile,
+            resourceMode: config.resourceMode,
             resources: this.commonOsResources(config),
           },
           args.agentId,
@@ -575,8 +622,7 @@ export class ComputerService {
         memoryRequest:
           commonOs.resources?.memoryRequest ?? computer.memoryRequest,
         memoryLimit: commonOs.resources?.memoryLimit ?? computer.memoryLimit,
-        storageLimit:
-          commonOs.resources?.storageLimit ?? computer.storageLimit,
+        storageLimit: commonOs.resources?.storageLimit ?? computer.storageLimit,
         gpuType: commonOs.resources?.gpuType ?? computer.gpuType,
         gpuCount: commonOs.resources?.gpuCount ?? computer.gpuCount,
         runtimeGeneration:
@@ -585,15 +631,15 @@ export class ComputerService {
           computer.runtimeGeneration,
         persistentVolumeId:
           commonOs.compute?.volumeId ?? computer.persistentVolumeId,
-        computeTenantId:
-          commonOs.compute?.tenantId ?? computer.computeTenantId,
+        computeTenantId: commonOs.compute?.tenantId ?? computer.computeTenantId,
         computeCellId: commonOs.compute?.cellId ?? computer.computeCellId,
         workspaceRoot: commonOs.workspace?.rootDir ?? computer.workspaceRoot,
         workspaceSnapshot:
           commonOs.workspace?.snapshot ?? computer.workspaceSnapshot,
         browser: commonOs.browser ?? computer.browser,
         startedAt:
-          commonOs.startedAt && !Number.isNaN(new Date(commonOs.startedAt).getTime())
+          commonOs.startedAt &&
+          !Number.isNaN(new Date(commonOs.startedAt).getTime())
             ? new Date(commonOs.startedAt)
             : computer.startedAt,
         errorMessage: commonOs.pod?.lastError ?? computer.errorMessage,
@@ -634,7 +680,9 @@ export class ComputerService {
       sessionId: args.sessionId,
     });
     if (!computer.commonOsAgentId) {
-      throw new BadRequestException('Computer is not linked to a CommonOS runtime');
+      throw new BadRequestException(
+        'Computer is not linked to a CommonOS runtime',
+      );
     }
     const path = normalizeWorkspacePath(args.path);
     const data = await this.commonOsComputerRequest<{ content?: string }>(
@@ -666,9 +714,12 @@ export class ComputerService {
     const computer = await this.getInstance(args.agentId, args.computerId);
     this.assertComputerSessionCompatible(computer, args.sessionId);
     if (!computer.commonOsAgentId) {
-      throw new BadRequestException('Computer is not linked to a CommonOS runtime');
+      throw new BadRequestException(
+        'Computer is not linked to a CommonOS runtime',
+      );
     }
-    const agentCommonsSessionId = args.sessionId ?? computer.sessionId ?? undefined;
+    const agentCommonsSessionId =
+      args.sessionId ?? computer.sessionId ?? undefined;
     const commonOsSessionId =
       agentCommonsSessionId ?? (computer.metadata as any)?.commonOsSessionId;
     const progressId = uuidv4();
@@ -813,11 +864,15 @@ export class ComputerService {
       eventType: `${args.eventType}.result`,
       actorId: args.actorId,
       actorType: args.actorType,
-      summary: response.status === 'failed' ? 'Computer instruction failed' : 'Computer instruction completed',
+      summary:
+        response.status === 'failed'
+          ? 'Computer instruction failed'
+          : 'Computer instruction completed',
       payload: response,
     });
 
-    const failed = response.status === 'failed' || response.status === 'timeout';
+    const failed =
+      response.status === 'failed' || response.status === 'timeout';
     this.emitComputerToolProgress(args.runId, {
       toolName,
       stage,
@@ -926,7 +981,9 @@ export class ComputerService {
   }) {
     const config = await this.assertCapability(args.agentId, 'browser');
     if (config.networkAccess === 'disabled') {
-      throw new BadRequestException('Network access is disabled for this computer');
+      throw new BadRequestException(
+        'Network access is disabled for this computer',
+      );
     }
     const url = args.url.trim();
     if (!/^https?:\/\//i.test(url) && !/^http:\/\/localhost[:/]/i.test(url)) {
@@ -1159,6 +1216,8 @@ export class ComputerService {
         ownerUserId: args.agent.ownerUserId ?? args.agent.owner,
         workspaceId: args.agent.workspaceId,
         resources: this.commonOsResources(args.config),
+        resourceProfile: args.config.resourceProfile,
+        resourceMode: args.config.resourceMode,
         idleTtlMinutes: args.config.idleTtlMinutes,
         policy: {
           allowBrowser: args.config.allowBrowser,
@@ -1177,7 +1236,7 @@ export class ComputerService {
 
     const [updated] = await this.db
       .update(schema.agentComputerInstance)
-        .set({
+      .set({
         status: this.mapStatus(commonOsAgent.status),
         desiredState: commonOsAgent.desiredState ?? 'running',
         commonOsFleetId: null,
@@ -1192,8 +1251,7 @@ export class ComputerService {
             : null),
         resourceProfile:
           commonOsAgent.resources?.profile ?? args.config.resourceProfile,
-        resourceMode:
-          commonOsAgent.resources?.mode ?? args.config.resourceMode,
+        resourceMode: commonOsAgent.resources?.mode ?? args.config.resourceMode,
         cpuRequest:
           commonOsAgent.resources?.cpuRequest ?? args.config.cpuRequest,
         cpuLimit: commonOsAgent.resources?.cpuLimit ?? args.config.cpuLimit,
@@ -1223,7 +1281,9 @@ export class ComputerService {
           : new Date(),
         updatedAt: new Date(),
       })
-      .where(eq(schema.agentComputerInstance.computerId, args.computer.computerId))
+      .where(
+        eq(schema.agentComputerInstance.computerId, args.computer.computerId),
+      )
       .returning();
 
     await this.recordEvent({
@@ -1322,7 +1382,12 @@ export class ComputerService {
         'CommonOS fleet fallback is unavailable. Set COMMON_OS_FLEET_ID or deploy the CommonOS /computers API.',
       );
     }
-    return this.commonOsRequest<T>(method, legacyFleetPath, body, agentCommonsId);
+    return this.commonOsRequest<T>(
+      method,
+      legacyFleetPath,
+      body,
+      agentCommonsId,
+    );
   }
 
   private async commonOsRequest<T>(
@@ -1349,9 +1414,10 @@ export class ComputerService {
       body: body !== undefined ? JSON.stringify(body) : undefined,
     });
     if (!response.ok) {
-      const payload = (await response.json().catch(() => null)) as
-        | { error?: string; message?: string }
-        | null;
+      const payload = (await response.json().catch(() => null)) as {
+        error?: string;
+        message?: string;
+      } | null;
       throw new Error(
         payload?.error ||
           payload?.message ||
@@ -1419,7 +1485,8 @@ export class ComputerService {
       throw new BadRequestException('sessionId must be a valid UUID');
     }
     const session = await this.db.query.session.findFirst({
-      where: (t) => and(eq(t.sessionId, sessionId as any), eq(t.agentId, agentId)),
+      where: (t) =>
+        and(eq(t.sessionId, sessionId as any), eq(t.agentId, agentId)),
     });
     if (!session) {
       throw new BadRequestException(
@@ -1432,6 +1499,15 @@ export class ComputerService {
     patch: Partial<typeof schema.agentComputerConfig.$inferInsert>,
     current?: ComputerConfig,
   ) {
+    const source: Record<string, any> = {
+      ...(patch as Record<string, any>),
+      ...((patch as any).autoWake !== undefined
+        ? { autoStart: Boolean((patch as any).autoWake) }
+        : {}),
+      ...((patch as any).allowAgentUse !== undefined
+        ? { allowAgentStart: Boolean((patch as any).allowAgentUse) }
+        : {}),
+    };
     const normalized: Record<string, any> = {};
     const allowed = [
       'enabled',
@@ -1457,7 +1533,7 @@ export class ComputerService {
       'metadata',
     ];
     for (const key of allowed) {
-      if ((patch as any)[key] !== undefined) normalized[key] = (patch as any)[key];
+      if (source[key] !== undefined) normalized[key] = source[key];
     }
 
     normalized.defaultMode = 'persistent';
@@ -1479,18 +1555,70 @@ export class ComputerService {
       );
     }
 
+    const resources = (patch as any).resources as
+      | {
+          vcpu?: number;
+          memoryGiB?: number;
+          storageGiB?: number;
+          gpu?: { count?: number; type?: string } | null;
+        }
+      | undefined;
+    if (resources) {
+      if (resources.vcpu !== undefined) {
+        const value = Number(resources.vcpu);
+        if (!Number.isFinite(value) || value <= 0 || value > 32) {
+          throw new BadRequestException(
+            'resources.vcpu must be between 0 and 32',
+          );
+        }
+        normalized.cpuLimit = String(value);
+      }
+      if (resources.memoryGiB !== undefined) {
+        const value = Number(resources.memoryGiB);
+        if (!Number.isFinite(value) || value <= 0 || value > 128) {
+          throw new BadRequestException(
+            'resources.memoryGiB must be between 0 and 128',
+          );
+        }
+        normalized.memoryLimit = `${value}Gi`;
+      }
+      if (resources.storageGiB !== undefined) {
+        const value = Number(resources.storageGiB);
+        if (!Number.isFinite(value) || value < 10 || value > 2048) {
+          throw new BadRequestException(
+            'resources.storageGiB must be between 10 and 2048',
+          );
+        }
+        normalized.storageLimit = `${value}Gi`;
+      }
+      if (resources.gpu !== undefined) {
+        const count = resources.gpu ? Number(resources.gpu.count ?? 1) : 0;
+        if (!Number.isInteger(count) || count < 0 || count > 8) {
+          throw new BadRequestException(
+            'resources.gpu.count must be an integer between 0 and 8',
+          );
+        }
+        normalized.gpuCount = count;
+        normalized.gpuType =
+          count > 0 ? (resources.gpu?.type ?? 'nvidia-l4') : null;
+      }
+    }
+
     if (normalized.resourceMode !== undefined) {
       normalized.resourceMode =
         normalized.resourceMode === 'fixed' ? 'fixed' : 'elastic';
     }
     if (normalized.resourceMode === 'fixed') {
       normalized.cpuRequest = normalized.cpuLimit ?? current?.cpuLimit;
-      normalized.memoryRequest =
-        normalized.memoryLimit ?? current?.memoryLimit;
+      normalized.memoryRequest = normalized.memoryLimit ?? current?.memoryLimit;
     }
 
     if (normalized.networkAccess !== undefined) {
-      if (!['standard', 'restricted', 'disabled'].includes(normalized.networkAccess)) {
+      if (
+        !['standard', 'restricted', 'disabled'].includes(
+          normalized.networkAccess,
+        )
+      ) {
         throw new BadRequestException(
           'networkAccess must be standard, restricted, or disabled',
         );
@@ -1528,16 +1656,63 @@ export class ComputerService {
 
   private commonOsResources(config: ComputerConfig) {
     return {
-      profile: config.resourceProfile as ComputerResourceProfile,
-      mode: config.resourceMode as ComputerResourceMode,
-      cpuRequest: config.cpuRequest,
-      cpuLimit: config.cpuLimit,
-      memoryRequest: config.memoryRequest,
-      memoryLimit: config.memoryLimit,
-      storageLimit: config.storageLimit,
-      gpuType: config.gpuType,
-      gpuCount: config.gpuCount,
+      vcpu: this.cpuCores(config.cpuLimit),
+      memoryGiB: this.gibibytes(config.memoryLimit),
+      storageGiB: this.gibibytes(config.storageLimit),
+      gpu:
+        Number(config.gpuCount ?? 0) > 0
+          ? {
+              count: Number(config.gpuCount),
+              ...(config.gpuType ? { type: config.gpuType } : {}),
+            }
+          : null,
     };
+  }
+
+  private publicResources(resource: {
+    cpuLimit?: string | null;
+    memoryLimit?: string | null;
+    storageLimit?: string | null;
+    gpuType?: string | null;
+    gpuCount?: number | null;
+  }) {
+    return {
+      vcpu: this.cpuCores(resource.cpuLimit),
+      memoryGiB: this.gibibytes(resource.memoryLimit),
+      storageGiB: this.gibibytes(resource.storageLimit),
+      gpu:
+        Number(resource.gpuCount ?? 0) > 0
+          ? {
+              count: Number(resource.gpuCount),
+              ...(resource.gpuType ? { type: resource.gpuType } : {}),
+            }
+          : null,
+    };
+  }
+
+  private cpuCores(value?: string | null) {
+    const text = String(value ?? '0').trim();
+    if (text.endsWith('m')) return Number(text.slice(0, -1)) / 1000;
+    const parsed = Number(text);
+    return Number.isFinite(parsed) ? parsed : 0;
+  }
+
+  private gibibytes(value?: string | null) {
+    const match = String(value ?? '0')
+      .trim()
+      .match(/^(\d+(?:\.\d+)?)(Ki|Mi|Gi|Ti)?$/i);
+    if (!match) return 0;
+    const amount = Number(match[1]);
+    switch ((match[2] ?? 'Gi').toLowerCase()) {
+      case 'ki':
+        return amount / (1024 * 1024);
+      case 'mi':
+        return amount / 1024;
+      case 'ti':
+        return amount * 1024;
+      default:
+        return amount;
+    }
   }
 
   private async applyConfigToComputer(
@@ -1551,6 +1726,8 @@ export class ComputerService {
         `/computers/${computer.commonOsAgentId}`,
         undefined,
         {
+          resourceProfile: config.resourceProfile,
+          resourceMode: config.resourceMode,
           resources: this.commonOsResources(config),
           idleTtlMinutes: config.idleTtlMinutes,
           policy: {
@@ -1609,7 +1786,9 @@ export class ComputerService {
   }
 
   private storageGiB(value: string) {
-    const match = String(value).trim().match(/^(\d+(?:\.\d+)?)(Gi|Ti)$/i);
+    const match = String(value)
+      .trim()
+      .match(/^(\d+(?:\.\d+)?)(Gi|Ti)$/i);
     if (!match) {
       throw new BadRequestException('storageLimit must use Gi or Ti units');
     }
@@ -1663,9 +1842,7 @@ export class ComputerService {
     }
   }
 
-  private commonOsSystemPrompt(
-    agent: typeof schema.agent.$inferSelect,
-  ) {
+  private commonOsSystemPrompt(agent: typeof schema.agent.$inferSelect) {
     return [
       `You are the CommonOS computer runtime for Agent Commons agent ${agent.name}.`,
       `Agent Commons ID: ${agent.agentId}`,
@@ -1713,7 +1890,11 @@ export class ComputerService {
   }
 
   private commonOsUseGeneralComputerApi() {
-    return process.env.COMMON_OS_COMPUTER_API !== 'legacy';
+    // The persistent singleton contract is the only supported provisioning
+    // path. Keep the old environment variable harmless during rolling secret
+    // updates; individual read/tool calls may still use their explicit legacy
+    // fallback while old CommonOS tasks drain.
+    return true;
   }
 
   private commonOsBasePath(apiUrl: string) {
@@ -1729,10 +1910,7 @@ function normalizeWorkspacePath(path: string) {
   if (!trimmed || trimmed.includes('\0')) {
     throw new BadRequestException('path is required');
   }
-  const parts = trimmed
-    .replace(/\\/g, '/')
-    .split('/')
-    .filter(Boolean);
+  const parts = trimmed.replace(/\\/g, '/').split('/').filter(Boolean);
   if (parts.some((part) => part === '.' || part === '..')) {
     throw new BadRequestException('path escapes workspace');
   }

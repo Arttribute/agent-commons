@@ -67,6 +67,7 @@ ENV NODE_ENV=production \
 RUN mkdir -p /tmp/.cache && chmod 777 /tmp/.cache
 
 COPY --from=build /deploy ./
+COPY --from=build /workspace/apps/commons-api/migrations ./migrations
 
 EXPOSE 8080
 
