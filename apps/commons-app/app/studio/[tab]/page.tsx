@@ -174,7 +174,7 @@ const StudioPage: NextPage = () => {
         return {
           title: "Tasks",
           description:
-            "Plan, filter, and run agent work from one focused queue.",
+            "Schedule one-off or recurring tasks for your agents to run automatically.",
         };
       case "workflows":
         return {
@@ -191,7 +191,7 @@ const StudioPage: NextPage = () => {
       default:
         return {
           title: "Agents",
-          description: "Manage your agents and open an agent workspace.",
+          description: "",
         };
     }
   }, [activeTab]);

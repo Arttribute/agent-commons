@@ -398,44 +398,65 @@ function SessionsView({
   onDeleteSession: (sessionId: string) => Promise<boolean>;
 }) {
   const { streamingTitleSessionId, streamingTitleText } = useAgentContext();
+  // Full-view swap: the list owns the whole section until a session is
+  // opened, then the chat takes over with a back button to return.
+  const [view, setView] = useState<"list" | "chat">("list");
+
+  const openSession = (sessionId: string) => {
+    setView("chat");
+    onSelectSession(sessionId);
+  };
+
+  if (view === "chat") {
+    return (
+      <div className="flex h-full min-h-0 flex-col overflow-hidden">
+        <div className="flex shrink-0 items-center gap-2 px-3 py-2">
+          <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0" onClick={() => setView("list")} aria-label="Back to sessions">
+            <ArrowLeft className="h-4 w-4" />
+          </Button>
+          <p className="min-w-0 truncate text-sm font-medium">{selectedSession?.title || "Session"}</p>
+        </div>
+        <div className="min-h-0 flex-1 overflow-hidden">
+          {selectedSession ? (
+            <SessionInterface agent={agent} session={selectedSession} agentId={agent.agentId} sessionId={selectedSession.sessionId} userId={userAddress} height="100%" isLoadingSession={loadingSession} />
+          ) : (
+            <div className="flex h-full items-center justify-center">
+              <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
 
   return (
-    <div className="grid h-full min-h-0 grid-cols-[320px_minmax(0,1fr)] overflow-hidden">
-      <aside className="flex min-h-0 flex-col overflow-hidden border-r border-border bg-muted/15">
-        <div className="shrink-0 border-b border-border/70 p-3">
-          <div className="flex items-center justify-between gap-2">
-            <h2 className="text-sm font-medium">Sessions</h2>
-            <Button size="sm" variant="outline" className="h-8 gap-1.5" onClick={onCreateSession}>
-              <Plus className="h-3.5 w-3.5" />
-              New
-            </Button>
-          </div>
-          <div className="mt-3">
-            <SearchTrigger />
-          </div>
+    <div className="flex h-full min-h-0 flex-col overflow-hidden">
+      <div className="shrink-0 px-5 pb-3 pt-4">
+        <div className="flex items-center justify-between gap-3">
+          <h2 className="text-sm font-medium">Sessions</h2>
+          <Button size="sm" variant="outline" className="h-8 gap-1.5" onClick={onCreateSession}>
+            <Plus className="h-3.5 w-3.5" />
+            New
+          </Button>
         </div>
-        <ScrollArea className="min-h-0 flex-1">
-          <div className="p-2">
-            <SessionsList
-              sessions={sessions}
-              currentSessionId={selectedSession?.sessionId}
-              onSelect={onSelectSession}
-              onRename={onRenameSession}
-              onDelete={onDeleteSession}
-              streamingTitleSessionId={streamingTitleSessionId}
-              streamingTitleText={streamingTitleText}
-              emptyLabel="No sessions found."
-            />
-          </div>
-        </ScrollArea>
-      </aside>
-      <div className="min-h-0 overflow-hidden">
-        {selectedSession ? (
-          <SessionInterface agent={agent} session={selectedSession} agentId={agent.agentId} sessionId={selectedSession.sessionId} userId={userAddress} height="100%" isLoadingSession={loadingSession} />
-        ) : (
-          <div className="flex h-full items-center justify-center text-sm text-muted-foreground">Select a session to view its conversation.</div>
-        )}
+        <div className="mt-3 max-w-md">
+          <SearchTrigger />
+        </div>
       </div>
+      <ScrollArea className="min-h-0 flex-1">
+        <div className="mx-auto max-w-3xl px-5 pb-6">
+          <SessionsList
+            sessions={sessions}
+            currentSessionId={selectedSession?.sessionId}
+            onSelect={openSession}
+            onRename={onRenameSession}
+            onDelete={onDeleteSession}
+            streamingTitleSessionId={streamingTitleSessionId}
+            streamingTitleText={streamingTitleText}
+            emptyLabel="No sessions found."
+          />
+        </div>
+      </ScrollArea>
     </div>
   );
 }

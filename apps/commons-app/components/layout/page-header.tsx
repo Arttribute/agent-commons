@@ -21,8 +21,8 @@ export function PageTitle({
   className?: string;
 }) {
   return (
-    <h1 className={cn("text-xl font-semibold tracking-tight", className)}>
-      <span className="inline-block rounded-md bg-teal-200 px-2.5 py-1 leading-none text-neutral-900">
+    <h1 className={cn("text-lg font-semibold tracking-tight", className)}>
+      <span className="inline-block rounded-md bg-teal-200 px-2 py-1 leading-none text-neutral-900">
         {title}
       </span>
     </h1>
