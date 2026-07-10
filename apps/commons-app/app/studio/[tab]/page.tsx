@@ -12,7 +12,7 @@ import { TaskManagementView } from "@/components/tasks/task-management-view";
 import { SkillsMarketplaceView } from "@/components/skills/skills-marketplace-view";
 import { Loader2 } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
-import { Button } from "@/components/ui/button";
+import { CreateButton, PageHeader } from "@/components/layout/page-header";
 import { useRouter } from "next/navigation";
 import { useAgents } from "@/hooks/use-agents";
 import { normalizePrincipalId } from "@/lib/principal-id";
@@ -26,16 +26,21 @@ const StudioPage: NextPage = () => {
 
   const activeTab = (tab as string) || pathname?.split("/")[2] || "agents";
 
-  const [showCreateWorkflowDialog, setShowCreateWorkflowDialog] = useState(false);
+  const [showCreateWorkflowDialog, setShowCreateWorkflowDialog] =
+    useState(false);
   const skillCreateRef = useRef<(() => void) | null>(null);
-  const registerSkillCreate = useCallback((fn: () => void) => { skillCreateRef.current = fn; }, []);
+  const registerSkillCreate = useCallback((fn: () => void) => {
+    skillCreateRef.current = fn;
+  }, []);
   const taskCreateRef = useRef<(() => void) | null>(null);
-  const registerTaskCreate = useCallback((fn: () => void) => { taskCreateRef.current = fn; }, []);
+  const registerTaskCreate = useCallback((fn: () => void) => {
+    taskCreateRef.current = fn;
+  }, []);
   // The launcher's footprint, so the floating agents can keep clear of it.
   const composerRef = useRef<HTMLDivElement>(null);
 
   const { agents, loading: loadingAgents } = useAgents(
-    activeTab === "agents" ? userAddress : undefined
+    activeTab === "agents" ? userAddress : undefined,
   );
 
   const mainContent = useMemo(() => {
@@ -49,7 +54,10 @@ const StudioPage: NextPage = () => {
       case "tasks":
         return (
           <div className="h-full">
-            <TaskManagementView userAddress={userAddress} onRegisterCreate={registerTaskCreate} />
+            <TaskManagementView
+              userAddress={userAddress}
+              onRegisterCreate={registerTaskCreate}
+            />
           </div>
         );
       case "workflows":
@@ -61,7 +69,10 @@ const StudioPage: NextPage = () => {
       case "skills":
         return (
           <div className="p-4 sm:p-6">
-            <SkillsMarketplaceView userAddress={userAddress} onRegisterCreate={registerSkillCreate} />
+            <SkillsMarketplaceView
+              userAddress={userAddress}
+              onRegisterCreate={registerSkillCreate}
+            />
           </div>
         );
       // Only the real /studio/agents route mounts the launcher — it depends on
@@ -84,7 +95,10 @@ const StudioPage: NextPage = () => {
                       the time the showcase measures it to route avatars clear.
                       z-index (not DOM order) keeps the composer above them. */}
                   <div className="pointer-events-none absolute inset-0 z-20 flex items-center justify-center px-4">
-                    <div ref={composerRef} className="pointer-events-auto w-full max-w-2xl">
+                    <div
+                      ref={composerRef}
+                      className="pointer-events-auto w-full max-w-2xl"
+                    >
                       <div className="mb-3 text-center">
                         <h2 className="text-lg font-semibold tracking-tight">
                           Start a session
@@ -125,15 +139,27 @@ const StudioPage: NextPage = () => {
           </div>
         );
     }
-  }, [activeTab, loadingAgents, agents, userAddress, registerSkillCreate, registerTaskCreate]);
+  }, [
+    activeTab,
+    loadingAgents,
+    agents,
+    userAddress,
+    registerSkillCreate,
+    registerTaskCreate,
+  ]);
 
   const createLabel = useMemo(() => {
     switch (activeTab) {
-      case "tools":     return "Create Tool";
-      case "tasks":     return "Create Task";
-      case "workflows": return "Create Workflow";
-      case "skills":    return "Create Skill";
-      default:          return "Create Agent";
+      case "tools":
+        return "Create new tool";
+      case "tasks":
+        return "Create new task";
+      case "workflows":
+        return "Create new workflow";
+      case "skills":
+        return "Create new skill";
+      default:
+        return "Create new agent";
     }
   }, [activeTab]);
 
@@ -147,7 +173,8 @@ const StudioPage: NextPage = () => {
       case "tasks":
         return {
           title: "Tasks",
-          description: "Plan, filter, and run agent work from one focused queue.",
+          description:
+            "Plan, filter, and run agent work from one focused queue.",
         };
       case "workflows":
         return {
@@ -157,7 +184,8 @@ const StudioPage: NextPage = () => {
       case "skills":
         return {
           title: "Skills",
-          description: "Browse platform skills or create modular capabilities for your agents.",
+          description:
+            "Browse platform skills or create modular capabilities for your agents.",
         };
       case "agents":
       default:
@@ -184,17 +212,9 @@ const StudioPage: NextPage = () => {
 
   return (
     <div className="flex h-full min-w-0 flex-col bg-background">
-      <div className="flex items-center justify-between gap-4 border-b border-border/70 bg-background px-5 py-3">
-        <div className="min-w-0">
-          <h1 className="text-lg font-semibold tracking-tight">{pageCopy.title}</h1>
-          <p className="mt-0.5 truncate text-xs text-muted-foreground">
-            {pageCopy.description}
-          </p>
-        </div>
-        <Button size="sm" onClick={handleCreateClick}>
-          {createLabel}
-        </Button>
-      </div>
+      <PageHeader title={pageCopy.title} description={pageCopy.description}>
+        <CreateButton label={createLabel} onClick={handleCreateClick} />
+      </PageHeader>
 
       <div className="min-h-0 flex-1 overflow-y-auto">{mainContent}</div>
 

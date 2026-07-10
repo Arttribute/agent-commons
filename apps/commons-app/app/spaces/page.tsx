@@ -6,7 +6,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useSpaces } from "@/hooks/spaces/use-spaces";
 // Create form moved to its own page
 import { SpacesList } from "@/components/spaces/spaces-list";
-import { Button } from "@/components/ui/button";
+import { CreateButton, PageTitle } from "@/components/layout/page-header";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 
@@ -23,12 +23,16 @@ export default function SpacesPage() {
     async function load() {
       if (!humanId) return;
       try {
-        const res = await fetch(`/api/agents?ownerId=${encodeURIComponent(humanId)}`);
+        const res = await fetch(
+          `/api/agents?ownerId=${encodeURIComponent(humanId)}`,
+        );
         const json = await res.json();
         if (!cancelled) {
           const list = json.data || [];
           setAgentIds(
-            Array.isArray(list) ? list.map((a: any) => a.agentId).filter(Boolean) : []
+            Array.isArray(list)
+              ? list.map((a: any) => a.agentId).filter(Boolean)
+              : [],
           );
         }
       } catch {}
@@ -58,15 +62,12 @@ export default function SpacesPage() {
           <div className="w-full p-4 space-y-6 overflow-y-auto">
             <div className="flex items-center justify-between px-4 pt-4">
               <div>
-                <div className="">
-                  <div className="bg-teal-200 w-20 h-8 -mb-8 rounded-lg"></div>
-                  <h2 className="text-2xl font-semibold"> Spaces</h2>
-                </div>
-                <p className="text-xs text-muted-foreground mt-1">
+                <PageTitle title="Spaces" />
+                <p className="text-sm text-muted-foreground mt-1.5">
                   Spaces you are in (you + {ownedAgentCount} agents).
                 </p>
               </div>
-              <div className="flex items-center gap-4">
+              <div className="flex items-center gap-3">
                 <div className="flex-1 max-w-xs">
                   <Input
                     value={search}
@@ -74,22 +75,20 @@ export default function SpacesPage() {
                     placeholder="Search spaces..."
                   />
                 </div>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className="border border-border font-semibold px-6"
+                <CreateButton
+                  label="Create new space"
                   onClick={() => {
                     window.open("/spaces/create", "_self");
                   }}
-                >
-                  New Space
-                </Button>
+                />
               </div>
             </div>
 
             <ScrollArea className="space-y-4 p-4 h-[72vh]">
               {loading && (
-                <div className="text-xs text-muted-foreground">Loading spaces...</div>
+                <div className="text-xs text-muted-foreground">
+                  Loading spaces...
+                </div>
               )}
               {error && <div className="text-xs text-red-500">{error}</div>}
               <SpacesList

@@ -3,6 +3,7 @@
 import { DashboardSideBar } from "@/components/layout/dashboard-side-bar";
 import { useAuth } from "@/context/AuthContext";
 import { normalizePrincipalId } from "@/lib/principal-id";
+import { PageHeader } from "@/components/layout/page-header";
 import { LibraryBig } from "lucide-react";
 
 export default function LibraryPage() {
@@ -15,12 +16,10 @@ export default function LibraryPage() {
         <DashboardSideBar username={userAddress} />
 
         <div className="flex-1 min-w-0 overflow-y-auto">
-          <div className="px-6 py-4 border-b border-border/60 bg-background">
-            <h1 className="text-xl font-semibold tracking-tight">Library</h1>
-            <p className="text-sm text-muted-foreground mt-0.5">
-              Files, documents, and collections connected to your account.
-            </p>
-          </div>
+          <PageHeader
+            title="Library"
+            description="Files, documents, and collections connected to your account."
+          />
 
           <div className="px-6 py-4">
             <div className="flex flex-col items-center justify-center gap-3 rounded-lg border border-dashed border-border py-16 text-center">
