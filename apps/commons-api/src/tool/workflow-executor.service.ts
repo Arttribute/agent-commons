@@ -913,10 +913,12 @@ export class WorkflowExecutorService {
       }
     }
 
-    const url = new URL(`${baseUrl}${this.replaceTemplate(path, parsedArgs)}`);
+    const url = new URL(`${baseUrl}${this.replaceTemplate(path, parsedArgs, { encode: true })}`);
     if (queryParams) {
       for (const [k, v] of Object.entries(queryParams)) {
-        const value = this.replaceTemplate(v, parsedArgs);
+        // Substitute raw: URLSearchParams encodes values itself, and encoding
+        // twice mangles RFC3339 timestamps and other reserved characters.
+        const value = this.replaceTemplate(v, parsedArgs, { encode: false });
         if (value !== '') url.searchParams.set(k, value);
       }
     }
@@ -930,7 +932,13 @@ export class WorkflowExecutorService {
       headers: headers ?? {},
       body: requestBody ? JSON.stringify(requestBody) : undefined,
     });
-    if (!response.ok) throw new Error(`Dynamic API error: ${response.status} ${response.statusText}`);
+    if (!response.ok) {
+      const detail = await response.text().then(
+        (t) => t.slice(0, 500) || response.statusText,
+        () => response.statusText,
+      );
+      throw new Error(`Dynamic API error: ${response.status} ${detail}`);
+    }
     return await response.json();
   }
 
@@ -946,12 +954,17 @@ export class WorkflowExecutorService {
     }
   }
 
-  private replaceTemplate(template: string, args: Record<string, any>): string {
+  private replaceTemplate(
+    template: string,
+    args: Record<string, any>,
+    options: { encode: boolean } = { encode: true },
+  ): string {
     return template.replace(/\{([^}]+)\}/g, (_match, key) => {
       const value = args[key];
-      return value === undefined || value === null
-        ? ''
-        : encodeURIComponent(String(value));
+      if (value === undefined || value === null) return '';
+      return options.encode
+        ? encodeURIComponent(String(value))
+        : String(value);
     });
   }
 

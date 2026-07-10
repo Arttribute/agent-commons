@@ -9,6 +9,7 @@ import { loginCommand, logoutCommand, whoamiCommand, configCommand } from './com
 import { agentsCommand } from './commands/agents.js';
 import { sessionsCommand } from './commands/sessions.js';
 import { toolsCommand } from './commands/tools.js';
+import { connectionsCommand } from './commands/connections.js';
 import { workflowCommand } from './commands/workflow.js';
 import { taskCommand } from './commands/task.js';
 import { runCommand } from './commands/run.js';
@@ -20,6 +21,7 @@ import { modelsCommand } from './commands/models.js';
 import { memoryCommand } from './commands/memory.js';
 import { usageCommand } from './commands/usage.js';
 import { logsCommand } from './commands/logs.js';
+import { computerCommand } from './commands/computer.js';
 import { banner, select, spin, c, sym } from './ui.js';
 import { loadConfig, saveConfig, makeClient, ensureAccessToken } from './config.js';
 
@@ -49,13 +51,14 @@ async function interactiveMenu(): Promise<void> {
   );
 
   type MenuAction =
-    | 'chat' | 'run' | 'sessions' | 'agents'
+    | 'chat' | 'run' | 'computer' | 'sessions' | 'agents'
     | 'tasks' | 'workflows' | 'mcp' | 'skills'
     | 'wallet' | 'usage' | 'logs' | 'config' | 'exit';
 
   const action = await select<MenuAction>('What would you like to do?', [
     { label: 'Chat with an agent',         value: 'chat',      hint: 'agc chat' },
     { label: 'Run an agent (one-shot)',    value: 'run',       hint: 'agc run'  },
+    { label: 'Manage an agent cloud computer', value: 'computer', hint: 'agc computer status' },
     { label: 'View sessions',              value: 'sessions',  hint: 'agc sessions list' },
     { label: 'Manage agents',              value: 'agents',    hint: 'agc agents list'   },
     { label: 'Tasks',                      value: 'tasks',     hint: 'agc task list'     },
@@ -73,9 +76,12 @@ async function interactiveMenu(): Promise<void> {
     process.exit(0);
   }
 
-  // For commands that need an agent ID, pick one interactively if no default is set
-  const agentId = cfg.defaultAgentId ?? await pickAgentInteractively(action as 'chat' | 'run');
-  if ((action === 'chat' || action === 'run') && !agentId) return;
+  // For commands that need an agent ID, pick one interactively if no default is set.
+  const needsAgent = action === 'chat' || action === 'run' || action === 'computer';
+  const agentId = needsAgent
+    ? cfg.defaultAgentId ?? await pickAgentInteractively(action)
+    : undefined;
+  if (needsAgent && !agentId) return;
 
   // "run" needs a prompt typed before handing off to the subprocess
   if (action === 'run') {
@@ -88,6 +94,7 @@ async function interactiveMenu(): Promise<void> {
   const commandMap: Record<MenuAction, string[]> = {
     chat:      ['chat', '--agent', agentId!],
     run:       [],  // handled above
+    computer:  ['computer', 'status', '--agent', agentId!],
     sessions:  ['sessions', 'list'],
     agents:    ['agents', 'list'],
     tasks:     ['task', 'list'],
@@ -129,7 +136,7 @@ function runSubcommand(args: string[]): void {
  * or null if the user cancels or no agents are accessible.
  * If no agents exist yet, guides the user to create one.
  */
-async function pickAgentInteractively(action: 'chat' | 'run'): Promise<string | null> {
+async function pickAgentInteractively(action: 'chat' | 'run' | 'computer'): Promise<string | null> {
   const cfg = loadConfig();
   const spinner = spin('Fetching your agents…');
 
@@ -159,7 +166,9 @@ async function pickAgentInteractively(action: 'chat' | 'run'): Promise<string | 
 
   console.log();
   const agentId = await select<string>(
-    `Choose an agent to ${action} with:`,
+    action === 'computer'
+      ? 'Choose the agent whose cloud computer you want to manage:'
+      : `Choose an agent to ${action} with:`,
     agents.map((a: any) => ({
       label: a.name,
       value: a.agentId,
@@ -210,6 +219,7 @@ program.addCommand(configCommand());
 program.addCommand(agentsCommand());
 program.addCommand(sessionsCommand());
 program.addCommand(toolsCommand());
+program.addCommand(connectionsCommand());
 
 // Workflows
 program.addCommand(workflowCommand());
@@ -220,6 +230,9 @@ program.addCommand(taskCommand());
 // Convenience run / chat
 program.addCommand(runCommand());
 program.addCommand(chatCommand());
+
+// Persistent cloud computers
+program.addCommand(computerCommand());
 
 // MCP
 program.addCommand(mcpCommand());

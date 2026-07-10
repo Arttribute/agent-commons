@@ -94,6 +94,124 @@ describe('client.agents', () => {
   });
 });
 
+// ── persistent computer ──────────────────────────────────────────────────────
+
+describe('client.agents persistent computer', () => {
+  const computer = {
+    computerId: 'c1',
+    agentId: 'a1',
+    enabled: true,
+    persistence: 'persistent',
+    desiredState: 'running',
+    status: 'running',
+    resourceProfile: 'standard',
+    resourceMode: 'elastic',
+    resources: { vcpu: 2, memoryGiB: 4, storageGiB: 20 },
+    createdAt: '',
+    updatedAt: '',
+  };
+
+  it('computer config — GET and PUT /v1/agents/:id/computer/config', async () => {
+    const getFetch = makeFetch({ data: { agentId: 'a1', enabled: false } });
+    await makeClient(getFetch).agents.getComputerConfig('a1');
+    expect(getFetch.mock.calls[0][0]).toBe('http://api.test/v1/agents/a1/computer/config');
+    expect(getFetch.mock.calls[0][1].method).toBe('GET');
+
+    const putFetch = makeFetch({ data: { agentId: 'a1', enabled: true } });
+    await makeClient(putFetch).agents.updateComputerConfig('a1', {
+      enabled: true,
+      resourceProfile: 'standard',
+    });
+    expect(putFetch.mock.calls[0][0]).toBe('http://api.test/v1/agents/a1/computer/config');
+    expect(putFetch.mock.calls[0][1].method).toBe('PUT');
+    expect(JSON.parse(putFetch.mock.calls[0][1].body)).toEqual({
+      enabled: true,
+      resourceProfile: 'standard',
+    });
+  });
+
+  it('getComputer — GET /v1/agents/:id/computer', async () => {
+    const fetch = makeFetch({ data: computer });
+    await makeClient(fetch).agents.getComputer('a1');
+    expect(fetch.mock.calls[0][0]).toBe('http://api.test/v1/agents/a1/computer');
+    expect(fetch.mock.calls[0][1].method).toBe('GET');
+  });
+
+  it.each([
+    ['wakeComputer', 'wake'],
+    ['sleepComputer', 'sleep'],
+    ['restartComputer', 'restart'],
+  ] as const)('%s — POST /v1/agents/:id/computer/%s', async (method, action) => {
+    const fetch = makeFetch({ data: computer });
+    await makeClient(fetch).agents[method]('a1', { reason: 'test' });
+    const [url, opts] = fetch.mock.calls[0];
+    expect(url).toBe(`http://api.test/v1/agents/a1/computer/${action}`);
+    expect(opts.method).toBe('POST');
+    expect(JSON.parse(opts.body)).toEqual({ reason: 'test' });
+  });
+
+  it('resizeComputer — POST /v1/agents/:id/computer/resize', async () => {
+    const fetch = makeFetch({ data: computer });
+    await makeClient(fetch).agents.resizeComputer('a1', { resourceProfile: 'performance' });
+    const [url, opts] = fetch.mock.calls[0];
+    expect(url).toBe('http://api.test/v1/agents/a1/computer/resize');
+    expect(opts.method).toBe('POST');
+    expect(JSON.parse(opts.body)).toEqual({ resourceProfile: 'performance' });
+  });
+
+  it('execComputer — POST /v1/agents/:id/computer/exec', async () => {
+    const fetch = makeFetch({ data: { stdout: 'ok' } });
+    await makeClient(fetch).agents.execComputer('a1', { command: 'pwd', cwd: '/workspace' });
+    const [url, opts] = fetch.mock.calls[0];
+    expect(url).toBe('http://api.test/v1/agents/a1/computer/exec');
+    expect(opts.method).toBe('POST');
+    expect(JSON.parse(opts.body)).toEqual({ command: 'pwd', cwd: '/workspace' });
+  });
+
+  it('readComputerFile — GET singular encoded file path', async () => {
+    const fetch = makeFetch({ data: { path: '/a b', content: 'x' } });
+    await makeClient(fetch).agents.readComputerFile('a1', '/a b');
+    expect(fetch.mock.calls[0][0]).toBe(
+      'http://api.test/v1/agents/a1/computer/files/read?path=%2Fa%20b',
+    );
+  });
+
+  it('openComputerBrowser — POST singular browser path', async () => {
+    const fetch = makeFetch({ data: {} });
+    await makeClient(fetch).agents.openComputerBrowser('a1', { url: 'https://example.com' });
+    expect(fetch.mock.calls[0][0]).toBe(
+      'http://api.test/v1/agents/a1/computer/browser/open',
+    );
+  });
+
+  it('listComputerEvents — GET singular events path with limit', async () => {
+    const fetch = makeFetch({ data: [] });
+    await makeClient(fetch).agents.listComputerEvents('a1', 25);
+    expect(fetch.mock.calls[0][0]).toBe(
+      'http://api.test/v1/agents/a1/computer/events?limit=25',
+    );
+  });
+
+  it('deprecated plural helpers resolve through the singleton endpoints', async () => {
+    const listFetch = makeFetch({ data: computer });
+    const listed = await makeClient(listFetch).agents.listComputers('a1', { sessionId: 'ignored' });
+    expect(listFetch.mock.calls[0][0]).toBe('http://api.test/v1/agents/a1/computer');
+    expect(listed.data).toHaveLength(1);
+
+    const startFetch = makeFetch({ data: computer });
+    await makeClient(startFetch).agents.startComputer('a1', {
+      lifecycle: 'ephemeral',
+      reason: 'compatibility',
+    });
+    expect(startFetch.mock.calls[0][0]).toBe('http://api.test/v1/agents/a1/computer/wake');
+    expect(JSON.parse(startFetch.mock.calls[0][1].body)).toEqual({ reason: 'compatibility' });
+
+    const stopFetch = makeFetch({ data: computer });
+    await makeClient(stopFetch).agents.stopComputer('a1', 'legacy-id');
+    expect(stopFetch.mock.calls[0][0]).toBe('http://api.test/v1/agents/a1/computer/sleep');
+  });
+});
+
 // ── sessions ──────────────────────────────────────────────────────────────────
 
 describe('client.sessions', () => {

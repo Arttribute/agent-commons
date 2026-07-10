@@ -13,7 +13,6 @@ interface InitiatorMessageProps {
     }>;
     computerRequest?: {
       enabled: boolean;
-      lifecycle?: "persistent" | "ephemeral";
     };
   };
 }
@@ -29,10 +28,7 @@ export default function InitiatorMessage({ message, metadata }: InitiatorMessage
             {computerRequest && (
               <span className="flex max-w-full items-center gap-1.5 rounded-md bg-white/60 px-2 py-1 text-xs text-gray-800">
                 <Monitor className="h-3.5 w-3.5 shrink-0" />
-                <span>Agent computer</span>
-                <span className="shrink-0 text-gray-500">
-                  {computerRequest.lifecycle === "persistent" ? "Persistent" : "Ephemeral"}
-                </span>
+                <span>Agent&apos;s persistent computer</span>
               </span>
             )}
             {attachments.map((attachment) => (

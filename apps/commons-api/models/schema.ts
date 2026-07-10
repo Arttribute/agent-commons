@@ -154,7 +154,9 @@ export const agentComputerConfig = pgTable(
       .references(() => agent.agentId, { onDelete: 'cascade' }),
 
     enabled: pgBoolean('enabled').default(false).notNull(),
-    defaultMode: text('default_mode').default('ephemeral').notNull(),
+    // Kept for wire compatibility with pre-singleton clients. Agent computers
+    // are now always persistent; new code should not branch on this column.
+    defaultMode: text('default_mode').default('persistent').notNull(),
     autoStart: pgBoolean('auto_start').default(false).notNull(),
     allowAgentStart: pgBoolean('allow_agent_start').default(true).notNull(),
     allowUserSelect: pgBoolean('allow_user_select').default(true).notNull(),
@@ -167,18 +169,25 @@ export const agentComputerConfig = pgTable(
       .default(1)
       .notNull(),
     maxEphemeralComputers: integer('max_ephemeral_computers')
-      .default(2)
+      .default(0)
       .notNull(),
     maxConcurrentComputers: integer('max_concurrent_computers')
-      .default(2)
+      .default(1)
       .notNull(),
     idleTtlMinutes: integer('idle_ttl_minutes').default(60).notNull(),
     sessionTtlMinutes: integer('session_ttl_minutes').default(180).notNull(),
 
     image: text('image'),
+    resourceProfile: text('resource_profile').default('standard').notNull(),
+    resourceMode: text('resource_mode').default('elastic').notNull(),
+    cpuRequest: text('cpu_request').default('500m'),
     cpuLimit: text('cpu_limit').default('2'),
+    memoryRequest: text('memory_request').default('1Gi'),
     memoryLimit: text('memory_limit').default('4Gi'),
-    storageLimit: text('storage_limit').default('5Gi'),
+    storageLimit: text('storage_limit').default('20Gi'),
+    gpuType: text('gpu_type'),
+    gpuCount: integer('gpu_count').default(0).notNull(),
+    billingMode: text('billing_mode').default('tier').notNull(),
     region: text('region'),
     provider: text('provider').default('commonos').notNull(),
 
@@ -215,8 +224,10 @@ export const agentComputerInstance = pgTable(
     ownerUserId: text('owner_user_id'),
     workspaceId: text('workspace_id'),
     name: text('name').notNull(),
-    lifecycle: text('lifecycle').default('ephemeral').notNull(),
+    lifecycle: text('lifecycle').default('persistent').notNull(),
+    canonical: pgBoolean('canonical').default(false).notNull(),
     status: text('status').default('provisioning').notNull(),
+    desiredState: text('desired_state').default('running').notNull(),
 
     provider: text('provider').default('commonos').notNull(),
     cloudProvider: text('cloud_provider'),
@@ -227,9 +238,19 @@ export const agentComputerInstance = pgTable(
     commonOsAgentId: text('common_os_agent_id'),
 
     image: text('image'),
+    resourceProfile: text('resource_profile').default('standard').notNull(),
+    resourceMode: text('resource_mode').default('elastic').notNull(),
+    cpuRequest: text('cpu_request'),
     cpuLimit: text('cpu_limit'),
+    memoryRequest: text('memory_request'),
     memoryLimit: text('memory_limit'),
     storageLimit: text('storage_limit'),
+    gpuType: text('gpu_type'),
+    gpuCount: integer('gpu_count').default(0).notNull(),
+    runtimeGeneration: integer('runtime_generation').default(0).notNull(),
+    persistentVolumeId: text('persistent_volume_id'),
+    computeTenantId: text('compute_tenant_id'),
+    computeCellId: text('compute_cell_id'),
     workspaceRoot: text('workspace_root').default('/mnt/shared'),
     workspaceSnapshot: text('workspace_snapshot'),
 
@@ -275,6 +296,9 @@ export const agentComputerInstance = pgTable(
     commonOsIdx: index('idx_agent_computer_instance_commonos').on(
       table.commonOsAgentId,
     ),
+    canonicalIdx: uniqueIndex('idx_agent_computer_instance_canonical')
+      .on(table.agentId)
+      .where(sql`${table.canonical} = true`),
   }),
 );
 

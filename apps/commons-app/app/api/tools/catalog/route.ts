@@ -51,6 +51,7 @@ export async function GET() {
     connections,
     staticTools,
     userTools,
+    platformTools,
     mcpServers,
     agents,
     workflows,
@@ -59,6 +60,7 @@ export async function GET() {
     fetchJson(`/v1/oauth/connections?${ownerQuery}`, headers),
     fetchJson("/v1/tools/static", headers),
     fetchJson(`/v1/tools?${ownerToolQuery}`, headers),
+    fetchJson("/v1/tools?visibility=platform", headers),
     fetchJson(`/v1/mcp/servers?${ownerQuery}`, headers),
     fetchJson(`/v1/agents?owner=${encodeURIComponent(user.userId)}`, headers),
     fetchJson(`/v1/workflows?${ownerQuery}`, headers),
@@ -69,6 +71,7 @@ export async function GET() {
     connections: asList(connections, ["connections", "data"]),
     staticTools: asList(staticTools, ["data", "tools"]),
     userTools: asList(userTools, ["data", "tools"]),
+    platformTools: asList(platformTools, ["data", "tools"]),
     mcpServers: asList(mcpServers, ["servers", "data"]),
     agents: asList(agents, ["data", "agents"]).map((agent: any) => ({
       ...agent,

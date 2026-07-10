@@ -84,21 +84,60 @@ var CommonsClient = class {
       // ── Computers ────────────────────────────────────────────────────────
       getComputerConfig: (agentId) => this.request("GET", `/v1/agents/${agentId}/computer/config`),
       updateComputerConfig: (agentId, params) => this.request("PUT", `/v1/agents/${agentId}/computer/config`, params),
-      listComputers: (agentId, filter) => {
-        const qs = new URLSearchParams();
-        if (filter?.sessionId) qs.set("sessionId", filter.sessionId);
-        if (filter?.includeTerminated) qs.set("includeTerminated", "true");
-        const query = qs.toString();
-        return this.request("GET", `/v1/agents/${agentId}/computers${query ? `?${query}` : ""}`);
+      /** Get the agent's one persistent cloud computer. */
+      getComputer: (agentId, _legacyComputerId) => this.request("GET", `/v1/agents/${agentId}/computer`),
+      /** Wake the agent's persistent cloud computer, provisioning it if needed. */
+      wakeComputer: (agentId, params) => this.request("POST", `/v1/agents/${agentId}/computer/wake`, params),
+      /** Sleep the runtime while preserving the computer's durable workspace. */
+      sleepComputer: (agentId, params) => this.request("POST", `/v1/agents/${agentId}/computer/sleep`, params),
+      /** Replace the runtime without replacing the persistent computer. */
+      restartComputer: (agentId, params) => this.request("POST", `/v1/agents/${agentId}/computer/restart`, params),
+      resizeComputer: (agentId, params) => this.request("POST", `/v1/agents/${agentId}/computer/resize`, params),
+      execComputer: (agentId, params) => this.request("POST", `/v1/agents/${agentId}/computer/exec`, params),
+      readComputerFile: (agentId, pathOrLegacyComputerId, legacyPath) => {
+        const path = legacyPath ?? pathOrLegacyComputerId;
+        return this.request(
+          "GET",
+          `/v1/agents/${agentId}/computer/files/read?path=${encodeURIComponent(path)}`
+        );
       },
-      startComputer: (agentId, params) => this.request("POST", `/v1/agents/${agentId}/computers`, params),
-      getComputer: (agentId, computerId) => this.request("GET", `/v1/agents/${agentId}/computers/${computerId}`),
-      refreshComputer: (agentId, computerId) => this.request("POST", `/v1/agents/${agentId}/computers/${computerId}/refresh`),
-      stopComputer: (agentId, computerId) => this.request("POST", `/v1/agents/${agentId}/computers/${computerId}/stop`),
-      readComputerFile: (agentId, computerId, path) => this.request("GET", `/v1/agents/${agentId}/computers/${computerId}/files/read?path=${encodeURIComponent(path)}`),
-      runComputerCommand: (agentId, computerId, params) => this.request("POST", `/v1/agents/${agentId}/computers/${computerId}/commands`, params),
-      openComputerBrowser: (agentId, computerId, params) => this.request("POST", `/v1/agents/${agentId}/computers/${computerId}/browser/open`, params),
-      listComputerEvents: (agentId, computerId, limit) => this.request("GET", `/v1/agents/${agentId}/computers/${computerId}/events${limit ? `?limit=${limit}` : ""}`),
+      openComputerBrowser: (agentId, paramsOrLegacyComputerId, legacyParams) => {
+        const params = typeof paramsOrLegacyComputerId === "string" ? legacyParams : paramsOrLegacyComputerId;
+        if (!params) {
+          return Promise.reject(new TypeError("Browser options are required."));
+        }
+        return this.request("POST", `/v1/agents/${agentId}/computer/browser/open`, params);
+      },
+      listComputerEvents: (agentId, limitOrLegacyComputerId, legacyLimit) => {
+        const limit = typeof limitOrLegacyComputerId === "number" ? limitOrLegacyComputerId : legacyLimit;
+        return this.request(
+          "GET",
+          `/v1/agents/${agentId}/computer/events${limit ? `?limit=${limit}` : ""}`
+        );
+      },
+      // ── Deprecated per-instance compatibility ────────────────────────────
+      /** @deprecated Use getComputer. The singleton is returned as a one-item list. */
+      listComputers: (agentId, _filter) => {
+        return this.request("GET", `/v1/agents/${agentId}/computer`).then(({ data }) => ({ data: data ? [data] : [] }));
+      },
+      /** @deprecated Use wakeComputer. Lifecycle, name, and session are ignored. */
+      startComputer: (agentId, params) => this.request(
+        "POST",
+        `/v1/agents/${agentId}/computer/wake`,
+        params?.reason ? { reason: params.reason } : void 0
+      ),
+      /** @deprecated Use getComputer. Computer IDs are ignored. */
+      refreshComputer: (agentId, _computerId) => this.request("GET", `/v1/agents/${agentId}/computer`),
+      /** @deprecated Use sleepComputer. Computer IDs are ignored. */
+      stopComputer: (agentId, _computerId) => this.request("POST", `/v1/agents/${agentId}/computer/sleep`),
+      /** @deprecated Use execComputer. Computer IDs are ignored. */
+      runComputerCommand: (agentId, paramsOrLegacyComputerId, legacyParams) => {
+        const params = typeof paramsOrLegacyComputerId === "string" ? legacyParams : paramsOrLegacyComputerId;
+        if (!params) {
+          return Promise.reject(new TypeError("Command options are required."));
+        }
+        return this.request("POST", `/v1/agents/${agentId}/computer/exec`, params);
+      },
       // ── TTS Voices ───────────────────────────────────────────────────────
       /**
        * List available TTS voices for a provider.
@@ -187,6 +226,34 @@ var CommonsClient = class {
       delete: (toolId) => this.request("DELETE", `/v1/tools/${toolId}`),
       /** List built-in static tools available to all agents. */
       listStatic: () => this.request("GET", "/v1/tools/static")
+    };
+  }
+  // ── OAuth Connections ─────────────────────────────────────────────────────
+  get oauth() {
+    return {
+      /** List OAuth providers available on the platform (Google Workspace, GitHub, …). */
+      listProviders: () => this.request("GET", "/v1/oauth/providers"),
+      /** Get one provider's details, including its scope groups. */
+      getProvider: (providerKey) => this.request("GET", `/v1/oauth/providers/${encodeURIComponent(providerKey)}`),
+      /**
+       * List the caller's OAuth connections (the accounts agents act with).
+       * `ownerId` is only needed when authenticating with a management key.
+       */
+      listConnections: (params) => {
+        const q = params ? new URLSearchParams(params).toString() : "";
+        return this.request("GET", `/v1/oauth/connections${q ? `?${q}` : ""}`);
+      },
+      /**
+       * Start an OAuth connect flow. Returns the authorization URL the user
+       * must open in a browser to grant access.
+       */
+      connect: (params) => this.request("POST", "/v1/oauth/connect", params),
+      /** Refresh a connection's access token now. */
+      refresh: (connectionId) => this.request("POST", `/v1/oauth/connections/${connectionId}/refresh`),
+      /** Check whether a connection's token is valid. */
+      test: (connectionId) => this.request("GET", `/v1/oauth/connections/${connectionId}/test`),
+      /** Revoke a connection and delete its tokens. */
+      revoke: (connectionId) => this.request("DELETE", `/v1/oauth/connections/${connectionId}`)
     };
   }
   // ── Tool Keys ─────────────────────────────────────────────────────────────

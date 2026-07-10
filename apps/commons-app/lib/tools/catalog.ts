@@ -79,6 +79,11 @@ export interface ToolCatalogItem {
   connectUrl?: string;
   mcpTemplate?: McpServerTemplate;
   tool?: Tool;
+  /**
+   * Executable platform tools behind this catalog item (e.g. the google_gmail_*
+   * tools behind the "Gmail" card). These are what get assigned per-agent.
+   */
+  tools?: Tool[];
   agent?: CatalogAgent;
   workflow?: Workflow;
   workflowNode?: {
@@ -106,7 +111,13 @@ function hasConnection(
   connections: OAuthConnection[],
   keys: string[],
 ): boolean {
-  return connections.some((connection) => keys.includes(connection.providerKey));
+  // Only an *active* connection counts — a connection whose refresh failed
+  // (status "error"/"expired") must not be presented as working.
+  return connections.some(
+    (connection) =>
+      keys.includes(connection.providerKey) &&
+      (connection.status ?? "active") === "active",
+  );
 }
 
 function grantedScopesFor(
@@ -116,6 +127,7 @@ function grantedScopesFor(
   const scopes = new Set<string>();
   for (const connection of connections) {
     if (!keys.includes(connection.providerKey)) continue;
+    if ((connection.status ?? "active") !== "active") continue;
     for (const scope of connection.scopes ?? []) scopes.add(scope);
   }
   return [...scopes];
@@ -275,7 +287,14 @@ const oauthAppSeed = [
     description: "Create and manage design assets through Canva Connect APIs.",
     icon: "Palette",
     providerKeys: ["canva"],
-    scopes: ["asset:read", "asset:write", "design:content:read"],
+    scopes: [
+      "profile:read",
+      "design:meta:read",
+      "design:content:read",
+      "design:content:write",
+      "asset:read",
+      "asset:write",
+    ],
     docs: "https://www.canva.dev/docs/connect/authentication/",
     tags: ["design", "content", "oauth"],
   },
@@ -285,7 +304,7 @@ const oauthAppSeed = [
     description: "Use repository, issue, pull request, and code context from GitHub.",
     icon: "Github",
     providerKeys: ["github"],
-    scopes: ["repo", "read:user"],
+    scopes: ["read:user", "user:email", "repo"],
     docs: "https://github.com/github/github-mcp-server",
     tags: ["code", "devtools", "oauth"],
   },
@@ -295,7 +314,14 @@ const oauthAppSeed = [
     description: "Search messages, retrieve context, and send workspace updates.",
     icon: "MessageSquare",
     providerKeys: ["slack"],
-    scopes: ["search:read", "channels:history", "chat:write"],
+    scopes: [
+      "channels:read",
+      "channels:history",
+      "groups:history",
+      "im:history",
+      "mpim:history",
+      "chat:write",
+    ],
     docs: "https://docs.slack.dev/ai/slack-mcp-server",
     tags: ["communication", "team", "oauth"],
   },
@@ -447,6 +473,8 @@ export function buildToolCatalog(params: {
   connections: OAuthConnection[];
   staticTools: Tool[];
   userTools: Tool[];
+  /** Platform-owned executable tools from the tool table (e.g. google_*) */
+  platformTools?: Tool[];
   mcpServers: McpServer[];
   agents: CatalogAgent[];
   workflows: Workflow[];
@@ -456,6 +484,7 @@ export function buildToolCatalog(params: {
     connections,
     staticTools,
     userTools,
+    platformTools = [],
     mcpServers,
     agents,
     workflows,
@@ -471,6 +500,13 @@ export function buildToolCatalog(params: {
     )}&scopes=${encodeURIComponent(item.scopes.join(" "))}&label=${encodeURIComponent(
       item.displayName,
     )}&returnUrl=${encodeURIComponent("/studio/tools")}`;
+
+    // "google:gmail" → tools named google_gmail_* — the executable platform
+    // tools this card represents, used for per-agent assignment.
+    const toolPrefix = `${item.id.replace(":", "_")}_`;
+    const itemTools = platformTools.filter((tool) =>
+      tool.name?.startsWith(toolPrefix),
+    );
 
     return {
       id: item.id,
@@ -492,6 +528,7 @@ export function buildToolCatalog(params: {
       oauthScopes: [...item.scopes],
       grantedScopes: grantedScopesFor(connections, GOOGLE_PROVIDER_ALIASES),
       connectUrl,
+      tools: itemTools,
     };
   });
 

@@ -57,6 +57,246 @@ function encrypt(text) {
   };
 }
 
+const providerDefinitions = [
+  {
+    providerKey: 'google_workspace',
+    displayName: 'Google Workspace',
+    description: 'Connect to Google Classroom, Gmail, Drive, Calendar, and more Google services',
+    logoUrl: 'https://www.gstatic.com/images/branding/product/1x/googleg_48dp.png',
+    authUrl: 'https://accounts.google.com/o/oauth2/v2/auth',
+    tokenUrl: 'https://oauth2.googleapis.com/token',
+    revokeUrl: 'https://oauth2.googleapis.com/revoke',
+    userInfoUrl: 'https://www.googleapis.com/oauth2/v2/userinfo',
+    clientIdEnv: 'GOOGLE_OAUTH_CLIENT_ID',
+    clientSecretEnv: 'GOOGLE_OAUTH_CLIENT_SECRET',
+    scopes: {
+      default: ['openid', 'email', 'profile'],
+      classroom: [
+        'https://www.googleapis.com/auth/classroom.courses.readonly',
+        'https://www.googleapis.com/auth/classroom.announcements',
+        'https://www.googleapis.com/auth/classroom.coursework.students',
+        'https://www.googleapis.com/auth/classroom.coursework.me',
+        'https://www.googleapis.com/auth/classroom.rosters.readonly',
+        'https://www.googleapis.com/auth/classroom.push-notifications'
+      ],
+      drive: [
+        'https://www.googleapis.com/auth/drive.readonly',
+        'https://www.googleapis.com/auth/drive.file'
+      ],
+      calendar: [
+        'https://www.googleapis.com/auth/calendar.readonly',
+        'https://www.googleapis.com/auth/calendar.events'
+      ],
+      gmail: [
+        'https://www.googleapis.com/auth/gmail.readonly',
+        'https://www.googleapis.com/auth/gmail.send'
+      ],
+      docs: [
+        'https://www.googleapis.com/auth/documents',
+        'https://www.googleapis.com/auth/drive.file'
+      ],
+      sheets: [
+        'https://www.googleapis.com/auth/spreadsheets',
+        'https://www.googleapis.com/auth/drive.file'
+      ],
+      slides: [
+        'https://www.googleapis.com/auth/presentations',
+        'https://www.googleapis.com/auth/drive.file'
+      ]
+    },
+    authorizationParams: {
+      access_type: 'offline',
+      prompt: 'consent',
+      include_granted_scopes: 'true'
+    },
+    tokenParams: {}
+  },
+  {
+    providerKey: 'github',
+    displayName: 'GitHub',
+    description: 'Connect to GitHub for repository access, issues, pull requests, and code context',
+    logoUrl: 'https://github.githubassets.com/images/modules/logos_page/GitHub-Mark.png',
+    authUrl: 'https://github.com/login/oauth/authorize',
+    tokenUrl: 'https://github.com/login/oauth/access_token',
+    revokeUrl: null,
+    userInfoUrl: 'https://api.github.com/user',
+    clientIdEnv: 'GITHUB_OAUTH_CLIENT_ID',
+    clientSecretEnv: 'GITHUB_OAUTH_CLIENT_SECRET',
+    scopes: {
+      default: ['read:user', 'user:email'],
+      repo: ['repo'],
+      issues: ['repo'],
+      pull_requests: ['repo'],
+      workflow: ['workflow'],
+      org: ['read:org'],
+      gist: ['gist'],
+      packages: ['read:packages', 'write:packages']
+    },
+    authorizationParams: {},
+    tokenParams: {}
+  },
+  {
+    providerKey: 'slack',
+    displayName: 'Slack',
+    description: 'Connect to Slack for workspace messages, channels, files, and team updates',
+    logoUrl: 'https://a.slack-edge.com/80588/marketing/img/icons/icon_slack_hash_colored.png',
+    authUrl: 'https://slack.com/oauth/v2/authorize',
+    tokenUrl: 'https://slack.com/api/oauth.v2.access',
+    revokeUrl: 'https://slack.com/api/auth.revoke',
+    userInfoUrl: 'https://slack.com/api/auth.test',
+    clientIdEnv: 'SLACK_OAUTH_CLIENT_ID',
+    clientSecretEnv: 'SLACK_OAUTH_CLIENT_SECRET',
+    scopes: {
+      default: ['channels:read', 'chat:write'],
+      messages: ['channels:history', 'groups:history', 'im:history', 'mpim:history'],
+      files: ['files:read', 'files:write'],
+      users: ['users:read', 'users:read.email'],
+      commands: ['commands']
+    },
+    authorizationParams: {},
+    tokenParams: {}
+  },
+  {
+    providerKey: 'canva',
+    displayName: 'Canva',
+    description: 'Connect to Canva to create, read, and export designs through Canva Connect APIs',
+    logoUrl: 'https://static.canva.com/static/images/favicon-1.ico',
+    authUrl: 'https://www.canva.com/api/oauth/authorize',
+    tokenUrl: 'https://api.canva.com/rest/v1/oauth/token',
+    revokeUrl: 'https://api.canva.com/rest/v1/oauth/revoke',
+    userInfoUrl: 'https://api.canva.com/rest/v1/users/me/profile',
+    clientIdEnv: 'CANVA_OAUTH_CLIENT_ID',
+    clientSecretEnv: 'CANVA_OAUTH_CLIENT_SECRET',
+    scopes: {
+      default: ['profile:read', 'design:meta:read'],
+      designs: [
+        'profile:read',
+        'design:meta:read',
+        'design:content:read',
+        'design:content:write'
+      ],
+      assets: ['asset:read', 'asset:write'],
+      folders: ['folder:read', 'folder:write']
+    },
+    authorizationParams: {},
+    tokenParams: {}
+  }
+];
+
+async function upsertOAuthProvider(provider) {
+  const clientId = process.env[provider.clientIdEnv];
+  const clientSecret = process.env[provider.clientSecretEnv];
+  const hasCredentials = Boolean(clientId && clientSecret);
+  const existing = await sql`
+    SELECT provider_id FROM oauth_provider WHERE provider_key = ${provider.providerKey}
+  `;
+
+  if (existing.length === 0 && !hasCredentials) {
+    console.log(
+      `⚠️  Skipping ${provider.displayName} - missing ${provider.clientIdEnv} or ${provider.clientSecretEnv}`
+    );
+    return 'skipped';
+  }
+
+  if (existing.length === 0) {
+    console.log(`Seeding ${provider.displayName} provider...`);
+    const encryptedSecret = encrypt(clientSecret);
+
+    await sql`
+      INSERT INTO oauth_provider (
+        provider_key,
+        display_name,
+        description,
+        logo_url,
+        auth_url,
+        token_url,
+        revoke_url,
+        user_info_url,
+        client_id,
+        encrypted_client_secret,
+        secret_iv,
+        secret_tag,
+        scopes,
+        authorization_params,
+        token_params,
+        is_active,
+        is_platform
+      ) VALUES (
+        ${provider.providerKey},
+        ${provider.displayName},
+        ${provider.description},
+        ${provider.logoUrl},
+        ${provider.authUrl},
+        ${provider.tokenUrl},
+        ${provider.revokeUrl},
+        ${provider.userInfoUrl},
+        ${clientId},
+        ${encryptedSecret.encryptedValue},
+        ${encryptedSecret.iv},
+        ${encryptedSecret.tag},
+        ${sql.json(provider.scopes)},
+        ${sql.json(provider.authorizationParams ?? {})},
+        ${sql.json(provider.tokenParams ?? {})},
+        true,
+        true
+      )
+    `;
+    console.log(`✓ Seeded ${provider.displayName} provider`);
+    return 'seeded';
+  }
+
+  if (hasCredentials) {
+    console.log(`Updating ${provider.displayName} provider and credentials...`);
+    const encryptedSecret = encrypt(clientSecret);
+
+    await sql`
+      UPDATE oauth_provider
+      SET
+        display_name = ${provider.displayName},
+        description = ${provider.description},
+        logo_url = ${provider.logoUrl},
+        auth_url = ${provider.authUrl},
+        token_url = ${provider.tokenUrl},
+        revoke_url = ${provider.revokeUrl},
+        user_info_url = ${provider.userInfoUrl},
+        client_id = ${clientId},
+        encrypted_client_secret = ${encryptedSecret.encryptedValue},
+        secret_iv = ${encryptedSecret.iv},
+        secret_tag = ${encryptedSecret.tag},
+        scopes = ${sql.json(provider.scopes)},
+        authorization_params = ${sql.json(provider.authorizationParams ?? {})},
+        token_params = ${sql.json(provider.tokenParams ?? {})},
+        is_active = true,
+        is_platform = true,
+        updated_at = timezone('utc', now())
+      WHERE provider_key = ${provider.providerKey}
+    `;
+    console.log(`✓ Updated ${provider.displayName} provider`);
+    return 'updated';
+  }
+
+  console.log(`Updating ${provider.displayName} provider metadata (credentials unchanged)...`);
+  await sql`
+    UPDATE oauth_provider
+    SET
+      display_name = ${provider.displayName},
+      description = ${provider.description},
+      logo_url = ${provider.logoUrl},
+      auth_url = ${provider.authUrl},
+      token_url = ${provider.tokenUrl},
+      revoke_url = ${provider.revokeUrl},
+      user_info_url = ${provider.userInfoUrl},
+      scopes = ${sql.json(provider.scopes)},
+      authorization_params = ${sql.json(provider.authorizationParams ?? {})},
+      token_params = ${sql.json(provider.tokenParams ?? {})},
+      is_platform = true,
+      updated_at = timezone('utc', now())
+    WHERE provider_key = ${provider.providerKey}
+  `;
+  console.log(`✓ Updated ${provider.displayName} provider metadata`);
+  return 'updated_metadata';
+}
+
 async function migrate() {
   console.log('🔧 Creating OAuth 2.0 system tables...\n');
 
@@ -214,146 +454,16 @@ async function migrate() {
 
     // ========== Seed Platform Providers ==========
     console.log('\n🌱 Seeding platform OAuth providers...');
-
-    // Check if Google Workspace provider already exists
-    const existingGoogle = await sql`
-      SELECT provider_id FROM oauth_provider WHERE provider_key = 'google_workspace'
-    `;
-
-    if (existingGoogle.length === 0 && process.env.GOOGLE_OAUTH_CLIENT_ID && process.env.GOOGLE_OAUTH_CLIENT_SECRET) {
-      console.log('Seeding Google Workspace provider...');
-      const googleSecret = encrypt(process.env.GOOGLE_OAUTH_CLIENT_SECRET);
-
-      await sql`
-        INSERT INTO oauth_provider (
-          provider_key,
-          display_name,
-          description,
-          logo_url,
-          auth_url,
-          token_url,
-          revoke_url,
-          user_info_url,
-          client_id,
-          encrypted_client_secret,
-          secret_iv,
-          secret_tag,
-          scopes,
-          authorization_params,
-          token_params,
-          is_active,
-          is_platform
-        ) VALUES (
-          'google_workspace',
-          'Google Workspace',
-          'Connect to Google Classroom, Gmail, Drive, Calendar, and more Google services',
-          'https://www.gstatic.com/images/branding/product/1x/googleg_48dp.png',
-          'https://accounts.google.com/o/oauth2/v2/auth',
-          'https://oauth2.googleapis.com/token',
-          'https://oauth2.googleapis.com/revoke',
-          'https://www.googleapis.com/oauth2/v2/userinfo',
-          ${process.env.GOOGLE_OAUTH_CLIENT_ID},
-          ${googleSecret.encryptedValue},
-          ${googleSecret.iv},
-          ${googleSecret.tag},
-          ${JSON.stringify({
-            default: ['openid', 'email', 'profile'],
-            classroom: [
-              'https://www.googleapis.com/auth/classroom.courses.readonly',
-              'https://www.googleapis.com/auth/classroom.announcements',
-              'https://www.googleapis.com/auth/classroom.coursework.students',
-              'https://www.googleapis.com/auth/classroom.coursework.me',
-              'https://www.googleapis.com/auth/classroom.rosters.readonly',
-              'https://www.googleapis.com/auth/classroom.push-notifications'
-            ],
-            drive: [
-              'https://www.googleapis.com/auth/drive.readonly',
-              'https://www.googleapis.com/auth/drive.file'
-            ],
-            calendar: [
-              'https://www.googleapis.com/auth/calendar.readonly',
-              'https://www.googleapis.com/auth/calendar.events'
-            ],
-            gmail: [
-              'https://www.googleapis.com/auth/gmail.readonly',
-              'https://www.googleapis.com/auth/gmail.send'
-            ]
-          })},
-          ${JSON.stringify({
-            access_type: 'offline',
-            prompt: 'consent',
-            include_granted_scopes: 'true'
-          })},
-          '{}',
-          true,
-          true
-        )
-      `;
-      console.log('✓ Seeded Google Workspace provider');
-    } else if (existingGoogle.length > 0) {
-      console.log('✓ Google Workspace provider already exists');
-    } else {
-      console.log('⚠️  Skipping Google Workspace - missing GOOGLE_OAUTH_CLIENT_ID or GOOGLE_OAUTH_CLIENT_SECRET');
+    const seedResults = {};
+    for (const provider of providerDefinitions) {
+      const result = await upsertOAuthProvider(provider);
+      seedResults[result] = (seedResults[result] || 0) + 1;
     }
-
-    // Check if GitHub provider already exists
-    const existingGithub = await sql`
-      SELECT provider_id FROM oauth_provider WHERE provider_key = 'github'
-    `;
-
-    if (existingGithub.length === 0 && process.env.GITHUB_OAUTH_CLIENT_ID && process.env.GITHUB_OAUTH_CLIENT_SECRET) {
-      console.log('Seeding GitHub provider...');
-      const githubSecret = encrypt(process.env.GITHUB_OAUTH_CLIENT_SECRET);
-
-      await sql`
-        INSERT INTO oauth_provider (
-          provider_key,
-          display_name,
-          description,
-          logo_url,
-          auth_url,
-          token_url,
-          revoke_url,
-          user_info_url,
-          client_id,
-          encrypted_client_secret,
-          secret_iv,
-          secret_tag,
-          scopes,
-          authorization_params,
-          is_active,
-          is_platform
-        ) VALUES (
-          'github',
-          'GitHub',
-          'Connect to GitHub for repository access, issues, pull requests, and more',
-          'https://github.githubassets.com/images/modules/logos_page/GitHub-Mark.png',
-          'https://github.com/login/oauth/authorize',
-          'https://github.com/login/oauth/access_token',
-          NULL,
-          'https://api.github.com/user',
-          ${process.env.GITHUB_OAUTH_CLIENT_ID},
-          ${githubSecret.encryptedValue},
-          ${githubSecret.iv},
-          ${githubSecret.tag},
-          ${JSON.stringify({
-            default: ['user', 'user:email'],
-            repo: ['repo', 'repo:status', 'repo_deployment'],
-            workflow: ['workflow'],
-            write: ['write:discussion', 'write:packages'],
-            read: ['read:org', 'read:user', 'read:project']
-          })},
-          '{}',
-          true,
-          true
-        )
-      `;
-      console.log('✓ Seeded GitHub provider');
-    } else if (existingGithub.length > 0) {
-      console.log('✓ GitHub provider already exists');
-    } else {
-      console.log('⚠️  Skipping GitHub - missing GITHUB_OAUTH_CLIENT_ID or GITHUB_OAUTH_CLIENT_SECRET');
-    }
+    console.log(
+      `✓ Provider seed summary: ${Object.entries(seedResults)
+        .map(([status, count]) => `${status}=${count}`)
+        .join(', ')}`
+    );
 
     // ========== Verify Tables ==========
     console.log('\n📊 Verifying table structures...');
@@ -397,11 +507,11 @@ async function migrate() {
 
     console.log('\n✅ OAuth 2.0 system migration completed successfully!');
     console.log('\n📝 Next steps:');
-    console.log('   1. Set GOOGLE_OAUTH_CLIENT_ID and GOOGLE_OAUTH_CLIENT_SECRET for Google integration');
-    console.log('   2. Set GITHUB_OAUTH_CLIENT_ID and GITHUB_OAUTH_CLIENT_SECRET for GitHub integration');
-    console.log('   3. Implement OAuth services (Provider, Connection, Flow, TokenInjection)');
-    console.log('   4. Create OAuth controller and endpoints');
-    console.log('   5. Build frontend OAuth UI\n');
+    console.log('   1. Set *_OAUTH_CLIENT_ID and *_OAUTH_CLIENT_SECRET for each provider you want active');
+    console.log('      Supported prefixes: GOOGLE, GITHUB, SLACK, CANVA');
+    console.log('   2. Configure each provider redirect URL as <frontend-origin>/api/oauth/callback/<provider_key>');
+    console.log('      Example: http://localhost:3000/api/oauth/callback/github');
+    console.log('   3. Rerun this migration whenever OAuth client credentials or provider scopes change\n');
 
   } catch (error) {
     console.error('\n❌ Migration failed:', error);

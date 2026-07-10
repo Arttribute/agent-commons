@@ -32,35 +32,151 @@ interface Agent {
     externalUrl?: string;
     createdAt: string;
 }
-type AgentComputerLifecycle = 'persistent' | 'ephemeral';
-type AgentComputerStatus = 'provisioning' | 'starting' | 'running' | 'idle' | 'stopping' | 'stopped' | 'terminated' | 'failed' | 'error' | 'unavailable';
+/** Agent computers are durable. Runtime pods may be replaced, but this identity persists. */
+type AgentComputerLifecycle = 'persistent';
+type ComputerPersistence = AgentComputerLifecycle;
+type ComputerLifecycle = AgentComputerLifecycle;
+type ComputerResourceProfile = 'starter' | 'standard' | 'performance' | 'gpu';
+type ComputerResourceMode = 'fixed' | 'elastic';
+type AgentComputerResourceProfile = ComputerResourceProfile;
+type AgentComputerResourceMode = ComputerResourceMode;
+/**
+ * Common accelerator names. Providers may expose additional values without
+ * requiring an SDK release, so string extensions remain valid.
+ */
+type ComputerGpuType = 'nvidia-t4' | 'nvidia-l4' | 'nvidia-a10' | 'nvidia-a100' | 'nvidia-h100' | 'nvidia-h200' | 'nvidia-b200' | (string & {});
+interface ComputerGpu {
+    count: number;
+    type?: ComputerGpuType;
+}
+type AgentComputerGpuType = ComputerGpuType;
+type AgentComputerGpu = ComputerGpu;
+/** Public, provider-neutral resource units. */
+interface ComputerResources {
+    vcpu: number;
+    memoryGiB: number;
+    storageGiB: number;
+    gpu?: ComputerGpu | null;
+}
+type AgentComputerResources = ComputerResources;
+interface ComputerResourceUpdate {
+    vcpu?: number;
+    memoryGiB?: number;
+    storageGiB?: number;
+    gpu?: ComputerGpu | null;
+}
+type AgentComputerDesiredState = 'running' | 'sleeping' | 'disabled';
+type AgentComputerStatus = 'disabled' | 'provisioning' | 'starting' | 'running' | 'idle' | 'sleeping' | 'resizing' | 'restarting' | 'stopping' | 'error' | 'unavailable' | 'stopped' | 'terminated' | 'failed';
+type ComputerNetworkAccess = 'standard' | 'restricted' | 'disabled' | (string & {});
+/**
+ * Mutable computer settings only. Server-owned identity, provider, billing,
+ * timestamps, and runtime fields intentionally cannot be submitted here.
+ */
+interface ComputerConfigUpdate {
+    enabled?: boolean;
+    autoWake?: boolean;
+    allowAgentUse?: boolean;
+    allowBrowser?: boolean;
+    allowTerminal?: boolean;
+    allowFilesystem?: boolean;
+    networkAccess?: ComputerNetworkAccess;
+    resourceProfile?: ComputerResourceProfile;
+    resourceMode?: ComputerResourceMode;
+    resources?: ComputerResourceUpdate;
+}
 interface AgentComputerConfig {
     configId: string;
     agentId: string;
     enabled: boolean;
-    defaultMode: AgentComputerLifecycle;
+    /** @deprecated Computers are always persistent. */
+    defaultMode: AgentComputerLifecycle | 'ephemeral';
+    /** @deprecated Use autoWake. */
     autoStart: boolean;
+    /** @deprecated Use allowAgentUse. */
     allowAgentStart: boolean;
+    /** @deprecated The singleton computer is selected implicitly. */
     allowUserSelect: boolean;
     allowBrowser: boolean;
     allowTerminal: boolean;
     allowFilesystem: boolean;
-    networkAccess: 'standard' | 'restricted' | 'disabled' | string;
+    networkAccess: ComputerNetworkAccess;
+    /** @deprecated The singleton limit is always one. */
     maxPersistentComputers: number;
+    /** @deprecated Ephemeral computers are no longer supported. */
     maxEphemeralComputers: number;
+    /** @deprecated The singleton limit is always one. */
     maxConcurrentComputers: number;
+    /** @deprecated Use the service's sleep policy. */
     idleTtlMinutes: number;
+    /** @deprecated Persistent computers are not scoped to chat sessions. */
     sessionTtlMinutes: number;
     image?: string | null;
+    /** @deprecated Provider quantities are represented by resources. */
     cpuLimit?: string | null;
+    /** @deprecated Provider quantities are represented by resources. */
     memoryLimit?: string | null;
+    /** @deprecated Provider quantities are represented by resources. */
     storageLimit?: string | null;
     region?: string | null;
     provider: string;
     metadata?: Record<string, any> | null;
     createdAt: string;
     updatedAt: string;
+    persistence?: ComputerPersistence;
+    autoWake?: boolean;
+    allowAgentUse?: boolean;
+    resourceProfile?: ComputerResourceProfile;
+    resourceMode?: ComputerResourceMode;
+    resources?: ComputerResources;
+    cpuRequest?: string | null;
+    memoryRequest?: string | null;
+    gpuType?: ComputerGpuType | null;
+    gpuCount?: number;
+    billingMode?: 'tier' | 'usage' | (string & {});
 }
+interface AgentComputerBrowser {
+    status?: 'off' | 'starting' | 'on' | 'error';
+    url?: string | null;
+    title?: string | null;
+    screenshot?: string | null;
+    lastAction?: string | null;
+    error?: string | null;
+    updatedAt?: string | null;
+}
+interface AgentComputerTerminal {
+    lastCommand?: string | null;
+    lastExitCode?: number | null;
+    lastOutput?: string | null;
+    updatedAt?: string | null;
+}
+/** The one persistent cloud computer assigned to an agent. */
+interface AgentComputer {
+    computerId: string;
+    agentId: string;
+    enabled: boolean;
+    persistence: ComputerPersistence;
+    desiredState: AgentComputerDesiredState;
+    status: AgentComputerStatus;
+    resourceProfile: ComputerResourceProfile;
+    resourceMode: ComputerResourceMode;
+    resources: ComputerResources;
+    provider?: string;
+    cloudProvider?: string | null;
+    region?: string | null;
+    runtimeId?: string | null;
+    runtimeGeneration?: number;
+    namespaceId?: string | null;
+    workspaceRoot?: string | null;
+    browser?: AgentComputerBrowser | null;
+    terminal?: AgentComputerTerminal | null;
+    lastActivityAt?: string | null;
+    startedAt?: string | null;
+    sleptAt?: string | null;
+    errorMessage?: string | null;
+    createdAt: string;
+    updatedAt: string;
+}
+/** @deprecated Use AgentComputer. */
 interface AgentComputerInstance {
     computerId: string;
     agentId: string;
@@ -68,7 +184,8 @@ interface AgentComputerInstance {
     ownerUserId?: string | null;
     workspaceId?: string | null;
     name: string;
-    lifecycle: AgentComputerLifecycle;
+    /** @deprecated Ephemeral values may be read from historical records only. */
+    lifecycle: AgentComputerLifecycle | 'ephemeral';
     status: AgentComputerStatus;
     provider: string;
     cloudProvider?: string | null;
@@ -81,21 +198,8 @@ interface AgentComputerInstance {
     storageLimit?: string | null;
     workspaceRoot?: string | null;
     workspaceSnapshot?: string | null;
-    browser?: {
-        status?: 'off' | 'starting' | 'on' | 'error';
-        url?: string | null;
-        title?: string | null;
-        screenshot?: string | null;
-        lastAction?: string | null;
-        error?: string | null;
-        updatedAt?: string | null;
-    } | null;
-    terminal?: {
-        lastCommand?: string | null;
-        lastExitCode?: number | null;
-        lastOutput?: string | null;
-        updatedAt?: string | null;
-    } | null;
+    browser?: AgentComputerBrowser | null;
+    terminal?: AgentComputerTerminal | null;
     metadata?: Record<string, any> | null;
     lastActivityAt?: string | null;
     expiresAt?: string | null;
@@ -104,6 +208,42 @@ interface AgentComputerInstance {
     errorMessage?: string | null;
     createdAt: string;
     updatedAt: string;
+    canonical?: boolean;
+    enabled?: boolean;
+    persistence?: ComputerPersistence;
+    desiredState?: AgentComputerDesiredState;
+    resourceProfile?: ComputerResourceProfile;
+    resourceMode?: ComputerResourceMode;
+    resources?: ComputerResources;
+    cpuRequest?: string | null;
+    memoryRequest?: string | null;
+    gpuType?: ComputerGpuType | null;
+    gpuCount?: number;
+    runtimeId?: string | null;
+    runtimeGeneration?: number;
+    persistentVolumeId?: string | null;
+    computeTenantId?: string | null;
+    computeCellId?: string | null;
+}
+interface ComputerActionParams {
+    reason?: string;
+}
+interface ComputerResizeParams {
+    resourceProfile?: ComputerResourceProfile;
+    resourceMode?: ComputerResourceMode;
+    resources?: ComputerResourceUpdate;
+}
+interface ComputerCommandParams {
+    command: string;
+    cwd?: string;
+    timeoutSeconds?: number;
+}
+interface ComputerFile {
+    path: string;
+    content: string;
+}
+interface ComputerBrowserOpenParams {
+    url: string;
 }
 interface AgentComputerEvent {
     eventId: string;
@@ -158,8 +298,10 @@ interface RunParams {
     initiatorId?: string;
     computerRequest?: {
         enabled: boolean;
+        /** @deprecated The agent's singleton computer is selected implicitly. */
         computerIds?: string[];
-        lifecycle?: AgentComputerLifecycle;
+        /** @deprecated Computers are always persistent; this value is ignored. */
+        lifecycle?: AgentComputerLifecycle | 'ephemeral';
     };
     /** Uploaded file references. Raw file bytes must be uploaded separately. */
     attachments?: Array<{
@@ -838,16 +980,49 @@ declare class CommonsClient {
         getComputerConfig: (agentId: string) => Promise<{
             data: AgentComputerConfig;
         }>;
-        updateComputerConfig: (agentId: string, params: Partial<AgentComputerConfig>) => Promise<{
+        updateComputerConfig: (agentId: string, params: ComputerConfigUpdate) => Promise<{
             data: AgentComputerConfig;
         }>;
-        listComputers: (agentId: string, filter?: {
+        /** Get the agent's one persistent cloud computer. */
+        getComputer: (agentId: string, _legacyComputerId?: string) => Promise<{
+            data: AgentComputer | null;
+        }>;
+        /** Wake the agent's persistent cloud computer, provisioning it if needed. */
+        wakeComputer: (agentId: string, params?: ComputerActionParams) => Promise<{
+            data: AgentComputer;
+        }>;
+        /** Sleep the runtime while preserving the computer's durable workspace. */
+        sleepComputer: (agentId: string, params?: ComputerActionParams) => Promise<{
+            data: AgentComputer;
+        }>;
+        /** Replace the runtime without replacing the persistent computer. */
+        restartComputer: (agentId: string, params?: ComputerActionParams) => Promise<{
+            data: AgentComputer;
+        }>;
+        resizeComputer: (agentId: string, params: ComputerResizeParams) => Promise<{
+            data: AgentComputer;
+        }>;
+        execComputer: (agentId: string, params: ComputerCommandParams) => Promise<{
+            data: any;
+        }>;
+        readComputerFile: (agentId: string, pathOrLegacyComputerId: string, legacyPath?: string) => Promise<{
+            data: ComputerFile;
+        }>;
+        openComputerBrowser: (agentId: string, paramsOrLegacyComputerId: ComputerBrowserOpenParams | string, legacyParams?: ComputerBrowserOpenParams) => Promise<{
+            data: any;
+        }>;
+        listComputerEvents: (agentId: string, limitOrLegacyComputerId?: number | string, legacyLimit?: number) => Promise<{
+            data: AgentComputerEvent[];
+        }>;
+        /** @deprecated Use getComputer. The singleton is returned as a one-item list. */
+        listComputers: (agentId: string, _filter?: {
             sessionId?: string;
             includeTerminated?: boolean;
         }) => Promise<{
             data: AgentComputerInstance[];
         }>;
-        startComputer: (agentId: string, params: {
+        /** @deprecated Use wakeComputer. Lifecycle, name, and session are ignored. */
+        startComputer: (agentId: string, params?: {
             sessionId?: string;
             lifecycle?: "persistent" | "ephemeral";
             name?: string;
@@ -855,35 +1030,17 @@ declare class CommonsClient {
         }) => Promise<{
             data: AgentComputerInstance;
         }>;
-        getComputer: (agentId: string, computerId: string) => Promise<{
+        /** @deprecated Use getComputer. Computer IDs are ignored. */
+        refreshComputer: (agentId: string, _computerId?: string) => Promise<{
             data: AgentComputerInstance;
         }>;
-        refreshComputer: (agentId: string, computerId: string) => Promise<{
+        /** @deprecated Use sleepComputer. Computer IDs are ignored. */
+        stopComputer: (agentId: string, _computerId?: string) => Promise<{
             data: AgentComputerInstance;
         }>;
-        stopComputer: (agentId: string, computerId: string) => Promise<{
-            data: AgentComputerInstance;
-        }>;
-        readComputerFile: (agentId: string, computerId: string, path: string) => Promise<{
-            data: {
-                path: string;
-                content: string;
-            };
-        }>;
-        runComputerCommand: (agentId: string, computerId: string, params: {
-            command: string;
-            cwd?: string;
-            timeoutSeconds?: number;
-        }) => Promise<{
+        /** @deprecated Use execComputer. Computer IDs are ignored. */
+        runComputerCommand: (agentId: string, paramsOrLegacyComputerId: ComputerCommandParams | string, legacyParams?: ComputerCommandParams) => Promise<{
             data: any;
-        }>;
-        openComputerBrowser: (agentId: string, computerId: string, params: {
-            url: string;
-        }) => Promise<{
-            data: any;
-        }>;
-        listComputerEvents: (agentId: string, computerId: string, limit?: number) => Promise<{
-            data: AgentComputerEvent[];
         }>;
         /**
          * List available TTS voices for a provider.
@@ -1047,6 +1204,55 @@ declare class CommonsClient {
         /** List built-in static tools available to all agents. */
         listStatic: () => Promise<{
             data: Tool[];
+        }>;
+    };
+    get oauth(): {
+        /** List OAuth providers available on the platform (Google Workspace, GitHub, …). */
+        listProviders: () => Promise<{
+            providers: any[];
+        }>;
+        /** Get one provider's details, including its scope groups. */
+        getProvider: (providerKey: string) => Promise<{
+            provider: any;
+        }>;
+        /**
+         * List the caller's OAuth connections (the accounts agents act with).
+         * `ownerId` is only needed when authenticating with a management key.
+         */
+        listConnections: (params?: {
+            ownerId?: string;
+            ownerType?: "user" | "agent";
+        }) => Promise<{
+            connections: any[];
+        }>;
+        /**
+         * Start an OAuth connect flow. Returns the authorization URL the user
+         * must open in a browser to grant access.
+         */
+        connect: (params: {
+            providerKey: string;
+            scopes?: string[];
+            redirectUri?: string;
+        }) => Promise<{
+            authorizationUrl: string;
+            state: string;
+            expiresAt: string;
+        }>;
+        /** Refresh a connection's access token now. */
+        refresh: (connectionId: string) => Promise<{
+            success: boolean;
+        }>;
+        /** Check whether a connection's token is valid. */
+        test: (connectionId: string) => Promise<{
+            success: boolean;
+            status: string;
+            accessTokenValid: boolean;
+            providerUserEmail?: string;
+            error?: string;
+        }>;
+        /** Revoke a connection and delete its tokens. */
+        revoke: (connectionId: string) => Promise<{
+            success: boolean;
         }>;
     };
     get toolKeys(): {
@@ -1383,4 +1589,4 @@ declare function listWorkflowTemplates(): readonly [{
 }];
 declare function buildWorkflowTemplate(templateName: WorkflowTemplateName, ctx: WorkflowTemplateContext): WorkflowTemplateBuild;
 
-export { type A2AArtifact, type A2ADataPart, type A2AFilePart, type A2AMessage, type A2AMessagePart, type A2ASendTaskParams, type A2ASkill, type A2ATask, type A2ATaskState, type A2ATextPart, type Agent, type AgentCard, type AgentMemory, type AgentWallet, type ApiKey, type ApiKeyPrincipalType, type ChatMessage, CommonsClient, type CommonsClientConfig, CommonsError, type CreateAgentParams, type CreateApiKeyParams, type CreateMemoryParams, type CreateSkillParams, type CreateTaskParams, type CreateToolKeyParams, type CreateToolParams, type CreateWalletParams, type CreatedApiKey, type McpConnectionType, type McpPrompt, type McpResource, type McpServer, type MemorySourceType, type MemoryStats, type MemoryType, type ModelConfig, type ModelProvider, type RunParams, type Session, type Skill, type SkillIndex, type StreamEvent, type StreamEventType, type Task, type Tool, type ToolKey, type ToolPermission, type UpdateMemoryParams, type UsageAggregation, type UsageEvent, type WalletBalance, type WalletType, type Workflow, type WorkflowDefinition, type WorkflowEdge, type WorkflowExecution, type WorkflowNode, type WorkflowNodeType, type WorkflowTemplateBuild, type WorkflowTemplateContext, type WorkflowTemplateName, type WorkflowTemplateTool, buildWorkflowTemplate, listWorkflowTemplates };
+export { type A2AArtifact, type A2ADataPart, type A2AFilePart, type A2AMessage, type A2AMessagePart, type A2ASendTaskParams, type A2ASkill, type A2ATask, type A2ATaskState, type A2ATextPart, type Agent, type AgentCard, type AgentComputer, type AgentComputerBrowser, type AgentComputerConfig, type AgentComputerDesiredState, type AgentComputerEvent, type AgentComputerGpu, type AgentComputerGpuType, type AgentComputerInstance, type AgentComputerLifecycle, type AgentComputerResourceMode, type AgentComputerResourceProfile, type AgentComputerResources, type AgentComputerStatus, type AgentComputerTerminal, type AgentMemory, type AgentWallet, type ApiKey, type ApiKeyPrincipalType, type ChatMessage, CommonsClient, type CommonsClientConfig, CommonsError, type ComputerActionParams, type ComputerBrowserOpenParams, type ComputerCommandParams, type ComputerConfigUpdate, type ComputerFile, type ComputerGpu, type ComputerGpuType, type ComputerLifecycle, type ComputerNetworkAccess, type ComputerPersistence, type ComputerResizeParams, type ComputerResourceMode, type ComputerResourceProfile, type ComputerResourceUpdate, type ComputerResources, type CreateAgentParams, type CreateApiKeyParams, type CreateMemoryParams, type CreateSkillParams, type CreateTaskParams, type CreateToolKeyParams, type CreateToolParams, type CreateWalletParams, type CreatedApiKey, type McpConnectionType, type McpPrompt, type McpResource, type McpServer, type MemorySourceType, type MemoryStats, type MemoryType, type ModelConfig, type ModelProvider, type RunParams, type Session, type Skill, type SkillIndex, type StreamEvent, type StreamEventType, type Task, type Tool, type ToolKey, type ToolPermission, type UpdateMemoryParams, type UsageAggregation, type UsageEvent, type WalletBalance, type WalletType, type Workflow, type WorkflowDefinition, type WorkflowEdge, type WorkflowExecution, type WorkflowNode, type WorkflowNodeType, type WorkflowTemplateBuild, type WorkflowTemplateContext, type WorkflowTemplateName, type WorkflowTemplateTool, buildWorkflowTemplate, listWorkflowTemplates };

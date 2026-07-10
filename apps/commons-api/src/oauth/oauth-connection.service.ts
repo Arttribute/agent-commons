@@ -68,13 +68,19 @@ export class OAuthConnectionService {
       });
 
       if (existing) {
-        // Update existing connection
+        // Update existing connection. Union the scopes: with incremental
+        // authorization the provider reports all granted scopes, but if it
+        // only reports the newly requested ones we must not drop earlier
+        // grants tied to this same connection.
+        const mergedScopes = [
+          ...new Set([...(existing.scopes ?? []), ...params.scopes]),
+        ];
         return this.updateConnectionTokens(existing.connectionId, {
           accessToken: params.accessToken,
           accessTokenExpiresAt: params.accessTokenExpiresAt,
           refreshToken: params.refreshToken,
           idToken: params.idToken,
-          scopes: params.scopes,
+          scopes: mergedScopes,
           providerUserId: params.providerUserId,
           providerUserEmail: params.providerUserEmail,
           providerUserName: params.providerUserName,

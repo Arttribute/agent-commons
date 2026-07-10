@@ -48,49 +48,192 @@ export interface Agent {
   createdAt: string;
 }
 
-// ─── Agent Computers ───────────────────────────────────────────────────────
+// ─── Agent Computer ─────────────────────────────────────────────────────────
 
-export type AgentComputerLifecycle = 'persistent' | 'ephemeral';
+/** Agent computers are durable. Runtime pods may be replaced, but this identity persists. */
+export type AgentComputerLifecycle = 'persistent';
+export type ComputerPersistence = AgentComputerLifecycle;
+export type ComputerLifecycle = AgentComputerLifecycle;
+
+export type ComputerResourceProfile = 'starter' | 'standard' | 'performance' | 'gpu';
+export type ComputerResourceMode = 'fixed' | 'elastic';
+export type AgentComputerResourceProfile = ComputerResourceProfile;
+export type AgentComputerResourceMode = ComputerResourceMode;
+
+/**
+ * Common accelerator names. Providers may expose additional values without
+ * requiring an SDK release, so string extensions remain valid.
+ */
+export type ComputerGpuType =
+  | 'nvidia-t4'
+  | 'nvidia-l4'
+  | 'nvidia-a10'
+  | 'nvidia-a100'
+  | 'nvidia-h100'
+  | 'nvidia-h200'
+  | 'nvidia-b200'
+  | (string & {});
+
+export interface ComputerGpu {
+  count: number;
+  type?: ComputerGpuType;
+}
+
+export type AgentComputerGpuType = ComputerGpuType;
+export type AgentComputerGpu = ComputerGpu;
+
+/** Public, provider-neutral resource units. */
+export interface ComputerResources {
+  vcpu: number;
+  memoryGiB: number;
+  storageGiB: number;
+  gpu?: ComputerGpu | null;
+}
+
+export type AgentComputerResources = ComputerResources;
+
+export interface ComputerResourceUpdate {
+  vcpu?: number;
+  memoryGiB?: number;
+  storageGiB?: number;
+  gpu?: ComputerGpu | null;
+}
+
+export type AgentComputerDesiredState = 'running' | 'sleeping' | 'disabled';
 export type AgentComputerStatus =
+  | 'disabled'
   | 'provisioning'
   | 'starting'
   | 'running'
   | 'idle'
+  | 'sleeping'
+  | 'resizing'
+  | 'restarting'
   | 'stopping'
+  | 'error'
+  | 'unavailable'
+  // Deprecated wire states retained while older API deployments are upgraded.
   | 'stopped'
   | 'terminated'
-  | 'failed'
-  | 'error'
-  | 'unavailable';
+  | 'failed';
+
+export type ComputerNetworkAccess = 'standard' | 'restricted' | 'disabled' | (string & {});
+
+/**
+ * Mutable computer settings only. Server-owned identity, provider, billing,
+ * timestamps, and runtime fields intentionally cannot be submitted here.
+ */
+export interface ComputerConfigUpdate {
+  enabled?: boolean;
+  autoWake?: boolean;
+  allowAgentUse?: boolean;
+  allowBrowser?: boolean;
+  allowTerminal?: boolean;
+  allowFilesystem?: boolean;
+  networkAccess?: ComputerNetworkAccess;
+  resourceProfile?: ComputerResourceProfile;
+  resourceMode?: ComputerResourceMode;
+  resources?: ComputerResourceUpdate;
+}
 
 export interface AgentComputerConfig {
   configId: string;
   agentId: string;
   enabled: boolean;
-  defaultMode: AgentComputerLifecycle;
+  /** @deprecated Computers are always persistent. */
+  defaultMode: AgentComputerLifecycle | 'ephemeral';
+  /** @deprecated Use autoWake. */
   autoStart: boolean;
+  /** @deprecated Use allowAgentUse. */
   allowAgentStart: boolean;
+  /** @deprecated The singleton computer is selected implicitly. */
   allowUserSelect: boolean;
   allowBrowser: boolean;
   allowTerminal: boolean;
   allowFilesystem: boolean;
-  networkAccess: 'standard' | 'restricted' | 'disabled' | string;
+  networkAccess: ComputerNetworkAccess;
+  /** @deprecated The singleton limit is always one. */
   maxPersistentComputers: number;
+  /** @deprecated Ephemeral computers are no longer supported. */
   maxEphemeralComputers: number;
+  /** @deprecated The singleton limit is always one. */
   maxConcurrentComputers: number;
+  /** @deprecated Use the service's sleep policy. */
   idleTtlMinutes: number;
+  /** @deprecated Persistent computers are not scoped to chat sessions. */
   sessionTtlMinutes: number;
   image?: string | null;
+  /** @deprecated Provider quantities are represented by resources. */
   cpuLimit?: string | null;
+  /** @deprecated Provider quantities are represented by resources. */
   memoryLimit?: string | null;
+  /** @deprecated Provider quantities are represented by resources. */
   storageLimit?: string | null;
   region?: string | null;
   provider: string;
   metadata?: Record<string, any> | null;
   createdAt: string;
   updatedAt: string;
+
+  persistence?: ComputerPersistence;
+  autoWake?: boolean;
+  allowAgentUse?: boolean;
+  resourceProfile?: ComputerResourceProfile;
+  resourceMode?: ComputerResourceMode;
+  resources?: ComputerResources;
+  cpuRequest?: string | null;
+  memoryRequest?: string | null;
+  gpuType?: ComputerGpuType | null;
+  gpuCount?: number;
+  billingMode?: 'tier' | 'usage' | (string & {});
 }
 
+export interface AgentComputerBrowser {
+  status?: 'off' | 'starting' | 'on' | 'error';
+  url?: string | null;
+  title?: string | null;
+  screenshot?: string | null;
+  lastAction?: string | null;
+  error?: string | null;
+  updatedAt?: string | null;
+}
+
+export interface AgentComputerTerminal {
+  lastCommand?: string | null;
+  lastExitCode?: number | null;
+  lastOutput?: string | null;
+  updatedAt?: string | null;
+}
+
+/** The one persistent cloud computer assigned to an agent. */
+export interface AgentComputer {
+  computerId: string;
+  agentId: string;
+  enabled: boolean;
+  persistence: ComputerPersistence;
+  desiredState: AgentComputerDesiredState;
+  status: AgentComputerStatus;
+  resourceProfile: ComputerResourceProfile;
+  resourceMode: ComputerResourceMode;
+  resources: ComputerResources;
+  provider?: string;
+  cloudProvider?: string | null;
+  region?: string | null;
+  runtimeId?: string | null;
+  runtimeGeneration?: number;
+  namespaceId?: string | null;
+  workspaceRoot?: string | null;
+  browser?: AgentComputerBrowser | null;
+  terminal?: AgentComputerTerminal | null;
+  lastActivityAt?: string | null;
+  startedAt?: string | null;
+  sleptAt?: string | null;
+  errorMessage?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** @deprecated Use AgentComputer. */
 export interface AgentComputerInstance {
   computerId: string;
   agentId: string;
@@ -98,7 +241,8 @@ export interface AgentComputerInstance {
   ownerUserId?: string | null;
   workspaceId?: string | null;
   name: string;
-  lifecycle: AgentComputerLifecycle;
+  /** @deprecated Ephemeral values may be read from historical records only. */
+  lifecycle: AgentComputerLifecycle | 'ephemeral';
   status: AgentComputerStatus;
   provider: string;
   cloudProvider?: string | null;
@@ -111,21 +255,8 @@ export interface AgentComputerInstance {
   storageLimit?: string | null;
   workspaceRoot?: string | null;
   workspaceSnapshot?: string | null;
-  browser?: {
-    status?: 'off' | 'starting' | 'on' | 'error';
-    url?: string | null;
-    title?: string | null;
-    screenshot?: string | null;
-    lastAction?: string | null;
-    error?: string | null;
-    updatedAt?: string | null;
-  } | null;
-  terminal?: {
-    lastCommand?: string | null;
-    lastExitCode?: number | null;
-    lastOutput?: string | null;
-    updatedAt?: string | null;
-  } | null;
+  browser?: AgentComputerBrowser | null;
+  terminal?: AgentComputerTerminal | null;
   metadata?: Record<string, any> | null;
   lastActivityAt?: string | null;
   expiresAt?: string | null;
@@ -134,6 +265,48 @@ export interface AgentComputerInstance {
   errorMessage?: string | null;
   createdAt: string;
   updatedAt: string;
+
+  canonical?: boolean;
+  enabled?: boolean;
+  persistence?: ComputerPersistence;
+  desiredState?: AgentComputerDesiredState;
+  resourceProfile?: ComputerResourceProfile;
+  resourceMode?: ComputerResourceMode;
+  resources?: ComputerResources;
+  cpuRequest?: string | null;
+  memoryRequest?: string | null;
+  gpuType?: ComputerGpuType | null;
+  gpuCount?: number;
+  runtimeId?: string | null;
+  runtimeGeneration?: number;
+  persistentVolumeId?: string | null;
+  computeTenantId?: string | null;
+  computeCellId?: string | null;
+}
+
+export interface ComputerActionParams {
+  reason?: string;
+}
+
+export interface ComputerResizeParams {
+  resourceProfile?: ComputerResourceProfile;
+  resourceMode?: ComputerResourceMode;
+  resources?: ComputerResourceUpdate;
+}
+
+export interface ComputerCommandParams {
+  command: string;
+  cwd?: string;
+  timeoutSeconds?: number;
+}
+
+export interface ComputerFile {
+  path: string;
+  content: string;
+}
+
+export interface ComputerBrowserOpenParams {
+  url: string;
 }
 
 export interface AgentComputerEvent {
@@ -194,8 +367,10 @@ export interface RunParams {
   initiatorId?: string;
   computerRequest?: {
     enabled: boolean;
+    /** @deprecated The agent's singleton computer is selected implicitly. */
     computerIds?: string[];
-    lifecycle?: AgentComputerLifecycle;
+    /** @deprecated Computers are always persistent; this value is ignored. */
+    lifecycle?: AgentComputerLifecycle | 'ephemeral';
   };
   /** Uploaded file references. Raw file bytes must be uploaded separately. */
   attachments?: Array<{ fileId: string }>;

@@ -43,7 +43,9 @@ interface RunBody {
   attachments?: Array<{ fileId: string }>;
   computerRequest?: {
     enabled: boolean;
+    /** @deprecated Ignored; each agent has one assigned computer. */
     computerIds?: string[];
+    /** @deprecated Ignored; assigned computers are always persistent. */
     lifecycle?: 'persistent' | 'ephemeral';
   };
 }

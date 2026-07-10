@@ -291,7 +291,6 @@ export interface CommonTool {
   startAgentComputer(props: {
     agentId?: string;
     sessionId?: string;
-    lifecycle?: 'persistent' | 'ephemeral';
     name?: string;
     reason?: string;
   }): Promise<any>;
@@ -1268,7 +1267,6 @@ export class CommonToolService implements CommonTool {
   async startAgentComputer(props: {
     agentId?: string;
     sessionId?: string;
-    lifecycle?: 'persistent' | 'ephemeral';
     name?: string;
     reason?: string;
   }, metadata?: ToolExecutionMetadata) {

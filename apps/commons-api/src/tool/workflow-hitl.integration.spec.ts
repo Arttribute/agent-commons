@@ -159,6 +159,7 @@ describe('HITL integration — WorkflowExecutorService', () => {
         { x: 1 },             // inputData
         expect.objectContaining({ 'n-approval': expect.objectContaining({ approved: true }) }),
         'n-approval',          // resumeFromNode
+        0,                     // workflowDepth (top-level resume)
       );
     });
 

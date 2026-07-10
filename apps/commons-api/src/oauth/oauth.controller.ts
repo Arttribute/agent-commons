@@ -155,11 +155,18 @@ export class OAuthController {
       );
     }
 
+    // Default redirect goes through the web app's callback proxy — that is
+    // the URI registered with the OAuth provider. APP_ORIGIN lets CLI/SDK
+    // callers (which have no browser origin) produce the same registered URI.
+    const defaultRedirectBase =
+      process.env.APP_ORIGIN || `${req.protocol}://${req.get('host')}`;
     const result = await this.flowService.initiateFlow({
       userId: ownerId,
       providerKey: dto.providerKey,
       requestedScopes: dto.scopes,
-      redirectUri: dto.redirectUri || `${req.protocol}://${req.get('host')}/api/oauth/callback/${dto.providerKey}`,
+      redirectUri:
+        dto.redirectUri ||
+        `${defaultRedirectBase}/api/oauth/callback/${dto.providerKey}`,
       userAgent: req.headers['user-agent'],
       ipAddress: req.ip,
     });

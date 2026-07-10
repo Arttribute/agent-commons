@@ -25,7 +25,6 @@ type UploadedAttachment = {
 type ComputerConfigState = {
   enabled?: boolean;
   allowUserSelect?: boolean;
-  defaultMode?: "persistent" | "ephemeral";
 };
 
 export default function ChatInputBox({
@@ -289,6 +288,20 @@ export default function ChatInputBox({
     }
   }, [computerConfig]);
 
+  const computerSessionRef = useRef({ agentId, sessionId });
+  useEffect(() => {
+    const previous = computerSessionRef.current;
+    const adoptedCreatedSession =
+      previous.agentId === agentId && !previous.sessionId && Boolean(sessionId);
+    if (
+      previous.agentId !== agentId ||
+      (!adoptedCreatedSession && previous.sessionId !== sessionId)
+    ) {
+      setComputerEnabled(false);
+    }
+    computerSessionRef.current = { agentId, sessionId };
+  }, [agentId, sessionId]);
+
   const handleSend = async (overrideText?: string) => {
     const baseText = (overrideText ?? inputText).trim();
     if ((!baseText && uploadedAttachments.length === 0) || isLoading || isUploading) return;
@@ -306,7 +319,6 @@ export default function ChatInputBox({
     const computerRequest = computerEnabled
       ? {
           enabled: true,
-          lifecycle: computerConfig?.defaultMode === "persistent" ? "persistent" as const : "ephemeral" as const,
         }
       : undefined;
     const messageAttachments = uploadedAttachments.map((attachment) => ({
@@ -321,7 +333,6 @@ export default function ChatInputBox({
     previewUrlsRef.current.forEach((previewUrl) => URL.revokeObjectURL(previewUrl));
     previewUrlsRef.current.clear();
     setAttachments([]);
-    setComputerEnabled(false);
     accumulatedRef.current = "";
     runningToolActivitiesRef.current.clear();
     activityArgsRef.current.clear();
@@ -507,10 +518,8 @@ export default function ChatInputBox({
                 <Monitor className="h-4 w-4" />
               </span>
               <span className="min-w-0">
-                <span className="block max-w-44 truncate text-foreground">Agent computer</span>
-                <span className="block text-muted-foreground">
-                  {computerConfig?.defaultMode === "persistent" ? "Persistent" : "Ephemeral"}
-                </span>
+                <span className="block max-w-44 truncate text-foreground">Agent&apos;s persistent computer</span>
+                <span className="block text-muted-foreground">Same workspace in every chat</span>
               </span>
               <button
                 type="button"
@@ -595,7 +604,7 @@ export default function ChatInputBox({
                     )}
                   >
                     <Monitor className="h-4 w-4" />
-                    <span>{canUseComputer ? "Agent computer" : "Agent computer unavailable"}</span>
+                    <span>{canUseComputer ? "Use agent’s computer" : "Agent computer unavailable"}</span>
                   </button>
                 </div>
               )}

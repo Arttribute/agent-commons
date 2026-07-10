@@ -12,7 +12,7 @@
 ### Migration File ✓
 - **Migration script**: [apps/commons-api/migrations/add-oauth-system.mjs](apps/commons-api/migrations/add-oauth-system.mjs)
   - Creates 3 OAuth tables with proper indexes
-  - Seeds Google Workspace and GitHub providers (if credentials are set)
+  - Seeds Google Workspace, GitHub, Slack, and Canva providers (if credentials are set)
   - Includes encryption for client secrets
   - Executable and ready to run
 
@@ -21,6 +21,8 @@
   - Added `TOOL_KEY_ENCRYPTION_MASTER` (required)
   - Added `GOOGLE_OAUTH_CLIENT_ID` and `GOOGLE_OAUTH_CLIENT_SECRET` (optional)
   - Added `GITHUB_OAUTH_CLIENT_ID` and `GITHUB_OAUTH_CLIENT_SECRET` (optional)
+  - Added `SLACK_OAUTH_CLIENT_ID` and `SLACK_OAUTH_CLIENT_SECRET` (optional)
+  - Added `CANVA_OAUTH_CLIENT_ID` and `CANVA_OAUTH_CLIENT_SECRET` (optional)
 
 ### Documentation ✓
 - **Migration guide**: [apps/commons-api/migrations/README-OAUTH-MIGRATION.md](apps/commons-api/migrations/README-OAUTH-MIGRATION.md)
@@ -185,7 +187,7 @@ If you want to add Google Workspace support immediately:
 ### 1. Get OAuth Credentials
 - Go to https://console.cloud.google.com/apis/credentials
 - Create OAuth 2.0 Client ID
-- Set redirect URI: `http://localhost:3001/v1/oauth/callback/google_workspace`
+- Set redirect URI: `http://localhost:3000/api/oauth/callback/google_workspace`
 
 ### 2. Add to .env
 ```bash

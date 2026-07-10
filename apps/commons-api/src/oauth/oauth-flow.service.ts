@@ -2,7 +2,110 @@ import { Injectable, Logger, BadRequestException } from '@nestjs/common';
 import { OAuthProviderService } from './oauth-provider.service';
 import { OAuthConnectionService } from './oauth-connection.service';
 import { OAuthStateService } from './oauth-state.service';
-import * as oauthSchema from '../../models/oauth-schema';
+
+type ProviderRuntimeConfig = {
+  scopeDelimiter?: string;
+  pkce?: boolean;
+  omitAuthorizationCodeGrantType?: boolean;
+  revokeRefreshToken?: boolean;
+  includeClientCredentialsOnRevoke?: boolean;
+};
+
+type ProviderTokenSet = {
+  accessToken?: string;
+  refreshToken?: string;
+  idToken?: string;
+  expiresIn?: number;
+  scope?: string | string[];
+};
+
+type ProviderUserIdentity = {
+  id?: string;
+  email?: string;
+  name?: string;
+};
+
+function providerRuntimeConfig(providerKey: string): ProviderRuntimeConfig {
+  switch (providerKey) {
+    case 'canva':
+      return {
+        pkce: true,
+        revokeRefreshToken: true,
+        includeClientCredentialsOnRevoke: true,
+      };
+    case 'slack':
+      return {
+        scopeDelimiter: ',',
+        omitAuthorizationCodeGrantType: true,
+      };
+    default:
+      return {};
+  }
+}
+
+function parseScopes(scopes?: string | string[]) {
+  if (Array.isArray(scopes)) return scopes;
+  if (!scopes) return [];
+  return scopes
+    .split(/[\s,]+/)
+    .map((scope) => scope.trim())
+    .filter(Boolean);
+}
+
+function extractTokenSet(providerKey: string, payload: any): ProviderTokenSet {
+  if (providerKey === 'slack') {
+    if (payload?.ok === false) {
+      throw new Error(payload.error || 'Slack OAuth token exchange failed');
+    }
+
+    const authedUser = payload?.authed_user;
+    return {
+      accessToken: payload?.access_token || authedUser?.access_token,
+      refreshToken: payload?.refresh_token || authedUser?.refresh_token,
+      expiresIn: payload?.expires_in || authedUser?.expires_in,
+      scope: payload?.scope || authedUser?.scope,
+    };
+  }
+
+  return {
+    accessToken: payload?.access_token,
+    refreshToken: payload?.refresh_token,
+    idToken: payload?.id_token,
+    expiresIn: payload?.expires_in,
+    scope: payload?.scope,
+  };
+}
+
+function extractProviderUserIdentity(
+  providerKey: string,
+  userInfo: any,
+  tokenPayload: any,
+): ProviderUserIdentity {
+  if (providerKey === 'slack') {
+    return {
+      id:
+        userInfo?.user_id ||
+        userInfo?.bot_id ||
+        tokenPayload?.authed_user?.id ||
+        tokenPayload?.bot_user_id,
+      name: userInfo?.user || userInfo?.team || tokenPayload?.team?.name,
+    };
+  }
+
+  if (providerKey === 'canva') {
+    return {
+      id: userInfo?.user?.id || userInfo?.profile?.id,
+      email: userInfo?.user?.email || userInfo?.profile?.email,
+      name: userInfo?.profile?.display_name || userInfo?.user?.display_name,
+    };
+  }
+
+  return {
+    id: userInfo?.id || userInfo?.sub,
+    email: userInfo?.email,
+    name: userInfo?.name || userInfo?.login,
+  };
+}
 
 /**
  * OAuthFlowService
@@ -76,11 +179,16 @@ export class OAuthFlowService {
       }
 
       // Create state for CSRF protection
+      const runtimeConfig = providerRuntimeConfig(provider.providerKey);
+      const codeVerifier = runtimeConfig.pkce
+        ? this.stateService.generateCodeVerifier()
+        : undefined;
       const state = await this.stateService.createState({
         ownerId: params.userId,
         providerId: provider.providerId,
         redirectUri: params.redirectUri,
         requestedScopes: scopes,
+        codeVerifier,
         userAgent: params.userAgent,
         ipAddress: params.ipAddress,
       });
@@ -93,7 +201,19 @@ export class OAuthFlowService {
       authUrl.searchParams.append('redirect_uri', params.redirectUri);
       authUrl.searchParams.append('response_type', 'code');
       authUrl.searchParams.append('state', state.stateId);
-      authUrl.searchParams.append('scope', scopes.join(' '));
+      if (scopes.length > 0) {
+        authUrl.searchParams.append(
+          'scope',
+          scopes.join(runtimeConfig.scopeDelimiter || ' '),
+        );
+      }
+
+      if (runtimeConfig.pkce && codeVerifier) {
+        const codeChallenge =
+          await this.stateService.generateCodeChallenge(codeVerifier);
+        authUrl.searchParams.append('code_challenge', codeChallenge);
+        authUrl.searchParams.append('code_challenge_method', 'S256');
+      }
 
       // Add provider-specific authorization parameters
       const authParams = provider.authorizationParams as Record<string, any>;
@@ -101,6 +221,17 @@ export class OAuthFlowService {
         Object.entries(authParams).forEach(([key, value]) => {
           authUrl.searchParams.append(key, String(value));
         });
+      }
+
+      // Google incremental authorization: without this, re-consenting for one
+      // product (e.g. Calendar) issues a token limited to the newly requested
+      // scopes and silently drops previously granted ones (e.g. Gmail),
+      // because we keep a single connection per user per provider.
+      if (
+        authUrl.hostname.endsWith('google.com') &&
+        !authUrl.searchParams.has('include_granted_scopes')
+      ) {
+        authUrl.searchParams.append('include_granted_scopes', 'true');
       }
 
       this.logger.log(
@@ -147,6 +278,7 @@ export class OAuthFlowService {
       const provider = await this.providerService.getProviderById(
         stateRecord.providerId,
       );
+      const runtimeConfig = providerRuntimeConfig(provider.providerKey);
 
       // Get decrypted client secret
       const clientSecret =
@@ -158,8 +290,15 @@ export class OAuthFlowService {
         client_id: provider.clientId,
         client_secret: clientSecret,
         redirect_uri: redirectUri,
-        grant_type: 'authorization_code',
       });
+
+      if (!runtimeConfig.omitAuthorizationCodeGrantType) {
+        tokenParams.append('grant_type', 'authorization_code');
+      }
+
+      if (runtimeConfig.pkce && stateRecord.codeVerifier) {
+        tokenParams.append('code_verifier', stateRecord.codeVerifier);
+      }
 
       // Add provider-specific token parameters
       const providerTokenParams = provider.tokenParams as Record<string, any>;
@@ -190,12 +329,13 @@ export class OAuthFlowService {
       }
 
       const tokens: any = await tokenResponse.json();
+      const tokenSet = extractTokenSet(provider.providerKey, tokens);
 
-      if (!tokens.access_token) {
+      if (!tokenSet.accessToken) {
         throw new Error('No access token received from provider');
       }
 
-      if (!tokens.refresh_token) {
+      if (!tokenSet.refreshToken) {
         this.logger.warn(
           'No refresh token received - long-term access may not be possible',
         );
@@ -203,19 +343,19 @@ export class OAuthFlowService {
 
       // Calculate access token expiry
       let accessTokenExpiresAt: Date | undefined;
-      if (tokens.expires_in) {
+      if (tokenSet.expiresIn) {
         accessTokenExpiresAt = new Date(
-          Date.now() + tokens.expires_in * 1000,
+          Date.now() + tokenSet.expiresIn * 1000,
         );
       }
 
       // Fetch user info from provider (if supported)
       let providerUserInfo: any = null;
-      if (provider.userInfoUrl && tokens.access_token) {
+      if (provider.userInfoUrl && tokenSet.accessToken) {
         try {
           const userInfoResponse = await fetch(provider.userInfoUrl, {
             headers: {
-              Authorization: `Bearer ${tokens.access_token}`,
+              Authorization: `Bearer ${tokenSet.accessToken}`,
             },
           });
 
@@ -231,27 +371,30 @@ export class OAuthFlowService {
 
       // Parse scopes (handle both string and array formats)
       let grantedScopes: string[];
-      if (typeof tokens.scope === 'string') {
-        grantedScopes = tokens.scope.split(' ');
-      } else if (Array.isArray(tokens.scope)) {
-        grantedScopes = tokens.scope;
+      if (tokenSet.scope) {
+        grantedScopes = parseScopes(tokenSet.scope);
       } else {
         grantedScopes = stateRecord.requestedScopes;
       }
+      const providerUserIdentity = extractProviderUserIdentity(
+        provider.providerKey,
+        providerUserInfo,
+        tokens,
+      );
 
       // Store connection
       const connection = await this.connectionService.createConnection({
         ownerId: stateRecord.ownerId,
         ownerType: 'user',
         providerId: provider.providerId,
-        accessToken: tokens.access_token,
+        accessToken: tokenSet.accessToken,
         accessTokenExpiresAt,
-        refreshToken: tokens.refresh_token || '',
-        idToken: tokens.id_token,
+        refreshToken: tokenSet.refreshToken || '',
+        idToken: tokenSet.idToken,
         scopes: grantedScopes,
-        providerUserId: providerUserInfo?.id || providerUserInfo?.sub,
-        providerUserEmail: providerUserInfo?.email,
-        providerUserName: providerUserInfo?.name,
+        providerUserId: providerUserIdentity.id,
+        providerUserEmail: providerUserIdentity.email,
+        providerUserName: providerUserIdentity.name,
         providerMetadata: providerUserInfo,
       });
 
@@ -356,32 +499,33 @@ export class OAuthFlowService {
       }
 
       const newTokens: any = await tokenResponse.json();
+      const newTokenSet = extractTokenSet(provider.providerKey, newTokens);
 
-      if (!newTokens.access_token) {
+      if (!newTokenSet.accessToken) {
         throw new Error('No access token received from token refresh');
       }
 
       // Calculate access token expiry
       let accessTokenExpiresAt: Date | undefined;
-      if (newTokens.expires_in) {
+      if (newTokenSet.expiresIn) {
         accessTokenExpiresAt = new Date(
-          Date.now() + newTokens.expires_in * 1000,
+          Date.now() + newTokenSet.expiresIn * 1000,
         );
       }
 
       // Update connection with new tokens
       // Note: Some providers return new refresh tokens, some don't
       await this.connectionService.updateConnectionTokens(connectionId, {
-        accessToken: newTokens.access_token,
+        accessToken: newTokenSet.accessToken,
         accessTokenExpiresAt,
-        refreshToken: newTokens.refresh_token, // May be undefined
-        idToken: newTokens.id_token, // May be undefined
+        refreshToken: newTokenSet.refreshToken, // May be undefined
+        idToken: newTokenSet.idToken, // May be undefined
       });
 
       this.logger.log(`Refreshed access token for connection ${connectionId}`);
 
       return {
-        accessToken: newTokens.access_token,
+        accessToken: newTokenSet.accessToken,
         expiresAt: accessTokenExpiresAt,
       };
     } catch (error: any) {
@@ -421,11 +565,24 @@ export class OAuthFlowService {
           // Get decrypted tokens
           const tokens =
             await this.connectionService.getDecryptedTokens(connectionId);
+          const runtimeConfig = providerRuntimeConfig(provider.providerKey);
 
           // Revoke access token
           const revokeParams = new URLSearchParams({
-            token: tokens.accessToken,
+            token:
+              runtimeConfig.revokeRefreshToken && tokens.refreshToken
+                ? tokens.refreshToken
+                : tokens.accessToken,
           });
+
+          if (runtimeConfig.includeClientCredentialsOnRevoke) {
+            const clientSecret =
+              await this.providerService.getDecryptedClientSecret(
+                provider.providerId,
+              );
+            revokeParams.append('client_id', provider.clientId);
+            revokeParams.append('client_secret', clientSecret);
+          }
 
           const revokeResponse = await fetch(provider.revokeUrl, {
             method: 'POST',

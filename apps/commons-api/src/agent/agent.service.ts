@@ -69,7 +69,9 @@ const app = typia.llm.application<CommonTool, 'chatgpt'>();
 type StreamStatusState = 'queued' | 'running' | 'completed' | 'failed';
 type RunComputerRequest = {
   enabled: boolean;
+  /** @deprecated Accepted from older clients and ignored. */
   computerIds?: string[];
+  /** @deprecated Accepted from older clients and ignored. */
   lifecycle?: 'persistent' | 'ephemeral';
 };
 
@@ -371,13 +373,13 @@ export class AgentService implements OnModuleInit {
       - Treat fileId values as the durable handles for follow-up work. Do not ask the user to paste file contents that are available through readUploadedFile.
 
       ### Computers
-      Agent computers are isolated CommonOS pod runtimes with a filesystem, terminal, and browser. Use them only when the user asks for computer-backed work or when the work materially requires a runtime, filesystem, browser, long-running process, app execution, or generated files.
-      - **startAgentComputer** — start or reuse a persistent/ephemeral computer for this agent.
-      - **listAgentComputers** — inspect active computers before starting more.
+      Each agent may have one isolated CommonOS computer with a persistent workspace, terminal, and browser. The runtime may sleep and be replaced, but files and computer identity persist across chats. Use it only when the user asks for computer-backed work or when the work materially requires a runtime, filesystem, browser, long-running process, app execution, or generated files.
+      - **startAgentComputer** — idempotently wake or attach this agent's assigned computer.
+      - **listAgentComputers** — inspect the assigned computer's current state.
       - **runComputerCommand** — run terminal work through the selected computer.
       - **readComputerFile** — read files from the computer workspace.
       - **openComputerBrowser** — open a URL in the computer browser and refresh browser state.
-      - Prefer an existing active computer that matches the session. Do not start extra computers unless isolation or concurrency is useful.
+      - Never create or ask for an extra computer. Continue in the same assigned workspace across sessions.
       - Keep terminal commands task-scoped, avoid secret exfiltration, and report created files, screenshots, URLs, and command results clearly.
 
       ### Goals
@@ -578,7 +580,9 @@ export class AgentService implements OnModuleInit {
     /** User selected computer usage for this chat turn. */
     computerRequest?: {
       enabled: boolean;
+      /** @deprecated Ignored; each agent has one assigned computer. */
       computerIds?: string[];
+      /** @deprecated Ignored; assigned computers are always persistent. */
       lifecycle?: 'persistent' | 'ephemeral';
     };
   }): Observable<any> {
@@ -731,13 +735,11 @@ export class AgentService implements OnModuleInit {
               'running',
               selectedComputerIds.length
                 ? 'Using the selected agent computer'
-                : 'Preparing an agent computer for this turn',
-              computerRequest.lifecycle
-                ? `${computerRequest.lifecycle} runtime`
-                : undefined,
+                : 'Waking the agent computer for this turn',
+              'Persistent workspace',
               {
                 computerIds: selectedComputerIds,
-                lifecycle: computerRequest.lifecycle,
+                lifecycle: 'persistent',
               },
             );
 
@@ -769,7 +771,6 @@ export class AgentService implements OnModuleInit {
                   const started = await this.computerService.startComputer({
                     agentId,
                     sessionId: currentSessionId,
-                    lifecycle: computerRequest.lifecycle,
                     actorId: initiator,
                     actorType: 'user',
                     reason: 'Selected from the chat composer',
@@ -791,7 +792,7 @@ export class AgentService implements OnModuleInit {
                     {
                       computerId: started?.computerId,
                       status: started?.status,
-                      lifecycle: started?.lifecycle,
+                    lifecycle: 'persistent',
                     },
                   );
                   if (failed) {
@@ -1100,17 +1101,41 @@ export class AgentService implements OnModuleInit {
                             toolCallId: config.toolCall?.id,
                           },
                         },
-                        headers: { 'Content-Type': 'application/json' },
+                        headers: {
+                          'Content-Type': 'application/json',
+                          ...(process.env.API_SECRET_KEY
+                            ? {
+                                'x-internal-tool-secret':
+                                  process.env.API_SECRET_KEY,
+                              }
+                            : {}),
+                        },
                       },
                     )
                     .json<any>();
                 } catch (error: any) {
                   status = 'error';
-                  const responseBody = error?.response?.body;
+                  // got returns the response body as a raw string on HTTPError;
+                  // parse it so the model sees the real failure (e.g. missing
+                  // OAuth connection, upstream API error) instead of a bare
+                  // "Response code 400".
+                  let responseBody = error?.response?.body;
+                  if (typeof responseBody === 'string') {
+                    try {
+                      responseBody = JSON.parse(responseBody);
+                    } catch {
+                      responseBody = { message: responseBody };
+                    }
+                  }
+                  // Nest error bodies carry the useful text in `message`
+                  // (`error` is just the status phrase, e.g. "Bad Request").
+                  const detail = Array.isArray(responseBody?.message)
+                    ? responseBody.message.join('; ')
+                    : responseBody?.message;
                   data = {
                     error:
+                      detail ??
                       responseBody?.error ??
-                      responseBody?.message ??
                       error?.message ??
                       String(error),
                     statusCode: error?.response?.statusCode,
@@ -1557,20 +1582,18 @@ export class AgentService implements OnModuleInit {
             ? 'Computer runtime is unavailable for this turn. Do not call computer tools.'
             : computerRequest?.computerIds?.length
               ? [
-                  `Selected computer IDs: ${computerRequest.computerIds.join(', ')}`,
-                  'These selected computers are available to you now through the computer tools. Treat the selected computer as your assigned runtime for this turn.',
-                  'When using runComputerCommand, readComputerFile, or openComputerBrowser, pass one of these IDs as computerId.',
-                  'Do not tell the user you lack computer access while a selected computer ID is present. If a command/browser/file operation is needed, call the computer tool and report the actual tool result. If the tool fails, report that failure with evidence.',
+                  `Assigned computer ID: ${computerRequest.computerIds[0]}`,
+                  'This is the agent\'s one persistent computer and is available through the computer tools. Continue work in its existing workspace across chat sessions.',
+                  'Computer tool calls may omit computerId; if supplied, use the assigned ID above.',
+                  'Do not tell the user you lack computer access while this assigned computer is ready. If the tool fails, report that failure with evidence.',
                 ].join('\n')
-              : 'No specific computer was selected. Use an active suitable computer or call startAgentComputer before computer-backed work.';
+              : 'The assigned computer is not active. Call startAgentComputer before computer-backed work.';
           const computerSelectionBlock = computerRequest?.enabled
             ? [
                 '## USER COMPUTER SELECTION',
                 'The user explicitly selected Agent Computer for this turn.',
                 computerSelectionDetail,
-                !computerUnavailable && computerRequest.lifecycle
-                  ? `Requested lifecycle: ${computerRequest.lifecycle}`
-                  : '',
+                !computerUnavailable ? 'Workspace lifecycle: persistent.' : '',
                 computerUnavailable
                   ? ''
                   : [

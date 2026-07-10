@@ -24,7 +24,7 @@ var __toESM = (mod, isNodeMode, target) => (target = mod != null ? __create(__ge
 ));
 
 // src/bin.ts
-var import_commander16 = require("commander");
+var import_commander18 = require("commander");
 var import_path5 = require("path");
 var import_os4 = require("os");
 var import_child_process3 = require("child_process");
@@ -160,7 +160,7 @@ var sym = {
   bullet: import_chalk.default.dim("\u2022"),
   dot: import_chalk.default.dim("\xB7")
 };
-function banner(version = "0.2.0") {
+function banner(version = "0.2.4") {
   const line = import_chalk.default.cyan("  \u2500".padEnd(2) + "\u2500".repeat(44));
   console.log("");
   console.log(line);
@@ -954,12 +954,136 @@ ${sym.ok} ${c.label(toolName)}`);
   return cmd;
 }
 
-// src/commands/workflow.ts
+// src/commands/connections.ts
 var import_commander5 = require("commander");
+function connectionsCommand() {
+  const cmd = new import_commander5.Command("connections").description(
+    "Manage OAuth account connections (Google Workspace, GitHub, Slack, \u2026) that agents act with"
+  );
+  cmd.command("list", { isDefault: true }).description("List your connected accounts").option("--json", "Output as JSON").action(async (opts) => {
+    const cfg = loadConfig();
+    const spinner = spin("Fetching connections\u2026");
+    try {
+      const client = makeClient();
+      const res = await client.oauth.listConnections(
+        cfg.initiator ? { ownerId: cfg.initiator, ownerType: "user" } : void 0
+      );
+      const connections = res?.connections ?? [];
+      spinner.stop();
+      if (opts.json) return jsonOut(connections);
+      section(`Connections (${connections.length})`);
+      if (connections.length === 0) {
+        console.log(c.dim("  No connected accounts. Run `agc connections connect <provider>`."));
+        return;
+      }
+      table(
+        connections.map((conn) => ({
+          ID: (conn.connectionId ?? "").slice(0, 8) + "\u2026",
+          Provider: conn.providerDisplayName || conn.providerKey || "",
+          Account: conn.providerUserEmail || conn.providerUserName || "",
+          Status: conn.status ?? "",
+          Scopes: String((conn.scopes ?? []).length),
+          Used: conn.lastUsedAt ? relativeTime(conn.lastUsedAt) : c.dim("never")
+        })),
+        ["ID", "Provider", "Account", "Status", "Scopes", "Used"]
+      );
+    } catch (err) {
+      spinner.stop();
+      printError(err);
+      process.exit(1);
+    }
+  });
+  cmd.command("providers").description("List OAuth providers available to connect").option("--json", "Output as JSON").action(async (opts) => {
+    const spinner = spin("Fetching providers\u2026");
+    try {
+      const client = makeClient();
+      const res = await client.oauth.listProviders();
+      const providers = res?.providers ?? [];
+      spinner.stop();
+      if (opts.json) return jsonOut(providers);
+      section(`Providers (${providers.length})`);
+      table(
+        providers.map((p) => ({
+          Key: p.providerKey ?? "",
+          Name: p.displayName ?? "",
+          Active: p.isActive ? "yes" : "no"
+        })),
+        ["Key", "Name", "Active"]
+      );
+    } catch (err) {
+      spinner.stop();
+      printError(err);
+      process.exit(1);
+    }
+  });
+  cmd.command("connect <providerKey>").description("Connect an account: prints an authorization URL to open in your browser").option("--scopes <scopes>", "Space-separated OAuth scopes to request").option("--json", "Output as JSON").action(async (providerKey, opts) => {
+    const cfg = loadConfig();
+    if (!cfg.initiator) {
+      console.error(c.error("No initiator set. Run `agc login` first."));
+      process.exit(1);
+    }
+    const spinner = spin("Starting OAuth flow\u2026");
+    try {
+      const client = makeClient();
+      const res = await client.oauth.connect({
+        providerKey,
+        ...opts.scopes ? { scopes: String(opts.scopes).split(/\s+/).filter(Boolean) } : {}
+      });
+      spinner.stop();
+      if (opts.json) return jsonOut(res);
+      console.log(`
+${sym.ok} Open this URL in your browser to authorize:`);
+      console.log(`
+  ${c.id(res.authorizationUrl)}
+`);
+      console.log(c.dim("  After approving, the connection appears in `agc connections list`."));
+    } catch (err) {
+      spinner.stop();
+      printError(err);
+      process.exit(1);
+    }
+  });
+  cmd.command("test <connectionId>").description("Check that a connection is active and its token is valid").option("--json", "Output as JSON").action(async (connectionId, opts) => {
+    const spinner = spin("Testing connection\u2026");
+    try {
+      const client = makeClient();
+      const res = await client.oauth.test(connectionId);
+      spinner.stop();
+      if (opts.json) return jsonOut(res);
+      detail([
+        ["Status", res.status],
+        ["Token valid", res.accessTokenValid ? "yes" : "no"],
+        ["Account", res.providerUserEmail ?? c.dim("(unknown)")],
+        ["Last error", res.error ?? c.dim("(none)")]
+      ]);
+    } catch (err) {
+      spinner.stop();
+      printError(err);
+      process.exit(1);
+    }
+  });
+  cmd.command("revoke <connectionId>").description("Revoke a connection and delete its stored tokens").action(async (connectionId) => {
+    const spinner = spin("Revoking connection\u2026");
+    try {
+      const client = makeClient();
+      await client.oauth.revoke(connectionId);
+      spinner.stop();
+      console.log(`${sym.ok} Connection revoked.`);
+    } catch (err) {
+      spinner.stop();
+      printError(err);
+      process.exit(1);
+    }
+  });
+  return cmd;
+}
+
+// src/commands/workflow.ts
+var import_commander6 = require("commander");
 var import_fs4 = require("fs");
 var import_sdk2 = require("@agent-commons/sdk");
 function workflowCommand() {
-  const cmd = new import_commander5.Command("workflow").description("Run and monitor workflows").alias("wf");
+  const cmd = new import_commander6.Command("workflow").description("Run and monitor workflows").alias("wf");
   async function createTemplateWorkflow(params) {
     const client = makeClient();
     const template = (0, import_sdk2.buildWorkflowTemplate)(params.templateName, params.ctx);
@@ -1357,9 +1481,9 @@ ${c.warn("\u23F8  Awaiting approval")} at node ${c.id(e.pausedAtNode ?? "")}`);
 }
 
 // src/commands/task.ts
-var import_commander6 = require("commander");
+var import_commander7 = require("commander");
 function taskCommand() {
-  const cmd = new import_commander6.Command("task").description("Manage and execute tasks").alias("t");
+  const cmd = new import_commander7.Command("task").description("Manage and execute tasks").alias("t");
   cmd.command("list").description("List tasks").option("--agent <agentId>", "Filter by agent ID").option("--session <sessionId>", "Filter by session ID").option("--json", "Output as JSON").action(async (opts) => {
     const cfg = loadConfig();
     const agentId = opts.agent ?? cfg.defaultAgentId;
@@ -1544,7 +1668,7 @@ ${sym.fail} ${c.error(event.message ?? event.type)}`);
 }
 
 // src/commands/run.ts
-var import_commander7 = require("commander");
+var import_commander8 = require("commander");
 var readline3 = __toESM(require("readline"));
 
 // src/local-tools.ts
@@ -2177,7 +2301,7 @@ async function runLocalTool(call, cfg) {
 
 // src/commands/run.ts
 function runCommand() {
-  return new import_commander7.Command("run").description("Send a single prompt to an agent and stream the response").argument("<prompt>", "Prompt text to send").option("--agent <agentId>", "Agent ID").option("--session <sessionId>", "Resume an existing session by ID").option("--new-session", "Create a new session and print its ID for future use").option("--local", "Enable local file system access (with permission prompts)").option("-y, --yes", "Enable local file system access and auto-approve all operations").option("--no-stream", "Disable streaming (wait for full response)").option("--json", "Output raw event stream as JSON lines").action(async (prompt2, opts) => {
+  return new import_commander8.Command("run").description("Send a single prompt to an agent and stream the response").argument("<prompt>", "Prompt text to send").option("--agent <agentId>", "Agent ID").option("--session <sessionId>", "Resume an existing session by ID").option("--new-session", "Create a new session and print its ID for future use").option("--computer", "Give the agent access to its persistent cloud computer").option("--local", "Enable local file system access (with permission prompts)").option("-y, --yes", "Enable local file system access and auto-approve all operations").option("--no-stream", "Disable streaming (wait for full response)").option("--json", "Output raw event stream as JSON lines").action(async (prompt2, opts) => {
     const cfg = loadConfig();
     const agentId = opts.agent ?? cfg.defaultAgentId;
     if (!agentId) {
@@ -2246,6 +2370,9 @@ function runCommand() {
       if (localEnabled) {
         rows.push(["Local tools", autoApprove ? c.warn("enabled  (auto-approve on)") : c.success("enabled")]);
       }
+      if (opts.computer) {
+        rows.push(["Cloud computer", c.success("enabled") + c.dim("  (persistent, remote)")]);
+      }
       if (rows.length) {
         detail(rows);
         console.log();
@@ -2256,6 +2383,7 @@ function runCommand() {
       sessionId,
       messages: [{ role: "user", content: prompt2 }],
       ...cfg.initiator && { initiatorId: cfg.initiator },
+      ...opts.computer && { computerRequest: { enabled: true } },
       ...cliContext && { cliContext }
     };
     if (opts.noStream && !localEnabled) {
@@ -2355,7 +2483,7 @@ ${sym.fail} ${c.error(event.message ?? "Error")}`);
 }
 
 // src/commands/chat.ts
-var import_commander8 = require("commander");
+var import_commander9 = require("commander");
 var readline4 = __toESM(require("readline"));
 var import_fs6 = require("fs");
 var import_path4 = require("path");
@@ -2399,7 +2527,7 @@ var LOCAL_TOOLS_DISCLAIMER = `
   ${c.dim("Session activity is logged to")} ${c.primary("~/.agc/sessions/")}
 `;
 function chatCommand() {
-  return new import_commander8.Command("chat").description("Start an interactive chat REPL with an agent").option("--agent <agentId>", "Agent ID (or set defaultAgentId in config)").option("--resume <sessionId>", "Resume an existing session by ID").option("--no-stream", "Disable token streaming (wait for full response)").option("--no-local", "Disable local file system access for the agent").action(async (opts) => {
+  return new import_commander9.Command("chat").description("Start an interactive chat REPL with an agent").option("--agent <agentId>", "Agent ID (or set defaultAgentId in config)").option("--resume <sessionId>", "Resume an existing session by ID").option("--computer", "Give the agent access to its persistent cloud computer").option("--no-stream", "Disable token streaming (wait for full response)").option("--no-local", "Disable local file system access for the agent").action(async (opts) => {
     const localEnabled = opts.local !== false;
     const cfg = loadConfig();
     const agentId = opts.agent ?? cfg.defaultAgentId;
@@ -2481,6 +2609,7 @@ ${c.bold("Agent Commons Chat")}`);
       ["Session", c.id(sessionId) + (isResume ? c.dim(" (resumed)") : c.dim(" (new)"))]
     ];
     if (walletLine) headerRows.push(["Wallet", walletLine]);
+    if (opts.computer) headerRows.push(["Cloud computer", c.success("enabled") + c.dim("  (persistent, remote)")]);
     if (localEnabled) headerRows.push(["Local tools", c.success("enabled") + c.dim("  (read, write, search, run)")]);
     detail(headerRows);
     let localToolsCfg = null;
@@ -2590,6 +2719,7 @@ ${content}
         agentId,
         sessionId,
         messages: [{ role: "user", content: userMessage }],
+        ...opts.computer && { computerRequest: { enabled: true } },
         ...cliContext && { cliContext }
       };
       if (opts.noStream) {
@@ -2746,7 +2876,15 @@ ${sym.fail} ${c.error(event.message ?? "Stream error")}`);
           if (thinkingSpinner.isSpinning) thinkingSpinner.stop();
           process.stdout.write("\n");
           if (localToolsCfg && agentContent) {
-            await handleLocalToolLoop(agentContent, localToolsCfg, client, agentId, sessionId, appendSessionLog);
+            await handleLocalToolLoop(
+              agentContent,
+              localToolsCfg,
+              client,
+              agentId,
+              sessionId,
+              appendSessionLog,
+              !!opts.computer
+            );
           }
         } catch (err) {
           process.stdout.write("\n");
@@ -2775,7 +2913,7 @@ Session preserved. Resume with: agc chat --resume ${sessionId}`));
   });
 }
 var MAX_TOOL_DEPTH = 10;
-async function handleLocalToolLoop(agentText, cfg, client, agentId, sessionId, appendLog, depth = 0) {
+async function handleLocalToolLoop(agentText, cfg, client, agentId, sessionId, appendLog, computerEnabled = false, depth = 0) {
   if (depth >= MAX_TOOL_DEPTH) {
     console.log(c.dim(`
   [local] Max tool depth reached (${MAX_TOOL_DEPTH}). Stopping tool loop.
@@ -2822,7 +2960,8 @@ ${result}
     for await (const evt of client.agents.stream({
       agentId,
       sessionId,
-      messages: [{ role: "user", content: resultMsg }]
+      messages: [{ role: "user", content: resultMsg }],
+      ...computerEnabled && { computerRequest: { enabled: true } }
     })) {
       if (evt.type === "token") {
         const tok = evt.content ?? "";
@@ -2860,7 +2999,16 @@ ${sym.fail} ${c.error(evt.message ?? "Stream error")}`);
     console.error(`${sym.fail} ${c.error(err?.message ?? String(err))}`);
     return;
   }
-  await handleLocalToolLoop(followContent, cfg, client, agentId, sessionId, appendLog, depth + 1);
+  await handleLocalToolLoop(
+    followContent,
+    cfg,
+    client,
+    agentId,
+    sessionId,
+    appendLog,
+    computerEnabled,
+    depth + 1
+  );
 }
 function truncate(s, max) {
   const str = String(s ?? "");
@@ -2949,9 +3097,9 @@ function extractText(payload) {
 }
 
 // src/commands/mcp.ts
-var import_commander9 = require("commander");
+var import_commander10 = require("commander");
 function mcpCommand() {
-  const cmd = new import_commander9.Command("mcp").description("Manage MCP (Model Context Protocol) servers");
+  const cmd = new import_commander10.Command("mcp").description("Manage MCP (Model Context Protocol) servers");
   cmd.command("list").description("List MCP servers for the current initiator").option("--agent <agentId>", "List servers owned by an agent instead of the user").option("--json", "Output as JSON").action(async (opts) => {
     const cfg = loadConfig();
     if (!cfg.initiator && !opts.agent) {
@@ -3249,9 +3397,9 @@ ${sym.ok} MCP server registered`);
 }
 
 // src/commands/skills.ts
-var import_commander10 = require("commander");
+var import_commander11 = require("commander");
 function skillsCommand() {
-  const cmd = new import_commander10.Command("skills").description("Discover and manage skills");
+  const cmd = new import_commander11.Command("skills").description("Discover and manage skills");
   cmd.command("list").description("List available skills").option("--owner <id>", "Filter by owner ID").option("--platform", "Show platform-only skills").option("--json", "Output as JSON").action(async (opts) => {
     const spinner = spin("Fetching skills\u2026");
     try {
@@ -3502,9 +3650,9 @@ function skillsCommand() {
 }
 
 // src/commands/wallet.ts
-var import_commander11 = require("commander");
+var import_commander12 = require("commander");
 function walletCommand() {
-  const cmd = new import_commander11.Command("wallet").description("Manage agent wallets");
+  const cmd = new import_commander12.Command("wallet").description("Manage agent wallets");
   cmd.command("list").description("List all wallets for an agent").option("--agent <agentId>", "Agent ID (or use defaultAgentId from config)").option("--json", "Output as JSON").action(async (opts) => {
     const cfg = loadConfig();
     const agentId = opts.agent ?? cfg.defaultAgentId;
@@ -3734,9 +3882,9 @@ function chainName(chainId) {
 }
 
 // src/commands/models.ts
-var import_commander12 = require("commander");
+var import_commander13 = require("commander");
 function modelsCommand() {
-  const cmd = new import_commander12.Command("models").description("List available LLM models");
+  const cmd = new import_commander13.Command("models").description("List available LLM models");
   cmd.command("ls").description("List all available models grouped by provider").option("--provider <name>", "Filter by provider (openai, anthropic, google, mistral, groq, ollama)").option("--json", "Output as JSON").action(async (opts) => {
     const client = makeClient();
     const spinner = spin("Fetching models\u2026");
@@ -3779,9 +3927,9 @@ ${c.bold(provider.toUpperCase())}`);
 }
 
 // src/commands/memory.ts
-var import_commander13 = require("commander");
+var import_commander14 = require("commander");
 function memoryCommand() {
-  const cmd = new import_commander13.Command("memory").description("View and manage agent memories");
+  const cmd = new import_commander14.Command("memory").description("View and manage agent memories");
   cmd.command("list").description("List memories for an agent").option("--agent <agentId>", "Agent ID (defaults to configured agent)").option("--type <type>", "Filter by type: episodic | semantic | procedural").option("--limit <n>", "Max results", "50").option("--json", "Output as JSON").action(async (opts) => {
     const cfg = loadConfig();
     const agentId = opts.agent ?? cfg.defaultAgentId;
@@ -3921,9 +4069,9 @@ ${sym.ok} Memory ${c.id(memoryId)} deleted`);
 }
 
 // src/commands/usage.ts
-var import_commander14 = require("commander");
+var import_commander15 = require("commander");
 function usageCommand() {
-  const cmd = new import_commander14.Command("usage").description("View token usage and cost by agent");
+  const cmd = new import_commander15.Command("usage").description("View token usage and cost by agent");
   cmd.command("agents").description("Show usage summary for all your agents").option("--owner <address>", "Owner address (defaults to configured initiator)").option("--from <date>", "Start date (ISO, e.g. 2025-01-01)").option("--to <date>", "End date (ISO)").option("--json", "Output as JSON").action(async (opts) => {
     const cfg = loadConfig();
     const owner = opts.owner ?? cfg.initiator;
@@ -4015,7 +4163,7 @@ function usageCommand() {
 }
 
 // src/commands/logs.ts
-var import_commander15 = require("commander");
+var import_commander16 = require("commander");
 var STATUS_COLOR = {
   success: (s) => c.bold(s),
   error: (s) => c.error(s),
@@ -4025,7 +4173,7 @@ function colorStatus(status) {
   return (STATUS_COLOR[status] ?? c.dim)(status);
 }
 function logsCommand() {
-  const cmd = new import_commander15.Command("logs").description("View agent activity logs");
+  const cmd = new import_commander16.Command("logs").description("View agent activity logs");
   cmd.command("list").alias("ls").description("List recent log entries for an agent").option("--agent <agentId>", "Agent ID (defaults to configured agent)").option("--session <sessionId>", "Filter by session ID").option("--status <status>", "Filter: success | error | warning").option("--limit <n>", "Max entries to show", "50").option("--json", "Output as JSON").action(async (opts) => {
     const cfg = loadConfig();
     const agentId = opts.agent ?? cfg.defaultAgentId;
@@ -4099,6 +4247,288 @@ function logsCommand() {
   return cmd;
 }
 
+// src/commands/computer.ts
+var import_commander17 = require("commander");
+var RESOURCE_PROFILES = [
+  "starter",
+  "standard",
+  "performance",
+  "gpu"
+];
+var RESOURCE_MODES = ["fixed", "elastic"];
+function resolveAgentId(opts) {
+  const agentId = opts.agent ?? loadConfig().defaultAgentId;
+  if (!agentId) {
+    throw new Error(
+      "Specify --agent <agentId> or set defaultAgentId with `agc config set defaultAgentId <id>`."
+    );
+  }
+  return agentId;
+}
+function unwrap(response) {
+  return response?.data ?? response;
+}
+function displayComputer(computer) {
+  if (!computer) {
+    section("Persistent cloud computer");
+    detail([
+      ["Status", statusBadge("disabled")],
+      ["Persistence", "persistent"],
+      ["Computer ID", c.dim("(not provisioned)")]
+    ]);
+    console.log(c.dim("  Enable it with: agc computer enable --agent <agentId>"));
+    return;
+  }
+  const wire = computer;
+  const resources = computer.resources ?? {};
+  const gpu = resources.gpu ?? (wire.gpuCount ? { count: wire.gpuCount, type: wire.gpuType } : null);
+  const cpu = resources.vcpu ?? wire.cpuRequest ?? wire.cpuLimit;
+  const memory = resources.memoryGiB != null ? `${resources.memoryGiB} GiB` : wire.memoryRequest ?? wire.memoryLimit;
+  const storage = resources.storageGiB != null ? `${resources.storageGiB} GiB` : wire.storageLimit;
+  section("Persistent cloud computer");
+  detail([
+    ["Computer ID", computer.computerId ? c.id(computer.computerId) : c.dim("(not provisioned)")],
+    ["Enabled", computer.enabled === false ? "no" : c.success("yes")],
+    ["Status", statusBadge(computer.status ?? "disabled")],
+    ["Desired state", computer.desiredState ?? c.dim("n/a")],
+    ["Persistence", computer.persistence ?? wire.lifecycle ?? "persistent"],
+    ["Profile", computer.resourceProfile ?? c.dim("n/a")],
+    ["Mode", computer.resourceMode ?? c.dim("n/a")],
+    ["CPU", cpu != null ? String(cpu) : c.dim("n/a")],
+    ["Memory", memory != null ? String(memory) : c.dim("n/a")],
+    ["Storage", storage != null ? String(storage) : c.dim("n/a")],
+    ["GPU", gpu?.count ? `${gpu.count} \xD7 ${gpu.type ?? "provider default"}` : "none"],
+    ["Region", computer.region ?? c.dim("automatic")],
+    ["Workspace", computer.workspaceRoot ?? c.dim("not mounted")],
+    ["Last activity", computer.lastActivityAt ? relativeTime(computer.lastActivityAt) : c.dim("never")],
+    ["Error", computer.errorMessage ?? void 0]
+  ]);
+}
+function parseNumber(value, name, options) {
+  if (value === void 0) return void 0;
+  const parsed = Number(value);
+  const minimum = options?.allowZero ? 0 : Number.MIN_VALUE;
+  if (!Number.isFinite(parsed) || parsed < minimum || options?.integer && !Number.isInteger(parsed)) {
+    const qualifier = options?.integer ? "whole number" : "number";
+    throw new Error(`${name} must be a ${options?.allowZero ? "non-negative" : "positive"} ${qualifier}.`);
+  }
+  return parsed;
+}
+async function changeEnabled(agentId, enabled, json) {
+  const spinner = spin(`${enabled ? "Enabling" : "Disabling"} persistent cloud computer\u2026`);
+  try {
+    const response = await makeClient().agents.updateComputerConfig(agentId, { enabled });
+    const config = unwrap(response);
+    spinner.stop();
+    if (json) return jsonOut(config);
+    console.log(`
+${sym.ok} Persistent cloud computer ${enabled ? "enabled" : "disabled"} for agent ${c.id(agentId)}`);
+    if (enabled) {
+      console.log(c.dim(`  Wake it now with: agc computer wake --agent ${agentId}`));
+    }
+  } catch (error) {
+    spinner.stop();
+    printError(error);
+    process.exitCode = 1;
+  }
+}
+async function lifecycleAction(action, agentId, reason, json) {
+  const verb = action === "wake" ? "Waking" : action === "sleep" ? "Sleeping" : "Restarting";
+  const spinner = spin(`${verb} persistent cloud computer\u2026`);
+  try {
+    const client = makeClient();
+    const response = action === "wake" ? await client.agents.wakeComputer(agentId, reason ? { reason } : void 0) : action === "sleep" ? await client.agents.sleepComputer(agentId, reason ? { reason } : void 0) : await client.agents.restartComputer(agentId, reason ? { reason } : void 0);
+    const computer = unwrap(response);
+    spinner.stop();
+    if (json) return jsonOut(computer);
+    console.log(`
+${sym.ok} Persistent cloud computer ${action === "sleep" ? "is sleeping" : action === "wake" ? "is awake" : "restarted"}`);
+    displayComputer(computer);
+  } catch (error) {
+    spinner.stop();
+    printError(error);
+    process.exitCode = 1;
+  }
+}
+function addAgentOption(command) {
+  return command.option("--agent <agentId>", "Agent ID (defaults to configured agent)");
+}
+function computerCommand() {
+  const command = new import_commander17.Command("computer").description("Manage an agent's one persistent cloud computer");
+  addAgentOption(command.command("status").description("Show persistent cloud computer status")).option("--json", "Output as JSON").action(async (opts) => {
+    let agentId;
+    try {
+      agentId = resolveAgentId(opts);
+    } catch (error) {
+      printError(error);
+      process.exitCode = 1;
+      return;
+    }
+    const spinner = spin("Fetching persistent cloud computer\u2026");
+    try {
+      const computer = unwrap(await makeClient().agents.getComputer(agentId));
+      spinner.stop();
+      if (opts.json) return jsonOut(computer);
+      displayComputer(computer);
+    } catch (error) {
+      spinner.stop();
+      printError(error);
+      process.exitCode = 1;
+    }
+  });
+  addAgentOption(command.command("enable").description("Enable a persistent cloud computer for an agent")).option("--json", "Output as JSON").action(async (opts) => {
+    try {
+      await changeEnabled(resolveAgentId(opts), true, !!opts.json);
+    } catch (error) {
+      printError(error);
+      process.exitCode = 1;
+    }
+  });
+  addAgentOption(command.command("disable").description("Disable the agent cloud computer")).option("--json", "Output as JSON").action(async (opts) => {
+    try {
+      await changeEnabled(resolveAgentId(opts), false, !!opts.json);
+    } catch (error) {
+      printError(error);
+      process.exitCode = 1;
+    }
+  });
+  for (const action of ["wake", "sleep", "restart"]) {
+    const descriptions = {
+      wake: "Wake the persistent cloud computer",
+      sleep: "Sleep compute while preserving the persistent workspace",
+      restart: "Restart the runtime while preserving the persistent workspace"
+    };
+    addAgentOption(command.command(action).description(descriptions[action])).option("--reason <text>", `Reason for the ${action}`).option("--json", "Output as JSON").action(async (opts) => {
+      try {
+        await lifecycleAction(action, resolveAgentId(opts), opts.reason, !!opts.json);
+      } catch (error) {
+        printError(error);
+        process.exitCode = 1;
+      }
+    });
+  }
+  addAgentOption(command.command("resize").description("Resize the persistent cloud computer")).option("--profile <profile>", `Resource profile: ${RESOURCE_PROFILES.join(" | ")}`).option("--mode <mode>", `Resource mode: ${RESOURCE_MODES.join(" | ")}`).option("--vcpu <count>", "Requested virtual CPU count").option("--cpu <count>", "Alias for --vcpu").option("--memory <gib>", "Requested memory in GiB").option("--storage <gib>", "Requested persistent storage in GiB").option("--gpu-type <type>", "GPU type, such as nvidia-h100").option("--gpu-count <count>", "GPU count (0 removes GPU allocation)").option("--json", "Output as JSON").action(async (opts) => {
+    let agentId;
+    let resize;
+    try {
+      agentId = resolveAgentId(opts);
+      if (opts.profile && !RESOURCE_PROFILES.includes(opts.profile)) {
+        throw new Error(`--profile must be one of: ${RESOURCE_PROFILES.join(", ")}.`);
+      }
+      if (opts.mode && !RESOURCE_MODES.includes(opts.mode)) {
+        throw new Error(`--mode must be one of: ${RESOURCE_MODES.join(", ")}.`);
+      }
+      if (opts.vcpu !== void 0 && opts.cpu !== void 0) {
+        throw new Error("Use either --vcpu or --cpu, not both.");
+      }
+      const vcpu = parseNumber(opts.vcpu ?? opts.cpu, "CPU");
+      const memoryGiB = parseNumber(opts.memory, "Memory");
+      const storageGiB = parseNumber(opts.storage, "Storage");
+      const gpuCount = parseNumber(opts.gpuCount, "GPU count", { integer: true, allowZero: true });
+      const resources = {
+        ...vcpu !== void 0 && { vcpu },
+        ...memoryGiB !== void 0 && { memoryGiB },
+        ...storageGiB !== void 0 && { storageGiB },
+        ...(gpuCount !== void 0 || opts.gpuType) && {
+          gpu: { count: gpuCount ?? 1, ...opts.gpuType && { type: opts.gpuType } }
+        }
+      };
+      resize = {
+        ...opts.profile && { resourceProfile: opts.profile },
+        ...opts.mode && { resourceMode: opts.mode },
+        ...Object.keys(resources).length > 0 && { resources }
+      };
+      if (Object.keys(resize).length === 0) {
+        throw new Error("Specify --profile, --mode, or at least one resource value.");
+      }
+    } catch (error) {
+      printError(error);
+      process.exitCode = 1;
+      return;
+    }
+    const spinner = spin("Resizing persistent cloud computer\u2026");
+    try {
+      const computer = unwrap(await makeClient().agents.resizeComputer(agentId, resize));
+      spinner.stop();
+      if (opts.json) return jsonOut(computer);
+      console.log(`
+${sym.ok} Persistent cloud computer resize requested`);
+      displayComputer(computer);
+    } catch (error) {
+      spinner.stop();
+      printError(error);
+      process.exitCode = 1;
+    }
+  });
+  addAgentOption(
+    command.command("exec").description("Run a command in the persistent cloud computer").argument("<command...>", "Command and arguments to run")
+  ).option("--cwd <path>", "Working directory").option("--timeout <seconds>", "Command timeout in seconds", "120").option("--json", "Output as JSON").action(async (commandParts, opts) => {
+    let agentId;
+    let timeoutSeconds;
+    try {
+      agentId = resolveAgentId(opts);
+      timeoutSeconds = parseNumber(opts.timeout, "Timeout");
+    } catch (error) {
+      printError(error);
+      process.exitCode = 1;
+      return;
+    }
+    const spinner = spin("Running command in persistent cloud computer\u2026");
+    try {
+      const result = unwrap(await makeClient().agents.execComputer(agentId, {
+        command: commandParts.join(" "),
+        ...opts.cwd && { cwd: opts.cwd },
+        ...timeoutSeconds !== void 0 && { timeoutSeconds }
+      }));
+      spinner.stop();
+      if (opts.json) return jsonOut(result);
+      const stdout = result?.stdout ?? result?.output ?? result?.result ?? "";
+      const stderr = result?.stderr ?? "";
+      if (stdout) process.stdout.write(String(stdout).replace(/\n?$/, "\n"));
+      if (stderr) process.stderr.write(c.error(String(stderr).replace(/\n?$/, "\n")));
+      const exitCode = result?.exitCode ?? result?.exit_code;
+      if (exitCode !== void 0 && exitCode !== 0) process.exitCode = Number(exitCode);
+    } catch (error) {
+      spinner.stop();
+      printError(error);
+      process.exitCode = 1;
+    }
+  });
+  addAgentOption(command.command("events").description("List recent persistent cloud computer events")).option("--limit <count>", "Maximum events", "50").option("--json", "Output as JSON").action(async (opts) => {
+    let agentId;
+    let limit;
+    try {
+      agentId = resolveAgentId(opts);
+      limit = parseNumber(opts.limit, "Limit", { integer: true });
+    } catch (error) {
+      printError(error);
+      process.exitCode = 1;
+      return;
+    }
+    const spinner = spin("Fetching persistent cloud computer events\u2026");
+    try {
+      const events = unwrap(await makeClient().agents.listComputerEvents(agentId, limit));
+      spinner.stop();
+      if (opts.json) return jsonOut(events);
+      section(`Cloud computer events (${events.length})`);
+      table(
+        events.map((event) => ({
+          Event: event.eventType ?? "",
+          Summary: event.summary ?? "",
+          Actor: event.actorType ?? "",
+          When: event.createdAt ? relativeTime(event.createdAt) : ""
+        })),
+        ["Event", "Summary", "Actor", "When"]
+      );
+    } catch (error) {
+      spinner.stop();
+      printError(error);
+      process.exitCode = 1;
+    }
+  });
+  return command;
+}
+
 // src/bin.ts
 var CONFIG_FILE3 = (0, import_path5.join)((0, import_os4.homedir)(), ".agc", "config.json");
 async function interactiveMenu() {
@@ -4120,6 +4550,7 @@ async function interactiveMenu() {
   const action = await select("What would you like to do?", [
     { label: "Chat with an agent", value: "chat", hint: "agc chat" },
     { label: "Run an agent (one-shot)", value: "run", hint: "agc run" },
+    { label: "Manage an agent cloud computer", value: "computer", hint: "agc computer status" },
     { label: "View sessions", value: "sessions", hint: "agc sessions list" },
     { label: "Manage agents", value: "agents", hint: "agc agents list" },
     { label: "Tasks", value: "tasks", hint: "agc task list" },
@@ -4135,8 +4566,9 @@ async function interactiveMenu() {
   if (action === "exit") {
     process.exit(0);
   }
-  const agentId = cfg.defaultAgentId ?? await pickAgentInteractively(action);
-  if ((action === "chat" || action === "run") && !agentId) return;
+  const needsAgent = action === "chat" || action === "run" || action === "computer";
+  const agentId = needsAgent ? cfg.defaultAgentId ?? await pickAgentInteractively(action) : void 0;
+  if (needsAgent && !agentId) return;
   if (action === "run") {
     const prompt2 = await askPrompt("Enter your prompt:");
     if (!prompt2) return;
@@ -4147,6 +4579,7 @@ async function interactiveMenu() {
     chat: ["chat", "--agent", agentId],
     run: [],
     // handled above
+    computer: ["computer", "status", "--agent", agentId],
     sessions: ["sessions", "list"],
     agents: ["agents", "list"],
     tasks: ["task", "list"],
@@ -4212,7 +4645,7 @@ async function pickAgentInteractively(action) {
   }
   console.log();
   const agentId = await select(
-    `Choose an agent to ${action} with:`,
+    action === "computer" ? "Choose the agent whose cloud computer you want to manage:" : `Choose an agent to ${action} with:`,
     agents.map((a) => ({
       label: a.name,
       value: a.agentId,
@@ -4231,8 +4664,8 @@ async function pickAgentInteractively(action) {
   }
   return agentId;
 }
-var program = new import_commander16.Command();
-program.name("agc").description("Agent Commons CLI \u2014 interact with the Agent Commons platform").version("0.2.0", "-v, --version").action(async () => {
+var program = new import_commander18.Command();
+program.name("agc").description("Agent Commons CLI \u2014 interact with the Agent Commons platform").version("0.2.4", "-v, --version").action(async () => {
   await interactiveMenu();
 });
 program.hook("preAction", async (_thisCommand, actionCommand) => {
@@ -4246,10 +4679,12 @@ program.addCommand(configCommand());
 program.addCommand(agentsCommand());
 program.addCommand(sessionsCommand());
 program.addCommand(toolsCommand());
+program.addCommand(connectionsCommand());
 program.addCommand(workflowCommand());
 program.addCommand(taskCommand());
 program.addCommand(runCommand());
 program.addCommand(chatCommand());
+program.addCommand(computerCommand());
 program.addCommand(mcpCommand());
 program.addCommand(skillsCommand());
 program.addCommand(walletCommand());

@@ -41,8 +41,6 @@ export function useAgentStream(initiator: string, options: UseAgentStreamOptions
       attachments?: Array<{ fileId: string }>;
       computerRequest?: {
         enabled: boolean;
-        computerIds?: string[];
-        lifecycle?: "persistent" | "ephemeral";
       };
     }) => {
       setStreaming(true);

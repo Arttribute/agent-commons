@@ -3,11 +3,15 @@ import { TypedBody } from '@nestia/core';
 import {
   BadRequestException,
   Controller,
+  ForbiddenException,
   forwardRef,
+  Headers,
   Inject,
   Post,
+  UnauthorizedException,
   UseGuards,
 } from '@nestjs/common';
+import { timingSafeEqual } from 'crypto';
 import { Public, RateLimitGuard, RateLimit } from '~/modules/auth';
 import { ChatCompletionMessageToolCall } from 'openai/resources/index.mjs';
 
@@ -22,7 +26,7 @@ import { OAuthTokenInjectionService } from '~/oauth/oauth-token-injection.servic
 import { DatabaseService } from '~/modules/database/database.service';
 import { McpToolDiscoveryService } from '~/mcp/mcp-tool-discovery.service';
 import * as schema from '#/models/schema';
-import { eq } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 
 @Controller({ version: '1', path: 'agents' })
 export class AgentToolsController {
@@ -69,7 +73,13 @@ export class AgentToolsController {
         toolCallId?: string;
       };
     },
+    @Headers('x-internal-tool-secret') internalSecret?: string,
   ) {
+    // This endpoint executes tools with server-held credentials (OAuth tokens,
+    // tool keys). It is only ever called by this API's own agent loop, so it
+    // must never be reachable with arbitrary external input.
+    this.assertInternalCaller(internalSecret);
+
     const { metadata, toolCall } = body;
     const args = toolCall.args;
     const functionName = toolCall.name;
@@ -155,6 +165,12 @@ export class AgentToolsController {
       }
 
       if (dbTool && dbTool.apiSpec) {
+        // OAuth-backed tools act with a user's connected account, so they
+        // must be explicitly enabled for this agent — platform visibility
+        // alone is not enough.
+        if (dbTool.apiSpec.authType === 'oauth2') {
+          await this.assertAgentToolEnabled(dbTool.toolId, functionName, agentId);
+        }
         // => dynamic approach (API fetch)
         const result = await this.invokeDynamicTool(
           dbTool.apiSpec,
@@ -265,6 +281,57 @@ export class AgentToolsController {
   }
 
   /**
+   * Only this API's own agent loop may call the tool-execution endpoint.
+   * When API_SECRET_KEY is configured the caller must present it via the
+   * x-internal-tool-secret header; without it (local dev with auth disabled)
+   * the check is skipped.
+   */
+  private assertInternalCaller(internalSecret?: string) {
+    const expected = process.env.API_SECRET_KEY;
+    const authRequired = process.env.API_AUTH_REQUIRED !== 'false';
+    if (!expected || !authRequired) return;
+
+    const provided = internalSecret ?? '';
+    const expectedBuf = Buffer.from(expected);
+    const providedBuf = Buffer.from(provided);
+    const matches =
+      expectedBuf.length === providedBuf.length &&
+      timingSafeEqual(expectedBuf, providedBuf);
+
+    if (!matches) {
+      throw new UnauthorizedException(
+        'Tool execution endpoint is internal to the agent runtime',
+      );
+    }
+  }
+
+  /**
+   * OAuth-backed tools must be explicitly enabled for the calling agent via
+   * an agent_tool assignment (created in Studio → Agent → Tools).
+   */
+  private async assertAgentToolEnabled(
+    toolId: string,
+    functionName: string,
+    agentId: string,
+  ) {
+    const mappings = await this.db.query.agentTool.findMany({
+      // agent_id may be uuid in the DB while agentId is text — cast to text
+      where: () => sql`agent_tool.agent_id::text = ${agentId}`,
+    });
+
+    const enabled = mappings.some(
+      (m: any) => m.toolId === toolId && m.isEnabled,
+    );
+
+    if (!enabled) {
+      throw new ForbiddenException(
+        `Tool "${functionName}" uses a connected account and is not enabled for this agent. ` +
+          `Enable it for the agent in Studio → Agents → Tools before use.`,
+      );
+    }
+  }
+
+  /**
    * The "dynamic" approach for either DB-based or resource-based apiSpec:
    * build a request to external API from the tool's `apiSpec`.
    * Automatically injects OAuth tokens if required.
@@ -277,6 +344,7 @@ export class AgentToolsController {
       headers?: Record<string, string>;
       queryParams?: Record<string, string>;
       bodyTemplate?: any;
+      bodyTransform?: string;
       authType?: string;
       oauthProviderKey?: string;
       oauthTokenLocation?: 'header' | 'query' | 'body';
@@ -294,12 +362,15 @@ export class AgentToolsController {
     const { method, baseUrl, path, headers, queryParams, bodyTemplate } =
       apiSpec;
 
-    // 1) Build final URL with query params
-    let finalUrl = `${baseUrl}${this.replaceTemplate(path, parsedArgs)}`;
+    // 1) Build final URL with query params.
+    // Path segments are URI-encoded during substitution; query values must be
+    // substituted raw because URLSearchParams encodes them itself (encoding
+    // twice mangles RFC3339 timestamps etc. and upstream APIs reject them).
+    let finalUrl = `${baseUrl}${this.replaceTemplate(path, parsedArgs, { encode: true })}`;
     const url = new URL(finalUrl);
     if (queryParams) {
       for (const [k, v] of Object.entries(queryParams)) {
-        const value = this.replaceTemplate(v, parsedArgs);
+        const value = this.replaceTemplate(v, parsedArgs, { encode: false });
         if (value !== '') {
           url.searchParams.set(k, value);
         }
@@ -311,7 +382,9 @@ export class AgentToolsController {
     let requestBody: any = undefined;
     const methodUpper = method.toUpperCase();
     if (['POST', 'PUT', 'PATCH'].includes(methodUpper)) {
-      if (bodyTemplate) {
+      if (apiSpec.bodyTransform) {
+        requestBody = this.applyBodyTransform(apiSpec.bodyTransform, parsedArgs);
+      } else if (bodyTemplate) {
         requestBody = this.buildBodyFromTemplate(bodyTemplate, parsedArgs);
       } else if (parsedArgs && Object.keys(parsedArgs).length > 0) {
         // If no template, but args exist, send args as JSON body
@@ -365,7 +438,8 @@ export class AgentToolsController {
         });
       } catch (oauthError: any) {
         throw new BadRequestException(
-          `OAuth authentication failed: ${oauthError.message}`,
+          `OAuth authorization failed for provider "${apiSpec.oauthProviderKey}": ${oauthError.message} ` +
+            `The user must connect (or reconnect) this provider in Studio → Tools before this tool can run.`,
         );
       }
     }
@@ -378,19 +452,97 @@ export class AgentToolsController {
     });
 
     if (!response.ok) {
+      // Surface the upstream error detail so the agent (and user) can see the
+      // real cause — e.g. Google's "Invalid value" or "insufficient scopes" —
+      // instead of an opaque status code.
+      const detail = await this.extractUpstreamError(response);
+      if (response.status === 401 || response.status === 403) {
+        throw new BadRequestException(
+          `Upstream API rejected the request (${response.status}): ${detail}. ` +
+            `The connected ${apiSpec.oauthProviderKey ?? 'API'} account is likely missing the required scopes — ` +
+            `the user should reconnect the provider and grant the needed permissions.`,
+        );
+      }
       throw new BadRequestException(
-        `Dynamic API error: ${response.status} ${response.statusText}`,
+        `Upstream API error (${response.status} ${response.statusText}): ${detail}`,
       );
     }
     return await response.json();
   }
 
-  private replaceTemplate(template: string, args: Record<string, any>): string {
+  /** Pull a human-readable error message out of an upstream API response. */
+  private async extractUpstreamError(response: Response): Promise<string> {
+    try {
+      const text = await response.text();
+      try {
+        const parsed = JSON.parse(text);
+        return (
+          parsed?.error?.message ??
+          parsed?.error_description ??
+          (typeof parsed?.error === 'string' ? parsed.error : undefined) ??
+          parsed?.message ??
+          text.slice(0, 500)
+        );
+      } catch {
+        return text.slice(0, 500) || response.statusText;
+      }
+    } catch {
+      return response.statusText;
+    }
+  }
+
+  /**
+   * Named body transforms for tools whose request body cannot be expressed as
+   * a JSON template (e.g. Gmail's base64url RFC822 `raw` message).
+   */
+  private applyBodyTransform(
+    transform: string,
+    args: Record<string, any>,
+  ): any {
+    switch (transform) {
+      case 'gmailRawMessage': {
+        const to = String(args.to ?? '').trim();
+        const subject = String(args.subject ?? '');
+        const body = String(args.body ?? '');
+        if (!to) {
+          throw new BadRequestException(
+            'Missing required "to" recipient for Gmail send',
+          );
+        }
+        const headers = [
+          `To: ${to}`,
+          args.cc ? `Cc: ${String(args.cc)}` : null,
+          args.bcc ? `Bcc: ${String(args.bcc)}` : null,
+          // RFC 2047 base64 encoding keeps non-ASCII subjects intact
+          `Subject: =?UTF-8?B?${Buffer.from(subject, 'utf8').toString('base64')}?=`,
+          'MIME-Version: 1.0',
+          'Content-Type: text/plain; charset="UTF-8"',
+          'Content-Transfer-Encoding: 7bit',
+        ].filter(Boolean);
+        const rfc822 = `${headers.join('\r\n')}\r\n\r\n${body}`;
+        const raw = Buffer.from(rfc822, 'utf8')
+          .toString('base64')
+          .replace(/\+/g, '-')
+          .replace(/\//g, '_')
+          .replace(/=+$/, '');
+        return { raw };
+      }
+      default:
+        throw new BadRequestException(`Unknown bodyTransform "${transform}"`);
+    }
+  }
+
+  private replaceTemplate(
+    template: string,
+    args: Record<string, any>,
+    options: { encode: boolean } = { encode: true },
+  ): string {
     return template.replace(/\{([^}]+)\}/g, (_match, key) => {
       const value = args[key];
-      return value === undefined || value === null
-        ? ''
-        : encodeURIComponent(String(value));
+      if (value === undefined || value === null) return '';
+      return options.encode
+        ? encodeURIComponent(String(value))
+        : String(value);
     });
   }
 

@@ -23,14 +23,21 @@ describe('ComputerService', () => {
   beforeEach(() => {
     db = dbMock();
     service = new ComputerService(db as any);
+    jest.spyOn(service as any, 'assertCapability').mockResolvedValue({
+      enabled: true,
+      allowTerminal: true,
+      allowFilesystem: true,
+      allowBrowser: true,
+      networkAccess: 'standard',
+    });
   });
 
-  it('runs a command against the active session computer when computerId is omitted', async () => {
+  it('runs a command against the agent persistent computer when computerId is omitted', async () => {
     const computer = {
       computerId: '11111111-1111-4111-8111-111111111111',
       agentId: 'agent_1',
-      sessionId: '22222222-2222-4222-8222-222222222222',
-      lifecycle: 'ephemeral',
+      sessionId: null,
+      lifecycle: 'persistent',
       status: 'running',
       commonOsAgentId: 'commonos_agent_1',
     };
@@ -66,24 +73,32 @@ describe('ComputerService', () => {
     ).rejects.toBeInstanceOf(BadRequestException);
   });
 
-  it('rejects a selected computer that belongs to another session', async () => {
+  it('allows the same persistent computer to continue across chat sessions', async () => {
     jest.spyOn(service, 'getInstance').mockResolvedValue({
       computerId: '11111111-1111-4111-8111-111111111111',
       agentId: 'agent_1',
-      sessionId: '22222222-2222-4222-8222-222222222222',
-      lifecycle: 'ephemeral',
+      sessionId: null,
+      lifecycle: 'persistent',
       status: 'running',
       commonOsAgentId: 'commonos_agent_1',
     } as any);
+    const sendInstruction = jest
+      .spyOn(service, 'sendInstruction')
+      .mockResolvedValue({ status: 'completed', response: 'ok' } as any);
 
-    await expect(
-      service.runCommand({
-        agentId: 'agent_1',
+    await service.runCommand({
+      agentId: 'agent_1',
+      computerId: '11111111-1111-4111-8111-111111111111',
+      sessionId: '33333333-3333-4333-8333-333333333333',
+      command: 'pwd',
+    });
+
+    expect(sendInstruction).toHaveBeenCalledWith(
+      expect.objectContaining({
         computerId: '11111111-1111-4111-8111-111111111111',
         sessionId: '33333333-3333-4333-8333-333333333333',
-        command: 'pwd',
       }),
-    ).rejects.toBeInstanceOf(BadRequestException);
+    );
   });
 
   it('does not use the computer id as an Agent Commons session id for unscoped commands', async () => {
@@ -123,9 +138,48 @@ describe('ComputerService', () => {
       '/computers/commonos_agent_1/instructions',
       undefined,
       { content: 'run pwd' },
+      'agent_1',
     );
     expect(db.insertValues).toHaveBeenCalledWith(
       expect.objectContaining({ sessionId: undefined }),
     );
+  });
+
+  it('maps friendly profiles to bounded elastic resource ceilings', () => {
+    const normalized = (service as any).normalizeConfigPatch(
+      { resourceProfile: 'performance', resourceMode: 'elastic' },
+      { storageLimit: '20Gi' },
+    );
+
+    expect(normalized).toEqual(
+      expect.objectContaining({
+        resourceProfile: 'performance',
+        resourceMode: 'elastic',
+        cpuRequest: '1',
+        cpuLimit: '4',
+        memoryRequest: '2Gi',
+        memoryLimit: '8Gi',
+        storageLimit: '50Gi',
+        gpuCount: 0,
+        defaultMode: 'persistent',
+        maxConcurrentComputers: 1,
+      }),
+    );
+  });
+
+  it('keeps persistent storage when moving to a smaller compute profile', () => {
+    expect(
+      (service as any).normalizeConfigPatch(
+        { resourceProfile: 'starter' },
+        { storageLimit: '20Gi' },
+      ).storageLimit,
+    ).toBe('20Gi');
+
+    expect(() =>
+      (service as any).normalizeConfigPatch(
+        { storageLimit: '10Gi' },
+        { storageLimit: '20Gi' },
+      ),
+    ).toThrow(BadRequestException);
   });
 });

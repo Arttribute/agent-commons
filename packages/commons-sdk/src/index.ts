@@ -2,6 +2,15 @@ export { CommonsClient, CommonsError } from './client';
 export { buildWorkflowTemplate, listWorkflowTemplates } from './workflow-templates';
 export type {
   Agent, CreateAgentParams,
+  // Persistent agent computers
+  AgentComputer, AgentComputerBrowser, AgentComputerConfig, AgentComputerDesiredState,
+  AgentComputerEvent, AgentComputerGpu, AgentComputerGpuType, AgentComputerInstance,
+  AgentComputerLifecycle, AgentComputerResourceMode, AgentComputerResourceProfile,
+  AgentComputerResources, AgentComputerStatus, AgentComputerTerminal,
+  ComputerActionParams, ComputerBrowserOpenParams, ComputerLifecycle,
+  ComputerCommandParams, ComputerConfigUpdate, ComputerFile, ComputerGpu,
+  ComputerGpuType, ComputerNetworkAccess, ComputerPersistence, ComputerResizeParams,
+  ComputerResources, ComputerResourceMode, ComputerResourceProfile, ComputerResourceUpdate,
   Session,
   ModelConfig, ModelProvider,
   RunParams, ChatMessage, StreamEvent, StreamEventType,

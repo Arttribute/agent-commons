@@ -66,6 +66,7 @@ export function chatCommand(): Command {
     .description('Start an interactive chat REPL with an agent')
     .option('--agent <agentId>', 'Agent ID (or set defaultAgentId in config)')
     .option('--resume <sessionId>', 'Resume an existing session by ID')
+    .option('--computer', "Give the agent access to its persistent cloud computer")
     .option('--no-stream', 'Disable token streaming (wait for full response)')
     .option('--no-local', 'Disable local file system access for the agent')
     .action(async (opts) => {
@@ -160,6 +161,7 @@ export function chatCommand(): Command {
         ['Session', c.id(sessionId) + (isResume ? c.dim(' (resumed)') : c.dim(' (new)'))],
       ];
       if (walletLine) headerRows.push(['Wallet', walletLine]);
+      if (opts.computer) headerRows.push(['Cloud computer', c.success('enabled') + c.dim('  (persistent, remote)')]);
       if (localEnabled) headerRows.push(['Local tools', c.success('enabled') + c.dim('  (read, write, search, run)')]);
       detail(headerRows);
 
@@ -292,6 +294,7 @@ export function chatCommand(): Command {
           agentId,
           sessionId,
           messages: [{ role: 'user' as const, content: userMessage }],
+          ...(opts.computer && { computerRequest: { enabled: true } }),
           ...(cliContext && { cliContext }),
         };
 
@@ -459,7 +462,15 @@ export function chatCommand(): Command {
 
             // ── Local tool-call loop (recursive until no more tool calls) ───
             if (localToolsCfg && agentContent) {
-              await handleLocalToolLoop(agentContent, localToolsCfg, client, agentId, sessionId, appendSessionLog);
+              await handleLocalToolLoop(
+                agentContent,
+                localToolsCfg,
+                client,
+                agentId,
+                sessionId,
+                appendSessionLog,
+                !!opts.computer,
+              );
             }
           } catch (err) {
             process.stdout.write('\n');
@@ -510,6 +521,7 @@ async function handleLocalToolLoop(
   agentId: string,
   sessionId: string,
   appendLog: (sessionId: string, record: Record<string, unknown>) => void,
+  computerEnabled = false,
   depth = 0,
 ): Promise<void> {
   if (depth >= MAX_TOOL_DEPTH) {
@@ -561,6 +573,7 @@ async function handleLocalToolLoop(
       agentId,
       sessionId,
       messages: [{ role: 'user' as const, content: resultMsg }],
+      ...(computerEnabled && { computerRequest: { enabled: true } }),
     })) {
       if (evt.type === 'token') {
         const tok = (evt as any).content ?? '';
@@ -595,7 +608,16 @@ async function handleLocalToolLoop(
   }
 
   // Recurse — the follow-up response may itself contain another tool call
-  await handleLocalToolLoop(followContent, cfg, client, agentId, sessionId, appendLog, depth + 1);
+  await handleLocalToolLoop(
+    followContent,
+    cfg,
+    client,
+    agentId,
+    sessionId,
+    appendLog,
+    computerEnabled,
+    depth + 1,
+  );
 }
 
 /** Truncate a string to max chars, appending … if needed */

@@ -4,7 +4,7 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common';
-import { and, desc, eq, inArray, isNull, or, sql } from 'drizzle-orm';
+import { and, desc, eq } from 'drizzle-orm';
 import { v4 as uuidv4 } from 'uuid';
 import * as schema from '#/models/schema';
 import { DatabaseService } from '~/modules/database/database.service';
@@ -13,7 +13,10 @@ import {
   type AgentRunProgressEvent,
 } from '~/agent/run-progress';
 
-type ComputerLifecycle = 'persistent' | 'ephemeral';
+/** @deprecated Input compatibility only. All assigned computers are persistent. */
+type LegacyComputerLifecycle = 'persistent' | 'ephemeral';
+type ComputerResourceProfile = 'starter' | 'standard' | 'performance' | 'gpu';
+type ComputerResourceMode = 'fixed' | 'elastic';
 type ComputerStatus =
   | 'provisioning'
   | 'starting'
@@ -47,6 +50,26 @@ type CommonOsAgent = {
     region?: string | null;
     namespaceId?: string | null;
     lastError?: string | null;
+    podName?: string | null;
+  } | null;
+  desiredState?: 'running' | 'stopped';
+  resources?: {
+    profile?: ComputerResourceProfile;
+    mode?: ComputerResourceMode;
+    cpuRequest?: string;
+    cpuLimit?: string;
+    memoryRequest?: string;
+    memoryLimit?: string;
+    storageLimit?: string;
+    gpuType?: string | null;
+    gpuCount?: number;
+    generation?: number;
+  } | null;
+  compute?: {
+    tenantId?: string | null;
+    cellId?: string | null;
+    volumeId?: string | null;
+    generation?: number;
   } | null;
   workspace?: {
     snapshot?: string | null;
@@ -61,6 +84,56 @@ type CommonOsAgent = {
 type CommonOsInstructionProgress = {
   status?: string;
   elapsedMs: number;
+};
+
+const COMPUTER_RESOURCE_PROFILES: Record<
+  ComputerResourceProfile,
+  {
+    cpuRequest: string;
+    cpuLimit: string;
+    memoryRequest: string;
+    memoryLimit: string;
+    storageLimit: string;
+    gpuType: string | null;
+    gpuCount: number;
+  }
+> = {
+  starter: {
+    cpuRequest: '250m',
+    cpuLimit: '1',
+    memoryRequest: '512Mi',
+    memoryLimit: '2Gi',
+    storageLimit: '10Gi',
+    gpuType: null,
+    gpuCount: 0,
+  },
+  standard: {
+    cpuRequest: '500m',
+    cpuLimit: '2',
+    memoryRequest: '1Gi',
+    memoryLimit: '4Gi',
+    storageLimit: '20Gi',
+    gpuType: null,
+    gpuCount: 0,
+  },
+  performance: {
+    cpuRequest: '1',
+    cpuLimit: '4',
+    memoryRequest: '2Gi',
+    memoryLimit: '8Gi',
+    storageLimit: '50Gi',
+    gpuType: null,
+    gpuCount: 0,
+  },
+  gpu: {
+    cpuRequest: '2',
+    cpuLimit: '8',
+    memoryRequest: '8Gi',
+    memoryLimit: '32Gi',
+    storageLimit: '100Gi',
+    gpuType: 'nvidia-l4',
+    gpuCount: 1,
+  },
 };
 
 @Injectable()
@@ -80,8 +153,11 @@ export class ComputerService {
       .values({
         agentId,
         enabled: false,
-        defaultMode: 'ephemeral',
+        defaultMode: 'persistent',
         provider: 'commonos',
+        resourceProfile: 'standard',
+        resourceMode: 'elastic',
+        ...COMPUTER_RESOURCE_PROFILES.standard,
       })
       .returning();
     return created;
@@ -93,7 +169,7 @@ export class ComputerService {
   ) {
     await this.assertAgent(agentId);
     const current = await this.getConfig(agentId);
-    const next = this.normalizeConfigPatch(patch);
+    const next = this.normalizeConfigPatch(patch, current);
 
     const [updated] = await this.db
       .update(schema.agentComputerConfig)
@@ -103,6 +179,19 @@ export class ComputerService {
       })
       .where(eq(schema.agentComputerConfig.configId, current.configId))
       .returning();
+
+    const computer = await this.getAssignedComputer(agentId);
+    if (computer) {
+      if (!updated.enabled && ACTIVE_STATUSES.includes(computer.status as ComputerStatus)) {
+        await this.stopComputer({
+          agentId,
+          computerId: computer.computerId,
+          actorType: 'service',
+        });
+      } else {
+        await this.applyConfigToComputer(computer, updated);
+      }
+    }
     return updated;
   }
 
@@ -111,59 +200,36 @@ export class ComputerService {
     sessionId?: string;
     includeTerminated?: boolean;
   }) {
-    const rows = await this.db.query.agentComputerInstance.findMany({
-      where: (t) => {
-        const filters = [
-          eq(t.agentId, args.agentId),
-          args.sessionId
-            ? or(
-                eq(t.sessionId, args.sessionId),
-                isNull(t.sessionId),
-                eq(t.lifecycle, 'persistent'),
-              )
-            : undefined,
-          !args.includeTerminated
-            ? sql`${t.status} not in ('terminated', 'stopped')`
-            : undefined,
-        ].filter(Boolean);
-        return and(...(filters as any[]));
-      },
-      orderBy: (t) => desc(t.createdAt),
-    });
+    const computer = await this.getAssignedComputer(args.agentId);
+    if (!computer) return [];
+    if (computer.commonOsAgentId) {
+      await this.refreshInstance(computer.computerId, { silent: true }).catch(
+        () => null,
+      );
+    }
+    const refreshed = await this.getAssignedComputer(args.agentId);
+    if (!refreshed) return [];
+    if (!args.includeTerminated && refreshed.status === 'terminated') return [];
+    return [refreshed];
+  }
 
-    await Promise.all(
-      rows
-        .filter((row) => row.commonOsAgentId)
-        .slice(0, 4)
-        .map((row) =>
-          this.refreshInstance(row.computerId, { silent: true }).catch(() => null),
-        ),
+  async getAssignedComputer(agentId: string): Promise<ComputerInstance | null> {
+    return (
+      (await this.db.query.agentComputerInstance.findFirst({
+        where: (t) => and(eq(t.agentId, agentId), eq(t.canonical, true)),
+        orderBy: (t) => desc(t.createdAt),
+      })) ?? null
     );
-
-    return this.db.query.agentComputerInstance.findMany({
-      where: (t) => {
-        const filters = [
-          eq(t.agentId, args.agentId),
-          args.sessionId
-            ? or(
-                eq(t.sessionId, args.sessionId),
-                isNull(t.sessionId),
-                eq(t.lifecycle, 'persistent'),
-              )
-            : undefined,
-          !args.includeTerminated
-            ? sql`${t.status} not in ('terminated', 'stopped')`
-            : undefined,
-        ].filter(Boolean);
-        return and(...(filters as any[]));
-      },
-      orderBy: (t) => desc(t.createdAt),
-    });
   }
 
   async getInstance(agentId: string, computerId: string) {
     const computer = await this.db.query.agentComputerInstance.findFirst({
-      where: (t) => and(eq(t.agentId, agentId), eq(t.computerId, computerId)),
+      where: (t) =>
+        and(
+          eq(t.agentId, agentId),
+          eq(t.computerId, computerId),
+          eq(t.canonical, true),
+        ),
     });
     if (!computer) throw new NotFoundException('Computer not found');
     return computer;
@@ -172,7 +238,8 @@ export class ComputerService {
   async startComputer(args: {
     agentId: string;
     sessionId?: string;
-    lifecycle?: ComputerLifecycle;
+    /** @deprecated Computers are always persistent. */
+    lifecycle?: LegacyComputerLifecycle;
     name?: string;
     actorId?: string;
     actorType?: 'user' | 'agent' | 'service';
@@ -197,110 +264,95 @@ export class ComputerService {
       await this.assertSessionForAgent(args.agentId, sessionId);
     }
 
-    const lifecycle =
-      args.lifecycle ?? (config.defaultMode as ComputerLifecycle) ?? 'ephemeral';
     this.emitComputerToolProgress(args.runId, {
       toolName: 'startAgentComputer',
       stage: 'computer',
       status: 'running',
-      message: 'Preparing an agent computer',
-      detail: `${lifecycle} runtime`,
+      message: 'Waking the agent computer',
+      detail: 'Persistent workspace',
       payload: {
-        lifecycle,
+        lifecycle: 'persistent',
         sessionId,
         toolCallId: args.toolCallId,
       },
     });
-    await this.enforceLimits(args.agentId, lifecycle, config);
-
-    if (lifecycle === 'persistent') {
-      const reusable = await this.db.query.agentComputerInstance.findFirst({
-        where: (t) =>
-          and(
-            eq(t.agentId, args.agentId),
-            eq(t.lifecycle, 'persistent'),
-            inArray(t.status, ACTIVE_STATUSES),
-          ),
-        orderBy: (t) => desc(t.createdAt),
+    let computer = await this.getAssignedComputer(args.agentId);
+    if (computer && ACTIVE_STATUSES.includes(computer.status as ComputerStatus)) {
+      await this.recordEvent({
+        computerId: computer.computerId,
+        agentId: args.agentId,
+        sessionId,
+        eventType: 'computer.attached',
+        actorId: args.actorId,
+        actorType: args.actorType,
+        summary: 'Persistent computer attached',
+        payload: { reason: args.reason },
       });
-      if (reusable) {
-        await this.recordEvent({
-          computerId: reusable.computerId,
-          agentId: args.agentId,
-          sessionId,
-          eventType: 'computer.reused',
-          actorId: args.actorId,
-          actorType: args.actorType,
-          summary: 'Persistent computer reused',
-          payload: { reason: args.reason },
-        });
-        this.emitComputerToolProgress(args.runId, {
-          toolName: 'startAgentComputer',
-          stage: 'computer',
-          status: 'completed',
-          message: 'Reusing an active agent computer',
-          detail: reusable.name ?? reusable.computerId,
-          payload: {
-            progressId: reusable.computerId,
-            computerId: reusable.computerId,
-            status: reusable.status,
-            lifecycle: reusable.lifecycle,
-            toolCallId: args.toolCallId,
-          },
-        });
-        return this.refreshInstance(reusable.computerId, { silent: true });
-      }
+      const refreshed = await this.refreshInstance(computer.computerId, {
+        silent: true,
+      }).catch(() => computer!);
+      this.emitComputerReady(args.runId, refreshed, args.toolCallId, 'Agent computer attached');
+      return refreshed;
     }
 
     const now = new Date();
-    const expiresAt =
-      lifecycle === 'ephemeral'
-        ? new Date(now.getTime() + config.sessionTtlMinutes * 60_000)
-        : null;
-    const computerId = uuidv4();
-    const name =
-      args.name?.trim() ||
-      (lifecycle === 'persistent'
-        ? `${agent.name} computer`
-        : `${agent.name} session computer`);
-
-    const [created] = await this.db
-      .insert(schema.agentComputerInstance)
-      .values({
-        computerId,
-        agentId: args.agentId,
-        sessionId: sessionId as any,
-        ownerUserId: agent.ownerUserId,
-        workspaceId: agent.workspaceId,
-        name,
-        lifecycle,
-        status: 'provisioning',
-        provider: config.provider,
-        region: config.region,
-        image: config.image,
-        cpuLimit: config.cpuLimit,
-        memoryLimit: config.memoryLimit,
-        storageLimit: config.storageLimit,
-        workspaceRoot: '/mnt/shared',
-        expiresAt: expiresAt ?? undefined,
-        lastActivityAt: now,
-        metadata: {
-          reason: args.reason,
-          provisioner: 'commonos',
-          commonOsSessionId: sessionId ?? computerId,
-        },
-      })
-      .returning();
+    const name = args.name?.trim() || `${agent.name} computer`;
+    if (!computer) {
+      const [created] = await this.db
+        .insert(schema.agentComputerInstance)
+        .values({
+          computerId: uuidv4(),
+          agentId: args.agentId,
+          sessionId: null,
+          ownerUserId: agent.ownerUserId ?? agent.owner,
+          workspaceId: agent.workspaceId,
+          name,
+          lifecycle: 'persistent',
+          canonical: true,
+          desiredState: 'running',
+          status: 'provisioning',
+          provider: config.provider,
+          region: config.region,
+          image: config.image,
+          resourceProfile: config.resourceProfile,
+          resourceMode: config.resourceMode,
+          cpuRequest: config.cpuRequest,
+          cpuLimit: config.cpuLimit,
+          memoryRequest: config.memoryRequest,
+          memoryLimit: config.memoryLimit,
+          storageLimit: config.storageLimit,
+          gpuType: config.gpuType,
+          gpuCount: config.gpuCount,
+          workspaceRoot: '/mnt/shared',
+          expiresAt: null,
+          lastActivityAt: now,
+          metadata: {
+            reason: args.reason,
+            provisioner: 'commonos',
+          },
+        })
+        .onConflictDoNothing()
+        .returning();
+      computer = created ?? (await this.getAssignedComputer(args.agentId));
+    }
+    if (!computer) {
+      throw new Error('Could not create the agent computer record');
+    }
+    const computerId = computer.computerId;
 
     await this.recordEvent({
       computerId,
       agentId: args.agentId,
       sessionId,
-      eventType: 'computer.provisioning',
+      eventType: computer.commonOsAgentId
+        ? 'computer.waking'
+        : 'computer.provisioning',
       actorId: args.actorId,
       actorType: args.actorType,
-      summary: 'Computer provisioning started',
-      payload: { lifecycle, name },
+      summary: computer.commonOsAgentId
+        ? 'Computer wake requested'
+        : 'Computer provisioning started',
+      payload: { lifecycle: 'persistent', name, reason: args.reason },
     });
 
     this.emitComputerToolProgress(args.runId, {
@@ -312,7 +364,7 @@ export class ComputerService {
       payload: {
         progressId: computerId,
         computerId,
-        lifecycle,
+        lifecycle: 'persistent',
         name,
         toolCallId: args.toolCallId,
       },
@@ -325,11 +377,11 @@ export class ComputerService {
         stage: 'computer',
         status: 'running',
         message: 'Booting agent computer',
-        detail: `${lifecycle} runtime - ${this.formatElapsed(Date.now() - now.getTime())}`,
+        detail: `Persistent workspace - ${this.formatElapsed(Date.now() - now.getTime())}`,
         payload: {
           progressId: computerId,
           computerId,
-          lifecycle,
+          lifecycle: 'persistent',
           name,
           toolCallId: args.toolCallId,
         },
@@ -337,29 +389,42 @@ export class ComputerService {
     );
 
     try {
-      const provisioned = await this.deployWithCommonOs({
-        agent,
-        config,
-        computer: created,
-        lifecycle,
-        name,
-      });
+      let provisioned: ComputerInstance;
+      if (computer.commonOsAgentId && computer.status !== 'terminated') {
+        const commonOs = await this.commonOsComputerRequest<CommonOsAgent>(
+          'PATCH',
+          `/computers/${computer.commonOsAgentId}`,
+          undefined,
+          {
+            desiredState: 'running',
+            resources: this.commonOsResources(config),
+          },
+          args.agentId,
+        );
+        const [waking] = await this.db
+          .update(schema.agentComputerInstance)
+          .set({
+            desiredState: 'running',
+            status: this.mapStatus(commonOs.status ?? 'starting'),
+            runtimeGeneration:
+              commonOs.compute?.generation ??
+              commonOs.resources?.generation ??
+              computer.runtimeGeneration + 1,
+            updatedAt: new Date(),
+          })
+          .where(eq(schema.agentComputerInstance.computerId, computerId))
+          .returning();
+        provisioned = waking;
+      } else {
+        provisioned = await this.deployWithCommonOs({
+          agent,
+          config,
+          computer,
+          name,
+        });
+      }
       stopProvisioningHeartbeat();
-      this.emitComputerToolProgress(args.runId, {
-        toolName: 'startAgentComputer',
-        stage: 'computer',
-        status: 'completed',
-        message: 'Agent computer is ready',
-        detail: provisioned.name ?? provisioned.computerId,
-        payload: {
-          progressId: provisioned.computerId,
-          computerId: provisioned.computerId,
-          commonOsAgentId: provisioned.commonOsAgentId,
-          status: provisioned.status,
-          lifecycle: provisioned.lifecycle,
-          toolCallId: args.toolCallId,
-        },
-      });
+      this.emitComputerReady(args.runId, provisioned, args.toolCallId);
       return provisioned;
     } catch (err: any) {
       stopProvisioningHeartbeat();
@@ -392,7 +457,7 @@ export class ComputerService {
         payload: {
           progressId: computerId,
           computerId,
-          lifecycle,
+          lifecycle: 'persistent',
           error: message,
           toolCallId: args.toolCallId,
         },
@@ -408,17 +473,16 @@ export class ComputerService {
     actorType?: 'user' | 'agent' | 'service';
   }) {
     const computer = await this.getInstance(args.agentId, args.computerId);
+    if (computer.status === 'stopped' && computer.desiredState === 'stopped') {
+      return computer;
+    }
     if (computer.commonOsAgentId) {
-      await this.commonOsComputerRequest(
-        'DELETE',
+      await this.commonOsComputerRequest<CommonOsAgent>(
+        'PATCH',
         `/computers/${computer.commonOsAgentId}`,
-        this.commonOsFleetId()
-          ? `/fleets/${this.commonOsFleetId()}/agents/${computer.commonOsAgentId}`
-          : undefined,
-      ).catch((err) =>
-        this.logger.warn(
-          `CommonOS terminate failed for ${computer.commonOsAgentId}: ${err.message}`,
-        ),
+        undefined,
+        { desiredState: 'stopped' },
+        args.agentId,
       );
     }
 
@@ -426,6 +490,7 @@ export class ComputerService {
       .update(schema.agentComputerInstance)
       .set({
         status: 'stopped',
+        desiredState: 'stopped',
         stoppedAt: new Date(),
         updatedAt: new Date(),
       })
@@ -438,9 +503,35 @@ export class ComputerService {
       eventType: 'computer.stopped',
       actorId: args.actorId,
       actorType: args.actorType,
-      summary: 'Computer stopped',
+      summary: 'Computer sleeping; persistent workspace retained',
     });
     return updated;
+  }
+
+  async stopAssignedComputer(args: {
+    agentId: string;
+    actorId?: string;
+    actorType?: 'user' | 'agent' | 'service';
+  }) {
+    const computer = await this.getAssignedComputer(args.agentId);
+    if (!computer) return null;
+    return this.stopComputer({ ...args, computerId: computer.computerId });
+  }
+
+  async restartAssignedComputer(args: {
+    agentId: string;
+    actorId?: string;
+    actorType?: 'user' | 'agent' | 'service';
+    reason?: string;
+  }) {
+    const computer = await this.getAssignedComputer(args.agentId);
+    if (computer) {
+      await this.stopComputer({ ...args, computerId: computer.computerId });
+    }
+    return this.startComputer({
+      ...args,
+      reason: args.reason ?? 'Computer restart requested',
+    });
   }
 
   async refreshInstance(
@@ -459,18 +550,44 @@ export class ComputerService {
       this.commonOsFleetId()
         ? `/fleets/${this.commonOsFleetId()}/agents/${computer.commonOsAgentId}`
         : undefined,
+      undefined,
+      computer.agentId,
     );
     const status = this.mapStatus(commonOs.status);
     const [updated] = await this.db
       .update(schema.agentComputerInstance)
       .set({
         status,
+        desiredState: commonOs.desiredState ?? computer.desiredState,
         cloudProvider: commonOs.pod?.provider ?? computer.cloudProvider,
         region: commonOs.pod?.region ?? computer.region,
         namespaceId: commonOs.pod?.namespaceId ?? computer.namespaceId,
-        podName: commonOs.pod?.namespaceId
-          ? `agent-${String(commonOs._id ?? computer.commonOsAgentId).replace(/_/g, '-')}`
-          : computer.podName,
+        podName:
+          commonOs.pod?.podName ??
+          (commonOs.pod?.namespaceId
+            ? `computer-${String(commonOs._id ?? computer.commonOsAgentId).replace(/_/g, '-')}`
+            : computer.podName),
+        resourceProfile:
+          commonOs.resources?.profile ?? computer.resourceProfile,
+        resourceMode: commonOs.resources?.mode ?? computer.resourceMode,
+        cpuRequest: commonOs.resources?.cpuRequest ?? computer.cpuRequest,
+        cpuLimit: commonOs.resources?.cpuLimit ?? computer.cpuLimit,
+        memoryRequest:
+          commonOs.resources?.memoryRequest ?? computer.memoryRequest,
+        memoryLimit: commonOs.resources?.memoryLimit ?? computer.memoryLimit,
+        storageLimit:
+          commonOs.resources?.storageLimit ?? computer.storageLimit,
+        gpuType: commonOs.resources?.gpuType ?? computer.gpuType,
+        gpuCount: commonOs.resources?.gpuCount ?? computer.gpuCount,
+        runtimeGeneration:
+          commonOs.compute?.generation ??
+          commonOs.resources?.generation ??
+          computer.runtimeGeneration,
+        persistentVolumeId:
+          commonOs.compute?.volumeId ?? computer.persistentVolumeId,
+        computeTenantId:
+          commonOs.compute?.tenantId ?? computer.computeTenantId,
+        computeCellId: commonOs.compute?.cellId ?? computer.computeCellId,
         workspaceRoot: commonOs.workspace?.rootDir ?? computer.workspaceRoot,
         workspaceSnapshot:
           commonOs.workspace?.snapshot ?? computer.workspaceSnapshot,
@@ -499,12 +616,18 @@ export class ComputerService {
     return updated;
   }
 
+  async refreshForAgent(agentId: string, computerId: string) {
+    await this.getInstance(agentId, computerId);
+    return this.refreshInstance(computerId);
+  }
+
   async readFile(args: {
     agentId: string;
     computerId?: string;
     sessionId?: string;
     path: string;
   }) {
+    await this.assertCapability(args.agentId, 'filesystem');
     const computer = await this.resolveComputerForTool({
       agentId: args.agentId,
       computerId: args.computerId,
@@ -520,6 +643,8 @@ export class ComputerService {
       this.commonOsFleetId()
         ? `/fleets/${this.commonOsFleetId()}/agents/${computer.commonOsAgentId}/workspace/read?path=${encodeURIComponent(path)}`
         : undefined,
+      undefined,
+      computer.agentId,
     );
     await this.touchComputer(computer.computerId);
     return { path, content: data.content ?? '' };
@@ -596,6 +721,7 @@ export class ComputerService {
           content: args.instruction,
           ...(commonOsSessionId ? { sessionId: commonOsSessionId } : {}),
         },
+        computer.agentId,
       );
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -652,6 +778,7 @@ export class ComputerService {
 
     const response = await this.pollCommonOsMessage(
       computer.commonOsAgentId,
+      computer.agentId,
       sent?._id,
       args.waitMs ?? 180_000,
       (progress) => {
@@ -727,6 +854,7 @@ export class ComputerService {
     runId?: string;
     toolCallId?: string;
   }) {
+    await this.assertCapability(args.agentId, 'terminal');
     const command = args.command.trim();
     if (!command) throw new BadRequestException('command is required');
     if (command.length > 2000) {
@@ -796,6 +924,10 @@ export class ComputerService {
     runId?: string;
     toolCallId?: string;
   }) {
+    const config = await this.assertCapability(args.agentId, 'browser');
+    if (config.networkAccess === 'disabled') {
+      throw new BadRequestException('Network access is disabled for this computer');
+    }
     const url = args.url.trim();
     if (!/^https?:\/\//i.test(url) && !/^http:\/\/localhost[:/]/i.test(url)) {
       throw new BadRequestException('url must start with http:// or https://');
@@ -851,23 +983,19 @@ export class ComputerService {
       sessionId,
       includeTerminated: false,
     }).catch(() => []);
-    const lines = computers.length
-      ? computers
-          .map(
-            (c) =>
-              `- ${c.name} (${c.computerId}) ${c.lifecycle}/${c.status}${c.browser?.url ? ` browser=${c.browser.url}` : ''}`,
-          )
-          .join('\n')
-      : '- No active computers yet.';
+    const computer = computers[0];
+    const line = computer
+      ? `- ${computer.name} (${computer.computerId}) persistent/${computer.status}${computer.browser?.url ? ` browser=${computer.browser.url}` : ''}`
+      : '- The persistent computer has not been provisioned yet.';
 
     return [
-      '### Computers',
-      'You may use isolated CommonOS computers when work requires a filesystem, terminal, browser, or longer-running runtime.',
-      `Computer use is ${config.allowAgentStart ? 'agent-startable' : 'user-start only'}; default mode is ${config.defaultMode}.`,
-      'Use startAgentComputer before computer work when no suitable computer is active. Use runComputerCommand for terminal work, readComputerFile for files, and openComputerBrowser for browser work.',
+      '### Persistent computer',
+      'This agent can have exactly one isolated CommonOS computer. Its workspace persists across chats and pod restarts.',
+      `Computer use is ${config.allowAgentStart ? 'agent-wakeable' : 'user-wake only'}; resource profile is ${config.resourceProfile}/${config.resourceMode}.`,
+      'Use startAgentComputer to wake or attach the assigned computer before computer work. It is idempotent and never creates an extra computer. Use runComputerCommand for terminal work, readComputerFile for files, and openComputerBrowser for browser work.',
       'Always keep commands scoped to the task, avoid secrets exfiltration, and summarize created files/screenshots/results for the user.',
-      'Active computers:',
-      lines,
+      'Assigned computer:',
+      line,
     ].join('\n');
   }
 
@@ -979,35 +1107,67 @@ export class ComputerService {
       : `${minutes}m elapsed`;
   }
 
+  private emitComputerReady(
+    runId: string | undefined,
+    computer: ComputerInstance,
+    toolCallId?: string,
+    message = 'Agent computer is ready',
+  ) {
+    this.emitComputerToolProgress(runId, {
+      toolName: 'startAgentComputer',
+      stage: 'computer',
+      status: 'completed',
+      message,
+      detail: computer.name ?? computer.computerId,
+      payload: {
+        progressId: computer.computerId,
+        computerId: computer.computerId,
+        commonOsAgentId: computer.commonOsAgentId,
+        status: computer.status,
+        lifecycle: 'persistent',
+        toolCallId,
+      },
+    });
+  }
+
   private async deployWithCommonOs(args: {
     agent: typeof schema.agent.$inferSelect;
     config: ComputerConfig;
     computer: ComputerInstance;
-    lifecycle: ComputerLifecycle;
     name: string;
   }) {
     if (!this.commonOsConfigured()) {
       throw new Error(
-        'CommonOS API is not configured. Set COMMON_OS_API_KEY and, for legacy fleet fallback or explicit placement, COMMON_OS_FLEET_ID.',
+        'CommonOS computer API is not configured. Set COMMON_OS_API_URL and COMMON_OS_API_KEY.',
       );
     }
 
-    const fleetId = this.commonOsFleetId();
     const commonOsAgent = await this.commonOsComputerRequest<CommonOsAgent>(
       'POST',
       '/computers',
-      fleetId ? `/fleets/${fleetId}/agents` : undefined,
+      undefined,
       {
-        ...(fleetId ? { fleetId } : {}),
         name: args.name,
         role: args.name,
-        systemPrompt: this.commonOsSystemPrompt(args.agent, args.lifecycle),
+        systemPrompt: this.commonOsSystemPrompt(args.agent),
         permissionTier: 'worker',
         room: 'dev-room',
         integrationPath: 'native',
         ...(args.config.image ? { dockerImage: args.config.image } : {}),
         agentCommonsId: args.agent.agentId,
+        computerId: args.computer.computerId,
+        ownerUserId: args.agent.ownerUserId ?? args.agent.owner,
+        workspaceId: args.agent.workspaceId,
+        resources: this.commonOsResources(args.config),
+        idleTtlMinutes: args.config.idleTtlMinutes,
+        policy: {
+          allowBrowser: args.config.allowBrowser,
+          allowTerminal: args.config.allowTerminal,
+          allowFilesystem: args.config.allowFilesystem,
+          networkAccess: args.config.networkAccess,
+        },
       },
+      args.agent.agentId,
     );
 
     const commonOsAgentId = String(commonOsAgent._id ?? commonOsAgent.id ?? '');
@@ -1019,14 +1179,42 @@ export class ComputerService {
       .update(schema.agentComputerInstance)
         .set({
         status: this.mapStatus(commonOsAgent.status),
-        commonOsFleetId: fleetId || null,
+        desiredState: commonOsAgent.desiredState ?? 'running',
+        commonOsFleetId: null,
         commonOsAgentId,
         cloudProvider: commonOsAgent.pod?.provider,
         region: commonOsAgent.pod?.region ?? args.config.region,
         namespaceId: commonOsAgent.pod?.namespaceId ?? null,
-        podName: commonOsAgent.pod?.namespaceId
-          ? `agent-${commonOsAgentId.replace(/_/g, '-')}`
-          : null,
+        podName:
+          commonOsAgent.pod?.podName ??
+          (commonOsAgent.pod?.namespaceId
+            ? `computer-${commonOsAgentId.replace(/_/g, '-')}`
+            : null),
+        resourceProfile:
+          commonOsAgent.resources?.profile ?? args.config.resourceProfile,
+        resourceMode:
+          commonOsAgent.resources?.mode ?? args.config.resourceMode,
+        cpuRequest:
+          commonOsAgent.resources?.cpuRequest ?? args.config.cpuRequest,
+        cpuLimit: commonOsAgent.resources?.cpuLimit ?? args.config.cpuLimit,
+        memoryRequest:
+          commonOsAgent.resources?.memoryRequest ?? args.config.memoryRequest,
+        memoryLimit:
+          commonOsAgent.resources?.memoryLimit ?? args.config.memoryLimit,
+        storageLimit:
+          commonOsAgent.resources?.storageLimit ?? args.config.storageLimit,
+        gpuType: commonOsAgent.resources?.gpuType ?? args.config.gpuType,
+        gpuCount: commonOsAgent.resources?.gpuCount ?? args.config.gpuCount,
+        runtimeGeneration:
+          commonOsAgent.compute?.generation ??
+          commonOsAgent.resources?.generation ??
+          args.computer.runtimeGeneration + 1,
+        persistentVolumeId:
+          commonOsAgent.compute?.volumeId ?? args.computer.persistentVolumeId,
+        computeTenantId:
+          commonOsAgent.compute?.tenantId ?? args.computer.computeTenantId,
+        computeCellId:
+          commonOsAgent.compute?.cellId ?? args.computer.computeCellId,
         workspaceRoot: commonOsAgent.workspace?.rootDir ?? '/mnt/shared',
         workspaceSnapshot: commonOsAgent.workspace?.snapshot ?? null,
         browser: commonOsAgent.browser ?? null,
@@ -1053,6 +1241,7 @@ export class ComputerService {
 
   private async pollCommonOsMessage(
     commonOsAgentId: string,
+    agentCommonsId: string,
     messageId: string | undefined,
     waitMs: number,
     onProgress?: (progress: CommonOsInstructionProgress) => void,
@@ -1070,6 +1259,8 @@ export class ComputerService {
         this.commonOsFleetId()
           ? `/fleets/${this.commonOsFleetId()}/agents/${commonOsAgentId}/human-messages`
           : undefined,
+        undefined,
+        agentCommonsId,
       );
       const message = list.find((item) => item._id === messageId);
       const status = String(message?.status ?? 'pending');
@@ -1109,10 +1300,16 @@ export class ComputerService {
     computerPath: string,
     legacyFleetPath?: string,
     body?: unknown,
+    agentCommonsId?: string,
   ): Promise<T> {
     if (this.commonOsUseGeneralComputerApi()) {
       try {
-        return await this.commonOsRequest<T>(method, computerPath, body);
+        return await this.commonOsRequest<T>(
+          method,
+          computerPath,
+          body,
+          agentCommonsId,
+        );
       } catch (err) {
         if (!legacyFleetPath) throw err;
         this.logger.warn(
@@ -1125,13 +1322,14 @@ export class ComputerService {
         'CommonOS fleet fallback is unavailable. Set COMMON_OS_FLEET_ID or deploy the CommonOS /computers API.',
       );
     }
-    return this.commonOsRequest<T>(method, legacyFleetPath, body);
+    return this.commonOsRequest<T>(method, legacyFleetPath, body, agentCommonsId);
   }
 
   private async commonOsRequest<T>(
     method: 'GET' | 'POST' | 'PATCH' | 'DELETE',
     path: string,
     body?: unknown,
+    agentCommonsId?: string,
   ): Promise<T> {
     const apiUrl = this.commonOsApiUrl();
     const apiKey = this.commonOsApiKey();
@@ -1143,6 +1341,9 @@ export class ComputerService {
       method,
       headers: {
         Authorization: `Bearer ${apiKey}`,
+        ...(agentCommonsId
+          ? { 'x-agent-commons-agent-id': agentCommonsId }
+          : {}),
         ...(body !== undefined ? { 'Content-Type': 'application/json' } : {}),
       },
       body: body !== undefined ? JSON.stringify(body) : undefined,
@@ -1168,10 +1369,11 @@ export class ComputerService {
     const requestedId = args.computerId?.trim();
     if (requestedId) {
       const computer = await this.getInstance(args.agentId, requestedId);
-      this.assertComputerSessionCompatible(
-        computer,
-        args.sessionId ?? undefined,
-      );
+      if (!ACTIVE_STATUSES.includes(computer.status as ComputerStatus)) {
+        throw new BadRequestException(
+          'The agent computer is sleeping. Wake it before using computer tools.',
+        );
+      }
       return computer;
     }
 
@@ -1185,22 +1387,12 @@ export class ComputerService {
         ACTIVE_STATUSES.includes(computer.status as ComputerStatus) &&
         Boolean(computer.commonOsAgentId),
     );
-    const sessionScoped = args.sessionId
-      ? usable.filter((computer) => computer.sessionId === args.sessionId)
-      : [];
-    const persistent = usable.filter(
-      (computer) => computer.lifecycle === 'persistent',
-    );
-    const selected = sessionScoped[0] ?? persistent[0] ?? usable[0];
+    const selected = usable[0];
     if (!selected) {
       throw new BadRequestException(
-        'No active agent computer is available for this session. Start or select an agent computer first.',
+        'The agent computer is not running. Wake it before using computer tools.',
       );
     }
-    this.assertComputerSessionCompatible(
-      selected,
-      args.sessionId ?? undefined,
-    );
     return selected;
   }
 
@@ -1208,42 +1400,10 @@ export class ComputerService {
     computer: ComputerInstance,
     sessionId?: string | null,
   ) {
-    const requestedSessionId = sessionId?.trim();
-    if (
-      requestedSessionId &&
-      computer.sessionId &&
-      String(computer.sessionId) !== requestedSessionId
-    ) {
-      throw new BadRequestException(
-        'Computer belongs to a different session. Use a computer from this chat session or start a new one.',
-      );
-    }
-  }
-
-  private async enforceLimits(
-    agentId: string,
-    lifecycle: ComputerLifecycle,
-    config: ComputerConfig,
-  ) {
-    const active = await this.db.query.agentComputerInstance.findMany({
-      where: (t) => and(eq(t.agentId, agentId), inArray(t.status, ACTIVE_STATUSES)),
-      columns: { lifecycle: true },
-    });
-    if (active.length >= config.maxConcurrentComputers) {
-      throw new BadRequestException(
-        `Computer limit reached (${config.maxConcurrentComputers} active). Stop one before starting another.`,
-      );
-    }
-    const sameLifecycle = active.filter((item) => item.lifecycle === lifecycle);
-    const max =
-      lifecycle === 'persistent'
-        ? config.maxPersistentComputers
-        : config.maxEphemeralComputers;
-    if (sameLifecycle.length >= max) {
-      throw new BadRequestException(
-        `${lifecycle} computer limit reached (${max}).`,
-      );
-    }
+    // Persistent computers belong to agents, not chat sessions. Keep this
+    // method as a no-op while older call sites and records are migrated.
+    void computer;
+    void sessionId;
   }
 
   private async assertAgent(agentId: string) {
@@ -1270,11 +1430,11 @@ export class ComputerService {
 
   private normalizeConfigPatch(
     patch: Partial<typeof schema.agentComputerConfig.$inferInsert>,
+    current?: ComputerConfig,
   ) {
     const normalized: Record<string, any> = {};
     const allowed = [
       'enabled',
-      'defaultMode',
       'autoStart',
       'allowAgentStart',
       'allowUserSelect',
@@ -1282,62 +1442,179 @@ export class ComputerService {
       'allowTerminal',
       'allowFilesystem',
       'networkAccess',
-      'maxPersistentComputers',
-      'maxEphemeralComputers',
-      'maxConcurrentComputers',
       'idleTtlMinutes',
-      'sessionTtlMinutes',
       'image',
+      'resourceProfile',
+      'resourceMode',
+      'cpuRequest',
       'cpuLimit',
+      'memoryRequest',
       'memoryLimit',
       'storageLimit',
+      'gpuType',
+      'gpuCount',
       'region',
-      'provider',
       'metadata',
     ];
     for (const key of allowed) {
       if ((patch as any)[key] !== undefined) normalized[key] = (patch as any)[key];
     }
 
-    if (normalized.defaultMode !== undefined) {
-      normalized.defaultMode =
-        normalized.defaultMode === 'persistent' ? 'persistent' : 'ephemeral';
+    normalized.defaultMode = 'persistent';
+    normalized.maxPersistentComputers = 1;
+    normalized.maxEphemeralComputers = 0;
+    normalized.maxConcurrentComputers = 1;
+
+    if (normalized.resourceProfile !== undefined) {
+      if (!(normalized.resourceProfile in COMPUTER_RESOURCE_PROFILES)) {
+        throw new BadRequestException(
+          'resourceProfile must be starter, standard, performance, or gpu',
+        );
+      }
+      Object.assign(
+        normalized,
+        COMPUTER_RESOURCE_PROFILES[
+          normalized.resourceProfile as ComputerResourceProfile
+        ],
+      );
     }
 
-    for (const key of [
-      'maxPersistentComputers',
-      'maxEphemeralComputers',
-      'maxConcurrentComputers',
-      'idleTtlMinutes',
-      'sessionTtlMinutes',
-    ]) {
-      if (normalized[key] !== undefined) {
-        normalized[key] = Math.max(1, Math.min(Number(normalized[key]) || 1, 24 * 60));
+    if (normalized.resourceMode !== undefined) {
+      normalized.resourceMode =
+        normalized.resourceMode === 'fixed' ? 'fixed' : 'elastic';
+    }
+    if (normalized.resourceMode === 'fixed') {
+      normalized.cpuRequest = normalized.cpuLimit ?? current?.cpuLimit;
+      normalized.memoryRequest =
+        normalized.memoryLimit ?? current?.memoryLimit;
+    }
+
+    if (normalized.networkAccess !== undefined) {
+      if (!['standard', 'restricted', 'disabled'].includes(normalized.networkAccess)) {
+        throw new BadRequestException(
+          'networkAccess must be standard, restricted, or disabled',
+        );
       }
     }
 
-    if (normalized.maxPersistentComputers !== undefined) {
-      normalized.maxPersistentComputers = Math.min(
-        normalized.maxPersistentComputers,
-        3,
+    if (normalized.idleTtlMinutes !== undefined) {
+      normalized.idleTtlMinutes = Math.max(
+        5,
+        Math.min(Number(normalized.idleTtlMinutes) || 60, 24 * 60),
       );
     }
-    if (normalized.maxEphemeralComputers !== undefined) {
-      normalized.maxEphemeralComputers = Math.min(
-        normalized.maxEphemeralComputers,
-        5,
-      );
-    }
-    if (normalized.maxConcurrentComputers !== undefined) {
-      normalized.maxConcurrentComputers = Math.min(
-        normalized.maxConcurrentComputers,
-        5,
-      );
+
+    const nextStorage = normalized.storageLimit ?? current?.storageLimit;
+    if (
+      current?.storageLimit &&
+      nextStorage &&
+      this.storageGiB(nextStorage) < this.storageGiB(current.storageLimit)
+    ) {
+      if (normalized.resourceProfile !== undefined) {
+        // A smaller compute profile never shrinks or destroys the existing
+        // workspace. The retained capacity may be billed as storage overage.
+        normalized.storageLimit = current.storageLimit;
+      } else {
+        throw new BadRequestException(
+          'Persistent storage cannot be reduced. Choose the current size or a larger value.',
+        );
+      }
     }
 
     return Object.fromEntries(
       Object.entries(normalized).filter(([, value]) => value !== undefined),
     );
+  }
+
+  private commonOsResources(config: ComputerConfig) {
+    return {
+      profile: config.resourceProfile as ComputerResourceProfile,
+      mode: config.resourceMode as ComputerResourceMode,
+      cpuRequest: config.cpuRequest,
+      cpuLimit: config.cpuLimit,
+      memoryRequest: config.memoryRequest,
+      memoryLimit: config.memoryLimit,
+      storageLimit: config.storageLimit,
+      gpuType: config.gpuType,
+      gpuCount: config.gpuCount,
+    };
+  }
+
+  private async applyConfigToComputer(
+    computer: ComputerInstance,
+    config: ComputerConfig,
+  ) {
+    let commonOs: CommonOsAgent | null = null;
+    if (computer.commonOsAgentId) {
+      commonOs = await this.commonOsComputerRequest<CommonOsAgent>(
+        'PATCH',
+        `/computers/${computer.commonOsAgentId}`,
+        undefined,
+        {
+          resources: this.commonOsResources(config),
+          idleTtlMinutes: config.idleTtlMinutes,
+          policy: {
+            allowBrowser: config.allowBrowser,
+            allowTerminal: config.allowTerminal,
+            allowFilesystem: config.allowFilesystem,
+            networkAccess: config.networkAccess,
+          },
+        },
+        computer.agentId,
+      );
+    }
+    const [updated] = await this.db
+      .update(schema.agentComputerInstance)
+      .set({
+        resourceProfile: config.resourceProfile,
+        resourceMode: config.resourceMode,
+        cpuRequest: config.cpuRequest,
+        cpuLimit: config.cpuLimit,
+        memoryRequest: config.memoryRequest,
+        memoryLimit: config.memoryLimit,
+        storageLimit: config.storageLimit,
+        gpuType: config.gpuType,
+        gpuCount: config.gpuCount,
+        runtimeGeneration:
+          commonOs?.compute?.generation ??
+          commonOs?.resources?.generation ??
+          computer.runtimeGeneration,
+        updatedAt: new Date(),
+      })
+      .where(eq(schema.agentComputerInstance.computerId, computer.computerId))
+      .returning();
+    return updated;
+  }
+
+  private async assertCapability(
+    agentId: string,
+    capability: 'browser' | 'terminal' | 'filesystem',
+  ) {
+    const config = await this.getConfig(agentId);
+    if (!config.enabled) {
+      throw new BadRequestException('Computer use is disabled for this agent');
+    }
+    const allowed =
+      capability === 'browser'
+        ? config.allowBrowser
+        : capability === 'terminal'
+          ? config.allowTerminal
+          : config.allowFilesystem;
+    if (!allowed) {
+      throw new BadRequestException(
+        `${capability} access is disabled for this computer`,
+      );
+    }
+    return config;
+  }
+
+  private storageGiB(value: string) {
+    const match = String(value).trim().match(/^(\d+(?:\.\d+)?)(Gi|Ti)$/i);
+    if (!match) {
+      throw new BadRequestException('storageLimit must use Gi or Ti units');
+    }
+    const amount = Number(match[1]);
+    return match[2].toLowerCase() === 'ti' ? amount * 1024 : amount;
   }
 
   private async touchComputer(computerId: string) {
@@ -1388,16 +1665,15 @@ export class ComputerService {
 
   private commonOsSystemPrompt(
     agent: typeof schema.agent.$inferSelect,
-    lifecycle: ComputerLifecycle,
   ) {
     return [
       `You are the CommonOS computer runtime for Agent Commons agent ${agent.name}.`,
       `Agent Commons ID: ${agent.agentId}`,
-      `Lifecycle: ${lifecycle}`,
+      'Lifecycle: persistent workspace with replaceable runtime generations',
       'Use the pod filesystem, terminal, and browser to complete computer-specific work.',
       'When asked to run a terminal command, run the exact requested command first and return stdout, stderr, and exit code.',
       'When asked to open a browser, use the pod browser tools and report visible/runtime errors.',
-      'Keep all workspace files under /mnt/shared and avoid unrelated destructive changes.',
+      'Keep all durable workspace files under /mnt/shared and avoid unrelated destructive changes.',
     ].join('\n');
   }
 

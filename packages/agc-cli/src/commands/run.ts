@@ -16,6 +16,7 @@ export function runCommand(): Command {
     .option('--agent <agentId>', 'Agent ID')
     .option('--session <sessionId>', 'Resume an existing session by ID')
     .option('--new-session', 'Create a new session and print its ID for future use')
+    .option('--computer', "Give the agent access to its persistent cloud computer")
     .option('--local', 'Enable local file system access (with permission prompts)')
     .option('-y, --yes', 'Enable local file system access and auto-approve all operations')
     .option('--no-stream', 'Disable streaming (wait for full response)')
@@ -99,6 +100,9 @@ export function runCommand(): Command {
         if (localEnabled) {
           rows.push(['Local tools', autoApprove ? c.warn('enabled  (auto-approve on)') : c.success('enabled')]);
         }
+        if (opts.computer) {
+          rows.push(['Cloud computer', c.success('enabled') + c.dim('  (persistent, remote)')]);
+        }
         if (rows.length) { detail(rows); console.log(); }
       }
 
@@ -107,6 +111,7 @@ export function runCommand(): Command {
         sessionId,
         messages: [{ role: 'user' as const, content: prompt }],
         ...(cfg.initiator && { initiatorId: cfg.initiator }),
+        ...(opts.computer && { computerRequest: { enabled: true } }),
         ...(cliContext && { cliContext }),
       };
 

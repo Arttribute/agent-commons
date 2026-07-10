@@ -112,14 +112,24 @@ export class ToolLoaderService {
       this.logger.debug(`Loaded ${spaceDefs.length} space tools`);
     }
 
-    // 6. Resolve keys and mark tools that require/have keys
-    await this.resolveToolKeys(toolDefs, agentId, userId);
+    // 6. Deduplicate by function name (a tool can be reachable through more
+    // than one source, and LLM providers reject duplicate tool names).
+    const seen = new Set<string>();
+    const dedupedDefs = toolDefs.filter((def) => {
+      const name = def.function?.name;
+      if (!name || seen.has(name)) return false;
+      seen.add(name);
+      return true;
+    });
+
+    // 7. Resolve keys and mark tools that require/have keys
+    await this.resolveToolKeys(dedupedDefs, agentId, userId);
 
     this.logger.log(
-      `Total ${toolDefs.length} tools loaded for agent ${agentId}`,
+      `Total ${dedupedDefs.length} tools loaded for agent ${agentId}`,
     );
 
-    return toolDefs;
+    return dedupedDefs;
   }
 
   /**
@@ -197,7 +207,12 @@ export class ToolLoaderService {
         ...userAccessibleTools,
       ].filter((tool) => {
         // Filter out deprecated tools
-        return !tool.isDeprecated;
+        if (tool.isDeprecated) return false;
+        // OAuth-backed tools act with a user's connected account, so they are
+        // never implicitly available: they must be explicitly assigned to the
+        // agent (agent_tool), which loadAgentSpecificTools handles.
+        if (tool.apiSpec?.authType === 'oauth2') return false;
+        return true;
       });
 
       // Remove duplicates based on toolId
