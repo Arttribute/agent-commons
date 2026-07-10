@@ -26,6 +26,7 @@ import {
   RefreshCw,
   Save,
   Search,
+  Server,
   Settings2,
   Sparkles,
   TerminalSquare,
@@ -52,6 +53,7 @@ import { AddToAgentBalance } from "@/components/finances/add-to-agent-balance";
 import { AgentTransactions } from "@/components/finances/agent-transactions";
 import { AgentMemoryView } from "@/components/memory/agent-memory-view";
 import { AgentComputerSurface } from "@/components/computers/agent-computer-surface";
+import { AgentRuntimeSurface } from "@/components/agents/agent-runtime-surface";
 import SessionInterface from "@/components/sessions/session-interface";
 import SessionsList from "@/components/sessions/sessions-list";
 import { SearchTrigger } from "@/components/search/search-trigger";
@@ -68,7 +70,13 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
@@ -85,6 +93,7 @@ import type { Skill } from "@agent-commons/sdk";
 
 type SectionKey =
   | "setup"
+  | "runtime"
   | "new-session"
   | "sessions"
   | "computer"
@@ -99,6 +108,7 @@ type SectionKey =
 
 const sections: Array<{ key: SectionKey; label: string; icon: typeof Bot }> = [
   { key: "setup", label: "Agent setup", icon: Settings2 },
+  { key: "runtime", label: "Runtime", icon: Server },
   { key: "new-session", label: "New session", icon: Plus },
   { key: "sessions", label: "Sessions", icon: MessageSquare },
   { key: "computer", label: "Computer", icon: Monitor },
@@ -112,7 +122,17 @@ const sections: Array<{ key: SectionKey; label: string; icon: typeof Bot }> = [
   { key: "wallet", label: "Wallet", icon: Wallet },
 ];
 
-const modelProviders = ["openai", "anthropic", "google", "mistral", "groq", "openrouter", "xai", "custom", "ollama"];
+const modelProviders = [
+  "openai",
+  "anthropic",
+  "google",
+  "mistral",
+  "groq",
+  "openrouter",
+  "xai",
+  "custom",
+  "ollama",
+];
 
 function AgentPageSkeleton() {
   return (
@@ -133,16 +153,32 @@ function AgentPageSkeleton() {
   );
 }
 
-function SectionHeader({ title, subtitle }: { title: string; subtitle?: string }) {
+function SectionHeader({
+  title,
+  subtitle,
+}: {
+  title: string;
+  subtitle?: string;
+}) {
   return (
     <div className="border-b border-border/70 px-5 py-4">
       <h1 className="text-xl font-semibold tracking-tight">{title}</h1>
-      {subtitle && <p className="mt-1 text-sm text-muted-foreground">{subtitle}</p>}
+      {subtitle && (
+        <p className="mt-1 text-sm text-muted-foreground">{subtitle}</p>
+      )}
     </div>
   );
 }
 
-function Panel({ title, children, action }: { title: string; children: React.ReactNode; action?: React.ReactNode }) {
+function Panel({
+  title,
+  children,
+  action,
+}: {
+  title: string;
+  children: React.ReactNode;
+  action?: React.ReactNode;
+}) {
   return (
     <section className="rounded-lg border border-border bg-background">
       <div className="flex min-h-11 items-center justify-between gap-3 border-b border-border/70 px-4">
@@ -260,13 +296,27 @@ function SetupView({
 
   return (
     <div className="min-h-0 overflow-auto">
-      <SectionHeader title="Agent setup" subtitle="Identity, discovery, behavior, and model configuration for this agent." />
+      <SectionHeader
+        title="Agent setup"
+        subtitle="Identity, discovery, behavior, and model configuration for this agent."
+      />
       <div className="mx-auto grid max-w-5xl gap-4 p-5">
         <Panel
           title="Profile"
           action={
-            <Button size="sm" className="h-8 gap-1.5" disabled={!isOwner || saving} onClick={save}>
-              {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : saved ? <Check className="h-3.5 w-3.5" /> : <Save className="h-3.5 w-3.5" />}
+            <Button
+              size="sm"
+              className="h-8 gap-1.5"
+              disabled={!isOwner || saving}
+              onClick={save}
+            >
+              {saving ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : saved ? (
+                <Check className="h-3.5 w-3.5" />
+              ) : (
+                <Save className="h-3.5 w-3.5" />
+              )}
               {saved ? "Saved" : "Save"}
             </Button>
           }
@@ -284,25 +334,51 @@ function SetupView({
                   if (updated) onSaved(updated as CommonAgent);
                 }}
               />
-              <Badge variant={form.a2aEnabled ? "default" : "secondary"} className="rounded-md">
+              <Badge
+                variant={form.a2aEnabled ? "default" : "secondary"}
+                className="rounded-md"
+              >
                 {form.a2aEnabled ? "Discoverable" : "Private"}
               </Badge>
             </div>
             <div className="grid gap-4">
               <div className="grid gap-1.5">
                 <Label>Name</Label>
-                <Input value={form.name} disabled={!isOwner} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} />
+                <Input
+                  value={form.name}
+                  disabled={!isOwner}
+                  onChange={(e) =>
+                    setForm((f) => ({ ...f, name: e.target.value }))
+                  }
+                />
               </div>
               <div className="grid gap-1.5">
                 <Label>Description</Label>
-                <Textarea className="min-h-20" value={form.description} disabled={!isOwner} onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))} />
+                <Textarea
+                  className="min-h-20"
+                  value={form.description}
+                  disabled={!isOwner}
+                  onChange={(e) =>
+                    setForm((f) => ({ ...f, description: e.target.value }))
+                  }
+                />
               </div>
               <div className="flex items-center justify-between rounded-lg border border-border px-3 py-2">
                 <div>
-                  <p className="text-sm font-medium">Public ecosystem discovery</p>
-                  <p className="text-xs text-muted-foreground">Uses the current A2A discoverability flag for this agent.</p>
+                  <p className="text-sm font-medium">
+                    Public ecosystem discovery
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    Uses the current A2A discoverability flag for this agent.
+                  </p>
                 </div>
-                <Switch checked={form.a2aEnabled} disabled={!isOwner} onCheckedChange={(checked) => setForm((f) => ({ ...f, a2aEnabled: checked }))} />
+                <Switch
+                  checked={form.a2aEnabled}
+                  disabled={!isOwner}
+                  onCheckedChange={(checked) =>
+                    setForm((f) => ({ ...f, a2aEnabled: checked }))
+                  }
+                />
               </div>
             </div>
           </div>
@@ -312,7 +388,14 @@ function SetupView({
           <div className="grid gap-4">
             <div className="grid gap-1.5">
               <Label>Persona</Label>
-              <Textarea className="min-h-24" value={form.persona} disabled={!isOwner} onChange={(e) => setForm((f) => ({ ...f, persona: e.target.value }))} />
+              <Textarea
+                className="min-h-24"
+                value={form.persona}
+                disabled={!isOwner}
+                onChange={(e) =>
+                  setForm((f) => ({ ...f, persona: e.target.value }))
+                }
+              />
             </div>
             <div className="grid gap-1.5">
               <Label>Greeting</Label>
@@ -320,7 +403,9 @@ function SetupView({
                 className="min-h-20"
                 value={form.greeting}
                 disabled={!isOwner}
-                onChange={(e) => setForm((f) => ({ ...f, greeting: e.target.value }))}
+                onChange={(e) =>
+                  setForm((f) => ({ ...f, greeting: e.target.value }))
+                }
                 placeholder="A short optional message shown before the first user message."
               />
             </div>
@@ -330,13 +415,25 @@ function SetupView({
                 className="min-h-24"
                 value={form.conversationStarters}
                 disabled={!isOwner}
-                onChange={(e) => setForm((f) => ({ ...f, conversationStarters: e.target.value }))}
+                onChange={(e) =>
+                  setForm((f) => ({
+                    ...f,
+                    conversationStarters: e.target.value,
+                  }))
+                }
                 placeholder={"One starter per line"}
               />
             </div>
             <div className="grid gap-1.5">
               <Label>System prompt</Label>
-              <Textarea className="min-h-44 font-mono text-sm" value={form.instructions} disabled={!isOwner} onChange={(e) => setForm((f) => ({ ...f, instructions: e.target.value }))} />
+              <Textarea
+                className="min-h-44 font-mono text-sm"
+                value={form.instructions}
+                disabled={!isOwner}
+                onChange={(e) =>
+                  setForm((f) => ({ ...f, instructions: e.target.value }))
+                }
+              />
             </div>
           </div>
         </Panel>
@@ -346,23 +443,67 @@ function SetupView({
             <div className="grid gap-3 md:grid-cols-2">
               <div className="grid gap-1.5">
                 <Label>Provider</Label>
-                <Select value={form.modelProvider} disabled={!isOwner} onValueChange={(value) => setForm((f) => ({ ...f, modelProvider: value }))}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>{modelProviders.map((provider) => <SelectItem key={provider} value={provider}>{provider}</SelectItem>)}</SelectContent>
+                <Select
+                  value={form.modelProvider}
+                  disabled={!isOwner}
+                  onValueChange={(value) =>
+                    setForm((f) => ({ ...f, modelProvider: value }))
+                  }
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {modelProviders.map((provider) => (
+                      <SelectItem key={provider} value={provider}>
+                        {provider}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
                 </Select>
               </div>
               <div className="grid gap-1.5">
                 <Label>Model ID</Label>
-                <Input value={form.modelId} disabled={!isOwner} onChange={(e) => setForm((f) => ({ ...f, modelId: e.target.value }))} />
+                <Input
+                  value={form.modelId}
+                  disabled={!isOwner}
+                  onChange={(e) =>
+                    setForm((f) => ({ ...f, modelId: e.target.value }))
+                  }
+                />
               </div>
               <div className="grid gap-1.5 md:col-span-2">
                 <Label>Base URL</Label>
-                <Input value={form.modelBaseUrl} disabled={!isOwner} onChange={(e) => setForm((f) => ({ ...f, modelBaseUrl: e.target.value }))} />
+                <Input
+                  value={form.modelBaseUrl}
+                  disabled={!isOwner}
+                  onChange={(e) =>
+                    setForm((f) => ({ ...f, modelBaseUrl: e.target.value }))
+                  }
+                />
               </div>
-              {(["temperature", "maxTokens", "topP", "presencePenalty", "frequencyPenalty"] as const).map((field) => (
+              {(
+                [
+                  "temperature",
+                  "maxTokens",
+                  "topP",
+                  "presencePenalty",
+                  "frequencyPenalty",
+                ] as const
+              ).map((field) => (
                 <div key={field} className="grid gap-1.5">
-                  <Label className="capitalize">{field.replace(/([A-Z])/g, " $1")}</Label>
-                  <Input value={form[field]} disabled={!isOwner} type="number" step="0.1" onChange={(e) => setForm((f) => ({ ...f, [field]: e.target.value }))} />
+                  <Label className="capitalize">
+                    {field.replace(/([A-Z])/g, " $1")}
+                  </Label>
+                  <Input
+                    value={form[field]}
+                    disabled={!isOwner}
+                    type="number"
+                    step="0.1"
+                    onChange={(e) =>
+                      setForm((f) => ({ ...f, [field]: e.target.value }))
+                    }
+                  />
                 </div>
               ))}
             </div>
@@ -417,10 +558,18 @@ function SessionsView({
         isLoadingSession={loadingSession}
         header={
           <div className="flex min-w-0 items-center gap-2">
-            <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0" onClick={() => setView("list")} aria-label="Back to sessions">
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-8 w-8 shrink-0"
+              onClick={() => setView("list")}
+              aria-label="Back to sessions"
+            >
               <ArrowLeft className="h-4 w-4" />
             </Button>
-            <p className="min-w-0 truncate text-sm font-medium">{selectedSession?.title || "Session"}</p>
+            <p className="min-w-0 truncate text-sm font-medium">
+              {selectedSession?.title || "Session"}
+            </p>
           </div>
         }
       />
@@ -432,7 +581,12 @@ function SessionsView({
       <div className="shrink-0 px-5 pb-3 pt-4">
         <div className="flex items-center justify-between gap-3">
           <h2 className="text-sm font-medium">Sessions</h2>
-          <Button size="sm" variant="outline" className="h-8 gap-1.5" onClick={onCreateSession}>
+          <Button
+            size="sm"
+            variant="outline"
+            className="h-8 gap-1.5"
+            onClick={onCreateSession}
+          >
             <Plus className="h-3.5 w-3.5" />
             New
           </Button>
@@ -459,12 +613,22 @@ function SessionsView({
   );
 }
 
-function ToolsView({ agentId, agentTools, setAgentTools }: { agentId: string; agentTools: any[]; setAgentTools: (tools: any[]) => void }) {
+function ToolsView({
+  agentId,
+  agentTools,
+  setAgentTools,
+}: {
+  agentId: string;
+  agentTools: any[];
+  setAgentTools: (tools: any[]) => void;
+}) {
   const router = useRouter();
   const [catalog, setCatalog] = useState<ToolCatalogItem[]>([]);
   const [loadingCatalog, setLoadingCatalog] = useState(false);
   const [selectedItemId, setSelectedItemId] = useState<string | null>(null);
-  const [statusFilter, setStatusFilter] = useState<"all" | "connected" | "not-connected">("all");
+  const [statusFilter, setStatusFilter] = useState<
+    "all" | "connected" | "not-connected"
+  >("all");
   const [toggling, setToggling] = useState<string | null>(null);
   const [savingConfig, setSavingConfig] = useState(false);
   const [usageComments, setUsageComments] = useState("");
@@ -476,7 +640,8 @@ function ToolsView({ agentId, agentTools, setAgentTools }: { agentId: string; ag
       .then((d) => {
         // Show everything except agent-processors and workflow-invocation items
         const items: ToolCatalogItem[] = (d.items ?? []).filter(
-          (i: ToolCatalogItem) => i.category !== "agents" && i.category !== "workflows",
+          (i: ToolCatalogItem) =>
+            i.category !== "agents" && i.category !== "workflows",
         );
         setCatalog(items);
       })
@@ -513,7 +678,9 @@ function ToolsView({ agentId, agentTools, setAgentTools }: { agentId: string; ag
 
   const selectedItem = useMemo(() => {
     if (!selectedItemId) return filteredCatalog[0] ?? null;
-    return catalog.find((i) => i.id === selectedItemId) ?? filteredCatalog[0] ?? null;
+    return (
+      catalog.find((i) => i.id === selectedItemId) ?? filteredCatalog[0] ?? null
+    );
   }, [catalog, filteredCatalog, selectedItemId]);
 
   // Sync local config state when selection changes
@@ -595,7 +762,8 @@ function ToolsView({ agentId, agentTools, setAgentTools }: { agentId: string; ag
         await upsertAssignments([toolId]);
       } else {
         const assignment = agentTools.find((t) => t.toolId === toolId);
-        if (assignment) await patchAssignments([assignment], { isEnabled: false });
+        if (assignment)
+          await patchAssignments([assignment], { isEnabled: false });
       }
     } finally {
       setToggling(null);
@@ -633,7 +801,10 @@ function ToolsView({ agentId, agentTools, setAgentTools }: { agentId: string; ag
         <div className="shrink-0 border-b border-border/70 p-4">
           <div className="flex items-center justify-between gap-2">
             <h2 className="text-sm font-medium">Tools</h2>
-            <Badge variant="secondary" className="h-5 px-1.5 text-[11px] font-normal">
+            <Badge
+              variant="secondary"
+              className="h-5 px-1.5 text-[11px] font-normal"
+            >
               {connectedCount} connected
             </Badge>
           </div>
@@ -646,7 +817,9 @@ function ToolsView({ agentId, agentTools, setAgentTools }: { agentId: string; ag
                 className="h-8 rounded-md capitalize"
                 onClick={() => setStatusFilter(value)}
               >
-                {value === "not-connected" ? "Not connected" : value.charAt(0).toUpperCase() + value.slice(1)}
+                {value === "not-connected"
+                  ? "Not connected"
+                  : value.charAt(0).toUpperCase() + value.slice(1)}
               </Button>
             ))}
           </div>
@@ -678,11 +851,18 @@ function ToolsView({ agentId, agentTools, setAgentTools }: { agentId: string; ag
                     >
                       <ToolIcon item={item} size="sm" />
                       <div className="min-w-0 flex-1">
-                        <p className="truncate text-sm font-medium">{item.displayName}</p>
-                        <p className="truncate text-xs text-muted-foreground">{item.categoryLabel}</p>
+                        <p className="truncate text-sm font-medium">
+                          {item.displayName}
+                        </p>
+                        <p className="truncate text-xs text-muted-foreground">
+                          {item.categoryLabel}
+                        </p>
                       </div>
                       {connected && (
-                        <div className="h-2 w-2 shrink-0 rounded-full bg-emerald-500" title="Connected" />
+                        <div
+                          className="h-2 w-2 shrink-0 rounded-full bg-emerald-500"
+                          title="Connected"
+                        />
                       )}
                     </button>
                   );
@@ -697,7 +877,10 @@ function ToolsView({ agentId, agentTools, setAgentTools }: { agentId: string; ag
       <div className="min-h-0 overflow-auto">
         {!selectedItem ? (
           <>
-            <SectionHeader title="Tools" subtitle="Select a tool from the list to configure it for this agent." />
+            <SectionHeader
+              title="Tools"
+              subtitle="Select a tool from the list to configure it for this agent."
+            />
             <div className="flex items-center justify-center p-12">
               <div className="rounded-lg border border-dashed p-12 text-center text-sm text-muted-foreground">
                 Connect a tool to configure how this agent can use it.
@@ -721,11 +904,15 @@ function ToolsView({ agentId, agentTools, setAgentTools }: { agentId: string; ag
             <div className="mx-auto max-w-4xl space-y-4 p-5">
               {/* Description */}
               <Panel title="About this tool">
-                <p className="text-sm leading-6 text-muted-foreground">{selectedItem.description}</p>
+                <p className="text-sm leading-6 text-muted-foreground">
+                  {selectedItem.description}
+                </p>
                 {selectedItem.tags.length > 0 && (
                   <div className="mt-3 flex flex-wrap gap-1.5">
                     {selectedItem.tags.map((tag) => (
-                      <Badge key={tag} variant="secondary" className="text-xs">{tag}</Badge>
+                      <Badge key={tag} variant="secondary" className="text-xs">
+                        {tag}
+                      </Badge>
                     ))}
                   </div>
                 )}
@@ -734,7 +921,9 @@ function ToolsView({ agentId, agentTools, setAgentTools }: { agentId: string; ag
                     variant="outline"
                     size="sm"
                     className="mt-3"
-                    onClick={() => window.open(selectedItem.documentationUrl, "_blank")}
+                    onClick={() =>
+                      window.open(selectedItem.documentationUrl, "_blank")
+                    }
                   >
                     <ExternalLink className="h-3.5 w-3.5" />
                     Documentation
@@ -761,7 +950,9 @@ function ToolsView({ agentId, agentTools, setAgentTools }: { agentId: string; ag
                       <Switch
                         checked={isItemEnabled(selectedItem)}
                         disabled={toggling === selectedItem.id}
-                        onCheckedChange={(checked) => setItemEnabled(selectedItem, checked)}
+                        onCheckedChange={(checked) =>
+                          setItemEnabled(selectedItem, checked)
+                        }
                         aria-label={`Enable ${selectedItem.displayName} for this agent`}
                       />
                     </div>
@@ -770,18 +961,23 @@ function ToolsView({ agentId, agentTools, setAgentTools }: { agentId: string; ag
                       selectedItem.status !== "connected" && (
                         <p className="flex items-start gap-2 rounded-md bg-amber-500/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-400">
                           <AlertTriangle className="mt-px h-3.5 w-3.5 shrink-0" />
-                          Your {selectedItem.displayName} account isn&apos;t connected yet.
-                          Connect it in the account section below — the agent can&apos;t
-                          use these tools until then.
+                          Your {selectedItem.displayName} account isn&apos;t
+                          connected yet. Connect it in the account section below
+                          — the agent can&apos;t use these tools until then.
                         </p>
                       )}
 
                     {itemTools(selectedItem).length > 1 && (
                       <div className="divide-y divide-border/70 rounded-xl border border-border">
                         {itemTools(selectedItem).map((tool) => (
-                          <div key={tool.toolId} className="flex items-center gap-3 px-3 py-2.5">
+                          <div
+                            key={tool.toolId}
+                            className="flex items-center gap-3 px-3 py-2.5"
+                          >
                             <div className="min-w-0 flex-1">
-                              <p className="truncate text-sm">{capabilityLabel(tool)}</p>
+                              <p className="truncate text-sm">
+                                {capabilityLabel(tool)}
+                              </p>
                               <p className="truncate text-xs text-muted-foreground">
                                 {tool.description}
                               </p>
@@ -789,7 +985,8 @@ function ToolsView({ agentId, agentTools, setAgentTools }: { agentId: string; ag
                             <Switch
                               checked={isToolEnabled(tool.toolId)}
                               disabled={
-                                toggling === tool.toolId || toggling === selectedItem.id
+                                toggling === tool.toolId ||
+                                toggling === selectedItem.id
                               }
                               onCheckedChange={(checked) =>
                                 setToolEnabled(tool.toolId, checked)
@@ -803,7 +1000,9 @@ function ToolsView({ agentId, agentTools, setAgentTools }: { agentId: string; ag
 
                     {isItemEnabled(selectedItem) && (
                       <div className="space-y-1.5 pt-1">
-                        <Label className="text-xs">Usage instructions (optional)</Label>
+                        <Label className="text-xs">
+                          Usage instructions (optional)
+                        </Label>
                         <Textarea
                           placeholder="Describe when and how this agent should use this tool…"
                           className="resize-none text-sm"
@@ -813,10 +1012,20 @@ function ToolsView({ agentId, agentTools, setAgentTools }: { agentId: string; ag
                         />
                         <div className="flex items-center justify-between gap-3">
                           <p className="text-xs text-muted-foreground">
-                            Passed to the agent at runtime alongside the tool definition.
+                            Passed to the agent at runtime alongside the tool
+                            definition.
                           </p>
-                          <Button size="sm" variant="outline" onClick={saveInstructions} disabled={savingConfig}>
-                            {savingConfig ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={saveInstructions}
+                            disabled={savingConfig}
+                          >
+                            {savingConfig ? (
+                              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                            ) : (
+                              <Save className="h-3.5 w-3.5" />
+                            )}
                             Save
                           </Button>
                         </div>
@@ -839,15 +1048,23 @@ function ToolsView({ agentId, agentTools, setAgentTools }: { agentId: string; ag
               )}
 
               {/* MCP tools — platform-level connection */}
-              {!isAssignable(selectedItem) && selectedItem.connectionMode !== "oauth" && (
-                <Panel title={isConnected(selectedItem) ? "Connection status" : "Setup required"}>
+              {!isAssignable(selectedItem) &&
+                selectedItem.connectionMode !== "oauth" && (
+                  <Panel
+                    title={
+                      isConnected(selectedItem)
+                        ? "Connection status"
+                        : "Setup required"
+                    }
+                  >
                   {isConnected(selectedItem) ? (
                     <div className="flex items-start gap-3">
                       <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600" />
                       <div className="space-y-1">
                         <p className="text-sm font-medium">Connected</p>
                         <p className="text-sm text-muted-foreground">
-                          This MCP connection is active and available to your agents.
+                            This MCP connection is active and available to your
+                            agents.
                         </p>
                         <Button
                           variant="outline"
@@ -866,7 +1083,8 @@ function ToolsView({ agentId, agentTools, setAgentTools }: { agentId: string; ag
                       <div className="space-y-1">
                         <p className="text-sm font-medium">Not connected</p>
                         <p className="text-sm text-muted-foreground">
-                          This MCP server must be configured before agents can use it.
+                            This MCP server must be configured before agents can
+                            use it.
                         </p>
                         <Button
                           size="sm"
@@ -893,9 +1111,17 @@ function ToolsView({ agentId, agentTools, setAgentTools }: { agentId: string; ag
 }
 
 function SkillsView({ agentId }: { agentId: string }) {
-  const { skills, loading, refresh } = useSkills({ ownerId: agentId, ownerType: "agent" });
+  const { skills, loading, refresh } = useSkills({
+    ownerId: agentId,
+    ownerType: "agent",
+  });
   const [editing, setEditing] = useState<Skill | null>(null);
-  const [draft, setDraft] = useState({ name: "", description: "", instructions: "", tags: "" });
+  const [draft, setDraft] = useState({
+    name: "",
+    description: "",
+    instructions: "",
+    tags: "",
+  });
   const [saving, setSaving] = useState(false);
 
   const beginEdit = (skill?: Skill) => {
@@ -912,8 +1138,14 @@ function SkillsView({ agentId }: { agentId: string }) {
   const save = async () => {
     if (!draft.name.trim() || !draft.instructions.trim()) return;
     setSaving(true);
-    const tags = draft.tags.split(",").map((tag) => tag.trim()).filter(Boolean);
-    const slug = draft.name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+    const tags = draft.tags
+      .split(",")
+      .map((tag) => tag.trim())
+      .filter(Boolean);
+    const slug = draft.name
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-|-$/g, "");
     try {
       await fetch(editing ? `/api/skills/${editing.skillId}` : "/api/skills", {
         method: editing ? "PUT" : "POST",
@@ -937,23 +1169,69 @@ function SkillsView({ agentId }: { agentId: string }) {
 
   return (
     <div className="min-h-0 overflow-auto">
-      <SectionHeader title="Skills" subtitle="Reusable instructions this agent can follow." />
+      <SectionHeader
+        title="Skills"
+        subtitle="Reusable instructions this agent can follow."
+      />
       <div className="mx-auto grid max-w-5xl gap-4 p-5 lg:grid-cols-[minmax(0,1fr)_380px]">
-        <Panel title="Agent skills" action={<Button size="sm" variant="outline" className="h-8 gap-1.5" onClick={() => beginEdit()}><Plus className="h-3.5 w-3.5" />New</Button>}>
-          {loading ? <Skeleton className="h-32 w-full" /> : skills.length === 0 ? (
-            <div className="rounded-lg border border-dashed p-8 text-center text-sm text-muted-foreground">No skills configured for this agent yet.</div>
+        <Panel
+          title="Agent skills"
+          action={
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-8 gap-1.5"
+              onClick={() => beginEdit()}
+            >
+              <Plus className="h-3.5 w-3.5" />
+              New
+            </Button>
+          }
+        >
+          {loading ? (
+            <Skeleton className="h-32 w-full" />
+          ) : skills.length === 0 ? (
+            <div className="rounded-lg border border-dashed p-8 text-center text-sm text-muted-foreground">
+              No skills configured for this agent yet.
+            </div>
           ) : (
             <div className="space-y-2">
               {skills.map((skill) => (
-                <button key={skill.skillId} type="button" className="w-full rounded-lg border border-border p-3 text-left hover:bg-muted/40" onClick={() => beginEdit(skill)}>
+                <button
+                  key={skill.skillId}
+                  type="button"
+                  className="w-full rounded-lg border border-border p-3 text-left hover:bg-muted/40"
+                  onClick={() => beginEdit(skill)}
+                >
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
-                      <p className="truncate text-sm font-medium">{skill.name}</p>
-                      <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">{skill.description}</p>
+                      <p className="truncate text-sm font-medium">
+                        {skill.name}
+                      </p>
+                      <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">
+                        {skill.description}
+                      </p>
                     </div>
-                    <Badge variant={skill.isActive ? "default" : "secondary"} className="rounded-md">{skill.isActive ? "active" : "inactive"}</Badge>
+                    <Badge
+                      variant={skill.isActive ? "default" : "secondary"}
+                      className="rounded-md"
+                    >
+                      {skill.isActive ? "active" : "inactive"}
+                    </Badge>
                   </div>
-                  {skill.tags?.length > 0 && <div className="mt-2 flex flex-wrap gap-1">{skill.tags.map((tag) => <Badge key={tag} variant="outline" className="rounded-md">{tag}</Badge>)}</div>}
+                  {skill.tags?.length > 0 && (
+                    <div className="mt-2 flex flex-wrap gap-1">
+                      {skill.tags.map((tag) => (
+                        <Badge
+                          key={tag}
+                          variant="outline"
+                          className="rounded-md"
+                        >
+                          {tag}
+                        </Badge>
+                      ))}
+                  </div>
+                  )}
                 </button>
               ))}
             </div>
@@ -961,11 +1239,55 @@ function SkillsView({ agentId }: { agentId: string }) {
         </Panel>
         <Panel title={editing ? "Edit skill" : "Create skill"}>
           <div className="space-y-3">
-            <div className="grid gap-1.5"><Label>Name</Label><Input value={draft.name} onChange={(e) => setDraft((d) => ({ ...d, name: e.target.value }))} /></div>
-            <div className="grid gap-1.5"><Label>Description</Label><Textarea className="min-h-20" value={draft.description} onChange={(e) => setDraft((d) => ({ ...d, description: e.target.value }))} /></div>
-            <div className="grid gap-1.5"><Label>Instructions</Label><Textarea className="min-h-40 font-mono text-sm" value={draft.instructions} onChange={(e) => setDraft((d) => ({ ...d, instructions: e.target.value }))} /></div>
-            <div className="grid gap-1.5"><Label>Tags</Label><Input value={draft.tags} onChange={(e) => setDraft((d) => ({ ...d, tags: e.target.value }))} placeholder="research, writing" /></div>
-            <Button className="w-full gap-1.5" disabled={saving || !draft.name.trim() || !draft.instructions.trim()} onClick={save}>{saving && <Loader2 className="h-3.5 w-3.5 animate-spin" />}Save skill</Button>
+            <div className="grid gap-1.5">
+              <Label>Name</Label>
+              <Input
+                value={draft.name}
+                onChange={(e) =>
+                  setDraft((d) => ({ ...d, name: e.target.value }))
+                }
+              />
+            </div>
+            <div className="grid gap-1.5">
+              <Label>Description</Label>
+              <Textarea
+                className="min-h-20"
+                value={draft.description}
+                onChange={(e) =>
+                  setDraft((d) => ({ ...d, description: e.target.value }))
+                }
+              />
+            </div>
+            <div className="grid gap-1.5">
+              <Label>Instructions</Label>
+              <Textarea
+                className="min-h-40 font-mono text-sm"
+                value={draft.instructions}
+                onChange={(e) =>
+                  setDraft((d) => ({ ...d, instructions: e.target.value }))
+                }
+              />
+            </div>
+            <div className="grid gap-1.5">
+              <Label>Tags</Label>
+              <Input
+                value={draft.tags}
+                onChange={(e) =>
+                  setDraft((d) => ({ ...d, tags: e.target.value }))
+                }
+                placeholder="research, writing"
+              />
+            </div>
+            <Button
+              className="w-full gap-1.5"
+              disabled={
+                saving || !draft.name.trim() || !draft.instructions.trim()
+              }
+              onClick={save}
+            >
+              {saving && <Loader2 className="h-3.5 w-3.5 animate-spin" />}Save
+              skill
+            </Button>
           </div>
         </Panel>
       </div>
@@ -978,38 +1300,70 @@ function ArtefactsView({ sessions, tasks }: { sessions: any[]; tasks: any[] }) {
     const items: any[] = [];
     for (const session of sessions) {
       for (const message of session.history ?? []) {
-        const metadataArtifacts = message.metadata?.artifacts ?? message.metadata?.files ?? [];
-        for (const artifact of Array.isArray(metadataArtifacts) ? metadataArtifacts : []) {
-          items.push({ ...artifact, source: session.title || "Session", createdAt: message.timestamp || session.createdAt });
+        const metadataArtifacts =
+          message.metadata?.artifacts ?? message.metadata?.files ?? [];
+        for (const artifact of Array.isArray(metadataArtifacts)
+          ? metadataArtifacts
+          : []) {
+          items.push({
+            ...artifact,
+            source: session.title || "Session",
+            createdAt: message.timestamp || session.createdAt,
+          });
         }
       }
     }
     for (const task of tasks) {
       const result = task.resultContent;
-      const taskArtifacts = Array.isArray(result?.artifacts) ? result.artifacts : [];
-      for (const artifact of taskArtifacts) items.push({ ...artifact, source: task.title, createdAt: task.createdAt });
+      const taskArtifacts = Array.isArray(result?.artifacts)
+        ? result.artifacts
+        : [];
+      for (const artifact of taskArtifacts)
+        items.push({
+          ...artifact,
+          source: task.title,
+          createdAt: task.createdAt,
+        });
     }
     return items;
   }, [sessions, tasks]);
 
   return (
     <div className="min-h-0 overflow-auto">
-      <SectionHeader title="Artefacts" subtitle="Files, documents, images, and structured outputs produced by this agent when available." />
+      <SectionHeader
+        title="Artefacts"
+        subtitle="Files, documents, images, and structured outputs produced by this agent when available."
+      />
       <div className="mx-auto max-w-5xl p-5">
         {artefacts.length === 0 ? (
           <div className="rounded-lg border border-dashed p-12 text-center">
             <ImageIcon className="mx-auto h-10 w-10 text-muted-foreground/40" />
             <p className="mt-3 text-sm font-medium">No artefacts found</p>
-            <p className="mt-1 text-sm text-muted-foreground">Generated files will appear here once sessions or tasks attach artifact metadata.</p>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Generated files will appear here once sessions or tasks attach
+              artifact metadata.
+            </p>
           </div>
         ) : (
           <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
             {artefacts.map((artifact, index) => (
-              <div key={`${artifact.artifactId ?? artifact.name ?? index}`} className="rounded-lg border border-border p-3">
+              <div
+                key={`${artifact.artifactId ?? artifact.name ?? index}`}
+                className="rounded-lg border border-border p-3"
+              >
                 <FileText className="h-5 w-5 text-muted-foreground" />
-                <p className="mt-3 truncate text-sm font-medium">{artifact.name || artifact.artifactId || "Untitled artefact"}</p>
-                <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">{artifact.description || artifact.mimeType || artifact.type || "Generated output"}</p>
-                <p className="mt-3 text-xs text-muted-foreground">{artifact.source} · {relative(artifact.createdAt)}</p>
+                <p className="mt-3 truncate text-sm font-medium">
+                  {artifact.name || artifact.artifactId || "Untitled artefact"}
+                </p>
+                <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">
+                  {artifact.description ||
+                    artifact.mimeType ||
+                    artifact.type ||
+                    "Generated output"}
+                </p>
+                <p className="mt-3 text-xs text-muted-foreground">
+                  {artifact.source} · {relative(artifact.createdAt)}
+                </p>
               </div>
             ))}
           </div>
@@ -1031,7 +1385,12 @@ type ObservabilityLog = {
   createdAt: string;
   responseTimeMs: number;
   sessionId?: string | null;
-  tools?: Array<{ name: string; status: string; summary?: string; duration?: number }>;
+  tools?: Array<{
+    name: string;
+    status: string;
+    summary?: string;
+    duration?: number;
+  }>;
 };
 
 type ObservabilityToolCall = {
@@ -1138,7 +1497,8 @@ type ObservabilityPayload = {
   };
 };
 
-const observabilityRanges: Array<{ value: ObservabilityRange; label: string }> = [
+const observabilityRanges: Array<{ value: ObservabilityRange; label: string }> =
+  [
   { value: "1h", label: "1 hour" },
   { value: "12h", label: "12 hours" },
   { value: "24h", label: "24 hours" },
@@ -1173,27 +1533,42 @@ function formatCost(value?: number | null) {
 }
 
 function compactNumber(value?: number | null) {
-  return new Intl.NumberFormat("en", { notation: "compact", maximumFractionDigits: 1 }).format(value || 0);
+  return new Intl.NumberFormat("en", {
+    notation: "compact",
+    maximumFractionDigits: 1,
+  }).format(value || 0);
 }
 
 function compactTime(value: string) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return "";
-  return date.toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+  return date.toLocaleString([], {
+    month: "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
 }
 
 function statusIsBad(status?: string) {
-  return ["error", "failed", "timeout", "unauthorized", "cancelled"].includes(String(status || "").toLowerCase());
+  return ["error", "failed", "timeout", "unauthorized", "cancelled"].includes(
+    String(status || "").toLowerCase(),
+  );
 }
 
 function statusIsBusy(status?: string) {
-  return ["pending", "running", "started"].includes(String(status || "").toLowerCase());
+  return ["pending", "running", "started"].includes(
+    String(status || "").toLowerCase(),
+  );
 }
 
 function observabilityStatusClass(status?: string) {
-  if (statusIsBad(status)) return "border-red-200 bg-red-50 text-red-700 dark:border-red-900/70 dark:bg-red-950/40 dark:text-red-300";
-  if (String(status).toLowerCase() === "warning") return "border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-900/70 dark:bg-amber-950/40 dark:text-amber-300";
-  if (statusIsBusy(status)) return "border-blue-200 bg-blue-50 text-blue-700 dark:border-blue-900/70 dark:bg-blue-950/40 dark:text-blue-300";
+  if (statusIsBad(status))
+    return "border-red-200 bg-red-50 text-red-700 dark:border-red-900/70 dark:bg-red-950/40 dark:text-red-300";
+  if (String(status).toLowerCase() === "warning")
+    return "border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-900/70 dark:bg-amber-950/40 dark:text-amber-300";
+  if (statusIsBusy(status))
+    return "border-blue-200 bg-blue-50 text-blue-700 dark:border-blue-900/70 dark:bg-blue-950/40 dark:text-blue-300";
   return "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900/70 dark:bg-emerald-950/40 dark:text-emerald-300";
 }
 
@@ -1221,9 +1596,16 @@ function ObservabilityStat({
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <p className="text-xs text-muted-foreground">{label}</p>
-          <p className="mt-1 truncate text-xl font-semibold tracking-tight">{value}</p>
+          <p className="mt-1 truncate text-xl font-semibold tracking-tight">
+            {value}
+          </p>
         </div>
-        <span className={cn("flex h-8 w-8 shrink-0 items-center justify-center rounded-md", iconClass)}>
+        <span
+          className={cn(
+            "flex h-8 w-8 shrink-0 items-center justify-center rounded-md",
+            iconClass,
+          )}
+        >
           <Icon className="h-4 w-4" />
         </span>
       </div>
@@ -1253,12 +1635,15 @@ function ObservabilityView({ agentId }: { agentId: string }) {
     try {
       const dates = observabilityWindow(range);
       const params = new URLSearchParams({ ...dates, limit: "300" });
-      const res = await fetch(`/api/agents/${agentId}/observability?${params.toString()}`);
+      const res = await fetch(
+        `/api/agents/${agentId}/observability?${params.toString()}`,
+      );
       const data = await res.json();
       const nextPayload = (data.data ?? data) as ObservabilityPayload;
       setPayload(nextPayload);
       setSelectedLogId((current) => {
-        if (current && nextPayload.logs?.some((log) => log.id === current)) return current;
+        if (current && nextPayload.logs?.some((log) => log.id === current))
+          return current;
         return nextPayload.logs?.[0]?.id ?? null;
       });
     } finally {
@@ -1272,8 +1657,11 @@ function ObservabilityView({ agentId }: { agentId: string }) {
 
   const summary = payload?.summary;
   const logs = payload?.logs ?? [];
-  const toolCalls = payload?.toolCalls?.length ? payload.toolCalls : payload?.embeddedToolCalls ?? [];
-  const selectedLog = logs.find((log) => log.id === selectedLogId) ?? logs[0] ?? null;
+  const toolCalls = payload?.toolCalls?.length
+    ? payload.toolCalls
+    : (payload?.embeddedToolCalls ?? []);
+  const selectedLog =
+    logs.find((log) => log.id === selectedLogId) ?? logs[0] ?? null;
   const chartData = (payload?.timeline ?? []).map((point) => ({
     ...point,
     time: compactTime(point.bucket),
@@ -1285,13 +1673,17 @@ function ObservabilityView({ agentId }: { agentId: string }) {
       const status = String(log.status || "info").toLowerCase();
       if (statusFilter !== "all" && statusFilter !== status) return false;
       if (!needle) return true;
-      return `${log.action} ${log.message} ${log.sessionId ?? ""} ${status}`.toLowerCase().includes(needle);
+      return `${log.action} ${log.message} ${log.sessionId ?? ""} ${status}`
+        .toLowerCase()
+        .includes(needle);
     });
   }, [logs, searchTerm, statusFilter]);
 
   const selectedLogTools = selectedLog?.tools ?? [];
   const recentTasks = payload?.tasks?.recent ?? [];
-  const failedTasks = recentTasks.filter((task) => statusIsBad(task.status)).slice(0, 4);
+  const failedTasks = recentTasks
+    .filter((task) => statusIsBad(task.status))
+    .slice(0, 4);
   const modelRollups = payload?.usage?.models ?? [];
   const toolRollups = payload?.toolRollups ?? [];
 
@@ -1299,21 +1691,36 @@ function ObservabilityView({ agentId }: { agentId: string }) {
     <div className="min-h-0 overflow-auto">
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border/70 px-5 py-4">
         <div>
-          <h1 className="text-xl font-semibold tracking-tight">Observability</h1>
-          <p className="mt-1 text-sm text-muted-foreground">Understand agent health, performance, tool behavior, and execution failures.</p>
+          <h1 className="text-xl font-semibold tracking-tight">
+            Observability
+          </h1>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Understand agent health, performance, tool behavior, and execution
+            failures.
+          </p>
         </div>
         <div className="flex items-center gap-2">
-          <Select value={range} onValueChange={(value) => setRange(value as ObservabilityRange)}>
+          <Select
+            value={range}
+            onValueChange={(value) => setRange(value as ObservabilityRange)}
+          >
             <SelectTrigger className="h-9 w-[140px]">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
               {observabilityRanges.map((item) => (
-                <SelectItem key={item.value} value={item.value}>{item.label}</SelectItem>
+                <SelectItem key={item.value} value={item.value}>
+                  {item.label}
+                </SelectItem>
               ))}
             </SelectContent>
           </Select>
-          <Button variant="outline" size="icon" className="h-9 w-9" onClick={load}>
+          <Button
+            variant="outline"
+            size="icon"
+            className="h-9 w-9"
+            onClick={load}
+          >
             <RefreshCw className={cn("h-4 w-4", loading && "animate-spin")} />
           </Button>
         </div>
@@ -1361,20 +1768,79 @@ function ObservabilityView({ agentId }: { agentId: string }) {
             {chartData.length ? (
               <div className="h-64">
                 <ResponsiveContainer width="100%" height="100%">
-                  <AreaChart data={chartData} margin={{ top: 8, right: 12, bottom: 0, left: 0 }}>
+                  <AreaChart
+                    data={chartData}
+                    margin={{ top: 8, right: 12, bottom: 0, left: 0 }}
+                  >
                     <defs>
-                      <linearGradient id="eventsFill" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="hsl(var(--primary))" stopOpacity={0.28} />
-                        <stop offset="95%" stopColor="hsl(var(--primary))" stopOpacity={0} />
+                      <linearGradient
+                        id="eventsFill"
+                        x1="0"
+                        y1="0"
+                        x2="0"
+                        y2="1"
+                      >
+                        <stop
+                          offset="5%"
+                          stopColor="hsl(var(--primary))"
+                          stopOpacity={0.28}
+                        />
+                        <stop
+                          offset="95%"
+                          stopColor="hsl(var(--primary))"
+                          stopOpacity={0}
+                        />
                       </linearGradient>
                     </defs>
-                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="hsl(var(--border))" />
-                    <XAxis dataKey="time" tick={{ fontSize: 11 }} tickLine={false} axisLine={false} minTickGap={32} />
-                    <YAxis tick={{ fontSize: 11 }} tickLine={false} axisLine={false} width={34} />
-                    <Tooltip contentStyle={{ background: "hsl(var(--background))", border: "1px solid hsl(var(--border))", borderRadius: 8 }} />
-                    <Area type="monotone" dataKey="events" name="Events" stroke="hsl(var(--primary))" fill="url(#eventsFill)" strokeWidth={2} />
-                    <Line type="monotone" dataKey="failures" name="Failures" stroke="#ef4444" strokeWidth={2} dot={false} />
-                    <Line type="monotone" dataKey="warnings" name="Warnings" stroke="#f59e0b" strokeWidth={2} dot={false} />
+                    <CartesianGrid
+                      strokeDasharray="3 3"
+                      vertical={false}
+                      stroke="hsl(var(--border))"
+                    />
+                    <XAxis
+                      dataKey="time"
+                      tick={{ fontSize: 11 }}
+                      tickLine={false}
+                      axisLine={false}
+                      minTickGap={32}
+                    />
+                    <YAxis
+                      tick={{ fontSize: 11 }}
+                      tickLine={false}
+                      axisLine={false}
+                      width={34}
+                    />
+                    <Tooltip
+                      contentStyle={{
+                        background: "hsl(var(--background))",
+                        border: "1px solid hsl(var(--border))",
+                        borderRadius: 8,
+                      }}
+                    />
+                    <Area
+                      type="monotone"
+                      dataKey="events"
+                      name="Events"
+                      stroke="hsl(var(--primary))"
+                      fill="url(#eventsFill)"
+                      strokeWidth={2}
+                    />
+                    <Line
+                      type="monotone"
+                      dataKey="failures"
+                      name="Failures"
+                      stroke="#ef4444"
+                      strokeWidth={2}
+                      dot={false}
+                    />
+                    <Line
+                      type="monotone"
+                      dataKey="warnings"
+                      name="Warnings"
+                      stroke="#f59e0b"
+                      strokeWidth={2}
+                      dot={false}
+                    />
                   </AreaChart>
                 </ResponsiveContainer>
               </div>
@@ -1387,13 +1853,51 @@ function ObservabilityView({ agentId }: { agentId: string }) {
             {chartData.length ? (
               <div className="h-64">
                 <ResponsiveContainer width="100%" height="100%">
-                  <LineChart data={chartData} margin={{ top: 8, right: 12, bottom: 0, left: 0 }}>
-                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="hsl(var(--border))" />
-                    <XAxis dataKey="time" tick={{ fontSize: 11 }} tickLine={false} axisLine={false} minTickGap={32} />
-                    <YAxis tick={{ fontSize: 11 }} tickLine={false} axisLine={false} width={42} />
-                    <Tooltip contentStyle={{ background: "hsl(var(--background))", border: "1px solid hsl(var(--border))", borderRadius: 8 }} />
-                    <Line type="monotone" dataKey="avgResponseTimeMs" name="Avg response ms" stroke="#2563eb" strokeWidth={2} dot={false} />
-                    <Line type="monotone" dataKey="toolCalls" name="Tool calls" stroke="#10b981" strokeWidth={2} dot={false} />
+                  <LineChart
+                    data={chartData}
+                    margin={{ top: 8, right: 12, bottom: 0, left: 0 }}
+                  >
+                    <CartesianGrid
+                      strokeDasharray="3 3"
+                      vertical={false}
+                      stroke="hsl(var(--border))"
+                    />
+                    <XAxis
+                      dataKey="time"
+                      tick={{ fontSize: 11 }}
+                      tickLine={false}
+                      axisLine={false}
+                      minTickGap={32}
+                    />
+                    <YAxis
+                      tick={{ fontSize: 11 }}
+                      tickLine={false}
+                      axisLine={false}
+                      width={42}
+                    />
+                    <Tooltip
+                      contentStyle={{
+                        background: "hsl(var(--background))",
+                        border: "1px solid hsl(var(--border))",
+                        borderRadius: 8,
+                      }}
+                    />
+                    <Line
+                      type="monotone"
+                      dataKey="avgResponseTimeMs"
+                      name="Avg response ms"
+                      stroke="#2563eb"
+                      strokeWidth={2}
+                      dot={false}
+                    />
+                    <Line
+                      type="monotone"
+                      dataKey="toolCalls"
+                      name="Tool calls"
+                      stroke="#10b981"
+                      strokeWidth={2}
+                      dot={false}
+                    />
                   </LineChart>
                 </ResponsiveContainer>
               </div>
@@ -1408,20 +1912,39 @@ function ObservabilityView({ agentId }: { agentId: string }) {
             {toolRollups.length ? (
               <div className="space-y-3">
                 {toolRollups.slice(0, 6).map((tool) => (
-                  <div key={tool.id} className="rounded-lg border border-border bg-muted/20 p-3">
+                  <div
+                    key={tool.id}
+                    className="rounded-lg border border-border bg-muted/20 p-3"
+                  >
                     <div className="flex items-center justify-between gap-3">
                       <div className="min-w-0">
-                        <p className="truncate text-sm font-medium">{tool.name}</p>
-                        <p className="mt-1 text-xs text-muted-foreground">{tool.calls} calls · avg {formatMs(tool.avgDurationMs)} · P95 {formatMs(tool.p95DurationMs)}</p>
+                        <p className="truncate text-sm font-medium">
+                          {tool.name}
+                        </p>
+                        <p className="mt-1 text-xs text-muted-foreground">
+                          {tool.calls} calls · avg{" "}
+                          {formatMs(tool.avgDurationMs)} · P95{" "}
+                          {formatMs(tool.p95DurationMs)}
+                        </p>
                       </div>
-                      <Badge variant="outline" className={cn("rounded-md", tool.failures ? observabilityStatusClass("warning") : observabilityStatusClass("success"))}>
+                      <Badge
+                        variant="outline"
+                        className={cn(
+                          "rounded-md",
+                          tool.failures
+                            ? observabilityStatusClass("warning")
+                            : observabilityStatusClass("success"),
+                        )}
+                      >
                         {tool.successRate}% pass
                       </Badge>
                     </div>
                     <div className="mt-3 grid h-2 overflow-hidden rounded-full bg-muted">
                       <div
                         className="h-2 rounded-full bg-emerald-500"
-                        style={{ width: `${Math.max(4, Math.min(100, tool.successRate))}%` }}
+                        style={{
+                          width: `${Math.max(4, Math.min(100, tool.successRate))}%`,
+                        }}
                       />
                     </div>
                   </div>
@@ -1434,34 +1957,70 @@ function ObservabilityView({ agentId }: { agentId: string }) {
 
           <Panel title="Task and model signals">
             <div className="grid gap-3 sm:grid-cols-3">
-              <Stat label="Completed tasks" value={summary?.tasks?.completed ?? 0} />
+              <Stat
+                label="Completed tasks"
+                value={summary?.tasks?.completed ?? 0}
+              />
               <Stat label="Failed tasks" value={summary?.tasks?.failed ?? 0} />
-              <Stat label="Task P95" value={formatMs(summary?.tasks?.p95DurationMs)} />
+              <Stat
+                label="Task P95"
+                value={formatMs(summary?.tasks?.p95DurationMs)}
+              />
             </div>
             <div className="mt-4 grid gap-4 lg:grid-cols-2">
               <div className="space-y-2">
-                <p className="text-xs font-medium uppercase text-muted-foreground">Model activity</p>
-                {modelRollups.length ? modelRollups.slice(0, 4).map((model) => (
-                  <div key={`${model.provider}:${model.modelId}`} className="rounded-md border border-border bg-muted/20 px-3 py-2">
+                <p className="text-xs font-medium uppercase text-muted-foreground">
+                  Model activity
+                </p>
+                {modelRollups.length ? (
+                  modelRollups.slice(0, 4).map((model) => (
+                    <div
+                      key={`${model.provider}:${model.modelId}`}
+                      className="rounded-md border border-border bg-muted/20 px-3 py-2"
+                    >
                     <div className="flex items-center justify-between gap-3 text-sm">
-                      <span className="truncate font-medium">{model.modelId}</span>
-                      <span className="text-muted-foreground">{model.calls} calls</span>
+                        <span className="truncate font-medium">
+                          {model.modelId}
+                        </span>
+                        <span className="text-muted-foreground">
+                          {model.calls} calls
+                        </span>
                     </div>
-                    <p className="mt-1 text-xs text-muted-foreground">{compactNumber(model.totalTokens)} tokens · {formatCost(model.costUsd)} · avg {formatMs(model.avgDurationMs)}</p>
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        {compactNumber(model.totalTokens)} tokens ·{" "}
+                        {formatCost(model.costUsd)} · avg{" "}
+                        {formatMs(model.avgDurationMs)}
+                      </p>
                   </div>
-                )) : (
-                  <p className="rounded-md border border-dashed p-4 text-sm text-muted-foreground">No usage events in this range.</p>
+                  ))
+                ) : (
+                  <p className="rounded-md border border-dashed p-4 text-sm text-muted-foreground">
+                    No usage events in this range.
+                  </p>
                 )}
               </div>
               <div className="space-y-2">
-                <p className="text-xs font-medium uppercase text-muted-foreground">Recent failures</p>
-                {failedTasks.length ? failedTasks.map((task) => (
-                  <div key={task.taskId} className="rounded-md border border-red-200 bg-red-50/60 px-3 py-2 text-sm dark:border-red-900/60 dark:bg-red-950/20">
+                <p className="text-xs font-medium uppercase text-muted-foreground">
+                  Recent failures
+                </p>
+                {failedTasks.length ? (
+                  failedTasks.map((task) => (
+                    <div
+                      key={task.taskId}
+                      className="rounded-md border border-red-200 bg-red-50/60 px-3 py-2 text-sm dark:border-red-900/60 dark:bg-red-950/20"
+                    >
                     <p className="truncate font-medium">{task.title}</p>
-                    <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">{task.errorMessage || task.summary || "Task failed without a recorded message."}</p>
+                      <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">
+                        {task.errorMessage ||
+                          task.summary ||
+                          "Task failed without a recorded message."}
+                      </p>
                   </div>
-                )) : (
-                  <p className="rounded-md border border-dashed p-4 text-sm text-muted-foreground">No task failures found.</p>
+                  ))
+                ) : (
+                  <p className="rounded-md border border-dashed p-4 text-sm text-muted-foreground">
+                    No task failures found.
+                  </p>
                 )}
               </div>
             </div>
@@ -1508,27 +2067,50 @@ function ObservabilityView({ agentId }: { agentId: string }) {
                       onClick={() => setSelectedLogId(log.id)}
                       className={cn(
                         "w-full rounded-lg border border-border bg-background p-3 text-left transition hover:bg-muted/40",
-                        selectedLog?.id === log.id && "border-primary/50 bg-primary/5"
+                        selectedLog?.id === log.id &&
+                          "border-primary/50 bg-primary/5",
                       )}
                     >
                       <div className="flex items-center justify-between gap-3">
                         <div className="min-w-0">
-                          <p className="truncate text-sm font-medium">{log.action || "Agent event"}</p>
-                          <p className="mt-1 line-clamp-1 text-xs text-muted-foreground">{log.message || "No message recorded"}</p>
+                          <p className="truncate text-sm font-medium">
+                            {log.action || "Agent event"}
+                          </p>
+                          <p className="mt-1 line-clamp-1 text-xs text-muted-foreground">
+                            {log.message || "No message recorded"}
+                          </p>
                         </div>
-                        <Badge variant="outline" className={cn("shrink-0 rounded-md", observabilityStatusClass(log.status))}>{log.status}</Badge>
+                        <Badge
+                          variant="outline"
+                          className={cn(
+                            "shrink-0 rounded-md",
+                            observabilityStatusClass(log.status),
+                          )}
+                        >
+                          {log.status}
+                        </Badge>
                       </div>
                       <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
                         <span>{compactTime(log.createdAt)}</span>
                         <span>{formatMs(log.responseTimeMs)}</span>
-                        {log.sessionId && <span>Session {shortId(log.sessionId)}</span>}
-                        {!!log.tools?.length && <span>{log.tools.length} tool events</span>}
+                        {log.sessionId && (
+                          <span>Session {shortId(log.sessionId)}</span>
+                        )}
+                        {!!log.tools?.length && (
+                          <span>{log.tools.length} tool events</span>
+                        )}
                       </div>
                     </button>
                   ))}
                 </div>
               ) : (
-                <EmptyObservabilityState text={loading ? "Loading observability data..." : "No logs match the current filters."} />
+                <EmptyObservabilityState
+                  text={
+                    loading
+                      ? "Loading observability data..."
+                      : "No logs match the current filters."
+                  }
+                />
               )}
             </ScrollArea>
           </Panel>
@@ -1538,54 +2120,99 @@ function ObservabilityView({ agentId }: { agentId: string }) {
               <div className="space-y-4">
                 <div>
                   <div className="flex items-center justify-between gap-3">
-                    <Badge variant="outline" className={cn("rounded-md", observabilityStatusClass(selectedLog.status))}>
-                      {statusIsBad(selectedLog.status) ? <XCircle className="mr-1 h-3 w-3" /> : <CheckCircle2 className="mr-1 h-3 w-3" />}
+                    <Badge
+                      variant="outline"
+                      className={cn(
+                        "rounded-md",
+                        observabilityStatusClass(selectedLog.status),
+                      )}
+                    >
+                      {statusIsBad(selectedLog.status) ? (
+                        <XCircle className="mr-1 h-3 w-3" />
+                      ) : (
+                        <CheckCircle2 className="mr-1 h-3 w-3" />
+                      )}
                       {selectedLog.status}
                     </Badge>
-                    <span className="text-xs text-muted-foreground">{relative(selectedLog.createdAt)}</span>
+                    <span className="text-xs text-muted-foreground">
+                      {relative(selectedLog.createdAt)}
+                    </span>
                   </div>
-                  <h3 className="mt-3 text-base font-semibold">{selectedLog.action || "Agent event"}</h3>
-                  <p className="mt-2 text-sm text-muted-foreground">{selectedLog.message || "No message was recorded for this event."}</p>
+                  <h3 className="mt-3 text-base font-semibold">
+                    {selectedLog.action || "Agent event"}
+                  </h3>
+                  <p className="mt-2 text-sm text-muted-foreground">
+                    {selectedLog.message ||
+                      "No message was recorded for this event."}
+                  </p>
                 </div>
 
                 <div className="grid gap-2 text-sm">
                   <div className="flex items-center justify-between rounded-md bg-muted/30 px-3 py-2">
                     <span className="text-muted-foreground">Response time</span>
-                    <span className="font-medium">{formatMs(selectedLog.responseTimeMs)}</span>
+                    <span className="font-medium">
+                      {formatMs(selectedLog.responseTimeMs)}
+                    </span>
                   </div>
                   <div className="flex items-center justify-between rounded-md bg-muted/30 px-3 py-2">
                     <span className="text-muted-foreground">Log ID</span>
-                    <span className="font-mono text-xs">{shortId(selectedLog.logId)}</span>
+                    <span className="font-mono text-xs">
+                      {shortId(selectedLog.logId)}
+                    </span>
                   </div>
                   {selectedLog.sessionId && (
                     <div className="flex items-center justify-between rounded-md bg-muted/30 px-3 py-2">
                       <span className="text-muted-foreground">Session</span>
-                      <span className="font-mono text-xs">{shortId(selectedLog.sessionId)}</span>
+                      <span className="font-mono text-xs">
+                        {shortId(selectedLog.sessionId)}
+                      </span>
                     </div>
                   )}
                 </div>
 
                 <div>
-                  <p className="mb-2 text-xs font-medium uppercase text-muted-foreground">Tools in this event</p>
+                  <p className="mb-2 text-xs font-medium uppercase text-muted-foreground">
+                    Tools in this event
+                  </p>
                   {selectedLogTools.length ? (
                     <div className="space-y-2">
                       {selectedLogTools.map((tool, index) => (
-                        <div key={`${tool.name}-${index}`} className="rounded-md border border-border p-2">
+                        <div
+                          key={`${tool.name}-${index}`}
+                          className="rounded-md border border-border p-2"
+                        >
                           <div className="flex items-center justify-between gap-2">
-                            <span className="truncate text-sm font-medium">{tool.name}</span>
-                            <Badge variant="outline" className={cn("rounded-md", observabilityStatusClass(tool.status))}>{tool.status}</Badge>
+                            <span className="truncate text-sm font-medium">
+                              {tool.name}
+                            </span>
+                            <Badge
+                              variant="outline"
+                              className={cn(
+                                "rounded-md",
+                                observabilityStatusClass(tool.status),
+                              )}
+                            >
+                              {tool.status}
+                            </Badge>
                           </div>
-                          <p className="mt-1 text-xs text-muted-foreground">{tool.summary || `${formatMs(tool.duration)} recorded duration`}</p>
+                          <p className="mt-1 text-xs text-muted-foreground">
+                            {tool.summary ||
+                              `${formatMs(tool.duration)} recorded duration`}
+                          </p>
                         </div>
                       ))}
                     </div>
                   ) : (
-                    <p className="rounded-md border border-dashed p-3 text-sm text-muted-foreground">No embedded tool data on this log.</p>
+                    <p className="rounded-md border border-dashed p-3 text-sm text-muted-foreground">
+                      No embedded tool data on this log.
+                    </p>
                   )}
                 </div>
 
                 <div>
-                  <p className="mb-2 text-xs font-medium uppercase text-muted-foreground">Raw event</p>
+                  <p className="mb-2 text-xs font-medium uppercase text-muted-foreground">
+                    Raw event
+                  </p>
                   <pre className="max-h-44 overflow-auto rounded-md border border-border bg-muted/30 p-3 text-xs">
                     {JSON.stringify(selectedLog, null, 2)}
                   </pre>
@@ -1601,14 +2228,37 @@ function ObservabilityView({ agentId }: { agentId: string }) {
           {toolCalls.length ? (
             <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
               {toolCalls.slice(0, 12).map((tool) => (
-                <div key={tool.id} className="rounded-lg border border-border bg-muted/20 p-3">
+                <div
+                  key={tool.id}
+                  className="rounded-lg border border-border bg-muted/20 p-3"
+                >
                   <div className="flex items-center justify-between gap-2">
-                    <p className="truncate text-sm font-medium">{tool.toolName}</p>
-                    <Badge variant="outline" className={cn("rounded-md", observabilityStatusClass(tool.status))}>{tool.status}</Badge>
+                    <p className="truncate text-sm font-medium">
+                      {tool.toolName}
+                    </p>
+                    <Badge
+                      variant="outline"
+                      className={cn(
+                        "rounded-md",
+                        observabilityStatusClass(tool.status),
+                      )}
+                    >
+                      {tool.status}
+                    </Badge>
                   </div>
-                  <p className="mt-2 text-xs text-muted-foreground">{compactTime(tool.startedAt)} · {formatMs(tool.durationMs)}</p>
-                  {tool.errorMessage && <p className="mt-2 line-clamp-2 text-xs text-red-600 dark:text-red-300">{tool.errorMessage}</p>}
-                  {tool.summary && <p className="mt-2 line-clamp-2 text-xs text-muted-foreground">{tool.summary}</p>}
+                  <p className="mt-2 text-xs text-muted-foreground">
+                    {compactTime(tool.startedAt)} · {formatMs(tool.durationMs)}
+                  </p>
+                  {tool.errorMessage && (
+                    <p className="mt-2 line-clamp-2 text-xs text-red-600 dark:text-red-300">
+                      {tool.errorMessage}
+                    </p>
+                  )}
+                  {tool.summary && (
+                    <p className="mt-2 line-clamp-2 text-xs text-muted-foreground">
+                      {tool.summary}
+                    </p>
+                  )}
                 </div>
               ))}
             </div>
@@ -1636,7 +2286,9 @@ function UsageView({ agentId }: { agentId: string }) {
       <div className="flex items-center justify-between gap-3 border-b border-border/70 px-5 py-4">
         <div>
           <h1 className="text-xl font-semibold tracking-tight">Usage</h1>
-          <p className="mt-1 text-sm text-muted-foreground">Model calls, token volume, and cost for this agent.</p>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Model calls, token volume, and cost for this agent.
+          </p>
         </div>
         <div className="flex rounded-md border border-border bg-muted/40 p-0.5">
           {[
@@ -1669,7 +2321,9 @@ function UsageView({ agentId }: { agentId: string }) {
               </div>
               <div className="flex items-center justify-between">
                 <span className="text-muted-foreground">Timeline</span>
-                <Badge variant="secondary" className="rounded-md">{range}</Badge>
+                <Badge variant="secondary" className="rounded-md">
+                  {range}
+                </Badge>
               </div>
             </div>
           </Panel>
@@ -1678,13 +2332,18 @@ function UsageView({ agentId }: { agentId: string }) {
               <div className="h-2 rounded-full bg-muted">
                 <div className="h-2 w-1/5 rounded-full bg-emerald-500" />
               </div>
-              <p className="text-xs text-muted-foreground">Agent-level budgets are not configured in this workspace yet.</p>
+              <p className="text-xs text-muted-foreground">
+                Agent-level budgets are not configured in this workspace yet.
+              </p>
             </div>
           </Panel>
           <Panel title="Breakdown">
             <div className="space-y-2">
               {["LLM calls", "Input tokens", "Output tokens"].map((item) => (
-                <div key={item} className="flex items-center justify-between rounded-md bg-muted/30 px-3 py-2 text-sm">
+                <div
+                  key={item}
+                  className="flex items-center justify-between rounded-md bg-muted/30 px-3 py-2 text-sm"
+                >
                   <span>{item}</span>
                   <span className="text-muted-foreground">Tracked</span>
                 </div>
@@ -1710,20 +2369,44 @@ function WalletView({ agentId }: { agentId: string }) {
 
   return (
     <div className="min-h-0 overflow-auto">
-      <SectionHeader title="Wallet" subtitle="Funding, balances, and wallet activity for this agent." />
+      <SectionHeader
+        title="Wallet"
+        subtitle="Funding, balances, and wallet activity for this agent."
+      />
       <div className="mx-auto grid max-w-5xl gap-4 p-5 lg:grid-cols-[minmax(0,1fr)_380px]">
         <Panel title="Primary wallet">
-          {loading ? <Skeleton className="h-32 w-full" /> : wallet ? (
+          {loading ? (
+            <Skeleton className="h-32 w-full" />
+          ) : wallet ? (
             <div className="space-y-4">
               <div className="grid gap-3 sm:grid-cols-2">
-                <Stat label="USDC" value={balanceLoading ? "Loading" : balance?.usdc ?? "0"} />
-                <Stat label="Native" value={balanceLoading ? "Loading" : balance?.native ?? "0"} />
+                <Stat
+                  label="USDC"
+                  value={balanceLoading ? "Loading" : (balance?.usdc ?? "0")}
+                />
+                <Stat
+                  label="Native"
+                  value={balanceLoading ? "Loading" : (balance?.native ?? "0")}
+                />
               </div>
               <div className="rounded-lg border border-border bg-muted/30 p-3">
                 <Label className="text-xs text-muted-foreground">Address</Label>
                 <div className="mt-2 flex items-center gap-2">
-                  <p className="min-w-0 flex-1 truncate font-mono text-sm">{wallet.address}</p>
-                  <Button variant="ghost" size="icon" className="h-8 w-8" onClick={copy}>{copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}</Button>
+                  <p className="min-w-0 flex-1 truncate font-mono text-sm">
+                    {wallet.address}
+                  </p>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8"
+                    onClick={copy}
+                  >
+                    {copied ? (
+                      <Check className="h-4 w-4" />
+                    ) : (
+                      <Copy className="h-4 w-4" />
+                    )}
+                  </Button>
                 </div>
               </div>
               <AddToAgentBalance agentId={agentId} />
@@ -1734,25 +2417,40 @@ function WalletView({ agentId }: { agentId: string }) {
         </Panel>
         <Panel title="Transactions">
           <AgentTransactions transactions={[]} />
-          <p className="mt-3 text-xs text-muted-foreground">Transaction history is shown when wallet transaction records are available from the wallet provider.</p>
+          <p className="mt-3 text-xs text-muted-foreground">
+            Transaction history is shown when wallet transaction records are
+            available from the wallet provider.
+          </p>
         </Panel>
       </div>
     </div>
   );
 }
 
-export default function AgentStudioPage({ params }: { params: Promise<{ agent: string }> }) {
+export default function AgentStudioPage({
+  params,
+}: {
+  params: Promise<{ agent: string }>;
+}) {
   const { agent: agentId } = use(params);
   const router = useRouter();
   const { authState } = useAuth();
   const userAddress = normalizePrincipalId(authState.walletAddress);
   const { agents } = useAgents(userAddress || undefined);
-  const { setMessages, clearMessages, startTitleStream, pendingPrompt, setPendingPrompt } = useAgentContext();
+  const {
+    setMessages,
+    clearMessages,
+    startTitleStream,
+    pendingPrompt,
+    setPendingPrompt,
+  } = useAgentContext();
 
   // A message typed on the agents overview is handed off via context and
   // auto-sent into a fresh session here. Capture it once on mount, then clear
   // the one-shot signal so it can't fire again on a later visit.
-  const [autoPrompt, setAutoPrompt] = useState<string | null>(() => pendingPrompt);
+  const [autoPrompt, setAutoPrompt] = useState<string | null>(
+    () => pendingPrompt,
+  );
   const hadAutoPromptRef = useRef<boolean>(Boolean(pendingPrompt));
   useEffect(() => {
     if (pendingPrompt) setPendingPrompt(null);
@@ -1769,28 +2467,45 @@ export default function AgentStudioPage({ params }: { params: Promise<{ agent: s
   const [tasks, setTasks] = useState<any[]>([]);
   const { renameSession, deleteSession } = useSessionMutations();
 
-  const handleRenameSession = useCallback(async (sessionId: string, title: string) => {
+  const handleRenameSession = useCallback(
+    async (sessionId: string, title: string) => {
     const prev = sessions;
-    setSessions((list) => list.map((s) => (s.sessionId === sessionId ? { ...s, title } : s)));
-    setSelectedSession((cur: any) => (cur?.sessionId === sessionId ? { ...cur, title } : cur));
+      setSessions((list) =>
+        list.map((s) => (s.sessionId === sessionId ? { ...s, title } : s)),
+      );
+      setSelectedSession((cur: any) =>
+        cur?.sessionId === sessionId ? { ...cur, title } : cur,
+      );
     const ok = await renameSession(sessionId, title);
     if (!ok) setSessions(prev);
     return ok;
-  }, [sessions, renameSession]);
+    },
+    [sessions, renameSession],
+  );
 
-  const handleDeleteSession = useCallback(async (sessionId: string) => {
+  const handleDeleteSession = useCallback(
+    async (sessionId: string) => {
     const prev = sessions;
     setSessions((list) => list.filter((s) => s.sessionId !== sessionId));
     const ok = await deleteSession(sessionId);
     if (!ok) {
       setSessions(prev);
     } else {
-      setSelectedSession((cur: any) => (cur?.sessionId === sessionId ? null : cur));
+        setSelectedSession((cur: any) =>
+          cur?.sessionId === sessionId ? null : cur,
+        );
     }
     return ok;
-  }, [sessions, deleteSession]);
+    },
+    [sessions, deleteSession],
+  );
 
-  const isOwner = Boolean(userAddress && agent && ((agent as any).ownerUserId === userAddress || agent.owner === userAddress));
+  const isOwner = Boolean(
+    userAddress &&
+      agent &&
+      ((agent as any).ownerUserId === userAddress ||
+        agent.owner === userAddress),
+  );
 
   const loadAgent = useCallback(async () => {
     if (!agentId) return;
@@ -1813,7 +2528,11 @@ export default function AgentStudioPage({ params }: { params: Promise<{ agent: s
     if (!agentId || !userAddress) return;
     const res = await fetch(`/api/sessions/list?agentId=${agentId}`);
     const data = await res.json();
-    const list = (data?.data || []).sort((a: any, b: any) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
+    const list = (data?.data || []).sort(
+      (a: any, b: any) =>
+        new Date(b.createdAt || 0).getTime() -
+        new Date(a.createdAt || 0).getTime(),
+    );
     setSessions(list);
   }, [agentId, userAddress]);
 
@@ -1824,7 +2543,8 @@ export default function AgentStudioPage({ params }: { params: Promise<{ agent: s
     setTasks(data.data ?? []);
   }, [agentId]);
 
-  const loadSession = useCallback(async (sessionId: string) => {
+  const loadSession = useCallback(
+    async (sessionId: string) => {
     setLoadingSession(true);
     clearMessages();
     try {
@@ -1836,14 +2556,26 @@ export default function AgentStudioPage({ params }: { params: Promise<{ agent: s
     } finally {
       setLoadingSession(false);
     }
-  }, [clearMessages, setMessages]);
-
-  useEffect(() => { loadAgent(); }, [loadAgent]);
-  useEffect(() => { loadSessions(); }, [loadSessions]);
-  useEffect(() => { loadTasks(); }, [loadTasks]);
+    },
+    [clearMessages, setMessages],
+  );
 
   useEffect(() => {
-    if (!selectedSession && sessions[0]?.sessionId && activeSection !== "new-session") {
+    loadAgent();
+  }, [loadAgent]);
+  useEffect(() => {
+    loadSessions();
+  }, [loadSessions]);
+  useEffect(() => {
+    loadTasks();
+  }, [loadTasks]);
+
+  useEffect(() => {
+    if (
+      !selectedSession &&
+      sessions[0]?.sessionId &&
+      activeSection !== "new-session"
+    ) {
       loadSession(sessions[0].sessionId);
     }
   }, [sessions, selectedSession, activeSection, loadSession]);
@@ -1863,13 +2595,29 @@ export default function AgentStudioPage({ params }: { params: Promise<{ agent: s
 
   if (loading) return <AgentPageSkeleton />;
   if (!agent) {
-    return <div className="flex h-full items-center justify-center text-sm text-muted-foreground">Agent not found</div>;
+    return (
+      <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
+        Agent not found
+      </div>
+    );
   }
 
   const renderSection = () => {
     switch (activeSection) {
       case "setup":
         return <SetupView agent={agent} isOwner={isOwner} onSaved={setAgent} />;
+      case "runtime":
+        return (
+          <div className="min-h-0 overflow-auto">
+            <SectionHeader
+              title="Runtime"
+              subtitle="Execution engine, managed computer, lifecycle, and cross-runtime capabilities."
+            />
+            <div className="mx-auto max-w-5xl p-5">
+              <AgentRuntimeSurface agentId={agentId} />
+            </div>
+          </div>
+        );
       case "new-session":
         return (
           <SessionInterface
@@ -1883,21 +2631,61 @@ export default function AgentStudioPage({ params }: { params: Promise<{ agent: s
             initialPrompt={autoPrompt}
             onInitialPromptSent={() => setAutoPrompt(null)}
             onSessionCreated={(sessionId, title) => {
-              const newSession = { sessionId, agentId, title: "", createdAt: new Date().toISOString() };
-              setSessions((prev) => [newSession, ...prev.filter((s) => s.sessionId !== sessionId)]);
+              const newSession = {
+                sessionId,
+                agentId,
+                title: "",
+                createdAt: new Date().toISOString(),
+              };
+              setSessions((prev) => [
+                newSession,
+                ...prev.filter((s) => s.sessionId !== sessionId),
+              ]);
               if (title) startTitleStream(sessionId, title);
-              setSelectedSession({ sessionId, tasks: [], childSessions: [], spaces: [] });
+              setSelectedSession({
+                sessionId,
+                tasks: [],
+                childSessions: [],
+                spaces: [],
+              });
             }}
           />
         );
       case "sessions":
-        return <SessionsView agent={agent} sessions={sessions} selectedSession={selectedSession} userAddress={userAddress} loadingSession={loadingSession} onSelectSession={loadSession} onCreateSession={() => setActiveSection("new-session")} onRenameSession={handleRenameSession} onDeleteSession={handleDeleteSession} />;
+        return (
+          <SessionsView
+            agent={agent}
+            sessions={sessions}
+            selectedSession={selectedSession}
+            userAddress={userAddress}
+            loadingSession={loadingSession}
+            onSelectSession={loadSession}
+            onCreateSession={() => setActiveSection("new-session")}
+            onRenameSession={handleRenameSession}
+            onDeleteSession={handleDeleteSession}
+          />
+        );
       case "computer":
-        return <AgentComputerSurface agentId={agentId} embedded className="h-full" />;
+        return (
+          <AgentComputerSurface agentId={agentId} embedded className="h-full" />
+        );
       case "tasks":
-        return <TaskManagementView userAddress={userAddress} agentId={agentId} hideAgentFilter preSelectedAgentId={agentId} />;
+        return (
+          <TaskManagementView
+            userAddress={userAddress}
+            agentId={agentId}
+            hideAgentFilter
+            preSelectedAgentId={agentId}
+          />
+        );
       case "tools":
-        return <ToolsView agentId={agentId} agentTools={agentTools} setAgentTools={setAgentTools} />;
+        return (
+          <ToolsView
+            agentId={agentId}
+            agentTools={agentTools}
+            setAgentTools={setAgentTools}
+          />
+        );
       case "skills":
         return <SkillsView agentId={agentId} />;
       case "artefacts":
@@ -1907,7 +2695,19 @@ export default function AgentStudioPage({ params }: { params: Promise<{ agent: s
       case "usage":
         return <UsageView agentId={agentId} />;
       case "memory":
-        return <div className="min-h-0 overflow-auto"><SectionHeader title="Memory" subtitle="Review, search, add, and remove memory entries for this agent." /><div className="mx-auto max-w-5xl p-5"><Panel title="Memory store"><AgentMemoryView agentId={agentId} /></Panel></div></div>;
+        return (
+          <div className="min-h-0 overflow-auto">
+            <SectionHeader
+              title="Memory"
+              subtitle="Review, search, add, and remove memory entries for this agent."
+            />
+            <div className="mx-auto max-w-5xl p-5">
+              <Panel title="Memory store">
+                <AgentMemoryView agentId={agentId} />
+              </Panel>
+            </div>
+          </div>
+        );
       case "wallet":
         return <WalletView agentId={agentId} />;
     }
@@ -1951,18 +2751,25 @@ export default function AgentStudioPage({ params }: { params: Promise<{ agent: s
               <button
                 key={key}
                 type="button"
-                className={cn("flex h-9 w-full items-center gap-2 rounded-md px-2 text-left text-sm text-muted-foreground hover:bg-muted hover:text-foreground", activeSection === key && "bg-accent text-accent-foreground")}
+                className={cn(
+                  "flex h-9 w-full items-center gap-2 rounded-md px-2 text-left text-sm text-muted-foreground hover:bg-muted hover:text-foreground",
+                  activeSection === key && "bg-accent text-accent-foreground",
+                )}
                 onClick={() => setActiveSection(key)}
               >
                 <Icon className="h-4 w-4 shrink-0" />
                 <span className="min-w-0 flex-1 truncate">{label}</span>
-                {activeSection === key && <ChevronRight className="h-3.5 w-3.5" />}
+                {activeSection === key && (
+                  <ChevronRight className="h-3.5 w-3.5" />
+                )}
               </button>
             ))}
           </nav>
         </ScrollArea>
       </aside>
-      <main className="h-full min-h-0 min-w-0 overflow-y-auto overscroll-contain">{renderSection()}</main>
+      <main className="h-full min-h-0 min-w-0 overflow-y-auto overscroll-contain">
+        {renderSection()}
+      </main>
     </div>
   );
 }

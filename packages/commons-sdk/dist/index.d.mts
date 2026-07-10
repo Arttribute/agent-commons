@@ -1,4 +1,4 @@
-type ModelProvider = 'openai' | 'anthropic' | 'google' | 'mistral' | 'groq' | 'ollama' | 'openrouter' | 'xai' | 'custom';
+type ModelProvider = "openai" | "anthropic" | "google" | "mistral" | "groq" | "ollama" | "openrouter" | "xai" | "custom";
 interface ModelConfig {
     provider: ModelProvider;
     modelId: string;
@@ -7,8 +7,28 @@ interface ModelConfig {
     temperature?: number;
     maxTokens?: number;
     topP?: number;
-    reasoningEffort?: 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh';
-    verbosity?: 'low' | 'medium' | 'high';
+    reasoningEffort?: "none" | "minimal" | "low" | "medium" | "high" | "xhigh";
+    verbosity?: "low" | "medium" | "high";
+}
+type AgentRuntimeType = "native" | "openclaw" | "hermes" | "custom";
+type AgentRuntimeStatus = "disabled" | "provisioning" | "starting" | "ready" | "degraded" | "stopped" | "failed";
+interface AgentRuntimeConfig {
+    deploymentMode?: "managed" | "external";
+    channelPolicy?: "pairing" | "allowlist" | "open" | "disabled";
+    enabledPlugins?: string[];
+    enabledToolsets?: string[];
+    memoryMode?: "native" | "platform" | "hybrid";
+    metadata?: Record<string, string | number | boolean>;
+}
+interface AgentRuntime {
+    runtimeType: AgentRuntimeType;
+    version?: string | null;
+    status: AgentRuntimeStatus;
+    config: AgentRuntimeConfig;
+    capabilities: Record<string, boolean>;
+    updatedAt?: string | null;
+    managed: boolean;
+    computer?: AgentComputer | null;
 }
 interface Agent {
     agentId: string;
@@ -31,20 +51,25 @@ interface Agent {
     isLiaison?: boolean;
     externalUrl?: string;
     createdAt: string;
+    runtimeType?: AgentRuntimeType;
+    runtimeVersion?: string | null;
+    runtimeStatus?: AgentRuntimeStatus;
+    runtimeConfig?: AgentRuntimeConfig;
+    runtimeCapabilities?: Record<string, boolean>;
 }
 /** Agent computers are durable. Runtime pods may be replaced, but this identity persists. */
-type AgentComputerLifecycle = 'persistent';
+type AgentComputerLifecycle = "persistent";
 type ComputerPersistence = AgentComputerLifecycle;
 type ComputerLifecycle = AgentComputerLifecycle;
-type ComputerResourceProfile = 'starter' | 'standard' | 'performance' | 'gpu';
-type ComputerResourceMode = 'fixed' | 'elastic';
+type ComputerResourceProfile = "starter" | "standard" | "performance" | "gpu";
+type ComputerResourceMode = "fixed" | "elastic";
 type AgentComputerResourceProfile = ComputerResourceProfile;
 type AgentComputerResourceMode = ComputerResourceMode;
 /**
  * Common accelerator names. Providers may expose additional values without
  * requiring an SDK release, so string extensions remain valid.
  */
-type ComputerGpuType = 'nvidia-t4' | 'nvidia-l4' | 'nvidia-a10' | 'nvidia-a100' | 'nvidia-h100' | 'nvidia-h200' | 'nvidia-b200' | (string & {});
+type ComputerGpuType = "nvidia-t4" | "nvidia-l4" | "nvidia-a10" | "nvidia-a100" | "nvidia-h100" | "nvidia-h200" | "nvidia-b200" | (string & {});
 interface ComputerGpu {
     count: number;
     type?: ComputerGpuType;
@@ -65,9 +90,9 @@ interface ComputerResourceUpdate {
     storageGiB?: number;
     gpu?: ComputerGpu | null;
 }
-type AgentComputerDesiredState = 'running' | 'sleeping' | 'disabled';
-type AgentComputerStatus = 'disabled' | 'provisioning' | 'starting' | 'running' | 'idle' | 'sleeping' | 'resizing' | 'restarting' | 'stopping' | 'error' | 'unavailable' | 'stopped' | 'terminated' | 'failed';
-type ComputerNetworkAccess = 'standard' | 'restricted' | 'disabled' | (string & {});
+type AgentComputerDesiredState = "running" | "sleeping" | "disabled";
+type AgentComputerStatus = "disabled" | "provisioning" | "starting" | "running" | "idle" | "sleeping" | "resizing" | "restarting" | "stopping" | "error" | "unavailable" | "stopped" | "terminated" | "failed";
+type ComputerNetworkAccess = "standard" | "restricted" | "disabled" | (string & {});
 /**
  * Mutable computer settings only. Server-owned identity, provider, billing,
  * timestamps, and runtime fields intentionally cannot be submitted here.
@@ -89,7 +114,7 @@ interface AgentComputerConfig {
     agentId: string;
     enabled: boolean;
     /** @deprecated Computers are always persistent. */
-    defaultMode: AgentComputerLifecycle | 'ephemeral';
+    defaultMode: AgentComputerLifecycle | "ephemeral";
     /** @deprecated Use autoWake. */
     autoStart: boolean;
     /** @deprecated Use allowAgentUse. */
@@ -132,10 +157,10 @@ interface AgentComputerConfig {
     memoryRequest?: string | null;
     gpuType?: ComputerGpuType | null;
     gpuCount?: number;
-    billingMode?: 'tier' | 'usage' | (string & {});
+    billingMode?: "tier" | "usage" | (string & {});
 }
 interface AgentComputerBrowser {
-    status?: 'off' | 'starting' | 'on' | 'error';
+    status?: "off" | "starting" | "on" | "error";
     url?: string | null;
     title?: string | null;
     screenshot?: string | null;
@@ -185,7 +210,7 @@ interface AgentComputerInstance {
     workspaceId?: string | null;
     name: string;
     /** @deprecated Ephemeral values may be read from historical records only. */
-    lifecycle: AgentComputerLifecycle | 'ephemeral';
+    lifecycle: AgentComputerLifecycle | "ephemeral";
     status: AgentComputerStatus;
     provider: string;
     cloudProvider?: string | null;
@@ -276,6 +301,9 @@ interface CreateAgentParams {
     topP?: number;
     commonTools?: string[];
     avatar?: string;
+    runtimeType?: AgentRuntimeType;
+    runtimeVersion?: string;
+    runtimeConfig?: AgentRuntimeConfig;
 }
 interface Session {
     sessionId: string;
@@ -287,9 +315,9 @@ interface Session {
     };
     createdAt: string;
     /** 'cli' | 'web' — origin of the session, used for filtering in the UI */
-    source?: 'cli' | 'web';
+    source?: "cli" | "web";
     /** Same as source; returned from the backend column `initiator_type` */
-    initiatorType?: 'cli' | 'web';
+    initiatorType?: "cli" | "web";
 }
 interface RunParams {
     agentId: string;
@@ -301,7 +329,7 @@ interface RunParams {
         /** @deprecated The agent's singleton computer is selected implicitly. */
         computerIds?: string[];
         /** @deprecated Computers are always persistent; this value is ignored. */
-        lifecycle?: AgentComputerLifecycle | 'ephemeral';
+        lifecycle?: AgentComputerLifecycle | "ephemeral";
     };
     /** Uploaded file references. Raw file bytes must be uploaded separately. */
     attachments?: Array<{
@@ -317,12 +345,12 @@ interface RunParams {
     }>;
 }
 interface ChatMessage {
-    role: 'user' | 'assistant' | 'system' | 'tool';
+    role: "user" | "assistant" | "system" | "tool";
     content: string | Array<{
-        type: 'text';
+        type: "text";
         text: string;
     } | {
-        type: 'image_url';
+        type: "image_url";
         image_url: {
             url: string;
         };
@@ -330,18 +358,18 @@ interface ChatMessage {
     tool_call_id?: string;
     name?: string;
 }
-type StreamEventType = 'token' | 'tool' | 'toolProgress' | 'toolStart' | 'toolEnd' | 'agent_step' | 'run_started' | 'final' | 'completed' | 'failed' | 'cancelled' | 'status' | 'keepalive' | 'cli_tool_request' | 'error';
+type StreamEventType = "token" | "tool" | "toolProgress" | "toolStart" | "toolEnd" | "agent_step" | "run_started" | "final" | "completed" | "failed" | "cancelled" | "status" | "keepalive" | "cli_tool_request" | "error";
 interface StreamEvent {
     type: StreamEventType;
     /** Identifies the run; pass to POST /v1/agents/runs/:runId/stream to resume a dropped stream. */
     runId?: string;
     /** Monotonic per-run sequence number; resume with `after: <last seen seq>` to avoid duplicates. */
     seq?: number;
-    phase?: 'commentary' | 'final_answer' | string;
+    phase?: "commentary" | "final_answer" | string;
     role?: string;
     content?: string;
     stage?: string;
-    status?: 'queued' | 'running' | 'completed' | 'failed' | string;
+    status?: "queued" | "running" | "completed" | "failed" | string;
     name?: string;
     toolName?: string;
     tool?: string;
@@ -363,7 +391,7 @@ interface Workflow {
     description?: string;
     definition: WorkflowDefinition;
     ownerId: string;
-    ownerType: 'user' | 'agent';
+    ownerType: "user" | "agent";
     isPublic?: boolean;
     category?: string;
     tags?: string[];
@@ -376,7 +404,7 @@ interface WorkflowDefinition {
     edges: WorkflowEdge[];
     outputMapping?: Record<string, string>;
 }
-type WorkflowNodeType = 'tool' | 'input' | 'output' | 'condition' | 'transform' | 'loop' | 'agent_processor' | 'workflow' | 'human_approval';
+type WorkflowNodeType = "tool" | "input" | "output" | "condition" | "transform" | "loop" | "agent_processor" | "workflow" | "human_approval";
 interface WorkflowNode {
     id: string;
     type: WorkflowNodeType | string;
@@ -399,7 +427,7 @@ interface WorkflowEdge {
 interface WorkflowExecution {
     executionId: string;
     workflowId: string;
-    status: 'running' | 'completed' | 'failed' | 'cancelled' | 'awaiting_approval';
+    status: "running" | "completed" | "failed" | "cancelled" | "awaiting_approval";
     startedAt?: string;
     completedAt?: string;
     outputData?: any;
@@ -416,8 +444,8 @@ interface Task {
     sessionId: string;
     title: string;
     description?: string;
-    status: 'pending' | 'started' | 'running' | 'completed' | 'failed' | 'cancelled';
-    executionMode: 'single' | 'workflow' | 'sequential';
+    status: "pending" | "started" | "running" | "completed" | "failed" | "cancelled";
+    executionMode: "single" | "workflow" | "sequential";
     workflowId?: string;
     cronExpression?: string;
     isRecurring?: boolean;
@@ -436,7 +464,7 @@ interface Task {
     summary?: string;
     errorMessage?: string;
     createdBy: string;
-    createdByType: 'user' | 'agent';
+    createdByType: "user" | "agent";
     createdAt: string;
     updatedAt?: string;
 }
@@ -445,7 +473,7 @@ interface CreateTaskParams {
     sessionId: string;
     title: string;
     description?: string;
-    executionMode?: 'single' | 'workflow' | 'sequential';
+    executionMode?: "single" | "workflow" | "sequential";
     workflowId?: string;
     workflowInputs?: Record<string, any>;
     cronExpression?: string;
@@ -453,13 +481,13 @@ interface CreateTaskParams {
     isRecurring?: boolean;
     dependsOn?: string[];
     tools?: string[];
-    toolConstraintType?: 'hard' | 'soft' | 'none';
+    toolConstraintType?: "hard" | "soft" | "none";
     toolInstructions?: string;
     priority?: number;
     /** Max execution time in milliseconds for workflow tasks */
     timeoutMs?: number;
     createdBy: string;
-    createdByType: 'user' | 'agent';
+    createdByType: "user" | "agent";
 }
 interface Tool {
     toolId: string;
@@ -480,15 +508,15 @@ interface CreateToolParams {
     apiSpec?: {
         baseUrl: string;
         path: string;
-        method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE' | string;
+        method: "GET" | "POST" | "PUT" | "PATCH" | "DELETE" | string;
         headers?: Record<string, string>;
         queryParams?: Record<string, string>;
         bodyTemplate?: any;
-        authType?: 'none' | 'bearer' | 'api-key' | 'basic' | 'oauth2' | string;
+        authType?: "none" | "bearer" | "api-key" | "basic" | "oauth2" | string;
         authKeyName?: string;
         oauthProviderKey?: string;
         oauthScopes?: string[];
-        oauthTokenLocation?: 'header' | 'query' | 'body';
+        oauthTokenLocation?: "header" | "query" | "body";
         oauthTokenKey?: string;
         oauthTokenPrefix?: string;
     };
@@ -497,8 +525,8 @@ interface CreateToolParams {
     inputSchema?: any;
     outputSchema?: any;
     owner?: string;
-    ownerType?: 'user' | 'agent';
-    visibility?: 'private' | 'public' | 'platform';
+    ownerType?: "user" | "agent";
+    visibility?: "private" | "public" | "platform";
     tags?: string[];
     version?: string;
     rateLimitPerMinute?: number;
@@ -508,7 +536,7 @@ interface ToolKey {
     keyId: string;
     toolId?: string;
     ownerId: string;
-    ownerType: 'user' | 'agent';
+    ownerType: "user" | "agent";
     keyName: string;
     displayName?: string;
     description?: string;
@@ -520,7 +548,7 @@ interface ToolKey {
 interface CreateToolKeyParams {
     toolId?: string;
     ownerId: string;
-    ownerType: 'user' | 'agent';
+    ownerType: "user" | "agent";
     keyName: string;
     value: string;
     displayName?: string;
@@ -531,25 +559,25 @@ interface ToolPermission {
     id: string;
     toolId: string;
     subjectId: string;
-    subjectType: 'user' | 'agent';
-    permission: 'read' | 'execute' | 'admin';
+    subjectType: "user" | "agent";
+    permission: "read" | "execute" | "admin";
     grantedBy?: string;
     createdAt: string;
     expiresAt?: string;
 }
-type A2ATaskState = 'submitted' | 'working' | 'input-required' | 'completed' | 'failed' | 'canceled';
+type A2ATaskState = "submitted" | "working" | "input-required" | "completed" | "failed" | "canceled";
 interface A2ATextPart {
-    type: 'text';
+    type: "text";
     text: string;
     metadata?: Record<string, any>;
 }
 interface A2ADataPart {
-    type: 'data';
+    type: "data";
     data: Record<string, any>;
     metadata?: Record<string, any>;
 }
 interface A2AFilePart {
-    type: 'file';
+    type: "file";
     file: {
         name?: string;
         mimeType?: string;
@@ -560,7 +588,7 @@ interface A2AFilePart {
 }
 type A2AMessagePart = A2ATextPart | A2ADataPart | A2AFilePart;
 interface A2AMessage {
-    role: 'user' | 'agent';
+    role: "user" | "agent";
     parts: A2AMessagePart[];
     contextId?: string;
     messageId?: string;
@@ -618,19 +646,19 @@ interface A2ASendTaskParams {
         token?: string;
     };
 }
-type McpConnectionType = 'stdio' | 'sse' | 'http' | 'streamable-http';
+type McpConnectionType = "stdio" | "sse" | "http" | "streamable-http";
 interface McpServer {
     serverId: string;
     name: string;
     description?: string;
     connectionType: McpConnectionType;
     connectionConfig: Record<string, any>;
-    status: 'connected' | 'disconnected' | 'error';
+    status: "connected" | "disconnected" | "error";
     toolsCount: number;
     capabilities?: Record<string, any>;
     isPublic: boolean;
     ownerId: string;
-    ownerType: 'user' | 'agent';
+    ownerType: "user" | "agent";
     createdAt: string;
 }
 interface McpResource {
@@ -694,15 +722,15 @@ interface CreateSkillParams {
     tools?: string[];
     triggers?: string[];
     ownerId?: string;
-    ownerType?: 'platform' | 'user' | 'agent';
+    ownerType?: "platform" | "user" | "agent";
     isPublic?: boolean;
     tags?: string[];
     icon?: string;
     source?: string;
     sourceUrl?: string;
 }
-type MemoryType = 'episodic' | 'semantic' | 'procedural';
-type MemorySourceType = 'auto' | 'manual';
+type MemoryType = "episodic" | "semantic" | "procedural";
+type MemorySourceType = "auto" | "manual";
 interface AgentMemory {
     memoryId: string;
     agentId: string;
@@ -744,6 +772,18 @@ interface UpdateMemoryParams {
     isActive?: boolean;
     memoryType?: MemoryType;
 }
+interface SharedMemoryScope {
+    scopeId: string;
+    name: string;
+    description?: string | null;
+    access?: "read" | "write" | "admin";
+    updatedAt: string;
+}
+interface CreateSharedMemoryScopeParams {
+    name: string;
+    description?: string;
+    agentIds: string[];
+}
 interface UsageEvent {
     eventId: string;
     agentId: string;
@@ -771,15 +811,15 @@ interface UsageAggregation {
     callCount: number;
     events: UsageEvent[];
 }
-type CreditDirection = 'grant' | 'debit' | 'adjustment' | 'refund' | 'expiration';
-type CreditPlatform = 'agent_commons' | 'commonlab' | 'common_os' | 'system';
+type CreditDirection = "grant" | "debit" | "adjustment" | "refund" | "expiration";
+type CreditPlatform = "agent_commons" | "commonlab" | "common_os" | "system";
 interface CreditLedgerEntry {
     entryId: string;
     principalId: string;
-    principalType: 'user' | 'agent' | 'service';
+    principalType: "user" | "agent" | "service";
     workspaceId?: string | null;
     amount: number;
-    currency: 'credits';
+    currency: "credits";
     direction: CreditDirection;
     eventType: string;
     sourcePlatform: CreditPlatform;
@@ -803,11 +843,11 @@ interface CreditBalance {
     principalId: string;
     workspaceId?: string | null;
     balance: number;
-    currency: 'credits';
+    currency: "credits";
 }
 interface CreditWriteParams {
     principalId: string;
-    principalType?: 'user' | 'agent' | 'service';
+    principalType?: "user" | "agent" | "service";
     workspaceId?: string | null;
     amount: number;
     eventType: string;
@@ -823,7 +863,7 @@ interface CreditWriteParams {
     usageEventId?: string;
     metadata?: Record<string, unknown>;
 }
-type WalletType = 'eoa' | 'erc4337' | 'external';
+type WalletType = "eoa" | "erc4337" | "external";
 interface AgentWallet {
     id: string;
     agentId: string;
@@ -849,7 +889,7 @@ interface CreateWalletParams {
     externalAddress?: string;
     chainId?: string;
 }
-type ApiKeyPrincipalType = 'user' | 'agent';
+type ApiKeyPrincipalType = "user" | "agent";
 interface ApiKey {
     id: string;
     label?: string | null;
@@ -896,6 +936,26 @@ declare class CommonsClient {
         }>;
         update: (agentId: string, params: Partial<CreateAgentParams>) => Promise<{
             data: Agent;
+        }>;
+        getRuntime: (agentId: string) => Promise<{
+            data: AgentRuntime;
+        }>;
+        configureRuntime: (agentId: string, params: {
+            runtimeType?: AgentRuntimeType;
+            version?: string | null;
+            config?: AgentRuntimeConfig;
+            deploy?: boolean;
+        }) => Promise<{
+            data: AgentRuntime;
+        }>;
+        deployRuntime: (agentId: string) => Promise<{
+            data: AgentRuntime;
+        }>;
+        sleepRuntime: (agentId: string) => Promise<{
+            data: AgentRuntime;
+        }>;
+        restartRuntime: (agentId: string) => Promise<{
+            data: AgentRuntime;
         }>;
         /** List tools assigned to an agent. */
         listTools: (agentId: string) => Promise<{
@@ -1511,6 +1571,14 @@ declare class CommonsClient {
         }>;
         /** Soft-delete (deactivate) a memory. */
         delete: (memoryId: string) => Promise<void>;
+        /** Create an append-only memory scope shared by a set of owned agents. */
+        createSharedScope: (params: CreateSharedMemoryScopeParams) => Promise<{
+            data: SharedMemoryScope;
+        }>;
+        /** List shared-memory scopes available to an agent. */
+        listSharedScopes: (agentId: string) => Promise<{
+            data: SharedMemoryScope[];
+        }>;
     };
     get usage(): {
         /** Get aggregated token + cost usage for an agent. */

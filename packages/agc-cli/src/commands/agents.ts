@@ -1,18 +1,28 @@
-import { Command } from 'commander';
-import { loadConfig, makeClient } from '../config.js';
-import { c, sym, table, detail, section, relativeTime, spin, printError, jsonOut } from '../ui.js';
+import { Command } from "commander";
+import { loadConfig, makeClient } from "../config.js";
+import {
+  c,
+  sym,
+  table,
+  detail,
+  section,
+  relativeTime,
+  spin,
+  printError,
+  jsonOut,
+} from "../ui.js";
 
 export function agentsCommand(): Command {
-  const cmd = new Command('agents').description('Manage agents');
+  const cmd = new Command("agents").description("Manage agents");
 
   // ── list ────────────────────────────────────────────────────────────────────
   cmd
-    .command('list')
-    .description('List agents owned by the current initiator')
-    .option('--json', 'Output as JSON')
+    .command("list")
+    .description("List agents owned by the current initiator")
+    .option("--json", "Output as JSON")
     .action(async (opts) => {
       const cfg = loadConfig();
-      const spinner = spin('Fetching agents…');
+      const spinner = spin("Fetching agents…");
       try {
         const client = makeClient();
         // Pass initiator as owner filter if set; otherwise list all accessible agents
@@ -23,12 +33,13 @@ export function agentsCommand(): Command {
         section(`Agents (${agents.length})`);
         table(
           agents.map((a: any) => ({
-            ID:       a.agentId.slice(0, 8) + '…',
+            ID: a.agentId.slice(0, 8) + "…",
             Name:     a.name,
+            Runtime: a.runtimeType ?? "native",
             Model:    `${a.modelProvider}/${a.modelId}`,
             Created:  relativeTime(a.createdAt),
           })),
-          ['ID', 'Name', 'Model', 'Created'],
+          ["ID", "Name", "Runtime", "Model", "Created"],
         );
       } catch (err) {
         spinner.stop();
@@ -39,11 +50,11 @@ export function agentsCommand(): Command {
 
   // ── get ─────────────────────────────────────────────────────────────────────
   cmd
-    .command('get <agentId>')
-    .description('Show details for an agent')
-    .option('--json', 'Output as JSON')
+    .command("get <agentId>")
+    .description("Show details for an agent")
+    .option("--json", "Output as JSON")
     .action(async (agentId: string, opts) => {
-      const spinner = spin('Fetching agent…');
+      const spinner = spin("Fetching agent…");
       try {
         const client = makeClient();
         const res = await client.agents.get(agentId);
@@ -52,11 +63,18 @@ export function agentsCommand(): Command {
         if (opts.json) return jsonOut(agent);
         section(agent.name);
         detail([
-          ['Agent ID',    c.id(agent.agentId)],
-          ['Provider',    `${agent.modelProvider} / ${agent.modelId}`],
-          ['Instructions', agent.instructions?.slice(0, 80) ?? c.dim('(none)')],
-          ['Tools',       [...(agent.commonTools ?? []), ...(agent.externalTools ?? [])].join(', ') || c.dim('(none)')],
-          ['Created',     relativeTime(agent.createdAt)],
+          ["Agent ID", c.id(agent.agentId)],
+          ["Provider", `${agent.modelProvider} / ${agent.modelId}`],
+          ["Runtime", agent.runtimeType ?? "native"],
+          ["Runtime status", agent.runtimeStatus ?? "ready"],
+          ["Instructions", agent.instructions?.slice(0, 80) ?? c.dim("(none)")],
+          [
+            "Tools",
+            [...(agent.commonTools ?? []), ...(agent.externalTools ?? [])].join(
+              ", ",
+            ) || c.dim("(none)"),
+          ],
+          ["Created", relativeTime(agent.createdAt)],
         ]);
       } catch (err) {
         spinner.stop();
@@ -67,23 +85,40 @@ export function agentsCommand(): Command {
 
   // ── create ──────────────────────────────────────────────────────────────────
   cmd
-    .command('create')
-    .description('Create a new agent')
-    .requiredOption('--name <name>', 'Agent name')
-    .option('--instructions <text>', 'System instructions')
-    .option('--provider <provider>', 'Model provider (openai|anthropic|google|groq|openrouter|xai|ollama|custom)', 'openai')
-    .option('--model <id>', 'Model ID', 'gpt-5.4-mini')
-    .option('--model-api-key <key>', 'Provider API key (BYOK)')
-    .option('--model-base-url <url>', 'Base URL for custom or local OpenAI-compatible providers')
-    .option('--json', 'Output as JSON')
+    .command("create")
+    .description("Create a new agent")
+    .requiredOption("--name <name>", "Agent name")
+    .option("--instructions <text>", "System instructions")
+    .option(
+      "--provider <provider>",
+      "Model provider (openai|anthropic|google|groq|openrouter|xai|ollama|custom)",
+      "openai",
+    )
+    .option("--model <id>", "Model ID", "gpt-5.4-mini")
+    .option("--model-api-key <key>", "Provider API key (BYOK)")
+    .option(
+      "--model-base-url <url>",
+      "Base URL for custom or local OpenAI-compatible providers",
+    )
+    .option(
+      "--runtime <runtime>",
+      "Agent runtime (native|openclaw|hermes|custom)",
+      "native",
+    )
+    .option("--json", "Output as JSON")
     .action(async (opts) => {
       const cfg = loadConfig();
       if (!cfg.initiator) {
-        console.error(c.error('No initiator set. Run `agc login` first.'));
+        console.error(c.error("No initiator set. Run `agc login` first."));
         process.exit(1);
       }
-      const spinner = spin('Creating agent…');
+      const spinner = spin("Creating agent…");
       try {
+        if (
+          !["native", "openclaw", "hermes", "custom"].includes(opts.runtime)
+        ) {
+          throw new Error(`Unsupported runtime "${opts.runtime}"`);
+        }
         const client = makeClient();
         const res = await client.agents.create({
           name: opts.name,
@@ -93,17 +128,21 @@ export function agentsCommand(): Command {
           modelId: opts.model,
           modelApiKey: opts.modelApiKey,
           modelBaseUrl: opts.modelBaseUrl,
+          runtimeType: opts.runtime,
         });
         const agent = (res as any)?.data ?? res;
         spinner.stop();
         if (opts.json) return jsonOut(agent);
         console.log(`\n${sym.ok} Agent created`);
         detail([
-          ['Agent ID', c.id(agent.agentId)],
-          ['Name',     agent.name],
-          ['Model',    `${agent.modelProvider}/${agent.modelId}`],
+          ["Agent ID", c.id(agent.agentId)],
+          ["Name", agent.name],
+          ["Model", `${agent.modelProvider}/${agent.modelId}`],
+          ["Runtime", agent.runtimeType ?? opts.runtime],
         ]);
-        console.log(c.dim('\n  Tip: agc config set defaultAgentId ' + agent.agentId));
+        console.log(
+          c.dim("\n  Tip: agc config set defaultAgentId " + agent.agentId),
+        );
       } catch (err) {
         spinner.stop();
         printError(err);
@@ -111,29 +150,90 @@ export function agentsCommand(): Command {
       }
     });
 
+  const runtime = cmd.command("runtime").description("Manage an agent runtime");
+
+  runtime
+    .command("status <agentId>")
+    .description("Show managed runtime status and capabilities")
+    .option("--json", "Output as JSON")
+    .action(async (agentId: string, opts) => {
+      const spinner = spin("Fetching runtime status…");
+      try {
+        const result = await makeClient().agents.getRuntime(agentId);
+        spinner.stop();
+        if (opts.json) return jsonOut(result.data);
+        detail([
+          ["Runtime", result.data.runtimeType],
+          ["Status", result.data.status],
+          ["Managed", result.data.managed ? "yes" : "no"],
+          ["Computer", result.data.computer?.computerId ?? c.dim("(none)")],
+        ]);
+      } catch (err) {
+        spinner.stop();
+        printError(err);
+        process.exit(1);
+      }
+    });
+
+  for (const action of ["deploy", "restart", "sleep"] as const) {
+    runtime
+      .command(`${action} <agentId>`)
+      .description(
+        `${action[0]!.toUpperCase()}${action.slice(1)} the managed agent runtime`,
+      )
+      .action(async (agentId: string) => {
+        const spinner = spin(
+          `${action[0]!.toUpperCase()}${action.slice(1)}ing runtime…`,
+        );
+        try {
+          const client = makeClient();
+          const result =
+            action === "deploy"
+              ? await client.agents.deployRuntime(agentId)
+              : action === "restart"
+                ? await client.agents.restartRuntime(agentId)
+                : await client.agents.sleepRuntime(agentId);
+          spinner.stop();
+          console.log(`\n${sym.ok} Runtime ${result.data.status}`);
+        } catch (err) {
+          spinner.stop();
+          printError(err);
+          process.exit(1);
+        }
+      });
+  }
+
   // ── autonomy ────────────────────────────────────────────────────────────────
-  const autonomy = cmd.command('autonomy').description('Manage agent heartbeat');
+  const autonomy = cmd
+    .command("autonomy")
+    .description("Manage agent heartbeat");
 
   autonomy
-    .command('status')
-    .description('Show autonomy status for an agent')
-    .requiredOption('--agent <agentId>', 'Agent ID')
-    .option('--json', 'Output as JSON')
+    .command("status")
+    .description("Show autonomy status for an agent")
+    .requiredOption("--agent <agentId>", "Agent ID")
+    .option("--json", "Output as JSON")
     .action(async (opts) => {
       const client = makeClient();
-      const spinner = spin('Fetching autonomy status…');
+      const spinner = spin("Fetching autonomy status…");
       try {
         const res = await client.agents.getAutonomy(opts.agent);
         spinner.stop();
         const s = res.data;
         if (opts.json) return jsonOut(s);
-        console.log(`\n${c.bold('Heartbeat Status')}`);
+        console.log(`\n${c.bold("Heartbeat Status")}`);
         detail([
-          ['Enabled',      s.enabled ? c.bold('yes') : 'no'],
-          ['Interval',     s.intervalSec ? `${s.intervalSec}s` : 'n/a'],
-          ['Armed',        s.isArmed ? c.bold('yes') : 'no'],
-          ['Last beat',    s.lastBeatAt ? new Date(s.lastBeatAt).toLocaleString() : 'never'],
-          ['Next beat',    s.nextBeatAt ? new Date(s.nextBeatAt).toLocaleString() : 'n/a'],
+          ["Enabled", s.enabled ? c.bold("yes") : "no"],
+          ["Interval", s.intervalSec ? `${s.intervalSec}s` : "n/a"],
+          ["Armed", s.isArmed ? c.bold("yes") : "no"],
+          [
+            "Last beat",
+            s.lastBeatAt ? new Date(s.lastBeatAt).toLocaleString() : "never",
+          ],
+          [
+            "Next beat",
+            s.nextBeatAt ? new Date(s.nextBeatAt).toLocaleString() : "n/a",
+          ],
         ]);
       } catch (err) {
         spinner.stop();
@@ -143,20 +243,26 @@ export function agentsCommand(): Command {
     });
 
   autonomy
-    .command('enable')
-    .description('Enable heartbeat for an agent')
-    .requiredOption('--agent <agentId>', 'Agent ID')
-    .option('--interval <seconds>', 'Heartbeat interval in seconds (min 30)', '300')
+    .command("enable")
+    .description("Enable heartbeat for an agent")
+    .requiredOption("--agent <agentId>", "Agent ID")
+    .option(
+      "--interval <seconds>",
+      "Heartbeat interval in seconds (min 30)",
+      "300",
+    )
     .action(async (opts) => {
       const client = makeClient();
-      const spinner = spin('Enabling autonomy…');
+      const spinner = spin("Enabling autonomy…");
       try {
         await client.agents.setAutonomy(opts.agent, {
           enabled: true,
           intervalSec: parseInt(opts.interval, 10),
         });
         spinner.stop();
-        console.log(`\n${sym.ok} Autonomy enabled for agent ${c.id(opts.agent)}`);
+        console.log(
+          `\n${sym.ok} Autonomy enabled for agent ${c.id(opts.agent)}`,
+        );
         console.log(c.dim(`  Heartbeat every ${opts.interval}s`));
       } catch (err) {
         spinner.stop();
@@ -166,16 +272,18 @@ export function agentsCommand(): Command {
     });
 
   autonomy
-    .command('disable')
-    .description('Disable heartbeat for an agent')
-    .requiredOption('--agent <agentId>', 'Agent ID')
+    .command("disable")
+    .description("Disable heartbeat for an agent")
+    .requiredOption("--agent <agentId>", "Agent ID")
     .action(async (opts) => {
       const client = makeClient();
-      const spinner = spin('Disabling autonomy…');
+      const spinner = spin("Disabling autonomy…");
       try {
         await client.agents.setAutonomy(opts.agent, { enabled: false });
         spinner.stop();
-        console.log(`\n${sym.ok} Autonomy disabled for agent ${c.id(opts.agent)}`);
+        console.log(
+          `\n${sym.ok} Autonomy disabled for agent ${c.id(opts.agent)}`,
+        );
       } catch (err) {
         spinner.stop();
         printError(err);
@@ -184,16 +292,18 @@ export function agentsCommand(): Command {
     });
 
   autonomy
-    .command('trigger')
-    .description('Trigger a single heartbeat immediately')
-    .requiredOption('--agent <agentId>', 'Agent ID')
+    .command("trigger")
+    .description("Trigger a single heartbeat immediately")
+    .requiredOption("--agent <agentId>", "Agent ID")
     .action(async (opts) => {
       const client = makeClient();
-      const spinner = spin('Triggering heartbeat…');
+      const spinner = spin("Triggering heartbeat…");
       try {
         await client.agents.triggerHeartbeat(opts.agent);
         spinner.stop();
-        console.log(`\n${sym.ok} Heartbeat triggered for agent ${c.id(opts.agent)}`);
+        console.log(
+          `\n${sym.ok} Heartbeat triggered for agent ${c.id(opts.agent)}`,
+        );
       } catch (err) {
         spinner.stop();
         printError(err);

@@ -1,7 +1,10 @@
 // src/client.ts
 var CommonsClient = class {
   constructor(config) {
-    this.baseUrl = (config.baseUrl ?? "https://api.agentcommons.io").replace(/\/$/, "");
+    this.baseUrl = (config.baseUrl ?? "https://api.agentcommons.io").replace(
+      /\/$/,
+      ""
+    );
     this.apiKey = config.apiKey;
     this.initiator = config.initiator;
     this._fetch = config.fetch ?? fetch;
@@ -39,6 +42,11 @@ var CommonsClient = class {
       list: (owner) => this.request("GET", `/v1/agents${owner ? `?owner=${owner}` : ""}`),
       get: (agentId) => this.request("GET", `/v1/agents/${agentId}`),
       update: (agentId, params) => this.request("PUT", `/v1/agents/${agentId}`, params),
+      getRuntime: (agentId) => this.request("GET", `/v1/agents/${agentId}/runtime`),
+      configureRuntime: (agentId, params) => this.request("PUT", `/v1/agents/${agentId}/runtime`, params),
+      deployRuntime: (agentId) => this.request("POST", `/v1/agents/${agentId}/runtime/deploy`),
+      sleepRuntime: (agentId) => this.request("POST", `/v1/agents/${agentId}/runtime/sleep`),
+      restartRuntime: (agentId) => this.request("POST", `/v1/agents/${agentId}/runtime/restart`),
       /** List tools assigned to an agent. */
       listTools: (agentId) => this.request("GET", `/v1/agents/${agentId}/tools`),
       /** Assign a tool to an agent. */
@@ -73,12 +81,18 @@ var CommonsClient = class {
       /** Get the knowledgebase entries for an agent. */
       getKnowledgebase: (agentId) => this.request("GET", `/v1/agents/${agentId}/knowledgebase`),
       /** Replace the knowledgebase entries for an agent. */
-      updateKnowledgebase: (agentId, knowledgebase) => this.request("PUT", `/v1/agents/${agentId}/knowledgebase`, { knowledgebase }),
+      updateKnowledgebase: (agentId, knowledgebase) => this.request("PUT", `/v1/agents/${agentId}/knowledgebase`, {
+        knowledgebase
+      }),
       // ── Preferred Connections ────────────────────────────────────────────
       /** List agents that this agent prefers to collaborate with. */
       getPreferredConnections: (agentId) => this.request("GET", `/v1/agents/${agentId}/preferred-connections`),
       /** Add a preferred agent connection. */
-      addPreferredConnection: (agentId, params) => this.request("POST", `/v1/agents/${agentId}/preferred-connections`, params),
+      addPreferredConnection: (agentId, params) => this.request(
+        "POST",
+        `/v1/agents/${agentId}/preferred-connections`,
+        params
+      ),
       /** Remove a preferred agent connection by its record ID. */
       removePreferredConnection: (id) => this.request("DELETE", `/v1/agents/preferred-connections/${id}`),
       // ── Computers ────────────────────────────────────────────────────────
@@ -106,7 +120,11 @@ var CommonsClient = class {
         if (!params) {
           return Promise.reject(new TypeError("Browser options are required."));
         }
-        return this.request("POST", `/v1/agents/${agentId}/computer/browser/open`, params);
+        return this.request(
+          "POST",
+          `/v1/agents/${agentId}/computer/browser/open`,
+          params
+        );
       },
       listComputerEvents: (agentId, limitOrLegacyComputerId, legacyLimit) => {
         const limit = typeof limitOrLegacyComputerId === "number" ? limitOrLegacyComputerId : legacyLimit;
@@ -118,7 +136,12 @@ var CommonsClient = class {
       // ── Deprecated per-instance compatibility ────────────────────────────
       /** @deprecated Use getComputer. The singleton is returned as a one-item list. */
       listComputers: (agentId, _filter) => {
-        return this.request("GET", `/v1/agents/${agentId}/computer`).then(({ data }) => ({ data: data ? [data] : [] }));
+        return this.request(
+          "GET",
+          `/v1/agents/${agentId}/computer`
+        ).then(({ data }) => ({
+          data: data ? [data] : []
+        }));
       },
       /** @deprecated Use wakeComputer. Lifecycle, name, and session are ignored. */
       startComputer: (agentId, params) => this.request(
@@ -136,7 +159,11 @@ var CommonsClient = class {
         if (!params) {
           return Promise.reject(new TypeError("Command options are required."));
         }
-        return this.request("POST", `/v1/agents/${agentId}/computer/exec`, params);
+        return this.request(
+          "POST",
+          `/v1/agents/${agentId}/computer/exec`,
+          params
+        );
       },
       // ── TTS Voices ───────────────────────────────────────────────────────
       /**
@@ -149,7 +176,10 @@ var CommonsClient = class {
         if (provider) params.set("provider", provider);
         if (q) params.set("q", q);
         const qs = params.toString();
-        return this.request("GET", `/v1/agents/tts/voices${qs ? `?${qs}` : ""}`);
+        return this.request(
+          "GET",
+          `/v1/agents/tts/voices${qs ? `?${qs}` : ""}`
+        );
       }
     };
   }
@@ -163,20 +193,42 @@ var CommonsClient = class {
   get workflows() {
     return {
       create: (params) => this.request("POST", "/v1/workflows", params),
-      list: (ownerId, ownerType) => this.request("GET", `/v1/workflows?ownerId=${ownerId}&ownerType=${ownerType}`),
+      list: (ownerId, ownerType) => this.request(
+        "GET",
+        `/v1/workflows?ownerId=${ownerId}&ownerType=${ownerType}`
+      ),
       get: (workflowId) => this.request("GET", `/v1/workflows/${workflowId}`),
       update: (workflowId, updates) => this.request("PUT", `/v1/workflows/${workflowId}`, updates),
       delete: (workflowId) => this.request("DELETE", `/v1/workflows/${workflowId}`),
       execute: (workflowId, params) => this.request("POST", `/v1/workflows/${workflowId}/execute`, params),
-      getExecution: (workflowId, executionId) => this.request("GET", `/v1/workflows/${workflowId}/executions/${executionId}`),
-      listExecutions: (workflowId, limit) => this.request("GET", `/v1/workflows/${workflowId}/executions${limit ? `?limit=${limit}` : ""}`),
-      cancelExecution: (workflowId, executionId) => this.request("POST", `/v1/workflows/${workflowId}/executions/${executionId}/cancel`),
+      getExecution: (workflowId, executionId) => this.request(
+        "GET",
+        `/v1/workflows/${workflowId}/executions/${executionId}`
+      ),
+      listExecutions: (workflowId, limit) => this.request(
+        "GET",
+        `/v1/workflows/${workflowId}/executions${limit ? `?limit=${limit}` : ""}`
+      ),
+      cancelExecution: (workflowId, executionId) => this.request(
+        "POST",
+        `/v1/workflows/${workflowId}/executions/${executionId}/cancel`
+      ),
       /** Approve a paused human_approval node and resume execution. */
-      approveExecution: (workflowId, executionId, params) => this.request("POST", `/v1/workflows/${workflowId}/executions/${executionId}/approve`, params),
+      approveExecution: (workflowId, executionId, params) => this.request(
+        "POST",
+        `/v1/workflows/${workflowId}/executions/${executionId}/approve`,
+        params
+      ),
       /** Reject a paused human_approval node and terminate execution. */
-      rejectExecution: (workflowId, executionId, params) => this.request("POST", `/v1/workflows/${workflowId}/executions/${executionId}/reject`, params),
+      rejectExecution: (workflowId, executionId, params) => this.request(
+        "POST",
+        `/v1/workflows/${workflowId}/executions/${executionId}/reject`,
+        params
+      ),
       /** Stream execution progress via SSE. Returns an async generator. */
-      stream: (workflowId, executionId) => this._streamSse(`/v1/workflows/${workflowId}/executions/${executionId}/stream`)
+      stream: (workflowId, executionId) => this._streamSse(
+        `/v1/workflows/${workflowId}/executions/${executionId}/stream`
+      )
     };
   }
   // ── Tasks ─────────────────────────────────────────────────────────────────
@@ -206,7 +258,10 @@ var CommonsClient = class {
       /** List all sessions for a given agent (all initiators). */
       listByAgent: (agentId) => this.request("GET", `/v1/sessions/agent/${agentId}`),
       /** List all sessions for a user across all agents. */
-      listByUser: (initiator) => this.request("GET", `/v1/sessions/user/${encodeURIComponent(initiator)}`),
+      listByUser: (initiator) => this.request(
+        "GET",
+        `/v1/sessions/user/${encodeURIComponent(initiator)}`
+      ),
       create: (params) => this.request("POST", "/v1/sessions", params),
       get: (sessionId) => this.request("GET", `/v1/sessions/${sessionId}`),
       /** Get full session with history, tasks, childSessions, and spaces. */
@@ -234,7 +289,10 @@ var CommonsClient = class {
       /** List OAuth providers available on the platform (Google Workspace, GitHub, …). */
       listProviders: () => this.request("GET", "/v1/oauth/providers"),
       /** Get one provider's details, including its scope groups. */
-      getProvider: (providerKey) => this.request("GET", `/v1/oauth/providers/${encodeURIComponent(providerKey)}`),
+      getProvider: (providerKey) => this.request(
+        "GET",
+        `/v1/oauth/providers/${encodeURIComponent(providerKey)}`
+      ),
       /**
        * List the caller's OAuth connections (the accounts agents act with).
        * `ownerId` is only needed when authenticating with a management key.
@@ -285,7 +343,8 @@ var CommonsClient = class {
         const params = new URLSearchParams();
         if (filter?.ownerId) params.set("ownerId", filter.ownerId);
         if (filter?.ownerType) params.set("ownerType", filter.ownerType);
-        if (filter?.isPublic !== void 0) params.set("isPublic", String(filter.isPublic));
+        if (filter?.isPublic !== void 0)
+          params.set("isPublic", String(filter.isPublic));
         const qs = params.toString();
         return this.request("GET", `/v1/skills${qs ? `?${qs}` : ""}`);
       },
@@ -347,7 +406,10 @@ var CommonsClient = class {
       create: (params) => this.request("POST", "/v1/auth/api-keys", params),
       /** List all active API keys for a principal (key values not included). */
       list: (principalId, principalType) => {
-        const q = new URLSearchParams({ principalId, principalType }).toString();
+        const q = new URLSearchParams({
+          principalId,
+          principalType
+        }).toString();
         return this.request("GET", `/v1/auth/api-keys?${q}`);
       },
       /** Revoke (soft-delete) an API key by its UUID. */
@@ -430,7 +492,10 @@ var CommonsClient = class {
         params: { id: taskId }
       }).then((r) => r.result),
       /** List recent A2A tasks for an agent. */
-      listTasks: (agentId, limit) => this.request("GET", `/v1/a2a/${agentId}/tasks${limit ? `?limit=${limit}` : ""}`),
+      listTasks: (agentId, limit) => this.request(
+        "GET",
+        `/v1/a2a/${agentId}/tasks${limit ? `?limit=${limit}` : ""}`
+      ),
       /** Stream A2A task updates (SSE). */
       stream: (agentId, taskId) => this._streamSse(`/v1/a2a/${agentId}/tasks/${taskId}/stream`)
     };
@@ -439,11 +504,18 @@ var CommonsClient = class {
   get mcp() {
     return {
       /** List MCP servers for an owner. */
-      listServers: (ownerId, ownerType) => this.request("GET", `/v1/mcp/servers?ownerId=${ownerId}&ownerType=${ownerType}`),
+      listServers: (ownerId, ownerType) => this.request(
+        "GET",
+        `/v1/mcp/servers?ownerId=${ownerId}&ownerType=${ownerType}`
+      ),
       /** Create a new MCP server. */
       createServer: (params) => {
         const { ownerId, ownerType, ...dto } = params;
-        return this.request("POST", `/v1/mcp/servers?ownerId=${ownerId}&ownerType=${ownerType}`, dto);
+        return this.request(
+          "POST",
+          `/v1/mcp/servers?ownerId=${ownerId}&ownerType=${ownerType}`,
+          dto
+        );
       },
       /** Get MCP server by ID. */
       getServer: (serverId) => this.request("GET", `/v1/mcp/servers/${serverId}`),
@@ -464,15 +536,25 @@ var CommonsClient = class {
       /** List tools discovered from an MCP server. */
       listTools: (serverId) => this.request("GET", `/v1/mcp/servers/${serverId}/tools`),
       /** List all MCP tools across all servers for a given owner. */
-      listToolsByOwner: (ownerId, ownerType) => this.request("GET", `/v1/mcp/tools?ownerId=${ownerId}&ownerType=${ownerType}`),
+      listToolsByOwner: (ownerId, ownerType) => this.request(
+        "GET",
+        `/v1/mcp/tools?ownerId=${ownerId}&ownerType=${ownerType}`
+      ),
       /** List resources from an MCP server. */
       listResources: (serverId) => this.request("GET", `/v1/mcp/servers/${serverId}/resources`),
       /** Read a resource by URI. */
-      readResource: (serverId, uri) => this.request("GET", `/v1/mcp/servers/${serverId}/resources/read?uri=${encodeURIComponent(uri)}`),
+      readResource: (serverId, uri) => this.request(
+        "GET",
+        `/v1/mcp/servers/${serverId}/resources/read?uri=${encodeURIComponent(uri)}`
+      ),
       /** List prompts from an MCP server. */
       listPrompts: (serverId) => this.request("GET", `/v1/mcp/servers/${serverId}/prompts`),
       /** Render a prompt with arguments. */
-      getPrompt: (serverId, promptName, args) => this.request("POST", `/v1/mcp/servers/${serverId}/prompts/${promptName}`, { arguments: args })
+      getPrompt: (serverId, promptName, args) => this.request(
+        "POST",
+        `/v1/mcp/servers/${serverId}/prompts/${promptName}`,
+        { arguments: args }
+      )
     };
   }
   // ── Memory ────────────────────────────────────────────────────────────────
@@ -484,7 +566,10 @@ var CommonsClient = class {
         if (opts?.type) params.set("type", opts.type);
         if (opts?.limit) params.set("limit", String(opts.limit));
         const qs = params.toString();
-        return this.request("GET", `/v1/memory/agents/${agentId}${qs ? `?${qs}` : ""}`);
+        return this.request(
+          "GET",
+          `/v1/memory/agents/${agentId}${qs ? `?${qs}` : ""}`
+        );
       },
       /** Get memory stats for an agent. */
       stats: (agentId) => this.request("GET", `/v1/memory/agents/${agentId}/stats`),
@@ -492,7 +577,10 @@ var CommonsClient = class {
       retrieve: (agentId, query, limit) => {
         const params = new URLSearchParams({ q: query });
         if (limit) params.set("limit", String(limit));
-        return this.request("GET", `/v1/memory/agents/${agentId}/retrieve?${params}`);
+        return this.request(
+          "GET",
+          `/v1/memory/agents/${agentId}/retrieve?${params}`
+        );
       },
       /** Get a single memory by ID. */
       get: (memoryId) => this.request("GET", `/v1/memory/${memoryId}`),
@@ -501,7 +589,11 @@ var CommonsClient = class {
       /** Update a memory. */
       update: (memoryId, params) => this.request("PATCH", `/v1/memory/${memoryId}`, params),
       /** Soft-delete (deactivate) a memory. */
-      delete: (memoryId) => this.request("DELETE", `/v1/memory/${memoryId}`)
+      delete: (memoryId) => this.request("DELETE", `/v1/memory/${memoryId}`),
+      /** Create an append-only memory scope shared by a set of owned agents. */
+      createSharedScope: (params) => this.request("POST", "/v1/memory/shared-scopes", params),
+      /** List shared-memory scopes available to an agent. */
+      listSharedScopes: (agentId) => this.request("GET", `/v1/memory/shared-scopes/agents/${agentId}`)
     };
   }
   // ── Usage / Observability ─────────────────────────────────────────────────
@@ -513,7 +605,10 @@ var CommonsClient = class {
         if (opts?.from) params.set("from", opts.from);
         if (opts?.to) params.set("to", opts.to);
         const qs = params.toString();
-        return this.request("GET", `/v1/usage/agents/${agentId}${qs ? `?${qs}` : ""}`);
+        return this.request(
+          "GET",
+          `/v1/usage/agents/${agentId}${qs ? `?${qs}` : ""}`
+        );
       },
       /** Get aggregated token + cost usage for a session. */
       getSessionUsage: (sessionId) => this.request("GET", `/v1/usage/sessions/${sessionId}`)

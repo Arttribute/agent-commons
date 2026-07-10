@@ -1,15 +1,15 @@
 // ─── Core Types ───────────────────────────────────────────────────────────────
 
 export type ModelProvider =
-  | 'openai'
-  | 'anthropic'
-  | 'google'
-  | 'mistral'
-  | 'groq'
-  | 'ollama'
-  | 'openrouter'
-  | 'xai'
-  | 'custom';
+  | "openai"
+  | "anthropic"
+  | "google"
+  | "mistral"
+  | "groq"
+  | "ollama"
+  | "openrouter"
+  | "xai"
+  | "custom";
 
 export interface ModelConfig {
   provider: ModelProvider;
@@ -19,11 +19,41 @@ export interface ModelConfig {
   temperature?: number;
   maxTokens?: number;
   topP?: number;
-  reasoningEffort?: 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh';
-  verbosity?: 'low' | 'medium' | 'high';
+  reasoningEffort?: "none" | "minimal" | "low" | "medium" | "high" | "xhigh";
+  verbosity?: "low" | "medium" | "high";
 }
 
 // ─── Agent ────────────────────────────────────────────────────────────────────
+
+export type AgentRuntimeType = "native" | "openclaw" | "hermes" | "custom";
+export type AgentRuntimeStatus =
+  | "disabled"
+  | "provisioning"
+  | "starting"
+  | "ready"
+  | "degraded"
+  | "stopped"
+  | "failed";
+
+export interface AgentRuntimeConfig {
+  deploymentMode?: "managed" | "external";
+  channelPolicy?: "pairing" | "allowlist" | "open" | "disabled";
+  enabledPlugins?: string[];
+  enabledToolsets?: string[];
+  memoryMode?: "native" | "platform" | "hybrid";
+  metadata?: Record<string, string | number | boolean>;
+}
+
+export interface AgentRuntime {
+  runtimeType: AgentRuntimeType;
+  version?: string | null;
+  status: AgentRuntimeStatus;
+  config: AgentRuntimeConfig;
+  capabilities: Record<string, boolean>;
+  updatedAt?: string | null;
+  managed: boolean;
+  computer?: AgentComputer | null;
+}
 
 export interface Agent {
   agentId: string;
@@ -46,17 +76,26 @@ export interface Agent {
   isLiaison?: boolean;
   externalUrl?: string;
   createdAt: string;
+  runtimeType?: AgentRuntimeType;
+  runtimeVersion?: string | null;
+  runtimeStatus?: AgentRuntimeStatus;
+  runtimeConfig?: AgentRuntimeConfig;
+  runtimeCapabilities?: Record<string, boolean>;
 }
 
 // ─── Agent Computer ─────────────────────────────────────────────────────────
 
 /** Agent computers are durable. Runtime pods may be replaced, but this identity persists. */
-export type AgentComputerLifecycle = 'persistent';
+export type AgentComputerLifecycle = "persistent";
 export type ComputerPersistence = AgentComputerLifecycle;
 export type ComputerLifecycle = AgentComputerLifecycle;
 
-export type ComputerResourceProfile = 'starter' | 'standard' | 'performance' | 'gpu';
-export type ComputerResourceMode = 'fixed' | 'elastic';
+export type ComputerResourceProfile =
+  | "starter"
+  | "standard"
+  | "performance"
+  | "gpu";
+export type ComputerResourceMode = "fixed" | "elastic";
 export type AgentComputerResourceProfile = ComputerResourceProfile;
 export type AgentComputerResourceMode = ComputerResourceMode;
 
@@ -65,13 +104,13 @@ export type AgentComputerResourceMode = ComputerResourceMode;
  * requiring an SDK release, so string extensions remain valid.
  */
 export type ComputerGpuType =
-  | 'nvidia-t4'
-  | 'nvidia-l4'
-  | 'nvidia-a10'
-  | 'nvidia-a100'
-  | 'nvidia-h100'
-  | 'nvidia-h200'
-  | 'nvidia-b200'
+  | "nvidia-t4"
+  | "nvidia-l4"
+  | "nvidia-a10"
+  | "nvidia-a100"
+  | "nvidia-h100"
+  | "nvidia-h200"
+  | "nvidia-b200"
   | (string & {});
 
 export interface ComputerGpu {
@@ -99,25 +138,29 @@ export interface ComputerResourceUpdate {
   gpu?: ComputerGpu | null;
 }
 
-export type AgentComputerDesiredState = 'running' | 'sleeping' | 'disabled';
+export type AgentComputerDesiredState = "running" | "sleeping" | "disabled";
 export type AgentComputerStatus =
-  | 'disabled'
-  | 'provisioning'
-  | 'starting'
-  | 'running'
-  | 'idle'
-  | 'sleeping'
-  | 'resizing'
-  | 'restarting'
-  | 'stopping'
-  | 'error'
-  | 'unavailable'
+  | "disabled"
+  | "provisioning"
+  | "starting"
+  | "running"
+  | "idle"
+  | "sleeping"
+  | "resizing"
+  | "restarting"
+  | "stopping"
+  | "error"
+  | "unavailable"
   // Deprecated wire states retained while older API deployments are upgraded.
-  | 'stopped'
-  | 'terminated'
-  | 'failed';
+  | "stopped"
+  | "terminated"
+  | "failed";
 
-export type ComputerNetworkAccess = 'standard' | 'restricted' | 'disabled' | (string & {});
+export type ComputerNetworkAccess =
+  | "standard"
+  | "restricted"
+  | "disabled"
+  | (string & {});
 
 /**
  * Mutable computer settings only. Server-owned identity, provider, billing,
@@ -141,7 +184,7 @@ export interface AgentComputerConfig {
   agentId: string;
   enabled: boolean;
   /** @deprecated Computers are always persistent. */
-  defaultMode: AgentComputerLifecycle | 'ephemeral';
+  defaultMode: AgentComputerLifecycle | "ephemeral";
   /** @deprecated Use autoWake. */
   autoStart: boolean;
   /** @deprecated Use allowAgentUse. */
@@ -185,11 +228,11 @@ export interface AgentComputerConfig {
   memoryRequest?: string | null;
   gpuType?: ComputerGpuType | null;
   gpuCount?: number;
-  billingMode?: 'tier' | 'usage' | (string & {});
+  billingMode?: "tier" | "usage" | (string & {});
 }
 
 export interface AgentComputerBrowser {
-  status?: 'off' | 'starting' | 'on' | 'error';
+  status?: "off" | "starting" | "on" | "error";
   url?: string | null;
   title?: string | null;
   screenshot?: string | null;
@@ -242,7 +285,7 @@ export interface AgentComputerInstance {
   workspaceId?: string | null;
   name: string;
   /** @deprecated Ephemeral values may be read from historical records only. */
-  lifecycle: AgentComputerLifecycle | 'ephemeral';
+  lifecycle: AgentComputerLifecycle | "ephemeral";
   status: AgentComputerStatus;
   provider: string;
   cloudProvider?: string | null;
@@ -341,6 +384,9 @@ export interface CreateAgentParams {
   topP?: number;
   commonTools?: string[];
   avatar?: string;
+  runtimeType?: AgentRuntimeType;
+  runtimeVersion?: string;
+  runtimeConfig?: AgentRuntimeConfig;
 }
 
 // ─── Session ──────────────────────────────────────────────────────────────────
@@ -353,9 +399,9 @@ export interface Session {
   model: ModelConfig & { name?: string };
   createdAt: string;
   /** 'cli' | 'web' — origin of the session, used for filtering in the UI */
-  source?: 'cli' | 'web';
+  source?: "cli" | "web";
   /** Same as source; returned from the backend column `initiator_type` */
-  initiatorType?: 'cli' | 'web';
+  initiatorType?: "cli" | "web";
 }
 
 // ─── Run / Stream ─────────────────────────────────────────────────────────────
@@ -370,7 +416,7 @@ export interface RunParams {
     /** @deprecated The agent's singleton computer is selected implicitly. */
     computerIds?: string[];
     /** @deprecated Computers are always persistent; this value is ignored. */
-    lifecycle?: AgentComputerLifecycle | 'ephemeral';
+    lifecycle?: AgentComputerLifecycle | "ephemeral";
   };
   /** Uploaded file references. Raw file bytes must be uploaded separately. */
   attachments?: Array<{ fileId: string }>;
@@ -385,12 +431,12 @@ export interface RunParams {
 }
 
 export interface ChatMessage {
-  role: 'user' | 'assistant' | 'system' | 'tool';
+  role: "user" | "assistant" | "system" | "tool";
   content:
     | string
     | Array<
-        | { type: 'text'; text: string }
-        | { type: 'image_url'; image_url: { url: string } }
+        | { type: "text"; text: string }
+        | { type: "image_url"; image_url: { url: string } }
         | Record<string, any>
       >;
   tool_call_id?: string;
@@ -398,21 +444,21 @@ export interface ChatMessage {
 }
 
 export type StreamEventType =
-  | 'token'
-  | 'tool'
-  | 'toolProgress'
-  | 'toolStart'
-  | 'toolEnd'
-  | 'agent_step'
-  | 'run_started'
-  | 'final'
-  | 'completed'
-  | 'failed'
-  | 'cancelled'
-  | 'status'
-  | 'keepalive'
-  | 'cli_tool_request'
-  | 'error';
+  | "token"
+  | "tool"
+  | "toolProgress"
+  | "toolStart"
+  | "toolEnd"
+  | "agent_step"
+  | "run_started"
+  | "final"
+  | "completed"
+  | "failed"
+  | "cancelled"
+  | "status"
+  | "keepalive"
+  | "cli_tool_request"
+  | "error";
 
 export interface StreamEvent {
   type: StreamEventType;
@@ -420,11 +466,11 @@ export interface StreamEvent {
   runId?: string;
   /** Monotonic per-run sequence number; resume with `after: <last seen seq>` to avoid duplicates. */
   seq?: number;
-  phase?: 'commentary' | 'final_answer' | string;
+  phase?: "commentary" | "final_answer" | string;
   role?: string;
   content?: string;
   stage?: string;
-  status?: 'queued' | 'running' | 'completed' | 'failed' | string;
+  status?: "queued" | "running" | "completed" | "failed" | string;
   name?: string;
   toolName?: string;
   tool?: string;
@@ -449,7 +495,7 @@ export interface Workflow {
   description?: string;
   definition: WorkflowDefinition;
   ownerId: string;
-  ownerType: 'user' | 'agent';
+  ownerType: "user" | "agent";
   isPublic?: boolean;
   category?: string;
   tags?: string[];
@@ -465,15 +511,15 @@ export interface WorkflowDefinition {
 }
 
 export type WorkflowNodeType =
-  | 'tool'         // invoke a registered tool
-  | 'input'        // pass-through: outputs the workflow inputData
-  | 'output'       // pass-through: marks final output
-  | 'condition'    // evaluates config.expression → { result: boolean }; routes true/false branch
-  | 'transform'    // field mapping via config.mapping; no tool call
-  | 'loop'         // iterates config.iterations times or over config.itemsPath array
-  | 'agent_processor' // runs an LLM inference step via config.agentId
-  | 'workflow'     // invokes another saved workflow
-  | 'human_approval'; // pauses execution until approved/rejected
+  | "tool" // invoke a registered tool
+  | "input" // pass-through: outputs the workflow inputData
+  | "output" // pass-through: marks final output
+  | "condition" // evaluates config.expression → { result: boolean }; routes true/false branch
+  | "transform" // field mapping via config.mapping; no tool call
+  | "loop" // iterates config.iterations times or over config.itemsPath array
+  | "agent_processor" // runs an LLM inference step via config.agentId
+  | "workflow" // invokes another saved workflow
+  | "human_approval"; // pauses execution until approved/rejected
 
 export interface WorkflowNode {
   id: string;
@@ -496,7 +542,12 @@ export interface WorkflowEdge {
 export interface WorkflowExecution {
   executionId: string;
   workflowId: string;
-  status: 'running' | 'completed' | 'failed' | 'cancelled' | 'awaiting_approval';
+  status:
+    | "running"
+    | "completed"
+    | "failed"
+    | "cancelled"
+    | "awaiting_approval";
   startedAt?: string;
   completedAt?: string;
   outputData?: any;
@@ -516,8 +567,14 @@ export interface Task {
   sessionId: string;
   title: string;
   description?: string;
-  status: 'pending' | 'started' | 'running' | 'completed' | 'failed' | 'cancelled';
-  executionMode: 'single' | 'workflow' | 'sequential';
+  status:
+    | "pending"
+    | "started"
+    | "running"
+    | "completed"
+    | "failed"
+    | "cancelled";
+  executionMode: "single" | "workflow" | "sequential";
   workflowId?: string;
   cronExpression?: string;
   isRecurring?: boolean;
@@ -536,7 +593,7 @@ export interface Task {
   summary?: string;
   errorMessage?: string;
   createdBy: string;
-  createdByType: 'user' | 'agent';
+  createdByType: "user" | "agent";
   createdAt: string;
   updatedAt?: string;
 }
@@ -546,7 +603,7 @@ export interface CreateTaskParams {
   sessionId: string;
   title: string;
   description?: string;
-  executionMode?: 'single' | 'workflow' | 'sequential';
+  executionMode?: "single" | "workflow" | "sequential";
   workflowId?: string;
   workflowInputs?: Record<string, any>;
   cronExpression?: string;
@@ -554,13 +611,13 @@ export interface CreateTaskParams {
   isRecurring?: boolean;
   dependsOn?: string[];
   tools?: string[];
-  toolConstraintType?: 'hard' | 'soft' | 'none';
+  toolConstraintType?: "hard" | "soft" | "none";
   toolInstructions?: string;
   priority?: number;
   /** Max execution time in milliseconds for workflow tasks */
   timeoutMs?: number;
   createdBy: string;
-  createdByType: 'user' | 'agent';
+  createdByType: "user" | "agent";
 }
 
 // ─── Tool ─────────────────────────────────────────────────────────────────────
@@ -585,15 +642,15 @@ export interface CreateToolParams {
   apiSpec?: {
     baseUrl: string;
     path: string;
-    method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE' | string;
+    method: "GET" | "POST" | "PUT" | "PATCH" | "DELETE" | string;
     headers?: Record<string, string>;
     queryParams?: Record<string, string>;
     bodyTemplate?: any;
-    authType?: 'none' | 'bearer' | 'api-key' | 'basic' | 'oauth2' | string;
+    authType?: "none" | "bearer" | "api-key" | "basic" | "oauth2" | string;
     authKeyName?: string;
     oauthProviderKey?: string;
     oauthScopes?: string[];
-    oauthTokenLocation?: 'header' | 'query' | 'body';
+    oauthTokenLocation?: "header" | "query" | "body";
     oauthTokenKey?: string;
     oauthTokenPrefix?: string;
   };
@@ -602,8 +659,8 @@ export interface CreateToolParams {
   inputSchema?: any;
   outputSchema?: any;
   owner?: string;
-  ownerType?: 'user' | 'agent';
-  visibility?: 'private' | 'public' | 'platform';
+  ownerType?: "user" | "agent";
+  visibility?: "private" | "public" | "platform";
   tags?: string[];
   version?: string;
   rateLimitPerMinute?: number;
@@ -616,7 +673,7 @@ export interface ToolKey {
   keyId: string;
   toolId?: string;
   ownerId: string;
-  ownerType: 'user' | 'agent';
+  ownerType: "user" | "agent";
   keyName: string;
   displayName?: string;
   description?: string;
@@ -629,7 +686,7 @@ export interface ToolKey {
 export interface CreateToolKeyParams {
   toolId?: string;
   ownerId: string;
-  ownerType: 'user' | 'agent';
+  ownerType: "user" | "agent";
   keyName: string;
   value: string;
   displayName?: string;
@@ -643,8 +700,8 @@ export interface ToolPermission {
   id: string;
   toolId: string;
   subjectId: string;
-  subjectType: 'user' | 'agent';
-  permission: 'read' | 'execute' | 'admin';
+  subjectType: "user" | "agent";
+  permission: "read" | "execute" | "admin";
   grantedBy?: string;
   createdAt: string;
   expiresAt?: string;
@@ -653,24 +710,32 @@ export interface ToolPermission {
 // ─── A2A Protocol ─────────────────────────────────────────────────────────────
 
 export type A2ATaskState =
-  | 'submitted'
-  | 'working'
-  | 'input-required'
-  | 'completed'
-  | 'failed'
-  | 'canceled';
+  | "submitted"
+  | "working"
+  | "input-required"
+  | "completed"
+  | "failed"
+  | "canceled";
 
-export interface A2ATextPart { type: 'text'; text: string; metadata?: Record<string, any> }
-export interface A2ADataPart { type: 'data'; data: Record<string, any>; metadata?: Record<string, any> }
+export interface A2ATextPart {
+  type: "text";
+  text: string;
+  metadata?: Record<string, any>;
+}
+export interface A2ADataPart {
+  type: "data";
+  data: Record<string, any>;
+  metadata?: Record<string, any>;
+}
 export interface A2AFilePart {
-  type: 'file';
+  type: "file";
   file: { name?: string; mimeType?: string; bytes?: string; uri?: string };
   metadata?: Record<string, any>;
 }
 export type A2AMessagePart = A2ATextPart | A2ADataPart | A2AFilePart;
 
 export interface A2AMessage {
-  role: 'user' | 'agent';
+  role: "user" | "agent";
   parts: A2AMessagePart[];
   contextId?: string;
   messageId?: string;
@@ -733,7 +798,7 @@ export interface A2ASendTaskParams {
 
 // ─── MCP ──────────────────────────────────────────────────────────────────────
 
-export type McpConnectionType = 'stdio' | 'sse' | 'http' | 'streamable-http';
+export type McpConnectionType = "stdio" | "sse" | "http" | "streamable-http";
 
 export interface McpServer {
   serverId: string;
@@ -741,12 +806,12 @@ export interface McpServer {
   description?: string;
   connectionType: McpConnectionType;
   connectionConfig: Record<string, any>;
-  status: 'connected' | 'disconnected' | 'error';
+  status: "connected" | "disconnected" | "error";
   toolsCount: number;
   capabilities?: Record<string, any>;
   isPublic: boolean;
   ownerId: string;
-  ownerType: 'user' | 'agent';
+  ownerType: "user" | "agent";
   createdAt: string;
 }
 
@@ -816,7 +881,7 @@ export interface CreateSkillParams {
   tools?: string[];
   triggers?: string[];
   ownerId?: string;
-  ownerType?: 'platform' | 'user' | 'agent';
+  ownerType?: "platform" | "user" | "agent";
   isPublic?: boolean;
   tags?: string[];
   icon?: string;
@@ -826,8 +891,8 @@ export interface CreateSkillParams {
 
 // ─── Memory ───────────────────────────────────────────────────────────────────
 
-export type MemoryType = 'episodic' | 'semantic' | 'procedural';
-export type MemorySourceType = 'auto' | 'manual';
+export type MemoryType = "episodic" | "semantic" | "procedural";
+export type MemorySourceType = "auto" | "manual";
 
 export interface AgentMemory {
   memoryId: string;
@@ -874,6 +939,20 @@ export interface UpdateMemoryParams {
   memoryType?: MemoryType;
 }
 
+export interface SharedMemoryScope {
+  scopeId: string;
+  name: string;
+  description?: string | null;
+  access?: "read" | "write" | "admin";
+  updatedAt: string;
+}
+
+export interface CreateSharedMemoryScopeParams {
+  name: string;
+  description?: string;
+  agentIds: string[];
+}
+
 // ─── Usage / Observability ────────────────────────────────────────────────────
 
 export interface UsageEvent {
@@ -908,25 +987,25 @@ export interface UsageAggregation {
 // ─── Credits ─────────────────────────────────────────────────────────────────
 
 export type CreditDirection =
-  | 'grant'
-  | 'debit'
-  | 'adjustment'
-  | 'refund'
-  | 'expiration';
+  | "grant"
+  | "debit"
+  | "adjustment"
+  | "refund"
+  | "expiration";
 
 export type CreditPlatform =
-  | 'agent_commons'
-  | 'commonlab'
-  | 'common_os'
-  | 'system';
+  | "agent_commons"
+  | "commonlab"
+  | "common_os"
+  | "system";
 
 export interface CreditLedgerEntry {
   entryId: string;
   principalId: string;
-  principalType: 'user' | 'agent' | 'service';
+  principalType: "user" | "agent" | "service";
   workspaceId?: string | null;
   amount: number;
-  currency: 'credits';
+  currency: "credits";
   direction: CreditDirection;
   eventType: string;
   sourcePlatform: CreditPlatform;
@@ -951,12 +1030,12 @@ export interface CreditBalance {
   principalId: string;
   workspaceId?: string | null;
   balance: number;
-  currency: 'credits';
+  currency: "credits";
 }
 
 export interface CreditWriteParams {
   principalId: string;
-  principalType?: 'user' | 'agent' | 'service';
+  principalType?: "user" | "agent" | "service";
   workspaceId?: string | null;
   amount: number;
   eventType: string;
@@ -975,7 +1054,7 @@ export interface CreditWriteParams {
 
 // ─── Wallet ───────────────────────────────────────────────────────────────────
 
-export type WalletType = 'eoa' | 'erc4337' | 'external';
+export type WalletType = "eoa" | "erc4337" | "external";
 
 export interface AgentWallet {
   id: string;
@@ -1007,7 +1086,7 @@ export interface CreateWalletParams {
 
 // ─── API Keys ─────────────────────────────────────────────────────────────────
 
-export type ApiKeyPrincipalType = 'user' | 'agent';
+export type ApiKeyPrincipalType = "user" | "agent";
 
 export interface ApiKey {
   id: string;

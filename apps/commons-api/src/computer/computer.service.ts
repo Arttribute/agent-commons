@@ -8,6 +8,7 @@ import { and, desc, eq } from 'drizzle-orm';
 import { v4 as uuidv4 } from 'uuid';
 import * as schema from '#/models/schema';
 import { DatabaseService } from '~/modules/database/database.service';
+import { EncryptionService } from '~/modules/encryption';
 import {
   agentRunProgress,
   type AgentRunProgressEvent,
@@ -86,6 +87,20 @@ type CommonOsInstructionProgress = {
   elapsedMs: number;
 };
 
+export type CommonOsRuntimeEvent = {
+  id: string;
+  type: string;
+  payload: {
+    msgId?: string;
+    sessionId?: string | null;
+    status?: string;
+    delta?: string;
+    tool?: string;
+    label?: string;
+  };
+  createdAt?: string;
+};
+
 const COMPUTER_RESOURCE_PROFILES: Record<
   ComputerResourceProfile,
   {
@@ -140,7 +155,10 @@ const COMPUTER_RESOURCE_PROFILES: Record<
 export class ComputerService {
   private readonly logger = new Logger(ComputerService.name);
 
-  constructor(private readonly db: DatabaseService) {}
+  constructor(
+    private readonly db: DatabaseService,
+    private readonly encryption: EncryptionService,
+  ) {}
 
   async getConfig(agentId: string): Promise<ComputerConfig> {
     const existing = await this.db.query.agentComputerConfig.findFirst({
@@ -434,42 +452,15 @@ export class ComputerService {
     );
 
     try {
-      let provisioned: ComputerInstance;
-      if (computer.commonOsAgentId && computer.status !== 'terminated') {
-        const commonOs = await this.commonOsComputerRequest<CommonOsAgent>(
-          'PATCH',
-          `/computers/${computer.commonOsAgentId}`,
-          undefined,
-          {
-            desiredState: 'running',
-            resourceProfile: config.resourceProfile,
-            resourceMode: config.resourceMode,
-            resources: this.commonOsResources(config),
-          },
-          args.agentId,
-        );
-        const [waking] = await this.db
-          .update(schema.agentComputerInstance)
-          .set({
-            desiredState: 'running',
-            status: this.mapStatus(commonOs.status ?? 'starting'),
-            runtimeGeneration:
-              commonOs.compute?.generation ??
-              commonOs.resources?.generation ??
-              computer.runtimeGeneration + 1,
-            updatedAt: new Date(),
-          })
-          .where(eq(schema.agentComputerInstance.computerId, computerId))
-          .returning();
-        provisioned = waking;
-      } else {
-        provisioned = await this.deployWithCommonOs({
+      // The canonical POST is an idempotent upsert in CommonOS. Using it for
+      // both first boot and wake keeps runtime adapter configuration in sync
+      // (including OpenClaw ↔ Hermes switches) while preserving the volume.
+      const provisioned = await this.deployWithCommonOs({
           agent,
           config,
           computer,
           name,
         });
-      }
       stopProvisioningHeartbeat();
       this.emitComputerReady(args.runId, provisioned, args.toolCallId);
       return provisioned;
@@ -710,6 +701,7 @@ export class ComputerService {
     actorType?: 'user' | 'agent' | 'service';
     runId?: string;
     toolCallId?: string;
+    onRuntimeEvent?: (event: CommonOsRuntimeEvent) => void | Promise<void>;
   }) {
     const computer = await this.getInstance(args.agentId, args.computerId);
     this.assertComputerSessionCompatible(computer, args.sessionId);
@@ -851,6 +843,7 @@ export class ComputerService {
           },
         });
       },
+      args.onRuntimeEvent,
     );
     await this.touchComputer(computer.computerId);
     await this.refreshInstance(computer.computerId, { silent: true }).catch(
@@ -1199,6 +1192,18 @@ export class ComputerService {
       );
     }
 
+    const runtimeType = String(args.agent.runtimeType ?? 'native');
+    const integrationPath =
+      runtimeType === 'openclaw' || runtimeType === 'hermes'
+        ? runtimeType
+        : runtimeType === 'custom'
+          ? 'guest'
+          : 'native';
+    const modelApiKey = this.decryptStoredSecret(args.agent.modelApiKey);
+    const runtimeConfig = (args.agent.runtimeConfig ?? {}) as Record<
+      string,
+      any
+    >;
     const commonOsAgent = await this.commonOsComputerRequest<CommonOsAgent>(
       'POST',
       '/computers',
@@ -1209,7 +1214,34 @@ export class ComputerService {
         systemPrompt: this.commonOsSystemPrompt(args.agent),
         permissionTier: 'worker',
         room: 'dev-room',
-        integrationPath: 'native',
+        integrationPath,
+        nativeConfig:
+          integrationPath === 'native'
+            ? {
+                modelProvider: args.agent.modelProvider,
+                modelId: args.agent.modelId,
+                ...(modelApiKey ? { modelApiKey } : {}),
+              }
+            : undefined,
+        openclawConfig:
+          integrationPath === 'openclaw'
+            ? {
+                modelProvider: args.agent.modelProvider,
+                modelId: args.agent.modelId,
+                ...(modelApiKey ? { modelApiKey } : {}),
+                channels: runtimeConfig.channels ?? {},
+                plugins: runtimeConfig.enabledPlugins ?? [],
+                dmPolicy: runtimeConfig.channelPolicy ?? 'pairing',
+              }
+            : undefined,
+        hermesConfig:
+          integrationPath === 'hermes'
+            ? {
+                modelProvider: args.agent.modelProvider,
+                modelId: args.agent.modelId,
+                ...(modelApiKey ? { modelApiKey } : {}),
+              }
+            : undefined,
         ...(args.config.image ? { dockerImage: args.config.image } : {}),
         agentCommonsId: args.agent.agentId,
         computerId: args.computer.computerId,
@@ -1299,12 +1331,23 @@ export class ComputerService {
     return updated;
   }
 
+  private decryptStoredSecret(value?: string | null): string | undefined {
+    if (!value) return undefined;
+    if (!value.startsWith('enc:')) return value;
+    const [, iv, tag, encryptedValue] = value.split(':');
+    if (!iv || !tag || !encryptedValue) {
+      throw new Error('Stored model API key is malformed');
+    }
+    return this.encryption.decrypt(encryptedValue, iv, tag);
+  }
+
   private async pollCommonOsMessage(
     commonOsAgentId: string,
     agentCommonsId: string,
     messageId: string | undefined,
     waitMs: number,
     onProgress?: (progress: CommonOsInstructionProgress) => void,
+    onRuntimeEvent?: (event: CommonOsRuntimeEvent) => void | Promise<void>,
   ) {
     if (!messageId) {
       return { status: 'submitted', response: null, error: null };
@@ -1312,7 +1355,30 @@ export class ComputerService {
     const started = Date.now();
     let lastProgressAt = 0;
     let lastStatus = '';
+    const observedEventIds = new Set<string>();
     while (Date.now() - started < Math.min(waitMs, 720_000)) {
+      if (onRuntimeEvent && this.commonOsUseGeneralComputerApi()) {
+        const events = await this.commonOsComputerRequest<any[]>(
+          'GET',
+          `/computers/${commonOsAgentId}/instructions/${messageId}/events`,
+          undefined,
+          undefined,
+          agentCommonsId,
+        ).catch(() => []);
+        for (const event of events) {
+          const id = String(event?._id ?? event?.id ?? '');
+          if (!id || observedEventIds.has(id)) continue;
+          observedEventIds.add(id);
+          await onRuntimeEvent({
+            id,
+            type: String(event?.type ?? ''),
+            payload: (event?.payload ?? {}) as CommonOsRuntimeEvent['payload'],
+            createdAt: event?.createdAt
+              ? new Date(event.createdAt).toISOString()
+              : undefined,
+          });
+        }
+      }
       const list = await this.commonOsComputerRequest<any[]>(
         'GET',
         `/computers/${commonOsAgentId}/instructions`,
@@ -1337,10 +1403,34 @@ export class ComputerService {
         });
       }
       if (message?.response || message?.status === 'failed') {
+        if (onRuntimeEvent && this.commonOsUseGeneralComputerApi()) {
+          const events = await this.commonOsComputerRequest<any[]>(
+            'GET',
+            `/computers/${commonOsAgentId}/instructions/${messageId}/events`,
+            undefined,
+            undefined,
+            agentCommonsId,
+          ).catch(() => []);
+          for (const event of events) {
+            const id = String(event?._id ?? event?.id ?? '');
+            if (!id || observedEventIds.has(id)) continue;
+            observedEventIds.add(id);
+            await onRuntimeEvent({
+              id,
+              type: String(event?.type ?? ''),
+              payload: (event?.payload ??
+                {}) as CommonOsRuntimeEvent['payload'],
+              createdAt: event?.createdAt
+                ? new Date(event.createdAt).toISOString()
+                : undefined,
+            });
+          }
+        }
         return {
           status: message.status,
           response: message.response ?? null,
           error: message.error ?? null,
+          usage: message.usage ?? null,
           respondedAt: message.respondedAt ?? null,
           commonOsMessageId: messageId,
         };

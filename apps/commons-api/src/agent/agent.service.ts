@@ -61,6 +61,10 @@ import { ActivityService } from '~/activity/activity.service';
 import { FilesService } from '~/files';
 import { ComputerService } from '~/computer';
 import { agentRunProgress } from './run-progress';
+import {
+  RUNTIME_CAPABILITIES,
+  normalizeRuntimeType,
+} from './runtime/runtime.types';
 
 const got = import('got');
 
@@ -114,7 +118,10 @@ export class AgentService implements OnModuleInit {
    * Key: requestId  Value: resolve fn that completes the tool call
    * The CLI POSTs back to /v1/agents/cli-tool-result to resolve these.
    */
-  public readonly pendingCliToolRequests = new Map<string, (result: string) => void>();
+  public readonly pendingCliToolRequests = new Map<
+    string,
+    (result: string) => void
+  >();
 
   /** Called by the controller when the CLI POSTs a tool result. */
   resolveCliToolRequest(requestId: string, result: string): boolean {
@@ -174,6 +181,18 @@ export class AgentService implements OnModuleInit {
       insertValue.modelApiKey = this.encryptApiKey(insertValue.modelApiKey);
     }
 
+    const runtimeType = normalizeRuntimeType(insertValue.runtimeType);
+    insertValue.runtimeType = runtimeType;
+    insertValue.runtimeStatus ??=
+      runtimeType === 'native' ? 'ready' : 'stopped';
+    insertValue.runtimeConfig ??= {
+      deploymentMode: 'managed',
+      channelPolicy: 'pairing',
+      memoryMode: 'hybrid',
+    };
+    insertValue.runtimeCapabilities ??= RUNTIME_CAPABILITIES[runtimeType];
+    insertValue.runtimeUpdatedAt ??= new Date();
+
     const [agentEntry] = await this.db
       .insert(schema.agent)
       .values({
@@ -185,12 +204,17 @@ export class AgentService implements OnModuleInit {
       .returning();
 
     // Auto-provision a primary EOA wallet for every new agent
-    await this.walletService.createWallet({
+    await this.walletService
+      .createWallet({
       agentId,
       walletType: 'eoa',
       label: 'Primary',
-    }).catch((err) =>
-      console.error(`[AgentService] Failed to create wallet for agent ${agentId}:`, err),
+      })
+      .catch((err) =>
+        console.error(
+          `[AgentService] Failed to create wallet for agent ${agentId}:`,
+          err,
+        ),
     );
 
     const actorId = agentEntry.ownerUserId ?? agentEntry.owner ?? agentId;
@@ -284,21 +308,36 @@ export class AgentService implements OnModuleInit {
 
   /* ─────────────────────────  SYSTEM PROMPT  ───────────────────────── */
   private buildSystemPrompt(
-    agent: { agentId: string; persona?: string | null; instructions?: string | null; [key: string]: any },
+    agent: {
+      agentId: string;
+      persona?: string | null;
+      instructions?: string | null;
+      [key: string]: any;
+    },
     sessionId: string,
     childSessionsInfo: string,
     memoryBlock = '',
-    sessionTasks: Array<{ taskId: string; title: string; status: string; description?: string | null; summary?: string | null; createdAt?: Date | null }> = [],
+    sessionTasks: Array<{
+      taskId: string;
+      title: string;
+      status: string;
+      description?: string | null;
+      summary?: string | null;
+      createdAt?: Date | null;
+    }> = [],
     computerBlock = '',
   ): string {
     const currentTime = new Date();
 
-    const taskLines = sessionTasks.length > 0
-      ? sessionTasks.map((t) => {
+    const taskLines =
+      sessionTasks.length > 0
+        ? sessionTasks
+            .map((t) => {
           const statusLabel = t.status.toUpperCase();
           const summary = t.summary ? ` — ${t.summary}` : '';
           return `- [${statusLabel}] (${t.taskId}) ${t.title}${summary}`;
-        }).join('\n')
+            })
+            .join('\n')
       : '  (no tasks in this session yet)';
 
     const taskBlock = dedent`
@@ -416,15 +455,24 @@ export class AgentService implements OnModuleInit {
   }
 
   /* ─────────────────────────  SESSION BOOTSTRAP  ───────────────────────── */
-  private async createAgentSession(agentId: string, sessionId: string, firstUserMessage = '') {
-    const [agent, childSessions, memoryBlock, sessionTasks, computerBlock] = await Promise.all([
+  private async createAgentSession(
+    agentId: string,
+    sessionId: string,
+    firstUserMessage = '',
+  ) {
+    const [agent, childSessions, memoryBlock, sessionTasks, computerBlock] =
+      await Promise.all([
       this.getAgent({ agentId }),
       this.getChildSessions(sessionId),
       firstUserMessage
-        ? this.memoryService.buildMemoryBlock(agentId, firstUserMessage).catch(() => '')
+          ? this.memoryService
+              .buildMemoryBlock(agentId, firstUserMessage)
+              .catch(() => '')
         : Promise.resolve(''),
       this.taskExecution.listSessionTasks(sessionId).catch(() => []),
-      this.computerService.buildComputerPrompt(agentId, sessionId).catch(() => ''),
+        this.computerService
+          .buildComputerPrompt(agentId, sessionId)
+          .catch(() => ''),
     ]);
     const childSessionsInfo =
       childSessions.length > 0
@@ -434,7 +482,14 @@ export class AgentService implements OnModuleInit {
     const messages: ChatCompletionMessageParam[] = [
       {
         role: 'system',
-        content: this.buildSystemPrompt(agent, sessionId, childSessionsInfo, memoryBlock, sessionTasks, computerBlock),
+        content: this.buildSystemPrompt(
+          agent,
+          sessionId,
+          childSessionsInfo,
+          memoryBlock,
+          sessionTasks,
+          computerBlock,
+        ),
       },
     ];
 
@@ -528,7 +583,10 @@ export class AgentService implements OnModuleInit {
         sessionId: taskSessionId,
         initiator: agent.agentId,
       }).subscribe({
-        error: (err) => this.logger.error(`triggerAgent error for ${props.agentId}: ${err.message}`),
+        error: (err) =>
+          this.logger.error(
+            `triggerAgent error for ${props.agentId}: ${err.message}`,
+          ),
       });
     }
   }
@@ -550,7 +608,10 @@ export class AgentService implements OnModuleInit {
       sessionId,
       initiator: agentId,
     }).subscribe({
-      error: (err) => this.logger.error(`dispatchPendingTask error for ${agentId}: ${err.message}`),
+      error: (err) =>
+        this.logger.error(
+          `dispatchPendingTask error for ${agentId}: ${err.message}`,
+        ),
     });
   }
 
@@ -574,7 +635,11 @@ export class AgentService implements OnModuleInit {
      * the caller is the single source of truth for what it can execute, so
      * adding a new pod-local tool never requires a commons-api change.
      */
-    cliTools?: Array<{ name: string; description: string; parameters: Record<string, unknown> }>;
+    cliTools?: Array<{
+      name: string;
+      description: string;
+      parameters: Record<string, unknown>;
+    }>;
     /** Uploaded chat file references. Raw bytes are never passed into LangGraph state. */
     attachments?: Array<{ fileId: string }>;
     /** User selected computer usage for this chat turn. */
@@ -588,7 +653,10 @@ export class AgentService implements OnModuleInit {
   }): Observable<any> {
     return new Observable<any>((subscriber) => {
       // Keep SSE connection alive through proxies
-      const keepalive = setInterval(() => subscriber.next({ type: 'keepalive' }), 15_000);
+      const keepalive = setInterval(
+        () => subscriber.next({ type: 'keepalive' }),
+        15_000,
+      );
       let unsubscribeProgress: () => void = () => undefined;
 
       const run = async () => {
@@ -688,13 +756,23 @@ export class AgentService implements OnModuleInit {
               });
               currentSessionId = newSession.sessionId;
               isNewSession = true;
-              emitStatus('session', 'completed', 'Conversation ready', undefined, {
+              emitStatus(
+                'session',
+                'completed',
+                'Conversation ready',
+                undefined,
+                {
                 sessionId: currentSessionId,
                 isNewSession,
-              });
+                },
+              );
             } else {
               // In a space: reuse or create a single agent-space session
-              emitStatus('session', 'running', 'Opening the space conversation');
+              emitStatus(
+                'session',
+                'running',
+                'Opening the space conversation',
+              );
               const { session: spSession, created } =
                 await this.session.getOrCreateAgentSpaceSession({
                   agentId,
@@ -714,16 +792,28 @@ export class AgentService implements OnModuleInit {
                 });
               currentSessionId = spSession.sessionId;
               isNewSession = created;
-              emitStatus('session', 'completed', 'Space conversation ready', undefined, {
+              emitStatus(
+                'session',
+                'completed',
+                'Space conversation ready',
+                undefined,
+                {
                 sessionId: currentSessionId,
                 isNewSession,
-              });
+                },
+              );
             }
           } else {
-            emitStatus('session', 'completed', 'Resuming this conversation', undefined, {
+            emitStatus(
+              'session',
+              'completed',
+              'Resuming this conversation',
+              undefined,
+              {
               sessionId: currentSessionId,
               isNewSession,
-            });
+              },
+            );
           }
 
           if (computerRequest?.enabled) {
@@ -745,7 +835,8 @@ export class AgentService implements OnModuleInit {
 
             if (!selectedComputerIds.length) {
               try {
-                const activeComputers = await this.computerService.listInstances({
+                const activeComputers =
+                  await this.computerService.listInstances({
                   agentId,
                   sessionId: currentSessionId,
                   includeTerminated: false,
@@ -788,7 +879,9 @@ export class AgentService implements OnModuleInit {
                     failed
                       ? 'Agent computer could not be started'
                       : 'Agent computer is ready',
-                    started?.errorMessage ?? started?.name ?? started?.computerId,
+                    started?.errorMessage ??
+                      started?.name ??
+                      started?.computerId,
                     {
                       computerId: started?.computerId,
                       status: started?.status,
@@ -903,7 +996,11 @@ export class AgentService implements OnModuleInit {
           };
 
           const callbackHandler = BaseCallbackHandler.fromMethods({
-            handleLLMStart: async (_llm: any, _prompts: string[], runId: string) => {
+            handleLLMStart: async (
+              _llm: any,
+              _prompts: string[],
+              runId: string,
+            ) => {
               if (runId) llmRunStartedAt.set(runId, performance.now());
               emitStatus('model', 'running', 'Thinking');
             },
@@ -939,7 +1036,8 @@ export class AgentService implements OnModuleInit {
             /** Structured trace log — parseable by log aggregators (CloudWatch, Datadog, etc.) */
             handleLLMEnd: async (result: any, runId: string) => {
               const usage = extractTokenUsageFromLLMResult(result);
-              const durationMs = runId && llmRunStartedAt.has(runId)
+              const durationMs =
+                runId && llmRunStartedAt.has(runId)
                 ? Math.round(performance.now() - llmRunStartedAt.get(runId)!)
                 : undefined;
               if (runId) llmRunStartedAt.delete(runId);
@@ -951,7 +1049,8 @@ export class AgentService implements OnModuleInit {
               );
 
               if (!usage) {
-                console.log(JSON.stringify({
+                console.log(
+                  JSON.stringify({
                   level: 'warn',
                   event: 'llm_call_usage_missing',
                   traceId,
@@ -961,7 +1060,8 @@ export class AgentService implements OnModuleInit {
                   provider: usageContext.provider,
                   modelId: usageContext.modelId,
                   ts: new Date().toISOString(),
-                }));
+                  }),
+                );
                 return;
               }
 
@@ -996,7 +1096,8 @@ export class AgentService implements OnModuleInit {
                   console.error('[UsageService] Failed to record event:', err),
                 );
 
-              console.log(JSON.stringify({
+              console.log(
+                JSON.stringify({
                 level: 'info',
                 event: 'llm_call',
                 traceId,
@@ -1012,12 +1113,15 @@ export class AgentService implements OnModuleInit {
                 costUsd,
                 usageSource: usage.source,
                 ts: new Date().toISOString(),
-              }));
+                }),
+              );
             },
           });
 
           // ── Build LLM from agent/session model config (provider-agnostic) ──
-          const sessionRecord = await this.session.getSession({ id: currentSessionId });
+          const sessionRecord = await this.session.getSession({
+            id: currentSessionId,
+          });
           const decryptedApiKey = agent.modelApiKey
             ? this.decryptApiKey(agent.modelApiKey)
             : undefined;
@@ -1049,33 +1153,225 @@ export class AgentService implements OnModuleInit {
           // the caller is the single source of truth for what it can execute,
           // so it can add new pod-local tools without a commons-api change.
           const dynamicCliTools = props.cliTools?.length
-            ? props.cliTools.map((def): ChatCompletionTool => ({
+            ? props.cliTools.map(
+                (def): ChatCompletionTool => ({
                 type: 'function',
-                function: { name: def.name, description: def.description, parameters: def.parameters as any },
-              }))
+                  function: {
+                    name: def.name,
+                    description: def.description,
+                    parameters: def.parameters as any,
+                  },
+                }),
+              )
             : null;
 
           const cliToolSchemas: ChatCompletionTool[] = props.cliContext
-            ? dynamicCliTools ?? [
-                { type: 'function', function: { name: 'cli_list_directory', description: 'List files and folders at a path on the user\'s local machine. Call this immediately when asked about local files or directories.', parameters: { type: 'object', properties: { path: { type: 'string', description: 'Directory path relative to session root (default: session root)' } }, required: [] } } },
-                { type: 'function', function: { name: 'cli_read_file', description: 'Read the full contents of a file on the user\'s local machine.', parameters: { type: 'object', properties: { path: { type: 'string', description: 'File path relative to session root' } }, required: ['path'] } } },
-                { type: 'function', function: { name: 'cli_write_file', description: 'Write content to a file on the user\'s local machine. Requires user confirmation.', parameters: { type: 'object', properties: { path: { type: 'string', description: 'File path relative to session root' }, content: { type: 'string', description: 'Content to write' } }, required: ['path', 'content'] } } },
-                { type: 'function', function: { name: 'cli_search_files', description: 'Search for files matching a pattern on the user\'s local machine (e.g. "*.ts").', parameters: { type: 'object', properties: { pattern: { type: 'string', description: 'Glob-style filename pattern' }, directory: { type: 'string', description: 'Directory to search (default: session root)' } }, required: ['pattern'] } } },
-                { type: 'function', function: { name: 'cli_run_command', description: 'Run a shell command on the user\'s local machine and return output. Requires user confirmation.', parameters: { type: 'object', properties: { command: { type: 'string', description: 'Command to run' }, args: { type: 'array', items: { type: 'string' }, description: 'Arguments' }, cwd: { type: 'string', description: 'Working directory' } }, required: ['command'] } } },
-                { type: 'function', function: { name: 'cli_browser_open', description: 'Launch the user\'s shared pod browser and navigate to a URL.', parameters: { type: 'object', properties: { url: { type: 'string', description: 'URL to open' } }, required: ['url'] } } },
-                { type: 'function', function: { name: 'cli_browser_status', description: 'Return the shared browser\'s on/off state, current URL, page title, and latest screenshot.', parameters: { type: 'object', properties: {}, required: [] } } },
-                { type: 'function', function: { name: 'cli_browser_screenshot', description: 'Refresh and return the latest screenshot of the shared browser.', parameters: { type: 'object', properties: {}, required: [] } } },
-                { type: 'function', function: { name: 'cli_browser_click', description: 'Click a coordinate in the shared browser\'s viewport.', parameters: { type: 'object', properties: { x: { type: 'number' }, y: { type: 'number' } }, required: ['x', 'y'] } } },
-                { type: 'function', function: { name: 'cli_browser_type', description: 'Type text into the focused element, or into a CSS selector, in the shared browser.', parameters: { type: 'object', properties: { text: { type: 'string' }, selector: { type: 'string' } }, required: ['text'] } } },
-                { type: 'function', function: { name: 'cli_browser_close', description: 'Close the shared browser.', parameters: { type: 'object', properties: {}, required: [] } } },
-              ]
+            ? (dynamicCliTools ?? [
+                {
+                  type: 'function',
+                  function: {
+                    name: 'cli_list_directory',
+                    description:
+                      "List files and folders at a path on the user's local machine. Call this immediately when asked about local files or directories.",
+                    parameters: {
+                      type: 'object',
+                      properties: {
+                        path: {
+                          type: 'string',
+                          description:
+                            'Directory path relative to session root (default: session root)',
+                        },
+                      },
+                      required: [],
+                    },
+                  },
+                },
+                {
+                  type: 'function',
+                  function: {
+                    name: 'cli_read_file',
+                    description:
+                      "Read the full contents of a file on the user's local machine.",
+                    parameters: {
+                      type: 'object',
+                      properties: {
+                        path: {
+                          type: 'string',
+                          description: 'File path relative to session root',
+                        },
+                      },
+                      required: ['path'],
+                    },
+                  },
+                },
+                {
+                  type: 'function',
+                  function: {
+                    name: 'cli_write_file',
+                    description:
+                      "Write content to a file on the user's local machine. Requires user confirmation.",
+                    parameters: {
+                      type: 'object',
+                      properties: {
+                        path: {
+                          type: 'string',
+                          description: 'File path relative to session root',
+                        },
+                        content: {
+                          type: 'string',
+                          description: 'Content to write',
+                        },
+                      },
+                      required: ['path', 'content'],
+                    },
+                  },
+                },
+                {
+                  type: 'function',
+                  function: {
+                    name: 'cli_search_files',
+                    description:
+                      'Search for files matching a pattern on the user\'s local machine (e.g. "*.ts").',
+                    parameters: {
+                      type: 'object',
+                      properties: {
+                        pattern: {
+                          type: 'string',
+                          description: 'Glob-style filename pattern',
+                        },
+                        directory: {
+                          type: 'string',
+                          description:
+                            'Directory to search (default: session root)',
+                        },
+                      },
+                      required: ['pattern'],
+                    },
+                  },
+                },
+                {
+                  type: 'function',
+                  function: {
+                    name: 'cli_run_command',
+                    description:
+                      "Run a shell command on the user's local machine and return output. Requires user confirmation.",
+                    parameters: {
+                      type: 'object',
+                      properties: {
+                        command: {
+                          type: 'string',
+                          description: 'Command to run',
+                        },
+                        args: {
+                          type: 'array',
+                          items: { type: 'string' },
+                          description: 'Arguments',
+                        },
+                        cwd: {
+                          type: 'string',
+                          description: 'Working directory',
+                        },
+                      },
+                      required: ['command'],
+                    },
+                  },
+                },
+                {
+                  type: 'function',
+                  function: {
+                    name: 'cli_browser_open',
+                    description:
+                      "Launch the user's shared pod browser and navigate to a URL.",
+                    parameters: {
+                      type: 'object',
+                      properties: {
+                        url: { type: 'string', description: 'URL to open' },
+                      },
+                      required: ['url'],
+                    },
+                  },
+                },
+                {
+                  type: 'function',
+                  function: {
+                    name: 'cli_browser_status',
+                    description:
+                      "Return the shared browser's on/off state, current URL, page title, and latest screenshot.",
+                    parameters: {
+                      type: 'object',
+                      properties: {},
+                      required: [],
+                    },
+                  },
+                },
+                {
+                  type: 'function',
+                  function: {
+                    name: 'cli_browser_screenshot',
+                    description:
+                      'Refresh and return the latest screenshot of the shared browser.',
+                    parameters: {
+                      type: 'object',
+                      properties: {},
+                      required: [],
+                    },
+                  },
+                },
+                {
+                  type: 'function',
+                  function: {
+                    name: 'cli_browser_click',
+                    description:
+                      "Click a coordinate in the shared browser's viewport.",
+                    parameters: {
+                      type: 'object',
+                      properties: {
+                        x: { type: 'number' },
+                        y: { type: 'number' },
+                      },
+                      required: ['x', 'y'],
+                    },
+                  },
+                },
+                {
+                  type: 'function',
+                  function: {
+                    name: 'cli_browser_type',
+                    description:
+                      'Type text into the focused element, or into a CSS selector, in the shared browser.',
+                    parameters: {
+                      type: 'object',
+                      properties: {
+                        text: { type: 'string' },
+                        selector: { type: 'string' },
+                      },
+                      required: ['text'],
+                    },
+                  },
+                },
+                {
+                  type: 'function',
+                  function: {
+                    name: 'cli_browser_close',
+                    description: 'Close the shared browser.',
+                    parameters: {
+                      type: 'object',
+                      properties: {},
+                      required: [],
+                    },
+                  },
+                },
+              ])
             : [];
 
-          const llmWithTools = (llm as any).bindTools([...toolDefs, ...cliToolSchemas] as any, {
+          const llmWithTools = (llm as any).bindTools(
+            [...toolDefs, ...cliToolSchemas] as any,
+            {
             parallel_tool_calls: true,
             strict: false,
             callbacks: [callbackHandler],
-          });
+            },
+          );
 
           const makeRunner = (def: ChatCompletionTool & { endpoint: string }) =>
             tool(
@@ -1223,7 +1519,11 @@ export class AgentService implements OnModuleInit {
                   return new Promise<string>((resolve) => {
                     // Keepalive pings prevent GCP from closing the idle SSE stream
                     const pingInterval = setInterval(() => {
-                      try { subscriber.next({ type: 'keepalive' }); } catch { /* stream may already be closed */ }
+                      try {
+                        subscriber.next({ type: 'keepalive' });
+                      } catch {
+                        /* stream may already be closed */
+                      }
                     }, CLI_KEEPALIVE_INTERVAL_MS);
 
                     const cleanup = () => {
@@ -1234,13 +1534,18 @@ export class AgentService implements OnModuleInit {
 
                     const timer = setTimeout(() => {
                       cleanup();
-                      resolve(`Error: CLI tool timed out after ${CLI_TOOL_TIMEOUT_MS / 1_000}s`);
+                      resolve(
+                        `Error: CLI tool timed out after ${CLI_TOOL_TIMEOUT_MS / 1_000}s`,
+                      );
                     }, CLI_TOOL_TIMEOUT_MS);
 
-                    this.pendingCliToolRequests.set(requestId, (result: string) => {
+                    this.pendingCliToolRequests.set(
+                      requestId,
+                      (result: string) => {
                       cleanup();
                       resolve(result);
-                    });
+                      },
+                    );
                   });
                 },
                 { name, description, schema: schema as any },
@@ -1258,39 +1563,73 @@ export class AgentService implements OnModuleInit {
               (toolRunners as any[]).push(
                 makeCliTool(
                   'cli_read_file',
-                  'Read the full contents of a file on the user\'s local machine. Path is relative to the session root directory.',
-                  z.object({ path: z.string().describe('File path relative to session root') }),
+                  "Read the full contents of a file on the user's local machine. Path is relative to the session root directory.",
+                  z.object({
+                    path: z
+                      .string()
+                      .describe('File path relative to session root'),
+                  }),
                 ),
                 makeCliTool(
                   'cli_list_directory',
-                  'List files and directories at a given path on the user\'s local machine. Defaults to the session root.',
-                  z.object({ path: z.string().optional().describe('Directory path (default: session root)') }),
+                  "List files and directories at a given path on the user's local machine. Defaults to the session root.",
+                  z.object({
+                    path: z
+                      .string()
+                      .optional()
+                      .describe('Directory path (default: session root)'),
+                  }),
                 ),
                 makeCliTool(
                   'cli_write_file',
-                  'Write content to a file on the user\'s local machine. Creates parent directories if needed. Requires user confirmation.',
+                  "Write content to a file on the user's local machine. Creates parent directories if needed. Requires user confirmation.",
                   z.object({
-                    path: z.string().describe('File path relative to session root'),
+                    path: z
+                      .string()
+                      .describe('File path relative to session root'),
                     content: z.string().describe('Content to write'),
                   }),
                 ),
                 makeCliTool(
                   'cli_search_files',
-                  'Search for files matching a name pattern on the user\'s local machine. Returns up to 50 matches.',
+                  "Search for files matching a name pattern on the user's local machine. Returns up to 50 matches.",
                   z.object({
-                    pattern: z.string().describe('Glob-style filename pattern (e.g. "*.ts")'),
-                    directory: z.string().optional().describe('Directory to search in (default: session root)'),
+                    pattern: z
+                      .string()
+                      .describe('Glob-style filename pattern (e.g. "*.ts")'),
+                    directory: z
+                      .string()
+                      .optional()
+                      .describe(
+                        'Directory to search in (default: session root)',
+                      ),
                   }),
                 ),
                 makeCliTool(
                   'cli_run_command',
-                  'Execute a short shell command (<30s) on the user\'s local machine. For long-running commands (installs, builds, scaffolders) use cli_start_process instead.',
+                  "Execute a short shell command (<30s) on the user's local machine. For long-running commands (installs, builds, scaffolders) use cli_start_process instead.",
                   z.object({
-                    command: z.string().describe('Command to run (e.g. "node")'),
-                    args: z.array(z.string()).optional().describe('Arguments array'),
-                    cwd: z.string().optional().describe('Working directory (default: session root)'),
-                    timeout_seconds: z.number().optional().describe('Max seconds to wait (default 120, max 300)'),
-                    interactive: z.boolean().optional().describe('Connect user terminal stdin for commands that need prompts. Output not captured.'),
+                    command: z
+                      .string()
+                      .describe('Command to run (e.g. "node")'),
+                    args: z
+                      .array(z.string())
+                      .optional()
+                      .describe('Arguments array'),
+                    cwd: z
+                      .string()
+                      .optional()
+                      .describe('Working directory (default: session root)'),
+                    timeout_seconds: z
+                      .number()
+                      .optional()
+                      .describe('Max seconds to wait (default 120, max 300)'),
+                    interactive: z
+                      .boolean()
+                      .optional()
+                      .describe(
+                        'Connect user terminal stdin for commands that need prompts. Output not captured.',
+                      ),
                   }),
                 ),
                 makeCliTool(
@@ -1298,30 +1637,45 @@ export class AgentService implements OnModuleInit {
                   'Start a long-running command in the background (npm install, builds, scaffolders, etc). Returns a processId immediately — use cli_wait_for_process to poll progress. Requires user confirmation.',
                   z.object({
                     command: z.string().describe('Command to run (e.g. "npx")'),
-                    args: z.array(z.string()).optional().describe('Arguments array'),
-                    cwd: z.string().optional().describe('Working directory (default: session root)'),
+                    args: z
+                      .array(z.string())
+                      .optional()
+                      .describe('Arguments array'),
+                    cwd: z
+                      .string()
+                      .optional()
+                      .describe('Working directory (default: session root)'),
                   }),
                 ),
                 makeCliTool(
                   'cli_wait_for_process',
                   'Block for up to wait_seconds (max 120) waiting for a background process to finish, then return its current output and status. Call in a loop, reporting progress to the user between each call.',
                   z.object({
-                    processId: z.string().describe('processId returned by cli_start_process'),
-                    wait_seconds: z.number().optional().describe('How long to block (default 60, max 120)'),
+                    processId: z
+                      .string()
+                      .describe('processId returned by cli_start_process'),
+                    wait_seconds: z
+                      .number()
+                      .optional()
+                      .describe('How long to block (default 60, max 120)'),
                   }),
                 ),
                 makeCliTool(
                   'cli_process_status',
                   'Instantly check the status and recent stdout of a background process without blocking.',
                   z.object({
-                    processId: z.string().describe('processId returned by cli_start_process'),
+                    processId: z
+                      .string()
+                      .describe('processId returned by cli_start_process'),
                   }),
                 ),
                 makeCliTool(
                   'cli_kill_process',
                   'Kill a running background process.',
                   z.object({
-                    processId: z.string().describe('processId returned by cli_start_process'),
+                    processId: z
+                      .string()
+                      .describe('processId returned by cli_start_process'),
                   }),
                 ),
                 makeCliTool(
@@ -1331,12 +1685,12 @@ export class AgentService implements OnModuleInit {
                 ),
                 makeCliTool(
                   'cli_browser_open',
-                  'Launch the user\'s shared pod browser and navigate to a URL.',
+                  "Launch the user's shared pod browser and navigate to a URL.",
                   z.object({ url: z.string().describe('URL to open') }),
                 ),
                 makeCliTool(
                   'cli_browser_status',
-                  'Return the shared browser\'s on/off state, current URL, page title, and latest screenshot.',
+                  "Return the shared browser's on/off state, current URL, page title, and latest screenshot.",
                   z.object({}),
                 ),
                 makeCliTool(
@@ -1346,7 +1700,7 @@ export class AgentService implements OnModuleInit {
                 ),
                 makeCliTool(
                   'cli_browser_click',
-                  'Click a coordinate in the shared browser\'s viewport.',
+                  "Click a coordinate in the shared browser's viewport.",
                   z.object({
                     x: z.number().describe('X coordinate'),
                     y: z.number().describe('Y coordinate'),
@@ -1357,7 +1711,10 @@ export class AgentService implements OnModuleInit {
                   'Type text into the focused element, or into a CSS selector, in the shared browser.',
                   z.object({
                     text: z.string().describe('Text to type'),
-                    selector: z.string().optional().describe('Optional CSS selector to type into'),
+                    selector: z
+                      .string()
+                      .optional()
+                      .describe('Optional CSS selector to type into'),
                   }),
                 ),
                 makeCliTool(
@@ -1426,14 +1783,26 @@ export class AgentService implements OnModuleInit {
             // Fetch agent and inject fresh persona/instructions for existing sessions
             const firstMsg = props.messages?.find((m) => m.role === 'user');
             const firstUserText = this.contentToText(firstMsg?.content);
-            const [agent, childSessions, memoryBlock, sessionTasks, computerBlock] = await Promise.all([
+            const [
+              agent,
+              childSessions,
+              memoryBlock,
+              sessionTasks,
+              computerBlock,
+            ] = await Promise.all([
               this.getAgent({ agentId }),
               this.getChildSessions(currentSessionId),
               firstUserText
-                ? this.memoryService.buildMemoryBlock(agentId, firstUserText).catch(() => '')
+                ? this.memoryService
+                    .buildMemoryBlock(agentId, firstUserText)
+                    .catch(() => '')
                 : Promise.resolve(''),
-              this.taskExecution.listSessionTasks(currentSessionId).catch(() => []),
-              this.computerService.buildComputerPrompt(agentId, currentSessionId).catch(() => ''),
+              this.taskExecution
+                .listSessionTasks(currentSessionId)
+                .catch(() => []),
+              this.computerService
+                .buildComputerPrompt(agentId, currentSessionId)
+                .catch(() => ''),
             ]);
             const childSessionsInfo =
               childSessions.length > 0
@@ -1443,7 +1812,14 @@ export class AgentService implements OnModuleInit {
             messages.push({
               type: 'system',
               role: 'system',
-              content: this.buildSystemPrompt(agent, currentSessionId, childSessionsInfo, memoryBlock, sessionTasks, computerBlock),
+              content: this.buildSystemPrompt(
+                agent,
+                currentSessionId,
+                childSessionsInfo,
+                memoryBlock,
+                sessionTasks,
+                computerBlock,
+              ),
             } as any);
             emitStatus('context', 'completed', 'Conversation context ready');
 
@@ -1516,7 +1892,8 @@ export class AgentService implements OnModuleInit {
                   }`,
                   'Preparing text previews and visual artifacts',
                 );
-                const summaries = await this.filesService.getAttachmentSummaries(
+                const summaries =
+                  await this.filesService.getAttachmentSummaries(
                   props.attachments!,
                   {
                     agentId,
@@ -1572,10 +1949,9 @@ export class AgentService implements OnModuleInit {
             this.contentToText(
               props.messages?.findLast((m) => m.role === 'user')?.content,
             ) || undefined;
-          const memoryBlock = await this.memoryService.buildMemoryBlock(
-            agentId,
-            latestUserMsg ?? '',
-          ).catch(() => '');
+          const memoryBlock = await this.memoryService
+            .buildMemoryBlock(agentId, latestUserMsg ?? '')
+            .catch(() => '');
 
           // Build the extra content to append to the system prompt (memory + CLI context)
           const computerSelectionDetail = computerUnavailable
@@ -1583,7 +1959,7 @@ export class AgentService implements OnModuleInit {
             : computerRequest?.computerIds?.length
               ? [
                   `Assigned computer ID: ${computerRequest.computerIds[0]}`,
-                  'This is the agent\'s one persistent computer and is available through the computer tools. Continue work in its existing workspace across chat sessions.',
+                  "This is the agent's one persistent computer and is available through the computer tools. Continue work in its existing workspace across chat sessions.",
                   'Computer tool calls may omit computerId; if supplied, use the assigned ID above.',
                   'Do not tell the user you lack computer access while this assigned computer is ready. If the tool fails, report that failure with evidence.',
                 ].join('\n')
@@ -1601,10 +1977,19 @@ export class AgentService implements OnModuleInit {
                       'For a Next.js/localhost task, use runComputerCommand for finite setup/edit/install/build commands, start the dev server with runComputerCommand, then use openComputerBrowser or another verification command to confirm it is working before responding.',
                       'Do not wait for long-running dev servers to exit. Once server startup logs or a localhost health check confirm it is running, continue with browser verification.',
                     ].join('\n'),
-              ].filter(Boolean).join('\n')
+              ]
+                .filter(Boolean)
+                .join('\n')
             : '';
 
-          const extraSystemContent = [memoryBlock, props.cliContext, computerSelectionBlock, computerPreparationBlock].filter(Boolean).join('\n\n');
+          const extraSystemContent = [
+            memoryBlock,
+            props.cliContext,
+            computerSelectionBlock,
+            computerPreparationBlock,
+          ]
+            .filter(Boolean)
+            .join('\n\n');
 
           if (extraSystemContent) {
             // Append to the existing system message, or push a new one
@@ -1659,7 +2044,10 @@ export class AgentService implements OnModuleInit {
                   workflowId: nextTask.workflowId,
                 },
               );
-              if (nextTask.executionMode === 'workflow' && nextTask.workflowId) {
+              if (
+                nextTask.executionMode === 'workflow' &&
+                nextTask.workflowId
+              ) {
                 // Execute workflow task fully
                 await this.taskExecution.executeTask(nextTask.taskId);
                 emitStatus(
@@ -1686,7 +2074,8 @@ export class AgentService implements OnModuleInit {
                 .where(eq(schema.task.taskId, nextTask.taskId));
 
               // Inject task instruction into messages (marked internal so it's filtered from history)
-              const taskContextStr = nextTask.context && Object.keys(nextTask.context).length > 0
+              const taskContextStr =
+                nextTask.context && Object.keys(nextTask.context).length > 0
                 ? `\n\nContext:\n${JSON.stringify(nextTask.context, null, 2)}`
                 : '';
               const taskToolsStr = nextTask.tools?.length
@@ -1706,7 +2095,9 @@ export class AgentService implements OnModuleInit {
               { messages },
               {
                 configurable: { thread_id: currentSessionId },
-                recursionLimit: Number(process.env.AGENT_GRAPH_RECURSION_LIMIT ?? 100),
+                recursionLimit: Number(
+                  process.env.AGENT_GRAPH_RECURSION_LIMIT ?? 100,
+                ),
               },
             );
 
@@ -1723,7 +2114,10 @@ export class AgentService implements OnModuleInit {
                 // Agent responded but didn't call updateTaskProgress — complete it now
                 const lastAi = [...(result.messages as any[])]
                   .reverse()
-                  .find((m: any) => m.getType?.() === 'ai' || m._getType?.() === 'ai');
+                  .find(
+                    (m: any) =>
+                      m.getType?.() === 'ai' || m._getType?.() === 'ai',
+                  );
                 const responseText =
                   typeof lastAi?.content === 'string'
                     ? lastAi.content
@@ -1742,7 +2136,9 @@ export class AgentService implements OnModuleInit {
                     updatedAt: new Date(),
                   })
                   .where(eq(schema.task.taskId, nextTask.taskId));
-                this.logger.log(`Auto-completed task ${nextTask.taskId} after agent response`);
+                this.logger.log(
+                  `Auto-completed task ${nextTask.taskId} after agent response`,
+                );
                 emitStatus(
                   'task',
                   'completed',
@@ -1865,7 +2261,8 @@ export class AgentService implements OnModuleInit {
                 if (m.toDict().type === 'system') return false;
                 // Filter out internal trigger messages so they don't appear in session chat
                 const content = typeof m.content === 'string' ? m.content : '';
-                if (content.startsWith('⫷⫷AUTOMATED_USER_TRIGGER⫸⫸')) return false;
+                if (content.startsWith('⫷⫷AUTOMATED_USER_TRIGGER⫸⫸'))
+                  return false;
                 if (content.startsWith('⫷⫷TASK_DISPATCH⫸⫸')) return false;
                 if (content.startsWith('##TASK_INSTRUCTION[')) return false;
                 return true;
@@ -1925,7 +2322,7 @@ export class AgentService implements OnModuleInit {
                 previous &&
                 previous.role === role &&
                 previous.content === content
-                  ? (previousIndex += 1, previous)
+                  ? ((previousIndex += 1), previous)
                   : undefined;
 
               const fresh: Record<string, any> = {};
@@ -1969,7 +2366,8 @@ export class AgentService implements OnModuleInit {
                   : currentSession.title ||
                     (spaceId ? `Space: ${spaceId}` : sessionTitle),
                 metrics: {
-                  totalTokens: usageTotals.inputTokens + usageTotals.outputTokens,
+                  totalTokens:
+                    usageTotals.inputTokens + usageTotals.outputTokens,
                   toolCalls: toolUsage.length,
                   errorCount: toolUsage.filter((t) => t.status === 'error')
                     .length,
@@ -1991,9 +2389,15 @@ export class AgentService implements OnModuleInit {
                 updatedAt: new Date(),
               },
             });
-            emitStatus('session', 'completed', 'Conversation saved', undefined, {
+            emitStatus(
+              'session',
+              'completed',
+              'Conversation saved',
+              undefined,
+              {
               sessionId: currentSessionId,
-            });
+              },
+            );
           }
 
           await this.logService.createLogEntry({
@@ -2022,14 +2426,17 @@ export class AgentService implements OnModuleInit {
           // Only consolidate non-space, non-child sessions to avoid noise
           if (currentSessionId && !spaceId && !parentSessionId) {
             const historyForConsolidation = (
-              finalResult?.messages as any[] ?? []
+              (finalResult?.messages as any[]) ?? []
             )
               .filter((m: any) => {
                 const t = m.getType?.() ?? m.type;
                 return t === 'human' || t === 'ai';
               })
               .map((m: any) => ({
-                role: m.getType?.() === 'human' || m.type === 'human' ? 'user' : 'assistant',
+                role:
+                  m.getType?.() === 'human' || m.type === 'human'
+                    ? 'user'
+                    : 'assistant',
                 content: this.stripAttachmentManifest(
                   this.serializeHistoryContent(m.content),
                 ),
@@ -2037,7 +2444,11 @@ export class AgentService implements OnModuleInit {
 
             if (historyForConsolidation.length >= 2) {
               this.memoryService
-                .consolidateSession(agentId, currentSessionId, historyForConsolidation)
+                .consolidateSession(
+                  agentId,
+                  currentSessionId,
+                  historyForConsolidation,
+                )
                 .catch((err) =>
                   console.error('[MemoryService] Consolidation failed:', err),
                 );
@@ -2149,7 +2560,11 @@ export class AgentService implements OnModuleInit {
     computerRequest?: { enabled: boolean };
     cliContext?: string;
   }): 'minimal' | undefined {
-    if (props.attachments?.length || props.computerRequest?.enabled || props.cliContext) {
+    if (
+      props.attachments?.length ||
+      props.computerRequest?.enabled ||
+      props.cliContext
+    ) {
       return undefined;
     }
     const lastUser = props.messages?.findLast((m) => m.role === 'user');
@@ -2164,7 +2579,8 @@ export class AgentService implements OnModuleInit {
       return content
         .map((part: any) => {
           if (part?.type === 'text') return part.text ?? '';
-          if (part?.type === 'image_url') return '[image attachment omitted from history]';
+          if (part?.type === 'image_url')
+            return '[image attachment omitted from history]';
           return '';
         })
         .filter(Boolean)
@@ -2180,7 +2596,10 @@ export class AgentService implements OnModuleInit {
     return content.slice(0, index).trimEnd();
   }
 
-  private supportsImageInputs(provider?: string | null, modelId?: string | null) {
+  private supportsImageInputs(
+    provider?: string | null,
+    modelId?: string | null,
+  ) {
     const normalizedProvider = (provider || 'openai').toLowerCase();
     const normalizedModel = (modelId || '').toLowerCase();
     if (normalizedProvider === 'openai') return true;
@@ -2243,6 +2662,12 @@ export class AgentService implements OnModuleInit {
     const data = omit(updateData, ['wallet', 'agentId', 'createdAt']) as any;
     if (data.modelApiKey) {
       data.modelApiKey = this.encryptApiKey(data.modelApiKey);
+    }
+    if (data.runtimeType !== undefined) {
+      const runtimeType = normalizeRuntimeType(data.runtimeType);
+      data.runtimeType = runtimeType;
+      data.runtimeCapabilities = RUNTIME_CAPABILITIES[runtimeType];
+      data.runtimeUpdatedAt = new Date();
     }
     const [updated] = await this.db
       .update(schema.agent)
@@ -2330,11 +2755,7 @@ export class AgentService implements OnModuleInit {
       with: { tool: true },
     });
   }
-  async addAgentTool(
-    agentId: string,
-    toolId: string,
-    usageComments?: string,
-  ) {
+  async addAgentTool(agentId: string, toolId: string, usageComments?: string) {
     // Upsert: re-adding a tool that was previously assigned (possibly
     // disabled) re-enables it instead of tripping the unique index.
     const [inserted] = await this.db
@@ -2357,7 +2778,11 @@ export class AgentService implements OnModuleInit {
   }
   async updateAgentTool(
     id: string,
-    updates: { usageComments?: string; isEnabled?: boolean; config?: Record<string, any> },
+    updates: {
+      usageComments?: string;
+      isEnabled?: boolean;
+      config?: Record<string, any>;
+    },
   ) {
     const [updated] = await this.db
       .update(schema.agentTool)

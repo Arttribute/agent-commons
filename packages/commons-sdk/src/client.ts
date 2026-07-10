@@ -1,25 +1,60 @@
 import {
-  Agent, CreateAgentParams,
-  RunParams, StreamEvent,
-  Workflow, WorkflowExecution,
-  Task, CreateTaskParams,
-  Tool, CreateToolParams,
-  ToolKey, CreateToolKeyParams,
+  Agent,
+  CreateAgentParams,
+  RunParams,
+  StreamEvent,
+  Workflow,
+  WorkflowExecution,
+  Task,
+  CreateTaskParams,
+  Tool,
+  CreateToolParams,
+  ToolKey,
+  CreateToolKeyParams,
   ToolPermission,
   CommonsClientConfig,
-  AgentCard, A2ATask, A2ASendTaskParams,
-  McpServer, McpResource, McpPrompt, McpConnectionType,
-  Skill, SkillIndex, CreateSkillParams,
+  AgentCard,
+  A2ATask,
+  A2ASendTaskParams,
+  McpServer,
+  McpResource,
+  McpPrompt,
+  McpConnectionType,
+  Skill,
+  SkillIndex,
+  CreateSkillParams,
   UsageAggregation,
-  CreditBalance, CreditLedgerEntry, CreditWriteParams,
-  AgentMemory, MemoryStats, MemoryType,
-  CreateMemoryParams, UpdateMemoryParams,
-  AgentWallet, WalletBalance, CreateWalletParams,
-  ApiKey, CreatedApiKey, CreateApiKeyParams, ApiKeyPrincipalType,
-  AgentComputer, AgentComputerConfig, AgentComputerInstance, AgentComputerEvent,
-  ComputerActionParams, ComputerBrowserOpenParams, ComputerCommandParams,
-  ComputerConfigUpdate, ComputerFile, ComputerResizeParams,
-} from './types';
+  CreditBalance,
+  CreditLedgerEntry,
+  CreditWriteParams,
+  AgentMemory,
+  MemoryStats,
+  MemoryType,
+  CreateMemoryParams,
+  UpdateMemoryParams,
+  SharedMemoryScope,
+  CreateSharedMemoryScopeParams,
+  AgentWallet,
+  WalletBalance,
+  CreateWalletParams,
+  ApiKey,
+  CreatedApiKey,
+  CreateApiKeyParams,
+  ApiKeyPrincipalType,
+  AgentComputer,
+  AgentComputerConfig,
+  AgentComputerInstance,
+  AgentComputerEvent,
+  ComputerActionParams,
+  ComputerBrowserOpenParams,
+  ComputerCommandParams,
+  ComputerConfigUpdate,
+  ComputerFile,
+  ComputerResizeParams,
+  AgentRuntime,
+  AgentRuntimeConfig,
+  AgentRuntimeType,
+} from "./types";
 
 export class CommonsClient {
   private readonly baseUrl: string;
@@ -28,9 +63,10 @@ export class CommonsClient {
   private readonly _fetch: typeof fetch;
 
   constructor(config: CommonsClientConfig) {
-    this.baseUrl = (
-      config.baseUrl ?? 'https://api.agentcommons.io'
-    ).replace(/\/$/, '');
+    this.baseUrl = (config.baseUrl ?? "https://api.agentcommons.io").replace(
+      /\/$/,
+      "",
+    );
     this.apiKey = config.apiKey;
     this.initiator = config.initiator;
     this._fetch = config.fetch ?? fetch;
@@ -39,13 +75,17 @@ export class CommonsClient {
   // ── Helpers ───────────────────────────────────────────────────────────────
 
   private headers(extra?: Record<string, string>): Record<string, string> {
-    const h: Record<string, string> = { 'Content-Type': 'application/json' };
-    if (this.apiKey) h['Authorization'] = `Bearer ${this.apiKey}`;
-    if (this.initiator) h['x-initiator'] = this.initiator;
+    const h: Record<string, string> = { "Content-Type": "application/json" };
+    if (this.apiKey) h["Authorization"] = `Bearer ${this.apiKey}`;
+    if (this.initiator) h["x-initiator"] = this.initiator;
     return { ...h, ...extra };
   }
 
-  private async request<T>(method: string, path: string, body?: unknown): Promise<T> {
+  private async request<T>(
+    method: string,
+    path: string,
+    body?: unknown,
+  ): Promise<T> {
     const res = await this._fetch(`${this.baseUrl}${path}`, {
       method,
       headers: this.headers(),
@@ -64,7 +104,7 @@ export class CommonsClient {
     return {
       /** List all available LLM models from the registry */
       list: (): Promise<{ data: any[]; grouped: Record<string, any[]> }> =>
-        this.request('GET', '/v1/models'),
+        this.request("GET", "/v1/models"),
     };
   }
 
@@ -73,32 +113,61 @@ export class CommonsClient {
   get agents() {
     return {
       create: (params: CreateAgentParams): Promise<{ data: Agent }> =>
-        this.request('POST', '/v1/agents', params),
+        this.request("POST", "/v1/agents", params),
 
       list: (owner?: string): Promise<{ data: Agent[] }> =>
-        this.request('GET', `/v1/agents${owner ? `?owner=${owner}` : ''}`),
+        this.request("GET", `/v1/agents${owner ? `?owner=${owner}` : ""}`),
 
       get: (agentId: string): Promise<{ data: Agent }> =>
-        this.request('GET', `/v1/agents/${agentId}`),
+        this.request("GET", `/v1/agents/${agentId}`),
 
-      update: (agentId: string, params: Partial<CreateAgentParams>): Promise<{ data: Agent }> =>
-        this.request('PUT', `/v1/agents/${agentId}`, params),
+      update: (
+        agentId: string,
+        params: Partial<CreateAgentParams>,
+      ): Promise<{ data: Agent }> =>
+        this.request("PUT", `/v1/agents/${agentId}`, params),
+
+      getRuntime: (agentId: string): Promise<{ data: AgentRuntime }> =>
+        this.request("GET", `/v1/agents/${agentId}/runtime`),
+
+      configureRuntime: (
+        agentId: string,
+        params: {
+          runtimeType?: AgentRuntimeType;
+          version?: string | null;
+          config?: AgentRuntimeConfig;
+          deploy?: boolean;
+        },
+      ): Promise<{ data: AgentRuntime }> =>
+        this.request("PUT", `/v1/agents/${agentId}/runtime`, params),
+
+      deployRuntime: (agentId: string): Promise<{ data: AgentRuntime }> =>
+        this.request("POST", `/v1/agents/${agentId}/runtime/deploy`),
+
+      sleepRuntime: (agentId: string): Promise<{ data: AgentRuntime }> =>
+        this.request("POST", `/v1/agents/${agentId}/runtime/sleep`),
+
+      restartRuntime: (agentId: string): Promise<{ data: AgentRuntime }> =>
+        this.request("POST", `/v1/agents/${agentId}/runtime/restart`),
 
       /** List tools assigned to an agent. */
       listTools: (agentId: string): Promise<{ data: any[] }> =>
-        this.request('GET', `/v1/agents/${agentId}/tools`),
+        this.request("GET", `/v1/agents/${agentId}/tools`),
 
       /** Assign a tool to an agent. */
-      addTool: (agentId: string, params: { toolId: string; usageComments?: string }): Promise<{ data: any }> =>
-        this.request('POST', `/v1/agents/${agentId}/tools`, params),
+      addTool: (
+        agentId: string,
+        params: { toolId: string; usageComments?: string },
+      ): Promise<{ data: any }> =>
+        this.request("POST", `/v1/agents/${agentId}/tools`, params),
 
       /** Remove a tool assignment from an agent. */
       removeTool: (assignmentId: string): Promise<void> =>
-        this.request('DELETE', `/v1/agents/tools/${assignmentId}`),
+        this.request("DELETE", `/v1/agents/tools/${assignmentId}`),
 
       /** Create a liaison agent for an external agent. */
       createLiaison: (params: Record<string, any>): Promise<any> =>
-        this.request('POST', '/v1/liaison', params),
+        this.request("POST", "/v1/liaison", params),
 
       /**
        * Stream an agent run. Returns an async generator of StreamEvents.
@@ -115,7 +184,9 @@ export class CommonsClient {
       // ── Heartbeat ─────────────────────────────────────────────────────────
 
       /** Get the current heartbeat status for an agent. */
-      getAutonomy: (agentId: string): Promise<{
+      getAutonomy: (
+        agentId: string,
+      ): Promise<{
         data: {
           enabled: boolean;
           intervalSec: number;
@@ -123,63 +194,75 @@ export class CommonsClient {
           lastBeatAt: string | null;
           nextBeatAt: string | null;
         };
-      }> => this.request('GET', `/v1/agents/${agentId}/autonomy`),
+      }> => this.request("GET", `/v1/agents/${agentId}/autonomy`),
 
       /** Enable or disable the heartbeat, optionally setting the interval. */
       setAutonomy: (
         agentId: string,
         params: { enabled: boolean; intervalSec?: number },
-      ): Promise<{ data: { enabled: boolean; intervalSec: number; isArmed: boolean } }> =>
-        this.request('PUT', `/v1/agents/${agentId}/autonomy`, params),
+      ): Promise<{
+        data: { enabled: boolean; intervalSec: number; isArmed: boolean };
+      }> => this.request("PUT", `/v1/agents/${agentId}/autonomy`, params),
 
       /** Trigger a single heartbeat immediately. */
       triggerHeartbeat: (agentId: string): Promise<{ message: string }> =>
-        this.request('POST', `/v1/agents/${agentId}/autonomy/trigger`),
+        this.request("POST", `/v1/agents/${agentId}/autonomy/trigger`),
 
       /**
        * Manually trigger an agent (fire-and-forget).
        * Requires autonomy to be enabled on the agent.
        */
       trigger: (agentId: string): Promise<{ message: string }> =>
-        this.request('POST', `/v1/agents/${agentId}/trigger`),
+        this.request("POST", `/v1/agents/${agentId}/trigger`),
 
       // ── Knowledgebase ────────────────────────────────────────────────────
 
       /** Get the knowledgebase entries for an agent. */
       getKnowledgebase: (agentId: string): Promise<{ data: any[] }> =>
-        this.request('GET', `/v1/agents/${agentId}/knowledgebase`),
+        this.request("GET", `/v1/agents/${agentId}/knowledgebase`),
 
       /** Replace the knowledgebase entries for an agent. */
-      updateKnowledgebase: (agentId: string, knowledgebase: any[]): Promise<{ data: any[] }> =>
-        this.request('PUT', `/v1/agents/${agentId}/knowledgebase`, { knowledgebase }),
+      updateKnowledgebase: (
+        agentId: string,
+        knowledgebase: any[],
+      ): Promise<{ data: any[] }> =>
+        this.request("PUT", `/v1/agents/${agentId}/knowledgebase`, {
+          knowledgebase,
+        }),
 
       // ── Preferred Connections ────────────────────────────────────────────
 
       /** List agents that this agent prefers to collaborate with. */
       getPreferredConnections: (agentId: string): Promise<{ data: any[] }> =>
-        this.request('GET', `/v1/agents/${agentId}/preferred-connections`),
+        this.request("GET", `/v1/agents/${agentId}/preferred-connections`),
 
       /** Add a preferred agent connection. */
       addPreferredConnection: (
         agentId: string,
         params: { preferredAgentId: string; usageComments?: string },
       ): Promise<{ data: any }> =>
-        this.request('POST', `/v1/agents/${agentId}/preferred-connections`, params),
+        this.request(
+          "POST",
+          `/v1/agents/${agentId}/preferred-connections`,
+          params,
+        ),
 
       /** Remove a preferred agent connection by its record ID. */
       removePreferredConnection: (id: string): Promise<{ success: boolean }> =>
-        this.request('DELETE', `/v1/agents/preferred-connections/${id}`),
+        this.request("DELETE", `/v1/agents/preferred-connections/${id}`),
 
       // ── Computers ────────────────────────────────────────────────────────
 
-      getComputerConfig: (agentId: string): Promise<{ data: AgentComputerConfig }> =>
-        this.request('GET', `/v1/agents/${agentId}/computer/config`),
+      getComputerConfig: (
+        agentId: string,
+      ): Promise<{ data: AgentComputerConfig }> =>
+        this.request("GET", `/v1/agents/${agentId}/computer/config`),
 
       updateComputerConfig: (
         agentId: string,
         params: ComputerConfigUpdate,
       ): Promise<{ data: AgentComputerConfig }> =>
-        this.request('PUT', `/v1/agents/${agentId}/computer/config`, params),
+        this.request("PUT", `/v1/agents/${agentId}/computer/config`, params),
 
       /** Get the agent's one persistent cloud computer. */
       getComputer: (
@@ -187,40 +270,40 @@ export class CommonsClient {
         /** @deprecated Computer IDs are no longer required and are ignored. */
         _legacyComputerId?: string,
       ): Promise<{ data: AgentComputer | null }> =>
-        this.request('GET', `/v1/agents/${agentId}/computer`),
+        this.request("GET", `/v1/agents/${agentId}/computer`),
 
       /** Wake the agent's persistent cloud computer, provisioning it if needed. */
       wakeComputer: (
         agentId: string,
         params?: ComputerActionParams,
       ): Promise<{ data: AgentComputer }> =>
-        this.request('POST', `/v1/agents/${agentId}/computer/wake`, params),
+        this.request("POST", `/v1/agents/${agentId}/computer/wake`, params),
 
       /** Sleep the runtime while preserving the computer's durable workspace. */
       sleepComputer: (
         agentId: string,
         params?: ComputerActionParams,
       ): Promise<{ data: AgentComputer }> =>
-        this.request('POST', `/v1/agents/${agentId}/computer/sleep`, params),
+        this.request("POST", `/v1/agents/${agentId}/computer/sleep`, params),
 
       /** Replace the runtime without replacing the persistent computer. */
       restartComputer: (
         agentId: string,
         params?: ComputerActionParams,
       ): Promise<{ data: AgentComputer }> =>
-        this.request('POST', `/v1/agents/${agentId}/computer/restart`, params),
+        this.request("POST", `/v1/agents/${agentId}/computer/restart`, params),
 
       resizeComputer: (
         agentId: string,
         params: ComputerResizeParams,
       ): Promise<{ data: AgentComputer }> =>
-        this.request('POST', `/v1/agents/${agentId}/computer/resize`, params),
+        this.request("POST", `/v1/agents/${agentId}/computer/resize`, params),
 
       execComputer: (
         agentId: string,
         params: ComputerCommandParams,
       ): Promise<{ data: any }> =>
-        this.request('POST', `/v1/agents/${agentId}/computer/exec`, params),
+        this.request("POST", `/v1/agents/${agentId}/computer/exec`, params),
 
       readComputerFile: (
         agentId: string,
@@ -230,7 +313,7 @@ export class CommonsClient {
       ): Promise<{ data: ComputerFile }> => {
         const path = legacyPath ?? pathOrLegacyComputerId;
         return this.request(
-          'GET',
+          "GET",
           `/v1/agents/${agentId}/computer/files/read?path=${encodeURIComponent(path)}`,
         );
       },
@@ -241,13 +324,18 @@ export class CommonsClient {
         /** @deprecated Pass browser options as the second argument. */
         legacyParams?: ComputerBrowserOpenParams,
       ): Promise<{ data: any }> => {
-        const params = typeof paramsOrLegacyComputerId === 'string'
+        const params =
+          typeof paramsOrLegacyComputerId === "string"
           ? legacyParams
           : paramsOrLegacyComputerId;
         if (!params) {
-          return Promise.reject(new TypeError('Browser options are required.'));
+          return Promise.reject(new TypeError("Browser options are required."));
         }
-        return this.request('POST', `/v1/agents/${agentId}/computer/browser/open`, params);
+        return this.request(
+          "POST",
+          `/v1/agents/${agentId}/computer/browser/open`,
+          params,
+        );
       },
 
       listComputerEvents: (
@@ -256,12 +344,13 @@ export class CommonsClient {
         /** @deprecated Pass the limit as the second argument. */
         legacyLimit?: number,
       ): Promise<{ data: AgentComputerEvent[] }> => {
-        const limit = typeof limitOrLegacyComputerId === 'number'
+        const limit =
+          typeof limitOrLegacyComputerId === "number"
           ? limitOrLegacyComputerId
           : legacyLimit;
         return this.request(
-          'GET',
-          `/v1/agents/${agentId}/computer/events${limit ? `?limit=${limit}` : ''}`,
+          "GET",
+          `/v1/agents/${agentId}/computer/events${limit ? `?limit=${limit}` : ""}`,
         );
       },
 
@@ -272,8 +361,12 @@ export class CommonsClient {
         agentId: string,
         _filter?: { sessionId?: string; includeTerminated?: boolean },
       ): Promise<{ data: AgentComputerInstance[] }> => {
-        return this.request<{ data: AgentComputer | null }>('GET', `/v1/agents/${agentId}/computer`)
-          .then(({ data }) => ({ data: data ? [data as AgentComputerInstance] : [] }));
+        return this.request<{ data: AgentComputer | null }>(
+          "GET",
+          `/v1/agents/${agentId}/computer`,
+        ).then(({ data }) => ({
+          data: data ? [data as AgentComputerInstance] : [],
+        }));
       },
 
       /** @deprecated Use wakeComputer. Lifecycle, name, and session are ignored. */
@@ -281,27 +374,30 @@ export class CommonsClient {
         agentId: string,
         params?: {
           sessionId?: string;
-          lifecycle?: 'persistent' | 'ephemeral';
+          lifecycle?: "persistent" | "ephemeral";
           name?: string;
           reason?: string;
         },
       ): Promise<{ data: AgentComputerInstance }> =>
-        this.request('POST', `/v1/agents/${agentId}/computer/wake`,
-          params?.reason ? { reason: params.reason } : undefined),
+        this.request(
+          "POST",
+          `/v1/agents/${agentId}/computer/wake`,
+          params?.reason ? { reason: params.reason } : undefined,
+        ),
 
       /** @deprecated Use getComputer. Computer IDs are ignored. */
       refreshComputer: (
         agentId: string,
         _computerId?: string,
       ): Promise<{ data: AgentComputerInstance }> =>
-        this.request('GET', `/v1/agents/${agentId}/computer`),
+        this.request("GET", `/v1/agents/${agentId}/computer`),
 
       /** @deprecated Use sleepComputer. Computer IDs are ignored. */
       stopComputer: (
         agentId: string,
         _computerId?: string,
       ): Promise<{ data: AgentComputerInstance }> =>
-        this.request('POST', `/v1/agents/${agentId}/computer/sleep`),
+        this.request("POST", `/v1/agents/${agentId}/computer/sleep`),
 
       /** @deprecated Use execComputer. Computer IDs are ignored. */
       runComputerCommand: (
@@ -309,13 +405,18 @@ export class CommonsClient {
         paramsOrLegacyComputerId: ComputerCommandParams | string,
         legacyParams?: ComputerCommandParams,
       ): Promise<{ data: any }> => {
-        const params = typeof paramsOrLegacyComputerId === 'string'
+        const params =
+          typeof paramsOrLegacyComputerId === "string"
           ? legacyParams
           : paramsOrLegacyComputerId;
         if (!params) {
-          return Promise.reject(new TypeError('Command options are required.'));
+          return Promise.reject(new TypeError("Command options are required."));
         }
-        return this.request('POST', `/v1/agents/${agentId}/computer/exec`, params);
+        return this.request(
+          "POST",
+          `/v1/agents/${agentId}/computer/exec`,
+          params,
+        );
       },
 
       // ── TTS Voices ───────────────────────────────────────────────────────
@@ -326,14 +427,17 @@ export class CommonsClient {
        * @param q - optional search query to filter voices
        */
       listVoices: (
-        provider?: 'openai' | 'elevenlabs',
+        provider?: "openai" | "elevenlabs",
         q?: string,
       ): Promise<{ data: any[] }> => {
         const params = new URLSearchParams();
-        if (provider) params.set('provider', provider);
-        if (q) params.set('q', q);
+        if (provider) params.set("provider", provider);
+        if (q) params.set("q", q);
         const qs = params.toString();
-        return this.request('GET', `/v1/agents/tts/voices${qs ? `?${qs}` : ''}`);
+        return this.request(
+          "GET",
+          `/v1/agents/tts/voices${qs ? `?${qs}` : ""}`,
+        );
       },
     };
   }
@@ -343,7 +447,7 @@ export class CommonsClient {
   get run() {
     return {
       once: (params: RunParams): Promise<any> =>
-        this.request('POST', '/v1/agents/run', params),
+        this.request("POST", "/v1/agents/run", params),
     };
   }
 
@@ -356,58 +460,109 @@ export class CommonsClient {
         description?: string;
         definition: any;
         ownerId: string;
-        ownerType: 'user' | 'agent';
+        ownerType: "user" | "agent";
         isPublic?: boolean;
         category?: string;
         tags?: string[];
-      }): Promise<Workflow> => this.request('POST', '/v1/workflows', params),
+      }): Promise<Workflow> => this.request("POST", "/v1/workflows", params),
 
-      list: (ownerId: string, ownerType: 'user' | 'agent'): Promise<Workflow[]> =>
-        this.request('GET', `/v1/workflows?ownerId=${ownerId}&ownerType=${ownerType}`),
+      list: (
+        ownerId: string,
+        ownerType: "user" | "agent",
+      ): Promise<Workflow[]> =>
+        this.request(
+          "GET",
+          `/v1/workflows?ownerId=${ownerId}&ownerType=${ownerType}`,
+        ),
 
       get: (workflowId: string): Promise<Workflow> =>
-        this.request('GET', `/v1/workflows/${workflowId}`),
+        this.request("GET", `/v1/workflows/${workflowId}`),
 
-      update: (workflowId: string, updates: Partial<Workflow>): Promise<Workflow> =>
-        this.request('PUT', `/v1/workflows/${workflowId}`, updates),
+      update: (
+        workflowId: string,
+        updates: Partial<Workflow>,
+      ): Promise<Workflow> =>
+        this.request("PUT", `/v1/workflows/${workflowId}`, updates),
 
       delete: (workflowId: string): Promise<{ success: boolean }> =>
-        this.request('DELETE', `/v1/workflows/${workflowId}`),
+        this.request("DELETE", `/v1/workflows/${workflowId}`),
 
-      execute: (workflowId: string, params: {
+      execute: (
+        workflowId: string,
+        params: {
         agentId?: string;
         sessionId?: string;
         inputData?: Record<string, any>;
         userId?: string;
-      }): Promise<WorkflowExecution> =>
-        this.request('POST', `/v1/workflows/${workflowId}/execute`, params),
+        },
+      ): Promise<WorkflowExecution> =>
+        this.request("POST", `/v1/workflows/${workflowId}/execute`, params),
 
-      getExecution: (workflowId: string, executionId: string): Promise<WorkflowExecution> =>
-        this.request('GET', `/v1/workflows/${workflowId}/executions/${executionId}`),
+      getExecution: (
+        workflowId: string,
+        executionId: string,
+      ): Promise<WorkflowExecution> =>
+        this.request(
+          "GET",
+          `/v1/workflows/${workflowId}/executions/${executionId}`,
+        ),
 
-      listExecutions: (workflowId: string, limit?: number): Promise<WorkflowExecution[]> =>
-        this.request('GET', `/v1/workflows/${workflowId}/executions${limit ? `?limit=${limit}` : ''}`),
+      listExecutions: (
+        workflowId: string,
+        limit?: number,
+      ): Promise<WorkflowExecution[]> =>
+        this.request(
+          "GET",
+          `/v1/workflows/${workflowId}/executions${limit ? `?limit=${limit}` : ""}`,
+        ),
 
-      cancelExecution: (workflowId: string, executionId: string): Promise<{ success: boolean }> =>
-        this.request('POST', `/v1/workflows/${workflowId}/executions/${executionId}/cancel`),
+      cancelExecution: (
+        workflowId: string,
+        executionId: string,
+      ): Promise<{ success: boolean }> =>
+        this.request(
+          "POST",
+          `/v1/workflows/${workflowId}/executions/${executionId}/cancel`,
+        ),
 
       /** Approve a paused human_approval node and resume execution. */
-      approveExecution: (workflowId: string, executionId: string, params: {
+      approveExecution: (
+        workflowId: string,
+        executionId: string,
+        params: {
         approvalToken: string;
         approvalData?: Record<string, any>;
-      }): Promise<{ success: boolean; executionId: string; action: string }> =>
-        this.request('POST', `/v1/workflows/${workflowId}/executions/${executionId}/approve`, params),
+        },
+      ): Promise<{ success: boolean; executionId: string; action: string }> =>
+        this.request(
+          "POST",
+          `/v1/workflows/${workflowId}/executions/${executionId}/approve`,
+          params,
+        ),
 
       /** Reject a paused human_approval node and terminate execution. */
-      rejectExecution: (workflowId: string, executionId: string, params: {
+      rejectExecution: (
+        workflowId: string,
+        executionId: string,
+        params: {
         approvalToken: string;
         reason?: string;
-      }): Promise<{ success: boolean; executionId: string; action: string }> =>
-        this.request('POST', `/v1/workflows/${workflowId}/executions/${executionId}/reject`, params),
+        },
+      ): Promise<{ success: boolean; executionId: string; action: string }> =>
+        this.request(
+          "POST",
+          `/v1/workflows/${workflowId}/executions/${executionId}/reject`,
+          params,
+        ),
 
       /** Stream execution progress via SSE. Returns an async generator. */
-      stream: (workflowId: string, executionId: string): AsyncGenerator<StreamEvent> =>
-        this._streamSse(`/v1/workflows/${workflowId}/executions/${executionId}/stream`),
+      stream: (
+        workflowId: string,
+        executionId: string,
+      ): AsyncGenerator<StreamEvent> =>
+        this._streamSse(
+          `/v1/workflows/${workflowId}/executions/${executionId}/stream`,
+        ),
     };
   }
 
@@ -416,32 +571,45 @@ export class CommonsClient {
   get tasks() {
     return {
       create: (params: CreateTaskParams): Promise<{ data: Task }> =>
-        this.request('POST', '/v1/tasks', params),
+        this.request("POST", "/v1/tasks", params),
 
-      list: (filter: { sessionId?: string; agentId?: string; ownerId?: string; ownerType?: 'user' | 'agent' }): Promise<{ data: Task[] }> => {
+      list: (filter: {
+        sessionId?: string;
+        agentId?: string;
+        ownerId?: string;
+        ownerType?: "user" | "agent";
+      }): Promise<{ data: Task[] }> => {
         const q = new URLSearchParams(filter as any).toString();
-        return this.request('GET', `/v1/tasks?${q}`);
+        return this.request("GET", `/v1/tasks?${q}`);
       },
 
       get: (taskId: string): Promise<{ data: Task }> =>
-        this.request('GET', `/v1/tasks/${taskId}`),
+        this.request("GET", `/v1/tasks/${taskId}`),
 
       execute: (taskId: string): Promise<{ success: boolean; data: any }> =>
-        this.request('POST', `/v1/tasks/${taskId}/execute`),
+        this.request("POST", `/v1/tasks/${taskId}/execute`),
 
       cancel: (taskId: string): Promise<{ success: boolean }> =>
-        this.request('POST', `/v1/tasks/${taskId}/cancel`),
+        this.request("POST", `/v1/tasks/${taskId}/cancel`),
 
       delete: (taskId: string): Promise<{ success: boolean }> =>
-        this.request('DELETE', `/v1/tasks/${taskId}`),
+        this.request("DELETE", `/v1/tasks/${taskId}`),
 
       /** Edit human-facing task details (title/description/priority). */
-      update: (taskId: string, params: { title?: string; description?: string; priority?: number }): Promise<{ data: Task }> =>
-        this.request('PATCH', `/v1/tasks/${taskId}`, params),
+      update: (
+        taskId: string,
+        params: { title?: string; description?: string; priority?: number },
+      ): Promise<{ data: Task }> =>
+        this.request("PATCH", `/v1/tasks/${taskId}`, params),
 
       /** Reschedule a task's upcoming run and/or resize its estimated duration. */
-      reschedule: (taskId: string, params: { scheduledFor?: Date; estimatedDuration?: number }): Promise<{ data: Task; rescheduledRun: { runId: string; created: boolean } | null }> =>
-        this.request('PATCH', `/v1/tasks/${taskId}/schedule`, params),
+      reschedule: (
+        taskId: string,
+        params: { scheduledFor?: Date; estimatedDuration?: number },
+      ): Promise<{
+        data: Task;
+        rescheduledRun: { runId: string; created: boolean } | null;
+      }> => this.request("PATCH", `/v1/tasks/${taskId}/schedule`, params),
 
       /** Stream task status updates via SSE. Returns an async generator. */
       stream: (taskId: string): AsyncGenerator<StreamEvent> =>
@@ -453,16 +621,26 @@ export class CommonsClient {
 
   get sessions() {
     return {
-      list: (agentId: string, initiatorId: string): Promise<{ data: import('./types').Session[] }> =>
-        this.request('GET', `/v1/sessions/list/${agentId}/${initiatorId}`),
+      list: (
+        agentId: string,
+        initiatorId: string,
+      ): Promise<{ data: import("./types").Session[] }> =>
+        this.request("GET", `/v1/sessions/list/${agentId}/${initiatorId}`),
 
       /** List all sessions for a given agent (all initiators). */
-      listByAgent: (agentId: string): Promise<{ data: import('./types').Session[] }> =>
-        this.request('GET', `/v1/sessions/agent/${agentId}`),
+      listByAgent: (
+        agentId: string,
+      ): Promise<{ data: import("./types").Session[] }> =>
+        this.request("GET", `/v1/sessions/agent/${agentId}`),
 
       /** List all sessions for a user across all agents. */
-      listByUser: (initiator: string): Promise<{ data: import('./types').Session[] }> =>
-        this.request('GET', `/v1/sessions/user/${encodeURIComponent(initiator)}`),
+      listByUser: (
+        initiator: string,
+      ): Promise<{ data: import("./types").Session[] }> =>
+        this.request(
+          "GET",
+          `/v1/sessions/user/${encodeURIComponent(initiator)}`,
+        ),
 
       create: (params: {
         agentId: string;
@@ -470,16 +648,16 @@ export class CommonsClient {
         title?: string;
         model?: Record<string, any>;
         /** 'cli' | 'web' — marks the origin of this session for filtering in the UI */
-        source?: 'cli' | 'web';
-      }): Promise<{ data: import('./types').Session }> =>
-        this.request('POST', '/v1/sessions', params),
+        source?: "cli" | "web";
+      }): Promise<{ data: import("./types").Session }> =>
+        this.request("POST", "/v1/sessions", params),
 
-      get: (sessionId: string): Promise<{ data: import('./types').Session }> =>
-        this.request('GET', `/v1/sessions/${sessionId}`),
+      get: (sessionId: string): Promise<{ data: import("./types").Session }> =>
+        this.request("GET", `/v1/sessions/${sessionId}`),
 
       /** Get full session with history, tasks, childSessions, and spaces. */
       getFull: (sessionId: string): Promise<{ data: any }> =>
-        this.request('GET', `/v1/sessions/${sessionId}/full`),
+        this.request("GET", `/v1/sessions/${sessionId}/full`),
     };
   }
 
@@ -487,26 +665,34 @@ export class CommonsClient {
 
   get tools() {
     return {
-      list: (filter?: { agentId?: string; owner?: string; ownerType?: string; visibility?: string }): Promise<{ data: Tool[] }> => {
-        const q = filter ? new URLSearchParams(filter as any).toString() : '';
-        return this.request('GET', `/v1/tools${q ? `?${q}` : ''}`);
+      list: (filter?: {
+        agentId?: string;
+        owner?: string;
+        ownerType?: string;
+        visibility?: string;
+      }): Promise<{ data: Tool[] }> => {
+        const q = filter ? new URLSearchParams(filter as any).toString() : "";
+        return this.request("GET", `/v1/tools${q ? `?${q}` : ""}`);
       },
 
       get: (toolId: string): Promise<{ data: Tool }> =>
-        this.request('GET', `/v1/tools/${toolId}`),
+        this.request("GET", `/v1/tools/${toolId}`),
 
       create: (params: CreateToolParams): Promise<{ data: Tool }> =>
-        this.request('POST', '/v1/tools', params),
+        this.request("POST", "/v1/tools", params),
 
-      update: (toolId: string, params: Partial<CreateToolParams>): Promise<{ data: Tool }> =>
-        this.request('PUT', `/v1/tools/${toolId}`, params),
+      update: (
+        toolId: string,
+        params: Partial<CreateToolParams>,
+      ): Promise<{ data: Tool }> =>
+        this.request("PUT", `/v1/tools/${toolId}`, params),
 
       delete: (toolId: string): Promise<{ success: boolean }> =>
-        this.request('DELETE', `/v1/tools/${toolId}`),
+        this.request("DELETE", `/v1/tools/${toolId}`),
 
       /** List built-in static tools available to all agents. */
       listStatic: (): Promise<{ data: Tool[] }> =>
-        this.request('GET', '/v1/tools/static'),
+        this.request("GET", "/v1/tools/static"),
     };
   }
 
@@ -516,19 +702,25 @@ export class CommonsClient {
     return {
       /** List OAuth providers available on the platform (Google Workspace, GitHub, …). */
       listProviders: (): Promise<{ providers: any[] }> =>
-        this.request('GET', '/v1/oauth/providers'),
+        this.request("GET", "/v1/oauth/providers"),
 
       /** Get one provider's details, including its scope groups. */
       getProvider: (providerKey: string): Promise<{ provider: any }> =>
-        this.request('GET', `/v1/oauth/providers/${encodeURIComponent(providerKey)}`),
+        this.request(
+          "GET",
+          `/v1/oauth/providers/${encodeURIComponent(providerKey)}`,
+        ),
 
       /**
        * List the caller's OAuth connections (the accounts agents act with).
        * `ownerId` is only needed when authenticating with a management key.
        */
-      listConnections: (params?: { ownerId?: string; ownerType?: 'user' | 'agent' }): Promise<{ connections: any[] }> => {
-        const q = params ? new URLSearchParams(params as any).toString() : '';
-        return this.request('GET', `/v1/oauth/connections${q ? `?${q}` : ''}`);
+      listConnections: (params?: {
+        ownerId?: string;
+        ownerType?: "user" | "agent";
+      }): Promise<{ connections: any[] }> => {
+        const q = params ? new URLSearchParams(params as any).toString() : "";
+        return this.request("GET", `/v1/oauth/connections${q ? `?${q}` : ""}`);
       },
 
       /**
@@ -539,20 +731,30 @@ export class CommonsClient {
         providerKey: string;
         scopes?: string[];
         redirectUri?: string;
-      }): Promise<{ authorizationUrl: string; state: string; expiresAt: string }> =>
-        this.request('POST', '/v1/oauth/connect', params),
+      }): Promise<{
+        authorizationUrl: string;
+        state: string;
+        expiresAt: string;
+      }> => this.request("POST", "/v1/oauth/connect", params),
 
       /** Refresh a connection's access token now. */
       refresh: (connectionId: string): Promise<{ success: boolean }> =>
-        this.request('POST', `/v1/oauth/connections/${connectionId}/refresh`),
+        this.request("POST", `/v1/oauth/connections/${connectionId}/refresh`),
 
       /** Check whether a connection's token is valid. */
-      test: (connectionId: string): Promise<{ success: boolean; status: string; accessTokenValid: boolean; providerUserEmail?: string; error?: string }> =>
-        this.request('GET', `/v1/oauth/connections/${connectionId}/test`),
+      test: (
+        connectionId: string,
+      ): Promise<{
+        success: boolean;
+        status: string;
+        accessTokenValid: boolean;
+        providerUserEmail?: string;
+        error?: string;
+      }> => this.request("GET", `/v1/oauth/connections/${connectionId}/test`),
 
       /** Revoke a connection and delete its tokens. */
       revoke: (connectionId: string): Promise<{ success: boolean }> =>
-        this.request('DELETE', `/v1/oauth/connections/${connectionId}`),
+        this.request("DELETE", `/v1/oauth/connections/${connectionId}`),
     };
   }
 
@@ -560,16 +762,22 @@ export class CommonsClient {
 
   get toolKeys() {
     return {
-      list: (filter: { ownerId?: string; ownerType?: string; toolId?: string }): Promise<{ success: boolean; data: ToolKey[] }> => {
+      list: (filter: {
+        ownerId?: string;
+        ownerType?: string;
+        toolId?: string;
+      }): Promise<{ success: boolean; data: ToolKey[] }> => {
         const q = new URLSearchParams(filter as any).toString();
-        return this.request('GET', `/v1/tool-keys${q ? `?${q}` : ''}`);
+        return this.request("GET", `/v1/tool-keys${q ? `?${q}` : ""}`);
       },
 
-      create: (params: CreateToolKeyParams): Promise<{ success: boolean; data: ToolKey }> =>
-        this.request('POST', '/v1/tool-keys', params),
+      create: (
+        params: CreateToolKeyParams,
+      ): Promise<{ success: boolean; data: ToolKey }> =>
+        this.request("POST", "/v1/tool-keys", params),
 
       delete: (keyId: string): Promise<{ success: boolean }> =>
-        this.request('DELETE', `/v1/tool-keys/${keyId}`),
+        this.request("DELETE", `/v1/tool-keys/${keyId}`),
     };
   }
 
@@ -577,22 +785,24 @@ export class CommonsClient {
 
   get toolPermissions() {
     return {
-      list: (toolId?: string): Promise<{ success: boolean; data: ToolPermission[] }> => {
-        const q = toolId ? `?toolId=${toolId}` : '';
-        return this.request('GET', `/v1/tool-permissions${q}`);
+      list: (
+        toolId?: string,
+      ): Promise<{ success: boolean; data: ToolPermission[] }> => {
+        const q = toolId ? `?toolId=${toolId}` : "";
+        return this.request("GET", `/v1/tool-permissions${q}`);
       },
 
       grant: (params: {
         toolId: string;
         subjectId: string;
-        subjectType: 'user' | 'agent';
-        permission: 'read' | 'execute' | 'admin';
+        subjectType: "user" | "agent";
+        permission: "read" | "execute" | "admin";
         grantedBy?: string;
       }): Promise<{ success: boolean; data: ToolPermission }> =>
-        this.request('POST', '/v1/tool-permissions/grant', params),
+        this.request("POST", "/v1/tool-permissions/grant", params),
 
       revoke: (permissionId: string): Promise<{ success: boolean }> =>
-        this.request('DELETE', `/v1/tool-permissions/revoke/${permissionId}`),
+        this.request("DELETE", `/v1/tool-permissions/revoke/${permissionId}`),
     };
   }
 
@@ -600,31 +810,39 @@ export class CommonsClient {
 
   get skills() {
     return {
-      list: (filter?: { ownerId?: string; ownerType?: string; isPublic?: boolean }): Promise<{ data: Skill[] }> => {
+      list: (filter?: {
+        ownerId?: string;
+        ownerType?: string;
+        isPublic?: boolean;
+      }): Promise<{ data: Skill[] }> => {
         const params = new URLSearchParams();
-        if (filter?.ownerId) params.set('ownerId', filter.ownerId);
-        if (filter?.ownerType) params.set('ownerType', filter.ownerType);
-        if (filter?.isPublic !== undefined) params.set('isPublic', String(filter.isPublic));
+        if (filter?.ownerId) params.set("ownerId", filter.ownerId);
+        if (filter?.ownerType) params.set("ownerType", filter.ownerType);
+        if (filter?.isPublic !== undefined)
+          params.set("isPublic", String(filter.isPublic));
         const qs = params.toString();
-        return this.request('GET', `/v1/skills${qs ? `?${qs}` : ''}`);
+        return this.request("GET", `/v1/skills${qs ? `?${qs}` : ""}`);
       },
 
       get: (skillIdOrSlug: string): Promise<{ data: Skill }> =>
-        this.request('GET', `/v1/skills/${skillIdOrSlug}`),
+        this.request("GET", `/v1/skills/${skillIdOrSlug}`),
 
       getIndex: (ownerId?: string): Promise<{ data: SkillIndex[] }> => {
-        const qs = ownerId ? `?ownerId=${ownerId}` : '';
-        return this.request('GET', `/v1/skills/index${qs}`);
+        const qs = ownerId ? `?ownerId=${ownerId}` : "";
+        return this.request("GET", `/v1/skills/index${qs}`);
       },
 
       create: (params: CreateSkillParams): Promise<{ data: Skill }> =>
-        this.request('POST', '/v1/skills', params),
+        this.request("POST", "/v1/skills", params),
 
-      update: (skillIdOrSlug: string, updates: Partial<CreateSkillParams>): Promise<{ data: Skill }> =>
-        this.request('PUT', `/v1/skills/${skillIdOrSlug}`, updates),
+      update: (
+        skillIdOrSlug: string,
+        updates: Partial<CreateSkillParams>,
+      ): Promise<{ data: Skill }> =>
+        this.request("PUT", `/v1/skills/${skillIdOrSlug}`, updates),
 
       delete: (skillIdOrSlug: string): Promise<{ deleted: boolean }> =>
-        this.request('DELETE', `/v1/skills/${skillIdOrSlug}`),
+        this.request("DELETE", `/v1/skills/${skillIdOrSlug}`),
     };
   }
 
@@ -634,30 +852,34 @@ export class CommonsClient {
     return {
       /** List all wallets for an agent. */
       list: (agentId: string): Promise<AgentWallet[]> =>
-        this.request('GET', `/v1/wallets/agent/${agentId}`),
+        this.request("GET", `/v1/wallets/agent/${agentId}`),
 
       /** Get the primary active wallet for an agent. */
       primary: (agentId: string): Promise<AgentWallet | null> =>
-        this.request('GET', `/v1/wallets/agent/${agentId}/primary`),
+        this.request("GET", `/v1/wallets/agent/${agentId}/primary`),
 
       /** Get a specific wallet by ID. */
       get: (walletId: string): Promise<AgentWallet> =>
-        this.request('GET', `/v1/wallets/${walletId}`),
+        this.request("GET", `/v1/wallets/${walletId}`),
 
       /** Create a new wallet for an agent. */
       create: (params: CreateWalletParams): Promise<AgentWallet> =>
-        this.request('POST', '/v1/wallets', params),
+        this.request("POST", "/v1/wallets", params),
 
       /** Get USDC and native token balance for a wallet. */
       balance: (walletId: string): Promise<WalletBalance> =>
-        this.request('GET', `/v1/wallets/${walletId}/balance`),
+        this.request("GET", `/v1/wallets/${walletId}/balance`),
 
       /** Transfer USDC or ETH to another address. */
       transfer: (
         walletId: string,
-        params: { toAddress: string; amount: string; tokenSymbol?: 'USDC' | 'ETH' },
+        params: {
+          toAddress: string;
+          amount: string;
+          tokenSymbol?: "USDC" | "ETH";
+        },
       ): Promise<{ txHash: string }> =>
-        this.request('POST', `/v1/wallets/${walletId}/transfer`, params),
+        this.request("POST", `/v1/wallets/${walletId}/transfer`, params),
 
       /**
        * Proxy an HTTP request through an agent's primary wallet, automatically
@@ -673,11 +895,11 @@ export class CommonsClient {
           body?: string;
         },
       ): Promise<{ status: number; body: unknown }> =>
-        this.request('POST', `/v1/wallets/agent/${agentId}/x402-fetch`, params),
+        this.request("POST", `/v1/wallets/agent/${agentId}/x402-fetch`, params),
 
       /** Deactivate a wallet. */
       deactivate: (walletId: string): Promise<void> =>
-        this.request('DELETE', `/v1/wallets/${walletId}`),
+        this.request("DELETE", `/v1/wallets/${walletId}`),
     };
   }
 
@@ -692,8 +914,10 @@ export class CommonsClient {
        * that the current API key belongs to. Use this to auto-detect the
        * initiator without asking the user to type their address manually.
        */
-      me: (): Promise<{ principalId: string | null; principalType: string | null }> =>
-        this.request('GET', '/v1/auth/me'),
+      me: (): Promise<{
+        principalId: string | null;
+        principalType: string | null;
+      }> => this.request("GET", "/v1/auth/me"),
     };
   }
 
@@ -706,25 +930,33 @@ export class CommonsClient {
        * The plaintext key is returned only in this response — never again.
        */
       create: (params: CreateApiKeyParams): Promise<CreatedApiKey> =>
-        this.request('POST', '/v1/auth/api-keys', params),
+        this.request("POST", "/v1/auth/api-keys", params),
 
       /** List all active API keys for a principal (key values not included). */
-      list: (principalId: string, principalType: ApiKeyPrincipalType): Promise<ApiKey[]> => {
-        const q = new URLSearchParams({ principalId, principalType }).toString();
-        return this.request('GET', `/v1/auth/api-keys?${q}`);
+      list: (
+        principalId: string,
+        principalType: ApiKeyPrincipalType,
+      ): Promise<ApiKey[]> => {
+        const q = new URLSearchParams({
+          principalId,
+          principalType,
+        }).toString();
+        return this.request("GET", `/v1/auth/api-keys?${q}`);
       },
 
       /** Revoke (soft-delete) an API key by its UUID. */
       revoke: (id: string): Promise<{ revoked: boolean }> =>
-        this.request('DELETE', `/v1/auth/api-keys/${id}`),
+        this.request("DELETE", `/v1/auth/api-keys/${id}`),
     };
   }
 
   // ── SSE Streaming internals ───────────────────────────────────────────────
 
-  private async *_streamAgentRun(params: RunParams): AsyncGenerator<StreamEvent> {
+  private async *_streamAgentRun(
+    params: RunParams,
+  ): AsyncGenerator<StreamEvent> {
     const res = await this._fetch(`${this.baseUrl}/v1/agents/run/stream`, {
-      method: 'POST',
+      method: "POST",
       headers: this.headers(),
       body: JSON.stringify(params),
     });
@@ -739,8 +971,8 @@ export class CommonsClient {
 
   private async *_streamSse(path: string): AsyncGenerator<StreamEvent> {
     const res = await this._fetch(`${this.baseUrl}${path}`, {
-      method: 'GET',
-      headers: this.headers({ Accept: 'text/event-stream' }),
+      method: "GET",
+      headers: this.headers({ Accept: "text/event-stream" }),
     });
 
     if (!res.ok) {
@@ -752,27 +984,27 @@ export class CommonsClient {
   }
 
   private async *_parseEventStream(res: Response): AsyncGenerator<StreamEvent> {
-    if (!res.body) throw new Error('No response body');
+    if (!res.body) throw new Error("No response body");
     const reader = res.body.getReader();
     const decoder = new TextDecoder();
-    let buffer = '';
+    let buffer = "";
 
     while (true) {
       const { done, value } = await reader.read();
       if (done) break;
       buffer += decoder.decode(value, { stream: true });
 
-      const lines = buffer.split('\n');
-      buffer = lines.pop() ?? '';
+      const lines = buffer.split("\n");
+      buffer = lines.pop() ?? "";
 
       for (const line of lines) {
-        if (line.startsWith('data: ')) {
+        if (line.startsWith("data: ")) {
           const raw = line.slice(6).trim();
-          if (raw === '[DONE]') return;
+          if (raw === "[DONE]") return;
           try {
             const event = JSON.parse(raw) as StreamEvent;
-            if (event.type !== 'keepalive') yield event;
-            if (event.type === 'final' || event.type === 'completed') return;
+            if (event.type !== "keepalive") yield event;
+            if (event.type === "final" || event.type === "completed") return;
           } catch {
             // Ignore malformed lines
           }
@@ -787,32 +1019,47 @@ export class CommonsClient {
     return {
       /** Fetch the A2A Agent Card for an agent. */
       getAgentCard: (agentId: string): Promise<AgentCard> =>
-        this.request('GET', `/.well-known/agent.json?agentId=${agentId}`),
+        this.request("GET", `/.well-known/agent.json?agentId=${agentId}`),
 
       /** Send a task to an agent (synchronous, waits for completion). */
-      sendTask: (agentId: string, params: A2ASendTaskParams): Promise<A2ATask> =>
-        this.request('POST', `/v1/a2a/${agentId}`, {
-          jsonrpc: '2.0',
+      sendTask: (
+        agentId: string,
+        params: A2ASendTaskParams,
+      ): Promise<A2ATask> =>
+        this.request("POST", `/v1/a2a/${agentId}`, {
+          jsonrpc: "2.0",
           id: params.id ?? `sdk-${Date.now()}`,
-          method: 'tasks/send',
+          method: "tasks/send",
           params,
         }).then((r: any) => r.result as A2ATask),
 
       /** Get A2A task status. */
       getTask: (agentId: string, taskId: string): Promise<A2ATask> =>
-        this.request('POST', `/v1/a2a/${agentId}`, {
-          jsonrpc: '2.0', id: taskId, method: 'tasks/get', params: { id: taskId },
+        this.request("POST", `/v1/a2a/${agentId}`, {
+          jsonrpc: "2.0",
+          id: taskId,
+          method: "tasks/get",
+          params: { id: taskId },
         }).then((r: any) => r.result as A2ATask),
 
       /** Cancel a running A2A task. */
       cancelTask: (agentId: string, taskId: string): Promise<A2ATask> =>
-        this.request('POST', `/v1/a2a/${agentId}`, {
-          jsonrpc: '2.0', id: taskId, method: 'tasks/cancel', params: { id: taskId },
+        this.request("POST", `/v1/a2a/${agentId}`, {
+          jsonrpc: "2.0",
+          id: taskId,
+          method: "tasks/cancel",
+          params: { id: taskId },
         }).then((r: any) => r.result as A2ATask),
 
       /** List recent A2A tasks for an agent. */
-      listTasks: (agentId: string, limit?: number): Promise<{ tasks: A2ATask[]; total: number }> =>
-        this.request('GET', `/v1/a2a/${agentId}/tasks${limit ? `?limit=${limit}` : ''}`),
+      listTasks: (
+        agentId: string,
+        limit?: number,
+      ): Promise<{ tasks: A2ATask[]; total: number }> =>
+        this.request(
+          "GET",
+          `/v1/a2a/${agentId}/tasks${limit ? `?limit=${limit}` : ""}`,
+        ),
 
       /** Stream A2A task updates (SSE). */
       stream: (agentId: string, taskId: string): AsyncGenerator<StreamEvent> =>
@@ -825,8 +1072,14 @@ export class CommonsClient {
   get mcp() {
     return {
       /** List MCP servers for an owner. */
-      listServers: (ownerId: string, ownerType: 'user' | 'agent'): Promise<{ servers: McpServer[]; total: number }> =>
-        this.request('GET', `/v1/mcp/servers?ownerId=${ownerId}&ownerType=${ownerType}`),
+      listServers: (
+        ownerId: string,
+        ownerType: "user" | "agent",
+      ): Promise<{ servers: McpServer[]; total: number }> =>
+        this.request(
+          "GET",
+          `/v1/mcp/servers?ownerId=${ownerId}&ownerType=${ownerType}`,
+        ),
 
       /** Create a new MCP server. */
       createServer: (params: {
@@ -837,78 +1090,116 @@ export class CommonsClient {
         isPublic?: boolean;
         tags?: string[];
         ownerId: string;
-        ownerType: 'user' | 'agent';
+        ownerType: "user" | "agent";
       }): Promise<McpServer> => {
         const { ownerId, ownerType, ...dto } = params;
-        return this.request('POST', `/v1/mcp/servers?ownerId=${ownerId}&ownerType=${ownerType}`, dto);
+        return this.request(
+          "POST",
+          `/v1/mcp/servers?ownerId=${ownerId}&ownerType=${ownerType}`,
+          dto,
+        );
       },
 
       /** Get MCP server by ID. */
       getServer: (serverId: string): Promise<McpServer> =>
-        this.request('GET', `/v1/mcp/servers/${serverId}`),
+        this.request("GET", `/v1/mcp/servers/${serverId}`),
 
       /** Update an MCP server's configuration. */
-      updateServer: (serverId: string, params: Partial<{
+      updateServer: (
+        serverId: string,
+        params: Partial<{
         name: string;
         description: string;
         connectionConfig: Record<string, any>;
         isPublic: boolean;
         tags: string[];
-      }>): Promise<McpServer> =>
-        this.request('PUT', `/v1/mcp/servers/${serverId}`, params),
+        }>,
+      ): Promise<McpServer> =>
+        this.request("PUT", `/v1/mcp/servers/${serverId}`, params),
 
       /** Delete an MCP server. */
       deleteServer: (serverId: string): Promise<void> =>
-        this.request('DELETE', `/v1/mcp/servers/${serverId}`),
+        this.request("DELETE", `/v1/mcp/servers/${serverId}`),
 
       /** List public MCP servers (marketplace). */
       getMarketplace: (): Promise<{ servers: McpServer[]; total: number }> =>
-        this.request('GET', '/v1/mcp/servers/marketplace'),
+        this.request("GET", "/v1/mcp/servers/marketplace"),
 
       /** Get connection status for an MCP server. */
-      getServerStatus: (serverId: string): Promise<{
+      getServerStatus: (
+        serverId: string,
+      ): Promise<{
         connected: boolean;
         capabilities: string[];
         toolsDiscovered: number;
         lastConnectedAt: Date | null;
         lastError: string | null;
-      }> => this.request('GET', `/v1/mcp/servers/${serverId}/status`),
+      }> => this.request("GET", `/v1/mcp/servers/${serverId}/status`),
 
       /** Connect to an MCP server. */
       connect: (serverId: string): Promise<{ connected: boolean }> =>
-        this.request('POST', `/v1/mcp/servers/${serverId}/connect`),
+        this.request("POST", `/v1/mcp/servers/${serverId}/connect`),
 
       /** Disconnect from an MCP server. */
       disconnect: (serverId: string): Promise<void> =>
-        this.request('POST', `/v1/mcp/servers/${serverId}/disconnect`),
+        this.request("POST", `/v1/mcp/servers/${serverId}/disconnect`),
 
       /** Sync tools + resources + prompts from the MCP server. */
-      sync: (serverId: string): Promise<{ toolsDiscovered: number; resourcesDiscovered: number; promptsDiscovered: number }> =>
-        this.request('POST', `/v1/mcp/servers/${serverId}/sync`, {}),
+      sync: (
+        serverId: string,
+      ): Promise<{
+        toolsDiscovered: number;
+        resourcesDiscovered: number;
+        promptsDiscovered: number;
+      }> => this.request("POST", `/v1/mcp/servers/${serverId}/sync`, {}),
 
       /** List tools discovered from an MCP server. */
       listTools: (serverId: string): Promise<{ tools: any[]; total: number }> =>
-        this.request('GET', `/v1/mcp/servers/${serverId}/tools`),
+        this.request("GET", `/v1/mcp/servers/${serverId}/tools`),
 
       /** List all MCP tools across all servers for a given owner. */
-      listToolsByOwner: (ownerId: string, ownerType: 'user' | 'agent'): Promise<{ tools: any[] }> =>
-        this.request('GET', `/v1/mcp/tools?ownerId=${ownerId}&ownerType=${ownerType}`),
+      listToolsByOwner: (
+        ownerId: string,
+        ownerType: "user" | "agent",
+      ): Promise<{ tools: any[] }> =>
+        this.request(
+          "GET",
+          `/v1/mcp/tools?ownerId=${ownerId}&ownerType=${ownerType}`,
+        ),
 
       /** List resources from an MCP server. */
-      listResources: (serverId: string): Promise<{ resources: McpResource[]; total: number }> =>
-        this.request('GET', `/v1/mcp/servers/${serverId}/resources`),
+      listResources: (
+        serverId: string,
+      ): Promise<{ resources: McpResource[]; total: number }> =>
+        this.request("GET", `/v1/mcp/servers/${serverId}/resources`),
 
       /** Read a resource by URI. */
-      readResource: (serverId: string, uri: string): Promise<{ uri: string; contents: any }> =>
-        this.request('GET', `/v1/mcp/servers/${serverId}/resources/read?uri=${encodeURIComponent(uri)}`),
+      readResource: (
+        serverId: string,
+        uri: string,
+      ): Promise<{ uri: string; contents: any }> =>
+        this.request(
+          "GET",
+          `/v1/mcp/servers/${serverId}/resources/read?uri=${encodeURIComponent(uri)}`,
+        ),
 
       /** List prompts from an MCP server. */
-      listPrompts: (serverId: string): Promise<{ prompts: McpPrompt[]; total: number }> =>
-        this.request('GET', `/v1/mcp/servers/${serverId}/prompts`),
+      listPrompts: (
+        serverId: string,
+      ): Promise<{ prompts: McpPrompt[]; total: number }> =>
+        this.request("GET", `/v1/mcp/servers/${serverId}/prompts`),
 
       /** Render a prompt with arguments. */
-      getPrompt: (serverId: string, promptName: string, args?: Record<string, string>): Promise<{ description?: string; messages: any[] }> =>
-        this.request('POST', `/v1/mcp/servers/${serverId}/prompts/${promptName}`, { arguments: args }),
+      getPrompt: (
+        serverId: string,
+        promptName: string,
+        args?: Record<string, string>,
+      ): Promise<{ description?: string; messages: any[] }> =>
+        this.request(
+          "POST",
+          `/v1/mcp/servers/${serverId}/prompts/${promptName}`,
+          { arguments: args },
+        ),
     };
   }
 
@@ -922,15 +1213,18 @@ export class CommonsClient {
         opts?: { type?: MemoryType; limit?: number },
       ): Promise<{ data: AgentMemory[] }> => {
         const params = new URLSearchParams();
-        if (opts?.type)  params.set('type', opts.type);
-        if (opts?.limit) params.set('limit', String(opts.limit));
+        if (opts?.type) params.set("type", opts.type);
+        if (opts?.limit) params.set("limit", String(opts.limit));
         const qs = params.toString();
-        return this.request('GET', `/v1/memory/agents/${agentId}${qs ? `?${qs}` : ''}`);
+        return this.request(
+          "GET",
+          `/v1/memory/agents/${agentId}${qs ? `?${qs}` : ""}`,
+        );
       },
 
       /** Get memory stats for an agent. */
       stats: (agentId: string): Promise<{ data: MemoryStats }> =>
-        this.request('GET', `/v1/memory/agents/${agentId}/stats`),
+        this.request("GET", `/v1/memory/agents/${agentId}/stats`),
 
       /** Retrieve memories most relevant to a query. */
       retrieve: (
@@ -939,25 +1233,43 @@ export class CommonsClient {
         limit?: number,
       ): Promise<{ data: AgentMemory[] }> => {
         const params = new URLSearchParams({ q: query });
-        if (limit) params.set('limit', String(limit));
-        return this.request('GET', `/v1/memory/agents/${agentId}/retrieve?${params}`);
+        if (limit) params.set("limit", String(limit));
+        return this.request(
+          "GET",
+          `/v1/memory/agents/${agentId}/retrieve?${params}`,
+        );
       },
 
       /** Get a single memory by ID. */
       get: (memoryId: string): Promise<{ data: AgentMemory }> =>
-        this.request('GET', `/v1/memory/${memoryId}`),
+        this.request("GET", `/v1/memory/${memoryId}`),
 
       /** Manually create a memory. */
       create: (params: CreateMemoryParams): Promise<{ data: AgentMemory }> =>
-        this.request('POST', '/v1/memory', params),
+        this.request("POST", "/v1/memory", params),
 
       /** Update a memory. */
-      update: (memoryId: string, params: UpdateMemoryParams): Promise<{ data: AgentMemory }> =>
-        this.request('PATCH', `/v1/memory/${memoryId}`, params),
+      update: (
+        memoryId: string,
+        params: UpdateMemoryParams,
+      ): Promise<{ data: AgentMemory }> =>
+        this.request("PATCH", `/v1/memory/${memoryId}`, params),
 
       /** Soft-delete (deactivate) a memory. */
       delete: (memoryId: string): Promise<void> =>
-        this.request('DELETE', `/v1/memory/${memoryId}`),
+        this.request("DELETE", `/v1/memory/${memoryId}`),
+
+      /** Create an append-only memory scope shared by a set of owned agents. */
+      createSharedScope: (
+        params: CreateSharedMemoryScopeParams,
+      ): Promise<{ data: SharedMemoryScope }> =>
+        this.request("POST", "/v1/memory/shared-scopes", params),
+
+      /** List shared-memory scopes available to an agent. */
+      listSharedScopes: (
+        agentId: string,
+      ): Promise<{ data: SharedMemoryScope[] }> =>
+        this.request("GET", `/v1/memory/shared-scopes/agents/${agentId}`),
     };
   }
 
@@ -971,15 +1283,20 @@ export class CommonsClient {
         opts?: { from?: string; to?: string },
       ): Promise<{ data: UsageAggregation }> => {
         const params = new URLSearchParams();
-        if (opts?.from) params.set('from', opts.from);
-        if (opts?.to)   params.set('to',   opts.to);
+        if (opts?.from) params.set("from", opts.from);
+        if (opts?.to) params.set("to", opts.to);
         const qs = params.toString();
-        return this.request('GET', `/v1/usage/agents/${agentId}${qs ? `?${qs}` : ''}`);
+        return this.request(
+          "GET",
+          `/v1/usage/agents/${agentId}${qs ? `?${qs}` : ""}`,
+        );
       },
 
       /** Get aggregated token + cost usage for a session. */
-      getSessionUsage: (sessionId: string): Promise<{ data: UsageAggregation }> =>
-        this.request('GET', `/v1/usage/sessions/${sessionId}`),
+      getSessionUsage: (
+        sessionId: string,
+      ): Promise<{ data: UsageAggregation }> =>
+        this.request("GET", `/v1/usage/sessions/${sessionId}`),
     };
   }
 
@@ -992,10 +1309,10 @@ export class CommonsClient {
         workspaceId?: string;
       }): Promise<{ data: CreditBalance }> => {
         const params = new URLSearchParams();
-        if (filter?.principalId) params.set('principalId', filter.principalId);
-        if (filter?.workspaceId) params.set('workspaceId', filter.workspaceId);
+        if (filter?.principalId) params.set("principalId", filter.principalId);
+        if (filter?.workspaceId) params.set("workspaceId", filter.workspaceId);
         const qs = params.toString();
-        return this.request('GET', `/v1/credits/balance${qs ? `?${qs}` : ''}`);
+        return this.request("GET", `/v1/credits/balance${qs ? `?${qs}` : ""}`);
       },
 
       ledger: (filter?: {
@@ -1004,18 +1321,22 @@ export class CommonsClient {
         limit?: number;
       }): Promise<{ data: CreditLedgerEntry[] }> => {
         const params = new URLSearchParams();
-        if (filter?.principalId) params.set('principalId', filter.principalId);
-        if (filter?.workspaceId) params.set('workspaceId', filter.workspaceId);
-        if (filter?.limit) params.set('limit', String(filter.limit));
+        if (filter?.principalId) params.set("principalId", filter.principalId);
+        if (filter?.workspaceId) params.set("workspaceId", filter.workspaceId);
+        if (filter?.limit) params.set("limit", String(filter.limit));
         const qs = params.toString();
-        return this.request('GET', `/v1/credits/ledger${qs ? `?${qs}` : ''}`);
+        return this.request("GET", `/v1/credits/ledger${qs ? `?${qs}` : ""}`);
       },
 
-      grant: (params: CreditWriteParams): Promise<{ data: CreditLedgerEntry }> =>
-        this.request('POST', '/v1/credits/grants', params),
+      grant: (
+        params: CreditWriteParams,
+      ): Promise<{ data: CreditLedgerEntry }> =>
+        this.request("POST", "/v1/credits/grants", params),
 
-      debit: (params: CreditWriteParams): Promise<{ data: CreditLedgerEntry }> =>
-        this.request('POST', '/v1/credits/debits', params),
+      debit: (
+        params: CreditWriteParams,
+      ): Promise<{ data: CreditLedgerEntry }> =>
+        this.request("POST", "/v1/credits/debits", params),
     };
   }
 }
@@ -1029,6 +1350,6 @@ export class CommonsError extends Error {
     public readonly data?: unknown,
   ) {
     super(message);
-    this.name = 'CommonsError';
+    this.name = "CommonsError";
   }
 }

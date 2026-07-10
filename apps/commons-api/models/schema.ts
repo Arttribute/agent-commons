@@ -72,14 +72,37 @@ export const agent = pgTable('agent', {
 
   // A2A Protocol — Agent-to-Agent interoperability
   a2aEnabled: pgBoolean('a2a_enabled').default(false).notNull(),
-  a2aSkills: jsonb('a2a_skills').$type<Array<{
+  a2aSkills: jsonb('a2a_skills').$type<
+    Array<{
     id: string;
     name: string;
     description?: string;
     tags?: string[];
     inputModes?: string[];
     outputModes?: string[];
-  }>>(),
+    }>
+  >(),
+
+  // Execution runtime. `native` preserves the existing Agent Commons
+  // LangGraph path; managed runtimes are dispatched through the runtime
+  // adapter layer and hosted on the agent's persistent CommonOS computer.
+  runtimeType: text('runtime_type').default('native').notNull(),
+  runtimeVersion: text('runtime_version'),
+  runtimeStatus: text('runtime_status').default('ready').notNull(),
+  runtimeConfig: jsonb('runtime_config')
+    .$type<{
+      deploymentMode?: 'managed' | 'external';
+      channelPolicy?: 'pairing' | 'allowlist' | 'open' | 'disabled';
+      enabledPlugins?: string[];
+      enabledToolsets?: string[];
+      memoryMode?: 'native' | 'platform' | 'hybrid';
+      metadata?: Record<string, unknown>;
+    }>()
+    .default({}),
+  runtimeCapabilities: jsonb('runtime_capabilities')
+    .$type<Record<string, boolean>>()
+    .default({}),
+  runtimeUpdatedAt: timestamp('runtime_updated_at', { withTimezone: true }),
 
   createdAt: timestamp('created_at', { withTimezone: true })
     .default(sql`timezone('utc', now())`)
@@ -95,7 +118,9 @@ export const agent = pgTable('agent', {
  * plain EOA keypairs, and external wallets connected by the owner.
  */
 export const agentWallet = pgTable('agent_wallet', {
-  id: uuid('id').default(sql`uuid_generate_v4()`).primaryKey(),
+  id: uuid('id')
+    .default(sql`uuid_generate_v4()`)
+    .primaryKey(),
 
   agentId: text('agent_id')
     .notNull()
@@ -201,9 +226,7 @@ export const agentComputerConfig = pgTable(
       .notNull(),
   },
   (table) => ({
-    agentIdx: uniqueIndex('idx_agent_computer_config_agent').on(
-      table.agentId,
-    ),
+    agentIdx: uniqueIndex('idx_agent_computer_config_agent').on(table.agentId),
   }),
 );
 
@@ -397,6 +420,11 @@ export const session = pgTable('session', {
   // 'web' | 'cli' — where this session was initiated from.
   // Column already exists in DB (phase14 migration); default is 'web'.
   initiatorType: text('initiator_type').default('web'),
+
+  // Canonical session identity remains in Agent Commons. Runtime-specific
+  // session handles are optional adapter metadata and never replace it.
+  runtimeType: text('runtime_type').default('native').notNull(),
+  runtimeSessionId: text('runtime_session_id'),
 
   // Keep as JSON list of space IDs for now (not relational)
   spaces: jsonb('spaces').$type<{ spaceIds: string[] }>(),
@@ -594,7 +622,9 @@ export const task = pgTable('task', {
   toolInstructions: text('tool_instructions'), // Instructions for agent on how to use tools (e.g., "If you encounter X, use tool Y")
 
   // Recurring task session management
-  recurringSessionMode: text('recurring_session_mode').default('same').notNull(), // 'same' | 'new' - whether recurring tasks run in same or new session
+  recurringSessionMode: text('recurring_session_mode')
+    .default('same')
+    .notNull(), // 'same' | 'new' - whether recurring tasks run in same or new session
 
   // Context and metadata
   context: jsonb('context').$type<Record<string, any>>(), // Additional context for execution
@@ -838,7 +868,9 @@ export const agentPreferredConnection = pgTable('agent_preferred_connection', {
 
 /* ─────────────────────────  AGENT TOOL (mapping)  ───────────────────────── */
 
-export const agentTool = pgTable('agent_tool', {
+export const agentTool = pgTable(
+  'agent_tool',
+  {
   id: uuid('id')
     .default(sql`uuid_generate_v4()`)
     .primaryKey(),
@@ -867,13 +899,15 @@ export const agentTool = pgTable('agent_tool', {
   updatedAt: timestamp('updated_at', { withTimezone: true })
     .default(sql`timezone('utc', now())`)
     .notNull(),
-}, (table) => ({
+  },
+  (table) => ({
   // One assignment per agent per tool; lets addAgentTool upsert on re-enable
   agentToolIdx: uniqueIndex('idx_agent_tool_agent_tool').on(
     table.agentId,
     table.toolId,
   ),
-}));
+  }),
+);
 
 /* ─────────────────────────  TOOL PERMISSION  ───────────────────────── */
 
@@ -1208,26 +1242,47 @@ export const a2aTask = pgTable('a2a_task', {
   contextId: text('context_id'),
 
   // Message content (A2A Message JSON: { role, parts: MessagePart[] })
-  inputMessage: jsonb('input_message').$type<{
+  inputMessage: jsonb('input_message')
+    .$type<{
     role: 'user' | 'agent';
-    parts: Array<{ type: string; text?: string; data?: any; mimeType?: string }>;
+      parts: Array<{
+        type: string;
+        text?: string;
+        data?: any;
+        mimeType?: string;
+      }>;
     contextId?: string;
     taskId?: string;
-  }>().notNull(),
+    }>()
+    .notNull(),
 
   // Output messages produced by the agent
-  outputMessages: jsonb('output_messages').$type<Array<{
+  outputMessages: jsonb('output_messages').$type<
+    Array<{
     role: 'agent';
-    parts: Array<{ type: string; text?: string; data?: any; mimeType?: string }>;
-  }>>(),
+      parts: Array<{
+        type: string;
+        text?: string;
+        data?: any;
+        mimeType?: string;
+      }>;
+    }>
+  >(),
 
   // Artefacts (files/data produced)
-  artifacts: jsonb('artifacts').$type<Array<{
+  artifacts: jsonb('artifacts').$type<
+    Array<{
     artifactId?: string;
     name?: string;
     description?: string;
-    parts: Array<{ type: string; text?: string; data?: any; mimeType?: string }>;
-  }>>(),
+      parts: Array<{
+        type: string;
+        text?: string;
+        data?: any;
+        mimeType?: string;
+      }>;
+    }>
+  >(),
 
   // Push notification config (webhook)
   pushUrl: text('push_url'),
@@ -1399,7 +1454,10 @@ export const agentMemory = pgTable('agent_memory', {
   lastAccessedAt: timestamp('last_accessed_at', { withTimezone: true }),
 
   /** Keyword tags for fast retrieval */
-  tags: jsonb('tags').notNull().default(sql`'[]'::jsonb`).$type<string[]>(),
+  tags: jsonb('tags')
+    .notNull()
+    .default(sql`'[]'::jsonb`)
+    .$type<string[]>(),
 
   /**
    * 'auto'   — extracted by consolidation LLM after session
@@ -1419,6 +1477,101 @@ export const agentMemory = pgTable('agent_memory', {
     .default(sql`timezone('utc', now())`)
     .notNull(),
 });
+
+/* ───────────────────────  SHARED AGENT MEMORY  ─────────────────────── */
+
+export const sharedMemoryScope = pgTable(
+  'shared_memory_scope',
+  {
+    scopeId: uuid('scope_id')
+      .default(sql`uuid_generate_v4()`)
+      .primaryKey(),
+    ownerUserId: text('owner_user_id').notNull(),
+    workspaceId: text('workspace_id'),
+    name: text('name').notNull(),
+    description: text('description'),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .default(sql`timezone('utc', now())`)
+      .notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true })
+      .default(sql`timezone('utc', now())`)
+      .notNull(),
+  },
+  (table) => ({
+    ownerIdx: index('idx_shared_memory_scope_owner').on(
+      table.ownerUserId,
+      table.updatedAt,
+    ),
+  }),
+);
+
+export const sharedMemoryMember = pgTable(
+  'shared_memory_member',
+  {
+    memberId: uuid('member_id')
+      .default(sql`uuid_generate_v4()`)
+      .primaryKey(),
+    scopeId: uuid('scope_id')
+      .notNull()
+      .references(() => sharedMemoryScope.scopeId, { onDelete: 'cascade' }),
+    agentId: text('agent_id')
+      .notNull()
+      .references(() => agent.agentId, { onDelete: 'cascade' }),
+    access: text('access').notNull().default('write'),
+    joinedAt: timestamp('joined_at', { withTimezone: true })
+      .default(sql`timezone('utc', now())`)
+      .notNull(),
+  },
+  (table) => ({
+    agentScopeUnique: uniqueIndex('uq_shared_memory_member_agent_scope').on(
+      table.scopeId,
+      table.agentId,
+    ),
+    agentIdx: index('idx_shared_memory_member_agent').on(
+      table.agentId,
+      table.scopeId,
+    ),
+  }),
+);
+
+export const sharedMemoryEntry = pgTable(
+  'shared_memory_entry',
+  {
+    entryId: uuid('entry_id')
+      .default(sql`uuid_generate_v4()`)
+      .primaryKey(),
+    scopeId: uuid('scope_id')
+      .notNull()
+      .references(() => sharedMemoryScope.scopeId, { onDelete: 'cascade' }),
+    key: text('key').notNull(),
+    version: integer('version').notNull(),
+    content: text('content').notNull(),
+    summary: text('summary').notNull(),
+    authoredByAgentId: text('authored_by_agent_id')
+      .notNull()
+      .references(() => agent.agentId, { onDelete: 'cascade' }),
+    authoredBySessionId: uuid('authored_by_session_id').references(
+      () => session.sessionId,
+      { onDelete: 'set null' },
+    ),
+    supersedesEntryId: uuid('supersedes_entry_id'),
+    metadata: jsonb('metadata').$type<Record<string, unknown>>().default({}),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .default(sql`timezone('utc', now())`)
+      .notNull(),
+  },
+  (table) => ({
+    versionUnique: uniqueIndex('uq_shared_memory_entry_version').on(
+      table.scopeId,
+      table.key,
+      table.version,
+    ),
+    scopeCreatedIdx: index('idx_shared_memory_entry_scope_created').on(
+      table.scopeId,
+      table.createdAt,
+    ),
+  }),
+);
 
 /* ─────────────────────────  USAGE EVENT  ───────────────────────── */
 
@@ -1447,6 +1600,8 @@ export const usageEvent = pgTable('usage_event', {
   // Model info
   provider: text('provider').notNull(),   // 'openai' | 'anthropic' | 'google' | ...
   modelId: text('model_id').notNull(),    // e.g. 'gpt-4o', 'claude-sonnet-4-6'
+  runtimeType: text('runtime_type').default('native').notNull(),
+  usageSource: text('usage_source').default('agent_commons').notNull(),
 
   // Token usage
   inputTokens: integer('input_tokens').notNull().default(0),
@@ -1657,12 +1812,15 @@ export const workflowExecutionRelations = relations(
   }),
 );
 
-export const scheduledTaskRunRelations = relations(scheduledTaskRun, ({ one }) => ({
+export const scheduledTaskRunRelations = relations(
+  scheduledTaskRun,
+  ({ one }) => ({
   task: one(task, {
     fields: [scheduledTaskRun.taskId],
     references: [task.taskId],
   }),
-}));
+  }),
+);
 
 export const a2aTaskRelations = relations(a2aTask, ({ one }) => ({
   agent: one(agent, {
@@ -1711,9 +1869,7 @@ export const usageEventRelations = relations(usageEvent, ({ one }) => ({
  * OAuth Provider Configuration
  * Stores OAuth 2.0 provider settings (Google, GitHub, Slack, etc.)
  */
-export const oauthProvider = pgTable(
-  'oauth_provider',
-  {
+export const oauthProvider = pgTable('oauth_provider', {
     providerId: uuid('provider_id')
       .default(sql`uuid_generate_v4()`)
       .primaryKey(),
@@ -1756,8 +1912,7 @@ export const oauthProvider = pgTable(
     updatedAt: timestamp('updated_at', { withTimezone: true })
       .default(sql`timezone('utc', now())`)
       .notNull(),
-  },
-);
+});
 
 /* ─────────────────────────  OAUTH CONNECTION  ───────────────────────── */
 
@@ -1765,9 +1920,7 @@ export const oauthProvider = pgTable(
  * OAuth Connection
  * Stores user OAuth connections with encrypted tokens
  */
-export const oauthConnection = pgTable(
-  'oauth_connection',
-  {
+export const oauthConnection = pgTable('oauth_connection', {
     connectionId: uuid('connection_id')
       .default(sql`uuid_generate_v4()`)
       .primaryKey(),
@@ -1830,8 +1983,7 @@ export const oauthConnection = pgTable(
     updatedAt: timestamp('updated_at', { withTimezone: true })
       .default(sql`timezone('utc', now())`)
       .notNull(),
-  },
-);
+});
 
 /* ─────────────────────────  OAUTH STATE  ───────────────────────── */
 
@@ -1839,9 +1991,7 @@ export const oauthConnection = pgTable(
  * OAuth State
  * Temporary CSRF protection tokens (short-lived)
  */
-export const oauthState = pgTable(
-  'oauth_state',
-  {
+export const oauthState = pgTable('oauth_state', {
     stateId: text('state_id').primaryKey(),
 
     // Context
@@ -1869,8 +2019,7 @@ export const oauthState = pgTable(
     createdAt: timestamp('created_at', { withTimezone: true })
       .default(sql`timezone('utc', now())`)
       .notNull(),
-  },
-);
+});
 
 /* ─────────────────────────  OAUTH RELATIONS  ───────────────────────── */
 
@@ -2020,8 +2169,14 @@ export const skill = pgTable('skill', {
   description: text('description').notNull(),
   instructions: text('instructions').notNull(),
 
-  tools: jsonb('tools').notNull().default(sql`'[]'::jsonb`).$type<string[]>(),
-  triggers: jsonb('triggers').notNull().default(sql`'[]'::jsonb`).$type<string[]>(),
+  tools: jsonb('tools')
+    .notNull()
+    .default(sql`'[]'::jsonb`)
+    .$type<string[]>(),
+  triggers: jsonb('triggers')
+    .notNull()
+    .default(sql`'[]'::jsonb`)
+    .$type<string[]>(),
 
   ownerId: text('owner_id'),
   ownerType: text('owner_type').notNull().default('platform'), // 'platform' | 'user' | 'agent'
@@ -2030,7 +2185,10 @@ export const skill = pgTable('skill', {
   isActive: pgBoolean('is_active').notNull().default(true),
 
   version: text('version').notNull().default('1.0.0'),
-  tags: jsonb('tags').notNull().default(sql`'[]'::jsonb`).$type<string[]>(),
+  tags: jsonb('tags')
+    .notNull()
+    .default(sql`'[]'::jsonb`)
+    .$type<string[]>(),
   icon: text('icon'),
   usageCount: integer('usage_count').notNull().default(0),
 
@@ -2130,7 +2288,9 @@ export const activityEvent = pgTable('activity_event', {
  * Only the SHA-256 hash is stored — plaintext key returned once on creation.
  */
 export const apiKey = pgTable('api_keys', {
-  id: uuid('id').default(sql`uuid_generate_v4()`).primaryKey(),
+  id: uuid('id')
+    .default(sql`uuid_generate_v4()`)
+    .primaryKey(),
 
   // SHA-256 hash of the raw key — never store plaintext
   keyHash: text('key_hash').notNull().unique(),
@@ -2142,7 +2302,10 @@ export const apiKey = pgTable('api_keys', {
   principalType: text('principal_type').notNull(),
 
   workspaceId: text('workspace_id'),
-  scopes: text('scopes').array().default(sql`'{}'::text[]`).notNull(),
+  scopes: text('scopes')
+    .array()
+    .default(sql`'{}'::text[]`)
+    .notNull(),
   expiresAt: timestamp('expires_at', { withTimezone: true }),
   credentialType: text('credential_type')
     .default('personal_access_token')

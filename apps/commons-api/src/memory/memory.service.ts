@@ -1,5 +1,20 @@
-import { Injectable, Logger } from '@nestjs/common';
-import { InferInsertModel, InferSelectModel, and, desc, eq, gte, ilike, or, sql } from 'drizzle-orm';
+import {
+  BadRequestException,
+  ConflictException,
+  ForbiddenException,
+  Injectable,
+  Logger,
+} from '@nestjs/common';
+import {
+  InferInsertModel,
+  InferSelectModel,
+  and,
+  desc,
+  eq,
+  inArray,
+  or,
+  sql,
+} from 'drizzle-orm';
 import * as schema from '#/models/schema';
 import { DatabaseService } from '~/modules/database/database.service';
 import { ModelProviderFactory } from '~/modules/model-provider';
@@ -24,7 +39,10 @@ export class MemoryService {
   // ── CRUD ──────────────────────────────────────────────────────────────────
 
   async createMemory(
-    input: Omit<InferInsertModel<typeof schema.agentMemory>, 'memoryId' | 'createdAt' | 'updatedAt'>,
+    input: Omit<
+      InferInsertModel<typeof schema.agentMemory>,
+      'memoryId' | 'createdAt' | 'updatedAt'
+    >,
   ): Promise<Memory> {
     const [row] = await this.db
       .insert(schema.agentMemory)
@@ -38,8 +56,10 @@ export class MemoryService {
     opts?: { activeOnly?: boolean; type?: MemoryType; limit?: number },
   ): Promise<Memory[]> {
     const conditions = [eq(schema.agentMemory.agentId, agentId)];
-    if (opts?.activeOnly !== false) conditions.push(eq(schema.agentMemory.isActive, true));
-    if (opts?.type) conditions.push(eq(schema.agentMemory.memoryType, opts.type));
+    if (opts?.activeOnly !== false)
+      conditions.push(eq(schema.agentMemory.isActive, true));
+    if (opts?.type)
+      conditions.push(eq(schema.agentMemory.memoryType, opts.type));
 
     return this.db
       .select()
@@ -57,7 +77,18 @@ export class MemoryService {
 
   async updateMemory(
     memoryId: string,
-    delta: Partial<Pick<Memory, 'content' | 'summary' | 'importanceScore' | 'tags' | 'isActive' | 'memoryType' | 'expiresAt'>>,
+    delta: Partial<
+      Pick<
+        Memory,
+        | 'content'
+        | 'summary'
+        | 'importanceScore'
+        | 'tags'
+        | 'isActive'
+        | 'memoryType'
+        | 'expiresAt'
+      >
+    >,
   ): Promise<Memory | undefined> {
     const [row] = await this.db
       .update(schema.agentMemory)
@@ -106,9 +137,7 @@ export class MemoryService {
     if (all.length === 0) return [];
 
     const queryLower = query.toLowerCase();
-    const queryWords = queryLower
-      .split(/\s+/)
-      .filter((w) => w.length > 3);
+    const queryWords = queryLower.split(/\s+/).filter((w) => w.length > 3);
 
     const now = Date.now();
     const sevenDaysMs = 7 * 24 * 60 * 60 * 1000;
@@ -125,7 +154,8 @@ export class MemoryService {
         if (summaryLower.includes(word)) keywordHits += 3;
         if (tags.some((t) => t.toLowerCase().includes(word))) keywordHits += 2;
       }
-      const keywordScore = queryWords.length > 0
+      const keywordScore =
+        queryWords.length > 0
         ? Math.min(keywordHits / (queryWords.length * 3), 1)
         : 0;
 
@@ -135,9 +165,7 @@ export class MemoryService {
 
       // Composite (importance weighted highest)
       const composite =
-        keywordScore * 0.45 +
-        mem.importanceScore * 0.35 +
-        recencyScore * 0.20;
+        keywordScore * 0.45 + mem.importanceScore * 0.35 + recencyScore * 0.2;
 
       return { mem, composite };
     });
@@ -157,9 +185,7 @@ export class MemoryService {
         accessCount: sql`${schema.agentMemory.accessCount} + 1`,
         lastAccessedAt: new Date(),
       })
-      .where(
-        or(...memoryIds.map((id) => eq(schema.agentMemory.memoryId, id))),
-      );
+      .where(or(...memoryIds.map((id) => eq(schema.agentMemory.memoryId, id))));
   }
 
   // ── Consolidation ─────────────────────────────────────────────────────────
@@ -207,7 +233,11 @@ OUTPUT RULES:
       });
 
       const response = await llm.invoke([
-        { role: 'system', content: 'You extract structured memories from conversations. Return only valid JSON.' },
+        {
+          role: 'system',
+          content:
+            'You extract structured memories from conversations. Return only valid JSON.',
+        },
         { role: 'user', content: prompt },
       ]);
 
@@ -254,7 +284,9 @@ OUTPUT RULES:
 
       return { memoriesCreated: created, memoriesUpdated: 0 };
     } catch (err) {
-      this.logger.warn(`Memory consolidation failed for session ${sessionId}: ${err}`);
+      this.logger.warn(
+        `Memory consolidation failed for session ${sessionId}: ${err}`,
+      );
       return { memoriesCreated: 0, memoriesUpdated: 0 };
     }
   }
@@ -273,14 +305,226 @@ OUTPUT RULES:
     const lines = memories
       .map((m) => {
         const typeLabel =
-          m.memoryType === 'episodic'   ? '[Event]'    :
-          m.memoryType === 'procedural' ? '[Behaviour]' :
-                                          '[Fact]';
+          m.memoryType === 'episodic'
+            ? '[Event]'
+            : m.memoryType === 'procedural'
+              ? '[Behaviour]'
+              : '[Fact]';
         return `• ${typeLabel} ${m.summary}`;
       })
       .join('\n');
 
     return `\n## Relevant Memories\nThe following memories from previous sessions may be relevant:\n${lines}\n`;
+  }
+
+  // ── Shared, append-only memory ───────────────────────────────────────────
+
+  async createSharedScope(input: {
+    ownerUserId: string;
+    workspaceId?: string | null;
+    name: string;
+    description?: string;
+    agentIds: string[];
+  }) {
+    const agentIds = [...new Set(input.agentIds)].filter(Boolean);
+    if (!input.ownerUserId || !input.name.trim() || agentIds.length === 0) {
+      throw new BadRequestException(
+        'ownerUserId, name, and at least one agent are required',
+      );
+    }
+    const owned = await this.db
+      .select({ agentId: schema.agent.agentId })
+      .from(schema.agent)
+      .where(
+        and(
+          inArray(schema.agent.agentId, agentIds),
+          or(
+            eq(schema.agent.ownerUserId, input.ownerUserId),
+            eq(schema.agent.owner, input.ownerUserId),
+            ...(input.workspaceId
+              ? [eq(schema.agent.workspaceId, input.workspaceId)]
+              : []),
+          ),
+        ),
+      );
+    if (owned.length !== agentIds.length) {
+      throw new ForbiddenException(
+        'Every shared-memory agent must belong to this owner or workspace',
+      );
+    }
+    return this.db.transaction(async (tx) => {
+      const [scope] = await tx
+        .insert(schema.sharedMemoryScope)
+        .values({
+          ownerUserId: input.ownerUserId,
+          workspaceId: input.workspaceId,
+          name: input.name.trim(),
+          description: input.description?.trim(),
+        })
+        .returning();
+      await tx
+        .insert(schema.sharedMemoryMember)
+        .values(
+          agentIds.map((agentId) => ({
+            scopeId: scope.scopeId,
+            agentId,
+            access: 'write',
+          })),
+        );
+      return scope;
+    });
+  }
+
+  async getSharedScopesForAgent(agentId: string) {
+    return this.db
+      .select({
+        scopeId: schema.sharedMemoryScope.scopeId,
+        name: schema.sharedMemoryScope.name,
+        description: schema.sharedMemoryScope.description,
+        access: schema.sharedMemoryMember.access,
+        updatedAt: schema.sharedMemoryScope.updatedAt,
+      })
+      .from(schema.sharedMemoryMember)
+      .innerJoin(
+        schema.sharedMemoryScope,
+        eq(schema.sharedMemoryMember.scopeId, schema.sharedMemoryScope.scopeId),
+      )
+      .where(eq(schema.sharedMemoryMember.agentId, agentId))
+      .orderBy(desc(schema.sharedMemoryScope.updatedAt));
+  }
+
+  async appendSharedMemory(input: {
+    scopeId: string;
+    agentId: string;
+    sessionId?: string;
+    key: string;
+    content: string;
+    summary?: string;
+    expectedVersion?: number;
+    metadata?: Record<string, unknown>;
+  }) {
+    const member = await this.db.query.sharedMemoryMember.findFirst({
+      where: and(
+        eq(schema.sharedMemoryMember.scopeId, input.scopeId),
+        eq(schema.sharedMemoryMember.agentId, input.agentId),
+      ),
+    });
+    if (!member || !['write', 'admin'].includes(member.access)) {
+      throw new ForbiddenException(
+        'Agent does not have write access to this shared memory',
+      );
+    }
+    const key = input.key.trim().slice(0, 160);
+    const content = input.content.trim();
+    if (!key || !content)
+      throw new BadRequestException(
+        'Shared memory key and content are required',
+      );
+
+    return this.db.transaction(async (tx) => {
+      await tx.execute(
+        sql`SELECT pg_advisory_xact_lock(hashtext(${`${input.scopeId}:${key}`}))`,
+      );
+      const [latest] = await tx
+        .select()
+        .from(schema.sharedMemoryEntry)
+        .where(
+          and(
+            eq(schema.sharedMemoryEntry.scopeId, input.scopeId),
+            eq(schema.sharedMemoryEntry.key, key),
+          ),
+        )
+        .orderBy(desc(schema.sharedMemoryEntry.version))
+        .limit(1);
+      const currentVersion = latest?.version ?? 0;
+      if (
+        input.expectedVersion !== undefined &&
+        input.expectedVersion !== currentVersion
+      ) {
+        throw new ConflictException({
+          message: 'Shared memory changed; read the latest version and retry',
+          currentVersion,
+          latestEntryId: latest?.entryId ?? null,
+        });
+      }
+      const [entry] = await tx
+        .insert(schema.sharedMemoryEntry)
+        .values({
+          scopeId: input.scopeId,
+          key,
+          version: currentVersion + 1,
+          content,
+          summary:
+            input.summary?.trim() || content.replace(/\s+/g, ' ').slice(0, 160),
+          authoredByAgentId: input.agentId,
+          authoredBySessionId: input.sessionId as any,
+          supersedesEntryId: latest?.entryId,
+          metadata: input.metadata ?? {},
+        })
+        .returning();
+      await tx
+        .update(schema.sharedMemoryScope)
+        .set({ updatedAt: new Date() })
+        .where(eq(schema.sharedMemoryScope.scopeId, input.scopeId));
+      return entry;
+    });
+  }
+
+  async retrieveSharedRelevant(agentId: string, query: string, limit = 12) {
+    const scopes = await this.getSharedScopesForAgent(agentId);
+    if (!scopes.length) return [];
+    const rows = await this.db
+      .select()
+      .from(schema.sharedMemoryEntry)
+      .where(
+        inArray(
+          schema.sharedMemoryEntry.scopeId,
+          scopes.map((scope) => scope.scopeId),
+        ),
+      )
+      .orderBy(desc(schema.sharedMemoryEntry.createdAt))
+      .limit(500);
+    const latest = new Map<string, (typeof rows)[number]>();
+    for (const row of rows) {
+      const id = `${row.scopeId}:${row.key}`;
+      if (!latest.has(id)) latest.set(id, row);
+    }
+    const words = query
+      .toLowerCase()
+      .split(/\W+/)
+      .filter((word) => word.length > 3);
+    return [...latest.values()]
+      .map((row) => ({
+        row,
+        score: words.reduce(
+          (score, word) =>
+            score +
+            (row.summary.toLowerCase().includes(word) ? 3 : 0) +
+            (row.content.toLowerCase().includes(word) ? 1 : 0),
+          0,
+        ),
+      }))
+      .sort(
+        (a, b) =>
+          b.score - a.score ||
+          b.row.createdAt.getTime() - a.row.createdAt.getTime(),
+      )
+      .slice(0, Math.max(1, Math.min(limit, 50)))
+      .map(({ row }) => row);
+  }
+
+  async buildSharedMemoryBlock(
+    agentId: string,
+    query: string,
+  ): Promise<string> {
+    const memories = await this.retrieveSharedRelevant(agentId, query, 12);
+    if (!memories.length) return '';
+    return `\n## Shared Team Memory\nThese are the latest attributed facts shared with this agent. Treat them as collaborative context, not private memory:\n${memories
+      .map(
+        (memory) =>
+          `• [${memory.key} v${memory.version}, by ${memory.authoredByAgentId}] ${memory.summary}`,
+      )
+      .join('\n')}\n`;
   }
 
   // ── Stats ────────────────────────────────────────────────────────────────
@@ -295,15 +539,20 @@ OUTPUT RULES:
     const all = await this.getMemories(agentId, { activeOnly: true });
     const total = all.length;
     if (total === 0) {
-      return { total: 0, episodic: 0, semantic: 0, procedural: 0, avgImportance: 0 };
+      return {
+        total: 0,
+        episodic: 0,
+        semantic: 0,
+        procedural: 0,
+        avgImportance: 0,
+      };
     }
     return {
       total,
       episodic: all.filter((m) => m.memoryType === 'episodic').length,
       semantic: all.filter((m) => m.memoryType === 'semantic').length,
       procedural: all.filter((m) => m.memoryType === 'procedural').length,
-      avgImportance:
-        all.reduce((sum, m) => sum + m.importanceScore, 0) / total,
+      avgImportance: all.reduce((sum, m) => sum + m.importanceScore, 0) / total,
     };
   }
 }

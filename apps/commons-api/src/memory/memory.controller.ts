@@ -2,6 +2,7 @@ import {
   Body,
   Controller,
   Delete,
+  ForbiddenException,
   Get,
   HttpCode,
   NotFoundException,
@@ -9,9 +10,12 @@ import {
   Patch,
   Post,
   Query,
+  Req,
+  UseGuards,
   Version,
 } from '@nestjs/common';
 import { MemoryService, MemoryType } from './memory.service';
+import { OwnerGuard, OwnerOnly } from '~/modules/auth';
 
 class CreateMemoryDto {
   agentId!: string;
@@ -36,9 +40,40 @@ class UpdateMemoryDto {
 export class MemoryController {
   constructor(private memoryService: MemoryService) {}
 
+  /** POST /v1/memory/shared-scopes — create an attributed team-memory scope. */
+  @Post('shared-scopes')
+  @Version('1')
+  async createSharedScope(
+    @Body() dto: { name: string; description?: string; agentIds: string[] },
+    @Req() req: any,
+  ) {
+    const principal = req.principal;
+    if (principal?.principalType !== 'user') {
+      throw new ForbiddenException('A user principal is required');
+    }
+    return {
+      data: await this.memoryService.createSharedScope({
+        ownerUserId: principal.principalId,
+        workspaceId: principal.workspaceId,
+        ...dto,
+      }),
+    };
+  }
+
+  /** GET /v1/memory/shared-scopes/agents/:agentId */
+  @Get('shared-scopes/agents/:agentId')
+  @Version('1')
+  @UseGuards(OwnerGuard)
+  @OwnerOnly({ table: 'agent', idParam: 'agentId' })
+  async sharedScopes(@Param('agentId') agentId: string) {
+    return { data: await this.memoryService.getSharedScopesForAgent(agentId) };
+  }
+
   /** GET /v1/memory/agents/:agentId — list all memories for an agent */
   @Get('agents/:agentId')
   @Version('1')
+  @UseGuards(OwnerGuard)
+  @OwnerOnly({ table: 'agent', idParam: 'agentId' })
   async list(
     @Param('agentId') agentId: string,
     @Query('type') type?: MemoryType,

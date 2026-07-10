@@ -8,6 +8,7 @@ import { ToolService } from './tool.service';
 import { CommonToolService } from './tools/common-tool.service';
 import { EthereumToolService } from './tools/ethereum-tool.service';
 import { AgentService } from '~/agent/agent.service';
+import { ExternalRuntimeService } from '~/agent/runtime/external-runtime.service';
 import { DatabaseService } from '~/modules/database/database.service';
 import { Logger } from '@nestjs/common';
 
@@ -51,7 +52,13 @@ describe('Workflow Integration Tests', () => {
           findMany: jest.fn(),
         },
         tool: {
-          findFirst: jest.fn().mockResolvedValue({ toolId: 'mock-tool', name: 'mock-tool', description: 'mock' }),
+          findFirst: jest
+            .fn()
+            .mockResolvedValue({
+              toolId: 'mock-tool',
+              name: 'mock-tool',
+              description: 'mock',
+            }),
           findMany: jest.fn().mockResolvedValue([]),
         },
         toolPermission: {
@@ -83,16 +90,24 @@ describe('Workflow Integration Tests', () => {
           provide: ToolLoaderService,
           useValue: mockToolLoader,
         },
-        { provide: ToolService,         useValue: { getTool: jest.fn(), getStaticTools: jest.fn().mockReturnValue([]) } },
+        {
+          provide: ToolService,
+          useValue: {
+            getTool: jest.fn(),
+            getStaticTools: jest.fn().mockReturnValue([]),
+          },
+        },
         { provide: CommonToolService,   useValue: {} },
         { provide: EthereumToolService, useValue: {} },
         { provide: AgentService,        useValue: { runAgent: jest.fn() } },
+        { provide: ExternalRuntimeService, useValue: { runAgent: jest.fn() } },
       ],
     }).compile();
 
     workflowService = module.get<WorkflowService>(WorkflowService);
-    workflowExecutor =
-      module.get<WorkflowExecutorService>(WorkflowExecutorService);
+    workflowExecutor = module.get<WorkflowExecutorService>(
+      WorkflowExecutorService,
+    );
     taskService = module.get<TaskService>(TaskService);
     toolAccessService = module.get<ToolAccessService>(ToolAccessService);
 
@@ -206,7 +221,9 @@ describe('Workflow Integration Tests', () => {
       );
 
       // Execution row was persisted; fetch it directly via db mock
-      const status = await mockDb.query.workflowExecution.findFirst({ where: {} } as any);
+      const status = await mockDb.query.workflowExecution.findFirst({
+        where: {},
+      } as any);
 
       expect(status).toBeDefined();
       expect(status.status).toBe('completed');
@@ -218,19 +235,59 @@ describe('Workflow Integration Tests', () => {
         startNodeId: 'start',
         endNodeId: 'merge',
         nodes: [
-          { id: 'start', position: { x: 0, y: 0 }, type: 'tool' as const, toolId: 'trigger-tool' },
-          { id: 'fetch-api1', position: { x: 0, y: 0 }, type: 'tool' as const, toolId: 'http-get-tool' },
-          { id: 'fetch-api2', position: { x: 0, y: 0 }, type: 'tool' as const, toolId: 'http-get-tool' },
-          { id: 'fetch-api3', position: { x: 0, y: 0 }, type: 'tool' as const, toolId: 'http-get-tool' },
-          { id: 'merge', position: { x: 0, y: 0 }, type: 'tool' as const, toolId: 'merge-tool' },
+          {
+            id: 'start',
+            position: { x: 0, y: 0 },
+            type: 'tool' as const,
+            toolId: 'trigger-tool',
+          },
+          {
+            id: 'fetch-api1',
+            position: { x: 0, y: 0 },
+            type: 'tool' as const,
+            toolId: 'http-get-tool',
+          },
+          {
+            id: 'fetch-api2',
+            position: { x: 0, y: 0 },
+            type: 'tool' as const,
+            toolId: 'http-get-tool',
+          },
+          {
+            id: 'fetch-api3',
+            position: { x: 0, y: 0 },
+            type: 'tool' as const,
+            toolId: 'http-get-tool',
+          },
+          {
+            id: 'merge',
+            position: { x: 0, y: 0 },
+            type: 'tool' as const,
+            toolId: 'merge-tool',
+          },
         ],
         edges: [
           { id: 'edge-1', source: 'start', target: 'fetch-api1' },
           { id: 'edge-1', source: 'start', target: 'fetch-api2' },
           { id: 'edge-1', source: 'start', target: 'fetch-api3' },
-          { id: 'edge-1', source: 'fetch-api1', target: 'merge', mapping: { data: 'data1' } },
-          { id: 'edge-1', source: 'fetch-api2', target: 'merge', mapping: { data: 'data2' } },
-          { id: 'edge-1', source: 'fetch-api3', target: 'merge', mapping: { data: 'data3' } },
+          {
+            id: 'edge-1',
+            source: 'fetch-api1',
+            target: 'merge',
+            mapping: { data: 'data1' },
+          },
+          {
+            id: 'edge-1',
+            source: 'fetch-api2',
+            target: 'merge',
+            mapping: { data: 'data2' },
+          },
+          {
+            id: 'edge-1',
+            source: 'fetch-api3',
+            target: 'merge',
+            mapping: { data: 'data3' },
+          },
         ],
       };
 
@@ -255,8 +312,12 @@ describe('Workflow Integration Tests', () => {
 
       // Verify the definition was stored with all nodes
       expect(workflow.definition.nodes).toHaveLength(5);
-      expect(workflow.definition.nodes.map((n: any) => n.id)).toContain('start');
-      expect(workflow.definition.nodes.map((n: any) => n.id)).toContain('merge');
+      expect(workflow.definition.nodes.map((n: any) => n.id)).toContain(
+        'start',
+      );
+      expect(workflow.definition.nodes.map((n: any) => n.id)).toContain(
+        'merge',
+      );
     });
   });
 
@@ -449,11 +510,7 @@ describe('Workflow Integration Tests', () => {
       mockDb.query.toolPermission.findMany.mockResolvedValue([]);
 
       await expect(
-        toolAccessService.canExecuteTool(
-          'private-tool',
-          'agent-123',
-          'agent',
-        ),
+        toolAccessService.canExecuteTool('private-tool', 'agent-123', 'agent'),
       ).rejects.toThrow();
     });
 
@@ -525,11 +582,7 @@ describe('Workflow Integration Tests', () => {
 
       // Should deny access due to expired permission
       await expect(
-        toolAccessService.canExecuteTool(
-          'private-tool',
-          'agent-123',
-          'agent',
-        ),
+        toolAccessService.canExecuteTool('private-tool', 'agent-123', 'agent'),
       ).rejects.toThrow();
     });
   });
@@ -541,11 +594,26 @@ describe('Workflow Integration Tests', () => {
         workflowId: 'wf-e2e',
         definition: {
           nodes: [
-            { id: 'node1', position: { x: 0, y: 0 }, type: 'tool' as const, toolId: 'tool-1' },
-            { id: 'node2', position: { x: 0, y: 0 }, type: 'tool' as const, toolId: 'tool-2' },
+            {
+              id: 'node1',
+              position: { x: 0, y: 0 },
+              type: 'tool' as const,
+              toolId: 'tool-1',
+            },
+            {
+              id: 'node2',
+              position: { x: 0, y: 0 },
+              type: 'tool' as const,
+              toolId: 'tool-2',
+            },
           ],
           edges: [
-            { id: 'edge-1', source: 'node1', target: 'node2', mapping: { output: 'input' } },
+            {
+              id: 'edge-1',
+              source: 'node1',
+              target: 'node2',
+              mapping: { output: 'input' },
+            },
           ],
         },
         ownerId: 'user-123',

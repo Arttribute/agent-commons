@@ -8,6 +8,7 @@ export type ResourceType =
   | "other";
 
 export type AgentMode = "fullyAutonomous" | "userDriven";
+export type AgentRuntimeType = "native" | "openclaw" | "hermes" | "custom";
 
 export interface Resource {
   image: string | undefined;
@@ -48,6 +49,16 @@ export interface CommonAgent {
   topP: number;
   frequencyPenalty: number;
   presencePenalty: number;
+  runtimeType?: AgentRuntimeType;
+  runtimeVersion?: string;
+  runtimeStatus?: string;
+  runtimeConfig?: {
+    deploymentMode?: "managed" | "external";
+    channelPolicy?: "pairing" | "allowlist" | "open" | "disabled";
+    enabledPlugins?: string[];
+    enabledToolsets?: string[];
+    memoryMode?: "native" | "platform" | "hybrid";
+  };
   // TTS
   ttsProvider?: string;
   ttsVoice?: string;

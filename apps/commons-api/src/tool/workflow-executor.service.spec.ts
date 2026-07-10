@@ -15,6 +15,7 @@ import { ToolService } from './tool.service';
 import { CommonToolService } from './tools/common-tool.service';
 import { EthereumToolService } from './tools/ethereum-tool.service';
 import { AgentService } from '~/agent/agent.service';
+import { ExternalRuntimeService } from '~/agent/runtime/external-runtime.service';
 import { Logger } from '@nestjs/common';
 
 /* ─── Minimal workflow definitions ─────────────────────────────────────── */
@@ -34,8 +35,12 @@ function linearDef() {
 }
 
 function makeDb(workflowRow?: any) {
-  const insertReturning = jest.fn().mockResolvedValue([{ executionId: 'exec-1', status: 'running' }]);
-  const insertValues    = jest.fn().mockReturnValue({ returning: insertReturning });
+  const insertReturning = jest
+    .fn()
+    .mockResolvedValue([{ executionId: 'exec-1', status: 'running' }]);
+  const insertValues = jest
+    .fn()
+    .mockReturnValue({ returning: insertReturning });
   const insert          = jest.fn().mockReturnValue({ values: insertValues });
 
   const updateWhere = jest.fn().mockResolvedValue(undefined);
@@ -43,11 +48,27 @@ function makeDb(workflowRow?: any) {
   const update      = jest.fn().mockReturnValue({ set: updateSet });
 
   const query = {
-    workflow:          { findFirst: jest.fn().mockResolvedValue(workflowRow ?? { workflowId: 'wf-1', definition: linearDef(), timeoutMs: 30_000 }) },
+    workflow: {
+      findFirst: jest
+        .fn()
+        .mockResolvedValue(
+          workflowRow ?? {
+            workflowId: 'wf-1',
+            definition: linearDef(),
+            timeoutMs: 30_000,
+          },
+        ),
+    },
     workflowExecution: { findFirst: jest.fn().mockResolvedValue(null) },
   };
 
-  return { insert, update, query, _insertValues: insertValues, _updateSet: updateSet };
+  return {
+    insert,
+    update,
+    query,
+    _insertValues: insertValues,
+    _updateSet: updateSet,
+  };
 }
 
 describe('WorkflowExecutorService', () => {
@@ -61,11 +82,18 @@ describe('WorkflowExecutorService', () => {
       providers: [
         WorkflowExecutorService,
         { provide: DatabaseService,     useValue: db },
-        { provide: ToolLoaderService,   useValue: { loadTool: jest.fn().mockResolvedValue(null) } },
-        { provide: ToolService,         useValue: { getTool: jest.fn().mockResolvedValue(null) } },
+        {
+          provide: ToolLoaderService,
+          useValue: { loadTool: jest.fn().mockResolvedValue(null) },
+        },
+        {
+          provide: ToolService,
+          useValue: { getTool: jest.fn().mockResolvedValue(null) },
+        },
         { provide: CommonToolService,   useValue: {} },
         { provide: EthereumToolService, useValue: {} },
         { provide: AgentService,        useValue: { runAgent: jest.fn() } },
+        { provide: ExternalRuntimeService, useValue: { runAgent: jest.fn() } },
       ],
     }).compile();
 
@@ -84,21 +112,32 @@ describe('WorkflowExecutorService', () => {
   /* ── executeWorkflow ──────────────────────────────────────────────────── */
   describe('executeWorkflow()', () => {
     it('creates an execution row and returns its ID', async () => {
-      const id = await service.executeWorkflow({ workflowId: 'wf-1', agentId: 'agent-1', inputData: { k: 'v' } });
+      const id = await service.executeWorkflow({
+        workflowId: 'wf-1',
+        agentId: 'agent-1',
+        inputData: { k: 'v' },
+      });
       expect(id).toBe('exec-1');
       expect(db._insertValues).toHaveBeenCalledWith(
-        expect.objectContaining({ workflowId: 'wf-1', status: 'running', inputData: { k: 'v' } }),
+        expect.objectContaining({
+          workflowId: 'wf-1',
+          status: 'running',
+          inputData: { k: 'v' },
+        }),
       );
     });
 
     it('throws when workflow is not found', async () => {
       db.query.workflow.findFirst = jest.fn().mockResolvedValue(null);
-      await expect(service.executeWorkflow({ workflowId: 'missing' }))
-        .rejects.toThrow('Workflow missing not found');
+      await expect(
+        service.executeWorkflow({ workflowId: 'missing' }),
+      ).rejects.toThrow('Workflow missing not found');
     });
 
     it('returns immediately (async graph walker runs in background)', async () => {
-      jest.spyOn(service as any, 'executeGraphWalker').mockResolvedValue(undefined);
+      jest
+        .spyOn(service as any, 'executeGraphWalker')
+        .mockResolvedValue(undefined);
       const id = await service.executeWorkflow({ workflowId: 'wf-1' });
       expect(typeof id).toBe('string');
     });
@@ -119,22 +158,36 @@ describe('WorkflowExecutorService', () => {
 
     it('throws when execution not found', async () => {
       db.query.workflowExecution.findFirst = jest.fn().mockResolvedValue(null);
-      await expect(service.approveExecution('x', 'tok')).rejects.toThrow('not found');
+      await expect(service.approveExecution('x', 'tok')).rejects.toThrow(
+        'not found',
+      );
     });
 
     it('throws when not in awaiting_approval state', async () => {
-      db.query.workflowExecution.findFirst = jest.fn().mockResolvedValue({ ...pausedExecution(), status: 'running' });
-      await expect(service.approveExecution('exec-1', 'tok-ok')).rejects.toThrow('not awaiting approval');
+      db.query.workflowExecution.findFirst = jest
+        .fn()
+        .mockResolvedValue({ ...pausedExecution(), status: 'running' });
+      await expect(
+        service.approveExecution('exec-1', 'tok-ok'),
+      ).rejects.toThrow('not awaiting approval');
     });
 
     it('throws on token mismatch', async () => {
-      db.query.workflowExecution.findFirst = jest.fn().mockResolvedValue(pausedExecution());
-      await expect(service.approveExecution('exec-1', 'wrong-token')).rejects.toThrow('Invalid approval token');
+      db.query.workflowExecution.findFirst = jest
+        .fn()
+        .mockResolvedValue(pausedExecution());
+      await expect(
+        service.approveExecution('exec-1', 'wrong-token'),
+      ).rejects.toThrow('Invalid approval token');
     });
 
     it('sets status back to "running" on valid approval', async () => {
-      db.query.workflowExecution.findFirst = jest.fn().mockResolvedValue(pausedExecution());
-      jest.spyOn(service as any, 'executeGraphWalker').mockResolvedValue(undefined);
+      db.query.workflowExecution.findFirst = jest
+        .fn()
+        .mockResolvedValue(pausedExecution());
+      jest
+        .spyOn(service as any, 'executeGraphWalker')
+        .mockResolvedValue(undefined);
 
       const statusSeen: string[] = [];
       db.update = jest.fn().mockReturnValue({
@@ -144,7 +197,9 @@ describe('WorkflowExecutorService', () => {
         }),
       });
 
-      await service.approveExecution('exec-1', 'tok-ok', { note: 'looks good' });
+      await service.approveExecution('exec-1', 'tok-ok', {
+        note: 'looks good',
+      });
       expect(statusSeen).toContain('running');
     });
   });
@@ -153,14 +208,20 @@ describe('WorkflowExecutorService', () => {
   describe('rejectExecution()', () => {
     it('throws on token mismatch', async () => {
       db.query.workflowExecution.findFirst = jest.fn().mockResolvedValue({
-        executionId: 'exec-1', status: 'awaiting_approval', approvalToken: 'correct',
+        executionId: 'exec-1',
+        status: 'awaiting_approval',
+        approvalToken: 'correct',
       });
-      await expect(service.rejectExecution('exec-1', 'wrong')).rejects.toThrow('Invalid approval token');
+      await expect(service.rejectExecution('exec-1', 'wrong')).rejects.toThrow(
+        'Invalid approval token',
+      );
     });
 
     it('marks execution as "failed" with reason', async () => {
       db.query.workflowExecution.findFirst = jest.fn().mockResolvedValue({
-        executionId: 'exec-1', status: 'awaiting_approval', approvalToken: 'tok',
+        executionId: 'exec-1',
+        status: 'awaiting_approval',
+        approvalToken: 'tok',
       });
 
       const errorMessages: string[] = [];
@@ -177,7 +238,9 @@ describe('WorkflowExecutorService', () => {
 
     it('uses a default reason when none provided', async () => {
       db.query.workflowExecution.findFirst = jest.fn().mockResolvedValue({
-        executionId: 'exec-1', status: 'awaiting_approval', approvalToken: 'tok',
+        executionId: 'exec-1',
+        status: 'awaiting_approval',
+        approvalToken: 'tok',
       });
 
       let capturedMsg = '';
@@ -202,9 +265,7 @@ describe('WorkflowExecutorService', () => {
           { id: 'input', type: 'input' },
           { id: 'output', type: 'output' },
         ],
-        edges: [
-          { id: 'input-output', source: 'input', target: 'output' },
-        ],
+        edges: [{ id: 'input-output', source: 'input', target: 'output' }],
       };
 
       await (service as any).executeGraphWalker(
@@ -226,9 +287,7 @@ describe('WorkflowExecutorService', () => {
     });
 
     it('propagateSkip marks a node and its descendants as skipped', () => {
-      const nodes = [
-        { id: 'A' }, { id: 'B' }, { id: 'C' },
-      ];
+      const nodes = [{ id: 'A' }, { id: 'B' }, { id: 'C' }];
       const outgoing = new Map([
         ['A', [{ edgeId: 'e1', target: 'B' }]],
         ['B', [{ edgeId: 'e2', target: 'C' }]],
@@ -242,7 +301,14 @@ describe('WorkflowExecutorService', () => {
       const deadEdges   = new Set<string>();
       const skippedNodes = new Set<string>();
 
-      (service as any).propagateSkip('A', nodes, outgoing, incomingCount, deadEdges, skippedNodes);
+      (service as any).propagateSkip(
+        'A',
+        nodes,
+        outgoing,
+        incomingCount,
+        deadEdges,
+        skippedNodes,
+      );
 
       expect(skippedNodes.has('A')).toBe(true);
       expect(deadEdges.has('e1')).toBe(true);

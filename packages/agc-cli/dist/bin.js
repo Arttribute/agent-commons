@@ -577,10 +577,11 @@ function agentsCommand() {
         agents.map((a) => ({
           ID: a.agentId.slice(0, 8) + "\u2026",
           Name: a.name,
+          Runtime: a.runtimeType ?? "native",
           Model: `${a.modelProvider}/${a.modelId}`,
           Created: relativeTime(a.createdAt)
         })),
-        ["ID", "Name", "Model", "Created"]
+        ["ID", "Name", "Runtime", "Model", "Created"]
       );
     } catch (err) {
       spinner.stop();
@@ -600,8 +601,15 @@ function agentsCommand() {
       detail([
         ["Agent ID", c.id(agent.agentId)],
         ["Provider", `${agent.modelProvider} / ${agent.modelId}`],
+        ["Runtime", agent.runtimeType ?? "native"],
+        ["Runtime status", agent.runtimeStatus ?? "ready"],
         ["Instructions", agent.instructions?.slice(0, 80) ?? c.dim("(none)")],
-        ["Tools", [...agent.commonTools ?? [], ...agent.externalTools ?? []].join(", ") || c.dim("(none)")],
+        [
+          "Tools",
+          [...agent.commonTools ?? [], ...agent.externalTools ?? []].join(
+            ", "
+          ) || c.dim("(none)")
+        ],
         ["Created", relativeTime(agent.createdAt)]
       ]);
     } catch (err) {
@@ -610,7 +618,18 @@ function agentsCommand() {
       process.exit(1);
     }
   });
-  cmd.command("create").description("Create a new agent").requiredOption("--name <name>", "Agent name").option("--instructions <text>", "System instructions").option("--provider <provider>", "Model provider (openai|anthropic|google|groq|openrouter|xai|ollama|custom)", "openai").option("--model <id>", "Model ID", "gpt-5.4-mini").option("--model-api-key <key>", "Provider API key (BYOK)").option("--model-base-url <url>", "Base URL for custom or local OpenAI-compatible providers").option("--json", "Output as JSON").action(async (opts) => {
+  cmd.command("create").description("Create a new agent").requiredOption("--name <name>", "Agent name").option("--instructions <text>", "System instructions").option(
+    "--provider <provider>",
+    "Model provider (openai|anthropic|google|groq|openrouter|xai|ollama|custom)",
+    "openai"
+  ).option("--model <id>", "Model ID", "gpt-5.4-mini").option("--model-api-key <key>", "Provider API key (BYOK)").option(
+    "--model-base-url <url>",
+    "Base URL for custom or local OpenAI-compatible providers"
+  ).option(
+    "--runtime <runtime>",
+    "Agent runtime (native|openclaw|hermes|custom)",
+    "native"
+  ).option("--json", "Output as JSON").action(async (opts) => {
     const cfg = loadConfig();
     if (!cfg.initiator) {
       console.error(c.error("No initiator set. Run `agc login` first."));
@@ -618,6 +637,9 @@ function agentsCommand() {
     }
     const spinner = spin("Creating agent\u2026");
     try {
+      if (!["native", "openclaw", "hermes", "custom"].includes(opts.runtime)) {
+        throw new Error(`Unsupported runtime "${opts.runtime}"`);
+      }
       const client = makeClient();
       const res = await client.agents.create({
         name: opts.name,
@@ -626,7 +648,8 @@ function agentsCommand() {
         modelProvider: opts.provider,
         modelId: opts.model,
         modelApiKey: opts.modelApiKey,
-        modelBaseUrl: opts.modelBaseUrl
+        modelBaseUrl: opts.modelBaseUrl,
+        runtimeType: opts.runtime
       });
       const agent = res?.data ?? res;
       spinner.stop();
@@ -636,15 +659,57 @@ ${sym.ok} Agent created`);
       detail([
         ["Agent ID", c.id(agent.agentId)],
         ["Name", agent.name],
-        ["Model", `${agent.modelProvider}/${agent.modelId}`]
+        ["Model", `${agent.modelProvider}/${agent.modelId}`],
+        ["Runtime", agent.runtimeType ?? opts.runtime]
       ]);
-      console.log(c.dim("\n  Tip: agc config set defaultAgentId " + agent.agentId));
+      console.log(
+        c.dim("\n  Tip: agc config set defaultAgentId " + agent.agentId)
+      );
     } catch (err) {
       spinner.stop();
       printError(err);
       process.exit(1);
     }
   });
+  const runtime = cmd.command("runtime").description("Manage an agent runtime");
+  runtime.command("status <agentId>").description("Show managed runtime status and capabilities").option("--json", "Output as JSON").action(async (agentId, opts) => {
+    const spinner = spin("Fetching runtime status\u2026");
+    try {
+      const result = await makeClient().agents.getRuntime(agentId);
+      spinner.stop();
+      if (opts.json) return jsonOut(result.data);
+      detail([
+        ["Runtime", result.data.runtimeType],
+        ["Status", result.data.status],
+        ["Managed", result.data.managed ? "yes" : "no"],
+        ["Computer", result.data.computer?.computerId ?? c.dim("(none)")]
+      ]);
+    } catch (err) {
+      spinner.stop();
+      printError(err);
+      process.exit(1);
+    }
+  });
+  for (const action of ["deploy", "restart", "sleep"]) {
+    runtime.command(`${action} <agentId>`).description(
+      `${action[0].toUpperCase()}${action.slice(1)} the managed agent runtime`
+    ).action(async (agentId) => {
+      const spinner = spin(
+        `${action[0].toUpperCase()}${action.slice(1)}ing runtime\u2026`
+      );
+      try {
+        const client = makeClient();
+        const result = action === "deploy" ? await client.agents.deployRuntime(agentId) : action === "restart" ? await client.agents.restartRuntime(agentId) : await client.agents.sleepRuntime(agentId);
+        spinner.stop();
+        console.log(`
+${sym.ok} Runtime ${result.data.status}`);
+      } catch (err) {
+        spinner.stop();
+        printError(err);
+        process.exit(1);
+      }
+    });
+  }
   const autonomy = cmd.command("autonomy").description("Manage agent heartbeat");
   autonomy.command("status").description("Show autonomy status for an agent").requiredOption("--agent <agentId>", "Agent ID").option("--json", "Output as JSON").action(async (opts) => {
     const client = makeClient();
@@ -660,8 +725,14 @@ ${c.bold("Heartbeat Status")}`);
         ["Enabled", s.enabled ? c.bold("yes") : "no"],
         ["Interval", s.intervalSec ? `${s.intervalSec}s` : "n/a"],
         ["Armed", s.isArmed ? c.bold("yes") : "no"],
-        ["Last beat", s.lastBeatAt ? new Date(s.lastBeatAt).toLocaleString() : "never"],
-        ["Next beat", s.nextBeatAt ? new Date(s.nextBeatAt).toLocaleString() : "n/a"]
+        [
+          "Last beat",
+          s.lastBeatAt ? new Date(s.lastBeatAt).toLocaleString() : "never"
+        ],
+        [
+          "Next beat",
+          s.nextBeatAt ? new Date(s.nextBeatAt).toLocaleString() : "n/a"
+        ]
       ]);
     } catch (err) {
       spinner.stop();
@@ -669,7 +740,11 @@ ${c.bold("Heartbeat Status")}`);
       process.exit(1);
     }
   });
-  autonomy.command("enable").description("Enable heartbeat for an agent").requiredOption("--agent <agentId>", "Agent ID").option("--interval <seconds>", "Heartbeat interval in seconds (min 30)", "300").action(async (opts) => {
+  autonomy.command("enable").description("Enable heartbeat for an agent").requiredOption("--agent <agentId>", "Agent ID").option(
+    "--interval <seconds>",
+    "Heartbeat interval in seconds (min 30)",
+    "300"
+  ).action(async (opts) => {
     const client = makeClient();
     const spinner = spin("Enabling autonomy\u2026");
     try {
@@ -678,8 +753,10 @@ ${c.bold("Heartbeat Status")}`);
         intervalSec: parseInt(opts.interval, 10)
       });
       spinner.stop();
-      console.log(`
-${sym.ok} Autonomy enabled for agent ${c.id(opts.agent)}`);
+      console.log(
+        `
+${sym.ok} Autonomy enabled for agent ${c.id(opts.agent)}`
+      );
       console.log(c.dim(`  Heartbeat every ${opts.interval}s`));
     } catch (err) {
       spinner.stop();
@@ -693,8 +770,10 @@ ${sym.ok} Autonomy enabled for agent ${c.id(opts.agent)}`);
     try {
       await client.agents.setAutonomy(opts.agent, { enabled: false });
       spinner.stop();
-      console.log(`
-${sym.ok} Autonomy disabled for agent ${c.id(opts.agent)}`);
+      console.log(
+        `
+${sym.ok} Autonomy disabled for agent ${c.id(opts.agent)}`
+      );
     } catch (err) {
       spinner.stop();
       printError(err);
@@ -707,8 +786,10 @@ ${sym.ok} Autonomy disabled for agent ${c.id(opts.agent)}`);
     try {
       await client.agents.triggerHeartbeat(opts.agent);
       spinner.stop();
-      console.log(`
-${sym.ok} Heartbeat triggered for agent ${c.id(opts.agent)}`);
+      console.log(
+        `
+${sym.ok} Heartbeat triggered for agent ${c.id(opts.agent)}`
+      );
     } catch (err) {
       spinner.stop();
       printError(err);

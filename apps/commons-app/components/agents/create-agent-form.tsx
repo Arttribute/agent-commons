@@ -16,7 +16,7 @@ import {
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
-import type { AgentMode, CommonAgent } from "@/types/agent";
+import type { AgentMode, AgentRuntimeType, CommonAgent } from "@/types/agent";
 import { Bot, Brain, Cog } from "lucide-react";
 
 import ImageUploader from "./ImageUploader";
@@ -43,6 +43,7 @@ export function CreateAgentForm() {
     mode: "userDriven",
     common_tools: [],
     external_tools: [],
+    runtimeType: "native",
   });
 
   const [customTools, setCustomTools] = useState<{ [key: string]: string }>({
@@ -107,6 +108,12 @@ export function CreateAgentForm() {
       modelId: agent.modelId,
       modelApiKey: agent.modelApiKey,
       modelBaseUrl: agent.modelBaseUrl,
+      runtimeType: agent.runtimeType ?? "native",
+      runtimeConfig: {
+        deploymentMode: "managed",
+        channelPolicy: "pairing",
+        memoryMode: "hybrid",
+      },
     };
 
     try {
@@ -135,6 +142,7 @@ export function CreateAgentForm() {
       mode: "userDriven",
       common_tools: [],
       external_tools: [],
+      runtimeType: "native",
     });
     setLoadingCreate(false);
   };
@@ -284,6 +292,36 @@ export function CreateAgentForm() {
 
                 {/* ADVANCED */}
                 <TabsContent value="advanced" className="space-y-6">
+                  <div className="grid gap-2 rounded-lg border border-border p-3">
+                    <Label>Agent runtime</Label>
+                    <Select
+                      value={agent.runtimeType ?? "native"}
+                      onValueChange={(value: AgentRuntimeType) =>
+                        setAgent((previous) => ({
+                          ...previous,
+                          runtimeType: value,
+                        }))
+                      }
+                    >
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="native">Agent Commons</SelectItem>
+                        <SelectItem value="openclaw">OpenClaw</SelectItem>
+                        <SelectItem value="hermes">Hermes</SelectItem>
+                        <SelectItem value="custom">Custom runtime</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <p className="text-xs leading-5 text-muted-foreground">
+                      {agent.runtimeType === "openclaw" ||
+                      agent.runtimeType === "hermes"
+                        ? "This agent receives an isolated persistent managed computer. Sessions, tools, workflows, memory, usage, and billing remain unified in Agent Commons."
+                        : agent.runtimeType === "custom"
+                          ? "Custom runtimes use the same session and capability contract and require a compatible managed image."
+                          : "The mature native Agent Commons runtime with the existing fast streaming and tool experience."}
+                    </p>
+                  </div>
                   <Presets
                     agent={agent}
                     setAgent={setAgent}

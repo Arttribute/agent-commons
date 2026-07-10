@@ -20,6 +20,12 @@ import { WalletModule } from '~/wallet/wallet.module';
 import { FilesModule } from '~/files';
 import { ComputerModule } from '~/computer';
 import { PinataModule } from '~/pinata/pinata.module';
+import { RuntimeController } from './runtime/runtime.controller';
+import { RuntimeMigrationService } from './runtime/runtime-migration.service';
+import { RuntimeManagementService } from './runtime/runtime-management.service';
+import { ExternalRuntimeService } from './runtime/external-runtime.service';
+import { RuntimeDispatcherService } from './runtime/runtime-dispatcher.service';
+import { RuntimeToolBridgeController } from './runtime/runtime-tool-bridge.controller';
 
 @Module({
   imports: [
@@ -37,8 +43,31 @@ import { PinataModule } from '~/pinata/pinata.module';
     ComputerModule,
     PinataModule,
   ],
-  controllers: [AgentController, AgentToolsController],
-  providers: [AgentService, HeartbeatService, RunStreamRegistry, ResourceService, EmbeddingService, OwnerGuard],
-  exports: [AgentService, HeartbeatService, RunStreamRegistry],
+  controllers: [
+    AgentController,
+    AgentToolsController,
+    RuntimeController,
+    RuntimeToolBridgeController,
+  ],
+  providers: [
+    AgentService,
+    HeartbeatService,
+    RunStreamRegistry,
+    ResourceService,
+    EmbeddingService,
+    OwnerGuard,
+    RuntimeMigrationService,
+    RuntimeManagementService,
+    ExternalRuntimeService,
+    RuntimeDispatcherService,
+  ],
+  exports: [
+    AgentService,
+    HeartbeatService,
+    RunStreamRegistry,
+    RuntimeManagementService,
+    ExternalRuntimeService,
+    RuntimeDispatcherService,
+  ],
 })
 export class AgentModule {}

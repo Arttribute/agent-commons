@@ -33,13 +33,20 @@ import { Observable } from 'rxjs';
 import { filter, map } from 'rxjs/operators';
 import { omit } from 'lodash';
 import { OwnerGuard, OwnerOnly } from '~/modules/auth';
+import { RuntimeDispatcherService } from './runtime/runtime-dispatcher.service';
+import { RuntimeManagementService } from './runtime/runtime-management.service';
+import { normalizeRuntimeType } from './runtime/runtime.types';
 
 interface RunBody {
   agentId: string;
   messages: any[];
   sessionId?: string;
   cliContext?: string;
-  cliTools?: Array<{ name: string; description: string; parameters: Record<string, unknown> }>;
+  cliTools?: Array<{
+    name: string;
+    description: string;
+    parameters: Record<string, unknown>;
+  }>;
   attachments?: Array<{ fileId: string }>;
   computerRequest?: {
     enabled: boolean;
@@ -57,6 +64,8 @@ export class AgentController {
     private readonly heartbeat: HeartbeatService,
     private readonly runStreams: RunStreamRegistry,
     private readonly pinata: PinataService,
+    private readonly runtimeDispatcher: RuntimeDispatcherService,
+    private readonly runtimes: RuntimeManagementService,
   ) {}
 
   @Post()
@@ -83,10 +92,16 @@ export class AgentController {
             workspaceId: principal.workspaceId ?? body.workspaceId,
           }
         : body;
-    const agent = await this.agent.createAgent({
+    let agent = await this.agent.createAgent({
       value: ownedBody as InferInsertModel<typeof schema.agent>,
       commonsOwned: body.commonsOwned,
     });
+    if (normalizeRuntimeType(agent.runtimeType) !== 'native') {
+      await this.runtimes
+        .ensureConfigured(agent.agentId, true)
+        .catch(() => undefined);
+      agent = await this.agent.getAgent({ agentId: agent.agentId });
+    }
     return { data: omit(agent, ['wallet', 'modelApiKey']) };
   }
 
@@ -106,7 +121,7 @@ export class AgentController {
     // collect only the final message; use lastValueFrom
     const { lastValueFrom } = await import('rxjs');
     return lastValueFrom(
-      this.agent.runAgent({ ...body, initiator }).pipe(
+      this.runtimeDispatcher.runAgent({ ...body, initiator }).pipe(
         // The final emission from runAgent will contain the full data
         filter((chunk) => chunk.type === 'final'),
         map((chunk) => chunk.payload),
@@ -137,7 +152,10 @@ export class AgentController {
     // POST /v1/agents/runs/:runId/stream using the runId from `run_started`.
     const runId = uuidv4();
     return this.runStreams
-      .start(runId, this.agent.runAgent({ ...body, stream: true, initiator }))
+      .start(
+        runId,
+        this.runtimeDispatcher.runAgent({ ...body, stream: true, initiator }),
+      )
       .pipe(map((data) => ({ data })));
   }
 
@@ -168,8 +186,14 @@ export class AgentController {
    */
   @Post('cli-tool-result')
   submitCliToolResult(@Body() body: { requestId: string; result: string }) {
-    const resolved = this.agent.resolveCliToolRequest(body.requestId, body.result);
-    if (!resolved) throw new BadRequestException(`No pending CLI tool request with id "${body.requestId}"`);
+    const resolved = this.agent.resolveCliToolRequest(
+      body.requestId,
+      body.result,
+    );
+    if (!resolved)
+      throw new BadRequestException(
+        `No pending CLI tool request with id "${body.requestId}"`,
+      );
     return { ok: true };
   }
 
@@ -177,7 +201,8 @@ export class AgentController {
   async triggerAgent(@Param('agentId') agentId: string) {
     this.agent.triggerAgent({ agentId });
     return {
-      message: 'Agent trigger sent. Make sure you have enabled agent autonomy for the trigger to work',
+      message:
+        'Agent trigger sent. Make sure you have enabled agent autonomy for the trigger to work',
     };
   }
 
@@ -394,7 +419,12 @@ export class AgentController {
   @Patch('tools/:id')
   async updateAgentTool(
     @Param('id') id: string,
-    @Body() body: { usageComments?: string; isEnabled?: boolean; config?: Record<string, any> },
+    @Body()
+    body: {
+      usageComments?: string;
+      isEnabled?: boolean;
+      config?: Record<string, any>;
+    },
   ) {
     const tool = await this.agent.updateAgentTool(id, body);
     return { data: tool };

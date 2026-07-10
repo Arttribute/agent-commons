@@ -2,13 +2,20 @@ import { Injectable, Logger, forwardRef, Inject } from '@nestjs/common';
 import { eq } from 'drizzle-orm';
 import * as vm from 'vm';
 import { randomBytes } from 'crypto';
+import { lastValueFrom } from 'rxjs';
 import { DatabaseService } from '../modules/database';
 import { ToolLoaderService } from './tool-loader.service';
 import { ToolService } from './tool.service';
 import { CommonToolService } from './tools/common-tool.service';
 import { EthereumToolService } from './tools/ethereum-tool.service';
 import { AgentService } from '../agent/agent.service';
-import { ToolExecutionError, WorkflowNodeError, AgentProcessorError } from './workflow-errors';
+import { ExternalRuntimeService } from '../agent/runtime/external-runtime.service';
+import { normalizeRuntimeType } from '../agent/runtime/runtime.types';
+import {
+  ToolExecutionError,
+  WorkflowNodeError,
+  AgentProcessorError,
+} from './workflow-errors';
 import * as schema from '../../models/schema';
 
 interface NodeExecutionContext {
@@ -64,6 +71,8 @@ export class WorkflowExecutorService {
     private readonly ethereumToolService: EthereumToolService,
     @Inject(forwardRef(() => AgentService))
     private readonly agentService: AgentService,
+    @Inject(forwardRef(() => ExternalRuntimeService))
+    private readonly externalRuntime: ExternalRuntimeService,
   ) {}
 
   // ── Public: start a new execution ─────────────────────────────────────────
@@ -77,7 +86,8 @@ export class WorkflowExecutorService {
     userId?: string;
     workflowDepth?: number;
   }): Promise<string> {
-    const { workflowId, agentId, sessionId, taskId, inputData, userId } = params;
+    const { workflowId, agentId, sessionId, taskId, inputData, userId } =
+      params;
     const workflowDepth = params.workflowDepth ?? 0;
     if (workflowDepth > 2) {
       throw new Error('Nested workflow depth limit exceeded');
@@ -102,28 +112,54 @@ export class WorkflowExecutorService {
       })
       .returning();
 
-    this.logger.log(`Started workflow execution ${execution.executionId} for workflow ${workflowId}`);
+    this.logger.log(
+      `Started workflow execution ${execution.executionId} for workflow ${workflowId}`,
+    );
 
     const timeoutMs = workflow.timeoutMs || 300_000;
     const definition = { ...(workflow.definition as any), workflowId };
     const executionPromise = this.executeGraphWalker(
-      execution.executionId, definition, agentId, userId, inputData || {}, undefined, undefined, workflowDepth,
+      execution.executionId,
+      definition,
+      agentId,
+      userId,
+      inputData || {},
+      undefined,
+      undefined,
+      workflowDepth,
     );
     const timeoutPromise = new Promise<never>((_, reject) =>
-      setTimeout(() => reject(new Error(`Workflow execution timeout after ${timeoutMs}ms`)), timeoutMs),
+      setTimeout(
+        () =>
+          reject(new Error(`Workflow execution timeout after ${timeoutMs}ms`)),
+        timeoutMs,
+      ),
     );
 
     Promise.race([executionPromise, timeoutPromise]).catch(async (error) => {
-      this.logger.error(`Workflow execution ${execution.executionId} failed: ${error.message}`);
+      this.logger.error(
+        `Workflow execution ${execution.executionId} failed: ${error.message}`,
+      );
       // Don't overwrite awaiting_approval status
       const current = await this.db.query.workflowExecution.findFirst({
         where: (e) => eq(e.executionId, execution.executionId),
       });
-      if (current && current.status !== 'awaiting_approval' && current.status !== 'cancelled') {
+      if (
+        current &&
+        current.status !== 'awaiting_approval' &&
+        current.status !== 'cancelled'
+      ) {
         try {
-          await this.db.update(schema.workflowExecution)
-            .set({ status: 'failed', errorMessage: error.message, completedAt: new Date() })
-            .where(eq(schema.workflowExecution.executionId, execution.executionId));
+          await this.db
+            .update(schema.workflowExecution)
+            .set({
+              status: 'failed',
+              errorMessage: error.message,
+              completedAt: new Date(),
+            })
+            .where(
+              eq(schema.workflowExecution.executionId, execution.executionId),
+            );
         } catch (updateError) {
           this.logger.error('Failed to update timeout status:', updateError);
         }
@@ -135,24 +171,32 @@ export class WorkflowExecutorService {
 
   // ── Public: resume a paused (awaiting_approval) execution ─────────────────
 
-  async approveExecution(executionId: string, approvalToken: string, approvalData?: Record<string, any>): Promise<void> {
+  async approveExecution(
+    executionId: string,
+    approvalToken: string,
+    approvalData?: Record<string, any>,
+  ): Promise<void> {
     const execution = await this.db.query.workflowExecution.findFirst({
       where: (e) => eq(e.executionId, executionId),
       with: { workflow: true },
     });
     if (!execution) throw new Error(`Execution ${executionId} not found`);
     if (execution.status !== 'awaiting_approval') {
-      throw new Error(`Execution ${executionId} is not awaiting approval (status: ${execution.status})`);
+      throw new Error(
+        `Execution ${executionId} is not awaiting approval (status: ${execution.status})`,
+      );
     }
     if ((execution as any).approvalToken !== approvalToken) {
       throw new Error('Invalid approval token');
     }
 
     const pausedAtNode: string = (execution as any).pausedAtNode;
-    const pausedNodeOutputs: Record<string, any> = (execution as any).pausedNodeOutputs || {};
+    const pausedNodeOutputs: Record<string, any> =
+      (execution as any).pausedNodeOutputs || {};
 
     // Mark execution as resumed
-    await this.db.update(schema.workflowExecution)
+    await this.db
+      .update(schema.workflowExecution)
       .set({
         status: 'running',
         approvalData: approvalData ?? {},
@@ -163,34 +207,56 @@ export class WorkflowExecutorService {
 
     // Resume graph from paused node — inject approval result into outputs
     const approvalOutput = { approved: true, approvalData: approvalData ?? {} };
-    const resumeOutputs = { ...pausedNodeOutputs, [pausedAtNode]: approvalOutput };
+    const resumeOutputs = {
+      ...pausedNodeOutputs,
+      [pausedAtNode]: approvalOutput,
+    };
 
     const workflow = (execution as any).workflow;
     this.executeGraphWalker(
-      executionId, workflow.definition, execution.agentId ?? undefined,
-      undefined, execution.inputData as Record<string, any> || {},
-      resumeOutputs, pausedAtNode, 0,
+      executionId,
+      workflow.definition,
+      execution.agentId ?? undefined,
+      undefined,
+      (execution.inputData as Record<string, any>) || {},
+      resumeOutputs,
+      pausedAtNode,
+      0,
     ).catch(async (error) => {
-      this.logger.error(`Resumed execution ${executionId} failed: ${error.message}`);
-      await this.db.update(schema.workflowExecution)
-        .set({ status: 'failed', errorMessage: error.message, completedAt: new Date() })
+      this.logger.error(
+        `Resumed execution ${executionId} failed: ${error.message}`,
+      );
+      await this.db
+        .update(schema.workflowExecution)
+        .set({
+          status: 'failed',
+          errorMessage: error.message,
+          completedAt: new Date(),
+        })
         .where(eq(schema.workflowExecution.executionId, executionId));
     });
   }
 
-  async rejectExecution(executionId: string, approvalToken: string, reason?: string): Promise<void> {
+  async rejectExecution(
+    executionId: string,
+    approvalToken: string,
+    reason?: string,
+  ): Promise<void> {
     const execution = await this.db.query.workflowExecution.findFirst({
       where: (e) => eq(e.executionId, executionId),
     });
     if (!execution) throw new Error(`Execution ${executionId} not found`);
     if (execution.status !== 'awaiting_approval') {
-      throw new Error(`Execution ${executionId} is not awaiting approval (status: ${execution.status})`);
+      throw new Error(
+        `Execution ${executionId} is not awaiting approval (status: ${execution.status})`,
+      );
     }
     if ((execution as any).approvalToken !== approvalToken) {
       throw new Error('Invalid approval token');
     }
 
-    await this.db.update(schema.workflowExecution)
+    await this.db
+      .update(schema.workflowExecution)
       .set({
         status: 'failed',
         errorMessage: reason ?? 'Rejected by human reviewer',
@@ -226,9 +292,15 @@ export class WorkflowExecutorService {
 
     // ── Build graph structures ────────────────────────────────────────────
     // adjacency: source → [{ edgeId, target, sourceHandle }]
-    const outgoing = new Map<string, Array<{ edgeId: string; target: string; sourceHandle?: string }>>();
+    const outgoing = new Map<
+      string,
+      Array<{ edgeId: string; target: string; sourceHandle?: string }>
+    >();
     // incomingCount[node] = { live: number, dead: number, total: number }
-    const incomingCount = new Map<string, { live: number; dead: number; total: number }>();
+    const incomingCount = new Map<
+      string,
+      { live: number; dead: number; total: number }
+    >();
 
     for (const node of nodes) {
       outgoing.set(node.id, []);
@@ -248,7 +320,7 @@ export class WorkflowExecutorService {
     const deadEdges = new Set<string>();
     const completedNodes = new Set<string>();
     const skippedNodes = new Set<string>();
-    const nodeOutputs: Record<string, any> = { '__input__': inputData };
+    const nodeOutputs: Record<string, any> = { __input__: inputData };
     const nodeResults: Record<string, NodeExecutionResult> = {};
 
     // Restore state from a previous pause
@@ -302,7 +374,14 @@ export class WorkflowExecutorService {
         // Propagate skips for fully-dead nodes
         for (const nodeId of fullyDead) {
           if (!skippedNodes.has(nodeId)) {
-            this.propagateSkip(nodeId, nodes, outgoing, incomingCount, deadEdges, skippedNodes);
+            this.propagateSkip(
+              nodeId,
+              nodes,
+              outgoing,
+              incomingCount,
+              deadEdges,
+              skippedNodes,
+            );
           }
         }
 
@@ -312,24 +391,36 @@ export class WorkflowExecutorService {
         }
 
         // Update current node tracker in DB
-        await this.db.update(schema.workflowExecution)
+        await this.db
+          .update(schema.workflowExecution)
           .set({ currentNode: frontier.join(',') })
           .where(eq(schema.workflowExecution.executionId, executionId));
 
         // Execute all frontier nodes concurrently
-        const results = await Promise.all(frontier.map((nodeId) => {
+        const results = await Promise.all(
+          frontier.map((nodeId) => {
           const node = nodes.find((n: any) => n.id === nodeId);
           if (!node) {
-            return Promise.resolve<NodeExecutionResult>(
-              { nodeId, status: 'skipped', error: 'Node definition not found', duration: 0 },
-            );
+              return Promise.resolve<NodeExecutionResult>({
+                nodeId,
+                status: 'skipped',
+                error: 'Node definition not found',
+                duration: 0,
+              });
           }
           const isFirstNodeWithNoIncoming =
-            !resumeFromNode &&
-            !edges.some((e: any) => e.target === nodeId);
+              !resumeFromNode && !edges.some((e: any) => e.target === nodeId);
 
-          let nodeInputs = this.mapNodeInputs(nodeId, edges, nodeOutputs, node.config);
-          if (isFirstNodeWithNoIncoming && Object.keys(nodeInputs).length === 0) {
+            let nodeInputs = this.mapNodeInputs(
+              nodeId,
+              edges,
+              nodeOutputs,
+              node.config,
+            );
+            if (
+              isFirstNodeWithNoIncoming &&
+              Object.keys(nodeInputs).length === 0
+            ) {
             nodeInputs = inputData;
           }
 
@@ -346,7 +437,8 @@ export class WorkflowExecutorService {
             userId,
             workflowDepth,
           );
-        }));
+          }),
+        );
 
         // Process results
         let fatalError: Error | null = null;
@@ -357,18 +449,35 @@ export class WorkflowExecutorService {
           if (result.status === 'error') {
             const node = nodes.find((n: any) => n.id === result.nodeId);
             if (!node?.config?.continueOnError && !fatalError) {
-              fatalError = new Error(`Node ${result.nodeId} failed: ${result.error}`);
+              fatalError = new Error(
+                `Node ${result.nodeId} failed: ${result.error}`,
+              );
             }
             // Mark outgoing edges as dead on error (unless continueOnError)
             if (!node?.config?.continueOnError) {
-              this.markOutgoingDead(result.nodeId, outgoing, incomingCount, deadEdges);
+              this.markOutgoingDead(
+                result.nodeId,
+                outgoing,
+                incomingCount,
+                deadEdges,
+              );
             } else if (result.output !== undefined) {
               nodeOutputs[result.nodeId] = result.output;
-              this.updateDownstreamLiveDegree(result.nodeId, outgoing, incomingCount, deadEdges);
+              this.updateDownstreamLiveDegree(
+                result.nodeId,
+                outgoing,
+                incomingCount,
+                deadEdges,
+              );
             }
           } else if (result.status === 'skipped') {
             skippedNodes.add(result.nodeId);
-            this.markOutgoingDead(result.nodeId, outgoing, incomingCount, deadEdges);
+            this.markOutgoingDead(
+              result.nodeId,
+              outgoing,
+              incomingCount,
+              deadEdges,
+            );
           } else {
             // success
             if (result.output !== undefined) {
@@ -377,10 +486,15 @@ export class WorkflowExecutorService {
 
             // Handle condition nodes — mark non-taken branch dead
             const node = nodes.find((n: any) => n.id === result.nodeId);
-            if ((node?.type === 'condition') && result.output?.result !== undefined) {
+            if (
+              node?.type === 'condition' &&
+              result.output?.result !== undefined
+            ) {
               const taken = result.output.result ? 'true' : 'false';
               const notTaken = result.output.result ? 'false' : 'true';
-              for (const { edgeId, target, sourceHandle } of outgoing.get(result.nodeId) || []) {
+              for (const { edgeId, target, sourceHandle } of outgoing.get(
+                result.nodeId,
+              ) || []) {
                 if (sourceHandle === notTaken) {
                   deadEdges.add(edgeId);
                   const cnt = incomingCount.get(target)!;
@@ -393,13 +507,19 @@ export class WorkflowExecutorService {
                 }
               }
             } else {
-              this.updateDownstreamLiveDegree(result.nodeId, outgoing, incomingCount, deadEdges);
+              this.updateDownstreamLiveDegree(
+                result.nodeId,
+                outgoing,
+                incomingCount,
+                deadEdges,
+              );
             }
           }
         }
 
         // Persist progress
-        await this.db.update(schema.workflowExecution)
+        await this.db
+          .update(schema.workflowExecution)
           .set({ nodeResults: JSON.parse(JSON.stringify(nodeResults)) })
           .where(eq(schema.workflowExecution.executionId, executionId));
 
@@ -418,9 +538,12 @@ export class WorkflowExecutorService {
         nodeResults: JSON.parse(JSON.stringify(nodeResults)),
         currentNode: null,
       };
-      if (finalOutput !== undefined) updateData.outputData = JSON.parse(JSON.stringify(finalOutput));
+      if (finalOutput !== undefined)
+        updateData.outputData = JSON.parse(JSON.stringify(finalOutput));
 
-      await this.db.update(schema.workflowExecution).set(updateData)
+      await this.db
+        .update(schema.workflowExecution)
+        .set(updateData)
         .where(eq(schema.workflowExecution.executionId, executionId));
 
       // Update workflow execution stats
@@ -428,8 +551,12 @@ export class WorkflowExecutorService {
         where: (w) => eq(w.workflowId, definition.workflowId ?? ''),
       });
       if (wf) {
-        await this.db.update(schema.workflow)
-          .set({ executionCount: (wf.executionCount || 0) + 1, lastExecutedAt: new Date() })
+        await this.db
+          .update(schema.workflow)
+          .set({
+            executionCount: (wf.executionCount || 0) + 1,
+            lastExecutedAt: new Date(),
+          })
           .where(eq(schema.workflow.workflowId, wf.workflowId));
       }
 
@@ -440,14 +567,30 @@ export class WorkflowExecutorService {
     } catch (error: any) {
       if (error instanceof HumanApprovalPauseError) {
         // Persist pause state then stop — execution will resume via approveExecution()
-        await this.persistApprovalPause(executionId, error.nodeId, error.approvalToken, nodeOutputs, nodeResults);
-        this.logger.log(`Workflow execution ${executionId} paused at node ${error.nodeId} awaiting approval`);
+        await this.persistApprovalPause(
+          executionId,
+          error.nodeId,
+          error.approvalToken,
+          nodeOutputs,
+          nodeResults,
+        );
+        this.logger.log(
+          `Workflow execution ${executionId} paused at node ${error.nodeId} awaiting approval`,
+        );
         return;
       }
-      await this.db.update(schema.workflowExecution)
-        .set({ status: 'failed', completedAt: new Date(), errorMessage: error.message, currentNode: null })
+      await this.db
+        .update(schema.workflowExecution)
+        .set({
+          status: 'failed',
+          completedAt: new Date(),
+          errorMessage: error.message,
+          currentNode: null,
+        })
         .where(eq(schema.workflowExecution.executionId, executionId));
-      this.logger.error(`Workflow execution ${executionId} failed: ${error.message}`);
+      this.logger.error(
+        `Workflow execution ${executionId} failed: ${error.message}`,
+      );
     }
   }
 
@@ -468,28 +611,73 @@ export class WorkflowExecutorService {
 
       switch (nodeType) {
         case 'input':
-          return { nodeId, status: 'success', output: inputs, duration: duration() };
+          return {
+            nodeId,
+            status: 'success',
+            output: inputs,
+            duration: duration(),
+          };
 
         case 'output':
-          return { nodeId, status: 'success', output: inputs, duration: duration() };
+          return {
+            nodeId,
+            status: 'success',
+            output: inputs,
+            duration: duration(),
+          };
 
         case 'condition':
-          return await this.executeConditionNode(nodeId, inputs, config, duration);
+          return await this.executeConditionNode(
+            nodeId,
+            inputs,
+            config,
+            duration,
+          );
 
         case 'transform':
-          return await this.executeTransformNode(nodeId, inputs, config, duration);
+          return await this.executeTransformNode(
+            nodeId,
+            inputs,
+            config,
+            duration,
+          );
 
         case 'loop':
-          return await this.executeLoopNode(nodeId, inputs, config, agentId, userId, duration);
+          return await this.executeLoopNode(
+            nodeId,
+            inputs,
+            config,
+            agentId,
+            userId,
+            duration,
+          );
 
         case 'agent_processor':
-          return await this.executeAgentProcessorNode(nodeId, inputs, config, agentId, duration);
+          return await this.executeAgentProcessorNode(
+            nodeId,
+            inputs,
+            config,
+            agentId,
+            userId,
+            duration,
+          );
 
         case 'workflow':
-          return await this.executeWorkflowNode(context, agentId, userId, workflowDepth, duration);
+          return await this.executeWorkflowNode(
+            context,
+            agentId,
+            userId,
+            workflowDepth,
+            duration,
+          );
 
         case 'human_approval':
-          return await this.executeHumanApprovalNode(nodeId, inputs, config, duration);
+          return await this.executeHumanApprovalNode(
+            nodeId,
+            inputs,
+            config,
+            duration,
+          );
 
         case 'tool':
         default:
@@ -497,8 +685,15 @@ export class WorkflowExecutorService {
       }
     } catch (error: any) {
       if (error instanceof HumanApprovalPauseError) throw error;
-      this.logger.error(`Node ${context.nodeId} dispatch failed: ${error.message}`);
-      return { nodeId: context.nodeId, status: 'error', error: error.message, duration: duration() };
+      this.logger.error(
+        `Node ${context.nodeId} dispatch failed: ${error.message}`,
+      );
+      return {
+        nodeId: context.nodeId,
+        status: 'error',
+        error: error.message,
+        duration: duration(),
+      };
     }
   }
 
@@ -510,14 +705,28 @@ export class WorkflowExecutorService {
   ): Promise<NodeExecutionResult> {
     const expression: string = config?.expression;
     if (!expression) {
-      return { nodeId, status: 'error', error: 'condition node requires config.expression', duration: duration() };
+      return {
+        nodeId,
+        status: 'error',
+        error: 'condition node requires config.expression',
+        duration: duration(),
+      };
     }
     try {
       const sandbox = { ...inputs, __result__: undefined };
-      vm.runInNewContext(`__result__ = !!(${expression})`, sandbox, { timeout: 1000 });
+      vm.runInNewContext(`__result__ = !!(${expression})`, sandbox, {
+        timeout: 1000,
+      });
       const result = Boolean(sandbox.__result__);
-      this.logger.debug(`Condition node ${nodeId}: "${expression}" → ${result}`);
-      return { nodeId, status: 'success', output: { result, expression, inputs }, duration: duration() };
+      this.logger.debug(
+        `Condition node ${nodeId}: "${expression}" → ${result}`,
+      );
+      return {
+        nodeId,
+        status: 'success',
+        output: { result, expression, inputs },
+        duration: duration(),
+      };
     } catch (e: any) {
       const err = new WorkflowNodeError({
         nodeId,
@@ -526,7 +735,12 @@ export class WorkflowExecutorService {
         retryable: false,
         cause: e,
       });
-      return { nodeId, status: 'error', error: err.message, duration: duration() };
+      return {
+        nodeId,
+        status: 'error',
+        error: err.message,
+        duration: duration(),
+      };
     }
   }
 
@@ -539,7 +753,12 @@ export class WorkflowExecutorService {
     const mapping: Record<string, string> = config?.mapping;
     if (!mapping) {
       // No mapping — pass through
-      return { nodeId, status: 'success', output: inputs, duration: duration() };
+      return {
+        nodeId,
+        status: 'success',
+        output: inputs,
+        duration: duration(),
+      };
     }
     const output: Record<string, any> = {};
     for (const [targetField, sourcePath] of Object.entries(mapping)) {
@@ -567,7 +786,10 @@ export class WorkflowExecutorService {
     // If itemsPath is set, iterate over an array; otherwise repeat `iterations` times
     const items: any[] = itemsPath
       ? (this.getNestedValue(inputs, itemsPath) ?? [])
-      : Array.from({ length: iterations }, (_, i) => ({ ...inputs, __loopIndex__: i }));
+      : Array.from({ length: iterations }, (_, i) => ({
+          ...inputs,
+          __loopIndex__: i,
+        }));
 
     const results: any[] = [];
     for (const item of items) {
@@ -576,8 +798,18 @@ export class WorkflowExecutorService {
           where: (t: any) => eq(t.toolId, toolId),
         });
         if (!tool) {
-          const staticTool = this.toolService.getStaticTools().find((t) => t.toolId === toolId);
-          if (staticTool) tool = { ...staticTool, owner: null, version: '1.0.0', createdAt: new Date(), updatedAt: new Date(), tags: ['platform', 'static'] };
+          const staticTool = this.toolService
+            .getStaticTools()
+            .find((t) => t.toolId === toolId);
+          if (staticTool)
+            tool = {
+              ...staticTool,
+              owner: null,
+              version: '1.0.0',
+              createdAt: new Date(),
+              updatedAt: new Date(),
+              tags: ['platform', 'static'],
+            };
         }
         if (tool) {
           const result = await this.invokeTool(tool, item, agentId, userId);
@@ -588,7 +820,12 @@ export class WorkflowExecutorService {
       }
     }
 
-    return { nodeId, status: 'success', output: { results, count: results.length }, duration: duration() };
+    return {
+      nodeId,
+      status: 'success',
+      output: { results, count: results.length },
+      duration: duration(),
+    };
   }
 
   private async executeAgentProcessorNode(
@@ -596,11 +833,18 @@ export class WorkflowExecutorService {
     inputs: Record<string, any>,
     config: Record<string, any> | undefined,
     agentId: string | undefined,
+    userId: string | undefined,
     duration: () => number,
   ): Promise<NodeExecutionResult> {
     const targetAgentId: string | undefined = config?.agentId ?? agentId;
     if (!targetAgentId) {
-      return { nodeId, status: 'error', error: 'agent_processor node requires agentId in config or workflow context', duration: duration() };
+      return {
+        nodeId,
+        status: 'error',
+        error:
+          'agent_processor node requires agentId in config or workflow context',
+        duration: duration(),
+      };
     }
 
     const instruction: string = config?.prompt
@@ -608,18 +852,35 @@ export class WorkflowExecutorService {
       : 'Analyze and process the provided data, then return a clear, structured result.';
 
     try {
-      const agent = await this.agentService.getAgent({ agentId: targetAgentId });
+      const agent = await this.agentService.getAgent({
+        agentId: targetAgentId,
+      });
       if (!agent) {
-        return { nodeId, status: 'error', error: `Agent ${targetAgentId} not found`, duration: duration() };
+        return {
+          nodeId,
+          status: 'error',
+          error: `Agent ${targetAgentId} not found`,
+          duration: duration(),
+        };
       }
 
-      const output = await this.commonToolService.processWithinWorkflow({
+      const runtimeType = normalizeRuntimeType(agent.runtimeType);
+      const output =
+        runtimeType === 'native'
+          ? await this.commonToolService.processWithinWorkflow({
         instruction,
         data: inputs,
         sessionId: '',
         agentId: targetAgentId,
         maxTokens: config?.maxTokens,
         workflowDepth: 1,
+            })
+          : await this.executeExternalRuntimeNode({
+              agentId: targetAgentId,
+              initiator:
+                userId || agent.ownerUserId || agent.owner || targetAgentId,
+              instruction,
+              inputs,
       });
       return { nodeId, status: 'success', output, duration: duration() };
     } catch (e: any) {
@@ -629,9 +890,48 @@ export class WorkflowExecutorService {
         message: `Agent processor failed: ${e.message}`,
         cause: e,
       });
-      this.logger.error(`Agent processor node ${nodeId} (agent=${targetAgentId}) failed [retryable=${err.retryable}]: ${err.message}`);
-      return { nodeId, status: 'error', error: err.message, duration: duration() };
+      this.logger.error(
+        `Agent processor node ${nodeId} (agent=${targetAgentId}) failed [retryable=${err.retryable}]: ${err.message}`,
+      );
+      return {
+        nodeId,
+        status: 'error',
+        error: err.message,
+        duration: duration(),
+      };
     }
+  }
+
+  private async executeExternalRuntimeNode(args: {
+    agentId: string;
+    initiator: string;
+    instruction: string;
+    inputs: Record<string, any>;
+  }) {
+    const event = await lastValueFrom(
+      this.externalRuntime.runAgent({
+        agentId: args.agentId,
+        initiator: args.initiator,
+        stream: false,
+        messages: [
+          {
+            role: 'user',
+            content: `${args.instruction}\n\nData to process:\n${JSON.stringify(args.inputs, null, 2)}\n\nProvide a clear, structured result.`,
+          },
+        ],
+      }),
+    );
+    if (event?.type === 'error')
+      throw new Error(event.message || 'External runtime failed');
+    const result = event?.payload?.content;
+    if (typeof result !== 'string' || !result.trim()) {
+      throw new Error('External runtime returned no workflow output');
+    }
+    return {
+      result,
+      processed: true,
+      runtimeType: event.payload?.metadata?.runtimeType,
+    };
   }
 
   private async executeWorkflowNode(
@@ -703,7 +1003,8 @@ export class WorkflowExecutorService {
           return {
             nodeId: context.nodeId,
             status: 'error',
-            error: execution.errorMessage ?? `Workflow ${targetWorkflowId} failed`,
+            error:
+              execution.errorMessage ?? `Workflow ${targetWorkflowId} failed`,
             duration: duration(),
           };
         }
@@ -775,13 +1076,24 @@ export class WorkflowExecutorService {
     let tool: any = null;
     try {
       tool = context.toolId
-        ? await this.db.query.tool.findFirst({ where: (t: any) => eq(t.toolId, context.toolId!) })
+        ? await this.db.query.tool.findFirst({
+            where: (t: any) => eq(t.toolId, context.toolId!),
+          })
         : null;
 
       if (!tool && context.toolId) {
-        const staticTool = this.toolService.getStaticTools().find((t) => t.toolId === context.toolId);
+        const staticTool = this.toolService
+          .getStaticTools()
+          .find((t) => t.toolId === context.toolId);
         if (staticTool) {
-          tool = { ...staticTool, owner: null, version: '1.0.0', createdAt: new Date(), updatedAt: new Date(), tags: ['platform', 'static'] };
+          tool = {
+            ...staticTool,
+            owner: null,
+            version: '1.0.0',
+            createdAt: new Date(),
+            updatedAt: new Date(),
+            tags: ['platform', 'static'],
+          };
         }
       }
       if (!tool) {
@@ -792,8 +1104,18 @@ export class WorkflowExecutorService {
           duration: dur(),
         };
       }
-      const output = await this.invokeTool(tool, context.inputs, agentId, userId);
-      return { nodeId: context.nodeId, status: 'success', output, duration: dur() };
+      const output = await this.invokeTool(
+        tool,
+        context.inputs,
+        agentId,
+        userId,
+      );
+      return {
+        nodeId: context.nodeId,
+        status: 'success',
+        output,
+        duration: dur(),
+      };
     } catch (error: any) {
       const err = new ToolExecutionError({
         toolName: tool?.name ?? context.toolId ?? 'unknown',
@@ -803,8 +1125,15 @@ export class WorkflowExecutorService {
         statusCode: error.response?.statusCode ?? error.statusCode,
         cause: error,
       });
-      this.logger.error(`Tool node ${context.nodeId} (${err.toolName}) failed [retryable=${err.retryable}]: ${err.message}`);
-      return { nodeId: context.nodeId, status: 'error', error: err.message, duration: dur() };
+      this.logger.error(
+        `Tool node ${context.nodeId} (${err.toolName}) failed [retryable=${err.retryable}]: ${err.message}`,
+      );
+      return {
+        nodeId: context.nodeId,
+        status: 'error',
+        error: err.message,
+        duration: dur(),
+      };
     }
   }
 
@@ -813,7 +1142,10 @@ export class WorkflowExecutorService {
   /** Decrement live in-degree for all live outgoing edges of a completed node. */
   private updateDownstreamLiveDegree(
     nodeId: string,
-    outgoing: Map<string, Array<{ edgeId: string; target: string; sourceHandle?: string }>>,
+    outgoing: Map<
+      string,
+      Array<{ edgeId: string; target: string; sourceHandle?: string }>
+    >,
     incomingCount: Map<string, { live: number; dead: number; total: number }>,
     deadEdges: Set<string>,
   ): void {
@@ -828,7 +1160,10 @@ export class WorkflowExecutorService {
   /** Mark all outgoing edges of a failed/skipped node as dead. */
   private markOutgoingDead(
     nodeId: string,
-    outgoing: Map<string, Array<{ edgeId: string; target: string; sourceHandle?: string }>>,
+    outgoing: Map<
+      string,
+      Array<{ edgeId: string; target: string; sourceHandle?: string }>
+    >,
     incomingCount: Map<string, { live: number; dead: number; total: number }>,
     deadEdges: Set<string>,
   ): void {
@@ -846,7 +1181,10 @@ export class WorkflowExecutorService {
   private propagateSkip(
     nodeId: string,
     nodes: any[],
-    outgoing: Map<string, Array<{ edgeId: string; target: string; sourceHandle?: string }>>,
+    outgoing: Map<
+      string,
+      Array<{ edgeId: string; target: string; sourceHandle?: string }>
+    >,
     incomingCount: Map<string, { live: number; dead: number; total: number }>,
     deadEdges: Set<string>,
     skippedNodes: Set<string>,
@@ -860,7 +1198,14 @@ export class WorkflowExecutorService {
         cnt.live = Math.max(0, cnt.live - 1);
         cnt.dead++;
         if (cnt.live === 0 && cnt.dead === cnt.total) {
-          this.propagateSkip(target, nodes, outgoing, incomingCount, deadEdges, skippedNodes);
+          this.propagateSkip(
+            target,
+            nodes,
+            outgoing,
+            incomingCount,
+            deadEdges,
+            skippedNodes,
+          );
         }
       }
     }
@@ -878,34 +1223,52 @@ export class WorkflowExecutorService {
     const functionName = tool.name;
     const metadata: any = { agentId, sessionId: undefined, spaceId: undefined };
     // Phase 10: wallet key injection removed — tools use WalletService if they need signing
-    const { agentId: _, privateKey: __, sessionId: ___, spaceId: ____, ...cleanInputs } = inputs;
+    const {
+      agentId: _,
+      privateKey: __,
+      sessionId: ___,
+      spaceId: ____,
+      ...cleanInputs
+    } = inputs;
     this.logger.log(`Invoking tool: ${functionName}`, cleanInputs);
 
     if (tool.apiSpec) {
       return await this.invokeDynamicTool(tool.apiSpec, cleanInputs);
     }
 
-    const staticService = [this.commonToolService, this.ethereumToolService]
-      .find((service) => typeof (service as any)[functionName] === 'function');
+    const staticService = [
+      this.commonToolService,
+      this.ethereumToolService,
+    ].find((service) => typeof (service as any)[functionName] === 'function');
     if (staticService) {
       if (functionName === 'processWithinWorkflow') {
-        return await (staticService as any)[functionName]({ ...cleanInputs, workflowDepth }, metadata);
+        return await (staticService as any)[functionName](
+          { ...cleanInputs, workflowDepth },
+          metadata,
+        );
       }
       // @ts-expect-error runtime dispatch
       return await staticService[functionName](cleanInputs, metadata);
     }
 
-    throw new Error(`No static, dynamic, or resource-based implementation found for tool "${functionName}"`);
+    throw new Error(
+      `No static, dynamic, or resource-based implementation found for tool "${functionName}"`,
+    );
   }
 
   private async invokeDynamicTool(
     apiSpec: {
-      method: string; baseUrl: string; path: string;
-      headers?: Record<string, string>; queryParams?: Record<string, string>; bodyTemplate?: any;
+      method: string;
+      baseUrl: string;
+      path: string;
+      headers?: Record<string, string>;
+      queryParams?: Record<string, string>;
+      bodyTemplate?: any;
     },
     parsedArgs: Record<string, any>,
   ): Promise<any> {
-    const { method, baseUrl, path, headers, queryParams, bodyTemplate } = apiSpec;
+    const { method, baseUrl, path, headers, queryParams, bodyTemplate } =
+      apiSpec;
     this.assertTemplateInputs(path, parsedArgs);
     if (queryParams) {
       for (const value of Object.values(queryParams)) {
@@ -913,7 +1276,9 @@ export class WorkflowExecutorService {
       }
     }
 
-    const url = new URL(`${baseUrl}${this.replaceTemplate(path, parsedArgs, { encode: true })}`);
+    const url = new URL(
+      `${baseUrl}${this.replaceTemplate(path, parsedArgs, { encode: true })}`,
+    );
     if (queryParams) {
       for (const [k, v] of Object.entries(queryParams)) {
         // Substitute raw: URLSearchParams encodes values itself, and encoding
@@ -924,8 +1289,11 @@ export class WorkflowExecutorService {
     }
     let requestBody: any;
     if (['POST', 'PUT', 'PATCH'].includes(method.toUpperCase())) {
-      requestBody = bodyTemplate ? this.buildBodyFromTemplate(bodyTemplate, parsedArgs)
-        : Object.keys(parsedArgs).length > 0 ? parsedArgs : undefined;
+      requestBody = bodyTemplate
+        ? this.buildBodyFromTemplate(bodyTemplate, parsedArgs)
+        : Object.keys(parsedArgs).length > 0
+          ? parsedArgs
+          : undefined;
     }
     const response = await fetch(url.toString(), {
       method,
@@ -942,10 +1310,16 @@ export class WorkflowExecutorService {
     return await response.json();
   }
 
-  private assertTemplateInputs(template: string, args: Record<string, any>): void {
+  private assertTemplateInputs(
+    template: string,
+    args: Record<string, any>,
+  ): void {
     const missing = Array.from(template.matchAll(/\{([^}]+)\}/g))
       .map((match) => match[1])
-      .filter((key) => args[key] === undefined || args[key] === null || args[key] === '');
+      .filter(
+        (key) =>
+          args[key] === undefined || args[key] === null || args[key] === '',
+      );
 
     if (missing.length) {
       throw new Error(
@@ -962,17 +1336,17 @@ export class WorkflowExecutorService {
     return template.replace(/\{([^}]+)\}/g, (_match, key) => {
       const value = args[key];
       if (value === undefined || value === null) return '';
-      return options.encode
-        ? encodeURIComponent(String(value))
-        : String(value);
+      return options.encode ? encodeURIComponent(String(value)) : String(value);
     });
   }
 
   private buildBodyFromTemplate(template: any, args: Record<string, any>): any {
-    if (Array.isArray(template)) return template.map((e) => this.buildBodyFromTemplate(e, args));
+    if (Array.isArray(template))
+      return template.map((e) => this.buildBodyFromTemplate(e, args));
     if (template && typeof template === 'object') {
       const result: any = {};
-      for (const [k, v] of Object.entries(template)) result[k] = this.buildBodyFromTemplate(v, args);
+      for (const [k, v] of Object.entries(template))
+        result[k] = this.buildBodyFromTemplate(v, args);
       return result;
     }
     if (typeof template === 'string') {
@@ -985,14 +1359,20 @@ export class WorkflowExecutorService {
   // ── Input mapping ──────────────────────────────────────────────────────────
 
   private mapNodeInputs(
-    nodeId: string, edges: any[], nodeOutputs: Record<string, any>, config?: Record<string, any>,
+    nodeId: string,
+    edges: any[],
+    nodeOutputs: Record<string, any>,
+    config?: Record<string, any>,
   ): Record<string, any> {
     const inputs: Record<string, any> = {};
     for (const edge of edges.filter((e) => e.target === nodeId)) {
       const src = nodeOutputs[edge.source];
       if (!src) continue;
       if (edge.mapping) {
-        for (const [sf, tf] of Object.entries(edge.mapping) as [string, string][]) {
+        for (const [sf, tf] of Object.entries(edge.mapping) as [
+          string,
+          string,
+        ][]) {
           const v = this.getNestedValue(src, sf);
           if (v !== undefined) inputs[tf] = v;
         }
@@ -1004,7 +1384,16 @@ export class WorkflowExecutorService {
       }
     }
     if (config) {
-      const { expression, mapping, iterations, itemsPath, prompt, agentId, toolId, ...rest } = config;
+      const {
+        expression,
+        mapping,
+        iterations,
+        itemsPath,
+        prompt,
+        agentId,
+        toolId,
+        ...rest
+      } = config;
       Object.assign(inputs, rest);
     }
     return inputs;
@@ -1014,13 +1403,20 @@ export class WorkflowExecutorService {
     return path.split('.').reduce((acc, part) => acc?.[part], obj);
   }
 
-  private getFinalOutput(completedNodes: string[], nodeOutputs: Record<string, any>, definition: any): any {
+  private getFinalOutput(
+    completedNodes: string[],
+    nodeOutputs: Record<string, any>,
+    definition: any,
+  ): any {
     if (definition.outputMapping) {
       const output: Record<string, any> = {};
       for (const [key, nodePath] of Object.entries(definition.outputMapping)) {
         const [nodeId, ...fp] = (nodePath as string).split('.');
         const nodeOutput = nodeOutputs[nodeId];
-        if (nodeOutput) output[key] = fp.length ? this.getNestedValue(nodeOutput, fp.join('.')) : nodeOutput;
+        if (nodeOutput)
+          output[key] = fp.length
+            ? this.getNestedValue(nodeOutput, fp.join('.'))
+            : nodeOutput;
       }
       return output;
     }
@@ -1029,7 +1425,10 @@ export class WorkflowExecutorService {
     return last ? nodeOutputs[last] : undefined;
   }
 
-  private interpolateTemplate(template: string, context: Record<string, any>): string {
+  private interpolateTemplate(
+    template: string,
+    context: Record<string, any>,
+  ): string {
     return template.replace(/\{\{(.+?)\}\}/g, (_, path) => {
       const val = this.getNestedValue(context, path.trim());
       return val !== undefined ? String(val) : `{{${path}}}`;
@@ -1048,7 +1447,8 @@ export class WorkflowExecutorService {
   }
 
   async cancelExecution(executionId: string) {
-    const [updated] = await this.db.update(schema.workflowExecution)
+    const [updated] = await this.db
+      .update(schema.workflowExecution)
       .set({ status: 'cancelled', completedAt: new Date() })
       .where(eq(schema.workflowExecution.executionId, executionId))
       .returning();
@@ -1076,7 +1476,8 @@ export class WorkflowExecutorService {
     nodeOutputs: Record<string, any>,
     nodeResults: Record<string, NodeExecutionResult>,
   ): Promise<void> {
-    await this.db.update(schema.workflowExecution)
+    await this.db
+      .update(schema.workflowExecution)
       .set({
         status: 'awaiting_approval',
         approvalToken,
