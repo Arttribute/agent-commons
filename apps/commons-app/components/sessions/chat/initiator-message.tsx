@@ -23,14 +23,14 @@ export default function InitiatorMessage({ message, metadata }: InitiatorMessage
   const computerRequest = metadata?.computerRequest?.enabled ? metadata.computerRequest : null;
   return (
     <div className="flex justify-end my-3">
-      <div className="max-w-[80%] rounded-2xl rounded-tr-sm bg-indigo-600 px-4 py-2.5">
+      <div className="max-w-[80%] rounded-2xl rounded-tr-sm bg-indigo-100 px-4 py-2.5">
         {(attachments.length > 0 || computerRequest) && (
           <div className="mb-2 flex flex-wrap justify-end gap-1.5">
             {computerRequest && (
-              <span className="flex max-w-full items-center gap-1.5 rounded-md bg-white/15 px-2 py-1 text-xs text-white">
+              <span className="flex max-w-full items-center gap-1.5 rounded-md bg-white/60 px-2 py-1 text-xs text-gray-800">
                 <Monitor className="h-3.5 w-3.5 shrink-0" />
                 <span>Agent computer</span>
-                <span className="shrink-0 text-white/70">
+                <span className="shrink-0 text-gray-500">
                   {computerRequest.lifecycle === "persistent" ? "Persistent" : "Ephemeral"}
                 </span>
               </span>
@@ -40,7 +40,7 @@ export default function InitiatorMessage({ message, metadata }: InitiatorMessage
             ))}
           </div>
         )}
-        <p className="text-sm text-white leading-relaxed">{message}</p>
+        <p className="text-sm leading-relaxed text-gray-900">{message}</p>
       </div>
     </div>
   );
@@ -62,11 +62,11 @@ function AttachmentPill({
       ? Table2
       : FileText;
   return (
-    <span className="flex max-w-full items-center gap-1.5 rounded-md bg-white/15 px-2 py-1 text-xs text-white">
+    <span className="flex max-w-full items-center gap-1.5 rounded-md bg-white/60 px-2 py-1 text-xs text-gray-800">
       <Icon className="h-3.5 w-3.5 shrink-0" />
       <span className="max-w-40 truncate">{attachment.name}</span>
       {attachment.sizeBytes ? (
-        <span className="shrink-0 text-white/70">{formatBytes(attachment.sizeBytes)}</span>
+        <span className="shrink-0 text-gray-500">{formatBytes(attachment.sizeBytes)}</span>
       ) : null}
     </span>
   );

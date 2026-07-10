@@ -196,3 +196,29 @@ body {
   background: transparent;
   color: hsl(var(--muted-foreground) / 0.6);
 }
+
+/* Shimmering status text ("Thinking…", "Transcribing…") — a soft highlight
+   sweeps across muted text while the agent works. */
+@keyframes text-shimmer {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
+}
+.text-shimmer {
+  background-image: linear-gradient(
+    90deg,
+    hsl(var(--muted-foreground) / 0.55) 0%,
+    hsl(var(--muted-foreground) / 0.55) 42%,
+    hsl(var(--foreground)) 50%,
+    hsl(var(--muted-foreground) / 0.55) 58%,
+    hsl(var(--muted-foreground) / 0.55) 100%
+  );
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: text-shimmer 2.4s linear infinite;
+}

@@ -80,6 +80,29 @@ const ACTIVE_COMPUTER_RUN_STATUSES = new Set([
   'idle',
 ]);
 
+/**
+ * Conversational turns that never need model reasoning: greetings, acks,
+ * thanks, farewells, and "who are you" smalltalk. Deliberately conservative —
+ * anything that could be a real question or task must NOT match, so it falls
+ * through to the provider's default reasoning behavior.
+ */
+const TRIVIAL_TURN_PATTERN = new RegExp(
+  '^(?:' +
+    [
+      '(?:hey|hi|hiya|hello|howdy|yo|sup|hey yo|yo yo|good (?:morning|afternoon|evening|night))(?:[\\s,!.]+(?:there|again|everyone|team|all))?',
+      "how(?:'?s| is| are)? (?:you|it going|things|everything)(?: (?:doing|today))?",
+      "what'?s up",
+      '(?:thanks|thank you|thankyou|thx|ty|cheers|much appreciated)(?:[\\s,!.]+(?:so much|a lot|again|for (?:that|your help)))?',
+      '(?:ok(?:ay)?|cool|nice|great|perfect|awesome|sweet|got it|sounds good|makes sense|alright|all right|understood|noted|will do|sure)',
+      '(?:yes|yeah|yep|yup|no|nope|nah)',
+      '(?:bye|goodbye|see (?:ya|you)(?: later)?|later|take care)',
+      "(?:who are you|what are you|what can you do|what'?s your name|tell me about yourself)",
+      '(?:lol|haha+|hehe+|lmao)',
+    ].join('|') +
+    ')[\\s!.?,:;~*\\u{1F300}-\\u{1FAFF}\\u2600-\\u27BF]*$',
+  'iu',
+);
+
 @Injectable()
 export class AgentService implements OnModuleInit {
   private readonly logger = new Logger(AgentService.name);
@@ -993,7 +1016,6 @@ export class AgentService implements OnModuleInit {
           });
 
           // ── Build LLM from agent/session model config (provider-agnostic) ──
-          emitStatus('model', 'running', 'Configuring model');
           const sessionRecord = await this.session.getSession({ id: currentSessionId });
           const decryptedApiKey = agent.modelApiKey
             ? this.decryptApiKey(agent.modelApiKey)
@@ -1014,6 +1036,9 @@ export class AgentService implements OnModuleInit {
               topP: agent.topP ?? undefined,
               presencePenalty: agent.presencePenalty ?? undefined,
               frequencyPenalty: agent.frequencyPenalty ?? undefined,
+              // Adaptive hint only — an explicit reasoningEffort on the
+              // session model always wins inside buildFromSessionModel.
+              reasoningEffort: this.resolveAdaptiveReasoningEffort(props),
             },
           );
 
@@ -1050,12 +1075,6 @@ export class AgentService implements OnModuleInit {
             strict: false,
             callbacks: [callbackHandler],
           });
-          emitStatus(
-            'model',
-            'completed',
-            'Model ready',
-            `${usageContext.provider}/${usageContext.modelId}`,
-          );
 
           const makeRunner = (def: ChatCompletionTool & { endpoint: string }) =>
             tool(
@@ -2092,6 +2111,28 @@ export class AgentService implements OnModuleInit {
         .join('\n');
     }
     return String(content);
+  }
+
+  /**
+   * Zero-latency reasoning-depth hint. Trivial conversational turns
+   * (greetings, acks, thanks) gain nothing from model reasoning, so they run
+   * at the provider's minimal thinking setting and start streaming sooner.
+   * Anything with attachments, computer use, CLI context, or real content
+   * returns undefined and keeps the provider's default behavior.
+   */
+  private resolveAdaptiveReasoningEffort(props: {
+    messages?: ChatCompletionMessageParam[];
+    attachments?: Array<{ fileId: string }>;
+    computerRequest?: { enabled: boolean };
+    cliContext?: string;
+  }): 'minimal' | undefined {
+    if (props.attachments?.length || props.computerRequest?.enabled || props.cliContext) {
+      return undefined;
+    }
+    const lastUser = props.messages?.findLast((m) => m.role === 'user');
+    const text = this.contentToText(lastUser?.content).trim();
+    if (!text || text.length > 160) return undefined;
+    return TRIVIAL_TURN_PATTERN.test(text) ? 'minimal' : undefined;
   }
 
   private serializeHistoryContent(content: unknown): string {

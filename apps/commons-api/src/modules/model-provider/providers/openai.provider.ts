@@ -31,11 +31,21 @@ export function buildOpenAIModel(config: ModelConfig): ChatOpenAI {
     throw new Error('Custom model providers require modelBaseUrl');
   }
   const isGpt5 = config.provider === 'openai' && config.modelId.startsWith('gpt-5');
-  const reasoningEffort = isGpt5
+  // o1/o3/o4 reasoning models also reject sampling params, and their effort
+  // floor is 'low' (no none/minimal like the gpt-5 family).
+  const isOSeries =
+    config.provider === 'openai' && /^o[134](-|$)/.test(config.modelId);
+  const isReasoningModel = isGpt5 || isOSeries;
+
+  let reasoningEffort = isReasoningModel
     ? normalizeReasoningEffort(
         config.reasoningEffort ?? process.env.AGENT_OPENAI_REASONING_EFFORT,
       )
     : undefined;
+  if (isOSeries && reasoningEffort) {
+    if (reasoningEffort === 'none' || reasoningEffort === 'minimal') reasoningEffort = 'low';
+    if (reasoningEffort === 'xhigh') reasoningEffort = 'high';
+  }
   const verbosity = isGpt5
     ? normalizeVerbosity(
         config.verbosity ?? process.env.AGENT_OPENAI_TEXT_VERBOSITY,
@@ -45,14 +55,14 @@ export function buildOpenAIModel(config: ModelConfig): ChatOpenAI {
   return new ChatOpenAI({
     model: config.modelId,
     apiKey,
-    // GPT-5 reasoning models choose their own sampling parameters. Sending
-    // legacy temperature/top-p/penalty defaults can make otherwise valid
-    // requests fail on newer model snapshots.
-    temperature: isGpt5 ? undefined : config.temperature ?? 0,
+    // Reasoning models choose their own sampling parameters. Sending legacy
+    // temperature/top-p/penalty defaults can make otherwise valid requests
+    // fail on newer model snapshots.
+    temperature: isReasoningModel ? undefined : config.temperature ?? 0,
     maxTokens: config.maxTokens,
-    topP: isGpt5 ? undefined : config.topP,
-    presencePenalty: isGpt5 ? undefined : config.presencePenalty,
-    frequencyPenalty: isGpt5 ? undefined : config.frequencyPenalty,
+    topP: isReasoningModel ? undefined : config.topP,
+    presencePenalty: isReasoningModel ? undefined : config.presencePenalty,
+    frequencyPenalty: isReasoningModel ? undefined : config.frequencyPenalty,
     reasoning: reasoningEffort ? { effort: reasoningEffort } : undefined,
     verbosity,
     streaming: true,

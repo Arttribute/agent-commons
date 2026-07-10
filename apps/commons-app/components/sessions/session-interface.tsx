@@ -8,7 +8,6 @@ import InitiatorMessage from "./chat/initiator-message";
 import AgentOutput from "./chat/agent-output";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import type { CommonAgent } from "@/types/agent";
-import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import {
   hasActiveComputer,
@@ -70,37 +69,33 @@ function ExpandableToolCard({ tools }: { tools: Message[] }) {
   const [open, setOpen] = useState(false);
 
   return (
-    <Card className="my-2">
-      <div
-        role="button"
-        tabIndex={0}
+    <div className="my-2">
+      <button
+        type="button"
         onClick={() => setOpen(!open)}
-        onKeyDown={(e) => {
-          if (e.key === "Enter" || e.key === " ") setOpen(!open);
-        }}
-        className="flex items-center justify-between p-4 cursor-pointer select-none"
+        className="group inline-flex items-center gap-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
       >
-        <div className="text-sm text-muted-foreground font-medium">
+        <span>
           {tools.length} tool call{tools.length > 1 ? "s" : ""}
-        </div>
+        </span>
         <ChevronDown
-          className={`h-4 w-4 transition-transform ${open ? "rotate-180" : ""}`}
+          className={`h-3 w-3 text-muted-foreground/60 transition-transform group-hover:text-foreground ${open ? "rotate-180" : ""}`}
         />
-      </div>
+      </button>
 
       {open && (
-        <div className="border-t px-4 py-2 space-y-3">
+        <div className="mt-2 space-y-2">
           {tools.map((tool, idx) => (
             <pre
               key={idx}
-              className="whitespace-pre-wrap break-words text-xs bg-muted rounded p-3 overflow-x-auto"
+              className="overflow-x-auto whitespace-pre-wrap break-words rounded-md bg-muted/40 p-3 text-xs text-muted-foreground"
             >
               {tool.content}
             </pre>
           ))}
         </div>
       )}
-    </Card>
+    </div>
   );
 }
 

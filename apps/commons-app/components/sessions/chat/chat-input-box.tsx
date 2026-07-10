@@ -2,9 +2,11 @@
 
 import { useEffect, useRef, useState } from "react";
 import type { StreamEvent } from "@agent-commons/sdk";
-import { ArrowUp, FileText, ImageIcon, Loader2, Monitor, Plus, Table2, X } from "lucide-react";
+import { ArrowUp, FileText, ImageIcon, Loader2, Mic, Monitor, Plus, Table2, X } from "lucide-react";
 import { useAgentContext } from "@/context/AgentContext";
 import { useAgentStream } from "@/hooks/use-agent-stream";
+import { useVoiceRecorder } from "@/hooks/use-voice-recorder";
+import { VoiceRecorderPanel } from "./voice-recorder";
 import { cn } from "@/lib/utils";
 
 type UploadedAttachment = {
@@ -238,6 +240,14 @@ export default function ChatInputBox({
         timestamp: new Date().toISOString(),
       });
     },
+  });
+
+  const [voiceError, setVoiceError] = useState<string | null>(null);
+  const voice = useVoiceRecorder({
+    onTranscribed: (text) => {
+      setInputText((current) => (current.trim() ? `${current.trimEnd()} ${text}` : text));
+    },
+    onError: (message) => setVoiceError(message),
   });
 
   const isLoading = streaming || disabled;
@@ -516,77 +526,105 @@ export default function ChatInputBox({
           ))}
         </div>
       )}
-      <textarea
-        placeholder={placeholder}
-        className="text-sm w-full h-16 p-3 rounded-2xl resize-none focus:outline-none bg-transparent placeholder:text-muted-foreground/60"
-        value={inputText}
-        onChange={(e) => setInputText(e.target.value)}
-        onKeyDown={(e) => {
-          if (e.key === "Enter" && !e.shiftKey) {
-            e.preventDefault();
-            handleSend();
-          }
-        }}
-        disabled={isLoading}
-      />
-      <div className="flex justify-between items-center px-2 pb-2">
-        {footerLeft ? (
-          <div className="min-w-0">{footerLeft}</div>
-        ) : (
-        <div className="relative">
-          <button
-            type="button"
-            onClick={() => setMenuOpen((open) => !open)}
-            disabled={!!isLoading}
-            title="Add photos & files"
-            className="rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-40"
-          >
-            <Plus className="h-4 w-4" />
-          </button>
-          {menuOpen && (
-            <div className="absolute bottom-9 left-0 z-10 w-48 rounded-lg border border-border bg-popover p-1 shadow-lg">
+      {voice.state !== "idle" ? (
+        <VoiceRecorderPanel
+          state={voice.state}
+          elapsedMs={voice.elapsedMs}
+          getLevel={voice.getLevel}
+          onCancel={voice.cancel}
+          onAccept={voice.accept}
+        />
+      ) : (
+        <>
+          <textarea
+            placeholder={placeholder}
+            className="text-sm w-full h-16 p-3 rounded-2xl resize-none focus:outline-none bg-transparent placeholder:text-muted-foreground/60"
+            value={inputText}
+            onChange={(e) => setInputText(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && !e.shiftKey) {
+                e.preventDefault();
+                handleSend();
+              }
+            }}
+            disabled={isLoading}
+          />
+          {voiceError && <p className="px-3 pb-1 text-xs text-red-500">{voiceError}</p>}
+          <div className="flex justify-between items-center px-2 pb-2">
+            {footerLeft ? (
+              <div className="min-w-0">{footerLeft}</div>
+            ) : (
+            <div className="relative">
               <button
                 type="button"
-                onMouseDown={(event) => event.preventDefault()}
-                onClick={openFilePicker}
-                className="flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-sm text-popover-foreground hover:bg-muted"
+                onClick={() => setMenuOpen((open) => !open)}
+                disabled={!!isLoading}
+                title="Add photos & files"
+                className="rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-40"
               >
                 <Plus className="h-4 w-4" />
-                <span>Add photos & files</span>
               </button>
+              {menuOpen && (
+                <div className="absolute bottom-9 left-0 z-10 w-48 rounded-lg border border-border bg-popover p-1 shadow-lg">
+                  <button
+                    type="button"
+                    onMouseDown={(event) => event.preventDefault()}
+                    onClick={openFilePicker}
+                    className="flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-sm text-popover-foreground hover:bg-muted"
+                  >
+                    <Plus className="h-4 w-4" />
+                    <span>Add photos & files</span>
+                  </button>
+                  <button
+                    type="button"
+                    onMouseDown={(event) => event.preventDefault()}
+                    onClick={() => {
+                      if (!canUseComputer) return;
+                      setComputerEnabled((enabled) => !enabled);
+                      setMenuOpen(false);
+                    }}
+                    disabled={!canUseComputer}
+                    className={cn(
+                      "flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-sm text-popover-foreground hover:bg-muted",
+                      !canUseComputer && "cursor-not-allowed opacity-50 hover:bg-transparent"
+                    )}
+                  >
+                    <Monitor className="h-4 w-4" />
+                    <span>{canUseComputer ? "Agent computer" : "Agent computer unavailable"}</span>
+                  </button>
+                </div>
+              )}
+            </div>
+            )}
+            <div className="flex items-center gap-1">
               <button
                 type="button"
-                onMouseDown={(event) => event.preventDefault()}
                 onClick={() => {
-                  if (!canUseComputer) return;
-                  setComputerEnabled((enabled) => !enabled);
-                  setMenuOpen(false);
+                  setVoiceError(null);
+                  voice.start();
                 }}
-                disabled={!canUseComputer}
-                className={cn(
-                  "flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-sm text-popover-foreground hover:bg-muted",
-                  !canUseComputer && "cursor-not-allowed opacity-50 hover:bg-transparent"
-                )}
+                disabled={!!isLoading || isUploading}
+                title="Dictate a message"
+                aria-label="Dictate a message"
+                className="rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-40"
               >
-                <Monitor className="h-4 w-4" />
-                <span>{canUseComputer ? "Agent computer" : "Agent computer unavailable"}</span>
+                <Mic className="h-4 w-4" />
+              </button>
+              <button
+                onClick={() => handleSend()}
+                disabled={(!inputText.trim() && uploadedAttachments.length === 0) || !!isLoading || isUploading}
+                className="bg-foreground rounded-lg p-1.5 text-background transition-opacity disabled:opacity-40 hover:opacity-80"
+              >
+                {isLoading || isUploading ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <ArrowUp className="h-4 w-4" />
+                )}
               </button>
             </div>
-          )}
-        </div>
-        )}
-        <button
-          onClick={() => handleSend()}
-          disabled={(!inputText.trim() && uploadedAttachments.length === 0) || !!isLoading || isUploading}
-          className="bg-foreground rounded-lg p-1.5 text-background transition-opacity disabled:opacity-40 hover:opacity-80"
-        >
-          {isLoading || isUploading ? (
-            <Loader2 className="h-4 w-4 animate-spin" />
-          ) : (
-            <ArrowUp className="h-4 w-4" />
-          )}
-        </button>
-      </div>
+          </div>
+        </>
+      )}
     </div>
   );
 }
@@ -658,7 +696,9 @@ function formatBytes(bytes: number) {
 
 function statusEventToActivity(event: StreamEvent) {
   const stage = event.stage ?? "status";
-  if (["request", "agent", "session", "tools", "context"].includes(stage)) {
+  // Routine plumbing stages ("Loading tools", "Model ready", "Thinking") are
+  // noise in the timeline — the UI derives its own thinking state instead.
+  if (["request", "agent", "session", "tools", "context", "model"].includes(stage)) {
     return null;
   }
   const status = normalizeActivityStatus(event.status);

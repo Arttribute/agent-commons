@@ -29,6 +29,7 @@ import { ActivityModule } from './activity/activity.module';
 import { CreditModule } from './credit';
 import { FilesModule } from './files';
 import { ComputerModule } from './computer';
+import { AudioModule } from './audio';
 
 @Module({
   imports: [
@@ -56,6 +57,7 @@ import { ComputerModule } from './computer';
     CreditModule,
     FilesModule,
     ComputerModule,
+    AudioModule,
     MemoryModule,
     WalletModule,
     LogModule,

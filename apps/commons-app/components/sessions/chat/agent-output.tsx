@@ -18,7 +18,6 @@ import {
   Bot,
   Brain,
   Check,
-  CheckCircle2,
   ChevronDown,
   CircleDashed,
   Copy,
@@ -92,6 +91,7 @@ export default function AgentOutput({
             activities={activities}
             durationMs={durationMs}
             isStreaming={Boolean(isStreaming)}
+            hasContent={Boolean(content)}
           />
           {hasComputerUse && (
             <MiniComputer
@@ -219,8 +219,8 @@ export default function AgentOutput({
           >
             {content}
           </ReactMarkdown>
-          {isStreaming && (
-            <span className="inline-block w-1.5 h-4 bg-indigo-400 rounded-sm animate-pulse ml-0.5 align-middle" />
+          {isStreaming && Boolean(content) && (
+            <span className="ml-0.5 inline-block h-4 w-1.5 animate-pulse rounded-sm bg-muted-foreground/40 align-middle" />
           )}
         </div>
       </div>
@@ -232,26 +232,35 @@ function ActivityTimeline({
   activities,
   durationMs,
   isStreaming,
+  hasContent,
 }: {
   activities: StreamActivity[];
   durationMs?: number;
   isStreaming: boolean;
+  hasContent: boolean;
 }) {
   const visible = activities.filter((activity) => !isRoutineActivity(activity));
-  if (!visible.length && (!durationMs || isStreaming)) return null;
 
   if (isStreaming) {
-    const current =
-      [...visible].reverse().find((activity) => activity.status === "running") ??
-      visible[visible.length - 1];
-    if (!current) return null;
+    const running = visible.some((activity) => activity.status === "running");
+    // Model is working with nothing on screen yet — show the shimmer line.
+    const thinking = !hasContent && !running;
+    if (!visible.length) {
+      return thinking ? (
+        <div className="not-prose mb-3">
+          <span className="text-shimmer text-[13px] leading-5">Thinking…</span>
+        </div>
+      ) : null;
+    }
     return (
       <div className="not-prose mb-3">
-        <ActivityRow activity={current} compact />
+        <ActivityList activities={visible.slice(-8)} thinking={thinking} />
       </div>
     );
   }
 
+  // A plain reply with no real steps gets no chrome at all.
+  if (!visible.length) return null;
   return <CompletedActivitySummary activities={visible} durationMs={durationMs} />;
 }
 
@@ -269,74 +278,87 @@ function CompletedActivitySummary({
     <div className="not-prose mb-3">
       <button
         type="button"
-        className="inline-flex h-7 items-center gap-1.5 rounded-md border border-border/70 bg-muted/25 px-2.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+        className="group inline-flex items-center gap-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
         onClick={() => setOpen((value) => !value)}
       >
-        <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" />
         <span>{label}</span>
-        {visible.length > 0 && (
-          <ChevronDown className={cn("h-3.5 w-3.5 transition-transform", open && "rotate-180")} />
-        )}
+        <ChevronDown
+          className={cn(
+            "h-3 w-3 text-muted-foreground/60 transition-transform group-hover:text-foreground",
+            open && "rotate-180"
+          )}
+        />
       </button>
       {open && visible.length > 0 && (
-        <div className="mt-2 space-y-1.5">
-          {visible.map((activity) => (
-            <ActivityRow key={activity.id} activity={activity} />
-          ))}
+        <div className="mt-2.5">
+          <ActivityList activities={visible} />
         </div>
       )}
     </div>
   );
 }
 
-function ActivityRow({
-  activity,
-  compact = false,
+/**
+ * Minimal vertical timeline: small muted icons joined by a hairline, one
+ * quiet line of text per step. The in-flight step shimmers; nothing else
+ * carries color except a failed step's icon.
+ */
+function ActivityList({
+  activities,
+  thinking = false,
 }: {
-  activity: StreamActivity;
-  compact?: boolean;
+  activities: StreamActivity[];
+  thinking?: boolean;
 }) {
-  const Icon = iconForActivity(activity);
+  const rows: Array<{ key: string; activity?: StreamActivity }> = activities.map(
+    (activity) => ({ key: activity.id, activity })
+  );
+  if (thinking) rows.push({ key: "thinking" });
+
   return (
-    <div
-      className={cn(
-        "flex items-start gap-2 rounded-md border border-border/70 bg-muted/25 px-3 py-2 text-xs",
-        compact && "inline-flex max-w-full",
-        activity.status === "failed" && "border-destructive/30 bg-destructive/5"
-      )}
-    >
-      <span
-        className={cn(
-          "mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-md bg-background text-muted-foreground",
-          activity.status === "running" && "text-indigo-500",
-          activity.status === "completed" && "text-emerald-600",
-          activity.status === "failed" && "text-destructive"
-        )}
-      >
-        <Icon
-          className={cn(
-            "h-3.5 w-3.5",
-            activity.status === "running" && "animate-pulse"
-          )}
-        />
-      </span>
-      <span className="min-w-0 flex-1">
-        <span className="block truncate font-medium text-foreground">
-          {activity.title}
-        </span>
-        {activity.detail ? (
-          <span className="mt-0.5 block truncate text-muted-foreground">
-            {activity.detail}
-          </span>
-        ) : null}
-      </span>
+    <div>
+      {rows.map(({ key, activity }, index) => {
+        const isLast = index === rows.length - 1;
+        const Icon = activity ? iconForActivity(activity) : CircleDashed;
+        const running = !activity || activity.status === "running";
+        return (
+          <div key={key} className="flex gap-2.5">
+            <div className="flex flex-col items-center">
+              <Icon
+                className={cn(
+                  "mt-[3px] h-3.5 w-3.5 shrink-0",
+                  activity?.status === "failed"
+                    ? "text-red-500"
+                    : "text-muted-foreground/70"
+                )}
+              />
+              {!isLast && <span className="mt-1 w-px flex-1 bg-border" />}
+            </div>
+            <div className={cn("min-w-0 flex-1", !isLast && "pb-2")}>
+              <span
+                className={cn(
+                  "block truncate text-[13px] leading-5",
+                  running ? "text-shimmer" : "text-muted-foreground"
+                )}
+              >
+                {activity?.title ?? "Thinking…"}
+                {activity?.detail ? (
+                  <span className={running ? undefined : "text-muted-foreground/60"}>
+                    {" "}
+                    · {activity.detail}
+                  </span>
+                ) : null}
+              </span>
+            </div>
+          </div>
+        );
+      })}
     </div>
   );
 }
 
 function iconForActivity(activity: StreamActivity) {
   if (activity.status === "failed") return AlertCircle;
-  if (activity.status === "completed") return CheckCircle2;
   if (activity.kind === "computer") return Monitor;
   if (activity.kind === "file") return FileText;
   if (activity.kind === "model") return Brain;
@@ -345,7 +367,9 @@ function iconForActivity(activity: StreamActivity) {
 }
 
 function isRoutineActivity(activity: StreamActivity) {
-  return ["request", "agent", "session", "tools", "context"].includes(activity.stage ?? "");
+  return ["request", "agent", "session", "tools", "context", "model"].includes(
+    activity.stage ?? ""
+  );
 }
 
 function normalizeActivities(
