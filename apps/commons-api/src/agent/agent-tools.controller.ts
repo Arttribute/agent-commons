@@ -315,8 +315,9 @@ export class AgentToolsController {
     agentId: string,
   ) {
     const mappings = await this.db.query.agentTool.findMany({
-      // agent_id may be uuid in the DB while agentId is text — cast to text
-      where: () => sql`agent_tool.agent_id::text = ${agentId}`,
+      // Use the column ref so Drizzle applies its table alias; cast to text
+      // in case the column type drifts from the schema.
+      where: (t) => sql`${t.agentId}::text = ${agentId}`,
     });
 
     const enabled = mappings.some(

@@ -83,9 +83,14 @@ export function scopeLabel(scope: string) {
 export function ScopePermissions({
   item,
   returnUrl,
+  title = "Permissions",
+  subtitle,
 }: {
   item: ToolCatalogItem;
   returnUrl: string;
+  /** Panel heading — override to position this as account-level access */
+  title?: string;
+  subtitle?: string;
 }) {
   const router = useRouter();
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -133,9 +138,9 @@ export function ScopePermissions({
     <div className="space-y-1">
       <div className="flex items-center justify-between gap-3 pb-2">
         <div>
-          <p className="text-sm font-medium">Permissions</p>
+          <p className="text-sm font-medium">{title}</p>
           <p className="text-xs text-muted-foreground">
-            Choose what {item.displayName} is allowed to do.
+            {subtitle ?? `Choose what ${item.displayName} is allowed to do.`}
           </p>
         </div>
         <ShieldCheck className="h-4 w-4 shrink-0 text-muted-foreground" />

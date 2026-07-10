@@ -2335,9 +2335,19 @@ export class AgentService implements OnModuleInit {
     toolId: string,
     usageComments?: string,
   ) {
+    // Upsert: re-adding a tool that was previously assigned (possibly
+    // disabled) re-enables it instead of tripping the unique index.
     const [inserted] = await this.db
       .insert(schema.agentTool)
       .values({ agentId, toolId, usageComments })
+      .onConflictDoUpdate({
+        target: [schema.agentTool.agentId, schema.agentTool.toolId],
+        set: {
+          isEnabled: true,
+          ...(usageComments !== undefined ? { usageComments } : {}),
+          updatedAt: new Date(),
+        },
+      })
       .returning();
     const withTool = await this.db.query.agentTool.findFirst({
       where: (t) => eq(t.id, inserted.id),

@@ -867,7 +867,13 @@ export const agentTool = pgTable('agent_tool', {
   updatedAt: timestamp('updated_at', { withTimezone: true })
     .default(sql`timezone('utc', now())`)
     .notNull(),
-});
+}, (table) => ({
+  // One assignment per agent per tool; lets addAgentTool upsert on re-enable
+  agentToolIdx: uniqueIndex('idx_agent_tool_agent_tool').on(
+    table.agentId,
+    table.toolId,
+  ),
+}));
 
 /* ─────────────────────────  TOOL PERMISSION  ───────────────────────── */
 

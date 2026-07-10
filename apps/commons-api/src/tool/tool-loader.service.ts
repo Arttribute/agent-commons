@@ -261,7 +261,9 @@ export class ToolLoaderService {
       // Cast agent_id to text explicitly — the DB column may be uuid while
       // agentId here is an Ethereum address (text), causing "uuid = text" errors.
       const mappings = await this.db.query.agentTool.findMany({
-        where: () => sql`agent_tool.agent_id::text = ${agentId}`,
+        // Use the column ref so Drizzle applies its table alias ("agentTool");
+        // a hardcoded "agent_tool.agent_id" breaks the relational query.
+        where: (t) => sql`${t.agentId}::text = ${agentId}`,
         with: {
           tool: true,
         },
@@ -276,12 +278,19 @@ export class ToolLoaderService {
           const tool = mapping.tool;
           if (!tool || tool.isDeprecated) return null;
 
+          const baseDescription =
+            tool.description || tool.schema.function?.description || '';
+          // Per-agent usage instructions ride along in the tool description
+          // so the model sees them next to the tool definition.
+          const description = mapping.usageComments
+            ? `${baseDescription}\n\nUsage notes from the agent owner: ${mapping.usageComments}`
+            : baseDescription;
+
           return {
             type: 'function' as const,
             function: {
               name: tool.name,
-              description:
-                tool.description || tool.schema.function?.description || '',
+              description,
               parameters:
                 tool.schema.function?.parameters ||
                 ({ type: 'object', properties: {} } as any),

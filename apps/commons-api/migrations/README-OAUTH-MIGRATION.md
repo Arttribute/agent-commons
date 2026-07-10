@@ -251,3 +251,21 @@ Notes for production:
   OAuth flows build the redirect URI that is registered with Google.
 - Set `API_SECRET_KEY` (already required for management auth) — it now also
   protects the internal tool-execution endpoint `POST /v1/agents/tools`.
+
+## Schema-drift repair migrations (2026-07-10, applied to shared DB)
+
+- `fix-agent-tool-table.sql` — the production `agent_tool` table was missing
+  `is_enabled`/`config`/`updated_at`, carried a legacy `"toolId"` column, and
+  had `tool_id` as text. Assigning a tool to an agent 500'd. Now aligned with
+  `models/schema.ts` plus a unique `(agent_id, tool_id)` index so re-adding a
+  tool upserts.
+- `fix-tool-execution-log-table.sql` — production had an older variant of
+  `tool_execution_log`; every execution-log insert failed silently. Recreated
+  to match the schema.
+
+## Google Cloud project requirements
+
+The OAuth client's GCP project must have the product APIs enabled or every
+call fails with 403 regardless of granted scopes:
+Gmail API, Google Calendar API, Google Drive API, Google Sheets API —
+enable at https://console.developers.google.com/apis (project 848878149972).

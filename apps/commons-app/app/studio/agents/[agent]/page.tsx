@@ -22,7 +22,6 @@ import {
   Loader2,
   MessageSquare,
   Monitor,
-  PlugZap,
   Plus,
   RefreshCw,
   Save,
@@ -32,7 +31,6 @@ import {
   TerminalSquare,
   Wallet,
   Wrench,
-  X,
   XCircle,
   Zap,
 } from "lucide-react";
@@ -470,7 +468,6 @@ function ToolsView({ agentId, agentTools, setAgentTools }: { agentId: string; ag
   const [toggling, setToggling] = useState<string | null>(null);
   const [savingConfig, setSavingConfig] = useState(false);
   const [usageComments, setUsageComments] = useState("");
-  const [isEnabled, setIsEnabled] = useState(true);
 
   useEffect(() => {
     setLoadingCatalog(true);
@@ -524,71 +521,105 @@ function ToolsView({ agentId, agentTools, setAgentTools }: { agentId: string; ag
     if (!selectedItem) return;
     const assignment = getAssignment(selectedItem);
     setUsageComments(assignment?.usageComments ?? "");
-    setIsEnabled(assignment?.isEnabled ?? true);
   }, [selectedItem?.id, agentTools]);
 
-  const connect = async (item: ToolCatalogItem) => {
-    const tools = itemTools(item);
-    if (tools.length === 0) return;
-    setToggling(item.id);
-    try {
-      const assignedIds = new Set(getAssignments(item).map((t) => t.toolId));
-      const created: any[] = [];
-      for (const tool of tools) {
-        if (assignedIds.has(tool.toolId)) continue;
-        const res = await fetch(`/api/agents/${agentId}/tools`, {
-          method: "POST",
+  // Enabled = at least one assignment that isn't switched off
+  const isItemEnabled = (item: ToolCatalogItem) =>
+    getAssignments(item).some((a) => a.isEnabled !== false);
+
+  const isToolEnabled = (toolId: string) => {
+    const assignment = agentTools.find((t) => t.toolId === toolId);
+    return Boolean(assignment && assignment.isEnabled !== false);
+  };
+
+  /** Create-or-re-enable assignments for the given tools (API upserts). */
+  const upsertAssignments = async (toolIds: string[]) => {
+    const results: any[] = [];
+    for (const toolId of toolIds) {
+      const res = await fetch(`/api/agents/${agentId}/tools`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ toolId }),
+      });
+      const data = await res.json();
+      if (res.ok && data?.data) results.push(data.data);
+    }
+    if (results.length) {
+      const byToolId = new Map(results.map((a) => [a.toolId, a]));
+      setAgentTools([
+        ...agentTools.filter((t) => !byToolId.has(t.toolId)),
+        ...results,
+      ]);
+    }
+    return results;
+  };
+
+  const patchAssignments = async (
+    assignments: any[],
+    patch: Record<string, any>,
+  ) => {
+    const updated = await Promise.all(
+      assignments.map(async (assignment) => {
+        const res = await fetch(`/api/agents/tools/${assignment.id}`, {
+          method: "PATCH",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ toolId: tool.toolId }),
+          body: JSON.stringify(patch),
         });
         const data = await res.json();
-        if (data?.data) created.push(data.data);
-      }
-      if (created.length) setAgentTools([...agentTools, ...created]);
-    } finally {
-      setToggling(null);
-    }
+        return data?.data ?? assignment;
+      }),
+    );
+    const byId = new Map(updated.map((a: any) => [a.id, a]));
+    setAgentTools(agentTools.map((t) => byId.get(t.id) ?? t));
   };
 
-  const disconnect = async (item: ToolCatalogItem) => {
-    const assignments = getAssignments(item);
-    if (assignments.length === 0) return;
+  /** Master toggle: on enables every capability, off disables them all. */
+  const setItemEnabled = async (item: ToolCatalogItem, enabled: boolean) => {
     setToggling(item.id);
     try {
-      await Promise.all(
-        assignments.map((assignment) =>
-          fetch(`/api/agents/tools/${assignment.id}`, { method: "DELETE" }),
-        ),
-      );
-      const removed = new Set(assignments.map((a) => a.id));
-      setAgentTools(agentTools.filter((t) => !removed.has(t.id)));
+      if (enabled) {
+        await upsertAssignments(itemTools(item).map((t) => t.toolId));
+      } else {
+        await patchAssignments(getAssignments(item), { isEnabled: false });
+      }
     } finally {
       setToggling(null);
     }
   };
 
-  const saveConfig = async () => {
+  /** Per-capability toggle for one tool inside a bundle (e.g. Gmail send). */
+  const setToolEnabled = async (toolId: string, enabled: boolean) => {
+    setToggling(toolId);
+    try {
+      if (enabled) {
+        await upsertAssignments([toolId]);
+      } else {
+        const assignment = agentTools.find((t) => t.toolId === toolId);
+        if (assignment) await patchAssignments([assignment], { isEnabled: false });
+      }
+    } finally {
+      setToggling(null);
+    }
+  };
+
+  const saveInstructions = async () => {
     if (!selectedItem) return;
     const assignments = getAssignments(selectedItem);
     if (assignments.length === 0) return;
     setSavingConfig(true);
     try {
-      const updated = await Promise.all(
-        assignments.map(async (assignment) => {
-          const res = await fetch(`/api/agents/tools/${assignment.id}`, {
-            method: "PATCH",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ usageComments, isEnabled }),
-          });
-          const data = await res.json();
-          return data?.data ?? assignment;
-        }),
-      );
-      const byId = new Map(updated.map((a: any) => [a.id, a]));
-      setAgentTools(agentTools.map((t) => byId.get(t.id) ?? t));
+      await patchAssignments(assignments, { usageComments });
     } finally {
       setSavingConfig(false);
     }
+  };
+
+  /** "Gmail: send message" → "Send message" */
+  const capabilityLabel = (tool: any) => {
+    const name = tool.displayName || tool.name || "";
+    const idx = name.indexOf(":");
+    const label = (idx >= 0 ? name.slice(idx + 1) : name).trim();
+    return label.charAt(0).toUpperCase() + label.slice(1);
   };
 
   const isAssignable = (item: ToolCatalogItem) => itemTools(item).length > 0;
@@ -711,80 +742,98 @@ function ToolsView({ agentId, agentTools, setAgentTools }: { agentId: string; ag
                 )}
               </Panel>
 
-              {/* Assignable tools (custom / system) — per-agent config */}
-              {isAssignable(selectedItem) && isConnected(selectedItem) && (
-                <Panel title="Agent configuration">
-                  <div className="space-y-4">
+              {/* Per-agent access — one clean on/off, plus per-capability
+                  switches for multi-tool bundles like Gmail */}
+              {isAssignable(selectedItem) && (
+                <Panel title="Agent access">
+                  <div className="space-y-3">
                     <div className="flex items-center justify-between gap-3">
                       <div>
-                        <p className="text-sm font-medium">Enabled for this agent</p>
-                        <p className="text-xs text-muted-foreground">When disabled the agent cannot invoke this tool.</p>
+                        <p className="text-sm font-medium">
+                          Enabled for this agent
+                        </p>
+                        <p className="text-xs text-muted-foreground">
+                          {isItemEnabled(selectedItem)
+                            ? `This agent can use ${selectedItem.displayName}.`
+                            : `Turn on to let this agent use ${selectedItem.displayName}.`}
+                        </p>
                       </div>
                       <Switch
-                        checked={isEnabled}
-                        onCheckedChange={setIsEnabled}
-                      />
-                    </div>
-                    <div className="space-y-1.5">
-                      <Label className="text-xs">Usage instructions</Label>
-                      <Textarea
-                        placeholder="Describe when and how this agent should use this tool…"
-                        className="resize-none text-sm"
-                        rows={3}
-                        value={usageComments}
-                        onChange={(e) => setUsageComments(e.target.value)}
-                      />
-                      <p className="text-xs text-muted-foreground">These instructions are passed to the agent at runtime alongside the tool definition.</p>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <Button size="sm" onClick={saveConfig} disabled={savingConfig}>
-                        {savingConfig ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
-                        Save
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        className="text-destructive hover:text-destructive"
-                        onClick={() => disconnect(selectedItem)}
+                        checked={isItemEnabled(selectedItem)}
                         disabled={toggling === selectedItem.id}
-                      >
-                        {toggling === selectedItem.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <X className="h-3.5 w-3.5" />}
-                        Disconnect
-                      </Button>
+                        onCheckedChange={(checked) => setItemEnabled(selectedItem, checked)}
+                        aria-label={`Enable ${selectedItem.displayName} for this agent`}
+                      />
                     </div>
+
+                    {selectedItem.connectionMode === "oauth" &&
+                      selectedItem.status !== "connected" && (
+                        <p className="flex items-start gap-2 rounded-md bg-amber-500/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-400">
+                          <AlertTriangle className="mt-px h-3.5 w-3.5 shrink-0" />
+                          Your {selectedItem.displayName} account isn&apos;t connected yet.
+                          Connect it in the account section below — the agent can&apos;t
+                          use these tools until then.
+                        </p>
+                      )}
+
+                    {itemTools(selectedItem).length > 1 && (
+                      <div className="divide-y divide-border/70 rounded-xl border border-border">
+                        {itemTools(selectedItem).map((tool) => (
+                          <div key={tool.toolId} className="flex items-center gap-3 px-3 py-2.5">
+                            <div className="min-w-0 flex-1">
+                              <p className="truncate text-sm">{capabilityLabel(tool)}</p>
+                              <p className="truncate text-xs text-muted-foreground">
+                                {tool.description}
+                              </p>
+                            </div>
+                            <Switch
+                              checked={isToolEnabled(tool.toolId)}
+                              disabled={
+                                toggling === tool.toolId || toggling === selectedItem.id
+                              }
+                              onCheckedChange={(checked) =>
+                                setToolEnabled(tool.toolId, checked)
+                              }
+                              aria-label={`Allow: ${capabilityLabel(tool)}`}
+                            />
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {isItemEnabled(selectedItem) && (
+                      <div className="space-y-1.5 pt-1">
+                        <Label className="text-xs">Usage instructions (optional)</Label>
+                        <Textarea
+                          placeholder="Describe when and how this agent should use this tool…"
+                          className="resize-none text-sm"
+                          rows={3}
+                          value={usageComments}
+                          onChange={(e) => setUsageComments(e.target.value)}
+                        />
+                        <div className="flex items-center justify-between gap-3">
+                          <p className="text-xs text-muted-foreground">
+                            Passed to the agent at runtime alongside the tool definition.
+                          </p>
+                          <Button size="sm" variant="outline" onClick={saveInstructions} disabled={savingConfig}>
+                            {savingConfig ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
+                            Save
+                          </Button>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </Panel>
               )}
 
-              {/* Assignable tools — not yet connected */}
-              {isAssignable(selectedItem) && !isConnected(selectedItem) && (
-                <Panel title="Connect to this agent">
-                  <div className="flex items-center justify-between gap-4">
-                    <p className="text-sm text-muted-foreground">
-                      {selectedItem.connectionMode === "oauth" &&
-                      selectedItem.status !== "connected"
-                        ? `Connect your ${selectedItem.displayName} account below first, then enable it for this agent. Both are required before the agent can use it.`
-                        : "Connect this tool to make it available for the agent to invoke during sessions."}
-                    </p>
-                    <Button
-                      size="sm"
-                      onClick={() => connect(selectedItem)}
-                      disabled={toggling === selectedItem.id}
-                    >
-                      {toggling === selectedItem.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <PlugZap className="h-3.5 w-3.5" />}
-                      Connect
-                    </Button>
-                  </div>
-                </Panel>
-              )}
-
-              {/* OAuth tools — account-level scoped permissions (shown alongside
-                  the per-agent assignment panels above) */}
+              {/* OAuth account connection — account-wide, shared by all agents */}
               {selectedItem.connectionMode === "oauth" && (
                 <div className="rounded-lg border border-border bg-background p-4">
                   <ScopePermissions
                     item={selectedItem}
                     returnUrl={`/studio/agents/${agentId}`}
+                    title="Account access"
+                    subtitle={`What your connected ${selectedItem.displayName} account allows. Applies to your whole workspace — use “Agent access” above to control this agent.`}
                   />
                 </div>
               )}
