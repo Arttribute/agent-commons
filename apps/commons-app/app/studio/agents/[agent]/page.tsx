@@ -409,23 +409,23 @@ function SessionsView({
 
   if (view === "chat") {
     return (
-      <div className="flex h-full min-h-0 flex-col overflow-hidden">
-        <div className="flex shrink-0 items-center gap-2 px-3 py-2">
-          <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0" onClick={() => setView("list")} aria-label="Back to sessions">
-            <ArrowLeft className="h-4 w-4" />
-          </Button>
-          <p className="min-w-0 truncate text-sm font-medium">{selectedSession?.title || "Session"}</p>
-        </div>
-        <div className="min-h-0 flex-1 overflow-hidden">
-          {selectedSession ? (
-            <SessionInterface agent={agent} session={selectedSession} agentId={agent.agentId} sessionId={selectedSession.sessionId} userId={userAddress} height="100%" isLoadingSession={loadingSession} />
-          ) : (
-            <div className="flex h-full items-center justify-center">
-              <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
-            </div>
-          )}
-        </div>
-      </div>
+      <SessionInterface
+        agent={agent}
+        session={selectedSession}
+        agentId={agent.agentId}
+        sessionId={selectedSession?.sessionId ?? ""}
+        userId={userAddress}
+        height="100%"
+        isLoadingSession={loadingSession}
+        header={
+          <div className="flex min-w-0 items-center gap-2">
+            <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0" onClick={() => setView("list")} aria-label="Back to sessions">
+              <ArrowLeft className="h-4 w-4" />
+            </Button>
+            <p className="min-w-0 truncate text-sm font-medium">{selectedSession?.title || "Session"}</p>
+          </div>
+        }
+      />
     );
   }
 
@@ -487,13 +487,22 @@ function ToolsView({ agentId, agentTools, setAgentTools }: { agentId: string; ag
       .finally(() => setLoadingCatalog(false));
   }, []);
 
-  // An item is "connected to this agent" when it has a toolId and an assignment exists
-  const getAssignment = (item: ToolCatalogItem) =>
-    agentTools.find((t) => t.toolId === item.tool?.toolId);
+  // Executable tools behind a catalog item: multi-tool bundles (Google apps)
+  // expose `tools`, single custom/system tools expose `tool`.
+  const itemTools = (item: ToolCatalogItem) =>
+    item.tools?.length ? item.tools : item.tool ? [item.tool] : [];
+
+  // An item is "connected to this agent" when assignments exist for its tools
+  const getAssignments = (item: ToolCatalogItem) => {
+    const toolIds = new Set(itemTools(item).map((t) => t.toolId));
+    return agentTools.filter((t) => toolIds.has(t.toolId));
+  };
+
+  const getAssignment = (item: ToolCatalogItem) => getAssignments(item)[0];
 
   const isConnected = (item: ToolCatalogItem): boolean => {
-    if (item.tool?.toolId) return Boolean(getAssignment(item));
-    // OAuth/MCP: connected at platform level
+    if (itemTools(item).length > 0) return getAssignments(item).length > 0;
+    // OAuth/MCP without executable tools: connected at platform level
     return item.status === "connected";
   };
 
@@ -519,28 +528,40 @@ function ToolsView({ agentId, agentTools, setAgentTools }: { agentId: string; ag
   }, [selectedItem?.id, agentTools]);
 
   const connect = async (item: ToolCatalogItem) => {
-    if (!item.tool?.toolId) return;
+    const tools = itemTools(item);
+    if (tools.length === 0) return;
     setToggling(item.id);
     try {
-      const res = await fetch(`/api/agents/${agentId}/tools`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ toolId: item.tool.toolId }),
-      });
-      const data = await res.json();
-      if (data?.data) setAgentTools([...agentTools, data.data]);
+      const assignedIds = new Set(getAssignments(item).map((t) => t.toolId));
+      const created: any[] = [];
+      for (const tool of tools) {
+        if (assignedIds.has(tool.toolId)) continue;
+        const res = await fetch(`/api/agents/${agentId}/tools`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ toolId: tool.toolId }),
+        });
+        const data = await res.json();
+        if (data?.data) created.push(data.data);
+      }
+      if (created.length) setAgentTools([...agentTools, ...created]);
     } finally {
       setToggling(null);
     }
   };
 
   const disconnect = async (item: ToolCatalogItem) => {
-    const assignment = getAssignment(item);
-    if (!assignment) return;
+    const assignments = getAssignments(item);
+    if (assignments.length === 0) return;
     setToggling(item.id);
     try {
-      await fetch(`/api/agents/tools/${assignment.id}`, { method: "DELETE" });
-      setAgentTools(agentTools.filter((t) => t.id !== assignment.id));
+      await Promise.all(
+        assignments.map((assignment) =>
+          fetch(`/api/agents/tools/${assignment.id}`, { method: "DELETE" }),
+        ),
+      );
+      const removed = new Set(assignments.map((a) => a.id));
+      setAgentTools(agentTools.filter((t) => !removed.has(t.id)));
     } finally {
       setToggling(null);
     }
@@ -548,25 +569,29 @@ function ToolsView({ agentId, agentTools, setAgentTools }: { agentId: string; ag
 
   const saveConfig = async () => {
     if (!selectedItem) return;
-    const assignment = getAssignment(selectedItem);
-    if (!assignment) return;
+    const assignments = getAssignments(selectedItem);
+    if (assignments.length === 0) return;
     setSavingConfig(true);
     try {
-      const res = await fetch(`/api/agents/tools/${assignment.id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ usageComments, isEnabled }),
-      });
-      const data = await res.json();
-      if (data?.data) {
-        setAgentTools(agentTools.map((t) => (t.id === assignment.id ? data.data : t)));
-      }
+      const updated = await Promise.all(
+        assignments.map(async (assignment) => {
+          const res = await fetch(`/api/agents/tools/${assignment.id}`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ usageComments, isEnabled }),
+          });
+          const data = await res.json();
+          return data?.data ?? assignment;
+        }),
+      );
+      const byId = new Map(updated.map((a: any) => [a.id, a]));
+      setAgentTools(agentTools.map((t) => byId.get(t.id) ?? t));
     } finally {
       setSavingConfig(false);
     }
   };
 
-  const isAssignable = (item: ToolCatalogItem) => Boolean(item.tool?.toolId);
+  const isAssignable = (item: ToolCatalogItem) => itemTools(item).length > 0;
 
   const connectedCount = catalog.filter(isConnected).length;
 
@@ -736,7 +761,10 @@ function ToolsView({ agentId, agentTools, setAgentTools }: { agentId: string; ag
                 <Panel title="Connect to this agent">
                   <div className="flex items-center justify-between gap-4">
                     <p className="text-sm text-muted-foreground">
-                      Connect this tool to make it available for the agent to invoke during sessions.
+                      {selectedItem.connectionMode === "oauth" &&
+                      selectedItem.status !== "connected"
+                        ? `Connect your ${selectedItem.displayName} account below first, then enable it for this agent. Both are required before the agent can use it.`
+                        : "Connect this tool to make it available for the agent to invoke during sessions."}
                     </p>
                     <Button
                       size="sm"
@@ -750,8 +778,9 @@ function ToolsView({ agentId, agentTools, setAgentTools }: { agentId: string; ag
                 </Panel>
               )}
 
-              {/* OAuth tools — scoped permissions, Claude-connectors style */}
-              {!isAssignable(selectedItem) && selectedItem.connectionMode === "oauth" && (
+              {/* OAuth tools — account-level scoped permissions (shown alongside
+                  the per-agent assignment panels above) */}
+              {selectedItem.connectionMode === "oauth" && (
                 <div className="rounded-lg border border-border bg-background p-4">
                   <ScopePermissions
                     item={selectedItem}
@@ -1800,7 +1829,7 @@ export default function AgentStudioPage({ params }: { params: Promise<{ agent: s
             agentId={agentId}
             sessionId={selectedSession?.sessionId || ""}
             userId={userAddress}
-            height="calc(100vh - 180px)"
+            height="100%"
             isLoadingSession={loadingSession}
             initialPrompt={autoPrompt}
             onInitialPromptSent={() => setAutoPrompt(null)}

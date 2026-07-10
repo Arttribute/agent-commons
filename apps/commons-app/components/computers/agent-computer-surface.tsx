@@ -26,7 +26,6 @@ import {
   Minimize2,
   Moon,
   Play,
-  Plus,
   Power,
   RefreshCw,
   RotateCw,
@@ -45,10 +44,14 @@ import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
 import {
   currentNodes,
-  hasActiveComputer,
+  isActiveComputer,
+  isComputerUsable,
   parseSnapshot,
   type AgentComputer,
+  type AgentComputerConfig,
   type ComputerRuntimeTab,
+  type ComputerResourceMode,
+  type ComputerResourceProfile,
   type FsNode,
 } from "@/components/computers/computer-types";
 import { TrafficLights, WindowFrame } from "@/components/computers/desktop-window";
@@ -62,28 +65,6 @@ import {
   type ComputerTokens,
 } from "@/components/computers/computer-theme";
 
-type ComputerConfig = {
-  enabled: boolean;
-  defaultMode: "persistent" | "ephemeral";
-  autoStart: boolean;
-  allowAgentStart: boolean;
-  allowUserSelect: boolean;
-  allowBrowser: boolean;
-  allowTerminal: boolean;
-  allowFilesystem: boolean;
-  networkAccess: string;
-  maxPersistentComputers: number;
-  maxEphemeralComputers: number;
-  maxConcurrentComputers: number;
-  idleTtlMinutes: number;
-  sessionTtlMinutes: number;
-  image?: string | null;
-  cpuLimit?: string | null;
-  memoryLimit?: string | null;
-  storageLimit?: string | null;
-  region?: string | null;
-};
-
 type ComputerEvent = {
   eventId: string;
   eventType: string;
@@ -92,8 +73,10 @@ type ComputerEvent = {
   createdAt: string;
 };
 
-/** The apps living on the desktop, plus the two full-surface management views. */
-type ComputerApp = "browser" | "code" | "files" | "terminal" | "computers" | "config";
+/** The apps living on the desktop, plus the overview and settings views. */
+type ComputerApp = "browser" | "code" | "files" | "terminal" | "overview" | "config";
+
+type ComputerPowerAction = "wake" | "sleep" | "restart";
 
 const WIDTH_KEY = "agent-computer:width";
 const MIN_WIDTH = 460;
@@ -111,8 +94,6 @@ function mapTab(tab?: ComputerRuntimeTab): ComputerApp {
 
 export function AgentComputerSurface({
   agentId,
-  sessionId,
-  selectedComputerId,
   activeTab,
   autoRefresh = false,
   embedded = false,
@@ -120,21 +101,18 @@ export function AgentComputerSurface({
   className,
 }: {
   agentId: string;
-  sessionId?: string;
-  selectedComputerId?: string;
   activeTab?: ComputerRuntimeTab;
   autoRefresh?: boolean;
   embedded?: boolean;
   onClose?: () => void;
   className?: string;
 }) {
-  const [config, setConfig] = useState<ComputerConfig | null>(null);
-  const [draft, setDraft] = useState<ComputerConfig | null>(null);
-  const [computers, setComputers] = useState<AgentComputer[]>([]);
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [config, setConfig] = useState<AgentComputerConfig | null>(null);
+  const [draft, setDraft] = useState<AgentComputerConfig | null>(null);
+  const [computer, setComputer] = useState<AgentComputer | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [starting, setStarting] = useState(false);
+  const [powerAction, setPowerAction] = useState<ComputerPowerAction | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [app, setApp] = useState<ComputerApp>(mapTab(activeTab));
   const [pendingFile, setPendingFile] = useState<string | null>(null);
@@ -150,40 +128,27 @@ export function AgentComputerSurface({
   const willCloseRef = useRef(false);
   fullscreenRef.current = fullscreen;
 
-  const selectedComputer =
-    computers.find((computer) => computer.computerId === selectedId) ?? computers[0] ?? null;
-
   const load = useCallback(async () => {
     setError(null);
     try {
-      const [configRes, computersRes] = await Promise.all([
+      const [configRes, computerRes] = await Promise.all([
         fetch(`/api/agents/${agentId}/computer/config`, { cache: "no-store" }),
-        fetch(
-          `/api/agents/${agentId}/computers${sessionId ? `?sessionId=${encodeURIComponent(sessionId)}` : ""}`,
-          { cache: "no-store" },
-        ),
+        fetch(`/api/agents/${agentId}/computer`, { cache: "no-store" }),
       ]);
       const configPayload = await configRes.json();
-      const computersPayload = await computersRes.json();
-      if (!configRes.ok) throw new Error(configPayload?.error || "Could not load computer config");
-      if (!computersRes.ok) throw new Error(computersPayload?.error || "Could not load computers");
-      setConfig(configPayload.data);
-      setDraft((current) => current ?? configPayload.data);
-      const nextComputers: AgentComputer[] = computersPayload.data ?? [];
-      setComputers(nextComputers);
-      setSelectedId((current) => {
-        if (selectedComputerId && nextComputers.some((c) => c.computerId === selectedComputerId)) {
-          return selectedComputerId;
-        }
-        if (current && nextComputers.some((c) => c.computerId === current)) return current;
-        return nextComputers[0]?.computerId ?? null;
-      });
+      const computerPayload = await computerRes.json();
+      if (!configRes.ok) throw new Error(errorMessage(configPayload, "Could not load computer config"));
+      if (!computerRes.ok) throw new Error(errorMessage(computerPayload, "Could not load computer"));
+      const nextConfig = normalizeComputerConfig(configPayload.data);
+      setConfig(nextConfig);
+      setDraft((current) => current ?? nextConfig);
+      setComputer(unwrapComputer(computerPayload));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Computer load failed");
     } finally {
       setLoading(false);
     }
-  }, [agentId, selectedComputerId, sessionId]);
+  }, [agentId]);
 
   useEffect(() => {
     load();
@@ -192,10 +157,6 @@ export function AgentComputerSurface({
   useEffect(() => {
     if (activeTab) setApp(mapTab(activeTab));
   }, [activeTab]);
-
-  useEffect(() => {
-    if (selectedComputerId) setSelectedId(selectedComputerId);
-  }, [selectedComputerId]);
 
   useEffect(() => {
     if (!autoRefresh) return;
@@ -266,12 +227,13 @@ export function AgentComputerSurface({
       const response = await fetch(`/api/agents/${agentId}/computer/config`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(draft),
+        body: JSON.stringify(computerConfigPatch(draft)),
       });
       const payload = await response.json();
-      if (!response.ok) throw new Error(payload?.error || "Could not save config");
-      setConfig(payload.data);
-      setDraft(payload.data);
+      if (!response.ok) throw new Error(errorMessage(payload, "Could not save config"));
+      const nextConfig = normalizeComputerConfig(payload.data);
+      setConfig(nextConfig);
+      setDraft(nextConfig);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not save config");
     } finally {
@@ -279,41 +241,44 @@ export function AgentComputerSurface({
     }
   };
 
-  const startComputer = async (lifecycle: "persistent" | "ephemeral") => {
-    setStarting(true);
+  const runPowerAction = async (action: ComputerPowerAction) => {
+    setPowerAction(action);
     setError(null);
     try {
-      const response = await fetch(`/api/agents/${agentId}/computers`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          sessionId,
-          lifecycle,
-          reason: "Started from session computer",
-        }),
-      });
+      const response = await fetch(`/api/agents/${agentId}/computer/${action}`, { method: "POST" });
       const payload = await response.json();
-      if (!response.ok) throw new Error(payload?.error || "Could not start computer");
+      if (!response.ok) throw new Error(errorMessage(payload, `Could not ${action} computer`));
+      setComputer(unwrapComputer(payload));
       await load();
-      setSelectedId(payload.data?.computerId ?? null);
-      setApp("terminal");
+      if (action === "wake") setApp("terminal");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not start computer");
+      setError(err instanceof Error ? err.message : `Could not ${action} computer`);
     } finally {
-      setStarting(false);
+      setPowerAction(null);
     }
   };
 
-  const stopComputer = async (computerId: string) => {
-    await fetch(`/api/agents/${agentId}/computers/${computerId}/stop`, { method: "POST" }).catch(
-      () => null,
-    );
-    await load();
-  };
-
-  const selectComputer = (computerId: string) => {
-    setSelectedId(computerId);
-    if (app === "computers") setApp("terminal");
+  const enableComputer = async () => {
+    if (!draft) return;
+    setSaving(true);
+    setError(null);
+    try {
+      const response = await fetch(`/api/agents/${agentId}/computer/config`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ enabled: true }),
+      });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(errorMessage(payload, "Could not enable computer"));
+      const nextConfig = normalizeComputerConfig(payload.data);
+      setConfig(nextConfig);
+      setDraft(nextConfig);
+      await runPowerAction("wake");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not enable computer");
+    } finally {
+      setSaving(false);
+    }
   };
 
   const body = (
@@ -321,9 +286,7 @@ export function AgentComputerSurface({
       <TopBar
         app={app}
         onApp={setApp}
-        computer={selectedComputer}
-        computerCount={computers.length}
-        anyActive={hasActiveComputer(computers)}
+        computer={computer}
         loading={loading}
         embedded={embedded}
         fullscreen={fullscreen}
@@ -342,17 +305,15 @@ export function AgentComputerSurface({
       )}
 
       <div className="relative min-h-0 flex-1">
-        {app === "computers" ? (
-          <ComputersView
-            computers={computers}
-            selectedId={selectedComputer?.computerId ?? null}
+        {app === "overview" ? (
+          <ComputerOverview
+            computer={computer}
+            config={config}
             loading={loading}
-            starting={starting}
-            enabled={Boolean(config?.enabled)}
+            powerAction={powerAction}
             tokens={tokens}
-            onSelect={selectComputer}
-            onStop={stopComputer}
-            onStart={startComputer}
+            onAction={runPowerAction}
+            onConfigure={() => setApp("config")}
           />
         ) : app === "config" ? (
           <ConfigView
@@ -370,13 +331,12 @@ export function AgentComputerSurface({
           <DesktopStage
             app={app}
             agentId={agentId}
-            sessionId={sessionId}
-            computer={selectedComputer}
+            computer={computer}
             loading={loading}
-            starting={starting}
+            powerAction={powerAction}
             enabled={Boolean(config?.enabled)}
             autoRefresh={autoRefresh}
-            eventsKey={computers.map((c) => c.updatedAt).join("|")}
+            eventsKey={computer?.updatedAt ?? ""}
             openPath={pendingFile}
             mode={mode}
             tokens={tokens}
@@ -388,9 +348,10 @@ export function AgentComputerSurface({
               setApp("code");
             }}
             onFileOpened={() => setPendingFile(null)}
-            onStart={startComputer}
+            onWake={() => runPowerAction("wake")}
+            onEnable={enableComputer}
             onRefresh={load}
-            onManage={() => setApp("computers")}
+            onManage={() => setApp("overview")}
           />
         )}
       </div>
@@ -448,8 +409,6 @@ function TopBar({
   app,
   onApp,
   computer,
-  computerCount,
-  anyActive,
   loading,
   embedded,
   fullscreen,
@@ -463,8 +422,6 @@ function TopBar({
   app: ComputerApp;
   onApp: (app: ComputerApp) => void;
   computer: AgentComputer | null;
-  computerCount: number;
-  anyActive: boolean;
   loading: boolean;
   embedded: boolean;
   fullscreen: boolean;
@@ -489,20 +446,20 @@ function TopBar({
 
       <button
         type="button"
-        onClick={() => onApp("computers")}
-        title="Computers"
+        onClick={() => onApp("overview")}
+        title="Computer overview"
         className={cn(
           "flex min-w-0 items-center gap-2 rounded-md border px-2.5 py-1.5 text-left transition-colors",
-          app === "computers" ? tokens.chipActive : tokens.chip,
+          app === "overview" ? tokens.chipActive : tokens.chip,
         )}
       >
-        <StatusDot status={computer?.status} active={anyActive} />
+        <StatusDot status={computer?.status} active={isActiveComputer(computer)} />
         <span className="flex min-w-0 flex-col leading-none">
           <span className={cn("truncate text-[11px] font-medium", tokens.text)}>
-            {computer?.name ?? (computerCount ? "Select computer" : "No computer")}
+            {computer?.name ?? "Agent computer"}
           </span>
           <span className={cn("truncate text-[9px] uppercase tracking-wide", tokens.textDim)}>
-            {computer ? computer.status : "commonos"}
+            {computer ? humanStatus(computer.status) : "not set up"}
           </span>
         </span>
       </button>
@@ -586,7 +543,7 @@ function StatusDot({ status, active }: { status?: string; active?: boolean }) {
   const tone =
     status && ["running", "idle"].includes(status)
       ? "bg-emerald-400"
-      : status && ["provisioning", "starting"].includes(status)
+      : status && ["provisioning", "starting", "restarting", "resizing", "stopping"].includes(status)
         ? "bg-amber-400"
         : status && ["failed", "error", "unavailable"].includes(status)
           ? "bg-red-400"
@@ -604,10 +561,9 @@ function StatusDot({ status, active }: { status?: string; active?: boolean }) {
 function DesktopStage({
   app,
   agentId,
-  sessionId,
   computer,
   loading,
-  starting,
+  powerAction,
   enabled,
   autoRefresh,
   eventsKey,
@@ -619,16 +575,16 @@ function DesktopStage({
   onSetCodeTheme,
   onOpenFile,
   onFileOpened,
-  onStart,
+  onWake,
+  onEnable,
   onRefresh,
   onManage,
 }: {
   app: ComputerApp;
   agentId: string;
-  sessionId?: string;
   computer: AgentComputer | null;
   loading: boolean;
-  starting: boolean;
+  powerAction: ComputerPowerAction | null;
   enabled: boolean;
   autoRefresh?: boolean;
   eventsKey: string;
@@ -640,7 +596,8 @@ function DesktopStage({
   onSetCodeTheme: (theme: CodeTheme) => void;
   onOpenFile: (path: string) => void;
   onFileOpened: () => void;
-  onStart: (lifecycle: "persistent" | "ephemeral") => void;
+  onWake: () => void;
+  onEnable: () => void;
   onRefresh: () => void;
   onManage: () => void;
 }) {
@@ -651,11 +608,20 @@ function DesktopStage({
         <div className="flex h-full items-center justify-center">
           <Loader2 className={cn("h-6 w-6 animate-spin", tokens.textDim)} />
         </div>
-      ) : !computer ? (
-        <BootDesktop starting={starting} enabled={enabled} mode={mode} tokens={tokens} onStart={onStart} onManage={onManage} />
+      ) : !isComputerUsable(computer) ? (
+        <BootDesktop
+          computer={computer}
+          busy={Boolean(powerAction)}
+          enabled={enabled}
+          mode={mode}
+          tokens={tokens}
+          onWake={onWake}
+          onEnable={onEnable}
+          onManage={onManage}
+        />
       ) : app === "browser" ? (
         <div className="absolute inset-2 sm:inset-3">
-          <BrowserWindow agentId={agentId} sessionId={sessionId} computer={computer} mode={mode} tokens={tokens} onRefresh={onRefresh} />
+          <BrowserWindow agentId={agentId} computer={computer} mode={mode} tokens={tokens} onRefresh={onRefresh} />
         </div>
       ) : app === "code" ? (
         <div className="absolute inset-2 sm:inset-3">
@@ -676,7 +642,6 @@ function DesktopStage({
         <div className="absolute inset-x-0 top-6 bottom-6 mx-auto w-[min(92%,760px)]">
           <TerminalWindow
             agentId={agentId}
-            sessionId={sessionId}
             computer={computer}
             autoRefresh={autoRefresh}
             eventsKey={eventsKey}
@@ -689,18 +654,22 @@ function DesktopStage({
 }
 
 function BootDesktop({
-  starting,
+  computer,
+  busy,
   enabled,
   mode,
   tokens,
-  onStart,
+  onWake,
+  onEnable,
   onManage,
 }: {
-  starting: boolean;
+  computer: AgentComputer | null;
+  busy: boolean;
   enabled: boolean;
   mode: ComputerMode;
   tokens: ComputerTokens;
-  onStart: (lifecycle: "persistent" | "ephemeral") => void;
+  onWake: () => void;
+  onEnable: () => void;
   onManage: () => void;
 }) {
   const light = mode === "light";
@@ -715,11 +684,13 @@ function BootDesktop({
         <Power className={cn("h-7 w-7", light ? "text-zinc-600" : "text-zinc-300")} />
       </div>
       <div className="space-y-1">
-        <p className={cn("text-sm font-medium", tokens.text)}>No computer running</p>
+        <p className={cn("text-sm font-medium", tokens.text)}>
+          {!enabled ? "Computer not enabled" : computer ? `Computer is ${humanStatus(computer.status)}` : "Computer is ready to set up"}
+        </p>
         <p className={cn("mx-auto max-w-xs text-xs leading-relaxed", tokens.textDim)}>
           {enabled
-            ? "Boot a CommonOS machine to give this agent a browser, a terminal, an editor and a filesystem."
-            : "Computer access is disabled for this agent. Enable it in settings to boot a machine."}
+            ? "Wake this agent’s persistent cloud computer. Its workspace remains available between chats and sleep cycles."
+            : "Enable one persistent CommonOS computer for this agent. It stays off until the agent or you need it."}
         </p>
       </div>
       <div className="flex items-center gap-2">
@@ -729,11 +700,11 @@ function BootDesktop({
             "h-8 gap-1.5",
             light ? "bg-zinc-900 text-white hover:bg-zinc-800" : "bg-zinc-100 text-zinc-900 hover:bg-white",
           )}
-          disabled={!enabled || starting}
-          onClick={() => onStart("ephemeral")}
+          disabled={busy}
+          onClick={enabled ? onWake : onEnable}
         >
-          {starting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Play className="h-3.5 w-3.5" />}
-          Boot computer
+          {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Play className="h-3.5 w-3.5" />}
+          {enabled ? "Wake computer" : "Enable computer"}
         </Button>
         <Button
           size="sm"
@@ -756,14 +727,12 @@ function BootDesktop({
 
 function BrowserWindow({
   agentId,
-  sessionId,
   computer,
   mode,
   tokens,
   onRefresh,
 }: {
   agentId: string;
-  sessionId?: string;
   computer: AgentComputer;
   mode: ComputerMode;
   tokens: ComputerTokens;
@@ -781,10 +750,10 @@ function BrowserWindow({
     if (!url.trim()) return;
     setOpening(true);
     try {
-      await fetch(`/api/agents/${agentId}/computers/${computer.computerId}/browser/open`, {
+      await fetch(`/api/agents/${agentId}/computer/browser/open`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ url, sessionId }),
+        body: JSON.stringify({ url }),
       });
       onRefresh();
     } finally {
@@ -900,7 +869,7 @@ function CodeWindow({
       });
       try {
         const res = await fetch(
-          `/api/agents/${agentId}/computers/${computer.computerId}/files/read?path=${encodeURIComponent(path)}`,
+          `/api/agents/${agentId}/computer/files/read?path=${encodeURIComponent(path)}`,
         );
         const payload = await res.json();
         if (!res.ok) throw new Error(payload?.error || "Could not read file");
@@ -1334,14 +1303,12 @@ function FilesWindow({
 
 function TerminalWindow({
   agentId,
-  sessionId,
   computer,
   eventsKey,
   autoRefresh,
   onRefresh,
 }: {
   agentId: string;
-  sessionId?: string;
   computer: AgentComputer;
   eventsKey: string;
   autoRefresh?: boolean;
@@ -1352,7 +1319,7 @@ function TerminalWindow({
   const [running, setRunning] = useState(false);
 
   const loadEvents = useCallback(async () => {
-    const res = await fetch(`/api/agents/${agentId}/computers/${computer.computerId}/events?limit=80`, {
+    const res = await fetch(`/api/agents/${agentId}/computer/events?limit=80`, {
       cache: "no-store",
     });
     const payload = await res.json().catch(() => null);
@@ -1373,10 +1340,10 @@ function TerminalWindow({
     if (!command.trim()) return;
     setRunning(true);
     try {
-      await fetch(`/api/agents/${agentId}/computers/${computer.computerId}/commands`, {
+      await fetch(`/api/agents/${agentId}/computer/commands`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ command, sessionId, timeoutSeconds: 120 }),
+        body: JSON.stringify({ command, timeoutSeconds: 120 }),
       });
       setCommand("");
       await loadEvents();
@@ -1452,106 +1419,128 @@ function TerminalBlock({ title, body }: { title: string; body: string }) {
   );
 }
 
-/* ─── Computers view ─────────────────────────────────────────────────────── */
+/* ─── Computer overview ───────────────────────────────────────────────────── */
 
-function ComputersView({
-  computers,
-  selectedId,
+function ComputerOverview({
+  computer,
+  config,
   loading,
-  starting,
-  enabled,
+  powerAction,
   tokens,
-  onSelect,
-  onStop,
-  onStart,
+  onAction,
+  onConfigure,
 }: {
-  computers: AgentComputer[];
-  selectedId: string | null;
+  computer: AgentComputer | null;
+  config: AgentComputerConfig | null;
   loading: boolean;
-  starting: boolean;
-  enabled: boolean;
+  powerAction: ComputerPowerAction | null;
   tokens: ComputerTokens;
-  onSelect: (computerId: string) => void;
-  onStop: (computerId: string) => void;
-  onStart: (lifecycle: "persistent" | "ephemeral") => void;
+  onAction: (action: ComputerPowerAction) => void;
+  onConfigure: () => void;
 }) {
+  const active = isActiveComputer(computer);
+  const profile = profileFor(config?.resourceProfile ?? "standard");
+
   return (
     <div className={cn("flex h-full min-h-0 flex-col", tokens.viewBg)}>
       <div className={cn("flex items-center justify-between gap-3 border-b px-4 py-3", tokens.border)}>
         <div>
           <h3 className={cn("flex items-center gap-2 text-sm font-medium", tokens.text)}>
             <Cpu className={cn("h-4 w-4", tokens.textDim)} />
-            Computers
+            Agent computer
           </h3>
           <p className={cn("mt-0.5 text-xs", tokens.textDim)}>
-            {computers.length ? `${computers.length} machine${computers.length === 1 ? "" : "s"}` : "No machines yet"}
+            One persistent workspace for every chat with this agent
           </p>
         </div>
-        <div className="flex items-center gap-2">
-          <Button size="sm" variant="outline" className="h-8 gap-1.5" disabled={!enabled || starting} onClick={() => onStart("persistent")}>
-            <HardDrive className="h-3.5 w-3.5" />
-            Persistent
-          </Button>
-          <Button size="sm" className="h-8 gap-1.5" disabled={!enabled || starting} onClick={() => onStart("ephemeral")}>
-            {starting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Plus className="h-3.5 w-3.5" />}
-            New
-          </Button>
-        </div>
+        <Button size="sm" variant="outline" className="h-8 gap-1.5" onClick={onConfigure}>
+          <Settings2 className="h-3.5 w-3.5" />
+          Configure
+        </Button>
       </div>
       <ScrollArea className="min-h-0 flex-1">
-        <div className="grid gap-2 p-4 sm:grid-cols-2">
-          {loading && computers.length === 0 ? (
-            <div className="col-span-full flex h-32 items-center justify-center">
+        <div className="mx-auto grid max-w-2xl gap-4 p-5">
+          {loading && !config ? (
+            <div className="flex h-40 items-center justify-center">
               <Loader2 className={cn("h-5 w-5 animate-spin", tokens.textDim)} />
             </div>
-          ) : computers.length === 0 ? (
-            <div className={cn("col-span-full rounded-xl border border-dashed p-10 text-center text-sm", tokens.textDim)}>
-              No computers yet — boot one to get started.
-            </div>
           ) : (
-            computers.map((computer) => {
-              const active = ["running", "idle", "provisioning", "starting"].includes(computer.status);
-              return (
-                <div
-                  key={computer.computerId}
-                  className={cn(
-                    "group cursor-pointer rounded-xl border p-3 transition-colors",
-                    selectedId === computer.computerId ? tokens.cardActive : tokens.card,
-                  )}
-                  onClick={() => onSelect(computer.computerId)}
-                >
-                  <div className="flex items-center gap-2">
-                    <StatusDot status={computer.status} />
-                    <p className={cn("min-w-0 flex-1 truncate text-sm font-medium", tokens.text)}>{computer.name}</p>
-                    <span className={cn("rounded-md border px-1.5 py-0.5 text-[10px] uppercase tracking-wide", tokens.divider, tokens.textDim)}>
-                      {computer.lifecycle}
+            <>
+              <div className={cn("rounded-xl border p-4", tokens.card)}>
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div className="flex min-w-0 items-center gap-3">
+                    <span className={cn("flex h-11 w-11 shrink-0 items-center justify-center rounded-xl", tokens.mutedPanel)}>
+                      <HardDrive className={cn("h-5 w-5", tokens.textDim)} />
                     </span>
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2">
+                        <p className={cn("truncate text-sm font-medium", tokens.text)}>
+                          {computer?.name ?? "Persistent cloud computer"}
+                        </p>
+                        <StatusDot status={computer?.status} active={active} />
+                      </div>
+                      <p className={cn("mt-1 text-xs", tokens.textDim)}>
+                        {config?.enabled
+                          ? computer
+                            ? `${humanStatus(computer.status)} · updated ${formatTime(computer.updatedAt)}`
+                            : "Enabled · not provisioned yet"
+                          : "Not enabled for this agent"}
+                      </p>
+                    </div>
                   </div>
-                  <p className={cn("mt-2 truncate font-mono text-[10px]", tokens.textDim)}>
-                    {computer.status} · {shortId(computer.computerId)}
-                  </p>
-                  <div className="mt-3 flex items-center justify-between">
-                    <span className={cn("text-[10px]", tokens.textDim)}>{formatTime(computer.updatedAt)}</span>
-                    {active && (
-                      <button
-                        type="button"
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          onStop(computer.computerId);
-                        }}
-                        className={cn(
-                          "flex items-center gap-1 rounded-md px-1.5 py-1 text-[10px] hover:bg-red-500/15 hover:text-red-500",
-                          tokens.textDim,
-                        )}
+                  <div className="flex items-center gap-2">
+                    {active ? (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="h-8 gap-1.5"
+                        disabled={Boolean(powerAction)}
+                        onClick={() => onAction("sleep")}
                       >
-                        <Power className="h-3 w-3" />
-                        Stop
-                      </button>
+                        {powerAction === "sleep" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Moon className="h-3.5 w-3.5" />}
+                        Sleep
+                      </Button>
+                    ) : (
+                      <Button
+                        size="sm"
+                        className="h-8 gap-1.5"
+                        disabled={!config?.enabled || Boolean(powerAction)}
+                        onClick={() => onAction("wake")}
+                      >
+                        {powerAction === "wake" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Play className="h-3.5 w-3.5" />}
+                        Wake
+                      </Button>
+                    )}
+                    {computer && (
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="h-8 gap-1.5"
+                        disabled={!config?.enabled || Boolean(powerAction)}
+                        onClick={() => onAction("restart")}
+                      >
+                        <RefreshCw className={cn("h-3.5 w-3.5", powerAction === "restart" && "animate-spin")} />
+                        Restart
+                      </Button>
                     )}
                   </div>
                 </div>
-              );
-            })
+                {computer?.errorMessage && (
+                  <p className="mt-3 rounded-lg bg-red-500/10 px-3 py-2 text-xs text-red-600 dark:text-red-300">
+                    {computer.errorMessage}
+                  </p>
+                )}
+              </div>
+
+              <div className="grid gap-3 sm:grid-cols-3">
+                <OverviewStat label="Performance" value={profile.label} detail={config?.resourceMode === "fixed" ? "Fixed allocation" : "Elastic scaling"} tokens={tokens} />
+                <OverviewStat label="Compute ceiling" value={`${config?.cpuLimit ?? profile.cpu} vCPU`} detail={config?.memoryLimit ?? profile.memory} tokens={tokens} />
+                <OverviewStat label="Persistent storage" value={config?.storageLimit ?? profile.storage} detail={config?.region || computer?.region || "Automatic region"} tokens={tokens} />
+              </div>
+              <p className={cn("px-1 text-xs leading-relaxed", tokens.textDim)}>
+                Sleeping pauses compute charges while keeping the workspace. Waking always returns this same computer and its files.
+              </p>
+            </>
           )}
         </div>
       </ScrollArea>
@@ -1559,10 +1548,45 @@ function ComputersView({
   );
 }
 
+function OverviewStat({
+  label,
+  value,
+  detail,
+  tokens,
+}: {
+  label: string;
+  value: string;
+  detail: string;
+  tokens: ComputerTokens;
+}) {
+  return (
+    <div className={cn("rounded-xl border p-3", tokens.card)}>
+      <p className={cn("text-[10px] font-medium uppercase tracking-wide", tokens.textDim)}>{label}</p>
+      <p className={cn("mt-1.5 text-sm font-medium", tokens.text)}>{value}</p>
+      <p className={cn("mt-0.5 text-xs", tokens.textDim)}>{detail}</p>
+    </div>
+  );
+}
+
 /* ─── Config view (tabbed) ───────────────────────────────────────────────── */
 
-const CONFIG_TABS = ["Appearance", "Access", "Limits", "Runtime"] as const;
+const CONFIG_TABS = ["Appearance", "Access", "Performance"] as const;
 type ConfigTab = (typeof CONFIG_TABS)[number];
+
+const RESOURCE_PROFILES: Array<{
+  id: ComputerResourceProfile;
+  label: string;
+  detail: string;
+  cpu: string;
+  memory: string;
+  storage: string;
+  gpu?: string;
+}> = [
+  { id: "starter", label: "Starter", detail: "Light browsing and scripts", cpu: "1", memory: "2Gi", storage: "10Gi" },
+  { id: "standard", label: "Standard", detail: "Everyday agent work", cpu: "2", memory: "4Gi", storage: "20Gi" },
+  { id: "performance", label: "Performance", detail: "Builds and heavier workloads", cpu: "4", memory: "8Gi", storage: "50Gi" },
+  { id: "gpu", label: "GPU", detail: "Accelerated model and media work", cpu: "8", memory: "32Gi", storage: "100Gi", gpu: "1 GPU" },
+];
 
 function ConfigView({
   draft,
@@ -1575,14 +1599,14 @@ function ConfigView({
   onChange,
   onSave,
 }: {
-  draft: ComputerConfig | null;
+  draft: AgentComputerConfig | null;
   saving: boolean;
   tokens: ComputerTokens;
   appearanceId: AppearanceId;
   codeTheme: CodeTheme;
   onSetAppearance: (id: AppearanceId) => void;
   onSetCodeTheme: (theme: CodeTheme) => void;
-  onChange: (config: ComputerConfig) => void;
+  onChange: (config: AgentComputerConfig) => void;
   onSave: () => void;
 }) {
   const [tab, setTab] = useState<ConfigTab>("Appearance");
@@ -1633,19 +1657,19 @@ function ConfigView({
             <>
               <ToggleRow
                 label="Computer access"
-                detail="Allow this agent to use CommonOS computers."
+                detail="Give this agent one persistent CommonOS computer."
                 checked={draft.enabled}
                 onChange={(enabled) => onChange({ ...draft, enabled })}
               />
               <ToggleRow
-                label="Agent can start computers"
-                detail="Lets the agent provision a computer when a task requires one."
+                label="Agent can wake its computer"
+                detail="Let the agent wake the same computer when a task needs it."
                 checked={draft.allowAgentStart}
                 onChange={(allowAgentStart) => onChange({ ...draft, allowAgentStart })}
               />
               <ToggleRow
                 label="User-selectable"
-                detail="Show the computer option in the session composer."
+                detail="Show this persistent computer in the chat composer."
                 checked={draft.allowUserSelect}
                 onChange={(allowUserSelect) => onChange({ ...draft, allowUserSelect })}
               />
@@ -1663,64 +1687,159 @@ function ConfigView({
               />
               <ToggleRow
                 label="Filesystem"
-                detail="Allow the agent to read and write workspace files."
+                detail="Allow the agent to read and write its persistent workspace."
                 checked={draft.allowFilesystem}
                 onChange={(allowFilesystem) => onChange({ ...draft, allowFilesystem })}
               />
+              <div className="space-y-2 pt-1">
+                <div>
+                  <p className={cn("text-sm font-medium", tokens.text)}>Network access</p>
+                  <p className={cn("mt-0.5 text-xs", tokens.textDim)}>Control outbound access from this computer.</p>
+                </div>
+                <SegmentedOptions
+                  value={networkOption(draft.networkAccess)}
+                  options={[
+                    { value: "standard", label: "Standard" },
+                    { value: "restricted", label: "Restricted" },
+                    { value: "disabled", label: "Off" },
+                  ]}
+                  tokens={tokens}
+                  onChange={(networkAccess) => onChange({ ...draft, networkAccess })}
+                />
+              </div>
             </>
           )}
 
-          {draft && tab === "Limits" && (
+          {draft && tab === "Performance" && (
             <>
-              <div className="grid gap-1.5">
-                <ConfigLabel>Default mode</ConfigLabel>
-                <div className={cn("flex items-center gap-1 rounded-lg p-0.5", tokens.switcherTrack)}>
-                  {(["ephemeral", "persistent"] as const).map((option) => (
+              <div className="space-y-2">
+                <div>
+                  <p className={cn("text-sm font-medium", tokens.text)}>Performance profile</p>
+                  <p className={cn("mt-0.5 text-xs", tokens.textDim)}>Choose the maximum resources this computer can use.</p>
+                </div>
+                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                  {RESOURCE_PROFILES.map((profile) => (
                     <button
-                      key={option}
+                      key={profile.id}
                       type="button"
-                      onClick={() => onChange({ ...draft, defaultMode: option })}
+                      onClick={() => onChange({ ...draft, resourceProfile: profile.id })}
                       className={cn(
-                        "flex-1 rounded-md px-3 py-1.5 text-xs capitalize transition-colors",
-                        draft.defaultMode === option ? tokens.switcherActive : tokens.switcherIdle,
+                        "rounded-xl border p-3 text-left transition-colors",
+                        draft.resourceProfile === profile.id ? tokens.cardActive : tokens.card,
                       )}
                     >
-                      {option}
+                      <span className="flex items-center justify-between gap-2">
+                        <span className={cn("text-sm font-medium", tokens.text)}>{profile.label}</span>
+                        {draft.resourceProfile === profile.id && <Check className="h-3.5 w-3.5 text-indigo-500" />}
+                      </span>
+                      <span className={cn("mt-1 block text-xs", tokens.textDim)}>{profile.detail}</span>
+                      <span className={cn("mt-2 block font-mono text-[10px]", tokens.textDim)}>
+                        {profile.cpu} vCPU · {profile.memory} · {profile.storage}{profile.gpu ? ` · ${profile.gpu}` : ""}
+                      </span>
                     </button>
                   ))}
                 </div>
               </div>
-              <div className="grid grid-cols-3 gap-2">
-                <NumberField label="Persistent" value={draft.maxPersistentComputers} onChange={(value) => onChange({ ...draft, maxPersistentComputers: value })} />
-                <NumberField label="Ephemeral" value={draft.maxEphemeralComputers} onChange={(value) => onChange({ ...draft, maxEphemeralComputers: value })} />
-                <NumberField label="Total" value={draft.maxConcurrentComputers} onChange={(value) => onChange({ ...draft, maxConcurrentComputers: value })} />
-              </div>
-              <div className="grid grid-cols-2 gap-2">
-                <NumberField label="Idle minutes" value={draft.idleTtlMinutes} onChange={(value) => onChange({ ...draft, idleTtlMinutes: value })} />
-                <NumberField label="Session minutes" value={draft.sessionTtlMinutes} onChange={(value) => onChange({ ...draft, sessionTtlMinutes: value })} />
-              </div>
-            </>
-          )}
 
-          {draft && tab === "Runtime" && (
-            <>
-              <div className="grid gap-1.5">
-                <ConfigLabel>Runtime image</ConfigLabel>
-                <ConfigInput value={draft.image ?? ""} onChange={(value) => onChange({ ...draft, image: value })} placeholder="CommonOS default" />
+              <div className="space-y-2">
+                <div>
+                  <p className={cn("text-sm font-medium", tokens.text)}>Resource behavior</p>
+                  <p className={cn("mt-0.5 text-xs", tokens.textDim)}>Elastic starts small and boosts automatically when work gets heavier.</p>
+                </div>
+                <SegmentedOptions
+                  value={draft.resourceMode}
+                  options={[
+                    { value: "elastic", label: "Elastic" },
+                    { value: "fixed", label: "Fixed" },
+                  ]}
+                  tokens={tokens}
+                  onChange={(resourceMode) => onChange({ ...draft, resourceMode })}
+                />
+                <ResourcePreview config={draft} tokens={tokens} />
               </div>
-              <div className="grid grid-cols-3 gap-2">
-                <TextField label="CPU" value={draft.cpuLimit ?? ""} onChange={(value) => onChange({ ...draft, cpuLimit: value })} />
-                <TextField label="Memory" value={draft.memoryLimit ?? ""} onChange={(value) => onChange({ ...draft, memoryLimit: value })} />
-                <TextField label="Storage" value={draft.storageLimit ?? ""} onChange={(value) => onChange({ ...draft, storageLimit: value })} />
-              </div>
-              <div className="grid gap-1.5">
-                <ConfigLabel>Region</ConfigLabel>
-                <ConfigInput value={draft.region ?? ""} onChange={(value) => onChange({ ...draft, region: value })} placeholder="CommonOS default" />
+
+              <div className="grid gap-3 sm:grid-cols-2">
+                <NumberField
+                  label="Sleep after idle (minutes)"
+                  value={draft.idleTtlMinutes}
+                  onChange={(idleTtlMinutes) => onChange({ ...draft, idleTtlMinutes })}
+                />
+                <div className="grid gap-1.5">
+                  <ConfigLabel>Region</ConfigLabel>
+                  <ConfigInput value={draft.region ?? ""} onChange={(region) => onChange({ ...draft, region })} placeholder="Automatic" />
+                </div>
               </div>
             </>
           )}
         </div>
       </ScrollArea>
+    </div>
+  );
+}
+
+function SegmentedOptions<T extends string>({
+  value,
+  options,
+  tokens,
+  onChange,
+}: {
+  value: T;
+  options: Array<{ value: T; label: string }>;
+  tokens: ComputerTokens;
+  onChange: (value: T) => void;
+}) {
+  return (
+    <div className={cn("flex items-center gap-1 rounded-lg p-0.5", tokens.switcherTrack)}>
+      {options.map((option) => (
+        <button
+          key={option.value}
+          type="button"
+          onClick={() => onChange(option.value)}
+          className={cn(
+            "flex-1 rounded-md px-3 py-1.5 text-xs transition-colors",
+            value === option.value ? tokens.switcherActive : tokens.switcherIdle,
+          )}
+        >
+          {option.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function ResourcePreview({ config, tokens }: { config: AgentComputerConfig; tokens: ComputerTokens }) {
+  const profile = profileFor(config.resourceProfile);
+  const elastic = config.resourceMode !== "fixed";
+  const requestCpu = config.cpuRequest || "Automatic";
+  const requestMemory = config.memoryRequest || "Automatic";
+  const limitCpu = config.cpuLimit || profile.cpu;
+  const limitMemory = config.memoryLimit || profile.memory;
+  const storage = config.storageLimit || profile.storage;
+  const gpu = Number(config.gpuCount || 0) > 0
+    ? `${config.gpuCount} ${config.gpuType || "GPU"}`
+    : profile.gpu || "No GPU";
+
+  return (
+    <div className={cn("grid gap-2 rounded-xl border p-3 sm:grid-cols-2", tokens.card)}>
+      <div>
+        <p className={cn("text-[10px] font-medium uppercase tracking-wide", tokens.textDim)}>
+          {elastic ? "Starts at" : "Allocation"}
+        </p>
+        <p className={cn("mt-1 text-xs font-medium", tokens.text)}>
+          {elastic ? `${requestCpu} vCPU · ${requestMemory}` : `${limitCpu} vCPU · ${limitMemory}`}
+        </p>
+      </div>
+      <div>
+        <p className={cn("text-[10px] font-medium uppercase tracking-wide", tokens.textDim)}>
+          {elastic ? "Elastic ceiling" : "Workspace"}
+        </p>
+        <p className={cn("mt-1 text-xs font-medium", tokens.text)}>
+          {elastic ? `${limitCpu} vCPU · ${limitMemory}` : `${storage} storage`}
+        </p>
+      </div>
+      <div className={cn("border-t pt-2 text-xs sm:col-span-2", tokens.border, tokens.textDim)}>
+        {storage} persistent storage · {gpu}
+      </div>
     </div>
   );
 }
@@ -1852,16 +1971,81 @@ function NumberField({ label, value, onChange }: { label: string; value: number;
   );
 }
 
-function TextField({ label, value, onChange }: { label: string; value: string; onChange: (value: string) => void }) {
-  return (
-    <div className="grid gap-1.5">
-      <ConfigLabel>{label}</ConfigLabel>
-      <ConfigInput value={value} onChange={onChange} />
-    </div>
-  );
+/* ─── Helpers ────────────────────────────────────────────────────────────── */
+
+function profileFor(profile: ComputerResourceProfile) {
+  return RESOURCE_PROFILES.find((item) => item.id === profile) ?? RESOURCE_PROFILES[0];
 }
 
-/* ─── Helpers ────────────────────────────────────────────────────────────── */
+function networkOption(value?: string): "standard" | "restricted" | "disabled" {
+  if (value === "restricted" || value === "disabled") return value;
+  return "standard";
+}
+
+function humanStatus(status?: string) {
+  if (!status) return "not provisioned";
+  if (status === "idle") return "running";
+  if (status === "stopped") return "sleeping";
+  return status.replaceAll("_", " ");
+}
+
+function unwrapComputer(payload: any): AgentComputer | null {
+  const data = payload?.data;
+  const computer = data?.computer ?? data;
+  return computer && typeof computer === "object" && typeof computer.computerId === "string"
+    ? (computer as AgentComputer)
+    : null;
+}
+
+function errorMessage(payload: any, fallback: string) {
+  const message = payload?.error?.message ?? payload?.error ?? payload?.message;
+  return typeof message === "string" && message.trim() ? message : fallback;
+}
+
+function normalizeComputerConfig(value: any): AgentComputerConfig {
+  const profile: ComputerResourceProfile = ["starter", "standard", "performance", "gpu"].includes(
+    value?.resourceProfile,
+  )
+    ? value.resourceProfile
+    : "standard";
+  const resourceMode: ComputerResourceMode = value?.resourceMode === "fixed" ? "fixed" : "elastic";
+  return {
+    ...(value ?? {}),
+    enabled: Boolean(value?.enabled),
+    allowAgentStart: value?.allowAgentStart !== false,
+    allowUserSelect: value?.allowUserSelect !== false,
+    allowBrowser: value?.allowBrowser !== false,
+    allowTerminal: value?.allowTerminal !== false,
+    allowFilesystem: value?.allowFilesystem !== false,
+    networkAccess: value?.networkAccess || "standard",
+    resourceProfile: profile,
+    resourceMode,
+    idleTtlMinutes: Math.max(1, Number(value?.idleTtlMinutes) || 60),
+  };
+}
+
+function computerConfigPatch(config: AgentComputerConfig) {
+  return {
+    enabled: config.enabled,
+    allowAgentStart: config.allowAgentStart,
+    allowUserSelect: config.allowUserSelect,
+    allowBrowser: config.allowBrowser,
+    allowTerminal: config.allowTerminal,
+    allowFilesystem: config.allowFilesystem,
+    networkAccess: config.networkAccess,
+    resourceProfile: config.resourceProfile,
+    resourceMode: config.resourceMode,
+    cpuRequest: config.cpuRequest,
+    cpuLimit: config.cpuLimit,
+    memoryRequest: config.memoryRequest,
+    memoryLimit: config.memoryLimit,
+    storageLimit: config.storageLimit,
+    gpuType: config.gpuType,
+    gpuCount: config.gpuCount,
+    idleTtlMinutes: config.idleTtlMinutes,
+    region: config.region,
+  };
+}
 
 function browserStatusClass(status?: string) {
   if (status === "on") return "bg-emerald-400";
@@ -1942,10 +2126,6 @@ function prismLanguage(name: string) {
     dockerfile: "docker",
   };
   return map[ext] ?? "text";
-}
-
-function shortId(id: string) {
-  return `${id.slice(0, 8)}…${id.slice(-4)}`;
 }
 
 function formatTime(value: string) {

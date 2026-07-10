@@ -10,7 +10,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import type { CommonAgent } from "@/types/agent";
 import { Button } from "@/components/ui/button";
 import {
-  hasActiveComputer,
+  isActiveComputer,
   type AgentComputer,
   type ComputerRuntimeTab,
 } from "@/components/computers/computer-types";
@@ -43,8 +43,6 @@ interface Message {
     }>;
     computerRequest?: {
       enabled: boolean;
-      computerIds?: string[];
-      lifecycle?: "persistent" | "ephemeral";
     };
   };
   isStreaming?: boolean;
@@ -63,6 +61,12 @@ interface SessionInterfaceImprovedProps {
   /** A message to auto-send once on mount (handed off from the agents launcher). */
   initialPrompt?: string | null;
   onInitialPromptSent?: () => void;
+  /**
+   * Optional content (e.g. a back button + title) rendered in a slim bar
+   * above the conversation. When present the computer button moves into
+   * this bar instead of floating over the messages.
+   */
+  header?: React.ReactNode;
 }
 
 function ExpandableToolCard({ tools }: { tools: Message[] }) {
@@ -122,6 +126,7 @@ export default function SessionInterfaceImproved({
   isRedirecting = false,
   initialPrompt,
   onInitialPromptSent,
+  header,
 }: SessionInterfaceImprovedProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -133,9 +138,8 @@ export default function SessionInterfaceImproved({
   );
   const [spaces, setSpaces] = useState<any[]>(session?.spaces || []);
   const [computerOpen, setComputerOpen] = useState(false);
-  const [sessionComputers, setSessionComputers] = useState<AgentComputer[]>([]);
+  const [sessionComputer, setSessionComputer] = useState<AgentComputer | null>(null);
   const [computerRuntimeTab, setComputerRuntimeTab] = useState<ComputerRuntimeTab>("files");
-  const [preferredComputerId, setPreferredComputerId] = useState<string | null>(null);
 
   const { messages, setInputText } = useAgentContext();
   const greeting = (agent as any)?.greeting as string | undefined;
@@ -217,33 +221,33 @@ export default function SessionInterfaceImproved({
     }
   }, [sessionId]);
 
-  const fetchSessionComputers = useCallback(async () => {
+  const fetchAgentComputer = useCallback(async () => {
     if (!agentId) return;
     try {
-      const query = sessionId ? `?sessionId=${encodeURIComponent(sessionId)}` : "";
-      const res = await fetch(`/api/agents/${agentId}/computers${query}`, {
+      const res = await fetch(`/api/agents/${agentId}/computer`, {
         cache: "no-store",
       });
       if (res.ok) {
         const data = await res.json();
-        setSessionComputers(data?.data ?? []);
+        const computer = data?.data?.computer ?? data?.data ?? null;
+        setSessionComputer(computer?.computerId ? computer : null);
       }
     } catch {
       // Computer status is a lightweight hint here; the drawer can refresh itself.
     }
-  }, [agentId, sessionId]);
+  }, [agentId]);
 
   useEffect(() => {
-    fetchSessionComputers();
-  }, [fetchSessionComputers, messages.length, isStreaming]);
+    fetchAgentComputer();
+  }, [fetchAgentComputer, messages.length, isStreaming]);
 
   useEffect(() => {
     if (!isStreaming) return;
     const interval = setInterval(() => {
-      fetchSessionComputers();
+      fetchAgentComputer();
     }, 3000);
     return () => clearInterval(interval);
-  }, [fetchSessionComputers, isStreaming]);
+  }, [fetchAgentComputer, isStreaming]);
 
   useEffect(() => {
     // Computer activity keeps the drawer state fresh but no longer forces it
@@ -254,8 +258,7 @@ export default function SessionInterfaceImproved({
         computerId?: string;
       }>).detail;
       if (detail?.tab) setComputerRuntimeTab(detail.tab);
-      if (detail?.computerId) setPreferredComputerId(detail.computerId);
-      fetchSessionComputers();
+      fetchAgentComputer();
     };
     // Clicking the mini computer window opens the full drawer on the right tab.
     const handleComputerOpen = (event: Event) => {
@@ -264,9 +267,8 @@ export default function SessionInterfaceImproved({
         computerId?: string;
       }>).detail;
       if (detail?.tab) setComputerRuntimeTab(detail.tab);
-      if (detail?.computerId) setPreferredComputerId(detail.computerId);
       setComputerOpen(true);
-      fetchSessionComputers();
+      fetchAgentComputer();
     };
     window.addEventListener("agent-computer-activity", handleComputerActivity);
     window.addEventListener("agent-computer-open", handleComputerOpen);
@@ -274,7 +276,7 @@ export default function SessionInterfaceImproved({
       window.removeEventListener("agent-computer-activity", handleComputerActivity);
       window.removeEventListener("agent-computer-open", handleComputerOpen);
     };
-  }, [fetchSessionComputers]);
+  }, [fetchAgentComputer]);
 
   // Poll tasks while any task is active (started/in_progress), stop when all terminal
   const pollIntervalRef = useRef<NodeJS.Timeout | null>(null);
@@ -321,46 +323,62 @@ export default function SessionInterfaceImproved({
           return current;
         });
       });
-      fetchSessionComputers();
+      fetchAgentComputer();
     }
-  }, [isStreaming, fetchTasks, fetchSessionComputers, startTaskPolling]);
+  }, [isStreaming, fetchTasks, fetchAgentComputer, startTaskPolling]);
 
   // Clean up polling on unmount
   useEffect(() => () => stopTaskPolling(), [stopTaskPolling]);
 
+  const computerButton = !computerOpen ? (
+    <Button
+      type="button"
+      variant={header ? "ghost" : "outline"}
+      size="icon"
+      className={cn(
+        "relative h-8 w-8 shrink-0 rounded-md",
+        !header &&
+          "absolute right-4 top-4 z-10 h-9 w-9 bg-background/95 shadow-sm backdrop-blur",
+      )}
+      title="Agent computer"
+      aria-label="Agent computer"
+      onClick={() => {
+        setComputerOpen(true);
+        fetchAgentComputer();
+      }}
+    >
+      <Monitor className="h-4 w-4" />
+      {isActiveComputer(sessionComputer) && (
+        <span className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-red-500 ring-2 ring-background" />
+      )}
+    </Button>
+  ) : null;
+
   return (
-    <div className="relative flex h-full min-h-0 min-w-0 flex-1 overflow-hidden">
+    <div
+      className="relative flex h-full min-h-0 min-w-0 flex-1 overflow-hidden"
+      style={height ? { height } : undefined}
+    >
+      {/* Chat column: header bar, flexible messages area, pinned input.
+          The input is a shrink-0 flex row, so attachment chips and the
+          computer chip grow it upward by shrinking the messages area —
+          nothing ever pushes the composer out of view. */}
       <div
         className={cn(
-          "relative min-w-0 overflow-y-auto py-4",
+          "relative flex min-h-0 min-w-0 flex-col",
           computerOpen ? "flex-1" : "w-full",
         )}
       >
-        {!computerOpen && (
-          <Button
-            type="button"
-            variant="outline"
-            size="icon"
-            className="absolute right-4 top-4 z-10 h-9 w-9 rounded-md bg-background/95 shadow-sm backdrop-blur"
-            title="Agent computer"
-            aria-label="Agent computer"
-            onClick={() => {
-              setComputerOpen(true);
-              fetchSessionComputers();
-            }}
-          >
-            <Monitor className="h-4 w-4" />
-            {hasActiveComputer(sessionComputers) && (
-              <span className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-red-500 ring-2 ring-background" />
-            )}
-          </Button>
+        {header ? (
+          <div className="flex shrink-0 items-center justify-between gap-2 px-3 py-2">
+            <div className="min-w-0 flex-1">{header}</div>
+            {computerButton}
+          </div>
+        ) : (
+          computerButton
         )}
-      <ScrollArea
-        className="overflow-y-auto"
-        scrollHideDelay={100}
-        style={{ height: height ?? "78vh" }}
-      >
-        <div className="container mx-auto max-w-2xl mb-20" ref={scrollRef}>
+      <ScrollArea className="min-h-0 flex-1" scrollHideDelay={100}>
+        <div className="container mx-auto max-w-2xl px-4 pb-6 pt-4" ref={scrollRef}>
           {isLoadingSession && messages.length === 0 ? (
             <ChatLoadingIndicator />
           ) : messages.length === 0 && (greeting || conversationStarters.length > 0) ? (
@@ -413,7 +431,7 @@ export default function SessionInterfaceImproved({
                         content={message.content}
                         metadata={message.metadata}
                         isStreaming={message.isStreaming}
-                        computers={sessionComputers}
+                        computer={sessionComputer}
                       />
                     );
                   }
@@ -429,7 +447,7 @@ export default function SessionInterfaceImproved({
         </div>
       </ScrollArea>
 
-      <div className="container mx-auto max-w-2xl">
+      <div className="container mx-auto w-full max-w-2xl shrink-0 px-4 pb-4">
         <ChatInputBox
           agentId={agentId}
           sessionId={sessionId}
@@ -452,8 +470,6 @@ export default function SessionInterfaceImproved({
       {computerOpen && (
         <AgentComputerSurface
           agentId={agentId}
-          sessionId={sessionId || undefined}
-          selectedComputerId={preferredComputerId ?? undefined}
           activeTab={computerRuntimeTab}
           autoRefresh={computerOpen || Boolean(isStreaming)}
           onClose={() => setComputerOpen(false)}

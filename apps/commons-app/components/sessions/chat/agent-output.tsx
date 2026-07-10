@@ -51,8 +51,8 @@ interface AgentOutputProps {
   };
   className?: string;
   isStreaming?: boolean;
-  /** Live session computers, used by the inline mini computer window. */
-  computers?: AgentComputer[];
+  /** The agent's persistent computer, used by the inline mini computer window. */
+  computer?: AgentComputer | null;
 }
 
 export default function AgentOutput({
@@ -60,13 +60,12 @@ export default function AgentOutput({
   metadata,
   className,
   isStreaming,
-  computers,
+  computer,
 }: AgentOutputProps) {
   const computerToolCalls = getComputerToolCalls(metadata?.toolCalls ?? []);
   const activities = normalizeActivities(metadata?.activity, metadata?.toolCalls);
   const computerActivities = activities.filter((activity) => activity.kind === "computer");
   const hasComputerUse = computerActivities.length > 0 || computerToolCalls.length > 0;
-  const activeComputer = pickComputer(computers, computerActivities);
   const durationMs = metadata?.durationMs;
 
   if (!content && !isStreaming && computerToolCalls.length === 0 && activities.length === 0) {
@@ -97,7 +96,7 @@ export default function AgentOutput({
             <MiniComputer
               activities={computerActivities}
               toolCalls={computerToolCalls}
-              computer={activeComputer}
+              computer={computer}
               live={Boolean(isStreaming)}
             />
           )}
@@ -485,7 +484,7 @@ function detailForToolCall(call: ToolCall, result: any) {
   }
   if (call.name === "openComputerBrowser") return result?.browser?.url ?? call.args?.url;
   if (call.name === "startAgentComputer") {
-    return [result?.name, result?.status, result?.lifecycle].filter(Boolean).join(" · ") || result?.computerId;
+    return [result?.name, result?.status].filter(Boolean).join(" · ") || result?.computerId;
   }
   if (call.name === "runWorkflow") return result?.workflowId ?? call.args?.workflowId;
   return result?.error ?? call.args?.reason ?? "";
@@ -519,36 +518,6 @@ function getComputerToolCalls(toolCalls: ToolCall[]) {
     "openComputerBrowser",
   ]);
   return toolCalls.filter((call) => names.has(call.name));
-}
-
-/**
- * Choose the computer whose live state (screenshot, status) backs the mini
- * window: prefer one referenced by the activities, else the busiest one.
- */
-function pickComputer(
-  computers: AgentComputer[] | undefined,
-  activities: StreamActivity[],
-): AgentComputer | null {
-  if (!computers?.length) return null;
-  for (let i = activities.length - 1; i >= 0; i -= 1) {
-    const payload = activities[i].payload;
-    const out = payload?.output ?? payload?.result ?? payload;
-    const unwrapped = out?.data ?? out?.toolData ?? out;
-    const id =
-      payload?.computerId ??
-      unwrapped?.computerId ??
-      unwrapped?.computer?.computerId ??
-      payload?.args?.computerId;
-    const match = computers.find((computer) => computer.computerId === id);
-    if (match) return match;
-  }
-  const active = computers.filter((computer) =>
-    ["provisioning", "starting", "running", "idle"].includes(computer.status),
-  );
-  const pool = active.length ? active : computers;
-  return [...pool].sort(
-    (a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime(),
-  )[0];
 }
 
 function unwrapToolResult(result: any) {

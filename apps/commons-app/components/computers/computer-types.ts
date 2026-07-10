@@ -4,17 +4,72 @@
  * can depend on a single source of truth for the computer shape.
  */
 
+export type ComputerResourceProfile = "starter" | "standard" | "performance" | "gpu";
+
+export type ComputerResourceMode = "elastic" | "fixed";
+
+export type AgentComputerStatus =
+  | "provisioning"
+  | "starting"
+  | "running"
+  | "idle"
+  | "restarting"
+  | "resizing"
+  | "sleeping"
+  | "stopping"
+  | "stopped"
+  | "terminated"
+  | "failed"
+  | "error"
+  | "unavailable";
+
+export type AgentComputerConfig = {
+  configId?: string;
+  agentId?: string;
+  enabled: boolean;
+  allowAgentStart: boolean;
+  allowUserSelect: boolean;
+  allowBrowser: boolean;
+  allowTerminal: boolean;
+  allowFilesystem: boolean;
+  networkAccess: "standard" | "restricted" | "disabled" | string;
+  resourceProfile: ComputerResourceProfile;
+  resourceMode: ComputerResourceMode;
+  cpuRequest?: string | null;
+  cpuLimit?: string | null;
+  memoryRequest?: string | null;
+  memoryLimit?: string | null;
+  storageLimit?: string | null;
+  gpuType?: string | null;
+  gpuCount?: number | null;
+  idleTtlMinutes: number;
+  region?: string | null;
+  createdAt?: string;
+  updatedAt?: string;
+};
+
 export type AgentComputer = {
   computerId: string;
   agentId: string;
   sessionId?: string | null;
+  ownerUserId?: string | null;
+  workspaceId?: string | null;
   name: string;
-  lifecycle: "persistent" | "ephemeral";
-  status: string;
+  status: AgentComputerStatus | string;
   provider: string;
   cloudProvider?: string | null;
   region?: string | null;
   namespaceId?: string | null;
+  podName?: string | null;
+  resourceProfile?: ComputerResourceProfile | null;
+  resourceMode?: ComputerResourceMode | null;
+  cpuRequest?: string | null;
+  cpuLimit?: string | null;
+  memoryRequest?: string | null;
+  memoryLimit?: string | null;
+  storageLimit?: string | null;
+  gpuType?: string | null;
+  gpuCount?: number | null;
   workspaceRoot?: string | null;
   workspaceSnapshot?: string | null;
   browser?: {
@@ -31,6 +86,9 @@ export type AgentComputer = {
     lastOutput?: string | null;
     updatedAt?: string | null;
   } | null;
+  lastActivityAt?: string | null;
+  startedAt?: string | null;
+  stoppedAt?: string | null;
   errorMessage?: string | null;
   createdAt: string;
   updatedAt: string;
@@ -46,10 +104,17 @@ export type FsNode = {
   depth: number;
 };
 
-export function hasActiveComputer(computers: AgentComputer[]) {
-  return computers.some((computer) =>
-    ["provisioning", "starting", "running", "idle"].includes(computer.status),
+export function isActiveComputer(computer?: AgentComputer | null) {
+  return Boolean(
+    computer &&
+      ["provisioning", "starting", "running", "idle", "restarting", "resizing"].includes(
+        computer.status,
+      ),
   );
+}
+
+export function isComputerUsable(computer?: AgentComputer | null): computer is AgentComputer {
+  return Boolean(computer && ["running", "idle"].includes(computer.status));
 }
 
 /** Parse the agent's indented workspace snapshot listing into a nested tree. */
