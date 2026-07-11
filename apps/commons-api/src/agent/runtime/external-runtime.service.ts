@@ -7,6 +7,7 @@ import { DatabaseService } from '~/modules/database';
 import { SessionService } from '~/session/session.service';
 import { ComputerService, type CommonOsRuntimeEvent } from '~/computer';
 import { MemoryService } from '~/memory/memory.service';
+import { SkillService } from '~/skill/skill.service';
 import { FilesService } from '~/files';
 import { LogService } from '~/log/log.service';
 import { UsageService } from '~/modules/usage/usage.service';
@@ -32,6 +33,7 @@ export class ExternalRuntimeService {
     private readonly computers: ComputerService,
     private readonly runtimes: RuntimeManagementService,
     private readonly memories: MemoryService,
+    private readonly skills: SkillService,
     private readonly files: FilesService,
     private readonly logs: LogService,
     private readonly usage: UsageService,
@@ -157,7 +159,7 @@ export class ExternalRuntimeService {
           const userText = this.latestUserText(props.messages);
           if (!userText)
             throw new BadRequestException('A user message is required');
-          const [memoryBlock, sharedMemoryBlock, attachments] =
+          const [memoryBlock, sharedMemoryBlock, skillsBlock, attachments] =
             await Promise.all([
               this.memories
                 .buildMemoryBlock(props.agentId, userText)
@@ -165,6 +167,7 @@ export class ExternalRuntimeService {
               this.memories
                 .buildSharedMemoryBlock(props.agentId, userText)
                 .catch(() => ''),
+              this.buildSkillsBlock(props.agentId).catch(() => ''),
               props.attachments?.length
                 ? this.files.getAttachmentSummaries(props.attachments, {
                     agentId: props.agentId,
@@ -182,6 +185,7 @@ export class ExternalRuntimeService {
             userText,
             memoryBlock,
             sharedMemoryBlock,
+            skillsBlock,
             attachments.text,
           ]
             .filter(Boolean)
@@ -465,6 +469,29 @@ export class ExternalRuntimeService {
     }
   }
 
+  /**
+   * Agent Commons skills reach managed runtimes (OpenClaw, Hermes) as an
+   * instruction-context index: the runtime sees which skills exist and pulls
+   * full instructions on demand through the pod tool bridge
+   * (agent_commons_call_tool → invoke_skill). Native runs get the same
+   * skills through the platform tool loader instead.
+   */
+  private async buildSkillsBlock(agentId: string) {
+    const index = await this.skills.getIndex(agentId);
+    if (!index.length) return '';
+    const lines = index
+      .slice(0, 25)
+      .map(
+        (skill) =>
+          `- ${skill.name} (slug: ${skill.slug})${skill.description ? ` — ${skill.description}` : ''}`,
+      );
+    return [
+      '## Agent skills',
+      'Reusable instructions configured for this agent. When a request matches a skill, fetch its full instructions with the agent_commons_call_tool pod tool: call invoke_skill with { "skillSlug": "<slug>" } and follow them.',
+      ...lines,
+    ].join('\n');
+  }
+
   private latestUserText(messages?: Array<{ role: string; content: unknown }>) {
     const message = [...(messages ?? [])]
       .reverse()
@@ -505,6 +532,12 @@ export class ExternalRuntimeService {
 
   private statusLabel(status?: string) {
     if (status === 'waiting_for_runtime') return 'Waiting for agent runtime';
+    if (status === 'waiting_for_openclaw')
+      return 'Starting OpenClaw (first start can take a couple of minutes)';
+    if (status === 'waiting_for_hermes')
+      return 'Starting Hermes (first start can take a couple of minutes)';
+    if (status === 'runtime_recovering')
+      return 'Agent runtime is restarting — hang tight';
     if (status?.startsWith('waiting_for_'))
       return `Waiting for ${status.slice(12).replace(/_/g, ' ')}`;
     return status ? status.replace(/_/g, ' ') : 'Agent runtime is working';

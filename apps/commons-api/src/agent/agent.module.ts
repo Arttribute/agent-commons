@@ -20,6 +20,7 @@ import { WalletModule } from '~/wallet/wallet.module';
 import { FilesModule } from '~/files';
 import { ComputerModule } from '~/computer';
 import { PinataModule } from '~/pinata/pinata.module';
+import { SkillModule } from '~/skill/skill.module';
 import { RuntimeController } from './runtime/runtime.controller';
 import { RuntimeMigrationService } from './runtime/runtime-migration.service';
 import { RuntimeManagementService } from './runtime/runtime-management.service';
@@ -42,6 +43,7 @@ import { RuntimeToolBridgeController } from './runtime/runtime-tool-bridge.contr
     FilesModule,
     ComputerModule,
     PinataModule,
+    SkillModule,
   ],
   controllers: [
     AgentController,

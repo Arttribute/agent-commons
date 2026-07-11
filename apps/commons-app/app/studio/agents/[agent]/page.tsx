@@ -54,6 +54,13 @@ import { AgentTransactions } from "@/components/finances/agent-transactions";
 import { AgentMemoryView } from "@/components/memory/agent-memory-view";
 import { AgentComputerSurface } from "@/components/computers/agent-computer-surface";
 import { AgentRuntimeSurface } from "@/components/agents/agent-runtime-surface";
+import {
+  RUNTIME_NATIVE_TOOLING,
+  RuntimeNativeToolingDetail,
+  RuntimeSkillsNote,
+  managedRuntimeKey,
+  useAgentRuntime,
+} from "@/components/agents/runtime-native-tooling";
 import SessionInterface from "@/components/sessions/session-interface";
 import SessionsList from "@/components/sessions/sessions-list";
 import { SearchTrigger } from "@/components/search/search-trigger";
@@ -215,10 +222,12 @@ function SetupView({
   agent,
   isOwner,
   onSaved,
+  onOpenSection,
 }: {
   agent: CommonAgent;
   isOwner: boolean;
   onSaved: (agent: CommonAgent) => void;
+  onOpenSection?: (section: SectionKey) => void;
 }) {
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -439,6 +448,50 @@ function SetupView({
         </Panel>
 
         <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_360px]">
+          {(agent.runtimeType === "openclaw" ||
+            agent.runtimeType === "hermes") && (
+            <Panel title="Runtime">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div className="flex items-center gap-3">
+                  <div className="rounded-lg border border-border bg-muted/30 p-2">
+                    <Server className="h-4 w-4" />
+                  </div>
+                  <div>
+                    <p className="text-sm font-medium">
+                      {agent.runtimeType === "openclaw" ? "OpenClaw" : "Hermes"}{" "}
+                      on a managed computer
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      This agent runs{" "}
+                      {agent.runtimeType === "openclaw" ? "OpenClaw" : "Hermes"}{" "}
+                      with its own built-in tooling, bridged to your Agent
+                      Commons tools, skills, memory, and wallet.
+                    </p>
+                  </div>
+                </div>
+                {onOpenSection && (
+                  <div className="flex gap-2">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="h-8"
+                      onClick={() => onOpenSection("runtime")}
+                    >
+                      Runtime settings
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="h-8"
+                      onClick={() => onOpenSection("tools")}
+                    >
+                      Built-in tooling
+                    </Button>
+                  </div>
+                )}
+              </div>
+            </Panel>
+          )}
           <Panel title="Model">
             <div className="grid gap-3 md:grid-cols-2">
               <div className="grid gap-1.5">
@@ -613,19 +666,27 @@ function SessionsView({
   );
 }
 
+const RUNTIME_NATIVE_ID = "__runtime_native__";
+
 function ToolsView({
   agentId,
   agentTools,
   setAgentTools,
+  runtimeType,
 }: {
   agentId: string;
   agentTools: any[];
   setAgentTools: (tools: any[]) => void;
+  runtimeType?: string;
 }) {
   const router = useRouter();
   const [catalog, setCatalog] = useState<ToolCatalogItem[]>([]);
   const [loadingCatalog, setLoadingCatalog] = useState(false);
   const [selectedItemId, setSelectedItemId] = useState<string | null>(null);
+  const isManagedRuntime =
+    runtimeType === "openclaw" || runtimeType === "hermes";
+  const { runtime, setRuntime } = useAgentRuntime(agentId, isManagedRuntime);
+  const runtimeKey = managedRuntimeKey(runtime);
   const [statusFilter, setStatusFilter] = useState<
     "all" | "connected" | "not-connected"
   >("all");
@@ -831,13 +892,43 @@ function ToolsView({
             </div>
           ) : (
             <div className="p-2">
+              {runtimeKey && runtime && (
+                <button
+                  type="button"
+                  className={cn(
+                    "mb-1 flex w-full items-center gap-3 rounded-lg border border-border/70 bg-muted/20 px-2.5 py-2 text-left transition-colors hover:bg-muted",
+                    selectedItemId === RUNTIME_NATIVE_ID &&
+                      "bg-accent text-accent-foreground",
+                  )}
+                  onClick={() => setSelectedItemId(RUNTIME_NATIVE_ID)}
+                >
+                  <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-border bg-background">
+                    <Server className="h-4 w-4" />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-medium">
+                      {RUNTIME_NATIVE_TOOLING[runtimeKey].label} built-in
+                      tooling
+                    </p>
+                    <p className="truncate text-xs text-muted-foreground">
+                      Comes with this runtime
+                    </p>
+                  </div>
+                  <div
+                    className="h-2 w-2 shrink-0 rounded-full bg-emerald-500"
+                    title="Included"
+                  />
+                </button>
+              )}
               {filteredCatalog.length === 0 ? (
                 <div className="rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground">
                   No tools in this filter.
                 </div>
               ) : (
                 filteredCatalog.map((item) => {
-                  const active = selectedItem?.id === item.id;
+                  const active =
+                    selectedItemId !== RUNTIME_NATIVE_ID &&
+                    selectedItem?.id === item.id;
                   const connected = isConnected(item);
                   return (
                     <button
@@ -875,7 +966,23 @@ function ToolsView({
 
       {/* ── Right panel ─────────────────────────────────────────── */}
       <div className="min-h-0 overflow-auto">
-        {!selectedItem ? (
+        {selectedItemId === RUNTIME_NATIVE_ID && runtimeKey && runtime ? (
+          <>
+            <SectionHeader
+              title={`${RUNTIME_NATIVE_TOOLING[runtimeKey].label} built-in tooling`}
+              subtitle="Included with this runtime · configured here, run on the agent's managed computer"
+            />
+            <div className="mx-auto max-w-4xl p-5">
+              <Panel title="Runtime tooling">
+                <RuntimeNativeToolingDetail
+                  agentId={agentId}
+                  runtime={runtime}
+                  onUpdated={setRuntime}
+                />
+              </Panel>
+            </div>
+          </>
+        ) : !selectedItem ? (
           <>
             <SectionHeader
               title="Tools"
@@ -1110,7 +1217,16 @@ function ToolsView({
   );
 }
 
-function SkillsView({ agentId }: { agentId: string }) {
+function SkillsView({
+  agentId,
+  runtimeType,
+}: {
+  agentId: string;
+  runtimeType?: string;
+}) {
+  const isManagedRuntime =
+    runtimeType === "openclaw" || runtimeType === "hermes";
+  const { runtime } = useAgentRuntime(agentId, isManagedRuntime);
   const { skills, loading, refresh } = useSkills({
     ownerId: agentId,
     ownerType: "agent",
@@ -1173,6 +1289,11 @@ function SkillsView({ agentId }: { agentId: string }) {
         title="Skills"
         subtitle="Reusable instructions this agent can follow."
       />
+      {runtime && (
+        <div className="mx-auto max-w-5xl px-5 pt-5">
+          <RuntimeSkillsNote runtime={runtime} />
+        </div>
+      )}
       <div className="mx-auto grid max-w-5xl gap-4 p-5 lg:grid-cols-[minmax(0,1fr)_380px]">
         <Panel
           title="Agent skills"
@@ -2605,7 +2726,14 @@ export default function AgentStudioPage({
   const renderSection = () => {
     switch (activeSection) {
       case "setup":
-        return <SetupView agent={agent} isOwner={isOwner} onSaved={setAgent} />;
+        return (
+          <SetupView
+            agent={agent}
+            isOwner={isOwner}
+            onSaved={setAgent}
+            onOpenSection={setActiveSection}
+          />
+        );
       case "runtime":
         return (
           <div className="min-h-0 overflow-auto">
@@ -2684,10 +2812,11 @@ export default function AgentStudioPage({
             agentId={agentId}
             agentTools={agentTools}
             setAgentTools={setAgentTools}
+            runtimeType={agent.runtimeType}
           />
         );
       case "skills":
-        return <SkillsView agentId={agentId} />;
+        return <SkillsView agentId={agentId} runtimeType={agent.runtimeType} />;
       case "artefacts":
         return <ArtefactsView sessions={sessions} tasks={tasks} />;
       case "observability":

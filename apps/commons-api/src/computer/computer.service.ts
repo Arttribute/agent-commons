@@ -830,7 +830,7 @@ export class ComputerService {
           stage,
           status: 'running',
           message: this.waitingMessageForComputerEvent(args.eventType),
-          detail: `${args.summary} - ${progress.status ?? 'pending'} - ${this.formatElapsed(progress.elapsedMs)}`,
+          detail: `${args.summary} - ${(progress.status ?? 'pending').replace(/_/g, ' ')} - ${this.formatElapsed(progress.elapsedMs)}`,
           payload: {
             progressId,
             computerId: computer.computerId,
@@ -1355,8 +1355,52 @@ export class ComputerService {
     const started = Date.now();
     let lastProgressAt = 0;
     let lastStatus = '';
+    // Fast turns never need a heartbeat check — the first one only fires
+    // after 30s of waiting.
+    let lastHeartbeatCheckAt = started;
+    let staleHeartbeatMs = 0;
     const observedEventIds = new Set<string>();
     while (Date.now() - started < Math.min(waitMs, 720_000)) {
+      // A wedged runtime daemon keeps its pod Running while heartbeats,
+      // message polling, and event emission all stop — without this check
+      // the run would sit silent until waitMs expires. kubelet's liveness
+      // probe restarts such a daemon and the control plane re-queues the
+      // instruction, so report recovery progress and only abort once the
+      // heartbeat has been stale far beyond the restart+reclaim window.
+      if (Date.now() - lastHeartbeatCheckAt >= 30_000) {
+        lastHeartbeatCheckAt = Date.now();
+        const runtimeDoc = await this.commonOsComputerRequest<{
+          lastHeartbeatAt?: string | null;
+        }>(
+          'GET',
+          `/computers/${commonOsAgentId}`,
+          undefined,
+          undefined,
+          agentCommonsId,
+        ).catch(() => null);
+        const heartbeatAt = runtimeDoc?.lastHeartbeatAt
+          ? new Date(runtimeDoc.lastHeartbeatAt).getTime()
+          : NaN;
+        staleHeartbeatMs = Number.isFinite(heartbeatAt)
+          ? Math.max(0, Date.now() - heartbeatAt)
+          : staleHeartbeatMs;
+        if (staleHeartbeatMs > 360_000) {
+          return {
+            status: 'failed',
+            response: null,
+            error:
+              'The agent runtime stopped responding (no heartbeat for over 6 minutes) and did not recover after an automatic restart. Restart the runtime and try again.',
+            commonOsMessageId: messageId,
+          };
+        }
+        if (staleHeartbeatMs > 90_000 && onProgress) {
+          lastProgressAt = Date.now();
+          onProgress({
+            status: 'runtime_recovering',
+            elapsedMs: Date.now() - started,
+          });
+        }
+      }
       if (onRuntimeEvent && this.commonOsUseGeneralComputerApi()) {
         const events = await this.commonOsComputerRequest<any[]>(
           'GET',
