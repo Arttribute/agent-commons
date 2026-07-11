@@ -159,14 +159,23 @@ export class ExternalRuntimeService {
           const userText = this.latestUserText(props.messages);
           if (!userText)
             throw new BadRequestException('A user message is required');
+          const memoryMode = String(
+            (agent.runtimeConfig as Record<string, unknown> | null)
+              ?.memoryMode ?? 'hybrid',
+          );
+          const includePlatformMemory = memoryMode !== 'native';
           const [memoryBlock, sharedMemoryBlock, skillsBlock, attachments] =
             await Promise.all([
-              this.memories
-                .buildMemoryBlock(props.agentId, userText)
-                .catch(() => ''),
-              this.memories
-                .buildSharedMemoryBlock(props.agentId, userText)
-                .catch(() => ''),
+              includePlatformMemory
+                ? this.memories
+                    .buildMemoryBlock(props.agentId, userText)
+                    .catch(() => '')
+                : Promise.resolve(''),
+              includePlatformMemory
+                ? this.memories
+                    .buildSharedMemoryBlock(props.agentId, userText)
+                    .catch(() => '')
+                : Promise.resolve(''),
               this.buildSkillsBlock(props.agentId).catch(() => ''),
               props.attachments?.length
                 ? this.files.getAttachmentSummaries(props.attachments, {

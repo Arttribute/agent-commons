@@ -114,67 +114,15 @@ export function managedRuntimeKey(
 
 /** Detail panel for the pinned "native tooling" entry in the agent Tools view. */
 export function RuntimeNativeToolingDetail({
-  agentId,
   runtime,
-  onUpdated,
 }: {
   agentId: string;
   runtime: RuntimeInfo;
   onUpdated: (runtime: RuntimeInfo) => void;
 }) {
   const key = managedRuntimeKey(runtime);
-  const [plugins, setPlugins] = useState(
-    (runtime.config.enabledPlugins ?? []).join(", "),
-  );
-  const [channelPolicy, setChannelPolicy] = useState(
-    runtime.config.channelPolicy ?? "pairing",
-  );
-  const [memoryMode, setMemoryMode] = useState(
-    runtime.config.memoryMode ?? "hybrid",
-  );
-  const [saving, setSaving] = useState(false);
-  const [saved, setSaved] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   if (!key) return null;
   const meta = RUNTIME_NATIVE_TOOLING[key];
-
-  const save = async () => {
-    setSaving(true);
-    setError(null);
-    try {
-      const res = await fetch(`/api/agents/${agentId}/runtime`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          config: {
-            ...runtime.config,
-            enabledPlugins: plugins
-              .split(",")
-              .map((p) => p.trim())
-              .filter(Boolean),
-            channelPolicy,
-            memoryMode,
-          },
-          // Config changes redeploy the runtime so the gateway picks them up.
-          deploy: true,
-        }),
-      });
-      const payload = await res.json();
-      if (!res.ok)
-        throw new Error(
-          payload?.message || payload?.error || "Could not save configuration",
-        );
-      onUpdated(payload.data as RuntimeInfo);
-      setSaved(true);
-      setTimeout(() => setSaved(false), 1800);
-    } catch (cause) {
-      setError(
-        cause instanceof Error ? cause.message : "Could not save configuration",
-      );
-    } finally {
-      setSaving(false);
-    }
-  };
 
   return (
     <div className="grid gap-4">
@@ -184,8 +132,13 @@ export function RuntimeNativeToolingDetail({
         </div>
         <div className="min-w-0">
           <div className="flex items-center gap-2">
-            <h3 className="text-sm font-medium">{meta.label} built-in tooling</h3>
-            <Badge variant="secondary" className="h-5 rounded-md px-1.5 text-[11px] font-normal">
+            <h3 className="text-sm font-medium">
+              {meta.label} built-in tooling
+            </h3>
+            <Badge
+              variant="secondary"
+              className="h-5 rounded-md px-1.5 text-[11px] font-normal"
+            >
               {runtime.status}
             </Badge>
           </div>
@@ -219,45 +172,167 @@ export function RuntimeNativeToolingDetail({
         {meta.bridgeNote}
       </p>
 
-      {key === "openclaw" && (
-        <div className="grid gap-3 rounded-lg border border-border p-3">
-          <p className="text-xs font-medium">OpenClaw configuration</p>
-          <div className="grid gap-1.5">
-            <p className="text-xs text-muted-foreground">
-              Extra plugins (comma-separated)
-            </p>
-            <Input
-              value={plugins}
-              placeholder="e.g. whatsapp, telegram"
-              onChange={(event) => setPlugins(event.target.value)}
-            />
-          </div>
-          <div className="grid gap-1.5 sm:max-w-xs">
-            <p className="text-xs text-muted-foreground">Channel DM policy</p>
-            <Select
-              value={channelPolicy}
-              onValueChange={(value) =>
-                setChannelPolicy(value as typeof channelPolicy)
-              }
+      <p className="text-[11px] text-muted-foreground">
+        Runtime-specific configuration lives in Agent setup. This view only
+        describes the tools provided by {meta.label} and the Agent Commons tool
+        bridge.
+      </p>
+    </div>
+  );
+}
+
+/** Runtime-specific settings shown in Agent setup. Native agents deliberately
+ * do not render this panel because their model and generation settings already
+ * live in the native setup form. */
+export function ManagedRuntimeSetup({
+  agentId,
+  isOwner,
+}: {
+  agentId: string;
+  isOwner: boolean;
+}) {
+  const { runtime, loading, setRuntime } = useAgentRuntime(agentId);
+  const key = managedRuntimeKey(runtime);
+  const [channelPolicy, setChannelPolicy] = useState<
+    "pairing" | "allowlist" | "open" | "disabled"
+  >("pairing");
+  const [memoryMode, setMemoryMode] = useState<
+    "native" | "platform" | "hybrid"
+  >("hybrid");
+  const [toolsets, setToolsets] = useState("hermes-cli");
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!runtime) return;
+    setChannelPolicy(runtime.config.channelPolicy ?? "pairing");
+    setMemoryMode(runtime.config.memoryMode ?? "hybrid");
+    setToolsets((runtime.config.enabledToolsets ?? ["hermes-cli"]).join(", "));
+  }, [runtime]);
+
+  if (loading) {
+    return (
+      <div className="flex h-24 items-center justify-center">
+        <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
+  if (!runtime || !key) return null;
+  const meta = RUNTIME_NATIVE_TOOLING[key];
+
+  const save = async () => {
+    setSaving(true);
+    setError(null);
+    try {
+      const enabledToolsets = toolsets
+        .split(",")
+        .map((item) => item.trim())
+        .filter(Boolean);
+      const response = await fetch(`/api/agents/${agentId}/runtime`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          config: {
+            ...runtime.config,
+            memoryMode,
+            ...(key === "openclaw" ? { channelPolicy } : {}),
+            ...(key === "hermes" ? { enabledToolsets } : {}),
+          },
+          deploy: true,
+        }),
+      });
+      const payload = await response.json();
+      if (!response.ok) {
+        throw new Error(
+          payload?.message ||
+            payload?.error ||
+            "Could not apply runtime settings",
+        );
+      }
+      setRuntime(payload.data as RuntimeInfo);
+      setSaved(true);
+      setTimeout(() => setSaved(false), 1800);
+    } catch (cause) {
+      setError(
+        cause instanceof Error
+          ? cause.message
+          : "Could not apply runtime settings",
+      );
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="grid gap-4">
+      <div className="flex items-start gap-3">
+        <div className="rounded-lg border border-border bg-muted/30 p-2">
+          <Server className="h-4 w-4" />
+        </div>
+        <div>
+          <div className="flex items-center gap-2">
+            <p className="text-sm font-medium">{meta.label}</p>
+            <Badge
+              variant="secondary"
+              className="h-5 rounded-md px-1.5 text-[11px]"
             >
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="pairing">Pairing (scan to connect)</SelectItem>
-                <SelectItem value="allowlist">Allowlist</SelectItem>
-                <SelectItem value="open">Open</SelectItem>
-                <SelectItem value="disabled">Disabled</SelectItem>
-              </SelectContent>
-            </Select>
+              {runtime.status}
+            </Badge>
           </div>
+          <p className="mt-1 text-xs text-muted-foreground">{meta.summary}</p>
+        </div>
+      </div>
+
+      {key === "openclaw" && (
+        <div className="grid max-w-sm gap-1.5">
+          <p className="text-xs font-medium">Channel direct-message policy</p>
+          <Select
+            value={channelPolicy}
+            disabled={!isOwner || saving}
+            onValueChange={(value) =>
+              setChannelPolicy(value as typeof channelPolicy)
+            }
+          >
+            <SelectTrigger>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="pairing">Pairing required</SelectItem>
+              <SelectItem value="allowlist">Allowlist only</SelectItem>
+              <SelectItem value="open">Open</SelectItem>
+              <SelectItem value="disabled">Channels disabled</SelectItem>
+            </SelectContent>
+          </Select>
+          <p className="text-[11px] text-muted-foreground">
+            Used by OpenClaw channel connectors configured on this persistent
+            runtime.
+          </p>
         </div>
       )}
 
-      <div className="grid gap-1.5 sm:max-w-xs">
-        <p className="text-xs text-muted-foreground">Memory mode</p>
+      {key === "hermes" && (
+        <div className="grid gap-1.5">
+          <p className="text-xs font-medium">Hermes toolsets</p>
+          <Input
+            value={toolsets}
+            disabled={!isOwner || saving}
+            onChange={(event) => setToolsets(event.target.value)}
+            placeholder="hermes-cli"
+          />
+          <p className="text-[11px] text-muted-foreground">
+            Comma-separated Hermes toolsets, such as hermes-cli, web, browser,
+            debugging, or safe. Agent Commons tools remain available through the
+            bridge.
+          </p>
+        </div>
+      )}
+
+      <div className="grid max-w-sm gap-1.5">
+        <p className="text-xs font-medium">Memory context</p>
         <Select
           value={memoryMode}
+          disabled={!isOwner || saving}
           onValueChange={(value) => setMemoryMode(value as typeof memoryMode)}
         >
           <SelectTrigger>
@@ -265,9 +340,11 @@ export function RuntimeNativeToolingDetail({
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="hybrid">
-              Hybrid — runtime + Agent Commons memory
+              Runtime + Agent Commons memory
             </SelectItem>
-            <SelectItem value="platform">Agent Commons memory only</SelectItem>
+            <SelectItem value="platform">
+              Agent Commons context preferred
+            </SelectItem>
             <SelectItem value="native">Runtime memory only</SelectItem>
           </SelectContent>
         </Select>
@@ -275,25 +352,30 @@ export function RuntimeNativeToolingDetail({
 
       {error && <p className="text-xs text-destructive">{error}</p>}
       <div>
-        <Button size="sm" className="h-8 gap-1.5" disabled={saving} onClick={save}>
+        <Button
+          size="sm"
+          className="h-8 gap-1.5"
+          disabled={!isOwner || saving}
+          onClick={() => void save()}
+        >
           {saving ? (
             <Loader2 className="h-3.5 w-3.5 animate-spin" />
           ) : saved ? (
             <Check className="h-3.5 w-3.5" />
           ) : null}
-          {saved ? "Saved" : "Save & apply"}
+          {saved ? "Applied" : "Save & restart runtime"}
         </Button>
-        <p className="mt-2 text-[11px] text-muted-foreground">
-          Saving restarts the {meta.label} runtime so the new configuration takes
-          effect.
-        </p>
       </div>
     </div>
   );
 }
 
 /** Compact banner for the Skills view when a managed runtime is active. */
-export function RuntimeSkillsNote({ runtime }: { runtime: RuntimeInfo | null }) {
+export function RuntimeSkillsNote({
+  runtime,
+}: {
+  runtime: RuntimeInfo | null;
+}) {
   const key = managedRuntimeKey(runtime);
   if (!key) return null;
   const meta = RUNTIME_NATIVE_TOOLING[key];

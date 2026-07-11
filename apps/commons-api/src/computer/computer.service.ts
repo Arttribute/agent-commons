@@ -456,11 +456,11 @@ export class ComputerService {
       // both first boot and wake keeps runtime adapter configuration in sync
       // (including OpenClaw ↔ Hermes switches) while preserving the volume.
       const provisioned = await this.deployWithCommonOs({
-          agent,
-          config,
-          computer,
-          name,
-        });
+        agent,
+        config,
+        computer,
+        name,
+      });
       stopProvisioningHeartbeat();
       this.emitComputerReady(args.runId, provisioned, args.toolCallId);
       return provisioned;
@@ -1240,6 +1240,7 @@ export class ComputerService {
                 modelProvider: args.agent.modelProvider,
                 modelId: args.agent.modelId,
                 ...(modelApiKey ? { modelApiKey } : {}),
+                toolsets: runtimeConfig.enabledToolsets ?? [],
               }
             : undefined,
         ...(args.config.image ? { dockerImage: args.config.image } : {}),

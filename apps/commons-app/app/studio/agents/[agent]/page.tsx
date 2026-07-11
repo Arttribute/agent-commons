@@ -56,6 +56,7 @@ import { AgentComputerSurface } from "@/components/computers/agent-computer-surf
 import { AgentRuntimeSurface } from "@/components/agents/agent-runtime-surface";
 import {
   RUNTIME_NATIVE_TOOLING,
+  ManagedRuntimeSetup,
   RuntimeNativeToolingDetail,
   RuntimeSkillsNote,
   managedRuntimeKey,
@@ -231,6 +232,10 @@ function SetupView({
 }) {
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const runtimeType = agent.runtimeType ?? "native";
+  const isManagedRuntime =
+    runtimeType === "openclaw" || runtimeType === "hermes";
   const [form, setForm] = useState({
     name: agent.name || "",
     avatar: agent.avatar || "",
@@ -243,6 +248,7 @@ function SetupView({
     modelProvider: (agent as any).modelProvider || "openai",
     modelId: (agent as any).modelId || "",
     modelBaseUrl: (agent as any).modelBaseUrl || "",
+    modelApiKey: "",
     temperature: String((agent as any).temperature ?? 0.7),
     maxTokens: String((agent as any).maxTokens ?? 4096),
     topP: String((agent as any).topP ?? 1),
@@ -263,6 +269,7 @@ function SetupView({
       modelProvider: (agent as any).modelProvider || "openai",
       modelId: (agent as any).modelId || "",
       modelBaseUrl: (agent as any).modelBaseUrl || "",
+      modelApiKey: "",
       temperature: String((agent as any).temperature ?? 0.7),
       maxTokens: String((agent as any).maxTokens ?? 4096),
       topP: String((agent as any).topP ?? 1),
@@ -274,9 +281,16 @@ function SetupView({
   const save = async () => {
     setSaving(true);
     setSaved(false);
+    setSaveError(null);
     try {
+      const modelChanged =
+        form.modelProvider !== ((agent as any).modelProvider || "openai") ||
+        form.modelId !== ((agent as any).modelId || "") ||
+        Boolean(form.modelApiKey.trim());
+      const { modelApiKey, ...formValues } = form;
       const payload = {
-        ...form,
+        ...formValues,
+        ...(modelApiKey.trim() ? { modelApiKey: modelApiKey.trim() } : {}),
         conversationStarters: form.conversationStarters
           .split("\n")
           .map((starter) => starter.trim())
@@ -295,9 +309,30 @@ function SetupView({
       const data = await res.json();
       if (res.ok && data.data) {
         onSaved(data.data as CommonAgent);
+        setForm((current) => ({ ...current, modelApiKey: "" }));
+        if (isManagedRuntime && modelChanged) {
+          const restart = await fetch(
+            `/api/agents/${agent.agentId}/runtime/restart`,
+            { method: "POST" },
+          );
+          if (!restart.ok) {
+            const restartPayload = await restart.json().catch(() => ({}));
+            throw new Error(
+              restartPayload?.message ||
+                restartPayload?.error ||
+                "Model saved, but the managed runtime could not restart",
+            );
+          }
+        }
         setSaved(true);
         setTimeout(() => setSaved(false), 1800);
+      } else {
+        throw new Error(data?.message || data?.error || "Could not save agent");
       }
+    } catch (cause) {
+      setSaveError(
+        cause instanceof Error ? cause.message : "Could not save agent",
+      );
     } finally {
       setSaving(false);
     }
@@ -310,6 +345,11 @@ function SetupView({
         subtitle="Identity, discovery, behavior, and model configuration for this agent."
       />
       <div className="mx-auto grid max-w-5xl gap-4 p-5">
+        {saveError && (
+          <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">
+            {saveError}
+          </div>
+        )}
         <Panel
           title="Profile"
           action={
@@ -448,51 +488,32 @@ function SetupView({
         </Panel>
 
         <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_360px]">
-          {(agent.runtimeType === "openclaw" ||
-            agent.runtimeType === "hermes") && (
-            <Panel title="Runtime">
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <div className="flex items-center gap-3">
-                  <div className="rounded-lg border border-border bg-muted/30 p-2">
-                    <Server className="h-4 w-4" />
-                  </div>
-                  <div>
-                    <p className="text-sm font-medium">
-                      {agent.runtimeType === "openclaw" ? "OpenClaw" : "Hermes"}{" "}
-                      on a managed computer
-                    </p>
-                    <p className="text-xs text-muted-foreground">
-                      This agent runs{" "}
-                      {agent.runtimeType === "openclaw" ? "OpenClaw" : "Hermes"}{" "}
-                      with its own built-in tooling, bridged to your Agent
-                      Commons tools, skills, memory, and wallet.
-                    </p>
-                  </div>
-                </div>
-                {onOpenSection && (
-                  <div className="flex gap-2">
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      className="h-8"
-                      onClick={() => onOpenSection("runtime")}
-                    >
-                      Runtime settings
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      className="h-8"
-                      onClick={() => onOpenSection("tools")}
-                    >
-                      Built-in tooling
-                    </Button>
-                  </div>
-                )}
-              </div>
+          {isManagedRuntime && (
+            <Panel
+              title={`${runtimeType === "openclaw" ? "OpenClaw" : "Hermes"} settings`}
+              action={
+                onOpenSection ? (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="h-8"
+                    onClick={() => onOpenSection("runtime")}
+                  >
+                    Lifecycle
+                  </Button>
+                ) : undefined
+              }
+            >
+              <ManagedRuntimeSetup agentId={agent.agentId} isOwner={isOwner} />
             </Panel>
           )}
-          <Panel title="Model">
+          <Panel
+            title={
+              isManagedRuntime
+                ? `${runtimeType === "openclaw" ? "OpenClaw" : "Hermes"} model`
+                : "Native model"
+            }
+          >
             <div className="grid gap-3 md:grid-cols-2">
               <div className="grid gap-1.5">
                 <Label>Provider</Label>
@@ -507,11 +528,17 @@ function SetupView({
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    {modelProviders.map((provider) => (
-                      <SelectItem key={provider} value={provider}>
-                        {provider}
-                      </SelectItem>
-                    ))}
+                    {modelProviders
+                      .filter(
+                        (provider) =>
+                          !isManagedRuntime ||
+                          (provider !== "custom" && provider !== "ollama"),
+                      )
+                      .map((provider) => (
+                        <SelectItem key={provider} value={provider}>
+                          {provider}
+                        </SelectItem>
+                      ))}
                   </SelectContent>
                 </Select>
               </div>
@@ -526,42 +553,63 @@ function SetupView({
                 />
               </div>
               <div className="grid gap-1.5 md:col-span-2">
-                <Label>Base URL</Label>
+                <Label>Provider API key</Label>
                 <Input
-                  value={form.modelBaseUrl}
+                  type="password"
+                  autoComplete="new-password"
+                  value={form.modelApiKey}
                   disabled={!isOwner}
+                  placeholder="Leave blank to keep the existing key or use the platform key"
                   onChange={(e) =>
-                    setForm((f) => ({ ...f, modelBaseUrl: e.target.value }))
+                    setForm((f) => ({ ...f, modelApiKey: e.target.value }))
                   }
                 />
               </div>
-              {(
-                [
-                  "temperature",
-                  "maxTokens",
-                  "topP",
-                  "presencePenalty",
-                  "frequencyPenalty",
-                ] as const
-              ).map((field) => (
-                <div key={field} className="grid gap-1.5">
-                  <Label className="capitalize">
-                    {field.replace(/([A-Z])/g, " $1")}
-                  </Label>
+              {!isManagedRuntime && (
+                <div className="grid gap-1.5 md:col-span-2">
+                  <Label>Base URL</Label>
                   <Input
-                    value={form[field]}
+                    value={form.modelBaseUrl}
                     disabled={!isOwner}
-                    type="number"
-                    step="0.1"
                     onChange={(e) =>
-                      setForm((f) => ({ ...f, [field]: e.target.value }))
+                      setForm((f) => ({ ...f, modelBaseUrl: e.target.value }))
                     }
                   />
                 </div>
-              ))}
+              )}
+              {!isManagedRuntime && (
+                <>
+                  {(
+                    [
+                      "temperature",
+                      "maxTokens",
+                      "topP",
+                      "presencePenalty",
+                      "frequencyPenalty",
+                    ] as const
+                  ).map((field) => (
+                    <div key={field} className="grid gap-1.5">
+                      <Label className="capitalize">
+                        {field.replace(/([A-Z])/g, " $1")}
+                      </Label>
+                      <Input
+                        value={form[field]}
+                        disabled={!isOwner}
+                        type="number"
+                        step="0.1"
+                        onChange={(e) =>
+                          setForm((f) => ({ ...f, [field]: e.target.value }))
+                        }
+                      />
+                    </div>
+                  ))}
+                </>
+              )}
             </div>
           </Panel>
-          <AgentAutonomy agentId={agent.agentId} isOwner={isOwner} />
+          {!isManagedRuntime && (
+            <AgentAutonomy agentId={agent.agentId} isOwner={isOwner} />
+          )}
         </div>
       </div>
     </div>
@@ -1164,48 +1212,48 @@ function ToolsView({
                         : "Setup required"
                     }
                   >
-                  {isConnected(selectedItem) ? (
-                    <div className="flex items-start gap-3">
-                      <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600" />
-                      <div className="space-y-1">
-                        <p className="text-sm font-medium">Connected</p>
-                        <p className="text-sm text-muted-foreground">
+                    {isConnected(selectedItem) ? (
+                      <div className="flex items-start gap-3">
+                        <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600" />
+                        <div className="space-y-1">
+                          <p className="text-sm font-medium">Connected</p>
+                          <p className="text-sm text-muted-foreground">
                             This MCP connection is active and available to your
                             agents.
-                        </p>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          className="mt-2"
-                          onClick={() => router.push("/studio/tools")}
-                        >
-                          <Settings2 className="h-3.5 w-3.5" />
-                          Manage in Tools
-                        </Button>
+                          </p>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="mt-2"
+                            onClick={() => router.push("/studio/tools")}
+                          >
+                            <Settings2 className="h-3.5 w-3.5" />
+                            Manage in Tools
+                          </Button>
+                        </div>
                       </div>
-                    </div>
-                  ) : (
-                    <div className="flex items-start gap-3">
-                      <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-500" />
-                      <div className="space-y-1">
-                        <p className="text-sm font-medium">Not connected</p>
-                        <p className="text-sm text-muted-foreground">
+                    ) : (
+                      <div className="flex items-start gap-3">
+                        <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-500" />
+                        <div className="space-y-1">
+                          <p className="text-sm font-medium">Not connected</p>
+                          <p className="text-sm text-muted-foreground">
                             This MCP server must be configured before agents can
                             use it.
-                        </p>
-                        <Button
-                          size="sm"
-                          className="mt-2"
-                          onClick={() => router.push("/studio/tools")}
-                        >
-                          <ExternalLink className="h-3.5 w-3.5" />
-                          Set up in Tools
-                        </Button>
+                          </p>
+                          <Button
+                            size="sm"
+                            className="mt-2"
+                            onClick={() => router.push("/studio/tools")}
+                          >
+                            <ExternalLink className="h-3.5 w-3.5" />
+                            Set up in Tools
+                          </Button>
+                        </div>
                       </div>
-                    </div>
-                  )}
-                </Panel>
-              )}
+                    )}
+                  </Panel>
+                )}
 
               {/* MCP servers for this agent */}
               <AgentMcpSection agentId={agentId} />
@@ -1351,7 +1399,7 @@ function SkillsView({
                           {tag}
                         </Badge>
                       ))}
-                  </div>
+                    </div>
                   )}
                 </button>
               ))}
@@ -1620,12 +1668,12 @@ type ObservabilityPayload = {
 
 const observabilityRanges: Array<{ value: ObservabilityRange; label: string }> =
   [
-  { value: "1h", label: "1 hour" },
-  { value: "12h", label: "12 hours" },
-  { value: "24h", label: "24 hours" },
-  { value: "7d", label: "7 days" },
-  { value: "30d", label: "30 days" },
-];
+    { value: "1h", label: "1 hour" },
+    { value: "12h", label: "12 hours" },
+    { value: "24h", label: "24 hours" },
+    { value: "7d", label: "7 days" },
+    { value: "30d", label: "30 days" },
+  ];
 
 function observabilityWindow(range: ObservabilityRange) {
   const to = new Date();
@@ -2099,20 +2147,20 @@ function ObservabilityView({ agentId }: { agentId: string }) {
                       key={`${model.provider}:${model.modelId}`}
                       className="rounded-md border border-border bg-muted/20 px-3 py-2"
                     >
-                    <div className="flex items-center justify-between gap-3 text-sm">
+                      <div className="flex items-center justify-between gap-3 text-sm">
                         <span className="truncate font-medium">
                           {model.modelId}
                         </span>
                         <span className="text-muted-foreground">
                           {model.calls} calls
                         </span>
-                    </div>
+                      </div>
                       <p className="mt-1 text-xs text-muted-foreground">
                         {compactNumber(model.totalTokens)} tokens ·{" "}
                         {formatCost(model.costUsd)} · avg{" "}
                         {formatMs(model.avgDurationMs)}
                       </p>
-                  </div>
+                    </div>
                   ))
                 ) : (
                   <p className="rounded-md border border-dashed p-4 text-sm text-muted-foreground">
@@ -2130,13 +2178,13 @@ function ObservabilityView({ agentId }: { agentId: string }) {
                       key={task.taskId}
                       className="rounded-md border border-red-200 bg-red-50/60 px-3 py-2 text-sm dark:border-red-900/60 dark:bg-red-950/20"
                     >
-                    <p className="truncate font-medium">{task.title}</p>
+                      <p className="truncate font-medium">{task.title}</p>
                       <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">
                         {task.errorMessage ||
                           task.summary ||
                           "Task failed without a recorded message."}
                       </p>
-                  </div>
+                    </div>
                   ))
                 ) : (
                   <p className="rounded-md border border-dashed p-4 text-sm text-muted-foreground">
@@ -2590,33 +2638,33 @@ export default function AgentStudioPage({
 
   const handleRenameSession = useCallback(
     async (sessionId: string, title: string) => {
-    const prev = sessions;
+      const prev = sessions;
       setSessions((list) =>
         list.map((s) => (s.sessionId === sessionId ? { ...s, title } : s)),
       );
       setSelectedSession((cur: any) =>
         cur?.sessionId === sessionId ? { ...cur, title } : cur,
       );
-    const ok = await renameSession(sessionId, title);
-    if (!ok) setSessions(prev);
-    return ok;
+      const ok = await renameSession(sessionId, title);
+      if (!ok) setSessions(prev);
+      return ok;
     },
     [sessions, renameSession],
   );
 
   const handleDeleteSession = useCallback(
     async (sessionId: string) => {
-    const prev = sessions;
-    setSessions((list) => list.filter((s) => s.sessionId !== sessionId));
-    const ok = await deleteSession(sessionId);
-    if (!ok) {
-      setSessions(prev);
-    } else {
+      const prev = sessions;
+      setSessions((list) => list.filter((s) => s.sessionId !== sessionId));
+      const ok = await deleteSession(sessionId);
+      if (!ok) {
+        setSessions(prev);
+      } else {
         setSelectedSession((cur: any) =>
           cur?.sessionId === sessionId ? null : cur,
         );
-    }
-    return ok;
+      }
+      return ok;
     },
     [sessions, deleteSession],
   );
@@ -2666,17 +2714,17 @@ export default function AgentStudioPage({
 
   const loadSession = useCallback(
     async (sessionId: string) => {
-    setLoadingSession(true);
-    clearMessages();
-    try {
-      const res = await fetch(`/api/sessions/${sessionId}?full=true`);
-      const data = await res.json();
-      const session = data.data ?? null;
-      setSelectedSession(session);
-      setMessages(normalizeSessionHistory(session?.history));
-    } finally {
-      setLoadingSession(false);
-    }
+      setLoadingSession(true);
+      clearMessages();
+      try {
+        const res = await fetch(`/api/sessions/${sessionId}?full=true`);
+        const data = await res.json();
+        const session = data.data ?? null;
+        setSelectedSession(session);
+        setMessages(normalizeSessionHistory(session?.history));
+      } finally {
+        setLoadingSession(false);
+      }
     },
     [clearMessages, setMessages],
   );
