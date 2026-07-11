@@ -3,6 +3,7 @@ import {
   Injectable,
   Logger,
   NotFoundException,
+  ServiceUnavailableException,
 } from '@nestjs/common';
 import { and, desc, eq } from 'drizzle-orm';
 import { v4 as uuidv4 } from 'uuid';
@@ -467,7 +468,7 @@ export class ComputerService {
     } catch (err: any) {
       stopProvisioningHeartbeat();
       const message = err instanceof Error ? err.message : String(err);
-      const [failed] = await this.db
+      await this.db
         .update(schema.agentComputerInstance)
         .set({
           status: this.commonOsConfigured() ? 'failed' : 'unavailable',
@@ -500,7 +501,9 @@ export class ComputerService {
           toolCallId: args.toolCallId,
         },
       });
-      return failed;
+      throw new ServiceUnavailableException(
+        `Agent computer could not be started: ${message}`,
+      );
     }
   }
 
