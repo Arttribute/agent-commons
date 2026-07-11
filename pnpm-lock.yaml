@@ -368,8 +368,8 @@ importers:
   apps/commons-app:
     dependencies:
       '@agent-commons/sdk':
-        specifier: ^0.3.0
-        version: 0.3.0
+        specifier: ^0.4.0
+        version: 0.4.0
       '@dnd-kit/core':
         specifier: ^6.3.1
         version: 6.3.1(react-dom@19.0.0(react@19.0.0))(react@19.0.0)
@@ -859,8 +859,8 @@ packages:
   '@adraffy/ens-normalize@1.11.0':
     resolution: {integrity: sha512-/3DDPKHqqIqxUULp8yP4zODUY1i+2xvVWsv8A79xGWdCAG+8sb0hRh0Rk2QyOJUnnbyPUAZYcpBuRe3nS2OIUg==}
 
-  '@agent-commons/sdk@0.3.0':
-    resolution: {integrity: sha512-HBz4sOfNxm2qIH4Q/gLMJqfoJfNBszPtQkul3/M+PKSQee9WWsX4qYLyrejbIDKuIBsT8/klPIxOsmCfZjYCpQ==}
+  '@agent-commons/sdk@0.4.0':
+    resolution: {integrity: sha512-07HT0QhSZ9cuXXrdsiPVJxtpgaYZjyn4WBDwPVpAQq+H+VZ/flAP9RXddWHYd13K8JMEeCnqnUaSbZIQsWM9wQ==}
 
   '@ai-sdk/provider-utils@2.2.7':
     resolution: {integrity: sha512-kM0xS3GWg3aMChh9zfeM+80vEZfXzR3JEUBdycZLtbRZ2TRT8xOj3WodGHPb06sUK5yD7pAXC/P7ctsi2fvUGQ==}
@@ -2769,7 +2769,6 @@ packages:
 
   '@img/sharp-libvips-linux-x64@1.0.6':
     resolution: {integrity: sha512-/H7OsALdf2AHuMq8BGtwpoXBg1zkSQ7OE0ik+2a8tejhIYG1+RDjV11KUA85Pi5xOs8FyNG/2IMal9NWRas1Ag==}
-    cpu: [x64]
     os: [linux]
 
   '@img/sharp-libvips-linux-x64@1.2.4':
@@ -2848,7 +2847,6 @@ packages:
   '@img/sharp-linux-x64@0.33.5':
     resolution: {integrity: sha512-opC+Ok5pRNAzuvq1AG0ar+1owsu842/Ab+4qvU879ippJBHvyY5n2mxF1izXqkPYlGuP/M556uh53jRLJmzTWA==}
     engines: {node: ^18.17.0 || ^20.3.0 || >=21.0.0}
-    cpu: [x64]
     os: [linux]
 
   '@img/sharp-linux-x64@0.34.5':
@@ -2912,7 +2910,6 @@ packages:
   '@img/sharp-win32-x64@0.33.5':
     resolution: {integrity: sha512-MpY/o8/8kj+EcnxwvrP4aTJSWw/aZ7JIGR4aBeZkZw5B7/Jn+tY9/VNwtcoGmdT7GfggGIU4kygOMSbYnOrAbg==}
     engines: {node: ^18.17.0 || ^20.3.0 || >=21.0.0}
-    cpu: [x64]
     os: [win32]
 
   '@img/sharp-win32-x64@0.34.5':
@@ -16007,7 +16004,7 @@ snapshots:
 
   '@adraffy/ens-normalize@1.11.0': {}
 
-  '@agent-commons/sdk@0.3.0': {}
+  '@agent-commons/sdk@0.4.0': {}
 
   '@ai-sdk/provider-utils@2.2.7(zod@3.25.76)':
     dependencies:
@@ -26699,7 +26696,7 @@ snapshots:
       eslint: 9.24.0(jiti@2.6.1)
       eslint-import-resolver-node: 0.3.9
       eslint-import-resolver-typescript: 3.8.3(eslint-plugin-import@2.32.0(@typescript-eslint/parser@8.58.0(eslint@9.24.0(jiti@2.6.1))(typescript@5.8.3))(eslint@9.24.0(jiti@2.6.1)))(eslint@9.24.0(jiti@2.6.1))
-      eslint-plugin-import: 2.32.0(@typescript-eslint/parser@8.58.0(eslint@9.24.0(jiti@2.6.1))(typescript@5.8.3))(eslint-import-resolver-typescript@3.8.3)(eslint@9.24.0(jiti@2.6.1))
+      eslint-plugin-import: 2.32.0(@typescript-eslint/parser@8.58.0(eslint@9.24.0(jiti@2.6.1))(typescript@5.8.3))(eslint-import-resolver-typescript@3.8.3(eslint-plugin-import@2.32.0(@typescript-eslint/parser@8.58.0(eslint@9.24.0(jiti@2.6.1))(typescript@5.8.3))(eslint@9.24.0(jiti@2.6.1)))(eslint@9.24.0(jiti@2.6.1)))(eslint@9.24.0(jiti@2.6.1))
       eslint-plugin-jsx-a11y: 6.10.2(eslint@9.24.0(jiti@2.6.1))
       eslint-plugin-react: 7.37.4(eslint@9.24.0(jiti@2.6.1))
       eslint-plugin-react-hooks: 7.0.1(eslint@9.24.0(jiti@2.6.1))
@@ -26751,7 +26748,7 @@ snapshots:
       stable-hash: 0.0.4
       tinyglobby: 0.2.15
     optionalDependencies:
-      eslint-plugin-import: 2.32.0(@typescript-eslint/parser@8.58.0(eslint@9.24.0(jiti@2.6.1))(typescript@5.8.3))(eslint-import-resolver-typescript@3.8.3)(eslint@9.24.0(jiti@2.6.1))
+      eslint-plugin-import: 2.32.0(@typescript-eslint/parser@8.58.0(eslint@9.24.0(jiti@2.6.1))(typescript@5.8.3))(eslint-import-resolver-typescript@3.8.3(eslint-plugin-import@2.32.0(@typescript-eslint/parser@8.58.0(eslint@9.24.0(jiti@2.6.1))(typescript@5.8.3))(eslint@9.24.0(jiti@2.6.1)))(eslint@9.24.0(jiti@2.6.1)))(eslint@9.24.0(jiti@2.6.1))
     transitivePeerDependencies:
       - supports-color
 
@@ -26806,7 +26803,7 @@ snapshots:
       - eslint-import-resolver-webpack
       - supports-color
 
-  eslint-plugin-import@2.32.0(@typescript-eslint/parser@8.58.0(eslint@9.24.0(jiti@2.6.1))(typescript@5.8.3))(eslint-import-resolver-typescript@3.8.3)(eslint@9.24.0(jiti@2.6.1)):
+  eslint-plugin-import@2.32.0(@typescript-eslint/parser@8.58.0(eslint@9.24.0(jiti@2.6.1))(typescript@5.8.3))(eslint-import-resolver-typescript@3.8.3(eslint-plugin-import@2.32.0(@typescript-eslint/parser@8.58.0(eslint@9.24.0(jiti@2.6.1))(typescript@5.8.3))(eslint@9.24.0(jiti@2.6.1)))(eslint@9.24.0(jiti@2.6.1)))(eslint@9.24.0(jiti@2.6.1)):
     dependencies:
       '@rtsao/scc': 1.1.0
       array-includes: 3.1.9
