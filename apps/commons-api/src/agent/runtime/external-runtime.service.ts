@@ -253,7 +253,16 @@ export class ExternalRuntimeService {
           if (runtimeUsage) {
             const provider =
               runtimeUsage.provider || agent.modelProvider || runtimeType;
-            const modelId = runtimeUsage.model || agent.modelId || 'unknown';
+            // OpenResponses gateways identify the runtime endpoint itself
+            // (for example `openclaw/<runtime-id>`), not the upstream model
+            // that incurred the tokens. Price and expose usage against the
+            // configured agent model unless the runtime reports a real model.
+            const reportedModel = runtimeUsage.model;
+            const modelId =
+              reportedModel && !reportedModel.startsWith(`${runtimeType}/`)
+                ? reportedModel
+                : agent.modelId || 'unknown';
+            runtimeUsage.model = modelId;
             runtimeUsage.costUsd = calculateCost(
               provider as Parameters<typeof calculateCost>[0],
               modelId,
@@ -270,7 +279,7 @@ export class ExternalRuntimeService {
               cachedTokens: runtimeUsage.cachedTokens,
               totalTokens: runtimeUsage.totalTokens,
               costUsd: runtimeUsage.costUsd,
-              isByok: Boolean((agent.runtimeConfig as any)?.model?.byok),
+              isByok: Boolean(agent.modelApiKey),
               durationMs: Math.round(performance.now() - startedAt),
               traceId,
               runtimeType,
