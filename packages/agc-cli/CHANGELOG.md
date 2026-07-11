@@ -1,5 +1,20 @@
 # @agent-commons/cli
 
+## 0.3.0
+
+### Minor Changes
+
+- 23bc28a: Add OAuth connection management: `client.oauth` namespace in the SDK
+  (listProviders, listConnections, connect, refresh, test, revoke) and a new
+  `agc connections` command (list, providers, connect, test, revoke) so users
+  can connect and inspect the accounts (Google Workspace, GitHub, Slack, …)
+  their agents act with.
+
+### Patch Changes
+
+- Updated dependencies [23bc28a]
+  - @agent-commons/sdk@0.4.0
+
 ## 0.2.4
 
 ### Patch Changes
