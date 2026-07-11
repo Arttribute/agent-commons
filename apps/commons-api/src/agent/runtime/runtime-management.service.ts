@@ -166,6 +166,11 @@ export class RuntimeManagementService {
         actorId: actor?.id,
         actorType: actor?.type ?? 'service',
       });
+      if (['failed', 'unavailable', 'terminated'].includes(String(computer.status))) {
+        throw new Error(
+          computer.errorMessage || `${runtimeType} computer could not be started`,
+        );
+      }
       await this.setStatus(
         agentId,
         ['running', 'idle'].includes(String(computer.status))
@@ -204,7 +209,16 @@ export class RuntimeManagementService {
       reason: 'Agent session requested the managed runtime',
       actorType: 'service',
     });
-    await this.setStatus(agentId, 'ready');
+    if (['failed', 'unavailable', 'terminated'].includes(String(computer.status))) {
+      await this.setStatus(agentId, 'failed');
+      throw new Error(
+        computer.errorMessage || `${runtimeType} computer could not be started`,
+      );
+    }
+    await this.setStatus(
+      agentId,
+      ['running', 'idle'].includes(String(computer.status)) ? 'ready' : 'starting',
+    );
     return computer;
   }
 
