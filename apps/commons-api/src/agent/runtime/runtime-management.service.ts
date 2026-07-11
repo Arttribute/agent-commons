@@ -166,9 +166,14 @@ export class RuntimeManagementService {
         actorId: actor?.id,
         actorType: actor?.type ?? 'service',
       });
-      if (['failed', 'unavailable', 'terminated'].includes(String(computer.status))) {
+      if (
+        ['failed', 'unavailable', 'terminated'].includes(
+          String(computer.status),
+        )
+      ) {
         throw new Error(
-          computer.errorMessage || `${runtimeType} computer could not be started`,
+          computer.errorMessage ||
+            `${runtimeType} computer could not be started`,
         );
       }
       await this.setStatus(
@@ -209,7 +214,9 @@ export class RuntimeManagementService {
       reason: 'Agent session requested the managed runtime',
       actorType: 'service',
     });
-    if (['failed', 'unavailable', 'terminated'].includes(String(computer.status))) {
+    if (
+      ['failed', 'unavailable', 'terminated'].includes(String(computer.status))
+    ) {
       await this.setStatus(agentId, 'failed');
       throw new Error(
         computer.errorMessage || `${runtimeType} computer could not be started`,
@@ -217,7 +224,9 @@ export class RuntimeManagementService {
     }
     await this.setStatus(
       agentId,
-      ['running', 'idle'].includes(String(computer.status)) ? 'ready' : 'starting',
+      ['running', 'idle'].includes(String(computer.status))
+        ? 'ready'
+        : 'starting',
     );
     return computer;
   }
@@ -234,14 +243,34 @@ export class RuntimeManagementService {
 
   async restart(agentId: string, actorId?: string) {
     await this.setStatus(agentId, 'starting');
-    await this.computers.restartAssignedComputer({
-      agentId,
-      actorId,
-      actorType: actorId ? 'user' : 'service',
-      reason: 'Agent runtime restart requested',
-    });
-    await this.setStatus(agentId, 'ready');
-    return this.get(agentId);
+    try {
+      const computer = await this.computers.restartAssignedComputer({
+        agentId,
+        actorId,
+        actorType: actorId ? 'user' : 'service',
+        reason: 'Agent runtime restart requested',
+      });
+      if (
+        !computer ||
+        ['failed', 'unavailable', 'terminated'].includes(
+          String(computer.status),
+        )
+      ) {
+        throw new Error(
+          computer?.errorMessage || 'Managed runtime could not be restarted',
+        );
+      }
+      await this.setStatus(
+        agentId,
+        ['running', 'idle'].includes(String(computer.status))
+          ? 'ready'
+          : 'starting',
+      );
+      return this.get(agentId);
+    } catch (error) {
+      await this.setStatus(agentId, 'failed');
+      throw error;
+    }
   }
 
   private normalizeConfig(value?: RuntimeConfig | null): RuntimeConfig {

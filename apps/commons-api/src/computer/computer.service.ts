@@ -633,7 +633,7 @@ export class ComputerService {
           !Number.isNaN(new Date(commonOs.startedAt).getTime())
             ? new Date(commonOs.startedAt)
             : computer.startedAt,
-        errorMessage: commonOs.pod?.lastError ?? computer.errorMessage,
+        errorMessage: commonOs.pod?.lastError ?? null,
         updatedAt: new Date(),
       })
       .where(eq(schema.agentComputerInstance.computerId, computerId))
@@ -1309,6 +1309,7 @@ export class ComputerService {
         workspaceRoot: commonOsAgent.workspace?.rootDir ?? '/mnt/shared',
         workspaceSnapshot: commonOsAgent.workspace?.snapshot ?? null,
         browser: commonOsAgent.browser ?? null,
+        errorMessage: commonOsAgent.pod?.lastError ?? null,
         startedAt: commonOsAgent.startedAt
           ? new Date(commonOsAgent.startedAt)
           : new Date(),
