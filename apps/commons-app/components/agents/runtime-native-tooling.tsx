@@ -101,6 +101,18 @@ export function useAgentRuntime(agentId: string, enabled = true) {
     if (enabled) void refresh();
   }, [enabled, refresh]);
 
+  useEffect(() => {
+    if (
+      !enabled ||
+      !runtime ||
+      !["provisioning", "starting"].includes(runtime.status)
+    ) {
+      return;
+    }
+    const timer = window.setInterval(() => void refresh(), 5_000);
+    return () => window.clearInterval(timer);
+  }, [enabled, refresh, runtime]);
+
   return { runtime, loading, refresh, setRuntime };
 }
 

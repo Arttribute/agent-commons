@@ -24,11 +24,37 @@ export class RuntimeManagementService {
     const agent = await this.getAgent(agentId);
     const runtimeType = normalizeRuntimeType(agent.runtimeType);
     const config = await this.computers.getConfig(agentId);
-    const computer = await this.computers.getAssignedComputer(agentId);
+    let computer = await this.computers.getAssignedComputer(agentId);
+    if (
+      runtimeType !== 'native' &&
+      computer?.commonOsAgentId &&
+      ['provisioning', 'starting'].includes(String(computer.status))
+    ) {
+      computer = await this.computers
+        .refreshInstance(computer.computerId, { silent: true })
+        .catch(() => computer);
+    }
+    const effectiveStatus =
+      runtimeType === 'native'
+        ? 'ready'
+        : ['running', 'idle'].includes(String(computer?.status))
+          ? 'ready'
+          : ['failed', 'unavailable', 'terminated'].includes(
+                String(computer?.status),
+              )
+            ? 'failed'
+            : computer?.status === 'stopped'
+              ? 'stopped'
+              : ['provisioning', 'starting'].includes(String(computer?.status))
+                ? 'starting'
+                : agent.runtimeStatus;
+    if (effectiveStatus !== agent.runtimeStatus) {
+      await this.setStatus(agentId, effectiveStatus);
+    }
     return {
       runtimeType,
       version: agent.runtimeVersion,
-      status: agent.runtimeStatus,
+      status: effectiveStatus,
       config: agent.runtimeConfig ?? {},
       capabilities:
         agent.runtimeCapabilities ?? RUNTIME_CAPABILITIES[runtimeType],

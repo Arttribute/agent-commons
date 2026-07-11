@@ -67,6 +67,14 @@ export function AgentRuntimeSurface({ agentId }: { agentId: string }) {
     void load();
   }, [load]);
 
+  useEffect(() => {
+    if (!runtime || !["provisioning", "starting"].includes(runtime.status)) {
+      return;
+    }
+    const timer = window.setInterval(() => void load(), 5_000);
+    return () => window.clearInterval(timer);
+  }, [load, runtime]);
+
   const perform = async (name: "deploy" | "restart" | "sleep") => {
     setAction(name);
     setError(null);
