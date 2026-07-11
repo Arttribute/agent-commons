@@ -559,11 +559,16 @@ function SetupView({
                   autoComplete="new-password"
                   value={form.modelApiKey}
                   disabled={!isOwner}
-                  placeholder="Leave blank to keep the existing key or use the platform key"
+                  placeholder="Leave blank to keep the current key or use platform credentials"
                   onChange={(e) =>
                     setForm((f) => ({ ...f, modelApiKey: e.target.value }))
                   }
                 />
+                <p className="text-[11px] text-muted-foreground">
+                  Platform credentials are used only when Agent Commons has a
+                  key configured for the selected provider; otherwise enter a
+                  provider key here.
+                </p>
               </div>
               {!isManagedRuntime && (
                 <div className="grid gap-1.5 md:col-span-2">

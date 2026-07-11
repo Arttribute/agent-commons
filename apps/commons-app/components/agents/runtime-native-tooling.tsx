@@ -46,13 +46,11 @@ export const RUNTIME_NATIVE_TOOLING: Record<
       "OpenClaw runs on this agent's managed computer with its own gateway, plugins, and channel connectors.",
     builtIns: [
       { name: "browser", description: "Full browser automation" },
-      { name: "canvas", description: "Visual canvas and rendering" },
-      { name: "codex", description: "Code generation sessions" },
-      { name: "device-pair", description: "Pair phones and devices" },
-      { name: "file-transfer", description: "Send and receive files" },
-      { name: "memory-core", description: "OpenClaw's own memory store" },
-      { name: "phone-control", description: "Control paired phones" },
-      { name: "talk-voice", description: "Voice conversations" },
+      { name: "workspace", description: "Persistent files and project context" },
+      { name: "terminal", description: "Commands and development tasks" },
+      { name: "web", description: "Web search and content retrieval" },
+      { name: "memory", description: "OpenClaw's native memory store" },
+      { name: "sessions", description: "Persistent gateway conversations" },
     ],
     bridgeNote:
       "Tools connected below are also reachable from OpenClaw through the computer's tool bridge — OpenClaw can list and call any of them mid-task.",

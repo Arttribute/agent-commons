@@ -142,7 +142,14 @@ export function AgentComputerSurface({
       const nextConfig = normalizeComputerConfig(configPayload.data);
       setConfig(nextConfig);
       setDraft((current) => current ?? nextConfig);
-      setComputer(unwrapComputer(computerPayload));
+      const nextComputer = unwrapComputer(computerPayload);
+      setComputer(nextComputer);
+      if (
+        nextComputer?.errorMessage &&
+        ["failed", "error", "unavailable"].includes(nextComputer.status)
+      ) {
+        setError(nextComputer.errorMessage);
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Computer load failed");
     } finally {
