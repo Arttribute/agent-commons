@@ -863,6 +863,31 @@ interface CreditWriteParams {
     usageEventId?: string;
     metadata?: Record<string, unknown>;
 }
+type PlanKey = "free" | "plus" | "pro" | "max";
+type ComputeProfile = "starter" | "standard" | "performance" | "gpu";
+type ModelTier = "frontier" | "standard" | "fast" | "local";
+interface PlanEntitlements {
+    computerUse: boolean;
+    allowedProfiles: ComputeProfile[];
+    maxConcurrentComputers: number;
+    modelTiers: ModelTier[];
+    maxConcurrentRuns: number;
+}
+interface SubscriptionInfo {
+    planKey: PlanKey;
+    planName: string;
+    monthlyCredits: number;
+    entitlements: PlanEntitlements;
+    status: string;
+    currentPeriodEnd: string | null;
+    cancelAtPeriodEnd: boolean;
+}
+interface FlagEvaluation {
+    key: string;
+    enabled: boolean;
+    variant: string | null;
+    payload?: unknown;
+}
 type WalletType = "eoa" | "erc4337" | "external";
 interface AgentWallet {
     id: string;
@@ -1614,6 +1639,44 @@ declare class CommonsClient {
             data: CreditLedgerEntry;
         }>;
     };
+    get billing(): {
+        /** Current plan, status, and entitlements for the caller. */
+        subscription: () => Promise<{
+            data: SubscriptionInfo;
+        }>;
+        /** Entitlements only (what paid features the caller may use). */
+        entitlements: () => Promise<{
+            data: PlanEntitlements;
+        }>;
+        /** Create a Stripe Checkout session for a subscription plan. */
+        subscribe: (planKey: "plus" | "pro" | "max") => Promise<{
+            data: {
+                url: string;
+            };
+        }>;
+        /** Create a Stripe Checkout session for a one-time credit top-up. */
+        topup: (packKey: string) => Promise<{
+            data: {
+                url: string;
+            };
+        }>;
+        /** Open the Stripe billing portal. */
+        portal: () => Promise<{
+            data: {
+                url: string;
+            };
+        }>;
+    };
+    get flags(): {
+        /** Evaluate all active flags for the caller (call once at boot). */
+        all: () => Promise<{
+            data: Record<string, FlagEvaluation>;
+        }>;
+        /** Evaluate a single flag for the caller. */
+        evaluate: (key: string) => Promise<{
+            data: FlagEvaluation;
+        }>;
+    };
 }
 declare class CommonsError extends Error {
     readonly status: number;
@@ -1657,4 +1720,4 @@ declare function listWorkflowTemplates(): readonly [{
 }];
 declare function buildWorkflowTemplate(templateName: WorkflowTemplateName, ctx: WorkflowTemplateContext): WorkflowTemplateBuild;
 
-export { type A2AArtifact, type A2ADataPart, type A2AFilePart, type A2AMessage, type A2AMessagePart, type A2ASendTaskParams, type A2ASkill, type A2ATask, type A2ATaskState, type A2ATextPart, type Agent, type AgentCard, type AgentComputer, type AgentComputerBrowser, type AgentComputerConfig, type AgentComputerDesiredState, type AgentComputerEvent, type AgentComputerGpu, type AgentComputerGpuType, type AgentComputerInstance, type AgentComputerLifecycle, type AgentComputerResourceMode, type AgentComputerResourceProfile, type AgentComputerResources, type AgentComputerStatus, type AgentComputerTerminal, type AgentMemory, type AgentWallet, type ApiKey, type ApiKeyPrincipalType, type ChatMessage, CommonsClient, type CommonsClientConfig, CommonsError, type ComputerActionParams, type ComputerBrowserOpenParams, type ComputerCommandParams, type ComputerConfigUpdate, type ComputerFile, type ComputerGpu, type ComputerGpuType, type ComputerLifecycle, type ComputerNetworkAccess, type ComputerPersistence, type ComputerResizeParams, type ComputerResourceMode, type ComputerResourceProfile, type ComputerResourceUpdate, type ComputerResources, type CreateAgentParams, type CreateApiKeyParams, type CreateMemoryParams, type CreateSkillParams, type CreateTaskParams, type CreateToolKeyParams, type CreateToolParams, type CreateWalletParams, type CreatedApiKey, type McpConnectionType, type McpPrompt, type McpResource, type McpServer, type MemorySourceType, type MemoryStats, type MemoryType, type ModelConfig, type ModelProvider, type RunParams, type Session, type Skill, type SkillIndex, type StreamEvent, type StreamEventType, type Task, type Tool, type ToolKey, type ToolPermission, type UpdateMemoryParams, type UsageAggregation, type UsageEvent, type WalletBalance, type WalletType, type Workflow, type WorkflowDefinition, type WorkflowEdge, type WorkflowExecution, type WorkflowNode, type WorkflowNodeType, type WorkflowTemplateBuild, type WorkflowTemplateContext, type WorkflowTemplateName, type WorkflowTemplateTool, buildWorkflowTemplate, listWorkflowTemplates };
+export { type A2AArtifact, type A2ADataPart, type A2AFilePart, type A2AMessage, type A2AMessagePart, type A2ASendTaskParams, type A2ASkill, type A2ATask, type A2ATaskState, type A2ATextPart, type Agent, type AgentCard, type AgentComputer, type AgentComputerBrowser, type AgentComputerConfig, type AgentComputerDesiredState, type AgentComputerEvent, type AgentComputerGpu, type AgentComputerGpuType, type AgentComputerInstance, type AgentComputerLifecycle, type AgentComputerResourceMode, type AgentComputerResourceProfile, type AgentComputerResources, type AgentComputerStatus, type AgentComputerTerminal, type AgentMemory, type AgentWallet, type ApiKey, type ApiKeyPrincipalType, type ChatMessage, CommonsClient, type CommonsClientConfig, CommonsError, type ComputeProfile, type ComputerActionParams, type ComputerBrowserOpenParams, type ComputerCommandParams, type ComputerConfigUpdate, type ComputerFile, type ComputerGpu, type ComputerGpuType, type ComputerLifecycle, type ComputerNetworkAccess, type ComputerPersistence, type ComputerResizeParams, type ComputerResourceMode, type ComputerResourceProfile, type ComputerResourceUpdate, type ComputerResources, type CreateAgentParams, type CreateApiKeyParams, type CreateMemoryParams, type CreateSkillParams, type CreateTaskParams, type CreateToolKeyParams, type CreateToolParams, type CreateWalletParams, type CreatedApiKey, type FlagEvaluation, type McpConnectionType, type McpPrompt, type McpResource, type McpServer, type MemorySourceType, type MemoryStats, type MemoryType, type ModelConfig, type ModelProvider, type ModelTier, type PlanEntitlements, type PlanKey, type RunParams, type Session, type Skill, type SkillIndex, type StreamEvent, type StreamEventType, type SubscriptionInfo, type Task, type Tool, type ToolKey, type ToolPermission, type UpdateMemoryParams, type UsageAggregation, type UsageEvent, type WalletBalance, type WalletType, type Workflow, type WorkflowDefinition, type WorkflowEdge, type WorkflowExecution, type WorkflowNode, type WorkflowNodeType, type WorkflowTemplateBuild, type WorkflowTemplateContext, type WorkflowTemplateName, type WorkflowTemplateTool, buildWorkflowTemplate, listWorkflowTemplates };
