@@ -27,6 +27,8 @@ import {
   CreditBalance,
   CreditLedgerEntry,
   CreditWriteParams,
+  SubscriptionInfo,
+  PlanEntitlements,
   AgentMemory,
   MemoryStats,
   MemoryType,
@@ -1337,6 +1339,34 @@ export class CommonsClient {
         params: CreditWriteParams,
       ): Promise<{ data: CreditLedgerEntry }> =>
         this.request("POST", "/v1/credits/debits", params),
+    };
+  }
+
+  // ── Billing ────────────────────────────────────────────────────────────────
+
+  get billing() {
+    return {
+      /** Current plan, status, and entitlements for the caller. */
+      subscription: (): Promise<{ data: SubscriptionInfo }> =>
+        this.request("GET", "/v1/billing/subscription"),
+
+      /** Entitlements only (what paid features the caller may use). */
+      entitlements: (): Promise<{ data: PlanEntitlements }> =>
+        this.request("GET", "/v1/billing/entitlements"),
+
+      /** Create a Stripe Checkout session for a subscription plan. */
+      subscribe: (
+        planKey: "plus" | "pro" | "max",
+      ): Promise<{ data: { url: string } }> =>
+        this.request("POST", "/v1/billing/checkout/subscription", { planKey }),
+
+      /** Create a Stripe Checkout session for a one-time credit top-up. */
+      topup: (packKey: string): Promise<{ data: { url: string } }> =>
+        this.request("POST", "/v1/billing/checkout/topup", { packKey }),
+
+      /** Open the Stripe billing portal. */
+      portal: (): Promise<{ data: { url: string } }> =>
+        this.request("POST", "/v1/billing/portal", {}),
     };
   }
 }

@@ -2260,6 +2260,85 @@ export const creditLedgerEntry = pgTable(
   }),
 );
 
+/* ─────────────────────────  BILLING  ───────────────────────── */
+
+// A principal's Stripe customer link. One customer per principal.
+export const billingCustomer = pgTable(
+  'billing_customer',
+  {
+    id: uuid('id')
+      .default(sql`gen_random_uuid()`)
+      .primaryKey(),
+    principalId: text('principal_id').notNull(),
+    workspaceId: text('workspace_id'),
+    stripeCustomerId: text('stripe_customer_id').notNull(),
+    email: text('email'),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .default(sql`timezone('utc', now())`)
+      .notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true })
+      .default(sql`timezone('utc', now())`)
+      .notNull(),
+  },
+  (table) => ({
+    principalIdx: uniqueIndex('billing_customer_principal_idx').on(
+      table.principalId,
+    ),
+    stripeCustomerIdx: uniqueIndex('billing_customer_stripe_idx').on(
+      table.stripeCustomerId,
+    ),
+  }),
+);
+
+// Mirror of a Stripe subscription. Webhooks are the single writer.
+export const subscription = pgTable(
+  'subscription',
+  {
+    id: uuid('id')
+      .default(sql`gen_random_uuid()`)
+      .primaryKey(),
+    principalId: text('principal_id').notNull(),
+    workspaceId: text('workspace_id'),
+    stripeSubscriptionId: text('stripe_subscription_id').notNull(),
+    stripeCustomerId: text('stripe_customer_id').notNull(),
+    planKey: text('plan_key').notNull(), // 'free' | 'plus' | 'pro' | 'max'
+    status: text('status').notNull(), // active | trialing | past_due | canceled | ...
+    stripePriceId: text('stripe_price_id'),
+    currentPeriodStart: timestamp('current_period_start', {
+      withTimezone: true,
+    }),
+    currentPeriodEnd: timestamp('current_period_end', { withTimezone: true }),
+    cancelAtPeriodEnd: pgBoolean('cancel_at_period_end')
+      .default(false)
+      .notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .default(sql`timezone('utc', now())`)
+      .notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true })
+      .default(sql`timezone('utc', now())`)
+      .notNull(),
+  },
+  (table) => ({
+    stripeSubIdx: uniqueIndex('subscription_stripe_sub_idx').on(
+      table.stripeSubscriptionId,
+    ),
+    principalIdx: index('subscription_principal_idx').on(table.principalId),
+  }),
+);
+
+// Insert-first idempotency lock + audit log for Stripe webhook events.
+export const stripeWebhookEvent = pgTable('stripe_webhook_event', {
+  eventId: text('event_id').primaryKey(), // Stripe evt_... id
+  type: text('type').notNull(),
+  status: text('status').notNull().default('processing'), // processing | processed | failed | skipped
+  error: text('error'),
+  payload: jsonb('payload').$type<Record<string, unknown>>(),
+  createdAt: timestamp('created_at', { withTimezone: true })
+    .default(sql`timezone('utc', now())`)
+    .notNull(),
+  processedAt: timestamp('processed_at', { withTimezone: true }),
+});
+
 /* ─────────────────────────  API KEYS  ───────────────────────── */
 
 export const activityEvent = pgTable('activity_event', {

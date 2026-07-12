@@ -186,6 +186,38 @@ previous superuser role and redeploy.
 
 ---
 
+## 7. Enable Stripe billing (per environment)
+
+Billing code degrades gracefully when Stripe is unconfigured, so merging it does
+not require secrets. Turn it on deliberately:
+
+1. `stripe login`. In **test** mode (staging) create products + recurring prices
+   for Plus/Pro/Max and one-time prices for the three top-up packs; create a
+   test coupon + promotion code. Repeat in **live** mode for production.
+2. Add these keys to the environment's runtime secret
+   (`agent-commons/commons-api/<env>`) **and** the matching `Secrets` entries to
+   `infra/aws/ecs-express-service.yml` (they are intentionally not there yet so
+   deploys don't fail before Stripe exists):
+   `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_PRICE_PLUS`,
+   `STRIPE_PRICE_PRO`, `STRIPE_PRICE_MAX`, `STRIPE_PRICE_TOPUP_SMALL`,
+   `STRIPE_PRICE_TOPUP_MEDIUM`, `STRIPE_PRICE_TOPUP_LARGE`,
+   `CREDIT_UNITS_PER_USD`, `CREDIT_DEBITS_ENABLED`.
+3. In the Stripe dashboard add a webhook endpoint →
+   `https://api-<env>.agentcommons.io/v1/billing/webhook`; copy its signing
+   secret into `STRIPE_WEBHOOK_SECRET`. Subscribe to: `checkout.session.completed`,
+   `customer.subscription.*`, `invoice.paid`, `invoice.payment_failed`.
+4. Local dev: `stripe listen --forward-to localhost:3001/v1/billing/webhook`.
+5. Run `node apps/commons-api/scripts/analyze-usage-margins.mjs` against the
+   current usage data to sanity-check the tier grants before finalizing prices.
+6. Flip `CREDIT_DEBITS_ENABLED=true` when you want token usage to actually burn
+   credits (start on staging).
+
+Verify (staging, test card `4242 4242 4242 4242`): subscribe to Plus →
+`subscription` row active + a 5,000-credit `subscription_grant` in the ledger;
+`stripe trigger invoice.paid` twice → single grant (idempotent); top-up with the
+promo code → discounted, credits granted once; portal cancel → reverts at period
+end.
+
 ## Verify
 
 - Staging E2E: sign up at `staging.agentcommons.io` → create agent → chat →

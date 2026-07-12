@@ -35,6 +35,8 @@ export type {
   AgentWallet, WalletBalance, CreateWalletParams, WalletType,
   // API Keys
   ApiKey, CreatedApiKey, CreateApiKeyParams, ApiKeyPrincipalType,
+  // Billing
+  PlanKey, ComputeProfile, ModelTier, PlanEntitlements, SubscriptionInfo,
   CommonsClientConfig,
 } from './types';
 export type {
