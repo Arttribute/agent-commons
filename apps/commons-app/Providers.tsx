@@ -2,6 +2,7 @@
 import React from "react";
 import { PrivyProvider } from "@privy-io/react-auth";
 import { SessionProvider } from "next-auth/react";
+import { FlagsProvider } from "@/components/providers/flags-provider";
 
 type Props = {
   children: React.ReactNode;
@@ -10,10 +11,15 @@ type Props = {
 export default function Providers({ children }: Props) {
   const privyAppId = process.env.NEXT_PUBLIC_PRIVY_APP_ID;
   if (!privyAppId) {
-    return <SessionProvider>{children}</SessionProvider>;
+    return (
+      <SessionProvider>
+        <FlagsProvider>{children}</FlagsProvider>
+      </SessionProvider>
+    );
   }
   return (
     <SessionProvider>
+      <FlagsProvider>
       <PrivyProvider
         appId={privyAppId}
         config={{
@@ -36,6 +42,7 @@ export default function Providers({ children }: Props) {
       >
         {children}
       </PrivyProvider>
+      </FlagsProvider>
     </SessionProvider>
   );
 }

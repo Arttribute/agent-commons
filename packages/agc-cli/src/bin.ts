@@ -20,6 +20,7 @@ import { walletCommand } from './commands/wallet.js';
 import { modelsCommand } from './commands/models.js';
 import { memoryCommand } from './commands/memory.js';
 import { usageCommand } from './commands/usage.js';
+import { billingCommand, creditsCommand } from './commands/billing.js';
 import { logsCommand } from './commands/logs.js';
 import { computerCommand } from './commands/computer.js';
 import { banner, select, spin, c, sym } from './ui.js';
@@ -252,6 +253,10 @@ program.addCommand(memoryCommand());
 // Usage & Logs (observability)
 program.addCommand(usageCommand());
 program.addCommand(logsCommand());
+
+// Billing & credits
+program.addCommand(creditsCommand());
+program.addCommand(billingCommand());
 
 // Unknown command hint
 program.on('command:*', () => {

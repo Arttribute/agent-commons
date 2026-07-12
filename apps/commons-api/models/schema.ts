@@ -298,6 +298,9 @@ export const agentComputerInstance = pgTable(
     expiresAt: timestamp('expires_at', { withTimezone: true }),
     startedAt: timestamp('started_at', { withTimezone: true }),
     stoppedAt: timestamp('stopped_at', { withTimezone: true }),
+    // Per-minute usage metering cursor: everything up to this instant has been
+    // billed. See BillingModule / compute-metering.service.
+    meteredThroughAt: timestamp('metered_through_at', { withTimezone: true }),
     errorMessage: text('error_message'),
 
     createdAt: timestamp('created_at', { withTimezone: true })
@@ -2256,6 +2259,195 @@ export const creditLedgerEntry = pgTable(
     workspaceCreatedIdx: index('credit_ledger_entry_workspace_created_idx').on(
       table.workspaceId,
       table.createdAt,
+    ),
+  }),
+);
+
+/* ─────────────────────────  BILLING  ───────────────────────── */
+
+// A principal's Stripe customer link. One customer per principal.
+export const billingCustomer = pgTable(
+  'billing_customer',
+  {
+    id: uuid('id')
+      .default(sql`gen_random_uuid()`)
+      .primaryKey(),
+    principalId: text('principal_id').notNull(),
+    workspaceId: text('workspace_id'),
+    stripeCustomerId: text('stripe_customer_id').notNull(),
+    email: text('email'),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .default(sql`timezone('utc', now())`)
+      .notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true })
+      .default(sql`timezone('utc', now())`)
+      .notNull(),
+  },
+  (table) => ({
+    principalIdx: uniqueIndex('billing_customer_principal_idx').on(
+      table.principalId,
+    ),
+    stripeCustomerIdx: uniqueIndex('billing_customer_stripe_idx').on(
+      table.stripeCustomerId,
+    ),
+  }),
+);
+
+// Mirror of a Stripe subscription. Webhooks are the single writer.
+export const subscription = pgTable(
+  'subscription',
+  {
+    id: uuid('id')
+      .default(sql`gen_random_uuid()`)
+      .primaryKey(),
+    principalId: text('principal_id').notNull(),
+    workspaceId: text('workspace_id'),
+    stripeSubscriptionId: text('stripe_subscription_id').notNull(),
+    stripeCustomerId: text('stripe_customer_id').notNull(),
+    planKey: text('plan_key').notNull(), // 'free' | 'plus' | 'pro' | 'max'
+    status: text('status').notNull(), // active | trialing | past_due | canceled | ...
+    stripePriceId: text('stripe_price_id'),
+    currentPeriodStart: timestamp('current_period_start', {
+      withTimezone: true,
+    }),
+    currentPeriodEnd: timestamp('current_period_end', { withTimezone: true }),
+    cancelAtPeriodEnd: pgBoolean('cancel_at_period_end')
+      .default(false)
+      .notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .default(sql`timezone('utc', now())`)
+      .notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true })
+      .default(sql`timezone('utc', now())`)
+      .notNull(),
+  },
+  (table) => ({
+    stripeSubIdx: uniqueIndex('subscription_stripe_sub_idx').on(
+      table.stripeSubscriptionId,
+    ),
+    principalIdx: index('subscription_principal_idx').on(table.principalId),
+  }),
+);
+
+// Per-interval computer-use metering. One row per billed minute-window per
+// computer (unique on computerId + intervalStart), linked to the credit debit.
+export const computeUsageEvent = pgTable(
+  'compute_usage_event',
+  {
+    eventId: uuid('event_id')
+      .default(sql`gen_random_uuid()`)
+      .primaryKey(),
+    computerId: uuid('computer_id').notNull(),
+    agentId: text('agent_id').notNull(),
+    principalId: text('principal_id').notNull(),
+    workspaceId: text('workspace_id'),
+    resourceProfile: text('resource_profile').notNull(),
+    intervalStart: timestamp('interval_start', { withTimezone: true }).notNull(),
+    intervalEnd: timestamp('interval_end', { withTimezone: true }).notNull(),
+    minutes: integer('minutes').notNull(),
+    creditsCharged: integer('credits_charged').notNull(),
+    creditEntryId: uuid('credit_entry_id'),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .default(sql`timezone('utc', now())`)
+      .notNull(),
+  },
+  (table) => ({
+    computerIntervalIdx: uniqueIndex('compute_usage_computer_interval_idx').on(
+      table.computerId,
+      table.intervalStart,
+    ),
+    principalIdx: index('compute_usage_principal_idx').on(
+      table.principalId,
+      table.createdAt,
+    ),
+  }),
+);
+
+// Insert-first idempotency lock + audit log for Stripe webhook events.
+export const stripeWebhookEvent = pgTable('stripe_webhook_event', {
+  eventId: text('event_id').primaryKey(), // Stripe evt_... id
+  type: text('type').notNull(),
+  status: text('status').notNull().default('processing'), // processing | processed | failed | skipped
+  error: text('error'),
+  payload: jsonb('payload').$type<Record<string, unknown>>(),
+  createdAt: timestamp('created_at', { withTimezone: true })
+    .default(sql`timezone('utc', now())`)
+    .notNull(),
+  processedAt: timestamp('processed_at', { withTimezone: true }),
+});
+
+/* ─────────────────────────  FEATURE FLAGS  ───────────────────────── */
+
+export const featureFlag = pgTable('feature_flag', {
+  flagKey: text('flag_key').primaryKey(),
+  description: text('description'),
+  enabled: pgBoolean('enabled').default(false).notNull(),
+  flagType: text('flag_type').default('boolean').notNull(), // 'boolean' | 'multivariate'
+  rolloutPercentage: integer('rollout_percentage').default(0).notNull(), // 0-100
+  variants: jsonb('variants').$type<
+    Array<{ key: string; weight: number; payload?: unknown }>
+  >(),
+  targeting: jsonb('targeting').$type<{
+    allowPrincipalIds?: string[];
+    denyPrincipalIds?: string[];
+    allowWorkspaceIds?: string[];
+    allowPlanKeys?: string[];
+  }>(),
+  salt: text('salt'),
+  archivedAt: timestamp('archived_at', { withTimezone: true }),
+  createdAt: timestamp('created_at', { withTimezone: true })
+    .default(sql`timezone('utc', now())`)
+    .notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true })
+    .default(sql`timezone('utc', now())`)
+    .notNull(),
+});
+
+// Per-subject pins that bypass rollout/targeting (support + QA).
+export const flagOverride = pgTable(
+  'flag_override',
+  {
+    id: uuid('id')
+      .default(sql`gen_random_uuid()`)
+      .primaryKey(),
+    flagKey: text('flag_key').notNull(),
+    subjectType: text('subject_type').notNull(), // 'user' | 'workspace'
+    subjectId: text('subject_id').notNull(),
+    variantKey: text('variant_key'),
+    enabled: pgBoolean('enabled'),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .default(sql`timezone('utc', now())`)
+      .notNull(),
+  },
+  (table) => ({
+    subjectIdx: uniqueIndex('flag_override_subject_idx').on(
+      table.flagKey,
+      table.subjectType,
+      table.subjectId,
+    ),
+  }),
+);
+
+// First exposure per principal per flag — the join key for A/B analysis.
+export const flagExposure = pgTable(
+  'flag_exposure',
+  {
+    id: uuid('id')
+      .default(sql`gen_random_uuid()`)
+      .primaryKey(),
+    flagKey: text('flag_key').notNull(),
+    principalId: text('principal_id').notNull(),
+    workspaceId: text('workspace_id'),
+    variantKey: text('variant_key'),
+    context: jsonb('context').$type<Record<string, unknown>>(),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .default(sql`timezone('utc', now())`)
+      .notNull(),
+  },
+  (table) => ({
+    exposureIdx: uniqueIndex('flag_exposure_flag_principal_idx').on(
+      table.flagKey,
+      table.principalId,
     ),
   }),
 );

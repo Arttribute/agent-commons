@@ -45,7 +45,7 @@ export class CreditService {
     });
   }
 
-  async record(input: CreditLedgerInput) {
+  async record(input: CreditLedgerInput & { allowNegative?: boolean }) {
     const normalized = this.normalizeInput(input);
     return this.db.transaction(async (tx) => {
       const existing = await tx.query.creditLedgerEntry.findFirst({
@@ -56,7 +56,14 @@ export class CreditService {
       });
       if (existing) return existing;
 
-      if (normalized.amount < 0 && !this.allowNegativeBalances()) {
+      // allowNegative lets a caller (e.g. compute-use grace metering) debit
+      // past zero within its own bounded policy without flipping the global
+      // CREDIT_ALLOW_NEGATIVE_BALANCE flag.
+      if (
+        normalized.amount < 0 &&
+        !input.allowNegative &&
+        !this.allowNegativeBalances()
+      ) {
         const balance = await this.getBalanceWithDb(tx as DbLike, {
           principalId: normalized.principalId,
           workspaceId: normalized.workspaceId,

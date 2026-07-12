@@ -54,6 +54,11 @@ import {
   type ComputerResourceProfile,
   type FsNode,
 } from "@/components/computers/computer-types";
+import {
+  UpgradeDialog,
+  upgradePromptFrom,
+  type UpgradePrompt,
+} from "@/components/billing/upgrade-dialog";
 import { TrafficLights, WindowFrame } from "@/components/computers/desktop-window";
 import { MacFileIcon, MacFolderIcon } from "@/components/computers/mac-icons";
 import {
@@ -114,6 +119,7 @@ export function AgentComputerSurface({
   const [saving, setSaving] = useState(false);
   const [powerAction, setPowerAction] = useState<ComputerPowerAction | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [upgradePrompt, setUpgradePrompt] = useState<UpgradePrompt | null>(null);
   const [app, setApp] = useState<ComputerApp>(mapTab(activeTab));
   const [pendingFile, setPendingFile] = useState<string | null>(null);
   const { mode, wallpaper, tokens, codeTheme, appearanceId, setAppearance, setCodeTheme } =
@@ -254,6 +260,11 @@ export function AgentComputerSurface({
     try {
       const response = await fetch(`/api/agents/${agentId}/computer/${action}`, { method: "POST" });
       const payload = await response.json();
+      const upgrade = upgradePromptFrom(response.status, payload);
+      if (upgrade) {
+        setUpgradePrompt(upgrade);
+        return;
+      }
       if (!response.ok) throw new Error(errorMessage(payload, `Could not ${action} computer`));
       setComputer(unwrapComputer(payload));
       await load();
@@ -310,6 +321,13 @@ export function AgentComputerSurface({
           <span className="truncate">{error}</span>
         </div>
       )}
+
+      <UpgradeDialog
+        prompt={upgradePrompt}
+        onOpenChange={(open) => {
+          if (!open) setUpgradePrompt(null);
+        }}
+      />
 
       <div className="relative min-h-0 flex-1">
         {app === "overview" ? (

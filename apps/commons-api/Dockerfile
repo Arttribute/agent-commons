@@ -68,6 +68,8 @@ RUN mkdir -p /tmp/.cache && chmod 777 /tmp/.cache
 
 COPY --from=build /deploy ./
 COPY --from=build /workspace/apps/commons-api/migrations ./migrations
+# scripts/migrate.mjs runs versioned migrations in-container (see buildspec).
+COPY --from=build /workspace/apps/commons-api/scripts ./scripts
 
 EXPOSE 8080
 

@@ -2,6 +2,14 @@ AWSTemplateFormatVersion: "2010-09-09"
 Description: Commons Identity and unified API gateway ECS Express services.
 
 Parameters:
+  Environment:
+    Type: String
+    Default: production
+    AllowedValues: [production, staging]
+  IdentityIssuerUrl:
+    Type: String
+    Default: "https://auth.agentcommons.io/api/auth"
+    Description: Public issuer URL the gateway validates identity tokens against.
   IdentityImageUri: { Type: String }
   GatewayImageUri: { Type: String }
   ExecutionRoleArn: { Type: String }
@@ -15,7 +23,7 @@ Resources:
   IdentityService:
     Type: AWS::ECS::ExpressGatewayService
     Properties:
-      ServiceName: commons-identity-production
+      ServiceName: !Sub commons-identity-${Environment}
       Cluster: default
       ExecutionRoleArn: !Ref ExecutionRoleArn
       InfrastructureRoleArn: !Ref InfrastructureRoleArn
@@ -60,7 +68,7 @@ Resources:
   GatewayService:
     Type: AWS::ECS::ExpressGatewayService
     Properties:
-      ServiceName: commons-api-gateway-production
+      ServiceName: !Sub commons-api-gateway-${Environment}
       Cluster: default
       ExecutionRoleArn: !Ref ExecutionRoleArn
       InfrastructureRoleArn: !Ref InfrastructureRoleArn
@@ -73,7 +81,7 @@ Resources:
         Environment:
           - { Name: NODE_ENV, Value: production }
           - { Name: PORT, Value: "8080" }
-          - { Name: COMMONS_IDENTITY_ISSUER, Value: "https://auth.agentcommons.io/api/auth" }
+          - { Name: COMMONS_IDENTITY_ISSUER, Value: !Ref IdentityIssuerUrl }
           - Name: COMMONS_IDENTITY_JWKS_URL
             Value: !Sub "https://${IdentityService.Endpoint}/api/auth/.well-known/jwks.json"
           - { Name: COMMONS_IDENTITY_AUDIENCE, Value: commons-platform }

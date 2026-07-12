@@ -1,11 +1,15 @@
 import {
   BadRequestException,
+  HttpException,
+  HttpStatus,
   Injectable,
   Logger,
   NotFoundException,
   ServiceUnavailableException,
 } from '@nestjs/common';
 import { and, desc, eq } from 'drizzle-orm';
+import { EntitlementsService } from '~/billing/entitlements.service';
+import { ComputeProfile } from '~/billing/plan-catalog';
 import { v4 as uuidv4 } from 'uuid';
 import * as schema from '#/models/schema';
 import { DatabaseService } from '~/modules/database/database.service';
@@ -159,7 +163,72 @@ export class ComputerService {
   constructor(
     private readonly db: DatabaseService,
     private readonly encryption: EncryptionService,
+    private readonly entitlements: EntitlementsService,
   ) {}
+
+  /**
+   * Enforce the caller's subscription entitlements before starting a computer.
+   * Free plans cannot use computers at all; paid plans are limited to their
+   * allowed resource profiles and a max concurrent-computer count. Gated behind
+   * BILLING_ENFORCEMENT so it can be rolled out independently.
+   */
+  private async assertComputeEntitlement(
+    agent: { agentId: string; ownerUserId?: string | null },
+    resourceProfile: string,
+  ): Promise<void> {
+    if (process.env.BILLING_ENFORCEMENT !== 'true') return;
+    const ownerId = agent.ownerUserId;
+    if (!ownerId) return; // unowned/legacy agents are not gated
+
+    const ent = await this.entitlements.getEntitlements(ownerId);
+    if (!ent.computerUse) {
+      throw new HttpException(
+        {
+          code: 'upgrade_required',
+          feature: 'computer_use',
+          message:
+            'Agent computers require a paid plan. Upgrade to Plus or higher to use computer features.',
+        },
+        HttpStatus.PAYMENT_REQUIRED,
+      );
+    }
+    if (!ent.allowedProfiles.includes(resourceProfile as ComputeProfile)) {
+      throw new HttpException(
+        {
+          code: 'upgrade_required',
+          feature: 'compute_profile',
+          message: `The "${resourceProfile}" computer profile is not included in your plan. Upgrade for higher-tier compute.`,
+        },
+        HttpStatus.PAYMENT_REQUIRED,
+      );
+    }
+    const runningCount = await this.countRunningComputersForOwner(ownerId);
+    if (runningCount >= ent.maxConcurrentComputers) {
+      throw new HttpException(
+        {
+          code: 'limit_reached',
+          feature: 'concurrent_computers',
+          message: `Your plan allows ${ent.maxConcurrentComputers} concurrent computer(s). Stop one or upgrade.`,
+        },
+        HttpStatus.PAYMENT_REQUIRED,
+      );
+    }
+  }
+
+  private async countRunningComputersForOwner(
+    ownerId: string,
+  ): Promise<number> {
+    const rows = await this.db
+      .select({ id: schema.agentComputerInstance.computerId })
+      .from(schema.agentComputerInstance)
+      .where(
+        and(
+          eq(schema.agentComputerInstance.ownerUserId, ownerId),
+          eq(schema.agentComputerInstance.status, 'running'),
+        ),
+      );
+    return rows.length;
+  }
 
   async getConfig(agentId: string): Promise<ComputerConfig> {
     const existing = await this.db.query.agentComputerConfig.findFirst({
@@ -314,6 +383,11 @@ export class ComputerService {
     if (sessionId) {
       await this.assertSessionForAgent(args.agentId, sessionId);
     }
+
+    // Subscription gate: free plans can't use computers; paid plans are limited
+    // to their allowed profiles + concurrency. Attaching to an already-running
+    // computer skips this (only new/waking compute is gated).
+    await this.assertComputeEntitlement(agent, config.resourceProfile);
 
     this.emitComputerToolProgress(args.runId, {
       toolName: 'startAgentComputer',

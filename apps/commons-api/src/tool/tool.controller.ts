@@ -12,10 +12,13 @@ import {
   Req,
 } from '@nestjs/common';
 import { Request } from 'express';
+import { UseGuards } from '@nestjs/common';
 import { ToolService } from './tool.service';
+import { OwnerGuard, OwnerOnly } from '~/modules/auth';
 import { ChatCompletionTool } from 'openai/resources/chat/completions.mjs';
 
 @Controller({ version: '1', path: 'tools' })
+@UseGuards(OwnerGuard)
 export class ToolController {
   constructor(private readonly toolService: ToolService) {}
 
@@ -107,6 +110,7 @@ export class ToolController {
    * Update the schema for a tool
    */
   @Put(':name')
+  @OwnerOnly({ table: 'tool', idParam: 'name' })
   async updateTool(
     @Param('name') name: string,
     @Body()
@@ -139,6 +143,7 @@ export class ToolController {
    * Delete a tool by name
    */
   @Delete(':name')
+  @OwnerOnly({ table: 'tool', idParam: 'name' })
   async deleteTool(@Param('name') name: string) {
     const result = await this.toolService.deleteToolByName(name);
     return { success: true, data: result };

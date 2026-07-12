@@ -1052,6 +1052,41 @@ export interface CreditWriteParams {
   metadata?: Record<string, unknown>;
 }
 
+// ─── Billing ──────────────────────────────────────────────────────────────────
+
+export type PlanKey = "free" | "plus" | "pro" | "max";
+
+export type ComputeProfile = "starter" | "standard" | "performance" | "gpu";
+
+export type ModelTier = "frontier" | "standard" | "fast" | "local";
+
+export interface PlanEntitlements {
+  computerUse: boolean;
+  allowedProfiles: ComputeProfile[];
+  maxConcurrentComputers: number;
+  modelTiers: ModelTier[];
+  maxConcurrentRuns: number;
+}
+
+export interface SubscriptionInfo {
+  planKey: PlanKey;
+  planName: string;
+  monthlyCredits: number;
+  entitlements: PlanEntitlements;
+  status: string;
+  currentPeriodEnd: string | null;
+  cancelAtPeriodEnd: boolean;
+}
+
+// ─── Feature flags ──────────────────────────────────────────────────────────
+
+export interface FlagEvaluation {
+  key: string;
+  enabled: boolean;
+  variant: string | null;
+  payload?: unknown;
+}
+
 // ─── Wallet ───────────────────────────────────────────────────────────────────
 
 export type WalletType = "eoa" | "erc4337" | "external";

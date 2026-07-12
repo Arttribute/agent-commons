@@ -85,21 +85,17 @@ export class RateLimitGuard implements CanActivate {
   }
 
   private resolveKey(req: Request, strategy: string): string {
-    switch (strategy) {
-      case 'agent': {
-        // Body may contain metadata.agentId (tool calls) or agentId directly
-        const body = (req as any).body ?? {};
-        const agentId = body.metadata?.agentId ?? body.agentId;
-        return agentId ? `agent:${agentId}` : `ip:${req.ip}`;
-      }
-      case 'user': {
-        const initiator = req.headers['x-initiator'] as string;
-        return initiator ? `user:${initiator}` : `ip:${req.ip}`;
-      }
-      case 'ip':
-      default:
-        return `ip:${req.ip}`;
+    // Never key on caller-supplied body fields or headers — they are
+    // trivially rotated to evade the limiter. The authenticated principal
+    // (attached by ApiKeyGuard, which runs first) is the identity we trust;
+    // unauthenticated traffic degrades to per-IP buckets.
+    const principal = (req as any).principal as
+      | { principalId?: string }
+      | undefined;
+    if (strategy !== 'ip' && principal?.principalId) {
+      return `${strategy}:${principal.principalId}`;
     }
+    return `ip:${req.ip}`;
   }
 
   private cleanStaleBuckets(): void {

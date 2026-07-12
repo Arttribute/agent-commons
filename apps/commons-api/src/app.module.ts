@@ -1,8 +1,7 @@
 import { Module } from '@nestjs/common';
-import { APP_GUARD } from '@nestjs/core';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
-import { RateLimitGuard, AuthModule } from './modules/auth';
+import { AuthModule } from './modules/auth';
 
 import { AgentModule } from './agent';
 import { PinataModule } from './pinata/pinata.module';
@@ -27,6 +26,8 @@ import { LogModule } from './log/log.module';
 import { X402Module } from './modules/x402';
 import { ActivityModule } from './activity/activity.module';
 import { CreditModule } from './credit';
+import { BillingModule } from './billing/billing.module';
+import { FlagModule } from './flags/flag.module';
 import { FilesModule } from './files';
 import { ComputerModule } from './computer';
 import { AudioModule } from './audio';
@@ -55,6 +56,8 @@ import { AudioModule } from './audio';
     SkillModule,
     UsageModule,
     CreditModule,
+    BillingModule,
+    FlagModule,
     FilesModule,
     ComputerModule,
     AudioModule,
@@ -68,8 +71,8 @@ import { AudioModule } from './audio';
   controllers: [AppController],
   providers: [
     AppService,
-    // Global rate-limit guard (120 req/min per agent by default)
-    { provide: APP_GUARD, useClass: RateLimitGuard },
+    // Global guards (ApiKeyGuard then RateLimitGuard) live in AuthModule so
+    // their execution order is deterministic.
   ],
 })
 export class AppModule {}

@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
-import { supabase } from "@/lib/supabase";
+import { fetchAgentLogs } from "@/lib/agent-logs";
 import { LogItem } from "./log-item";
 import { LogDetails } from "./log-details";
 import { Input } from "@/components/ui/input";
@@ -37,19 +37,8 @@ export function LogsDisplay({ agentId }: LogsDisplayProps) {
   useEffect(() => {
     async function fetchLogs() {
       if (!agentId) return;
-      const { data, error } = await supabase
-        .from("agent_log")
-        .select("*")
-        .eq("agent_id", agentId)
-        .order("created_at", { ascending: false });
-
-      if (error) {
-        console.error("Error fetching logs:", error);
-        return;
-      }
-      if (data) {
-        setLogs(data as AgentLog[]);
-      }
+      const data = await fetchAgentLogs(agentId);
+      setLogs(data as AgentLog[]);
     }
     fetchLogs();
   }, [agentId]);

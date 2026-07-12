@@ -5,5 +5,5 @@ export { AuthModule } from './auth.module';
 export { Public } from './public.decorator';
 export { RateLimitGuard, RateLimit } from './rate-limit.guard';
 export type { RateLimitOptions } from './rate-limit.guard';
-export { OwnerGuard, OwnerOnly } from './owner.guard';
+export { OwnerGuard, OwnerOnly, resolveCallerId } from './owner.guard';
 export type { OwnerResourceOptions } from './owner.guard';

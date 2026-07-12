@@ -1,4 +1,10 @@
-import { Injectable, BadRequestException, Logger, NotFoundException } from '@nestjs/common';
+import {
+  Injectable,
+  BadRequestException,
+  ForbiddenException,
+  Logger,
+  NotFoundException,
+} from '@nestjs/common';
 import { DatabaseService } from '~/modules/database/database.service';
 import { EncryptionService } from '~/modules/encryption';
 import * as schema from '#/models/schema';
@@ -6,6 +12,7 @@ import { eq, and } from 'drizzle-orm';
 import { createPublicClient, createWalletClient, http, formatUnits, parseUnits, encodeFunctionData } from 'viem';
 import { generatePrivateKey, privateKeyToAccount } from 'viem/accounts';
 import { baseSepolia } from '#/lib/baseSepolia';
+import { safeFetch } from '~/utils/safe-fetch';
 import type { CreateWalletDto, WalletBalanceDto, WalletResponseDto } from './dto/wallet.dto';
 
 export interface TransferDto {
@@ -81,6 +88,25 @@ export class WalletService {
       .returning();
 
     return this.toResponse(wallet);
+  }
+
+  /**
+   * Assert that the caller owns the agent before wallet operations that are
+   * not covered by a route-param OwnerGuard (e.g. create, where the agent id
+   * arrives in the body).
+   */
+  async assertAgentOwnership(agentId: string, callerId: string): Promise<void> {
+    const agent = await this.db.query.agent.findFirst({
+      where: (a) => eq(a.agentId, agentId),
+    });
+    if (!agent) throw new NotFoundException(`Agent ${agentId} not found`);
+    const caller = callerId.toLowerCase();
+    const owns =
+      agent.ownerUserId?.toLowerCase() === caller ||
+      agent.owner?.toLowerCase() === caller;
+    if (!owns) {
+      throw new ForbiddenException('You do not own this agent');
+    }
   }
 
   /**
@@ -227,8 +253,8 @@ export class WalletService {
     url: string,
     init: RequestInit = {},
   ): Promise<Response> {
-    // First attempt — no payment header
-    const firstRes = await fetch(url, init);
+    // First attempt — no payment header. SSRF-guarded: url is agent-supplied.
+    const firstRes = await safeFetch(url, init);
 
     if (firstRes.status !== 402) return firstRes;
 
@@ -280,7 +306,7 @@ export class WalletService {
     const paymentHeader = await createPaymentHeader(viemWalletClient, 1, requirements);
 
     // Retry with payment header
-    const retryRes = await fetch(url, {
+    const retryRes = await safeFetch(url, {
       ...init,
       headers: {
         ...((init.headers as Record<string, string>) ?? {}),

@@ -8,21 +8,51 @@ process.env.SUPABASE_URL =
   process.env.SUPABASE_URL && decodeURIComponent(process.env.SUPABASE_URL);
 
 import { NestFactory } from '@nestjs/core';
-import { VersioningType } from '@nestjs/common';
+import { ValidationPipe, VersioningType } from '@nestjs/common';
+import { NestExpressApplication } from '@nestjs/platform-express';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
+import helmet from 'helmet';
 import { AppModule } from './app.module';
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule);
+  // rawBody is required for Stripe webhook signature verification. Default
+  // parsers are disabled so the explicit registrations below (with size
+  // limits) are the ones that actually run.
+  const app = await NestFactory.create<NestExpressApplication>(AppModule, {
+    rawBody: true,
+    bodyParser: false,
+  });
 
   // ApiKeyGuard is registered globally via AuthModule (APP_GUARD provider)
+
+  // Behind CloudFront/gateway/ALB — trust X-Forwarded-For so req.ip is the
+  // client address (rate limiting keys on it).
+  app.set('trust proxy', true);
+
+  app.use(helmet({ contentSecurityPolicy: false }));
+  app.useBodyParser('json', { limit: '10mb' });
+  app.useBodyParser('urlencoded', { extended: true, limit: '10mb' });
+  app.useGlobalPipes(
+    new ValidationPipe({ transform: true, whitelist: true }),
+  );
 
   // ── Versioning ────────────────────────────────────────────────────────────
   app.enableVersioning({ type: VersioningType.URI });
 
   // ── CORS ──────────────────────────────────────────────────────────────────
+  // Credentials are allowed, so a wildcard origin is never acceptable. In
+  // production the allowlist must be explicit; local dev falls back to
+  // localhost origins only.
+  const corsOrigins = process.env.CORS_ORIGIN?.split(',')
+    .map((o) => o.trim())
+    .filter(Boolean);
+  if (!corsOrigins?.length && process.env.NODE_ENV === 'production') {
+    throw new Error(
+      'CORS_ORIGIN must be set in production (comma-separated origin allowlist)',
+    );
+  }
   app.enableCors({
-    origin: process.env.CORS_ORIGIN?.split(',') ?? '*',
+    origin: corsOrigins ?? [/^https?:\/\/localhost(:\d+)?$/],
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     allowedHeaders: [
       'Content-Type',

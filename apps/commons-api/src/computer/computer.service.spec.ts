@@ -22,7 +22,11 @@ describe('ComputerService', () => {
 
   beforeEach(() => {
     db = dbMock();
-    service = new ComputerService(db as any, { decrypt: jest.fn() } as any);
+    service = new ComputerService(
+      db as any,
+      { decrypt: jest.fn() } as any,
+      { getEntitlements: jest.fn() } as any,
+    );
     jest.spyOn(service as any, 'assertCapability').mockResolvedValue({
       enabled: true,
       allowTerminal: true,

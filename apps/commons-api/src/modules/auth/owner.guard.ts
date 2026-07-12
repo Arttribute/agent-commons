@@ -17,9 +17,9 @@ export const OWNER_RESOURCE_KEY = 'owner_resource';
 
 export interface OwnerResourceOptions {
   /**
-   * Which schema table to look up. Currently supports: 'agent' | 'task' | 'workflow'
+   * Which schema table to look up.
    */
-  table: 'agent' | 'task' | 'workflow';
+  table: 'agent' | 'task' | 'workflow' | 'tool' | 'wallet';
   /**
    * Route param name holding the resource ID (default: same as table + 'Id', e.g. 'agentId')
    */
@@ -43,6 +43,24 @@ export interface OwnerResourceOptions {
 export const OwnerOnly = (options: OwnerResourceOptions) =>
   SetMetadata(OWNER_RESOURCE_KEY, options);
 
+/**
+ * Resolve the effective caller identity the same way OwnerGuard does:
+ * service principals may delegate via x-owner-id / x-initiator headers;
+ * user principals are always themselves.
+ */
+export function resolveCallerId(req: Request): string | undefined {
+  const principal = (req as any).principal as ApiKeyPrincipal | undefined;
+  const delegatedCallerId =
+    (req.headers['x-owner-id'] as string) ??
+    (req.headers['x-initiator'] as string);
+  return principal?.principalType === 'service'
+    ? (delegatedCallerId ?? principal.principalId)
+    : (principal?.principalId ?? delegatedCallerId);
+}
+
+/** Scopes that may mutate platform-owned (null-owner) resources. */
+const PLATFORM_ADMIN_SCOPES = ['platform:admin', 'legacy:delegate'];
+
 @Injectable()
 export class OwnerGuard implements CanActivate {
   private readonly enforced: boolean;
@@ -64,16 +82,14 @@ export class OwnerGuard implements CanActivate {
     if (!opts) return true; // No @OwnerOnly decorator — pass through
 
     const req = context.switchToHttp().getRequest<Request>();
+    const isRead = ['GET', 'HEAD'].includes(req.method.toUpperCase());
 
     // Resolve caller identity
     const principal = (req as any).principal as ApiKeyPrincipal | undefined;
     const delegatedCallerId =
       (req.headers['x-owner-id'] as string) ??
       (req.headers['x-initiator'] as string);
-    const callerId =
-      principal?.principalType === 'service'
-        ? delegatedCallerId ?? principal.principalId
-        : principal?.principalId ?? delegatedCallerId;
+    const callerId = resolveCallerId(req);
 
     if (!callerId) {
       throw new ForbiddenException('Owner identity required (x-owner-id or x-initiator header missing)');
@@ -91,10 +107,20 @@ export class OwnerGuard implements CanActivate {
       throw new NotFoundException(`${opts.table} ${resourceId} not found`);
     }
 
-    // Platform resources (owner=null) are accessible to everyone
+    // Platform resources (owner=null) are world-readable, but only platform
+    // admin credentials may mutate them.
     if (owner === undefined) return true;
     if (!owner.ownerUserId && !owner.workspaceId && !owner.legacyOwner) {
-      return true;
+      if (isRead) return true;
+      if (
+        principal?.principalType === 'service' &&
+        principal.scopes?.some((s) => PLATFORM_ADMIN_SCOPES.includes(s))
+      ) {
+        return true;
+      }
+      throw new ForbiddenException(
+        `Platform-owned ${opts.table} resources cannot be modified by this caller`,
+      );
     }
 
     // Trusted service principals may read agent metadata when explicitly
@@ -103,7 +129,7 @@ export class OwnerGuard implements CanActivate {
     if (
       opts.table === 'agent' &&
       principal?.principalType === 'service' &&
-      ['GET', 'HEAD'].includes(req.method.toUpperCase()) &&
+      isRead &&
       principal.scopes?.includes('agents:read')
     ) {
       return true;
@@ -112,7 +138,7 @@ export class OwnerGuard implements CanActivate {
     if (
       opts.table === 'agent' &&
       principal?.principalType === 'service' &&
-      !['GET', 'HEAD'].includes(req.method.toUpperCase()) &&
+      !isRead &&
       principal.scopes?.includes('agents:write')
     ) {
       return true;
@@ -192,6 +218,33 @@ export class OwnerGuard implements CanActivate {
         if (!row) return null;
         return {
           legacyOwner: (row as any).ownerId ?? (row as any).owner,
+        };
+      }
+      case 'tool': {
+        // Tools are addressed by name in the public API.
+        const row = await this.db.query.tool.findFirst({
+          where: (t) => eq(t.name, id),
+        });
+        if (!row) return null;
+        if (row.ownerType === 'platform') {
+          return { legacyOwner: null };
+        }
+        return { legacyOwner: row.owner };
+      }
+      case 'wallet': {
+        // Wallet ownership is derived from the agent that holds it.
+        const wallet = await this.db.query.agentWallet.findFirst({
+          where: (t) => eq(t.id, id),
+        });
+        if (!wallet) return null;
+        const agent = await this.db.query.agent.findFirst({
+          where: (t) => eq(t.agentId, wallet.agentId),
+        });
+        if (!agent) return null;
+        return {
+          ownerUserId: agent.ownerUserId,
+          workspaceId: agent.workspaceId,
+          legacyOwner: agent.owner,
         };
       }
       default:

@@ -8,9 +8,34 @@ import {
   Delete,
   Body,
   Param,
-  Query,
+  Req,
+  ForbiddenException,
 } from '@nestjs/common';
-import { ToolKeyService } from './tool-key.service';
+import { Request } from 'express';
+import { ToolKeyService, KeyOwner } from './tool-key.service';
+import { resolveCallerId, type ApiKeyPrincipal } from '~/modules/auth';
+
+/**
+ * Resolve the owning principal for a tool-key operation from the auth context.
+ * The owner is always derived from the authenticated caller — never from a
+ * value supplied in the request body or query string:
+ *   - a direct agent key → that agent owns the key;
+ *   - a direct user token, or a trusted service delegating on a user's behalf
+ *     (commons-app proxy, via x-owner-id / x-initiator) → that user owns it.
+ */
+function keyOwner(req: Request): KeyOwner {
+  const principal = (req as any).principal as ApiKeyPrincipal | undefined;
+  if (principal?.principalType === 'agent') {
+    return { ownerId: principal.principalId, ownerType: 'agent' };
+  }
+  const callerId = resolveCallerId(req);
+  if (!callerId) {
+    throw new ForbiddenException(
+      'A user or agent principal is required to manage tool keys',
+    );
+  }
+  return { ownerId: callerId, ownerType: 'user' };
+}
 
 @Controller({ version: '1', path: 'tool-keys' })
 export class ToolKeyController {
@@ -18,7 +43,7 @@ export class ToolKeyController {
 
   /**
    * POST /v1/tool-keys
-   * Create a new encrypted API key
+   * Create a new encrypted API key. Owner is taken from the auth context.
    */
   @Post()
   async createKey(
@@ -26,17 +51,19 @@ export class ToolKeyController {
     body: {
       keyName: string;
       value: string;
-      ownerId: string;
-      ownerType: 'user' | 'agent';
       toolId?: string;
       displayName?: string;
       description?: string;
       keyType?: 'api-key' | 'bearer-token' | 'oauth-token' | 'secret';
       expiresAt?: string;
     },
+    @Req() req: Request,
   ) {
+    const owner = keyOwner(req);
     const key = await this.toolKeyService.createKey({
       ...body,
+      ownerId: owner.ownerId,
+      ownerType: owner.ownerType,
       expiresAt: body.expiresAt ? new Date(body.expiresAt) : undefined,
     });
 
@@ -45,14 +72,15 @@ export class ToolKeyController {
 
   /**
    * GET /v1/tool-keys
-   * List all keys for an owner (user or agent)
+   * List all keys for the authenticated owner.
    */
   @Get()
-  async listKeys(
-    @Query('ownerId') ownerId: string,
-    @Query('ownerType') ownerType: 'user' | 'agent',
-  ) {
-    const keys = await this.toolKeyService.listKeys(ownerId, ownerType);
+  async listKeys(@Req() req: Request) {
+    const owner = keyOwner(req);
+    const keys = await this.toolKeyService.listKeys(
+      owner.ownerId,
+      owner.ownerType,
+    );
     return { success: true, data: keys };
   }
 
@@ -61,8 +89,8 @@ export class ToolKeyController {
    * Get key metadata (without decrypted value)
    */
   @Get(':keyId')
-  async getKeyMetadata(@Param('keyId') keyId: string) {
-    const key = await this.toolKeyService.getKeyMetadata(keyId);
+  async getKeyMetadata(@Param('keyId') keyId: string, @Req() req: Request) {
+    const key = await this.toolKeyService.getKeyMetadata(keyId, keyOwner(req));
     return { success: true, data: key };
   }
 
@@ -80,11 +108,16 @@ export class ToolKeyController {
       isActive?: boolean;
       expiresAt?: string;
     },
+    @Req() req: Request,
   ) {
-    const updated = await this.toolKeyService.updateKeyMetadata(keyId, {
-      ...body,
-      expiresAt: body.expiresAt ? new Date(body.expiresAt) : undefined,
-    });
+    const updated = await this.toolKeyService.updateKeyMetadata(
+      keyId,
+      {
+        ...body,
+        expiresAt: body.expiresAt ? new Date(body.expiresAt) : undefined,
+      },
+      keyOwner(req),
+    );
 
     return { success: true, data: updated };
   }
@@ -97,10 +130,12 @@ export class ToolKeyController {
   async updateKeyValue(
     @Param('keyId') keyId: string,
     @Body() body: { value: string },
+    @Req() req: Request,
   ) {
     const result = await this.toolKeyService.updateKeyValue(
       keyId,
       body.value,
+      keyOwner(req),
     );
 
     return { success: true, data: result };
@@ -111,8 +146,8 @@ export class ToolKeyController {
    * Delete a key
    */
   @Delete(':keyId')
-  async deleteKey(@Param('keyId') keyId: string) {
-    const result = await this.toolKeyService.deleteKey(keyId);
+  async deleteKey(@Param('keyId') keyId: string, @Req() req: Request) {
+    const result = await this.toolKeyService.deleteKey(keyId, keyOwner(req));
     return result;
   }
 
@@ -121,8 +156,8 @@ export class ToolKeyController {
    * Test if a key is valid
    */
   @Post(':keyId/test')
-  async testKey(@Param('keyId') keyId: string) {
-    const result = await this.toolKeyService.testKey(keyId);
+  async testKey(@Param('keyId') keyId: string, @Req() req: Request) {
+    const result = await this.toolKeyService.testKey(keyId, keyOwner(req));
     return { success: true, data: result };
   }
 
@@ -140,8 +175,9 @@ export class ToolKeyController {
       contextType: 'user' | 'agent' | 'global';
       priority?: number;
     },
+    @Req() req: Request,
   ) {
-    const mapping = await this.toolKeyService.mapKeyToTool(body);
+    const mapping = await this.toolKeyService.mapKeyToTool(body, keyOwner(req));
     return { success: true, data: mapping };
   }
 
@@ -150,18 +186,14 @@ export class ToolKeyController {
    * Remove a key mapping
    */
   @Delete('map/:mappingId')
-  async removeKeyMapping(@Param('mappingId') mappingId: string) {
-    const result = await this.toolKeyService.removeKeyMapping(mappingId);
-    return result;
-  }
-
-  /**
-   * POST /v1/tool-keys/:keyId/rotate
-   * Rotate key encryption
-   */
-  @Post(':keyId/rotate')
-  async rotateKeyEncryption(@Param('keyId') keyId: string) {
-    const result = await this.toolKeyService.rotateKeyEncryption(keyId);
+  async removeKeyMapping(
+    @Param('mappingId') mappingId: string,
+    @Req() req: Request,
+  ) {
+    const result = await this.toolKeyService.removeKeyMapping(
+      mappingId,
+      keyOwner(req),
+    );
     return result;
   }
 }
