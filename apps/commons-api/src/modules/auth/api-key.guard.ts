@@ -95,8 +95,25 @@ export class ApiKeyGuard implements CanActivate {
     }
 
     // 2. Management service key — compatibility-only. New services should use
-    // OAuth client credentials so a principal is always attached.
+    // OAuth client credentials so a principal is always attached. A service
+    // principal is attached so downstream guards can attribute the caller and
+    // scope-check delegation instead of treating the request as anonymous
+    // god-mode. Disable entirely with MANAGEMENT_KEY_ENABLED=false once no
+    // callers remain (usage is logged below to verify that).
     if (token && this.secretKey && token === this.secretKey) {
+      if (process.env.MANAGEMENT_KEY_ENABLED === 'false') {
+        throw new UnauthorizedException('Management key auth is disabled');
+      }
+      console.warn(
+        `[auth] management-key request: ${request.method} ${request.url}`,
+      );
+      request.principal = {
+        principalId: 'management-key',
+        principalType: 'service',
+        workspaceId: null,
+        scopes: ['legacy:delegate', 'platform:admin'],
+        authMethod: 'management_key',
+      };
       return true;
     }
 

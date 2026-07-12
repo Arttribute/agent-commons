@@ -13,6 +13,7 @@ import {
 } from '@nestjs/common';
 import { timingSafeEqual } from 'crypto';
 import { Public, RateLimitGuard, RateLimit } from '~/modules/auth';
+import { safeFetch } from '~/utils/safe-fetch';
 import { ChatCompletionMessageToolCall } from 'openai/resources/index.mjs';
 
 import { AgentService } from './agent.service';
@@ -445,8 +446,9 @@ export class AgentToolsController {
       }
     }
 
-    // 5) Execute fetch
-    const response = await fetch(httpRequest.url, {
+    // 5) Execute fetch (SSRF-guarded: the URL is user-controlled and we are
+    // injecting OAuth tokens / tool keys, so it must never reach internal hosts)
+    const response = await safeFetch(httpRequest.url, {
       method: httpRequest.method,
       headers: httpRequest.headers,
       body: httpRequest.body ? JSON.stringify(httpRequest.body) : undefined,

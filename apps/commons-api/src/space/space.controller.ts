@@ -8,12 +8,17 @@ import {
   Param,
   Query,
   Headers,
+  Req,
+  ForbiddenException,
   BadRequestException,
   Sse,
 } from '@nestjs/common';
+import { Request } from 'express';
 import { SpaceService } from './space.service';
 import { TypedBody } from '@nestia/core';
 import { AddMemberDto, CreateSpaceDto, SendMessageDto } from './dto/space.dto';
+import { resolveCallerId } from '~/modules/auth';
+import { issueSpaceRtcTicket } from './space-rtc-ticket';
 import { Observable, from, merge } from 'rxjs';
 import { map, switchMap } from 'rxjs/operators';
 
@@ -126,6 +131,31 @@ export class SpaceController {
   async getSpace(@Param('spaceId') spaceId: string) {
     const space = await this.spaceService.getSpace(spaceId);
     return { data: space };
+  }
+
+  /**
+   * Mint a short-lived ticket authorizing the caller to join this space's live
+   * RTC stream. The browser cannot present an identity token to the WebSocket
+   * directly, so it fetches a ticket here (access-checked) and passes it in the
+   * socket handshake. See space-rtc-ticket.ts.
+   */
+  @Post(':spaceId/rtc-ticket')
+  async issueRtcTicket(
+    @Param('spaceId') spaceId: string,
+    @Req() req: Request,
+  ) {
+    const callerId = resolveCallerId(req);
+    if (!callerId) {
+      throw new ForbiddenException('Authentication required');
+    }
+    const allowed = await this.spaceService.canUserAccessSpace(
+      spaceId,
+      callerId,
+    );
+    if (!allowed) {
+      throw new ForbiddenException('You do not have access to this space');
+    }
+    return { data: { ticket: issueSpaceRtcTicket(spaceId, callerId) } };
   }
 
   /**

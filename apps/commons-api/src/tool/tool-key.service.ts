@@ -4,6 +4,12 @@ import { DatabaseService } from '../modules/database';
 import { EncryptionService } from '../modules/encryption';
 import * as schema from '../../models/schema';
 
+/** The principal that owns a tool key. Always derived from the auth token. */
+export interface KeyOwner {
+  ownerId: string;
+  ownerType: 'user' | 'agent';
+}
+
 /**
  * ToolKeyService
  *
@@ -25,6 +31,28 @@ export class ToolKeyService {
     private readonly db: DatabaseService,
     private readonly encryption: EncryptionService,
   ) {}
+
+  /**
+   * Load a key and assert it belongs to `owner`. Returns 404 (not 403) on a
+   * mismatch so callers cannot probe for the existence of other principals'
+   * keys. All keyId-scoped operations go through this.
+   */
+  private async assertKeyOwner(
+    keyId: string,
+    owner: KeyOwner,
+  ): Promise<typeof schema.toolKey.$inferSelect> {
+    const key = await this.db.query.toolKey.findFirst({
+      where: (k: any) => eq(k.keyId, keyId),
+    });
+    if (
+      !key ||
+      key.ownerId !== owner.ownerId ||
+      key.ownerType !== owner.ownerType
+    ) {
+      throw new NotFoundException(`Key ${keyId} not found`);
+    }
+    return key;
+  }
 
   /**
    * Create a new encrypted key
@@ -137,14 +165,8 @@ export class ToolKeyService {
    * @param keyId - The key ID
    * @returns Key metadata
    */
-  async getKeyMetadata(keyId: string) {
-    const key = await this.db.query.toolKey.findFirst({
-      where: (k: any) => eq(k.keyId, keyId),
-    });
-
-    if (!key) {
-      throw new NotFoundException(`Key ${keyId} not found`);
-    }
+  async getKeyMetadata(keyId: string, owner: KeyOwner) {
+    const key = await this.assertKeyOwner(keyId, owner);
 
     // Return without sensitive data
     return {
@@ -192,7 +214,9 @@ export class ToolKeyService {
       isActive?: boolean;
       expiresAt?: Date;
     },
+    owner: KeyOwner,
   ) {
+    await this.assertKeyOwner(keyId, owner);
     const [updated] = await this.db
       .update(schema.toolKey)
       .set({
@@ -222,14 +246,8 @@ export class ToolKeyService {
    * @param keyId - The key ID
    * @returns Success indicator
    */
-  async rotateKeyEncryption(keyId: string) {
-    const key = await this.db.query.toolKey.findFirst({
-      where: (k: any) => eq(k.keyId, keyId),
-    });
-
-    if (!key) {
-      throw new NotFoundException(`Key ${keyId} not found`);
-    }
+  async rotateKeyEncryption(keyId: string, owner: KeyOwner) {
+    const key = await this.assertKeyOwner(keyId, owner);
 
     try {
       // Rotate encryption
@@ -268,14 +286,8 @@ export class ToolKeyService {
    * @param newValue - New plaintext value
    * @returns Success indicator
    */
-  async updateKeyValue(keyId: string, newValue: string) {
-    const key = await this.db.query.toolKey.findFirst({
-      where: (k: any) => eq(k.keyId, keyId),
-    });
-
-    if (!key) {
-      throw new NotFoundException(`Key ${keyId} not found`);
-    }
+  async updateKeyValue(keyId: string, newValue: string, owner: KeyOwner) {
+    await this.assertKeyOwner(keyId, owner);
 
     try {
       // Encrypt new value
@@ -311,15 +323,11 @@ export class ToolKeyService {
    * @param keyId - The key ID
    * @returns Success indicator
    */
-  async deleteKey(keyId: string) {
-    const result = await this.db
+  async deleteKey(keyId: string, owner: KeyOwner) {
+    await this.assertKeyOwner(keyId, owner);
+    await this.db
       .delete(schema.toolKey)
-      .where(eq(schema.toolKey.keyId, keyId))
-      .returning();
-
-    if (!result.length) {
-      throw new NotFoundException(`Key ${keyId} not found`);
-    }
+      .where(eq(schema.toolKey.keyId, keyId));
 
     this.logger.log(`Deleted key ${keyId}`);
 
@@ -332,13 +340,17 @@ export class ToolKeyService {
    * @param params - Mapping parameters
    * @returns Created mapping
    */
-  async mapKeyToTool(params: {
-    toolId: string;
-    keyId: string;
-    contextId: string;
-    contextType: 'user' | 'agent' | 'global';
-    priority?: number;
-  }) {
+  async mapKeyToTool(
+    params: {
+      toolId: string;
+      keyId: string;
+      contextId: string;
+      contextType: 'user' | 'agent' | 'global';
+      priority?: number;
+    },
+    owner: KeyOwner,
+  ) {
+    await this.assertKeyOwner(params.keyId, owner);
     const [mapping] = await this.db
       .insert(schema.toolKeyMapping)
       .values({
@@ -422,15 +434,19 @@ export class ToolKeyService {
    * @param mappingId - The mapping ID
    * @returns Success indicator
    */
-  async removeKeyMapping(mappingId: string) {
-    const result = await this.db
-      .delete(schema.toolKeyMapping)
-      .where(eq(schema.toolKeyMapping.id, mappingId))
-      .returning();
-
-    if (!result.length) {
+  async removeKeyMapping(mappingId: string, owner: KeyOwner) {
+    const mapping = await this.db.query.toolKeyMapping.findFirst({
+      where: (m: any) => eq(m.id, mappingId),
+    });
+    if (!mapping) {
       throw new NotFoundException(`Mapping ${mappingId} not found`);
     }
+    // The mapped key must belong to the caller.
+    await this.assertKeyOwner(mapping.keyId, owner);
+
+    await this.db
+      .delete(schema.toolKeyMapping)
+      .where(eq(schema.toolKeyMapping.id, mappingId));
 
     this.logger.log(`Removed key mapping ${mappingId}`);
 
@@ -443,10 +459,14 @@ export class ToolKeyService {
    * @param keyId - The key ID
    * @returns Validation result
    */
-  async testKey(keyId: string): Promise<{
+  async testKey(
+    keyId: string,
+    owner: KeyOwner,
+  ): Promise<{
     valid: boolean;
     error?: string;
   }> {
+    await this.assertKeyOwner(keyId, owner);
     try {
       const decrypted = await this.getDecryptedKey(keyId);
       return { valid: !!decrypted };

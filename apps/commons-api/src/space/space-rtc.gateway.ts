@@ -14,6 +14,7 @@ import { EventEmitter } from 'events';
 import { StreamMonitorService, StreamKind } from './stream-monitor.service';
 import { SpaceSpeechService } from './space-speech.service';
 import { WebCaptureService } from './web-capture.service';
+import { verifySpaceRtcTicket } from './space-rtc-ticket';
 
 interface SocketContext {
   spaceId: string;
@@ -21,13 +22,35 @@ interface SocketContext {
   participantType: 'agent' | 'human';
 }
 
-@WebSocketGateway({ namespace: '/space-rtc', cors: { origin: '*' } })
+/** Authorized identity resolved from the handshake ticket, per socket. */
+interface SocketAuth {
+  userId: string;
+  spaceId: string;
+}
+
+const rtcCorsOrigins = process.env.CORS_ORIGIN?.split(',')
+  .map((o) => o.trim())
+  .filter(Boolean);
+
+@WebSocketGateway({
+  namespace: '/space-rtc',
+  cors: {
+    origin:
+      rtcCorsOrigins ??
+      (process.env.NODE_ENV === 'production'
+        ? false
+        : [/^https?:\/\/localhost(:\d+)?$/]),
+    credentials: true,
+  },
+})
 export class SpaceRtcGateway
   implements OnGatewayInit, OnGatewayConnection, OnGatewayDisconnect
 {
   @WebSocketServer() server!: Server;
   private readonly logger = new Logger(SpaceRtcGateway.name);
   private readonly clientCtx = new Map<string, SocketContext>();
+  private readonly clientAuth = new Map<string, SocketAuth>();
+  private readonly authEnforced = process.env.API_AUTH_REQUIRED !== 'false';
 
   constructor(
     private readonly monitor: StreamMonitorService,
@@ -176,7 +199,30 @@ export class SpaceRtcGateway
   }
 
   handleConnection(client: Socket) {
-    this.logger.debug(`Client connected ${client.id}`);
+    // Live screen / web-capture / audio frames are broadcast per space, so an
+    // unauthenticated socket that guessed a spaceId could siphon another
+    // tenant's stream. Require a signed capability ticket (minted by the
+    // authenticated REST layer after an access check) on connect.
+    if (!this.authEnforced) {
+      this.logger.debug(`Client connected ${client.id} (auth disabled)`);
+      return;
+    }
+    const ticket =
+      (client.handshake.auth?.ticket as string | undefined) ??
+      (client.handshake.query?.ticket as string | undefined);
+    const payload = verifySpaceRtcTicket(ticket);
+    if (!payload) {
+      this.logger.warn(`Rejecting socket ${client.id}: invalid/missing ticket`);
+      client.disconnect(true);
+      return;
+    }
+    this.clientAuth.set(client.id, {
+      userId: payload.userId,
+      spaceId: payload.spaceId,
+    });
+    this.logger.debug(
+      `Client connected ${client.id} (user=${payload.userId} space=${payload.spaceId})`,
+    );
   }
 
   handleDisconnect(client: Socket) {
@@ -188,6 +234,7 @@ export class SpaceRtcGateway
       });
       this.clientCtx.delete(client.id);
     }
+    this.clientAuth.delete(client.id);
     this.logger.debug(`Client disconnected ${client.id}`);
   }
 
@@ -205,6 +252,18 @@ export class SpaceRtcGateway
   ) {
     if (!body.spaceId || !body.participantId)
       return { error: 'spaceId and participantId required' };
+
+    // A socket may only join the space its ticket was issued for.
+    if (this.authEnforced) {
+      const auth = this.clientAuth.get(client.id);
+      if (!auth || auth.spaceId !== body.spaceId) {
+        this.logger.warn(
+          `Socket ${client.id} tried to join space ${body.spaceId} without a matching ticket`,
+        );
+        return { error: 'not authorized for this space' };
+      }
+    }
+
     const participantType = body.participantType || 'human';
     client.join(body.spaceId);
     this.clientCtx.set(client.id, {

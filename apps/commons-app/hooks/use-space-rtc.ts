@@ -149,11 +149,38 @@ export function useSpaceRTC(options: UseSpaceRTCOptions) {
   useEffect(() => {
     if (!autoConnect || !spaceId || !selfId) return;
     const url = wsBase.endsWith("/") ? wsBase.slice(0, -1) : wsBase;
-    const socket = io(`${url}/space-rtc`, {
-      transports: ["websocket"],
-      autoConnect: true,
-    });
-    socketRef.current = socket;
+    let socket: Socket | undefined;
+    let cancelled = false;
+
+    // Fetch a short-lived capability ticket, then connect with it in the
+    // handshake. The RTC gateway rejects sockets without a valid ticket.
+    (async () => {
+      let ticket: string | undefined;
+      try {
+        const res = await fetch(`/api/spaces/${spaceId}/rtc-ticket`, {
+          method: "POST",
+        });
+        if (res.ok) {
+          const json = await res.json();
+          ticket = json?.data?.ticket;
+        } else {
+          console.warn("[space-rtc] ticket request failed:", res.status);
+        }
+      } catch (e) {
+        console.warn("[space-rtc] ticket request error:", e);
+      }
+      if (cancelled) return;
+
+      socket = io(`${url}/space-rtc`, {
+        transports: ["websocket"],
+        autoConnect: true,
+        auth: { ticket },
+      });
+      socketRef.current = socket;
+      wireSocket(socket);
+    })();
+
+    function wireSocket(socket: Socket) {
 
     socket.on("connect", () => {
       setConnected(true);
@@ -443,11 +470,15 @@ export function useSpaceRTC(options: UseSpaceRTCOptions) {
         } catch {}
       });
     }
+    } // end wireSocket
 
     return () => {
+      cancelled = true;
       try {
-        if (joinedRef.current) socket.emit("leave_space", { spaceId });
-        socket.disconnect();
+        if (socket) {
+          if (joinedRef.current) socket.emit("leave_space", { spaceId });
+          socket.disconnect();
+        }
       } catch {}
       stopAllPublishing();
       Array.from(pcMapRef.current.keys()).forEach(closePeerConnection);

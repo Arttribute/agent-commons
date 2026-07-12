@@ -180,12 +180,33 @@ export default function SpaceMessaging({
   useEffect(() => {
     if (!spaceId) return;
     const wsUrl = WS_BASE;
-    const socket: Socket = io(`${wsUrl}/space-rtc`, {
-      transports: ["websocket"],
-      autoConnect: true,
-    });
-
+    let socket: Socket | undefined;
+    let cancelled = false;
     let joined = false;
+
+    (async () => {
+      // Fetch a capability ticket (the RTC gateway rejects socket
+      // connections that do not present a valid one).
+      let ticket: string | undefined;
+      try {
+        const res = await fetch(`/api/spaces/${spaceId}/rtc-ticket`, {
+          method: "POST",
+        });
+        if (res.ok) ticket = (await res.json())?.data?.ticket;
+      } catch (e) {
+        console.warn("[space-messaging] ticket request error:", e);
+      }
+      if (cancelled) return;
+
+      socket = io(`${wsUrl}/space-rtc`, {
+        transports: ["websocket"],
+        autoConnect: true,
+        auth: { ticket },
+      });
+      wireSocket(socket);
+    })();
+
+    function wireSocket(socket: Socket) {
     socket.on("connect", () => {
       const participantId =
         currentUserId || `viewer-${Math.random().toString(36).slice(2)}`;
@@ -298,14 +319,18 @@ export default function SpaceMessaging({
         return prev;
       });
     });
+    } // end wireSocket
 
     return () => {
+      cancelled = true;
       try {
-        if (joined) {
-          console.debug("[space-messaging] leaving space", spaceId);
-          socket.emit("leave_space", { spaceId });
+        if (socket) {
+          if (joined) {
+            console.debug("[space-messaging] leaving space", spaceId);
+            socket.emit("leave_space", { spaceId });
+          }
+          socket.disconnect();
         }
-        socket.disconnect();
       } catch {}
     };
   }, [spaceId, currentUserId]);

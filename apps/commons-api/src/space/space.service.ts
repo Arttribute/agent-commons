@@ -357,6 +357,28 @@ export class SpaceService {
     return !!member;
   }
 
+  /**
+   * Whether a human principal may connect to a space's live stream: they must
+   * be the creator, an active member, or the space must be public.
+   */
+  async canUserAccessSpace(
+    spaceId: string,
+    userId: string,
+  ): Promise<boolean> {
+    const space = await this.db.query.space.findFirst({
+      where: eq(schema.space.spaceId, spaceId),
+    });
+    if (!space) return false;
+    if (space.isPublic) return true;
+    if (
+      space.createdByType === 'human' &&
+      space.createdBy?.toLowerCase() === userId.toLowerCase()
+    ) {
+      return true;
+    }
+    return this.isMember(spaceId, userId, 'human');
+  }
+
   /* ─────────────────────────  MESSAGE MANAGEMENT  ───────────────────────── */
 
   async sendMessage(props: {

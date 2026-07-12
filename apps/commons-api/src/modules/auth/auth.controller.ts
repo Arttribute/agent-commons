@@ -12,6 +12,16 @@ import {
 import { ApiKeyService, ApiKeyPrincipal } from './api-key.service';
 import { CreateApiKeyDto } from './dto/api-key.dto';
 
+/** Service principals with these scopes may manage keys for any principal. */
+const KEY_ADMIN_SCOPES = ['platform:admin', 'legacy:delegate'];
+
+function isKeyAdmin(caller: ApiKeyPrincipal | undefined): boolean {
+  return (
+    caller?.principalType === 'service' &&
+    (caller.scopes?.some((s) => KEY_ADMIN_SCOPES.includes(s)) ?? false)
+  );
+}
+
 @Controller('v1/auth')
 export class AuthController {
   constructor(private readonly apiKeyService: ApiKeyService) {}
@@ -45,7 +55,7 @@ export class AuthController {
   async create(@Body() dto: CreateApiKeyDto, @Req() req: any) {
     const caller = req.principal as ApiKeyPrincipal | undefined;
 
-    if (caller) {
+    if (caller && !isKeyAdmin(caller)) {
       const isSelf =
         dto.principalId?.toLowerCase() === caller.principalId.toLowerCase() &&
         dto.principalType === caller.principalType;
@@ -77,7 +87,11 @@ export class AuthController {
   ) {
     const caller = req.principal as ApiKeyPrincipal | undefined;
 
-    if (caller && caller.principalId.toLowerCase() !== principalId?.toLowerCase()) {
+    if (
+      caller &&
+      !isKeyAdmin(caller) &&
+      caller.principalId.toLowerCase() !== principalId?.toLowerCase()
+    ) {
       throw new ForbiddenException('You can only list your own API keys');
     }
 
@@ -90,7 +104,7 @@ export class AuthController {
   @Delete('api-keys/:id')
   async revoke(@Param('id') id: string, @Req() req: any) {
     const caller = req.principal as ApiKeyPrincipal | undefined;
-    if (caller) {
+    if (caller && !isKeyAdmin(caller)) {
       const owner = await this.apiKeyService.getPrincipalForKey(id);
       if (
         !owner ||
