@@ -26,6 +26,9 @@ GRANT USAGE ON SCHEMA public TO commons_api;
 -- CREATE is required so the langgraph PostgresSaver checkpointer can run its
 -- setup() (CREATE TABLE/INDEX IF NOT EXISTS) at boot. Still NOBYPASSRLS.
 GRANT CREATE ON SCHEMA public TO commons_api;
+-- Database-level CREATE/TEMP: the checkpointer's setup() performs a
+-- database-scoped operation on connect.
+GRANT CREATE, TEMPORARY ON DATABASE CURRENT_CATALOG TO commons_api;
 GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO commons_api;
 GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO commons_api;
 
