@@ -55,6 +55,20 @@ export class BillingController {
     return { data };
   }
 
+  /** Billing history (Stripe invoices). */
+  @Get('invoices')
+  async invoices(@Req() req: Request) {
+    const data = await this.billing.listInvoices(caller(req).principalId);
+    return { data };
+  }
+
+  /** Saved payment methods (Stripe) for display. */
+  @Get('payment-methods')
+  async paymentMethods(@Req() req: Request) {
+    const data = await this.billing.listPaymentMethods(caller(req).principalId);
+    return { data };
+  }
+
   /** Start a subscription checkout for a plan. */
   @Post('checkout/subscription')
   async subscriptionCheckout(
