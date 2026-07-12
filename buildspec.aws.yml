@@ -39,7 +39,9 @@ phases:
             "$IMAGE_URI" node scripts/migrate.mjs
         fi
       - trap 'kill "${ALARM_GUARD_PID:-}" 2>/dev/null || true; wait "${ALARM_GUARD_PID:-}" 2>/dev/null || true; infra/aws/set-express-alarm-threshold.sh "$SERVICE_NAME" 1 || true' EXIT
-      - infra/aws/set-express-alarm-threshold.sh "$SERVICE_NAME" 100
+      # Non-fatal: the RollbackAlarm does not exist until the service is first
+      # created, so this is a no-op on the very first deploy of an environment.
+      - infra/aws/set-express-alarm-threshold.sh "$SERVICE_NAME" 100 || true
       - (while sleep 20; do infra/aws/set-express-alarm-threshold.sh "$SERVICE_NAME" 100 || true; done) & ALARM_GUARD_PID=$!
       - >-
         aws cloudformation deploy
@@ -63,7 +65,7 @@ phases:
       - curl --fail --show-error --silent --retry 18 --retry-delay 10 --retry-all-errors "${ENDPOINT%/}/health" | jq -e '.status == "ok"'
       - kill "$ALARM_GUARD_PID" 2>/dev/null || true
       - wait "$ALARM_GUARD_PID" 2>/dev/null || true
-      - infra/aws/set-express-alarm-threshold.sh "$SERVICE_NAME" 1
+      - infra/aws/set-express-alarm-threshold.sh "$SERVICE_NAME" 1 || true
       - trap - EXIT
       - printf '{"endpoint":"%s","image":"%s","environment":"%s"}\n' "$ENDPOINT" "$IMAGE_URI" "$ENVIRONMENT" > deployment.json
 
