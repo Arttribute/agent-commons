@@ -218,6 +218,34 @@ Verify (staging, test card `4242 4242 4242 4242`): subscribe to Plus →
 promo code → discounted, credits granted once; portal cancel → reverts at period
 end.
 
+## 8. Production launch cutover checklist
+
+Run after everything has been exercised on staging.
+
+1. **Migrations**: `RUN_MIGRATIONS=true` on the prod API deploy once so
+   001_rls → 004_feature_flags are applied to the fresh prod DB; confirm
+   `pnpm --filter commons-api migrate:status` shows all applied.
+2. **RLS role**: prod `POSTGRES_USER=commons_api` (+ password from step 1c);
+   verify the anon key gets `permission denied` on every table via PostgREST.
+3. **Rotate `API_SECRET_KEY`** (deferred from Phase 0): generate a new value,
+   update `agent-commons/commons-api/production` + Vercel `NEST_API_SECRET_KEY`,
+   redeploy the prod API + commons-app. Then set `MANAGEMENT_KEY_ENABLED=false`
+   once the API logs show no `management-key` warnings for ~2 weeks.
+4. **Stripe live**: complete section 7 in live mode; real $10 top-up + refund
+   smoke test; confirm the live webhook signing secret verifies.
+5. **Flip enforcement toggles on prod** (each independent):
+   `CREDIT_DEBITS_ENABLED=true`, `BILLING_ENFORCEMENT=true`,
+   `COMPUTE_METERING_ENABLED=true`, `BILLING_SWEEPER_ENABLED=true`.
+6. **Alarms**: CloudWatch on `/v1/billing/webhook` 5xx, CodeBuild failures, and
+   ECS CPU/health; page on webhook failures (Stripe will retry, but investigate).
+7. **Grandfather early users**: one-time comp grant via `POST /v1/credits/grants`
+   (service token with `credits:write`).
+8. **Runbook drills**: webhook replay (resend from the Stripe dashboard; the
+   `stripe_webhook_event` row makes it idempotent); RLS rollback (swap
+   `POSTGRES_USER` back); metering kill switch (`COMPUTE_METERING_ENABLED=false`).
+9. Confirm the GitHub **production** environment requires reviewers and the
+   `staging` branch protection is in place.
+
 ## Verify
 
 - Staging E2E: sign up at `staging.agentcommons.io` → create agent → chat →
