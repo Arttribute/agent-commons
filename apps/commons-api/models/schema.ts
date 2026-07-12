@@ -2376,6 +2376,82 @@ export const stripeWebhookEvent = pgTable('stripe_webhook_event', {
   processedAt: timestamp('processed_at', { withTimezone: true }),
 });
 
+/* ─────────────────────────  FEATURE FLAGS  ───────────────────────── */
+
+export const featureFlag = pgTable('feature_flag', {
+  flagKey: text('flag_key').primaryKey(),
+  description: text('description'),
+  enabled: pgBoolean('enabled').default(false).notNull(),
+  flagType: text('flag_type').default('boolean').notNull(), // 'boolean' | 'multivariate'
+  rolloutPercentage: integer('rollout_percentage').default(0).notNull(), // 0-100
+  variants: jsonb('variants').$type<
+    Array<{ key: string; weight: number; payload?: unknown }>
+  >(),
+  targeting: jsonb('targeting').$type<{
+    allowPrincipalIds?: string[];
+    denyPrincipalIds?: string[];
+    allowWorkspaceIds?: string[];
+    allowPlanKeys?: string[];
+  }>(),
+  salt: text('salt'),
+  archivedAt: timestamp('archived_at', { withTimezone: true }),
+  createdAt: timestamp('created_at', { withTimezone: true })
+    .default(sql`timezone('utc', now())`)
+    .notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true })
+    .default(sql`timezone('utc', now())`)
+    .notNull(),
+});
+
+// Per-subject pins that bypass rollout/targeting (support + QA).
+export const flagOverride = pgTable(
+  'flag_override',
+  {
+    id: uuid('id')
+      .default(sql`gen_random_uuid()`)
+      .primaryKey(),
+    flagKey: text('flag_key').notNull(),
+    subjectType: text('subject_type').notNull(), // 'user' | 'workspace'
+    subjectId: text('subject_id').notNull(),
+    variantKey: text('variant_key'),
+    enabled: pgBoolean('enabled'),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .default(sql`timezone('utc', now())`)
+      .notNull(),
+  },
+  (table) => ({
+    subjectIdx: uniqueIndex('flag_override_subject_idx').on(
+      table.flagKey,
+      table.subjectType,
+      table.subjectId,
+    ),
+  }),
+);
+
+// First exposure per principal per flag — the join key for A/B analysis.
+export const flagExposure = pgTable(
+  'flag_exposure',
+  {
+    id: uuid('id')
+      .default(sql`gen_random_uuid()`)
+      .primaryKey(),
+    flagKey: text('flag_key').notNull(),
+    principalId: text('principal_id').notNull(),
+    workspaceId: text('workspace_id'),
+    variantKey: text('variant_key'),
+    context: jsonb('context').$type<Record<string, unknown>>(),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .default(sql`timezone('utc', now())`)
+      .notNull(),
+  },
+  (table) => ({
+    exposureIdx: uniqueIndex('flag_exposure_flag_principal_idx').on(
+      table.flagKey,
+      table.principalId,
+    ),
+  }),
+);
+
 /* ─────────────────────────  API KEYS  ───────────────────────── */
 
 export const activityEvent = pgTable('activity_event', {

@@ -1078,6 +1078,15 @@ export interface SubscriptionInfo {
   cancelAtPeriodEnd: boolean;
 }
 
+// ─── Feature flags ──────────────────────────────────────────────────────────
+
+export interface FlagEvaluation {
+  key: string;
+  enabled: boolean;
+  variant: string | null;
+  payload?: unknown;
+}
+
 // ─── Wallet ───────────────────────────────────────────────────────────────────
 
 export type WalletType = "eoa" | "erc4337" | "external";

@@ -29,6 +29,7 @@ import {
   CreditWriteParams,
   SubscriptionInfo,
   PlanEntitlements,
+  FlagEvaluation,
   AgentMemory,
   MemoryStats,
   MemoryType,
@@ -1367,6 +1368,20 @@ export class CommonsClient {
       /** Open the Stripe billing portal. */
       portal: (): Promise<{ data: { url: string } }> =>
         this.request("POST", "/v1/billing/portal", {}),
+    };
+  }
+
+  // ── Feature flags ────────────────────────────────────────────────────────
+
+  get flags() {
+    return {
+      /** Evaluate all active flags for the caller (call once at boot). */
+      all: (): Promise<{ data: Record<string, FlagEvaluation> }> =>
+        this.request("GET", "/v1/flags"),
+
+      /** Evaluate a single flag for the caller. */
+      evaluate: (key: string): Promise<{ data: FlagEvaluation }> =>
+        this.request("GET", `/v1/flags/${encodeURIComponent(key)}`),
     };
   }
 }

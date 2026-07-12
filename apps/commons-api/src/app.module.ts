@@ -27,6 +27,7 @@ import { X402Module } from './modules/x402';
 import { ActivityModule } from './activity/activity.module';
 import { CreditModule } from './credit';
 import { BillingModule } from './billing/billing.module';
+import { FlagModule } from './flags/flag.module';
 import { FilesModule } from './files';
 import { ComputerModule } from './computer';
 import { AudioModule } from './audio';
@@ -56,6 +57,7 @@ import { AudioModule } from './audio';
     UsageModule,
     CreditModule,
     BillingModule,
+    FlagModule,
     FilesModule,
     ComputerModule,
     AudioModule,

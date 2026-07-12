@@ -37,6 +37,8 @@ export type {
   ApiKey, CreatedApiKey, CreateApiKeyParams, ApiKeyPrincipalType,
   // Billing
   PlanKey, ComputeProfile, ModelTier, PlanEntitlements, SubscriptionInfo,
+  // Feature flags
+  FlagEvaluation,
   CommonsClientConfig,
 } from './types';
 export type {
