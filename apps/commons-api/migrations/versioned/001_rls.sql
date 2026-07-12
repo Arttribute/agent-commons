@@ -23,6 +23,9 @@ BEGIN
 END $$;
 
 GRANT USAGE ON SCHEMA public TO commons_api;
+-- CREATE is required so the langgraph PostgresSaver checkpointer can run its
+-- setup() (CREATE TABLE/INDEX IF NOT EXISTS) at boot. Still NOBYPASSRLS.
+GRANT CREATE ON SCHEMA public TO commons_api;
 GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO commons_api;
 GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO commons_api;
 
@@ -31,6 +34,26 @@ ALTER DEFAULT PRIVILEGES IN SCHEMA public
   GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO commons_api;
 ALTER DEFAULT PRIVILEGES IN SCHEMA public
   GRANT USAGE, SELECT ON SEQUENCES TO commons_api;
+
+-- The app owns its schema: it runs boot-time schema migrations (ALTER TABLE)
+-- and the langgraph checkpointer's setup() (CREATE), both of which require
+-- ownership. Transfer ownership of the public schema objects to commons_api.
+-- (The migration runner connects as the admin/postgres role, which must be a
+-- member of commons_api to reassign ownership to it.)
+GRANT commons_api TO CURRENT_USER;
+DO $$
+DECLARE r record;
+BEGIN
+  FOR r IN SELECT tablename FROM pg_tables WHERE schemaname = 'public' LOOP
+    EXECUTE format('ALTER TABLE public.%I OWNER TO commons_api', r.tablename);
+  END LOOP;
+  FOR r IN SELECT sequencename FROM pg_sequences WHERE schemaname = 'public' LOOP
+    EXECUTE format('ALTER SEQUENCE public.%I OWNER TO commons_api', r.sequencename);
+  END LOOP;
+  FOR r IN SELECT table_name FROM information_schema.views WHERE table_schema = 'public' LOOP
+    EXECUTE format('ALTER VIEW public.%I OWNER TO commons_api', r.table_name);
+  END LOOP;
+END $$;
 
 -- 2. Enable RLS on every base table with a blanket allow for commons_api, and
 --    revoke direct access from the PostgREST roles. Runs over all current
