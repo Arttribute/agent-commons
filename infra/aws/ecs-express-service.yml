@@ -2,6 +2,17 @@ AWSTemplateFormatVersion: "2010-09-09"
 Description: Agent Commons API ECS Express Mode service.
 
 Parameters:
+  Environment:
+    Type: String
+    Default: production
+    AllowedValues:
+      - production
+      - staging
+    Description: Deployment environment; drives resource names and tags.
+  MaxTasks:
+    Type: Number
+    Default: 4
+    Description: Max task count for autoscaling (staging typically 1).
   ImageUri:
     Type: String
   ExecutionRoleArn:
@@ -24,7 +35,7 @@ Resources:
   ApiService:
     Type: AWS::ECS::ExpressGatewayService
     Properties:
-      ServiceName: agent-commons-api-production
+      ServiceName: !Sub agent-commons-api-${Environment}
       Cluster: default
       ExecutionRoleArn: !Ref ExecutionRoleArn
       TaskRoleArn: !Ref TaskRoleArn
@@ -38,6 +49,8 @@ Resources:
         Environment:
           - Name: NODE_ENV
             Value: production
+          - Name: APP_ENV
+            Value: !Ref Environment
           - Name: HOST
             Value: 0.0.0.0
           - Name: LOG_LEVEL
@@ -111,9 +124,19 @@ Resources:
             ValueFrom: !Sub "${RuntimeSecretArn}:COMMON_OS_COMPUTER_API::"
           - Name: COMMON_OS_API_BASE_PATH
             ValueFrom: !Sub "${RuntimeSecretArn}:COMMON_OS_API_BASE_PATH::"
+          - Name: CORS_ORIGIN
+            ValueFrom: !Sub "${RuntimeSecretArn}:CORS_ORIGIN::"
+          - Name: POSTGRES_SSL
+            ValueFrom: !Sub "${RuntimeSecretArn}:POSTGRES_SSL::"
+          - Name: SSRF_ALLOW_HOSTS
+            ValueFrom: !Sub "${RuntimeSecretArn}:SSRF_ALLOW_HOSTS::"
+          - Name: SPACE_RTC_TICKET_SECRET
+            ValueFrom: !Sub "${RuntimeSecretArn}:SPACE_RTC_TICKET_SECRET::"
+          - Name: MANAGEMENT_KEY_ENABLED
+            ValueFrom: !Sub "${RuntimeSecretArn}:MANAGEMENT_KEY_ENABLED::"
       ScalingTarget:
         MinTaskCount: 1
-        MaxTaskCount: 4
+        MaxTaskCount: !Ref MaxTasks
         AutoScalingMetric: AVERAGE_CPU
         AutoScalingTargetValue: 70
       Tags:
@@ -122,7 +145,7 @@ Resources:
         - Key: Project
           Value: agent-commons
         - Key: Environment
-          Value: production
+          Value: !Ref Environment
 
 Outputs:
   Endpoint:

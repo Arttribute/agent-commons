@@ -1,14 +1,44 @@
 AWSTemplateFormatVersion: "2010-09-09"
 Description: Bootstrap resources for Commons Identity and the unified Commons API gateway.
 
+# Deploy once per environment. Shared ECR repos are created by the production
+# stack only; staging references them by name. Secrets, IAM roles, and the
+# CodeBuild project are per-environment. Production physical names are unchanged.
+
 Parameters:
+  Environment:
+    Type: String
+    Default: production
+    AllowedValues: [production, staging]
   SourceBucketName:
     Type: String
     Default: agent-commons-cicd-286273777416-eu-west-1
+  IdentityEcrRepositoryName:
+    Type: String
+    Default: agent-commons/identity
+  GatewayEcrRepositoryName:
+    Type: String
+    Default: agent-commons/api-gateway
+  # Per-environment values threaded into the CodeBuild project. The internal
+  # URLs are the ECS service endpoints for the target environment (set by the
+  # operator once the api/compute services for that environment exist).
+  IdentityIssuerUrl:
+    Type: String
+    Default: "https://auth.agentcommons.io/api/auth"
+  AgentCommonsInternalUrl:
+    Type: String
+    Default: "https://ag-7e8bac7021504d988073ef19cc0ea6ad.ecs.eu-west-1.on.aws"
+  CommonOsInternalUrl:
+    Type: String
+    Default: "https://co-34acbf16a9a0464c8be79137d4f7bbd6.ecs.eu-west-1.on.aws"
+
+Conditions:
+  IsProduction: !Equals [!Ref Environment, production]
 
 Resources:
   IdentityRepository:
     Type: AWS::ECR::Repository
+    Condition: IsProduction
     Properties:
       RepositoryName: agent-commons/identity
       ImageScanningConfiguration: { ScanOnPush: true }
@@ -19,6 +49,7 @@ Resources:
 
   GatewayRepository:
     Type: AWS::ECR::Repository
+    Condition: IsProduction
     Properties:
       RepositoryName: agent-commons/api-gateway
       ImageScanningConfiguration: { ScanOnPush: true }
@@ -30,21 +61,21 @@ Resources:
   IdentityRuntimeSecret:
     Type: AWS::SecretsManager::Secret
     Properties:
-      Name: agent-commons/identity/production
-      Description: Commons Identity production runtime configuration.
+      Name: !Sub agent-commons/identity/${Environment}
+      Description: !Sub Commons Identity ${Environment} runtime configuration.
       SecretString: "{}"
 
   GatewayRuntimeSecret:
     Type: AWS::SecretsManager::Secret
     Properties:
-      Name: agent-commons/api-gateway/production
-      Description: Commons API gateway production runtime configuration.
+      Name: !Sub agent-commons/api-gateway/${Environment}
+      Description: !Sub Commons API gateway ${Environment} runtime configuration.
       SecretString: "{}"
 
   TaskExecutionRole:
     Type: AWS::IAM::Role
     Properties:
-      RoleName: commons-platform-task-execution
+      RoleName: !If [IsProduction, commons-platform-task-execution, !Sub "commons-platform-${Environment}-task-execution"]
       AssumeRolePolicyDocument:
         Version: "2012-10-17"
         Statement:
@@ -67,7 +98,7 @@ Resources:
   InfrastructureRole:
     Type: AWS::IAM::Role
     Properties:
-      RoleName: commons-platform-ecs-infrastructure
+      RoleName: !If [IsProduction, commons-platform-ecs-infrastructure, !Sub "commons-platform-${Environment}-ecs-infra"]
       AssumeRolePolicyDocument:
         Version: "2012-10-17"
         Statement:
@@ -80,7 +111,7 @@ Resources:
   CodeBuildRole:
     Type: AWS::IAM::Role
     Properties:
-      RoleName: commons-platform-codebuild
+      RoleName: !If [IsProduction, commons-platform-codebuild, !Sub "commons-platform-${Environment}-codebuild"]
       AssumeRolePolicyDocument:
         Version: "2012-10-17"
         Statement:
@@ -137,8 +168,8 @@ Resources:
                   - ecr:PutImage
                   - ecr:UploadLayerPart
                 Resource:
-                  - !GetAtt IdentityRepository.Arn
-                  - !GetAtt GatewayRepository.Arn
+                  - !Sub arn:aws:ecr:${AWS::Region}:${AWS::AccountId}:repository/${IdentityEcrRepositoryName}
+                  - !Sub arn:aws:ecr:${AWS::Region}:${AWS::AccountId}:repository/${GatewayEcrRepositoryName}
               - Effect: Allow
                 Action: iam:PassRole
                 Resource:
@@ -148,7 +179,7 @@ Resources:
   BuildProject:
     Type: AWS::CodeBuild::Project
     Properties:
-      Name: commons-platform-production
+      Name: !If [IsProduction, commons-platform-production, !Sub "commons-platform-${Environment}"]
       ServiceRole: !GetAtt CodeBuildRole.Arn
       Source:
         Type: S3
@@ -163,10 +194,18 @@ Resources:
         EnvironmentVariables:
           - Name: AWS_ACCOUNT_ID
             Value: !Ref AWS::AccountId
+          - Name: ENVIRONMENT
+            Value: !Ref Environment
           - Name: IDENTITY_ECR_REPOSITORY
-            Value: !Ref IdentityRepository
+            Value: !Ref IdentityEcrRepositoryName
           - Name: GATEWAY_ECR_REPOSITORY
-            Value: !Ref GatewayRepository
+            Value: !Ref GatewayEcrRepositoryName
+          - Name: IDENTITY_ISSUER_URL
+            Value: !Ref IdentityIssuerUrl
+          - Name: AGENT_COMMONS_INTERNAL_URL
+            Value: !Ref AgentCommonsInternalUrl
+          - Name: COMMON_OS_INTERNAL_URL
+            Value: !Ref CommonOsInternalUrl
           - Name: TASK_EXECUTION_ROLE_ARN
             Value: !GetAtt TaskExecutionRole.Arn
           - Name: INFRASTRUCTURE_ROLE_ARN

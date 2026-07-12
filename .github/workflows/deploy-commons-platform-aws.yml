@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - main
+      - staging
     paths:
       - apps/commons-api-gateway/**
       - apps/commons-identity/**
@@ -17,7 +18,7 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: deploy-commons-platform-aws-production
+  group: deploy-commons-platform-aws-${{ github.ref_name }}
   cancel-in-progress: false
 
 permissions:
@@ -28,7 +29,7 @@ jobs:
   deploy:
     name: Build and deploy platform in AWS
     runs-on: ubuntu-latest
-    environment: production
+    environment: ${{ github.ref_name == 'main' && 'production' || 'staging' }}
 
     steps:
       - name: Checkout
@@ -57,7 +58,7 @@ jobs:
         id: build
         run: |
           build_id=$(aws codebuild start-build \
-            --project-name commons-platform-production \
+            --project-name "${{ vars.AWS_PLATFORM_CODEBUILD_PROJECT || 'commons-platform-production' }}" \
             --source-version "${{ steps.source.outputs.version_id }}" \
             --environment-variables-override name=DEPLOY_IDENTITY,value=true,type=PLAINTEXT \
             --query 'build.id' --output text)

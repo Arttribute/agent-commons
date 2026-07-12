@@ -12,18 +12,25 @@ import { escapeHtml, page, safeReturnPath } from "./ui.js";
 import { createPlatformRouter } from "./platform.js";
 
 const baseUrl = process.env.BETTER_AUTH_URL ?? "http://localhost:3010";
+// Per-app return-to/dashboard URLs default to the production domains but can be
+// overridden per environment (e.g. staging) via env vars.
 const nativeApps = {
   commonlabs: {
     name: "CommonLab",
-    defaultReturnTo: "https://commonlab.agentcommons.io/auth/signin",
+    defaultReturnTo:
+      process.env.RETURN_TO_COMMONLABS ??
+      "https://commonlab.agentcommons.io/auth/signin",
   },
   "agent-commons": {
     name: "Agent Commons",
-    defaultReturnTo: "https://www.agentcommons.io/login",
+    defaultReturnTo:
+      process.env.RETURN_TO_AGENT_COMMONS ??
+      "https://www.agentcommons.io/login",
   },
   "common-os": {
     name: "CommonOS",
-    defaultReturnTo: "https://os.agentcommons.io/auth",
+    defaultReturnTo:
+      process.env.RETURN_TO_COMMON_OS ?? "https://os.agentcommons.io/auth",
   },
 } as const;
 
@@ -557,10 +564,13 @@ app.post("/api/identity/apps/:app/activate", async (c) => {
             : "Your agent workspace is ready. Your existing agents and sessions stay attached to this identity.",
       url:
         appId === "commonlabs"
-          ? "https://commonlab.agentcommons.io/dashboard"
+          ? (process.env.DASHBOARD_URL_COMMONLABS ??
+            "https://commonlab.agentcommons.io/dashboard")
           : appId === "common-os"
-            ? "https://os.agentcommons.io/dashboard"
-            : "https://www.agentcommons.io/agents",
+            ? (process.env.DASHBOARD_URL_COMMON_OS ??
+              "https://os.agentcommons.io/dashboard")
+            : (process.env.DASHBOARD_URL_AGENT_COMMONS ??
+              "https://www.agentcommons.io/agents"),
       template: appId === "commonlabs" ? "commonlab" : "default",
     });
   }

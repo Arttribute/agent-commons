@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - main
+      - staging
     paths:
       - apps/commons-api/**
       - infra/aws/**
@@ -16,7 +17,8 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: deploy-commons-api-aws-production
+  # One in-flight deploy per environment (branch).
+  group: deploy-commons-api-aws-${{ github.ref_name }}
   cancel-in-progress: false
 
 permissions:
@@ -27,7 +29,8 @@ jobs:
   deploy:
     name: Build and deploy in AWS
     runs-on: ubuntu-latest
-    environment: production
+    # main -> production GitHub environment; any other branch -> staging.
+    environment: ${{ github.ref_name == 'main' && 'production' || 'staging' }}
 
     steps:
       - name: Checkout

@@ -1,7 +1,17 @@
 AWSTemplateFormatVersion: "2010-09-09"
 Description: Bootstrap resources for deploying commons-api to Amazon ECS Express Mode.
 
+# Deploy once per environment. Account-global resources (ECR repo, source
+# bucket, OIDC provider) are created only by the production stack; the staging
+# stack references them by name/ARN so both environments share images and CI
+# source while keeping their own secret, IAM roles, files bucket, and CodeBuild
+# project. Production physical names are unchanged for continuity.
+
 Parameters:
+  Environment:
+    Type: String
+    Default: production
+    AllowedValues: [production, staging]
   GitHubOrganization:
     Type: String
     Default: Arttribute
@@ -14,14 +24,27 @@ Parameters:
   ExistingGitHubOidcProviderArn:
     Type: String
     Default: ""
-    Description: Leave empty to create the GitHub Actions OIDC provider in this account.
+    Description: Leave empty to create the GitHub Actions OIDC provider in this account (production only).
+  SharedEcrRepositoryName:
+    Type: String
+    Default: agent-commons/commons-api
+    Description: ECR repo name (shared across envs; created by the production stack).
+  SharedSourceBucketName:
+    Type: String
+    Default: ""
+    Description: For staging, the CI source bucket name created by the production stack. Ignored for production.
 
 Conditions:
-  CreateGitHubOidcProvider: !Equals [!Ref ExistingGitHubOidcProviderArn, ""]
+  IsProduction: !Equals [!Ref Environment, production]
+  CreateGitHubOidcProvider: !And
+    - !Equals [!Ref ExistingGitHubOidcProviderArn, ""]
+    - !Condition IsProduction
 
 Resources:
+  # ── Shared account-global resources (production stack only) ──────────────
   ApiRepository:
     Type: AWS::ECR::Repository
+    Condition: IsProduction
     Properties:
       RepositoryName: agent-commons/commons-api
       ImageScanningConfiguration:
@@ -32,7 +55,7 @@ Resources:
           {
             "rules": [{
               "rulePriority": 1,
-              "description": "Keep the latest 30 production images",
+              "description": "Keep the latest 30 images",
               "selection": {
                 "tagStatus": "any",
                 "countType": "imageCountMoreThan",
@@ -42,15 +65,9 @@ Resources:
             }]
           }
 
-  ApiRuntimeSecret:
-    Type: AWS::SecretsManager::Secret
-    Properties:
-      Name: agent-commons/commons-api/production
-      Description: Runtime environment variables for the production commons-api service.
-      SecretString: "{}"
-
   SourceBucket:
     Type: AWS::S3::Bucket
+    Condition: IsProduction
     Properties:
       BucketName: !Sub agent-commons-cicd-${AWS::AccountId}-${AWS::Region}
       VersioningConfiguration:
@@ -61,10 +78,31 @@ Resources:
         IgnorePublicAcls: true
         RestrictPublicBuckets: true
 
+  GitHubOidcProvider:
+    Type: AWS::IAM::OIDCProvider
+    Condition: CreateGitHubOidcProvider
+    Properties:
+      Url: https://token.actions.githubusercontent.com
+      ClientIdList:
+        - sts.amazonaws.com
+      ThumbprintList:
+        - 6938fd4d98bab03faadb97b34396831e3780aea1
+
+  # ── Per-environment resources ────────────────────────────────────────────
+  ApiRuntimeSecret:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Name: !Sub agent-commons/commons-api/${Environment}
+      Description: !Sub Runtime environment variables for the ${Environment} commons-api service.
+      SecretString: "{}"
+
   AgentFilesBucket:
     Type: AWS::S3::Bucket
     Properties:
-      BucketName: !Sub agent-commons-files-${AWS::AccountId}-${AWS::Region}
+      BucketName: !If
+        - IsProduction
+        - !Sub agent-commons-files-${AWS::AccountId}-${AWS::Region}
+        - !Sub agent-commons-files-${Environment}-${AWS::AccountId}-${AWS::Region}
       VersioningConfiguration:
         Status: Enabled
       BucketEncryption:
@@ -83,20 +121,10 @@ Resources:
             AbortIncompleteMultipartUpload:
               DaysAfterInitiation: 7
 
-  GitHubOidcProvider:
-    Type: AWS::IAM::OIDCProvider
-    Condition: CreateGitHubOidcProvider
-    Properties:
-      Url: https://token.actions.githubusercontent.com
-      ClientIdList:
-        - sts.amazonaws.com
-      ThumbprintList:
-        - 6938fd4d98bab03faadb97b34396831e3780aea1
-
   TaskExecutionRole:
     Type: AWS::IAM::Role
     Properties:
-      RoleName: agent-commons-api-task-execution
+      RoleName: !If [IsProduction, agent-commons-api-task-execution, !Sub "agent-commons-api-${Environment}-task-execution"]
       AssumeRolePolicyDocument:
         Version: "2012-10-17"
         Statement:
@@ -118,7 +146,7 @@ Resources:
   ApiTaskRole:
     Type: AWS::IAM::Role
     Properties:
-      RoleName: agent-commons-api-task
+      RoleName: !If [IsProduction, agent-commons-api-task, !Sub "agent-commons-api-${Environment}-task"]
       AssumeRolePolicyDocument:
         Version: "2012-10-17"
         Statement:
@@ -145,7 +173,7 @@ Resources:
   InfrastructureRole:
     Type: AWS::IAM::Role
     Properties:
-      RoleName: agent-commons-api-ecs-infrastructure
+      RoleName: !If [IsProduction, agent-commons-api-ecs-infrastructure, !Sub "agent-commons-api-${Environment}-ecs-infra"]
       AssumeRolePolicyDocument:
         Version: "2012-10-17"
         Statement:
@@ -159,7 +187,7 @@ Resources:
   GitHubDeployRole:
     Type: AWS::IAM::Role
     Properties:
-      RoleName: agent-commons-api-github-deploy
+      RoleName: !If [IsProduction, agent-commons-api-github-deploy, !Sub "agent-commons-api-${Environment}-github-deploy"]
       AssumeRolePolicyDocument:
         Version: "2012-10-17"
         Statement:
@@ -168,7 +196,10 @@ Resources:
               Federated: !If
                 - CreateGitHubOidcProvider
                 - !Ref GitHubOidcProvider
-                - !Ref ExistingGitHubOidcProviderArn
+                - !If
+                  - IsProduction
+                  - !Ref ExistingGitHubOidcProviderArn
+                  - !Sub arn:aws:iam::${AWS::AccountId}:oidc-provider/token.actions.githubusercontent.com
             Action: sts:AssumeRoleWithWebIdentity
             Condition:
               StringEquals:
@@ -184,20 +215,29 @@ Resources:
                   - s3:PutObject
                   - s3:GetObject
                 Resource:
-                  - !Sub ${SourceBucket.Arn}/agent-commons/*
-                  - !Sub ${SourceBucket.Arn}/commons-platform/*
+                  - !Sub
+                    - arn:aws:s3:::${Bucket}/agent-commons/*
+                    - Bucket: !If [IsProduction, !Ref SourceBucket, !Ref SharedSourceBucketName]
+                  - !Sub
+                    - arn:aws:s3:::${Bucket}/commons-platform/*
+                    - Bucket: !If [IsProduction, !Ref SourceBucket, !Ref SharedSourceBucketName]
               - Effect: Allow
                 Action:
                   - codebuild:StartBuild
                   - codebuild:BatchGetBuilds
                 Resource:
                   - !GetAtt ApiBuildProject.Arn
-                  - !Sub arn:aws:codebuild:${AWS::Region}:${AWS::AccountId}:project/commons-platform-production
+                  # Also allow triggering the platform (identity+gateway) build,
+                  # which shares this deploy role.
+                  - !If
+                    - IsProduction
+                    - !Sub arn:aws:codebuild:${AWS::Region}:${AWS::AccountId}:project/commons-platform-production
+                    - !Sub arn:aws:codebuild:${AWS::Region}:${AWS::AccountId}:project/commons-platform-${Environment}
 
   CodeBuildRole:
     Type: AWS::IAM::Role
     Properties:
-      RoleName: agent-commons-api-codebuild
+      RoleName: !If [IsProduction, agent-commons-api-codebuild, !Sub "agent-commons-api-${Environment}-codebuild"]
       AssumeRolePolicyDocument:
         Version: "2012-10-17"
         Statement:
@@ -243,10 +283,15 @@ Resources:
                   - ecs:UntagResource
                 Resource: "*"
               - Effect: Allow
+                Action: secretsmanager:GetSecretValue
+                Resource: !Ref ApiRuntimeSecret
+              - Effect: Allow
                 Action:
                   - s3:GetObject
                   - s3:GetObjectVersion
-                Resource: !Sub ${SourceBucket.Arn}/agent-commons/*
+                Resource: !Sub
+                  - arn:aws:s3:::${Bucket}/agent-commons/*
+                  - Bucket: !If [IsProduction, !Ref SourceBucket, !Ref SharedSourceBucketName]
               - Effect: Allow
                 Action:
                   - ecr:BatchCheckLayerAvailability
@@ -255,7 +300,7 @@ Resources:
                   - ecr:InitiateLayerUpload
                   - ecr:PutImage
                   - ecr:UploadLayerPart
-                Resource: !GetAtt ApiRepository.Arn
+                Resource: !Sub arn:aws:ecr:${AWS::Region}:${AWS::AccountId}:repository/${SharedEcrRepositoryName}
               - Effect: Allow
                 Action: iam:PassRole
                 Resource:
@@ -266,11 +311,13 @@ Resources:
   ApiBuildProject:
     Type: AWS::CodeBuild::Project
     Properties:
-      Name: agent-commons-api-production
+      Name: !If [IsProduction, agent-commons-api-production, !Sub "agent-commons-api-${Environment}"]
       ServiceRole: !GetAtt CodeBuildRole.Arn
       Source:
         Type: S3
-        Location: !Sub ${SourceBucket}/agent-commons/source.zip
+        Location: !Sub
+          - ${Bucket}/agent-commons/source.zip
+          - Bucket: !If [IsProduction, !Ref SourceBucket, !Ref SharedSourceBucketName]
         BuildSpec: buildspec.aws.yml
       Artifacts:
         Type: NO_ARTIFACTS
@@ -282,8 +329,12 @@ Resources:
         EnvironmentVariables:
           - Name: AWS_ACCOUNT_ID
             Value: !Ref AWS::AccountId
+          - Name: ENVIRONMENT
+            Value: !Ref Environment
+          - Name: MAX_TASKS
+            Value: !If [IsProduction, "4", "1"]
           - Name: ECR_REPOSITORY
-            Value: !Ref ApiRepository
+            Value: !Ref SharedEcrRepositoryName
           - Name: TASK_EXECUTION_ROLE_ARN
             Value: !GetAtt TaskExecutionRole.Arn
           - Name: TASK_ROLE_ARN
@@ -304,7 +355,7 @@ Outputs:
   AwsRegion:
     Value: !Ref AWS::Region
   EcrRepository:
-    Value: !Ref ApiRepository
+    Value: !Ref SharedEcrRepositoryName
   GitHubDeployRoleArn:
     Value: !GetAtt GitHubDeployRole.Arn
   TaskExecutionRoleArn:
@@ -316,7 +367,7 @@ Outputs:
   RuntimeSecretArn:
     Value: !Ref ApiRuntimeSecret
   SourceBucketName:
-    Value: !Ref SourceBucket
+    Value: !If [IsProduction, !Ref SourceBucket, !Ref SharedSourceBucketName]
   AgentFilesBucketName:
     Value: !Ref AgentFilesBucket
   CodeBuildProjectName:

@@ -23,7 +23,13 @@ export const DatabaseServiceProvider: FactoryProvider<
       database: process.env.POSTGRES_DATABASE || '',
       user: process.env.POSTGRES_USER || '',
       password: process.env.POSTGRES_PASSWORD || '',
-      ssl: false,
+      // Managed Postgres (e.g. a dedicated staging/prod instance not behind the
+      // Supabase pooler) may require TLS. POSTGRES_SSL=require opts in without
+      // pinning a CA, matching the pooler's behavior.
+      ssl:
+        process.env.POSTGRES_SSL === 'require'
+          ? { rejectUnauthorized: false }
+          : false,
       prepare: isLambda ? false : undefined,
       connection: {
         search_path: 'public',
