@@ -134,6 +134,22 @@ Resources:
             ValueFrom: !Sub "${RuntimeSecretArn}:SPACE_RTC_TICKET_SECRET::"
           - Name: MANAGEMENT_KEY_ENABLED
             ValueFrom: !Sub "${RuntimeSecretArn}:MANAGEMENT_KEY_ENABLED::"
+          - Name: STRIPE_SECRET_KEY
+            ValueFrom: !Sub "${RuntimeSecretArn}:STRIPE_SECRET_KEY::"
+          - Name: STRIPE_WEBHOOK_SECRET
+            ValueFrom: !Sub "${RuntimeSecretArn}:STRIPE_WEBHOOK_SECRET::"
+          - Name: STRIPE_PRICE_PLUS
+            ValueFrom: !Sub "${RuntimeSecretArn}:STRIPE_PRICE_PLUS::"
+          - Name: STRIPE_PRICE_PRO
+            ValueFrom: !Sub "${RuntimeSecretArn}:STRIPE_PRICE_PRO::"
+          - Name: STRIPE_PRICE_MAX
+            ValueFrom: !Sub "${RuntimeSecretArn}:STRIPE_PRICE_MAX::"
+          - Name: STRIPE_PRICE_TOPUP_SMALL
+            ValueFrom: !Sub "${RuntimeSecretArn}:STRIPE_PRICE_TOPUP_SMALL::"
+          - Name: STRIPE_PRICE_TOPUP_MEDIUM
+            ValueFrom: !Sub "${RuntimeSecretArn}:STRIPE_PRICE_TOPUP_MEDIUM::"
+          - Name: STRIPE_PRICE_TOPUP_LARGE
+            ValueFrom: !Sub "${RuntimeSecretArn}:STRIPE_PRICE_TOPUP_LARGE::"
       ScalingTarget:
         MinTaskCount: 1
         MaxTaskCount: !Ref MaxTasks

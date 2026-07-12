@@ -8,3 +8,7 @@ node_modules
 !.env.*.example
 
 .vercel
+
+# Supabase CLI local link state
+supabase/.temp
+supabase/.branches

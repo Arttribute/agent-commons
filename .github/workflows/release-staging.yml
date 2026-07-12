@@ -1,0 +1,61 @@
+name: Release (staging snapshot)
+
+# Every push to `staging` publishes a canary build of the SDK + CLI to the npm
+# `staging` dist-tag, using changesets snapshot releases. Versions look like
+# `1.4.0-staging-20260712120000` and are installable with:
+#     pnpm add @agent-commons/sdk@staging
+#     npm i -g @agent-commons/cli@staging
+#
+# Production consumers always get the stable `latest` tag published from `main`
+# by release.yml. Snapshot releases do NOT consume changeset files or bump the
+# committed versions, so the changelog/version history stays clean and driven
+# solely by the main-branch "Version Packages" PR flow.
+
+on:
+  push:
+    branches:
+      - staging
+    paths:
+      - packages/**
+      - .changeset/**
+      - .github/workflows/release-staging.yml
+
+concurrency:
+  group: release-staging
+  cancel-in-progress: true
+
+jobs:
+  snapshot:
+    name: Publish staging snapshot
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.3
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: https://registry.npmjs.org
+
+      - name: Install dependencies
+        run: pnpm install --no-frozen-lockfile
+
+      - name: Build packages
+        run: pnpm --filter './packages/*' run build
+
+      - name: Version as snapshot
+        run: pnpm changeset version --snapshot staging
+
+      - name: Publish to the `staging` dist-tag
+        run: pnpm changeset publish --tag staging --no-git-tag
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          HUSKY: 0
