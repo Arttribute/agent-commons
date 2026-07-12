@@ -1,7 +1,10 @@
-import { Controller, Get, Param, Query } from '@nestjs/common';
+import { Controller, Get, Param, Query, UseGuards } from '@nestjs/common';
 import { LogService } from './log.service';
+import { OwnerGuard, OwnerOnly } from '~/modules/auth';
 
 @Controller({ version: '1', path: 'logs' })
+@UseGuards(OwnerGuard)
+@OwnerOnly({ table: 'agent', idParam: 'agentId' })
 export class LogController {
   constructor(private readonly logService: LogService) {}
 

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { supabase } from "@/lib/supabase";
+import { fetchAgentLogs } from "@/lib/agent-logs";
 import { ToolsUsageGraph } from "@/components/tools/stats/tools-usage-graph";
 import { ToolsUsageTable } from "@/components/tools/stats/tools-usage-table";
 import {
@@ -89,35 +89,23 @@ export function ToolsUsageStatistics({ agentId }: UsageStatisticsProps) {
   useEffect(() => {
     async function fetchLogs() {
       if (!agentId) return;
-      console.log("Fetching logs for agent", agentId);
-
       setLoading(true);
 
       const { start, end } = getTimeRange(timeSpan);
-
-      // We'll query logs for this agent between start and end
-      // Make sure your `agent_log` has a `created_at` or date column
-      // You might also need to convert your times to a string or timestamp for comparison
-      const { data, error } = await supabase
-        .from("agent_log")
-        .select("*")
-        .eq("agent_id", agentId)
-        .gte("created_at", start.toISOString())
-        .lte("created_at", end.toISOString())
-        .order("created_at", { ascending: true }); // earliest first
+      const all = await fetchAgentLogs(agentId, { limit: 200 });
+      // Time-range filtering is done client-side over the recent window.
+      const filtered = all
+        .filter((l) => {
+          const t = new Date(l.created_at).getTime();
+          return t >= start.getTime() && t <= end.getTime();
+        })
+        .sort(
+          (a, b) =>
+            new Date(a.created_at).getTime() - new Date(b.created_at).getTime(),
+        );
 
       setLoading(false);
-
-      if (error) {
-        console.error("Error fetching agent logs:", error);
-        return;
-      }
-
-      if (data) {
-        setLogs(data as AgentLog[]);
-      }
-      console.log("Fetched logs:", data);
-      console.log("Error:", error);
+      setLogs(filtered as AgentLog[]);
     }
 
     fetchLogs();
