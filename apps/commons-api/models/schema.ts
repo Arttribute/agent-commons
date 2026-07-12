@@ -298,6 +298,9 @@ export const agentComputerInstance = pgTable(
     expiresAt: timestamp('expires_at', { withTimezone: true }),
     startedAt: timestamp('started_at', { withTimezone: true }),
     stoppedAt: timestamp('stopped_at', { withTimezone: true }),
+    // Per-minute usage metering cursor: everything up to this instant has been
+    // billed. See BillingModule / compute-metering.service.
+    meteredThroughAt: timestamp('metered_through_at', { withTimezone: true }),
     errorMessage: text('error_message'),
 
     createdAt: timestamp('created_at', { withTimezone: true })
@@ -2323,6 +2326,40 @@ export const subscription = pgTable(
       table.stripeSubscriptionId,
     ),
     principalIdx: index('subscription_principal_idx').on(table.principalId),
+  }),
+);
+
+// Per-interval computer-use metering. One row per billed minute-window per
+// computer (unique on computerId + intervalStart), linked to the credit debit.
+export const computeUsageEvent = pgTable(
+  'compute_usage_event',
+  {
+    eventId: uuid('event_id')
+      .default(sql`gen_random_uuid()`)
+      .primaryKey(),
+    computerId: uuid('computer_id').notNull(),
+    agentId: text('agent_id').notNull(),
+    principalId: text('principal_id').notNull(),
+    workspaceId: text('workspace_id'),
+    resourceProfile: text('resource_profile').notNull(),
+    intervalStart: timestamp('interval_start', { withTimezone: true }).notNull(),
+    intervalEnd: timestamp('interval_end', { withTimezone: true }).notNull(),
+    minutes: integer('minutes').notNull(),
+    creditsCharged: integer('credits_charged').notNull(),
+    creditEntryId: uuid('credit_entry_id'),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .default(sql`timezone('utc', now())`)
+      .notNull(),
+  },
+  (table) => ({
+    computerIntervalIdx: uniqueIndex('compute_usage_computer_interval_idx').on(
+      table.computerId,
+      table.intervalStart,
+    ),
+    principalIdx: index('compute_usage_principal_idx').on(
+      table.principalId,
+      table.createdAt,
+    ),
   }),
 );
 
