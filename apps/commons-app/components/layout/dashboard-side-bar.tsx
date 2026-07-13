@@ -40,7 +40,9 @@ export function DashboardSideBar({ username }: { username: string }) {
   const sidebarOpen = isOpen && !isLockedDetailRoute;
 
   const currentSessionId = useMemo(() => {
-    const m = pathname?.match(/^\/agents\/[^/]+\/([^/]+)/);
+    const m =
+      pathname?.match(/^\/sessions\/([^/]+)/) ??
+      pathname?.match(/^\/agents\/[^/]+\/([^/]+)/);
     return m?.[1];
   }, [pathname]);
 

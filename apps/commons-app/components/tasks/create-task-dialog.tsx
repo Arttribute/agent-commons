@@ -6,6 +6,7 @@ import {
   Dialog,
   DialogContent,
   DialogDescription,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
@@ -20,9 +21,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Checkbox } from "@/components/ui/checkbox";
-import { ScrollArea } from "@/components/ui/scroll-area";
+import { cn } from "@/lib/utils";
 import { useAgents } from "@/hooks/use-agents";
 import { useWorkflows } from "@/hooks/use-workflows";
 import type { Session } from "@agent-commons/sdk";
@@ -58,6 +58,57 @@ const EMPTY_FORM = (preSelectedAgentId?: string, initialScheduledFor?: string) =
   recurringSessionMode: "same" as "same" | "new",
   scheduledFor: initialScheduledFor ?? "",
 });
+
+/** Minimal segmented choice — replaces the boxed radio groups. */
+function SegmentedChoice<T extends string>({
+  value,
+  options,
+  onChange,
+}: {
+  value: T;
+  options: Array<{ value: T; label: string }>;
+  onChange: (value: T) => void;
+}) {
+  return (
+    <div className="flex w-fit gap-1 rounded-lg bg-muted p-1">
+      {options.map((option) => (
+        <button
+          key={option.value}
+          type="button"
+          onClick={() => onChange(option.value)}
+          className={cn(
+            "rounded-md px-3 py-1.5 text-xs font-medium transition-colors",
+            value === option.value
+              ? "bg-background text-foreground shadow-sm"
+              : "text-muted-foreground hover:text-foreground",
+          )}
+        >
+          {option.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function FieldGroup({
+  label,
+  htmlFor,
+  children,
+  hint,
+}: {
+  label: string;
+  htmlFor?: string;
+  children: React.ReactNode;
+  hint?: string;
+}) {
+  return (
+    <div className="grid gap-1.5">
+      <Label htmlFor={htmlFor}>{label}</Label>
+      {children}
+      {hint && <p className="text-xs text-muted-foreground">{hint}</p>}
+    </div>
+  );
+}
 
 export function CreateTaskDialog({
   open,
@@ -143,46 +194,47 @@ export function CreateTaskDialog({
 
   return (
     <Dialog open={open} onOpenChange={onClose}>
-      <DialogContent className="max-w-2xl max-h-[90vh]">
-        <DialogHeader>
-          <DialogTitle>Create New Task</DialogTitle>
+      <DialogContent className="max-h-[90vh] gap-0 sm:max-w-3xl">
+        <DialogHeader className="pb-2">
+          <DialogTitle>Create new task</DialogTitle>
           <DialogDescription>
-            Configure and assign a task to your agent
+            Configure and assign a task to your agent.
           </DialogDescription>
         </DialogHeader>
 
-        <ScrollArea className="max-h-[calc(90vh-120px)] pr-4">
-          <form onSubmit={handleSubmit} className="space-y-4">
-            {/* Basic Info */}
-            <div className="space-y-4">
-              <div>
-                <Label htmlFor="title">Task Title *</Label>
-                <Input
-                  id="title"
-                  value={formData.title}
-                  onChange={(e) =>
-                    setFormData({ ...formData, title: e.target.value })
-                  }
-                  placeholder="e.g., Generate weekly report"
-                  required
-                />
-              </div>
+        {/* Inner padding keeps input focus rings clear of the scroll clip. */}
+        <div className="-mx-2 max-h-[calc(90vh-160px)] overflow-y-auto px-2">
+          <form
+            id="create-task-form"
+            onSubmit={handleSubmit}
+            className="space-y-5 py-3"
+          >
+            <FieldGroup label="Title" htmlFor="title">
+              <Input
+                id="title"
+                value={formData.title}
+                onChange={(e) =>
+                  setFormData({ ...formData, title: e.target.value })
+                }
+                placeholder="e.g. Generate weekly report"
+                required
+              />
+            </FieldGroup>
 
-              <div>
-                <Label htmlFor="description">Description</Label>
-                <Textarea
-                  id="description"
-                  value={formData.description}
-                  onChange={(e) =>
-                    setFormData({ ...formData, description: e.target.value })
-                  }
-                  placeholder="Describe what this task should accomplish..."
-                  rows={3}
-                />
-              </div>
+            <FieldGroup label="Description" htmlFor="description">
+              <Textarea
+                id="description"
+                value={formData.description}
+                onChange={(e) =>
+                  setFormData({ ...formData, description: e.target.value })
+                }
+                placeholder="Describe what this task should accomplish…"
+                rows={3}
+              />
+            </FieldGroup>
 
-              <div>
-                <Label htmlFor="agent">Select Agent *</Label>
+            <div className="grid gap-5 sm:grid-cols-2">
+              <FieldGroup label="Agent">
                 <Select
                   value={formData.agentId}
                   onValueChange={(value) =>
@@ -201,86 +253,67 @@ export function CreateTaskDialog({
                     ))}
                   </SelectContent>
                 </Select>
-              </div>
+              </FieldGroup>
 
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <Label htmlFor="priority">Priority</Label>
-                  <Input
-                    id="priority"
-                    type="number"
-                    value={formData.priority}
-                    onChange={(e) =>
-                      setFormData({
-                        ...formData,
-                        priority: parseInt(e.target.value) || 0,
-                      })
-                    }
-                    min="0"
-                  />
-                </div>
-
-                <div>
-                  <Label htmlFor="session">Session</Label>
-                  <Select
-                    value={formData.sessionId}
-                    onValueChange={(value) =>
-                      setFormData({ ...formData, sessionId: value })
-                    }
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="New session" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="new-session">Create new session</SelectItem>
-                      {sessions.map((session) => (
-                        <SelectItem
-                          key={session.sessionId}
-                          value={session.sessionId}
-                        >
-                          {session.title || `Session ${session.sessionId.slice(0, 8)}`}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
+              <FieldGroup label="Session">
+                <Select
+                  value={formData.sessionId}
+                  onValueChange={(value) =>
+                    setFormData({ ...formData, sessionId: value })
+                  }
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="New session" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="new-session">Create new session</SelectItem>
+                    {sessions.map((session) => (
+                      <SelectItem
+                        key={session.sessionId}
+                        value={session.sessionId}
+                      >
+                        {session.title || `Session ${session.sessionId.slice(0, 8)}`}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </FieldGroup>
             </div>
 
-            {/* Execution Mode */}
-            <div>
-              <Label>Execution Mode</Label>
-              <RadioGroup
-                value={formData.executionMode}
-                onValueChange={(value: any) =>
-                  setFormData({ ...formData, executionMode: value })
-                }
-                className="grid grid-cols-3 gap-4 mt-2"
-              >
-                <div className="flex items-center space-x-2 border p-3 rounded-md">
-                  <RadioGroupItem value="single" id="single" />
-                  <Label htmlFor="single" className="font-normal cursor-pointer">
-                    Single
-                  </Label>
-                </div>
-                <div className="flex items-center space-x-2 border p-3 rounded-md">
-                  <RadioGroupItem value="workflow" id="workflow" />
-                  <Label htmlFor="workflow" className="font-normal cursor-pointer">
-                    Workflow
-                  </Label>
-                </div>
-                <div className="flex items-center space-x-2 border p-3 rounded-md">
-                  <RadioGroupItem value="sequential" id="sequential" />
-                  <Label htmlFor="sequential" className="font-normal cursor-pointer">
-                    Sequential
-                  </Label>
-                </div>
-              </RadioGroup>
+            <div className="grid gap-5 sm:grid-cols-2">
+              <FieldGroup label="Execution mode">
+                <SegmentedChoice
+                  value={formData.executionMode}
+                  options={[
+                    { value: "single", label: "Single" },
+                    { value: "workflow", label: "Workflow" },
+                    { value: "sequential", label: "Sequential" },
+                  ]}
+                  onChange={(value) =>
+                    setFormData({ ...formData, executionMode: value })
+                  }
+                />
+              </FieldGroup>
+
+              <FieldGroup label="Priority" htmlFor="priority">
+                <Input
+                  id="priority"
+                  type="number"
+                  className="max-w-28"
+                  value={formData.priority}
+                  onChange={(e) =>
+                    setFormData({
+                      ...formData,
+                      priority: parseInt(e.target.value) || 0,
+                    })
+                  }
+                  min="0"
+                />
+              </FieldGroup>
             </div>
 
             {formData.executionMode === "workflow" && (
-              <div>
-                <Label htmlFor="workflow">Select Workflow</Label>
+              <FieldGroup label="Workflow">
                 <Select
                   value={formData.workflowId}
                   onValueChange={(value) =>
@@ -301,88 +334,83 @@ export function CreateTaskDialog({
                     ))}
                   </SelectContent>
                 </Select>
-              </div>
+              </FieldGroup>
             )}
 
-            {/* Tool Constraints */}
-            <div>
-              <Label>Tool Constraints</Label>
-              <RadioGroup
+            <FieldGroup
+              label="Tool constraints"
+              hint={
+                formData.toolConstraintType === "none"
+                  ? "The agent decides which tools to use."
+                  : formData.toolConstraintType === "soft"
+                    ? "Suggest tools the agent should prefer."
+                    : "Restrict the agent to the selected tools."
+              }
+            >
+              <SegmentedChoice
                 value={formData.toolConstraintType}
-                onValueChange={(value: any) =>
+                options={[
+                  { value: "none", label: "None" },
+                  { value: "soft", label: "Soft" },
+                  { value: "hard", label: "Hard" },
+                ]}
+                onChange={(value) =>
                   setFormData({ ...formData, toolConstraintType: value })
                 }
-                className="grid grid-cols-3 gap-4 mt-2"
-              >
-                <div className="flex items-center space-x-2 border p-3 rounded-md">
-                  <RadioGroupItem value="none" id="none" />
-                  <Label htmlFor="none" className="font-normal cursor-pointer">
-                    None
-                  </Label>
-                </div>
-                <div className="flex items-center space-x-2 border p-3 rounded-md">
-                  <RadioGroupItem value="soft" id="soft" />
-                  <Label htmlFor="soft" className="font-normal cursor-pointer">
-                    Soft
-                  </Label>
-                </div>
-                <div className="flex items-center space-x-2 border p-3 rounded-md">
-                  <RadioGroupItem value="hard" id="hard" />
-                  <Label htmlFor="hard" className="font-normal cursor-pointer">
-                    Hard
-                  </Label>
-                </div>
-              </RadioGroup>
-            </div>
+              />
+            </FieldGroup>
 
             {formData.toolConstraintType !== "none" && (
               <>
-                <div>
-                  <Label>Select Tools</Label>
-                  <div className="border rounded-md p-3 max-h-40 overflow-y-auto space-y-2 mt-2">
-                    {tools.map((tool) => (
-                      <div key={tool.toolId} className="flex items-center space-x-2">
-                        <Checkbox
-                          id={tool.toolId}
-                          checked={formData.tools.includes(tool.toolId)}
-                          onCheckedChange={(checked) => {
-                            setFormData({
-                              ...formData,
-                              tools: checked
-                                ? [...formData.tools, tool.toolId]
-                                : formData.tools.filter((t) => t !== tool.toolId),
-                            });
-                          }}
-                        />
-                        <Label
-                          htmlFor={tool.toolId}
-                          className="font-normal cursor-pointer text-sm"
-                        >
-                          {tool.name}
-                        </Label>
-                      </div>
-                    ))}
+                <FieldGroup label="Tools">
+                  <div className="max-h-40 space-y-2 overflow-y-auto rounded-lg bg-muted/40 p-3">
+                    {tools.length === 0 ? (
+                      <p className="text-xs text-muted-foreground">
+                        No custom tools available.
+                      </p>
+                    ) : (
+                      tools.map((tool) => (
+                        <div key={tool.toolId} className="flex items-center gap-2">
+                          <Checkbox
+                            id={tool.toolId}
+                            checked={formData.tools.includes(tool.toolId)}
+                            onCheckedChange={(checked) => {
+                              setFormData({
+                                ...formData,
+                                tools: checked
+                                  ? [...formData.tools, tool.toolId]
+                                  : formData.tools.filter((t) => t !== tool.toolId),
+                              });
+                            }}
+                          />
+                          <Label
+                            htmlFor={tool.toolId}
+                            className="cursor-pointer text-sm font-normal"
+                          >
+                            {tool.displayName || tool.name}
+                          </Label>
+                        </div>
+                      ))
+                    )}
                   </div>
-                </div>
+                </FieldGroup>
 
-                <div>
-                  <Label htmlFor="toolInstructions">Tool Instructions</Label>
+                <FieldGroup label="Tool instructions" htmlFor="toolInstructions">
                   <Textarea
                     id="toolInstructions"
                     value={formData.toolInstructions}
                     onChange={(e) =>
                       setFormData({ ...formData, toolInstructions: e.target.value })
                     }
-                    placeholder="e.g., If validation fails, use the validateData tool"
+                    placeholder="e.g. If validation fails, use the validateData tool"
                     rows={2}
                   />
-                </div>
+                </FieldGroup>
               </>
             )}
 
-            {/* Scheduling */}
-            <div className="space-y-3">
-              <div className="flex items-center space-x-2">
+            <div className="space-y-4">
+              <div className="flex items-center gap-2">
                 <Checkbox
                   id="isRecurring"
                   checked={formData.isRecurring}
@@ -391,82 +419,72 @@ export function CreateTaskDialog({
                   }
                 />
                 <Label htmlFor="isRecurring" className="cursor-pointer">
-                  Recurring Task
+                  Recurring task
                 </Label>
               </div>
 
               {formData.isRecurring ? (
-                <>
-                  <div>
-                    <Label htmlFor="cronExpression">Cron Expression</Label>
+                <div className="grid gap-5 sm:grid-cols-2">
+                  <FieldGroup
+                    label="Cron expression"
+                    htmlFor="cronExpression"
+                    hint="e.g. 0 9 * * 1 — every Monday at 9 AM"
+                  >
                     <Input
                       id="cronExpression"
                       value={formData.cronExpression}
                       onChange={(e) =>
                         setFormData({ ...formData, cronExpression: e.target.value })
                       }
-                      placeholder="e.g., 0 9 * * 1 (Every Monday at 9 AM)"
+                      placeholder="0 9 * * 1"
                     />
-                  </div>
+                  </FieldGroup>
 
-                  <div>
-                    <Label>Session Mode</Label>
-                    <RadioGroup
+                  <FieldGroup label="Session mode">
+                    <SegmentedChoice
                       value={formData.recurringSessionMode}
-                      onValueChange={(value: any) =>
+                      options={[
+                        { value: "same", label: "Same session" },
+                        { value: "new", label: "New session" },
+                      ]}
+                      onChange={(value) =>
                         setFormData({ ...formData, recurringSessionMode: value })
                       }
-                      className="flex space-x-4 mt-2"
-                    >
-                      <div className="flex items-center space-x-2">
-                        <RadioGroupItem value="same" id="same" />
-                        <Label htmlFor="same" className="font-normal">
-                          Same Session
-                        </Label>
-                      </div>
-                      <div className="flex items-center space-x-2">
-                        <RadioGroupItem value="new" id="new" />
-                        <Label htmlFor="new" className="font-normal">
-                          New Session
-                        </Label>
-                      </div>
-                    </RadioGroup>
-                  </div>
-                </>
+                    />
+                  </FieldGroup>
+                </div>
               ) : (
-                <div>
-                  <Label htmlFor="scheduledFor">Schedule For</Label>
+                <FieldGroup label="Schedule for" htmlFor="scheduledFor">
                   <Input
                     id="scheduledFor"
                     type="datetime-local"
+                    className="max-w-60"
                     min={toDatetimeLocal(new Date())}
                     value={formData.scheduledFor}
                     onChange={(e) =>
                       setFormData({ ...formData, scheduledFor: e.target.value })
                     }
                   />
-                </div>
+                </FieldGroup>
               )}
             </div>
-
-            {/* Submit Buttons */}
-            <div className="flex justify-end space-x-2 pt-4">
-              <Button type="button" variant="outline" onClick={onClose}>
-                Cancel
-              </Button>
-              <Button type="submit" disabled={!isValid || loading}>
-                {loading ? (
-                  <>
-                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                    Creating...
-                  </>
-                ) : (
-                  "Create Task"
-                )}
-              </Button>
-            </div>
           </form>
-        </ScrollArea>
+        </div>
+
+        <DialogFooter className="pt-3">
+          <Button type="button" variant="outline" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button
+            type="submit"
+            form="create-task-form"
+            disabled={!isValid || loading}
+            className="gap-1.5"
+          >
+            {loading && <Loader2 className="h-4 w-4 animate-spin" />}
+            {loading ? "Creating…" : "Create task"}
+          </Button>
+        </DialogFooter>
       </DialogContent>
     </Dialog>
   );

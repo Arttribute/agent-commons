@@ -71,7 +71,7 @@ export function SessionItem({
 }: SessionItemProps) {
   const router = useRouter();
   const { toast } = useToast();
-  const href = `/agents/${session.agentId}/${session.sessionId}`;
+  const href = `/sessions/${session.sessionId}`;
   const isCli =
     session.initiatorType === "cli" || (session as any).source === "cli";
 

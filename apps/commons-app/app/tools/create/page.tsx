@@ -1,12 +1,6 @@
-"use client";
-import { CreateToolWizard } from "@/components/tools/create-tool-wizard";
+import { redirect } from "next/navigation";
 
-export default function Page() {
-  return (
-    <div className="h-screen overflow-hidden">
-      <div className="h-screen overflow-y-auto">
-        <CreateToolWizard />
-      </div>
-    </div>
-  );
+/** Tool creation now happens via the dialog on /studio/tools. */
+export default function LegacyCreateToolPage() {
+  redirect("/studio/tools");
 }

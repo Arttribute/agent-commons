@@ -407,7 +407,7 @@ export default function SessionInterfaceImproved({
         )}
         <ScrollArea className="min-h-0 flex-1" scrollHideDelay={100}>
           <div
-            className="container mx-auto max-w-2xl px-4 pb-6 pt-4"
+            className="container mx-auto max-w-[52.5rem] px-4 pb-6 pt-4"
             ref={scrollRef}
           >
             {isLoadingSession && messages.length === 0 ? (
@@ -481,7 +481,7 @@ export default function SessionInterfaceImproved({
           </div>
         </ScrollArea>
 
-        <div className="container mx-auto w-full max-w-2xl shrink-0 px-4 pb-4">
+        <div className="container mx-auto w-full max-w-[52.5rem] shrink-0 px-4 pb-4">
           <ChatInputBox
             agentId={agentId}
             sessionId={sessionId}
