@@ -1,4 +1,9 @@
-import { BadRequestException, Injectable, Logger } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  Logger,
+  ServiceUnavailableException,
+} from '@nestjs/common';
 import { eq } from 'drizzle-orm';
 import * as schema from '#/models/schema';
 import { DatabaseService } from '~/modules/database';
@@ -368,12 +373,21 @@ export class RuntimeManagementService {
     if (!['connect', 'status', 'disconnect'].includes(action)) {
       throw new BadRequestException('Unsupported runtime channel action');
     }
-    await this.ensureReady(agentId);
-    return this.computers.runtimeChannelAction({
-      agentId,
-      channel,
-      action: action as 'connect' | 'status' | 'disconnect',
-    });
+    try {
+      await this.ensureReady(agentId);
+      return await this.computers.runtimeChannelAction({
+        agentId,
+        channel,
+        action: action as 'connect' | 'status' | 'disconnect',
+      });
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : '';
+      throw new ServiceUnavailableException(
+        detail.includes('timed out')
+          ? 'WhatsApp setup is taking longer than expected. Try again in a moment.'
+          : detail || 'WhatsApp setup is temporarily unavailable',
+      );
+    }
   }
 
   private normalizeConfig(

@@ -1,4 +1,7 @@
-import { BadRequestException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ServiceUnavailableException,
+} from '@nestjs/common';
 import { RuntimeManagementService } from './runtime-management.service';
 
 describe('RuntimeManagementService channel configuration', () => {
@@ -75,5 +78,29 @@ describe('RuntimeManagementService channel configuration', () => {
         {},
       ),
     ).toThrow(BadRequestException);
+  });
+
+  it('returns a useful service error when channel setup times out', async () => {
+    const computers = {
+      runtimeChannelAction: jest
+        .fn()
+        .mockRejectedValue(new Error('runtime channel command timed out')),
+    };
+    const channelService = new RuntimeManagementService(
+      {} as any,
+      computers as any,
+      encryption as any,
+    );
+    jest
+      .spyOn(channelService as any, 'getAgent')
+      .mockResolvedValue({ runtimeType: 'openclaw' });
+    jest.spyOn(channelService as any, 'ensureReady').mockResolvedValue({});
+
+    await expect(
+      channelService.channelAction('agent-1', 'whatsapp', 'status'),
+    ).rejects.toThrow(ServiceUnavailableException);
+    await expect(
+      channelService.channelAction('agent-1', 'whatsapp', 'status'),
+    ).rejects.toThrow('WhatsApp setup is taking longer than expected');
   });
 });
