@@ -120,6 +120,17 @@ export function createGatewayApp() {
       c.req.path,
     ),
   );
+  // Stripe posts webhooks with no Commons credential (it authenticates via the
+  // stripe-signature header, verified downstream). Pass it through publicly,
+  // preserving the raw body for signature verification.
+  app.post("/v1/billing/webhook", (c) =>
+    publicProxy(
+      c,
+      "agent-commons",
+      process.env.AGENT_COMMONS_INTERNAL_URL,
+      c.req.path,
+    ),
+  );
 
   app.use("/v1/*", async (c, next) => {
     const principal = await authenticate(c.req.header("authorization"));
