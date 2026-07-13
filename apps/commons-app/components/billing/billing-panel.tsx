@@ -1,10 +1,11 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
-import { Check, Loader2, CreditCard } from "lucide-react";
+import { Loader2, CreditCard } from "lucide-react";
 
 type PlanKey = "free" | "plus" | "pro" | "max";
 
@@ -47,43 +48,6 @@ interface PaymentMethod {
   expYear: number | null;
 }
 
-const PLANS: Array<{
-  key: PlanKey;
-  name: string;
-  price: string;
-  credits: string;
-  features: string[];
-}> = [
-  {
-    key: "free",
-    name: "Free",
-    price: "$0",
-    credits: "500 credits / mo",
-    features: ["Native agents", "Basic chat", "No computer use"],
-  },
-  {
-    key: "plus",
-    name: "Plus",
-    price: "$20",
-    credits: "5,000 credits / mo",
-    features: ["Everything in Free", "Computer use (standard)", "Frontier models"],
-  },
-  {
-    key: "pro",
-    name: "Pro",
-    price: "$50",
-    credits: "14,000 credits / mo",
-    features: ["Performance computers", "Higher concurrency", "Priority support"],
-  },
-  {
-    key: "max",
-    name: "Max",
-    price: "$200",
-    credits: "60,000 credits / mo",
-    features: ["GPU computers", "Highest limits"],
-  },
-];
-
 const TOPUPS = [
   { key: "small", label: "$10", credits: "10,000" },
   { key: "medium", label: "$50", credits: "52,500" },
@@ -123,6 +87,7 @@ function Section({
 }
 
 export function BillingPanel() {
+  const router = useRouter();
   const [sub, setSub] = useState<Subscription | null>(null);
   const [credits, setCredits] = useState<CreditsData | null>(null);
   const [invoices, setInvoices] = useState<Invoice[]>([]);
@@ -133,7 +98,6 @@ export function BillingPanel() {
   const [email, setEmail] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState<string | null>(null);
-  const [showPlans, setShowPlans] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -210,77 +174,10 @@ export function BillingPanel() {
                   : "Free plan — 500 credits per month"}
           </div>
         </div>
-        <Button
-          variant="outline"
-          onClick={() => setShowPlans((v) => !v)}
-        >
+        <Button variant="outline" onClick={() => router.push("/plans")}>
           {isPaid ? "Change plan" : "Upgrade"}
         </Button>
       </div>
-
-      {/* Plan grid (expandable) */}
-      {showPlans && (
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          {PLANS.map((plan) => {
-            const isCurrent = plan.key === currentPlan;
-            return (
-              <div
-                key={plan.key}
-                className={cn(
-                  "flex flex-col rounded-lg border p-4",
-                  isCurrent && "ring-2 ring-indigo-400",
-                )}
-              >
-                <div className="flex items-center justify-between">
-                  <span className="font-medium">{plan.name}</span>
-                  {isCurrent && <Badge variant="secondary">Current</Badge>}
-                </div>
-                <div className="mt-1 text-xl font-semibold">
-                  {plan.price}
-                  <span className="text-xs font-normal text-muted-foreground">/mo</span>
-                </div>
-                <div className="mt-0.5 text-xs text-muted-foreground">
-                  {plan.credits}
-                </div>
-                <ul className="mt-3 flex-1 space-y-1">
-                  {plan.features.map((f) => (
-                    <li key={f} className="flex items-start gap-1.5 text-xs">
-                      <Check className="mt-0.5 h-3 w-3 shrink-0 text-indigo-500" />
-                      <span>{f}</span>
-                    </li>
-                  ))}
-                </ul>
-                <div className="mt-4">
-                  {plan.key === "free" || isCurrent ? (
-                    <Button variant="outline" size="sm" disabled className="w-full">
-                      {isCurrent ? "Current" : "—"}
-                    </Button>
-                  ) : (
-                    <Button
-                      size="sm"
-                      className="w-full"
-                      disabled={busy !== null}
-                      onClick={() =>
-                        redirectTo(
-                          "/api/billing/checkout/subscription",
-                          { planKey: plan.key },
-                          `sub-${plan.key}`,
-                        )
-                      }
-                    >
-                      {busy === `sub-${plan.key}` ? (
-                        <Loader2 className="h-4 w-4 animate-spin" />
-                      ) : (
-                        "Choose"
-                      )}
-                    </Button>
-                  )}
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      )}
 
       {/* Credits */}
       <Section title="Credits">

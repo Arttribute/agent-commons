@@ -150,6 +150,14 @@ Resources:
             ValueFrom: !Sub "${RuntimeSecretArn}:STRIPE_PRICE_TOPUP_MEDIUM::"
           - Name: STRIPE_PRICE_TOPUP_LARGE
             ValueFrom: !Sub "${RuntimeSecretArn}:STRIPE_PRICE_TOPUP_LARGE::"
+          - Name: CREDIT_DEBITS_ENABLED
+            ValueFrom: !Sub "${RuntimeSecretArn}:CREDIT_DEBITS_ENABLED::"
+          - Name: BILLING_ENFORCEMENT
+            ValueFrom: !Sub "${RuntimeSecretArn}:BILLING_ENFORCEMENT::"
+          - Name: COMPUTE_METERING_ENABLED
+            ValueFrom: !Sub "${RuntimeSecretArn}:COMPUTE_METERING_ENABLED::"
+          - Name: BILLING_SWEEPER_ENABLED
+            ValueFrom: !Sub "${RuntimeSecretArn}:BILLING_SWEEPER_ENABLED::"
       ScalingTarget:
         MinTaskCount: 1
         MaxTaskCount: !Ref MaxTasks
