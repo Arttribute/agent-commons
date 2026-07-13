@@ -11,6 +11,7 @@ import {
   Monitor,
   Play,
   Plus,
+  Server,
   Sparkles,
   Workflow,
   X,
@@ -590,6 +591,26 @@ export function ComputerPanel({
             <p className="mt-1 text-xs leading-5 text-slate-500">
               {template?.isolationMode ||
                 "A scoped workspace for safe, lightweight practice."}
+            </p>
+          </div>
+        </div>
+      </div>
+
+      <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+        <div className="flex items-start gap-2">
+          <Server className="mt-0.5 h-4 w-4 shrink-0 text-slate-500" />
+          <div>
+            <p className="text-xs font-bold uppercase tracking-widest text-slate-500">
+              Lightweight runtime
+            </p>
+            <p className="mt-1 text-xs leading-5 text-slate-600">
+              This environment behaves like a small isolated code workspace. Try{" "}
+              <span className="font-mono font-semibold text-slate-900">ls</span>,{" "}
+              <span className="font-mono font-semibold text-slate-900">
+                cat team-plan.json
+              </span>,{" "}
+              <span className="font-mono font-semibold text-slate-900">pwd</span>, or{" "}
+              <span className="font-mono font-semibold text-slate-900">run team</span>.
             </p>
           </div>
         </div>

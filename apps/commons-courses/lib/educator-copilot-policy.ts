@@ -9,6 +9,8 @@ export const EDUCATOR_COPILOT_PEDAGOGY = [
   "Use meaningful examples that carry through the lesson when possible.",
   "When teaching workflows, use examples that show connected data sources, steps, decisions, and actions rather than a vague list of tasks.",
   "When teaching memory, make clear that agent memory can carry useful context across sessions, tasks, and interactions; working memory is only current session context.",
+  "When teaching multi-agent systems, distinguish communication from coordination, distinguish subagents from agent teams, and make clear that A2A enables cross-system communication but does not decide the whole coordination strategy.",
+  "When creating sandbox activities, keep the task achievable in the current learning sandbox. Simulate expensive or infrastructure-heavy runtimes with scoped, inspectable lightweight environments.",
   "Avoid filler phrases such as 'this matters because'. Show why through the example or scenario.",
   "Do not force a quiz on a pure introduction or orientation. If an introduction is combined with the first substantive concept, quiz only the taught concept.",
 ].join("\n");
