@@ -119,14 +119,15 @@ describe('ComputerService', () => {
     const commonOsRequest = jest
       .spyOn(service as any, 'commonOsComputerRequest')
       .mockResolvedValueOnce({ _id: 'msg_1', sessionId: 'runtime_session_1' })
-      .mockResolvedValueOnce([
-        {
+      .mockResolvedValueOnce({
+        message: {
           _id: 'msg_1',
           status: 'responded',
           response: 'ok',
           respondedAt: '2026-07-03T20:00:00.000Z',
         },
-      ]);
+        events: [],
+      });
 
     await service.sendInstruction({
       agentId: 'agent_1',
@@ -142,6 +143,14 @@ describe('ComputerService', () => {
       '/computers/commonos_agent_1/instructions',
       undefined,
       { content: 'run pwd' },
+      'agent_1',
+    );
+    expect(commonOsRequest).toHaveBeenNthCalledWith(
+      2,
+      'GET',
+      '/computers/commonos_agent_1/instructions/msg_1/snapshot',
+      undefined,
+      undefined,
       'agent_1',
     );
     expect(db.insertValues).toHaveBeenCalledWith(

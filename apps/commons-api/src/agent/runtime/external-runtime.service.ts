@@ -141,19 +141,9 @@ export class ExternalRuntimeService {
             'running',
             `Waking ${this.runtimeLabel(runtimeType)}`,
           );
-          const computer = await this.runtimes.ensureReady(
+          const runtimeReady = this.runtimes.ensureReady(
             props.agentId,
             sessionId,
-          );
-          emitStatus(
-            'runtime',
-            'completed',
-            `${this.runtimeLabel(runtimeType)} ready`,
-            undefined,
-            {
-              runtimeType,
-              computerId: computer.computerId,
-            },
           );
 
           const userText = this.latestUserText(props.messages);
@@ -164,32 +154,48 @@ export class ExternalRuntimeService {
               ?.memoryMode ?? 'hybrid',
           );
           const includePlatformMemory = memoryMode !== 'native';
-          const [memoryBlock, sharedMemoryBlock, skillsBlock, attachments] =
-            await Promise.all([
-              includePlatformMemory
-                ? this.memories
-                    .buildMemoryBlock(props.agentId, userText)
-                    .catch(() => '')
-                : Promise.resolve(''),
-              includePlatformMemory
-                ? this.memories
-                    .buildSharedMemoryBlock(props.agentId, userText)
-                    .catch(() => '')
-                : Promise.resolve(''),
-              this.buildSkillsBlock(props.agentId).catch(() => ''),
-              props.attachments?.length
-                ? this.files.getAttachmentSummaries(props.attachments, {
-                    agentId: props.agentId,
-                    sessionId,
-                    ownerId: props.initiator,
-                    includeImageParts: false,
-                  })
-                : Promise.resolve({
-                    text: '',
-                    imageParts: [],
-                    attachments: [],
-                  }),
-            ]);
+          const [
+            computer,
+            memoryBlock,
+            sharedMemoryBlock,
+            skillsBlock,
+            attachments,
+          ] = await Promise.all([
+            runtimeReady,
+            includePlatformMemory
+              ? this.memories
+                  .buildMemoryBlock(props.agentId, userText)
+                  .catch(() => '')
+              : Promise.resolve(''),
+            includePlatformMemory
+              ? this.memories
+                  .buildSharedMemoryBlock(props.agentId, userText)
+                  .catch(() => '')
+              : Promise.resolve(''),
+            this.buildSkillsBlock(props.agentId).catch(() => ''),
+            props.attachments?.length
+              ? this.files.getAttachmentSummaries(props.attachments, {
+                  agentId: props.agentId,
+                  sessionId,
+                  ownerId: props.initiator,
+                  includeImageParts: false,
+                })
+              : Promise.resolve({
+                  text: '',
+                  imageParts: [],
+                  attachments: [],
+                }),
+          ]);
+          emitStatus(
+            'runtime',
+            'completed',
+            `${this.runtimeLabel(runtimeType)} ready`,
+            undefined,
+            {
+              runtimeType,
+              computerId: computer.computerId,
+            },
+          );
           const instruction = [
             userText,
             memoryBlock,

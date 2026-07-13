@@ -96,8 +96,24 @@ export const agent = pgTable('agent', {
       enabledPlugins?: string[];
       enabledToolsets?: string[];
       memoryMode?: 'native' | 'platform' | 'hybrid';
+      channels?: Record<
+        string,
+        {
+          enabled: boolean;
+          mode?: 'bot' | 'self-chat' | 'cloud';
+          dmPolicy?: 'pairing' | 'allowlist' | 'open' | 'disabled';
+          allowFrom?: string[];
+          requireMention?: boolean;
+          homeTarget?: string;
+        }
+      >;
       metadata?: Record<string, unknown>;
     }>()
+    .default({}),
+  // Channel credentials are encrypted field-by-field. They never leave the API
+  // in runtime GET responses or enter the public runtime_config document.
+  runtimeSecrets: jsonb('runtime_secrets')
+    .$type<Record<string, Record<string, string>>>()
     .default({}),
   runtimeCapabilities: jsonb('runtime_capabilities')
     .$type<Record<string, boolean>>()
@@ -249,15 +265,14 @@ export const codeProjectDeployment = pgTable(
     status: text('status').default('building').notNull(),
     storagePrefix: text('storage_prefix'),
     publicUrl: text('public_url'),
-    buildErrors:
-      jsonb('build_errors').$type<
-        Array<{
-          file?: string;
-          line?: number;
-          column?: number;
-          message: string;
-        }>
-      >(),
+    buildErrors: jsonb('build_errors').$type<
+      Array<{
+        file?: string;
+        line?: number;
+        column?: number;
+        message: string;
+      }>
+    >(),
     verification: jsonb('verification').$type<Record<string, any>>(),
     createdAt: timestamp('created_at', { withTimezone: true })
       .default(sql`timezone('utc', now())`)

@@ -84,7 +84,9 @@ type CommonOsAgent = {
   } | null;
   browser?: ComputerInstance['browser'] | null;
   runtime?: Record<string, any> | null;
+  lastHeartbeatAt?: string | null;
   startedAt?: string | null;
+  updatedAt?: string | null;
 };
 
 type CommonOsInstructionProgress = {
@@ -384,11 +386,6 @@ export class ComputerService {
       await this.assertSessionForAgent(args.agentId, sessionId);
     }
 
-    // Subscription gate: free plans can't use computers; paid plans are limited
-    // to their allowed profiles + concurrency. Attaching to an already-running
-    // computer skips this (only new/waking compute is gated).
-    await this.assertComputeEntitlement(agent, config.resourceProfile);
-
     this.emitComputerToolProgress(args.runId, {
       toolName: 'startAgentComputer',
       stage: 'computer',
@@ -432,6 +429,10 @@ export class ComputerService {
       // wake path with the refreshed state so a failed runtime is replaceable.
       computer = refreshed;
     }
+
+    // Subscription gates apply when compute is provisioned or woken. Attaching
+    // to the agent's healthy persistent computer stays on the fast path.
+    await this.assertComputeEntitlement(agent, config.resourceProfile);
 
     const now = new Date();
     const name = args.name?.trim() || `${agent.name} computer`;
@@ -649,6 +650,30 @@ export class ComputerService {
     });
   }
 
+  async runtimeChannelAction(args: {
+    agentId: string;
+    channel: 'whatsapp';
+    action: 'connect' | 'status' | 'disconnect';
+  }) {
+    const computer = await this.getAssignedComputer(args.agentId);
+    if (!computer?.commonOsAgentId) {
+      throw new BadRequestException('Managed runtime is not provisioned');
+    }
+    if (!['running', 'idle'].includes(String(computer.status))) {
+      return { status: 'starting', runtimeStatus: computer.status };
+    }
+    return this.commonOsComputerRequest<{
+      output?: Record<string, unknown> | string;
+      raw?: string;
+    }>(
+      'POST',
+      `/computers/${computer.commonOsAgentId}/runtime-channels/${args.channel}/${args.action}`,
+      undefined,
+      {},
+      args.agentId,
+    );
+  }
+
   async refreshInstance(
     computerId: string,
     options: { silent?: boolean } = {},
@@ -668,7 +693,20 @@ export class ComputerService {
       undefined,
       computer.agentId,
     );
-    const status = this.mapStatus(commonOs.status);
+    const reportedStatus = this.mapStatus(commonOs.status);
+    const heartbeatAt = commonOs.lastHeartbeatAt
+      ? new Date(commonOs.lastHeartbeatAt).getTime()
+      : NaN;
+    const runtimeStartedAt = commonOs.startedAt
+      ? new Date(commonOs.startedAt).getTime()
+      : NaN;
+    const activeRuntimeIsStale =
+      ['running', 'idle'].includes(reportedStatus) &&
+      ((Number.isFinite(heartbeatAt) && Date.now() - heartbeatAt > 120_000) ||
+        (!Number.isFinite(heartbeatAt) &&
+          Number.isFinite(runtimeStartedAt) &&
+          Date.now() - runtimeStartedAt > 300_000));
+    const status = activeRuntimeIsStale ? 'failed' : reportedStatus;
     const [updated] = await this.db
       .update(schema.agentComputerInstance)
       .set({
@@ -710,7 +748,9 @@ export class ComputerService {
           !Number.isNaN(new Date(commonOs.startedAt).getTime())
             ? new Date(commonOs.startedAt)
             : computer.startedAt,
-        errorMessage: commonOs.pod?.lastError ?? null,
+        errorMessage: activeRuntimeIsStale
+          ? 'The agent computer stopped responding and will be recovered when it is next started.'
+          : (commonOs.pod?.lastError ?? null),
         updatedAt: new Date(),
       })
       .where(eq(schema.agentComputerInstance.computerId, computerId))
@@ -1404,6 +1444,7 @@ export class ComputerService {
       string,
       any
     >;
+    const runtimeChannels = this.runtimeChannels(args.agent);
     const commonOsAgent = await this.commonOsComputerRequest<CommonOsAgent>(
       'POST',
       '/computers',
@@ -1429,7 +1470,7 @@ export class ComputerService {
                 modelProvider: args.agent.modelProvider,
                 modelId: args.agent.modelId,
                 ...(modelApiKey ? { modelApiKey } : {}),
-                channels: runtimeConfig.channels ?? {},
+                channels: runtimeChannels,
                 plugins: runtimeConfig.enabledPlugins ?? [],
                 dmPolicy: runtimeConfig.channelPolicy ?? 'pairing',
               }
@@ -1441,6 +1482,7 @@ export class ComputerService {
                 modelId: args.agent.modelId,
                 ...(modelApiKey ? { modelApiKey } : {}),
                 toolsets: runtimeConfig.enabledToolsets ?? [],
+                channels: runtimeChannels,
               }
             : undefined,
         ...(args.config.image ? { dockerImage: args.config.image } : {}),
@@ -1543,6 +1585,38 @@ export class ComputerService {
     return this.encryption.decrypt(encryptedValue, iv, tag);
   }
 
+  private runtimeChannels(agent: typeof schema.agent.$inferSelect) {
+    const config = (agent.runtimeConfig ?? {}) as Record<string, any>;
+    const storedSecrets = (agent.runtimeSecrets ?? {}) as Record<
+      string,
+      Record<string, string>
+    >;
+    const result: Record<string, Record<string, unknown>> = {};
+    for (const [id, rawChannel] of Object.entries(
+      (config.channels ?? {}) as Record<string, Record<string, unknown>>,
+    )) {
+      if (!rawChannel?.enabled) continue;
+      const credentials = Object.fromEntries(
+        Object.entries(storedSecrets[id] ?? {}).flatMap(([field, value]) => {
+          const decrypted = this.decryptStoredSecret(value);
+          return decrypted ? [[field, decrypted]] : [];
+        }),
+      );
+      result[id] = {
+        enabled: true,
+        mode: rawChannel.mode,
+        dmPolicy: rawChannel.dmPolicy ?? config.channelPolicy ?? 'pairing',
+        allowFrom: Array.isArray(rawChannel.allowFrom)
+          ? rawChannel.allowFrom
+          : [],
+        requireMention: rawChannel.requireMention !== false,
+        homeTarget: rawChannel.homeTarget,
+        ...credentials,
+      };
+    }
+    return result;
+  }
+
   private async pollCommonOsMessage(
     commonOsAgentId: string,
     agentCommonsId: string,
@@ -1562,6 +1636,31 @@ export class ComputerService {
     let lastHeartbeatCheckAt = started;
     let staleHeartbeatMs = 0;
     const observedEventIds = new Set<string>();
+    let lastEventAt: string | undefined;
+    let lastEventId: string | undefined;
+    let snapshotSupported = true;
+    const forwardEvents = async (runtimeEvents: any[]) => {
+      for (const event of runtimeEvents) {
+        const id = String(event?._id ?? event?.id ?? '');
+        if (!id || observedEventIds.has(id)) continue;
+        observedEventIds.add(id);
+        const createdAt = event?.createdAt
+          ? new Date(event.createdAt).toISOString()
+          : undefined;
+        if (createdAt) {
+          lastEventAt = createdAt;
+          lastEventId = id;
+        }
+        if (onRuntimeEvent) {
+          await onRuntimeEvent({
+            id,
+            type: String(event?.type ?? ''),
+            payload: (event?.payload ?? {}) as CommonOsRuntimeEvent['payload'],
+            createdAt,
+          });
+        }
+      }
+    };
     while (Date.now() - started < Math.min(waitMs, 720_000)) {
       // A wedged runtime daemon keeps its pod Running while heartbeats,
       // message polling, and event emission all stop — without this check
@@ -1603,38 +1702,64 @@ export class ComputerService {
           });
         }
       }
-      if (onRuntimeEvent && this.commonOsUseGeneralComputerApi()) {
-        const events = await this.commonOsComputerRequest<any[]>(
+      let message: any;
+      if (this.commonOsUseGeneralComputerApi()) {
+        if (snapshotSupported) {
+          const suffix = lastEventAt
+            ? `?after=${encodeURIComponent(lastEventAt)}${lastEventId ? `&afterId=${encodeURIComponent(lastEventId)}` : ''}`
+            : '';
+          try {
+            const snapshot = await this.commonOsComputerRequest<{
+              message?: any;
+              events?: any[];
+            }>(
+              'GET',
+              `/computers/${commonOsAgentId}/instructions/${messageId}/snapshot${suffix}`,
+              undefined,
+              undefined,
+              agentCommonsId,
+            );
+            message = snapshot.message;
+            await forwardEvents(snapshot.events ?? []);
+          } catch (error) {
+            snapshotSupported = false;
+            this.logger.warn(
+              `CommonOS instruction snapshot is unavailable; using compatibility polling: ${error instanceof Error ? error.message : String(error)}`,
+            );
+          }
+        }
+        if (!snapshotSupported) {
+          const [list, runtimeEvents] = await Promise.all([
+            this.commonOsComputerRequest<any[]>(
+              'GET',
+              `/computers/${commonOsAgentId}/instructions`,
+              undefined,
+              undefined,
+              agentCommonsId,
+            ),
+            this.commonOsComputerRequest<any[]>(
+              'GET',
+              `/computers/${commonOsAgentId}/instructions/${messageId}/events`,
+              undefined,
+              undefined,
+              agentCommonsId,
+            ),
+          ]);
+          message = list.find((item) => item._id === messageId);
+          await forwardEvents(runtimeEvents);
+        }
+      } else {
+        const list = await this.commonOsComputerRequest<any[]>(
           'GET',
-          `/computers/${commonOsAgentId}/instructions/${messageId}/events`,
-          undefined,
+          `/computers/${commonOsAgentId}/instructions`,
+          this.commonOsFleetId()
+            ? `/fleets/${this.commonOsFleetId()}/agents/${commonOsAgentId}/human-messages`
+            : undefined,
           undefined,
           agentCommonsId,
-        ).catch(() => []);
-        for (const event of events) {
-          const id = String(event?._id ?? event?.id ?? '');
-          if (!id || observedEventIds.has(id)) continue;
-          observedEventIds.add(id);
-          await onRuntimeEvent({
-            id,
-            type: String(event?.type ?? ''),
-            payload: (event?.payload ?? {}) as CommonOsRuntimeEvent['payload'],
-            createdAt: event?.createdAt
-              ? new Date(event.createdAt).toISOString()
-              : undefined,
-          });
-        }
+        );
+        message = list.find((item) => item._id === messageId);
       }
-      const list = await this.commonOsComputerRequest<any[]>(
-        'GET',
-        `/computers/${commonOsAgentId}/instructions`,
-        this.commonOsFleetId()
-          ? `/fleets/${this.commonOsFleetId()}/agents/${commonOsAgentId}/human-messages`
-          : undefined,
-        undefined,
-        agentCommonsId,
-      );
-      const message = list.find((item) => item._id === messageId);
       const status = String(message?.status ?? 'pending');
       const now = Date.now();
       if (
@@ -1649,29 +1774,6 @@ export class ComputerService {
         });
       }
       if (message?.response || message?.status === 'failed') {
-        if (onRuntimeEvent && this.commonOsUseGeneralComputerApi()) {
-          const events = await this.commonOsComputerRequest<any[]>(
-            'GET',
-            `/computers/${commonOsAgentId}/instructions/${messageId}/events`,
-            undefined,
-            undefined,
-            agentCommonsId,
-          ).catch(() => []);
-          for (const event of events) {
-            const id = String(event?._id ?? event?.id ?? '');
-            if (!id || observedEventIds.has(id)) continue;
-            observedEventIds.add(id);
-            await onRuntimeEvent({
-              id,
-              type: String(event?.type ?? ''),
-              payload: (event?.payload ??
-                {}) as CommonOsRuntimeEvent['payload'],
-              createdAt: event?.createdAt
-                ? new Date(event.createdAt).toISOString()
-                : undefined,
-            });
-          }
-        }
         return {
           status: message.status,
           response: message.response ?? null,
@@ -1681,7 +1783,10 @@ export class ComputerService {
           commonOsMessageId: messageId,
         };
       }
-      await new Promise((resolve) => setTimeout(resolve, 2_000));
+      const elapsed = Date.now() - started;
+      await new Promise((resolve) =>
+        setTimeout(resolve, elapsed < 15_000 ? 350 : 800),
+      );
     }
     return {
       status: 'timeout',
