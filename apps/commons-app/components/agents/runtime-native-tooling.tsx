@@ -338,7 +338,9 @@ export function ManagedRuntimeSetup({
 
   useEffect(() => {
     if (!qrCode || whatsappConnected) return;
-    const timer = window.setInterval(async () => {
+    let cancelled = false;
+    let timer: number | undefined;
+    const poll = async () => {
       try {
         const response = await fetch(
           `/api/agents/${agentId}/runtime/channels/whatsapp/status`,
@@ -346,15 +348,22 @@ export function ManagedRuntimeSetup({
         );
         const payload = await response.json();
         if (response.ok && channelIsConnected(payload)) {
+          cancelled = true;
           setWhatsappConnected(true);
           setQrCode(null);
           void refresh();
         }
       } catch {
-        // Keep the QR visible; the next lightweight probe can recover.
+        // Keep the QR visible; the next serialized probe can recover.
+      } finally {
+        if (!cancelled) timer = window.setTimeout(poll, 5_000);
       }
-    }, 3_000);
-    return () => window.clearInterval(timer);
+    };
+    timer = window.setTimeout(poll, 5_000);
+    return () => {
+      cancelled = true;
+      if (timer !== undefined) window.clearTimeout(timer);
+    };
   }, [agentId, qrCode, refresh, whatsappConnected]);
 
   if (loading) {
