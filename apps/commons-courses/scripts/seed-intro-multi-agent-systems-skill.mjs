@@ -48,11 +48,12 @@ const CourseSchema = new mongoose.Schema({}, { strict: false, timestamps: true }
 const Course = mongoose.models.Course || mongoose.model("Course", CourseSchema);
 
 const sourceDir = "/Users/bashybaranaba/Downloads/Copy of Commons-Education (3)";
+const featureImagePath = "/Users/bashybaranaba/Downloads/Copy of Commons-Education (4).png";
 const skillSlug = "intro-to-multi-agent-systems";
 const targetCourseSlug = "ai-fluency-starter";
 
 const assetFiles = {
-  cover: "19.png",
+  cover: { sourcePath: featureImagePath, keyName: "feature.png" },
   multipleAgents: "20.png",
   architecture: "21.png",
   subagentsTeams: "22.png",
@@ -63,8 +64,10 @@ function rich(paragraphs) {
   return paragraphs.map((paragraph) => `<p>${paragraph}</p>`).join("");
 }
 
-async function upsertMedia(filename) {
-  const filePath = path.join(sourceDir, filename);
+async function upsertMedia(asset) {
+  const filename = typeof asset === "string" ? asset : asset.keyName;
+  const filePath =
+    typeof asset === "string" ? path.join(sourceDir, asset) : asset.sourcePath;
   const key = `course-media/${targetCourseSlug}/${skillSlug}/${filename}`;
   if (!fs.existsSync(filePath)) {
     throw new Error(`Missing source asset: ${filePath}`);
