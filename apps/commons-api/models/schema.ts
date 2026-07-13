@@ -65,21 +65,21 @@ export const agent = pgTable('agent', {
   cronJobName: text('cron_job_name'),
 
   // Model provider configuration (BYOK support)
-  modelProvider: text('model_provider').default('openai'),  // 'openai' | 'anthropic' | 'google' | 'mistral' | 'groq' | 'ollama'
+  modelProvider: text('model_provider').default('openai'), // 'openai' | 'anthropic' | 'google' | 'mistral' | 'groq' | 'ollama'
   modelId: text('model_id').default('gpt-5.4-mini'),
-  modelApiKey: text('model_api_key'),   // Encrypted BYOK API key
+  modelApiKey: text('model_api_key'), // Encrypted BYOK API key
   modelBaseUrl: text('model_base_url'), // For Ollama / custom endpoints
 
   // A2A Protocol — Agent-to-Agent interoperability
   a2aEnabled: pgBoolean('a2a_enabled').default(false).notNull(),
   a2aSkills: jsonb('a2a_skills').$type<
     Array<{
-    id: string;
-    name: string;
-    description?: string;
-    tags?: string[];
-    inputModes?: string[];
-    outputModes?: string[];
+      id: string;
+      name: string;
+      description?: string;
+      tags?: string[];
+      inputModes?: string[];
+      outputModes?: string[];
     }>
   >(),
 
@@ -145,8 +145,8 @@ export const agentWallet = pgTable('agent_wallet', {
   // Session key permissions (for ERC-4337 scoped keys)
   sessionPermissions: jsonb('session_permissions').$type<{
     allowedContracts?: string[];
-    maxValuePerTx?: string;    // in wei
-    expiresAt?: string;        // ISO timestamp
+    maxValuePerTx?: string; // in wei
+    expiresAt?: string; // ISO timestamp
   }>(),
 
   // Chain the wallet lives on (chain ID as string, e.g. "84532" for Base Sepolia)
@@ -164,6 +164,113 @@ export const agentWallet = pgTable('agent_wallet', {
     .default(sql`timezone('utc', now())`)
     .notNull(),
 });
+
+/* ─────────────────────────  CODE PROJECTS  ───────────────────────── */
+
+export const codeProject = pgTable(
+  'code_project',
+  {
+    projectId: uuid('project_id')
+      .default(sql`uuid_generate_v4()`)
+      .primaryKey(),
+    agentId: text('agent_id')
+      .notNull()
+      .references(() => agent.agentId, { onDelete: 'cascade' }),
+    sessionId: uuid('session_id').references(() => session.sessionId, {
+      onDelete: 'set null',
+    }),
+    ownerUserId: text('owner_user_id'),
+    workspaceId: text('workspace_id'),
+    name: text('name').notNull(),
+    slug: text('slug').notNull(),
+    description: text('description'),
+    framework: text('framework').default('react').notNull(),
+    entryFile: text('entry_file').default('src/main.tsx').notNull(),
+    status: text('status').default('draft').notNull(),
+    visibility: text('visibility').default('private').notNull(),
+    latestDeploymentId: uuid('latest_deployment_id'),
+    repositoryUrl: text('repository_url'),
+    metadata: jsonb('metadata').$type<Record<string, any>>().default({}),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .default(sql`timezone('utc', now())`)
+      .notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true })
+      .default(sql`timezone('utc', now())`)
+      .notNull(),
+  },
+  (table) => ({
+    slugIdx: uniqueIndex('idx_code_project_slug').on(table.slug),
+    agentIdx: index('idx_code_project_agent').on(
+      table.agentId,
+      table.updatedAt,
+    ),
+  }),
+);
+
+export const codeProjectFile = pgTable(
+  'code_project_file',
+  {
+    fileId: uuid('file_id')
+      .default(sql`uuid_generate_v4()`)
+      .primaryKey(),
+    projectId: uuid('project_id')
+      .notNull()
+      .references(() => codeProject.projectId, { onDelete: 'cascade' }),
+    path: text('path').notNull(),
+    content: text('content').notNull(),
+    mimeType: text('mime_type').default('text/plain').notNull(),
+    sizeBytes: integer('size_bytes').notNull(),
+    checksum: text('checksum').notNull(),
+    version: integer('version').default(1).notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .default(sql`timezone('utc', now())`)
+      .notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true })
+      .default(sql`timezone('utc', now())`)
+      .notNull(),
+  },
+  (table) => ({
+    projectPathIdx: uniqueIndex('idx_code_project_file_path').on(
+      table.projectId,
+      table.path,
+    ),
+  }),
+);
+
+export const codeProjectDeployment = pgTable(
+  'code_project_deployment',
+  {
+    deploymentId: uuid('deployment_id')
+      .default(sql`uuid_generate_v4()`)
+      .primaryKey(),
+    projectId: uuid('project_id')
+      .notNull()
+      .references(() => codeProject.projectId, { onDelete: 'cascade' }),
+    status: text('status').default('building').notNull(),
+    storagePrefix: text('storage_prefix'),
+    publicUrl: text('public_url'),
+    buildErrors:
+      jsonb('build_errors').$type<
+        Array<{
+          file?: string;
+          line?: number;
+          column?: number;
+          message: string;
+        }>
+      >(),
+    verification: jsonb('verification').$type<Record<string, any>>(),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .default(sql`timezone('utc', now())`)
+      .notNull(),
+    publishedAt: timestamp('published_at', { withTimezone: true }),
+  },
+  (table) => ({
+    projectIdx: index('idx_code_project_deployment_project').on(
+      table.projectId,
+      table.createdAt,
+    ),
+  }),
+);
 
 /* ─────────────────────────  AGENT COMPUTER  ───────────────────────── */
 
@@ -382,11 +489,11 @@ export const session = pgTable('session', {
   initiator: text('initiator'), // wallet address of user or agent
 
   model: jsonb('model').$type<{
-    name?: string;          // Legacy field - keep for backward compat
-    provider?: string;      // 'openai' | 'anthropic' | 'google' | 'mistral' | 'groq' | 'ollama'
-    modelId?: string;       // e.g. 'claude-sonnet-4-6', 'gpt-4o'
-    apiKey?: string;        // BYOK — encrypted at rest
-    baseUrl?: string;       // For custom endpoints
+    name?: string; // Legacy field - keep for backward compat
+    provider?: string; // 'openai' | 'anthropic' | 'google' | 'mistral' | 'groq' | 'ollama'
+    modelId?: string; // e.g. 'claude-sonnet-4-6', 'gpt-4o'
+    apiKey?: string; // BYOK — encrypted at rest
+    baseUrl?: string; // For custom endpoints
     temperature?: number;
     maxTokens?: number;
     topP?: number;
@@ -874,41 +981,41 @@ export const agentPreferredConnection = pgTable('agent_preferred_connection', {
 export const agentTool = pgTable(
   'agent_tool',
   {
-  id: uuid('id')
-    .default(sql`uuid_generate_v4()`)
-    .primaryKey(),
+    id: uuid('id')
+      .default(sql`uuid_generate_v4()`)
+      .primaryKey(),
 
-  agentId: text('agent_id')
-    .notNull()
-    .references(() => agent.agentId, { onDelete: 'cascade' }),
+    agentId: text('agent_id')
+      .notNull()
+      .references(() => agent.agentId, { onDelete: 'cascade' }),
 
-  toolId: uuid('tool_id')
-    .notNull()
-    .references(() => tool.toolId, { onDelete: 'cascade' }),
+    toolId: uuid('tool_id')
+      .notNull()
+      .references(() => tool.toolId, { onDelete: 'cascade' }),
 
-  // Configuration
-  usageComments: text('usage_comments'),
-  isEnabled: pgBoolean('is_enabled').default(true),
+    // Configuration
+    usageComments: text('usage_comments'),
+    isEnabled: pgBoolean('is_enabled').default(true),
 
-  // Custom configuration per agent
-  config: jsonb('config').$type<{
-    customParams?: Record<string, any>;
-    overrideDefaults?: Record<string, any>;
-  }>(),
+    // Custom configuration per agent
+    config: jsonb('config').$type<{
+      customParams?: Record<string, any>;
+      overrideDefaults?: Record<string, any>;
+    }>(),
 
-  createdAt: timestamp('created_at', { withTimezone: true })
-    .default(sql`timezone('utc', now())`)
-    .notNull(),
-  updatedAt: timestamp('updated_at', { withTimezone: true })
-    .default(sql`timezone('utc', now())`)
-    .notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .default(sql`timezone('utc', now())`)
+      .notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true })
+      .default(sql`timezone('utc', now())`)
+      .notNull(),
   },
   (table) => ({
-  // One assignment per agent per tool; lets addAgentTool upsert on re-enable
-  agentToolIdx: uniqueIndex('idx_agent_tool_agent_tool').on(
-    table.agentId,
-    table.toolId,
-  ),
+    // One assignment per agent per tool; lets addAgentTool upsert on re-enable
+    agentToolIdx: uniqueIndex('idx_agent_tool_agent_tool').on(
+      table.agentId,
+      table.toolId,
+    ),
   }),
 );
 
@@ -1203,10 +1310,10 @@ export const workflowExecution = pgTable('workflow_execution', {
   errorMessage: text('error_message'),
 
   // Human-in-the-loop (HITL) pause/resume
-  approvalToken: text('approval_token'),      // unique token for approve/reject endpoints
+  approvalToken: text('approval_token'), // unique token for approve/reject endpoints
   approvalData: jsonb('approval_data').$type<Record<string, any>>(), // data returned by approver
   pausedNodeOutputs: jsonb('paused_node_outputs').$type<Record<string, any>>(), // node outputs at time of pause
-  pausedAtNode: text('paused_at_node'),        // node ID that triggered the pause
+  pausedAtNode: text('paused_at_node'), // node ID that triggered the pause
 
   createdAt: timestamp('created_at', { withTimezone: true })
     .default(sql`timezone('utc', now())`)
@@ -1247,22 +1354,22 @@ export const a2aTask = pgTable('a2a_task', {
   // Message content (A2A Message JSON: { role, parts: MessagePart[] })
   inputMessage: jsonb('input_message')
     .$type<{
-    role: 'user' | 'agent';
+      role: 'user' | 'agent';
       parts: Array<{
         type: string;
         text?: string;
         data?: any;
         mimeType?: string;
       }>;
-    contextId?: string;
-    taskId?: string;
+      contextId?: string;
+      taskId?: string;
     }>()
     .notNull(),
 
   // Output messages produced by the agent
   outputMessages: jsonb('output_messages').$type<
     Array<{
-    role: 'agent';
+      role: 'agent';
       parts: Array<{
         type: string;
         text?: string;
@@ -1275,9 +1382,9 @@ export const a2aTask = pgTable('a2a_task', {
   // Artefacts (files/data produced)
   artifacts: jsonb('artifacts').$type<
     Array<{
-    artifactId?: string;
-    name?: string;
-    description?: string;
+      artifactId?: string;
+      name?: string;
+      description?: string;
       parts: Array<{
         type: string;
         text?: string;
@@ -1601,8 +1708,8 @@ export const usageEvent = pgTable('usage_event', {
   ),
 
   // Model info
-  provider: text('provider').notNull(),   // 'openai' | 'anthropic' | 'google' | ...
-  modelId: text('model_id').notNull(),    // e.g. 'gpt-4o', 'claude-sonnet-4-6'
+  provider: text('provider').notNull(), // 'openai' | 'anthropic' | 'google' | ...
+  modelId: text('model_id').notNull(), // e.g. 'gpt-4o', 'claude-sonnet-4-6'
   runtimeType: text('runtime_type').default('native').notNull(),
   usageSource: text('usage_source').default('agent_commons').notNull(),
 
@@ -1818,10 +1925,10 @@ export const workflowExecutionRelations = relations(
 export const scheduledTaskRunRelations = relations(
   scheduledTaskRun,
   ({ one }) => ({
-  task: one(task, {
-    fields: [scheduledTaskRun.taskId],
-    references: [task.taskId],
-  }),
+    task: one(task, {
+      fields: [scheduledTaskRun.taskId],
+      references: [task.taskId],
+    }),
   }),
 );
 
@@ -1873,48 +1980,48 @@ export const usageEventRelations = relations(usageEvent, ({ one }) => ({
  * Stores OAuth 2.0 provider settings (Google, GitHub, Slack, etc.)
  */
 export const oauthProvider = pgTable('oauth_provider', {
-    providerId: uuid('provider_id')
-      .default(sql`uuid_generate_v4()`)
-      .primaryKey(),
+  providerId: uuid('provider_id')
+    .default(sql`uuid_generate_v4()`)
+    .primaryKey(),
 
-    // Identity
-    providerKey: text('provider_key').notNull().unique(),
-    displayName: text('display_name').notNull(),
-    description: text('description'),
-    logoUrl: text('logo_url'),
+  // Identity
+  providerKey: text('provider_key').notNull().unique(),
+  displayName: text('display_name').notNull(),
+  description: text('description'),
+  logoUrl: text('logo_url'),
 
-    // OAuth Configuration URLs
-    authUrl: text('auth_url').notNull(),
-    tokenUrl: text('token_url').notNull(),
-    revokeUrl: text('revoke_url'),
-    userInfoUrl: text('user_info_url'),
+  // OAuth Configuration URLs
+  authUrl: text('auth_url').notNull(),
+  tokenUrl: text('token_url').notNull(),
+  revokeUrl: text('revoke_url'),
+  userInfoUrl: text('user_info_url'),
 
-    // Encrypted Client Credentials
-    clientId: text('client_id').notNull(),
-    encryptedClientSecret: text('encrypted_client_secret').notNull(),
-    secretIv: text('secret_iv').notNull(),
-    secretTag: text('secret_tag').notNull(),
+  // Encrypted Client Credentials
+  clientId: text('client_id').notNull(),
+  encryptedClientSecret: text('encrypted_client_secret').notNull(),
+  secretIv: text('secret_iv').notNull(),
+  secretTag: text('secret_tag').notNull(),
 
-    // Configuration
-    scopes: jsonb('scopes')
-      .notNull()
-      .default(sql`'{}'`),
-    authorizationParams: jsonb('authorization_params').default(sql`'{}'`),
-    tokenParams: jsonb('token_params').default(sql`'{}'`),
+  // Configuration
+  scopes: jsonb('scopes')
+    .notNull()
+    .default(sql`'{}'`),
+  authorizationParams: jsonb('authorization_params').default(sql`'{}'`),
+  tokenParams: jsonb('token_params').default(sql`'{}'`),
 
-    // Metadata
-    isActive: pgBoolean('is_active').default(true),
-    isPlatform: pgBoolean('is_platform').default(true),
-    ownerId: text('owner_id'),
-    ownerType: text('owner_type'),
+  // Metadata
+  isActive: pgBoolean('is_active').default(true),
+  isPlatform: pgBoolean('is_platform').default(true),
+  ownerId: text('owner_id'),
+  ownerType: text('owner_type'),
 
-    // Timestamps
-    createdAt: timestamp('created_at', { withTimezone: true })
-      .default(sql`timezone('utc', now())`)
-      .notNull(),
-    updatedAt: timestamp('updated_at', { withTimezone: true })
-      .default(sql`timezone('utc', now())`)
-      .notNull(),
+  // Timestamps
+  createdAt: timestamp('created_at', { withTimezone: true })
+    .default(sql`timezone('utc', now())`)
+    .notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true })
+    .default(sql`timezone('utc', now())`)
+    .notNull(),
 });
 
 /* ─────────────────────────  OAUTH CONNECTION  ───────────────────────── */
@@ -1924,68 +2031,68 @@ export const oauthProvider = pgTable('oauth_provider', {
  * Stores user OAuth connections with encrypted tokens
  */
 export const oauthConnection = pgTable('oauth_connection', {
-    connectionId: uuid('connection_id')
-      .default(sql`uuid_generate_v4()`)
-      .primaryKey(),
+  connectionId: uuid('connection_id')
+    .default(sql`uuid_generate_v4()`)
+    .primaryKey(),
 
-    // Ownership
-    ownerId: text('owner_id').notNull(),
-    ownerType: text('owner_type').notNull(),
+  // Ownership
+  ownerId: text('owner_id').notNull(),
+  ownerType: text('owner_type').notNull(),
 
-    // Provider Reference
-    providerId: uuid('provider_id')
-      .notNull()
-      .references(() => oauthProvider.providerId, { onDelete: 'cascade' }),
+  // Provider Reference
+  providerId: uuid('provider_id')
+    .notNull()
+    .references(() => oauthProvider.providerId, { onDelete: 'cascade' }),
 
-    // Encrypted Access Token
-    encryptedAccessToken: text('encrypted_access_token').notNull(),
-    accessTokenIv: text('access_token_iv').notNull(),
-    accessTokenTag: text('access_token_tag').notNull(),
-    accessTokenExpiresAt: timestamp('access_token_expires_at', {
-      withTimezone: true,
-    }),
+  // Encrypted Access Token
+  encryptedAccessToken: text('encrypted_access_token').notNull(),
+  accessTokenIv: text('access_token_iv').notNull(),
+  accessTokenTag: text('access_token_tag').notNull(),
+  accessTokenExpiresAt: timestamp('access_token_expires_at', {
+    withTimezone: true,
+  }),
 
-    // Encrypted Refresh Token
-    encryptedRefreshToken: text('encrypted_refresh_token').notNull(),
-    refreshTokenIv: text('refresh_token_iv').notNull(),
-    refreshTokenTag: text('refresh_token_tag').notNull(),
+  // Encrypted Refresh Token
+  encryptedRefreshToken: text('encrypted_refresh_token').notNull(),
+  refreshTokenIv: text('refresh_token_iv').notNull(),
+  refreshTokenTag: text('refresh_token_tag').notNull(),
 
-    // Optional ID Token
-    encryptedIdToken: text('encrypted_id_token'),
-    idTokenIv: text('id_token_iv'),
-    idTokenTag: text('id_token_tag'),
+  // Optional ID Token
+  encryptedIdToken: text('encrypted_id_token'),
+  idTokenIv: text('id_token_iv'),
+  idTokenTag: text('id_token_tag'),
 
-    // Scopes
-    scopes: text('scopes')
-      .array()
-      .notNull()
-      .default(sql`ARRAY[]::text[]`),
+  // Scopes
+  scopes: text('scopes')
+    .array()
+    .notNull()
+    .default(sql`ARRAY[]::text[]`),
 
-    // Provider User Info
-    providerUserId: text('provider_user_id'),
-    providerUserEmail: text('provider_user_email'),
-    providerUserName: text('provider_user_name'),
-    providerMetadata: jsonb('provider_metadata').default(sql`'{}'`),
+  // Provider User Info
+  providerUserId: text('provider_user_id'),
+  providerUserEmail: text('provider_user_email'),
+  providerUserName: text('provider_user_name'),
+  providerMetadata: jsonb('provider_metadata').default(sql`'{}'`),
 
-    // Status & Tracking
-    status: text('status').default('active'),
-    lastRefreshedAt: timestamp('last_refreshed_at', { withTimezone: true }),
-    lastUsedAt: timestamp('last_used_at', { withTimezone: true }),
-    usageCount: integer('usage_count').default(0),
-    lastError: text('last_error'),
-    lastErrorAt: timestamp('last_error_at', { withTimezone: true }),
+  // Status & Tracking
+  status: text('status').default('active'),
+  lastRefreshedAt: timestamp('last_refreshed_at', { withTimezone: true }),
+  lastUsedAt: timestamp('last_used_at', { withTimezone: true }),
+  usageCount: integer('usage_count').default(0),
+  lastError: text('last_error'),
+  lastErrorAt: timestamp('last_error_at', { withTimezone: true }),
 
-    // User Labels
-    displayName: text('display_name'),
-    description: text('description'),
+  // User Labels
+  displayName: text('display_name'),
+  description: text('description'),
 
-    // Timestamps
-    createdAt: timestamp('created_at', { withTimezone: true })
-      .default(sql`timezone('utc', now())`)
-      .notNull(),
-    updatedAt: timestamp('updated_at', { withTimezone: true })
-      .default(sql`timezone('utc', now())`)
-      .notNull(),
+  // Timestamps
+  createdAt: timestamp('created_at', { withTimezone: true })
+    .default(sql`timezone('utc', now())`)
+    .notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true })
+    .default(sql`timezone('utc', now())`)
+    .notNull(),
 });
 
 /* ─────────────────────────  OAUTH STATE  ───────────────────────── */
@@ -1995,33 +2102,33 @@ export const oauthConnection = pgTable('oauth_connection', {
  * Temporary CSRF protection tokens (short-lived)
  */
 export const oauthState = pgTable('oauth_state', {
-    stateId: text('state_id').primaryKey(),
+  stateId: text('state_id').primaryKey(),
 
-    // Context
-    ownerId: text('owner_id').notNull(),
-    providerId: uuid('provider_id')
-      .notNull()
-      .references(() => oauthProvider.providerId, { onDelete: 'cascade' }),
+  // Context
+  ownerId: text('owner_id').notNull(),
+  providerId: uuid('provider_id')
+    .notNull()
+    .references(() => oauthProvider.providerId, { onDelete: 'cascade' }),
 
-    // PKCE
-    codeVerifier: text('code_verifier'),
+  // PKCE
+  codeVerifier: text('code_verifier'),
 
-    // Redirect Context
-    redirectUri: text('redirect_uri').notNull(),
-    requestedScopes: text('requested_scopes')
-      .array()
-      .notNull()
-      .default(sql`ARRAY[]::text[]`),
+  // Redirect Context
+  redirectUri: text('redirect_uri').notNull(),
+  requestedScopes: text('requested_scopes')
+    .array()
+    .notNull()
+    .default(sql`ARRAY[]::text[]`),
 
-    // Security
-    userAgent: text('user_agent'),
-    ipAddress: text('ip_address'),
+  // Security
+  userAgent: text('user_agent'),
+  ipAddress: text('ip_address'),
 
-    // Expiry
-    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
-    createdAt: timestamp('created_at', { withTimezone: true })
-      .default(sql`timezone('utc', now())`)
-      .notNull(),
+  // Expiry
+  expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true })
+    .default(sql`timezone('utc', now())`)
+    .notNull(),
 });
 
 /* ─────────────────────────  OAUTH RELATIONS  ───────────────────────── */
@@ -2342,7 +2449,9 @@ export const computeUsageEvent = pgTable(
     principalId: text('principal_id').notNull(),
     workspaceId: text('workspace_id'),
     resourceProfile: text('resource_profile').notNull(),
-    intervalStart: timestamp('interval_start', { withTimezone: true }).notNull(),
+    intervalStart: timestamp('interval_start', {
+      withTimezone: true,
+    }).notNull(),
     intervalEnd: timestamp('interval_end', { withTimezone: true }).notNull(),
     minutes: integer('minutes').notNull(),
     creditsCharged: integer('credits_charged').notNull(),
@@ -2384,9 +2493,10 @@ export const featureFlag = pgTable('feature_flag', {
   enabled: pgBoolean('enabled').default(false).notNull(),
   flagType: text('flag_type').default('boolean').notNull(), // 'boolean' | 'multivariate'
   rolloutPercentage: integer('rollout_percentage').default(0).notNull(), // 0-100
-  variants: jsonb('variants').$type<
-    Array<{ key: string; weight: number; payload?: unknown }>
-  >(),
+  variants:
+    jsonb('variants').$type<
+      Array<{ key: string; weight: number; payload?: unknown }>
+    >(),
   targeting: jsonb('targeting').$type<{
     allowPrincipalIds?: string[];
     denyPrincipalIds?: string[];

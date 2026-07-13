@@ -766,6 +766,69 @@ export class ComputerService {
     return { path, content: data.content ?? '' };
   }
 
+  async writeFiles(args: {
+    agentId: string;
+    computerId?: string;
+    sessionId?: string;
+    files: Array<{ path: string; content: string }>;
+    actorId?: string;
+    actorType?: 'user' | 'agent' | 'service';
+    runId?: string;
+    toolCallId?: string;
+  }) {
+    await this.assertCapability(args.agentId, 'filesystem');
+    if (!Array.isArray(args.files) || args.files.length === 0) {
+      throw new BadRequestException('files must contain at least one file');
+    }
+    if (args.files.length > 40) {
+      throw new BadRequestException(
+        'A single write can contain at most 40 files',
+      );
+    }
+    let totalBytes = 0;
+    const files = args.files.map((file) => {
+      const path = normalizeWorkspacePath(file.path).replace(/^\//, '');
+      if (typeof file.content !== 'string') {
+        throw new BadRequestException(`File content must be text: ${path}`);
+      }
+      totalBytes += Buffer.byteLength(file.content);
+      return { path, content: file.content };
+    });
+    if (totalBytes > 500_000) {
+      throw new BadRequestException('A single write cannot exceed 500 KB');
+    }
+    const computer = await this.resolveComputerForTool({
+      agentId: args.agentId,
+      computerId: args.computerId,
+      sessionId: args.sessionId,
+    });
+    const result = await this.sendInstruction({
+      agentId: args.agentId,
+      computerId: computer.computerId,
+      sessionId: args.sessionId,
+      eventType: 'workspace.write',
+      summary: `Write ${files.length} file${files.length === 1 ? '' : 's'}`,
+      instruction: [
+        'Use cli_write_file to write every file below exactly as provided.',
+        'Create parent directories as needed. Do not abbreviate, summarize, or replace file content with placeholders.',
+        'After all writes, verify the paths with cli_list_directory and report any failure.',
+        '',
+        JSON.stringify(files),
+      ].join('\n'),
+      waitMs: 300_000,
+      actorId: args.actorId,
+      actorType: args.actorType,
+      runId: args.runId,
+      toolCallId: args.toolCallId,
+    });
+    return {
+      ...result,
+      computerId: computer.computerId,
+      files: files.map((file) => file.path),
+      bytes: totalBytes,
+    };
+  }
+
   async sendInstruction(args: {
     agentId: string;
     computerId: string;
@@ -1072,11 +1135,66 @@ export class ComputerService {
       instruction: [
         'Use this computer browser.',
         `Open ${url}.`,
-        'Wait until the page is loaded, then report the page title, current URL, and any obvious console/runtime errors.',
+        'Use browser_wait, browser_inspect, and browser_screenshot after loading.',
+        'Report the page title, current URL, rendered content, and every console, page, network, framework-overlay, or runtime error.',
+        'Treat any detected error or blank application root as a failed check; do not describe the page as working.',
       ].join('\n'),
       eventType: 'browser.open',
       summary: `Open ${url}`,
       waitMs: 180_000,
+      actorId: args.actorId,
+      actorType: args.actorType,
+      runId: args.runId,
+      toolCallId: args.toolCallId,
+    });
+    const computer = await this.refreshInstance(computerForTool.computerId, {
+      silent: true,
+    });
+    return { ...result, browser: computer.browser };
+  }
+
+  async testBrowser(args: {
+    agentId: string;
+    computerId?: string;
+    sessionId?: string;
+    url?: string;
+    actions?: Array<{
+      type: 'click' | 'type' | 'select' | 'press' | 'expectText';
+      selector?: string;
+      text?: string;
+      value?: string;
+      key?: string;
+    }>;
+    actorId?: string;
+    actorType?: 'user' | 'agent' | 'service';
+    runId?: string;
+    toolCallId?: string;
+  }) {
+    await this.assertCapability(args.agentId, 'browser');
+    const computerForTool = await this.resolveComputerForTool({
+      agentId: args.agentId,
+      computerId: args.computerId,
+      sessionId: args.sessionId,
+    });
+    const actions = (args.actions ?? []).slice(0, 20);
+    const result = await this.sendInstruction({
+      agentId: args.agentId,
+      computerId: computerForTool.computerId,
+      sessionId: args.sessionId,
+      instruction: [
+        'Test the application in this computer browser like a careful human developer.',
+        args.url ? `Open ${args.url} first.` : 'Use the currently open page.',
+        'Wait until the page is interactive. Use browser_inspect and browser_eval to inspect rendered text, the application root, runtime overlays, console errors, page errors, and failed requests.',
+        actions.length
+          ? `Perform these actions in order and verify their effects:\n${JSON.stringify(actions, null, 2)}`
+          : 'Exercise the primary visible interaction when it is safe and reversible.',
+        'Capture a final browser screenshot.',
+        'Return a concise test report with passed checks, failed checks, current URL/title, diagnostics, and screenshot status.',
+        'Any console error, page error, failed framework overlay, blank app root, broken interaction, or failed required request means the test failed. Never claim success while one remains.',
+      ].join('\n'),
+      eventType: 'browser.test',
+      summary: `Test ${args.url ?? 'current browser page'}`,
+      waitMs: 300_000,
       actorId: args.actorId,
       actorType: args.actorType,
       runId: args.runId,
@@ -1119,7 +1237,8 @@ export class ComputerService {
       '### Persistent computer',
       'This agent can have exactly one isolated CommonOS computer. Its workspace persists across chats and pod restarts.',
       `Computer use is ${config.allowAgentStart ? 'agent-wakeable' : 'user-wake only'}; resource profile is ${config.resourceProfile}/${config.resourceMode}.`,
-      'Use startAgentComputer to wake or attach the assigned computer before computer work. It is idempotent and never creates an extra computer. Use runComputerCommand for terminal work, readComputerFile for files, and openComputerBrowser for browser work.',
+      'Use startAgentComputer to wake or attach the assigned computer before computer work. It is idempotent and never creates an extra computer. Use writeComputerFiles for complete source files, runComputerCommand for finite terminal work, readComputerFile for files, and testComputerBrowser for application verification.',
+      'Never encode source files in shell heredocs or long commands. writeComputerFiles is the reliable structured file-writing path.',
       'Always keep commands scoped to the task, avoid secrets exfiltration, and summarize created files/screenshots/results for the user.',
       'Assigned computer:',
       line,
@@ -1153,12 +1272,16 @@ export class ComputerService {
   private toolNameForComputerEvent(eventType: string) {
     if (eventType === 'terminal.command') return 'runComputerCommand';
     if (eventType === 'browser.open') return 'openComputerBrowser';
+    if (eventType === 'browser.test') return 'testComputerBrowser';
+    if (eventType === 'workspace.write') return 'writeComputerFiles';
     return 'startAgentComputer';
   }
 
   private stageForComputerEvent(eventType: string) {
     if (eventType === 'terminal.command') return 'computer_terminal';
     if (eventType === 'browser.open') return 'computer_browser';
+    if (eventType === 'browser.test') return 'computer_browser_test';
+    if (eventType === 'workspace.write') return 'computer_files';
     return 'computer';
   }
 

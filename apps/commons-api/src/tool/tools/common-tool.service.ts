@@ -24,6 +24,11 @@ import { ModuleRef } from '@nestjs/core';
 import { WorkflowExecutorService } from '~/tool/workflow-executor.service';
 import { FilesService } from '~/files';
 import { ComputerService } from '~/computer';
+import {
+  CodeProjectService,
+  type BrowserCheckAction,
+  type CodeProjectFileInput,
+} from '~/code-project';
 
 const graphqlRequest = import('graphql-request');
 
@@ -326,6 +331,14 @@ export interface CommonTool {
     path: string;
   }): Promise<any>;
 
+  /** Write complete text files directly into the persistent computer workspace. */
+  writeComputerFiles(props: {
+    agentId?: string;
+    computerId?: string;
+    sessionId?: string;
+    files: Array<{ path: string; content: string }>;
+  }): Promise<any>;
+
   /**
    * Open a URL in an agent computer browser.
    */
@@ -334,6 +347,62 @@ export interface CommonTool {
     computerId?: string;
     sessionId?: string;
     url: string;
+  }): Promise<any>;
+
+  /** Test a real application end-to-end in the persistent computer browser. */
+  testComputerBrowser(props: {
+    agentId?: string;
+    computerId?: string;
+    sessionId?: string;
+    url?: string;
+    actions?: Array<{
+      type: 'click' | 'type' | 'select' | 'press' | 'expectText';
+      selector?: string;
+      text?: string;
+      value?: string;
+      key?: string;
+    }>;
+  }): Promise<any>;
+
+  /** Create a lightweight React project that does not require a computer. */
+  createCodeProject(props: {
+    agentId?: string;
+    sessionId?: string;
+    name: string;
+    description?: string;
+    files?: CodeProjectFileInput[];
+  }): Promise<any>;
+
+  /** Create or replace complete text files in a lightweight code project. */
+  writeCodeProjectFiles(props: {
+    agentId?: string;
+    projectId: string;
+    files: CodeProjectFileInput[];
+    replace?: boolean;
+  }): Promise<any>;
+
+  /** Read project metadata, complete source files, deployments, and test results. */
+  readCodeProject(props: { agentId?: string; projectId: string }): Promise<any>;
+
+  /** Compile and publish a lightweight React project at a durable public URL. */
+  publishCodeProject(props: {
+    agentId?: string;
+    projectId: string;
+  }): Promise<any>;
+
+  /** Test the public project in desktop and mobile Chromium viewports. */
+  testCodeProject(props: {
+    agentId?: string;
+    projectId: string;
+    actions?: BrowserCheckAction[];
+  }): Promise<any>;
+
+  /** Move a lightweight project into this agent's persistent computer. */
+  exportCodeProjectToComputer(props: {
+    agentId?: string;
+    sessionId?: string;
+    projectId: string;
+    directory?: string;
   }): Promise<any>;
 
   /**
@@ -517,6 +586,7 @@ export class CommonToolService implements CommonTool {
     private pinataService: PinataService,
     private files: FilesService,
     private computers: ComputerService,
+    private codeProjects: CodeProjectService,
     @Inject(forwardRef(() => SpaceService))
     private space: SpaceService,
     @Inject(forwardRef(() => SpaceTtsService))
@@ -595,7 +665,10 @@ export class CommonToolService implements CommonTool {
     }
 
     const startedAt = Date.now();
-    const timeoutMs = Math.max(1000, Math.min(props.timeoutMs ?? 60_000, 300_000));
+    const timeoutMs = Math.max(
+      1000,
+      Math.min(props.timeoutMs ?? 60_000, 300_000),
+    );
     while (Date.now() - startedAt < timeoutMs) {
       const execution = await workflowExecutor.getExecutionStatus(executionId);
       if (
@@ -1264,12 +1337,15 @@ export class CommonToolService implements CommonTool {
     });
   }
 
-  async startAgentComputer(props: {
-    agentId?: string;
-    sessionId?: string;
-    name?: string;
-    reason?: string;
-  }, metadata?: ToolExecutionMetadata) {
+  async startAgentComputer(
+    props: {
+      agentId?: string;
+      sessionId?: string;
+      name?: string;
+      reason?: string;
+    },
+    metadata?: ToolExecutionMetadata,
+  ) {
     const agentId = this.requireToolAgentId(props.agentId, metadata);
     return this.computers.startComputer({
       ...props,
@@ -1282,11 +1358,14 @@ export class CommonToolService implements CommonTool {
     });
   }
 
-  async listAgentComputers(props: {
-    agentId?: string;
-    sessionId?: string;
-    includeTerminated?: boolean;
-  }, metadata?: ToolExecutionMetadata) {
+  async listAgentComputers(
+    props: {
+      agentId?: string;
+      sessionId?: string;
+      includeTerminated?: boolean;
+    },
+    metadata?: ToolExecutionMetadata,
+  ) {
     const agentId = this.requireToolAgentId(props.agentId, metadata);
     return this.computers.listInstances({
       ...props,
@@ -1295,14 +1374,17 @@ export class CommonToolService implements CommonTool {
     });
   }
 
-  async runComputerCommand(props: {
-    agentId?: string;
-    computerId?: string;
-    sessionId?: string;
-    command: string;
-    cwd?: string;
-    timeoutSeconds?: number;
-  }, metadata?: ToolExecutionMetadata) {
+  async runComputerCommand(
+    props: {
+      agentId?: string;
+      computerId?: string;
+      sessionId?: string;
+      command: string;
+      cwd?: string;
+      timeoutSeconds?: number;
+    },
+    metadata?: ToolExecutionMetadata,
+  ) {
     const agentId = this.requireToolAgentId(props.agentId, metadata);
     return this.computers.runCommand({
       ...props,
@@ -1315,12 +1397,15 @@ export class CommonToolService implements CommonTool {
     });
   }
 
-  async readComputerFile(props: {
-    agentId?: string;
-    computerId?: string;
-    sessionId?: string;
-    path: string;
-  }, metadata?: ToolExecutionMetadata) {
+  async readComputerFile(
+    props: {
+      agentId?: string;
+      computerId?: string;
+      sessionId?: string;
+      path: string;
+    },
+    metadata?: ToolExecutionMetadata,
+  ) {
     const agentId = this.requireToolAgentId(props.agentId, metadata);
     return this.computers.readFile({
       ...props,
@@ -1329,12 +1414,36 @@ export class CommonToolService implements CommonTool {
     });
   }
 
-  async openComputerBrowser(props: {
-    agentId?: string;
-    computerId?: string;
-    sessionId?: string;
-    url: string;
-  }, metadata?: ToolExecutionMetadata) {
+  async writeComputerFiles(
+    props: {
+      agentId?: string;
+      computerId?: string;
+      sessionId?: string;
+      files: Array<{ path: string; content: string }>;
+    },
+    metadata?: ToolExecutionMetadata,
+  ) {
+    const agentId = this.requireToolAgentId(props.agentId, metadata);
+    return this.computers.writeFiles({
+      ...props,
+      agentId,
+      sessionId: props.sessionId ?? metadata?.sessionId,
+      actorId: agentId,
+      actorType: 'agent',
+      runId: metadata?.runId,
+      toolCallId: metadata?.toolCallId,
+    });
+  }
+
+  async openComputerBrowser(
+    props: {
+      agentId?: string;
+      computerId?: string;
+      sessionId?: string;
+      url: string;
+    },
+    metadata?: ToolExecutionMetadata,
+  ) {
     const agentId = this.requireToolAgentId(props.agentId, metadata);
     return this.computers.openBrowser({
       ...props,
@@ -1342,6 +1451,130 @@ export class CommonToolService implements CommonTool {
       sessionId: props.sessionId ?? metadata?.sessionId,
       actorId: agentId,
       actorType: 'agent',
+      runId: metadata?.runId,
+      toolCallId: metadata?.toolCallId,
+    });
+  }
+
+  async testComputerBrowser(
+    props: {
+      agentId?: string;
+      computerId?: string;
+      sessionId?: string;
+      url?: string;
+      actions?: Array<{
+        type: 'click' | 'type' | 'select' | 'press' | 'expectText';
+        selector?: string;
+        text?: string;
+        value?: string;
+        key?: string;
+      }>;
+    },
+    metadata?: ToolExecutionMetadata,
+  ) {
+    const agentId = this.requireToolAgentId(props.agentId, metadata);
+    return this.computers.testBrowser({
+      ...props,
+      agentId,
+      sessionId: props.sessionId ?? metadata?.sessionId,
+      actorId: agentId,
+      actorType: 'agent',
+      runId: metadata?.runId,
+      toolCallId: metadata?.toolCallId,
+    });
+  }
+
+  async createCodeProject(
+    props: {
+      agentId?: string;
+      sessionId?: string;
+      name: string;
+      description?: string;
+      files?: CodeProjectFileInput[];
+    },
+    metadata?: ToolExecutionMetadata,
+  ) {
+    const agentId = this.requireToolAgentId(props.agentId, metadata);
+    return this.codeProjects.create({
+      ...props,
+      agentId,
+      sessionId: props.sessionId ?? metadata?.sessionId,
+      runId: metadata?.runId,
+      toolCallId: metadata?.toolCallId,
+    });
+  }
+
+  async writeCodeProjectFiles(
+    props: {
+      agentId?: string;
+      projectId: string;
+      files: CodeProjectFileInput[];
+      replace?: boolean;
+    },
+    metadata?: ToolExecutionMetadata,
+  ) {
+    const agentId = this.requireToolAgentId(props.agentId, metadata);
+    return this.codeProjects.writeFiles({
+      ...props,
+      agentId,
+      runId: metadata?.runId,
+      toolCallId: metadata?.toolCallId,
+    });
+  }
+
+  async readCodeProject(
+    props: { agentId?: string; projectId: string },
+    metadata?: ToolExecutionMetadata,
+  ) {
+    const agentId = this.requireToolAgentId(props.agentId, metadata);
+    return this.codeProjects.get(agentId, props.projectId);
+  }
+
+  async publishCodeProject(
+    props: { agentId?: string; projectId: string },
+    metadata?: ToolExecutionMetadata,
+  ) {
+    const agentId = this.requireToolAgentId(props.agentId, metadata);
+    return this.codeProjects.publish({
+      agentId,
+      projectId: props.projectId,
+      runId: metadata?.runId,
+      toolCallId: metadata?.toolCallId,
+    });
+  }
+
+  async testCodeProject(
+    props: {
+      agentId?: string;
+      projectId: string;
+      actions?: BrowserCheckAction[];
+    },
+    metadata?: ToolExecutionMetadata,
+  ) {
+    const agentId = this.requireToolAgentId(props.agentId, metadata);
+    return this.codeProjects.verify({
+      agentId,
+      projectId: props.projectId,
+      actions: props.actions,
+      runId: metadata?.runId,
+      toolCallId: metadata?.toolCallId,
+    });
+  }
+
+  async exportCodeProjectToComputer(
+    props: {
+      agentId?: string;
+      sessionId?: string;
+      projectId: string;
+      directory?: string;
+    },
+    metadata?: ToolExecutionMetadata,
+  ) {
+    const agentId = this.requireToolAgentId(props.agentId, metadata);
+    return this.codeProjects.exportToComputer({
+      ...props,
+      agentId,
+      sessionId: props.sessionId ?? metadata?.sessionId,
       runId: metadata?.runId,
       toolCallId: metadata?.toolCallId,
     });
@@ -1645,17 +1878,22 @@ export class CommonToolService implements CommonTool {
       const userContent = `${instruction}\n\nData to process:\n${JSON.stringify(data, null, 2)}\n\nProvide a clear, structured result.`;
 
       const response = await llm.invoke([
-        new SystemMessage('You are a data processor within a workflow. Analyze and transform the provided data according to the instruction. Be concise and focused. Do not trigger new workflows or sessions.'),
+        new SystemMessage(
+          'You are a data processor within a workflow. Analyze and transform the provided data according to the instruction. Be concise and focused. Do not trigger new workflows or sessions.',
+        ),
         new HumanMessage(userContent),
       ]);
 
-      const result = typeof response.content === 'string'
-        ? response.content
-        : JSON.stringify(response.content);
+      const result =
+        typeof response.content === 'string'
+          ? response.content
+          : JSON.stringify(response.content);
 
       return { result, processed: true };
     } catch (error: any) {
-      throw new BadRequestException(`Agent processing failed: ${error.message}`);
+      throw new BadRequestException(
+        `Agent processing failed: ${error.message}`,
+      );
     }
   }
 
@@ -1683,7 +1921,12 @@ export class CommonToolService implements CommonTool {
       contextId?: string;
     },
     _metadata?: any,
-  ): Promise<{ text: string; taskId?: string; state?: string; artifacts?: any[] }> {
+  ): Promise<{
+    text: string;
+    taskId?: string;
+    state?: string;
+    artifacts?: any[];
+  }> {
     // ── Local skill lookup ─────────────────────────────────────────────────
     if (props.skillSlug && !props.url) {
       const skill = await this.skillService.get(props.skillSlug);
@@ -1695,15 +1938,22 @@ export class CommonToolService implements CommonTool {
     }
 
     if (!props.url) {
-      throw new BadRequestException('invoke_skill: either skillSlug or url is required');
+      throw new BadRequestException(
+        'invoke_skill: either skillSlug or url is required',
+      );
     }
 
     const { url, message = '', agentId, apiKey, contextId } = props;
 
     // Build the target endpoint
-    const endpoint = agentId && !url.includes(agentId) ? `${url.replace(/\/$/, '')}/${agentId}` : url;
+    const endpoint =
+      agentId && !url.includes(agentId)
+        ? `${url.replace(/\/$/, '')}/${agentId}`
+        : url;
 
-    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+    };
     if (apiKey) headers['Authorization'] = `Bearer ${apiKey}`;
 
     const taskId = `skill-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -1737,7 +1987,7 @@ export class CommonToolService implements CommonTool {
       );
     }
 
-    const rpcResponse = await response.json() as any;
+    const rpcResponse = (await response.json()) as any;
     if (rpcResponse.error) {
       throw new BadRequestException(
         `invoke_skill: remote agent error [${rpcResponse.error.code}] ${rpcResponse.error.message}`,
@@ -1745,8 +1995,11 @@ export class CommonToolService implements CommonTool {
     }
 
     const task = rpcResponse.result;
-    const textPart = task?.status?.message?.parts?.find((p: any) => p.type === 'text');
-    const text = textPart?.text ?? JSON.stringify(task?.status?.message ?? task);
+    const textPart = task?.status?.message?.parts?.find(
+      (p: any) => p.type === 'text',
+    );
+    const text =
+      textPart?.text ?? JSON.stringify(task?.status?.message ?? task);
 
     return {
       text,

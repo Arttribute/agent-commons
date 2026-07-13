@@ -15,6 +15,7 @@ import {
   type ComputerRuntimeTab,
 } from "@/components/computers/computer-types";
 import { AgentComputerSurface } from "@/components/computers/agent-computer-surface";
+import { CodeProjectSurface } from "@/components/code-projects/code-project-surface";
 import { cn } from "@/lib/utils";
 import { useAgentContext } from "@/context/AgentContext";
 
@@ -134,16 +135,22 @@ export default function SessionInterfaceImproved({
   const [error, setError] = useState<string | null>(null);
   const [tasks, setTasks] = useState<any[]>(session?.tasks || []);
   const [childSessions, setChildSessions] = useState<any[]>(
-    session?.childSessions || []
+    session?.childSessions || [],
   );
   const [spaces, setSpaces] = useState<any[]>(session?.spaces || []);
   const [computerOpen, setComputerOpen] = useState(false);
-  const [sessionComputer, setSessionComputer] = useState<AgentComputer | null>(null);
-  const [computerRuntimeTab, setComputerRuntimeTab] = useState<ComputerRuntimeTab>("files");
+  const [sessionComputer, setSessionComputer] = useState<AgentComputer | null>(
+    null,
+  );
+  const [computerRuntimeTab, setComputerRuntimeTab] =
+    useState<ComputerRuntimeTab>("files");
+  const [openProjectId, setOpenProjectId] = useState<string | null>(null);
 
   const { messages, setInputText } = useAgentContext();
   const greeting = (agent as any)?.greeting as string | undefined;
-  const conversationStarters = Array.isArray((agent as any)?.conversationStarters)
+  const conversationStarters = Array.isArray(
+    (agent as any)?.conversationStarters,
+  )
     ? ((agent as any).conversationStarters as string[]).filter(Boolean)
     : [];
 
@@ -179,7 +186,7 @@ export default function SessionInterfaceImproved({
     if (bottomRef.current) {
       bottomRef.current.scrollIntoView({
         behavior: smooth ? "smooth" : "auto",
-        block: "end"
+        block: "end",
       });
     }
   }, []);
@@ -253,28 +260,45 @@ export default function SessionInterfaceImproved({
     // Computer activity keeps the drawer state fresh but no longer forces it
     // open — the inline mini computer window in the chat covers the live view.
     const handleComputerActivity = (event: Event) => {
-      const detail = (event as CustomEvent<{
-        tab?: ComputerRuntimeTab;
-        computerId?: string;
-      }>).detail;
+      const detail = (
+        event as CustomEvent<{
+          tab?: ComputerRuntimeTab;
+          computerId?: string;
+        }>
+      ).detail;
       if (detail?.tab) setComputerRuntimeTab(detail.tab);
       fetchAgentComputer();
     };
     // Clicking the mini computer window opens the full drawer on the right tab.
     const handleComputerOpen = (event: Event) => {
-      const detail = (event as CustomEvent<{
-        tab?: ComputerRuntimeTab;
-        computerId?: string;
-      }>).detail;
+      const detail = (
+        event as CustomEvent<{
+          tab?: ComputerRuntimeTab;
+          computerId?: string;
+        }>
+      ).detail;
       if (detail?.tab) setComputerRuntimeTab(detail.tab);
       setComputerOpen(true);
       fetchAgentComputer();
     };
+    const handleProjectOpen = (event: Event) => {
+      const projectId = (event as CustomEvent<{ projectId?: string }>).detail
+        ?.projectId;
+      if (projectId) {
+        setComputerOpen(false);
+        setOpenProjectId(projectId);
+      }
+    };
     window.addEventListener("agent-computer-activity", handleComputerActivity);
     window.addEventListener("agent-computer-open", handleComputerOpen);
+    window.addEventListener("code-project-open", handleProjectOpen);
     return () => {
-      window.removeEventListener("agent-computer-activity", handleComputerActivity);
+      window.removeEventListener(
+        "agent-computer-activity",
+        handleComputerActivity,
+      );
       window.removeEventListener("agent-computer-open", handleComputerOpen);
+      window.removeEventListener("code-project-open", handleProjectOpen);
     };
   }, [fetchAgentComputer]);
 
@@ -286,8 +310,10 @@ export default function SessionInterfaceImproved({
     pollIntervalRef.current = setInterval(() => {
       fetchTasks().then(() => {
         setTasks((current) => {
-          const hasActive = current.some(
-            (t: any) => ["started", "running", "in_progress", "pending"].includes((t as any).status)
+          const hasActive = current.some((t: any) =>
+            ["started", "running", "in_progress", "pending"].includes(
+              (t as any).status,
+            ),
           );
           if (!hasActive && pollIntervalRef.current) {
             clearInterval(pollIntervalRef.current);
@@ -316,8 +342,10 @@ export default function SessionInterfaceImproved({
       // Streaming just ended — fetch fresh tasks
       fetchTasks().then(() => {
         setTasks((current) => {
-          const hasActive = current.some(
-            (t: any) => ["started", "running", "in_progress", "pending"].includes((t as any).status)
+          const hasActive = current.some((t: any) =>
+            ["started", "running", "in_progress", "pending"].includes(
+              (t as any).status,
+            ),
           );
           if (hasActive) startTaskPolling();
           return current;
@@ -377,94 +405,100 @@ export default function SessionInterfaceImproved({
         ) : (
           computerButton
         )}
-      <ScrollArea className="min-h-0 flex-1" scrollHideDelay={100}>
-        <div className="container mx-auto max-w-2xl px-4 pb-6 pt-4" ref={scrollRef}>
-          {isLoadingSession && messages.length === 0 ? (
-            <ChatLoadingIndicator />
-          ) : messages.length === 0 && (greeting || conversationStarters.length > 0) ? (
-            <div className="flex min-h-[45vh] flex-col justify-center py-8">
-              <div className="space-y-4">
-                {greeting && (
-                  <div className="rounded-lg border border-border bg-muted/30 p-4">
-                    <p className="text-sm leading-6 text-foreground">{greeting}</p>
-                  </div>
-                )}
-                {conversationStarters.length > 0 && (
-                  <div className="grid gap-2 sm:grid-cols-2">
-                    {conversationStarters.map((starter) => (
-                      <button
-                        key={starter}
-                        type="button"
-                        className="rounded-lg border border-border px-3 py-2 text-left text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-                        onClick={() => setInputText(starter)}
-                      >
-                        {starter}
-                      </button>
-                    ))}
-                  </div>
-                )}
+        <ScrollArea className="min-h-0 flex-1" scrollHideDelay={100}>
+          <div
+            className="container mx-auto max-w-2xl px-4 pb-6 pt-4"
+            ref={scrollRef}
+          >
+            {isLoadingSession && messages.length === 0 ? (
+              <ChatLoadingIndicator />
+            ) : messages.length === 0 &&
+              (greeting || conversationStarters.length > 0) ? (
+              <div className="flex min-h-[45vh] flex-col justify-center py-8">
+                <div className="space-y-4">
+                  {greeting && (
+                    <div className="rounded-lg border border-border bg-muted/30 p-4">
+                      <p className="text-sm leading-6 text-foreground">
+                        {greeting}
+                      </p>
+                    </div>
+                  )}
+                  {conversationStarters.length > 0 && (
+                    <div className="grid gap-2 sm:grid-cols-2">
+                      {conversationStarters.map((starter) => (
+                        <button
+                          key={starter}
+                          type="button"
+                          className="rounded-lg border border-border px-3 py-2 text-left text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                          onClick={() => setInputText(starter)}
+                        >
+                          {starter}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+                <div ref={bottomRef} />
               </div>
-              <div ref={bottomRef} />
-            </div>
-          ) : (
-            <>
-              {groupedItems.map((item, index) => {
-                if (item.type === "message") {
-                  const { message } = item;
-                  if (message.role === "user" || message.role === "human") {
-                    return (
-                      <InitiatorMessage
-                        key={index}
-                        message={message.content}
-                        timestamp={message.timestamp}
-                        metadata={message.metadata}
-                      />
-                    );
+            ) : (
+              <>
+                {groupedItems.map((item, index) => {
+                  if (item.type === "message") {
+                    const { message } = item;
+                    if (message.role === "user" || message.role === "human") {
+                      return (
+                        <InitiatorMessage
+                          key={index}
+                          message={message.content}
+                          timestamp={message.timestamp}
+                          metadata={message.metadata}
+                        />
+                      );
+                    }
+                    if (message.role === "ai") {
+                      const key = message.isStreaming
+                        ? `ai-streaming-${index}`
+                        : index;
+                      return (
+                        <AgentOutput
+                          key={key}
+                          content={message.content}
+                          metadata={message.metadata}
+                          isStreaming={message.isStreaming}
+                          computer={sessionComputer}
+                        />
+                      );
+                    }
+                    return null;
                   }
-                  if (message.role === "ai") {
-                    const key = message.isStreaming
-                      ? `ai-streaming-${index}`
-                      : index;
-                    return (
-                      <AgentOutput
-                        key={key}
-                        content={message.content}
-                        metadata={message.metadata}
-                        isStreaming={message.isStreaming}
-                        computer={sessionComputer}
-                      />
-                    );
-                  }
-                  return null;
-                }
 
-                return <ExpandableToolCard key={index} tools={item.tools} />;
-              })}
-              {/* Bottom marker for auto-scroll */}
-              <div ref={bottomRef} />
-            </>
-          )}
+                  return <ExpandableToolCard key={index} tools={item.tools} />;
+                })}
+                {/* Bottom marker for auto-scroll */}
+                <div ref={bottomRef} />
+              </>
+            )}
+          </div>
+        </ScrollArea>
+
+        <div className="container mx-auto w-full max-w-2xl shrink-0 px-4 pb-4">
+          <ChatInputBox
+            agentId={agentId}
+            sessionId={sessionId}
+            userId={userId || ""}
+            onSessionCreated={onSessionCreated}
+            disabled={isRedirecting || isLoadingSession}
+            initialPrompt={initialPrompt}
+            onInitialPromptSent={onInitialPromptSent}
+          />
         </div>
-      </ScrollArea>
 
-      <div className="container mx-auto w-full max-w-2xl shrink-0 px-4 pb-4">
-        <ChatInputBox
-          agentId={agentId}
+        <ExecutionWidget
           sessionId={sessionId}
-          userId={userId || ""}
-          onSessionCreated={onSessionCreated}
-          disabled={isRedirecting || isLoadingSession}
-          initialPrompt={initialPrompt}
-          onInitialPromptSent={onInitialPromptSent}
+          tasks={tasks}
+          childSessions={childSessions}
+          spaces={spaces}
         />
-      </div>
-
-      <ExecutionWidget
-        sessionId={sessionId}
-        tasks={tasks}
-        childSessions={childSessions}
-        spaces={spaces}
-      />
       </div>
 
       {computerOpen && (
@@ -473,6 +507,14 @@ export default function SessionInterfaceImproved({
           activeTab={computerRuntimeTab}
           autoRefresh={computerOpen || Boolean(isStreaming)}
           onClose={() => setComputerOpen(false)}
+        />
+      )}
+      {openProjectId && (
+        <CodeProjectSurface
+          agentId={agentId}
+          projectId={openProjectId}
+          autoRefresh={Boolean(isStreaming)}
+          onClose={() => setOpenProjectId(null)}
         />
       )}
     </div>

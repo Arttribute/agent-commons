@@ -67,6 +67,7 @@
     "dotenv": "^16.4.7",
     "drizzle-kit": "^0.30.6",
     "drizzle-orm": "^0.41.0",
+    "esbuild": "^0.25.0",
     "got": "^14.4.7",
     "graphql": "^16.10.0",
     "graphql-request": "^7.1.2",

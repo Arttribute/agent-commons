@@ -31,6 +31,7 @@ import { FlagModule } from './flags/flag.module';
 import { FilesModule } from './files';
 import { ComputerModule } from './computer';
 import { AudioModule } from './audio';
+import { CodeProjectModule } from './code-project';
 
 @Module({
   imports: [
@@ -38,7 +39,7 @@ import { AudioModule } from './audio';
     DatabaseModule,
     OpenAIModule,
     EncryptionModule,
-    ModelProviderModule,   // Global model provider factory
+    ModelProviderModule, // Global model provider factory
     PinataModule,
     EmbeddingModule,
 
@@ -60,11 +61,12 @@ import { AudioModule } from './audio';
     FlagModule,
     FilesModule,
     ComputerModule,
+    CodeProjectModule,
     AudioModule,
     MemoryModule,
     WalletModule,
     LogModule,
-    X402Module,     // Global x402 micropayment guard
+    X402Module, // Global x402 micropayment guard
     AuthModule,
   ],
 
