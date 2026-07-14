@@ -165,7 +165,9 @@ describe('ComputerService', () => {
       status: 'starting',
       commonOsAgentId: 'commonos_agent_1',
     };
-    jest.spyOn(service, 'getAssignedComputer').mockResolvedValue(computer as any);
+    jest
+      .spyOn(service, 'getAssignedComputer')
+      .mockResolvedValue(computer as any);
     jest.spyOn(service, 'refreshInstance').mockResolvedValue(computer as any);
     const commonOsRequest = jest
       .spyOn(service as any, 'commonOsComputerRequest')
