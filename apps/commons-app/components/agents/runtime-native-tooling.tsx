@@ -1,6 +1,11 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useState,
+  type KeyboardEvent,
+} from "react";
 import {
   Check,
   ChevronRight,
@@ -8,12 +13,14 @@ import {
   Loader2,
   MessageCircle,
   MessageSquare,
+  Plus,
   Puzzle,
   Send,
   Server,
   ShieldCheck,
   Sparkles,
   Unplug,
+  X,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -103,6 +110,205 @@ const DEFAULT_CHANNELS: Record<ChannelId, ChannelDraft> = {
     homeTarget: "",
   },
 };
+
+const WHATSAPP_COUNTRY_CODES = [
+  ["+1", "United States / Canada"],
+  ["+7", "Kazakhstan / Russia"],
+  ["+20", "Egypt"],
+  ["+27", "South Africa"],
+  ["+30", "Greece"],
+  ["+31", "Netherlands"],
+  ["+32", "Belgium"],
+  ["+33", "France"],
+  ["+34", "Spain"],
+  ["+36", "Hungary"],
+  ["+39", "Italy"],
+  ["+40", "Romania"],
+  ["+41", "Switzerland"],
+  ["+43", "Austria"],
+  ["+44", "United Kingdom"],
+  ["+45", "Denmark"],
+  ["+46", "Sweden"],
+  ["+47", "Norway"],
+  ["+48", "Poland"],
+  ["+49", "Germany"],
+  ["+51", "Peru"],
+  ["+52", "Mexico"],
+  ["+54", "Argentina"],
+  ["+55", "Brazil"],
+  ["+56", "Chile"],
+  ["+57", "Colombia"],
+  ["+58", "Venezuela"],
+  ["+60", "Malaysia"],
+  ["+61", "Australia"],
+  ["+62", "Indonesia"],
+  ["+63", "Philippines"],
+  ["+64", "New Zealand"],
+  ["+65", "Singapore"],
+  ["+66", "Thailand"],
+  ["+81", "Japan"],
+  ["+82", "South Korea"],
+  ["+84", "Vietnam"],
+  ["+86", "China"],
+  ["+90", "Turkey"],
+  ["+91", "India"],
+  ["+92", "Pakistan"],
+  ["+93", "Afghanistan"],
+  ["+94", "Sri Lanka"],
+  ["+98", "Iran"],
+  ["+212", "Morocco"],
+  ["+213", "Algeria"],
+  ["+216", "Tunisia"],
+  ["+218", "Libya"],
+  ["+220", "Gambia"],
+  ["+221", "Senegal"],
+  ["+223", "Mali"],
+  ["+225", "Cote d'Ivoire"],
+  ["+233", "Ghana"],
+  ["+234", "Nigeria"],
+  ["+243", "DR Congo"],
+  ["+250", "Rwanda"],
+  ["+251", "Ethiopia"],
+  ["+254", "Kenya"],
+  ["+255", "Tanzania"],
+  ["+256", "Uganda"],
+  ["+260", "Zambia"],
+  ["+263", "Zimbabwe"],
+  ["+351", "Portugal"],
+  ["+352", "Luxembourg"],
+  ["+353", "Ireland"],
+  ["+354", "Iceland"],
+  ["+358", "Finland"],
+  ["+370", "Lithuania"],
+  ["+371", "Latvia"],
+  ["+372", "Estonia"],
+  ["+380", "Ukraine"],
+  ["+420", "Czechia"],
+  ["+421", "Slovakia"],
+  ["+852", "Hong Kong"],
+  ["+880", "Bangladesh"],
+  ["+886", "Taiwan"],
+  ["+960", "Maldives"],
+  ["+961", "Lebanon"],
+  ["+962", "Jordan"],
+  ["+966", "Saudi Arabia"],
+  ["+971", "United Arab Emirates"],
+  ["+972", "Israel"],
+  ["+974", "Qatar"],
+] as const;
+
+function WhatsAppPhoneInput({
+  value,
+  onChange,
+  disabled,
+}: {
+  value: string[];
+  onChange: (numbers: string[]) => void;
+  disabled?: boolean;
+}) {
+  const [countryCode, setCountryCode] = useState("");
+  const [customCode, setCustomCode] = useState("+");
+  const [phoneNumber, setPhoneNumber] = useState("");
+
+  const addNumber = () => {
+    const prefix = countryCode === "custom" ? customCode : countryCode;
+    const codeDigits = prefix.replace(/\D/g, "");
+    const numberDigits = phoneNumber.replace(/\D/g, "");
+    if (!codeDigits || !numberDigits) return;
+    const international = `+${codeDigits}${numberDigits}`;
+    if (!value.includes(international)) onChange([...value, international]);
+    setPhoneNumber("");
+  };
+
+  const onPhoneKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
+    if (event.key !== "Enter") return;
+    event.preventDefault();
+    addNumber();
+  };
+
+  return (
+    <div className="grid gap-2">
+      {value.length > 0 && (
+        <div className="flex min-h-8 flex-wrap gap-1.5">
+          {value.map((number) => (
+            <Badge
+              key={number}
+              variant="secondary"
+              className="h-7 gap-1 rounded-md pr-1 text-xs font-normal"
+            >
+              {number}
+              <button
+                type="button"
+                aria-label={`Remove ${number}`}
+                disabled={disabled}
+                onClick={() =>
+                  onChange(value.filter((candidate) => candidate !== number))
+                }
+                className="rounded p-0.5 hover:bg-secondary-foreground/15"
+              >
+                <X className="h-3 w-3" />
+              </button>
+            </Badge>
+          ))}
+        </div>
+      )}
+      <div className="flex min-w-0 gap-1.5">
+        <Select
+          value={countryCode}
+          onValueChange={setCountryCode}
+          disabled={disabled}
+        >
+          <SelectTrigger className="h-8 w-32 shrink-0 text-xs">
+            <SelectValue placeholder="Country code" />
+          </SelectTrigger>
+          <SelectContent>
+            {WHATSAPP_COUNTRY_CODES.map(([code, country]) => (
+              <SelectItem key={`${code}-${country}`} value={code}>
+                {country} ({code})
+              </SelectItem>
+            ))}
+            <SelectItem value="custom">Custom code</SelectItem>
+          </SelectContent>
+        </Select>
+        {countryCode === "custom" && (
+          <Input
+            value={customCode}
+            onChange={(event) => setCustomCode(event.target.value)}
+            inputMode="tel"
+            aria-label="Custom country code"
+            className="h-8 w-16 shrink-0 text-xs"
+            disabled={disabled}
+          />
+        )}
+        <Input
+          value={phoneNumber}
+          onChange={(event) => setPhoneNumber(event.target.value)}
+          onKeyDown={onPhoneKeyDown}
+          inputMode="tel"
+          placeholder="Phone number"
+          aria-label="WhatsApp phone number"
+          className="h-8 min-w-0 text-xs"
+          disabled={disabled}
+        />
+        <Button
+          type="button"
+          size="icon"
+          variant="outline"
+          className="h-8 w-8 shrink-0"
+          aria-label="Add WhatsApp number"
+          disabled={
+            disabled ||
+            !phoneNumber.trim() ||
+            (!countryCode || (countryCode === "custom" && !customCode.trim()))
+          }
+          onClick={addNumber}
+        >
+          <Plus className="h-3.5 w-3.5" />
+        </Button>
+      </div>
+    </div>
+  );
+}
 
 function findQrImage(value: unknown): string | null {
   if (typeof value === "string") {
@@ -741,13 +947,12 @@ export function ManagedRuntimeSetup({
                         </div>
                         <label className="grid gap-1.5 text-xs font-medium">
                           Allowed WhatsApp numbers
-                          <TagsInput
+                          <WhatsAppPhoneInput
                             value={channels.whatsapp.allowFrom}
                             disabled={!isOwner || saving}
                             onChange={(allowFrom) =>
                               updateChannel("whatsapp", { allowFrom })
                             }
-                            placeholder="+254..."
                           />
                         </label>
                         {qrCode ? (
