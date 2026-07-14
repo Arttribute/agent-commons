@@ -376,20 +376,14 @@ export class RuntimeManagementService {
     }
     try {
       await this.ensureReady(agentId);
-      const deadline = Date.now() + 90_000;
-      while (Date.now() < deadline) {
-        const result = await this.computers.runtimeChannelAction({
-          agentId,
-          channel,
-          action: action as 'connect' | 'status' | 'disconnect',
-        });
-        if (!('status' in result) || result.status !== 'starting')
-          return result;
-        await new Promise((resolve) => setTimeout(resolve, 1_500));
-      }
-      throw new Error(
-        `WhatsApp setup timed out while ${runtimeType === 'openclaw' ? 'OpenClaw' : 'Hermes'} was starting`,
-      );
+      // Cold runtimes can take longer than the public load balancer timeout.
+      // Return the transient state promptly; the setup UI retries this action
+      // until the sidecar can produce a QR code.
+      return await this.computers.runtimeChannelAction({
+        agentId,
+        channel,
+        action: action as 'connect' | 'status' | 'disconnect',
+      });
     } catch (error) {
       const detail = error instanceof Error ? error.message : '';
       throw new ServiceUnavailableException(

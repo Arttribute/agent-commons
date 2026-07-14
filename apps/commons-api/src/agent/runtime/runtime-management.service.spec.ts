@@ -126,4 +126,26 @@ describe('RuntimeManagementService channel configuration', () => {
       channelService.channelAction('agent-1', 'whatsapp', 'status'),
     ).rejects.toThrow('WhatsApp setup is taking longer than expected');
   });
+
+  it('returns a cold runtime state promptly for client-side retry', async () => {
+    const computers = {
+      runtimeChannelAction: jest
+        .fn()
+        .mockResolvedValue({ status: 'starting', runtimeStatus: 'starting' }),
+    };
+    const channelService = new RuntimeManagementService(
+      {} as any,
+      computers as any,
+      encryption as any,
+    );
+    jest
+      .spyOn(channelService as any, 'getAgent')
+      .mockResolvedValue({ runtimeType: 'hermes' });
+    jest.spyOn(channelService as any, 'ensureReady').mockResolvedValue({});
+
+    await expect(
+      channelService.channelAction('agent-1', 'whatsapp', 'connect'),
+    ).resolves.toEqual({ status: 'starting', runtimeStatus: 'starting' });
+    expect(computers.runtimeChannelAction).toHaveBeenCalledTimes(1);
+  });
 });

@@ -143,6 +143,14 @@ function channelIsConnected(value: unknown) {
   );
 }
 
+function channelIsStarting(value: unknown) {
+  const text = JSON.stringify(value ?? {}).toLowerCase();
+  return (
+    /"status":"starting"/.test(text) ||
+    /"runtimestatus":"(?:provisioning|starting)"/.test(text)
+  );
+}
+
 /** Built-in tooling each managed runtime ships with, shown alongside the
  * Agent Commons catalog so both surfaces read as one system. */
 export const RUNTIME_NATIVE_TOOLING: Record<
@@ -517,15 +525,23 @@ export function ManagedRuntimeSetup({
     try {
       const updated = await save();
       if (!updated) return;
-      const response = await fetch(
-        `/api/agents/${agentId}/runtime/channels/whatsapp/connect`,
-        { method: "POST" },
-      );
-      const payload = await response.json();
-      if (!response.ok) {
-        throw new Error(
-          payload?.message ?? payload?.error ?? "Could not start pairing",
+      const deadline = Date.now() + 2 * 60_000;
+      let payload: unknown = null;
+      while (Date.now() < deadline) {
+        const response = await fetch(
+          `/api/agents/${agentId}/runtime/channels/whatsapp/connect`,
+          { method: "POST" },
         );
+        payload = await response.json().catch(() => null);
+        if (!response.ok) {
+          throw new Error(
+            (payload as { message?: string; error?: string } | null)?.message ??
+              (payload as { message?: string; error?: string } | null)?.error ??
+              "Could not start pairing",
+          );
+        }
+        if (!channelIsStarting(payload)) break;
+        await new Promise((resolve) => window.setTimeout(resolve, 1_800));
       }
       if (channelIsConnected(payload)) {
         setWhatsappConnected(true);
@@ -533,7 +549,11 @@ export function ManagedRuntimeSetup({
         return;
       }
       const qr = findQr(payload);
-      if (!qr) throw new Error(`${meta.label} did not return a pairing code`);
+      if (!qr) {
+        throw new Error(
+          `${meta.label} is taking longer than expected to prepare WhatsApp pairing`,
+        );
+      }
       setQrCode(qr);
     } catch (cause) {
       setError(
