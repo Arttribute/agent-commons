@@ -726,11 +726,13 @@ function ToolsView({
   agentTools,
   setAgentTools,
   runtimeType,
+  isOwner,
 }: {
   agentId: string;
   agentTools: any[];
   setAgentTools: (tools: any[]) => void;
   runtimeType?: string;
+  isOwner: boolean;
 }) {
   const router = useRouter();
   const [catalog, setCatalog] = useState<ToolCatalogItem[]>([]);
@@ -738,7 +740,7 @@ function ToolsView({
   const [selectedItemId, setSelectedItemId] = useState<string | null>(null);
   const isManagedRuntime =
     runtimeType === "openclaw" || runtimeType === "hermes";
-  const { runtime, setRuntime } = useAgentRuntime(agentId, isManagedRuntime);
+  const { runtime } = useAgentRuntime(agentId, isManagedRuntime);
   const runtimeKey = managedRuntimeKey(runtime);
   const [statusFilter, setStatusFilter] = useState<
     "all" | "connected" | "not-connected"
@@ -752,10 +754,14 @@ function ToolsView({
     fetch("/api/tools/catalog", { cache: "no-store" })
       .then((r) => r.json())
       .then((d) => {
-        // Show everything except agent-processors and workflow-invocation items
+        // Show everything except agent-processors, workflow-invocation items,
+        // and internal platform (system) tools — those only surface in the
+        // workflow editor.
         const items: ToolCatalogItem[] = (d.items ?? []).filter(
           (i: ToolCatalogItem) =>
-            i.category !== "agents" && i.category !== "workflows",
+            i.category !== "agents" &&
+            i.category !== "workflows" &&
+            i.category !== "system",
         );
         setCatalog(items);
       })
@@ -1030,7 +1036,7 @@ function ToolsView({
                 <RuntimeNativeToolingDetail
                   agentId={agentId}
                   runtime={runtime}
-                  onUpdated={setRuntime}
+                  isOwner={isOwner}
                 />
               </Panel>
             </div>
@@ -2866,6 +2872,7 @@ export default function AgentStudioPage({
             agentTools={agentTools}
             setAgentTools={setAgentTools}
             runtimeType={agent.runtimeType}
+            isOwner={isOwner}
           />
         );
       case "skills":

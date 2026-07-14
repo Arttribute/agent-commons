@@ -157,7 +157,7 @@ export function GlobalSearch({ open, onOpenChange }: GlobalSearchProps) {
                 <CommandItem
                   key={s.sessionId}
                   value={`session ${s.title || "New session"} ${s.sessionId}`}
-                  onSelect={() => go(`/agents/${s.agentId}/${s.sessionId}`)}
+                  onSelect={() => go(`/sessions/${s.sessionId}`)}
                 >
                   <MessageSquare className="text-muted-foreground" />
                   <span className="truncate">{s.title || "New session"}</span>

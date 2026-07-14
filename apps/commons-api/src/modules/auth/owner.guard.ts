@@ -9,8 +9,23 @@ import {
 import { Reflector } from '@nestjs/core';
 import { Request } from 'express';
 import { DatabaseService } from '../database/database.service';
-import { eq } from 'drizzle-orm';
+import { eq, or } from 'drizzle-orm';
 import * as schema from '../../../models/schema';
+
+const UUID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** Tools are addressed by name or toolId (UUID); the uuid column would throw
+ *  on non-UUID input, so the id branch is only added for UUID-shaped values. */
+function toolNameOrId(identifier: string) {
+  if (UUID_PATTERN.test(identifier)) {
+    return or(
+      eq(schema.tool.name, identifier),
+      eq(schema.tool.toolId, identifier),
+    );
+  }
+  return eq(schema.tool.name, identifier);
+}
 import type { ApiKeyPrincipal } from './api-key.service';
 
 export const OWNER_RESOURCE_KEY = 'owner_resource';
@@ -221,9 +236,8 @@ export class OwnerGuard implements CanActivate {
         };
       }
       case 'tool': {
-        // Tools are addressed by name in the public API.
         const row = await this.db.query.tool.findFirst({
-          where: (t) => eq(t.name, id),
+          where: toolNameOrId(id),
         });
         if (!row) return null;
         if (row.ownerType === 'platform') {

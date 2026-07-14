@@ -67,4 +67,16 @@ export class RuntimeController {
       data: await this.runtimes.restart(agentId, req.principal?.principalId),
     };
   }
+
+  @Post('channels/:channel/:action')
+  @RateLimit({ limit: 20, windowMs: 60_000, keyStrategy: 'user' })
+  async channelAction(
+    @Param('agentId') agentId: string,
+    @Param('channel') channel: string,
+    @Param('action') action: string,
+  ) {
+    return {
+      data: await this.runtimes.channelAction(agentId, channel, action),
+    };
+  }
 }

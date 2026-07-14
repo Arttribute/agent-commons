@@ -1,6 +1,11 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
+import {
+  oneDark,
+  oneLight,
+} from "react-syntax-highlighter/dist/esm/styles/prism";
 import {
   ChevronLeft,
   ChevronRight,
@@ -11,7 +16,10 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { StreamActivity } from "@/context/AgentContext";
-import type { AgentComputer, ComputerRuntimeTab } from "@/components/computers/computer-types";
+import type {
+  AgentComputer,
+  ComputerRuntimeTab,
+} from "@/components/computers/computer-types";
 import {
   useComputerTheme,
   type ComputerMode,
@@ -34,10 +42,37 @@ interface ToolCallLike {
 }
 
 type Scene =
-  | { id: string; kind: "terminal"; command: string; output?: string; status: SceneStatus }
-  | { id: string; kind: "editor"; path?: string; code: string; status: SceneStatus }
-  | { id: string; kind: "browser"; url?: string; title?: string; status: SceneStatus }
-  | { id: string; kind: "desktop"; label: string; detail?: string; status: SceneStatus };
+  | {
+      id: string;
+      kind: "terminal";
+      command: string;
+      output?: string;
+      status: SceneStatus;
+    }
+  | {
+      id: string;
+      kind: "editor";
+      path?: string;
+      code: string;
+      projectId?: string;
+      status: SceneStatus;
+    }
+  | {
+      id: string;
+      kind: "browser";
+      url?: string;
+      title?: string;
+      screenshot?: string;
+      projectId?: string;
+      status: SceneStatus;
+    }
+  | {
+      id: string;
+      kind: "desktop";
+      label: string;
+      detail?: string;
+      status: SceneStatus;
+    };
 
 type SceneStatus = "running" | "completed" | "failed";
 
@@ -45,7 +80,15 @@ const COMPUTER_TOOLS = new Set([
   "startAgentComputer",
   "runComputerCommand",
   "readComputerFile",
+  "writeComputerFiles",
   "openComputerBrowser",
+  "testComputerBrowser",
+  "createCodeProject",
+  "writeCodeProjectFiles",
+  "readCodeProject",
+  "publishCodeProject",
+  "testCodeProject",
+  "exportCodeProjectToComputer",
 ]);
 
 export function MiniComputer({
@@ -83,11 +126,13 @@ export function MiniComputer({
 
   const open = () => {
     if (typeof window === "undefined") return;
+    const projectId = "projectId" in scene ? scene.projectId : undefined;
     window.dispatchEvent(
-      new CustomEvent("agent-computer-open", {
+      new CustomEvent(projectId ? "code-project-open" : "agent-computer-open", {
         detail: {
           tab: tabForScene(scene),
           computerId: computer?.computerId,
+          projectId,
         },
       }),
     );
@@ -111,7 +156,7 @@ export function MiniComputer({
           open();
         }
       }}
-      title="Open agent computer"
+      title="Open coding workspace"
       className={cn(
         "not-prose group my-3 w-full max-w-xl cursor-pointer select-none overflow-hidden rounded-xl border text-left shadow-md transition-shadow hover:shadow-lg hover:ring-1 hover:ring-indigo-400/40",
         light ? "border-zinc-200 bg-white" : "border-zinc-800/90 bg-zinc-950",
@@ -119,36 +164,90 @@ export function MiniComputer({
       )}
     >
       {/* Titlebar */}
-      <div className={cn("flex h-8 items-center gap-2 border-b px-3", tokens.topBar)}>
+      <div
+        className={cn(
+          "flex h-8 items-center gap-2 border-b px-3",
+          tokens.topBar,
+        )}
+      >
         <span className="flex items-center gap-1.5">
-          <span className={cn("h-2.5 w-2.5 rounded-full transition-colors group-hover:bg-red-400/80", light ? "bg-zinc-300" : "bg-zinc-700")} />
-          <span className={cn("h-2.5 w-2.5 rounded-full transition-colors group-hover:bg-amber-400/80", light ? "bg-zinc-300" : "bg-zinc-700")} />
-          <span className={cn("h-2.5 w-2.5 rounded-full transition-colors group-hover:bg-emerald-400/80", light ? "bg-zinc-300" : "bg-zinc-700")} />
+          <span
+            className={cn(
+              "h-2.5 w-2.5 rounded-full transition-colors group-hover:bg-red-400/80",
+              light ? "bg-zinc-300" : "bg-zinc-700",
+            )}
+          />
+          <span
+            className={cn(
+              "h-2.5 w-2.5 rounded-full transition-colors group-hover:bg-amber-400/80",
+              light ? "bg-zinc-300" : "bg-zinc-700",
+            )}
+          />
+          <span
+            className={cn(
+              "h-2.5 w-2.5 rounded-full transition-colors group-hover:bg-emerald-400/80",
+              light ? "bg-zinc-300" : "bg-zinc-700",
+            )}
+          />
         </span>
-        <span className={cn("min-w-0 flex-1 truncate text-center font-mono text-[11px]", tokens.textDim)}>
+        <span
+          className={cn(
+            "min-w-0 flex-1 truncate text-center font-mono text-[11px]",
+            tokens.textDim,
+          )}
+        >
           {titleForScene(scene, computer)}
         </span>
         <span className="flex items-center gap-2">
           <span
             className={cn(
               "h-1.5 w-1.5 rounded-full",
-              running ? "animate-pulse bg-emerald-400" : light ? "bg-zinc-300" : "bg-zinc-600",
+              running
+                ? "animate-pulse bg-emerald-400"
+                : light
+                  ? "bg-zinc-300"
+                  : "bg-zinc-600",
             )}
           />
-          <Maximize2 className={cn("h-3 w-3 transition-colors", light ? "text-zinc-400 group-hover:text-zinc-600" : "text-zinc-600 group-hover:text-zinc-300")} />
+          <Maximize2
+            className={cn(
+              "h-3 w-3 transition-colors",
+              light
+                ? "text-zinc-400 group-hover:text-zinc-600"
+                : "text-zinc-600 group-hover:text-zinc-300",
+            )}
+          />
         </span>
       </div>
 
       {/* Screen — a scaled desktop; app scenes float as a window over the wallpaper. */}
       <div className="relative h-72 overflow-hidden" style={wallpaper}>
         {scene.kind === "desktop" ? (
-          <DesktopFace scene={scene} computer={computer} mode={mode} tokens={tokens} />
+          <DesktopFace
+            scene={scene}
+            computer={computer}
+            mode={mode}
+            tokens={tokens}
+          />
         ) : (
           <div className="absolute inset-3 overflow-hidden rounded-xl ring-1 ring-black/10 shadow-lg">
-            {scene.kind === "terminal" && <TerminalFace scene={scene} live={running} />}
-            {scene.kind === "editor" && <EditorFace scene={scene} codeTheme={codeTheme} />}
+            {scene.kind === "terminal" && (
+              <TerminalFace scene={scene} live={running} />
+            )}
+            {scene.kind === "editor" && (
+              <EditorFace
+                scene={scene}
+                codeTheme={codeTheme}
+                live={live && scene.status === "running"}
+              />
+            )}
             {scene.kind === "browser" && (
-              <BrowserFace scene={scene} computer={computer} mode={mode} tokens={tokens} />
+              <BrowserFace
+                scene={scene}
+                computer={computer}
+                mode={mode}
+                tokens={tokens}
+              />
             )}
           </div>
         )}
@@ -157,7 +256,10 @@ export function MiniComputer({
       {/* Footer — scene stepper */}
       {scenes.length > 1 && (
         <div
-          className={cn("flex h-7 items-center justify-between border-t px-2", tokens.topBar)}
+          className={cn(
+            "flex h-7 items-center justify-between border-t px-2",
+            tokens.topBar,
+          )}
           onClick={(event) => event.stopPropagation()}
         >
           <button
@@ -205,12 +307,19 @@ function TerminalFace({
       </div>
       <div className="mt-1 min-h-0 flex-1 overflow-hidden">
         {output ? (
-          <pre className="whitespace-pre-wrap break-words text-zinc-400">{output}</pre>
+          <pre className="whitespace-pre-wrap break-words text-zinc-400">
+            {output}
+          </pre>
         ) : scene.status === "running" ? null : (
           <span className="text-zinc-600">(no output)</span>
         )}
         {scene.status === "running" && (
-          <span className={cn("mt-0.5 inline-block h-3.5 w-2 bg-zinc-300", live && "animate-pulse")} />
+          <span
+            className={cn(
+              "mt-0.5 inline-block h-3.5 w-2 bg-zinc-300",
+              live && "animate-pulse",
+            )}
+          />
         )}
         {scene.status === "failed" && (
           <p className="mt-1 text-red-400">command failed</p>
@@ -223,30 +332,90 @@ function TerminalFace({
 function EditorFace({
   scene,
   codeTheme,
+  live,
 }: {
   scene: Extract<Scene, { kind: "editor" }>;
   codeTheme: ComputerMode;
+  live: boolean;
 }) {
-  const lines = scene.code.split("\n").slice(0, 12);
   const name = scene.path?.split("/").pop() ?? "untitled";
   const dark = codeTheme === "dark";
+  const [visibleChars, setVisibleChars] = useState(scene.code.length);
+
+  useEffect(() => {
+    if (!live || !scene.code) {
+      setVisibleChars(scene.code.length);
+      return;
+    }
+    setVisibleChars(Math.min(40, scene.code.length));
+    const chunk = Math.max(12, Math.ceil(scene.code.length / 90));
+    const interval = window.setInterval(() => {
+      setVisibleChars((current) => {
+        if (current >= scene.code.length) {
+          window.clearInterval(interval);
+          return scene.code.length;
+        }
+        return Math.min(scene.code.length, current + chunk);
+      });
+    }, 24);
+    return () => window.clearInterval(interval);
+  }, [live, scene.code]);
+
+  const visibleCode = scene.code.slice(0, visibleChars) || " ";
   return (
-    <div className={cn("flex h-full flex-col font-mono text-[11px] leading-5", dark ? "bg-zinc-950" : "bg-white")}>
-      <div className={cn("flex h-7 items-center gap-2 border-b px-2", dark ? "border-white/[0.06] bg-zinc-900/60" : "border-zinc-200 bg-zinc-100")}>
-        <span className={cn("flex items-center gap-1.5 rounded-t border-b-2 border-indigo-400 px-2 py-1", dark ? "text-zinc-200" : "text-zinc-700")}>
+    <div
+      className={cn(
+        "flex h-full flex-col font-mono text-[11px] leading-5",
+        dark ? "bg-zinc-950" : "bg-white",
+      )}
+    >
+      <div
+        className={cn(
+          "flex h-7 items-center gap-2 border-b px-2",
+          dark
+            ? "border-white/[0.06] bg-zinc-900/60"
+            : "border-zinc-200 bg-zinc-100",
+        )}
+      >
+        <span
+          className={cn(
+            "flex items-center gap-1.5 rounded-t border-b-2 border-indigo-400 px-2 py-1",
+            dark ? "text-zinc-200" : "text-zinc-700",
+          )}
+        >
           <FileCode2 className="h-3 w-3 text-indigo-400" />
           {name}
         </span>
       </div>
-      <div className="flex min-h-0 flex-1 overflow-hidden px-1 py-1.5">
-        <div className={cn("select-none pr-3 text-right", dark ? "text-zinc-700" : "text-zinc-300")}>
-          {lines.map((_, i) => (
-            <div key={i}>{i + 1}</div>
-          ))}
-        </div>
-        <pre className={cn("min-w-0 flex-1 overflow-hidden whitespace-pre", dark ? "text-zinc-300" : "text-zinc-600")}>
-          {lines.join("\n")}
-        </pre>
+      <div className="relative min-h-0 flex-1 overflow-hidden">
+        <SyntaxHighlighter
+          language={languageOf(name)}
+          style={dark ? oneDark : oneLight}
+          showLineNumbers
+          wrapLongLines={false}
+          customStyle={{
+            margin: 0,
+            padding: "8px 10px",
+            minHeight: "100%",
+            background: "transparent",
+            fontSize: 10,
+            lineHeight: "17px",
+          }}
+          lineNumberStyle={{
+            minWidth: "2.3em",
+            paddingRight: "0.8em",
+            opacity: 0.3,
+            userSelect: "none",
+          }}
+          codeTagProps={{
+            style: { fontFamily: "var(--font-mono, ui-monospace, monospace)" },
+          }}
+        >
+          {visibleCode}
+        </SyntaxHighlighter>
+        {live && visibleChars < scene.code.length && (
+          <span className="absolute bottom-2 right-2 h-3 w-1.5 animate-pulse bg-indigo-300" />
+        )}
       </div>
     </div>
   );
@@ -264,22 +433,39 @@ function BrowserFace({
   tokens: ComputerTokens;
 }) {
   const url = scene.url ?? computer?.browser?.url ?? "";
-  const screenshot = computer?.browser?.screenshot ?? null;
+  const screenshot = scene.screenshot ?? computer?.browser?.screenshot ?? null;
   const light = mode === "light";
   return (
-    <div className={cn("flex h-full flex-col", light ? "bg-white/80" : "bg-zinc-950/70")}>
-      <div className={cn("flex h-7 items-center gap-2 border-b px-2", tokens.toolbar)}>
+    <div
+      className={cn(
+        "flex h-full flex-col",
+        light ? "bg-white/80" : "bg-zinc-950/70",
+      )}
+    >
+      <div
+        className={cn(
+          "flex h-7 items-center gap-2 border-b px-2",
+          tokens.toolbar,
+        )}
+      >
         <Globe2 className={cn("h-3 w-3 shrink-0", tokens.textDim)} />
         <span
           className={cn(
             "min-w-0 flex-1 truncate rounded-md px-2 py-0.5 font-mono text-[10px]",
-            light ? "bg-zinc-100 text-zinc-500" : "bg-zinc-950/80 text-zinc-400",
+            light
+              ? "bg-zinc-100 text-zinc-500"
+              : "bg-zinc-950/80 text-zinc-400",
           )}
         >
           {url || "about:blank"}
         </span>
       </div>
-      <div className={cn("min-h-0 flex-1 overflow-hidden", light ? "bg-zinc-50" : "")}>
+      <div
+        className={cn(
+          "min-h-0 flex-1 overflow-hidden",
+          light ? "bg-zinc-50" : "",
+        )}
+      >
         {screenshot ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img
@@ -291,7 +477,10 @@ function BrowserFace({
           <div className="flex h-full flex-col items-center justify-center gap-1.5 px-6 text-center">
             <Globe2 className={cn("h-6 w-6", tokens.textDim)} />
             <p className={cn("line-clamp-2 text-xs", tokens.textDim)}>
-              {scene.title ?? (scene.status === "running" ? "Loading page..." : hostOf(url) || "Browser session")}
+              {scene.title ??
+                (scene.status === "running"
+                  ? "Loading page..."
+                  : hostOf(url) || "Browser session")}
             </p>
           </div>
         )}
@@ -311,17 +500,27 @@ function DesktopFace({
   mode: ComputerMode;
   tokens: ComputerTokens;
 }) {
-  const status = computer?.status ?? (scene.status === "running" ? "starting" : "ready");
-  const booting = ["provisioning", "starting"].includes(status) || scene.status === "running";
+  const status =
+    computer?.status ?? (scene.status === "running" ? "starting" : "ready");
+  const booting =
+    ["provisioning", "starting"].includes(status) || scene.status === "running";
   const light = mode === "light";
   return (
     <div className="flex h-full flex-col items-center justify-center gap-2 px-6 text-center">
-      <Monitor className={cn("h-7 w-7", light ? "text-zinc-500" : "text-zinc-300/90", booting && "animate-pulse")} />
+      <Monitor
+        className={cn(
+          "h-7 w-7",
+          light ? "text-zinc-500" : "text-zinc-300/90",
+          booting && "animate-pulse",
+        )}
+      />
       <p className={cn("font-mono text-xs lowercase", tokens.text)}>
         {computer?.name ?? scene.label}
       </p>
       <p className={cn("font-mono text-[10px] lowercase", tokens.textDim)}>
-        {scene.status === "failed" ? scene.detail ?? "failed to start" : status}
+        {scene.status === "failed"
+          ? (scene.detail ?? "failed to start")
+          : status}
       </p>
     </div>
   );
@@ -341,9 +540,11 @@ function buildScenes(
       if (!COMPUTER_TOOLS.has(toolName)) continue;
       const args = activity.payload?.args ?? {};
       const result = unwrap(
-        activity.payload?.output ?? activity.payload?.result ?? activity.payload,
+        activity.payload?.output ??
+          activity.payload?.result ??
+          activity.payload,
       );
-      const scene = sceneFor(
+      const derived = scenesFor(
         activity.id,
         toolName,
         args,
@@ -355,7 +556,7 @@ function buildScenes(
             : "running",
         activity.detail,
       );
-      if (scene) upsertScene(scenes, scene);
+      for (const scene of derived) upsertScene(scenes, scene);
     }
     return scenes;
   }
@@ -365,14 +566,14 @@ function buildScenes(
     toolCalls.forEach((call, index) => {
       if (!COMPUTER_TOOLS.has(call.name)) return;
       const result = unwrap(call.result);
-      const scene = sceneFor(
+      const derived = scenesFor(
         `${call.name}:${index}`,
         call.name,
         call.args ?? {},
         result,
         call.status === "error" || result?.error ? "failed" : "completed",
       );
-      if (scene) scenes.push(scene);
+      scenes.push(...derived);
     });
     return scenes;
   }
@@ -380,56 +581,131 @@ function buildScenes(
   return [];
 }
 
-function sceneFor(
+function scenesFor(
   id: string,
   toolName: string,
   args: any,
   result: any,
   status: SceneStatus,
   detail?: string,
-): Scene | null {
+): Scene[] {
   if (toolName === "runComputerCommand") {
     const command = firstString(args?.command, result?.command, detail) ?? "";
     const written = parseHeredoc(command);
     if (written) {
-      return { id, kind: "editor", path: written.path, code: written.code, status };
+      return [
+        { id, kind: "editor", path: written.path, code: written.code, status },
+      ];
     }
-    return {
-      id,
-      kind: "terminal",
-      command: command || "(command)",
-      output: firstString(result?.response, result?.output, result?.error),
-      status,
-    };
+    return [
+      {
+        id,
+        kind: "terminal",
+        command: command || "(command)",
+        output: firstString(result?.response, result?.output, result?.error),
+        status,
+      },
+    ];
   }
   if (toolName === "readComputerFile") {
-    return {
-      id,
-      kind: "editor",
-      path: firstString(result?.path, args?.path, detail),
-      code: firstString(result?.content) ?? "",
-      status,
-    };
+    return [
+      {
+        id,
+        kind: "editor",
+        path: firstString(result?.path, args?.path, detail),
+        code: firstString(result?.content) ?? "",
+        status,
+      },
+    ];
   }
-  if (toolName === "openComputerBrowser") {
-    return {
-      id,
-      kind: "browser",
-      url: firstString(result?.browser?.url, args?.url, detail),
-      title: firstString(result?.browser?.title),
+  if (toolName === "writeComputerFiles") {
+    const files = Array.isArray(args?.files) ? args.files : [];
+    return files.slice(0, 12).map((file: any, index: number) => ({
+      id: `${id}:${file.path ?? index}`,
+      kind: "editor" as const,
+      path: firstString(file.path),
+      code: firstString(file.content) ?? "",
       status,
-    };
+    }));
+  }
+  if (
+    toolName === "openComputerBrowser" ||
+    toolName === "testComputerBrowser"
+  ) {
+    return [
+      {
+        id,
+        kind: "browser",
+        url: firstString(result?.browser?.url, args?.url, detail),
+        title: firstString(result?.browser?.title),
+        status,
+      },
+    ];
   }
   if (toolName === "startAgentComputer") {
-    return {
-      id,
-      kind: "desktop",
-      label: firstString(result?.name, "agent computer") ?? "agent computer",
-      detail: firstString(result?.errorMessage, result?.status),
-      status,
-    };
+    return [
+      {
+        id,
+        kind: "desktop",
+        label: firstString(result?.name, "agent computer") ?? "agent computer",
+        detail: firstString(result?.errorMessage, result?.status),
+        status,
+      },
+    ];
   }
-  return null;
+  if (
+    ["createCodeProject", "writeCodeProjectFiles", "readCodeProject"].includes(
+      toolName,
+    )
+  ) {
+    const files = Array.isArray(args?.files)
+      ? args.files
+      : Array.isArray(result?.files)
+        ? result.files
+        : [];
+    const projectId = firstString(result?.projectId, args?.projectId);
+    return files.slice(0, 12).map((file: any, index: number) => ({
+      id: `${id}:${file.path ?? index}`,
+      kind: "editor" as const,
+      path: firstString(file.path),
+      code: firstString(file.content) ?? "",
+      projectId,
+      status,
+    }));
+  }
+  if (["publishCodeProject", "testCodeProject"].includes(toolName)) {
+    return [
+      {
+        id,
+        kind: "browser",
+        url: firstString(result?.publicUrl, result?.url, args?.publicUrl),
+        title:
+          toolName === "testCodeProject"
+            ? result?.passed
+              ? "Browser checks passed"
+              : "Testing prototype"
+            : "Public prototype",
+        screenshot: firstString(result?.screenshotUrl),
+        projectId: firstString(result?.projectId, args?.projectId),
+        status,
+      },
+    ];
+  }
+  if (toolName === "exportCodeProjectToComputer") {
+    return [
+      {
+        id,
+        kind: "terminal",
+        command: `export project → ${firstString(result?.directory, args?.directory) ?? "agent computer"}`,
+        output: firstString(
+          result?.response?.response,
+          result?.response?.error,
+        ),
+        status,
+      },
+    ];
+  }
+  return [];
 }
 
 /** Replace a scene emitted earlier for the same activity (running → completed). */
@@ -454,6 +730,7 @@ function mergeScene(previous: Scene, next: Scene): Scene {
       ...next,
       path: next.path ?? previous.path,
       code: next.code || previous.code,
+      projectId: next.projectId ?? previous.projectId,
     };
   }
   if (previous.kind === "browser" && next.kind === "browser") {
@@ -461,6 +738,8 @@ function mergeScene(previous: Scene, next: Scene): Scene {
       ...next,
       url: next.url ?? previous.url,
       title: next.title ?? previous.title,
+      screenshot: next.screenshot ?? previous.screenshot,
+      projectId: next.projectId ?? previous.projectId,
     };
   }
   return next;
@@ -476,6 +755,14 @@ function tabForScene(scene: Scene): ComputerRuntimeTab {
 }
 
 function titleForScene(scene: Scene, computer?: AgentComputer | null) {
+  if ("projectId" in scene && scene.projectId) {
+    if (scene.kind === "editor")
+      return scene.path
+        ? `${scene.path.split("/").pop()} — project`
+        : "code project";
+    if (scene.kind === "browser")
+      return hostOf(scene.url) || "public prototype";
+  }
   const host = computer?.name ? slugify(computer.name) : "commonos";
   if (scene.kind === "terminal") return `agent@${host}:~`;
   if (scene.kind === "editor") {
@@ -486,7 +773,12 @@ function titleForScene(scene: Scene, computer?: AgentComputer | null) {
 }
 
 function slugify(value: string) {
-  return value.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "commonos";
+  return (
+    value
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-|-$/g, "") || "commonos"
+  );
 }
 
 function hostOf(url?: string) {
@@ -517,6 +809,16 @@ function tailLines(text: string, max: number) {
   return lines.slice(-max).join("\n");
 }
 
+function languageOf(path: string) {
+  const extension = path.split(".").pop()?.toLowerCase();
+  if (extension === "tsx" || extension === "jsx") return "tsx";
+  if (extension === "ts") return "typescript";
+  if (extension === "css") return "css";
+  if (extension === "json") return "json";
+  if (extension === "html") return "markup";
+  return "javascript";
+}
+
 /**
  * Detects file-writing commands (heredocs) so codegen renders as an editor
  * face instead of a wall of shell text: `cat > app.ts << 'EOF' ... EOF`.
@@ -529,9 +831,8 @@ function parseHeredoc(command: string): { path?: string; code: string } | null {
   const end = lines.findIndex((line) => line.trim() === marker[1]);
   const code = (end >= 0 ? lines.slice(0, end) : lines).join("\n");
   if (!code.trim()) return null;
-  const path = command
-    .slice(0, marker.index)
-    .match(/>{1,2}\s*([\w@./~-]+)/)?.[1]
-    ?? afterMarker.match(/^[^\n]*>{1,2}\s*([\w@./~-]+)/)?.[1];
+  const path =
+    command.slice(0, marker.index).match(/>{1,2}\s*([\w@./~-]+)/)?.[1] ??
+    afterMarker.match(/^[^\n]*>{1,2}\s*([\w@./~-]+)/)?.[1];
   return { path, code };
 }

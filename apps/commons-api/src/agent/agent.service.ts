@@ -206,16 +206,16 @@ export class AgentService implements OnModuleInit {
     // Auto-provision a primary EOA wallet for every new agent
     await this.walletService
       .createWallet({
-      agentId,
-      walletType: 'eoa',
-      label: 'Primary',
+        agentId,
+        walletType: 'eoa',
+        label: 'Primary',
       })
       .catch((err) =>
         console.error(
           `[AgentService] Failed to create wallet for agent ${agentId}:`,
           err,
         ),
-    );
+      );
 
     const actorId = agentEntry.ownerUserId ?? agentEntry.owner ?? agentId;
     await this.activityService
@@ -333,12 +333,12 @@ export class AgentService implements OnModuleInit {
       sessionTasks.length > 0
         ? sessionTasks
             .map((t) => {
-          const statusLabel = t.status.toUpperCase();
-          const summary = t.summary ? ` — ${t.summary}` : '';
-          return `- [${statusLabel}] (${t.taskId}) ${t.title}${summary}`;
+              const statusLabel = t.status.toUpperCase();
+              const summary = t.summary ? ` — ${t.summary}` : '';
+              return `- [${statusLabel}] (${t.taskId}) ${t.title}${summary}`;
             })
             .join('\n')
-      : '  (no tasks in this session yet)';
+        : '  (no tasks in this session yet)';
 
     const taskBlock = dedent`
       ## SESSION TASKS
@@ -417,9 +417,27 @@ export class AgentService implements OnModuleInit {
       - **listAgentComputers** — inspect the assigned computer's current state.
       - **runComputerCommand** — run terminal work through the selected computer.
       - **readComputerFile** — read files from the computer workspace.
+      - **writeComputerFiles** — write complete text files through a structured payload. Use this for all source-code creation and replacement; do not use shell heredocs or squeeze code into commands.
       - **openComputerBrowser** — open a URL in the computer browser and refresh browser state.
+      - **testComputerBrowser** — inspect and exercise a real application in the browser, including console/page/network errors, interactions, and screenshots. Use it after builds and fixes; opening a URL alone is not sufficient verification.
       - Never create or ask for an extra computer. Continue in the same assigned workspace across sessions.
       - Keep terminal commands task-scoped, avoid secret exfiltration, and report created files, screenshots, URLs, and command results clearly.
+
+      ### Repository and GitHub work
+      For an existing repository, issue, backend service, complex dependency graph, or ML workload, use the persistent computer and the user's connected GitHub tools or authenticated gh CLI.
+      - Read the ticket and repository guidance first, inspect the current branch and dirty files, then create a focused branch without discarding user work.
+      - Write source through **writeComputerFiles**, run the repository's formatter, type checks, tests, builds, and browser checks, and fix failures before reporting completion.
+      - When authorized, commit only the intended files, push the branch, and create or update a pull request with a concise summary and verification evidence.
+      - Never claim a push, deployment, browser check, or pull request succeeded unless its command or tool result confirms it.
+
+      ### Lightweight code projects
+      For React prototypes, landing pages, dashboards, and other static frontend experiences, use lightweight code projects first. They do not require a computer and publish to durable low-cost public URLs.
+      - **createCodeProject** — create a React project with initial files. **writeCodeProjectFiles** — write complete files directly; never squeeze source code into shell commands.
+      - **readCodeProject** — inspect the current files and latest deployment. **publishCodeProject** — compile and publish the project.
+      - **testCodeProject** — run desktop/mobile Chromium checks, inspect runtime/console/network failures, and test important interactions. A successful build is not enough: test it, fix every reported error, republish, and re-test before saying it works.
+      - **exportCodeProjectToComputer** — move the project into the persistent computer when the work needs a backend, arbitrary packages, repository operations, ML/GPU compute, or unrestricted tooling.
+      - Lightweight projects support React, CSS, local modules/assets, lucide-react, framer-motion, recharts, clsx, and tailwind-merge. They do not execute a Next.js server or arbitrary build plugins.
+      - Prefer one purposeful write containing the complete related files. Iterate until the UI is polished, responsive, interactive, and publicly shareable.
 
       ### Goals
       Goals track high-level objectives across multiple tasks.
@@ -462,18 +480,18 @@ export class AgentService implements OnModuleInit {
   ) {
     const [agent, childSessions, memoryBlock, sessionTasks, computerBlock] =
       await Promise.all([
-      this.getAgent({ agentId }),
-      this.getChildSessions(sessionId),
-      firstUserMessage
+        this.getAgent({ agentId }),
+        this.getChildSessions(sessionId),
+        firstUserMessage
           ? this.memoryService
               .buildMemoryBlock(agentId, firstUserMessage)
               .catch(() => '')
-        : Promise.resolve(''),
-      this.taskExecution.listSessionTasks(sessionId).catch(() => []),
+          : Promise.resolve(''),
+        this.taskExecution.listSessionTasks(sessionId).catch(() => []),
         this.computerService
           .buildComputerPrompt(agentId, sessionId)
           .catch(() => ''),
-    ]);
+      ]);
     const childSessionsInfo =
       childSessions.length > 0
         ? `\n\nEXISTING CHILD SESSIONS:\nYou have the following ongoing conversations with other agents. Use these sessionIds to continue existing conversations instead of starting new ones:\n${childSessions.map((cs) => `- Agent ${cs.childAgentId}: ${cs.title || 'Untitled conversation'} (sessionId=${cs.childSessionId}, started: ${cs.createdAt})`).join('\n')}`
@@ -740,7 +758,7 @@ export class AgentService implements OnModuleInit {
                   agentId,
                   initiator: initiator,
                   model: {
-                    name: agent.modelId ?? 'gpt-5.4-mini',          // legacy compat
+                    name: agent.modelId ?? 'gpt-5.4-mini', // legacy compat
                     provider: agent.modelProvider ?? 'openai',
                     modelId: agent.modelId ?? 'gpt-5.4-mini',
                     temperature: agent.temperature || 0.7,
@@ -762,8 +780,8 @@ export class AgentService implements OnModuleInit {
                 'Conversation ready',
                 undefined,
                 {
-                sessionId: currentSessionId,
-                isNewSession,
+                  sessionId: currentSessionId,
+                  isNewSession,
                 },
               );
             } else {
@@ -798,8 +816,8 @@ export class AgentService implements OnModuleInit {
                 'Space conversation ready',
                 undefined,
                 {
-                sessionId: currentSessionId,
-                isNewSession,
+                  sessionId: currentSessionId,
+                  isNewSession,
                 },
               );
             }
@@ -810,8 +828,8 @@ export class AgentService implements OnModuleInit {
               'Resuming this conversation',
               undefined,
               {
-              sessionId: currentSessionId,
-              isNewSession,
+                sessionId: currentSessionId,
+                isNewSession,
               },
             );
           }
@@ -837,10 +855,10 @@ export class AgentService implements OnModuleInit {
               try {
                 const activeComputers =
                   await this.computerService.listInstances({
-                  agentId,
-                  sessionId: currentSessionId,
-                  includeTerminated: false,
-                });
+                    agentId,
+                    sessionId: currentSessionId,
+                    includeTerminated: false,
+                  });
                 const reusable = activeComputers.find((computer: any) =>
                   ACTIVE_COMPUTER_RUN_STATUSES.has(String(computer.status)),
                 );
@@ -885,7 +903,7 @@ export class AgentService implements OnModuleInit {
                     {
                       computerId: started?.computerId,
                       status: started?.status,
-                    lifecycle: 'persistent',
+                      lifecycle: 'persistent',
                     },
                   );
                   if (failed) {
@@ -1038,8 +1056,8 @@ export class AgentService implements OnModuleInit {
               const usage = extractTokenUsageFromLLMResult(result);
               const durationMs =
                 runId && llmRunStartedAt.has(runId)
-                ? Math.round(performance.now() - llmRunStartedAt.get(runId)!)
-                : undefined;
+                  ? Math.round(performance.now() - llmRunStartedAt.get(runId)!)
+                  : undefined;
               if (runId) llmRunStartedAt.delete(runId);
               emitStatus(
                 'model',
@@ -1051,15 +1069,15 @@ export class AgentService implements OnModuleInit {
               if (!usage) {
                 console.log(
                   JSON.stringify({
-                  level: 'warn',
-                  event: 'llm_call_usage_missing',
-                  traceId,
-                  langchainRunId: runId,
-                  agentId,
-                  sessionId: currentSessionId,
-                  provider: usageContext.provider,
-                  modelId: usageContext.modelId,
-                  ts: new Date().toISOString(),
+                    level: 'warn',
+                    event: 'llm_call_usage_missing',
+                    traceId,
+                    langchainRunId: runId,
+                    agentId,
+                    sessionId: currentSessionId,
+                    provider: usageContext.provider,
+                    modelId: usageContext.modelId,
+                    ts: new Date().toISOString(),
                   }),
                 );
                 return;
@@ -1098,21 +1116,21 @@ export class AgentService implements OnModuleInit {
 
               console.log(
                 JSON.stringify({
-                level: 'info',
-                event: 'llm_call',
-                traceId,
-                langchainRunId: runId,
-                agentId,
-                sessionId: currentSessionId,
-                provider: usageContext.provider,
-                modelId: usageContext.modelId,
-                inputTokens: usage.inputTokens,
-                outputTokens: usage.outputTokens,
-                cachedTokens: usage.cachedTokens,
-                totalTokens: usage.totalTokens,
-                costUsd,
-                usageSource: usage.source,
-                ts: new Date().toISOString(),
+                  level: 'info',
+                  event: 'llm_call',
+                  traceId,
+                  langchainRunId: runId,
+                  agentId,
+                  sessionId: currentSessionId,
+                  provider: usageContext.provider,
+                  modelId: usageContext.modelId,
+                  inputTokens: usage.inputTokens,
+                  outputTokens: usage.outputTokens,
+                  cachedTokens: usage.cachedTokens,
+                  totalTokens: usage.totalTokens,
+                  costUsd,
+                  usageSource: usage.source,
+                  ts: new Date().toISOString(),
                 }),
               );
             },
@@ -1155,7 +1173,7 @@ export class AgentService implements OnModuleInit {
           const dynamicCliTools = props.cliTools?.length
             ? props.cliTools.map(
                 (def): ChatCompletionTool => ({
-                type: 'function',
+                  type: 'function',
                   function: {
                     name: def.name,
                     description: def.description,
@@ -1367,9 +1385,9 @@ export class AgentService implements OnModuleInit {
           const llmWithTools = (llm as any).bindTools(
             [...toolDefs, ...cliToolSchemas] as any,
             {
-            parallel_tool_calls: true,
-            strict: false,
-            callbacks: [callbackHandler],
+              parallel_tool_calls: true,
+              strict: false,
+              callbacks: [callbackHandler],
             },
           );
 
@@ -1542,8 +1560,8 @@ export class AgentService implements OnModuleInit {
                     this.pendingCliToolRequests.set(
                       requestId,
                       (result: string) => {
-                      cleanup();
-                      resolve(result);
+                        cleanup();
+                        resolve(result);
                       },
                     );
                   });
@@ -1894,20 +1912,20 @@ export class AgentService implements OnModuleInit {
                 );
                 const summaries =
                   await this.filesService.getAttachmentSummaries(
-                  props.attachments!,
-                  {
-                    agentId,
-                    sessionId: currentSessionId,
-                    ownerId: initiator,
-                    includeImageParts: this.supportsImageInputs(
-                      agent.modelProvider,
-                      agent.modelId,
-                    ),
-                    maxImageParts: Number(
-                      process.env.AGENT_FILE_PROMPT_IMAGE_PARTS ?? 4,
-                    ),
-                  },
-                );
+                    props.attachments!,
+                    {
+                      agentId,
+                      sessionId: currentSessionId,
+                      ownerId: initiator,
+                      includeImageParts: this.supportsImageInputs(
+                        agent.modelProvider,
+                        agent.modelId,
+                      ),
+                      maxImageParts: Number(
+                        process.env.AGENT_FILE_PROMPT_IMAGE_PARTS ?? 4,
+                      ),
+                    },
+                  );
                 emitStatus(
                   'files',
                   'completed',
@@ -2013,7 +2031,7 @@ export class AgentService implements OnModuleInit {
 
           // Resolve effective provider/model for cost tracking
           const effectiveProvider = (agent.modelProvider ?? 'openai') as any;
-          const effectiveModelId  = agent.modelId ?? 'gpt-5.4-mini';
+          const effectiveModelId = agent.modelId ?? 'gpt-5.4-mini';
           const isByok = !!agent.modelApiKey;
           usageContext.provider = effectiveProvider;
           usageContext.modelId = effectiveModelId;
@@ -2076,8 +2094,8 @@ export class AgentService implements OnModuleInit {
               // Inject task instruction into messages (marked internal so it's filtered from history)
               const taskContextStr =
                 nextTask.context && Object.keys(nextTask.context).length > 0
-                ? `\n\nContext:\n${JSON.stringify(nextTask.context, null, 2)}`
-                : '';
+                  ? `\n\nContext:\n${JSON.stringify(nextTask.context, null, 2)}`
+                  : '';
               const taskToolsStr = nextTask.tools?.length
                 ? `\n\nTools to use: ${nextTask.tools.join(', ')}`
                 : '';
@@ -2395,7 +2413,7 @@ export class AgentService implements OnModuleInit {
               'Conversation saved',
               undefined,
               {
-              sessionId: currentSessionId,
+                sessionId: currentSessionId,
               },
             );
           }

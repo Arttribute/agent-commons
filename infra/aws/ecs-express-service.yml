@@ -31,6 +31,9 @@ Parameters:
     Type: String
     Default: agent-commons-files
 
+Conditions:
+  IsProduction: !Equals [!Ref Environment, production]
+
 Resources:
   ApiService:
     Type: AWS::ECS::ExpressGatewayService
@@ -63,6 +66,11 @@ Resources:
             Value: !Ref AgentFilesS3Region
           - Name: AGENT_FILES_S3_PREFIX
             Value: !Ref AgentFilesS3Prefix
+          - Name: PROTOTYPE_PUBLIC_BASE_URL
+            Value: !If
+              - IsProduction
+              - https://api.agentcommons.io/v1/previews
+              - https://api-staging.agentcommons.io/v1/previews
         Secrets:
           - Name: APP_KEY
             ValueFrom: !Sub "${RuntimeSecretArn}:APP_KEY::"

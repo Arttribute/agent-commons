@@ -1,23 +1,38 @@
-import { BadRequestException, Injectable, Logger } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  Logger,
+  ServiceUnavailableException,
+} from '@nestjs/common';
 import { eq } from 'drizzle-orm';
 import * as schema from '#/models/schema';
 import { DatabaseService } from '~/modules/database';
+import { EncryptionService } from '~/modules/encryption';
 import { ComputerService } from '~/computer';
 import {
   RUNTIME_CAPABILITIES,
+  RUNTIME_CHANNEL_IDS,
   isAgentRuntimeType,
   normalizeRuntimeType,
   type AgentRuntimeType,
+  type RuntimeChannelConfig,
+  type RuntimeChannelId,
   type RuntimeConfig,
 } from './runtime.types';
 
 @Injectable()
 export class RuntimeManagementService {
   private readonly logger = new Logger(RuntimeManagementService.name);
+  private readonly readyCache = new Map<
+    string,
+    { expiresAt: number; computer: any }
+  >();
+  private readonly readyCacheTtlMs = 10 * 60_000;
 
   constructor(
     private readonly db: DatabaseService,
     private readonly computers: ComputerService,
+    private readonly encryption: EncryptionService,
   ) {}
 
   async get(agentId: string) {
@@ -55,7 +70,7 @@ export class RuntimeManagementService {
       runtimeType,
       version: agent.runtimeVersion,
       status: effectiveStatus,
-      config: agent.runtimeConfig ?? {},
+      config: this.publicConfig(agent),
       capabilities:
         agent.runtimeCapabilities ?? RUNTIME_CAPABILITIES[runtimeType],
       updatedAt: agent.runtimeUpdatedAt,
@@ -74,6 +89,7 @@ export class RuntimeManagementService {
     },
     actor?: { id?: string; type?: 'user' | 'agent' | 'service' },
   ) {
+    this.readyCache.delete(agentId);
     const agent = await this.getAgent(agentId);
     const runtimeType =
       input.runtimeType ?? normalizeRuntimeType(agent.runtimeType);
@@ -84,6 +100,27 @@ export class RuntimeManagementService {
     }
     const runtimeConfig = this.normalizeConfig(
       input.config ?? (agent.runtimeConfig as RuntimeConfig),
+      runtimeType,
+    );
+    const secretUpdate = input.config
+      ? this.updateChannelSecrets(
+          (agent.runtimeSecrets ?? {}) as Record<
+            string,
+            Record<string, string>
+          >,
+          input.config.channels,
+        )
+      : {
+          value: (agent.runtimeSecrets ?? {}) as Record<
+            string,
+            Record<string, string>
+          >,
+          changed: false,
+        };
+    this.validateChannelConfiguration(
+      runtimeType,
+      runtimeConfig.channels,
+      secretUpdate.value,
     );
     const now = new Date();
     await this.db
@@ -94,6 +131,7 @@ export class RuntimeManagementService {
           input.version === undefined ? agent.runtimeVersion : input.version,
         runtimeStatus: runtimeType === 'native' ? 'ready' : 'stopped',
         runtimeConfig,
+        runtimeSecrets: secretUpdate.value,
         runtimeCapabilities: RUNTIME_CAPABILITIES[runtimeType],
         runtimeUpdatedAt: now,
       })
@@ -102,7 +140,12 @@ export class RuntimeManagementService {
     const runtimeConfigurationChanged =
       runtimeType !== normalizeRuntimeType(agent.runtimeType) ||
       input.version !== undefined ||
-      input.config !== undefined;
+      (input.config !== undefined &&
+        JSON.stringify(runtimeConfig) !==
+          JSON.stringify(
+            this.normalizeConfig(agent.runtimeConfig, runtimeType),
+          )) ||
+      secretUpdate.changed;
 
     if (
       runtimeType === 'native' &&
@@ -176,6 +219,7 @@ export class RuntimeManagementService {
     agentId: string,
     actor?: { id?: string; type?: 'user' | 'agent' | 'service' },
   ) {
+    this.readyCache.delete(agentId);
     const agent = await this.getAgent(agentId);
     const runtimeType = normalizeRuntimeType(agent.runtimeType);
     if (runtimeType === 'native') {
@@ -208,6 +252,12 @@ export class RuntimeManagementService {
           ? 'ready'
           : 'starting',
       );
+      if (['running', 'idle'].includes(String(computer.status))) {
+        this.readyCache.set(agentId, {
+          expiresAt: Date.now() + this.readyCacheTtlMs,
+          computer,
+        });
+      }
       return computer;
     } catch (error) {
       await this.setStatus(agentId, 'failed');
@@ -219,6 +269,9 @@ export class RuntimeManagementService {
   }
 
   async ensureReady(agentId: string, sessionId?: string) {
+    const cached = this.readyCache.get(agentId);
+    if (cached && cached.expiresAt > Date.now()) return cached.computer;
+    if (cached) this.readyCache.delete(agentId);
     const agent = await this.getAgent(agentId);
     const runtimeType = normalizeRuntimeType(agent.runtimeType);
     if (runtimeType === 'native') {
@@ -254,10 +307,17 @@ export class RuntimeManagementService {
         ? 'ready'
         : 'starting',
     );
+    if (['running', 'idle'].includes(String(computer.status))) {
+      this.readyCache.set(agentId, {
+        expiresAt: Date.now() + this.readyCacheTtlMs,
+        computer,
+      });
+    }
     return computer;
   }
 
   async sleep(agentId: string, actorId?: string) {
+    this.readyCache.delete(agentId);
     await this.computers.stopAssignedComputer({
       agentId,
       actorId,
@@ -268,6 +328,7 @@ export class RuntimeManagementService {
   }
 
   async restart(agentId: string, actorId?: string) {
+    this.readyCache.delete(agentId);
     await this.setStatus(agentId, 'starting');
     try {
       const computer = await this.computers.restartAssignedComputer({
@@ -299,7 +360,44 @@ export class RuntimeManagementService {
     }
   }
 
-  private normalizeConfig(value?: RuntimeConfig | null): RuntimeConfig {
+  async channelAction(agentId: string, channel: string, action: string) {
+    const agent = await this.getAgent(agentId);
+    const runtimeType = normalizeRuntimeType(agent.runtimeType);
+    if (runtimeType !== 'openclaw' && runtimeType !== 'hermes') {
+      throw new BadRequestException(
+        'QR channel setup is available for OpenClaw and Hermes',
+      );
+    }
+    if (channel !== 'whatsapp') {
+      throw new BadRequestException('Unsupported runtime channel');
+    }
+    if (!['connect', 'status', 'disconnect'].includes(action)) {
+      throw new BadRequestException('Unsupported runtime channel action');
+    }
+    try {
+      await this.ensureReady(agentId);
+      // Cold runtimes can take longer than the public load balancer timeout.
+      // Return the transient state promptly; the setup UI retries this action
+      // until the sidecar can produce a QR code.
+      return await this.computers.runtimeChannelAction({
+        agentId,
+        channel,
+        action: action as 'connect' | 'status' | 'disconnect',
+      });
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : '';
+      throw new ServiceUnavailableException(
+        detail.includes('timed out')
+          ? 'WhatsApp setup is taking longer than expected. Keep this window open and try again.'
+          : detail || 'WhatsApp setup is temporarily unavailable',
+      );
+    }
+  }
+
+  private normalizeConfig(
+    value?: RuntimeConfig | null,
+    runtimeType: AgentRuntimeType = 'native',
+  ): RuntimeConfig {
     const input = value ?? {};
     return {
       deploymentMode: input.deploymentMode ?? 'managed',
@@ -307,8 +405,164 @@ export class RuntimeManagementService {
       enabledPlugins: this.cleanStringList(input.enabledPlugins),
       enabledToolsets: this.cleanStringList(input.enabledToolsets),
       memoryMode: input.memoryMode ?? 'hybrid',
+      channels: this.normalizeChannels(
+        input.channels,
+        runtimeType,
+        input.channelPolicy ?? 'pairing',
+      ),
       metadata: this.cleanMetadata(input.metadata),
     };
+  }
+
+  private normalizeChannels(
+    value: RuntimeConfig['channels'],
+    runtimeType: AgentRuntimeType,
+    defaultPolicy: NonNullable<RuntimeConfig['channelPolicy']>,
+  ): RuntimeConfig['channels'] {
+    const channels: RuntimeConfig['channels'] = {};
+    for (const id of RUNTIME_CHANNEL_IDS) {
+      const input = value?.[id];
+      if (!input) continue;
+      const dmPolicy = input.dmPolicy ?? defaultPolicy;
+      const allowFrom = this.cleanStringList(input.allowFrom);
+      if (dmPolicy === 'open' && !allowFrom.includes('*')) allowFrom.push('*');
+      channels[id] = {
+        enabled: input.enabled !== false && dmPolicy !== 'disabled',
+        ...(id === 'whatsapp'
+          ? {
+              mode:
+                runtimeType === 'openclaw'
+                  ? input.mode === 'self-chat'
+                    ? 'self-chat'
+                    : 'bot'
+                  : (input.mode ?? 'bot'),
+            }
+          : {}),
+        dmPolicy,
+        allowFrom,
+        requireMention: input.requireMention !== false,
+        ...(input.homeTarget?.trim()
+          ? { homeTarget: input.homeTarget.trim() }
+          : {}),
+      };
+    }
+    return channels;
+  }
+
+  private publicConfig(agent: typeof schema.agent.$inferSelect) {
+    const config = this.normalizeConfig(
+      agent.runtimeConfig as RuntimeConfig,
+      normalizeRuntimeType(agent.runtimeType),
+    );
+    const secrets = (agent.runtimeSecrets ?? {}) as Record<
+      string,
+      Record<string, string>
+    >;
+    const channels = Object.fromEntries(
+      Object.entries(config.channels ?? {}).map(([id, channel]) => {
+        const configuredFields = Object.keys(secrets[id] ?? {}).sort();
+        const needsPairing = id === 'whatsapp' && channel?.mode !== 'cloud';
+        const required = this.requiredCredentialFields(
+          id as RuntimeChannelId,
+          channel,
+        );
+        return [
+          id,
+          {
+            ...channel,
+            setupMethod: needsPairing ? 'qr' : 'credentials',
+            configuredFields,
+            configured:
+              channel?.enabled === true &&
+              (needsPairing ||
+                required.every((field) => configuredFields.includes(field))),
+            needsPairing,
+          },
+        ];
+      }),
+    );
+    return { ...config, channels };
+  }
+
+  private updateChannelSecrets(
+    current: Record<string, Record<string, string>>,
+    channels?: RuntimeConfig['channels'],
+  ) {
+    const next = Object.fromEntries(
+      Object.entries(current).map(([channel, values]) => [
+        channel,
+        { ...values },
+      ]),
+    );
+    let changed = false;
+    for (const id of RUNTIME_CHANNEL_IDS) {
+      const patch = channels?.[id];
+      if (!patch) continue;
+      if (patch.clearCredentials) {
+        if (next[id]) changed = true;
+        delete next[id];
+      }
+      for (const [field, rawValue] of Object.entries(patch.credentials ?? {})) {
+        if (!this.allowedCredentialFields(id).includes(field)) continue;
+        const value = rawValue.trim();
+        if (!value) continue;
+        next[id] ??= {};
+        next[id][field] = this.encryptSecret(value);
+        changed = true;
+      }
+    }
+    return { value: next, changed };
+  }
+
+  private validateChannelConfiguration(
+    runtimeType: AgentRuntimeType,
+    channels: RuntimeConfig['channels'],
+    secrets: Record<string, Record<string, string>>,
+  ) {
+    for (const [rawId, channel] of Object.entries(channels ?? {})) {
+      if (!channel?.enabled) continue;
+      const id = rawId as RuntimeChannelId;
+      if (runtimeType === 'openclaw' && id === 'whatsapp') continue;
+      if (
+        runtimeType === 'hermes' &&
+        id === 'whatsapp' &&
+        channel.mode !== 'cloud'
+      ) {
+        continue;
+      }
+      const missing = this.requiredCredentialFields(id, channel).filter(
+        (field) => !secrets[id]?.[field],
+      );
+      if (missing.length) {
+        throw new BadRequestException(
+          `${id} is missing required credentials: ${missing.join(', ')}`,
+        );
+      }
+    }
+  }
+
+  private requiredCredentialFields(
+    id: RuntimeChannelId,
+    channel?: RuntimeChannelConfig,
+  ) {
+    if (id === 'telegram') return ['botToken'];
+    if (id === 'slack') return ['botToken', 'appToken'];
+    if (id === 'discord') return ['botToken'];
+    if (channel?.mode === 'cloud') {
+      return ['phoneNumberId', 'accessToken', 'appSecret', 'verifyToken'];
+    }
+    return [];
+  }
+
+  private allowedCredentialFields(id: RuntimeChannelId) {
+    if (id === 'telegram' || id === 'discord') return ['botToken'];
+    if (id === 'slack') return ['botToken', 'appToken'];
+    return ['phoneNumberId', 'accessToken', 'appSecret', 'verifyToken'];
+  }
+
+  private encryptSecret(value: string) {
+    const encrypted = this.encryption.encrypt(value);
+    return `enc:${encrypted.iv}:${encrypted.tag}:${encrypted.encryptedValue}`;
   }
 
   private cleanStringList(value?: string[]) {

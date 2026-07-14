@@ -333,21 +333,39 @@ POST /v1/workflows/:workflowId/execute
 
 ---
 
+### Get workflow execution status
+
+```http
+GET /v1/workflows/:workflowId/executions/:executionId
+```
+
+Returns the current status, result/error, and per-node results. The execution ID
+must belong to the workflow in the URL.
+
 ### Stream workflow execution
 
 ```http
-GET /v1/workflows/:executionId/stream
+GET /v1/workflows/:workflowId/executions/:executionId/stream
 ```
 
-SSE stream with per-node status updates:
+SSE stream with status, current node, and terminal output updates:
 
 ```
-data: {"nodeId":"scrape","status":"running"}
-data: {"nodeId":"scrape","status":"completed","output":"Page content..."}
-data: {"nodeId":"summarize","status":"running"}
-data: {"nodeId":"summarize","status":"completed","output":"Key points: ..."}
-data: {"executionId":"exec_123","status":"completed"}
+data: {"type":"status","status":"running","currentNode":"scrape","nodeResults":{}}
+data: {"type":"completed","outputData":{"summary":"Key points..."},"nodeResults":{}}
 ```
+
+### Cancel or resume an execution
+
+```http
+POST /v1/workflows/:workflowId/executions/:executionId/cancel
+POST /v1/workflows/:workflowId/executions/:executionId/approve
+POST /v1/workflows/:workflowId/executions/:executionId/reject
+```
+
+Every workflow execution endpoint requires `Authorization: Bearer <API_KEY>` and
+enforces workflow ownership. Approval and rejection bodies must include the
+one-time `approvalToken` returned while the run is awaiting approval.
 
 ---
 

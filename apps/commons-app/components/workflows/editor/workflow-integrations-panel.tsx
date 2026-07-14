@@ -10,7 +10,8 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
 import { Textarea } from "@/components/ui/textarea";
-import { AlertTriangle, CheckCircle2, Copy, Database, KeyRound, Link2, Loader2, RotateCw, Trash2 } from "lucide-react";
+import { Activity, AlertTriangle, CheckCircle2, Copy, Database, KeyRound, Link2, Loader2, RotateCw, Trash2 } from "lucide-react";
+import Link from "next/link";
 
 type WorkflowIntegrationsPanelProps = {
   workflowId: string;
@@ -69,6 +70,9 @@ export function WorkflowIntegrationsPanel({ workflowId }: WorkflowIntegrationsPa
   const [mongoUri, setMongoUri] = useState("");
 
   const databaseKeys = useMemo(() => keys.filter(isDatabaseKey), [keys]);
+  const publicApiBase = (process.env.NEXT_PUBLIC_AGENT_COMMONS_API_URL || process.env.NEXT_PUBLIC_NEST_API_BASE_URL || "https://api.agentcommons.io").replace(/\/$/, "");
+  const executeEndpoint = `${publicApiBase}/v1/workflows/${workflowId}/execute`;
+  const apiExample = `curl -X POST '${executeEndpoint}' \\\n+  -H 'Authorization: Bearer <API_KEY>' \\\n+  -H 'Content-Type: application/json' \\\n+  -d '{"inputData": {}}'`;
 
   const loadWebhook = async () => {
     setWebhookLoading(true);
@@ -256,6 +260,37 @@ export function WorkflowIntegrationsPanel({ workflowId }: WorkflowIntegrationsPa
               <Trash2 className="h-3.5 w-3.5" />
               Disable
             </Button>
+          </div>
+        </section>
+
+        <Separator />
+
+        <section className="space-y-3">
+          <div className="flex items-start justify-between gap-2">
+            <div className="flex min-w-0 items-start gap-2">
+              <Activity className="mt-0.5 h-4 w-4 text-muted-foreground" />
+              <div>
+                <h4 className="font-semibold">Workflow API</h4>
+                <p className="text-[11px] text-muted-foreground">Trigger, poll, stream, cancel, or approve a run from an authenticated system.</p>
+              </div>
+            </div>
+            <Badge variant="outline" className="text-[10px]">Bearer auth</Badge>
+          </div>
+          <div className="relative rounded-lg border border-border bg-muted/30 p-3 pr-10">
+            <pre className="overflow-x-auto whitespace-pre-wrap break-all font-mono text-[10px] leading-relaxed">{apiExample}</pre>
+            <Button type="button" variant="ghost" size="icon" className="absolute right-1.5 top-1.5 h-7 w-7" onClick={() => navigator.clipboard?.writeText(apiExample)} aria-label="Copy API example">
+              <Copy className="h-3.5 w-3.5" />
+            </Button>
+          </div>
+          <div className="space-y-1 rounded-lg border border-dashed border-border p-3 font-mono text-[10px] text-muted-foreground">
+            <p>GET /executions/:executionId · poll status</p>
+            <p>GET /executions/:executionId/stream · SSE updates</p>
+            <p>POST /executions/:executionId/cancel · cancel</p>
+            <p>POST /executions/:executionId/approve · human approval</p>
+          </div>
+          <div className="flex items-center justify-between gap-2">
+            <p className="text-[10px] text-muted-foreground">Keys are scoped to their owner and rate-limited.</p>
+            <Link href="/settings/api-keys" className="shrink-0 text-[10px] font-medium underline-offset-2 hover:underline">Manage API keys</Link>
           </div>
         </section>
 

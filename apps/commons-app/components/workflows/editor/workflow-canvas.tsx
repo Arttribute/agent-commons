@@ -21,7 +21,7 @@ import { useWorkflowStore } from "@/lib/workflows/workflow-store";
 import { wouldCreateCycle } from "@/lib/workflows/workflow-validator";
 import {
   getEdgeColor,
-  validateTypeCompatibility,
+  getTypeCompatibility,
 } from "@/lib/workflows/type-colors";
 import {
   extractTypedParameters,
@@ -166,11 +166,11 @@ export function WorkflowCanvas() {
         if (input) targetType = input.type;
       }
 
-      // Validate type compatibility
-      if (!validateTypeCompatibility(sourceType, targetType)) {
+      const compatibility = getTypeCompatibility(sourceType, targetType);
+      if (!compatibility.compatible) {
         toast({
           title: "Type mismatch",
-          description: `Cannot connect ${sourceType} to ${targetType}`,
+          description: `Choose a nested field or add a Transform step to map ${sourceType} to ${targetType}.`,
           variant: "destructive",
         });
         return;
@@ -187,10 +187,24 @@ export function WorkflowCanvas() {
           color: getEdgeColor(sourceType, targetType),
           sourceColor: getEdgeColor(sourceType),
           targetColor: getEdgeColor(targetType),
+          mapping:
+            connection.sourceHandle && connection.targetHandle
+              ? { [connection.sourceHandle]: connection.targetHandle }
+              : {},
+          targetTypes: connection.targetHandle
+            ? { [connection.targetHandle]: targetType as any }
+            : {},
+          mappingMode: compatibility.mode,
         },
       };
 
       setEdges(addEdge(newEdge, edges) as typeof edges);
+      if (compatibility.mode !== "exact" && compatibility.message) {
+        toast({
+          title: compatibility.mode === "dynamic" ? "Dynamic mapping connected" : "Conversion added",
+          description: compatibility.message,
+        });
+      }
     },
     [nodes, edges, setEdges, toast]
   );
@@ -241,6 +255,7 @@ export function WorkflowCanvas() {
             toolId: nodeData.toolId,
             toolName: nodeData.toolName,
             agentId: nodeData.agentId,
+            agentAvatar: nodeData.agentAvatar,
             workflowId: nodeData.workflowId,
             description: nodeData.description,
             inputs,

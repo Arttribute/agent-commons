@@ -136,25 +136,21 @@ export class ExternalRuntimeService {
             runtimeType,
           });
 
-          emitStatus(
-            'runtime',
-            'running',
-            `Waking ${this.runtimeLabel(runtimeType)}`,
-          );
-          const computer = await this.runtimes.ensureReady(
-            props.agentId,
-            sessionId,
-          );
-          emitStatus(
-            'runtime',
-            'completed',
-            `${this.runtimeLabel(runtimeType)} ready`,
-            undefined,
-            {
-              runtimeType,
-              computerId: computer.computerId,
-            },
-          );
+          let runtimeStatusShown = false;
+          let runtimeStatusTimer: ReturnType<typeof setTimeout> | undefined;
+          const runtimeReady = this.runtimes
+            .ensureReady(props.agentId, sessionId)
+            .finally(() => {
+              if (runtimeStatusTimer) clearTimeout(runtimeStatusTimer);
+            });
+          runtimeStatusTimer = setTimeout(() => {
+            runtimeStatusShown = true;
+            emitStatus(
+              'runtime',
+              'running',
+              `Starting ${this.runtimeLabel(runtimeType)}`,
+            );
+          }, 1_000);
 
           const userText = this.latestUserText(props.messages);
           if (!userText)
@@ -164,32 +160,50 @@ export class ExternalRuntimeService {
               ?.memoryMode ?? 'hybrid',
           );
           const includePlatformMemory = memoryMode !== 'native';
-          const [memoryBlock, sharedMemoryBlock, skillsBlock, attachments] =
-            await Promise.all([
-              includePlatformMemory
-                ? this.memories
-                    .buildMemoryBlock(props.agentId, userText)
-                    .catch(() => '')
-                : Promise.resolve(''),
-              includePlatformMemory
-                ? this.memories
-                    .buildSharedMemoryBlock(props.agentId, userText)
-                    .catch(() => '')
-                : Promise.resolve(''),
-              this.buildSkillsBlock(props.agentId).catch(() => ''),
-              props.attachments?.length
-                ? this.files.getAttachmentSummaries(props.attachments, {
-                    agentId: props.agentId,
-                    sessionId,
-                    ownerId: props.initiator,
-                    includeImageParts: false,
-                  })
-                : Promise.resolve({
-                    text: '',
-                    imageParts: [],
-                    attachments: [],
-                  }),
-            ]);
+          const [
+            computer,
+            memoryBlock,
+            sharedMemoryBlock,
+            skillsBlock,
+            attachments,
+          ] = await Promise.all([
+            runtimeReady,
+            includePlatformMemory
+              ? this.memories
+                  .buildMemoryBlock(props.agentId, userText)
+                  .catch(() => '')
+              : Promise.resolve(''),
+            includePlatformMemory
+              ? this.memories
+                  .buildSharedMemoryBlock(props.agentId, userText)
+                  .catch(() => '')
+              : Promise.resolve(''),
+            this.buildSkillsBlock(props.agentId).catch(() => ''),
+            props.attachments?.length
+              ? this.files.getAttachmentSummaries(props.attachments, {
+                  agentId: props.agentId,
+                  sessionId,
+                  ownerId: props.initiator,
+                  includeImageParts: false,
+                })
+              : Promise.resolve({
+                  text: '',
+                  imageParts: [],
+                  attachments: [],
+                }),
+          ]);
+          if (runtimeStatusShown) {
+            emitStatus(
+              'runtime',
+              'completed',
+              `${this.runtimeLabel(runtimeType)} ready`,
+              undefined,
+              {
+                runtimeType,
+                computerId: computer.computerId,
+              },
+            );
+          }
           const instruction = [
             userText,
             memoryBlock,
@@ -550,10 +564,8 @@ export class ExternalRuntimeService {
 
   private statusLabel(status?: string) {
     if (status === 'waiting_for_runtime') return 'Waiting for agent runtime';
-    if (status === 'waiting_for_openclaw')
-      return 'Starting OpenClaw (first start can take a couple of minutes)';
-    if (status === 'waiting_for_hermes')
-      return 'Starting Hermes (first start can take a couple of minutes)';
+    if (status === 'waiting_for_openclaw') return 'Starting OpenClaw';
+    if (status === 'waiting_for_hermes') return 'Starting Hermes';
     if (status === 'runtime_recovering')
       return 'Agent runtime is restarting — hang tight';
     if (status?.startsWith('waiting_for_'))

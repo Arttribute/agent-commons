@@ -10,7 +10,6 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
 
 type StudioEntity = {
@@ -62,9 +61,7 @@ export function StudioEntitySwitcher({
           className="h-9 max-w-[320px] justify-between gap-2 rounded-md px-2.5"
         >
           <span className="flex min-w-0 items-center gap-2">
-            <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md border border-border bg-muted/50">
-              <Icon className="h-3.5 w-3.5 text-muted-foreground" />
-            </span>
+            <Icon className="h-4 w-4 shrink-0 text-muted-foreground" />
             <span className="truncate text-sm font-medium">{currentName}</span>
           </span>
           <ChevronsUpDown className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
@@ -82,7 +79,7 @@ export function StudioEntitySwitcher({
             />
           </div>
         </div>
-        <ScrollArea className="max-h-[320px]">
+        <div className="max-h-[320px] overflow-y-auto overscroll-contain">
           <div className="p-1">
             {filtered.length === 0 ? (
               <p className="px-3 py-6 text-center text-xs text-muted-foreground">
@@ -113,7 +110,7 @@ export function StudioEntitySwitcher({
               ))
             )}
           </div>
-        </ScrollArea>
+        </div>
       </PopoverContent>
     </Popover>
   );

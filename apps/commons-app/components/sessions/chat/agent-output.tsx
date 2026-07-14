@@ -63,17 +63,28 @@ export default function AgentOutput({
   computer,
 }: AgentOutputProps) {
   const computerToolCalls = getComputerToolCalls(metadata?.toolCalls ?? []);
-  const activities = normalizeActivities(metadata?.activity, metadata?.toolCalls);
-  const computerActivities = activities.filter((activity) => activity.kind === "computer");
-  const hasComputerUse = computerActivities.length > 0 || computerToolCalls.length > 0;
+  const activities = normalizeActivities(
+    metadata?.activity,
+    metadata?.toolCalls,
+  );
+  const computerActivities = activities.filter(
+    (activity) => activity.kind === "computer",
+  );
+  const hasComputerUse =
+    computerActivities.length > 0 || computerToolCalls.length > 0;
   const durationMs = metadata?.durationMs;
 
-  if (!content && !isStreaming && computerToolCalls.length === 0 && activities.length === 0) {
+  if (
+    !content &&
+    !isStreaming &&
+    computerToolCalls.length === 0 &&
+    activities.length === 0
+  ) {
     return (
       <div
         className={cn(
           "post-content prose prose-sm md:prose-base lg:prose-lg dark:prose-invert",
-          className
+          className,
         )}
       ></div>
     );
@@ -212,7 +223,9 @@ export default function AgentOutput({
                 );
               },
               td({ node, ...props }) {
-                return <td className="border border-border px-4 py-2" {...props} />;
+                return (
+                  <td className="border border-border px-4 py-2" {...props} />
+                );
               },
             }}
           >
@@ -256,7 +269,9 @@ function ActivityTimeline({
 
   // A plain reply with no real steps gets no chrome at all.
   if (!visible.length) return null;
-  return <CompletedActivitySummary activities={visible} durationMs={durationMs} />;
+  return (
+    <CompletedActivitySummary activities={visible} durationMs={durationMs} />
+  );
 }
 
 /**
@@ -274,7 +289,9 @@ function StreamingSteps({
   const [open, setOpen] = useState(false);
   const current = thinking
     ? undefined
-    : ([...activities].reverse().find((activity) => activity.status === "running") ??
+    : ([...activities]
+        .reverse()
+        .find((activity) => activity.status === "running") ??
       activities[activities.length - 1]);
   const hasHistory = activities.length > (current ? 1 : 0);
 
@@ -301,18 +318,22 @@ function StreamingSteps({
                       "h-3.5 w-3.5 shrink-0",
                       current?.status === "failed"
                         ? "text-red-500"
-                        : "text-muted-foreground/70"
+                        : "text-muted-foreground/70",
                     )}
                   />
                   <span
                     className={cn(
                       "min-w-0 flex-1 truncate text-[13px] leading-5",
-                      running ? "text-shimmer" : "text-muted-foreground"
+                      running ? "text-shimmer" : "text-muted-foreground",
                     )}
                   >
                     {current?.title ?? "Thinking…"}
                     {current?.detail ? (
-                      <span className={running ? undefined : "text-muted-foreground/60"}>
+                      <span
+                        className={
+                          running ? undefined : "text-muted-foreground/60"
+                        }
+                      >
                         {" "}
                         · {current.detail}
                       </span>
@@ -352,7 +373,7 @@ function CompletedActivitySummary({
         <ChevronDown
           className={cn(
             "h-3 w-3 text-muted-foreground/60 transition-transform group-hover:text-foreground",
-            open && "rotate-180"
+            open && "rotate-180",
           )}
         />
       </button>
@@ -377,9 +398,8 @@ function ActivityList({
   activities: StreamActivity[];
   thinking?: boolean;
 }) {
-  const rows: Array<{ key: string; activity?: StreamActivity }> = activities.map(
-    (activity) => ({ key: activity.id, activity })
-  );
+  const rows: Array<{ key: string; activity?: StreamActivity }> =
+    activities.map((activity) => ({ key: activity.id, activity }));
   if (thinking) rows.push({ key: "thinking" });
 
   return (
@@ -396,7 +416,7 @@ function ActivityList({
                   "mt-[3px] h-3.5 w-3.5 shrink-0",
                   activity?.status === "failed"
                     ? "text-red-500"
-                    : "text-muted-foreground/70"
+                    : "text-muted-foreground/70",
                 )}
               />
               {!isLast && <span className="mt-1 w-px flex-1 bg-border" />}
@@ -405,12 +425,14 @@ function ActivityList({
               <span
                 className={cn(
                   "block truncate text-[13px] leading-5",
-                  running ? "text-shimmer" : "text-muted-foreground"
+                  running ? "text-shimmer" : "text-muted-foreground",
                 )}
               >
                 {activity?.title ?? "Thinking…"}
                 {activity?.detail ? (
-                  <span className={running ? undefined : "text-muted-foreground/60"}>
+                  <span
+                    className={running ? undefined : "text-muted-foreground/60"}
+                  >
                     {" "}
                     · {activity.detail}
                   </span>
@@ -435,7 +457,7 @@ function iconForActivity(activity: StreamActivity) {
 
 function isRoutineActivity(activity: StreamActivity) {
   return ["request", "agent", "session", "tools", "context", "model"].includes(
-    activity.stage ?? ""
+    activity.stage ?? "",
   );
 }
 
@@ -467,30 +489,83 @@ function normalizeActivities(
 
 function titleForToolCall(name: string, status?: string) {
   const failed = status === "error" || status === "failed";
-  if (name === "startAgentComputer") return failed ? "Agent computer failed" : "Agent computer ready";
+  if (name === "startAgentComputer")
+    return failed ? "Agent computer failed" : "Agent computer ready";
   if (name === "listAgentComputers") return "Checked agent computers";
-  if (name === "runComputerCommand") return failed ? "Terminal command failed" : "Ran terminal command";
-  if (name === "readComputerFile") return failed ? "File read failed" : "Read computer file";
-  if (name === "openComputerBrowser") return failed ? "Browser action failed" : "Updated browser";
-  if (name === "readUploadedFile") return failed ? "File read failed" : "Read uploaded file";
-  if (name === "runWorkflow") return failed ? "Workflow failed" : "Ran workflow";
+  if (name === "runComputerCommand")
+    return failed ? "Terminal command failed" : "Ran terminal command";
+  if (name === "readComputerFile")
+    return failed ? "File read failed" : "Read computer file";
+  if (name === "writeComputerFiles")
+    return failed ? "File write failed" : "Updated computer files";
+  if (name === "openComputerBrowser")
+    return failed ? "Browser action failed" : "Updated browser";
+  if (name === "testComputerBrowser")
+    return failed ? "Browser tests found issues" : "Tested application";
+  if (name === "createCodeProject")
+    return failed ? "Project creation failed" : "Created code project";
+  if (name === "writeCodeProjectFiles")
+    return failed ? "Project update failed" : "Updated project files";
+  if (name === "readCodeProject")
+    return failed ? "Project read failed" : "Read code project";
+  if (name === "publishCodeProject")
+    return failed ? "Prototype build failed" : "Published prototype";
+  if (name === "testCodeProject")
+    return failed ? "Prototype tests found issues" : "Tested prototype";
+  if (name === "exportCodeProjectToComputer")
+    return failed ? "Project export failed" : "Moved project to computer";
+  if (name === "readUploadedFile")
+    return failed ? "File read failed" : "Read uploaded file";
+  if (name === "runWorkflow")
+    return failed ? "Workflow failed" : "Ran workflow";
   return failed ? `Failed ${name}` : `Used ${name}`;
 }
 
 function detailForToolCall(call: ToolCall, result: any) {
-  if (call.name === "runComputerCommand") return call.args?.command ?? result?.command;
+  if (call.name === "runComputerCommand")
+    return call.args?.command ?? result?.command;
   if (call.name === "readComputerFile" || call.name === "readUploadedFile") {
     return result?.path ?? result?.name ?? call.args?.path ?? call.args?.fileId;
   }
-  if (call.name === "openComputerBrowser") return result?.browser?.url ?? call.args?.url;
-  if (call.name === "startAgentComputer") {
-    return [result?.name, result?.status].filter(Boolean).join(" · ") || result?.computerId;
+  if (call.name === "writeComputerFiles")
+    return call.args?.files?.map((file: any) => file.path).join(", ");
+  if (
+    call.name === "openComputerBrowser" ||
+    call.name === "testComputerBrowser"
+  )
+    return result?.browser?.url ?? call.args?.url;
+  if (
+    ["createCodeProject", "writeCodeProjectFiles", "readCodeProject"].includes(
+      call.name,
+    )
+  ) {
+    return (
+      result?.name ??
+      result?.projectId ??
+      call.args?.projectId ??
+      call.args?.name
+    );
   }
-  if (call.name === "runWorkflow") return result?.workflowId ?? call.args?.workflowId;
+  if (["publishCodeProject", "testCodeProject"].includes(call.name)) {
+    return result?.publicUrl ?? result?.url ?? call.args?.projectId;
+  }
+  if (call.name === "exportCodeProjectToComputer")
+    return result?.directory ?? call.args?.projectId;
+  if (call.name === "startAgentComputer") {
+    return (
+      [result?.name, result?.status].filter(Boolean).join(" · ") ||
+      result?.computerId
+    );
+  }
+  if (call.name === "runWorkflow")
+    return result?.workflowId ?? call.args?.workflowId;
   return result?.error ?? call.args?.reason ?? "";
 }
 
-function formatDuration(durationMs: number | undefined, activities: StreamActivity[]) {
+function formatDuration(
+  durationMs: number | undefined,
+  activities: StreamActivity[],
+) {
   const fallbackMs = estimateDurationFromActivities(activities);
   const ms = durationMs && durationMs > 0 ? durationMs : fallbackMs;
   if (!ms || ms < 1000) return "a moment";
@@ -503,7 +578,9 @@ function formatDuration(durationMs: number | undefined, activities: StreamActivi
 
 function estimateDurationFromActivities(activities: StreamActivity[]) {
   const times = activities
-    .map((activity) => activity.timestamp ? new Date(activity.timestamp).getTime() : NaN)
+    .map((activity) =>
+      activity.timestamp ? new Date(activity.timestamp).getTime() : NaN,
+    )
     .filter((value) => Number.isFinite(value));
   if (times.length < 2) return undefined;
   return Math.max(...times) - Math.min(...times);
@@ -515,7 +592,15 @@ function getComputerToolCalls(toolCalls: ToolCall[]) {
     "listAgentComputers",
     "runComputerCommand",
     "readComputerFile",
+    "writeComputerFiles",
     "openComputerBrowser",
+    "testComputerBrowser",
+    "createCodeProject",
+    "writeCodeProjectFiles",
+    "readCodeProject",
+    "publishCodeProject",
+    "testCodeProject",
+    "exportCodeProjectToComputer",
   ]);
   return toolCalls.filter((call) => names.has(call.name));
 }

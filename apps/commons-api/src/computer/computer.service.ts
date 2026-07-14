@@ -84,7 +84,9 @@ type CommonOsAgent = {
   } | null;
   browser?: ComputerInstance['browser'] | null;
   runtime?: Record<string, any> | null;
+  lastHeartbeatAt?: string | null;
   startedAt?: string | null;
+  updatedAt?: string | null;
 };
 
 type CommonOsInstructionProgress = {
@@ -384,11 +386,6 @@ export class ComputerService {
       await this.assertSessionForAgent(args.agentId, sessionId);
     }
 
-    // Subscription gate: free plans can't use computers; paid plans are limited
-    // to their allowed profiles + concurrency. Attaching to an already-running
-    // computer skips this (only new/waking compute is gated).
-    await this.assertComputeEntitlement(agent, config.resourceProfile);
-
     this.emitComputerToolProgress(args.runId, {
       toolName: 'startAgentComputer',
       stage: 'computer',
@@ -432,6 +429,10 @@ export class ComputerService {
       // wake path with the refreshed state so a failed runtime is replaceable.
       computer = refreshed;
     }
+
+    // Subscription gates apply when compute is provisioned or woken. Attaching
+    // to the agent's healthy persistent computer stays on the fast path.
+    await this.assertComputeEntitlement(agent, config.resourceProfile);
 
     const now = new Date();
     const name = args.name?.trim() || `${agent.name} computer`;
@@ -649,6 +650,36 @@ export class ComputerService {
     });
   }
 
+  async runtimeChannelAction(args: {
+    agentId: string;
+    channel: 'whatsapp';
+    action: 'connect' | 'status' | 'disconnect';
+  }) {
+    let computer = await this.getAssignedComputer(args.agentId);
+    if (!computer?.commonOsAgentId) {
+      throw new BadRequestException('Managed runtime is not provisioned');
+    }
+    const commonOsAgentId = computer.commonOsAgentId;
+    if (!['running', 'idle'].includes(String(computer.status))) {
+      computer = await this.refreshInstance(computer.computerId, {
+        silent: true,
+      }).catch(() => computer);
+    }
+    // CommonOS inspects the channel sidecar directly and returns a transient
+    // state until that container is ready. Model prewarming should not block
+    // channel setup once the sidecar can already serve pairing requests.
+    return this.commonOsComputerRequest<{
+      output?: Record<string, unknown> | string;
+      raw?: string;
+    }>(
+      'POST',
+      `/computers/${commonOsAgentId}/runtime-channels/${args.channel}/${args.action}`,
+      undefined,
+      {},
+      args.agentId,
+    );
+  }
+
   async refreshInstance(
     computerId: string,
     options: { silent?: boolean } = {},
@@ -668,7 +699,20 @@ export class ComputerService {
       undefined,
       computer.agentId,
     );
-    const status = this.mapStatus(commonOs.status);
+    const reportedStatus = this.mapStatus(commonOs.status);
+    const heartbeatAt = commonOs.lastHeartbeatAt
+      ? new Date(commonOs.lastHeartbeatAt).getTime()
+      : NaN;
+    const runtimeStartedAt = commonOs.startedAt
+      ? new Date(commonOs.startedAt).getTime()
+      : NaN;
+    const activeRuntimeIsStale =
+      ['running', 'idle'].includes(reportedStatus) &&
+      ((Number.isFinite(heartbeatAt) && Date.now() - heartbeatAt > 120_000) ||
+        (!Number.isFinite(heartbeatAt) &&
+          Number.isFinite(runtimeStartedAt) &&
+          Date.now() - runtimeStartedAt > 300_000));
+    const status = activeRuntimeIsStale ? 'failed' : reportedStatus;
     const [updated] = await this.db
       .update(schema.agentComputerInstance)
       .set({
@@ -710,7 +754,9 @@ export class ComputerService {
           !Number.isNaN(new Date(commonOs.startedAt).getTime())
             ? new Date(commonOs.startedAt)
             : computer.startedAt,
-        errorMessage: commonOs.pod?.lastError ?? null,
+        errorMessage: activeRuntimeIsStale
+          ? 'The agent computer stopped responding and will be recovered when it is next started.'
+          : (commonOs.pod?.lastError ?? null),
         updatedAt: new Date(),
       })
       .where(eq(schema.agentComputerInstance.computerId, computerId))
@@ -764,6 +810,69 @@ export class ComputerService {
     );
     await this.touchComputer(computer.computerId);
     return { path, content: data.content ?? '' };
+  }
+
+  async writeFiles(args: {
+    agentId: string;
+    computerId?: string;
+    sessionId?: string;
+    files: Array<{ path: string; content: string }>;
+    actorId?: string;
+    actorType?: 'user' | 'agent' | 'service';
+    runId?: string;
+    toolCallId?: string;
+  }) {
+    await this.assertCapability(args.agentId, 'filesystem');
+    if (!Array.isArray(args.files) || args.files.length === 0) {
+      throw new BadRequestException('files must contain at least one file');
+    }
+    if (args.files.length > 40) {
+      throw new BadRequestException(
+        'A single write can contain at most 40 files',
+      );
+    }
+    let totalBytes = 0;
+    const files = args.files.map((file) => {
+      const path = normalizeWorkspacePath(file.path).replace(/^\//, '');
+      if (typeof file.content !== 'string') {
+        throw new BadRequestException(`File content must be text: ${path}`);
+      }
+      totalBytes += Buffer.byteLength(file.content);
+      return { path, content: file.content };
+    });
+    if (totalBytes > 500_000) {
+      throw new BadRequestException('A single write cannot exceed 500 KB');
+    }
+    const computer = await this.resolveComputerForTool({
+      agentId: args.agentId,
+      computerId: args.computerId,
+      sessionId: args.sessionId,
+    });
+    const result = await this.sendInstruction({
+      agentId: args.agentId,
+      computerId: computer.computerId,
+      sessionId: args.sessionId,
+      eventType: 'workspace.write',
+      summary: `Write ${files.length} file${files.length === 1 ? '' : 's'}`,
+      instruction: [
+        'Use cli_write_file to write every file below exactly as provided.',
+        'Create parent directories as needed. Do not abbreviate, summarize, or replace file content with placeholders.',
+        'After all writes, verify the paths with cli_list_directory and report any failure.',
+        '',
+        JSON.stringify(files),
+      ].join('\n'),
+      waitMs: 300_000,
+      actorId: args.actorId,
+      actorType: args.actorType,
+      runId: args.runId,
+      toolCallId: args.toolCallId,
+    });
+    return {
+      ...result,
+      computerId: computer.computerId,
+      files: files.map((file) => file.path),
+      bytes: totalBytes,
+    };
   }
 
   async sendInstruction(args: {
@@ -1072,11 +1181,66 @@ export class ComputerService {
       instruction: [
         'Use this computer browser.',
         `Open ${url}.`,
-        'Wait until the page is loaded, then report the page title, current URL, and any obvious console/runtime errors.',
+        'Use browser_wait, browser_inspect, and browser_screenshot after loading.',
+        'Report the page title, current URL, rendered content, and every console, page, network, framework-overlay, or runtime error.',
+        'Treat any detected error or blank application root as a failed check; do not describe the page as working.',
       ].join('\n'),
       eventType: 'browser.open',
       summary: `Open ${url}`,
       waitMs: 180_000,
+      actorId: args.actorId,
+      actorType: args.actorType,
+      runId: args.runId,
+      toolCallId: args.toolCallId,
+    });
+    const computer = await this.refreshInstance(computerForTool.computerId, {
+      silent: true,
+    });
+    return { ...result, browser: computer.browser };
+  }
+
+  async testBrowser(args: {
+    agentId: string;
+    computerId?: string;
+    sessionId?: string;
+    url?: string;
+    actions?: Array<{
+      type: 'click' | 'type' | 'select' | 'press' | 'expectText';
+      selector?: string;
+      text?: string;
+      value?: string;
+      key?: string;
+    }>;
+    actorId?: string;
+    actorType?: 'user' | 'agent' | 'service';
+    runId?: string;
+    toolCallId?: string;
+  }) {
+    await this.assertCapability(args.agentId, 'browser');
+    const computerForTool = await this.resolveComputerForTool({
+      agentId: args.agentId,
+      computerId: args.computerId,
+      sessionId: args.sessionId,
+    });
+    const actions = (args.actions ?? []).slice(0, 20);
+    const result = await this.sendInstruction({
+      agentId: args.agentId,
+      computerId: computerForTool.computerId,
+      sessionId: args.sessionId,
+      instruction: [
+        'Test the application in this computer browser like a careful human developer.',
+        args.url ? `Open ${args.url} first.` : 'Use the currently open page.',
+        'Wait until the page is interactive. Use browser_inspect and browser_eval to inspect rendered text, the application root, runtime overlays, console errors, page errors, and failed requests.',
+        actions.length
+          ? `Perform these actions in order and verify their effects:\n${JSON.stringify(actions, null, 2)}`
+          : 'Exercise the primary visible interaction when it is safe and reversible.',
+        'Capture a final browser screenshot.',
+        'Return a concise test report with passed checks, failed checks, current URL/title, diagnostics, and screenshot status.',
+        'Any console error, page error, failed framework overlay, blank app root, broken interaction, or failed required request means the test failed. Never claim success while one remains.',
+      ].join('\n'),
+      eventType: 'browser.test',
+      summary: `Test ${args.url ?? 'current browser page'}`,
+      waitMs: 300_000,
       actorId: args.actorId,
       actorType: args.actorType,
       runId: args.runId,
@@ -1119,7 +1283,8 @@ export class ComputerService {
       '### Persistent computer',
       'This agent can have exactly one isolated CommonOS computer. Its workspace persists across chats and pod restarts.',
       `Computer use is ${config.allowAgentStart ? 'agent-wakeable' : 'user-wake only'}; resource profile is ${config.resourceProfile}/${config.resourceMode}.`,
-      'Use startAgentComputer to wake or attach the assigned computer before computer work. It is idempotent and never creates an extra computer. Use runComputerCommand for terminal work, readComputerFile for files, and openComputerBrowser for browser work.',
+      'Use startAgentComputer to wake or attach the assigned computer before computer work. It is idempotent and never creates an extra computer. Use writeComputerFiles for complete source files, runComputerCommand for finite terminal work, readComputerFile for files, and testComputerBrowser for application verification.',
+      'Never encode source files in shell heredocs or long commands. writeComputerFiles is the reliable structured file-writing path.',
       'Always keep commands scoped to the task, avoid secrets exfiltration, and summarize created files/screenshots/results for the user.',
       'Assigned computer:',
       line,
@@ -1153,12 +1318,16 @@ export class ComputerService {
   private toolNameForComputerEvent(eventType: string) {
     if (eventType === 'terminal.command') return 'runComputerCommand';
     if (eventType === 'browser.open') return 'openComputerBrowser';
+    if (eventType === 'browser.test') return 'testComputerBrowser';
+    if (eventType === 'workspace.write') return 'writeComputerFiles';
     return 'startAgentComputer';
   }
 
   private stageForComputerEvent(eventType: string) {
     if (eventType === 'terminal.command') return 'computer_terminal';
     if (eventType === 'browser.open') return 'computer_browser';
+    if (eventType === 'browser.test') return 'computer_browser_test';
+    if (eventType === 'workspace.write') return 'computer_files';
     return 'computer';
   }
 
@@ -1281,6 +1450,7 @@ export class ComputerService {
       string,
       any
     >;
+    const runtimeChannels = this.runtimeChannels(args.agent);
     const commonOsAgent = await this.commonOsComputerRequest<CommonOsAgent>(
       'POST',
       '/computers',
@@ -1306,7 +1476,7 @@ export class ComputerService {
                 modelProvider: args.agent.modelProvider,
                 modelId: args.agent.modelId,
                 ...(modelApiKey ? { modelApiKey } : {}),
-                channels: runtimeConfig.channels ?? {},
+                channels: runtimeChannels,
                 plugins: runtimeConfig.enabledPlugins ?? [],
                 dmPolicy: runtimeConfig.channelPolicy ?? 'pairing',
               }
@@ -1318,6 +1488,7 @@ export class ComputerService {
                 modelId: args.agent.modelId,
                 ...(modelApiKey ? { modelApiKey } : {}),
                 toolsets: runtimeConfig.enabledToolsets ?? [],
+                channels: runtimeChannels,
               }
             : undefined,
         ...(args.config.image ? { dockerImage: args.config.image } : {}),
@@ -1420,6 +1591,38 @@ export class ComputerService {
     return this.encryption.decrypt(encryptedValue, iv, tag);
   }
 
+  private runtimeChannels(agent: typeof schema.agent.$inferSelect) {
+    const config = (agent.runtimeConfig ?? {}) as Record<string, any>;
+    const storedSecrets = (agent.runtimeSecrets ?? {}) as Record<
+      string,
+      Record<string, string>
+    >;
+    const result: Record<string, Record<string, unknown>> = {};
+    for (const [id, rawChannel] of Object.entries(
+      (config.channels ?? {}) as Record<string, Record<string, unknown>>,
+    )) {
+      if (!rawChannel?.enabled) continue;
+      const credentials = Object.fromEntries(
+        Object.entries(storedSecrets[id] ?? {}).flatMap(([field, value]) => {
+          const decrypted = this.decryptStoredSecret(value);
+          return decrypted ? [[field, decrypted]] : [];
+        }),
+      );
+      result[id] = {
+        enabled: true,
+        mode: rawChannel.mode,
+        dmPolicy: rawChannel.dmPolicy ?? config.channelPolicy ?? 'pairing',
+        allowFrom: Array.isArray(rawChannel.allowFrom)
+          ? rawChannel.allowFrom
+          : [],
+        requireMention: rawChannel.requireMention !== false,
+        homeTarget: rawChannel.homeTarget,
+        ...credentials,
+      };
+    }
+    return result;
+  }
+
   private async pollCommonOsMessage(
     commonOsAgentId: string,
     agentCommonsId: string,
@@ -1439,6 +1642,31 @@ export class ComputerService {
     let lastHeartbeatCheckAt = started;
     let staleHeartbeatMs = 0;
     const observedEventIds = new Set<string>();
+    let lastEventAt: string | undefined;
+    let lastEventId: string | undefined;
+    let snapshotSupported = true;
+    const forwardEvents = async (runtimeEvents: any[]) => {
+      for (const event of runtimeEvents) {
+        const id = String(event?._id ?? event?.id ?? '');
+        if (!id || observedEventIds.has(id)) continue;
+        observedEventIds.add(id);
+        const createdAt = event?.createdAt
+          ? new Date(event.createdAt).toISOString()
+          : undefined;
+        if (createdAt) {
+          lastEventAt = createdAt;
+          lastEventId = id;
+        }
+        if (onRuntimeEvent) {
+          await onRuntimeEvent({
+            id,
+            type: String(event?.type ?? ''),
+            payload: (event?.payload ?? {}) as CommonOsRuntimeEvent['payload'],
+            createdAt,
+          });
+        }
+      }
+    };
     while (Date.now() - started < Math.min(waitMs, 720_000)) {
       // A wedged runtime daemon keeps its pod Running while heartbeats,
       // message polling, and event emission all stop — without this check
@@ -1480,38 +1708,64 @@ export class ComputerService {
           });
         }
       }
-      if (onRuntimeEvent && this.commonOsUseGeneralComputerApi()) {
-        const events = await this.commonOsComputerRequest<any[]>(
+      let message: any;
+      if (this.commonOsUseGeneralComputerApi()) {
+        if (snapshotSupported) {
+          const suffix = lastEventAt
+            ? `?after=${encodeURIComponent(lastEventAt)}${lastEventId ? `&afterId=${encodeURIComponent(lastEventId)}` : ''}`
+            : '';
+          try {
+            const snapshot = await this.commonOsComputerRequest<{
+              message?: any;
+              events?: any[];
+            }>(
+              'GET',
+              `/computers/${commonOsAgentId}/instructions/${messageId}/snapshot${suffix}`,
+              undefined,
+              undefined,
+              agentCommonsId,
+            );
+            message = snapshot.message;
+            await forwardEvents(snapshot.events ?? []);
+          } catch (error) {
+            snapshotSupported = false;
+            this.logger.warn(
+              `CommonOS instruction snapshot is unavailable; using compatibility polling: ${error instanceof Error ? error.message : String(error)}`,
+            );
+          }
+        }
+        if (!snapshotSupported) {
+          const [list, runtimeEvents] = await Promise.all([
+            this.commonOsComputerRequest<any[]>(
+              'GET',
+              `/computers/${commonOsAgentId}/instructions`,
+              undefined,
+              undefined,
+              agentCommonsId,
+            ),
+            this.commonOsComputerRequest<any[]>(
+              'GET',
+              `/computers/${commonOsAgentId}/instructions/${messageId}/events`,
+              undefined,
+              undefined,
+              agentCommonsId,
+            ),
+          ]);
+          message = list.find((item) => item._id === messageId);
+          await forwardEvents(runtimeEvents);
+        }
+      } else {
+        const list = await this.commonOsComputerRequest<any[]>(
           'GET',
-          `/computers/${commonOsAgentId}/instructions/${messageId}/events`,
-          undefined,
+          `/computers/${commonOsAgentId}/instructions`,
+          this.commonOsFleetId()
+            ? `/fleets/${this.commonOsFleetId()}/agents/${commonOsAgentId}/human-messages`
+            : undefined,
           undefined,
           agentCommonsId,
-        ).catch(() => []);
-        for (const event of events) {
-          const id = String(event?._id ?? event?.id ?? '');
-          if (!id || observedEventIds.has(id)) continue;
-          observedEventIds.add(id);
-          await onRuntimeEvent({
-            id,
-            type: String(event?.type ?? ''),
-            payload: (event?.payload ?? {}) as CommonOsRuntimeEvent['payload'],
-            createdAt: event?.createdAt
-              ? new Date(event.createdAt).toISOString()
-              : undefined,
-          });
-        }
+        );
+        message = list.find((item) => item._id === messageId);
       }
-      const list = await this.commonOsComputerRequest<any[]>(
-        'GET',
-        `/computers/${commonOsAgentId}/instructions`,
-        this.commonOsFleetId()
-          ? `/fleets/${this.commonOsFleetId()}/agents/${commonOsAgentId}/human-messages`
-          : undefined,
-        undefined,
-        agentCommonsId,
-      );
-      const message = list.find((item) => item._id === messageId);
       const status = String(message?.status ?? 'pending');
       const now = Date.now();
       if (
@@ -1526,29 +1780,6 @@ export class ComputerService {
         });
       }
       if (message?.response || message?.status === 'failed') {
-        if (onRuntimeEvent && this.commonOsUseGeneralComputerApi()) {
-          const events = await this.commonOsComputerRequest<any[]>(
-            'GET',
-            `/computers/${commonOsAgentId}/instructions/${messageId}/events`,
-            undefined,
-            undefined,
-            agentCommonsId,
-          ).catch(() => []);
-          for (const event of events) {
-            const id = String(event?._id ?? event?.id ?? '');
-            if (!id || observedEventIds.has(id)) continue;
-            observedEventIds.add(id);
-            await onRuntimeEvent({
-              id,
-              type: String(event?.type ?? ''),
-              payload: (event?.payload ??
-                {}) as CommonOsRuntimeEvent['payload'],
-              createdAt: event?.createdAt
-                ? new Date(event.createdAt).toISOString()
-                : undefined,
-            });
-          }
-        }
         return {
           status: message.status,
           response: message.response ?? null,
@@ -1558,7 +1789,10 @@ export class ComputerService {
           commonOsMessageId: messageId,
         };
       }
-      await new Promise((resolve) => setTimeout(resolve, 2_000));
+      const elapsed = Date.now() - started;
+      await new Promise((resolve) =>
+        setTimeout(resolve, elapsed < 15_000 ? 350 : 800),
+      );
     }
     return {
       status: 'timeout',

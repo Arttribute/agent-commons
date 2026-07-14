@@ -16,6 +16,7 @@ import {
 } from "lucide-react";
 import type { Tool } from "@/types/tool";
 import type { ToolCatalogItem } from "@/lib/tools/catalog";
+import { CreateToolDialog } from "@/components/tools/create-tool-dialog";
 import { EditToolDialog } from "@/components/tools/management/edit-tool-dialog";
 import { ManageKeysDialog } from "@/components/tools/management/manage-keys-dialog";
 import { ManagePermissionsDialog } from "@/components/tools/management/manage-permissions-dialog";
@@ -65,7 +66,6 @@ const FILTERS = [
   { value: "all", label: "All" },
   { value: "apps", label: "Apps" },
   { value: "mcp", label: "MCP" },
-  { value: "platform", label: "Platform" },
   { value: "custom", label: "Custom" },
 ] as const;
 
@@ -78,19 +78,18 @@ function filterOf(item: ToolCatalogItem): FilterValue | null {
       return "apps";
     case "mcp_api":
       return "mcp";
-    case "system":
-      return "platform";
     case "custom":
       return "custom";
     default:
-      return null; // agents & workflows live on their own pages
+      // Internal platform (system) tools only surface in the workflow editor;
+      // agents & workflows live on their own pages.
+      return null;
   }
 }
 
 const sectionTitles: Record<Exclude<FilterValue, "all">, string> = {
   apps: "Apps",
   mcp: "MCP integrations",
-  platform: "Platform tools",
   custom: "Custom tools",
 };
 
@@ -428,6 +427,7 @@ export function ToolsManagementView({ userAddress }: ToolsManagementViewProps) {
   const [quickConnectItem, setQuickConnectItem] = useState<ToolCatalogItem | null>(null);
   const [detailsItem, setDetailsItem] = useState<ToolCatalogItem | null>(null);
 
+  const [showCreateTool, setShowCreateTool] = useState(false);
   const [editTool, setEditTool] = useState<Tool | null>(null);
   const [keysTool, setKeysTool] = useState<Tool | null>(null);
   const [permissionsTool, setPermissionsTool] = useState<Tool | null>(null);
@@ -459,7 +459,6 @@ export function ToolsManagementView({ userAddress }: ToolsManagementViewProps) {
     const groups: Record<Exclude<FilterValue, "all">, ToolCatalogItem[]> = {
       apps: [],
       mcp: [],
-      platform: [],
       custom: [],
     };
     for (const item of items) {
@@ -610,7 +609,7 @@ export function ToolsManagementView({ userAddress }: ToolsManagementViewProps) {
               variant="outline"
               size="sm"
               className="mt-4"
-              onClick={() => router.push("/tools/create")}
+              onClick={() => setShowCreateTool(true)}
             >
               <PlugZap className="h-3.5 w-3.5" />
               Create tool
@@ -650,6 +649,8 @@ export function ToolsManagementView({ userAddress }: ToolsManagementViewProps) {
           )}
         </div>
       )}
+
+      <CreateToolDialog open={showCreateTool} onOpenChange={setShowCreateTool} />
 
       <McpQuickConnectDialog
         item={quickConnectItem}

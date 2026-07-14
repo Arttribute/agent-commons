@@ -2,7 +2,7 @@
 
 import { Injectable, BadRequestException, NotFoundException } from '@nestjs/common';
 import { DatabaseService } from '~/modules/database/database.service';
-import { eq, and } from 'drizzle-orm';
+import { eq, and, or, SQL } from 'drizzle-orm';
 import * as schema from '#/models/schema';
 import { InferSelectModel } from 'drizzle-orm';
 import { ChatCompletionTool } from 'openai/resources/chat/completions.mjs';
@@ -10,6 +10,24 @@ import typia from 'typia';
 import { CommonTool } from '~/tool/tools/common-tool.service';
 import { EthereumTool } from '~/tool/tools/ethereum-tool.service';
 import { map } from 'lodash';
+
+const UUID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * Match a tool by name, or by toolId when the identifier is UUID-shaped.
+ * (The toolId column is a Postgres uuid — comparing it against a non-UUID
+ * string would throw, so the id branch is only added for UUID input.)
+ */
+export function toolNameOrId(identifier: string): SQL | undefined {
+  if (UUID_PATTERN.test(identifier)) {
+    return or(
+      eq(schema.tool.name, identifier),
+      eq(schema.tool.toolId, identifier),
+    );
+  }
+  return eq(schema.tool.name, identifier);
+}
 
 @Injectable()
 export class ToolService {
@@ -73,13 +91,14 @@ export class ToolService {
   }
 
   /**
-   * Retrieve a tool by name
+   * Retrieve a tool by name or toolId (UUID). Public tool routes accept
+   * either identifier so clients can address tools by their primary key.
    */
   async getToolByName(
     name: string,
   ): Promise<InferSelectModel<typeof schema.tool>> {
     const tool = await this.db.query.tool.findFirst({
-      where: (t) => eq(t.name, name),
+      where: toolNameOrId(name),
     });
 
     if (!tool) {
@@ -185,7 +204,7 @@ export class ToolService {
         }),
         updatedAt: new Date(),
       })
-      .where(eq(schema.tool.name, params.name))
+      .where(toolNameOrId(params.name))
       .returning();
 
     if (!updated) {
@@ -201,7 +220,7 @@ export class ToolService {
   async deleteToolByName(name: string) {
     const [deleted] = await this.db
       .delete(schema.tool)
-      .where(eq(schema.tool.name, name))
+      .where(toolNameOrId(name))
       .returning();
 
     if (!deleted) {

@@ -133,6 +133,23 @@ export class ComputerController {
     return { data };
   }
 
+  @Post('computer/files/write')
+  @RateLimit({ limit: 30, windowMs: 60_000, keyStrategy: 'user' })
+  async writeAssignedComputerFiles(
+    @Param('agentId') agentId: string,
+    @Body() body: { files: Array<{ path: string; content: string }> },
+    @Req() req: Request,
+  ) {
+    const principal = (req as any).principal;
+    const data = await this.computers.writeFiles({
+      agentId,
+      files: body.files,
+      actorId: principal?.principalId ?? (req.headers['x-initiator'] as string),
+      actorType: principal?.principalType ?? 'user',
+    });
+    return { data };
+  }
+
   @Post('computer/commands')
   @RateLimit({ limit: 30, windowMs: 60_000, keyStrategy: 'user' })
   async runAssignedComputerCommand(
@@ -175,6 +192,33 @@ export class ComputerController {
     const data = await this.computers.openBrowser({
       agentId,
       url: body.url,
+      actorId: principal?.principalId ?? (req.headers['x-initiator'] as string),
+      actorType: principal?.principalType ?? 'user',
+    });
+    return { data };
+  }
+
+  @Post('computer/browser/test')
+  @RateLimit({ limit: 20, windowMs: 60_000, keyStrategy: 'user' })
+  async testAssignedComputerBrowser(
+    @Param('agentId') agentId: string,
+    @Body()
+    body: {
+      url?: string;
+      actions?: Array<{
+        type: 'click' | 'type' | 'select' | 'press' | 'expectText';
+        selector?: string;
+        text?: string;
+        value?: string;
+        key?: string;
+      }>;
+    },
+    @Req() req: Request,
+  ) {
+    const principal = (req as any).principal;
+    const data = await this.computers.testBrowser({
+      agentId,
+      ...body,
       actorId: principal?.principalId ?? (req.headers['x-initiator'] as string),
       actorType: principal?.principalType ?? 'user',
     });

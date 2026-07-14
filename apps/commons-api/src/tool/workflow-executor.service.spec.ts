@@ -23,13 +23,13 @@ import { Logger } from '@nestjs/common';
 function linearDef() {
   return {
     nodes: [
-      { id: 'n-in',  type: 'input',  data: {} },
-      { id: 'n-t',   type: 'tool',   data: { toolId: 'tool-1' } },
+      { id: 'n-in', type: 'input', data: {} },
+      { id: 'n-t', type: 'tool', data: { toolId: 'tool-1' } },
       { id: 'n-out', type: 'output', data: {} },
     ],
     edges: [
       { id: 'e1', source: 'n-in', target: 'n-t' },
-      { id: 'e2', source: 'n-t',  target: 'n-out' },
+      { id: 'e2', source: 'n-t', target: 'n-out' },
     ],
   };
 }
@@ -41,23 +41,21 @@ function makeDb(workflowRow?: any) {
   const insertValues = jest
     .fn()
     .mockReturnValue({ returning: insertReturning });
-  const insert          = jest.fn().mockReturnValue({ values: insertValues });
+  const insert = jest.fn().mockReturnValue({ values: insertValues });
 
   const updateWhere = jest.fn().mockResolvedValue(undefined);
-  const updateSet   = jest.fn().mockReturnValue({ where: updateWhere });
-  const update      = jest.fn().mockReturnValue({ set: updateSet });
+  const updateSet = jest.fn().mockReturnValue({ where: updateWhere });
+  const update = jest.fn().mockReturnValue({ set: updateSet });
 
   const query = {
     workflow: {
-      findFirst: jest
-        .fn()
-        .mockResolvedValue(
-          workflowRow ?? {
-            workflowId: 'wf-1',
-            definition: linearDef(),
-            timeoutMs: 30_000,
-          },
-        ),
+      findFirst: jest.fn().mockResolvedValue(
+        workflowRow ?? {
+          workflowId: 'wf-1',
+          definition: linearDef(),
+          timeoutMs: 30_000,
+        },
+      ),
     },
     workflowExecution: { findFirst: jest.fn().mockResolvedValue(null) },
   };
@@ -81,7 +79,7 @@ describe('WorkflowExecutorService', () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         WorkflowExecutorService,
-        { provide: DatabaseService,     useValue: db },
+        { provide: DatabaseService, useValue: db },
         {
           provide: ToolLoaderService,
           useValue: { loadTool: jest.fn().mockResolvedValue(null) },
@@ -90,9 +88,9 @@ describe('WorkflowExecutorService', () => {
           provide: ToolService,
           useValue: { getTool: jest.fn().mockResolvedValue(null) },
         },
-        { provide: CommonToolService,   useValue: {} },
+        { provide: CommonToolService, useValue: {} },
         { provide: EthereumToolService, useValue: {} },
-        { provide: AgentService,        useValue: { runAgent: jest.fn() } },
+        { provide: AgentService, useValue: { runAgent: jest.fn() } },
         { provide: ExternalRuntimeService, useValue: { runAgent: jest.fn() } },
       ],
     }).compile();
@@ -146,14 +144,14 @@ describe('WorkflowExecutorService', () => {
   /* ── approveExecution ────────────────────────────────────────────────── */
   describe('approveExecution()', () => {
     const pausedExecution = () => ({
-      executionId:      'exec-1',
-      status:           'awaiting_approval',
-      approvalToken:    'tok-ok',
-      pausedAtNode:     'n-approval',
+      executionId: 'exec-1',
+      status: 'awaiting_approval',
+      approvalToken: 'tok-ok',
+      pausedAtNode: 'n-approval',
       pausedNodeOutputs: { 'n-prev': { out: 1 } },
-      inputData:        {},
-      agentId:          'agent-1',
-      workflow:         { definition: linearDef() },
+      inputData: {},
+      agentId: 'agent-1',
+      workflow: { definition: linearDef() },
     });
 
     it('throws when execution not found', async () => {
@@ -298,7 +296,7 @@ describe('WorkflowExecutorService', () => {
         ['B', { live: 1, dead: 0, total: 1 }],
         ['C', { live: 1, dead: 0, total: 1 }],
       ]);
-      const deadEdges   = new Set<string>();
+      const deadEdges = new Set<string>();
       const skippedNodes = new Set<string>();
 
       (service as any).propagateSkip(
@@ -314,6 +312,70 @@ describe('WorkflowExecutorService', () => {
       expect(deadEdges.has('e1')).toBe(true);
       // B should have its live in-degree decremented and be added to skipped
       expect(incomingCount.get('B')!.live).toBe(0);
+    });
+
+    it('maps precise result fields into a nested target object', () => {
+      const mapped = (service as any).mapNodeInputs(
+        'target',
+        [
+          {
+            source: 'agent',
+            target: 'target',
+            mapping: {
+              'result.subject': 'message.subject',
+              'result.body': 'message.body',
+            },
+            targetTypes: {
+              'message.subject': 'string',
+              'message.body': 'string',
+            },
+          },
+        ],
+        {
+          agent: { subject: 'Status', body: 'All systems operational' },
+        },
+      );
+
+      expect(mapped).toEqual({
+        message: {
+          subject: 'Status',
+          body: 'All systems operational',
+        },
+      });
+    });
+
+    it('coerces dynamic values to the declared target type', () => {
+      const mapped = (service as any).mapNodeInputs(
+        'target',
+        [
+          {
+            source: 'input',
+            target: 'target',
+            mapping: { value: 'count' },
+            targetTypes: { count: 'number' },
+          },
+        ],
+        { input: { value: '42' } },
+      );
+
+      expect(mapped).toEqual({ count: 42 });
+    });
+
+    it('fails with an actionable message when a conversion is invalid', () => {
+      expect(() =>
+        (service as any).mapNodeInputs(
+          'target',
+          [
+            {
+              source: 'input',
+              target: 'target',
+              mapping: { value: 'payload' },
+              targetTypes: { payload: 'object' },
+            },
+          ],
+          { input: { value: 'not-json' } },
+        ),
+      ).toThrow('Could not map value to payload as object');
     });
   });
 

@@ -12,6 +12,7 @@ interface TagsInputProps {
   placeholder?: string;
   className?: string;
   maxTags?: number;
+  disabled?: boolean;
 }
 
 export function TagsInput({
@@ -20,6 +21,7 @@ export function TagsInput({
   placeholder = "Add tags...",
   className,
   maxTags,
+  disabled = false,
 }: TagsInputProps) {
   const [inputValue, setInputValue] = useState("");
 
@@ -58,7 +60,7 @@ export function TagsInput({
     <div
       className={cn(
         "flex flex-wrap gap-2 p-2 border border-input rounded-md bg-background focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-2",
-        className
+        className,
       )}
     >
       {value.map((tag) => (
@@ -70,6 +72,7 @@ export function TagsInput({
           <span>{tag}</span>
           <button
             type="button"
+            disabled={disabled}
             onClick={() => removeTag(tag)}
             className="ml-1 rounded-full hover:bg-secondary-foreground/20 p-0.5"
           >
@@ -85,7 +88,7 @@ export function TagsInput({
         onBlur={handleBlur}
         placeholder={value.length === 0 ? placeholder : ""}
         className="flex-1 min-w-[120px] border-0 focus-visible:ring-0 focus-visible:ring-offset-0 p-0 h-6"
-        disabled={maxTags ? value.length >= maxTags : false}
+        disabled={disabled || (maxTags ? value.length >= maxTags : false)}
       />
     </div>
   );

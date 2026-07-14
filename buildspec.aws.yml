@@ -22,11 +22,10 @@ phases:
       - docker push "$IMAGE_URI"
   post_build:
     commands:
-      # Optional: run pending DB migrations in-container before the deploy.
-      # Off by default; enable per-deploy with RUN_MIGRATIONS=true so routine
-      # code deploys never mutate the schema unexpectedly.
+      # Apply ordered, ledger-backed migrations before starting code that may
+      # depend on them. Break-glass deploys can opt out with RUN_MIGRATIONS=false.
       - |
-        if [ "${RUN_MIGRATIONS:-false}" = "true" ]; then
+        if [ "${RUN_MIGRATIONS:-true}" = "true" ]; then
           echo "Running database migrations..."
           SECRET_JSON=$(aws secretsmanager get-secret-value --secret-id "$RUNTIME_SECRET_ARN" --query SecretString --output text --region "$AWS_REGION")
           docker run --rm \

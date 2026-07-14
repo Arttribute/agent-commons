@@ -1,10 +1,32 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
-import { Check, Loader2, Puzzle, Server, Sparkles } from "lucide-react";
+import {
+  useCallback,
+  useEffect,
+  useState,
+  type KeyboardEvent,
+} from "react";
+import {
+  Check,
+  ChevronRight,
+  Hash,
+  Loader2,
+  MessageCircle,
+  MessageSquare,
+  Plus,
+  Puzzle,
+  Send,
+  Server,
+  ShieldCheck,
+  Sparkles,
+  Unplug,
+  X,
+} from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Switch } from "@/components/ui/switch";
+import { TagsInput } from "@/components/ui/tags-input";
 import {
   Select,
   SelectContent,
@@ -25,8 +47,315 @@ export type RuntimeInfo = {
     enabledPlugins?: string[];
     enabledToolsets?: string[];
     memoryMode?: "native" | "platform" | "hybrid";
+    channels?: Record<
+      string,
+      {
+        enabled: boolean;
+        mode?: "bot" | "self-chat" | "cloud";
+        dmPolicy?: "pairing" | "allowlist" | "open" | "disabled";
+        allowFrom?: string[];
+        requireMention?: boolean;
+        homeTarget?: string;
+        setupMethod?: "credentials" | "qr";
+        configuredFields?: string[];
+        configured?: boolean;
+        needsPairing?: boolean;
+      }
+    >;
   };
 };
+
+type ChannelDraft = {
+  enabled: boolean;
+  mode: "bot" | "self-chat" | "cloud";
+  dmPolicy: "pairing" | "allowlist" | "open" | "disabled";
+  allowFrom: string[];
+  requireMention: boolean;
+  homeTarget: string;
+};
+
+type ChannelId = "telegram" | "whatsapp" | "slack" | "discord";
+
+const DEFAULT_CHANNELS: Record<ChannelId, ChannelDraft> = {
+  telegram: {
+    enabled: false,
+    mode: "bot",
+    dmPolicy: "allowlist",
+    allowFrom: [],
+    requireMention: true,
+    homeTarget: "",
+  },
+  whatsapp: {
+    enabled: false,
+    mode: "bot",
+    dmPolicy: "allowlist",
+    allowFrom: [],
+    requireMention: true,
+    homeTarget: "",
+  },
+  slack: {
+    enabled: false,
+    mode: "bot",
+    dmPolicy: "allowlist",
+    allowFrom: [],
+    requireMention: true,
+    homeTarget: "",
+  },
+  discord: {
+    enabled: false,
+    mode: "bot",
+    dmPolicy: "allowlist",
+    allowFrom: [],
+    requireMention: true,
+    homeTarget: "",
+  },
+};
+
+const WHATSAPP_COUNTRY_CODES = [
+  ["+1", "United States / Canada"],
+  ["+7", "Kazakhstan / Russia"],
+  ["+20", "Egypt"],
+  ["+27", "South Africa"],
+  ["+30", "Greece"],
+  ["+31", "Netherlands"],
+  ["+32", "Belgium"],
+  ["+33", "France"],
+  ["+34", "Spain"],
+  ["+36", "Hungary"],
+  ["+39", "Italy"],
+  ["+40", "Romania"],
+  ["+41", "Switzerland"],
+  ["+43", "Austria"],
+  ["+44", "United Kingdom"],
+  ["+45", "Denmark"],
+  ["+46", "Sweden"],
+  ["+47", "Norway"],
+  ["+48", "Poland"],
+  ["+49", "Germany"],
+  ["+51", "Peru"],
+  ["+52", "Mexico"],
+  ["+54", "Argentina"],
+  ["+55", "Brazil"],
+  ["+56", "Chile"],
+  ["+57", "Colombia"],
+  ["+58", "Venezuela"],
+  ["+60", "Malaysia"],
+  ["+61", "Australia"],
+  ["+62", "Indonesia"],
+  ["+63", "Philippines"],
+  ["+64", "New Zealand"],
+  ["+65", "Singapore"],
+  ["+66", "Thailand"],
+  ["+81", "Japan"],
+  ["+82", "South Korea"],
+  ["+84", "Vietnam"],
+  ["+86", "China"],
+  ["+90", "Turkey"],
+  ["+91", "India"],
+  ["+92", "Pakistan"],
+  ["+93", "Afghanistan"],
+  ["+94", "Sri Lanka"],
+  ["+98", "Iran"],
+  ["+212", "Morocco"],
+  ["+213", "Algeria"],
+  ["+216", "Tunisia"],
+  ["+218", "Libya"],
+  ["+220", "Gambia"],
+  ["+221", "Senegal"],
+  ["+223", "Mali"],
+  ["+225", "Cote d'Ivoire"],
+  ["+233", "Ghana"],
+  ["+234", "Nigeria"],
+  ["+243", "DR Congo"],
+  ["+250", "Rwanda"],
+  ["+251", "Ethiopia"],
+  ["+254", "Kenya"],
+  ["+255", "Tanzania"],
+  ["+256", "Uganda"],
+  ["+260", "Zambia"],
+  ["+263", "Zimbabwe"],
+  ["+351", "Portugal"],
+  ["+352", "Luxembourg"],
+  ["+353", "Ireland"],
+  ["+354", "Iceland"],
+  ["+358", "Finland"],
+  ["+370", "Lithuania"],
+  ["+371", "Latvia"],
+  ["+372", "Estonia"],
+  ["+380", "Ukraine"],
+  ["+420", "Czechia"],
+  ["+421", "Slovakia"],
+  ["+852", "Hong Kong"],
+  ["+880", "Bangladesh"],
+  ["+886", "Taiwan"],
+  ["+960", "Maldives"],
+  ["+961", "Lebanon"],
+  ["+962", "Jordan"],
+  ["+966", "Saudi Arabia"],
+  ["+971", "United Arab Emirates"],
+  ["+972", "Israel"],
+  ["+974", "Qatar"],
+] as const;
+
+function WhatsAppPhoneInput({
+  value,
+  onChange,
+  disabled,
+}: {
+  value: string[];
+  onChange: (numbers: string[]) => void;
+  disabled?: boolean;
+}) {
+  const [countryCode, setCountryCode] = useState("");
+  const [customCode, setCustomCode] = useState("+");
+  const [phoneNumber, setPhoneNumber] = useState("");
+
+  const addNumber = () => {
+    const prefix = countryCode === "custom" ? customCode : countryCode;
+    const codeDigits = prefix.replace(/\D/g, "");
+    const numberDigits = phoneNumber.replace(/\D/g, "");
+    if (!codeDigits || !numberDigits) return;
+    const international = `+${codeDigits}${numberDigits}`;
+    if (!value.includes(international)) onChange([...value, international]);
+    setPhoneNumber("");
+  };
+
+  const onPhoneKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
+    if (event.key !== "Enter") return;
+    event.preventDefault();
+    addNumber();
+  };
+
+  return (
+    <div className="grid gap-2">
+      {value.length > 0 && (
+        <div className="flex min-h-8 flex-wrap gap-1.5">
+          {value.map((number) => (
+            <Badge
+              key={number}
+              variant="secondary"
+              className="h-7 gap-1 rounded-md pr-1 text-xs font-normal"
+            >
+              {number}
+              <button
+                type="button"
+                aria-label={`Remove ${number}`}
+                disabled={disabled}
+                onClick={() =>
+                  onChange(value.filter((candidate) => candidate !== number))
+                }
+                className="rounded p-0.5 hover:bg-secondary-foreground/15"
+              >
+                <X className="h-3 w-3" />
+              </button>
+            </Badge>
+          ))}
+        </div>
+      )}
+      <div className="flex min-w-0 gap-1.5">
+        <Select
+          value={countryCode}
+          onValueChange={setCountryCode}
+          disabled={disabled}
+        >
+          <SelectTrigger className="h-8 w-32 shrink-0 text-xs">
+            <SelectValue placeholder="Country code" />
+          </SelectTrigger>
+          <SelectContent>
+            {WHATSAPP_COUNTRY_CODES.map(([code, country]) => (
+              <SelectItem key={`${code}-${country}`} value={code}>
+                {country} ({code})
+              </SelectItem>
+            ))}
+            <SelectItem value="custom">Custom code</SelectItem>
+          </SelectContent>
+        </Select>
+        {countryCode === "custom" && (
+          <Input
+            value={customCode}
+            onChange={(event) => setCustomCode(event.target.value)}
+            inputMode="tel"
+            aria-label="Custom country code"
+            className="h-8 w-16 shrink-0 text-xs"
+            disabled={disabled}
+          />
+        )}
+        <Input
+          value={phoneNumber}
+          onChange={(event) => setPhoneNumber(event.target.value)}
+          onKeyDown={onPhoneKeyDown}
+          inputMode="tel"
+          placeholder="Phone number"
+          aria-label="WhatsApp phone number"
+          className="h-8 min-w-0 text-xs"
+          disabled={disabled}
+        />
+        <Button
+          type="button"
+          size="icon"
+          variant="outline"
+          className="h-8 w-8 shrink-0"
+          aria-label="Add WhatsApp number"
+          disabled={
+            disabled ||
+            !phoneNumber.trim() ||
+            (!countryCode || (countryCode === "custom" && !customCode.trim()))
+          }
+          onClick={addNumber}
+        >
+          <Plus className="h-3.5 w-3.5" />
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+function findQrImage(value: unknown): string | null {
+  if (typeof value === "string") {
+    const match = value.match(
+      /data:image\/(?:png|svg\+xml);base64,[A-Za-z0-9+/=]+/,
+    );
+    return match?.[0] ?? null;
+  }
+  if (!value || typeof value !== "object") return null;
+  for (const child of Object.values(value as Record<string, unknown>)) {
+    const nested = findQrImage(child);
+    if (nested) return nested;
+  }
+  return null;
+}
+
+function findQr(value: unknown): string | null {
+  // Hermes includes both a raw wa.me pairing payload and a rendered QR data
+  // URL. Always choose the image first so the UI shows a scannable code.
+  const image = findQrImage(value);
+  if (image) return image;
+  if (!value || typeof value !== "object") return null;
+  for (const [key, child] of Object.entries(value as Record<string, unknown>)) {
+    if (/qr(?:Data)?Url|qrCode|qr/i.test(key) && typeof child === "string") {
+      return child;
+    }
+    const nested = findQr(child);
+    if (nested) return nested;
+  }
+  return null;
+}
+
+function channelIsConnected(value: unknown) {
+  const text = JSON.stringify(value ?? {}).toLowerCase();
+  return (
+    /"(?:connected|linked|loggedin|logged_in)":true/.test(text) ||
+    /"status":"(?:connected|linked|ready|online)"/.test(text)
+  );
+}
+
+function channelIsStarting(value: unknown) {
+  const text = JSON.stringify(value ?? {}).toLowerCase();
+  return (
+    /"status":"starting"/.test(text) ||
+    /"runtimestatus":"(?:provisioning|starting)"/.test(text)
+  );
+}
 
 /** Built-in tooling each managed runtime ships with, shown alongside the
  * Agent Commons catalog so both surfaces read as one system. */
@@ -46,7 +375,10 @@ export const RUNTIME_NATIVE_TOOLING: Record<
       "OpenClaw runs on this agent's managed computer with its own gateway, plugins, and channel connectors.",
     builtIns: [
       { name: "browser", description: "Full browser automation" },
-      { name: "workspace", description: "Persistent files and project context" },
+      {
+        name: "workspace",
+        description: "Persistent files and project context",
+      },
       { name: "terminal", description: "Commands and development tasks" },
       { name: "web", description: "Web search and content retrieval" },
       { name: "memory", description: "OpenClaw's native memory store" },
@@ -124,11 +456,13 @@ export function managedRuntimeKey(
 
 /** Detail panel for the pinned "native tooling" entry in the agent Tools view. */
 export function RuntimeNativeToolingDetail({
+  agentId,
   runtime,
+  isOwner,
 }: {
   agentId: string;
   runtime: RuntimeInfo;
-  onUpdated: (runtime: RuntimeInfo) => void;
+  isOwner: boolean;
 }) {
   const key = managedRuntimeKey(runtime);
   if (!key) return null;
@@ -182,11 +516,13 @@ export function RuntimeNativeToolingDetail({
         {meta.bridgeNote}
       </p>
 
-      <p className="text-[11px] text-muted-foreground">
-        Runtime-specific configuration lives in Agent setup. This view only
-        describes the tools provided by {meta.label} and the Agent Commons tool
-        bridge.
-      </p>
+      <div className="border-t border-border pt-4">
+        <ManagedRuntimeSetup
+          agentId={agentId}
+          isOwner={isOwner}
+          showRuntimeSummary={false}
+        />
+      </div>
     </div>
   );
 }
@@ -197,11 +533,13 @@ export function RuntimeNativeToolingDetail({
 export function ManagedRuntimeSetup({
   agentId,
   isOwner,
+  showRuntimeSummary = true,
 }: {
   agentId: string;
   isOwner: boolean;
+  showRuntimeSummary?: boolean;
 }) {
-  const { runtime, loading, setRuntime } = useAgentRuntime(agentId);
+  const { runtime, loading, setRuntime, refresh } = useAgentRuntime(agentId);
   const key = managedRuntimeKey(runtime);
   const [channelPolicy, setChannelPolicy] = useState<
     "pairing" | "allowlist" | "open" | "disabled"
@@ -209,7 +547,26 @@ export function ManagedRuntimeSetup({
   const [memoryMode, setMemoryMode] = useState<
     "native" | "platform" | "hybrid"
   >("hybrid");
-  const [toolsets, setToolsets] = useState("hermes-cli");
+  const [toolsetPreset, setToolsetPreset] = useState("hermes-cli");
+  const [channels, setChannels] = useState(DEFAULT_CHANNELS);
+  const [selectedChannel, setSelectedChannel] = useState<ChannelId | null>(
+    null,
+  );
+  const [telegramToken, setTelegramToken] = useState("");
+  const [slackSecrets, setSlackSecrets] = useState({
+    botToken: "",
+    appToken: "",
+  });
+  const [discordToken, setDiscordToken] = useState("");
+  const [whatsappSecrets, setWhatsappSecrets] = useState({
+    phoneNumberId: "",
+    accessToken: "",
+    appSecret: "",
+    verifyToken: "",
+  });
+  const [qrCode, setQrCode] = useState<string | null>(null);
+  const [channelBusy, setChannelBusy] = useState(false);
+  const [whatsappConnected, setWhatsappConnected] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -218,8 +575,51 @@ export function ManagedRuntimeSetup({
     if (!runtime) return;
     setChannelPolicy(runtime.config.channelPolicy ?? "pairing");
     setMemoryMode(runtime.config.memoryMode ?? "hybrid");
-    setToolsets((runtime.config.enabledToolsets ?? ["hermes-cli"]).join(", "));
+    setToolsetPreset(runtime.config.enabledToolsets?.[0] ?? "hermes-cli");
+    setChannels((current) => {
+      const next = { ...current };
+      for (const id of ["telegram", "whatsapp", "slack", "discord"] as const) {
+        const configured = runtime.config.channels?.[id];
+        next[id] = {
+          ...DEFAULT_CHANNELS[id],
+          ...(configured ?? {}),
+          allowFrom: configured?.allowFrom ?? [],
+          homeTarget: configured?.homeTarget ?? "",
+        };
+      }
+      return next;
+    });
   }, [runtime]);
+
+  useEffect(() => {
+    if (!qrCode || whatsappConnected) return;
+    let cancelled = false;
+    let timer: number | undefined;
+    const poll = async () => {
+      try {
+        const response = await fetch(
+          `/api/agents/${agentId}/runtime/channels/whatsapp/status`,
+          { method: "POST" },
+        );
+        const payload = await response.json();
+        if (response.ok && channelIsConnected(payload)) {
+          cancelled = true;
+          setWhatsappConnected(true);
+          setQrCode(null);
+          void refresh();
+        }
+      } catch {
+        // Keep the QR visible; the next serialized probe can recover.
+      } finally {
+        if (!cancelled) timer = window.setTimeout(poll, 5_000);
+      }
+    };
+    timer = window.setTimeout(poll, 5_000);
+    return () => {
+      cancelled = true;
+      if (timer !== undefined) window.clearTimeout(timer);
+    };
+  }, [agentId, qrCode, refresh, whatsappConnected]);
 
   if (loading) {
     return (
@@ -231,14 +631,17 @@ export function ManagedRuntimeSetup({
   if (!runtime || !key) return null;
   const meta = RUNTIME_NATIVE_TOOLING[key];
 
+  const updateChannel = (id: ChannelId, patch: Partial<ChannelDraft>) => {
+    setChannels((current) => ({
+      ...current,
+      [id]: { ...current[id], ...patch },
+    }));
+  };
+
   const save = async () => {
     setSaving(true);
     setError(null);
     try {
-      const enabledToolsets = toolsets
-        .split(",")
-        .map((item) => item.trim())
-        .filter(Boolean);
       const response = await fetch(`/api/agents/${agentId}/runtime`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
@@ -247,7 +650,41 @@ export function ManagedRuntimeSetup({
             ...runtime.config,
             memoryMode,
             ...(key === "openclaw" ? { channelPolicy } : {}),
-            ...(key === "hermes" ? { enabledToolsets } : {}),
+            ...(key === "hermes" ? { enabledToolsets: [toolsetPreset] } : {}),
+            channels: {
+              telegram: {
+                ...channels.telegram,
+                dmPolicy: key === "openclaw" ? channelPolicy : "allowlist",
+                credentials: telegramToken.trim()
+                  ? { botToken: telegramToken.trim() }
+                  : {},
+              },
+              whatsapp: {
+                ...channels.whatsapp,
+                dmPolicy: key === "openclaw" ? channelPolicy : "allowlist",
+                credentials: Object.fromEntries(
+                  Object.entries(whatsappSecrets).filter(([, value]) =>
+                    value.trim(),
+                  ),
+                ),
+              },
+              slack: {
+                ...channels.slack,
+                dmPolicy: key === "openclaw" ? channelPolicy : "allowlist",
+                credentials: Object.fromEntries(
+                  Object.entries(slackSecrets).filter(([, value]) =>
+                    value.trim(),
+                  ),
+                ),
+              },
+              discord: {
+                ...channels.discord,
+                dmPolicy: key === "openclaw" ? channelPolicy : "allowlist",
+                credentials: discordToken.trim()
+                  ? { botToken: discordToken.trim() }
+                  : {},
+              },
+            },
           },
           deploy: true,
         }),
@@ -261,42 +698,438 @@ export function ManagedRuntimeSetup({
         );
       }
       setRuntime(payload.data as RuntimeInfo);
+      setTelegramToken("");
+      setSlackSecrets({ botToken: "", appToken: "" });
+      setDiscordToken("");
+      setWhatsappSecrets({
+        phoneNumberId: "",
+        accessToken: "",
+        appSecret: "",
+        verifyToken: "",
+      });
       setSaved(true);
       setTimeout(() => setSaved(false), 1800);
+      return payload.data as RuntimeInfo;
     } catch (cause) {
       setError(
         cause instanceof Error
           ? cause.message
           : "Could not apply runtime settings",
       );
+      return null;
     } finally {
       setSaving(false);
     }
   };
 
+  const connectWhatsapp = async () => {
+    if (key !== "openclaw" && key !== "hermes") return;
+    setChannelBusy(true);
+    setError(null);
+    setQrCode(null);
+    setWhatsappConnected(false);
+    try {
+      const updated = await save();
+      if (!updated) return;
+      const deadline = Date.now() + 2 * 60_000;
+      let payload: unknown = null;
+      while (Date.now() < deadline) {
+        const response = await fetch(
+          `/api/agents/${agentId}/runtime/channels/whatsapp/connect`,
+          { method: "POST" },
+        );
+        payload = await response.json().catch(() => null);
+        if (!response.ok) {
+          throw new Error(
+            (payload as { message?: string; error?: string } | null)?.message ??
+              (payload as { message?: string; error?: string } | null)?.error ??
+              "Could not start pairing",
+          );
+        }
+        if (!channelIsStarting(payload)) break;
+        // Stay below the channel action rate limit during a full cold boot.
+        await new Promise((resolve) => window.setTimeout(resolve, 4_000));
+      }
+      if (channelIsConnected(payload)) {
+        setWhatsappConnected(true);
+        void refresh();
+        return;
+      }
+      const qr = findQr(payload);
+      if (!qr) {
+        throw new Error(
+          `${meta.label} is taking longer than expected to prepare WhatsApp pairing`,
+        );
+      }
+      setQrCode(qr);
+    } catch (cause) {
+      setError(
+        cause instanceof Error ? cause.message : "Could not start pairing",
+      );
+    } finally {
+      setChannelBusy(false);
+    }
+  };
+
   return (
-    <div className="grid gap-4">
-      <div className="flex items-start gap-3">
-        <div className="rounded-lg border border-border bg-muted/30 p-2">
-          <Server className="h-4 w-4" />
-        </div>
-        <div>
-          <div className="flex items-center gap-2">
-            <p className="text-sm font-medium">{meta.label}</p>
-            <Badge
-              variant="secondary"
-              className="h-5 rounded-md px-1.5 text-[11px]"
-            >
-              {runtime.status}
-            </Badge>
+    <div className="grid gap-5">
+      {showRuntimeSummary && (
+        <div className="flex items-start gap-3">
+          <div className="rounded-lg border border-border bg-muted/30 p-2">
+            <Server className="h-4 w-4" />
           </div>
-          <p className="mt-1 text-xs text-muted-foreground">{meta.summary}</p>
+          <div>
+            <div className="flex items-center gap-2">
+              <p className="text-sm font-medium">{meta.label}</p>
+              <Badge
+                variant="secondary"
+                className="h-5 rounded-md px-1.5 text-[11px]"
+              >
+                {runtime.status}
+              </Badge>
+            </div>
+            <p className="mt-1 text-xs text-muted-foreground">{meta.summary}</p>
+          </div>
         </div>
-      </div>
+      )}
+
+      <section className="grid gap-2">
+        <div className="flex items-center justify-between">
+          <div>
+            <p className="text-xs font-medium">Messaging channels</p>
+            <p className="text-[11px] text-muted-foreground">
+              Reach this agent outside Agent Commons.
+            </p>
+          </div>
+          <ShieldCheck className="h-4 w-4 text-muted-foreground" />
+        </div>
+
+        {(["telegram", "whatsapp", "slack", "discord"] as const).map((id) => {
+          const info = runtime.config.channels?.[id];
+          const active = channels[id].enabled;
+          const Icon =
+            id === "telegram"
+              ? Send
+              : id === "whatsapp"
+                ? MessageCircle
+                : id === "slack"
+                  ? Hash
+                  : MessageSquare;
+          const status =
+            id === "whatsapp" && whatsappConnected
+              ? "Connected"
+              : info?.configured && !info.needsPairing
+                ? "Configured"
+                : active
+                  ? "Setup needed"
+                  : "Off";
+          return (
+            <div key={id} className="border-b border-border/70 last:border-b-0">
+              <button
+                type="button"
+                className="flex w-full items-center gap-3 py-3 text-left"
+                onClick={() =>
+                  setSelectedChannel((current) => (current === id ? null : id))
+                }
+              >
+                <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md border bg-muted/30">
+                  <Icon className="h-4 w-4" />
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="block text-xs font-medium capitalize">
+                    {id}
+                  </span>
+                  <span className="block text-[11px] text-muted-foreground">
+                    {id === "telegram"
+                      ? "Bot token"
+                      : id === "whatsapp" && key === "openclaw"
+                        ? "Linked device"
+                        : id === "whatsapp"
+                          ? "Business Cloud API"
+                          : id === "slack"
+                            ? "Socket Mode"
+                            : "Bot token"}
+                  </span>
+                </span>
+                <Badge
+                  variant={
+                    status === "Connected" || status === "Configured"
+                      ? "secondary"
+                      : "outline"
+                  }
+                  className="h-5 rounded-md px-1.5 text-[10px] font-normal"
+                >
+                  {status}
+                </Badge>
+                <ChevronRight
+                  className={`h-4 w-4 text-muted-foreground transition-transform ${selectedChannel === id ? "rotate-90" : ""}`}
+                />
+              </button>
+
+              {selectedChannel === id && (
+                <div className="grid gap-3 pb-4 pl-11">
+                  <div className="flex items-center justify-between">
+                    <p className="text-xs font-medium">Enabled</p>
+                    <Switch
+                      checked={channels[id].enabled}
+                      disabled={!isOwner || saving}
+                      onCheckedChange={(enabled) =>
+                        updateChannel(id, { enabled })
+                      }
+                    />
+                  </div>
+
+                  {id === "telegram" && (
+                    <>
+                      <label className="grid gap-1.5 text-xs font-medium">
+                        Bot token
+                        <Input
+                          type="password"
+                          autoComplete="new-password"
+                          value={telegramToken}
+                          disabled={!isOwner || saving}
+                          placeholder={
+                            info?.configuredFields?.includes("botToken")
+                              ? "Token saved"
+                              : "123456789:..."
+                          }
+                          onChange={(event) =>
+                            setTelegramToken(event.target.value)
+                          }
+                        />
+                      </label>
+                      <label className="grid gap-1.5 text-xs font-medium">
+                        Allowed Telegram user IDs
+                        <TagsInput
+                          value={channels.telegram.allowFrom}
+                          disabled={!isOwner || saving}
+                          onChange={(allowFrom) =>
+                            updateChannel("telegram", { allowFrom })
+                          }
+                          placeholder="Add numeric user ID"
+                        />
+                      </label>
+                    </>
+                  )}
+
+                  {id === "whatsapp" && key === "hermes" && (
+                    <div className="grid grid-cols-2 rounded-md border p-0.5">
+                      {(["bot", "cloud"] as const).map((mode) => (
+                        <button
+                          key={mode}
+                          type="button"
+                          className={`h-7 rounded px-2 text-[11px] font-medium ${channels.whatsapp.mode === mode ? "bg-muted" : "text-muted-foreground"}`}
+                          onClick={() => updateChannel("whatsapp", { mode })}
+                        >
+                          {mode === "bot" ? "Linked device" : "Business API"}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+
+                  {id === "whatsapp" &&
+                    (key === "openclaw" ||
+                      channels.whatsapp.mode !== "cloud") && (
+                      <>
+                        <div className="grid grid-cols-2 rounded-md border p-0.5">
+                          {(["bot", "self-chat"] as const).map((mode) => (
+                            <button
+                              key={mode}
+                              type="button"
+                              className={`h-7 rounded px-2 text-[11px] font-medium ${channels.whatsapp.mode === mode ? "bg-muted" : "text-muted-foreground"}`}
+                              onClick={() =>
+                                updateChannel("whatsapp", { mode })
+                              }
+                            >
+                              {mode === "bot" ? "Bot number" : "My number"}
+                            </button>
+                          ))}
+                        </div>
+                        <label className="grid gap-1.5 text-xs font-medium">
+                          Allowed WhatsApp numbers
+                          <WhatsAppPhoneInput
+                            value={channels.whatsapp.allowFrom}
+                            disabled={!isOwner || saving}
+                            onChange={(allowFrom) =>
+                              updateChannel("whatsapp", { allowFrom })
+                            }
+                          />
+                        </label>
+                        {qrCode ? (
+                          <div className="grid justify-items-center gap-2 border-t pt-3">
+                            {qrCode.startsWith("data:image/") ? (
+                              <img
+                                src={qrCode}
+                                alt="WhatsApp pairing code"
+                                className="h-52 w-52 bg-white object-contain p-2"
+                              />
+                            ) : (
+                              <pre className="max-w-full overflow-auto bg-white p-2 text-[8px] leading-none text-black">
+                                {qrCode}
+                              </pre>
+                            )}
+                            <p className="text-[11px] text-muted-foreground">
+                              WhatsApp Settings → Linked devices → Link a device
+                            </p>
+                          </div>
+                        ) : (
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            className="h-8 w-fit gap-1.5"
+                            disabled={
+                              !isOwner ||
+                              channelBusy ||
+                              !channels.whatsapp.enabled
+                            }
+                            onClick={() => void connectWhatsapp()}
+                          >
+                            {channelBusy ? (
+                              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                            ) : whatsappConnected ? (
+                              <Check className="h-3.5 w-3.5" />
+                            ) : (
+                              <Unplug className="h-3.5 w-3.5" />
+                            )}
+                            {whatsappConnected ? "Connected" : "Pair WhatsApp"}
+                          </Button>
+                        )}
+                      </>
+                    )}
+
+                  {id === "whatsapp" &&
+                    key === "hermes" &&
+                    channels.whatsapp.mode === "cloud" && (
+                      <div className="grid gap-3 sm:grid-cols-2">
+                        {(
+                          [
+                            ["phoneNumberId", "Phone number ID"],
+                            ["accessToken", "Access token"],
+                            ["appSecret", "App secret"],
+                            ["verifyToken", "Verify token"],
+                          ] as const
+                        ).map(([field, label]) => (
+                          <label
+                            key={field}
+                            className="grid gap-1.5 text-xs font-medium"
+                          >
+                            {label}
+                            <Input
+                              type={
+                                field === "phoneNumberId" ? "text" : "password"
+                              }
+                              value={whatsappSecrets[field]}
+                              disabled={!isOwner || saving}
+                              placeholder={
+                                info?.configuredFields?.includes(field)
+                                  ? "Saved"
+                                  : field === "phoneNumberId"
+                                    ? "15-17 digit ID"
+                                    : "Required"
+                              }
+                              onChange={(event) =>
+                                setWhatsappSecrets((current) => ({
+                                  ...current,
+                                  [field]: event.target.value,
+                                }))
+                              }
+                            />
+                          </label>
+                        ))}
+                      </div>
+                    )}
+
+                  {id === "slack" && (
+                    <>
+                      <div className="grid gap-3 sm:grid-cols-2">
+                        {(
+                          [
+                            ["botToken", "Bot token", "xoxb-..."],
+                            ["appToken", "App token", "xapp-..."],
+                          ] as const
+                        ).map(([field, label, placeholder]) => (
+                          <label
+                            key={field}
+                            className="grid gap-1.5 text-xs font-medium"
+                          >
+                            {label}
+                            <Input
+                              type="password"
+                              autoComplete="new-password"
+                              value={slackSecrets[field]}
+                              disabled={!isOwner || saving}
+                              placeholder={
+                                info?.configuredFields?.includes(field)
+                                  ? "Saved"
+                                  : placeholder
+                              }
+                              onChange={(event) =>
+                                setSlackSecrets((current) => ({
+                                  ...current,
+                                  [field]: event.target.value,
+                                }))
+                              }
+                            />
+                          </label>
+                        ))}
+                      </div>
+                      <label className="grid gap-1.5 text-xs font-medium">
+                        Allowed Slack member IDs
+                        <TagsInput
+                          value={channels.slack.allowFrom}
+                          disabled={!isOwner || saving}
+                          onChange={(allowFrom) =>
+                            updateChannel("slack", { allowFrom })
+                          }
+                          placeholder="U01ABC2DEF3"
+                        />
+                      </label>
+                    </>
+                  )}
+
+                  {id === "discord" && (
+                    <>
+                      <label className="grid gap-1.5 text-xs font-medium">
+                        Bot token
+                        <Input
+                          type="password"
+                          autoComplete="new-password"
+                          value={discordToken}
+                          disabled={!isOwner || saving}
+                          placeholder={
+                            info?.configuredFields?.includes("botToken")
+                              ? "Token saved"
+                              : "Discord bot token"
+                          }
+                          onChange={(event) =>
+                            setDiscordToken(event.target.value)
+                          }
+                        />
+                      </label>
+                      <label className="grid gap-1.5 text-xs font-medium">
+                        Allowed Discord user IDs
+                        <TagsInput
+                          value={channels.discord.allowFrom}
+                          disabled={!isOwner || saving}
+                          onChange={(allowFrom) =>
+                            updateChannel("discord", { allowFrom })
+                          }
+                          placeholder="284102345871466496"
+                        />
+                      </label>
+                    </>
+                  )}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </section>
 
       {key === "openclaw" && (
         <div className="grid max-w-sm gap-1.5">
-          <p className="text-xs font-medium">Channel direct-message policy</p>
+          <p className="text-xs font-medium">Default message access</p>
           <Select
             value={channelPolicy}
             disabled={!isOwner || saving}
@@ -308,33 +1141,36 @@ export function ManagedRuntimeSetup({
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="pairing">Pairing required</SelectItem>
-              <SelectItem value="allowlist">Allowlist only</SelectItem>
-              <SelectItem value="open">Open</SelectItem>
-              <SelectItem value="disabled">Channels disabled</SelectItem>
+              <SelectItem value="pairing">Pair new senders</SelectItem>
+              <SelectItem value="allowlist">Allowed people only</SelectItem>
+              <SelectItem value="open">Anyone</SelectItem>
+              <SelectItem value="disabled">No direct messages</SelectItem>
             </SelectContent>
           </Select>
-          <p className="text-[11px] text-muted-foreground">
-            Used by OpenClaw channel connectors configured on this persistent
-            runtime.
-          </p>
         </div>
       )}
 
       {key === "hermes" && (
-        <div className="grid gap-1.5">
-          <p className="text-xs font-medium">Hermes toolsets</p>
-          <Input
-            value={toolsets}
-            disabled={!isOwner || saving}
-            onChange={(event) => setToolsets(event.target.value)}
-            placeholder="hermes-cli"
-          />
-          <p className="text-[11px] text-muted-foreground">
-            Comma-separated Hermes toolsets, such as hermes-cli, web, browser,
-            debugging, or safe. Agent Commons tools remain available through the
-            bridge.
-          </p>
+        <div className="grid gap-2">
+          <p className="text-xs font-medium">Built-in tool access</p>
+          <div className="grid grid-cols-3 rounded-md border p-0.5">
+            {[
+              ["hermes-cli", "Full"],
+              ["coding", "Coding"],
+              ["safe", "Research"],
+            ].map(([value, label]) => (
+              <button
+                key={value}
+                type="button"
+                title={`${label} Hermes tool preset`}
+                className={`h-8 rounded px-2 text-[11px] font-medium ${toolsetPreset === value ? "bg-muted" : "text-muted-foreground"}`}
+                disabled={!isOwner || saving}
+                onClick={() => setToolsetPreset(value)}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
         </div>
       )}
 

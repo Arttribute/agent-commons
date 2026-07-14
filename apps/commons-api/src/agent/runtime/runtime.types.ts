@@ -32,12 +32,32 @@ export type RuntimeCapabilities = {
   delegation: boolean;
 };
 
+export const RUNTIME_CHANNEL_IDS = [
+  'telegram',
+  'whatsapp',
+  'slack',
+  'discord',
+] as const;
+export type RuntimeChannelId = (typeof RUNTIME_CHANNEL_IDS)[number];
+
+export type RuntimeChannelConfig = {
+  enabled: boolean;
+  mode?: 'bot' | 'self-chat' | 'cloud';
+  dmPolicy?: 'pairing' | 'allowlist' | 'open' | 'disabled';
+  allowFrom?: string[];
+  requireMention?: boolean;
+  homeTarget?: string;
+  credentials?: Record<string, string>;
+  clearCredentials?: boolean;
+};
+
 export type RuntimeConfig = {
   deploymentMode?: 'managed' | 'external';
   channelPolicy?: 'pairing' | 'allowlist' | 'open' | 'disabled';
   enabledPlugins?: string[];
   enabledToolsets?: string[];
   memoryMode?: 'native' | 'platform' | 'hybrid';
+  channels?: Partial<Record<RuntimeChannelId, RuntimeChannelConfig>>;
   metadata?: Record<string, unknown>;
 };
 

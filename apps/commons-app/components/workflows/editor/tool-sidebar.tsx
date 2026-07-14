@@ -20,6 +20,7 @@ import {
 import { cn } from "@/lib/utils";
 import { getNodeTheme } from "./nodes/node-theme";
 import { getBrandIcon, type BrandIcon } from "@/lib/brand-icons";
+import { AgentAvatar } from "@/components/agents/agent-avatar";
 
 interface ToolSidebarProps {
   userId: string;
@@ -34,6 +35,7 @@ interface PaletteNode {
   nodeType: WorkflowPaletteKind;
   /** Recognizable service mark, when the tool maps to one */
   brand?: BrandIcon;
+  agentAvatar?: string;
   dragData: {
     type: WorkflowPaletteKind;
     nodeType?: WorkflowPaletteKind;
@@ -42,6 +44,7 @@ interface PaletteNode {
     toolId?: string;
     toolName?: string;
     agentId?: string;
+    agentAvatar?: string;
     workflowId?: string;
     schema?: any;
     config?: Record<string, any>;
@@ -87,7 +90,9 @@ function DragItem({ node, hideBadge }: { node: PaletteNode; hideBadge?: boolean 
           node.brand ? "border border-border bg-background" : theme.chip
         )}
       >
-        {node.brand ? (
+        {node.agentAvatar ? (
+          <AgentAvatar name={node.label} src={node.agentAvatar} size={14} bordered={false} />
+        ) : node.brand ? (
           <node.brand.icon
             size={14}
             color={node.brand.monochrome ? "currentColor" : node.brand.hex}
@@ -207,11 +212,13 @@ function catalogToPaletteNode(item: ToolCatalogItem): PaletteNode | null {
       description: item.description,
       badge: "agent",
       nodeType: "agent_processor",
+      agentAvatar: item.agent?.avatar,
       dragData: {
         type: "agent_processor",
         label: item.displayName,
         description: item.description,
         agentId: item.workflowNode.agentId,
+        agentAvatar: item.agent?.avatar,
         config: item.workflowNode.config,
       },
     };

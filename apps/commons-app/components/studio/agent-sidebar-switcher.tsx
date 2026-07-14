@@ -10,7 +10,6 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
 
 export type SwitcherAgent = {
@@ -111,7 +110,7 @@ export function AgentSidebarSwitcher({
             />
           </div>
         </div>
-        <ScrollArea className="max-h-[320px]">
+        <div className="max-h-[320px] overflow-y-auto overscroll-contain">
           <div className="p-1">
             {filtered.length === 0 ? (
               <p className="px-3 py-6 text-center text-xs text-muted-foreground">
@@ -142,7 +141,7 @@ export function AgentSidebarSwitcher({
               ))
             )}
           </div>
-        </ScrollArea>
+        </div>
       </PopoverContent>
     </Popover>
   );

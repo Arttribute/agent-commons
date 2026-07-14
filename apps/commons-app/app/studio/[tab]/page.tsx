@@ -8,6 +8,7 @@ import { StudioAgentLauncher } from "@/components/studio/agent-launcher";
 import { ToolsManagementView } from "@/components/tools/management/tools-management-view";
 import { WorkflowsListView } from "@/components/workflows/workflows-list-view";
 import { CreateWorkflowDialog } from "@/components/workflows/create-workflow-dialog";
+import { CreateToolDialog } from "@/components/tools/create-tool-dialog";
 import { TaskManagementView } from "@/components/tasks/task-management-view";
 import { SkillsMarketplaceView } from "@/components/skills/skills-marketplace-view";
 import { Loader2 } from "lucide-react";
@@ -28,6 +29,7 @@ const StudioPage: NextPage = () => {
 
   const [showCreateWorkflowDialog, setShowCreateWorkflowDialog] =
     useState(false);
+  const [showCreateToolDialog, setShowCreateToolDialog] = useState(false);
   const skillCreateRef = useRef<(() => void) | null>(null);
   const registerSkillCreate = useCallback((fn: () => void) => {
     skillCreateRef.current = fn;
@@ -97,7 +99,7 @@ const StudioPage: NextPage = () => {
                   <div className="pointer-events-none absolute inset-0 z-20 flex items-center justify-center px-4">
                     <div
                       ref={composerRef}
-                      className="pointer-events-auto w-full max-w-2xl"
+                      className="pointer-events-auto w-full max-w-3xl"
                     >
                       <div className="mb-3 text-center">
                         <h2 className="text-lg font-semibold tracking-tight">
@@ -204,9 +206,9 @@ const StudioPage: NextPage = () => {
     } else if (activeTab === "skills") {
       skillCreateRef.current?.();
     } else if (activeTab === "tools") {
-      router.push("/tools/create");
+      setShowCreateToolDialog(true);
     } else {
-      router.push("/agents/create");
+      router.push("/studio/agents/create");
     }
   };
 
@@ -222,6 +224,10 @@ const StudioPage: NextPage = () => {
         open={showCreateWorkflowDialog}
         onClose={() => setShowCreateWorkflowDialog(false)}
         userAddress={userAddress}
+      />
+      <CreateToolDialog
+        open={showCreateToolDialog}
+        onOpenChange={setShowCreateToolDialog}
       />
     </div>
   );

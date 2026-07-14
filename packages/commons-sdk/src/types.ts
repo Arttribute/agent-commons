@@ -525,6 +525,11 @@ export interface WorkflowNode {
   id: string;
   type: WorkflowNodeType | string;
   toolId?: string;
+  toolName?: string;
+  agentId?: string;
+  agentAvatar?: string;
+  workflowId?: string;
+  label?: string;
   position?: { x: number; y: number };
   config?: Record<string, any>;
 }
@@ -537,6 +542,9 @@ export interface WorkflowEdge {
   sourceHandle?: string;
   targetHandle?: string;
   mapping?: Record<string, string>;
+  /** Runtime target types used for dynamic (`any`) values and safe coercion. */
+  targetTypes?: Record<string, string>;
+  mappingMode?: "exact" | "dynamic" | "coerce";
 }
 
 export interface WorkflowExecution {
@@ -551,7 +559,11 @@ export interface WorkflowExecution {
   startedAt?: string;
   completedAt?: string;
   outputData?: any;
+  /** Alias returned by the immediate execute/status REST response. */
+  result?: any;
   nodeResults?: Record<string, any>;
+  /** Alias returned by the immediate execute/status REST response. */
+  stepResults?: Record<string, any>;
   errorMessage?: string;
   currentNode?: string;
   /** Set when status is 'awaiting_approval' */
