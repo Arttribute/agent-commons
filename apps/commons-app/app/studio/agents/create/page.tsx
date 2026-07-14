@@ -147,33 +147,21 @@ export default function CreateAgentPage() {
 
   return (
     <div className="flex h-full min-w-0 flex-col bg-background">
-      <div className="flex items-center justify-between gap-4 px-6 pb-3 pt-5">
-        <div className="flex min-w-0 items-center gap-2">
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-8 w-8 shrink-0"
-            onClick={() => router.push("/studio/agents")}
-            aria-label="Back to agents"
-          >
-            <ArrowLeft className="h-4 w-4" />
-          </Button>
-          <PageTitle title="Create New Agent" />
-        </div>
+      <div className="flex items-center gap-2 px-6 pb-3 pt-5">
         <Button
-          type="submit"
-          form="create-agent-form"
-          disabled={!canSubmit}
-          className="gap-1.5"
+          variant="ghost"
+          size="icon"
+          className="h-8 w-8 shrink-0"
+          onClick={() => router.push("/studio/agents")}
+          aria-label="Back to agents"
         >
-          {creating && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-          {creating ? "Creating…" : "Create Agent"}
+          <ArrowLeft className="h-4 w-4" />
         </Button>
+        <PageTitle title="Create New Agent" />
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto">
         <form
-          id="create-agent-form"
           onSubmit={handleSubmit}
           className="mx-auto grid w-full max-w-xl gap-6 px-6 pb-12 pt-4"
         >
@@ -310,6 +298,15 @@ export default function CreateAgentPage() {
               </div>
             )}
           </div>
+
+          <Button
+            type="submit"
+            disabled={!canSubmit}
+            className="mt-2 w-full gap-1.5"
+          >
+            {creating && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+            {creating ? "Creating…" : "Create Agent"}
+          </Button>
         </form>
       </div>
     </div>

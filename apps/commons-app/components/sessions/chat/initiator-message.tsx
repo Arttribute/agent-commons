@@ -79,7 +79,7 @@ export default function InitiatorMessage({ message, metadata }: InitiatorMessage
           <button
             type="button"
             onClick={() => setExpanded((v) => !v)}
-            className="group mt-1.5 inline-flex items-center gap-1 text-xs font-medium text-indigo-500 transition-colors hover:text-indigo-700"
+            className="mt-1.5 inline-flex items-center gap-1 text-sm leading-relaxed text-gray-900 hover:underline"
           >
             {expanded ? "Show less" : "Show more"}
             <ChevronDown

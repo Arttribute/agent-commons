@@ -99,7 +99,7 @@ const StudioPage: NextPage = () => {
                   <div className="pointer-events-none absolute inset-0 z-20 flex items-center justify-center px-4">
                     <div
                       ref={composerRef}
-                      className="pointer-events-auto w-full max-w-[52.5rem]"
+                      className="pointer-events-auto w-full max-w-3xl"
                     >
                       <div className="mb-3 text-center">
                         <h2 className="text-lg font-semibold tracking-tight">

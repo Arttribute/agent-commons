@@ -35,7 +35,11 @@ export function DashboardSideBar({ username }: { username: string }) {
 
   const isLockedDetailRoute = useMemo(() => {
     if (!pathname) return false;
-    return /^\/studio\/(agents|tools|workflows|skills)\/[^/]+/.test(pathname);
+    // Detail pages ([id] routes) collapse the sidebar; create pages keep the
+    // normal expanded sidebar like the studio list pages.
+    return /^\/studio\/(agents|tools|workflows|skills)\/(?!create(?:\/|$))[^/]+/.test(
+      pathname,
+    );
   }, [pathname]);
   const sidebarOpen = isOpen && !isLockedDetailRoute;
 

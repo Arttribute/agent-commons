@@ -22,7 +22,7 @@ function SessionPageSkeleton() {
         <Skeleton className="h-8 w-8 rounded-full" />
         <Skeleton className="h-4 w-40" />
       </div>
-      <div className="mx-auto flex w-full max-w-[52.5rem] flex-1 flex-col gap-4 p-6">
+      <div className="mx-auto flex w-full max-w-3xl flex-1 flex-col gap-4 p-6">
         <Skeleton className="h-16 w-3/4" />
         <Skeleton className="h-24 w-full" />
         <Skeleton className="h-16 w-2/3 ml-auto" />
