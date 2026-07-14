@@ -541,7 +541,8 @@ export function ManagedRuntimeSetup({
           );
         }
         if (!channelIsStarting(payload)) break;
-        await new Promise((resolve) => window.setTimeout(resolve, 1_800));
+        // Stay below the channel action rate limit during a full cold boot.
+        await new Promise((resolve) => window.setTimeout(resolve, 4_000));
       }
       if (channelIsConnected(payload)) {
         setWhatsappConnected(true);
