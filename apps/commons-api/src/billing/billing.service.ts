@@ -147,6 +147,60 @@ export class BillingService {
     return { url: session.url };
   }
 
+  /** Recent invoices for the principal (from Stripe), for billing history. */
+  async listInvoices(principalId: string, limit = 12) {
+    const row = await this.db.query.billingCustomer.findFirst({
+      where: eq(schema.billingCustomer.principalId, principalId),
+    });
+    if (!row || !this.stripe.configured) return [];
+    const invoices = await this.stripe.stripe.invoices.list({
+      customer: row.stripeCustomerId,
+      limit,
+    });
+    return invoices.data.map((inv) => ({
+      id: inv.id,
+      number: inv.number,
+      created: inv.created ? new Date(inv.created * 1000).toISOString() : null,
+      amountPaid: inv.amount_paid,
+      amountDue: inv.amount_due,
+      currency: inv.currency,
+      status: inv.status,
+      hostedInvoiceUrl: inv.hosted_invoice_url,
+      pdf: inv.invoice_pdf,
+    }));
+  }
+
+  /** Saved payment methods for the principal (from Stripe), for display. */
+  async listPaymentMethods(principalId: string) {
+    const row = await this.db.query.billingCustomer.findFirst({
+      where: eq(schema.billingCustomer.principalId, principalId),
+    });
+    if (!row || !this.stripe.configured) {
+      return { defaultPaymentMethodId: null, paymentMethods: [] };
+    }
+    const [customer, methods] = await Promise.all([
+      this.stripe.stripe.customers.retrieve(row.stripeCustomerId),
+      this.stripe.stripe.paymentMethods.list({
+        customer: row.stripeCustomerId,
+        type: 'card',
+      }),
+    ]);
+    const defaultPm =
+      customer && !('deleted' in customer)
+        ? ((customer.invoice_settings?.default_payment_method as string) ?? null)
+        : null;
+    return {
+      defaultPaymentMethodId: defaultPm,
+      paymentMethods: methods.data.map((pm) => ({
+        id: pm.id,
+        brand: pm.card?.brand ?? 'card',
+        last4: pm.card?.last4 ?? '••••',
+        expMonth: pm.card?.exp_month ?? null,
+        expYear: pm.card?.exp_year ?? null,
+      })),
+    };
+  }
+
   /** Current plan + entitlements for a principal. */
   async getSubscription(principalId: string) {
     const plan = await this.entitlements.getPlan(principalId);

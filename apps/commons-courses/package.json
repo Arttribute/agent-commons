@@ -2,6 +2,9 @@
   "name": "commons-courses",
   "version": "0.1.0",
   "private": true,
+  "engines": {
+    "node": "20.x"
+  },
   "scripts": {
     "dev": "next dev",
     "build": "next build",
@@ -9,6 +12,7 @@
     "lint": "eslint",
     "migrate:ai-fluency-media:s3": "node scripts/migrate-ai-fluency-media-to-s3.mjs",
     "seed:make-agent-powerful-skill": "node scripts/seed-make-agent-powerful-skill.mjs",
+    "seed:intro-multi-agent-systems-skill": "node scripts/seed-intro-multi-agent-systems-skill.mjs",
     "repair:payments-index": "node scripts/repair-payments-index.mjs",
     "set:ai-quick-wins-start-date": "node scripts/set-ai-quick-wins-start-date.mjs"
   },

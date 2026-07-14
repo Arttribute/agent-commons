@@ -1,6 +1,6 @@
 {
-  "buildCommand": "npm run build",
+  "buildCommand": "pnpm build",
   "outputDirectory": ".next",
-  "installCommand": "npm install",
+  "installCommand": "corepack enable && corepack prepare pnpm@10.15.0 --activate && cd ../.. && pnpm install --no-frozen-lockfile",
   "framework": "nextjs"
 }

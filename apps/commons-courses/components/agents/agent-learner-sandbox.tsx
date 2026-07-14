@@ -927,6 +927,32 @@ export function AgentLearnerSandbox({
     let output = "";
     if (command === "ls" || command === "ls .") {
       output = files.map((file) => file.path).join("\n") || "workspace is empty";
+    } else if (["run team", "node runtime.js", "npm start"].includes(command)) {
+      const workflow =
+        config.workflowTemplates?.find((item) => item.id === selectedWorkflowId) ||
+        config.workflowTemplates?.[0];
+      const selectedRoleNames = (config.skillTemplates || [])
+        .filter((skill) => selectedSkills.includes(skill.id))
+        .map((skill) => skill.name);
+      const selectedTaskNames = (config.taskTemplates || [])
+        .filter((task) => selectedTasks.includes(task.id))
+        .map((task) => task.title);
+      const memoryLabels = (config.memoryTemplates || [])
+        .filter((memory) => memoryEntries[memory.id]?.trim())
+        .map((memory) => memory.label);
+      output = [
+        "$ run team",
+        `workspace: /${config.computerTemplate?.workspaceName || "sandbox-workspace"}`,
+        `architecture: ${workflow?.name || "Learner-defined multi-agent workflow"}`,
+        `roles: ${selectedRoleNames.join(", ") || "No focused roles selected"}`,
+        `scheduled tasks: ${selectedTaskNames.join(", ") || "No routine selected"}`,
+        `shared memory records: ${memoryLabels.join(", ") || "No memory records"}`,
+        "1. Lead agent receives the shared goal.",
+        "2. Focused agents work in separate contexts.",
+        "3. Useful results move through the workflow.",
+        "4. The lead agent combines the result and asks for review.",
+        "simulation -> completed inside the lightweight learning runtime",
+      ].join("\n");
     } else if (command.startsWith("cat ")) {
       const target = command.slice(4).trim();
       const file = files.find((item) => item.path === target);

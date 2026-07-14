@@ -21,6 +21,7 @@ import {
   Trash2,
   Plus,
   BarChart2,
+  CreditCard,
 } from "lucide-react";
 import {
   Dialog,
@@ -31,10 +32,12 @@ import {
 } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
 import { UsageSection } from "@/components/account/usage-section";
+import { BillingPanel } from "@/components/billing/billing-panel";
 
 export const SETTINGS_SECTIONS = [
   "profile",
   "models",
+  "billing",
   "api-keys",
   "usage",
 ] as const;
@@ -43,6 +46,7 @@ export type SettingsSection = (typeof SETTINGS_SECTIONS)[number];
 const SECTION_LABELS: Record<SettingsSection, string> = {
   profile: "Profile",
   models: "Model Defaults",
+  billing: "Billing",
   "api-keys": "API Keys",
   usage: "Usage",
 };
@@ -50,6 +54,7 @@ const SECTION_LABELS: Record<SettingsSection, string> = {
 const SECTION_ICONS: Record<SettingsSection, React.ElementType> = {
   profile: User,
   models: Cpu,
+  billing: CreditCard,
   "api-keys": KeyRound,
   usage: BarChart2,
 };
@@ -488,6 +493,7 @@ export function SettingsPanel({
           <ProfileSection walletAddress={walletAddress} />
         )}
         {section === "models" && <ModelDefaultsSection />}
+        {section === "billing" && <BillingPanel />}
         {section === "api-keys" && (
           <ApiKeysSection walletAddress={walletAddress} />
         )}

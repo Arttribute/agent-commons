@@ -80,7 +80,7 @@ export function CopilotMaterialBuilder({
         <div>
           <p className="text-sm font-black text-slate-950">Material upload</p>
           <p className="mt-1 text-sm leading-6 text-slate-500">
-            Upload source material and let the copilot create a draft course or a skill path.
+            Upload source material and let the copilot create a reviewable draft course or skill path in your account.
           </p>
         </div>
 
@@ -188,7 +188,7 @@ export function CopilotMaterialBuilder({
           <p className="text-sm font-black text-slate-950">Copilot standard</p>
           <p className="mt-2 text-sm leading-6 text-slate-500">
             The draft should follow the uploaded material, use consistent terminology,
-            avoid unsupported topics, and include meaningful quizzes.
+            avoid unsupported topics, include meaningful quizzes, and add a focused sandbox when the material supports practice.
           </p>
         </div>
 

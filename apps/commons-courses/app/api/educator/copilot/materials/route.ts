@@ -317,7 +317,7 @@ async function draftWithOpenAI(input: {
           educatorInstructions: input.instructions,
           materialText: input.materialText,
           outputShape:
-            "Return JSON with title, tagline, description, longDescription, duration, level, modules, skillPack, and notes. Skill challenges usually need lesson HTML, keyIdeas, and 2 quiz questions. Pure orientation or introduction challenges may have 0 quiz questions. If an introduction is combined with the first substantive concept, quiz only the taught concept, not the orientation. Keep each challenge focused on one main concept.",
+            "Return JSON with title, tagline, description, longDescription, duration, level, modules, skillPack, and notes. Skill challenges usually need lesson HTML, keyIdeas, and 2 quiz questions. Pure orientation or introduction challenges may have 0 quiz questions. If an introduction is combined with the first substantive concept, quiz only the taught concept, not the orientation. Keep each challenge focused on one main concept. When the material naturally supports hands-on agent work, include one final sandbox challenge using the existing sandbox fields: guideSteps, skillTemplates, toolTemplates, taskTemplates, workflowTemplates, memoryTemplates, and computerTemplate. Keep sandbox runtimes lightweight and simulated unless the source material explicitly requires real infrastructure.",
         }),
       },
       ...input.images.map((image) => ({
@@ -358,6 +358,9 @@ function copilotSystemPrompt() {
     "Create rigorous, accessible course material from uploaded educator materials.",
     EDUCATOR_COPILOT_PEDAGOGY,
     "Use standard learning design: short introductions, meaningful examples, key ideas, challenging quizzes, and practical sandbox tasks when relevant.",
+    "Create material directly inside the educator account as a draft. Keep it reviewable: complete lesson bodies, clear quiz feedback, and no placeholder copy.",
+    "For skill paths, create a natural sequence that can sit alongside existing paths in the same course. Do not repeat prior modules unless the uploaded material requires a bridge.",
+    "When adding sandbox work, use only supported sandbox capabilities: identity, system_prompt, skills, tools, tasks, workflows, memory, computer, chat, logs, and credits.",
     "Return only valid JSON.",
   ].join("\n");
 }
