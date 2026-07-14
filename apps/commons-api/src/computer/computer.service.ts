@@ -655,19 +655,25 @@ export class ComputerService {
     channel: 'whatsapp';
     action: 'connect' | 'status' | 'disconnect';
   }) {
-    const computer = await this.getAssignedComputer(args.agentId);
+    let computer = await this.getAssignedComputer(args.agentId);
     if (!computer?.commonOsAgentId) {
       throw new BadRequestException('Managed runtime is not provisioned');
     }
+    const commonOsAgentId = computer.commonOsAgentId;
     if (!['running', 'idle'].includes(String(computer.status))) {
-      return { status: 'starting', runtimeStatus: computer.status };
+      computer = await this.refreshInstance(computer.computerId, {
+        silent: true,
+      }).catch(() => computer);
+      if (!computer || !['running', 'idle'].includes(String(computer.status))) {
+        return { status: 'starting', runtimeStatus: computer?.status };
+      }
     }
     return this.commonOsComputerRequest<{
       output?: Record<string, unknown> | string;
       raw?: string;
     }>(
       'POST',
-      `/computers/${computer.commonOsAgentId}/runtime-channels/${args.channel}/${args.action}`,
+      `/computers/${commonOsAgentId}/runtime-channels/${args.channel}/${args.action}`,
       undefined,
       {},
       args.agentId,

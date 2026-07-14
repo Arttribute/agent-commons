@@ -32,7 +32,12 @@ export type RuntimeCapabilities = {
   delegation: boolean;
 };
 
-export const RUNTIME_CHANNEL_IDS = ['telegram', 'whatsapp'] as const;
+export const RUNTIME_CHANNEL_IDS = [
+  'telegram',
+  'whatsapp',
+  'slack',
+  'discord',
+] as const;
 export type RuntimeChannelId = (typeof RUNTIME_CHANNEL_IDS)[number];
 
 export type RuntimeChannelConfig = {

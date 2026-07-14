@@ -136,15 +136,21 @@ export class ExternalRuntimeService {
             runtimeType,
           });
 
-          emitStatus(
-            'runtime',
-            'running',
-            `Waking ${this.runtimeLabel(runtimeType)}`,
-          );
-          const runtimeReady = this.runtimes.ensureReady(
-            props.agentId,
-            sessionId,
-          );
+          let runtimeStatusShown = false;
+          let runtimeStatusTimer: ReturnType<typeof setTimeout> | undefined;
+          const runtimeReady = this.runtimes
+            .ensureReady(props.agentId, sessionId)
+            .finally(() => {
+              if (runtimeStatusTimer) clearTimeout(runtimeStatusTimer);
+            });
+          runtimeStatusTimer = setTimeout(() => {
+            runtimeStatusShown = true;
+            emitStatus(
+              'runtime',
+              'running',
+              `Starting ${this.runtimeLabel(runtimeType)}`,
+            );
+          }, 1_000);
 
           const userText = this.latestUserText(props.messages);
           if (!userText)
@@ -186,16 +192,18 @@ export class ExternalRuntimeService {
                   attachments: [],
                 }),
           ]);
-          emitStatus(
-            'runtime',
-            'completed',
-            `${this.runtimeLabel(runtimeType)} ready`,
-            undefined,
-            {
-              runtimeType,
-              computerId: computer.computerId,
-            },
-          );
+          if (runtimeStatusShown) {
+            emitStatus(
+              'runtime',
+              'completed',
+              `${this.runtimeLabel(runtimeType)} ready`,
+              undefined,
+              {
+                runtimeType,
+                computerId: computer.computerId,
+              },
+            );
+          }
           const instruction = [
             userText,
             memoryBlock,
@@ -556,10 +564,8 @@ export class ExternalRuntimeService {
 
   private statusLabel(status?: string) {
     if (status === 'waiting_for_runtime') return 'Waiting for agent runtime';
-    if (status === 'waiting_for_openclaw')
-      return 'Starting OpenClaw (first start can take a couple of minutes)';
-    if (status === 'waiting_for_hermes')
-      return 'Starting Hermes (first start can take a couple of minutes)';
+    if (status === 'waiting_for_openclaw') return 'Starting OpenClaw';
+    if (status === 'waiting_for_hermes') return 'Starting Hermes';
     if (status === 'runtime_recovering')
       return 'Agent runtime is restarting — hang tight';
     if (status?.startsWith('waiting_for_'))

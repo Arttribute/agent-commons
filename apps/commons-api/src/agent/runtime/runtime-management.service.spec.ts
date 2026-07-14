@@ -80,6 +80,29 @@ describe('RuntimeManagementService channel configuration', () => {
     ).toThrow(BadRequestException);
   });
 
+  it('stores only the documented Slack and Discord credentials', () => {
+    const result = (service as any).updateChannelSecrets(
+      {},
+      {
+        slack: {
+          enabled: true,
+          credentials: {
+            botToken: 'xoxb-secret',
+            appToken: 'xapp-secret',
+            signingSecret: 'not-used-in-socket-mode',
+          },
+        },
+        discord: {
+          enabled: true,
+          credentials: { botToken: 'discord-secret' },
+        },
+      },
+    );
+
+    expect(Object.keys(result.value.slack)).toEqual(['botToken', 'appToken']);
+    expect(Object.keys(result.value.discord)).toEqual(['botToken']);
+  });
+
   it('returns a useful service error when channel setup times out', async () => {
     const computers = {
       runtimeChannelAction: jest

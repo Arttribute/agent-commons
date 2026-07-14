@@ -27,7 +27,7 @@ export class RuntimeManagementService {
     string,
     { expiresAt: number; computer: any }
   >();
-  private readonly readyCacheTtlMs = 60_000;
+  private readonly readyCacheTtlMs = 10 * 60_000;
 
   constructor(
     private readonly db: DatabaseService,
@@ -362,9 +362,10 @@ export class RuntimeManagementService {
 
   async channelAction(agentId: string, channel: string, action: string) {
     const agent = await this.getAgent(agentId);
-    if (normalizeRuntimeType(agent.runtimeType) !== 'openclaw') {
+    const runtimeType = normalizeRuntimeType(agent.runtimeType);
+    if (runtimeType !== 'openclaw' && runtimeType !== 'hermes') {
       throw new BadRequestException(
-        'QR channel setup is currently available for OpenClaw',
+        'QR channel setup is available for OpenClaw and Hermes',
       );
     }
     if (channel !== 'whatsapp') {
@@ -375,16 +376,25 @@ export class RuntimeManagementService {
     }
     try {
       await this.ensureReady(agentId);
-      return await this.computers.runtimeChannelAction({
-        agentId,
-        channel,
-        action: action as 'connect' | 'status' | 'disconnect',
-      });
+      const deadline = Date.now() + 90_000;
+      while (Date.now() < deadline) {
+        const result = await this.computers.runtimeChannelAction({
+          agentId,
+          channel,
+          action: action as 'connect' | 'status' | 'disconnect',
+        });
+        if (!('status' in result) || result.status !== 'starting')
+          return result;
+        await new Promise((resolve) => setTimeout(resolve, 1_500));
+      }
+      throw new Error(
+        `WhatsApp setup timed out while ${runtimeType === 'openclaw' ? 'OpenClaw' : 'Hermes'} was starting`,
+      );
     } catch (error) {
       const detail = error instanceof Error ? error.message : '';
       throw new ServiceUnavailableException(
         detail.includes('timed out')
-          ? 'WhatsApp setup is taking longer than expected. Try again in a moment.'
+          ? 'WhatsApp setup is taking longer than expected. Keep this window open and try again.'
           : detail || 'WhatsApp setup is temporarily unavailable',
       );
     }
@@ -542,6 +552,8 @@ export class RuntimeManagementService {
     channel?: RuntimeChannelConfig,
   ) {
     if (id === 'telegram') return ['botToken'];
+    if (id === 'slack') return ['botToken', 'appToken'];
+    if (id === 'discord') return ['botToken'];
     if (channel?.mode === 'cloud') {
       return ['phoneNumberId', 'accessToken', 'appSecret', 'verifyToken'];
     }
@@ -549,9 +561,9 @@ export class RuntimeManagementService {
   }
 
   private allowedCredentialFields(id: RuntimeChannelId) {
-    return id === 'telegram'
-      ? ['botToken']
-      : ['phoneNumberId', 'accessToken', 'appSecret', 'verifyToken'];
+    if (id === 'telegram' || id === 'discord') return ['botToken'];
+    if (id === 'slack') return ['botToken', 'appToken'];
+    return ['phoneNumberId', 'accessToken', 'appSecret', 'verifyToken'];
   }
 
   private encryptSecret(value: string) {
