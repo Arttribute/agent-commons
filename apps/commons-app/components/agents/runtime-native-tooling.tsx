@@ -104,13 +104,26 @@ const DEFAULT_CHANNELS: Record<ChannelId, ChannelDraft> = {
   },
 };
 
-function findQr(value: unknown): string | null {
+function findQrImage(value: unknown): string | null {
   if (typeof value === "string") {
     const match = value.match(
       /data:image\/(?:png|svg\+xml);base64,[A-Za-z0-9+/=]+/,
     );
     return match?.[0] ?? null;
   }
+  if (!value || typeof value !== "object") return null;
+  for (const child of Object.values(value as Record<string, unknown>)) {
+    const nested = findQrImage(child);
+    if (nested) return nested;
+  }
+  return null;
+}
+
+function findQr(value: unknown): string | null {
+  // Hermes includes both a raw wa.me pairing payload and a rendered QR data
+  // URL. Always choose the image first so the UI shows a scannable code.
+  const image = findQrImage(value);
+  if (image) return image;
   if (!value || typeof value !== "object") return null;
   for (const [key, child] of Object.entries(value as Record<string, unknown>)) {
     if (/qr(?:Data)?Url|qrCode|qr/i.test(key) && typeof child === "string") {
@@ -520,7 +533,7 @@ export function ManagedRuntimeSetup({
         return;
       }
       const qr = findQr(payload);
-      if (!qr) throw new Error("OpenClaw did not return a pairing code");
+      if (!qr) throw new Error(`${meta.label} did not return a pairing code`);
       setQrCode(qr);
     } catch (cause) {
       setError(
