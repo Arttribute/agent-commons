@@ -664,10 +664,10 @@ export class ComputerService {
       computer = await this.refreshInstance(computer.computerId, {
         silent: true,
       }).catch(() => computer);
-      if (!computer || !['running', 'idle'].includes(String(computer.status))) {
-        return { status: 'starting', runtimeStatus: computer?.status };
-      }
     }
+    // CommonOS inspects the channel sidecar directly and returns a transient
+    // state until that container is ready. Model prewarming should not block
+    // channel setup once the sidecar can already serve pairing requests.
     return this.commonOsComputerRequest<{
       output?: Record<string, unknown> | string;
       raw?: string;

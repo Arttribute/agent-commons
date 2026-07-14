@@ -158,6 +158,35 @@ describe('ComputerService', () => {
     );
   });
 
+  it('proxies channel setup while the model runtime is still prewarming', async () => {
+    const computer = {
+      computerId: '11111111-1111-4111-8111-111111111111',
+      agentId: 'agent_1',
+      status: 'starting',
+      commonOsAgentId: 'commonos_agent_1',
+    };
+    jest.spyOn(service, 'getAssignedComputer').mockResolvedValue(computer as any);
+    jest.spyOn(service, 'refreshInstance').mockResolvedValue(computer as any);
+    const commonOsRequest = jest
+      .spyOn(service as any, 'commonOsComputerRequest')
+      .mockResolvedValue({ status: 'starting', runtimeStatus: 'Pending' });
+
+    await expect(
+      service.runtimeChannelAction({
+        agentId: 'agent_1',
+        channel: 'whatsapp',
+        action: 'connect',
+      }),
+    ).resolves.toEqual({ status: 'starting', runtimeStatus: 'Pending' });
+    expect(commonOsRequest).toHaveBeenCalledWith(
+      'POST',
+      '/computers/commonos_agent_1/runtime-channels/whatsapp/connect',
+      undefined,
+      {},
+      'agent_1',
+    );
+  });
+
   it('maps friendly profiles to bounded elastic resource ceilings', () => {
     const normalized = (service as any).normalizeConfigPatch(
       { resourceProfile: 'performance', resourceMode: 'elastic' },
