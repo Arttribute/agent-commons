@@ -7,6 +7,7 @@ import {
   Inject,
 } from '@nestjs/common';
 import { eq, gt, and } from 'drizzle-orm';
+import { v4 as uuidv4 } from 'uuid';
 import { DatabaseService } from '~/modules/database/database.service';
 import { SessionService } from '~/session/session.service';
 import { AgentService } from './agent.service';
@@ -177,12 +178,12 @@ export class HeartbeatService implements OnModuleInit, OnModuleDestroy {
       // a fresh LangGraph thread ID so checkpoint history never accumulates —
       // reusing the same sessionId causes the context window to grow unboundedly.
       const markerSession = await this.getOrCreateHeartbeatSession(agent);
-      const beatThreadId = `${markerSession.sessionId}:${Date.now()}`;
 
       this.agentService
         .runAgent({
           agentId,
-          sessionId: beatThreadId,
+          sessionId: markerSession.sessionId,
+          checkpointThreadId: uuidv4(),
           messages: [{ role: 'user', content: HEARTBEAT_PROMPT }],
           initiator: agentId,
         })

@@ -208,7 +208,10 @@ describe('HeartbeatService', () => {
       expect(agentSvc.runAgent).toHaveBeenCalledWith(
         expect.objectContaining({
           agentId: 'agent-1',
-          sessionId: expect.stringContaining('heartbeat-sess-1'),
+          sessionId: 'heartbeat-sess-1',
+          checkpointThreadId: expect.stringMatching(
+            /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i,
+          ),
           messages: [expect.objectContaining({ content: expect.stringContaining('⫷⫷HEARTBEAT⫸⫸') })],
         }),
       );
