@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import Image from "next/image";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -123,11 +124,22 @@ export function BillingPanel() {
   const balance = credits?.balance?.balance ?? 0;
 
   return (
-    <div className="mx-auto max-w-4xl px-6 py-10">
-      <h1 className="text-xl font-semibold">Billing &amp; credits</h1>
-      <p className="mt-1 text-sm text-muted-foreground">
-        Credits cover model usage and agent computer time.
-      </p>
+    <div className="mx-auto max-w-5xl px-6 py-10">
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-xl font-semibold">Billing &amp; credits</h1>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Credits cover model usage and agent computer time.
+          </p>
+        </div>
+        <Image
+          src="/logo.jpg"
+          alt="Agent Commons"
+          width={110}
+          height={28}
+          className="shrink-0"
+        />
+      </div>
 
       {/* Balance */}
       <Card className="mt-6 flex items-center justify-between p-5">

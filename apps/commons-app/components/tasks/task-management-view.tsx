@@ -14,9 +14,6 @@ import {
   MoreHorizontal,
   Play,
   Plus,
-  SignalHigh,
-  SignalLow,
-  SignalMedium,
   SlidersHorizontal,
   Trash2,
   X,
@@ -94,11 +91,58 @@ function StatusDot({ status }: { status: Task["status"] }) {
 }
 
 const PRIORITY_OPTIONS = [
-  { key: "high", label: "High", icon: SignalHigh, className: "text-orange-500", value: 3 },
-  { key: "medium", label: "Medium", icon: SignalMedium, className: "text-amber-500", value: 2 },
-  { key: "low", label: "Low", icon: SignalLow, className: "text-sky-500", value: 1 },
-  { key: "none", label: "No priority", icon: Minus, className: "text-muted-foreground/60", value: 0 },
+  { key: "high", label: "High", value: 3 },
+  { key: "medium", label: "Medium", value: 2 },
+  { key: "low", label: "Low", value: 1 },
+  { key: "none", label: "No priority", value: 0 },
 ] as const;
+
+/**
+ * Linear-style monochrome priority glyph: three bottom-aligned bars of
+ * increasing height — low fills one, medium two, high all three. Unfilled
+ * bars stay as faint placeholders; no priority renders a dash.
+ */
+function PriorityBars({
+  level,
+  className,
+}: {
+  level: number;
+  className?: string;
+}) {
+  if (level <= 0) {
+    return (
+      <Minus className={cn("h-4 w-4 text-muted-foreground/60", className)} />
+    );
+  }
+  const bars = [
+    { x: 1.5, y: 9, height: 5 },
+    { x: 6.5, y: 6, height: 8 },
+    { x: 11.5, y: 3, height: 11 },
+  ];
+  return (
+    <svg
+      width="16"
+      height="16"
+      viewBox="0 0 16 16"
+      className={cn("shrink-0", className)}
+      aria-hidden
+    >
+      {bars.map((bar, index) => (
+        <rect
+          key={index}
+          x={bar.x}
+          y={bar.y}
+          width="3"
+          height={bar.height}
+          rx="1"
+          className={
+            index < level ? "fill-foreground" : "fill-muted-foreground/25"
+          }
+        />
+      ))}
+    </svg>
+  );
+}
 
 /** Linear-style priority glyph; click to quick-edit */
 function PriorityControl({
@@ -121,7 +165,7 @@ function PriorityControl({
           title={`Priority: ${current.label}`}
           aria-label="Change priority"
         >
-          <current.icon className={cn("h-[18px] w-[18px]", current.className)} strokeWidth={2.5} />
+          <PriorityBars level={current.value} />
         </button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" className="w-40">
@@ -133,7 +177,7 @@ function PriorityControl({
               onChange(option.value);
             }}
           >
-            <option.icon className={cn("h-4 w-4", option.className)} strokeWidth={2.5} />
+            <PriorityBars level={option.value} />
             {option.label}
             {option.key === current.key && <Check className="ml-auto h-3.5 w-3.5" />}
           </DropdownMenuItem>
