@@ -20,7 +20,7 @@ Workflows let you chain multiple steps — tool calls, AI processing, data trans
 
 A workflow has:
 - **Nodes** — individual steps
-- **Edges** — connections between steps, defining order and data flow
+- **Edges** — typed field mappings between steps, defining order and data flow
 - **Input schema** — what data the workflow needs to start
 - **Output schema** — what it produces when done
 
@@ -103,7 +103,7 @@ The `{{inputs.url}}` syntax references the workflow's input. Use `{{nodeId.outpu
 
 ```bash
 curl -X POST https://api.agentcommons.io/v1/workflows \
-  -H "x-api-key: YOUR_KEY" \
+  -H "Authorization: Bearer $AGENT_COMMONS_API_KEY" \
   -H "Content-Type: application/json" \
   -d '{
     "name": "Scrape and Summarize",
@@ -123,7 +123,13 @@ curl -X POST https://api.agentcommons.io/v1/workflows \
         }
       ],
       "edges": [
-        { "from": "scrape", "to": "summarize" }
+        {
+          "id": "scrape-summary",
+          "source": "scrape",
+          "target": "summarize",
+          "mapping": { "result.content": "data.content" },
+          "targetTypes": { "data.content": "string" }
+        }
       ]
     },
     "inputSchema": {
@@ -179,8 +185,9 @@ curl -X POST https://api.agentcommons.io/v1/workflows \
 
 ```bash
 curl -X POST https://api.agentcommons.io/v1/workflows/workflow_abc123/execute \
-  -H "x-api-key: YOUR_KEY" \
-  -d '{ "inputs": { "url": "https://techcrunch.com/latest" } }'
+  -H "Authorization: Bearer $AGENT_COMMONS_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{ "inputData": { "url": "https://techcrunch.com/latest" } }'
 ```
 
 **Response:**
@@ -197,18 +204,16 @@ curl -X POST https://api.agentcommons.io/v1/workflows/workflow_abc123/execute \
 ## Streaming execution progress
 
 ```bash
-curl https://api.agentcommons.io/v1/workflows/exec_xyz/stream \
-  -H "x-api-key: YOUR_KEY"
+curl -N https://api.agentcommons.io/v1/workflows/workflow_abc123/executions/exec_xyz/stream \
+  -H "Authorization: Bearer $AGENT_COMMONS_API_KEY"
 ```
 
 You'll receive SSE events:
 
 ```
-data: {"nodeId":"scrape","status":"running"}
-data: {"nodeId":"scrape","status":"completed","output":"Page content here...","duration":1240}
-data: {"nodeId":"summarize","status":"running"}
-data: {"nodeId":"summarize","status":"completed","output":"• Point 1\n• Point 2\n• Point 3","duration":2100}
-data: {"executionId":"exec_xyz","status":"completed","totalDuration":3340}
+data: {"type":"status","status":"running","currentNode":"scrape","nodeResults":{}}
+data: {"type":"status","status":"running","currentNode":"summarize","nodeResults":{"scrape":{"status":"success"}}}
+data: {"type":"completed","outputData":{"summary":"..."},"nodeResults":{}}
 ```
 
 ---
@@ -217,7 +222,7 @@ data: {"executionId":"exec_xyz","status":"completed","totalDuration":3340}
 
 ```bash
 curl https://api.agentcommons.io/v1/workflows/workflow_abc123/executions \
-  -H "x-api-key: YOUR_KEY"
+  -H "Authorization: Bearer $AGENT_COMMONS_API_KEY"
 ```
 
 Each execution record shows status, start/end time, and the output of every node.
@@ -231,10 +236,78 @@ In the web app:
 1. Go to **Studio → Workflows → Create**
 2. Click **Open Editor** to enter the canvas
 3. **Add nodes** by clicking the `+` button or dragging from the sidebar
-4. **Connect nodes** by clicking the output handle of one node and dragging to the input of another
-5. **Configure each node** by clicking it — set tool name, parameters, or prompt
-6. **Set inputs** by clicking the Inputs panel and defining expected parameters
-7. **Run** directly from the editor to test
+4. **Connect nodes** by dragging handles. Dynamic `any` values are resolved to the target type at runtime.
+5. Open **Details → Edit** to map a precise upstream field to each input, add dotted fields such as `message.subject`, or expose nested result fields.
+6. For agent steps, choose the workflow architecture, agent role, supervisor, handoff policy, and context/session policy under **Coordination**.
+7. **Run** directly from the fixed action in the Run tab and inspect live node results under Logs.
+
+Multiple edges may assemble one target object. For example, these mappings build
+`message` from two different steps:
+
+```json
+[
+  { "mapping": { "result.subject": "message.subject" }, "targetTypes": { "message.subject": "string" } },
+  { "mapping": { "result.body": "message.body" }, "targetTypes": { "message.body": "string" } }
+]
+```
+
+`targetTypes` is optional for exact mappings. When present, the executor performs
+explicit JSON conversions and returns an actionable mapping error if a dynamic
+value cannot be converted.
+
+---
+
+## Multi-agent coordination
+
+Agent nodes support `sequential`, `hierarchical`, `peer_to_peer`, and `hybrid`
+architectures. The graph still defines deterministic execution and handoff order;
+agent configuration adds the collaboration contract:
+
+```json
+{
+  "id": "researcher",
+  "type": "agent_processor",
+  "config": {
+    "agentId": "agent_123",
+    "architecture": "hierarchical",
+    "role": "specialist",
+    "reportsTo": "orchestrator",
+    "handoffPolicy": "on_success",
+    "contextPolicy": "shared",
+    "sessionPolicy": "workflow",
+    "checkIn": "after_step"
+  }
+}
+```
+
+Independent agent branches execute concurrently. Sequential edges provide direct
+handoffs, `reportsTo` records hierarchy, and peer IDs are populated automatically
+when peer-to-peer architecture is selected. Coordination metadata is attached to
+each agent result for downstream steps and run monitoring.
+
+---
+
+## Poll, cancel, and approve from external systems
+
+All workflow management and execution routes require a bearer API key and verify
+workflow ownership. Webhook trigger URLs are the exception: they use a rotatable,
+high-entropy secret embedded in the URL and store only its hash.
+
+```bash
+# Poll
+curl https://api.agentcommons.io/v1/workflows/$WORKFLOW_ID/executions/$EXECUTION_ID \
+  -H "Authorization: Bearer $AGENT_COMMONS_API_KEY"
+
+# Cancel
+curl -X POST https://api.agentcommons.io/v1/workflows/$WORKFLOW_ID/executions/$EXECUTION_ID/cancel \
+  -H "Authorization: Bearer $AGENT_COMMONS_API_KEY"
+
+# Resume a human-approval step
+curl -X POST https://api.agentcommons.io/v1/workflows/$WORKFLOW_ID/executions/$EXECUTION_ID/approve \
+  -H "Authorization: Bearer $AGENT_COMMONS_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"approvalToken":"...","approvalData":{"reviewedBy":"ops"}}'
+```
 
 ---
 

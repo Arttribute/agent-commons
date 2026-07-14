@@ -34,6 +34,7 @@ import {
   WorkflowInputSchema,
 } from "@/lib/workflows/workflow-input-schema";
 import { formatType, getTypeColor } from "@/lib/workflows/type-mapping";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 
 interface TestPanelProps {
   workflowId: string;
@@ -241,20 +242,24 @@ export function TestPanel({ workflowId }: TestPanelProps) {
             </>
           )}
         </Button>
-        <Button
-          variant="ghost"
-          size="icon"
-          className="h-9 w-9 rounded-xl"
-          onClick={() => setOpen((current) => !current)}
-          aria-label={open ? "Hide console" : "Show console"}
-          title={open ? "Hide console" : "Show console"}
-        >
-          {open ? (
-            <PanelRightClose className="h-4 w-4" />
-          ) : (
-            <SquareTerminal className="h-4 w-4" />
-          )}
-        </Button>
+        <TooltipProvider delayDuration={150}>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-9 w-9 rounded-xl"
+                onClick={() => setOpen((current) => !current)}
+                aria-label={open ? "Hide workflow activity" : "Open workflow activity"}
+              >
+                {open ? <PanelRightClose className="h-4 w-4" /> : <SquareTerminal className="h-4 w-4" />}
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent side="bottom">
+              {open ? "Hide runs, logs, and integrations" : "Open runs, logs, and integrations"}
+            </TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
       </div>
 
       {open && (
@@ -268,8 +273,8 @@ export function TestPanel({ workflowId }: TestPanelProps) {
           </TabsList>
         </div>
 
-        <TabsContent value="run" className="m-0 min-h-0 flex-1">
-          <ScrollArea className="h-full">
+        <TabsContent value="run" className="m-0 flex min-h-0 flex-1 flex-col">
+          <ScrollArea className="min-h-0 flex-1">
             <div className="p-4 space-y-4">
           {/* Inputs */}
           {inputSchema && inputSchema.parameters.length > 0 ? (
@@ -404,6 +409,12 @@ export function TestPanel({ workflowId }: TestPanelProps) {
           )}
             </div>
           </ScrollArea>
+          <div className="border-t border-border bg-background/95 p-3 backdrop-blur-sm">
+            <Button onClick={handleRun} disabled={running || !inputSchema} className="h-9 w-full gap-2 rounded-xl">
+              {running ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
+              {loading ? "Starting…" : pendingExecutionId ? "Running…" : "Run workflow"}
+            </Button>
+          </div>
         </TabsContent>
 
         <TabsContent value="logs" className="m-0 min-h-0 flex-1">

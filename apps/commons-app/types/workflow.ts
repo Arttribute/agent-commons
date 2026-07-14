@@ -1,5 +1,36 @@
 import { WorkflowDataType } from "@/lib/workflows/type-mapping";
 
+export interface WorkflowPortDefinition {
+  name: string;
+  /** Runtime path inside the node value. Defaults to name. */
+  path?: string;
+  type: WorkflowDataType;
+  required?: boolean;
+  description?: string;
+  schema?: Record<string, any>;
+  properties?: Record<string, any>;
+  items?: WorkflowDataType;
+  /** User-created ports are persisted with the workflow definition. */
+  custom?: boolean;
+}
+
+export type WorkflowArchitecture =
+  | "sequential"
+  | "hierarchical"
+  | "peer_to_peer"
+  | "hybrid";
+
+export interface AgentCoordinationConfig {
+  architecture?: WorkflowArchitecture;
+  role?: "orchestrator" | "supervisor" | "specialist" | "reviewer" | "peer";
+  reportsTo?: string;
+  peerNodeIds?: string[];
+  handoffPolicy?: "automatic" | "on_success" | "manual";
+  contextPolicy?: "shared" | "summary" | "isolated";
+  sessionPolicy?: "workflow" | "agent" | "new_each_run";
+  checkIn?: "never" | "before_handoff" | "after_step";
+}
+
 export type WorkflowNodeType =
   | "tool"
   | "agent_processor"
@@ -86,12 +117,13 @@ export interface ReactFlowNode {
     toolId?: string;
     toolName?: string;
     agentId?: string;
+    agentAvatar?: string;
     workflowId?: string;
     description?: string;
     icon?: string;
     accent?: string;
-    inputs?: Array<{ name: string; type: WorkflowDataType; required?: boolean }>;
-    outputs?: Array<{ name: string; type: WorkflowDataType }>;
+    inputs?: WorkflowPortDefinition[];
+    outputs?: WorkflowPortDefinition[];
     nodeType?: WorkflowNodeType;
     config?: Record<string, any>;
     schema?: any;
@@ -109,6 +141,9 @@ export interface ReactFlowEdge {
     dataType: string;
     color: string;
     mapping?: Record<string, string>;
+    /** Target types drive safe runtime coercion for dynamic/`any` values. */
+    targetTypes?: Record<string, WorkflowDataType>;
+    mappingMode?: "exact" | "dynamic" | "coerce";
   };
 }
 

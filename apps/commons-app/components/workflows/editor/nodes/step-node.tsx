@@ -10,12 +10,14 @@ import { getTypeColor, WorkflowDataType } from "@/lib/workflows/type-mapping";
 import type { WorkflowNodeType } from "@/types/workflow";
 import { getNodeTheme } from "./node-theme";
 import { getBrandIcon } from "@/lib/brand-icons";
+import { AgentAvatar } from "@/components/agents/agent-avatar";
 
 interface StepNodeData {
   label: string;
   description?: string;
   nodeType?: WorkflowNodeType;
   toolName?: string;
+  agentAvatar?: string;
   inputs?: Array<{ name: string; type: WorkflowDataType; required?: boolean }>;
   outputs?: Array<{ name: string; type: WorkflowDataType }>;
 }
@@ -74,6 +76,15 @@ export const StepNode = memo(({ id, data, selected, type }: NodeProps<StepNodeDa
             <Icon className="h-7 w-7" strokeWidth={1.9} />
           )}
         </div>
+
+        {nodeType === "agent_processor" && data.agentAvatar && (
+          <AgentAvatar
+            name={data.label}
+            src={data.agentAvatar}
+            size={23}
+            className="pointer-events-none absolute -right-2 -top-2 border-2 border-background shadow-sm"
+          />
+        )}
 
         {inputs.map((input, index) => (
           <Handle

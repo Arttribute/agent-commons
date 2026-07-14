@@ -334,12 +334,18 @@ export const useWorkflowStore = create<WorkflowEditorState>((set, get) => ({
           toolId: node.data.toolId || node.data.toolName, // Use toolId (UUID) if available, fallback to toolName for legacy nodes
           toolName: node.data.toolName,
           agentId: node.data.agentId,
+          agentAvatar: node.data.agentAvatar,
           workflowId: node.data.workflowId,
           position: node.position,
           config: {
             ...(node.data.agentId ? { agentId: node.data.agentId } : {}),
+            ...(node.data.agentAvatar ? { agentAvatar: node.data.agentAvatar } : {}),
             ...(node.data.workflowId ? { workflowId: node.data.workflowId } : {}),
             ...(node.data.config || {}),
+            // Persist editor-defined schemas so custom/nested ports survive a
+            // catalog refresh and are available to external API consumers.
+            inputPorts: node.data.inputs || [],
+            outputPorts: node.data.outputs || [],
           },
           label: node.data.label,
         })),
@@ -355,6 +361,8 @@ export const useWorkflowStore = create<WorkflowEditorState>((set, get) => ({
             target: edge.target,
             sourceHandle: edge.sourceHandle,
             targetHandle: edge.targetHandle,
+            targetTypes: edge.data?.targetTypes,
+            mappingMode: edge.data?.mappingMode,
             mapping: preservedMapping ??
               (edge.sourceHandle && edge.targetHandle
                 ? { [edge.sourceHandle]: edge.targetHandle }
@@ -438,6 +446,11 @@ export const useWorkflowStore = create<WorkflowEditorState>((set, get) => ({
           outputs = defaults.outputs;
         }
 
+        // Saved ports take precedence: they include user-added fields and
+        // schema paths that may not exist in today's catalog response.
+        inputs = node.config?.inputPorts?.length ? node.config.inputPorts : inputs;
+        outputs = node.config?.outputPorts?.length ? node.config.outputPorts : outputs;
+
         return {
           id: node.id,
           type: nodeType,
@@ -447,6 +460,7 @@ export const useWorkflowStore = create<WorkflowEditorState>((set, get) => ({
             toolId: node.toolId,
             toolName: node.toolName,
             agentId: node.agentId || node.config?.agentId,
+            agentAvatar: node.agentAvatar || node.config?.agentAvatar,
             workflowId: node.workflowId || node.config?.workflowId,
             inputs,
             outputs,
@@ -472,6 +486,8 @@ export const useWorkflowStore = create<WorkflowEditorState>((set, get) => ({
             dataType: "any",
             color: "#6b7280",
             mapping: edge.mapping || {},
+            targetTypes: edge.targetTypes || {},
+            mappingMode: edge.mappingMode || "dynamic",
           },
         };
       });

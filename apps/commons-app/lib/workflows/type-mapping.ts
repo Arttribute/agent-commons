@@ -17,30 +17,81 @@ export interface TypedParameter {
   type: WorkflowDataType;
   required: boolean;
   description?: string;
+  /** Dot-separated runtime path. The display name may be changed independently. */
+  path?: string;
   items?: WorkflowDataType; // For arrays
   properties?: Record<string, any>; // For objects
+}
+
+export interface WorkflowPort extends TypedParameter {
+  /** Original JSON Schema fragment used to expose nested fields in the mapper. */
+  schema?: Record<string, any>;
 }
 
 /**
  * Extract typed parameters from a tool's JSON Schema
  */
-export function extractTypedParameters(
-  schema: any
-): TypedParameter[] {
+export function extractTypedParameters(schema: any): WorkflowPort[] {
   if (!schema?.function?.parameters) return [];
 
   const params = schema.function.parameters;
   const properties = params.properties || {};
   const required = params.required || [];
 
-  return Object.entries(properties).map(([name, prop]: [string, any]) => ({
+  const topLevel = Object.entries(properties).map(([name, prop]: [string, any]) => ({
     name,
     type: mapJsonSchemaType(prop),
     required: required.includes(name),
     description: prop.description,
+    path: name,
     items: prop.items ? mapJsonSchemaType(prop.items) : undefined,
     properties: prop.type === "object" ? prop.properties : undefined,
+    schema: prop,
   }));
+
+  const nested = Object.entries(properties).flatMap(([name, prop]: [string, any]) =>
+    prop.type === "object" || prop.properties
+      ? flattenSchemaPorts(prop, name).map((port) => ({ ...port, required: false }))
+      : []
+  );
+
+  return [...topLevel, ...nested];
+}
+
+/**
+ * Flatten an object schema into selectable field paths while retaining the
+ * parent object. This mirrors how automation products expose a result bundle:
+ * users can wire the whole value or a precise nested property.
+ */
+export function flattenSchemaPorts(
+  schema: any,
+  rootPath = "",
+  depth = 0
+): WorkflowPort[] {
+  if (!schema || depth > 6) return [];
+
+  const properties = schema.properties ?? {};
+  const required = new Set<string>(schema.required ?? []);
+  const ports: WorkflowPort[] = [];
+
+  for (const [name, property] of Object.entries(properties) as [string, any][]) {
+    const path = rootPath ? `${rootPath}.${name}` : name;
+    ports.push({
+      name: path,
+      path,
+      type: mapJsonSchemaType(property),
+      required: required.has(name),
+      description: property.description,
+      items: property.items ? mapJsonSchemaType(property.items) : undefined,
+      properties: property.properties,
+      schema: property,
+    });
+    if (property.type === "object" || property.properties) {
+      ports.push(...flattenSchemaPorts(property, path, depth + 1));
+    }
+  }
+
+  return ports;
 }
 
 /**
@@ -161,20 +212,35 @@ export function formatType(type: WorkflowDataType): string {
  */
 export function extractOutputParameters(
   schema: any
-): Array<{ name: string; type: WorkflowDataType; description?: string }> {
-  const outputs: Array<{ name: string; type: WorkflowDataType; description?: string }> = [];
+): WorkflowPort[] {
+  const outputs: WorkflowPort[] = [];
 
   // Check if there's a return type definition in the schema
   const description = schema?.function?.description || "";
   const functionName = schema?.function?.name || "";
-  const baseOutputType = inferOutputType(schema);
+  const returnSchema =
+    schema?.function?.returns ??
+    schema?.function?.outputSchema ??
+    schema?.returns ??
+    schema?.outputSchema ??
+    schema?.responseSchema;
+  const baseOutputType = returnSchema
+    ? mapJsonSchemaType(returnSchema)
+    : inferOutputType(schema);
 
   // Always include the main result output
   outputs.push({
     name: "result",
+    path: "result",
     type: baseOutputType,
     description: "Complete result from the tool",
+    required: false,
+    schema: returnSchema,
   });
+
+  if (returnSchema?.properties) {
+    outputs.push(...flattenSchemaPorts(returnSchema, "result"));
+  }
 
   // Check for explicit return type documentation in description
   // Pattern 1: "returns an object with: field1 (type1), field2 (type2)"
@@ -192,8 +258,10 @@ export function extractOutputParameters(
 
       outputs.push({
         name: `result.${fieldName}`,
+        path: `result.${fieldName}`,
         type: mapSingleType(fieldType),
         description: `${fieldName} field from result`,
+        required: false,
       });
     }
   }
@@ -211,5 +279,9 @@ export function extractOutputParameters(
   // TODO: In the future, support custom schema extensions for return types
   // e.g., schema.function.returns = { type: "object", properties: {...} }
 
-  return outputs;
+  // Some schemas/documentation repeat a field. Keep the first, most precise
+  // declaration so React Flow handle ids remain stable.
+  return outputs.filter(
+    (port, index) => outputs.findIndex((candidate) => candidate.name === port.name) === index
+  );
 }

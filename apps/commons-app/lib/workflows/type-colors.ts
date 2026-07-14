@@ -35,35 +35,72 @@ export function validateTypeCompatibility(
   sourceType: string,
   targetType: string
 ): boolean {
+  return getTypeCompatibility(sourceType, targetType).compatible;
+}
+
+export type TypeCompatibility = {
+  compatible: boolean;
+  mode: "exact" | "dynamic" | "coerce" | "incompatible";
+  message?: string;
+};
+
+/**
+ * Workflow wires describe runtime mappings, so `any` is a dynamic value rather
+ * than an error. JSON values also have a small, explicit set of safe coercions;
+ * the executor applies the same rules before invoking the target node.
+ */
+export function getTypeCompatibility(
+  sourceType: string,
+  targetType: string
+): TypeCompatibility {
   const source = sourceType.toLowerCase();
   const target = targetType.toLowerCase();
 
-  // 'any' accepts anything
-  if (target === "any") return true;
+  if (source === "any" || target === "any") {
+    return {
+      compatible: true,
+      mode: "dynamic",
+      message: target === "any" ? "Value passes through as-is" : `Value is resolved as ${target} at runtime`,
+    };
+  }
 
   // Same types are compatible
-  if (source === target) return true;
+  if (source === target) return { compatible: true, mode: "exact" };
 
   // Aliases
-  if (source === "string" && target === "text") return true;
-  if (source === "text" && target === "string") return true;
-  if (source === "integer" && target === "number") return true;
-  if (source === "number" && target === "integer") return true;
+  if (source === "string" && target === "text") return { compatible: true, mode: "exact" };
+  if (source === "text" && target === "string") return { compatible: true, mode: "exact" };
+  if (source === "integer" && target === "number") return { compatible: true, mode: "exact" };
+  if (source === "number" && target === "integer") return { compatible: true, mode: "coerce" };
 
   // Text can convert to most types
   if (
     (source === "text" || source === "string") &&
     ["url", "base64"].includes(target)
   ) {
-    return true;
+    return { compatible: true, mode: "coerce", message: `Converted to ${target}` };
   }
 
   // URL can be treated as text
   if (source === "url" && (target === "text" || target === "string")) {
-    return true;
+    return { compatible: true, mode: "coerce", message: "Converted to string" };
   }
 
-  return false;
+  // Explicit JSON coercions. Object/array → string uses JSON serialization;
+  // string → structured values uses JSON parsing and fails with a clear runtime
+  // error if the value is malformed.
+  const coercible =
+    target === "string" ||
+    target === "text" ||
+    (source === "string" && ["number", "boolean", "object", "array"].includes(target)) ||
+    (source === "number" && target === "boolean") ||
+    (source === "boolean" && target === "number");
+
+  if (coercible) {
+    return { compatible: true, mode: "coerce", message: `Converted from ${source} to ${target}` };
+  }
+
+  return { compatible: false, mode: "incompatible" };
 }
 
 /**

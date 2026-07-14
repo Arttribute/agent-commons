@@ -25,6 +25,7 @@ interface NodeExecutionContext {
   workflowId?: string;
   inputs: Record<string, any>;
   config?: Record<string, any>;
+  executionId?: string;
 }
 
 interface NodeExecutionResult {
@@ -175,12 +176,18 @@ export class WorkflowExecutorService {
     executionId: string,
     approvalToken: string,
     approvalData?: Record<string, any>,
+    workflowId?: string,
   ): Promise<void> {
     const execution = await this.db.query.workflowExecution.findFirst({
       where: (e) => eq(e.executionId, executionId),
       with: { workflow: true },
     });
     if (!execution) throw new Error(`Execution ${executionId} not found`);
+    if (workflowId && execution.workflowId !== workflowId) {
+      throw new Error(
+        `Execution ${executionId} does not belong to workflow ${workflowId}`,
+      );
+    }
     if (execution.status !== 'awaiting_approval') {
       throw new Error(
         `Execution ${executionId} is not awaiting approval (status: ${execution.status})`,
@@ -241,11 +248,17 @@ export class WorkflowExecutorService {
     executionId: string,
     approvalToken: string,
     reason?: string,
+    workflowId?: string,
   ): Promise<void> {
     const execution = await this.db.query.workflowExecution.findFirst({
       where: (e) => eq(e.executionId, executionId),
     });
     if (!execution) throw new Error(`Execution ${executionId} not found`);
+    if (workflowId && execution.workflowId !== workflowId) {
+      throw new Error(
+        `Execution ${executionId} does not belong to workflow ${workflowId}`,
+      );
+    }
     if (execution.status !== 'awaiting_approval') {
       throw new Error(
         `Execution ${executionId} is not awaiting approval (status: ${execution.status})`,
@@ -399,16 +412,16 @@ export class WorkflowExecutorService {
         // Execute all frontier nodes concurrently
         const results = await Promise.all(
           frontier.map((nodeId) => {
-          const node = nodes.find((n: any) => n.id === nodeId);
-          if (!node) {
+            const node = nodes.find((n: any) => n.id === nodeId);
+            if (!node) {
               return Promise.resolve<NodeExecutionResult>({
                 nodeId,
                 status: 'skipped',
                 error: 'Node definition not found',
                 duration: 0,
               });
-          }
-          const isFirstNodeWithNoIncoming =
+            }
+            const isFirstNodeWithNoIncoming =
               !resumeFromNode && !edges.some((e: any) => e.target === nodeId);
 
             let nodeInputs = this.mapNodeInputs(
@@ -421,22 +434,23 @@ export class WorkflowExecutorService {
               isFirstNodeWithNoIncoming &&
               Object.keys(nodeInputs).length === 0
             ) {
-            nodeInputs = inputData;
-          }
+              nodeInputs = inputData;
+            }
 
-          return this.dispatchNode(
-            {
-              nodeId,
-              nodeType: node.type || 'tool',
-              toolId: node.toolId,
-              workflowId: definition.workflowId,
-              inputs: nodeInputs,
-              config: node.config,
-            },
-            agentId,
-            userId,
-            workflowDepth,
-          );
+            return this.dispatchNode(
+              {
+                nodeId,
+                nodeType: node.type || 'tool',
+                toolId: node.toolId,
+                workflowId: definition.workflowId,
+                inputs: nodeInputs,
+                config: node.config,
+                executionId,
+              },
+              agentId,
+              userId,
+              workflowDepth,
+            );
           }),
         );
 
@@ -562,7 +576,7 @@ export class WorkflowExecutorService {
 
       this.logger.log(
         `Workflow execution ${executionId} completed in ${Date.now() - startTime}ms ` +
-        `(${completedNodes.size} node(s), ${skippedNodes.size} skipped)`,
+          `(${completedNodes.size} node(s), ${skippedNodes.size} skipped)`,
       );
     } catch (error: any) {
       if (error instanceof HumanApprovalPauseError) {
@@ -659,6 +673,7 @@ export class WorkflowExecutorService {
             config,
             agentId,
             userId,
+            context.executionId,
             duration,
           );
 
@@ -834,6 +849,7 @@ export class WorkflowExecutorService {
     config: Record<string, any> | undefined,
     agentId: string | undefined,
     userId: string | undefined,
+    executionId: string | undefined,
     duration: () => number,
   ): Promise<NodeExecutionResult> {
     const targetAgentId: string | undefined = config?.agentId ?? agentId;
@@ -847,9 +863,24 @@ export class WorkflowExecutorService {
       };
     }
 
-    const instruction: string = config?.prompt
+    const baseInstruction: string = config?.prompt
       ? this.interpolateTemplate(config.prompt, inputs)
       : 'Analyze and process the provided data, then return a clear, structured result.';
+    const coordination = {
+      architecture: config?.architecture ?? 'sequential',
+      role: config?.role ?? 'specialist',
+      reportsTo: config?.reportsTo,
+      peerNodeIds: config?.peerNodeIds ?? [],
+      handoffPolicy: config?.handoffPolicy ?? 'on_success',
+      contextPolicy: config?.contextPolicy ?? 'shared',
+      sessionPolicy: config?.sessionPolicy ?? 'workflow',
+      checkIn: config?.checkIn ?? 'after_step',
+    };
+    const instruction = `${baseInstruction}\n\nWorkflow coordination contract:\n${JSON.stringify(
+      coordination,
+      null,
+      2,
+    )}\nComplete only your assigned role. Return a structured result suitable for the next handoff; do not expose private chain-of-thought.`;
 
     try {
       const agent = await this.agentService.getAgent({
@@ -865,15 +896,20 @@ export class WorkflowExecutorService {
       }
 
       const runtimeType = normalizeRuntimeType(agent.runtimeType);
-      const output =
+      const rawOutput =
         runtimeType === 'native'
           ? await this.commonToolService.processWithinWorkflow({
-        instruction,
-        data: inputs,
-        sessionId: '',
-        agentId: targetAgentId,
-        maxTokens: config?.maxTokens,
-        workflowDepth: 1,
+              instruction,
+              data: inputs,
+              sessionId:
+                coordination.sessionPolicy === 'new_each_run'
+                  ? ''
+                  : coordination.sessionPolicy === 'agent'
+                    ? `workflow:${executionId ?? nodeId}:agent:${targetAgentId}`
+                    : `workflow:${executionId ?? nodeId}`,
+              agentId: targetAgentId,
+              maxTokens: config?.maxTokens,
+              workflowDepth: 1,
             })
           : await this.executeExternalRuntimeNode({
               agentId: targetAgentId,
@@ -881,7 +917,11 @@ export class WorkflowExecutorService {
                 userId || agent.ownerUserId || agent.owner || targetAgentId,
               instruction,
               inputs,
-      });
+            });
+      const output =
+        rawOutput && typeof rawOutput === 'object' && !Array.isArray(rawOutput)
+          ? { ...rawOutput, _coordination: coordination }
+          : { result: rawOutput, _coordination: coordination };
       return { nodeId, status: 'success', output, duration: duration() };
     } catch (e: any) {
       const err = new AgentProcessorError({
@@ -1367,18 +1407,37 @@ export class WorkflowExecutorService {
     const inputs: Record<string, any> = {};
     for (const edge of edges.filter((e) => e.target === nodeId)) {
       const src = nodeOutputs[edge.source];
-      if (!src) continue;
+      if (src === undefined) continue;
       if (edge.mapping) {
         for (const [sf, tf] of Object.entries(edge.mapping) as [
           string,
           string,
         ][]) {
-          const v = this.getNestedValue(src, sf);
-          if (v !== undefined) inputs[tf] = v;
+          const v = this.getMappedSourceValue(src, sf);
+          if (v !== undefined) {
+            const targetType = edge.targetTypes?.[tf];
+            this.setNestedValue(
+              inputs,
+              tf,
+              this.coerceWorkflowValue(v, targetType, sf, tf),
+            );
+          }
         }
       } else if (edge.sourceHandle && edge.targetHandle) {
-        const v = this.getNestedValue(src, edge.sourceHandle);
-        if (v !== undefined) inputs[edge.targetHandle] = v;
+        const v = this.getMappedSourceValue(src, edge.sourceHandle);
+        if (v !== undefined) {
+          const targetType = edge.targetTypes?.[edge.targetHandle];
+          this.setNestedValue(
+            inputs,
+            edge.targetHandle,
+            this.coerceWorkflowValue(
+              v,
+              targetType,
+              edge.sourceHandle,
+              edge.targetHandle,
+            ),
+          );
+        }
       } else {
         Object.assign(inputs, src);
       }
@@ -1392,6 +1451,18 @@ export class WorkflowExecutorService {
         prompt,
         agentId,
         toolId,
+        inputPorts,
+        outputPorts,
+        architecture,
+        role,
+        reportsTo,
+        peerNodeIds,
+        handoffPolicy,
+        contextPolicy,
+        sessionPolicy,
+        checkIn,
+        continueOnError,
+        agentAvatar,
         ...rest
       } = config;
       Object.assign(inputs, rest);
@@ -1400,7 +1471,90 @@ export class WorkflowExecutorService {
   }
 
   private getNestedValue(obj: any, path: string): any {
+    if (!path) return obj;
     return path.split('.').reduce((acc, part) => acc?.[part], obj);
+  }
+
+  private getMappedSourceValue(source: any, path: string): any {
+    if (!path || path === 'result') return source?.result ?? source;
+    const direct = this.getNestedValue(source, path);
+    if (direct !== undefined) return direct;
+    // Tool return schemas conventionally name their root `result`, while tool
+    // implementations return the root object directly. Support both shapes.
+    return path.startsWith('result.')
+      ? this.getNestedValue(source, path.slice('result.'.length))
+      : undefined;
+  }
+
+  private setNestedValue(
+    target: Record<string, any>,
+    path: string,
+    value: any,
+  ) {
+    const parts = path.split('.').filter(Boolean);
+    if (!parts.length) return;
+    let cursor: Record<string, any> = target;
+    for (const part of parts.slice(0, -1)) {
+      if (
+        !cursor[part] ||
+        typeof cursor[part] !== 'object' ||
+        Array.isArray(cursor[part])
+      ) {
+        cursor[part] = {};
+      }
+      cursor = cursor[part];
+    }
+    cursor[parts[parts.length - 1]] = value;
+  }
+
+  private coerceWorkflowValue(
+    value: any,
+    targetType: string | undefined,
+    sourcePath: string,
+    targetPath: string,
+  ): any {
+    if (!targetType || targetType === 'any' || value == null) return value;
+    try {
+      switch (targetType) {
+        case 'string':
+        case 'text':
+        case 'url':
+        case 'base64':
+          return typeof value === 'object'
+            ? JSON.stringify(value)
+            : String(value);
+        case 'number':
+        case 'integer': {
+          const number = Number(value);
+          if (!Number.isFinite(number)) throw new Error('value is not numeric');
+          return targetType === 'integer' ? Math.trunc(number) : number;
+        }
+        case 'boolean':
+          if (typeof value === 'string') {
+            if (value.toLowerCase() === 'true') return true;
+            if (value.toLowerCase() === 'false') return false;
+          }
+          return Boolean(value);
+        case 'object': {
+          const parsed = typeof value === 'string' ? JSON.parse(value) : value;
+          if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+            throw new Error('value is not an object');
+          }
+          return parsed;
+        }
+        case 'array': {
+          const parsed = typeof value === 'string' ? JSON.parse(value) : value;
+          if (!Array.isArray(parsed)) throw new Error('value is not an array');
+          return parsed;
+        }
+        default:
+          return value;
+      }
+    } catch (error: any) {
+      throw new Error(
+        `Could not map ${sourcePath} to ${targetPath} as ${targetType}: ${error.message}`,
+      );
+    }
   }
 
   private getFinalOutput(
@@ -1437,16 +1591,22 @@ export class WorkflowExecutorService {
 
   // ── Public query methods ───────────────────────────────────────────────────
 
-  async getExecutionStatus(executionId: string) {
+  async getExecutionStatus(executionId: string, workflowId?: string) {
     const execution = await this.db.query.workflowExecution.findFirst({
       where: (e: any) => eq(e.executionId, executionId),
       with: { workflow: true, agent: true },
     });
     if (!execution) throw new Error(`Execution ${executionId} not found`);
+    if (workflowId && execution.workflowId !== workflowId) {
+      throw new Error(
+        `Execution ${executionId} does not belong to workflow ${workflowId}`,
+      );
+    }
     return execution;
   }
 
-  async cancelExecution(executionId: string) {
+  async cancelExecution(executionId: string, workflowId?: string) {
+    if (workflowId) await this.getExecutionStatus(executionId, workflowId);
     const [updated] = await this.db
       .update(schema.workflowExecution)
       .set({ status: 'cancelled', completedAt: new Date() })

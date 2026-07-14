@@ -74,10 +74,7 @@ export class WorkflowController {
   ) {
     const principal = (req as any)?.principal;
     if (principal?.principalType === 'user') {
-      return this.workflowService.listWorkflows(
-        principal.principalId,
-        'user',
-      );
+      return this.workflowService.listWorkflows(principal.principalId, 'user');
     }
 
     if (!ownerId || !ownerType) {
@@ -239,6 +236,8 @@ export class WorkflowController {
    * POST /v1/workflows/:id/execute
    */
   @Post(':id/execute')
+  @UseGuards(OwnerGuard)
+  @OwnerOnly({ table: 'workflow', idParam: 'id' })
   async executeWorkflow(
     @Param('id') workflowId: string,
     @Body()
@@ -261,7 +260,10 @@ export class WorkflowController {
     });
 
     // Fetch and return the execution details
-    const execution = await this.workflowExecutor.getExecutionStatus(executionId);
+    const execution = await this.workflowExecutor.getExecutionStatus(
+      executionId,
+      workflowId,
+    );
 
     return {
       executionId: execution.executionId,
@@ -280,11 +282,16 @@ export class WorkflowController {
    * GET /v1/workflows/:id/executions/:executionId
    */
   @Get(':id/executions/:executionId')
+  @UseGuards(OwnerGuard)
+  @OwnerOnly({ table: 'workflow', idParam: 'id' })
   async getExecutionStatus(
     @Param('id') workflowId: string,
     @Param('executionId') executionId: string,
   ) {
-    const execution = await this.workflowExecutor.getExecutionStatus(executionId);
+    const execution = await this.workflowExecutor.getExecutionStatus(
+      executionId,
+      workflowId,
+    );
 
     return {
       executionId: execution.executionId,
@@ -303,6 +310,8 @@ export class WorkflowController {
    * GET /v1/workflows/:id/executions
    */
   @Get(':id/executions')
+  @UseGuards(OwnerGuard)
+  @OwnerOnly({ table: 'workflow', idParam: 'id' })
   async listExecutions(
     @Param('id') workflowId: string,
     @Query('limit') limit?: number,
@@ -318,11 +327,13 @@ export class WorkflowController {
    * POST /v1/workflows/:id/executions/:executionId/cancel
    */
   @Post(':id/executions/:executionId/cancel')
+  @UseGuards(OwnerGuard)
+  @OwnerOnly({ table: 'workflow', idParam: 'id' })
   async cancelExecution(
     @Param('id') workflowId: string,
     @Param('executionId') executionId: string,
   ) {
-    return this.workflowExecutor.cancelExecution(executionId);
+    return this.workflowExecutor.cancelExecution(executionId, workflowId);
   }
 
   /**
@@ -330,13 +341,21 @@ export class WorkflowController {
    * POST /v1/workflows/:id/executions/:executionId/approve
    */
   @Post(':id/executions/:executionId/approve')
+  @UseGuards(OwnerGuard)
+  @OwnerOnly({ table: 'workflow', idParam: 'id' })
   async approveExecution(
-    @Param('id') _workflowId: string,
+    @Param('id') workflowId: string,
     @Param('executionId') executionId: string,
     @Body() body: { approvalToken: string; approvalData?: Record<string, any> },
   ) {
-    if (!body.approvalToken) throw new BadRequestException('approvalToken is required');
-    await this.workflowExecutor.approveExecution(executionId, body.approvalToken, body.approvalData);
+    if (!body.approvalToken)
+      throw new BadRequestException('approvalToken is required');
+    await this.workflowExecutor.approveExecution(
+      executionId,
+      body.approvalToken,
+      body.approvalData,
+      workflowId,
+    );
     return { success: true, executionId, action: 'approved' };
   }
 
@@ -345,13 +364,21 @@ export class WorkflowController {
    * POST /v1/workflows/:id/executions/:executionId/reject
    */
   @Post(':id/executions/:executionId/reject')
+  @UseGuards(OwnerGuard)
+  @OwnerOnly({ table: 'workflow', idParam: 'id' })
   async rejectExecution(
-    @Param('id') _workflowId: string,
+    @Param('id') workflowId: string,
     @Param('executionId') executionId: string,
     @Body() body: { approvalToken: string; reason?: string },
   ) {
-    if (!body.approvalToken) throw new BadRequestException('approvalToken is required');
-    await this.workflowExecutor.rejectExecution(executionId, body.approvalToken, body.reason);
+    if (!body.approvalToken)
+      throw new BadRequestException('approvalToken is required');
+    await this.workflowExecutor.rejectExecution(
+      executionId,
+      body.approvalToken,
+      body.reason,
+      workflowId,
+    );
     return { success: true, executionId, action: 'rejected' };
   }
 
@@ -367,8 +394,10 @@ export class WorkflowController {
    */
   @Get(':id/executions/:executionId/stream')
   @Sse(':id/executions/:executionId/stream')
+  @UseGuards(OwnerGuard)
+  @OwnerOnly({ table: 'workflow', idParam: 'id' })
   streamExecution(
-    @Param('id') _workflowId: string,
+    @Param('id') workflowId: string,
     @Param('executionId') executionId: string,
     @Req() req: Request,
   ): Observable<MessageEvent> {
@@ -378,15 +407,24 @@ export class WorkflowController {
       let closed = false;
 
       const keepalive = setInterval(() => {
-        if (!closed) subscriber.next({ data: JSON.stringify({ type: 'keepalive' }) } as any);
+        if (!closed)
+          subscriber.next({
+            data: JSON.stringify({ type: 'keepalive' }),
+          } as any);
       }, 5000);
 
       const poll = setInterval(async () => {
         if (closed) return;
         try {
-          const execution = await this.workflowExecutor.getExecutionStatus(executionId);
+          const execution = await this.workflowExecutor.getExecutionStatus(
+            executionId,
+            workflowId,
+          );
           const currentNode = (execution as any).currentNode ?? '';
-          if (execution.status !== lastStatus || currentNode !== lastCurrentNode) {
+          if (
+            execution.status !== lastStatus ||
+            currentNode !== lastCurrentNode
+          ) {
             lastStatus = execution.status;
             lastCurrentNode = currentNode;
             subscriber.next({
@@ -399,7 +437,13 @@ export class WorkflowController {
             } as any);
           }
           if (execution.status === 'completed') {
-            subscriber.next({ data: JSON.stringify({ type: 'completed', outputData: execution.outputData, nodeResults: execution.nodeResults }) } as any);
+            subscriber.next({
+              data: JSON.stringify({
+                type: 'completed',
+                outputData: execution.outputData,
+                nodeResults: execution.nodeResults,
+              }),
+            } as any);
             subscriber.complete();
           } else if (execution.status === 'awaiting_approval') {
             subscriber.next({
@@ -410,12 +454,22 @@ export class WorkflowController {
               }),
             } as any);
             // Keep stream open — client will continue polling after approval
-          } else if (execution.status === 'failed' || execution.status === 'cancelled') {
-            subscriber.next({ data: JSON.stringify({ type: execution.status, errorMessage: (execution as any).errorMessage }) } as any);
+          } else if (
+            execution.status === 'failed' ||
+            execution.status === 'cancelled'
+          ) {
+            subscriber.next({
+              data: JSON.stringify({
+                type: execution.status,
+                errorMessage: (execution as any).errorMessage,
+              }),
+            } as any);
             subscriber.complete();
           }
         } catch (err: any) {
-          subscriber.next({ data: JSON.stringify({ type: 'error', message: err.message }) } as any);
+          subscriber.next({
+            data: JSON.stringify({ type: 'error', message: err.message }),
+          } as any);
           subscriber.complete();
         }
       }, 750);

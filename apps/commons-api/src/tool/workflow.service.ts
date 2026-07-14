@@ -16,9 +16,21 @@ import * as schema from '../../models/schema';
  */
 export interface WorkflowNode {
   id: string;
-  type: 'tool' | 'agent_processor' | 'input' | 'output';
+  type:
+    | 'tool'
+    | 'agent_processor'
+    | 'workflow'
+    | 'input'
+    | 'output'
+    | 'condition'
+    | 'transform'
+    | 'loop'
+    | 'human_approval';
   toolId?: string;
   toolName?: string;
+  agentId?: string;
+  agentAvatar?: string;
+  workflowId?: string;
   position: { x: number; y: number };
   config?: Record<string, any>;
   label?: string;
@@ -34,6 +46,8 @@ export interface WorkflowEdge {
   sourceHandle?: string;
   targetHandle?: string;
   mapping?: Record<string, string>;
+  targetTypes?: Record<string, string>;
+  mappingMode?: 'exact' | 'dynamic' | 'coerce';
   label?: string;
 }
 
@@ -179,7 +193,9 @@ export class WorkflowService {
         if (!tool) {
           const toolService = this.getToolService();
           const staticTools = toolService.getStaticTools();
-          const staticTool = staticTools.find((t: any) => t.toolId === node.toolId);
+          const staticTool = staticTools.find(
+            (t: any) => t.toolId === node.toolId,
+          );
           if (staticTool) {
             // Found in static tools - use that name
             node.toolName = staticTool.name;
@@ -199,7 +215,11 @@ export class WorkflowService {
     }
 
     // 4. Validate that end node is reachable from start node (only if both specified)
-    if (startNodeId && endNodeId && !this.isReachable(nodes, edges, startNodeId, endNodeId)) {
+    if (
+      startNodeId &&
+      endNodeId &&
+      !this.isReachable(nodes, edges, startNodeId, endNodeId)
+    ) {
       throw new BadRequestException(
         `End node ${endNodeId} is not reachable from start node ${startNodeId}`,
       );
@@ -396,7 +416,10 @@ export class WorkflowService {
 
     const workflows = await this.db.query.workflow.findMany({
       where: and(...conditions),
-      orderBy: (w: any, { desc }: any) => [desc(w.executionCount), desc(w.createdAt)],
+      orderBy: (w: any, { desc }: any) => [
+        desc(w.executionCount),
+        desc(w.createdAt),
+      ],
       limit,
     });
 
@@ -513,11 +536,14 @@ export class WorkflowService {
 
   async getWebhookConfiguration(workflowId: string) {
     const workflow = await this.getWorkflow(workflowId);
-    const triggerConfig = (workflow.triggerConfig || {}) as WorkflowWebhookConfig;
+    const triggerConfig = (workflow.triggerConfig ||
+      {}) as WorkflowWebhookConfig;
 
     return {
       workflowId,
-      enabled: workflow.triggerType === 'webhook' && Boolean(triggerConfig.webhookSecretHash),
+      enabled:
+        workflow.triggerType === 'webhook' &&
+        Boolean(triggerConfig.webhookSecretHash),
       createdAt: triggerConfig.webhookCreatedAt,
       lastInvokedAt: triggerConfig.webhookLastInvokedAt,
     };
@@ -558,7 +584,7 @@ export class WorkflowService {
       webhookCreatedAt: _createdAt,
       webhookLastInvokedAt: _lastInvokedAt,
       ...triggerConfig
-    } = ((workflow.triggerConfig || {}) as WorkflowWebhookConfig);
+    } = (workflow.triggerConfig || {}) as WorkflowWebhookConfig;
 
     await this.db
       .update(schema.workflow)
@@ -585,8 +611,12 @@ export class WorkflowService {
       where: (w: any) => eq(w.triggerType, 'webhook'),
     });
     const workflow = workflows.find((candidate: any) => {
-      const triggerConfig = (candidate.triggerConfig || {}) as WorkflowWebhookConfig;
-      return this.compareWebhookHashes(tokenHash, triggerConfig.webhookSecretHash);
+      const triggerConfig = (candidate.triggerConfig ||
+        {}) as WorkflowWebhookConfig;
+      return this.compareWebhookHashes(
+        tokenHash,
+        triggerConfig.webhookSecretHash,
+      );
     });
 
     if (!workflow) {
@@ -618,7 +648,8 @@ export class WorkflowService {
       inputData,
       userId: workflow.ownerType === 'user' ? workflow.ownerId : undefined,
     });
-    const execution = await this.workflowExecutor.getExecutionStatus(executionId);
+    const execution =
+      await this.workflowExecutor.getExecutionStatus(executionId);
 
     return {
       accepted: true,
@@ -633,7 +664,10 @@ export class WorkflowService {
     return createHash('sha256').update(token).digest('hex');
   }
 
-  private compareWebhookHashes(actualHash: string, expectedHash?: string): boolean {
+  private compareWebhookHashes(
+    actualHash: string,
+    expectedHash?: string,
+  ): boolean {
     if (!expectedHash) return false;
     const actual = Buffer.from(actualHash, 'hex');
     const expected = Buffer.from(expectedHash, 'hex');
@@ -661,7 +695,11 @@ export class WorkflowService {
   private buildWebhookInput(payload: any, webhook: Record<string, any>) {
     if (payload && typeof payload === 'object' && !Array.isArray(payload)) {
       const inputData = 'inputData' in payload ? payload.inputData : payload;
-      if (inputData && typeof inputData === 'object' && !Array.isArray(inputData)) {
+      if (
+        inputData &&
+        typeof inputData === 'object' &&
+        !Array.isArray(inputData)
+      ) {
         return { ...inputData, _webhook: webhook };
       }
       return { body: inputData, _webhook: webhook };
