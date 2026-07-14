@@ -148,4 +148,27 @@ describe('RuntimeManagementService channel configuration', () => {
     ).resolves.toEqual({ status: 'starting', runtimeStatus: 'starting' });
     expect(computers.runtimeChannelAction).toHaveBeenCalledTimes(1);
   });
+
+  it('reuses an active assigned computer without starting it again', async () => {
+    const activeComputer = { computerId: 'computer-1', status: 'running' };
+    const computers = {
+      getConfig: jest.fn().mockResolvedValue({ enabled: true }),
+      getAssignedComputer: jest.fn().mockResolvedValue(activeComputer),
+      startComputer: jest.fn(),
+    };
+    const runtimeService = new RuntimeManagementService(
+      {} as any,
+      computers as any,
+      encryption as any,
+    );
+    jest.spyOn(runtimeService as any, 'getAgent').mockResolvedValue({
+      runtimeType: 'openclaw',
+      runtimeStatus: 'ready',
+    });
+
+    await expect(runtimeService.ensureReady('agent-1')).resolves.toBe(
+      activeComputer,
+    );
+    expect(computers.startComputer).not.toHaveBeenCalled();
+  });
 });

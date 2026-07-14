@@ -148,9 +148,9 @@ export class ExternalRuntimeService {
             emitStatus(
               'runtime',
               'running',
-              `Starting ${this.runtimeLabel(runtimeType)}`,
+              `Connecting to ${this.runtimeLabel(runtimeType)}`,
             );
-          }, 1_000);
+          }, 2_500);
 
           const userText = this.latestUserText(props.messages);
           if (!userText)
