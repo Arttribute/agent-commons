@@ -55,11 +55,13 @@ const StudioPage: NextPage = () => {
         );
       case "tasks":
         return (
-          <div className="h-full">
-            <TaskManagementView
-              userAddress={userAddress}
-              onRegisterCreate={registerTaskCreate}
-            />
+          <div className="h-full px-2 pb-2">
+            <div className="h-full overflow-hidden rounded-xl border border-border bg-white">
+              <TaskManagementView
+                userAddress={userAddress}
+                onRegisterCreate={registerTaskCreate}
+              />
+            </div>
           </div>
         );
       case "workflows":
