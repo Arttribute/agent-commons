@@ -481,7 +481,7 @@ export default function SessionInterfaceImproved({
           </div>
         </ScrollArea>
 
-        <div className="container mx-auto w-full max-w-3xl shrink-0 px-4 pb-4">
+        <div className="container mx-auto w-full max-w-[46rem] shrink-0 px-4 pb-4">
           <ChatInputBox
             agentId={agentId}
             sessionId={sessionId}

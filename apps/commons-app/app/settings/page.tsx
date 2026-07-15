@@ -10,7 +10,7 @@ export default function SettingsPage() {
   const walletAddress = normalizePrincipalId(authState.walletAddress);
 
   return (
-    <div className="h-screen overflow-hidden bg-background">
+    <div className="h-screen overflow-hidden bg-slate-50">
       <div className="flex h-screen">
         <DashboardSideBar username={walletAddress} />
         <div className="flex-1 min-w-0">

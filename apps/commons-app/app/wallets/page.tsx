@@ -262,7 +262,7 @@ export default function WalletsPage() {
   const { agents, loading } = useAgents(userAddress || undefined);
 
   return (
-    <div className="h-screen overflow-hidden bg-background">
+    <div className="h-screen overflow-hidden bg-slate-50">
       <div className="flex h-screen">
         <DashboardSideBar username={userAddress} />
 
