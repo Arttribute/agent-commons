@@ -2,7 +2,6 @@
 -- Replaces the unowned resource/embedding tables and chat-only attachments
 -- with a private-by-default, S3-backed artifact library.
 
-CREATE EXTENSION IF NOT EXISTS pgcrypto;
 CREATE EXTENSION IF NOT EXISTS vector;
 
 CREATE TABLE IF NOT EXISTS library_item (
@@ -214,7 +213,8 @@ SELECT
   coalesce(p.workspace_id, a.workspace_id), p.agent_id, p.session_id, 'app', p.name,
   p.description, 'application/vnd.agent-commons.nextjs-project',
   coalesce((SELECT sum(f.size_bytes)::integer FROM code_project_file f WHERE f.project_id = p.project_id), 0),
-  encode(digest(p.project_id::text || ':' || p.updated_at::text, 'sha256'), 'hex'),
+  md5(p.project_id::text || ':' || p.updated_at::text) ||
+    md5('library:' || p.project_id::text || ':' || p.updated_at::text),
   'code_project', CASE WHEN p.status = 'failed' THEN 'partial' ELSE 'ready' END,
   jsonb_build_object('projectId', p.project_id, 'framework', p.framework), p.created_at, p.updated_at
 FROM code_project p
