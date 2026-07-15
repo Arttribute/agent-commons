@@ -36,9 +36,6 @@ agent-commons/
 ├── packages/
 │   └── sdk/                # @agent-commons/sdk (TypeScript SDK)
 ├── cli/                    # agc CLI tool
-├── onchain/                # Hardhat smart contracts + subgraph
-│   ├── contracts/          # Solidity contracts (Base Sepolia)
-│   └── commons-subgraph/   # The Graph Protocol subgraph
 ├── docs/                   # Documentation
 └── pnpm-workspace.yaml
 ```

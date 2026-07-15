@@ -55,6 +55,19 @@ createRoot(document.getElementById('root')!).render(<Card />);`,
     ).rejects.toBeInstanceOf(BadRequestException);
   });
 
+  it('previews a Next.js App Router page through the safe browser compiler', async () => {
+    const result = await builder.build({
+      name: 'Next app',
+      entryFile: 'app/page.tsx',
+      files: [
+        { path: 'app/page.tsx', content: `'use client'; import './globals.css'; export default function Page() { return <main>Next works</main>; }` },
+        { path: 'app/globals.css', content: `body { background: white; color: black; }` },
+      ],
+    });
+    expect(result.assets.some((asset) => asset.path.endsWith('.js'))).toBe(true);
+    expect(result.assets.some((asset) => asset.path.endsWith('.css'))).toBe(true);
+  });
+
   it('returns a bounded build error for missing local files', async () => {
     await expect(
       builder.build({

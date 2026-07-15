@@ -7,12 +7,10 @@ import {
 import { HumanMessage, SystemMessage } from '@langchain/core/messages';
 import { ChatCompletionMessageParam } from 'openai/resources/chat/completions.mjs';
 import { ModelProviderFactory } from '~/modules/model-provider';
-import { EmbeddingType, ResourceType } from '~/embedding/dto/embedding.dto';
 import { AgentService } from '~/agent/agent.service';
 import { GoalService, CreateGoalDto } from '~/goal/goal.service';
 import { TaskService, CreateTaskDto, TaskContext } from '~/task/task.service';
 import { TaskExecutionService } from '~/task/task-execution.service';
-import { ResourceService } from '~/resource/resource.service';
 import { SpaceService } from '~/space/space.service';
 import { SkillService } from '~/skill/skill.service';
 //import { TaskService } from '~/task/task.service';
@@ -22,15 +20,13 @@ import { ToolSchema } from '~/tool/dto/tool.dto';
 import { SpaceTtsService } from '~/space/space-tts.service';
 import { ModuleRef } from '@nestjs/core';
 import { WorkflowExecutorService } from '~/tool/workflow-executor.service';
-import { FilesService } from '~/files';
+import { FilesService, LibraryService } from '~/files';
 import { ComputerService } from '~/computer';
 import {
   CodeProjectService,
   type BrowserCheckAction,
   type CodeProjectFileInput,
 } from '~/code-project';
-
-const graphqlRequest = import('graphql-request');
 
 type ToolExecutionMetadata = {
   agentId?: string;
@@ -154,37 +150,6 @@ export interface CommonTool {
   //getAgents(): any;
   //getAgentWithId(props: { id: string }): any;
 
-  /**
-   * Get Resources available in the network
-   */
-  getResources(): any;
-  getResourcesWithFilter(props: { where: { creator?: string } }): any;
-  getResourceWithId(props: { id: string }): any;
-
-  /**
-   * Find Resources available in the network, you may filter by query and resource type
-   * The query is a string that will be used to search for resources
-   */
-  findResources(props: { query: string; resourceType: ResourceType }): any;
-
-  /**
-   * Create a new Resource in the network if the resource is not a tool, set schema to undefined
-   */
-  createResource(props: {
-    name: string;
-    description: string;
-    thumbnail: string;
-    resourceFile: string;
-    resourceType: string;
-    embeddingType: string;
-    schema?: ToolSchema;
-    tags: string[];
-    requiredReputation: number;
-    usageCost: number;
-    contributors: `0x${string}`[];
-    shares: number[];
-  }): any;
-
   // Previously for onchain tasks
   // getTasks(): any;
   // getTasksWithFilter(props: { where: { status?: 'open' | 'closed' } }): any;
@@ -209,19 +174,23 @@ export interface CommonTool {
   }): any;
 
   /**
-   * Generate an image using DALL·E 3
+   * Generate an image using the current stable GPT Image model and save it to
+   * the owner's artifact library.
    */
   generateImage(props: {
     prompt: string;
     n?: number; // how many images to generate (default 1)
-    size?: '1024x1024' | '1024x1792' | '1792x1024'; // optional
-    quality?: 'standard' | 'hd'; // optional
-    agentId: string; // merged from second parameter
-    privateKey: string; // merged from second parameter
+    size?: '1024x1024' | '1024x1536' | '1536x1024' | 'auto';
+    quality?: 'low' | 'medium' | 'high' | 'auto';
+    agentId: string;
+    sessionId?: string;
   }): Promise<
     {
-      ipfsUrl: string;
-      revised_prompt: string | null;
+      fileId: string;
+      name: string;
+      url?: string;
+      prompt: string;
+      model: string;
     }[]
   >;
 
@@ -276,6 +245,14 @@ export interface CommonTool {
       url?: string;
     }>;
   }>;
+
+  /** Search only artifacts explicitly available to this agent. */
+  searchLibraryArtifacts(props: {
+    query: string;
+    limit?: number;
+    agentId: string;
+    sessionId?: string;
+  }): Promise<any[]>;
 
   /**
    * Create an .xlsx spreadsheet and store it as an agent file attachment.
@@ -565,9 +542,7 @@ export interface CommonTool {
 }
 
 @Injectable()
-export class CommonToolService implements CommonTool {
-  //   graphAPI = `https://gateway.thegraph.com/api/${process.env.GRAPH_API_KEY}/subgraphs/id/F2shbPHeLwRJ4thF22M3Tjz16L7GxCVvJ1SxD4H4ziD`;
-  graphAPI = `https://api.studio.thegraph.com/query/102152/agentcommons-testnet/version/latest`;
+export class CommonToolService {
   constructor(
     @Inject(forwardRef(() => AgentService)) private agent: AgentService,
     @Inject(forwardRef(() => GoalService))
@@ -576,8 +551,6 @@ export class CommonToolService implements CommonTool {
     private tasks: TaskService,
     @Inject(forwardRef(() => TaskExecutionService))
     private taskExecution: TaskExecutionService,
-    @Inject(forwardRef(() => ResourceService))
-    private resource: ResourceService,
     //@Inject(forwardRef(() => TaskService)) previous for onchain tasks
     //private task: TaskService,
     @Inject(forwardRef(() => OpenAIService))
@@ -585,6 +558,7 @@ export class CommonToolService implements CommonTool {
     @Inject(forwardRef(() => PinataService))
     private pinataService: PinataService,
     private files: FilesService,
+    private library: LibraryService,
     private computers: ComputerService,
     private codeProjects: CodeProjectService,
     @Inject(forwardRef(() => SpaceService))
@@ -852,205 +826,6 @@ export class CommonToolService implements CommonTool {
     );
   }
 
-  getAgents(props?: { id?: string }) {
-    const graphAPIKey = process.env.GRAPH_API_KEY;
-    const data = graphqlRequest.then(async (_) => {
-      const agentsDocument = _.gql`
-    	{
-    		agents {
-    			id
-    			owner
-    			metadata
-    			reputation
-    			isCommonAgent
-    			registrationTime
-    		}
-    	}
-    	`;
-
-      const agentsWithIdDocument = _.gql`
-    	{
-    		agent(id: ${props?.id}) {
-    			id
-    			owner
-    			metadata
-    			reputation
-    			isCommonAgent
-    			registrationTime
-    		}
-    	}
-    	`;
-
-      return await _.request(
-        this.graphAPI,
-        props?.id ? agentsWithIdDocument : agentsDocument,
-      );
-    });
-
-    return data;
-  }
-
-  getAgentWithId(props: { id: string }) {
-    return this.getAgents({ id: props.id });
-  }
-
-  getResources(props?: { where?: { creator?: string }; id?: string }) {
-    const graphAPIKey = process.env.GRAPH_API_KEY;
-    const data = graphqlRequest.then(async (_) => {
-      const commonResourcesDocument = _.gql`
-    	{
-        commonResources {
-          id
-          resourceId
-          creator
-          metadata
-          resourceFile
-          requiredReputation
-          usageCost
-          isCoreResource
-          totalShares
-          usageCount
-          contributors {
-          address
-          contributionShare
-          }
-        }
-    	}
-    	`;
-
-      const commonResourcesWithFilterDocument = _.gql`
-    	{
-        commonResources(where: ${props?.where}) {
-          id
-          resourceId
-          creator
-          metadata
-          resourceFile
-          requiredReputation
-          usageCost
-          isCoreResource
-          totalShares
-          usageCount
-          contributors {
-          address
-          contributionShare
-          }
-        }
-    	}
-    	`;
-
-      const commonResourcesWithIdDocument = _.gql`
-    	{
-        commonResources(id: ${props?.id}) {
-          id
-          resourceId
-          creator
-          metadata
-          resourceFile
-          requiredReputation
-          usageCost
-          isCoreResource
-          totalShares
-          usageCount
-          contributors {
-          address
-          contributionShare
-          }
-        }
-    	}
-    	`;
-
-      return await _.request(
-        this.graphAPI,
-        props?.id
-          ? commonResourcesWithIdDocument
-          : props?.where
-            ? commonResourcesWithFilterDocument
-            : commonResourcesDocument,
-      );
-    });
-
-    return data;
-  }
-  getResourceWithId(props: { id: string }) {
-    return this.getResources({
-      id: props.id,
-    });
-  }
-  getResourcesWithFilter(props: { where: { creator?: string } }) {
-    return this.getResources({
-      where: props.where,
-    });
-  }
-
-  findResources(props: { query: string; resourceType: ResourceType }) {
-    return this.resource.findResources(props);
-  }
-
-  // @ts-expect-error
-  async createResource(
-    props: {
-      name: string;
-      description: string;
-      thumbnail: string;
-      resourceFile: string;
-      resourceType: string;
-      embeddingType: string;
-      schema: ToolSchema;
-      tags: string[];
-      requiredReputation: bigint;
-      usageCost: bigint;
-      contributors: `0x${string}`[];
-      shares: bigint[];
-    },
-    metadata: { agentId: string; privateKey: string },
-  ) {
-    const resourceMetadataJSON = {
-      name: props.name,
-      description: props.description,
-      image: props.thumbnail,
-      attributes: [],
-    };
-    //upload metadata to IPFS
-    const metadataFile = await this.pinataService.uploadJsonFile(
-      resourceMetadataJSON,
-      'metadata.json',
-    );
-    //get ipfs file url
-    const cid = metadataFile.IpfsHash;
-    const resourceMetadata = `https://${process.env.GATEWAY_URL ?? 'gateway.pinata.cloud'}/ipfs/${cid}`;
-    //dynamic type based on embeddingType
-    const etype =
-      props.embeddingType === 'image'
-        ? EmbeddingType.image
-        : props.embeddingType === 'audio'
-          ? EmbeddingType.audio
-          : EmbeddingType.text;
-    const rType =
-      props.resourceType === 'image'
-        ? ResourceType.image
-        : props.resourceType === 'text'
-          ? ResourceType.text
-          : props.resourceType === 'audio'
-            ? ResourceType.audio
-            : props.resourceType === 'video'
-              ? ResourceType.video
-              : props.resourceType === 'csv'
-                ? ResourceType.csv
-                : ResourceType.tool;
-
-    const resource = await this.resource.createResource({
-      ...props,
-      agentId: metadata.agentId,
-      resourceMetadata,
-      schema: props.schema,
-      resourceType: rType,
-      embeddingType: etype,
-      tags: props.tags,
-    });
-
-    return resource;
-  }
   //Previously for onchain tasks
   // getTasks(props?: { where?: { status?: string } }) {
   //   const graphAPIKey = process.env.GRAPH_API_KEY;
@@ -1195,73 +970,90 @@ export class CommonToolService implements CommonTool {
     return this.agent.runAgent(props);
   }
   /**
-   * Generate an image using DALL·E 3
+   * Generate an image using the stable GPT Image API.
    * @param props
    * @param metadata
    * @returns
    */
-  /**
-   * Generate an image using DALL·E 3, then store on IPFS (Pinata).
-   */
+  /** Generate an image and persist it as a private S3-backed library item. */
   async generateImage(props: {
     prompt: string;
     n?: number;
-    size?: '1024x1024' | '1024x1792' | '1792x1024';
-    quality?: 'standard' | 'hd';
+    size?: '1024x1024' | '1024x1536' | '1536x1024' | 'auto';
+    quality?: 'low' | 'medium' | 'high' | 'auto';
     agentId: string;
-    privateKey: string;
+    sessionId?: string;
   }): Promise<
     {
-      ipfsUrl: string;
-      revised_prompt: string | null;
+      fileId: string;
+      name: string;
+      url?: string;
+      prompt: string;
+      model: string;
     }[]
   > {
     const {
       prompt,
       n = 1,
       size = '1024x1024',
-      quality = 'standard', // might not always do anything in current OpenAI version
+      quality = 'auto',
     } = props;
+    const model = process.env.OPENAI_IMAGE_MODEL || 'gpt-image-2';
 
-    // 1) Call OpenAI's DALL·E 3 with base64 output
+    // The Image API is the direct, single-turn generation surface. GPT Image
+    // returns base64 image data by default; response_format is intentionally
+    // omitted because GPT Image returns base64 data directly by default.
     const response = await this.openAI.images.generate({
-      model: 'dall-e-3',
+      model,
       prompt,
       n,
       size,
-      response_format: 'b64_json',
-      // if you want "hd" => quality: 'hd' (some beta features for DALL·E 3)
-    });
+      quality,
+      output_format: 'png',
+      moderation: 'auto',
+    } as any);
 
-    // 2) For each returned image, store it on IPFS
-    const results: {
-      ipfsUrl: string;
-      revised_prompt: string | null;
-    }[] = [];
+    const results: Array<{
+      fileId: string;
+      name: string;
+      url?: string;
+      prompt: string;
+      model: string;
+    }> = [];
 
     for (let i = 0; i < response.data.length; i++) {
       const imageData = response.data[i];
       const base64String = imageData.b64_json;
-      const revisedPrompt = imageData.revised_prompt ?? null;
-
-      // Upload to Pinata
-      // We'll default to "image/png" unless you have reason to suspect a different type
-      const pinataResult = await this.pinataService.uploadFileFromBase64(
-        base64String!,
-        `dalle_image_${i}.png`,
-        'image/png',
-      );
-
-      // pinataResult will have e.g. { IpfsHash: '...' }
-      const cid = pinataResult.IpfsHash;
-
+      if (!base64String) continue;
+      const created = await this.files.createGeneratedFile({
+        buffer: Buffer.from(base64String, 'base64'),
+        fileName: `generated-image-${Date.now()}-${i + 1}.png`,
+        mimeType: 'image/png',
+        agentId: props.agentId,
+        sessionId: props.sessionId,
+        metadata: {
+          provider: 'openai',
+          model,
+          prompt,
+          quality,
+          requestedSize: size,
+        },
+      });
+      const readable = await this.files.readFileForAgent({
+        fileId: created.fileId,
+        agentId: props.agentId,
+        sessionId: props.sessionId,
+        includeImageUrls: true,
+        maxChars: 1,
+      });
       results.push({
-        ipfsUrl: `https://${process.env.GATEWAY_URL ?? 'gateway.pinata.cloud'}/ipfs/${cid}`,
-        revised_prompt: revisedPrompt,
+        fileId: created.fileId,
+        name: created.name,
+        url: readable.artifacts.find((artifact) => artifact.url)?.url,
+        prompt,
+        model,
       });
     }
-
-    // 3) Return IPFS info
     return results;
   }
 
@@ -1315,6 +1107,19 @@ export class CommonToolService implements CommonTool {
       maxChars: props.maxChars,
       includeImageUrls: props.includeImageUrls,
       pageNumber: props.pageNumber,
+    });
+  }
+
+  async searchLibraryArtifacts(
+    props: { query: string; limit?: number; agentId: string; sessionId?: string },
+    metadata?: ToolExecutionMetadata,
+  ) {
+    const agentId = this.requireToolAgentId(props.agentId, metadata);
+    return this.library.searchForAgent({
+      agentId,
+      sessionId: props.sessionId ?? metadata?.sessionId,
+      query: props.query,
+      limit: props.limit,
     });
   }
 
@@ -1578,41 +1383,6 @@ export class CommonToolService implements CommonTool {
       runId: metadata?.runId,
       toolCallId: metadata?.toolCallId,
     });
-  }
-
-  async equipResourceTool(props: {
-    resourceId: string;
-    agentId: string;
-    privateKey: string;
-  }) {
-    const { resourceId, agentId, privateKey } = props;
-
-    // 1) Confirm resource is type=tool
-    const resource = await this.resource.getResourceById(resourceId);
-    if (!resource) {
-      throw new BadRequestException(`Resource "${resourceId}" not found`);
-    }
-    if (resource.resourceType !== 'tool') {
-      throw new BadRequestException(`Resource "${resourceId}" is not a tool`);
-    }
-
-    // 2) Add to agent.common_tools
-    const agent = await this.agent.getAgent({ agentId });
-    if (!agent) {
-      throw new BadRequestException(`Agent "${agentId}" not found`);
-    }
-
-    const updatedCommonTools = new Set(agent.commonTools ?? []);
-    updatedCommonTools.add(resourceId);
-
-    await this.agent.updateAgent(agentId, {
-      commonTools: Array.from(updatedCommonTools),
-    });
-
-    return {
-      success: true,
-      message: `Tool resource "${resourceId}" equipped successfully.`,
-    };
   }
 
   /* ─────────────────────────  SPACE METHODS  ───────────────────────── */

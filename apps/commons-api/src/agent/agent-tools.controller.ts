@@ -20,7 +20,6 @@ import { AgentService } from './agent.service';
 import { CommonToolService } from '~/tool/tools/common-tool.service';
 import { EthereumToolService } from '~/tool/tools/ethereum-tool.service';
 import { ToolService } from '~/tool/tool.service';
-import { ResourceService } from '~/resource/resource.service';
 import { SpaceToolsService } from '~/space/space-tools.service';
 import { SessionService } from '~/session/session.service';
 import { OAuthTokenInjectionService } from '~/oauth/oauth-token-injection.service';
@@ -40,9 +39,6 @@ export class AgentToolsController {
 
     @Inject(forwardRef(() => CommonToolService))
     private commonToolService: CommonToolService,
-
-    @Inject(forwardRef(() => ResourceService))
-    private resourceService: ResourceService,
 
     // The DB-based tool service for dynamic "apiSpec" calls
     private readonly toolService: ToolService,
@@ -217,60 +213,10 @@ export class AgentToolsController {
         return data;
       }
 
-      // ------------------------------------------------------------------------------------
-      // 5) Resource-based tools in resource table
-      //    For example, the functionName might be "resourceTool_123",
-      //    or the resource might store a name inside resource.schema.tool.name
-      // ------------------------------------------------------------------------------------
-
-      // (A) If your approach is to name them "resourceTool_<id>", parse the ID from the name:
-      const match = functionName.match(/^resourceTool_(\w+)$/);
-      if (match) {
-        const resourceId = match[1]; // captured group
-        console.log('Resource-based tool ID:', resourceId);
-
-        // Try to fetch that resource
-        const resource =
-          await this.resourceService.getResourceById(resourceId);
-        if (!resource) {
-          console.log('Resource-based tool not found:', resourceId);
-          const error = new BadRequestException(
-            `Resource-based tool not found for ID "${resourceId}"`,
-          );
-          await this.logToolError(executionLogId, startTime, error);
-          throw error;
-        }
-
-        // If resource.schema.tool has an apiSpec, do dynamic approach:
-        if (resource.schema?.apiSpec) {
-          const result = await this.invokeDynamicTool(
-            resource.schema.apiSpec,
-            args,
-            metadata,
-          );
-          await this.logToolSuccess(executionLogId, startTime, result);
-          return result;
-        }
-        // Otherwise, if it points to a static method name, you'd do that approach
-        // Or throw an error if no approach:
-        console.log('Resource-based tool has no apiSpec:', resource);
-        const error = new BadRequestException(
-          `Resource-based tool #${resourceId} has no "apiSpec" or static fallback`,
-        );
-        await this.logToolError(executionLogId, startTime, error);
-        throw error;
-      }
-
-      // (B) If your approach is to store the "functionName" inside resource.schema.tool.name
-      // you'd do a direct resource search by that name. e.g.:
-      //
-      // const resource = await this.resourceService.findResourceByFunctionName(functionName);
-      // if (resource && resource.schema?.tool?.apiSpec) { ... }
-
       // For now, let's just throw an error if we got here
       console.log('No tool found for:', functionName);
       const error = new BadRequestException(
-        `No static, dynamic, MCP, or resource-based tool found for "${functionName}"`,
+        `No static, dynamic, or MCP tool found for "${functionName}"`,
       );
       await this.logToolError(executionLogId, startTime, error);
       throw error;

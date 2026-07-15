@@ -17,6 +17,7 @@ import type {
   CodeProjectFileInput,
 } from './code-project.types';
 import { CodeProjectVerifier } from './code-project.verifier';
+import { OAuthTokenInjectionService } from '~/oauth/oauth-token-injection.service';
 
 const MAX_FILES = 80;
 const MAX_FILE_BYTES = 250_000;
@@ -30,6 +31,7 @@ export class CodeProjectService {
     private readonly storage: CodeProjectStorage,
     private readonly verifier: CodeProjectVerifier,
     private readonly computers: ComputerService,
+    private readonly oauthTokens: OAuthTokenInjectionService,
   ) {}
 
   async create(args: {
@@ -46,19 +48,42 @@ export class CodeProjectService {
     if (!name) throw new BadRequestException('name is required');
     const projectId = uuidv4();
     const slug = `${slugify(name)}-${projectId.slice(0, 8)}`;
+    const ownerUserId = agent.ownerUserId ?? agent.owner;
+    if (!ownerUserId) throw new BadRequestException('A verified project owner is required');
+    const [libraryItem] = await this.db.insert(schema.libraryItem).values({
+      ownerUserId,
+      workspaceId: agent.workspaceId,
+      sourceAgentId: args.agentId,
+      sourceSessionId: args.sessionId,
+      kind: 'app',
+      name,
+      description: args.description?.trim().slice(0, 1_000),
+      mimeType: 'application/vnd.agent-commons.nextjs-project',
+      sizeBytes: 0,
+      sha256: checksum(projectId),
+      source: 'code_project',
+      metadata: { projectId, framework: 'nextjs' },
+    }).returning();
     const [project] = await this.db
       .insert(schema.codeProject)
       .values({
         projectId,
         agentId: args.agentId,
         sessionId: args.sessionId,
-        ownerUserId: agent.ownerUserId,
+        ownerUserId,
         workspaceId: agent.workspaceId,
         name,
         slug,
         description: args.description?.trim().slice(0, 1_000),
+        framework: 'nextjs',
+        entryFile: 'app/page.tsx',
+        libraryItemId: libraryItem.itemId,
       })
       .returning();
+    await this.db.insert(schema.libraryLink).values([
+      { itemId: libraryItem.itemId, scopeType: 'code_project', scopeId: projectId },
+      ...(args.sessionId ? [{ itemId: libraryItem.itemId, scopeType: 'session', scopeId: args.sessionId }] : []),
+    ]);
 
     const files = args.files?.length ? args.files : starterFiles(name);
     await this.writeFiles({
@@ -81,6 +106,58 @@ export class CodeProjectService {
     return Promise.all(
       projects.map((project) => this.toPublicProject(project)),
     );
+  }
+
+  async exportToGitHub(args: {
+    agentId: string;
+    projectId: string;
+    repositoryName?: string;
+    private?: boolean;
+  }) {
+    const project = await this.assertProject(args.agentId, args.projectId);
+    const ownerId = project.ownerUserId;
+    if (!ownerId) throw new BadRequestException('Project owner is required');
+    const connection = await this.oauthTokens.resolveOAuthConnection({
+      providerKey: 'github',
+      sessionInitiator: ownerId,
+      agentOwnerId: ownerId,
+    });
+    if (!connection) {
+      throw new BadRequestException('Connect GitHub before exporting this app');
+    }
+    const token = await this.oauthTokens.getFreshAccessToken(connection.connectionId);
+    const headers = {
+      Authorization: `Bearer ${token}`,
+      Accept: 'application/vnd.github+json',
+      'X-GitHub-Api-Version': '2022-11-28',
+      'User-Agent': 'Agent-Commons',
+      'Content-Type': 'application/json',
+    };
+    let fullName: string;
+    let repositoryUrl = project.repositoryUrl;
+    if (!repositoryUrl) {
+      const repositoryName = slugify(args.repositoryName || project.name).slice(0, 100);
+      const created = await fetch('https://api.github.com/user/repos', {
+        method: 'POST', headers,
+        body: JSON.stringify({ name: repositoryName, private: args.private !== false, description: project.description || `Next.js app created with Agent Commons`, auto_init: false }),
+      });
+      const payload = await created.json() as any;
+      if (!created.ok) throw new BadRequestException(payload?.message || 'GitHub repository creation failed');
+      fullName = payload.full_name;
+      repositoryUrl = payload.html_url;
+    } else {
+      const parsed = new URL(repositoryUrl);
+      fullName = parsed.pathname.replace(/^\/+|\/+$/g, '').replace(/\.git$/, '');
+    }
+    const files = await this.db.query.codeProjectFile.findMany({ where: (table) => eq(table.projectId, args.projectId) });
+    for (const file of files) {
+      const endpoint = `https://api.github.com/repos/${fullName}/contents/${file.path.split('/').map(encodeURIComponent).join('/')}`;
+      const existing = await fetch(endpoint, { headers }).then(async (response) => response.ok ? response.json() as Promise<any> : null);
+      const response = await fetch(endpoint, { method: 'PUT', headers, body: JSON.stringify({ message: `Update ${file.path} from Agent Commons`, content: Buffer.from(file.content).toString('base64'), sha: existing?.sha }) });
+      if (!response.ok) { const payload = await response.json() as any; throw new BadRequestException(payload?.message || `Could not push ${file.path}`); }
+    }
+    await this.db.update(schema.codeProject).set({ repositoryUrl, updatedAt: new Date() }).where(eq(schema.codeProject.projectId, args.projectId));
+    return { repositoryUrl, repository: fullName, files: files.length };
   }
 
   async get(agentId: string, projectId: string) {
@@ -181,6 +258,19 @@ export class CodeProjectService {
         .update(schema.codeProject)
         .set({ status: 'draft', updatedAt: new Date() })
         .where(eq(schema.codeProject.projectId, args.projectId));
+      const project = await tx.query.codeProject.findFirst({
+        where: (table) => eq(table.projectId, args.projectId),
+      });
+      if (project?.libraryItemId) {
+        const contents = [...merged.values()].join('\n');
+        await tx.update(schema.libraryItem).set({
+          sizeBytes: Buffer.byteLength(contents),
+          sha256: checksum(contents),
+          textPreview: contents.slice(0, 2_000),
+          extractedTextChars: contents.length,
+          updatedAt: new Date(),
+        }).where(eq(schema.libraryItem.itemId, project.libraryItemId));
+      }
     });
 
     this.emit(
@@ -635,12 +725,11 @@ function buildErrorsFrom(error: any) {
 function starterFiles(name: string): CodeProjectFileInput[] {
   return [
     {
-      path: 'src/main.tsx',
-      content: `import React from 'react';
-import { createRoot } from 'react-dom/client';
-import './styles.css';
+      path: 'app/page.tsx',
+      content: `'use client';
+import './globals.css';
 
-function App() {
+export default function Page() {
   return (
     <main className="shell">
       <p className="eyebrow">Agent Commons prototype</p>
@@ -650,12 +739,10 @@ function App() {
     </main>
   );
 }
-
-createRoot(document.getElementById('root')!).render(<App />);
 `,
     },
     {
-      path: 'src/styles.css',
+      path: 'app/globals.css',
       content: `:root { font-family: Inter, ui-sans-serif, system-ui, sans-serif; color: #18181b; background: #f4f4f5; }
 * { box-sizing: border-box; }
 body { margin: 0; min-width: 320px; min-height: 100vh; }
@@ -666,5 +753,8 @@ h1 { margin: 0; font-size: clamp(42px, 8vw, 88px); line-height: 0.95; }
 .lede { margin: 0; color: #52525b; font-size: 18px; }
 `,
     },
+    { path: 'app/layout.tsx', content: `import type { ReactNode } from 'react';\nexport default function RootLayout({ children }: { children: ReactNode }) { return <html lang="en"><body>{children}</body></html>; }\n` },
+    { path: 'next.config.ts', content: `import type { NextConfig } from 'next';\nconst config: NextConfig = { output: 'export' };\nexport default config;\n` },
+    { path: 'package.json', content: JSON.stringify({ scripts: { dev: 'next dev', build: 'next build' }, dependencies: { next: '^15.5.0', react: '^19.0.0', 'react-dom': '^19.0.0' }, devDependencies: { typescript: '^5.0.0', '@types/react': '^19.0.0', '@types/node': '^20.0.0' } }, null, 2) },
   ];
 }

@@ -43,7 +43,12 @@ export class CodeProjectBuilder {
     files: CodeProjectFileInput[];
   }): Promise<BuildResult> {
     const files = new Map(args.files.map((file) => [file.path, file.content]));
-    const entryFile = resolveProjectFile(files, args.entryFile);
+    const resolvedEntry = resolveProjectFile(files, args.entryFile);
+    const nextEntry = '__agent_commons_entry.tsx';
+    if (resolvedEntry === 'app/page.tsx') {
+      files.set(nextEntry, `import React from 'react';\nimport { createRoot } from 'react-dom/client';\nimport Page from './app/page';\ncreateRoot(document.getElementById('root')!).render(<Page />);`);
+    }
+    const entryFile = resolvedEntry === 'app/page.tsx' ? nextEntry : resolvedEntry;
     if (!entryFile) {
       throw new BadRequestException(`Entry file not found: ${args.entryFile}`);
     }

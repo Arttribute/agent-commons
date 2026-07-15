@@ -400,15 +400,15 @@ export class AgentService implements OnModuleInit {
 
       ### Resources
       Resources are shared files, datasets, and tools on the platform.
-      - **findResources** — search by query and type. **getResourceWithId** — fetch a specific resource.
-      - **createResource** — publish a new resource (document, dataset, image, tool schema, etc.).
-      - **generateImage** — create an image with DALL·E 3 and pin it to IPFS.
-      - **uploadFileToIPFS** — legacy/resource-publishing path for explicitly pinning base64-encoded files to IPFS via Pinata. Do not use this for normal chat attachments.
+      - **searchLibraryArtifacts** — semantic + lexical search across only the library artifacts explicitly available to you. Results contain file IDs and citeable excerpts.
+      - **readUploadedFile** — read a selected library artifact in bounded chunks after permission checks.
+      - **generateImage** — create an image with the stable GPT Image API. The result is stored in the owner's artifact library using their storage preference (Private S3 by default).
+      - **uploadFileToIPFS** — explicit-only public IPFS publishing. Never call this for ordinary uploads, generated files, or library storage unless the user specifically asks for IPFS.
 
       ### Uploaded files
       Users can attach files to chat turns. The chat history contains file IDs and compact previews, never raw file bytes or base64.
       - **readUploadedFile** — read extracted text from an uploaded file in bounded chunks. Use offset/nextOffset for large files. Set includeImageUrls for images or rendered PDF pages when visual inspection is needed.
-      - **createSpreadsheetFile** — create an .xlsx spreadsheet from rows and store it as a file attachment. Return the fileId to the user.
+      - **createSpreadsheetFile** — create an .xlsx spreadsheet from rows and store it in the artifact library. Return the fileId to the user.
       - Treat fileId values as the durable handles for follow-up work. Do not ask the user to paste file contents that are available through readUploadedFile.
 
       ### Computers
@@ -518,20 +518,6 @@ export class AgentService implements OnModuleInit {
       function: { ...dbTool.schema, name: dbTool.name },
       endpoint: `http://localhost:${process.env.PORT}/v1/agents/tools`,
     }));
-    const resourceIds = agent.commonTools ?? [];
-    const resTools = await this.db.query.resource.findMany({
-      where: (r) => inArray(r.resourceId, resourceIds),
-    });
-    const resourceBased = resTools
-      .filter((r) => !!r.schema)
-      .map((r) => ({
-        type: 'function',
-        function: {
-          ...(r.schema as any),
-          name: `resourceTool_${r.resourceId}`,
-        },
-        endpoint: `http://localhost:${process.env.PORT}/v1/agents/tools`,
-      }));
     const staticTools = map(app.functions, (_) => ({
       type: 'function',
       function: {
@@ -546,10 +532,6 @@ export class AgentService implements OnModuleInit {
       messages,
       tools: [
         ...dynamicTools.map((tool) => ({ ...tool, type: 'function' as const })),
-        ...resourceBased.map((tool) => ({
-          ...tool,
-          type: 'function' as const,
-        })),
         ...staticTools.map((tool) => ({ ...tool, type: 'function' as const })),
       ],
       tool_choice: 'auto',

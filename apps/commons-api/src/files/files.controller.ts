@@ -36,6 +36,7 @@ export class FilesController {
       agentId?: string;
       sessionId?: string;
       workspaceId?: string;
+      storageProvider?: 's3' | 'ipfs';
     },
     @Headers('x-initiator') initiatorHeader: string | undefined,
     @Headers('x-owner-id') ownerHeader: string | undefined,
@@ -65,6 +66,7 @@ export class FilesController {
       ownerId,
       ownerType,
       workspaceId: principal?.workspaceId ?? body.workspaceId ?? null,
+      storageProvider: body.storageProvider,
     });
     return { data };
   }
@@ -78,7 +80,7 @@ export class FilesController {
     @Req() req: any,
   ) {
     const principal = req.principal as
-      | { principalId: string; principalType: 'user' | 'agent' | 'service' }
+      | { principalId: string; principalType: 'user' | 'agent' | 'service'; workspaceId?: string | null }
       | undefined;
     const ownerId =
       principal?.principalType === 'user'
@@ -88,6 +90,7 @@ export class FilesController {
       agentId,
       sessionId,
       ownerId,
+      workspaceId: principal?.workspaceId ?? undefined,
     });
     return { data };
   }
@@ -104,7 +107,7 @@ export class FilesController {
     @Req() req: any,
   ) {
     const principal = req.principal as
-      | { principalId: string; principalType: 'user' | 'agent' | 'service' }
+      | { principalId: string; principalType: 'user' | 'agent' | 'service'; workspaceId?: string | null }
       | undefined;
     const ownerId =
       principal?.principalType === 'user'
@@ -115,6 +118,7 @@ export class FilesController {
       agentId,
       sessionId,
       ownerId,
+      workspaceId: principal?.workspaceId ?? undefined,
       offset: offset ? Number(offset) : undefined,
       maxChars: maxChars ? Number(maxChars) : undefined,
       includeImageUrls: includeImageUrls === 'true',

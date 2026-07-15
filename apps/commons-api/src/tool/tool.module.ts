@@ -1,6 +1,5 @@
 import { forwardRef, Module } from '@nestjs/common';
 import { AgentModule } from '../agent';
-import { ResourceModule } from '../resource';
 import { ToolController } from './tool.controller';
 import { WorkflowController } from './workflow.controller';
 import { ToolKeyController } from './tool-key.controller';
@@ -27,7 +26,6 @@ import { CodeProjectModule } from '~/code-project';
 @Module({
   imports: [
     forwardRef(() => AgentModule),
-    forwardRef(() => ResourceModule),
     forwardRef(() => PinataModule),
     forwardRef(() => GoalModule),
     forwardRef(() => TaskModule),
