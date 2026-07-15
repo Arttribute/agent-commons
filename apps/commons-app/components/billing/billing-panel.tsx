@@ -1,7 +1,6 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -158,22 +157,8 @@ export function BillingPanel() {
     : null;
 
   return (
-    <div className="mx-auto max-w-5xl px-6 py-10">
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <h1 className="text-xl font-semibold">Billing &amp; credits</h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Credits cover model usage and agent computer time.
-          </p>
-        </div>
-        <Image
-          src="/logo.jpg"
-          alt="Agent Commons"
-          width={110}
-          height={28}
-          className="shrink-0"
-        />
-      </div>
+    <div className="mx-auto max-w-2xl space-y-8">
+      <h1 className="text-xl font-semibold">Billing</h1>
 
       {/* Current plan */}
       <div className="flex items-start justify-between">

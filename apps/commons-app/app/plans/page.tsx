@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -122,8 +123,8 @@ export default function PlansPage() {
 
   return (
     <div className="min-h-screen bg-background">
-      {/* Minimal top bar with back button */}
-      <div className="sticky top-0 z-10 flex items-center gap-2 px-4 py-3">
+      {/* Minimal top bar: back button left, brand top right */}
+      <div className="sticky top-0 z-10 flex items-center justify-between bg-background/95 px-4 py-3 backdrop-blur">
         <button
           onClick={goBack}
           aria-label="Back"
@@ -131,9 +132,16 @@ export default function PlansPage() {
         >
           <ArrowLeft className="h-5 w-5" />
         </button>
+        <Image
+          src="/logo.jpg"
+          alt="Agent Commons"
+          width={110}
+          height={28}
+          className="mr-2 shrink-0"
+        />
       </div>
 
-      <div className="mx-auto max-w-5xl px-6 pb-20">
+      <div className="mx-auto max-w-6xl px-6 pb-20">
         <div className="text-center">
           <h1 className="text-2xl font-semibold sm:text-3xl">Choose your plan</h1>
           <p className="mt-2 text-sm text-muted-foreground">
