@@ -652,8 +652,11 @@ export class ComputerService {
 
   async runtimeChannelAction(args: {
     agentId: string;
-    channel: 'whatsapp';
-    action: 'connect' | 'status' | 'disconnect';
+    channel: 'telegram' | 'whatsapp' | 'slack' | 'discord';
+    action: 'connect' | 'status' | 'disconnect' | 'approve' | 'test';
+    pairingCode?: string;
+    target?: string;
+    message?: string;
   }) {
     let computer = await this.getAssignedComputer(args.agentId);
     if (!computer?.commonOsAgentId) {
@@ -675,7 +678,11 @@ export class ComputerService {
       'POST',
       `/computers/${commonOsAgentId}/runtime-channels/${args.channel}/${args.action}`,
       undefined,
-      {},
+      {
+        ...(args.pairingCode ? { pairingCode: args.pairingCode } : {}),
+        ...(args.target ? { target: args.target } : {}),
+        ...(args.message ? { message: args.message } : {}),
+      },
       args.agentId,
     );
   }

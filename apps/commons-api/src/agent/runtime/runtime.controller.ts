@@ -74,9 +74,11 @@ export class RuntimeController {
     @Param('agentId') agentId: string,
     @Param('channel') channel: string,
     @Param('action') action: string,
+    @Body()
+    body: { pairingCode?: string; target?: string; message?: string },
   ) {
     return {
-      data: await this.runtimes.channelAction(agentId, channel, action),
+      data: await this.runtimes.channelAction(agentId, channel, action, body),
     };
   }
 }
