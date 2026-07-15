@@ -44,6 +44,8 @@ function providerRuntimeConfig(providerKey: string): ProviderRuntimeConfig {
       return {
         pkce: true,
         tokenClientAuth: 'basic',
+        revokeRefreshToken: true,
+        includeClientCredentialsOnRevoke: true,
       };
     default:
       return {};
@@ -301,11 +303,13 @@ export class OAuthFlowService {
       // Exchange authorization code for tokens
       const tokenParams = new URLSearchParams({
         code: params.code,
-        client_id: provider.clientId,
         redirect_uri: redirectUri,
       });
 
+      // For Basic-authenticated confidential clients the identity is already
+      // in the header; X omits both client fields from the form body.
       if (runtimeConfig.tokenClientAuth !== 'basic') {
+        tokenParams.append('client_id', provider.clientId);
         tokenParams.append('client_secret', clientSecret);
       }
 
@@ -484,11 +488,11 @@ export class OAuthFlowService {
       // Request new access token using refresh token
       const tokenParams = new URLSearchParams({
         refresh_token: tokens.refreshToken,
-        client_id: provider.clientId,
         grant_type: 'refresh_token',
       });
 
       if (runtimeConfig.tokenClientAuth !== 'basic') {
+        tokenParams.append('client_id', provider.clientId);
         tokenParams.append('client_secret', clientSecret);
       }
 
@@ -610,19 +614,29 @@ export class OAuthFlowService {
                 : tokens.accessToken,
           });
 
+          let revokeAuthorization: string | undefined;
           if (runtimeConfig.includeClientCredentialsOnRevoke) {
             const clientSecret =
               await this.providerService.getDecryptedClientSecret(
                 provider.providerId,
               );
-            revokeParams.append('client_id', provider.clientId);
-            revokeParams.append('client_secret', clientSecret);
+            if (runtimeConfig.tokenClientAuth === 'basic') {
+              revokeAuthorization = `Basic ${Buffer.from(
+                `${provider.clientId}:${clientSecret}`,
+              ).toString('base64')}`;
+            } else {
+              revokeParams.append('client_id', provider.clientId);
+              revokeParams.append('client_secret', clientSecret);
+            }
           }
 
           const revokeResponse = await fetch(provider.revokeUrl, {
             method: 'POST',
             headers: {
               'Content-Type': 'application/x-www-form-urlencoded',
+              ...(revokeAuthorization
+                ? { Authorization: revokeAuthorization }
+                : {}),
             },
             body: revokeParams.toString(),
           });

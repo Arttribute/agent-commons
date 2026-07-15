@@ -119,6 +119,7 @@ describe('OAuthFlowService X OAuth', () => {
       .toBe(`Basic ${Buffer.from('x-client:x-secret').toString('base64')}`);
     const body = new URLSearchParams(String(tokenRequest.init?.body));
     expect(body.get('code_verifier')).toBe('verifier');
+    expect(body.has('client_id')).toBe(false);
     expect(body.has('client_secret')).toBe(false);
     expect(connectionService.createConnection).toHaveBeenCalledWith(
       expect.objectContaining({

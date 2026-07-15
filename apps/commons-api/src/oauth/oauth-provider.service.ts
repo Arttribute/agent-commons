@@ -61,6 +61,7 @@ export class OAuthProviderService implements OnModuleInit {
       logoUrl: 'https://abs.twimg.com/favicons/twitter.3.ico',
       authUrl: 'https://x.com/i/oauth2/authorize',
       tokenUrl: 'https://api.x.com/2/oauth2/token',
+      revokeUrl: 'https://api.x.com/2/oauth2/revoke',
       userInfoUrl:
         'https://api.x.com/2/users/me?user.fields=id,name,username,profile_image_url',
       clientId,
