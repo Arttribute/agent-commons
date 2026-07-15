@@ -352,6 +352,7 @@ export class AgentToolsController {
       oauthTokenLocation?: 'header' | 'query' | 'body';
       oauthTokenKey?: string;
       oauthTokenPrefix?: string;
+      requiresConfirmation?: boolean;
     },
     parsedArgs: Record<string, any>,
     metadata: {
@@ -363,6 +364,12 @@ export class AgentToolsController {
   ): Promise<any> {
     const { method, baseUrl, path, headers, queryParams, bodyTemplate } =
       apiSpec;
+
+    if (apiSpec.requiresConfirmation && parsedArgs.confirmed !== true) {
+      throw new BadRequestException(
+        'This public write action requires explicit user confirmation. Show the exact action and content to the user, then retry with confirmed=true only after they approve it.',
+      );
+    }
 
     // 1) Build final URL with query params.
     // Path segments are URI-encoded during substitution; query values must be
@@ -529,6 +536,29 @@ export class AgentToolsController {
           .replace(/\//g, '_')
           .replace(/=+$/, '');
         return { raw };
+      }
+      case 'xCreatePost': {
+        const text = String(args.text ?? '').trim();
+        if (!text) {
+          throw new BadRequestException('Post text is required');
+        }
+        if (text.length > 25_000) {
+          throw new BadRequestException('Post text is too long');
+        }
+        const replyToPostId = String(args.replyToPostId ?? '').trim();
+        const quotePostId = String(args.quotePostId ?? '').trim();
+        if (replyToPostId && quotePostId) {
+          throw new BadRequestException(
+            'A post cannot be both a reply and a quote; provide only one target',
+          );
+        }
+        return {
+          text,
+          ...(replyToPostId
+            ? { reply: { in_reply_to_tweet_id: replyToPostId } }
+            : {}),
+          ...(quotePostId ? { quote_tweet_id: quotePostId } : {}),
+        };
       }
       default:
         throw new BadRequestException(`Unknown bodyTransform "${transform}"`);

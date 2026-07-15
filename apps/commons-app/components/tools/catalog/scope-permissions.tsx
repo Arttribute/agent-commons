@@ -10,6 +10,22 @@ import { cn } from "@/lib/utils";
 
 /** Friendly names for well-known OAuth scopes; falls back to the scope's tail */
 const SCOPE_LABELS: Record<string, { label: string; hint: string }> = {
+  "tweet.read": {
+    label: "Read posts",
+    hint: "Read posts visible to the connected X account",
+  },
+  "tweet.write": {
+    label: "Publish posts",
+    hint: "Publish, reply to, quote, and delete posts after confirmation",
+  },
+  "users.read": {
+    label: "Read profiles",
+    hint: "Identify the connected account and public X profiles",
+  },
+  "offline.access": {
+    label: "Stay connected",
+    hint: "Refresh access without asking you to reconnect every two hours",
+  },
   "https://www.googleapis.com/auth/gmail.readonly": {
     label: "Read email",
     hint: "Search and read messages",
@@ -102,6 +118,7 @@ export function ScopePermissions({
     [item]
   );
   const connected = item.status === "connected";
+  const providerUnavailable = item.status === "needs_configuration";
 
   useEffect(() => {
     // Connected: reflect what's actually granted. Not connected: propose all.
@@ -182,17 +199,27 @@ export function ScopePermissions({
 
       <div className="flex items-center justify-between gap-3 pt-2">
         <p className="text-[11px] leading-4 text-muted-foreground">
-          Access is granted on your workspace connection and applies to agents
-          that use this tool.
+          {providerUnavailable
+            ? `${item.displayName} needs its platform OAuth app configured before accounts can connect.`
+            : "Access is granted on your workspace connection and applies to agents that use this tool."}
         </p>
         <Button
           size="sm"
           className="h-8 shrink-0"
           onClick={apply}
-          disabled={applying || selected.size === 0 || (connected && !dirty)}
+          disabled={
+            providerUnavailable ||
+            applying ||
+            selected.size === 0 ||
+            (connected && !dirty)
+          }
         >
           {applying && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-          {connected ? "Update access" : "Connect"}
+          {providerUnavailable
+            ? "Platform setup required"
+            : connected
+              ? "Update access"
+              : "Connect"}
         </Button>
       </div>
     </div>

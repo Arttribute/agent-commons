@@ -180,6 +180,24 @@ const providerDefinitions = [
     },
     authorizationParams: {},
     tokenParams: {}
+  },
+  {
+    providerKey: 'x',
+    displayName: 'X (Twitter)',
+    description: 'Connect an X account for approved read, search, publish, reply, quote, and delete actions',
+    logoUrl: 'https://abs.twimg.com/favicons/twitter.3.ico',
+    authUrl: 'https://x.com/i/oauth2/authorize',
+    tokenUrl: 'https://api.x.com/2/oauth2/token',
+    revokeUrl: null,
+    userInfoUrl: 'https://api.x.com/2/users/me?user.fields=id,name,username,profile_image_url',
+    clientIdEnv: 'X_OAUTH_CLIENT_ID',
+    clientSecretEnv: 'X_OAUTH_CLIENT_SECRET',
+    scopes: {
+      default: ['tweet.read', 'users.read', 'offline.access'],
+      publish: ['tweet.read', 'tweet.write', 'users.read', 'offline.access']
+    },
+    authorizationParams: {},
+    tokenParams: {}
   }
 ];
 

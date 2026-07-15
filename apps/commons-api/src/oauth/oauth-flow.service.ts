@@ -6,6 +6,7 @@ import { OAuthStateService } from './oauth-state.service';
 type ProviderRuntimeConfig = {
   scopeDelimiter?: string;
   pkce?: boolean;
+  tokenClientAuth?: 'body' | 'basic';
   omitAuthorizationCodeGrantType?: boolean;
   revokeRefreshToken?: boolean;
   includeClientCredentialsOnRevoke?: boolean;
@@ -37,6 +38,12 @@ function providerRuntimeConfig(providerKey: string): ProviderRuntimeConfig {
       return {
         scopeDelimiter: ',',
         omitAuthorizationCodeGrantType: true,
+      };
+    case 'x':
+    case 'twitter':
+      return {
+        pkce: true,
+        tokenClientAuth: 'basic',
       };
     default:
       return {};
@@ -97,6 +104,13 @@ function extractProviderUserIdentity(
       id: userInfo?.user?.id || userInfo?.profile?.id,
       email: userInfo?.user?.email || userInfo?.profile?.email,
       name: userInfo?.profile?.display_name || userInfo?.user?.display_name,
+    };
+  }
+
+  if (providerKey === 'x' || providerKey === 'twitter') {
+    return {
+      id: userInfo?.data?.id,
+      name: userInfo?.data?.username || userInfo?.data?.name,
     };
   }
 
@@ -288,9 +302,12 @@ export class OAuthFlowService {
       const tokenParams = new URLSearchParams({
         code: params.code,
         client_id: provider.clientId,
-        client_secret: clientSecret,
         redirect_uri: redirectUri,
       });
+
+      if (runtimeConfig.tokenClientAuth !== 'basic') {
+        tokenParams.append('client_secret', clientSecret);
+      }
 
       if (!runtimeConfig.omitAuthorizationCodeGrantType) {
         tokenParams.append('grant_type', 'authorization_code');
@@ -314,6 +331,13 @@ export class OAuthFlowService {
         headers: {
           'Content-Type': 'application/x-www-form-urlencoded',
           Accept: 'application/json',
+          ...(runtimeConfig.tokenClientAuth === 'basic'
+            ? {
+                Authorization: `Basic ${Buffer.from(
+                  `${provider.clientId}:${clientSecret}`,
+                ).toString('base64')}`,
+              }
+            : {}),
         },
         body: tokenParams.toString(),
       });
@@ -443,6 +467,7 @@ export class OAuthFlowService {
       const provider = await this.providerService.getProviderById(
         connection.providerId,
       );
+      const runtimeConfig = providerRuntimeConfig(provider.providerKey);
 
       // Get decrypted tokens
       const tokens =
@@ -460,9 +485,12 @@ export class OAuthFlowService {
       const tokenParams = new URLSearchParams({
         refresh_token: tokens.refreshToken,
         client_id: provider.clientId,
-        client_secret: clientSecret,
         grant_type: 'refresh_token',
       });
+
+      if (runtimeConfig.tokenClientAuth !== 'basic') {
+        tokenParams.append('client_secret', clientSecret);
+      }
 
       // Add provider-specific token parameters
       const providerTokenParams = provider.tokenParams as Record<string, any>;
@@ -477,6 +505,13 @@ export class OAuthFlowService {
         headers: {
           'Content-Type': 'application/x-www-form-urlencoded',
           Accept: 'application/json',
+          ...(runtimeConfig.tokenClientAuth === 'basic'
+            ? {
+                Authorization: `Basic ${Buffer.from(
+                  `${provider.clientId}:${clientSecret}`,
+                ).toString('base64')}`,
+              }
+            : {}),
         },
         body: tokenParams.toString(),
       });

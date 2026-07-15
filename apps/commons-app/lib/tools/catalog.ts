@@ -282,6 +282,17 @@ const googleWorkspaceSeed = [
 
 const oauthAppSeed = [
   {
+    id: "oauth:x",
+    displayName: "X (Twitter)",
+    description:
+      "Connect an X account once, then let approved native, OpenClaw, and Hermes agents read, search, publish, reply, and delete posts.",
+    icon: "MessageSquare",
+    providerKeys: ["x", "twitter"],
+    scopes: ["tweet.read", "tweet.write", "users.read", "offline.access"],
+    docs: "https://docs.x.com/fundamentals/authentication/oauth-2-0/authorization-code",
+    tags: ["social", "x", "twitter", "oauth", "bots"],
+  },
+  {
     id: "oauth:canva",
     displayName: "Canva",
     description: "Create and manage design assets through Canva Connect APIs.",
@@ -540,6 +551,13 @@ export function buildToolCatalog(params: {
     )}&scopes=${encodeURIComponent(item.scopes.join(" "))}&label=${encodeURIComponent(
       item.displayName,
     )}&returnUrl=${encodeURIComponent("/studio/tools")}`;
+    const itemTools = platformTools.filter((tool) => {
+      const providerKey = tool.apiSpec?.oauthProviderKey;
+      return (
+        typeof providerKey === "string" &&
+        (item.providerKeys as readonly string[]).includes(providerKey)
+      );
+    });
 
     return {
       id: item.id,
@@ -547,7 +565,8 @@ export function buildToolCatalog(params: {
       displayName: item.displayName,
       description: item.description,
       category: "oauth" as const,
-      categoryLabel: "OAuth Applications",
+      categoryLabel:
+        item.id === "oauth:x" ? "Social Bots" : "OAuth Applications",
       connectionMode: "oauth" as const,
       status,
       statusLabel: statusLabel(status),
@@ -555,12 +574,14 @@ export function buildToolCatalog(params: {
       icon: item.icon,
       tags: [...item.tags],
       verified: true,
-      sourceLabel: "OAuth",
+      sourceLabel:
+        item.id === "oauth:x" ? "Agent Commons native connector" : "OAuth",
       documentationUrl: item.docs,
       authProviderKey: providerKey,
       oauthScopes: [...item.scopes],
       grantedScopes: grantedScopesFor(connections, [...item.providerKeys]),
       connectUrl,
+      tools: itemTools,
     };
   });
 

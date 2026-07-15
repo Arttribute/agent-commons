@@ -132,6 +132,12 @@ Recommended values:
 - `SPACE_RTC_TICKET_SECRET` — `openssl rand -hex 32` (distinct per env).
 - `MANAGEMENT_KEY_ENABLED` — `true` during migration, flip to `false` once no
   management-key callers remain (watch the API logs for `management-key` warns).
+- `X_OAUTH_CLIENT_ID` / `X_OAUTH_CLIENT_SECRET` — the confidential X developer
+  app used for one-click account connections. Register
+  `https://<web-domain>/api/oauth/callback/x` and enable OAuth 2.0 with PKCE.
+  After both fields exist in the runtime secret, set the API CodeBuild
+  environment variable `X_OAUTH_ENABLED=true`; it remains `false` by default so
+  environments without an X app still deploy safely.
 - Staging `COMMON_OS_FLEET_ID` / `COMMON_OS_API_KEY` — a **separate staging
   fleet** on the same CommonOS deployment.
 
