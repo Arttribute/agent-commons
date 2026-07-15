@@ -30,6 +30,10 @@ Parameters:
   AgentFilesS3Prefix:
     Type: String
     Default: agent-commons-files
+  AgentCommonsApiUrl:
+    Type: String
+    Default: https://api.agentcommons.io
+    Description: Public API origin used by shared managed runtimes to call back to this environment.
   XOAuthEnabled:
     Type: String
     Default: "false"
@@ -72,6 +76,8 @@ Resources:
             Value: !Ref AgentFilesS3Region
           - Name: AGENT_FILES_S3_PREFIX
             Value: !Ref AgentFilesS3Prefix
+          - Name: AGENT_COMMONS_API_URL
+            Value: !Ref AgentCommonsApiUrl
           - Name: PROTOTYPE_PUBLIC_BASE_URL
             Value: !If
               - IsProduction

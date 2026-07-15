@@ -1500,6 +1500,10 @@ export class ComputerService {
             : undefined,
         ...(args.config.image ? { dockerImage: args.config.image } : {}),
         agentCommonsId: args.agent.agentId,
+        agentCommonsApiUrl:
+          process.env.AGENT_COMMONS_API_URL ||
+          process.env.AGENTCOMMONS_API_URL ||
+          undefined,
         computerId: args.computer.computerId,
         ownerUserId: args.agent.ownerUserId ?? args.agent.owner,
         workspaceId: args.agent.workspaceId,
