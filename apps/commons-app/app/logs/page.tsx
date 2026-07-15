@@ -292,7 +292,7 @@ export default function LogsPage() {
   const isLoading = loadingAgents || loading;
 
   return (
-    <div className="h-screen overflow-hidden bg-slate-50">
+    <div className="h-screen overflow-hidden bg-stone-50">
       <div className="flex h-screen">
         <DashboardSideBar username={userAddress} />
         <div className="flex-1 min-w-0 overflow-y-auto">

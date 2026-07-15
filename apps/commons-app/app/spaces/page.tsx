@@ -57,7 +57,7 @@ export default function SpacesPage() {
   return (
     <div className="h-screen overflow-hidden">
       <div className="h-screen">
-        <div className="flex h-screen bg-slate-50">
+        <div className="flex h-screen bg-stone-50">
           <DashboardSideBar username={humanId || "wallet"} />
           <div className="w-full p-4 space-y-6 overflow-y-auto">
             <div className="flex items-center justify-between px-4 pt-4">

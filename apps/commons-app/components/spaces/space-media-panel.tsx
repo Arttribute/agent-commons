@@ -413,7 +413,7 @@ export default function SpaceMediaPanel({
 
   return (
     <div
-      className={`flex flex-col h-full border-l bg-slate-50 ${isExpanded ? "w-full" : ""}`}
+      className={`flex flex-col h-full border-l bg-stone-50 ${isExpanded ? "w-full" : ""}`}
     >
       {/* Header - Modern design */}
       {/* <div className="">

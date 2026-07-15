@@ -213,7 +213,7 @@ const StudioPage: NextPage = () => {
   };
 
   return (
-    <div className="flex h-full min-w-0 flex-col bg-slate-50">
+    <div className="flex h-full min-w-0 flex-col bg-stone-50">
       <PageHeader title={pageCopy.title} description={pageCopy.description}>
         <CreateButton label={createLabel} onClick={handleCreateClick} />
       </PageHeader>

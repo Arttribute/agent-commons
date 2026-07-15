@@ -11,7 +11,7 @@ export default function LibraryPage() {
   const userAddress = normalizePrincipalId(authState.walletAddress);
 
   return (
-    <div className="h-screen overflow-hidden bg-slate-50">
+    <div className="h-screen overflow-hidden bg-stone-50">
       <div className="flex h-screen">
         <DashboardSideBar username={userAddress} />
 
