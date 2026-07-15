@@ -135,9 +135,9 @@ export default function PlansPage() {
         <Image
           src="/logo.jpg"
           alt="Agent Commons"
-          width={110}
-          height={28}
-          className="mr-2 shrink-0"
+          width={131}
+          height={60}
+          className="mr-2 h-8 w-auto shrink-0 rounded-md object-contain"
         />
       </div>
 
