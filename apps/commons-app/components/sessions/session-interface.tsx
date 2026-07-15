@@ -407,7 +407,7 @@ export default function SessionInterfaceImproved({
         )}
         <ScrollArea className="min-h-0 flex-1" scrollHideDelay={100}>
           <div
-            className="container mx-auto max-w-3xl px-4 pb-6 pt-4"
+            className="container mx-auto max-w-[46rem] px-4 pb-6 pt-4"
             ref={scrollRef}
           >
             {isLoadingSession && messages.length === 0 ? (
