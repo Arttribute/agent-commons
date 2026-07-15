@@ -13,7 +13,7 @@ export default function BillingPage() {
     <div className="h-screen overflow-hidden bg-background">
       <div className="flex h-screen">
         <DashboardSideBar username={walletAddress} />
-        <div className="flex-1 min-w-0 overflow-y-auto">
+        <div className="flex-1 min-w-0 overflow-y-auto px-6 py-10">
           <BillingPanel />
         </div>
       </div>
