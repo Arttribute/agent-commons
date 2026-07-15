@@ -639,6 +639,8 @@ export class AgentService implements OnModuleInit {
     agentId: string;
     messages?: ChatCompletionMessageParam[];
     sessionId?: string;
+    /** Internal checkpoint identity when a run must not reuse session history. */
+    checkpointThreadId?: string;
     spaceId?: string;
     initiator: string;
     parentSessionId?: string;
@@ -686,6 +688,7 @@ export class AgentService implements OnModuleInit {
         const {
           agentId,
           sessionId,
+          checkpointThreadId,
           spaceId,
           initiator,
           parentSessionId,
@@ -2112,7 +2115,9 @@ export class AgentService implements OnModuleInit {
             const result = await graph.invoke(
               { messages },
               {
-                configurable: { thread_id: currentSessionId },
+                configurable: {
+                  thread_id: checkpointThreadId ?? currentSessionId,
+                },
                 recursionLimit: Number(
                   process.env.AGENT_GRAPH_RECURSION_LIMIT ?? 100,
                 ),

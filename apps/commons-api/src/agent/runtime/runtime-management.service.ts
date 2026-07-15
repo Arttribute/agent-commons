@@ -27,7 +27,7 @@ export class RuntimeManagementService {
     string,
     { expiresAt: number; computer: any }
   >();
-  private readonly readyCacheTtlMs = 10 * 60_000;
+  private readonly readyCacheTtlMs = 6 * 60 * 60_000;
 
   constructor(
     private readonly db: DatabaseService,
@@ -284,6 +284,20 @@ export class RuntimeManagementService {
         autoStart: true,
         allowAgentStart: true,
       });
+    }
+    // API replicas do not share the in-memory readiness cache. Reuse the
+    // canonical active computer from the database before calling CommonOS;
+    // the pod daemon independently verifies its sidecar before every run.
+    const assigned = await this.computers.getAssignedComputer(agentId);
+    if (assigned && ['running', 'idle'].includes(String(assigned.status))) {
+      if (agent.runtimeStatus !== 'ready') {
+        await this.setStatus(agentId, 'ready');
+      }
+      this.readyCache.set(agentId, {
+        expiresAt: Date.now() + this.readyCacheTtlMs,
+        computer: assigned,
+      });
+      return assigned;
     }
     await this.setStatus(agentId, 'starting');
     const computer = await this.computers.startComputer({
