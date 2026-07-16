@@ -67,6 +67,10 @@ export class RateLimitGuard implements CanActivate, OnModuleDestroy {
     ) ?? { limit: 120, windowMs: 60_000, keyStrategy: 'agent' };
 
     const req = context.switchToHttp().getRequest<Request>();
+    // Infrastructure liveness must not depend on Postgres. If the limiter's
+    // store is unavailable, keeping /health reachable allows ECS to replace
+    // the task instead of deadlocking a rollout on the same dependency.
+    if (req.path === '/health') return true;
     // Route scoping prevents a restrictive endpoint (for example gifts) from
     // consuming the caller's allowance for unrelated reads in the same minute.
     const routeScope = `${context.getClass().name}:${context.getHandler().name}`;
