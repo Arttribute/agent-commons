@@ -2,6 +2,8 @@ import {
   BadRequestException,
   ConflictException,
   ForbiddenException,
+  forwardRef,
+  Inject,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
@@ -40,6 +42,7 @@ type WorkflowProposal = {
 export class CopilotService {
   constructor(
     private readonly db: DatabaseService,
+    @Inject(forwardRef(() => WorkflowService))
     private readonly workflows: WorkflowService,
   ) {}
 
