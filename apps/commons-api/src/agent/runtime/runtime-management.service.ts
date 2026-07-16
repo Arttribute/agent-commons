@@ -374,19 +374,52 @@ export class RuntimeManagementService {
     }
   }
 
-  async channelAction(agentId: string, channel: string, action: string) {
+  async channelAction(
+    agentId: string,
+    channel: string,
+    action: string,
+    input: { pairingCode?: string; target?: string; message?: string } = {},
+  ) {
     const agent = await this.getAgent(agentId);
     const runtimeType = normalizeRuntimeType(agent.runtimeType);
     if (runtimeType !== 'openclaw' && runtimeType !== 'hermes') {
       throw new BadRequestException(
-        'QR channel setup is available for OpenClaw and Hermes',
+        'Managed channel setup is available for OpenClaw and Hermes',
       );
     }
-    if (channel !== 'whatsapp') {
+    if (!RUNTIME_CHANNEL_IDS.includes(channel as RuntimeChannelId)) {
       throw new BadRequestException('Unsupported runtime channel');
     }
-    if (!['connect', 'status', 'disconnect'].includes(action)) {
+    if (
+      !['connect', 'status', 'disconnect', 'approve', 'test'].includes(action)
+    ) {
       throw new BadRequestException('Unsupported runtime channel action');
+    }
+    const configuredChannel = (agent.runtimeConfig as RuntimeConfig | null)
+      ?.channels?.[channel as RuntimeChannelId];
+    if (!configuredChannel?.enabled) {
+      throw new BadRequestException(
+        `Enable ${channel} and save the runtime settings first`,
+      );
+    }
+    const pairingCode = input.pairingCode?.trim().toUpperCase();
+    const target = input.target?.trim();
+    const message = input.message?.trim();
+    const channelLabel =
+      channel === 'whatsapp'
+        ? 'WhatsApp'
+        : channel.charAt(0).toUpperCase() + channel.slice(1);
+    if (action === 'approve' && !/^[A-Z0-9]{6,12}$/.test(pairingCode ?? '')) {
+      throw new BadRequestException('A valid pairing code is required');
+    }
+    if (
+      action === 'test' &&
+      (!target || target.length > 256 || /[\r\n\0]/.test(target))
+    ) {
+      throw new BadRequestException('A valid test message target is required');
+    }
+    if ((message?.length ?? 0) > 1_000) {
+      throw new BadRequestException('Test message is too long');
     }
     try {
       await this.ensureReady(agentId);
@@ -395,15 +428,23 @@ export class RuntimeManagementService {
       // until the sidecar can produce a QR code.
       return await this.computers.runtimeChannelAction({
         agentId,
-        channel,
-        action: action as 'connect' | 'status' | 'disconnect',
+        channel: channel as RuntimeChannelId,
+        action: action as
+          | 'connect'
+          | 'status'
+          | 'disconnect'
+          | 'approve'
+          | 'test',
+        pairingCode,
+        target,
+        message,
       });
     } catch (error) {
       const detail = error instanceof Error ? error.message : '';
       throw new ServiceUnavailableException(
         detail.includes('timed out')
-          ? 'WhatsApp setup is taking longer than expected. Keep this window open and try again.'
-          : detail || 'WhatsApp setup is temporarily unavailable',
+          ? `${channelLabel} setup is taking longer than expected. Keep this window open and try again.`
+          : detail || `${channelLabel} setup is temporarily unavailable`,
       );
     }
   }

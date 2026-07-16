@@ -55,11 +55,13 @@ const StudioPage: NextPage = () => {
         );
       case "tasks":
         return (
-          <div className="h-full">
-            <TaskManagementView
-              userAddress={userAddress}
-              onRegisterCreate={registerTaskCreate}
-            />
+          <div className="h-full px-2 pb-2">
+            <div className="h-full overflow-hidden rounded-xl border border-border bg-white">
+              <TaskManagementView
+                userAddress={userAddress}
+                onRegisterCreate={registerTaskCreate}
+              />
+            </div>
           </div>
         );
       case "workflows":
@@ -213,7 +215,7 @@ const StudioPage: NextPage = () => {
   };
 
   return (
-    <div className="flex h-full min-w-0 flex-col bg-background">
+    <div className="flex h-full min-w-0 flex-col bg-stone-50">
       <PageHeader title={pageCopy.title} description={pageCopy.description}>
         <CreateButton label={createLabel} onClick={handleCreateClick} />
       </PageHeader>

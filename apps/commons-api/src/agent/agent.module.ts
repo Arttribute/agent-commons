@@ -7,8 +7,6 @@ import { ToolModule } from '../tool';
 import { TaskModule } from '../task';
 import { AgentToolsController } from './agent-tools.controller';
 import { SessionModule } from '~/session';
-import { ResourceService } from '~/resource/resource.service';
-import { EmbeddingService } from '~/embedding/embedding.service';
 import { LogModule } from '~/log';
 import { SpaceModule } from '~/space/space.module';
 import { OAuthModule } from '~/oauth/oauth.module';
@@ -55,8 +53,6 @@ import { RuntimeToolBridgeController } from './runtime/runtime-tool-bridge.contr
     AgentService,
     HeartbeatService,
     RunStreamRegistry,
-    ResourceService,
-    EmbeddingService,
     OwnerGuard,
     RuntimeMigrationService,
     RuntimeManagementService,

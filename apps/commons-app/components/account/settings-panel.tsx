@@ -22,6 +22,9 @@ import {
   Plus,
   BarChart2,
   CreditCard,
+  HardDrive,
+  ShieldCheck,
+  Globe2,
 } from "lucide-react";
 import {
   Dialog,
@@ -37,6 +40,7 @@ import { BillingPanel } from "@/components/billing/billing-panel";
 export const SETTINGS_SECTIONS = [
   "profile",
   "models",
+  "storage",
   "billing",
   "api-keys",
   "usage",
@@ -46,6 +50,7 @@ export type SettingsSection = (typeof SETTINGS_SECTIONS)[number];
 const SECTION_LABELS: Record<SettingsSection, string> = {
   profile: "Profile",
   models: "Model Defaults",
+  storage: "Artifact Storage",
   billing: "Billing",
   "api-keys": "API Keys",
   usage: "Usage",
@@ -54,6 +59,7 @@ const SECTION_LABELS: Record<SettingsSection, string> = {
 const SECTION_ICONS: Record<SettingsSection, React.ElementType> = {
   profile: User,
   models: Cpu,
+  storage: HardDrive,
   billing: CreditCard,
   "api-keys": KeyRound,
   usage: BarChart2,
@@ -247,6 +253,41 @@ function ModelDefaultsSection() {
       </div>
     </div>
   );
+}
+
+function ArtifactStorageSection() {
+  const [provider, setProvider] = useState<"s3" | "ipfs">("s3");
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+
+  useEffect(() => {
+    fetch("/api/library/preferences/storage", { cache: "no-store" })
+      .then((response) => response.json())
+      .then((data) => setProvider(data?.defaultStorageProvider === "ipfs" ? "ipfs" : "s3"))
+      .finally(() => setLoading(false));
+  }, []);
+
+  async function save() {
+    if (provider === "ipfs" && !window.confirm("IPFS files are publicly addressable and may persist after you remove them from Agent Commons. Use IPFS as your default?")) return;
+    setSaving(true);
+    const response = await fetch("/api/library/preferences/storage", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ defaultStorageProvider: provider }),
+    });
+    setSaving(false);
+    if (response.ok) { setSaved(true); setTimeout(() => setSaved(false), 2000); }
+  }
+
+  return <div className="max-w-xl space-y-6">
+    <div><h2 className="text-base font-semibold">Artifact Storage</h2><p className="mt-0.5 text-sm text-muted-foreground">Choose where new library artifacts are stored. You can override this for an individual upload.</p></div>
+    {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <div className="space-y-3">
+      <button onClick={() => setProvider("s3")} className={cn("flex w-full gap-3 rounded-lg border p-4 text-left", provider === "s3" && "border-foreground ring-1 ring-foreground")}><ShieldCheck className="mt-0.5 h-5 w-5" /><span><span className="block text-sm font-medium">Private S3 <span className="ml-1 text-xs text-muted-foreground">Recommended</span></span><span className="mt-1 block text-xs text-muted-foreground">Encrypted object storage with short-lived signed links. Files stay private unless you share them.</span></span></button>
+      <button onClick={() => setProvider("ipfs")} className={cn("flex w-full gap-3 rounded-lg border p-4 text-left", provider === "ipfs" && "border-amber-600 ring-1 ring-amber-600")}><Globe2 className="mt-0.5 h-5 w-5" /><span><span className="block text-sm font-medium">IPFS via Pinata</span><span className="mt-1 block text-xs text-amber-700">Publicly addressable and potentially persistent. Do not use for confidential, personal, or regulated data.</span></span></button>
+      <Button size="sm" onClick={save} disabled={saving}>{saving ? <Loader2 className="h-4 w-4 animate-spin" /> : saved ? <><Check className="mr-1.5 h-4 w-4" />Saved</> : "Save storage default"}</Button>
+    </div>}
+  </div>;
 }
 
 // ─── API Keys Section ─────────────────────────────────────────────────────────
@@ -493,6 +534,7 @@ export function SettingsPanel({
           <ProfileSection walletAddress={walletAddress} />
         )}
         {section === "models" && <ModelDefaultsSection />}
+        {section === "storage" && <ArtifactStorageSection />}
         {section === "billing" && <BillingPanel />}
         {section === "api-keys" && (
           <ApiKeysSection walletAddress={walletAddress} />

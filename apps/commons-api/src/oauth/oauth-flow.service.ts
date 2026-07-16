@@ -6,6 +6,7 @@ import { OAuthStateService } from './oauth-state.service';
 type ProviderRuntimeConfig = {
   scopeDelimiter?: string;
   pkce?: boolean;
+  tokenClientAuth?: 'body' | 'basic';
   omitAuthorizationCodeGrantType?: boolean;
   revokeRefreshToken?: boolean;
   includeClientCredentialsOnRevoke?: boolean;
@@ -37,6 +38,14 @@ function providerRuntimeConfig(providerKey: string): ProviderRuntimeConfig {
       return {
         scopeDelimiter: ',',
         omitAuthorizationCodeGrantType: true,
+      };
+    case 'x':
+    case 'twitter':
+      return {
+        pkce: true,
+        tokenClientAuth: 'basic',
+        revokeRefreshToken: true,
+        includeClientCredentialsOnRevoke: true,
       };
     default:
       return {};
@@ -97,6 +106,13 @@ function extractProviderUserIdentity(
       id: userInfo?.user?.id || userInfo?.profile?.id,
       email: userInfo?.user?.email || userInfo?.profile?.email,
       name: userInfo?.profile?.display_name || userInfo?.user?.display_name,
+    };
+  }
+
+  if (providerKey === 'x' || providerKey === 'twitter') {
+    return {
+      id: userInfo?.data?.id,
+      name: userInfo?.data?.username || userInfo?.data?.name,
     };
   }
 
@@ -287,10 +303,15 @@ export class OAuthFlowService {
       // Exchange authorization code for tokens
       const tokenParams = new URLSearchParams({
         code: params.code,
-        client_id: provider.clientId,
-        client_secret: clientSecret,
         redirect_uri: redirectUri,
       });
+
+      // For Basic-authenticated confidential clients the identity is already
+      // in the header; X omits both client fields from the form body.
+      if (runtimeConfig.tokenClientAuth !== 'basic') {
+        tokenParams.append('client_id', provider.clientId);
+        tokenParams.append('client_secret', clientSecret);
+      }
 
       if (!runtimeConfig.omitAuthorizationCodeGrantType) {
         tokenParams.append('grant_type', 'authorization_code');
@@ -314,6 +335,13 @@ export class OAuthFlowService {
         headers: {
           'Content-Type': 'application/x-www-form-urlencoded',
           Accept: 'application/json',
+          ...(runtimeConfig.tokenClientAuth === 'basic'
+            ? {
+                Authorization: `Basic ${Buffer.from(
+                  `${provider.clientId}:${clientSecret}`,
+                ).toString('base64')}`,
+              }
+            : {}),
         },
         body: tokenParams.toString(),
       });
@@ -443,6 +471,7 @@ export class OAuthFlowService {
       const provider = await this.providerService.getProviderById(
         connection.providerId,
       );
+      const runtimeConfig = providerRuntimeConfig(provider.providerKey);
 
       // Get decrypted tokens
       const tokens =
@@ -459,10 +488,13 @@ export class OAuthFlowService {
       // Request new access token using refresh token
       const tokenParams = new URLSearchParams({
         refresh_token: tokens.refreshToken,
-        client_id: provider.clientId,
-        client_secret: clientSecret,
         grant_type: 'refresh_token',
       });
+
+      if (runtimeConfig.tokenClientAuth !== 'basic') {
+        tokenParams.append('client_id', provider.clientId);
+        tokenParams.append('client_secret', clientSecret);
+      }
 
       // Add provider-specific token parameters
       const providerTokenParams = provider.tokenParams as Record<string, any>;
@@ -477,6 +509,13 @@ export class OAuthFlowService {
         headers: {
           'Content-Type': 'application/x-www-form-urlencoded',
           Accept: 'application/json',
+          ...(runtimeConfig.tokenClientAuth === 'basic'
+            ? {
+                Authorization: `Basic ${Buffer.from(
+                  `${provider.clientId}:${clientSecret}`,
+                ).toString('base64')}`,
+              }
+            : {}),
         },
         body: tokenParams.toString(),
       });
@@ -575,19 +614,29 @@ export class OAuthFlowService {
                 : tokens.accessToken,
           });
 
+          let revokeAuthorization: string | undefined;
           if (runtimeConfig.includeClientCredentialsOnRevoke) {
             const clientSecret =
               await this.providerService.getDecryptedClientSecret(
                 provider.providerId,
               );
-            revokeParams.append('client_id', provider.clientId);
-            revokeParams.append('client_secret', clientSecret);
+            if (runtimeConfig.tokenClientAuth === 'basic') {
+              revokeAuthorization = `Basic ${Buffer.from(
+                `${provider.clientId}:${clientSecret}`,
+              ).toString('base64')}`;
+            } else {
+              revokeParams.append('client_id', provider.clientId);
+              revokeParams.append('client_secret', clientSecret);
+            }
           }
 
           const revokeResponse = await fetch(provider.revokeUrl, {
             method: 'POST',
             headers: {
               'Content-Type': 'application/x-www-form-urlencoded',
+              ...(revokeAuthorization
+                ? { Authorization: revokeAuthorization }
+                : {}),
             },
             body: revokeParams.toString(),
           });

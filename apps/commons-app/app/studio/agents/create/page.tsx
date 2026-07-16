@@ -146,7 +146,7 @@ export default function CreateAgentPage() {
   };
 
   return (
-    <div className="flex h-full min-w-0 flex-col bg-background">
+    <div className="flex h-full min-w-0 flex-col bg-stone-50">
       <div className="flex items-center gap-2 px-6 pb-3 pt-5">
         <Button
           variant="ghost"

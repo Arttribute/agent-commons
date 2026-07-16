@@ -1,11 +1,6 @@
 "use client";
 
-import {
-  useCallback,
-  useEffect,
-  useState,
-  type KeyboardEvent,
-} from "react";
+import { useCallback, useEffect, useState, type KeyboardEvent } from "react";
 import {
   Check,
   ChevronRight,
@@ -299,7 +294,8 @@ function WhatsAppPhoneInput({
           disabled={
             disabled ||
             !phoneNumber.trim() ||
-            (!countryCode || (countryCode === "custom" && !customCode.trim()))
+            !countryCode ||
+            (countryCode === "custom" && !customCode.trim())
           }
           onClick={addNumber}
         >
@@ -345,7 +341,9 @@ function channelIsConnected(value: unknown) {
   const text = JSON.stringify(value ?? {}).toLowerCase();
   return (
     /"(?:connected|linked|loggedin|logged_in)":true/.test(text) ||
-    /"status":"(?:connected|linked|ready|online)"/.test(text)
+    /"(?:running|provider)":true/.test(text) ||
+    /"status":"(?:connected|linked|ready|online|sent|approved)"/.test(text) ||
+    /"ok":true/.test(text)
   );
 }
 
@@ -355,6 +353,26 @@ function channelIsStarting(value: unknown) {
     /"status":"starting"/.test(text) ||
     /"runtimestatus":"(?:provisioning|starting)"/.test(text)
   );
+}
+
+function channelTarget(
+  runtime: "openclaw" | "hermes",
+  id: ChannelId,
+  channel: ChannelDraft,
+) {
+  const raw = (channel.homeTarget || channel.allowFrom[0] || "").trim();
+  if (!raw) return "";
+  if (runtime === "hermes") {
+    const platform =
+      id === "whatsapp" && channel.mode === "cloud" ? "whatsapp_cloud" : id;
+    return raw.startsWith(`${platform}:`) ? raw : `${platform}:${raw}`;
+  }
+  if (id === "slack") {
+    if (/^[UDW]/i.test(raw)) return `user:${raw}`;
+    return /^channel:/i.test(raw) ? raw : `channel:${raw}`;
+  }
+  if (id === "discord" && /^\d+$/.test(raw)) return `user:${raw}`;
+  return raw;
 }
 
 /** Built-in tooling each managed runtime ships with, shown alongside the
@@ -565,7 +583,13 @@ export function ManagedRuntimeSetup({
     verifyToken: "",
   });
   const [qrCode, setQrCode] = useState<string | null>(null);
-  const [channelBusy, setChannelBusy] = useState(false);
+  const [channelBusy, setChannelBusy] = useState<ChannelId | null>(null);
+  const [connectedChannels, setConnectedChannels] = useState<
+    Partial<Record<ChannelId, boolean>>
+  >({});
+  const [pairingCodes, setPairingCodes] = useState<
+    Partial<Record<ChannelId, string>>
+  >({});
   const [whatsappConnected, setWhatsappConnected] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -603,13 +627,48 @@ export function ManagedRuntimeSetup({
         );
         const payload = await response.json();
         if (response.ok && channelIsConnected(payload)) {
+          const target = key
+            ? channelTarget(key, "whatsapp", channels.whatsapp)
+            : "";
+          if (!target) {
+            throw new Error(
+              "WhatsApp linked, but a destination number is required to verify delivery.",
+            );
+          }
+          const verification = await fetch(
+            `/api/agents/${agentId}/runtime/channels/whatsapp/test`,
+            {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                target,
+                message: `${key === "openclaw" ? "OpenClaw" : "Hermes"} is connected to whatsapp through Agent Commons.`,
+              }),
+            },
+          );
+          if (!verification.ok) {
+            const detail = await verification.json().catch(() => null);
+            throw new Error(
+              detail?.message ??
+                detail?.error ??
+                "WhatsApp linked, but the verification message could not be delivered",
+            );
+          }
           cancelled = true;
           setWhatsappConnected(true);
+          setConnectedChannels((current) => ({
+            ...current,
+            whatsapp: true,
+          }));
           setQrCode(null);
           void refresh();
         }
-      } catch {
-        // Keep the QR visible; the next serialized probe can recover.
+      } catch (cause) {
+        setError(
+          cause instanceof Error
+            ? cause.message
+            : "Could not verify WhatsApp delivery",
+        );
       } finally {
         if (!cancelled) timer = window.setTimeout(poll, 5_000);
       }
@@ -619,7 +678,7 @@ export function ManagedRuntimeSetup({
       cancelled = true;
       if (timer !== undefined) window.clearTimeout(timer);
     };
-  }, [agentId, qrCode, refresh, whatsappConnected]);
+  }, [agentId, channels.whatsapp, key, qrCode, refresh, whatsappConnected]);
 
   if (loading) {
     return (
@@ -722,52 +781,118 @@ export function ManagedRuntimeSetup({
     }
   };
 
-  const connectWhatsapp = async () => {
+  const callChannelAction = async (
+    id: ChannelId,
+    action: "connect" | "status" | "approve" | "test",
+    body: Record<string, string> = {},
+  ) => {
+    const response = await fetch(
+      `/api/agents/${agentId}/runtime/channels/${id}/${action}`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      },
+    );
+    const payload = await response.json().catch(() => null);
+    if (!response.ok) {
+      throw new Error(
+        (payload as { message?: string; error?: string } | null)?.message ??
+          (payload as { message?: string; error?: string } | null)?.error ??
+          `Could not ${action} ${id}`,
+      );
+    }
+    return payload;
+  };
+
+  const connectChannel = async (id: ChannelId) => {
     if (key !== "openclaw" && key !== "hermes") return;
-    setChannelBusy(true);
+    const verificationTarget = channelTarget(key, id, channels[id]);
+    if (!verificationTarget) {
+      setError(
+        id === "whatsapp"
+          ? "Add the WhatsApp number that should receive the verification message."
+          : `Add a ${id} destination or allowed user so Agent Commons can verify delivery end to end.`,
+      );
+      return;
+    }
+    setChannelBusy(id);
     setError(null);
-    setQrCode(null);
-    setWhatsappConnected(false);
+    if (id === "whatsapp") {
+      setQrCode(null);
+      setWhatsappConnected(false);
+    }
+    setConnectedChannels((current) => ({ ...current, [id]: false }));
     try {
       const updated = await save();
       if (!updated) return;
       const deadline = Date.now() + 2 * 60_000;
       let payload: unknown = null;
       while (Date.now() < deadline) {
-        const response = await fetch(
-          `/api/agents/${agentId}/runtime/channels/whatsapp/connect`,
-          { method: "POST" },
-        );
-        payload = await response.json().catch(() => null);
-        if (!response.ok) {
-          throw new Error(
-            (payload as { message?: string; error?: string } | null)?.message ??
-              (payload as { message?: string; error?: string } | null)?.error ??
-              "Could not start pairing",
-          );
-        }
+        payload = await callChannelAction(id, "connect");
         if (!channelIsStarting(payload)) break;
         // Stay below the channel action rate limit during a full cold boot.
         await new Promise((resolve) => window.setTimeout(resolve, 4_000));
       }
       if (channelIsConnected(payload)) {
-        setWhatsappConnected(true);
+        if (id === "whatsapp") setWhatsappConnected(true);
+        setConnectedChannels((current) => ({ ...current, [id]: true }));
+        await callChannelAction(id, "test", {
+          target: verificationTarget,
+          message: `${meta.label} is connected to ${id} through Agent Commons.`,
+        });
         void refresh();
         return;
       }
-      const qr = findQr(payload);
-      if (!qr) {
+      const qr = id === "whatsapp" ? findQr(payload) : null;
+      if (qr) {
+        setQrCode(qr);
+        return;
+      }
+      if (!channelIsConnected(payload)) {
         throw new Error(
-          `${meta.label} is taking longer than expected to prepare WhatsApp pairing`,
+          `${meta.label} could not verify the ${id} connection. Check the credentials and platform permissions.`,
         );
       }
-      setQrCode(qr);
     } catch (cause) {
+      setConnectedChannels((current) => ({ ...current, [id]: false }));
       setError(
         cause instanceof Error ? cause.message : "Could not start pairing",
       );
     } finally {
-      setChannelBusy(false);
+      setChannelBusy(null);
+    }
+  };
+
+  const approvePairing = async (id: ChannelId) => {
+    const pairingCode = pairingCodes[id]?.trim();
+    if (!pairingCode) return;
+    if (key !== "openclaw" && key !== "hermes") return;
+    const verificationTarget = channelTarget(key, id, channels[id]);
+    if (!verificationTarget) {
+      setError(
+        `Add a ${id} destination or allowed user so Agent Commons can verify delivery after approval.`,
+      );
+      return;
+    }
+    setChannelBusy(id);
+    setError(null);
+    try {
+      const updated = await save();
+      if (!updated) return;
+      await callChannelAction(id, "approve", { pairingCode });
+      await callChannelAction(id, "test", {
+        target: verificationTarget,
+        message: `${meta.label} pairing for ${id} was approved through Agent Commons.`,
+      });
+      setPairingCodes((current) => ({ ...current, [id]: "" }));
+      setConnectedChannels((current) => ({ ...current, [id]: true }));
+    } catch (cause) {
+      setError(
+        cause instanceof Error ? cause.message : "Could not approve pairing",
+      );
+    } finally {
+      setChannelBusy(null);
     }
   };
 
@@ -816,7 +941,7 @@ export function ManagedRuntimeSetup({
                   ? Hash
                   : MessageSquare;
           const status =
-            id === "whatsapp" && whatsappConnected
+            connectedChannels[id] || (id === "whatsapp" && whatsappConnected)
               ? "Connected"
               : info?.configured && !info.needsPairing
                 ? "Configured"
@@ -845,7 +970,9 @@ export function ManagedRuntimeSetup({
                       : id === "whatsapp" && key === "openclaw"
                         ? "Linked device"
                         : id === "whatsapp"
-                          ? "Business Cloud API"
+                          ? channels.whatsapp.mode === "cloud"
+                            ? "Business Cloud API"
+                            : "Linked device"
                           : id === "slack"
                             ? "Socket Mode"
                             : "Bot token"}
@@ -881,6 +1008,20 @@ export function ManagedRuntimeSetup({
 
                   {id === "telegram" && (
                     <>
+                      <p className="text-[11px] text-muted-foreground">
+                        Create the bot with{" "}
+                        <a
+                          href="https://t.me/BotFather"
+                          target="_blank"
+                          rel="noreferrer"
+                          className="underline underline-offset-2"
+                        >
+                          BotFather
+                        </a>
+                        , then send the bot{" "}
+                        <span className="font-mono">/start</span> once so it can
+                        message you.
+                      </p>
                       <label className="grid gap-1.5 text-xs font-medium">
                         Bot token
                         <Input
@@ -980,12 +1121,12 @@ export function ManagedRuntimeSetup({
                             className="h-8 w-fit gap-1.5"
                             disabled={
                               !isOwner ||
-                              channelBusy ||
+                              channelBusy !== null ||
                               !channels.whatsapp.enabled
                             }
-                            onClick={() => void connectWhatsapp()}
+                            onClick={() => void connectChannel("whatsapp")}
                           >
-                            {channelBusy ? (
+                            {channelBusy === "whatsapp" ? (
                               <Loader2 className="h-3.5 w-3.5 animate-spin" />
                             ) : whatsappConnected ? (
                               <Check className="h-3.5 w-3.5" />
@@ -1042,6 +1183,12 @@ export function ManagedRuntimeSetup({
 
                   {id === "slack" && (
                     <>
+                      <p className="text-[11px] text-muted-foreground">
+                        Use a Socket Mode app with a bot token, an app token
+                        with{" "}
+                        <span className="font-mono">connections:write</span>,
+                        and invite the bot to each channel it should use.
+                      </p>
                       <div className="grid gap-3 sm:grid-cols-2">
                         {(
                           [
@@ -1090,6 +1237,11 @@ export function ManagedRuntimeSetup({
 
                   {id === "discord" && (
                     <>
+                      <p className="text-[11px] text-muted-foreground">
+                        Enable Message Content Intent in the Discord Developer
+                        Portal and invite the bot with read/send message
+                        permissions.
+                      </p>
                       <label className="grid gap-1.5 text-xs font-medium">
                         Bot token
                         <Input
@@ -1119,6 +1271,94 @@ export function ManagedRuntimeSetup({
                         />
                       </label>
                     </>
+                  )}
+
+                  {(id !== "whatsapp" ||
+                    (key === "hermes" &&
+                      channels.whatsapp.mode === "cloud")) && (
+                    <div className="grid gap-3 border-t pt-3">
+                      <label className="grid gap-1.5 text-xs font-medium">
+                        Proactive message destination
+                        <Input
+                          value={channels[id].homeTarget}
+                          disabled={!isOwner || saving}
+                          placeholder={
+                            id === "whatsapp"
+                              ? "+254791711341"
+                              : id === "telegram"
+                                ? "Uses first allowed user, or enter @username / chat ID"
+                                : id === "slack"
+                                  ? "Uses first member, or enter a channel ID"
+                                  : "Uses first allowed user, or enter a channel ID"
+                          }
+                          onChange={(event) =>
+                            updateChannel(id, {
+                              homeTarget: event.target.value,
+                            })
+                          }
+                        />
+                      </label>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        className="h-8 w-fit gap-1.5"
+                        disabled={
+                          !isOwner ||
+                          channelBusy !== null ||
+                          !channels[id].enabled
+                        }
+                        onClick={() => void connectChannel(id)}
+                      >
+                        {channelBusy === id ? (
+                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        ) : connectedChannels[id] ? (
+                          <Check className="h-3.5 w-3.5" />
+                        ) : (
+                          <Unplug className="h-3.5 w-3.5" />
+                        )}
+                        {connectedChannels[id]
+                          ? "Connected"
+                          : "Connect & verify"}
+                      </Button>
+                    </div>
+                  )}
+
+                  {channels[id].enabled && (
+                    <div className="grid gap-2 border-t pt-3">
+                      <p className="text-[11px] text-muted-foreground">
+                        If the bot already showed you a pairing code, approve it
+                        here. Adding your user ID above avoids this step.
+                      </p>
+                      <div className="flex gap-2">
+                        <Input
+                          value={pairingCodes[id] ?? ""}
+                          disabled={!isOwner || channelBusy !== null}
+                          placeholder="Pairing code"
+                          className="h-8 max-w-48 uppercase"
+                          onChange={(event) =>
+                            setPairingCodes((current) => ({
+                              ...current,
+                              [id]: event.target.value.toUpperCase(),
+                            }))
+                          }
+                        />
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          className="h-8"
+                          disabled={
+                            !isOwner ||
+                            channelBusy !== null ||
+                            !pairingCodes[id]?.trim()
+                          }
+                          onClick={() => void approvePairing(id)}
+                        >
+                          Approve
+                        </Button>
+                      </div>
+                    </div>
                   )}
                 </div>
               )}

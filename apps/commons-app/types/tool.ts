@@ -42,6 +42,8 @@ export interface ToolApiSpec {
   oauthTokenLocation?: 'header' | 'query' | 'body';  // Default: 'header'
   oauthTokenKey?: string;         // Default: 'Authorization'
   oauthTokenPrefix?: string;      // Default: 'Bearer '
+  bodyTransform?: string;
+  requiresConfirmation?: boolean;
 }
 
 export interface ToolKey {

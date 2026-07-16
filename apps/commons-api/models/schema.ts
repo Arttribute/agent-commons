@@ -10,6 +10,7 @@ import {
   boolean as pgBoolean,
   uniqueIndex,
   index,
+  vector,
 } from 'drizzle-orm/pg-core';
 import { sql } from 'drizzle-orm';
 import { relations } from 'drizzle-orm';
@@ -200,12 +201,13 @@ export const codeProject = pgTable(
     name: text('name').notNull(),
     slug: text('slug').notNull(),
     description: text('description'),
-    framework: text('framework').default('react').notNull(),
-    entryFile: text('entry_file').default('src/main.tsx').notNull(),
+    framework: text('framework').default('nextjs').notNull(),
+    entryFile: text('entry_file').default('app/page.tsx').notNull(),
     status: text('status').default('draft').notNull(),
     visibility: text('visibility').default('private').notNull(),
     latestDeploymentId: uuid('latest_deployment_id'),
     repositoryUrl: text('repository_url'),
+    libraryItemId: uuid('library_item_id'),
     metadata: jsonb('metadata').$type<Record<string, any>>().default({}),
     createdAt: timestamp('created_at', { withTimezone: true })
       .default(sql`timezone('utc', now())`)
@@ -565,41 +567,41 @@ export const session = pgTable('session', {
     .notNull(),
 });
 
-/* ─────────────────────────  FILE ATTACHMENTS  ───────────────────────── */
+/* ─────────────────────────  ARTIFACT LIBRARY  ───────────────────────── */
 
-export const fileAttachment = pgTable(
-  'file_attachment',
+/**
+ * Canonical metadata for every durable user-uploaded or chat-generated item.
+ * Agent-computer files deliberately never enter these tables.
+ */
+export const libraryItem = pgTable(
+  'library_item',
   {
-    fileId: uuid('file_id')
+    itemId: uuid('item_id')
       .default(sql`gen_random_uuid()`)
       .primaryKey(),
-
-    agentId: text('agent_id').references(() => agent.agentId, {
-      onDelete: 'set null',
-    }),
-    sessionId: uuid('session_id').references(() => session.sessionId, {
-      onDelete: 'set null',
-    }),
-
-    ownerId: text('owner_id'),
-    ownerType: text('owner_type').default('user').notNull(),
+    ownerUserId: text('owner_user_id').notNull(),
     workspaceId: text('workspace_id'),
-
-    storageBucket: text('storage_bucket').notNull(),
-    storagePath: text('storage_path').notNull(),
-    originalName: text('original_name').notNull(),
-    mimeType: text('mime_type').notNull(),
+    sourceAgentId: text('source_agent_id').references(() => agent.agentId, {
+      onDelete: 'set null',
+    }),
+    sourceSessionId: uuid('source_session_id').references(() => session.sessionId, {
+      onDelete: 'set null',
+    }),
     kind: text('kind').notNull(),
+    name: text('name').notNull(),
+    description: text('description'),
+    mimeType: text('mime_type').notNull(),
     sizeBytes: integer('size_bytes').notNull(),
     sha256: text('sha256').notNull(),
-
+    source: text('source').default('upload').notNull(),
     status: text('status').default('ready').notNull(),
-    textStoragePath: text('text_storage_path'),
+    visibility: text('visibility').default('private').notNull(),
     textPreview: text('text_preview'),
     extractedTextChars: integer('extracted_text_chars').default(0).notNull(),
     extractionError: text('extraction_error'),
-    metadata: jsonb('metadata').$type<Record<string, any>>(),
-
+    metadata: jsonb('metadata').$type<Record<string, any>>().default({}),
+    isFavorite: pgBoolean('is_favorite').default(false).notNull(),
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
     createdAt: timestamp('created_at', { withTimezone: true })
       .default(sql`timezone('utc', now())`)
       .notNull(),
@@ -608,30 +610,45 @@ export const fileAttachment = pgTable(
       .notNull(),
   },
   (table) => ({
-    agentSessionIdx: index('idx_file_attachment_agent_session').on(
-      table.agentId,
-      table.sessionId,
+    ownerIdx: index('idx_library_item_owner').on(
+      table.ownerUserId,
+      table.updatedAt,
     ),
-    ownerIdx: index('idx_file_attachment_owner').on(
-      table.ownerId,
-      table.createdAt,
+    workspaceIdx: index('idx_library_item_workspace').on(
+      table.workspaceId,
+      table.updatedAt,
     ),
-    shaIdx: index('idx_file_attachment_sha256').on(table.sha256),
+    sourceSessionIdx: index('idx_library_item_source_session').on(
+      table.sourceSessionId,
+      table.updatedAt,
+    ),
+    shaIdx: index('idx_library_item_sha256').on(table.ownerUserId, table.sha256),
   }),
 );
 
-export const fileArtifact = pgTable(
-  'file_artifact',
+/** Per-account library defaults. IPFS is opt-in because content is public. */
+export const libraryPreference = pgTable('library_preference', {
+  ownerUserId: text('owner_user_id').primaryKey(),
+  defaultStorageProvider: text('default_storage_provider')
+    .default('s3')
+    .notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true })
+    .default(sql`timezone('utc', now())`)
+    .notNull(),
+});
+
+/** Original bytes, extracted text, thumbnails, and rendered document pages. */
+export const libraryBlob = pgTable(
+  'library_blob',
   {
-    artifactId: uuid('artifact_id')
+    blobId: uuid('blob_id')
       .default(sql`gen_random_uuid()`)
       .primaryKey(),
-
-    fileId: uuid('file_id')
+    itemId: uuid('item_id')
       .notNull()
-      .references(() => fileAttachment.fileId, { onDelete: 'cascade' }),
-
-    kind: text('kind').notNull(),
+      .references(() => libraryItem.itemId, { onDelete: 'cascade' }),
+    role: text('role').notNull(),
+    storageProvider: text('storage_provider').default('s3').notNull(),
     storageBucket: text('storage_bucket').notNull(),
     storagePath: text('storage_path').notNull(),
     mimeType: text('mime_type').notNull(),
@@ -646,8 +663,130 @@ export const fileArtifact = pgTable(
       .notNull(),
   },
   (table) => ({
-    fileIdx: index('idx_file_artifact_file').on(table.fileId),
-    kindIdx: index('idx_file_artifact_kind').on(table.fileId, table.kind),
+    itemIdx: index('idx_library_blob_item').on(table.itemId),
+    roleIdx: index('idx_library_blob_role').on(table.itemId, table.role),
+  }),
+);
+
+/** Searchable, citeable text units. Permission filtering always joins item. */
+export const libraryChunk = pgTable(
+  'library_chunk',
+  {
+    chunkId: uuid('chunk_id').default(sql`gen_random_uuid()`).primaryKey(),
+    itemId: uuid('item_id')
+      .notNull()
+      .references(() => libraryItem.itemId, { onDelete: 'cascade' }),
+    chunkIndex: integer('chunk_index').notNull(),
+    content: text('content').notNull(),
+    tokenCount: integer('token_count').notNull(),
+    embedding: vector('embedding', { dimensions: 1536 }),
+    embeddingModel: text('embedding_model'),
+    metadata: jsonb('metadata').$type<Record<string, any>>().default({}),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .default(sql`timezone('utc', now())`)
+      .notNull(),
+  },
+  (table) => ({
+    itemChunkIdx: uniqueIndex('idx_library_chunk_item_position').on(
+      table.itemId,
+      table.chunkIndex,
+    ),
+  }),
+);
+
+export const libraryGrant = pgTable(
+  'library_grant',
+  {
+    grantId: uuid('grant_id').default(sql`gen_random_uuid()`).primaryKey(),
+    itemId: uuid('item_id')
+      .notNull()
+      .references(() => libraryItem.itemId, { onDelete: 'cascade' }),
+    subjectType: text('subject_type').notNull(),
+    subjectId: text('subject_id').notNull(),
+    permission: text('permission').default('read').notNull(),
+    createdBy: text('created_by').notNull(),
+    expiresAt: timestamp('expires_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .default(sql`timezone('utc', now())`)
+      .notNull(),
+  },
+  (table) => ({
+    subjectIdx: index('idx_library_grant_subject').on(
+      table.subjectType,
+      table.subjectId,
+    ),
+    uniqueSubject: uniqueIndex('idx_library_grant_unique_subject').on(
+      table.itemId,
+      table.subjectType,
+      table.subjectId,
+    ),
+  }),
+);
+
+/** Provenance/grouping links; links are not authorization grants by themselves. */
+export const libraryLink = pgTable(
+  'library_link',
+  {
+    linkId: uuid('link_id').default(sql`gen_random_uuid()`).primaryKey(),
+    itemId: uuid('item_id')
+      .notNull()
+      .references(() => libraryItem.itemId, { onDelete: 'cascade' }),
+    scopeType: text('scope_type').notNull(),
+    scopeId: text('scope_id').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .default(sql`timezone('utc', now())`)
+      .notNull(),
+  },
+  (table) => ({
+    scopeIdx: index('idx_library_link_scope').on(table.scopeType, table.scopeId),
+    uniqueLink: uniqueIndex('idx_library_link_unique').on(
+      table.itemId,
+      table.scopeType,
+      table.scopeId,
+    ),
+  }),
+);
+
+export const libraryShareLink = pgTable(
+  'library_share_link',
+  {
+    shareId: uuid('share_id').default(sql`gen_random_uuid()`).primaryKey(),
+    itemId: uuid('item_id')
+      .notNull()
+      .references(() => libraryItem.itemId, { onDelete: 'cascade' }),
+    tokenHash: text('token_hash').notNull().unique(),
+    permission: text('permission').default('read').notNull(),
+    createdBy: text('created_by').notNull(),
+    expiresAt: timestamp('expires_at', { withTimezone: true }),
+    revokedAt: timestamp('revoked_at', { withTimezone: true }),
+    lastUsedAt: timestamp('last_used_at', { withTimezone: true }),
+    useCount: integer('use_count').default(0).notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .default(sql`timezone('utc', now())`)
+      .notNull(),
+  },
+  (table) => ({
+    itemIdx: index('idx_library_share_item').on(table.itemId),
+  }),
+);
+
+export const libraryAuditEvent = pgTable(
+  'library_audit_event',
+  {
+    eventId: uuid('event_id').default(sql`gen_random_uuid()`).primaryKey(),
+    itemId: uuid('item_id').references(() => libraryItem.itemId, {
+      onDelete: 'set null',
+    }),
+    actorType: text('actor_type').notNull(),
+    actorId: text('actor_id').notNull(),
+    action: text('action').notNull(),
+    metadata: jsonb('metadata').$type<Record<string, any>>().default({}),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .default(sql`timezone('utc', now())`)
+      .notNull(),
+  },
+  (table) => ({
+    itemIdx: index('idx_library_audit_item').on(table.itemId, table.createdAt),
   }),
 );
 
@@ -914,24 +1053,6 @@ export const tool = pgTable('tool', {
     .default(sql`timezone('utc', now())`)
     .notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true })
-    .default(sql`timezone('utc', now())`)
-    .notNull(),
-});
-
-/* ─────────────────────────  RESOURCE  ───────────────────────── */
-
-export const resource = pgTable('resource', {
-  resourceId: text('resource_id')
-    .default(sql`uuid_generate_v4()`)
-    .primaryKey(),
-
-  resourceType: text('resource_type').notNull(),
-
-  schema: jsonb('schema').notNull().$type<any>(),
-  tags: jsonb().notNull().$type<string[]>(),
-  resourceFile: text('resource_file').notNull(),
-
-  createdAt: timestamp('created_at', { withTimezone: true })
     .default(sql`timezone('utc', now())`)
     .notNull(),
 });

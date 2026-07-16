@@ -390,7 +390,7 @@ export default function SpaceMessaging({
     <>
       {/* Full-screen overlay */}
       {isFullScreen && (
-        <div className="fixed inset-0 z-[100] bg-slate-50 flex flex-col">
+        <div className="fixed inset-0 z-[100] bg-stone-50 flex flex-col">
           {/* Header */}
           <div className="px-4 py-3 flex items-center gap-3">
             {!forceFullScreen && (

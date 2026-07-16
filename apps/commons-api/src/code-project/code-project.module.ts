@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { ComputerModule } from '~/computer';
+import { OAuthModule } from '~/oauth/oauth.module';
 import { CodeProjectBuilder } from './code-project.builder';
 import {
   CodeProjectController,
@@ -10,7 +11,7 @@ import { CodeProjectStorage } from './code-project.storage';
 import { CodeProjectVerifier } from './code-project.verifier';
 
 @Module({
-  imports: [ComputerModule],
+  imports: [ComputerModule, OAuthModule],
   controllers: [CodeProjectController, PublicCodeProjectController],
   providers: [
     CodeProjectService,

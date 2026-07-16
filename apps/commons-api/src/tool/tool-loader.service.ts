@@ -363,12 +363,6 @@ export class ToolLoaderService {
     userId?: string,
   ): Promise<ToolDefinition | null> {
     try {
-      // Check if it's a resource tool (resourceTool_{resourceId})
-      if (toolName.startsWith('resourceTool_')) {
-        const resourceId = toolName.replace('resourceTool_', '');
-        return this.loadResourceTool(resourceId);
-      }
-
       // Look up in tool table
       const tool = await this.db.query.tool.findFirst({
         where: (t: any) => eq(t.name, toolName),
@@ -422,41 +416,6 @@ export class ToolLoaderService {
     } catch (error: any) {
       this.logger.error(
         `Failed to get tool by name ${toolName}: ${error.message}`,
-      );
-      return null;
-    }
-  }
-
-  /**
-   * Load a resource tool (legacy support for resource-based tools)
-   *
-   * @param resourceId - The resource ID
-   * @returns Tool definition or null
-   */
-  private async loadResourceTool(
-    resourceId: string,
-  ): Promise<ToolDefinition | null> {
-    try {
-      const resource = await this.db.query.resource.findFirst({
-        where: (r) => eq(r.resourceId, resourceId),
-      });
-
-      if (!resource || !resource.schema) {
-        return null;
-      }
-
-      return {
-        type: 'function' as const,
-        function: {
-          name: `resourceTool_${resourceId}`,
-          ...(resource.schema as any),
-        },
-        endpoint: `http://localhost:${process.env.PORT}/v1/agents/tools`,
-        category: 'resource',
-      };
-    } catch (error: any) {
-      this.logger.error(
-        `Failed to load resource tool ${resourceId}: ${error.message}`,
       );
       return null;
     }

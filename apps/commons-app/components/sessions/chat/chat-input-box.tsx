@@ -553,7 +553,7 @@ export default function ChatInputBox({
   return (
     <div
       className={cn(
-        "relative rounded-2xl bg-background border border-border shadow-sm transition-colors",
+        "relative rounded-2xl bg-white border border-stone-300 shadow-sm transition-colors",
         isDragging && "border-indigo-400 bg-indigo-50/40 dark:bg-indigo-950/20",
       )}
       onDragOver={(event) => {

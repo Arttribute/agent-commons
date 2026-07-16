@@ -114,9 +114,10 @@ describe('RuntimeManagementService channel configuration', () => {
       computers as any,
       encryption as any,
     );
-    jest
-      .spyOn(channelService as any, 'getAgent')
-      .mockResolvedValue({ runtimeType: 'openclaw' });
+    jest.spyOn(channelService as any, 'getAgent').mockResolvedValue({
+      runtimeType: 'openclaw',
+      runtimeConfig: { channels: { whatsapp: { enabled: true } } },
+    });
     jest.spyOn(channelService as any, 'ensureReady').mockResolvedValue({});
 
     await expect(
@@ -138,15 +139,77 @@ describe('RuntimeManagementService channel configuration', () => {
       computers as any,
       encryption as any,
     );
-    jest
-      .spyOn(channelService as any, 'getAgent')
-      .mockResolvedValue({ runtimeType: 'hermes' });
+    jest.spyOn(channelService as any, 'getAgent').mockResolvedValue({
+      runtimeType: 'hermes',
+      runtimeConfig: { channels: { whatsapp: { enabled: true } } },
+    });
     jest.spyOn(channelService as any, 'ensureReady').mockResolvedValue({});
 
     await expect(
       channelService.channelAction('agent-1', 'whatsapp', 'connect'),
     ).resolves.toEqual({ status: 'starting', runtimeStatus: 'starting' });
     expect(computers.runtimeChannelAction).toHaveBeenCalledTimes(1);
+  });
+
+  it('forwards pairing approvals and test messages to any managed channel', async () => {
+    const computers = {
+      runtimeChannelAction: jest
+        .fn()
+        .mockResolvedValue({ output: { status: 'approved' } }),
+    };
+    const channelService = new RuntimeManagementService(
+      {} as any,
+      computers as any,
+      encryption as any,
+    );
+    jest.spyOn(channelService as any, 'getAgent').mockResolvedValue({
+      runtimeType: 'openclaw',
+      runtimeConfig: { channels: { telegram: { enabled: true } } },
+    });
+    jest.spyOn(channelService as any, 'ensureReady').mockResolvedValue({});
+
+    await channelService.channelAction('agent-1', 'telegram', 'approve', {
+      pairingCode: 'abc12def',
+    });
+    expect(computers.runtimeChannelAction).toHaveBeenCalledWith(
+      expect.objectContaining({
+        channel: 'telegram',
+        action: 'approve',
+        pairingCode: 'ABC12DEF',
+      }),
+    );
+
+    await channelService.channelAction('agent-1', 'telegram', 'test', {
+      target: '123456789',
+      message: 'connected',
+    });
+    expect(computers.runtimeChannelAction).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        action: 'test',
+        target: '123456789',
+        message: 'connected',
+      }),
+    );
+  });
+
+  it('rejects malformed pairing codes before contacting the runtime', async () => {
+    const computers = { runtimeChannelAction: jest.fn() };
+    const channelService = new RuntimeManagementService(
+      {} as any,
+      computers as any,
+      encryption as any,
+    );
+    jest.spyOn(channelService as any, 'getAgent').mockResolvedValue({
+      runtimeType: 'hermes',
+      runtimeConfig: { channels: { discord: { enabled: true } } },
+    });
+
+    await expect(
+      channelService.channelAction('agent-1', 'discord', 'approve', {
+        pairingCode: 'bad code',
+      }),
+    ).rejects.toThrow(BadRequestException);
+    expect(computers.runtimeChannelAction).not.toHaveBeenCalled();
   });
 
   it('reuses an active assigned computer without starting it again', async () => {

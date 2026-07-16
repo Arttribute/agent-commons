@@ -55,6 +55,8 @@ phases:
         TaskRoleArn="$TASK_ROLE_ARN"
         InfrastructureRoleArn="$INFRASTRUCTURE_ROLE_ARN"
         RuntimeSecretArn="$RUNTIME_SECRET_ARN"
+        XOAuthEnabled="${X_OAUTH_ENABLED:-false}"
+        AgentCommonsApiUrl="${AGENT_COMMONS_API_URL:-https://api.agentcommons.io}"
         AgentFilesS3Bucket="$AGENT_FILES_S3_BUCKET"
         AgentFilesS3Region="$AGENT_FILES_S3_REGION"
         AgentFilesS3Prefix="$AGENT_FILES_S3_PREFIX"

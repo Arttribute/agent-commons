@@ -203,6 +203,50 @@ describe('AgentToolsController dynamic tool execution', () => {
     });
   });
 
+  describe('X public write safety', () => {
+    it('builds a post, reply, or quote body without leaking control args', () => {
+      expect(
+        (controller as any).applyBodyTransform('xCreatePost', {
+          text: 'Hello from Agent Commons',
+          confirmed: true,
+        }),
+      ).toEqual({ text: 'Hello from Agent Commons' });
+      expect(
+        (controller as any).applyBodyTransform('xCreatePost', {
+          text: 'A reply',
+          replyToPostId: '123',
+          confirmed: true,
+        }),
+      ).toEqual({
+        text: 'A reply',
+        reply: { in_reply_to_tweet_id: '123' },
+      });
+      expect(() =>
+        (controller as any).applyBodyTransform('xCreatePost', {
+          text: 'Ambiguous',
+          replyToPostId: '123',
+          quotePostId: '456',
+        }),
+      ).toThrow(/both a reply and a quote/);
+    });
+
+    it('blocks a public write until explicit confirmation is present', async () => {
+      await expect(
+        (controller as any).invokeDynamicTool(
+          {
+            method: 'POST',
+            baseUrl: 'https://api.x.com',
+            path: '/2/tweets',
+            bodyTransform: 'xCreatePost',
+            requiresConfirmation: true,
+          },
+          { text: 'Not approved yet' },
+          { agentId: 'agent-1' },
+        ),
+      ).rejects.toThrow(/explicit user confirmation/);
+    });
+  });
+
   describe('internal caller assertion', () => {
     const env = process.env;
 

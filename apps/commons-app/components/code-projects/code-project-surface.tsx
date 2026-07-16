@@ -14,10 +14,13 @@ import {
   RefreshCw,
   Rocket,
   Smartphone,
+  Moon,
+  Sun,
+  Github,
   X,
 } from "lucide-react";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
-import { oneDark } from "react-syntax-highlighter/dist/esm/styles/prism";
+import { oneDark, oneLight } from "react-syntax-highlighter/dist/esm/styles/prism";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
@@ -42,9 +45,10 @@ export function CodeProjectSurface({
   const [view, setView] = useState<WorkspaceView>("code");
   const [previewSize, setPreviewSize] = useState<PreviewSize>("desktop");
   const [loading, setLoading] = useState(true);
-  const [action, setAction] = useState<"publish" | "verify" | null>(null);
+  const [action, setAction] = useState<"publish" | "verify" | "github" | null>(null);
   const [copied, setCopied] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [theme, setTheme] = useState<"light" | "dark">("light");
 
   const load = useCallback(async () => {
     try {
@@ -89,7 +93,7 @@ export function CodeProjectSurface({
   );
   const latest = project?.deployments?.[0];
 
-  const runAction = async (next: "publish" | "verify") => {
+  const runAction = async (next: "publish" | "verify" | "github") => {
     setAction(next);
     setError(null);
     try {
@@ -105,7 +109,7 @@ export function CodeProjectSurface({
       if (!response.ok)
         throw new Error(payload?.message ?? payload?.error ?? `${next} failed`);
       await load();
-      setView("preview");
+      if (next !== "github") setView("preview");
     } catch (err) {
       setError(err instanceof Error ? err.message : `${next} failed`);
     } finally {
@@ -121,7 +125,7 @@ export function CodeProjectSurface({
   };
 
   return (
-    <aside className="relative z-30 flex h-full min-h-0 w-[min(920px,72vw)] shrink-0 flex-col overflow-hidden border-l border-zinc-800 bg-zinc-950 text-zinc-100 shadow-2xl max-md:absolute max-md:inset-0 max-md:w-full">
+    <aside className={cn("relative z-30 flex h-full min-h-0 w-[min(920px,72vw)] shrink-0 flex-col overflow-hidden border-l border-zinc-800 bg-zinc-950 text-zinc-100 shadow-2xl max-md:absolute max-md:inset-0 max-md:w-full", theme === "light" && "code-project-light")}>
       <header className="flex h-12 shrink-0 items-center gap-3 border-b border-white/[0.08] px-3">
         <span className="flex h-7 w-7 items-center justify-center rounded-md bg-indigo-500/15 text-indigo-300">
           <Code2 className="h-4 w-4" />
@@ -153,6 +157,8 @@ export function CodeProjectSurface({
         </div>
 
         <div className="ml-auto flex items-center gap-1">
+          <button type="button" title={`${theme === "light" ? "Dark" : "Light"} appearance`} onClick={() => setTheme((value) => value === "light" ? "dark" : "light")} className="flex h-7 w-7 items-center justify-center rounded-md text-zinc-400 hover:bg-white/10 hover:text-white">{theme === "light" ? <Moon className="h-3.5 w-3.5" /> : <Sun className="h-3.5 w-3.5" />}</button>
+          {project?.repositoryUrl ? <a href={project.repositoryUrl} target="_blank" rel="noreferrer" title="Open GitHub repository" className="flex h-7 w-7 items-center justify-center rounded-md text-zinc-400 hover:bg-white/10 hover:text-white"><Github className="h-3.5 w-3.5" /></a> : <Button size="sm" variant="ghost" className="h-7 gap-1.5 px-2 text-xs text-zinc-300 hover:bg-white/10 hover:text-white" disabled={Boolean(action)} onClick={() => runAction("github")}>{action === "github" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Github className="h-3.5 w-3.5" />}GitHub</Button>}
           {project?.publicUrl && (
             <>
               <button
@@ -265,7 +271,7 @@ export function CodeProjectSurface({
                     <Loader2 className="h-5 w-5 animate-spin text-zinc-600" />
                   </div>
                 ) : activeFile ? (
-                  <ProjectCode file={activeFile} />
+                  <ProjectCode file={activeFile} theme={theme} />
                 ) : (
                   <div className="flex h-full items-center justify-center text-xs text-zinc-600">
                     No source file selected
@@ -372,11 +378,11 @@ function ViewButton({
   );
 }
 
-function ProjectCode({ file }: { file: CodeProjectFile }) {
+function ProjectCode({ file, theme }: { file: CodeProjectFile; theme: "light" | "dark" }) {
   return (
     <SyntaxHighlighter
       language={languageOf(file.path)}
-      style={oneDark}
+      style={theme === "dark" ? oneDark : oneLight}
       showLineNumbers
       wrapLongLines={false}
       customStyle={{

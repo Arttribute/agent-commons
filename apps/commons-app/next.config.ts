@@ -28,10 +28,6 @@ const nextConfig = {
       },
       {
         protocol: "https",
-        hostname: "oaidalleapiprodscus.blob.core.windows.net", // Dalle Imahges
-      },
-      {
-        protocol: "https",
         hostname: "lh3.googleusercontent.com", // Added domain for Google user images
       },
       {

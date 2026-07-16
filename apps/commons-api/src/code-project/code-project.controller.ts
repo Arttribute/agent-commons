@@ -112,6 +112,16 @@ export class CodeProjectController {
       }),
     };
   }
+
+  @Post(':projectId/github')
+  @RateLimit({ limit: 5, windowMs: 60_000, keyStrategy: 'user' })
+  async exportToGitHub(
+    @Param('agentId') agentId: string,
+    @Param('projectId') projectId: string,
+    @Body() body: { repositoryName?: string; private?: boolean } = {},
+  ) {
+    return { data: await this.projects.exportToGitHub({ agentId, projectId, ...body }) };
+  }
 }
 
 @Public()

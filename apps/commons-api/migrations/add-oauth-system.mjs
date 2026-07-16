@@ -118,7 +118,7 @@ const providerDefinitions = [
     logoUrl: 'https://github.githubassets.com/images/modules/logos_page/GitHub-Mark.png',
     authUrl: 'https://github.com/login/oauth/authorize',
     tokenUrl: 'https://github.com/login/oauth/access_token',
-    revokeUrl: null,
+    revokeUrl: 'https://api.x.com/2/oauth2/revoke',
     userInfoUrl: 'https://api.github.com/user',
     clientIdEnv: 'GITHUB_OAUTH_CLIENT_ID',
     clientSecretEnv: 'GITHUB_OAUTH_CLIENT_SECRET',
@@ -177,6 +177,24 @@ const providerDefinitions = [
       ],
       assets: ['asset:read', 'asset:write'],
       folders: ['folder:read', 'folder:write']
+    },
+    authorizationParams: {},
+    tokenParams: {}
+  },
+  {
+    providerKey: 'x',
+    displayName: 'X (Twitter)',
+    description: 'Connect an X account for approved read, search, publish, reply, quote, and delete actions',
+    logoUrl: 'https://abs.twimg.com/favicons/twitter.3.ico',
+    authUrl: 'https://x.com/i/oauth2/authorize',
+    tokenUrl: 'https://api.x.com/2/oauth2/token',
+    revokeUrl: null,
+    userInfoUrl: 'https://api.x.com/2/users/me?user.fields=id,name,username,profile_image_url',
+    clientIdEnv: 'X_OAUTH_CLIENT_ID',
+    clientSecretEnv: 'X_OAUTH_CLIENT_SECRET',
+    scopes: {
+      default: ['tweet.read', 'users.read', 'offline.access'],
+      publish: ['tweet.read', 'tweet.write', 'users.read', 'offline.access']
     },
     authorizationParams: {},
     tokenParams: {}

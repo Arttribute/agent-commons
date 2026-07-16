@@ -61,7 +61,7 @@ export default function SkillDetailPage({
   }
 
   return (
-    <div className="flex h-full min-w-0 flex-col bg-background">
+    <div className="flex h-full min-w-0 flex-col bg-stone-50">
       <div className="flex items-center justify-between gap-3 border-b border-border/70 px-4 py-2">
         <div className="flex min-w-0 items-center gap-2">
           <Button

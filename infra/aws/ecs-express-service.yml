@@ -30,9 +30,19 @@ Parameters:
   AgentFilesS3Prefix:
     Type: String
     Default: agent-commons-files
+  AgentCommonsApiUrl:
+    Type: String
+    Default: https://api.agentcommons.io
+    Description: Public API origin used by shared managed runtimes to call back to this environment.
+  XOAuthEnabled:
+    Type: String
+    Default: "false"
+    AllowedValues: ["true", "false"]
+    Description: Inject the X OAuth app credentials after both keys exist in the runtime secret.
 
 Conditions:
   IsProduction: !Equals [!Ref Environment, production]
+  IsXOAuthEnabled: !Equals [!Ref XOAuthEnabled, "true"]
 
 Resources:
   ApiService:
@@ -66,6 +76,8 @@ Resources:
             Value: !Ref AgentFilesS3Region
           - Name: AGENT_FILES_S3_PREFIX
             Value: !Ref AgentFilesS3Prefix
+          - Name: AGENT_COMMONS_API_URL
+            Value: !Ref AgentCommonsApiUrl
           - Name: PROTOTYPE_PUBLIC_BASE_URL
             Value: !If
               - IsProduction
@@ -142,6 +154,16 @@ Resources:
             ValueFrom: !Sub "${RuntimeSecretArn}:SPACE_RTC_TICKET_SECRET::"
           - Name: MANAGEMENT_KEY_ENABLED
             ValueFrom: !Sub "${RuntimeSecretArn}:MANAGEMENT_KEY_ENABLED::"
+          - !If
+            - IsXOAuthEnabled
+            - Name: X_OAUTH_CLIENT_ID
+              ValueFrom: !Sub "${RuntimeSecretArn}:X_OAUTH_CLIENT_ID::"
+            - !Ref AWS::NoValue
+          - !If
+            - IsXOAuthEnabled
+            - Name: X_OAUTH_CLIENT_SECRET
+              ValueFrom: !Sub "${RuntimeSecretArn}:X_OAUTH_CLIENT_SECRET::"
+            - !Ref AWS::NoValue
           - Name: STRIPE_SECRET_KEY
             ValueFrom: !Sub "${RuntimeSecretArn}:STRIPE_SECRET_KEY::"
           - Name: STRIPE_WEBHOOK_SECRET

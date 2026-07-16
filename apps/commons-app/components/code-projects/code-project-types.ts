@@ -36,6 +36,7 @@ export type CodeProject = {
   status: "draft" | "building" | "ready" | "failed" | string;
   visibility: "private" | "public" | string;
   publicUrl?: string | null;
+  repositoryUrl?: string | null;
   files: CodeProjectFile[];
   deployments: CodeProjectDeployment[];
   updatedAt: string;

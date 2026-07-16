@@ -6,12 +6,10 @@ import { AuthModule } from './modules/auth';
 import { AgentModule } from './agent';
 import { PinataModule } from './pinata/pinata.module';
 import { ToolModule } from './tool';
-import { ResourceModule } from './resource';
 import { DatabaseModule } from './modules/database';
 import { OpenAIModule } from './modules/openai';
 import { EncryptionModule } from './modules/encryption';
 import { ModelProviderModule } from './modules/model-provider';
-import { EmbeddingModule } from './embedding/embedding.module';
 import { LiaisonModule } from './liaison/liaison.module';
 import { SpaceModule } from './space/space.module';
 import { OAuthModule } from './oauth/oauth.module';
@@ -41,14 +39,12 @@ import { CodeProjectModule } from './code-project';
     EncryptionModule,
     ModelProviderModule, // Global model provider factory
     PinataModule,
-    EmbeddingModule,
 
     // Feature modules
     AgentModule,
     ActivityModule,
     ToolModule,
     TaskModule,
-    ResourceModule,
     LiaisonModule,
     SpaceModule,
     OAuthModule,

@@ -15,8 +15,6 @@ import {
   HoverCardTrigger,
 } from "@/components/ui/hover-card";
 import { AgentAvatar } from "@/components/agents/agent-avatar";
-import { DotPattern } from "@/components/magicui/dot-pattern";
-import { cn } from "@/lib/utils";
 
 // useLayoutEffect warns during SSR; fall back to useEffect on the server.
 const useIsomorphicLayoutEffect =
@@ -88,7 +86,8 @@ function generateAgentPositions(agents: Agent[]): Position[] {
     const baseLeft = cell.col * cellWidthPercent + cellWidthPercent / 2;
     const baseTop = cell.row * cellHeightPercent + cellHeightPercent / 2;
     const offsetX = (seededRandom(index) - 0.5) * cellWidthPercent * 0.5;
-    const offsetY = (seededRandom(index + 1000) - 0.5) * cellHeightPercent * 0.5;
+    const offsetY =
+      (seededRandom(index + 1000) - 0.5) * cellHeightPercent * 0.5;
 
     return {
       top: baseTop + offsetY,
@@ -205,15 +204,6 @@ export default function AgentsShowcase({
 
   return (
     <div ref={containerRef} className="relative w-full h-full rounded-lg">
-      {/* Background pattern at the very bottom */}
-      <div className="pointer-events-none absolute inset-0 -z-10 overflow-hidden rounded-lg">
-        <DotPattern
-          className={cn(
-            "[mask-image:radial-gradient(600px_circle_at_center,white,transparent)] "
-          )}
-        />
-      </div>
-
       {agents.map((agent, idx) => {
         const position = positions[idx] ?? basePositions[idx];
         if (!position) return null;

@@ -1,4 +1,9 @@
-import { Injectable, Logger, NotFoundException } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  NotFoundException,
+  OnModuleInit,
+} from '@nestjs/common';
 import { eq, and, or } from 'drizzle-orm';
 import { DatabaseService } from '../modules/database';
 import { EncryptionService } from '../modules/encryption';
@@ -17,13 +22,80 @@ import * as oauthSchema from '../../models/oauth-schema';
  * - Provider discovery
  */
 @Injectable()
-export class OAuthProviderService {
+export class OAuthProviderService implements OnModuleInit {
   private readonly logger = new Logger(OAuthProviderService.name);
 
   constructor(
     private readonly db: DatabaseService,
     private readonly encryption: EncryptionService,
   ) {}
+
+  async onModuleInit() {
+    await this.syncXProviderFromEnvironment();
+  }
+
+  /**
+   * X connections use one platform OAuth app. End users only see the normal
+   * "Connect X" consent screen; operators provide the app credentials once
+   * through the runtime secret. Keeping this sync in the application makes a
+   * deploy self-configuring and avoids a separate production database command.
+   */
+  private async syncXProviderFromEnvironment() {
+    const clientId =
+      process.env.X_OAUTH_CLIENT_ID ?? process.env.TWITTER_OAUTH_CLIENT_ID;
+    const clientSecret =
+      process.env.X_OAUTH_CLIENT_SECRET ??
+      process.env.TWITTER_OAUTH_CLIENT_SECRET;
+    if (!clientId || !clientSecret) {
+      this.logger.warn(
+        'X OAuth is unavailable: set X_OAUTH_CLIENT_ID and X_OAUTH_CLIENT_SECRET',
+      );
+      return;
+    }
+
+    const config: oauthSchema.OAuthProviderConfig = {
+      providerKey: 'x',
+      displayName: 'X (Twitter)',
+      description:
+        'Connect an X account so approved agents can read, search, publish, reply to, and delete posts.',
+      logoUrl: 'https://abs.twimg.com/favicons/twitter.3.ico',
+      authUrl: 'https://x.com/i/oauth2/authorize',
+      tokenUrl: 'https://api.x.com/2/oauth2/token',
+      revokeUrl: 'https://api.x.com/2/oauth2/revoke',
+      userInfoUrl:
+        'https://api.x.com/2/users/me?user.fields=id,name,username,profile_image_url',
+      clientId,
+      clientSecret,
+      scopes: {
+        default: ['tweet.read', 'users.read', 'offline.access'],
+        publish: [
+          'tweet.read',
+          'tweet.write',
+          'users.read',
+          'offline.access',
+        ],
+      },
+      authorizationParams: {},
+      tokenParams: {},
+      isPlatform: true,
+    };
+
+    try {
+      const existing = await this.db.query.oauthProvider.findFirst({
+        where: (provider: any) => eq(provider.providerKey, 'x'),
+      });
+      if (existing) {
+        await this.updateProvider('x', config);
+      } else {
+        await this.createProvider(config);
+      }
+      this.logger.log('X OAuth provider is configured');
+    } catch (error: any) {
+      // A provider outage must not prevent the whole API from booting. The
+      // provider stays absent and the UI reports that platform setup is needed.
+      this.logger.error(`Could not configure X OAuth: ${error.message}`);
+    }
+  }
 
   /**
    * Create a new OAuth provider
@@ -413,6 +485,9 @@ export class OAuthProviderService {
 function providerAliases(providerKey: string) {
   if (providerKey === 'google_workspace' || providerKey === 'google') {
     return ['google_workspace', 'google', 'google_oauth'];
+  }
+  if (providerKey === 'x' || providerKey === 'twitter') {
+    return ['x', 'twitter'];
   }
   return [providerKey];
 }
