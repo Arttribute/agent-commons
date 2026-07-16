@@ -1427,7 +1427,7 @@ export const copilotChange = pgTable(
   'copilot_change',
   {
     changeId: uuid('change_id')
-      .default(sql`uuid_generate_v4()`)
+      .default(sql`gen_random_uuid()`)
       .primaryKey(),
     agentId: text('agent_id')
       .notNull()

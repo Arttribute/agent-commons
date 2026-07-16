@@ -9,7 +9,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS agent_default_owner_idx
   WHERE is_default = true AND owner_user_id IS NOT NULL;
 
 CREATE TABLE IF NOT EXISTS copilot_change (
-  change_id uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
+  change_id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   agent_id text NOT NULL REFERENCES agent(agent_id) ON DELETE CASCADE,
   owner_user_id text NOT NULL,
   scope text NOT NULL,
