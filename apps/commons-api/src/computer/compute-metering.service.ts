@@ -62,6 +62,7 @@ export class ComputeMeteringService implements OnModuleInit, OnModuleDestroy {
         .select({
           computerId: schema.agentComputerInstance.computerId,
           agentId: schema.agentComputerInstance.agentId,
+          status: schema.agentComputerInstance.status,
           ownerUserId: schema.agentComputerInstance.ownerUserId,
           workspaceId: schema.agentComputerInstance.workspaceId,
           resourceProfile: schema.agentComputerInstance.resourceProfile,
@@ -72,7 +73,12 @@ export class ComputeMeteringService implements OnModuleInit, OnModuleDestroy {
         .from(schema.agentComputerInstance)
         .where(
           and(
-            inArray(schema.agentComputerInstance.status, ['running', 'idle']),
+            eq(schema.agentComputerInstance.canonical, true),
+            inArray(schema.agentComputerInstance.status, [
+              'running',
+              'idle',
+              'stopping',
+            ]),
             sql`coalesce(${schema.agentComputerInstance.meteredThroughAt}, ${schema.agentComputerInstance.startedAt}) <= ${dueBefore}::timestamptz`,
           ),
         )
@@ -93,6 +99,14 @@ export class ComputeMeteringService implements OnModuleInit, OnModuleDestroy {
   }
 
   private async meterInstance(inst: any, now: Date): Promise<void> {
+    // A prior zero-credit stop request failed remotely. Keep retrying the stop
+    // without charging another minute or treating the runtime as usable.
+    if (inst.status === 'stopping') {
+      if (inst.ownerUserId) {
+        await this.handleExhausted(inst, inst.ownerUserId);
+      }
+      return;
+    }
     const cursor: Date = inst.meteredThroughAt ?? inst.startedAt;
     if (!cursor) return; // never started — nothing to meter
     const elapsedMs = now.getTime() - new Date(cursor).getTime();

@@ -227,4 +227,55 @@ describe('ComputerService', () => {
       ),
     ).toThrow(BadRequestException);
   });
+
+  it('persists stop intent and supplies the legacy fleet fallback', async () => {
+    const previousFleetId = process.env.COMMON_OS_FLEET_ID;
+    process.env.COMMON_OS_FLEET_ID = 'fleet_1';
+    const returning = jest.fn().mockResolvedValue([
+      {
+        computerId: '11111111-1111-4111-8111-111111111111',
+        agentId: 'agent_1',
+        status: 'stopped',
+        desiredState: 'stopped',
+      },
+    ]);
+    const set = jest.fn().mockReturnValue({
+      where: jest.fn().mockReturnValue({ returning }),
+    });
+    db.update.mockReturnValue({ set });
+    jest.spyOn(service, 'getInstance').mockResolvedValue({
+      computerId: '11111111-1111-4111-8111-111111111111',
+      agentId: 'agent_1',
+      sessionId: null,
+      status: 'running',
+      desiredState: 'running',
+      commonOsAgentId: 'commonos_agent_1',
+    } as any);
+    const commonOsRequest = jest
+      .spyOn(service as any, 'commonOsComputerRequest')
+      .mockResolvedValue({ desiredState: 'stopped' });
+
+    try {
+      await service.stopComputer({
+        agentId: 'agent_1',
+        computerId: '11111111-1111-4111-8111-111111111111',
+        actorType: 'service',
+      });
+    } finally {
+      if (previousFleetId === undefined) delete process.env.COMMON_OS_FLEET_ID;
+      else process.env.COMMON_OS_FLEET_ID = previousFleetId;
+    }
+
+    expect(set).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({ status: 'stopping', desiredState: 'stopped' }),
+    );
+    expect(commonOsRequest).toHaveBeenCalledWith(
+      'PATCH',
+      '/computers/commonos_agent_1',
+      '/fleets/fleet_1/agents/commonos_agent_1',
+      { desiredState: 'stopped' },
+      'agent_1',
+    );
+  });
 });

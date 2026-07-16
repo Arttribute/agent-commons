@@ -665,11 +665,23 @@ export class ComputerService {
     if (computer.status === 'stopped' && computer.desiredState === 'stopped') {
       return computer;
     }
+    // Persist intent before the remote call. If CommonOS is temporarily
+    // unavailable, metering can retry the stop without continuing to charge.
+    await this.db
+      .update(schema.agentComputerInstance)
+      .set({
+        status: 'stopping',
+        desiredState: 'stopped',
+        updatedAt: new Date(),
+      })
+      .where(eq(schema.agentComputerInstance.computerId, args.computerId));
     if (computer.commonOsAgentId) {
       await this.commonOsComputerRequest<CommonOsAgent>(
         'PATCH',
         `/computers/${computer.commonOsAgentId}`,
-        undefined,
+        this.commonOsFleetId()
+          ? `/fleets/${this.commonOsFleetId()}/agents/${computer.commonOsAgentId}`
+          : undefined,
         { desiredState: 'stopped' },
         args.agentId,
       );
