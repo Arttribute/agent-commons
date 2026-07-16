@@ -8,6 +8,7 @@ import { HumanMessage, SystemMessage } from '@langchain/core/messages';
 import { ChatCompletionMessageParam } from 'openai/resources/chat/completions.mjs';
 import { ModelProviderFactory } from '~/modules/model-provider';
 import { AgentService } from '~/agent/agent.service';
+import { CopilotService } from '~/agent/copilot.service';
 import { GoalService, CreateGoalDto } from '~/goal/goal.service';
 import { TaskService, CreateTaskDto, TaskContext } from '~/task/task.service';
 import { TaskExecutionService } from '~/task/task-execution.service';
@@ -36,6 +37,36 @@ type ToolExecutionMetadata = {
 };
 
 export interface CommonTool {
+  /**
+   * Inspect the calling Commons Copilot owner's platform resources before
+   * designing or changing account state.
+   */
+  listCommonsResources(props: {
+    resourceTypes?: Array<
+      'agents' | 'tools' | 'skills' | 'tasks' | 'workflows'
+    >;
+    agentId: string;
+  }): Promise<Record<string, unknown>>;
+
+  /**
+   * Create a reviewable workflow proposal. Depending on the user's copilot
+   * access policy it is either applied immediately with undo history or held
+   * for explicit confirmation.
+   */
+  proposeWorkflowChange(props: {
+    workflowId?: string;
+    name?: string;
+    description?: string;
+    definition: {
+      startNodeId?: string;
+      endNodeId?: string;
+      nodes: Array<Record<string, unknown>>;
+      edges: Array<Record<string, unknown>>;
+    };
+    summary: string;
+    agentId: string;
+  }): Promise<any>;
+
   createGoal(props: CreateGoalDto): Promise<any>;
   /** Text-to-speech for an agent inside a space */
   speakInSpace(props: {
@@ -131,6 +162,8 @@ export interface CommonTool {
     recurringSessionMode?: 'same' | 'new';
     context?: Record<string, any>;
     priority?: number;
+    /** Set true only after the user explicitly approves this exact task. */
+    confirmed?: boolean;
   }): Promise<any>;
   updateTaskProgress(props: {
     taskId: string;
@@ -545,6 +578,8 @@ export interface CommonTool {
 export class CommonToolService {
   constructor(
     @Inject(forwardRef(() => AgentService)) private agent: AgentService,
+    @Inject(forwardRef(() => CopilotService))
+    private copilot: CopilotService,
     @Inject(forwardRef(() => GoalService))
     private goals: GoalService,
     @Inject(forwardRef(() => TaskService))
@@ -569,6 +604,41 @@ export class CommonToolService {
     private modelProviderFactory: ModelProviderFactory,
     private moduleRef: ModuleRef,
   ) {}
+
+  async listCommonsResources(
+    props: {
+      resourceTypes?: Array<
+        'agents' | 'tools' | 'skills' | 'tasks' | 'workflows'
+      >;
+      agentId: string;
+    },
+    metadata?: { agentId?: string },
+  ) {
+    return this.copilot.listResources(
+      this.requireToolAgentId(props.agentId, metadata),
+      props.resourceTypes ?? [],
+    );
+  }
+
+  async proposeWorkflowChange(
+    props: {
+      workflowId?: string;
+      name?: string;
+      description?: string;
+      definition: {
+        startNodeId?: string;
+        endNodeId?: string;
+        nodes: Array<Record<string, unknown>>;
+        edges: Array<Record<string, unknown>>;
+      };
+      summary: string;
+      agentId: string;
+    },
+    metadata?: { agentId?: string },
+  ) {
+    const agentId = this.requireToolAgentId(props.agentId, metadata);
+    return this.copilot.proposeWorkflowChange(agentId, props);
+  }
 
   private requireToolAgentId(
     agentId?: string,
@@ -789,14 +859,22 @@ export class CommonToolService {
       recurringSessionMode?: 'same' | 'new';
       context?: Record<string, any>;
       priority?: number;
+      confirmed?: boolean;
     },
     metadata?: { agentId: string },
   ) {
     // Agent-created tasks use the agent's ID as createdBy
     const createdBy = metadata?.agentId || props.agentId;
+    await this.copilot.assertMutationAllowed(
+      createdBy,
+      'tasks',
+      props.confirmed === true,
+    );
+
+    const { confirmed: _confirmed, ...taskProps } = props;
 
     return await this.taskExecution.createTask({
-      ...props,
+      ...taskProps,
       createdBy,
       createdByType: 'agent',
     });
@@ -992,12 +1070,7 @@ export class CommonToolService {
       model: string;
     }[]
   > {
-    const {
-      prompt,
-      n = 1,
-      size = '1024x1024',
-      quality = 'auto',
-    } = props;
+    const { prompt, n = 1, size = '1024x1024', quality = 'auto' } = props;
     const model = process.env.OPENAI_IMAGE_MODEL || 'gpt-image-2';
 
     // The Image API is the direct, single-turn generation surface. GPT Image
@@ -1111,7 +1184,12 @@ export class CommonToolService {
   }
 
   async searchLibraryArtifacts(
-    props: { query: string; limit?: number; agentId: string; sessionId?: string },
+    props: {
+      query: string;
+      limit?: number;
+      agentId: string;
+      sessionId?: string;
+    },
     metadata?: ToolExecutionMetadata,
   ) {
     const agentId = this.requireToolAgentId(props.agentId, metadata);

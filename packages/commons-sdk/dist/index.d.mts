@@ -51,11 +51,33 @@ interface Agent {
     isLiaison?: boolean;
     externalUrl?: string;
     createdAt: string;
+    isDefault?: boolean;
+    isSystemManaged?: boolean;
+    copilotAccessMode?: "full" | "scoped" | "confirm" | null;
+    copilotScopes?: string[];
     runtimeType?: AgentRuntimeType;
     runtimeVersion?: string | null;
     runtimeStatus?: AgentRuntimeStatus;
     runtimeConfig?: AgentRuntimeConfig;
     runtimeCapabilities?: Record<string, boolean>;
+}
+interface CopilotChange {
+    changeId: string;
+    agentId: string;
+    ownerUserId: string;
+    scope: string;
+    resourceType: string;
+    resourceId?: string | null;
+    action: "create" | "update" | "delete";
+    status: "pending" | "applied" | "rejected" | "reverted";
+    title: string;
+    description?: string | null;
+    before?: unknown;
+    after?: unknown;
+    diff?: unknown;
+    createdAt: string;
+    reviewedAt?: string | null;
+    appliedAt?: string | null;
 }
 /** Agent computers are durable. Runtime pods may be replaced, but this identity persists. */
 type AgentComputerLifecycle = "persistent";
@@ -409,6 +431,11 @@ interface WorkflowNode {
     id: string;
     type: WorkflowNodeType | string;
     toolId?: string;
+    toolName?: string;
+    agentId?: string;
+    agentAvatar?: string;
+    workflowId?: string;
+    label?: string;
     position?: {
         x: number;
         y: number;
@@ -423,6 +450,9 @@ interface WorkflowEdge {
     sourceHandle?: string;
     targetHandle?: string;
     mapping?: Record<string, string>;
+    /** Runtime target types used for dynamic (`any`) values and safe coercion. */
+    targetTypes?: Record<string, string>;
+    mappingMode?: "exact" | "dynamic" | "coerce";
 }
 interface WorkflowExecution {
     executionId: string;
@@ -431,7 +461,11 @@ interface WorkflowExecution {
     startedAt?: string;
     completedAt?: string;
     outputData?: any;
+    /** Alias returned by the immediate execute/status REST response. */
+    result?: any;
     nodeResults?: Record<string, any>;
+    /** Alias returned by the immediate execute/status REST response. */
+    stepResults?: Record<string, any>;
     errorMessage?: string;
     currentNode?: string;
     /** Set when status is 'awaiting_approval' */
@@ -1134,6 +1168,33 @@ declare class CommonsClient {
          */
         listVoices: (provider?: "openai" | "elevenlabs", q?: string) => Promise<{
             data: any[];
+        }>;
+    };
+    get copilot(): {
+        get: () => Promise<{
+            data: Agent | null;
+        }>;
+        updateSettings: (params: {
+            accessMode: "full" | "scoped" | "confirm";
+            scopes?: string[];
+        }) => Promise<{
+            data: Agent;
+        }>;
+        listChanges: (filter?: {
+            status?: string;
+            resourceType?: string;
+            resourceId?: string;
+        }) => Promise<{
+            data: CopilotChange[];
+        }>;
+        acceptChange: (changeId: string) => Promise<{
+            data: CopilotChange;
+        }>;
+        rejectChange: (changeId: string) => Promise<{
+            data: CopilotChange;
+        }>;
+        revertChange: (changeId: string) => Promise<{
+            data: CopilotChange;
         }>;
     };
     get run(): {

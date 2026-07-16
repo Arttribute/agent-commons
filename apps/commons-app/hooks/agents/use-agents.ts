@@ -55,17 +55,22 @@ export function useAgents(owner?: string, auto: boolean = true) {
           : Array.isArray(data.data)
             ? data.data
             : [];
-        const mapped: AgentItem[] = list.map((a: any) => ({
-          ...a,
-          agentId: a.agentId || a.agent_id || a.id,
-        }));
+        const mapped: AgentItem[] = list
+          .map((a: any) => ({
+            ...a,
+            agentId: a.agentId || a.agent_id || a.id,
+          }))
+          .sort(
+            (a: any, b: any) =>
+              Number(Boolean(b.isDefault)) - Number(Boolean(a.isDefault)),
+          );
         setAgents(mapped);
         try {
           AGENTS_CACHE.set(owner, { ts: Date.now(), data: mapped });
           if (typeof window !== "undefined") {
             localStorage.setItem(
               `agents:${owner}`,
-              JSON.stringify({ ts: Date.now(), data: mapped })
+              JSON.stringify({ ts: Date.now(), data: mapped }),
             );
           }
         } catch (e) {
@@ -77,7 +82,7 @@ export function useAgents(owner?: string, auto: boolean = true) {
         if (!background) setLoading(false);
       }
     },
-    [owner]
+    [owner],
   );
 
   useEffect(() => {

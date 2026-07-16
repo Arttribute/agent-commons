@@ -8,6 +8,7 @@ import { Space_Grotesk } from "next/font/google";
 import { Toaster } from "@/components/ui/toaster";
 import { SidebarProvider } from "@/context/SidebarContext";
 import { GlobalSearchProvider } from "@/context/SearchContext";
+import { FloatingCommonsCopilot } from "@/components/copilot/floating-commons-copilot";
 
 const spaceGrotesk = Space_Grotesk({
   weight: ["400", "500", "600", "700"],
@@ -44,6 +45,7 @@ export default function RootLayout({
             <SidebarProvider>
               <GlobalSearchProvider>
                 {children}
+                <FloatingCommonsCopilot />
                 <Toaster />
               </GlobalSearchProvider>
             </SidebarProvider>

@@ -43,6 +43,13 @@ export const agent = pgTable('agent', {
   externalTools: jsonb('external_tools').$type<string[]>(),
   commonTools: jsonb('common_tools').$type<string[]>(),
 
+  // Native Commons copilot metadata. System-managed copilot behavior remains
+  // protected while its user-facing profile can still be personalized.
+  isDefault: pgBoolean('is_default').default(false).notNull(),
+  isSystemManaged: pgBoolean('is_system_managed').default(false).notNull(),
+  copilotAccessMode: text('copilot_access_mode'), // 'full' | 'scoped' | 'confirm'
+  copilotScopes: jsonb('copilot_scopes').$type<string[]>().default([]),
+
   temperature: real('temperature'),
   maxTokens: integer('max_tokens'),
   topP: real('top_p'),
@@ -584,9 +591,12 @@ export const libraryItem = pgTable(
     sourceAgentId: text('source_agent_id').references(() => agent.agentId, {
       onDelete: 'set null',
     }),
-    sourceSessionId: uuid('source_session_id').references(() => session.sessionId, {
-      onDelete: 'set null',
-    }),
+    sourceSessionId: uuid('source_session_id').references(
+      () => session.sessionId,
+      {
+        onDelete: 'set null',
+      },
+    ),
     kind: text('kind').notNull(),
     name: text('name').notNull(),
     description: text('description'),
@@ -622,7 +632,10 @@ export const libraryItem = pgTable(
       table.sourceSessionId,
       table.updatedAt,
     ),
-    shaIdx: index('idx_library_item_sha256').on(table.ownerUserId, table.sha256),
+    shaIdx: index('idx_library_item_sha256').on(
+      table.ownerUserId,
+      table.sha256,
+    ),
   }),
 );
 
@@ -672,7 +685,9 @@ export const libraryBlob = pgTable(
 export const libraryChunk = pgTable(
   'library_chunk',
   {
-    chunkId: uuid('chunk_id').default(sql`gen_random_uuid()`).primaryKey(),
+    chunkId: uuid('chunk_id')
+      .default(sql`gen_random_uuid()`)
+      .primaryKey(),
     itemId: uuid('item_id')
       .notNull()
       .references(() => libraryItem.itemId, { onDelete: 'cascade' }),
@@ -697,7 +712,9 @@ export const libraryChunk = pgTable(
 export const libraryGrant = pgTable(
   'library_grant',
   {
-    grantId: uuid('grant_id').default(sql`gen_random_uuid()`).primaryKey(),
+    grantId: uuid('grant_id')
+      .default(sql`gen_random_uuid()`)
+      .primaryKey(),
     itemId: uuid('item_id')
       .notNull()
       .references(() => libraryItem.itemId, { onDelete: 'cascade' }),
@@ -727,7 +744,9 @@ export const libraryGrant = pgTable(
 export const libraryLink = pgTable(
   'library_link',
   {
-    linkId: uuid('link_id').default(sql`gen_random_uuid()`).primaryKey(),
+    linkId: uuid('link_id')
+      .default(sql`gen_random_uuid()`)
+      .primaryKey(),
     itemId: uuid('item_id')
       .notNull()
       .references(() => libraryItem.itemId, { onDelete: 'cascade' }),
@@ -738,7 +757,10 @@ export const libraryLink = pgTable(
       .notNull(),
   },
   (table) => ({
-    scopeIdx: index('idx_library_link_scope').on(table.scopeType, table.scopeId),
+    scopeIdx: index('idx_library_link_scope').on(
+      table.scopeType,
+      table.scopeId,
+    ),
     uniqueLink: uniqueIndex('idx_library_link_unique').on(
       table.itemId,
       table.scopeType,
@@ -750,7 +772,9 @@ export const libraryLink = pgTable(
 export const libraryShareLink = pgTable(
   'library_share_link',
   {
-    shareId: uuid('share_id').default(sql`gen_random_uuid()`).primaryKey(),
+    shareId: uuid('share_id')
+      .default(sql`gen_random_uuid()`)
+      .primaryKey(),
     itemId: uuid('item_id')
       .notNull()
       .references(() => libraryItem.itemId, { onDelete: 'cascade' }),
@@ -773,7 +797,9 @@ export const libraryShareLink = pgTable(
 export const libraryAuditEvent = pgTable(
   'library_audit_event',
   {
-    eventId: uuid('event_id').default(sql`gen_random_uuid()`).primaryKey(),
+    eventId: uuid('event_id')
+      .default(sql`gen_random_uuid()`)
+      .primaryKey(),
     itemId: uuid('item_id').references(() => libraryItem.itemId, {
       onDelete: 'set null',
     }),
@@ -1394,6 +1420,48 @@ export const workflow = pgTable('workflow', {
     .default(sql`timezone('utc', now())`)
     .notNull(),
 });
+
+/* ─────────────────────────  COPILOT CHANGE REVIEW  ───────────────────────── */
+
+export const copilotChange = pgTable(
+  'copilot_change',
+  {
+    changeId: uuid('change_id')
+      .default(sql`uuid_generate_v4()`)
+      .primaryKey(),
+    agentId: text('agent_id')
+      .notNull()
+      .references(() => agent.agentId, { onDelete: 'cascade' }),
+    ownerUserId: text('owner_user_id').notNull(),
+    scope: text('scope').notNull(),
+    resourceType: text('resource_type').notNull(),
+    resourceId: text('resource_id'),
+    action: text('action').notNull(), // 'create' | 'update' | 'delete'
+    status: text('status').notNull().default('pending'),
+    title: text('title').notNull(),
+    description: text('description'),
+    before: jsonb('before'),
+    after: jsonb('after'),
+    diff: jsonb('diff'),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .default(sql`timezone('utc', now())`)
+      .notNull(),
+    reviewedAt: timestamp('reviewed_at', { withTimezone: true }),
+    appliedAt: timestamp('applied_at', { withTimezone: true }),
+  },
+  (table) => ({
+    ownerStatusIdx: index('copilot_change_owner_status_idx').on(
+      table.ownerUserId,
+      table.status,
+      table.createdAt,
+    ),
+    resourceIdx: index('copilot_change_resource_idx').on(
+      table.resourceType,
+      table.resourceId,
+      table.createdAt,
+    ),
+  }),
+);
 
 /* ─────────────────────────  WORKFLOW EXECUTION  ───────────────────────── */
 

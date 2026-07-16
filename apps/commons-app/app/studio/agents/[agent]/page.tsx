@@ -423,7 +423,7 @@ function SetupView({
                 </div>
                 <Switch
                   checked={form.a2aEnabled}
-                  disabled={!isOwner}
+                  disabled={!isOwner || Boolean(agent.isSystemManaged)}
                   onCheckedChange={(checked) =>
                     setForm((f) => ({ ...f, a2aEnabled: checked }))
                   }
@@ -474,11 +474,18 @@ function SetupView({
               />
             </div>
             <div className="grid gap-1.5">
-              <Label>System prompt</Label>
+              <Label>
+                System prompt
+                {agent.isSystemManaged && (
+                  <span className="ml-2 text-xs font-normal text-muted-foreground">
+                    Protected by Agent Commons
+                  </span>
+                )}
+              </Label>
               <Textarea
                 className="min-h-44 font-mono text-sm"
                 value={form.instructions}
-                disabled={!isOwner}
+                disabled={!isOwner || Boolean(agent.isSystemManaged)}
                 onChange={(e) =>
                   setForm((f) => ({ ...f, instructions: e.target.value }))
                 }

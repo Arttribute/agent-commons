@@ -12,6 +12,7 @@ type LauncherAgent = {
   name: string;
   avatar?: string | null;
   modelId?: string | null;
+  isDefault?: boolean;
 };
 
 /**
@@ -29,20 +30,15 @@ export function StudioAgentLauncher({
 }) {
   const router = useRouter();
   const { setPendingPrompt } = useAgentContext();
-  const { sessions, isLoading: sessionsLoading } = useUserSessions(userAddress);
+  const { isLoading: sessionsLoading } = useUserSessions(userAddress);
 
-  // The agent behind the user's most recent session (that they still own),
-  // falling back to their first agent.
-  const lastUsedAgentId = useMemo(() => {
-    const ownedIds = new Set(agents.map((a) => a.agentId));
-    const recent = [...sessions].sort(
-      (a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime(),
-    );
-    for (const session of recent) {
-      if (session.agentId && ownedIds.has(session.agentId)) return session.agentId;
-    }
-    return agents[0]?.agentId ?? "";
-  }, [sessions, agents]);
+  const defaultAgentId = useMemo(
+    () =>
+      agents.find((agent) => agent.isDefault)?.agentId ??
+      agents[0]?.agentId ??
+      "",
+    [agents],
+  );
 
   const [selectedAgentId, setSelectedAgentId] = useState<string>("");
   const manualPickRef = useRef(false);
@@ -58,8 +54,8 @@ export function StudioAgentLauncher({
   useEffect(() => {
     if (seededRef.current || manualPickRef.current || sessionsLoading) return;
     seededRef.current = true;
-    if (lastUsedAgentId) setSelectedAgentId(lastUsedAgentId);
-  }, [sessionsLoading, lastUsedAgentId]);
+    if (defaultAgentId) setSelectedAgentId(defaultAgentId);
+  }, [sessionsLoading, defaultAgentId]);
 
   const handleSelect = (id: string) => {
     manualPickRef.current = true;
@@ -85,7 +81,9 @@ export function StudioAgentLauncher({
         userId={userAddress}
         onLaunch={handleLaunch}
         placeholder={
-          selectedAgent ? `Message ${selectedAgent.name}…` : "Ask an agent anything…"
+          selectedAgent
+            ? `Message ${selectedAgent.name}…`
+            : "Ask an agent anything…"
         }
         footerLeft={
           <AgentSidebarSwitcher

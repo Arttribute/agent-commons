@@ -76,11 +76,34 @@ export interface Agent {
   isLiaison?: boolean;
   externalUrl?: string;
   createdAt: string;
+  isDefault?: boolean;
+  isSystemManaged?: boolean;
+  copilotAccessMode?: "full" | "scoped" | "confirm" | null;
+  copilotScopes?: string[];
   runtimeType?: AgentRuntimeType;
   runtimeVersion?: string | null;
   runtimeStatus?: AgentRuntimeStatus;
   runtimeConfig?: AgentRuntimeConfig;
   runtimeCapabilities?: Record<string, boolean>;
+}
+
+export interface CopilotChange {
+  changeId: string;
+  agentId: string;
+  ownerUserId: string;
+  scope: string;
+  resourceType: string;
+  resourceId?: string | null;
+  action: "create" | "update" | "delete";
+  status: "pending" | "applied" | "rejected" | "reverted";
+  title: string;
+  description?: string | null;
+  before?: unknown;
+  after?: unknown;
+  diff?: unknown;
+  createdAt: string;
+  reviewedAt?: string | null;
+  appliedAt?: string | null;
 }
 
 // ─── Agent Computer ─────────────────────────────────────────────────────────
@@ -1118,8 +1141,8 @@ export interface AgentWallet {
 export interface WalletBalance {
   address: string;
   chainId: string;
-  native: string;  // ETH formatted
-  usdc: string;    // USDC formatted (6 decimals)
+  native: string; // ETH formatted
+  usdc: string; // USDC formatted (6 decimals)
 }
 
 export interface CreateWalletParams {

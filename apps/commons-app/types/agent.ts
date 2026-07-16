@@ -38,6 +38,10 @@ export interface CommonAgent {
   knowledgebase: string;
   memory: string;
   owner: string;
+  isDefault?: boolean;
+  isSystemManaged?: boolean;
+  copilotAccessMode?: "full" | "scoped" | "confirm" | null;
+  copilotScopes?: string[];
   // LLM model config
   modelProvider?: string;
   modelId?: string;

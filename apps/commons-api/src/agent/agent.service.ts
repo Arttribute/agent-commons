@@ -12,6 +12,7 @@ import { PostgresSaver } from '@langchain/langgraph-checkpoint-postgres';
 import { ToolNode } from '@langchain/langgraph/prebuilt';
 import {
   BadRequestException,
+  ForbiddenException,
   Injectable,
   Logger,
   OnModuleInit,
@@ -22,7 +23,9 @@ import { ModelProviderFactory } from '~/modules/model-provider';
 import crypto from 'crypto';
 import dedent from 'dedent';
 import {
+  and,
   eq,
+  desc,
   InferInsertModel,
   InferSelectModel,
   inArray,
@@ -69,6 +72,10 @@ import {
 const got = import('got');
 
 const app = typia.llm.application<CommonTool, 'chatgpt'>();
+
+const COMMONS_COPILOT_INSTRUCTIONS = `You are Commons Copilot, the user's native guide and co-creator inside Agent Commons. You understand the web Studio, API, SDK, and agc CLI, and help users create, inspect, test, and manage agents, tools, skills, tasks, workflows, spaces, and code projects.
+
+For platform management, inspect current resources before proposing changes. Workflow changes must go through proposeWorkflowChange so the platform can enforce the user's access mode and retain a reviewable, reversible record. Never claim a pending proposal has been applied. Use listCommonsResources to ground recommendations in the user's actual account. For code work in the CLI, use the provided local tools and respect their confirmation boundaries. Prefer small, valid, testable workflow graphs with explicit input/output nodes, typed mappings, and clear failure or approval paths.`;
 
 type StreamStatusState = 'queued' | 'running' | 'completed' | 'failed';
 type RunComputerRequest = {
@@ -346,6 +353,16 @@ export class AgentService implements OnModuleInit {
       ${taskLines}
     `;
 
+    const copilotBlock = agent.isSystemManaged
+      ? dedent`
+          ## COMMONS COPILOT ROLE
+          You are the user's default native Commons Copilot. You can work from Studio, the API, SDK, or CLI.
+          Access mode: ${agent.copilotAccessMode ?? 'confirm'}
+          Automatic scopes: ${(agent.copilotScopes ?? []).join(', ') || 'none'}
+          Account mutations must use review-aware platform tools. Respect the returned requiresConfirmation flag and tell the user when a change is waiting in review.
+        `
+      : '';
+
     return dedent`You are an AI agent on the Agent Commons platform.
 
       ## YOUR IDENTITY
@@ -353,6 +370,7 @@ export class AgentService implements OnModuleInit {
       Name: ${agent.name ?? 'Unnamed Agent'}
       ${agent.persona ? `Persona: ${agent.persona}` : ''}
       ${agent.instructions ? `Instructions: ${agent.instructions}` : ''}
+      ${copilotBlock}
 
       Current date/time: ${currentTime.toISOString()}
       Session ID: ${sessionId}
@@ -731,6 +749,17 @@ export class AgentService implements OnModuleInit {
 
         try {
           const agent = await this.getAgent({ agentId });
+          if (
+            agent.isSystemManaged &&
+            agent.isDefault &&
+            (!initiator ||
+              !agent.ownerUserId ||
+              agent.ownerUserId.toLowerCase() !== initiator.toLowerCase())
+          ) {
+            throw new ForbiddenException(
+              'Commons Copilot is private to its account owner',
+            );
+          }
           emitStatus('agent', 'completed', `Loaded ${agent.name ?? 'agent'}`);
 
           let isNewSession = false;
@@ -964,7 +993,7 @@ export class AgentService implements OnModuleInit {
 
           const toolDefs = await this.toolLoader.loadToolsForAgent({
             agentId,
-            userId: agent.owner ?? undefined,
+            userId: agent.ownerUserId ?? agent.owner ?? undefined,
             spaceId,
             staticToolDefs: staticDefs,
             spaceToolDefs: spaceToolDefs,
@@ -2664,7 +2693,45 @@ export class AgentService implements OnModuleInit {
     agentId: string,
     updateData: Partial<InferSelectModel<typeof schema.agent>>,
   ) {
-    const data = omit(updateData, ['wallet', 'agentId', 'createdAt']) as any;
+    const existing = await this.getAgent({ agentId });
+    const systemManagedSafeFields = [
+      'name',
+      'avatar',
+      'persona',
+      'greeting',
+      'conversationStarters',
+      'modelProvider',
+      'modelId',
+      'modelApiKey',
+      'modelBaseUrl',
+      'temperature',
+      'maxTokens',
+      'topP',
+      'presencePenalty',
+      'frequencyPenalty',
+      'ttsProvider',
+      'ttsVoice',
+    ];
+    const data = (
+      existing.isSystemManaged
+        ? Object.fromEntries(
+            Object.entries(updateData).filter(([key]) =>
+              systemManagedSafeFields.includes(key),
+            ),
+          )
+        : omit(updateData, [
+            'wallet',
+            'agentId',
+            'createdAt',
+            'owner',
+            'ownerUserId',
+            'workspaceId',
+            'isDefault',
+            'isSystemManaged',
+            'copilotAccessMode',
+            'copilotScopes',
+          ])
+    ) as any;
     if (data.modelApiKey) {
       data.modelApiKey = this.encryptApiKey(data.modelApiKey);
     }
@@ -2693,19 +2760,72 @@ export class AgentService implements OnModuleInit {
     return this.db.query.agent.findMany();
   }
   async getAgentsByOwner(owner: string) {
-    return this.db.query.agent.findMany({ where: (t) => eq(t.owner, owner) });
+    await this.ensureDefaultCopilot(owner);
+    return this.db.query.agent.findMany({
+      where: (t) => or(eq(t.ownerUserId, owner), eq(t.owner, owner)),
+      orderBy: (t) => [desc(t.isDefault), desc(t.createdAt)],
+    });
   }
   async getAgentsForPrincipal(userId: string, workspaceId?: string | null) {
+    await this.ensureDefaultCopilot(userId, workspaceId);
     return this.db.query.agent.findMany({
       where: (t) =>
         workspaceId
           ? or(
               eq(t.ownerUserId, userId),
               eq(t.owner, userId),
-              eq(t.workspaceId, workspaceId),
+              and(eq(t.workspaceId, workspaceId), eq(t.isSystemManaged, false)),
             )
           : or(eq(t.ownerUserId, userId), eq(t.owner, userId)),
+      orderBy: (t) => [desc(t.isDefault), desc(t.createdAt)],
     });
+  }
+
+  async ensureDefaultCopilot(userId: string, workspaceId?: string | null) {
+    if (!userId?.trim()) return null;
+    const existing = await this.db.query.agent.findFirst({
+      where: (t) => and(eq(t.ownerUserId, userId), eq(t.isDefault, true)),
+    });
+    if (existing) return existing;
+
+    try {
+      return await this.createAgent({
+        value: {
+          name: 'Commons Copilot',
+          owner: userId,
+          ownerUserId: userId,
+          workspaceId: workspaceId ?? undefined,
+          instructions: COMMONS_COPILOT_INSTRUCTIONS,
+          persona:
+            'A calm, capable Agent Commons co-creator for building and operating agents, workflows, tools, skills, and tasks.',
+          greeting:
+            'I’m your Commons Copilot. I can help you build, test, and manage anything in Agent Commons—what should we make?',
+          conversationStarters: [
+            'Design a workflow with me',
+            'Show me what is in my Agent Commons account',
+            'Help me create a new agent',
+            'Turn this process into an automated task',
+          ],
+          avatar: '/ac-icon.svg',
+          isDefault: true,
+          isSystemManaged: true,
+          copilotAccessMode: 'confirm',
+          copilotScopes: [],
+          runtimeType: 'native',
+          modelProvider: 'openai',
+          modelId: 'gpt-5.4-mini',
+        },
+      });
+    } catch (error: any) {
+      // Concurrent first requests may race; the partial unique index makes the
+      // loser harmless, so return the row created by the winner.
+      if (error?.code === '23505') {
+        return this.db.query.agent.findFirst({
+          where: (t) => and(eq(t.ownerUserId, userId), eq(t.isDefault, true)),
+        });
+      }
+      throw error;
+    }
   }
 
   //get agent session full chat

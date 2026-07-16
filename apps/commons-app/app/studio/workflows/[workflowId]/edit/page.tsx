@@ -12,6 +12,7 @@ import { useAuth } from "@/context/AuthContext";
 import { normalizePrincipalId } from "@/lib/principal-id";
 import { Loader2 } from "lucide-react";
 import { useWorkflows } from "@/hooks/use-workflows";
+import { WorkflowChangeReview } from "@/components/workflows/editor/workflow-change-review";
 
 export default function WorkflowEditorPage() {
   const params = useParams();
@@ -72,7 +73,7 @@ export default function WorkflowEditorPage() {
         window.history.replaceState(
           {},
           "",
-          `/studio/workflows/${workflow.workflowId}`
+          `/studio/workflows/${workflow.workflowId}`,
         );
       }
     } catch (error) {
@@ -148,6 +149,8 @@ export default function WorkflowEditorPage() {
       <ToolSidebar userId={userId} />
 
       <TestPanel workflowId={workflowId} />
+
+      <WorkflowChangeReview workflowId={workflow.workflowId} />
     </div>
   );
 }

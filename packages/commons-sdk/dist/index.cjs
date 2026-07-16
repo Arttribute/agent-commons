@@ -212,6 +212,26 @@ var CommonsClient = class {
       }
     };
   }
+  get copilot() {
+    return {
+      get: () => this.request("GET", "/v1/copilot"),
+      updateSettings: (params) => this.request("PUT", "/v1/copilot/settings", params),
+      listChanges: (filter) => {
+        const query = new URLSearchParams();
+        if (filter?.status) query.set("status", filter.status);
+        if (filter?.resourceType)
+          query.set("resourceType", filter.resourceType);
+        if (filter?.resourceId) query.set("resourceId", filter.resourceId);
+        return this.request(
+          "GET",
+          `/v1/copilot/changes${query.size ? `?${query}` : ""}`
+        );
+      },
+      acceptChange: (changeId) => this.request("POST", `/v1/copilot/changes/${changeId}/accept`),
+      rejectChange: (changeId) => this.request("POST", `/v1/copilot/changes/${changeId}/reject`),
+      revertChange: (changeId) => this.request("POST", `/v1/copilot/changes/${changeId}/revert`)
+    };
+  }
   // ── Run (non-streaming) ───────────────────────────────────────────────────
   get run() {
     return {

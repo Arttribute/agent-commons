@@ -117,6 +117,7 @@ const StudioPage: NextPage = () => {
                           name: a.name,
                           avatar: (a as any).avatar,
                           modelId: (a as any).modelId,
+                          isDefault: Boolean((a as any).isDefault),
                         }))}
                         userAddress={userAddress}
                       />
