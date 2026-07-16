@@ -75,10 +75,12 @@ export class RateLimitGuard implements CanActivate, OnModuleDestroy {
     const now = Date.now();
     if (process.env.DISTRIBUTED_RATE_LIMIT_ENABLED !== 'false') {
       const windowStartMs = Math.floor(now / opts.windowMs) * opts.windowMs;
-      const windowStart = new Date(windowStartMs);
+      // Raw sql fragments do not have Drizzle column encoders attached. The
+      // postgres.js driver accepts ISO strings here, but not Date instances.
+      const windowStart = new Date(windowStartMs).toISOString();
       const expiresAt = new Date(
         windowStartMs + Math.max(opts.windowMs * 2, 600_000),
-      );
+      ).toISOString();
       const rows = (await this.db.execute(sql`
         insert into api_rate_limit_bucket (bucket_key, window_start, request_count, expires_at)
         values (${key}, ${windowStart}, 1, ${expiresAt})

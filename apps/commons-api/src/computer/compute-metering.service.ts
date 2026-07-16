@@ -54,6 +54,7 @@ export class ComputeMeteringService implements OnModuleInit, OnModuleDestroy {
   /** Meter every running instance that has at least one full minute unbilled. */
   async tick(): Promise<void> {
     const now = new Date();
+    const dueBefore = new Date(now.getTime() - 60_000).toISOString();
     // Claim due instances with a row lock so concurrent API tasks don't
     // double-bill. minute boundary: metered_through_at (or started_at) + 60s.
     const due = await this.db.transaction(async (tx) => {
@@ -72,7 +73,7 @@ export class ComputeMeteringService implements OnModuleInit, OnModuleDestroy {
         .where(
           and(
             inArray(schema.agentComputerInstance.status, ['running', 'idle']),
-            sql`coalesce(${schema.agentComputerInstance.meteredThroughAt}, ${schema.agentComputerInstance.startedAt}) <= ${new Date(now.getTime() - 60_000)}`,
+            sql`coalesce(${schema.agentComputerInstance.meteredThroughAt}, ${schema.agentComputerInstance.startedAt}) <= ${dueBefore}::timestamptz`,
           ),
         )
         .limit(200)
