@@ -26,6 +26,7 @@ describe('ComputerService', () => {
       db as any,
       { decrypt: jest.fn() } as any,
       { getEntitlements: jest.fn() } as any,
+      { getBalance: jest.fn() } as any,
     );
     jest.spyOn(service as any, 'assertCapability').mockResolvedValue({
       enabled: true,

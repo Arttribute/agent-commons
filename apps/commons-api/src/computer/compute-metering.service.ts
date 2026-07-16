@@ -4,7 +4,7 @@ import {
   OnModuleDestroy,
   OnModuleInit,
 } from '@nestjs/common';
-import { and, eq, sql } from 'drizzle-orm';
+import { and, eq, inArray, sql } from 'drizzle-orm';
 import * as schema from '#/models/schema';
 import { DatabaseService } from '~/modules/database/database.service';
 import { CreditService } from '~/credit/credit.service';
@@ -19,9 +19,8 @@ import { ComputerService } from './computer.service';
  * tick, so a minute is never double-billed. Debits are additionally idempotent
  * on `compute:<computerId>:<intervalStartISO>`.
  *
- * When a debit would exceed the balance we enter a bounded grace window
- * (allowNegative, capped by COMPUTE_GRACE_MAX_NEGATIVE) and auto-stop the
- * computer after COMPUTE_GRACE_MINUTES.
+ * When a debit would exceed the available balance we bill only whole minutes
+ * already covered, then stop the runtime. No negative-balance grace is used.
  */
 @Injectable()
 export class ComputeMeteringService implements OnModuleInit, OnModuleDestroy {
@@ -35,7 +34,7 @@ export class ComputeMeteringService implements OnModuleInit, OnModuleDestroy {
   ) {}
 
   onModuleInit() {
-    if (process.env.COMPUTE_METERING_ENABLED !== 'true') return;
+    if (process.env.COMPUTE_METERING_ENABLED === 'false') return;
     const everyMs = Number(process.env.COMPUTE_METERING_INTERVAL_MS || 60_000);
     this.timer = setInterval(
       () =>
@@ -72,7 +71,7 @@ export class ComputeMeteringService implements OnModuleInit, OnModuleDestroy {
         .from(schema.agentComputerInstance)
         .where(
           and(
-            eq(schema.agentComputerInstance.status, 'running'),
+            inArray(schema.agentComputerInstance.status, ['running', 'idle']),
             sql`coalesce(${schema.agentComputerInstance.meteredThroughAt}, ${schema.agentComputerInstance.startedAt}) <= ${new Date(now.getTime() - 60_000)}`,
           ),
         )
@@ -96,15 +95,12 @@ export class ComputeMeteringService implements OnModuleInit, OnModuleDestroy {
     const cursor: Date = inst.meteredThroughAt ?? inst.startedAt;
     if (!cursor) return; // never started — nothing to meter
     const elapsedMs = now.getTime() - new Date(cursor).getTime();
-    const minutes = Math.floor(elapsedMs / 60_000);
+    let minutes = Math.floor(elapsedMs / 60_000);
     if (minutes <= 0) return;
 
     const intervalStart = new Date(cursor);
-    const intervalEnd = new Date(
-      new Date(cursor).getTime() + minutes * 60_000,
-    );
+    let intervalEnd = new Date(new Date(cursor).getTime() + minutes * 60_000);
     const perMin = creditsPerMinute(inst.resourceProfile);
-    const charge = perMin * minutes;
     const principalId = inst.ownerUserId;
     if (!principalId) {
       // No billable owner (legacy/unowned) — advance cursor without charge.
@@ -113,20 +109,18 @@ export class ComputeMeteringService implements OnModuleInit, OnModuleDestroy {
     }
 
     const idempotencyKey = `compute:${inst.computerId}:${intervalStart.toISOString()}`;
-    const graceMax = Number(process.env.COMPUTE_GRACE_MAX_NEGATIVE || 500);
     const balance = await this.credits.getBalance({
       principalId,
-      workspaceId: inst.workspaceId,
     });
-
-    const wouldGoBelow = balance.balance - charge < 0;
-    const allowNegative = wouldGoBelow && balance.balance - charge >= -graceMax;
-
-    // If even the grace floor can't absorb it, don't debit — trigger auto-stop.
-    if (wouldGoBelow && !allowNegative) {
+    const affordableMinutes = Math.floor(balance.available / perMin);
+    if (affordableMinutes <= 0) {
       await this.handleExhausted(inst, principalId);
       return;
     }
+    const exhaustedAfterCharge = affordableMinutes < minutes;
+    minutes = Math.min(minutes, affordableMinutes);
+    intervalEnd = new Date(new Date(cursor).getTime() + minutes * 60_000);
+    const charge = perMin * minutes;
 
     const entry: any = await this.credits.record({
       principalId,
@@ -141,7 +135,6 @@ export class ComputeMeteringService implements OnModuleInit, OnModuleDestroy {
       agentId: inst.agentId,
       metadata: { computerId: inst.computerId, minutes, perMin },
       createdBy: 'metering',
-      allowNegative,
     });
 
     await this.db
@@ -167,13 +160,7 @@ export class ComputeMeteringService implements OnModuleInit, OnModuleDestroy {
 
     await this.advanceCursor(inst.computerId, intervalEnd);
 
-    // Grace bookkeeping: if we dipped into negative, start/continue the grace
-    // clock and stop once it elapses.
-    if (allowNegative) {
-      await this.trackGrace(inst, principalId);
-    } else {
-      await this.clearGrace(inst);
-    }
+    if (exhaustedAfterCharge) await this.handleExhausted(inst, principalId);
   }
 
   private async advanceCursor(computerId: string, through: Date) {
@@ -181,41 +168,6 @@ export class ComputeMeteringService implements OnModuleInit, OnModuleDestroy {
       .update(schema.agentComputerInstance)
       .set({ meteredThroughAt: through, updatedAt: new Date() })
       .where(eq(schema.agentComputerInstance.computerId, computerId));
-  }
-
-  private graceMinutes(): number {
-    return Number(process.env.COMPUTE_GRACE_MINUTES || 10);
-  }
-
-  private async trackGrace(inst: any, principalId: string) {
-    const meta = inst.metadata ?? {};
-    const startedAt: number = meta.billingGraceStartedAt ?? Date.now();
-    if (!meta.billingGraceStartedAt) {
-      this.logger.warn(
-        `Computer ${inst.computerId} entered billing grace for ${principalId}`,
-      );
-      await this.db
-        .update(schema.agentComputerInstance)
-        .set({
-          metadata: { ...meta, billingGraceStartedAt: startedAt },
-          updatedAt: new Date(),
-        })
-        .where(eq(schema.agentComputerInstance.computerId, inst.computerId));
-    }
-    if (Date.now() - startedAt >= this.graceMinutes() * 60_000) {
-      await this.handleExhausted(inst, principalId);
-    }
-  }
-
-  private async clearGrace(inst: any) {
-    const meta = inst.metadata ?? {};
-    if (meta.billingGraceStartedAt) {
-      const { billingGraceStartedAt, ...rest } = meta;
-      await this.db
-        .update(schema.agentComputerInstance)
-        .set({ metadata: rest, updatedAt: new Date() })
-        .where(eq(schema.agentComputerInstance.computerId, inst.computerId));
-    }
   }
 
   private async handleExhausted(inst: any, principalId: string) {

@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 export interface Entitlements {
   computerUse: boolean;
   allowedProfiles: string[];
+  maxComputerAgents: number;
   maxConcurrentComputers: number;
   modelTiers: string[];
   maxConcurrentRuns: number;

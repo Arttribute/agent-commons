@@ -95,8 +95,8 @@ export function SandboxCompletion({
               "Your agent was created, tested, and saved as part of this learning activity."}
           </p>
           {creditReward ? (
-            <p className="mt-1.5 text-xs font-black text-slate-950">
-              +{creditReward} credits queued
+            <p className="mt-1.5 text-xs font-medium text-slate-600">
+              Your verified credit reward will appear in Agent Commons.
             </p>
           ) : null}
           {onContinue ? (

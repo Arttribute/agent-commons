@@ -14,9 +14,15 @@ import { SpaceToolsService } from './space-tools.service';
 import { SpaceAgentTriggerService } from './space-agent-trigger.service';
 import { SpaceSpeechService } from './space-speech.service';
 import { SpaceTtsService } from './space-tts.service';
+import { UsageModule } from '~/modules/usage';
 
 @Module({
-  imports: [DatabaseModule, forwardRef(() => AgentModule), SessionModule],
+  imports: [
+    DatabaseModule,
+    forwardRef(() => AgentModule),
+    SessionModule,
+    UsageModule,
+  ],
   controllers: [SpaceController, SpaceStreamController],
   providers: [
     SpaceService,

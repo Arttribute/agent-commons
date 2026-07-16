@@ -7,9 +7,11 @@ import {
   NotFoundException,
   ServiceUnavailableException,
 } from '@nestjs/common';
-import { and, desc, eq } from 'drizzle-orm';
+import { and, desc, eq, inArray, ne, or, sql } from 'drizzle-orm';
 import { EntitlementsService } from '~/billing/entitlements.service';
 import { ComputeProfile } from '~/billing/plan-catalog';
+import { creditsPerMinute } from '~/billing/compute-pricing';
+import { CreditService } from '~/credit';
 import { v4 as uuidv4 } from 'uuid';
 import * as schema from '#/models/schema';
 import { DatabaseService } from '~/modules/database/database.service';
@@ -166,6 +168,7 @@ export class ComputerService {
     private readonly db: DatabaseService,
     private readonly encryption: EncryptionService,
     private readonly entitlements: EntitlementsService,
+    private readonly credits: CreditService,
   ) {}
 
   /**
@@ -175,11 +178,16 @@ export class ComputerService {
    * BILLING_ENFORCEMENT so it can be rolled out independently.
    */
   private async assertComputeEntitlement(
-    agent: { agentId: string; ownerUserId?: string | null },
+    agent: {
+      agentId: string;
+      ownerUserId?: string | null;
+      owner?: string | null;
+    },
     resourceProfile: string,
+    requireRuntimeCapacity = true,
   ): Promise<void> {
-    if (process.env.BILLING_ENFORCEMENT !== 'true') return;
-    const ownerId = agent.ownerUserId;
+    if (process.env.BILLING_ENFORCEMENT === 'false') return;
+    const ownerId = agent.ownerUserId ?? agent.owner;
     if (!ownerId) return; // unowned/legacy agents are not gated
 
     const ent = await this.entitlements.getEntitlements(ownerId);
@@ -204,7 +212,11 @@ export class ComputerService {
         HttpStatus.PAYMENT_REQUIRED,
       );
     }
-    const runningCount = await this.countRunningComputersForOwner(ownerId);
+    if (!requireRuntimeCapacity) return;
+    const runningCount = await this.countRunningComputersForOwner(
+      ownerId,
+      agent.agentId,
+    );
     if (runningCount >= ent.maxConcurrentComputers) {
       throw new HttpException(
         {
@@ -215,10 +227,25 @@ export class ComputerService {
         HttpStatus.PAYMENT_REQUIRED,
       );
     }
+    const balance = await this.credits.getBalance({ principalId: ownerId });
+    const required = creditsPerMinute(resourceProfile);
+    if (balance.available < required) {
+      throw new HttpException(
+        {
+          code: 'insufficient_credits',
+          feature: 'computer_use',
+          message: `At least ${required} credits are required to wake this computer.`,
+          available: balance.available,
+          required,
+        },
+        HttpStatus.PAYMENT_REQUIRED,
+      );
+    }
   }
 
   private async countRunningComputersForOwner(
     ownerId: string,
+    excludeAgentId?: string,
   ): Promise<number> {
     const rows = await this.db
       .select({ id: schema.agentComputerInstance.computerId })
@@ -226,7 +253,10 @@ export class ComputerService {
       .where(
         and(
           eq(schema.agentComputerInstance.ownerUserId, ownerId),
-          eq(schema.agentComputerInstance.status, 'running'),
+          inArray(schema.agentComputerInstance.status, ACTIVE_STATUSES),
+          ...(excludeAgentId
+            ? [ne(schema.agentComputerInstance.agentId, excludeAgentId)]
+            : []),
         ),
       );
     return rows.length;
@@ -287,9 +317,13 @@ export class ComputerService {
     agentId: string,
     patch: Partial<typeof schema.agentComputerConfig.$inferInsert>,
   ) {
-    await this.assertAgent(agentId);
+    const agent = await this.assertAgent(agentId);
     const current = await this.getConfig(agentId);
     const next = this.normalizeConfigPatch(patch, current);
+    if (next.enabled) {
+      await this.assertComputeEntitlement(agent, next.resourceProfile, false);
+      if (!current.enabled) await this.assertComputerSlot(agent);
+    }
 
     const [updated] = await this.db
       .update(schema.agentComputerConfig)
@@ -315,6 +349,44 @@ export class ComputerService {
       }
     }
     return updated;
+  }
+
+  private async assertComputerSlot(agent: {
+    agentId: string;
+    ownerUserId?: string | null;
+    owner?: string | null;
+  }) {
+    if (process.env.BILLING_ENFORCEMENT === 'false') return;
+    const ownerId = agent.ownerUserId ?? agent.owner;
+    if (!ownerId) return;
+    const ent = await this.entitlements.getEntitlements(ownerId);
+    const [row] = await this.db
+      .select({ count: sql<number>`count(*)` })
+      .from(schema.agentComputerConfig)
+      .innerJoin(
+        schema.agent,
+        eq(schema.agent.agentId, schema.agentComputerConfig.agentId),
+      )
+      .where(
+        and(
+          eq(schema.agentComputerConfig.enabled, true),
+          or(
+            eq(schema.agent.ownerUserId, ownerId),
+            eq(schema.agent.owner, ownerId),
+          ),
+        ),
+      );
+    if (Number(row?.count ?? 0) >= ent.maxComputerAgents) {
+      throw new HttpException(
+        {
+          code: 'limit_reached',
+          feature: 'computer_agents',
+          message: `Your plan includes ${ent.maxComputerAgents} persistent computer slot(s). Disable one or upgrade.`,
+          limit: ent.maxComputerAgents,
+        },
+        HttpStatus.PAYMENT_REQUIRED,
+      );
+    }
   }
 
   async listInstances(args: {
@@ -398,6 +470,9 @@ export class ComputerService {
         toolCallId: args.toolCallId,
       },
     });
+    // Check plan, profile, concurrency, and a one-minute credit floor before
+    // attaching to or waking any billable runtime.
+    await this.assertComputeEntitlement(agent, config.resourceProfile);
     let computer = await this.getAssignedComputer(args.agentId);
     if (
       computer &&
@@ -432,8 +507,6 @@ export class ComputerService {
 
     // Subscription gates apply when compute is provisioned or woken. Attaching
     // to the agent's healthy persistent computer stays on the fast path.
-    await this.assertComputeEntitlement(agent, config.resourceProfile);
-
     const now = new Date();
     const name = args.name?.trim() || `${agent.name} computer`;
     if (!computer) {

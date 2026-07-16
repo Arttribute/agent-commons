@@ -877,7 +877,38 @@ interface CreditBalance {
     principalId: string;
     workspaceId?: string | null;
     balance: number;
+    reserved: number;
+    available: number;
     currency: "credits";
+}
+interface CreditCampaign {
+    campaignKey: string;
+    name: string;
+    description?: string | null;
+    rewardCredits: number;
+    triggerType: "once" | "daily" | "monthly" | "event";
+    sourcePlatform: CreditPlatform;
+    claimable: boolean;
+    claimed: boolean;
+}
+interface CreditTransfer {
+    transferId: string;
+    senderPrincipalId: string;
+    recipientPrincipalId: string;
+    amount: number;
+    message?: string | null;
+    status: "completed" | "reversed";
+    createdAt: string;
+}
+interface CreditSummary {
+    balance: CreditBalance;
+    month: {
+        earned: number;
+        spent: number;
+    };
+    recent: CreditLedgerEntry[];
+    campaigns: CreditCampaign[];
+    transfers: CreditTransfer[];
 }
 interface CreditWriteParams {
     principalId: string;
@@ -903,9 +934,26 @@ type ModelTier = "frontier" | "standard" | "fast" | "local";
 interface PlanEntitlements {
     computerUse: boolean;
     allowedProfiles: ComputeProfile[];
+    maxComputerAgents: number;
     maxConcurrentComputers: number;
     modelTiers: ModelTier[];
     maxConcurrentRuns: number;
+}
+interface BillingCatalog {
+    creditsPerUsd: number;
+    plans: Array<{
+        key: PlanKey;
+        name: string;
+        priceUsd: number;
+        monthlyCredits: number;
+        entitlements: PlanEntitlements;
+    }>;
+    topups: Array<{
+        key: string;
+        name: string;
+        credits: number;
+        priceUsd: number;
+    }>;
 }
 interface SubscriptionInfo {
     planKey: PlanKey;
@@ -1693,6 +1741,31 @@ declare class CommonsClient {
         }) => Promise<{
             data: CreditLedgerEntry[];
         }>;
+        summary: () => Promise<{
+            data: CreditSummary;
+        }>;
+        campaigns: () => Promise<{
+            data: CreditCampaign[];
+        }>;
+        claimCampaign: (params: {
+            campaignKey: string;
+            eventId?: string;
+        }) => Promise<{
+            data: {
+                alreadyClaimed: boolean;
+            };
+        }>;
+        transfers: () => Promise<{
+            data: CreditTransfer[];
+        }>;
+        gift: (params: {
+            recipientPrincipalId: string;
+            amount: number;
+            message?: string;
+            idempotencyKey: string;
+        }) => Promise<{
+            data: CreditTransfer;
+        }>;
         grant: (params: CreditWriteParams) => Promise<{
             data: CreditLedgerEntry;
         }>;
@@ -1701,6 +1774,10 @@ declare class CommonsClient {
         }>;
     };
     get billing(): {
+        /** Public product catalog served from the backend source of truth. */
+        catalog: () => Promise<{
+            data: BillingCatalog;
+        }>;
         /** Current plan, status, and entitlements for the caller. */
         subscription: () => Promise<{
             data: SubscriptionInfo;
@@ -1781,4 +1858,4 @@ declare function listWorkflowTemplates(): readonly [{
 }];
 declare function buildWorkflowTemplate(templateName: WorkflowTemplateName, ctx: WorkflowTemplateContext): WorkflowTemplateBuild;
 
-export { type A2AArtifact, type A2ADataPart, type A2AFilePart, type A2AMessage, type A2AMessagePart, type A2ASendTaskParams, type A2ASkill, type A2ATask, type A2ATaskState, type A2ATextPart, type Agent, type AgentCard, type AgentComputer, type AgentComputerBrowser, type AgentComputerConfig, type AgentComputerDesiredState, type AgentComputerEvent, type AgentComputerGpu, type AgentComputerGpuType, type AgentComputerInstance, type AgentComputerLifecycle, type AgentComputerResourceMode, type AgentComputerResourceProfile, type AgentComputerResources, type AgentComputerStatus, type AgentComputerTerminal, type AgentMemory, type AgentWallet, type ApiKey, type ApiKeyPrincipalType, type ChatMessage, CommonsClient, type CommonsClientConfig, CommonsError, type ComputeProfile, type ComputerActionParams, type ComputerBrowserOpenParams, type ComputerCommandParams, type ComputerConfigUpdate, type ComputerFile, type ComputerGpu, type ComputerGpuType, type ComputerLifecycle, type ComputerNetworkAccess, type ComputerPersistence, type ComputerResizeParams, type ComputerResourceMode, type ComputerResourceProfile, type ComputerResourceUpdate, type ComputerResources, type CreateAgentParams, type CreateApiKeyParams, type CreateMemoryParams, type CreateSkillParams, type CreateTaskParams, type CreateToolKeyParams, type CreateToolParams, type CreateWalletParams, type CreatedApiKey, type FlagEvaluation, type McpConnectionType, type McpPrompt, type McpResource, type McpServer, type MemorySourceType, type MemoryStats, type MemoryType, type ModelConfig, type ModelProvider, type ModelTier, type PlanEntitlements, type PlanKey, type RunParams, type Session, type Skill, type SkillIndex, type StreamEvent, type StreamEventType, type SubscriptionInfo, type Task, type Tool, type ToolKey, type ToolPermission, type UpdateMemoryParams, type UsageAggregation, type UsageEvent, type WalletBalance, type WalletType, type Workflow, type WorkflowDefinition, type WorkflowEdge, type WorkflowExecution, type WorkflowNode, type WorkflowNodeType, type WorkflowTemplateBuild, type WorkflowTemplateContext, type WorkflowTemplateName, type WorkflowTemplateTool, buildWorkflowTemplate, listWorkflowTemplates };
+export { type A2AArtifact, type A2ADataPart, type A2AFilePart, type A2AMessage, type A2AMessagePart, type A2ASendTaskParams, type A2ASkill, type A2ATask, type A2ATaskState, type A2ATextPart, type Agent, type AgentCard, type AgentComputer, type AgentComputerBrowser, type AgentComputerConfig, type AgentComputerDesiredState, type AgentComputerEvent, type AgentComputerGpu, type AgentComputerGpuType, type AgentComputerInstance, type AgentComputerLifecycle, type AgentComputerResourceMode, type AgentComputerResourceProfile, type AgentComputerResources, type AgentComputerStatus, type AgentComputerTerminal, type AgentMemory, type AgentWallet, type ApiKey, type ApiKeyPrincipalType, type BillingCatalog, type ChatMessage, CommonsClient, type CommonsClientConfig, CommonsError, type ComputeProfile, type ComputerActionParams, type ComputerBrowserOpenParams, type ComputerCommandParams, type ComputerConfigUpdate, type ComputerFile, type ComputerGpu, type ComputerGpuType, type ComputerLifecycle, type ComputerNetworkAccess, type ComputerPersistence, type ComputerResizeParams, type ComputerResourceMode, type ComputerResourceProfile, type ComputerResourceUpdate, type ComputerResources, type CreateAgentParams, type CreateApiKeyParams, type CreateMemoryParams, type CreateSkillParams, type CreateTaskParams, type CreateToolKeyParams, type CreateToolParams, type CreateWalletParams, type CreatedApiKey, type CreditBalance, type CreditCampaign, type CreditDirection, type CreditLedgerEntry, type CreditPlatform, type CreditSummary, type CreditTransfer, type CreditWriteParams, type FlagEvaluation, type McpConnectionType, type McpPrompt, type McpResource, type McpServer, type MemorySourceType, type MemoryStats, type MemoryType, type ModelConfig, type ModelProvider, type ModelTier, type PlanEntitlements, type PlanKey, type RunParams, type Session, type Skill, type SkillIndex, type StreamEvent, type StreamEventType, type SubscriptionInfo, type Task, type Tool, type ToolKey, type ToolPermission, type UpdateMemoryParams, type UsageAggregation, type UsageEvent, type WalletBalance, type WalletType, type Workflow, type WorkflowDefinition, type WorkflowEdge, type WorkflowExecution, type WorkflowNode, type WorkflowNodeType, type WorkflowTemplateBuild, type WorkflowTemplateContext, type WorkflowTemplateName, type WorkflowTemplateTool, buildWorkflowTemplate, listWorkflowTemplates };

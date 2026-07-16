@@ -7,6 +7,8 @@ import type mongoose from "mongoose";
 import { trackAnalyticsEvent } from "@/lib/analytics";
 import { getCourseStartStatus } from "@/lib/course-schedule";
 import { isInstallmentOverdue } from "@/lib/installment-enforcement";
+import User from "@/models/User";
+import { claimCommonLabReward } from "@/lib/credits";
 
 interface EnrollmentProgress {
   _id: mongoose.Types.ObjectId;
@@ -38,10 +40,12 @@ interface CourseWithModules extends CourseIdOnly {
  */
 export async function GET(req: NextRequest) {
   const session = await auth();
-  if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (!session)
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const courseSlug = req.nextUrl.searchParams.get("courseSlug");
-  if (!courseSlug) return NextResponse.json({ error: "courseSlug required" }, { status: 400 });
+  if (!courseSlug)
+    return NextResponse.json({ error: "courseSlug required" }, { status: 400 });
 
   await connectDB();
 
@@ -49,7 +53,11 @@ export async function GET(req: NextRequest) {
     .select("_id startDate price")
     .lean()) as unknown as CourseIdOnly | null;
   if (!course) {
-    return NextResponse.json({ enrolled: false, completedLessons: [], progress: 0 });
+    return NextResponse.json({
+      enrolled: false,
+      completedLessons: [],
+      progress: 0,
+    });
   }
 
   const match = (await Enrollment.findOne({
@@ -58,16 +66,20 @@ export async function GET(req: NextRequest) {
   }).lean()) as EnrollmentProgress | null;
 
   if (!match) {
-    return NextResponse.json({ enrolled: false, completedLessons: [], progress: 0 });
+    return NextResponse.json({
+      enrolled: false,
+      completedLessons: [],
+      progress: 0,
+    });
   }
 
   const paymentStatus = isInstallmentOverdue(match)
     ? "overdue"
-    : match.paymentStatus ?? "free";
+    : (match.paymentStatus ?? "free");
   if (paymentStatus === "overdue" && match.paymentStatus !== "overdue") {
     await Enrollment.updateOne(
       { _id: match._id },
-      { $set: { paymentStatus: "overdue", accessLevel: "partial" } }
+      { $set: { paymentStatus: "overdue", accessLevel: "partial" } },
     );
   }
 
@@ -77,7 +89,7 @@ export async function GET(req: NextRequest) {
     progress: match.progress ?? 0,
     status: match.status,
     accessLevel:
-      paymentStatus === "overdue" ? "partial" : match.accessLevel ?? "full",
+      paymentStatus === "overdue" ? "partial" : (match.accessLevel ?? "full"),
     paymentStatus,
     currentInstallment: match.currentInstallment ?? 0,
     nextPaymentDueAt: match.nextPaymentDueAt,
@@ -97,11 +109,15 @@ export async function GET(req: NextRequest) {
  */
 export async function POST(req: NextRequest) {
   const session = await auth();
-  if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (!session)
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const { courseSlug, lessonKey } = await req.json();
   if (!courseSlug || !lessonKey) {
-    return NextResponse.json({ error: "courseSlug and lessonKey required" }, { status: 400 });
+    return NextResponse.json(
+      { error: "courseSlug and lessonKey required" },
+      { status: 400 },
+    );
   }
 
   await connectDB();
@@ -119,13 +135,16 @@ export async function POST(req: NextRequest) {
   }).lean()) as EnrollmentProgress | null;
 
   if (!match) {
-    return NextResponse.json({ error: "Not enrolled in this course" }, { status: 403 });
+    return NextResponse.json(
+      { error: "Not enrolled in this course" },
+      { status: 403 },
+    );
   }
 
   if (isInstallmentOverdue(match)) {
     await Enrollment.updateOne(
       { _id: match._id },
-      { $set: { paymentStatus: "overdue", accessLevel: "partial" } }
+      { $set: { paymentStatus: "overdue", accessLevel: "partial" } },
     );
     return NextResponse.json(
       {
@@ -134,7 +153,7 @@ export async function POST(req: NextRequest) {
         nextPaymentDueAt: match.nextPaymentDueAt,
         paymentGraceEndsAt: match.paymentGraceEndsAt,
       },
-      { status: 402 }
+      { status: 402 },
     );
   }
 
@@ -146,7 +165,7 @@ export async function POST(req: NextRequest) {
         startDate: course.startDate,
         startDateLabel: startStatus.label,
       },
-      { status: 403 }
+      { status: 403 },
     );
   }
 
@@ -157,9 +176,24 @@ export async function POST(req: NextRequest) {
       0,
     ) || 1;
 
+  const [moduleIndex, lessonIndex] = lessonKey
+    .split(":")
+    .map((part: string) => Number.parseInt(part, 10));
+  if (
+    !Number.isInteger(moduleIndex) ||
+    !Number.isInteger(lessonIndex) ||
+    moduleIndex < 0 ||
+    lessonIndex < 0 ||
+    !course.modules?.[moduleIndex]?.lessons?.[lessonIndex]
+  ) {
+    return NextResponse.json({ error: "Invalid lessonKey." }, { status: 400 });
+  }
+
   // Add lessonKey if not already present
   const existing: string[] = match.completedLessons ?? [];
-  const updated = existing.includes(lessonKey) ? existing : [...existing, lessonKey];
+  const updated = existing.includes(lessonKey)
+    ? existing
+    : [...existing, lessonKey];
   const progress = Math.round((updated.length / totalLessons) * 100);
   const status = progress >= 100 ? "completed" : "active";
 
@@ -174,9 +208,6 @@ export async function POST(req: NextRequest) {
       },
     },
   );
-  const [moduleIndex, lessonIndex] = lessonKey
-    .split(":")
-    .map((part: string) => Number.parseInt(part, 10));
   await trackAnalyticsEvent({
     eventType: "lesson_completed",
     userId: session.user.id,
@@ -189,5 +220,29 @@ export async function POST(req: NextRequest) {
     request: req,
   });
 
-  return NextResponse.json({ completedLessons: updated, progress, status });
+  let creditGrant;
+  // Retry the idempotent platform claim on later completion writes if the
+  // first cross-service request failed after progress was persisted.
+  if (status === "completed") {
+    const user = await User.findById(session.user.id)
+      .select("identityUserId identityWorkspaceId")
+      .lean<{ identityUserId?: string; identityWorkspaceId?: string }>();
+    if (user?.identityUserId) {
+      creditGrant = await claimCommonLabReward({
+        identityUserId: user.identityUserId,
+        workspaceId: user.identityWorkspaceId,
+        campaignKey: "commonlab-course-completion",
+        eventId: course._id.toString(),
+        relatedCourseId: course._id.toString(),
+        metadata: { courseSlug },
+      });
+    }
+  }
+
+  return NextResponse.json({
+    completedLessons: updated,
+    progress,
+    status,
+    creditGrant,
+  });
 }

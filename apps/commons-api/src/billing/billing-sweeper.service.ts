@@ -4,24 +4,14 @@ import {
   OnModuleDestroy,
   OnModuleInit,
 } from '@nestjs/common';
-import { and, gte, isNull, lte, sql } from 'drizzle-orm';
+import { and, gt, gte, isNull, lte } from 'drizzle-orm';
 import * as schema from '#/models/schema';
 import { DatabaseService } from '~/modules/database/database.service';
 import { CreditService } from '~/credit/credit.service';
 
 /**
- * Periodic credit maintenance: expire granted credits whose expiresAt has
- * passed. Credits are a pooled, signed ledger (balance = sum of amounts), so
- * "expiring" a grant records an offsetting 'expiration' entry that removes the
- * still-unused value — capped at the principal's current positive balance so it
- * never drives the balance negative, and keyed on the grant id so it runs once.
- *
- * A grant that was fully consumed before it expired has nothing to reclaim; we
- * simply skip it. The scan is bounded to a recent window so consumed grants
- * age out instead of being re-scanned forever.
- *
- * Free-tier monthly grants are issued lazily on balance read by CreditService
- * consumers, not here.
+ * Periodic maintenance for exact FIFO credit expiry and expired distributed
+ * rate-limit buckets.
  */
 @Injectable()
 export class BillingSweeperService implements OnModuleInit, OnModuleDestroy {
@@ -35,7 +25,9 @@ export class BillingSweeperService implements OnModuleInit, OnModuleDestroy {
 
   onModuleInit() {
     if (process.env.BILLING_SWEEPER_ENABLED === 'false') return;
-    const everyMs = Number(process.env.BILLING_SWEEPER_INTERVAL_MS || 3_600_000);
+    const everyMs = Number(
+      process.env.BILLING_SWEEPER_INTERVAL_MS || 3_600_000,
+    );
     this.timer = setInterval(
       () =>
         this.sweepExpirations().catch((err) =>
@@ -63,12 +55,12 @@ export class BillingSweeperService implements OnModuleInit, OnModuleDestroy {
         entryId: schema.creditLedgerEntry.entryId,
         principalId: schema.creditLedgerEntry.principalId,
         workspaceId: schema.creditLedgerEntry.workspaceId,
-        amount: schema.creditLedgerEntry.amount,
+        remainingAmount: schema.creditLedgerEntry.remainingAmount,
       })
       .from(schema.creditLedgerEntry)
       .where(
         and(
-          sql`${schema.creditLedgerEntry.amount} > 0`,
+          gt(schema.creditLedgerEntry.remainingAmount, 0),
           isNull(schema.creditLedgerEntry.voidedAt),
           lte(schema.creditLedgerEntry.expiresAt, now),
           gte(schema.creditLedgerEntry.expiresAt, windowStart),
@@ -78,35 +70,13 @@ export class BillingSweeperService implements OnModuleInit, OnModuleDestroy {
 
     let expired = 0;
     for (const grant of grants) {
-      const idempotencyKey = `expire:${grant.entryId}`;
-      const already = await this.db.query.creditLedgerEntry.findFirst({
-        where: (t) => sql`${t.idempotencyKey} = ${idempotencyKey}`,
-      });
-      if (already) continue;
-
-      const balance = await this.credits.getBalance({
-        principalId: grant.principalId,
-        workspaceId: grant.workspaceId,
-      });
-      const removable = Math.min(grant.amount, Math.max(0, balance.balance));
-      if (removable <= 0) continue; // fully consumed — nothing to reclaim
-
-      await this.credits.record({
-        principalId: grant.principalId,
-        principalType: 'user',
-        workspaceId: grant.workspaceId,
-        amount: removable,
-        direction: 'expiration',
-        eventType: 'credit_expiration',
-        sourcePlatform: 'system',
-        idempotencyKey,
-        description: 'Expired credits',
-        metadata: { grantEntryId: grant.entryId },
-        createdBy: 'sweeper',
-      });
-      expired += 1;
+      const entry = await this.credits.expireGrant(grant.entryId);
+      if (entry) expired += 1;
     }
     if (expired) this.logger.log(`Expired ${expired} matured grant(s)`);
+    await this.db
+      .delete(schema.apiRateLimitBucket)
+      .where(lte(schema.apiRateLimitBucket.expiresAt, now));
     return expired;
   }
 }

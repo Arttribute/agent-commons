@@ -57,12 +57,14 @@ export default function SkillPathClient({
   const pathname = usePathname();
   const [pack] = useState<CourseSkillPack | null>(initialPack);
   const [progress, setProgress] = useState<SkillProgress>(
-    initialProgress ?? emptyProgress
+    initialProgress ?? emptyProgress,
   );
   const [selectedChallengeId, setSelectedChallengeId] = useState("");
   const [mode, setMode] = useState<"learn" | "quiz" | "done">("learn");
   const [questionIndex, setQuestionIndex] = useState(0);
-  const [selectedAnswers, setSelectedAnswers] = useState<Record<string, number>>({});
+  const [selectedAnswers, setSelectedAnswers] = useState<
+    Record<string, number>
+  >({});
   const [feedback, setFeedback] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -74,14 +76,16 @@ export default function SkillPathClient({
     async function loadSkill() {
       const shouldRefresh =
         !initialProgress ||
-        initialProgress.practicalSignals?.some((signal) => signal.status === "pending");
+        initialProgress.practicalSignals?.some(
+          (signal) => signal.status === "pending",
+        );
       if (!shouldRefresh) {
         const firstOpen =
           initialPack.challenges.find(
             (challenge) =>
               !(initialProgress ?? emptyProgress).completedChallenges.includes(
-                challenge.id
-              )
+                challenge.id,
+              ),
           ) || initialPack.challenges[0];
         setSelectedChallengeId((current) => current || firstOpen?.id || "");
         return;
@@ -91,12 +95,20 @@ export default function SkillPathClient({
       try {
         const progressRes = await fetch(`/api/skills/${slug}/progress`);
         let nextProgress = progressRes.ok
-          ? ({ ...emptyProgress, ...((await progressRes.json()) as Partial<SkillProgress>) })
+          ? {
+              ...emptyProgress,
+              ...((await progressRes.json()) as Partial<SkillProgress>),
+            }
           : { ...emptyProgress, authenticated: progressRes.status !== 401 };
         const hasPendingSignal = nextProgress.practicalSignals?.some(
-          (signal) => signal.status === "pending"
+          (signal) => signal.status === "pending",
         );
-        if (progressRes.ok && nextProgress.authenticated && nextProgress.enrolled && hasPendingSignal) {
+        if (
+          progressRes.ok &&
+          nextProgress.authenticated &&
+          nextProgress.enrolled &&
+          hasPendingSignal
+        ) {
           const verifyRes = await fetch(`/api/skills/${slug}/verify`, {
             method: "POST",
           });
@@ -115,7 +127,8 @@ export default function SkillPathClient({
         setProgress(nextProgress);
         const firstOpen =
           initialPack.challenges.find(
-            (challenge) => !nextProgress.completedChallenges.includes(challenge.id)
+            (challenge) =>
+              !nextProgress.completedChallenges.includes(challenge.id),
           ) || initialPack.challenges[0];
         setSelectedChallengeId(firstOpen?.id || "");
       } finally {
@@ -132,7 +145,7 @@ export default function SkillPathClient({
     () =>
       pack?.challenges.find((item) => item.id === selectedChallengeId) ||
       pack?.challenges[0],
-    [pack, selectedChallengeId]
+    [pack, selectedChallengeId],
   );
 
   useEffect(() => {
@@ -143,11 +156,13 @@ export default function SkillPathClient({
           question.id,
           progress.challengeAnswers[`${challenge.id}:${question.id}`],
         ])
-        .filter(([, answer]) => answer !== undefined)
+        .filter(([, answer]) => answer !== undefined),
     ) as Record<string, number>;
     setSelectedAnswers(answers);
     setQuestionIndex(0);
-    setMode(progress.completedChallenges.includes(challenge.id) ? "done" : "learn");
+    setMode(
+      progress.completedChallenges.includes(challenge.id) ? "done" : "learn",
+    );
     setFeedback(null);
   }, [challenge, progress.challengeAnswers, progress.completedChallenges]);
 
@@ -168,8 +183,13 @@ export default function SkillPathClient({
       <div className="min-h-screen bg-white">
         <Nav />
         <main className="mx-auto max-w-xl px-4 pt-32 text-center">
-          <h1 className="text-xl font-semibold text-slate-950">Skill not found</h1>
-          <Link href="/skills" className="mt-4 inline-flex text-sm font-bold text-slate-700">
+          <h1 className="text-xl font-semibold text-slate-950">
+            Skill not found
+          </h1>
+          <Link
+            href="/skills"
+            className="mt-4 inline-flex text-sm font-bold text-slate-700"
+          >
             Back to skills
           </Link>
         </main>
@@ -180,12 +200,14 @@ export default function SkillPathClient({
   const completed = progress.completedChallenges.includes(challenge.id);
   const unlockedIndex = Math.min(
     progress.completedChallenges.length,
-    pack.challenges.length - 1
+    pack.challenges.length - 1,
   );
-  const currentIndex = pack.challenges.findIndex((item) => item.id === challenge.id);
+  const currentIndex = pack.challenges.findIndex(
+    (item) => item.id === challenge.id,
+  );
   const locked = currentIndex > unlockedIndex;
   const completionPct = Math.round(
-    (progress.completedChallenges.length / pack.challenges.length) * 100
+    (progress.completedChallenges.length / pack.challenges.length) * 100,
   );
 
   const selectChallenge = (id: string) => {
@@ -201,7 +223,7 @@ export default function SkillPathClient({
   const currentCorrect =
     currentQuestion && selectedAnswer === currentQuestion.answerIndex;
   const allCorrect = challenge.questions.every(
-    (question) => selectedAnswers[question.id] === question.answerIndex
+    (question) => selectedAnswers[question.id] === question.answerIndex,
   );
 
   const completeChallenge = async () => {
@@ -211,7 +233,10 @@ export default function SkillPathClient({
     const res = await fetch(`/api/skills/${pack.skillSlug}/progress`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ challengeId: challenge.id, answers: selectedAnswers }),
+      body: JSON.stringify({
+        challengeId: challenge.id,
+        answers: selectedAnswers,
+      }),
     });
     const data = await res.json();
     setSaving(false);
@@ -222,7 +247,12 @@ export default function SkillPathClient({
       return;
     }
 
-    setProgress((current) => ({ ...current, ...data, authenticated: true, enrolled: true }));
+    setProgress((current) => ({
+      ...current,
+      ...data,
+      authenticated: true,
+      enrolled: true,
+    }));
     setMode("done");
     setFeedback(`+${challenge.points} points. Streak updated.`);
     playCue(challenge.audioCue || "complete");
@@ -234,12 +264,21 @@ export default function SkillPathClient({
     simulated: boolean;
     creditReward: number;
   }) => {
-    if (!progress.authenticated || saving || locked || completed || !challenge?.sandbox) {
+    if (
+      !progress.authenticated ||
+      saving ||
+      locked ||
+      completed ||
+      !challenge?.sandbox
+    ) {
       return;
     }
     setSaving(true);
     const answers = Object.fromEntries(
-      challenge.questions.map((question) => [question.id, question.answerIndex])
+      challenge.questions.map((question) => [
+        question.id,
+        question.answerIndex,
+      ]),
     );
     const res = await fetch(`/api/skills/${pack.skillSlug}/progress`, {
       method: "POST",
@@ -259,12 +298,18 @@ export default function SkillPathClient({
       return;
     }
 
-    setProgress((current) => ({ ...current, ...data, authenticated: true, enrolled: true }));
+    setProgress((current) => ({
+      ...current,
+      ...data,
+      authenticated: true,
+      enrolled: true,
+    }));
     setMode("done");
+    const awardedCredits = data.creditGrant?.claim?.credits ?? 0;
     setFeedback(
-      completion.creditReward
-        ? `Agent created. +${challenge.points} points and ${completion.creditReward} credits queued.`
-        : `Agent created. +${challenge.points} points.`
+      awardedCredits
+        ? `Agent created. +${challenge.points} points and ${awardedCredits} credits.`
+        : `Agent created. +${challenge.points} points.`,
     );
     playCue(challenge.audioCue || "complete");
     celebrateChallenge(confettiRef.current, challenge.accentColor);
@@ -304,8 +349,16 @@ export default function SkillPathClient({
               </div>
             </div>
             <div className="flex shrink-0 items-center gap-2">
-              <Pill icon={Flame} label={String(progress.streak)} color="text-orange-500" />
-              <Pill icon={Zap} label={String(progress.points)} color="text-sky-500" />
+              <Pill
+                icon={Flame}
+                label={String(progress.streak)}
+                color="text-orange-500"
+              />
+              <Pill
+                icon={Zap}
+                label={String(progress.points)}
+                color="text-sky-500"
+              />
             </div>
           </div>
         </header>
@@ -321,8 +374,22 @@ export default function SkillPathClient({
             />
           </aside>
 
-          <section className={cn("min-h-0 px-4 py-4 sm:px-6", !locked && challenge.sandbox?.enabled ? "flex flex-col overflow-hidden" : "overflow-y-auto")}>
-            <div className={cn("mx-auto flex w-full flex-col", !locked && challenge.sandbox?.enabled ? "min-h-0 max-w-none flex-1" : "min-h-full max-w-3xl")}>
+          <section
+            className={cn(
+              "min-h-0 px-4 py-4 sm:px-6",
+              !locked && challenge.sandbox?.enabled
+                ? "flex flex-col overflow-hidden"
+                : "overflow-y-auto",
+            )}
+          >
+            <div
+              className={cn(
+                "mx-auto flex w-full flex-col",
+                !locked && challenge.sandbox?.enabled
+                  ? "min-h-0 max-w-none flex-1"
+                  : "min-h-full max-w-3xl",
+              )}
+            >
               <div className="mb-3 flex items-center justify-between gap-3">
                 <div>
                   <p className="text-xs font-bold uppercase tracking-widest text-slate-500">
@@ -354,7 +421,8 @@ export default function SkillPathClient({
                   onComplete={completeSandboxChallenge}
                   onContinue={
                     pack.challenges[currentIndex + 1]
-                      ? () => selectChallenge(pack.challenges[currentIndex + 1].id)
+                      ? () =>
+                          selectChallenge(pack.challenges[currentIndex + 1].id)
                       : () => {
                           window.location.href = "/skills";
                         }
@@ -378,7 +446,9 @@ export default function SkillPathClient({
                     }));
                     setFeedback(null);
                   }}
-                  onPrevious={() => setQuestionIndex((index) => Math.max(index - 1, 0))}
+                  onPrevious={() =>
+                    setQuestionIndex((index) => Math.max(index - 1, 0))
+                  }
                   onBackToLesson={() => {
                     setMode("learn");
                     setFeedback(null);
@@ -386,7 +456,9 @@ export default function SkillPathClient({
                   onNext={() => {
                     if (selectedAnswer === undefined) return;
                     if (!currentCorrect) {
-                      setFeedback("Not quite. Review the lesson and try again.");
+                      setFeedback(
+                        "Not quite. Review the lesson and try again.",
+                      );
                       playCue("focus");
                       return;
                     }
@@ -572,10 +644,20 @@ function QuizView({
         .map((option, originalIndex) => ({ option, originalIndex }))
         .sort(
           (a, b) =>
-            stableOptionRank(challenge.id, question.id, a.option, a.originalIndex) -
-            stableOptionRank(challenge.id, question.id, b.option, b.originalIndex)
+            stableOptionRank(
+              challenge.id,
+              question.id,
+              a.option,
+              a.originalIndex,
+            ) -
+            stableOptionRank(
+              challenge.id,
+              question.id,
+              b.option,
+              b.originalIndex,
+            ),
         ),
-    [challenge.id, question.id, question.options]
+    [challenge.id, question.id, question.options],
   );
 
   return (
@@ -618,7 +700,7 @@ function QuizView({
                   ? currentCorrect
                     ? "border-green-400 bg-green-50 text-green-950"
                     : "border-slate-950 bg-slate-950 text-white"
-                  : "border-slate-200 bg-white text-slate-800 hover:bg-slate-50"
+                  : "border-slate-200 bg-white text-slate-800 hover:bg-slate-50",
               )}
             >
               {option}
@@ -747,7 +829,7 @@ function stableOptionRank(
   challengeId: string,
   questionId: string,
   option: string,
-  index: number
+  index: number,
 ) {
   const input = `${challengeId}:${questionId}:${option}:${index}`;
   let hash = 0;
@@ -791,20 +873,29 @@ function DailyPath({
                 active
                   ? "border-slate-950 bg-slate-950 text-white"
                   : "border-slate-200 bg-white text-slate-800 hover:bg-slate-50",
-                locked && "cursor-not-allowed opacity-45"
+                locked && "cursor-not-allowed opacity-45",
               )}
             >
               <span
                 className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-xs font-black text-slate-950"
                 style={{ backgroundColor: challenge.accentColor || "#B8F56D" }}
               >
-                {completed ? <CheckCircle2 className="h-4 w-4" /> : challenge.day}
+                {completed ? (
+                  <CheckCircle2 className="h-4 w-4" />
+                ) : (
+                  challenge.day
+                )}
               </span>
               <span className="min-w-0">
                 <span className="block truncate text-sm font-bold">
                   {challenge.shortTitle || challenge.title}
                 </span>
-                <span className={cn("block text-xs", active ? "text-white/60" : "text-slate-500")}>
+                <span
+                  className={cn(
+                    "block text-xs",
+                    active ? "text-white/60" : "text-slate-500",
+                  )}
+                >
                   {challenge.minutes} min · {challenge.points} pts
                 </span>
               </span>
@@ -868,7 +959,7 @@ function playCue(cue: SkillChallenge["audioCue"]) {
 
 function celebrateChallenge(
   confettiController: ConfettiRef | null,
-  accentColor?: string
+  accentColor?: string,
 ) {
   if (!confettiController) return;
 

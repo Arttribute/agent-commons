@@ -8,8 +8,13 @@ export interface ModelRegistryEntry {
   supportsTools: boolean;
   supportsStreaming: boolean;
   supportsVision: boolean;
-  inputPricePer1kTokens: number;   // USD
-  outputPricePer1kTokens: number;  // USD
+  inputPricePer1kTokens: number; // USD
+  /** Cache-read price. Omit only when the provider does not publish one. */
+  cachedInputPricePer1kTokens?: number; // USD
+  outputPricePer1kTokens: number; // USD
+  longContextThreshold?: number;
+  longContextInputMultiplier?: number;
+  longContextOutputMultiplier?: number;
   tier: 'frontier' | 'standard' | 'fast' | 'local';
 }
 
@@ -19,23 +24,25 @@ export const MODEL_REGISTRY: ModelRegistryEntry[] = [
     provider: 'anthropic',
     modelId: 'claude-opus-4-6',
     displayName: 'Claude Opus 4.6',
-    contextWindow: 200000,
+    contextWindow: 1000000,
     supportsTools: true,
     supportsStreaming: true,
     supportsVision: true,
-    inputPricePer1kTokens: 0.015,
-    outputPricePer1kTokens: 0.075,
+    inputPricePer1kTokens: 0.005,
+    cachedInputPricePer1kTokens: 0.0005,
+    outputPricePer1kTokens: 0.025,
     tier: 'frontier',
   },
   {
     provider: 'anthropic',
     modelId: 'claude-sonnet-4-6',
     displayName: 'Claude Sonnet 4.6',
-    contextWindow: 200000,
+    contextWindow: 1000000,
     supportsTools: true,
     supportsStreaming: true,
     supportsVision: true,
     inputPricePer1kTokens: 0.003,
+    cachedInputPricePer1kTokens: 0.0003,
     outputPricePer1kTokens: 0.015,
     tier: 'standard',
   },
@@ -47,8 +54,9 @@ export const MODEL_REGISTRY: ModelRegistryEntry[] = [
     supportsTools: true,
     supportsStreaming: true,
     supportsVision: true,
-    inputPricePer1kTokens: 0.0008,
-    outputPricePer1kTokens: 0.004,
+    inputPricePer1kTokens: 0.001,
+    cachedInputPricePer1kTokens: 0.0001,
+    outputPricePer1kTokens: 0.005,
     tier: 'fast',
   },
   // ── OpenAI ─────────────────────────────────────────────────────────────────
@@ -61,7 +69,11 @@ export const MODEL_REGISTRY: ModelRegistryEntry[] = [
     supportsStreaming: true,
     supportsVision: true,
     inputPricePer1kTokens: 0.005,
+    cachedInputPricePer1kTokens: 0.0005,
     outputPricePer1kTokens: 0.03,
+    longContextThreshold: 272000,
+    longContextInputMultiplier: 2,
+    longContextOutputMultiplier: 1.5,
     tier: 'frontier',
   },
   {
@@ -73,18 +85,23 @@ export const MODEL_REGISTRY: ModelRegistryEntry[] = [
     supportsStreaming: true,
     supportsVision: true,
     inputPricePer1kTokens: 0.0025,
+    cachedInputPricePer1kTokens: 0.00025,
     outputPricePer1kTokens: 0.015,
+    longContextThreshold: 272000,
+    longContextInputMultiplier: 2,
+    longContextOutputMultiplier: 1.5,
     tier: 'frontier',
   },
   {
     provider: 'openai',
     modelId: 'gpt-5.4-mini',
     displayName: 'GPT-5.4 Mini',
-    contextWindow: 1047576,
+    contextWindow: 400000,
     supportsTools: true,
     supportsStreaming: true,
     supportsVision: true,
     inputPricePer1kTokens: 0.00075,
+    cachedInputPricePer1kTokens: 0.000075,
     outputPricePer1kTokens: 0.0045,
     tier: 'standard',
   },
@@ -97,6 +114,7 @@ export const MODEL_REGISTRY: ModelRegistryEntry[] = [
     supportsStreaming: true,
     supportsVision: true,
     inputPricePer1kTokens: 0.0025,
+    cachedInputPricePer1kTokens: 0.00125,
     outputPricePer1kTokens: 0.01,
     tier: 'frontier',
   },
@@ -109,6 +127,7 @@ export const MODEL_REGISTRY: ModelRegistryEntry[] = [
     supportsStreaming: true,
     supportsVision: true,
     inputPricePer1kTokens: 0.00015,
+    cachedInputPricePer1kTokens: 0.000075,
     outputPricePer1kTokens: 0.0006,
     tier: 'fast',
   },
@@ -190,8 +209,13 @@ export const MODEL_REGISTRY: ModelRegistryEntry[] = [
   },
 ];
 
-export function getModelInfo(provider: ModelProviderName, modelId: string): ModelRegistryEntry | undefined {
-  return MODEL_REGISTRY.find((m) => m.provider === provider && m.modelId === modelId);
+export function getModelInfo(
+  provider: ModelProviderName,
+  modelId: string,
+): ModelRegistryEntry | undefined {
+  return MODEL_REGISTRY.find(
+    (m) => m.provider === provider && m.modelId === modelId,
+  );
 }
 
 export function calculateCost(
@@ -199,11 +223,27 @@ export function calculateCost(
   modelId: string,
   inputTokens: number,
   outputTokens: number,
+  cachedInputTokens = 0,
 ): number {
   const model = getModelInfo(provider, modelId);
   if (!model) return 0;
+  const cachedTokens = Math.min(
+    Math.max(0, cachedInputTokens),
+    Math.max(0, inputTokens),
+  );
+  const uncachedInputTokens = Math.max(0, inputTokens - cachedTokens);
+  const longContext =
+    model.longContextThreshold !== undefined &&
+    inputTokens > model.longContextThreshold;
   return (
-    (inputTokens / 1000) * model.inputPricePer1kTokens +
-    (outputTokens / 1000) * model.outputPricePer1kTokens
+    (uncachedInputTokens / 1000) *
+      model.inputPricePer1kTokens *
+      (longContext ? (model.longContextInputMultiplier ?? 1) : 1) +
+    (cachedTokens / 1000) *
+      (model.cachedInputPricePer1kTokens ?? model.inputPricePer1kTokens) *
+      (longContext ? (model.longContextInputMultiplier ?? 1) : 1) +
+    (outputTokens / 1000) *
+      model.outputPricePer1kTokens *
+      (longContext ? (model.longContextOutputMultiplier ?? 1) : 1)
   );
 }

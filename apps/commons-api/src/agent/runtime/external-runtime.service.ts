@@ -280,8 +280,9 @@ export class ExternalRuntimeService {
             runtimeUsage.costUsd = calculateCost(
               provider as Parameters<typeof calculateCost>[0],
               modelId,
-              Math.max(0, runtimeUsage.inputTokens - runtimeUsage.cachedTokens),
+              runtimeUsage.inputTokens,
               runtimeUsage.outputTokens,
+              runtimeUsage.cachedTokens,
             );
             await this.usage.record({
               agentId: props.agentId,

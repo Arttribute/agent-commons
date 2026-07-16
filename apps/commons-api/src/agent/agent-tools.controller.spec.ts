@@ -22,7 +22,6 @@ describe('AgentToolsController dynamic tool execution', () => {
       {} as any,
       {} as any,
       {} as any,
-      {} as any,
     );
   });
 
@@ -81,7 +80,9 @@ describe('AgentToolsController dynamic tool execution', () => {
       );
 
       const url = new URL(requestedUrl);
-      expect(url.searchParams.get('q')).toBe('from:someone@example.com is:unread');
+      expect(url.searchParams.get('q')).toBe(
+        'from:someone@example.com is:unread',
+      );
       expect(url.searchParams.has('maxResults')).toBe(false);
     });
 
@@ -113,7 +114,12 @@ describe('AgentToolsController dynamic tool execution', () => {
         status: 400,
         statusText: 'Bad Request',
         text: async () =>
-          JSON.stringify({ error: { code: 400, message: "Invalid value '2026-07-10T00%3A00%3A00Z'" } }),
+          JSON.stringify({
+            error: {
+              code: 400,
+              message: "Invalid value '2026-07-10T00%3A00%3A00Z'",
+            },
+          }),
       })) as any;
 
       await expect(
@@ -136,7 +142,9 @@ describe('AgentToolsController dynamic tool execution', () => {
         statusText: 'Forbidden',
         text: async () =>
           JSON.stringify({
-            error: { message: 'Request had insufficient authentication scopes.' },
+            error: {
+              message: 'Request had insufficient authentication scopes.',
+            },
           }),
       })) as any;
 
@@ -255,15 +263,29 @@ describe('AgentToolsController dynamic tool execution', () => {
     });
 
     it('rejects calls without the internal secret when configured', () => {
-      process.env = { ...env, API_SECRET_KEY: 'shh', API_AUTH_REQUIRED: 'true' };
-      expect(() => (controller as any).assertInternalCaller(undefined)).toThrow();
+      process.env = {
+        ...env,
+        API_SECRET_KEY: 'shh',
+        API_AUTH_REQUIRED: 'true',
+      };
+      expect(() =>
+        (controller as any).assertInternalCaller(undefined),
+      ).toThrow();
       expect(() => (controller as any).assertInternalCaller('wrong')).toThrow();
-      expect(() => (controller as any).assertInternalCaller('shh')).not.toThrow();
+      expect(() =>
+        (controller as any).assertInternalCaller('shh'),
+      ).not.toThrow();
     });
 
     it('is a no-op when auth is disabled (local dev)', () => {
-      process.env = { ...env, API_SECRET_KEY: 'shh', API_AUTH_REQUIRED: 'false' };
-      expect(() => (controller as any).assertInternalCaller(undefined)).not.toThrow();
+      process.env = {
+        ...env,
+        API_SECRET_KEY: 'shh',
+        API_AUTH_REQUIRED: 'false',
+      };
+      expect(() =>
+        (controller as any).assertInternalCaller(undefined),
+      ).not.toThrow();
     });
   });
 });

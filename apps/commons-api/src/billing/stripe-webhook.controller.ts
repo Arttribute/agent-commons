@@ -15,15 +15,16 @@ import { CreditService } from '~/credit/credit.service';
 import { Public } from '~/modules/auth';
 import { StripeProvider } from './stripe.provider';
 import { EntitlementsService } from './entitlements.service';
-import { PLANS, planKeyFromPriceId } from './plan-catalog';
+import { PLANS, TOPUP_PACKS, planKeyFromPriceId } from './plan-catalog';
 
 /**
  * Stripe webhook receiver. This is the single writer of subscription state and
  * the only place purchases are turned into credit grants.
  *
  * Idempotency has two layers:
- *   1. stripe_webhook_event is insert-first (PK = Stripe event id); a duplicate
- *      delivery short-circuits.
+ *   1. stripe_webhook_event is an insert-first processing lock (PK = Stripe
+ *      event id). Processed events short-circuit; failed or stale locks can be
+ *      retried instead of being silently abandoned.
  *   2. every credit grant uses a deterministic idempotencyKey derived from the
  *      Stripe object id, so even a re-processed event cannot double-grant.
  */
@@ -58,7 +59,24 @@ export class StripeWebhookController {
       throw new BadRequestException('Invalid signature');
     }
 
-    // Insert-first idempotency lock. If the event already exists, skip.
+    const existing = await this.db.query.stripeWebhookEvent.findFirst({
+      where: eq(schema.stripeWebhookEvent.eventId, event.id),
+    });
+    if (existing?.status === 'processed' || existing?.status === 'skipped') {
+      this.logger.log(
+        `Duplicate webhook ${event.id} (${event.type}) — skipped`,
+      );
+      return { received: true, duplicate: true };
+    }
+    if (
+      existing?.status === 'processing' &&
+      existing.createdAt.getTime() > Date.now() - 5 * 60_000
+    ) {
+      return { received: true, processing: true };
+    }
+
+    // Insert-first processing lock. Failed and stale processing rows are
+    // deliberately reclaimed; downstream grants have their own idempotency key.
     const [locked] = await this.db
       .insert(schema.stripeWebhookEvent)
       .values({
@@ -71,11 +89,25 @@ export class StripeWebhookController {
       .returning();
 
     if (!locked) {
-      this.logger.log(`Duplicate webhook ${event.id} (${event.type}) — skipped`);
-      return { received: true, duplicate: true };
+      await this.db
+        .update(schema.stripeWebhookEvent)
+        .set({
+          status: 'processing',
+          error: null,
+          payload: event as unknown as Record<string, unknown>,
+          processedAt: null,
+        })
+        .where(eq(schema.stripeWebhookEvent.eventId, event.id));
     }
 
     try {
+      const expectsLive =
+        (process.env.APP_ENV || process.env.NODE_ENV) === 'production';
+      if (event.livemode !== expectsLive) {
+        throw new BadRequestException(
+          'Webhook mode does not match this environment',
+        );
+      }
       await this.dispatch(event);
       await this.db
         .update(schema.stripeWebhookEvent)
@@ -111,9 +143,7 @@ export class StripeWebhookController {
       case 'invoice.paid':
         return this.onInvoicePaid(event.data.object as Stripe.Invoice);
       case 'invoice.payment_failed':
-        return this.onInvoicePaymentFailed(
-          event.data.object as Stripe.Invoice,
-        );
+        return this.onInvoicePaymentFailed(event.data.object as Stripe.Invoice);
       default:
         this.logger.debug(`Unhandled webhook type ${event.type}`);
     }
@@ -125,8 +155,10 @@ export class StripeWebhookController {
     if (session.payment_status !== 'paid') return;
 
     const principalId = session.metadata?.principalId;
-    const credits = Number(session.metadata?.credits);
-    if (!principalId || !Number.isFinite(credits) || credits <= 0) {
+    const pack = session.metadata?.packKey
+      ? TOPUP_PACKS[session.metadata.packKey]
+      : null;
+    if (!principalId || !pack) {
       this.logger.warn(
         `checkout.session.completed ${session.id} missing top-up metadata`,
       );
@@ -135,19 +167,19 @@ export class StripeWebhookController {
     await this.credits.grant({
       principalId,
       principalType: 'user',
-      amount: credits,
+      amount: pack.credits,
       eventType: 'credit_topup',
       sourcePlatform: 'agent_commons',
       idempotencyKey: `stripe:${session.id}`,
       description: 'Credit top-up purchase',
       metadata: {
         stripeSessionId: session.id,
-        packKey: session.metadata?.packKey,
+        packKey: pack.key,
         amountTotal: session.amount_total,
       },
       createdBy: 'stripe',
     });
-    this.logger.log(`Granted ${credits} top-up credits to ${principalId}`);
+    this.logger.log(`Granted ${pack.credits} top-up credits to ${principalId}`);
   }
 
   /** Upsert the local subscription mirror. */
@@ -158,7 +190,9 @@ export class StripeWebhookController {
       where: eq(schema.billingCustomer.stripeCustomerId, customerId),
     });
     if (!customer) {
-      this.logger.warn(`Subscription ${sub.id} for unknown customer ${customerId}`);
+      this.logger.warn(
+        `Subscription ${sub.id} for unknown customer ${customerId}`,
+      );
       return;
     }
 
@@ -224,6 +258,7 @@ export class StripeWebhookController {
     await this.credits.grant({
       principalId: customer.principalId,
       principalType: 'user',
+      workspaceId: customer.workspaceId,
       amount: plan.monthlyCredits,
       eventType: 'subscription_grant',
       sourcePlatform: 'agent_commons',

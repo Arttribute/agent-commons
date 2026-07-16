@@ -1,4 +1,10 @@
-import { Injectable, Logger, Inject, forwardRef } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  Logger,
+  Inject,
+  forwardRef,
+} from '@nestjs/common';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
@@ -8,6 +14,8 @@ import { eq } from 'drizzle-orm';
 import { OpenAIService } from '~/modules/openai/openai.service';
 import * as schema from '#/models/schema';
 import { SessionService } from '~/session/session.service';
+import { UsageService } from '~/modules/usage';
+import { randomUUID } from 'crypto';
 
 export type TtsProvider = 'openai' | 'elevenlabs';
 
@@ -19,6 +27,8 @@ export interface SpeakArgs {
   voice?: string; // OpenAI voice name OR ElevenLabs voiceId
   format?: 'mp3' | 'wav' | 'opus' | 'aac' | 'flac' | 'pcm';
   instructions?: string; // optional style prompt
+  operationId?: string;
+  sessionId?: string;
 }
 
 export interface SpeakResult {
@@ -37,6 +47,7 @@ export class SpaceTtsService {
     private readonly openai: OpenAIService,
     @Inject(forwardRef(() => SessionService))
     private readonly session: SessionService,
+    private readonly usage: UsageService,
   ) {}
 
   /**
@@ -69,6 +80,29 @@ export class SpaceTtsService {
       providerOverride || (agent?.ttsProvider as TtsProvider) || 'openai';
     const voice: string =
       voiceOverride || agent?.ttsVoice || this.defaultVoiceFor(provider);
+    const principalId = agent?.ownerUserId || agent?.owner;
+    if (!principalId) {
+      throw new BadRequestException(
+        'The speaking agent has no billable owner.',
+      );
+    }
+    const costPerThousandCharacters = Number(
+      provider === 'elevenlabs'
+        ? process.env.ELEVENLABS_TTS_COST_USD_PER_1K_CHARACTERS || 0.1
+        : process.env.OPENAI_TTS_COST_USD_PER_1K_CHARACTERS || 0.015,
+    );
+    const costUsd =
+      (Math.max(1, text.length) / 1_000) * costPerThousandCharacters;
+    const operationId = args.operationId || randomUUID();
+    const reservation = await this.usage.authorizeCapability({
+      principalId,
+      capability: 'text_to_speech',
+      estimatedCostUsd: costUsd,
+      idempotencyKey: `capability:tts:${operationId}`,
+      agentId,
+      sessionId: args.sessionId,
+      metadata: { provider, characters: text.length },
+    });
 
     try {
       const { buffer, mime } =
@@ -80,6 +114,15 @@ export class SpaceTtsService {
               format,
               instructions,
             });
+      await this.usage.settleCapability({
+        reservationId: reservation?.reservationId,
+        capability: 'text_to_speech',
+        actualCostUsd: costUsd,
+        idempotencyKey: `capability:tts:${operationId}:capture`,
+        agentId,
+        sessionId: args.sessionId,
+        metadata: { provider, voice, characters: text.length },
+      });
 
       // Debug: optionally save raw audio to temp directory for inspection
       await this.debugSaveAudio({
@@ -122,6 +165,7 @@ export class SpaceTtsService {
 
       return { success: true, mime, bytes: buffer.length };
     } catch (e) {
+      await this.usage.releaseCapability(reservation?.reservationId);
       this.logger.warn(`speak failed (${provider}): ${String(e)}`);
       return { success: false, mime: 'application/octet-stream', bytes: 0 };
     }

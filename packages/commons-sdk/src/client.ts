@@ -27,8 +27,12 @@ import {
   CreditBalance,
   CreditLedgerEntry,
   CreditWriteParams,
+  CreditCampaign,
+  CreditSummary,
+  CreditTransfer,
   SubscriptionInfo,
   PlanEntitlements,
+  BillingCatalog,
   FlagEvaluation,
   AgentMemory,
   MemoryStats,
@@ -1365,6 +1369,29 @@ export class CommonsClient {
         return this.request("GET", `/v1/credits/ledger${qs ? `?${qs}` : ""}`);
       },
 
+      summary: (): Promise<{ data: CreditSummary }> =>
+        this.request("GET", "/v1/credits/summary"),
+
+      campaigns: (): Promise<{ data: CreditCampaign[] }> =>
+        this.request("GET", "/v1/credits/campaigns"),
+
+      claimCampaign: (params: {
+        campaignKey: string;
+        eventId?: string;
+      }): Promise<{ data: { alreadyClaimed: boolean } }> =>
+        this.request("POST", "/v1/credits/campaigns/claim", params),
+
+      transfers: (): Promise<{ data: CreditTransfer[] }> =>
+        this.request("GET", "/v1/credits/transfers"),
+
+      gift: (params: {
+        recipientPrincipalId: string;
+        amount: number;
+        message?: string;
+        idempotencyKey: string;
+      }): Promise<{ data: CreditTransfer }> =>
+        this.request("POST", "/v1/credits/gifts", params),
+
       grant: (
         params: CreditWriteParams,
       ): Promise<{ data: CreditLedgerEntry }> =>
@@ -1381,6 +1408,10 @@ export class CommonsClient {
 
   get billing() {
     return {
+      /** Public product catalog served from the backend source of truth. */
+      catalog: (): Promise<{ data: BillingCatalog }> =>
+        this.request("GET", "/v1/billing/catalog"),
+
       /** Current plan, status, and entitlements for the caller. */
       subscription: (): Promise<{ data: SubscriptionInfo }> =>
         this.request("GET", "/v1/billing/subscription"),

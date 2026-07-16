@@ -20,6 +20,7 @@ import { PinataService } from '~/pinata/pinata.service';
 import { ToolSchema } from '~/tool/dto/tool.dto';
 import { SpaceTtsService } from '~/space/space-tts.service';
 import { ModuleRef } from '@nestjs/core';
+import { randomUUID } from 'crypto';
 import { WorkflowExecutorService } from '~/tool/workflow-executor.service';
 import { FilesService, LibraryService } from '~/files';
 import { ComputerService } from '~/computer';
@@ -28,6 +29,10 @@ import {
   type BrowserCheckAction,
   type CodeProjectFileInput,
 } from '~/code-project';
+import { DatabaseService } from '~/modules/database/database.service';
+import { UsageService } from '~/modules/usage';
+import * as schema from '#/models/schema';
+import { eq } from 'drizzle-orm';
 
 type ToolExecutionMetadata = {
   agentId?: string;
@@ -603,7 +608,20 @@ export class CommonToolService {
     private skillService: SkillService,
     private modelProviderFactory: ModelProviderFactory,
     private moduleRef: ModuleRef,
+    private db: DatabaseService,
+    private usage: UsageService,
   ) {}
+
+  private async capabilityOwner(agentId: string) {
+    const agent = await this.db.query.agent.findFirst({
+      where: eq(schema.agent.agentId, agentId),
+    });
+    const principalId = agent?.ownerUserId || agent?.owner;
+    if (!principalId) {
+      throw new BadRequestException('The agent has no billable owner.');
+    }
+    return { principalId, workspaceId: agent?.workspaceId ?? null };
+  }
 
   async listCommonsResources(
     props: {
@@ -740,12 +758,15 @@ export class CommonToolService {
     };
   }
 
-  async webSearch(props: {
-    query: string;
-    count?: number;
-    freshness?: 'day' | 'week' | 'month' | 'year';
-    safeSearch?: 'off' | 'moderate' | 'strict';
-  }) {
+  async webSearch(
+    props: {
+      query: string;
+      count?: number;
+      freshness?: 'day' | 'week' | 'month' | 'year';
+      safeSearch?: 'off' | 'moderate' | 'strict';
+    },
+    metadata?: ToolExecutionMetadata,
+  ) {
     const query = props.query?.trim();
     if (!query) {
       throw new BadRequestException('webSearch requires a non-empty query');
@@ -757,6 +778,20 @@ export class CommonToolService {
         'webSearch is not configured. Set BRAVE_SEARCH_API_KEY to enable live web search.',
       );
     }
+
+    const agentId = this.requireToolAgentId(undefined, metadata);
+    const owner = await this.capabilityOwner(agentId);
+    const operationId = metadata?.toolCallId || randomUUID();
+    const costUsd = Number(process.env.BRAVE_SEARCH_COST_USD_PER_CALL || 0.005);
+    const reservation = await this.usage.authorizeCapability({
+      principalId: owner.principalId,
+      capability: 'web_search',
+      estimatedCostUsd: costUsd,
+      idempotencyKey: `capability:web-search:${operationId}`,
+      agentId,
+      sessionId: metadata?.sessionId,
+      metadata: { workspaceId: owner.workspaceId },
+    });
 
     const count = Math.max(1, Math.min(props.count ?? 8, 20));
     const freshnessMap = {
@@ -774,20 +809,36 @@ export class CommonToolService {
       url.searchParams.set('freshness', freshnessMap[props.freshness]);
     }
 
-    const response = await fetch(url.toString(), {
-      headers: {
-        Accept: 'application/json',
-        'X-Subscription-Token': apiKey,
-      },
-    });
+    let response: Response;
+    try {
+      response = await fetch(url.toString(), {
+        headers: {
+          Accept: 'application/json',
+          'X-Subscription-Token': apiKey,
+        },
+      });
+    } catch (error) {
+      await this.usage.releaseCapability(reservation?.reservationId);
+      throw error;
+    }
 
     if (!response.ok) {
+      await this.usage.releaseCapability(reservation?.reservationId);
       throw new BadRequestException(
         `webSearch provider returned ${response.status} ${response.statusText}`,
       );
     }
 
     const data: any = await response.json();
+    await this.usage.settleCapability({
+      reservationId: reservation?.reservationId,
+      capability: 'web_search',
+      actualCostUsd: costUsd,
+      idempotencyKey: `capability:web-search:${operationId}:capture`,
+      agentId,
+      sessionId: metadata?.sessionId,
+      metadata: { provider: 'brave', count },
+    });
     const results = (data.web?.results ?? []).map((item: any) => ({
       title: item.title,
       url: item.url,
@@ -802,21 +853,27 @@ export class CommonToolService {
     };
   }
 
-  async deepSearch(props: {
-    query: string;
-    focus?: string;
-    maxResults?: number;
-    includeSources?: boolean;
-  }) {
+  async deepSearch(
+    props: {
+      query: string;
+      focus?: string;
+      maxResults?: number;
+      includeSources?: boolean;
+    },
+    metadata?: ToolExecutionMetadata,
+  ) {
     const query = props.focus
       ? `${props.query.trim()} ${props.focus.trim()}`
       : props.query.trim();
 
-    const search = await this.webSearch({
-      query,
-      count: Math.max(5, Math.min(props.maxResults ?? 12, 20)),
-      safeSearch: 'moderate',
-    });
+    const search = await this.webSearch(
+      {
+        query,
+        count: Math.max(5, Math.min(props.maxResults ?? 12, 20)),
+        safeSearch: 'moderate',
+      },
+      metadata,
+    );
 
     const summary =
       search.results.length > 0
@@ -831,13 +888,20 @@ export class CommonToolService {
     };
   }
 
-  async speakInSpace(props: {
-    spaceId: string;
-    agentId: string;
-    text: string;
-    instructions?: string;
-  }) {
-    return this.spaceTts.speak(props);
+  async speakInSpace(
+    props: {
+      spaceId: string;
+      agentId: string;
+      text: string;
+      instructions?: string;
+    },
+    metadata?: ToolExecutionMetadata,
+  ) {
+    return this.spaceTts.speak({
+      ...props,
+      operationId: metadata?.toolCallId,
+      sessionId: metadata?.sessionId,
+    });
   }
 
   async createTask(
@@ -1054,14 +1118,17 @@ export class CommonToolService {
    * @returns
    */
   /** Generate an image and persist it as a private S3-backed library item. */
-  async generateImage(props: {
-    prompt: string;
-    n?: number;
-    size?: '1024x1024' | '1024x1536' | '1536x1024' | 'auto';
-    quality?: 'low' | 'medium' | 'high' | 'auto';
-    agentId: string;
-    sessionId?: string;
-  }): Promise<
+  async generateImage(
+    props: {
+      prompt: string;
+      n?: number;
+      size?: '1024x1024' | '1024x1536' | '1536x1024' | 'auto';
+      quality?: 'low' | 'medium' | 'high' | 'auto';
+      agentId: string;
+      sessionId?: string;
+    },
+    metadata?: ToolExecutionMetadata,
+  ): Promise<
     {
       fileId: string;
       name: string;
@@ -1070,21 +1137,70 @@ export class CommonToolService {
       model: string;
     }[]
   > {
-    const { prompt, n = 1, size = '1024x1024', quality = 'auto' } = props;
+    const { prompt, n = 1, size = '1024x1024' } = props;
+    if (!Number.isInteger(n) || n < 1 || n > 4) {
+      throw new BadRequestException('Image count must be between 1 and 4.');
+    }
+    const quality =
+      props.quality === 'auto' || !props.quality ? 'medium' : props.quality;
     const model = process.env.OPENAI_IMAGE_MODEL || 'gpt-image-2';
+    if (
+      model !== 'gpt-image-2' &&
+      !process.env.OPENAI_IMAGE_OUTPUT_PRICE_USD_JSON
+    ) {
+      throw new BadRequestException(
+        `Image generation model ${model} is disabled until its price is configured.`,
+      );
+    }
+    const agentId = this.requireToolAgentId(props.agentId, metadata);
+    const owner = await this.capabilityOwner(agentId);
+    const operationId = metadata?.toolCallId || randomUUID();
+    const outputCostUsd = imageOutputCostUsd(size, quality) * n;
+    const promptCostUsd = (Math.ceil(prompt.length / 4) / 1_000_000) * 5;
+    const costUsd = outputCostUsd + promptCostUsd;
+    const reservation = await this.usage.authorizeCapability({
+      principalId: owner.principalId,
+      capability: 'image_generation',
+      estimatedCostUsd: costUsd,
+      idempotencyKey: `capability:image:${operationId}`,
+      agentId,
+      sessionId: props.sessionId,
+      metadata: {
+        model,
+        size,
+        quality,
+        count: n,
+        workspaceId: owner.workspaceId,
+      },
+    });
 
     // The Image API is the direct, single-turn generation surface. GPT Image
     // returns base64 image data by default; response_format is intentionally
     // omitted because GPT Image returns base64 data directly by default.
-    const response = await this.openAI.images.generate({
-      model,
-      prompt,
-      n,
-      size,
-      quality,
-      output_format: 'png',
-      moderation: 'auto',
-    } as any);
+    let response: any;
+    try {
+      response = await this.openAI.images.generate({
+        model,
+        prompt,
+        n,
+        size,
+        quality,
+        output_format: 'png',
+        moderation: 'auto',
+      } as any);
+    } catch (error) {
+      await this.usage.releaseCapability(reservation?.reservationId);
+      throw error;
+    }
+    await this.usage.settleCapability({
+      reservationId: reservation?.reservationId,
+      capability: 'image_generation',
+      actualCostUsd: costUsd,
+      idempotencyKey: `capability:image:${operationId}:capture`,
+      agentId,
+      sessionId: props.sessionId,
+      metadata: { provider: 'openai', model, size, quality, count: n },
+    });
 
     const results: Array<{
       fileId: string;
@@ -1856,4 +1972,43 @@ export class CommonToolService {
       artifacts: task?.artifacts,
     };
   }
+}
+
+/** Current GPT Image 2 output prices; reviewed against the provider catalog. */
+function imageOutputCostUsd(
+  size: '1024x1024' | '1024x1536' | '1536x1024' | 'auto',
+  quality: 'low' | 'medium' | 'high',
+) {
+  const configured = process.env.OPENAI_IMAGE_OUTPUT_PRICE_USD_JSON;
+  let prices: Record<string, Record<string, number>> = {
+    low: { '1024x1024': 0.006, '1024x1536': 0.005, '1536x1024': 0.005 },
+    medium: {
+      '1024x1024': 0.053,
+      '1024x1536': 0.041,
+      '1536x1024': 0.041,
+    },
+    high: { '1024x1024': 0.211, '1024x1536': 0.165, '1536x1024': 0.165 },
+  };
+  if (configured) {
+    try {
+      prices = JSON.parse(configured);
+    } catch {
+      throw new BadRequestException(
+        'OPENAI_IMAGE_OUTPUT_PRICE_USD_JSON is invalid.',
+      );
+    }
+  }
+  const selected = Object.values(prices[quality] ?? {}).filter(
+    (value) => Number.isFinite(value) && value > 0,
+  );
+  if (!selected.length) {
+    throw new BadRequestException(
+      `No image price is configured for quality ${quality}.`,
+    );
+  }
+  // The API's auto size can choose an arbitrary resolution. Reserve the
+  // highest catalogued cost for the selected quality.
+  if (size === 'auto') return Math.max(...selected);
+  const exact = prices[quality]?.[size];
+  return Number.isFinite(exact) && exact > 0 ? exact : Math.max(...selected);
 }

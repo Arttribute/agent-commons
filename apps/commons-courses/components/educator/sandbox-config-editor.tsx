@@ -7,8 +7,12 @@ import type {
 } from "@/types/skills";
 import { createSandboxConfig } from "./sandbox-defaults";
 
-type SandboxSkillTemplate = NonNullable<AgentSandboxConfig["skillTemplates"]>[number];
-type SandboxToolTemplate = NonNullable<AgentSandboxConfig["toolTemplates"]>[number];
+type SandboxSkillTemplate = NonNullable<
+  AgentSandboxConfig["skillTemplates"]
+>[number];
+type SandboxToolTemplate = NonNullable<
+  AgentSandboxConfig["toolTemplates"]
+>[number];
 type SandboxTemplate = SandboxSkillTemplate | SandboxToolTemplate;
 
 const sandboxCapabilities: AgentSandboxCapability[] = [
@@ -57,9 +61,12 @@ export function SandboxConfigEditor({
     <div className="mt-4 rounded-lg border border-slate-200 bg-white p-3">
       <div className="mb-3 flex items-center justify-between gap-3">
         <div>
-          <p className="text-sm font-black text-slate-950">Agent learner sandbox</p>
+          <p className="text-sm font-black text-slate-950">
+            Agent learner sandbox
+          </p>
           <p className="mt-1 text-xs leading-5 text-slate-500">
-            Choose the minimal Agent Commons surface learners can use for this challenge.
+            Choose the minimal Agent Commons surface learners can use for this
+            challenge.
           </p>
         </div>
         <Toggle
@@ -83,7 +90,9 @@ export function SandboxConfigEditor({
                 className="mt-2 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
                 value={sandbox.mode}
                 onChange={(event) =>
-                  update({ mode: event.target.value as AgentSandboxConfig["mode"] })
+                  update({
+                    mode: event.target.value as AgentSandboxConfig["mode"],
+                  })
                 }
               >
                 <option value="simple">Simple</option>
@@ -91,14 +100,10 @@ export function SandboxConfigEditor({
                 <option value="full">Full</option>
               </select>
             </label>
-            <Field
-              label="Credit reward"
-              type="number"
-              value={String(sandbox.creditReward || 0)}
-              onChange={(creditReward) =>
-                update({ creditReward: Number(creditReward) || 0 })
-              }
-            />
+            <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs leading-5 text-slate-600">
+              Credit rewards are controlled by the central CommonLab campaign,
+              including amount, limits, and expiry.
+            </div>
           </div>
           <TextArea
             label="Brief"
@@ -120,7 +125,9 @@ export function SandboxConfigEditor({
               label="Required to complete"
               items={sandboxCapabilities.filter((item) => item !== "credits")}
               selected={sandbox.requiredCapabilities || []}
-              onChange={(requiredCapabilities) => update({ requiredCapabilities })}
+              onChange={(requiredCapabilities) =>
+                update({ requiredCapabilities })
+              }
             />
           </div>
 
@@ -160,7 +167,9 @@ export function SandboxConfigEditor({
             kind="skill"
             rows={sandbox.skillTemplates || []}
             onChange={(skillTemplates) =>
-              update({ skillTemplates: skillTemplates as SandboxSkillTemplate[] })
+              update({
+                skillTemplates: skillTemplates as SandboxSkillTemplate[],
+              })
             }
           />
           <TemplateList
@@ -196,7 +205,9 @@ function SandboxIntroEditor({
     <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
       <div className="mb-3 flex items-center justify-between gap-3">
         <div>
-          <p className="text-sm font-black text-slate-950">Learner intro screen</p>
+          <p className="text-sm font-black text-slate-950">
+            Learner intro screen
+          </p>
           <p className="mt-1 text-xs leading-5 text-slate-500">
             Explain the task before learners enter the live sandbox.
           </p>
@@ -204,7 +215,9 @@ function SandboxIntroEditor({
         <Toggle
           label="Show intro"
           checked={Boolean(sandbox.intro?.enabled)}
-          onChange={(enabled) => update({ intro: { ...sandbox.intro, enabled } })}
+          onChange={(enabled) =>
+            update({ intro: { ...sandbox.intro, enabled } })
+          }
         />
       </div>
       <div className="grid gap-3 md:grid-cols-2">
@@ -333,7 +346,8 @@ function ReviewConfigEditor({
         <div>
           <p className="text-sm font-black text-slate-950">AI reviewer</p>
           <p className="mt-1 text-xs leading-5 text-slate-500">
-            Give learners quiz-like feedback on prompts or skills before they create the agent.
+            Give learners quiz-like feedback on prompts or skills before they
+            create the agent.
           </p>
         </div>
         <Toggle
@@ -394,7 +408,10 @@ function CheckboxList<T extends string>({
       <p className="mb-2 text-sm font-bold text-slate-700">{label}</p>
       <div className="grid grid-cols-2 gap-2 rounded-lg border border-slate-200 p-3">
         {items.map((item) => (
-          <label key={item} className="flex items-center gap-2 text-xs font-bold text-slate-600">
+          <label
+            key={item}
+            className="flex items-center gap-2 text-xs font-bold text-slate-600"
+          >
             <input
               type="checkbox"
               checked={selected.includes(item)}
@@ -402,7 +419,7 @@ function CheckboxList<T extends string>({
                 onChange(
                   event.target.checked
                     ? Array.from(new Set([...selected, item]))
-                    : selected.filter((value) => value !== item)
+                    : selected.filter((value) => value !== item),
                 )
               }
             />
@@ -456,7 +473,10 @@ function TemplateList({
       </div>
       <div className="space-y-3">
         {rows.map((row, index) => (
-          <div key={row.id || index} className="grid gap-2 rounded-lg bg-slate-50 p-3 md:grid-cols-[1fr_1fr_auto]">
+          <div
+            key={row.id || index}
+            className="grid gap-2 rounded-lg bg-slate-50 p-3 md:grid-cols-[1fr_1fr_auto]"
+          >
             <Field
               label="Name"
               value={row.name || ""}
@@ -468,15 +488,22 @@ function TemplateList({
             />
             {kind === "tool" ? (
               <label>
-                <span className="text-sm font-bold text-slate-700">Connector</span>
+                <span className="text-sm font-bold text-slate-700">
+                  Connector
+                </span>
                 <select
                   className="mt-2 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
-                  value={"connectorKind" in row ? row.connectorKind || "custom" : "custom"}
+                  value={
+                    "connectorKind" in row
+                      ? row.connectorKind || "custom"
+                      : "custom"
+                  }
                   onChange={(event) => {
                     const next = [...rows];
                     next[index] = {
                       ...row,
-                      connectorKind: event.target.value as SandboxToolTemplate["connectorKind"],
+                      connectorKind: event.target
+                        .value as SandboxToolTemplate["connectorKind"],
                     };
                     onChange(next);
                   }}
@@ -492,7 +519,9 @@ function TemplateList({
             ) : null}
             <button
               type="button"
-              onClick={() => onChange(rows.filter((_, rowIndex) => rowIndex !== index))}
+              onClick={() =>
+                onChange(rows.filter((_, rowIndex) => rowIndex !== index))
+              }
               className="self-end rounded-lg border border-slate-200 px-3 py-2 text-xs font-bold text-slate-600 hover:bg-white"
             >
               Remove
@@ -592,7 +621,9 @@ function GuideStepEditor({
               </select>
             </label>
             <label>
-              <span className="text-sm font-bold text-slate-700">Dialog side</span>
+              <span className="text-sm font-bold text-slate-700">
+                Dialog side
+              </span>
               <select
                 className="mt-2 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
                 value={step.placement || "auto"}
@@ -600,7 +631,9 @@ function GuideStepEditor({
                   const next = [...steps];
                   next[index] = {
                     ...step,
-                    placement: event.target.value as NonNullable<typeof step.placement>,
+                    placement: event.target.value as NonNullable<
+                      typeof step.placement
+                    >,
                   };
                   onChange(next);
                 }}
@@ -614,7 +647,9 @@ function GuideStepEditor({
             </label>
             <button
               type="button"
-              onClick={() => onChange(steps.filter((_, stepIndex) => stepIndex !== index))}
+              onClick={() =>
+                onChange(steps.filter((_, stepIndex) => stepIndex !== index))
+              }
               className="self-end rounded-lg border border-slate-200 px-3 py-2 text-xs font-bold text-slate-600 hover:bg-white"
             >
               Remove

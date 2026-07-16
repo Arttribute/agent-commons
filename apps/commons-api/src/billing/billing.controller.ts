@@ -9,7 +9,7 @@ import {
 import type { Request } from 'express';
 import { BillingService } from './billing.service';
 import { EntitlementsService } from './entitlements.service';
-import { resolveCallerId, type ApiKeyPrincipal } from '~/modules/auth';
+import { Public, resolveCallerId, type ApiKeyPrincipal } from '~/modules/auth';
 import { PlanKey } from './plan-catalog';
 
 interface Caller {
@@ -38,6 +38,13 @@ export class BillingController {
     private readonly billing: BillingService,
     private readonly entitlements: EntitlementsService,
   ) {}
+
+  /** Current plan, status, entitlements. */
+  @Public()
+  @Get('catalog')
+  async getCatalog() {
+    return { data: this.billing.getCatalog() };
+  }
 
   /** Current plan, status, entitlements. */
   @Get('subscription')
@@ -84,10 +91,7 @@ export class BillingController {
 
   /** Start a one-time credit top-up checkout. */
   @Post('checkout/topup')
-  async topupCheckout(
-    @Req() req: Request,
-    @Body() body: { packKey: string },
-  ) {
+  async topupCheckout(@Req() req: Request, @Body() body: { packKey: string }) {
     const data = await this.billing.createTopupCheckout(
       caller(req),
       body.packKey,

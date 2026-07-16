@@ -17,7 +17,10 @@ interface UseVoiceRecorderOptions {
  * cancel() (discard) or accept() → "transcribing" → onTranscribed(text) →
  * back to "idle". All media resources are released on stop and on unmount.
  */
-export function useVoiceRecorder({ onTranscribed, onError }: UseVoiceRecorderOptions) {
+export function useVoiceRecorder({
+  onTranscribed,
+  onError,
+}: UseVoiceRecorderOptions) {
   const [state, setState] = useState<VoiceRecorderState>("idle");
   const [elapsedMs, setElapsedMs] = useState(0);
 
@@ -51,8 +54,13 @@ export function useVoiceRecorder({ onTranscribed, onError }: UseVoiceRecorderOpt
 
   const start = useCallback(async () => {
     if (recorderRef.current) return;
-    if (typeof MediaRecorder === "undefined" || !navigator.mediaDevices?.getUserMedia) {
-      callbacksRef.current.onError?.("Voice recording is not supported in this browser");
+    if (
+      typeof MediaRecorder === "undefined" ||
+      !navigator.mediaDevices?.getUserMedia
+    ) {
+      callbacksRef.current.onError?.(
+        "Voice recording is not supported in this browser",
+      );
       return;
     }
 
@@ -61,7 +69,7 @@ export function useVoiceRecorder({ onTranscribed, onError }: UseVoiceRecorderOpt
       stream = await navigator.mediaDevices.getUserMedia({ audio: true });
     } catch {
       callbacksRef.current.onError?.(
-        "Microphone access was denied. Allow it in your browser settings to dictate messages."
+        "Microphone access was denied. Allow it in your browser settings to dictate messages.",
       );
       return;
     }
@@ -72,14 +80,18 @@ export function useVoiceRecorder({ onTranscribed, onError }: UseVoiceRecorderOpt
       recorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
     } catch {
       stream.getTracks().forEach((track) => track.stop());
-      callbacksRef.current.onError?.("Could not start the recorder on this device");
+      callbacksRef.current.onError?.(
+        "Could not start the recorder on this device",
+      );
       return;
     }
 
     // Live level meter for the waveform.
     try {
       const AudioCtx =
-        window.AudioContext ?? (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+        window.AudioContext ??
+        (window as unknown as { webkitAudioContext: typeof AudioContext })
+          .webkitAudioContext;
       const audioContext = new AudioCtx();
       const analyser = audioContext.createAnalyser();
       analyser.fftSize = 512;
@@ -103,19 +115,27 @@ export function useVoiceRecorder({ onTranscribed, onError }: UseVoiceRecorderOpt
       releaseMedia();
 
       if (!accepted || blob.size < 1024) {
-        if (accepted) callbacksRef.current.onError?.("The recording was too short");
+        if (accepted)
+          callbacksRef.current.onError?.("The recording was too short");
         setState("idle");
         return;
       }
 
       setState("transcribing");
       try {
-        const text = await requestTranscription(blob, type);
+        const text = await requestTranscription(
+          blob,
+          type,
+          Date.now() - startedAt,
+        );
         if (text) callbacksRef.current.onTranscribed(text);
-        else callbacksRef.current.onError?.("No speech was detected in the recording");
+        else
+          callbacksRef.current.onError?.(
+            "No speech was detected in the recording",
+          );
       } catch (error) {
         callbacksRef.current.onError?.(
-          error instanceof Error ? error.message : "Transcription failed"
+          error instanceof Error ? error.message : "Transcription failed",
         );
       } finally {
         setState("idle");
@@ -128,7 +148,10 @@ export function useVoiceRecorder({ onTranscribed, onError }: UseVoiceRecorderOpt
 
     const startedAt = Date.now();
     setElapsedMs(0);
-    timerRef.current = setInterval(() => setElapsedMs(Date.now() - startedAt), 200);
+    timerRef.current = setInterval(
+      () => setElapsedMs(Date.now() - startedAt),
+      200,
+    );
     setState("recording");
   }, [releaseMedia]);
 
@@ -159,7 +182,11 @@ export function useVoiceRecorder({ onTranscribed, onError }: UseVoiceRecorderOpt
   return { state, elapsedMs, start, cancel, accept, getLevel };
 }
 
-async function requestTranscription(blob: Blob, mimeType: string): Promise<string> {
+async function requestTranscription(
+  blob: Blob,
+  mimeType: string,
+  durationMs: number,
+): Promise<string> {
   const extension = mimeType.includes("mp4")
     ? "mp4"
     : mimeType.includes("ogg")
@@ -169,11 +196,17 @@ async function requestTranscription(blob: Blob, mimeType: string): Promise<strin
         : "webm";
   const formData = new FormData();
   formData.set("file", blob, `recording.${extension}`);
+  formData.set("durationMs", String(Math.max(0, Math.round(durationMs))));
 
-  const response = await fetch("/api/audio/transcribe", { method: "POST", body: formData });
+  const response = await fetch("/api/audio/transcribe", {
+    method: "POST",
+    body: formData,
+  });
   const payload = await response.json().catch(() => null);
   if (!response.ok) {
-    throw new Error(payload?.error ?? payload?.message ?? "Transcription failed");
+    throw new Error(
+      payload?.error ?? payload?.message ?? "Transcription failed",
+    );
   }
   return String(payload?.data?.text ?? "").trim();
 }

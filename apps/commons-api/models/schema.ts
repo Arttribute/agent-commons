@@ -6,6 +6,7 @@ import {
   uuid,
   text,
   integer,
+  bigint,
   real,
   boolean as pgBoolean,
   uniqueIndex,
@@ -2552,6 +2553,8 @@ export const creditLedgerEntry = pgTable(
     createdBy: text('created_by'),
     createdByType: text('created_by_type').default('service'),
     expiresAt: timestamp('expires_at', { withTimezone: true }),
+    remainingAmount: integer('remaining_amount'),
+    transferId: uuid('transfer_id'),
     voidedAt: timestamp('voided_at', { withTimezone: true }),
     voidReason: text('void_reason'),
 
@@ -2571,6 +2574,167 @@ export const creditLedgerEntry = pgTable(
       table.workspaceId,
       table.createdAt,
     ),
+  }),
+);
+
+export const creditAccount = pgTable('credit_account', {
+  principalId: text('principal_id').primaryKey(),
+  balance: integer('balance').notNull().default(0),
+  reserved: integer('reserved').notNull().default(0),
+  lifetimeGranted: bigint('lifetime_granted', { mode: 'number' })
+    .notNull()
+    .default(0),
+  lifetimeSpent: bigint('lifetime_spent', { mode: 'number' })
+    .notNull()
+    .default(0),
+  createdAt: timestamp('created_at', { withTimezone: true })
+    .default(sql`timezone('utc', now())`)
+    .notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true })
+    .default(sql`timezone('utc', now())`)
+    .notNull(),
+});
+
+export const creditReservation = pgTable(
+  'credit_reservation',
+  {
+    reservationId: uuid('reservation_id')
+      .default(sql`gen_random_uuid()`)
+      .primaryKey(),
+    principalId: text('principal_id').notNull(),
+    amount: integer('amount').notNull(),
+    capturedAmount: integer('captured_amount').notNull().default(0),
+    status: text('status').notNull().default('active'),
+    purpose: text('purpose').notNull(),
+    idempotencyKey: text('idempotency_key').notNull(),
+    agentId: text('agent_id'),
+    sessionId: uuid('session_id'),
+    metadata: jsonb('metadata').$type<Record<string, unknown>>().default({}),
+    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .default(sql`timezone('utc', now())`)
+      .notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true })
+      .default(sql`timezone('utc', now())`)
+      .notNull(),
+  },
+  (table) => ({
+    idempotencyIdx: uniqueIndex('credit_reservation_idempotency_idx').on(
+      table.idempotencyKey,
+    ),
+    principalStatusIdx: index('credit_reservation_principal_status_idx').on(
+      table.principalId,
+      table.status,
+      table.expiresAt,
+    ),
+  }),
+);
+
+export const creditCampaign = pgTable('credit_campaign', {
+  campaignKey: text('campaign_key').primaryKey(),
+  name: text('name').notNull(),
+  description: text('description'),
+  rewardCredits: integer('reward_credits').notNull(),
+  triggerType: text('trigger_type').notNull(),
+  sourcePlatform: text('source_platform').notNull().default('system'),
+  startsAt: timestamp('starts_at', { withTimezone: true }),
+  endsAt: timestamp('ends_at', { withTimezone: true }),
+  maxClaimsPerPrincipal: integer('max_claims_per_principal'),
+  monthlyCapPerPrincipal: integer('monthly_cap_per_principal'),
+  totalBudgetCredits: bigint('total_budget_credits', { mode: 'number' }),
+  grantedCredits: bigint('granted_credits', { mode: 'number' })
+    .notNull()
+    .default(0),
+  visible: pgBoolean('visible').notNull().default(true),
+  active: pgBoolean('active').notNull().default(true),
+  eligibility: jsonb('eligibility')
+    .$type<Record<string, unknown>>()
+    .default({}),
+  metadata: jsonb('metadata').$type<Record<string, unknown>>().default({}),
+  createdAt: timestamp('created_at', { withTimezone: true })
+    .default(sql`timezone('utc', now())`)
+    .notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true })
+    .default(sql`timezone('utc', now())`)
+    .notNull(),
+});
+
+export const creditRewardClaim = pgTable(
+  'credit_reward_claim',
+  {
+    claimId: uuid('claim_id')
+      .default(sql`gen_random_uuid()`)
+      .primaryKey(),
+    campaignKey: text('campaign_key').notNull(),
+    principalId: text('principal_id').notNull(),
+    workspaceId: text('workspace_id'),
+    periodKey: text('period_key').notNull(),
+    eventId: text('event_id'),
+    credits: integer('credits').notNull(),
+    ledgerEntryId: uuid('ledger_entry_id'),
+    sourcePlatform: text('source_platform').notNull(),
+    metadata: jsonb('metadata').$type<Record<string, unknown>>().default({}),
+    claimedAt: timestamp('claimed_at', { withTimezone: true })
+      .default(sql`timezone('utc', now())`)
+      .notNull(),
+  },
+  (table) => ({
+    campaignPrincipalPeriodIdx: uniqueIndex(
+      'credit_reward_claim_campaign_principal_period_idx',
+    ).on(table.campaignKey, table.principalId, table.periodKey),
+    principalIdx: index('credit_reward_claim_principal_idx').on(
+      table.principalId,
+      table.claimedAt,
+    ),
+  }),
+);
+
+export const creditTransfer = pgTable(
+  'credit_transfer',
+  {
+    transferId: uuid('transfer_id')
+      .default(sql`gen_random_uuid()`)
+      .primaryKey(),
+    senderPrincipalId: text('sender_principal_id').notNull(),
+    recipientPrincipalId: text('recipient_principal_id').notNull(),
+    amount: integer('amount').notNull(),
+    message: text('message'),
+    status: text('status').notNull().default('completed'),
+    idempotencyKey: text('idempotency_key').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .default(sql`timezone('utc', now())`)
+      .notNull(),
+    reversedAt: timestamp('reversed_at', { withTimezone: true }),
+  },
+  (table) => ({
+    idempotencyIdx: uniqueIndex('credit_transfer_idempotency_idx').on(
+      table.idempotencyKey,
+    ),
+    senderIdx: index('credit_transfer_sender_idx').on(
+      table.senderPrincipalId,
+      table.createdAt,
+    ),
+    recipientIdx: index('credit_transfer_recipient_idx').on(
+      table.recipientPrincipalId,
+      table.createdAt,
+    ),
+  }),
+);
+
+export const apiRateLimitBucket = pgTable(
+  'api_rate_limit_bucket',
+  {
+    bucketKey: text('bucket_key').notNull(),
+    windowStart: timestamp('window_start', { withTimezone: true }).notNull(),
+    requestCount: integer('request_count').notNull().default(1),
+    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+  },
+  (table) => ({
+    primary: uniqueIndex('api_rate_limit_bucket_key_window_idx').on(
+      table.bucketKey,
+      table.windowStart,
+    ),
+    expiryIdx: index('api_rate_limit_expiry_idx').on(table.expiresAt),
   }),
 );
 

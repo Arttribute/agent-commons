@@ -702,6 +702,7 @@ export class AgentService implements OnModuleInit {
           props.computerRequest;
         let computerPreparationBlock = '';
         let computerUnavailable = false;
+        let creditReservationId: string | undefined;
         const emitStatus = (
           stage: string,
           status: StreamStatusState,
@@ -847,6 +848,55 @@ export class AgentService implements OnModuleInit {
                 isNewSession,
               },
             );
+          }
+
+          const sessionRecord = await this.session.getSession({
+            id: currentSessionId,
+          });
+          const decryptedApiKey = agent.modelApiKey
+            ? this.decryptApiKey(agent.modelApiKey)
+            : undefined;
+          const sessionModel = SessionService.decryptModelApiKey(
+            sessionRecord?.model as any,
+            this.encryption,
+          );
+          const effectiveModel = this.modelProviderFactory.resolveSessionModel(
+            sessionModel,
+            {
+              provider: (agent.modelProvider as any) ?? 'openai',
+              modelId: agent.modelId ?? 'gpt-5.4-mini',
+              apiKey: decryptedApiKey,
+              baseUrl: agent.modelBaseUrl ?? undefined,
+              temperature: agent.temperature ?? 0,
+              maxTokens: agent.maxTokens ?? undefined,
+              topP: agent.topP ?? undefined,
+              presencePenalty: agent.presencePenalty ?? undefined,
+              frequencyPenalty: agent.frequencyPenalty ?? undefined,
+              reasoningEffort: this.resolveAdaptiveReasoningEffort(props),
+            },
+          );
+
+          const billingOwnerId = agent.ownerUserId ?? agent.owner;
+          if (
+            !billingOwnerId &&
+            process.env.CREDIT_DEBITS_ENABLED !== 'false'
+          ) {
+            throw new ForbiddenException(
+              'This agent has no billable account owner.',
+            );
+          }
+          if (billingOwnerId) {
+            const reservation = await this.usageService.authorizeAgentRun({
+              principalId: billingOwnerId,
+              workspaceId: agent.workspaceId,
+              agentId,
+              sessionId: currentSessionId,
+              traceId,
+              provider: effectiveModel.provider,
+              modelId: effectiveModel.modelId,
+              isByok: !!effectiveModel.apiKey,
+            });
+            creditReservationId = reservation?.reservationId;
           }
 
           if (computerRequest?.enabled) {
@@ -1017,9 +1067,9 @@ export class AgentService implements OnModuleInit {
           const executedCalls: any[] = [];
           const llmRunStartedAt = new Map<string, number>();
           const usageContext = {
-            provider: (agent.modelProvider ?? 'openai') as any,
-            modelId: agent.modelId ?? 'gpt-5.4-mini',
-            isByok: !!agent.modelApiKey,
+            provider: effectiveModel.provider,
+            modelId: effectiveModel.modelId,
+            isByok: !!effectiveModel.apiKey,
           };
           const usageTotals = {
             inputTokens: 0,
@@ -1034,6 +1084,14 @@ export class AgentService implements OnModuleInit {
               _prompts: string[],
               runId: string,
             ) => {
+              await this.usageService.authorizeModelCall({
+                reservationId: creditReservationId,
+                provider: usageContext.provider,
+                modelId: usageContext.modelId,
+                prompts: _prompts,
+                maxOutputTokens: effectiveModel.maxTokens,
+                isByok: usageContext.isByok,
+              });
               if (runId) llmRunStartedAt.set(runId, performance.now());
               emitStatus('model', 'running', 'Thinking');
             },
@@ -1101,8 +1159,9 @@ export class AgentService implements OnModuleInit {
               const costUsd = calculateCost(
                 usageContext.provider,
                 usageContext.modelId,
-                Math.max(0, usage.inputTokens - usage.cachedTokens),
+                usage.inputTokens,
                 usage.outputTokens,
+                usage.cachedTokens,
               );
 
               usageTotals.inputTokens += usage.inputTokens;
@@ -1110,24 +1169,21 @@ export class AgentService implements OnModuleInit {
               usageTotals.cachedTokens += usage.cachedTokens;
               usageTotals.costUsd += costUsd;
 
-              this.usageService
-                .record({
-                  agentId,
-                  sessionId: currentSessionId as any,
-                  provider: usageContext.provider,
-                  modelId: usageContext.modelId,
-                  inputTokens: usage.inputTokens,
-                  outputTokens: usage.outputTokens,
-                  cachedTokens: usage.cachedTokens,
-                  totalTokens: usage.totalTokens,
-                  costUsd,
-                  isByok: usageContext.isByok,
-                  durationMs,
-                  traceId,
-                })
-                .catch((err) =>
-                  console.error('[UsageService] Failed to record event:', err),
-                );
+              await this.usageService.record({
+                agentId,
+                sessionId: currentSessionId as any,
+                provider: usageContext.provider,
+                modelId: usageContext.modelId,
+                inputTokens: usage.inputTokens,
+                outputTokens: usage.outputTokens,
+                cachedTokens: usage.cachedTokens,
+                totalTokens: usage.totalTokens,
+                costUsd,
+                isByok: usageContext.isByok,
+                durationMs,
+                traceId,
+                creditReservationId,
+              });
 
               console.log(
                 JSON.stringify({
@@ -1152,33 +1208,7 @@ export class AgentService implements OnModuleInit {
           });
 
           // ── Build LLM from agent/session model config (provider-agnostic) ──
-          const sessionRecord = await this.session.getSession({
-            id: currentSessionId,
-          });
-          const decryptedApiKey = agent.modelApiKey
-            ? this.decryptApiKey(agent.modelApiKey)
-            : undefined;
-          const sessionModel = SessionService.decryptModelApiKey(
-            sessionRecord?.model as any,
-            this.encryption,
-          );
-          const llm = this.modelProviderFactory.buildFromSessionModel(
-            sessionModel,
-            {
-              provider: (agent.modelProvider as any) ?? 'openai',
-              modelId: agent.modelId ?? 'gpt-5.4-mini',
-              apiKey: decryptedApiKey,
-              baseUrl: agent.modelBaseUrl ?? undefined,
-              temperature: agent.temperature ?? 0,
-              maxTokens: agent.maxTokens ?? undefined,
-              topP: agent.topP ?? undefined,
-              presencePenalty: agent.presencePenalty ?? undefined,
-              frequencyPenalty: agent.frequencyPenalty ?? undefined,
-              // Adaptive hint only — an explicit reasoningEffort on the
-              // session model always wins inside buildFromSessionModel.
-              reasoningEffort: this.resolveAdaptiveReasoningEffort(props),
-            },
-          );
+          const llm = this.modelProviderFactory.build(effectiveModel);
 
           // CLI tool schemas to expose to the LLM (only when cliContext is present).
           // When the caller (e.g. the CommonOS daemon) sends its own dynamic
@@ -2044,14 +2074,6 @@ export class AgentService implements OnModuleInit {
             }
           }
 
-          // Resolve effective provider/model for cost tracking
-          const effectiveProvider = (agent.modelProvider ?? 'openai') as any;
-          const effectiveModelId = agent.modelId ?? 'gpt-5.4-mini';
-          const isByok = !!agent.modelApiKey;
-          usageContext.provider = effectiveProvider;
-          usageContext.modelId = effectiveModelId;
-          usageContext.isByok = isByok;
-
           let loop = 0;
           const maxTaskCycles = Number(process.env.AGENT_MAX_TASK_CYCLES ?? 20);
           let finalResult = null;
@@ -2453,6 +2475,9 @@ export class AgentService implements OnModuleInit {
             });
           }
 
+          await this.usageService.finalizeAgentRun(creditReservationId);
+          creditReservationId = undefined;
+
           clearInterval(keepalive);
           unsubscribeProgress();
           subscriber.complete();
@@ -2490,6 +2515,14 @@ export class AgentService implements OnModuleInit {
             }
           }
         } catch (err) {
+          await this.usageService
+            .finalizeAgentRun(creditReservationId)
+            .catch((finalizeError) =>
+              this.logger.error(
+                `Failed to finalize credit reservation: ${finalizeError.message}`,
+              ),
+            );
+          creditReservationId = undefined;
           clearInterval(keepalive);
           unsubscribeProgress();
           const message = err instanceof Error ? err.message : String(err);

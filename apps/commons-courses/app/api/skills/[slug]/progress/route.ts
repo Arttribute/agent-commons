@@ -5,8 +5,13 @@ import Course from "@/models/Course";
 import Enrollment from "@/models/Enrollment";
 import User from "@/models/User";
 import { trackAnalyticsEvent } from "@/lib/analytics";
-import { grantCommonLabCredits } from "@/lib/credits";
-import { filterCompletedChallenges, findSkillPackBySlug } from "@/lib/skill-paths";
+import { claimCommonLabReward } from "@/lib/credits";
+import { getCommonsPrincipal } from "@/lib/commons-principal";
+import { getAgentCommonsClient } from "@/lib/agent-commons";
+import {
+  filterCompletedChallenges,
+  findSkillPackBySlug,
+} from "@/lib/skill-paths";
 import type { SkillPack } from "@/types/skills";
 import type { Types } from "mongoose";
 
@@ -39,7 +44,7 @@ type SkillProgressSignal = {
 
 export async function GET(
   _req: NextRequest,
-  { params }: { params: Promise<{ slug: string }> }
+  { params }: { params: Promise<{ slug: string }> },
 ) {
   const session = await auth();
   if (!session?.user?.id) {
@@ -57,7 +62,10 @@ export async function GET(
   const pack = course ? findSkillPackBySlug(course, slug) : null;
 
   if (!course || !pack) {
-    return NextResponse.json({ error: "Skill pack not found." }, { status: 404 });
+    return NextResponse.json(
+      { error: "Skill pack not found." },
+      { status: 404 },
+    );
   }
 
   const enrollment = await findOrCreateFreeSkillEnrollment({
@@ -81,7 +89,10 @@ export async function GET(
   return NextResponse.json({
     authenticated: true,
     enrolled: true,
-    completedChallenges: filterCompletedChallenges(enrollment.completedChallenges, pack),
+    completedChallenges: filterCompletedChallenges(
+      enrollment.completedChallenges,
+      pack,
+    ),
     challengeAnswers: mapLikeToObject(enrollment.challengeAnswers),
     points: calculatePackPoints(enrollment.completedChallenges, pack),
     streak: enrollment.streak ?? 0,
@@ -103,7 +114,7 @@ async function findOrCreateFreeSkillEnrollment({
     courseId: course._id,
   })
     .select(
-      "completedChallenges challengeAnswers points streak longestStreak lastChallengeCompletedAt practicalSignals"
+      "completedChallenges challengeAnswers points streak longestStreak lastChallengeCompletedAt practicalSignals",
     )
     .lean()) as SkillProgress | null;
 
@@ -132,7 +143,7 @@ async function findOrCreateFreeSkillEnrollment({
 
 export async function POST(
   req: NextRequest,
-  { params }: { params: Promise<{ slug: string }> }
+  { params }: { params: Promise<{ slug: string }> },
 ) {
   const session = await auth();
   if (!session?.user?.id) {
@@ -152,7 +163,7 @@ export async function POST(
   if (!body.challengeId || (!body.answers && !body.sandboxCompletion)) {
     return NextResponse.json(
       { error: "challengeId and answers or sandboxCompletion are required." },
-      { status: 400 }
+      { status: 400 },
     );
   }
 
@@ -166,21 +177,28 @@ export async function POST(
   const pack = course ? findSkillPackBySlug(course, slug) : null;
 
   const challenge = pack?.challenges?.find(
-    (item) => item.id === body.challengeId
+    (item) => item.id === body.challengeId,
   );
   if (!course || !pack || !challenge) {
-    return NextResponse.json({ error: "Challenge not found." }, { status: 404 });
+    return NextResponse.json(
+      { error: "Challenge not found." },
+      { status: 404 },
+    );
   }
 
   const allCorrect = challenge.sandbox?.enabled
     ? Boolean(body.sandboxCompletion)
     : challenge.questions.every(
-        (question) => body.answers?.[question.id] === question.answerIndex
+        (question) => body.answers?.[question.id] === question.answerIndex,
       );
   if (!allCorrect) {
     return NextResponse.json(
-      { error: challenge.sandbox?.enabled ? "Complete the sandbox task first." : "Answer all quiz questions correctly to complete the challenge." },
-      { status: 422 }
+      {
+        error: challenge.sandbox?.enabled
+          ? "Complete the sandbox task first."
+          : "Answer all quiz questions correctly to complete the challenge.",
+      },
+      { status: 422 },
     );
   }
 
@@ -197,48 +215,97 @@ export async function POST(
   if (!enrollment) {
     return NextResponse.json(
       { error: "Enroll in this course before saving skill progress." },
-      { status: 403 }
+      { status: 403 },
     );
   }
 
   const completedChallenges = enrollment.completedChallenges ?? [];
   const alreadyCompleted = completedChallenges.includes(challenge.id);
+  if (challenge.sandbox?.enabled && !alreadyCompleted) {
+    if (!body.sandboxCompletion?.agentId || body.sandboxCompletion.simulated) {
+      return NextResponse.json(
+        { error: "Complete the live Agent Commons sandbox first." },
+        { status: 422 },
+      );
+    }
+    const principal = await getCommonsPrincipal(session);
+    const identityUserId = principal?.identityUserId;
+    const client = identityUserId
+      ? getAgentCommonsClient(session.accessToken, identityUserId)
+      : null;
+    if (!client || !identityUserId) {
+      return NextResponse.json(
+        { error: "Your Agent Commons identity could not be verified." },
+        { status: 409 },
+      );
+    }
+    let createdAgent: { data?: Record<string, any> };
+    try {
+      createdAgent = (await client.agents.get(
+        body.sandboxCompletion.agentId,
+      )) as { data?: Record<string, any> };
+    } catch {
+      return NextResponse.json(
+        { error: "The sandbox completion could not be verified." },
+        { status: 422 },
+      );
+    }
+    const agent = createdAgent.data;
+    if (
+      !agent ||
+      (agent.ownerUserId ?? agent.owner)?.toLowerCase() !==
+        identityUserId.toLowerCase() ||
+      agent.metadata?.source !== "commonlab_skill_sandbox" ||
+      agent.metadata?.challengeId !== challenge.id ||
+      agent.metadata?.courseSlug !== course.slug
+    ) {
+      return NextResponse.json(
+        { error: "The sandbox completion could not be verified." },
+        { status: 422 },
+      );
+    }
+  }
   const awaitsPracticalVerification = Boolean(
-    challenge.practicalSignal && !body.sandboxCompletion
+    challenge.practicalSignal && !body.sandboxCompletion,
   );
   const shouldCompleteNow = !alreadyCompleted && !awaitsPracticalVerification;
   const streak = !shouldCompleteNow
-    ? enrollment.streak ?? 0
-    : calculateNextStreak(enrollment.lastChallengeCompletedAt, enrollment.streak ?? 0);
+    ? (enrollment.streak ?? 0)
+    : calculateNextStreak(
+        enrollment.lastChallengeCompletedAt,
+        enrollment.streak ?? 0,
+      );
   const nextCompleted = alreadyCompleted
     ? completedChallenges
     : shouldCompleteNow
       ? [...completedChallenges, challenge.id]
       : completedChallenges;
   const nextPoints = !shouldCompleteNow
-    ? enrollment.points ?? 0
+    ? (enrollment.points ?? 0)
     : (enrollment.points ?? 0) + challenge.points;
   const nextPackPoints = calculatePackPoints(nextCompleted, pack);
   const answerEntries = Object.fromEntries(
     Object.entries(body.answers || {}).map(([questionId, answer]) => [
       `${challenge.id}:${questionId}`,
       answer,
-    ])
+    ]),
   );
   const practicalSignals = challenge.practicalSignal
     ? [
         ...(enrollment.practicalSignals ?? []).filter(
           (signal: SkillProgressSignal) =>
-            signal.id !== challenge.practicalSignal?.id
+            signal.id !== challenge.practicalSignal?.id,
         ),
         {
           id: challenge.practicalSignal.id,
           platform: challenge.practicalSignal.platform,
           eventType: challenge.practicalSignal.eventType,
-          status: body.sandboxCompletion ? ("verified" as const) : ("pending" as const),
+          status: body.sandboxCompletion
+            ? ("verified" as const)
+            : ("pending" as const),
         },
       ]
-    : enrollment.practicalSignals ?? [];
+    : (enrollment.practicalSignals ?? []);
 
   await Enrollment.updateOne(
     { _id: enrollment._id },
@@ -256,10 +323,10 @@ export async function POST(
           Object.entries(answerEntries).map(([key, value]) => [
             `challengeAnswers.${key}`,
             value,
-          ])
+          ]),
         ),
       },
-    }
+    },
   );
 
   await trackAnalyticsEvent({
@@ -276,16 +343,19 @@ export async function POST(
     request: req,
   });
 
-  const creditReward = challenge.sandbox?.creditReward || 0;
-  let creditGrant: Awaited<ReturnType<typeof grantCommonLabCredits>> | undefined;
-  if (shouldCompleteNow && creditReward > 0 && user?.identityUserId) {
-    creditGrant = await grantCommonLabCredits({
+  let creditGrant: Awaited<ReturnType<typeof claimCommonLabReward>> | undefined;
+  // Completed challenges may re-submit this idempotent claim so a temporary
+  // API failure does not permanently lose the reward.
+  if (
+    (shouldCompleteNow || alreadyCompleted) &&
+    challenge.sandbox?.enabled &&
+    user?.identityUserId
+  ) {
+    creditGrant = await claimCommonLabReward({
       identityUserId: user.identityUserId,
       workspaceId: user.identityWorkspaceId,
-      amount: creditReward,
-      eventType: "skill_sandbox_completed",
-      idempotencyKey: `commonlab:${course._id.toString()}:${session.user.id}:${challenge.id}:credits`,
-      description: `Completed ${challenge.title}`,
+      campaignKey: "commonlab-skill-challenge",
+      eventId: `${course._id.toString()}:${challenge.id}`,
       relatedCourseId: course._id.toString(),
       relatedChallengeId: challenge.id,
       agentId: body.sandboxCompletion?.agentId,
@@ -306,7 +376,10 @@ export async function POST(
   });
 }
 
-function calculateNextStreak(lastCompletedAt: Date | undefined, currentStreak: number) {
+function calculateNextStreak(
+  lastCompletedAt: Date | undefined,
+  currentStreak: number,
+) {
   if (!lastCompletedAt) return 1;
 
   const today = startOfLocalDay(new Date());
@@ -329,10 +402,16 @@ function mapLikeToObject(value?: Map<string, number> | Record<string, number>) {
   return value;
 }
 
-function calculatePackPoints(completedChallenges: string[] | undefined, pack: SkillPack) {
-  const completed = new Set(filterCompletedChallenges(completedChallenges, pack));
+function calculatePackPoints(
+  completedChallenges: string[] | undefined,
+  pack: SkillPack,
+) {
+  const completed = new Set(
+    filterCompletedChallenges(completedChallenges, pack),
+  );
   return pack.challenges.reduce(
-    (sum, challenge) => sum + (completed.has(challenge.id) ? challenge.points : 0),
-    0
+    (sum, challenge) =>
+      sum + (completed.has(challenge.id) ? challenge.points : 0),
+    0,
   );
 }
