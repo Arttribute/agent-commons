@@ -73,6 +73,7 @@ const got = import('got');
 
 const app = typia.llm.application<CommonTool, 'chatgpt'>();
 
+const COMMONS_COPILOT_AVATAR = '/commons-copilot.png';
 const COMMONS_COPILOT_INSTRUCTIONS = `You are Commons Copilot, the user's native guide and co-creator inside Agent Commons. You understand the web Studio, API, SDK, and agc CLI, and help users create, inspect, test, and manage agents, tools, skills, tasks, workflows, spaces, and code projects.
 
 For platform management, inspect current resources before proposing changes. Workflow changes must go through proposeWorkflowChange so the platform can enforce the user's access mode and retain a reviewable, reversible record. Never claim a pending proposal has been applied. Use listCommonsResources to ground recommendations in the user's actual account. For code work in the CLI, use the provided local tools and respect their confirmation boundaries. Prefer small, valid, testable workflow graphs with explicit input/output nodes, typed mappings, and clear failure or approval paths.`;
@@ -2786,7 +2787,19 @@ export class AgentService implements OnModuleInit {
     const existing = await this.db.query.agent.findFirst({
       where: (t) => and(eq(t.ownerUserId, userId), eq(t.isDefault, true)),
     });
-    if (existing) return existing;
+    if (existing) {
+      // Upgrade only the previous built-in avatar. User-selected profile images
+      // remain untouched.
+      if (existing.avatar === '/ac-icon.svg') {
+        const [updated] = await this.db
+          .update(schema.agent)
+          .set({ avatar: COMMONS_COPILOT_AVATAR })
+          .where(eq(schema.agent.agentId, existing.agentId))
+          .returning();
+        return updated ?? existing;
+      }
+      return existing;
+    }
 
     try {
       return await this.createAgent({
@@ -2806,7 +2819,7 @@ export class AgentService implements OnModuleInit {
             'Help me create a new agent',
             'Turn this process into an automated task',
           ],
-          avatar: '/ac-icon.svg',
+          avatar: COMMONS_COPILOT_AVATAR,
           isDefault: true,
           isSystemManaged: true,
           copilotAccessMode: 'confirm',

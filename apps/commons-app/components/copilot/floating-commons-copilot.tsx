@@ -149,7 +149,11 @@ function FloatingCommonsCopilotInner() {
           }}
           className="fixed bottom-5 right-5 z-40 rounded-full border border-border bg-background p-1 shadow-lg transition hover:-translate-y-0.5 hover:shadow-xl"
         >
-          <AgentAvatar name={copilot.name} src={copilot.avatar} size={52} />
+          <AgentAvatar
+            name={copilot.name}
+            src={copilot.avatar || "/commons-copilot.png"}
+            size={52}
+          />
           <span className="absolute -left-1 -top-1 rounded-full bg-foreground p-1 text-background shadow">
             <Sparkles className="h-3 w-3" />
           </span>
@@ -164,7 +168,11 @@ function FloatingCommonsCopilotInner() {
       {open && (
         <aside className="fixed inset-y-0 right-0 z-[60] flex w-full max-w-[460px] flex-col border-l border-border bg-background shadow-2xl">
           <div className="flex h-14 shrink-0 items-center gap-3 border-b border-border px-4">
-            <AgentAvatar name={copilot.name} src={copilot.avatar} size={34} />
+            <AgentAvatar
+              name={copilot.name}
+              src={copilot.avatar || "/commons-copilot.png"}
+              size={34}
+            />
             <div className="min-w-0 flex-1">
               <p className="truncate text-sm font-semibold">{copilot.name}</p>
               <p className="text-[11px] text-muted-foreground">
