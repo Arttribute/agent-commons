@@ -2,8 +2,12 @@
 
 import { useParams, usePathname } from "next/navigation";
 import type { NextPage } from "next";
-import { useMemo, useState, useCallback, useRef } from "react";
+import { useMemo, useState, useCallback, useRef, useEffect } from "react";
 import AgentsShowcase from "@/components/agents/AgentsShowcase";
+import {
+  AgentsPagination,
+  AGENT_PAGE_SIZES,
+} from "@/components/agents/agents-pagination";
 import { StudioAgentLauncher } from "@/components/studio/agent-launcher";
 import { ToolsManagementView } from "@/components/tools/management/tools-management-view";
 import { WorkflowsListView } from "@/components/workflows/workflows-list-view";
@@ -43,6 +47,37 @@ const StudioPage: NextPage = () => {
 
   const { agents, loading: loadingAgents } = useAgents(
     activeTab === "agents" ? userAddress : undefined,
+  );
+
+  // Agents arrive ordered by latest interaction (falling back to creation);
+  // we page through them client-side, 10 floating profiles at a time.
+  const [agentPage, setAgentPage] = useState(0);
+  const [agentPageSize, setAgentPageSize] = useState(10);
+
+  useEffect(() => {
+    const stored = Number(window.localStorage.getItem("studio-agents-per-page"));
+    if (AGENT_PAGE_SIZES.includes(stored)) setAgentPageSize(stored);
+  }, []);
+
+  const handleAgentPageSizeChange = useCallback((size: number) => {
+    setAgentPageSize(size);
+    setAgentPage(0);
+    window.localStorage.setItem("studio-agents-per-page", String(size));
+  }, []);
+
+  // Keep the page in range when the list shrinks or the page size grows.
+  const agentPageCount = Math.max(1, Math.ceil(agents.length / agentPageSize));
+  useEffect(() => {
+    setAgentPage((p) => Math.min(p, agentPageCount - 1));
+  }, [agentPageCount]);
+
+  const pagedAgents = useMemo(
+    () =>
+      agents.slice(
+        agentPage * agentPageSize,
+        (agentPage + 1) * agentPageSize,
+      ),
+    [agents, agentPage, agentPageSize],
   );
 
   const mainContent = useMemo(() => {
@@ -123,7 +158,16 @@ const StudioPage: NextPage = () => {
                       />
                     </div>
                   </div>
-                  <AgentsShowcase agents={agents} avoidRef={composerRef} />
+                  <AgentsShowcase agents={pagedAgents} avoidRef={composerRef} />
+                  <div className="pointer-events-none absolute bottom-2 left-2 z-30">
+                    <AgentsPagination
+                      page={agentPage}
+                      pageSize={agentPageSize}
+                      total={agents.length}
+                      onPageChange={setAgentPage}
+                      onPageSizeChange={handleAgentPageSizeChange}
+                    />
+                  </div>
                 </>
               )}
             </div>
@@ -148,6 +192,10 @@ const StudioPage: NextPage = () => {
     activeTab,
     loadingAgents,
     agents,
+    pagedAgents,
+    agentPage,
+    agentPageSize,
+    handleAgentPageSizeChange,
     userAddress,
     registerSkillCreate,
     registerTaskCreate,

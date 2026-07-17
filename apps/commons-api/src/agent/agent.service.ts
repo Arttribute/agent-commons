@@ -2797,8 +2797,13 @@ export class AgentService implements OnModuleInit {
     await this.ensureDefaultCopilot(owner);
     return this.db.query.agent.findMany({
       where: (t) => or(eq(t.ownerUserId, owner), eq(t.owner, owner)),
-      orderBy: (t) => [desc(t.isDefault), desc(t.createdAt)],
+      orderBy: (t) => [desc(this.lastActivityAt(t))],
     });
+  }
+
+  /** Most recent session activity for an agent, falling back to its creation date. */
+  private lastActivityAt(t: typeof schema.agent._.columns) {
+    return sql`coalesce((select max(s.updated_at) from session s where s.agent_id = ${t.agentId}), ${t.createdAt})`;
   }
   async getAgentsForPrincipal(userId: string, workspaceId?: string | null) {
     await this.ensureDefaultCopilot(userId, workspaceId);
@@ -2811,7 +2816,7 @@ export class AgentService implements OnModuleInit {
               and(eq(t.workspaceId, workspaceId), eq(t.isSystemManaged, false)),
             )
           : or(eq(t.ownerUserId, userId), eq(t.owner, userId)),
-      orderBy: (t) => [desc(t.isDefault), desc(t.createdAt)],
+      orderBy: (t) => [desc(this.lastActivityAt(t))],
     });
   }
 
