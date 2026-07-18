@@ -159,15 +159,6 @@ const StudioPage: NextPage = () => {
                     </div>
                   </div>
                   <AgentsShowcase agents={pagedAgents} avoidRef={composerRef} />
-                  <div className="pointer-events-none absolute bottom-2 left-2 z-30">
-                    <AgentsPagination
-                      page={agentPage}
-                      pageSize={agentPageSize}
-                      total={agents.length}
-                      onPageChange={setAgentPage}
-                      onPageSizeChange={handleAgentPageSizeChange}
-                    />
-                  </div>
                 </>
               )}
             </div>
@@ -193,9 +184,6 @@ const StudioPage: NextPage = () => {
     loadingAgents,
     agents,
     pagedAgents,
-    agentPage,
-    agentPageSize,
-    handleAgentPageSizeChange,
     userAddress,
     registerSkillCreate,
     registerTaskCreate,
@@ -264,12 +252,26 @@ const StudioPage: NextPage = () => {
   };
 
   return (
-    <div className="flex h-full min-w-0 flex-col bg-stone-50">
+    <div className="relative flex h-full min-w-0 flex-col bg-stone-50">
       <PageHeader title={pageCopy.title} description={pageCopy.description}>
         <CreateButton label={createLabel} onClick={handleCreateClick} />
       </PageHeader>
 
       <div className="min-h-0 flex-1 overflow-y-auto">{mainContent}</div>
+
+      {/* Anchored at the page edge — same bottom line as the session chat
+          input and other fixed bottom UI, clear of the padded content area. */}
+      {activeTab === "agents" && !loadingAgents && agents.length > 0 && (
+        <div className="pointer-events-none absolute bottom-4 left-4 z-30 sm:left-6">
+          <AgentsPagination
+            page={agentPage}
+            pageSize={agentPageSize}
+            total={agents.length}
+            onPageChange={setAgentPage}
+            onPageSizeChange={handleAgentPageSizeChange}
+          />
+        </div>
+      )}
 
       <CreateWorkflowDialog
         open={showCreateWorkflowDialog}
