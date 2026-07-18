@@ -104,7 +104,7 @@ export function WorkflowCard({
 
   return (
     <div
-      className="group flex h-full cursor-pointer flex-col rounded-xl border border-border bg-background p-4 transition-all hover:-translate-y-0.5 hover:shadow-md"
+      className="group flex h-full cursor-pointer flex-col rounded-xl border border-border bg-background p-5 shadow-card transition-all hover:-translate-y-0.5 hover:shadow-md"
       onClick={handleEdit}
     >
       <div className="flex items-center justify-between gap-2">
@@ -152,7 +152,7 @@ export function WorkflowCard({
       <h3 className="mt-3 truncate text-sm font-normal text-foreground">
         {workflow.name}
       </h3>
-      <p className="mt-1 line-clamp-2 min-h-[2rem] text-xs leading-4 text-muted-foreground">
+      <p className="mt-1 truncate text-xs leading-4 text-muted-foreground">
         {workflow.description || "No description"}
       </p>
 

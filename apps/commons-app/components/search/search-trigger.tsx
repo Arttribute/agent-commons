@@ -38,7 +38,7 @@ export function SearchTrigger({
         aria-label="Search"
         title="Search (⌘K)"
         className={cn(
-          "rounded-md p-1.5 text-muted-foreground hover:bg-accent hover:text-foreground",
+          "rounded-md p-1.5 text-foreground/70 hover:bg-accent hover:text-foreground",
           className
         )}
       >

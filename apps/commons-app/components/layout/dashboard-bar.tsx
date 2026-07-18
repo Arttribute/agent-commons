@@ -58,7 +58,7 @@ export const DashboardBar: FC<DashboardBarProps> = ({ activeTab, rightSlot }) =>
             className={`flex h-9 w-full items-center gap-2 rounded-md px-2 text-left text-sm font-normal transition-colors ${
               activeTab === key
                 ? "bg-accent text-accent-foreground"
-                : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                : "text-foreground/70 hover:bg-muted hover:text-foreground"
             }`}
             onClick={() => nav(path)}
           >
