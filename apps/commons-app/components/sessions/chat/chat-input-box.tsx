@@ -5,6 +5,7 @@ import type { StreamEvent } from "@agent-commons/sdk";
 import Link from "next/link";
 import {
   ArrowUp,
+  BatteryLow,
   Check,
   FileText,
   Gauge,
@@ -13,7 +14,6 @@ import {
   Mic,
   Monitor,
   Plus,
-  Sparkles,
   Table2,
   X,
 } from "lucide-react";
@@ -104,6 +104,38 @@ export default function ChatInputBox({
   const [thinkingMenuOpen, setThinkingMenuOpen] = useState(false);
   const [thinkingLevel, setThinkingLevel] = useState<ThinkingLevel>("auto");
   const [outOfCredits, setOutOfCredits] = useState(false);
+  // Narrow surfaces (the copilot side panel) get the short one-line notice.
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [isNarrow, setIsNarrow] = useState(false);
+  useEffect(() => {
+    const node = containerRef.current;
+    if (!node || typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver((entries) => {
+      const width = entries[0]?.contentRect?.width ?? 0;
+      setIsNarrow(width > 0 && width < 400);
+    });
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, []);
+
+  // The composer is locked while out of credits, so re-check the balance
+  // whenever the user comes back (e.g. after topping up in another tab).
+  useEffect(() => {
+    if (!outOfCredits) return;
+    const recheck = async () => {
+      try {
+        const response = await fetch("/api/credits", { cache: "no-store" });
+        const payload = await response.json().catch(() => ({}));
+        if (response.ok && (payload?.data?.balance?.available ?? 0) > 0) {
+          setOutOfCredits(false);
+        }
+      } catch {
+        // Keep the banner; the next focus tries again.
+      }
+    };
+    window.addEventListener("focus", recheck);
+    return () => window.removeEventListener("focus", recheck);
+  }, [outOfCredits]);
   const [computerConfig, setComputerConfig] =
     useState<ComputerConfigState | null>(null);
   const [computerEnabled, setComputerEnabled] = useState(false);
@@ -405,7 +437,8 @@ export default function ChatInputBox({
     if (
       (!baseText && uploadedAttachments.length === 0) ||
       isLoading ||
-      isUploading
+      isUploading ||
+      outOfCredits
     )
       return;
 
@@ -615,6 +648,7 @@ export default function ChatInputBox({
 
   return (
     <div
+      ref={containerRef}
       className={cn(
         "relative rounded-2xl bg-white border border-stone-200 shadow-composer transition-colors",
         isDragging && "border-indigo-400 bg-indigo-50/40 dark:bg-indigo-950/20",
@@ -648,21 +682,23 @@ export default function ChatInputBox({
         }}
       />
       {outOfCredits && (
-        <div className="flex items-center justify-between gap-3 rounded-t-2xl border-b border-border bg-stone-50/80 px-4 py-2.5">
+        <div className="flex items-center justify-between gap-3 rounded-t-2xl border-b border-border bg-stone-50/80 px-3.5 py-2.5">
           <div className="flex min-w-0 items-center gap-2 text-sm">
-            <Sparkles className="h-4 w-4 shrink-0 text-indigo-500" />
+            <BatteryLow className="h-3.5 w-3.5 shrink-0 text-amber-500" />
             <span className="truncate text-foreground">
-              You&rsquo;re out of credits.
+              You&rsquo;re out of credits{isNarrow ? "" : "."}
             </span>
-            <span className="hidden truncate text-muted-foreground sm:inline">
-              Top up or upgrade to keep your agents running.
-            </span>
+            {!isNarrow && (
+              <span className="truncate text-muted-foreground">
+                Top up or upgrade to keep your agents running.
+              </span>
+            )}
           </div>
           <Link
             href="/settings/billing"
-            className="shrink-0 rounded-lg bg-foreground px-3 py-1.5 text-xs font-medium text-background transition-opacity hover:opacity-85"
+            className="shrink-0 rounded-lg bg-foreground px-2.5 py-1.5 text-xs font-medium text-background transition-opacity hover:opacity-85"
           >
-            Get credits
+            {isNarrow ? "Top up" : "Get credits"}
           </Link>
         </div>
       )}
@@ -811,7 +847,7 @@ export default function ChatInputBox({
                   setVoiceError(null);
                   voice.start();
                 }}
-                disabled={!!isLoading || isUploading}
+                disabled={!!isLoading || isUploading || outOfCredits}
                 title="Dictate a message"
                 aria-label="Dictate a message"
                 className="rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-40"
@@ -823,7 +859,8 @@ export default function ChatInputBox({
                 disabled={
                   (!inputText.trim() && uploadedAttachments.length === 0) ||
                   !!isLoading ||
-                  isUploading
+                  isUploading ||
+                  outOfCredits
                 }
                 className="bg-foreground rounded-lg p-1.5 text-background transition-opacity disabled:opacity-40 hover:opacity-80"
               >

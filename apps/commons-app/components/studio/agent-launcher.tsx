@@ -6,6 +6,7 @@ import ChatInputBox from "@/components/sessions/chat/chat-input-box";
 import { AgentSidebarSwitcher } from "@/components/studio/agent-sidebar-switcher";
 import { useAgentContext } from "@/context/AgentContext";
 import { useUserSessions } from "@/hooks/sessions/use-user-sessions";
+import { normalizeConversationStarters } from "@/lib/conversation-starters";
 
 type LauncherAgent = {
   agentId: string;
@@ -13,6 +14,7 @@ type LauncherAgent = {
   avatar?: string | null;
   modelId?: string | null;
   isDefault?: boolean;
+  conversationStarters?: unknown;
 };
 
 /**
@@ -29,7 +31,7 @@ export function StudioAgentLauncher({
   userAddress: string;
 }) {
   const router = useRouter();
-  const { setPendingPrompt } = useAgentContext();
+  const { setPendingPrompt, setInputText } = useAgentContext();
   const { isLoading: sessionsLoading } = useUserSessions(userAddress);
 
   const defaultAgentId = useMemo(
@@ -65,6 +67,13 @@ export function StudioAgentLauncher({
   const selectedAgent = useMemo(
     () => agents.find((a) => a.agentId === selectedAgentId) ?? null,
     [agents, selectedAgentId],
+  );
+
+  // Starter pills below the composer — the selected agent's own starters
+  // (the Commons Copilot's by default), clicking one fills the composer.
+  const starters = useMemo(
+    () => normalizeConversationStarters(selectedAgent?.conversationStarters),
+    [selectedAgent],
   );
 
   const handleLaunch = (text: string) => {
@@ -104,6 +113,21 @@ export function StudioAgentLauncher({
           />
         }
       />
+      {starters.length > 0 && (
+        <div className="mt-3 flex flex-wrap justify-center gap-2">
+          {starters.map((starter) => (
+            <button
+              key={starter.label}
+              type="button"
+              title={starter.prompt}
+              className="rounded-full border border-border bg-white px-3.5 py-1.5 text-sm text-muted-foreground shadow-card transition-colors hover:bg-muted hover:text-foreground"
+              onClick={() => setInputText(starter.prompt)}
+            >
+              {starter.label}
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

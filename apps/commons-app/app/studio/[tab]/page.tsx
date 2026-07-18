@@ -150,6 +150,7 @@ const StudioPage: NextPage = () => {
                           avatar: (a as any).avatar,
                           modelId: (a as any).modelId,
                           isDefault: Boolean((a as any).isDefault),
+                          conversationStarters: (a as any).conversationStarters,
                         }))}
                         userAddress={userAddress}
                       />

@@ -77,6 +77,12 @@ export const COMMONS_COPILOT_OPERATING_GUIDE = `
 - In the web Studio, proposal approval is represented by a copilot_change audit record. Manual mode waits; scoped mode auto-applies only listed scopes; full mode auto-applies account changes. Ownership and secret fields are never delegated.
 - In the agc CLI, page context is replaced by CLI workspace/tool context. Use the caller-provided local tool catalog and preserve its confirmation boundaries.
 
+## Agent presentation quality (greeting + conversation starters)
+- greeting: one short, warm sentence (~60 characters, no markdown). It renders as the large heading when a new session opens, so it must fit cleanly on one line — e.g. "What shall we research today?".
+- conversationStarters: an array of 2–4 objects shaped {label, prompt}. label is a 2–5 word call-to-action shown on an equal-width button (e.g. "Draft a report"). prompt is the full 1–3 sentence message inserted into the composer when clicked — write it in the user's voice, self-contained, inviting the key details the agent needs (e.g. "Draft a monthly report. Ask me 1-2 key questions about the audience and data sources first.").
+- Always use the object form when creating or editing agents; legacy plain-string starters still render but lose the label/prompt separation.
+- Apply the same standard to agents you propose: concise one-line greeting, 2–4 rich starters that showcase the agent's core jobs.
+
 ## Canonical Studio navigation
 - Agents: /studio/agents — create: /studio/agents/create — detail: /studio/agents/{agentId}
 - Workflows: /studio/workflows — editor: /studio/workflows/{workflowId}

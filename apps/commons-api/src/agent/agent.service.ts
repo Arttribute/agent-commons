@@ -79,6 +79,39 @@ const got = import('got');
 const app = typia.llm.application<CommonTool, 'chatgpt'>();
 
 const COMMONS_COPILOT_AVATAR = '/commons-copilot.png';
+
+/** One-line session heading; must fit cleanly on a single line. */
+const COMMONS_COPILOT_GREETING = 'What should we build today?';
+const LEGACY_COPILOT_GREETING =
+  'I’m your Commons Copilot. I can help you build, test, and manage anything in Agent Commons—what should we make?';
+const LEGACY_COPILOT_STARTERS = [
+  'Design a workflow with me',
+  'Show me what is in my Agent Commons account',
+  'Help me create a new agent',
+  'Turn this process into an automated task',
+];
+const COMMONS_COPILOT_STARTERS = [
+  {
+    label: 'Create an agent',
+    prompt:
+      'Help me create a new agent. Ask me 1-2 key questions about its purpose, then set it up with a one-line greeting and 2-4 rich conversation starters.',
+  },
+  {
+    label: 'Design a workflow',
+    prompt:
+      'Design a workflow with me. Start by asking what process I want to automate and what should trigger it.',
+  },
+  {
+    label: 'Automate a task',
+    prompt:
+      'Help me schedule an automated task. Ask me which agent should run it, what it should do, and when.',
+  },
+  {
+    label: 'Tour my account',
+    prompt:
+      'Show me what is in my Agent Commons account and suggest one improvement I could make today.',
+  },
+];
 const COMMONS_COPILOT_INSTRUCTIONS = `You are Commons Copilot, the user's native guide and co-creator inside Agent Commons. You understand the web Studio, API, SDK, and agc CLI, and help users create, inspect, test, and manage agents, tools, skills, tasks, workflows, spaces, and code projects.
 
 For platform management, inspect current resources before proposing changes. Use the typed proposal tool matching the resource the user requested. Never claim a pending proposal has been applied. Use listCommonsResources to ground recommendations in the user's actual account. For code work in the CLI, use the provided local tools and respect their confirmation boundaries. Prefer small, valid, testable workflow graphs with explicit input/output nodes, typed mappings, and clear failure or approval paths.
@@ -2875,18 +2908,39 @@ export class AgentService implements OnModuleInit {
       where: (t) => and(eq(t.ownerUserId, userId), eq(t.isDefault, true)),
     });
     if (existing) {
-      // Upgrade only the previous built-in avatar. User-selected profile images
-      // remain untouched.
+      // Upgrade only built-in defaults. User-customized profile images,
+      // greetings, and starters remain untouched.
       const needsAvatarUpgrade = existing.avatar === '/ac-icon.svg';
       const needsInstructionUpgrade =
         existing.instructions !== COMMONS_COPILOT_INSTRUCTIONS;
-      if (needsAvatarUpgrade || needsInstructionUpgrade) {
+      const needsGreetingUpgrade =
+        existing.greeting === LEGACY_COPILOT_GREETING;
+      // Only the untouched built-in starter set is migrated to the rich
+      // {label, prompt} format; customized starters stay as the user wrote them.
+      const needsStarterUpgrade =
+        Array.isArray(existing.conversationStarters) &&
+        existing.conversationStarters.length === LEGACY_COPILOT_STARTERS.length &&
+        existing.conversationStarters.every(
+          (starter, index) => starter === LEGACY_COPILOT_STARTERS[index],
+        );
+      if (
+        needsAvatarUpgrade ||
+        needsInstructionUpgrade ||
+        needsGreetingUpgrade ||
+        needsStarterUpgrade
+      ) {
         const [updated] = await this.db
           .update(schema.agent)
           .set({
             ...(needsAvatarUpgrade && { avatar: COMMONS_COPILOT_AVATAR }),
             ...(needsInstructionUpgrade && {
               instructions: COMMONS_COPILOT_INSTRUCTIONS,
+            }),
+            ...(needsGreetingUpgrade && {
+              greeting: COMMONS_COPILOT_GREETING,
+            }),
+            ...(needsStarterUpgrade && {
+              conversationStarters: COMMONS_COPILOT_STARTERS,
             }),
           })
           .where(eq(schema.agent.agentId, existing.agentId))
@@ -2906,14 +2960,8 @@ export class AgentService implements OnModuleInit {
           instructions: COMMONS_COPILOT_INSTRUCTIONS,
           persona:
             'A calm, capable Agent Commons co-creator for building and operating agents, workflows, tools, skills, and tasks.',
-          greeting:
-            'I’m your Commons Copilot. I can help you build, test, and manage anything in Agent Commons—what should we make?',
-          conversationStarters: [
-            'Design a workflow with me',
-            'Show me what is in my Agent Commons account',
-            'Help me create a new agent',
-            'Turn this process into an automated task',
-          ],
+          greeting: COMMONS_COPILOT_GREETING,
+          conversationStarters: COMMONS_COPILOT_STARTERS,
           avatar: COMMONS_COPILOT_AVATAR,
           isDefault: true,
           isSystemManaged: true,

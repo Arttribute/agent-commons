@@ -92,6 +92,7 @@ import { useAgents } from "@/hooks/use-agents";
 import { useSkills } from "@/hooks/use-skills";
 import { useAgentWallet } from "@/hooks/use-wallet";
 import { cn } from "@/lib/utils";
+import { normalizeConversationStarters } from "@/lib/conversation-starters";
 import { normalizePrincipalId } from "@/lib/principal-id";
 import { normalizeSessionHistory } from "@/lib/session-history";
 import { useAuth } from "@/context/AuthContext";
@@ -243,7 +244,9 @@ function SetupView({
     instructions: agent.instructions || "",
     description: agent.description || "",
     greeting: agent.greeting || "",
-    conversationStarters: (agent.conversationStarters || []).join("\n"),
+    conversationStarters: normalizeConversationStarters(
+      agent.conversationStarters,
+    ),
     a2aEnabled: Boolean((agent as any).a2aEnabled),
     modelProvider: (agent as any).modelProvider || "openai",
     modelId: (agent as any).modelId || "",
@@ -264,7 +267,9 @@ function SetupView({
       instructions: agent.instructions || "",
       description: agent.description || "",
       greeting: agent.greeting || "",
-      conversationStarters: (agent.conversationStarters || []).join("\n"),
+      conversationStarters: normalizeConversationStarters(
+      agent.conversationStarters,
+    ),
       a2aEnabled: Boolean((agent as any).a2aEnabled),
       modelProvider: (agent as any).modelProvider || "openai",
       modelId: (agent as any).modelId || "",
@@ -292,9 +297,12 @@ function SetupView({
         ...formValues,
         ...(modelApiKey.trim() ? { modelApiKey: modelApiKey.trim() } : {}),
         conversationStarters: form.conversationStarters
-          .split("\n")
-          .map((starter) => starter.trim())
-          .filter(Boolean),
+          .map((starter) => ({
+            label: starter.label.trim() || starter.prompt.trim(),
+            prompt: starter.prompt.trim() || starter.label.trim(),
+          }))
+          .filter((starter) => starter.label)
+          .slice(0, 4),
         temperature: Number(form.temperature),
         maxTokens: Number(form.maxTokens),
         topP: Number(form.topP),
@@ -448,30 +456,111 @@ function SetupView({
             </div>
             <div className="grid gap-1.5">
               <Label>Greeting</Label>
-              <Textarea
-                className="min-h-20"
+              <Input
                 value={form.greeting}
                 disabled={!isOwner}
+                maxLength={100}
                 onChange={(e) =>
                   setForm((f) => ({ ...f, greeting: e.target.value }))
                 }
-                placeholder="A short optional message shown before the first user message."
+                placeholder="What shall we work on today?"
               />
+              <p className="text-[11px] text-muted-foreground">
+                Shown as the big heading when a session starts — keep it to one
+                short line.
+              </p>
             </div>
             <div className="grid gap-1.5">
               <Label>Conversation starters</Label>
-              <Textarea
-                className="min-h-24"
-                value={form.conversationStarters}
-                disabled={!isOwner}
-                onChange={(e) =>
-                  setForm((f) => ({
-                    ...f,
-                    conversationStarters: e.target.value,
-                  }))
-                }
-                placeholder={"One starter per line"}
-              />
+              <p className="text-[11px] text-muted-foreground">
+                Two to four work best. The label shows on an equal-width
+                button; clicking it fills the composer with the full prompt.
+              </p>
+              <div className="grid gap-2">
+                {form.conversationStarters.map((starter, index) => (
+                  <div
+                    key={index}
+                    className="grid gap-2 rounded-lg border border-border p-2.5"
+                  >
+                    <div className="flex items-center gap-2">
+                      <Input
+                        value={starter.label}
+                        disabled={!isOwner}
+                        maxLength={40}
+                        placeholder="Button label — e.g. Draft a report"
+                        onChange={(e) =>
+                          setForm((f) => ({
+                            ...f,
+                            conversationStarters: f.conversationStarters.map(
+                              (item, i) =>
+                                i === index
+                                  ? { ...item, label: e.target.value }
+                                  : item,
+                            ),
+                          }))
+                        }
+                      />
+                      {isOwner && (
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8 shrink-0 text-muted-foreground hover:text-foreground"
+                          aria-label="Remove starter"
+                          onClick={() =>
+                            setForm((f) => ({
+                              ...f,
+                              conversationStarters:
+                                f.conversationStarters.filter(
+                                  (_, i) => i !== index,
+                                ),
+                            }))
+                          }
+                        >
+                          <XCircle className="h-4 w-4" />
+                        </Button>
+                      )}
+                    </div>
+                    <Textarea
+                      className="min-h-16 text-sm"
+                      value={starter.prompt}
+                      disabled={!isOwner}
+                      placeholder="Full prompt inserted when clicked — clear, self-contained, in the user's voice."
+                      onChange={(e) =>
+                        setForm((f) => ({
+                          ...f,
+                          conversationStarters: f.conversationStarters.map(
+                            (item, i) =>
+                              i === index
+                                ? { ...item, prompt: e.target.value }
+                                : item,
+                          ),
+                        }))
+                      }
+                    />
+                  </div>
+                ))}
+                {isOwner && form.conversationStarters.length < 4 && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="w-fit gap-1.5"
+                    onClick={() =>
+                      setForm((f) => ({
+                        ...f,
+                        conversationStarters: [
+                          ...f.conversationStarters,
+                          { label: "", prompt: "" },
+                        ],
+                      }))
+                    }
+                  >
+                    <Plus className="h-3.5 w-3.5" />
+                    Add starter
+                  </Button>
+                )}
+              </div>
             </div>
             <div className="grid gap-1.5">
               <Label>

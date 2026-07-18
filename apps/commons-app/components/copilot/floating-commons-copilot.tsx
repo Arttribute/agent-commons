@@ -289,7 +289,7 @@ function FloatingCommonsCopilotInner() {
       )}
 
       {open && (
-        <aside className="fixed inset-y-0 right-0 z-40 flex w-full flex-col border-l border-border bg-background shadow-xl lg:w-[min(430px,36vw)]">
+        <aside className="fixed inset-y-0 right-0 z-40 flex w-full flex-col border-l border-border bg-background shadow-xl lg:w-[300px]">
           <div className="flex h-14 shrink-0 items-center gap-2 border-b px-3">
             <Link
               href={profileHref}

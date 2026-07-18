@@ -27,7 +27,7 @@ export interface CommonAgent {
   persona: string;
   instructions: string;
   greeting?: string;
-  conversationStarters?: string[];
+  conversationStarters?: Array<string | { label: string; prompt: string }>;
   description?: string;
   address: string;
   mode: AgentMode;

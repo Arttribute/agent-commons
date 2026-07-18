@@ -33,7 +33,10 @@ export const agent = pgTable('agent', {
   owner: text(),
   name: text().notNull(),
   greeting: text(),
-  conversationStarters: jsonb('conversation_starters').$type<string[]>(),
+  // Legacy plain strings or rich {label, prompt} starter objects (max 4).
+  conversationStarters: jsonb('conversation_starters').$type<
+    Array<string | { label: string; prompt: string }>
+  >(),
   knowledgebase: jsonb('knowledgebase').$type<
     Array<{
       title: string;

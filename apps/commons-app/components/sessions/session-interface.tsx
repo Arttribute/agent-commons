@@ -17,6 +17,8 @@ import {
 import { AgentComputerSurface } from "@/components/computers/agent-computer-surface";
 import { CodeProjectSurface } from "@/components/code-projects/code-project-surface";
 import { cn } from "@/lib/utils";
+import { normalizeConversationStarters } from "@/lib/conversation-starters";
+import { AgentAvatar } from "@/components/agents/agent-avatar";
 import { useAgentContext } from "@/context/AgentContext";
 
 interface Message {
@@ -158,11 +160,9 @@ export default function SessionInterfaceImproved({
 
   const { messages, setInputText } = useAgentContext();
   const greeting = (agent as any)?.greeting as string | undefined;
-  const conversationStarters = Array.isArray(
+  const conversationStarters = normalizeConversationStarters(
     (agent as any)?.conversationStarters,
-  )
-    ? ((agent as any).conversationStarters as string[]).filter(Boolean)
-    : [];
+  );
 
   const groupedItems = useMemo(() => {
     type Item =
@@ -425,24 +425,38 @@ export default function SessionInterfaceImproved({
             ) : messages.length === 0 &&
               (greeting || conversationStarters.length > 0) ? (
               <div className="flex min-h-[45vh] flex-col justify-center py-8">
-                <div className="space-y-4">
-                  {greeting && (
-                    <div className="rounded-lg border border-border bg-muted/30 p-4">
-                      <p className="text-sm leading-6 text-foreground">
+                <div className="space-y-6">
+                  <div className="flex flex-col items-center gap-4 text-center">
+                    <AgentAvatar
+                      name={agent?.name}
+                      src={(agent as any)?.avatar}
+                      size={56}
+                    />
+                    {greeting && (
+                      <h2 className="text-xl font-normal tracking-tight text-foreground sm:text-2xl">
                         {greeting}
-                      </p>
-                    </div>
-                  )}
+                      </h2>
+                    )}
+                  </div>
                   {conversationStarters.length > 0 && (
-                    <div className="grid gap-2 sm:grid-cols-2">
+                    <div
+                      // Equal-width cells that always fill the row; wraps to
+                      // fewer columns in narrow surfaces like the copilot panel.
+                      className="grid w-full gap-2"
+                      style={{
+                        gridTemplateColumns:
+                          "repeat(auto-fit, minmax(150px, 1fr))",
+                      }}
+                    >
                       {conversationStarters.map((starter) => (
                         <button
-                          key={starter}
+                          key={starter.label}
                           type="button"
-                          className="rounded-lg border border-border px-3 py-2 text-left text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-                          onClick={() => setInputText(starter)}
+                          title={starter.prompt}
+                          className="min-w-0 rounded-xl border border-border bg-white px-3 py-2.5 text-center text-sm text-muted-foreground shadow-card transition-colors hover:bg-muted hover:text-foreground"
+                          onClick={() => setInputText(starter.prompt)}
                         >
-                          {starter}
+                          <span className="block truncate">{starter.label}</span>
                         </button>
                       ))}
                     </div>
