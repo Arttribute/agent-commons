@@ -58,20 +58,20 @@ export function HeroComposer() {
     };
   }, [promptIndex]);
 
-  const start = () => router.push("/login?callbackUrl=/studio");
+  const start = () => router.push("/login?callbackUrl=/studio/agents");
 
   return (
     <button
       type="button"
       onClick={start}
       aria-label="Start a session on Agent Commons"
-      className="group block w-full cursor-text rounded-2xl border border-stone-300 bg-white text-left shadow-composer transition-shadow hover:shadow-floating"
+      className="group block w-full cursor-text rounded-[1.35rem] border border-stone-300 bg-white text-left shadow-composer transition-all hover:-translate-y-0.5 hover:border-stone-400 hover:shadow-floating"
     >
-      <div className="min-h-[4.5rem] px-4 pt-3.5 text-[15px] leading-6 text-stone-800 sm:text-base">
+      <div className="min-h-[5rem] px-5 pt-4 text-[15px] leading-6 text-stone-800 sm:text-base">
         {text}
         <span className="ml-px inline-block h-[1.15em] w-[2px] translate-y-[3px] animate-caret-blink rounded-full bg-stone-800" />
       </div>
-      <div className="flex items-center justify-between px-3 pb-3 pt-1">
+      <div className="flex items-center justify-between px-4 pb-4 pt-1">
         <div className="flex items-center gap-1.5">
           <span className="flex h-8 w-8 items-center justify-center rounded-full border border-stone-200 text-stone-500">
             <Plus className="h-4 w-4" />

@@ -1,15 +1,4 @@
-import { icons as logosCollection } from "@iconify-json/logos";
-import {
-  getIconData,
-  iconToHTML,
-  iconToSVG,
-  replaceIDs,
-} from "@iconify/utils";
-
-/**
- * Full-color brand marks from the Iconify "logos" collection, rendered to
- * inline SVG on the server so the icon data never ships to the client.
- */
+/** Lightweight static brand marks generated from the project's icon set. */
 export function BrandLogo({
   name,
   size = 24,
@@ -21,16 +10,19 @@ export function BrandLogo({
   size?: number;
   className?: string;
 }) {
-  const icon = getIconData(logosCollection, name);
-  if (!icon) return null;
-  const svg = iconToSVG(icon, { height: size });
-  const html = iconToHTML(replaceIDs(svg.body), svg.attributes);
   return (
     <span
       aria-hidden
       className={className}
       style={{ display: "inline-flex", lineHeight: 0 }}
-      dangerouslySetInnerHTML={{ __html: html }}
-    />
+    >
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        src={`/brand-icons/${name}.svg`}
+        alt=""
+        height={size}
+        style={{ height: size, width: "auto" }}
+      />
+    </span>
   );
 }
