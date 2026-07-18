@@ -1437,6 +1437,8 @@ export const copilotChange = pgTable(
       .notNull()
       .references(() => agent.agentId, { onDelete: 'cascade' }),
     ownerUserId: text('owner_user_id').notNull(),
+    /** Copilot session the proposal originated from (for review indicators). */
+    sessionId: uuid('session_id'),
     scope: text('scope').notNull(),
     resourceType: text('resource_type').notNull(),
     resourceId: text('resource_id'),

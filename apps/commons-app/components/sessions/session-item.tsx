@@ -47,6 +47,8 @@ export interface SessionItemData {
 interface SessionItemProps {
   session: SessionItemData;
   isActive?: boolean;
+  /** Show an attention dot (e.g. a copilot change awaiting review). */
+  needsAttention?: boolean;
   /** Live-typing title while the agent names a brand-new session. */
   isStreamingTitle?: boolean;
   streamingTitleText?: string;
@@ -66,6 +68,7 @@ interface SessionItemProps {
 export function SessionItem({
   session,
   isActive = false,
+  needsAttention = false,
   isStreamingTitle = false,
   streamingTitleText = "",
   variant = "sidebar",
@@ -106,7 +109,13 @@ export function SessionItem({
   const showRunSpinner = isRunning && !isActive;
   const showDoneDot = !isActive && !isRunning && isRecentlyCompleted(completedAt);
 
-  const runIndicator = showRunSpinner ? (
+  const runIndicator = needsAttention ? (
+    <span
+      className="h-2 w-2 shrink-0 rounded-full bg-amber-500"
+      title="Has a change waiting for review"
+      aria-label="Needs review"
+    />
+  ) : showRunSpinner ? (
     <Loader2
       className="h-3.5 w-3.5 shrink-0 animate-spin text-muted-foreground"
       aria-label="Agent is working"

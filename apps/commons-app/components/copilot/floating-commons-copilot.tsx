@@ -53,7 +53,7 @@ const SCOPES = [
 const PANEL_WIDTH_KEY = "copilot-panel-width";
 const PANEL_MIN_WIDTH = 320;
 const PANEL_MAX_WIDTH = 560;
-const PANEL_DEFAULT_WIDTH = 340;
+const PANEL_DEFAULT_WIDTH = 360;
 
 function clampPanelWidth(value: number) {
   if (!Number.isFinite(value)) return PANEL_DEFAULT_WIDTH;
@@ -219,7 +219,21 @@ function FloatingCommonsCopilotInner() {
   const recentlyApplied = changes
     .filter((change) => change.status === "applied")
     .slice(0, 2);
-  const inlineChanges = [...pending, ...recentlyApplied];
+  // Inline reviews belong to the conversation they came from — a fresh chat
+  // stays clean. Changes without a recorded session still show anywhere so
+  // they remain reachable.
+  const inlineChanges = sessionId
+    ? [...pending, ...recentlyApplied].filter(
+        (change) => !change.sessionId || change.sessionId === sessionId,
+      )
+    : [];
+  const attentionSessionIds = [
+    ...new Set(
+      pending
+        .map((change) => change.sessionId)
+        .filter((id): id is string => Boolean(id)),
+    ),
+  ];
 
   const startNewChat = () => {
     clearMessages();
@@ -333,7 +347,7 @@ function FloatingCommonsCopilotInner() {
       )}
 
       {open && (
-        <aside className="fixed inset-y-0 right-0 z-40 flex w-full flex-col border-l border-border bg-background shadow-xl lg:w-[var(--copilot-panel-width,340px)]">
+        <aside className="fixed inset-y-0 right-0 z-40 flex w-full flex-col border-l border-border bg-background shadow-xl lg:w-[var(--copilot-panel-width,360px)]">
           {/* Drag the left edge to resize; width persists across sessions. */}
           <div
             role="separator"
@@ -438,6 +452,7 @@ function FloatingCommonsCopilotInner() {
                     currentSessionId={sessionId}
                     onSelect={(id) => void openSession(id)}
                     emptyLabel="No previous chats yet."
+                    attentionSessionIds={attentionSessionIds}
                   />
                 </div>
               </ScrollArea>

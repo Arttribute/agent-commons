@@ -43,13 +43,24 @@ type WorkflowProposal = {
   description?: string;
   definition: any;
   summary: string;
+  /** Copilot session the proposal was made in (from tool-call metadata). */
+  originSessionId?: string;
 };
 
 type ResourceProposal = {
   resourceId?: string;
   summary: string;
   data: Record<string, any>;
+  /** Copilot session the proposal was made in (from tool-call metadata). */
+  originSessionId?: string;
 };
+
+const UUID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function sessionUuidOrNull(value?: string) {
+  return value && UUID_PATTERN.test(value) ? value : null;
+}
 
 type TaskProposal = ResourceProposal & {
   data: {
@@ -423,6 +434,7 @@ export class CopilotService {
       .values({
         agentId,
         ownerUserId,
+        sessionId: sessionUuidOrNull(proposal.originSessionId),
         scope: 'workflows',
         resourceType: 'workflow',
         resourceId,
@@ -658,6 +670,7 @@ export class CopilotService {
       .values({
         agentId,
         ownerUserId,
+        sessionId: sessionUuidOrNull(proposal.originSessionId),
         scope,
         resourceType,
         resourceId: proposal.resourceId ?? null,

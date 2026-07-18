@@ -158,6 +158,22 @@ export default function SessionInterfaceImproved({
     useState<ComputerRuntimeTab>("files");
   const [openProjectId, setOpenProjectId] = useState<string | null>(null);
 
+  // Surface width drives the empty-state layout: wide surfaces center the
+  // composer with one starter row; narrow ones (mobile, the copilot panel)
+  // keep the composer at the bottom and stack starters one per row.
+  const surfaceRef = useRef<HTMLDivElement>(null);
+  const [isNarrowSurface, setIsNarrowSurface] = useState(false);
+  useEffect(() => {
+    const node = surfaceRef.current;
+    if (!node || typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver((entries) => {
+      const width = entries[0]?.contentRect?.width ?? 0;
+      setIsNarrowSurface(width > 0 && width < 480);
+    });
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, []);
+
   const { messages, setInputText } = useAgentContext();
   const greeting = (agent as any)?.greeting as string | undefined;
   const conversationStarters = normalizeConversationStarters(
@@ -392,6 +408,24 @@ export default function SessionInterfaceImproved({
       </Button>
     ) : null;
 
+  const composer = (
+    <ChatInputBox
+      agentId={agentId}
+      sessionId={sessionId}
+      userId={userId || ""}
+      onSessionCreated={onSessionCreated}
+      disabled={isRedirecting || isLoadingSession}
+      initialPrompt={initialPrompt}
+      onInitialPromptSent={onInitialPromptSent}
+      allowComputer={allowComputer}
+      uiContext={uiContext}
+      externalPrompt={externalPrompt}
+    />
+  );
+
+  const showCenteredEmptyState =
+    !isNarrowSurface && !isLoadingSession && messages.length === 0;
+
   return (
     <div
       className="relative flex h-full min-h-0 min-w-0 flex-1 overflow-hidden"
@@ -402,6 +436,7 @@ export default function SessionInterfaceImproved({
           computer chip grow it upward by shrinking the messages area —
           nothing ever pushes the composer out of view. */}
       <div
+        ref={surfaceRef}
         className={cn(
           "relative flex min-h-0 min-w-0 flex-col",
           computerOpen ? "flex-1" : "w-full",
@@ -415,6 +450,42 @@ export default function SessionInterfaceImproved({
         ) : (
           computerButton
         )}
+        {showCenteredEmptyState ? (
+          <div className="min-h-0 flex-1 overflow-y-auto">
+            <div className="flex min-h-full flex-col items-center justify-center px-4 py-8">
+              <div className="w-full max-w-[46rem]">
+                <div className="mb-6 flex flex-col items-center gap-4 text-center">
+                  <AgentAvatar
+                    name={agent?.name}
+                    src={(agent as any)?.avatar}
+                    size={56}
+                  />
+                  {greeting && (
+                    <h2 className="text-xl font-normal tracking-tight text-foreground sm:text-2xl">
+                      {greeting}
+                    </h2>
+                  )}
+                </div>
+                {composer}
+                {conversationStarters.length > 0 && (
+                  <div className="mt-3 grid w-full grid-flow-col auto-cols-fr gap-2">
+                    {conversationStarters.map((starter) => (
+                      <button
+                        key={starter.label}
+                        type="button"
+                        title={starter.prompt}
+                        className="min-w-0 rounded-xl border border-border bg-white px-3 py-2.5 text-center text-sm text-muted-foreground shadow-card transition-colors hover:bg-muted hover:text-foreground"
+                        onClick={() => setInputText(starter.prompt)}
+                      >
+                        <span className="block truncate">{starter.label}</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        ) : (
         <ScrollArea className="min-h-0 flex-1" scrollHideDelay={100}>
           <div
             className="container mx-auto max-w-[46rem] px-4 pb-6 pt-4"
@@ -440,9 +511,9 @@ export default function SessionInterfaceImproved({
                   </div>
                   {conversationStarters.length > 0 && (
                     <div
-                      // One row of equal-width cells, always filling the full
-                      // width — labels truncate rather than wrap or trail.
-                      className="grid w-full grid-flow-col auto-cols-fr gap-2"
+                      // Narrow surfaces stack starters one per row; wide
+                      // surfaces use the centered layout above instead.
+                      className="grid w-full grid-cols-1 gap-2"
                     >
                       {conversationStarters.map((starter) => (
                         <button
@@ -516,21 +587,13 @@ export default function SessionInterfaceImproved({
             )}
           </div>
         </ScrollArea>
+        )}
 
-        <div className="container mx-auto w-full max-w-[46rem] shrink-0 px-4 pb-4">
-          <ChatInputBox
-            agentId={agentId}
-            sessionId={sessionId}
-            userId={userId || ""}
-            onSessionCreated={onSessionCreated}
-            disabled={isRedirecting || isLoadingSession}
-            initialPrompt={initialPrompt}
-            onInitialPromptSent={onInitialPromptSent}
-            allowComputer={allowComputer}
-            uiContext={uiContext}
-            externalPrompt={externalPrompt}
-          />
-        </div>
+        {!showCenteredEmptyState && (
+          <div className="container mx-auto w-full max-w-[46rem] shrink-0 px-4 pb-4">
+            {composer}
+          </div>
+        )}
 
         <ExecutionWidget
           sessionId={sessionId}

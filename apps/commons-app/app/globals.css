@@ -16,7 +16,7 @@ body {
   /* Reserve exactly the copilot panel's width (kept in sync by the panel,
      including user resizes) so no gap trails behind the open panel. */
   html.commons-copilot-open #app-shell-content {
-    margin-right: var(--copilot-panel-width, 340px);
+    margin-right: var(--copilot-panel-width, 360px);
   }
 }
 

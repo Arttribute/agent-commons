@@ -752,10 +752,13 @@ export class CommonToolService {
       summary: string;
       agentId: string;
     },
-    metadata?: { agentId?: string },
+    metadata?: { agentId?: string; sessionId?: string },
   ) {
     const agentId = this.requireToolAgentId(props.agentId, metadata);
-    return this.copilot.proposeWorkflowChange(agentId, props);
+    return this.copilot.proposeWorkflowChange(agentId, {
+      ...props,
+      originSessionId: metadata?.sessionId,
+    });
   }
 
   async proposeAgentChange(
@@ -765,10 +768,13 @@ export class CommonToolService {
       data: Record<string, any>;
       agentId: string;
     },
-    metadata?: { agentId?: string },
+    metadata?: { agentId?: string; sessionId?: string },
   ) {
     const agentId = this.requireToolAgentId(props.agentId, metadata);
-    return this.copilot.proposeAgentChange(agentId, props);
+    return this.copilot.proposeAgentChange(agentId, {
+      ...props,
+      originSessionId: metadata?.sessionId,
+    });
   }
 
   async proposeSkillChange(
@@ -778,10 +784,13 @@ export class CommonToolService {
       data: Record<string, any>;
       agentId: string;
     },
-    metadata?: { agentId?: string },
+    metadata?: { agentId?: string; sessionId?: string },
   ) {
     const agentId = this.requireToolAgentId(props.agentId, metadata);
-    return this.copilot.proposeSkillChange(agentId, props);
+    return this.copilot.proposeSkillChange(agentId, {
+      ...props,
+      originSessionId: metadata?.sessionId,
+    });
   }
 
   async proposeToolChange(
@@ -791,10 +800,13 @@ export class CommonToolService {
       data: Record<string, any>;
       agentId: string;
     },
-    metadata?: { agentId?: string },
+    metadata?: { agentId?: string; sessionId?: string },
   ) {
     const agentId = this.requireToolAgentId(props.agentId, metadata);
-    return this.copilot.proposeToolChange(agentId, props);
+    return this.copilot.proposeToolChange(agentId, {
+      ...props,
+      originSessionId: metadata?.sessionId,
+    });
   }
 
   async proposeTaskChange(
@@ -809,10 +821,13 @@ export class CommonToolService {
       };
       agentId: string;
     },
-    metadata?: { agentId?: string },
+    metadata?: { agentId?: string; sessionId?: string },
   ) {
     const agentId = this.requireToolAgentId(props.agentId, metadata);
-    return this.copilot.proposeTaskChange(agentId, props);
+    return this.copilot.proposeTaskChange(agentId, {
+      ...props,
+      originSessionId: metadata?.sessionId,
+    });
   }
 
   private requireToolAgentId(

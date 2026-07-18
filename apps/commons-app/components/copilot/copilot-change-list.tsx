@@ -20,6 +20,8 @@ import { cn } from "@/lib/utils";
 
 export type CopilotChange = {
   changeId: string;
+  /** Copilot session the proposal came from, when recorded. */
+  sessionId?: string | null;
   resourceId?: string | null;
   resourceType: "workflow" | "agent" | "task" | "tool" | "skill" | string;
   action: "create" | "update" | "delete";
