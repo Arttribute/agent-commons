@@ -9,6 +9,10 @@ export default {
   ],
   theme: {
   	extend: {
+  		fontFamily: {
+  			// Space Mono — brand accent type for eyebrows, labels and headings.
+  			space: ['var(--font-space-mono)', 'ui-monospace', 'monospace']
+  		},
   		boxShadow: {
   			// Soft elevation scale: `composer` is the strongest (chat input),
   			// `card` is the moderate default for cards/panels/icon buttons.
@@ -74,6 +78,17 @@ export default {
   			sm: 'calc(var(--radius) - 4px)'
   		},
   		keyframes: {
+  			'caret-blink': {
+  				'0%, 45%': {
+  					opacity: '1'
+  				},
+  				'50%, 95%': {
+  					opacity: '0'
+  				},
+  				'100%': {
+  					opacity: '1'
+  				}
+  			},
   			float: {
   				'0%, 100%': {
   					transform: 'translateY(0)'
@@ -116,6 +131,7 @@ export default {
   			}
   		},
   		animation: {
+  			'caret-blink': 'caret-blink 1.1s steps(1) infinite',
   			float: 'float 3s ease-in-out infinite',
   			'background-position-spin': 'background-position-spin 3000ms infinite alternate',
   			grid: 'grid 15s linear infinite',
