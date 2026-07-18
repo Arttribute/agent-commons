@@ -67,7 +67,7 @@ export function EventBlock({
     >
       <div className="flex items-center gap-1 truncate">
         {event.isRecurring && <Repeat className="h-2.5 w-2.5 shrink-0 text-muted-foreground" />}
-        <span className="truncate font-medium text-foreground">{event.title}</span>
+        <span className="truncate text-foreground">{event.title}</span>
       </div>
 
       {event.isResizable && (

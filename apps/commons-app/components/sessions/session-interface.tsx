@@ -361,12 +361,11 @@ export default function SessionInterfaceImproved({
   const computerButton = !computerOpen ? (
     <Button
       type="button"
-      variant={header ? "ghost" : "outline"}
+      variant="ghost"
       size="icon"
       className={cn(
-        "relative h-8 w-8 shrink-0 rounded-md",
-        !header &&
-          "absolute right-4 top-4 z-10 h-9 w-9 bg-background/95 shadow-sm backdrop-blur",
+        "relative h-8 w-8 shrink-0 rounded-lg text-muted-foreground hover:text-foreground",
+        !header && "absolute right-4 top-4 z-10",
       )}
       title="Agent computer"
       aria-label="Agent computer"
@@ -442,38 +441,52 @@ export default function SessionInterfaceImproved({
               </div>
             ) : (
               <>
-                {groupedItems.map((item, index) => {
-                  if (item.type === "message") {
-                    const { message } = item;
-                    if (message.role === "user" || message.role === "human") {
-                      return (
-                        <InitiatorMessage
-                          key={index}
-                          message={message.content}
-                          timestamp={message.timestamp}
-                          metadata={message.metadata}
-                        />
-                      );
+                {(() => {
+                  // The agent identity row appears on the first agent message
+                  // after a user turn only — consecutive agent messages flow
+                  // together without repeating the avatar.
+                  let lastMessageRole: string | null = null;
+                  return groupedItems.map((item, index) => {
+                    if (item.type === "message") {
+                      const { message } = item;
+                      if (message.role === "user" || message.role === "human") {
+                        lastMessageRole = "human";
+                        return (
+                          <InitiatorMessage
+                            key={index}
+                            message={message.content}
+                            timestamp={message.timestamp}
+                            metadata={message.metadata}
+                          />
+                        );
+                      }
+                      if (message.role === "ai") {
+                        const showAgentHeader = lastMessageRole !== "ai";
+                        lastMessageRole = "ai";
+                        const key = message.isStreaming
+                          ? `ai-streaming-${index}`
+                          : index;
+                        return (
+                          <AgentOutput
+                            key={key}
+                            content={message.content}
+                            metadata={message.metadata}
+                            isStreaming={message.isStreaming}
+                            computer={sessionComputer}
+                            agentName={agent?.name}
+                            agentAvatar={(agent as any)?.avatar}
+                            showAgentHeader={showAgentHeader}
+                          />
+                        );
+                      }
+                      return null;
                     }
-                    if (message.role === "ai") {
-                      const key = message.isStreaming
-                        ? `ai-streaming-${index}`
-                        : index;
-                      return (
-                        <AgentOutput
-                          key={key}
-                          content={message.content}
-                          metadata={message.metadata}
-                          isStreaming={message.isStreaming}
-                          computer={sessionComputer}
-                        />
-                      );
-                    }
-                    return null;
-                  }
 
-                  return <ExpandableToolCard key={index} tools={item.tools} />;
-                })}
+                    return (
+                      <ExpandableToolCard key={index} tools={item.tools} />
+                    );
+                  });
+                })()}
                 {/* Bottom marker for auto-scroll */}
                 <div ref={bottomRef} />
               </>

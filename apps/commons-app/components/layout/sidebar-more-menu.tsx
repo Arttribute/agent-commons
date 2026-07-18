@@ -38,11 +38,11 @@ export function SidebarMoreMenu({
             aria-label="More"
             title="More"
             className={cn(
-              "rounded-md p-1 text-muted-foreground hover:bg-accent hover:text-foreground data-[state=open]:bg-accent data-[state=open]:text-foreground",
+              "rounded-md p-1.5 text-muted-foreground hover:bg-accent hover:text-foreground data-[state=open]:bg-accent data-[state=open]:text-foreground",
               active && "bg-accent text-accent-foreground"
             )}
           >
-            <MoreHorizontal className="h-5 w-5" />
+            <MoreHorizontal className="h-4 w-4" />
           </button>
         ) : (
           <button

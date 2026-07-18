@@ -170,7 +170,7 @@ function SectionHeader({
 }) {
   return (
     <div className="border-b border-border/70 px-5 py-4">
-      <h1 className="text-xl font-semibold tracking-tight">{title}</h1>
+      <h1 className="text-lg font-medium tracking-tight">{title}</h1>
       {subtitle && (
         <p className="mt-1 text-sm text-muted-foreground">{subtitle}</p>
       )}
@@ -1783,7 +1783,7 @@ function ObservabilityStat({
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <p className="text-xs text-muted-foreground">{label}</p>
-          <p className="mt-1 truncate text-xl font-semibold tracking-tight">
+          <p className="mt-1 truncate text-lg font-medium tracking-tight">
             {value}
           </p>
         </div>
@@ -1878,7 +1878,7 @@ function ObservabilityView({ agentId }: { agentId: string }) {
     <div className="min-h-0 overflow-auto">
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border/70 px-5 py-4">
         <div>
-          <h1 className="text-xl font-semibold tracking-tight">
+          <h1 className="text-lg font-medium tracking-tight">
             Observability
           </h1>
           <p className="mt-1 text-sm text-muted-foreground">
@@ -2472,7 +2472,7 @@ function UsageView({ agentId }: { agentId: string }) {
     <div className="min-h-0 overflow-auto">
       <div className="flex items-center justify-between gap-3 border-b border-border/70 px-5 py-4">
         <div>
-          <h1 className="text-xl font-semibold tracking-tight">Usage</h1>
+          <h1 className="text-lg font-medium tracking-tight">Usage</h1>
           <p className="mt-1 text-sm text-muted-foreground">
             Model calls, token volume, and cost for this agent.
           </p>

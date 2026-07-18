@@ -89,7 +89,7 @@ export function CreateSpaceForm({ creatorId, onCreated }: Props) {
     >
       <div className="">
         <div className="bg-teal-200 w-48 h-8 -mb-8 rounded-lg"></div>
-        <h2 className="text-2xl font-semibold">Create New Space</h2>
+        <h2 className="text-lg font-medium">Create New Space</h2>
       </div>
 
       <div className="space-y-1.5">

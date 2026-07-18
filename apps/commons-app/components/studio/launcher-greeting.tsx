@@ -63,7 +63,7 @@ export function LauncherGreeting() {
   }, []);
 
   return (
-    <h2 className="font-space text-2xl tracking-tight text-foreground sm:text-3xl">
+    <h2 className="text-2xl font-normal tracking-tight text-foreground sm:text-3xl">
       {greeting}
     </h2>
   );

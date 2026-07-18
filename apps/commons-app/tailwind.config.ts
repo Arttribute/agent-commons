@@ -9,10 +9,6 @@ export default {
   ],
   theme: {
   	extend: {
-  		fontFamily: {
-  			// Display/mono accent for greetings and hero text (Space Mono).
-  			space: ['var(--font-space-mono)', 'monospace']
-  		},
   		boxShadow: {
   			// Soft elevation scale: `composer` is the strongest (chat input),
   			// `card` is the moderate default for cards/panels/icon buttons.

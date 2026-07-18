@@ -4,7 +4,7 @@ import "./globals.css";
 import Providers from "@/Providers"; // The file with your <PrivyProvider> from earlier
 import { AuthProvider } from "@/context/AuthContext";
 import { Analytics } from "@vercel/analytics/react";
-import { Space_Grotesk, Space_Mono } from "next/font/google";
+import { Space_Grotesk } from "next/font/google";
 import { Toaster } from "@/components/ui/toaster";
 import { SidebarProvider } from "@/context/SidebarContext";
 import { GlobalSearchProvider } from "@/context/SearchContext";
@@ -15,13 +15,6 @@ const spaceGrotesk = Space_Grotesk({
   subsets: ["latin"],
   display: "swap",
   fallback: ["Helvetica", "Arial", "sans-serif"],
-});
-
-const spaceMono = Space_Mono({
-  weight: ["400", "700"],
-  subsets: ["latin"],
-  display: "swap",
-  variable: "--font-space-mono",
 });
 
 const geistSans = Geist({
@@ -46,10 +39,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" suppressHydrationWarning>
-      <body
-        className={`${spaceGrotesk.className} ${spaceMono.variable}`}
-        suppressHydrationWarning
-      >
+      <body className={spaceGrotesk.className} suppressHydrationWarning>
         <Providers>
           <AuthProvider>
             <SidebarProvider>

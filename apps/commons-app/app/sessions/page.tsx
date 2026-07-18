@@ -52,7 +52,7 @@ export default function SessionsPage() {
           {/* Header */}
           <div className="flex items-center justify-between px-6 py-4 border-b border-border/60 bg-background">
             <div>
-              <h1 className="text-xl font-semibold tracking-tight">Sessions</h1>
+              <h1 className="text-lg font-medium tracking-tight">Sessions</h1>
               <p className="text-sm text-muted-foreground mt-0.5">
                 All conversations across your agents — including CLI runs
               </p>

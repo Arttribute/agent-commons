@@ -159,7 +159,7 @@ export function BillingPanel() {
     <div className="mx-auto max-w-3xl space-y-8 pb-16">
       <header className="flex items-start justify-between gap-6">
         <div>
-          <h1 className="text-xl font-semibold tracking-tight">
+          <h1 className="text-lg font-medium tracking-tight">
             Credits &amp; billing
           </h1>
           <p className="mt-1.5 max-w-xl text-sm leading-6 text-muted-foreground">

@@ -289,7 +289,7 @@ function TaskRow({
         onChange={(priority) => onSetPriority(task.taskId, priority)}
       />
       <StatusDot status={task.status} />
-      <span className="min-w-0 flex-1 truncate font-medium" title={task.description || task.title}>
+      <span className="min-w-0 flex-1 truncate" title={task.description || task.title}>
         {task.title}
       </span>
       <span className="hidden shrink-0 items-center gap-1 rounded-full border border-border/70 px-2 py-0.5 text-[11px] text-muted-foreground sm:flex">
@@ -339,7 +339,7 @@ function TaskBoardCard({
       onClick={() => onOpen(task.taskId)}
     >
       <div className="flex items-start justify-between gap-2">
-        <h3 className="line-clamp-2 text-sm font-medium leading-5">{task.title}</h3>
+        <h3 className="line-clamp-2 text-sm font-normal leading-5">{task.title}</h3>
         <TaskActions
           task={task}
           isActing={isActing}

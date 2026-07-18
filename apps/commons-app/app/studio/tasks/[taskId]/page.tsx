@@ -283,7 +283,7 @@ export default function TaskDetailPage({
               <ArrowLeft className="h-4 w-4" />
             </Button>
             <div>
-              <h1 className="text-xl font-semibold leading-tight">{task.title}</h1>
+              <h1 className="text-lg font-medium leading-tight">{task.title}</h1>
               <div className="flex items-center gap-2 mt-1 flex-wrap">
                 <Badge className={`text-xs ${statusColors[task.status]}`}>
                   <StatusIcon className="h-3 w-3 mr-1" />

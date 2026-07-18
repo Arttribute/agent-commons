@@ -149,7 +149,7 @@ export function WorkflowCard({
         </DropdownMenu>
       </div>
 
-      <h3 className="mt-3 truncate text-sm font-semibold text-foreground">
+      <h3 className="mt-3 truncate text-sm font-normal text-foreground">
         {workflow.name}
       </h3>
       <p className="mt-1 line-clamp-2 min-h-[2rem] text-xs leading-4 text-muted-foreground">
