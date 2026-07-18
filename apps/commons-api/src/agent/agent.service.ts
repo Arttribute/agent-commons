@@ -117,6 +117,26 @@ const TRIVIAL_TURN_PATTERN = new RegExp(
   'iu',
 );
 
+const REASONING_EFFORT_LEVELS = [
+  'none',
+  'minimal',
+  'low',
+  'medium',
+  'high',
+  'xhigh',
+] as const;
+
+/** Validates a caller-supplied reasoning effort; unknown values are dropped. */
+function normalizeReasoningEffortInput(
+  value: unknown,
+): (typeof REASONING_EFFORT_LEVELS)[number] | undefined {
+  if (typeof value !== 'string') return undefined;
+  const normalized = value.trim().toLowerCase();
+  return (REASONING_EFFORT_LEVELS as readonly string[]).includes(normalized)
+    ? (normalized as (typeof REASONING_EFFORT_LEVELS)[number])
+    : undefined;
+}
+
 @Injectable()
 export class AgentService implements OnModuleInit {
   private readonly logger = new Logger(AgentService.name);
@@ -671,6 +691,8 @@ export class AgentService implements OnModuleInit {
       /** @deprecated Ignored; assigned computers are always persistent. */
       lifecycle?: 'persistent' | 'ephemeral';
     };
+    /** User-selected thinking depth for this turn; overrides the adaptive hint. */
+    reasoningEffort?: string;
   }): Observable<any> {
     return new Observable<any>((subscriber) => {
       // Keep SSE connection alive through proxies
@@ -875,6 +897,12 @@ export class AgentService implements OnModuleInit {
               reasoningEffort: this.resolveAdaptiveReasoningEffort(props),
             },
           );
+          // A thinking level picked in the composer wins over both the
+          // session/agent defaults and the adaptive trivial-turn hint.
+          const requestedEffort = normalizeReasoningEffortInput(
+            props.reasoningEffort,
+          );
+          if (requestedEffort) effectiveModel.reasoningEffort = requestedEffort;
 
           const billingOwnerId = agent.ownerUserId ?? agent.owner;
           if (

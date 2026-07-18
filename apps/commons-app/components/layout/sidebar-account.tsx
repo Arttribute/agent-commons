@@ -81,7 +81,7 @@ export function SidebarAccount({ collapsed = false }: { collapsed?: boolean }) {
             </div>
             {!collapsed && (
               <>
-                <span className="min-w-0 flex-1 truncate text-sm font-medium">
+                <span className="min-w-0 flex-1 truncate text-sm font-normal">
                   {displayName}
                 </span>
                 <ChevronsUpDown className="h-4 w-4 shrink-0 text-muted-foreground" />

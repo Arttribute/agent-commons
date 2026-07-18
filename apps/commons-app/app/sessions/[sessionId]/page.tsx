@@ -81,7 +81,7 @@ export default function SessionPage() {
   }, [sessionId]);
 
   return (
-    <div className="h-screen overflow-hidden bg-stone-50">
+    <div className="h-screen overflow-hidden bg-page">
       <div className="flex h-screen">
         <DashboardSideBar username={userAddress} />
         <main className="flex h-screen min-w-0 flex-1 flex-col overflow-hidden">

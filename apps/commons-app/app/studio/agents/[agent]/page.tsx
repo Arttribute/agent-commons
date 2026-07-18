@@ -2910,7 +2910,7 @@ export default function AgentStudioPage({
   };
 
   return (
-    <div className="grid h-full min-h-0 grid-cols-[280px_minmax(0,1fr)] overflow-hidden bg-stone-50">
+    <div className="grid h-full min-h-0 grid-cols-[280px_minmax(0,1fr)] overflow-hidden bg-page">
       <aside className="flex min-h-0 flex-col overflow-hidden border-r border-border bg-white">
         <div className="shrink-0 border-b border-border/70 p-3">
           <div className="flex items-center gap-1.5">

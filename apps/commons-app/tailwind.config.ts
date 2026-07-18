@@ -9,7 +9,20 @@ export default {
   ],
   theme: {
   	extend: {
+  		fontFamily: {
+  			// Display/mono accent for greetings and hero text (Space Mono).
+  			space: ['var(--font-space-mono)', 'monospace']
+  		},
+  		boxShadow: {
+  			// Soft elevation scale: `composer` is the strongest (chat input),
+  			// `card` is the moderate default for cards/panels/icon buttons.
+  			composer: '0 12px 32px -12px rgba(28, 25, 23, 0.14), 0 4px 12px -4px rgba(28, 25, 23, 0.08), 0 1px 3px rgba(28, 25, 23, 0.05)',
+  			card: '0 2px 8px -2px rgba(28, 25, 23, 0.06), 0 1px 2px rgba(28, 25, 23, 0.04)',
+  			floating: '0 8px 24px -8px rgba(28, 25, 23, 0.12), 0 2px 6px -2px rgba(28, 25, 23, 0.05)'
+  		},
   		colors: {
+  			// Page canvas — sits between stone-50 and the white used on cards.
+  			page: '#fcfcfb',
   			background: 'hsl(var(--background))',
   			foreground: 'hsl(var(--foreground))',
   			card: {

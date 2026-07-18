@@ -2,6 +2,8 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { DashboardSideBar } from "@/components/layout/dashboard-side-bar";
+import { PageTitle } from "@/components/layout/page-header";
+import { CreditsMenu } from "@/components/billing/credits-menu";
 import { useAuth } from "@/context/AuthContext";
 import { normalizePrincipalId } from "@/lib/principal-id";
 import { Button } from "@/components/ui/button";
@@ -48,7 +50,7 @@ export default function LibraryPage() {
   const [source, setSource] = useState("all");
   const [favorites, setFavorites] = useState(false);
   const [layout, setLayout] = useState<"grid" | "list">("grid");
-  const [groupByChat, setGroupByChat] = useState(true);
+  const [groupByChat, setGroupByChat] = useState(false);
   const [selected, setSelected] = useState<ItemDetail | null>(null);
   const [grantType, setGrantType] = useState<"agent" | "user" | "workspace">("agent");
   const [grantId, setGrantId] = useState("");
@@ -140,14 +142,14 @@ export default function LibraryPage() {
   }
 
   return (
-    <div className="h-screen overflow-hidden bg-[#fafaf9] text-stone-950">
+    <div className="h-screen overflow-hidden bg-page text-stone-950">
       <div className="flex h-screen"><DashboardSideBar username={userAddress} />
         <main className="min-w-0 flex-1 overflow-y-auto">
           <div className="mx-auto max-w-[1500px] px-5 py-6 sm:px-8 lg:px-12">
-            <header className="flex flex-col gap-4 border-b border-stone-200 pb-5 lg:flex-row lg:items-end lg:justify-between">
-              <div><h1 className="text-2xl font-semibold tracking-tight">Artifact library</h1>
-                <p className="mt-1 text-sm text-stone-500">Private files, images, documents, and apps created with your agents.</p></div>
-              <div className="flex flex-wrap items-center gap-2">
+            <header className="flex flex-col gap-4 pb-3 lg:flex-row lg:items-end lg:justify-between">
+              <div><PageTitle title="Library" />
+                <p className="mt-1.5 text-sm text-muted-foreground">Private files, images, documents, and apps created with your agents.</p></div>
+              <div className="flex flex-wrap items-center gap-3">
                 <div className="relative min-w-[240px] flex-1 lg:w-80"><Search className="absolute left-3 top-2.5 h-4 w-4 text-stone-400" />
                   <Input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search names and contents" className="h-9 bg-white pl-9" /></div>
                 <input ref={inputRef} type="file" multiple className="hidden" onChange={(e) => {
@@ -155,7 +157,11 @@ export default function LibraryPage() {
                   delete e.currentTarget.dataset.provider;
                   upload(e.target.files, provider);
                 }} />
-                <DropdownMenu><DropdownMenuTrigger asChild><Button className="h-9" disabled={uploading}>{uploading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Upload className="mr-2 h-4 w-4" />}Add</Button></DropdownMenuTrigger>
+                <CreditsMenu />
+                <DropdownMenu><DropdownMenuTrigger asChild>
+                  <button type="button" aria-label="Add to library" title="Add to library" disabled={uploading} className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full border border-border bg-background text-foreground shadow-card transition-colors hover:bg-muted disabled:opacity-50">
+                    {uploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" strokeWidth={1.75} />}
+                  </button></DropdownMenuTrigger>
                   <DropdownMenuContent align="end"><DropdownMenuItem onClick={() => inputRef.current?.click()}><ShieldCheck />Upload using account default</DropdownMenuItem>
                     <DropdownMenuItem onClick={() => { inputRef.current?.setAttribute("data-provider", "s3"); inputRef.current?.click(); }}><Upload />Upload privately to S3</DropdownMenuItem>
                     <DropdownMenuItem onClick={() => { inputRef.current?.setAttribute("data-provider", "ipfs"); inputRef.current?.click(); }}><Link2 />Publish to IPFS</DropdownMenuItem></DropdownMenuContent></DropdownMenu>

@@ -12,7 +12,6 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import Image from "next/image";
-import { Button } from "@/components/ui/button";
 import { SearchTrigger } from "@/components/search/search-trigger";
 import { SidebarMoreMenu } from "./sidebar-more-menu";
 
@@ -53,17 +52,19 @@ export const DashboardBar: FC<DashboardBarProps> = ({ activeTab, rightSlot }) =>
       <div className="flex flex-col gap-1">
         <SearchTrigger />
         {navItems.map(({ key, label, icon: Icon, path }) => (
-          <Button
+          <button
             key={key}
-            variant="ghost"
-            className={`justify-start px-2 w-full ${
-              activeTab === key ? "bg-accent text-accent-foreground" : ""
+            type="button"
+            className={`flex h-9 w-full items-center gap-2 rounded-md px-2 text-left text-sm font-normal transition-colors ${
+              activeTab === key
+                ? "bg-accent text-accent-foreground"
+                : "text-muted-foreground hover:bg-muted hover:text-foreground"
             }`}
             onClick={() => nav(path)}
           >
-            <Icon className="h-4 w-4" />
-            <span>{label}</span>
-          </Button>
+            <Icon className="h-4 w-4 shrink-0" strokeWidth={1.75} />
+            <span className="min-w-0 flex-1 truncate">{label}</span>
+          </button>
         ))}
         <SidebarMoreMenu activeSection={activeTab} />
       </div>

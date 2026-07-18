@@ -2,19 +2,10 @@
 
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import {
-  ArrowUpRight,
-  Check,
-  Copy,
-  Gift,
-  Loader2,
-  Sparkles,
-} from "lucide-react";
+import { ArrowUpRight, Gift, Loader2, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
-import { useAuth } from "@/context/AuthContext";
-import { normalizePrincipalId } from "@/lib/principal-id";
 
 type PlanKey = "free" | "plus" | "pro" | "max";
 
@@ -35,14 +26,6 @@ type Subscription = {
 type CreditSummary = {
   balance: { balance: number; reserved: number; available: number };
   month: { earned: number; spent: number };
-  campaigns: Array<{
-    campaignKey: string;
-    name: string;
-    description?: string | null;
-    rewardCredits: number;
-    claimable: boolean;
-    claimed: boolean;
-  }>;
   recent: Array<{
     entryId: string;
     amount: number;
@@ -80,14 +63,13 @@ function formatMoney(amount: number, currency: string) {
 
 export function BillingPanel() {
   const router = useRouter();
-  const { authState } = useAuth();
   const [subscription, setSubscription] = useState<Subscription | null>(null);
   const [summary, setSummary] = useState<CreditSummary | null>(null);
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [catalog, setCatalog] = useState<Catalog | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
-  const [recipient, setRecipient] = useState("");
+  const [recipientEmail, setRecipientEmail] = useState("");
   const [giftAmount, setGiftAmount] = useState("50");
   const [giftMessage, setGiftMessage] = useState("");
 
@@ -111,22 +93,15 @@ export function BillingPanel() {
     void load();
   }, [load]);
 
-  const daily = summary?.campaigns.find(
-    (item) => item.campaignKey === "daily-check-in",
-  );
   const balance = summary?.balance.available ?? 0;
-  const principalId = normalizePrincipalId(authState.walletAddress);
   const renewal = useMemo(
     () =>
       subscription?.currentPeriodEnd
-        ? new Date(subscription.currentPeriodEnd).toLocaleDateString(
-            undefined,
-            {
-              month: "short",
-              day: "numeric",
-              year: "numeric",
-            },
-          )
+        ? new Date(subscription.currentPeriodEnd).toLocaleDateString(undefined, {
+            month: "short",
+            day: "numeric",
+            year: "numeric",
+          })
         : null,
     [subscription?.currentPeriodEnd],
   );
@@ -159,60 +134,37 @@ export function BillingPanel() {
     }
   }
 
-  async function claimDaily() {
-    try {
-      await post("/api/credits/daily", {}, "daily");
-      setNotice(`Added ${daily?.rewardCredits ?? 10} credits.`);
-    } catch {
-      // The shared notice already contains the actionable API error.
-    }
-  }
-
-  async function claimCampaign(campaignKey: string, rewardCredits: number) {
-    try {
-      await post(
-        "/api/credits/campaigns/claim",
-        { campaignKey },
-        `campaign-${campaignKey}`,
-      );
-      setNotice(`Added ${rewardCredits.toLocaleString()} credits.`);
-    } catch {
-      // The shared notice already contains the actionable API error.
-    }
-  }
-
   async function sendGift(event: FormEvent) {
     event.preventDefault();
     try {
       await post(
         "/api/credits/gifts",
         {
-          recipientPrincipalId: recipient.trim(),
+          recipientEmail: recipientEmail.trim(),
           amount: Number(giftAmount),
           message: giftMessage.trim() || undefined,
           idempotencyKey: `web-gift:${crypto.randomUUID()}`,
         },
         "gift",
       );
-      setRecipient("");
+      setRecipientEmail("");
       setGiftMessage("");
-      setNotice("Gift sent.");
+      setNotice("Gift sent. 🎁");
     } catch {
       // The shared notice already contains the actionable API error.
     }
   }
 
   return (
-    <div className="mx-auto max-w-3xl space-y-10 pb-16">
+    <div className="mx-auto max-w-3xl space-y-8 pb-16">
       <header className="flex items-start justify-between gap-6">
         <div>
-          <p className="text-sm text-muted-foreground">Account</p>
-          <h1 className="mt-1 text-2xl font-semibold tracking-tight">
-            Credits & billing
+          <h1 className="text-xl font-semibold tracking-tight">
+            Credits &amp; billing
           </h1>
-          <p className="mt-2 max-w-xl text-sm leading-6 text-muted-foreground">
-            Create as many agents as you like. Credits pay for the work they do;
-            your plan controls how many can keep a persistent computer.
+          <p className="mt-1.5 max-w-xl text-sm leading-6 text-muted-foreground">
+            Credits pay for the work your agents do. Your plan controls how
+            many can keep a persistent computer.
           </p>
         </div>
         <Button variant="outline" onClick={() => router.push("/plans")}>
@@ -221,67 +173,37 @@ export function BillingPanel() {
       </header>
 
       {notice ? (
-        <div className="rounded-xl border bg-white px-4 py-3 text-sm">
+        <div className="rounded-xl border bg-white px-4 py-3 text-sm shadow-card">
           {notice}
         </div>
       ) : null}
 
-      <section className="grid gap-4 sm:grid-cols-[1.4fr_1fr]">
-        <div className="rounded-2xl bg-slate-950 p-6 text-white">
-          <div className="flex items-center justify-between">
-            <span className="text-sm text-slate-300">Available credits</span>
-            {summary?.balance.reserved ? (
-              <span className="text-xs text-slate-400">
-                {summary.balance.reserved.toLocaleString()} in active runs
-              </span>
-            ) : null}
-          </div>
-          <div className="mt-3 text-4xl font-semibold tabular-nums">
-            {summary ? balance.toLocaleString() : "—"}
-          </div>
-          <div className="mt-6 flex gap-6 text-xs text-slate-300">
-            <span>
-              +{(summary?.month.earned ?? 0).toLocaleString()} earned this month
-            </span>
-            <span>−{(summary?.month.spent ?? 0).toLocaleString()} used</span>
-          </div>
+      <section className="rounded-2xl border bg-white p-6 shadow-card">
+        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+          <Sparkles className="h-4 w-4" /> Available credits
         </div>
-
-        <div className="rounded-2xl border bg-white p-6">
-          <div className="flex items-center gap-2 text-sm font-medium">
-            <Sparkles className="h-4 w-4 text-amber-500" /> Daily check-in
-          </div>
-          <p className="mt-2 text-sm leading-5 text-muted-foreground">
-            A small boost for showing up and building. Daily rewards are capped
-            so a paid plan remains the best value.
-          </p>
-          <Button
-            className="mt-5 w-full"
-            size="sm"
-            disabled={!daily?.claimable || busy !== null}
-            onClick={claimDaily}
-          >
-            {busy === "daily" ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : daily?.claimed ? (
-              <>
-                <Check className="h-4 w-4" /> Claimed today
-              </>
-            ) : (
-              `Claim ${daily?.rewardCredits ?? 10} credits`
-            )}
-          </Button>
+        <div className="mt-2 text-4xl font-semibold tabular-nums tracking-tight">
+          {summary ? balance.toLocaleString() : "—"}
+        </div>
+        <div className="mt-4 flex flex-wrap gap-x-6 gap-y-1 text-xs text-muted-foreground">
+          <span>
+            +{(summary?.month.earned ?? 0).toLocaleString()} earned this month
+          </span>
+          <span>−{(summary?.month.spent ?? 0).toLocaleString()} used</span>
+          {summary?.balance.reserved ? (
+            <span>
+              {summary.balance.reserved.toLocaleString()} in active runs
+            </span>
+          ) : null}
         </div>
       </section>
 
-      <section className="rounded-2xl border bg-white p-6">
+      <section className="rounded-2xl border bg-white p-6 shadow-card">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
             <div className="flex items-center gap-2 font-medium">
               {subscription?.planName ?? "Free"}
-              <Badge variant="secondary">
-                {subscription?.status ?? "free"}
-              </Badge>
+              <Badge variant="secondary">{subscription?.status ?? "free"}</Badge>
             </div>
             <p className="mt-1 text-sm text-muted-foreground">
               {subscription?.monthlyCredits
@@ -331,73 +253,16 @@ export function BillingPanel() {
         </div>
       </section>
 
-      {(summary?.campaigns ?? []).filter(
-        (campaign) => campaign.campaignKey !== "daily-check-in",
-      ).length ? (
-        <section>
-          <h2 className="font-medium">Ways to earn</h2>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Complete useful work across Agent Commons and CommonLab.
-          </p>
-          <div className="mt-4 grid gap-3 sm:grid-cols-2">
-            {summary?.campaigns
-              .filter((campaign) => campaign.campaignKey !== "daily-check-in")
-              .map((campaign) => (
-                <div
-                  key={campaign.campaignKey}
-                  className="rounded-xl border bg-white p-4"
-                >
-                  <div className="flex items-center justify-between gap-3">
-                    <span className="text-sm font-medium">{campaign.name}</span>
-                    <Badge variant="secondary">
-                      +{campaign.rewardCredits.toLocaleString()}
-                    </Badge>
-                  </div>
-                  {campaign.description ? (
-                    <p className="mt-2 text-sm text-muted-foreground">
-                      {campaign.description}
-                    </p>
-                  ) : null}
-                  {campaign.claimable ? (
-                    <Button
-                      className="mt-4 w-full"
-                      size="sm"
-                      variant="outline"
-                      disabled={busy !== null}
-                      onClick={() =>
-                        void claimCampaign(
-                          campaign.campaignKey,
-                          campaign.rewardCredits,
-                        )
-                      }
-                    >
-                      {busy === `campaign-${campaign.campaignKey}` ? (
-                        <Loader2 className="h-4 w-4 animate-spin" />
-                      ) : (
-                        "Claim reward"
-                      )}
-                    </Button>
-                  ) : null}
-                </div>
-              ))}
-          </div>
-        </section>
-      ) : null}
-
       <section>
-        <div className="flex items-end justify-between">
-          <div>
-            <h2 className="font-medium">Add credits</h2>
-            <p className="mt-1 text-sm text-muted-foreground">
-              One-time packs never create a subscription.
-            </p>
-          </div>
-        </div>
+        <h2 className="font-medium">Add credits</h2>
+        <p className="mt-1 text-sm text-muted-foreground">
+          One-time packs never create a subscription.
+        </p>
         <div className="mt-4 grid gap-3 sm:grid-cols-3">
           {(catalog?.topups ?? []).map((pack) => (
             <button
               key={pack.key}
-              className="rounded-xl border bg-white p-4 text-left transition-colors hover:border-slate-400 disabled:opacity-50"
+              className="rounded-xl border bg-white p-4 text-left shadow-card transition-colors hover:border-stone-400 disabled:opacity-50"
               disabled={busy !== null}
               onClick={() =>
                 void post(
@@ -423,36 +288,23 @@ export function BillingPanel() {
         </div>
       </section>
 
-      <section className="rounded-2xl border bg-white p-6">
+      <section className="rounded-2xl border bg-white p-6 shadow-card">
         <div className="flex items-center gap-2 font-medium">
           <Gift className="h-4 w-4" /> Gift credits
         </div>
         <p className="mt-1 text-sm text-muted-foreground">
-          Send from your available balance using the recipient&apos;s Agent
-          Commons ID.
+          Send credits from your balance to a friend&rsquo;s Agent Commons
+          account.
         </p>
-        {principalId ? (
-          <button
-            type="button"
-            className="mt-3 inline-flex items-center gap-2 rounded-lg bg-slate-50 px-3 py-2 text-xs text-muted-foreground hover:bg-slate-100"
-            onClick={() => void navigator.clipboard.writeText(principalId)}
-            title="Copy your Agent Commons ID"
-          >
-            Your ID:{" "}
-            <span className="max-w-[320px] truncate font-mono text-foreground">
-              {principalId}
-            </span>
-            <Copy className="h-3.5 w-3.5" />
-          </button>
-        ) : null}
         <form
           className="mt-5 grid gap-3 sm:grid-cols-[1fr_120px_auto]"
           onSubmit={sendGift}
         >
           <Input
-            value={recipient}
-            onChange={(event) => setRecipient(event.target.value)}
-            placeholder="Recipient ID"
+            value={recipientEmail}
+            onChange={(event) => setRecipientEmail(event.target.value)}
+            type="email"
+            placeholder="friend@example.com"
             required
           />
           <Input
@@ -463,7 +315,7 @@ export function BillingPanel() {
             step={1}
             required
           />
-          <Button disabled={busy !== null || !recipient.trim()}>
+          <Button disabled={busy !== null || !recipientEmail.trim()}>
             {busy === "gift" ? (
               <Loader2 className="h-4 w-4 animate-spin" />
             ) : (
@@ -482,7 +334,7 @@ export function BillingPanel() {
 
       <section>
         <h2 className="font-medium">Recent activity</h2>
-        <div className="mt-4 divide-y rounded-xl border bg-white">
+        <div className="mt-4 divide-y rounded-xl border bg-white shadow-card">
           {(summary?.recent ?? []).length ? (
             summary?.recent.map((entry) => (
               <div
@@ -516,7 +368,7 @@ export function BillingPanel() {
       {invoices.length ? (
         <section>
           <h2 className="font-medium">Invoices</h2>
-          <div className="mt-4 divide-y rounded-xl border bg-white">
+          <div className="mt-4 divide-y rounded-xl border bg-white shadow-card">
             {invoices.slice(0, 5).map((invoice) => (
               <div
                 key={invoice.id}

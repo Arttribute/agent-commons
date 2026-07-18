@@ -51,7 +51,7 @@ export function CreateButton({
             aria-label={label}
             onClick={onClick}
             className={cn(
-              "flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full border border-border bg-background text-foreground shadow-sm transition-colors hover:bg-muted",
+              "flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full border border-border bg-background text-foreground shadow-card transition-colors hover:bg-muted",
               className,
             )}
           >

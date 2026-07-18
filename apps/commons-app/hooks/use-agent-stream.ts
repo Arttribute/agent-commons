@@ -42,6 +42,8 @@ export function useAgentStream(initiator: string, options: UseAgentStreamOptions
       computerRequest?: {
         enabled: boolean;
       };
+      /** Per-turn thinking depth chosen in the composer; omit for auto. */
+      reasoningEffort?: "low" | "medium" | "high" | "xhigh";
     }) => {
       setStreaming(true);
       setError(null);

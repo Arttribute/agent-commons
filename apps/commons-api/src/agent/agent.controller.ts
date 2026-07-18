@@ -55,6 +55,8 @@ interface RunBody {
     /** @deprecated Ignored; assigned computers are always persistent. */
     lifecycle?: 'persistent' | 'ephemeral';
   };
+  /** User-selected thinking depth for this turn (none|minimal|low|medium|high|xhigh). */
+  reasoningEffort?: string;
 }
 
 @Controller({ version: '1', path: 'agents' })

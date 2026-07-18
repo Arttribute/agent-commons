@@ -24,7 +24,6 @@ import SessionsList from "@/components/sessions/sessions-list";
 import { useSidebar } from "@/context/SidebarContext";
 import { useUserSessions } from "@/hooks/sessions/use-user-sessions";
 import { useSessionMutations } from "@/hooks/sessions/use-session-mutations";
-import { SidebarCreditBalance } from "@/components/billing/sidebar-credit-balance";
 
 export function DashboardSideBar({ username }: { username: string }) {
   const { isOpen, setIsOpen } = useSidebar();
@@ -230,7 +229,6 @@ export function DashboardSideBar({ username }: { username: string }) {
           sidebarOpen ? "p-2" : "flex justify-center px-1.5 py-2",
         )}
       >
-        <SidebarCreditBalance collapsed={!sidebarOpen} />
         <SidebarAccount collapsed={!sidebarOpen} />
       </div>
     </div>

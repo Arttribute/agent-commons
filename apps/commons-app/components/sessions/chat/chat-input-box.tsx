@@ -2,22 +2,38 @@
 
 import { useEffect, useRef, useState } from "react";
 import type { StreamEvent } from "@agent-commons/sdk";
+import Link from "next/link";
 import {
   ArrowUp,
+  Check,
   FileText,
+  Gauge,
   ImageIcon,
   Loader2,
   Mic,
   Monitor,
   Plus,
+  Sparkles,
   Table2,
   X,
 } from "lucide-react";
 import { useAgentContext } from "@/context/AgentContext";
 import { useAgentStream } from "@/hooks/use-agent-stream";
 import { useVoiceRecorder } from "@/hooks/use-voice-recorder";
+import { useSessionRunStore } from "@/stores/session-run-store";
 import { VoiceRecorderPanel } from "./voice-recorder";
 import { cn } from "@/lib/utils";
+
+/** User-selectable model thinking depth for this conversation. */
+const THINKING_LEVELS = [
+  { key: "auto", label: "Auto", detail: "Let the agent decide" },
+  { key: "low", label: "Quick", detail: "Fastest responses" },
+  { key: "medium", label: "Balanced", detail: "Everyday tasks" },
+  { key: "high", label: "Thorough", detail: "Harder problems" },
+  { key: "xhigh", label: "Max", detail: "Deepest reasoning" },
+] as const;
+
+type ThinkingLevel = (typeof THINKING_LEVELS)[number]["key"];
 
 type UploadedAttachment = {
   localId: string;
@@ -79,10 +95,15 @@ export default function ChatInputBox({
   const previewUrlsRef = useRef<Set<string>>(new Set());
   const [attachments, setAttachments] = useState<UploadedAttachment[]>([]);
   const [isDragging, setIsDragging] = useState(false);
-  const [menuOpen, setMenuOpen] = useState(false);
+  const [thinkingMenuOpen, setThinkingMenuOpen] = useState(false);
+  const [thinkingLevel, setThinkingLevel] = useState<ThinkingLevel>("auto");
+  const [outOfCredits, setOutOfCredits] = useState(false);
   const [computerConfig, setComputerConfig] =
     useState<ComputerConfigState | null>(null);
   const [computerEnabled, setComputerEnabled] = useState(false);
+  const markRunning = useSessionRunStore((state) => state.markRunning);
+  const markCompleted = useSessionRunStore((state) => state.markCompleted);
+  const activeRunSessionRef = useRef<string>("");
   const {
     addMessage,
     updateStreamingMessage,
@@ -111,6 +132,7 @@ export default function ChatInputBox({
       const content =
         payload?.content ?? payload?.data?.content ?? accumulatedRef.current;
       finalizeStreamingMessage(content, payload?.metadata);
+      markCompleted(payload?.sessionId ?? activeRunSessionRef.current);
       if (payload?.sessionId && payload.sessionId !== sessionId) {
         onSessionCreated?.(payload.sessionId, payload.title ?? "");
       }
@@ -273,6 +295,10 @@ export default function ChatInputBox({
       });
     },
     onError: (message) => {
+      markCompleted(activeRunSessionRef.current);
+      if (/insufficient credits|payment required/i.test(message)) {
+        setOutOfCredits(true);
+      }
       upsertStreamingActivity({
         id: `error:${++activitySequenceRef.current}`,
         kind: "status",
@@ -389,6 +415,7 @@ export default function ChatInputBox({
       textPreview: attachment.textPreview,
     }));
     setInputText("");
+    setOutOfCredits(false);
     previewUrlsRef.current.forEach((previewUrl) =>
       URL.revokeObjectURL(previewUrl),
     );
@@ -397,6 +424,8 @@ export default function ChatInputBox({
     accumulatedRef.current = "";
     runningToolActivitiesRef.current.clear();
     activityArgsRef.current.clear();
+    activeRunSessionRef.current = sessionId;
+    markRunning(sessionId);
 
     addMessage({
       role: "human",
@@ -422,6 +451,7 @@ export default function ChatInputBox({
         fileId: attachment.fileId,
       })),
       computerRequest,
+      reasoningEffort: thinkingLevel === "auto" ? undefined : thinkingLevel,
     });
   };
 
@@ -438,7 +468,6 @@ export default function ChatInputBox({
 
   const openFilePicker = () => {
     if (isLoading) return;
-    setMenuOpen(false);
     fileInputRef.current?.click();
   };
 
@@ -553,7 +582,7 @@ export default function ChatInputBox({
   return (
     <div
       className={cn(
-        "relative rounded-2xl bg-white border border-stone-300 shadow-sm transition-colors",
+        "relative rounded-2xl bg-white border border-stone-200 shadow-composer transition-colors",
         isDragging && "border-indigo-400 bg-indigo-50/40 dark:bg-indigo-950/20",
       )}
       onDragOver={(event) => {
@@ -584,31 +613,27 @@ export default function ChatInputBox({
           event.target.value = "";
         }}
       />
-      {(computerEnabled || attachments.length > 0) && (
+      {outOfCredits && (
+        <div className="flex items-center justify-between gap-3 rounded-t-2xl border-b border-border bg-stone-50/80 px-4 py-2.5">
+          <div className="flex min-w-0 items-center gap-2 text-sm">
+            <Sparkles className="h-4 w-4 shrink-0 text-indigo-500" />
+            <span className="truncate text-foreground">
+              You&rsquo;re out of credits.
+            </span>
+            <span className="hidden truncate text-muted-foreground sm:inline">
+              Top up or upgrade to keep your agents running.
+            </span>
+          </div>
+          <Link
+            href="/settings/billing"
+            className="shrink-0 rounded-lg bg-foreground px-3 py-1.5 text-xs font-medium text-background transition-opacity hover:opacity-85"
+          >
+            Get credits
+          </Link>
+        </div>
+      )}
+      {attachments.length > 0 && (
         <div className="flex flex-wrap gap-2 px-3 pt-3">
-          {computerEnabled && (
-            <div className="flex max-w-full items-center gap-2 rounded-lg border border-border bg-muted/50 px-2 py-1.5 text-xs">
-              <span className="flex h-7 w-7 items-center justify-center rounded-md bg-background text-muted-foreground">
-                <Monitor className="h-4 w-4" />
-              </span>
-              <span className="min-w-0">
-                <span className="block max-w-44 truncate text-foreground">
-                  Agent&apos;s persistent computer
-                </span>
-                <span className="block text-muted-foreground">
-                  Same workspace in every chat
-                </span>
-              </span>
-              <button
-                type="button"
-                onClick={() => setComputerEnabled(false)}
-                className="rounded-md p-1 text-muted-foreground hover:bg-background hover:text-foreground"
-                title="Remove"
-              >
-                <X className="h-3.5 w-3.5" />
-              </button>
-            </div>
-          )}
           {attachments.map((attachment) => (
             <AttachmentChip
               key={attachment.localId}
@@ -648,54 +673,104 @@ export default function ChatInputBox({
             {footerLeft ? (
               <div className="min-w-0">{footerLeft}</div>
             ) : (
-              <div className="relative">
+              <div className="flex items-center gap-1">
                 <button
                   type="button"
-                  onClick={() => setMenuOpen((open) => !open)}
+                  onClick={openFilePicker}
                   disabled={!!isLoading}
                   title="Add photos & files"
+                  aria-label="Add photos & files"
                   className="rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-40"
                 >
                   <Plus className="h-4 w-4" />
                 </button>
-                {menuOpen && (
-                  <div className="absolute bottom-9 left-0 z-10 w-48 rounded-lg border border-border bg-popover p-1 shadow-lg">
-                    <button
-                      type="button"
-                      onMouseDown={(event) => event.preventDefault()}
-                      onClick={openFilePicker}
-                      className="flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-sm text-popover-foreground hover:bg-muted"
-                    >
-                      <Plus className="h-4 w-4" />
-                      <span>Add photos & files</span>
-                    </button>
-                    <button
-                      type="button"
-                      onMouseDown={(event) => event.preventDefault()}
-                      onClick={() => {
-                        if (!canUseComputer) return;
-                        setComputerEnabled((enabled) => !enabled);
-                        setMenuOpen(false);
-                      }}
-                      disabled={!canUseComputer}
-                      className={cn(
-                        "flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-sm text-popover-foreground hover:bg-muted",
-                        !canUseComputer &&
-                          "cursor-not-allowed opacity-50 hover:bg-transparent",
-                      )}
-                    >
-                      <Monitor className="h-4 w-4" />
-                      <span>
-                        {canUseComputer
-                          ? "Use agent’s computer"
-                          : "Agent computer unavailable"}
-                      </span>
-                    </button>
-                  </div>
+                {canUseComputer && (
+                  <button
+                    type="button"
+                    onClick={() => setComputerEnabled((enabled) => !enabled)}
+                    disabled={!!isLoading}
+                    title={
+                      computerEnabled
+                        ? "Agent computer on — same workspace in every chat"
+                        : "Use agent’s computer"
+                    }
+                    aria-label="Toggle agent computer"
+                    aria-pressed={computerEnabled}
+                    className={cn(
+                      "relative rounded-lg p-1.5 transition-colors disabled:opacity-40",
+                      computerEnabled
+                        ? "bg-indigo-50 text-indigo-600 hover:bg-indigo-100"
+                        : "text-muted-foreground hover:bg-muted hover:text-foreground",
+                    )}
+                  >
+                    <Monitor className="h-4 w-4" />
+                    {computerEnabled && (
+                      <span className="absolute right-1 top-1 h-1.5 w-1.5 rounded-full bg-indigo-500" />
+                    )}
+                  </button>
                 )}
               </div>
             )}
             <div className="flex items-center gap-1">
+              {!isLaunchMode && (
+              <div className="relative">
+                <button
+                  type="button"
+                  onClick={() => setThinkingMenuOpen((open) => !open)}
+                  disabled={!!isLoading}
+                  title="Thinking level"
+                  aria-label="Thinking level"
+                  className={cn(
+                    "flex items-center gap-1.5 rounded-lg p-1.5 transition-colors disabled:opacity-40",
+                    thinkingLevel === "auto"
+                      ? "text-muted-foreground hover:bg-muted hover:text-foreground"
+                      : "bg-muted/70 text-foreground hover:bg-muted",
+                  )}
+                >
+                  <Gauge className="h-4 w-4" />
+                  {thinkingLevel !== "auto" && (
+                    <span className="text-xs">
+                      {
+                        THINKING_LEVELS.find(
+                          (level) => level.key === thinkingLevel,
+                        )?.label
+                      }
+                    </span>
+                  )}
+                </button>
+                {thinkingMenuOpen && (
+                  <div className="absolute bottom-9 right-0 z-10 w-52 rounded-xl border border-border bg-popover p-1 shadow-floating">
+                    <p className="px-2 pb-1 pt-1.5 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                      Thinking
+                    </p>
+                    {THINKING_LEVELS.map((level) => (
+                      <button
+                        key={level.key}
+                        type="button"
+                        onMouseDown={(event) => event.preventDefault()}
+                        onClick={() => {
+                          setThinkingLevel(level.key);
+                          setThinkingMenuOpen(false);
+                        }}
+                        className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm text-popover-foreground hover:bg-muted"
+                      >
+                        <span className="min-w-0 flex-1">
+                          <span className="block leading-tight">
+                            {level.label}
+                          </span>
+                          <span className="block text-xs text-muted-foreground">
+                            {level.detail}
+                          </span>
+                        </span>
+                        {thinkingLevel === level.key && (
+                          <Check className="h-3.5 w-3.5 shrink-0" />
+                        )}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+              )}
               <button
                 type="button"
                 onClick={() => {

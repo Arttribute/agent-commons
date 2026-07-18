@@ -86,6 +86,28 @@ export async function backendServiceAuthHeaders(
   return {};
 }
 
+/**
+ * Resolve an Agent Commons account id from an email via the identity service.
+ * Returns null when identity is unreachable, unconfigured, or has no match.
+ */
+export async function resolvePrincipalByEmail(
+  email: string,
+): Promise<string | null> {
+  const issuer = envValue("COMMONS_IDENTITY_ISSUER");
+  const token = await commonsIdentityServiceToken();
+  if (!issuer || !token) return null;
+  const base = issuer.replace(/\/api\/auth\/?$/, "");
+  const response = await fetch(
+    `${base}/api/identity/users/resolve?email=${encodeURIComponent(email)}`,
+    { headers: { Authorization: `Bearer ${token}` }, cache: "no-store" },
+  ).catch(() => null);
+  if (!response?.ok) return null;
+  const payload = (await response.json().catch(() => null)) as {
+    data?: { userId?: string };
+  } | null;
+  return payload?.data?.userId ?? null;
+}
+
 async function commonsIdentityServiceToken() {
   const issuer = envValue("COMMONS_IDENTITY_ISSUER");
   const clientId = envValue("AGENT_COMMONS_SERVICE_CLIENT_ID");

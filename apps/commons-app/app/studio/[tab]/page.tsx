@@ -9,6 +9,8 @@ import {
   AGENT_PAGE_SIZES,
 } from "@/components/agents/agents-pagination";
 import { StudioAgentLauncher } from "@/components/studio/agent-launcher";
+import { LauncherGreeting } from "@/components/studio/launcher-greeting";
+import { CreditsMenu } from "@/components/billing/credits-menu";
 import { ToolsManagementView } from "@/components/tools/management/tools-management-view";
 import { WorkflowsListView } from "@/components/workflows/workflows-list-view";
 import { CreateWorkflowDialog } from "@/components/workflows/create-workflow-dialog";
@@ -136,15 +138,10 @@ const StudioPage: NextPage = () => {
                   <div className="pointer-events-none absolute inset-0 z-20 flex items-center justify-center px-4">
                     <div
                       ref={composerRef}
-                      className="pointer-events-auto w-full max-w-3xl"
+                      className="pointer-events-auto w-full max-w-[46rem]"
                     >
-                      <div className="mb-3 text-center">
-                        <h2 className="text-lg font-semibold tracking-tight">
-                          Start a session
-                        </h2>
-                        <p className="mt-1 text-sm text-muted-foreground">
-                          Message an agent to spin up a new session instantly.
-                        </p>
+                      <div className="mb-5 text-center">
+                        <LauncherGreeting />
                       </div>
                       <StudioAgentLauncher
                         agents={agents.map((a) => ({
@@ -252,8 +249,9 @@ const StudioPage: NextPage = () => {
   };
 
   return (
-    <div className="relative flex h-full min-w-0 flex-col bg-stone-50">
+    <div className="relative flex h-full min-w-0 flex-col bg-page">
       <PageHeader title={pageCopy.title} description={pageCopy.description}>
+        <CreditsMenu />
         <CreateButton label={createLabel} onClick={handleCreateClick} />
       </PageHeader>
 

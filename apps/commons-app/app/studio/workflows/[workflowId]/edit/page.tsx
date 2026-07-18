@@ -133,7 +133,7 @@ export default function WorkflowEditorPage() {
   return (
     // Full-bleed canvas; all editor chrome floats above it so the canvas
     // gets the entire viewport.
-    <div className="relative h-full min-w-0 overflow-hidden bg-stone-50">
+    <div className="relative h-full min-w-0 overflow-hidden bg-page">
       <WorkflowCanvasProvider />
 
       <EditorToolbar
