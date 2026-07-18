@@ -2,63 +2,32 @@ import Image from "next/image";
 import Link from "next/link";
 import {
   ArrowRight,
-  Bot,
   Boxes,
   BrainCircuit,
   Check,
   Cloud,
-  Code2,
-  Feather,
   FolderKanban,
   Github,
   Globe2,
   LockKeyhole,
   Monitor,
   Network,
-  PawPrint,
-  Plus,
   RadioTower,
   ShieldCheck,
   Sparkles,
-  Users,
   Workflow,
   Wrench,
   Zap,
 } from "lucide-react";
-import { BrandLogo } from "@/components/landing/brand-logo";
 import { ComputerVisual } from "@/components/landing/computer-visual";
+import { DeveloperVisual } from "@/components/landing/developer-visual";
 import { HeroComposer } from "@/components/landing/hero-composer";
 import { LandingNav } from "@/components/landing/landing-nav";
+import { TeamVisual } from "@/components/landing/team-visual";
 import { WorkflowVisual } from "@/components/landing/workflow-visual";
-import {
-  ProductMapVisual,
-  SdkVisual,
-  TeamVisual,
-  TerminalVisual,
-} from "@/components/landing/visuals";
 
 const GITHUB_URL = "https://github.com/Arttribute/agent-commons";
 const START_URL = "/login?callbackUrl=/studio/agents";
-
-const MODELS: Array<[string, string]> = [
-  ["claude-icon", "Claude"],
-  ["openai-icon", "OpenAI"],
-  ["google-gemini", "Gemini"],
-  ["mistral-ai-icon", "Mistral"],
-  ["meta-icon", "Llama"],
-  ["hugging-face-icon", "Open source"],
-];
-
-const INTEGRATIONS: Array<[string, string]> = [
-  ["google-gmail", "Gmail"],
-  ["google-drive", "Drive"],
-  ["google-calendar", "Calendar"],
-  ["slack-icon", "Slack"],
-  ["telegram", "Telegram"],
-  ["linear-icon", "Linear"],
-  ["notion-icon", "Notion"],
-  ["github-icon", "GitHub"],
-];
 
 function Eyebrow({ children }: { children: React.ReactNode }) {
   return (
@@ -129,13 +98,9 @@ export default function Home() {
           <div className="pointer-events-none absolute left-[8%] top-32 h-32 w-32 rounded-full bg-brand-cyan/20 blur-3xl" />
           <div className="pointer-events-none absolute right-[7%] top-24 h-40 w-40 rounded-full bg-brand-lilac/20 blur-3xl" />
           <div className="relative mx-auto max-w-7xl px-5 pb-20 pt-20 text-center sm:pb-28 sm:pt-28 lg:px-8 lg:pt-32">
-            <div className="mx-auto inline-flex items-center gap-2 rounded-full border border-stone-200 bg-white/85 px-3 py-1.5 text-xs font-medium text-stone-600 shadow-card backdrop-blur">
-              <span className="h-2 w-2 rounded-full bg-emerald-500" />
-              The platform for multi-agent work
-            </div>
-            <h1 className="mx-auto mt-7 max-w-4xl text-[3rem] font-semibold leading-[0.98] tracking-[-0.055em] text-stone-950 sm:text-[4rem] lg:text-[4.75rem]">
+            <h1 className="mx-auto max-w-6xl text-[2.8rem] font-semibold leading-[1] tracking-[-0.05em] text-stone-950 sm:text-[3.65rem] lg:whitespace-nowrap lg:text-[4.25rem]">
               All your{" "}
-              <span className="bg-[linear-gradient(transparent_64%,rgba(182,246,211,0.78)_64%)]">
+              <span className="inline-block rounded-md bg-teal-200 px-[0.1em] leading-[1.02]">
                 agents
               </span>{" "}
               in one place.
@@ -174,11 +139,10 @@ export default function Home() {
             <SectionIntro
               eyebrow="One connected platform"
               title="Everything an agent needs to do real work."
-              body="Everything stays together from the first idea to the work your agents do every day. Build a team, connect its tools, and see how the work is going from one clear place."
+              body="Create agents, give them computers and tools, then coordinate them as teams and workflows."
               align="center"
             />
-            <ProductMapVisual />
-            <div className="grid overflow-hidden rounded-[1.5rem] border border-stone-200 bg-stone-200 sm:grid-cols-3 sm:gap-px">
+            <div className="mt-14 grid overflow-hidden rounded-[1.5rem] border border-stone-200 bg-stone-200 sm:grid-cols-2 sm:gap-px lg:grid-cols-4">
               {[
                 {
                   icon: Cloud,
@@ -200,6 +164,13 @@ export default function Home() {
                   title: "Workflows and automation",
                   body: "Turn repeatable work into clear visual flows that run on demand, on schedule, or when an event happens.",
                   href: "#workflows",
+                },
+                {
+                  icon: Wrench,
+                  color: "bg-brand-lilac/35",
+                  title: "Connected tools",
+                  body: "Connect the apps your agents need, or add your own tools for specialized work.",
+                  href: "/studio/tools",
                 },
               ].map((item) => (
                 <a
@@ -267,7 +238,7 @@ export default function Home() {
                 title={
                   <>
                     One agent is useful. A{" "}
-                    <span className="bg-[linear-gradient(transparent_64%,rgba(200,238,255,0.92)_64%)]">
+                    <span className="inline-block rounded-md bg-teal-200 px-[0.1em] leading-[1.08]">
                       team is powerful.
                     </span>
                   </>
@@ -276,10 +247,9 @@ export default function Home() {
               />
               <CheckList
                 items={[
-                  "Build focused teams for research, coding, support, and operations",
-                  "Delegate tasks while keeping status and ownership clear",
-                  "Share tools, skills, files, and working context",
-                  "Run one agent, a fixed team, or a dynamic swarm",
+                  "Give every agent a focused role",
+                  "Share context, tools, skills, and files",
+                  "Keep ownership and progress visible",
                 ]}
               />
             </div>
@@ -336,71 +306,17 @@ export default function Home() {
         </section>
 
         <section
-          id="integrations"
-          className="scroll-mt-16 border-b border-stone-200"
+          id="developers"
+          className="scroll-mt-16 border-b border-stone-200 bg-[#fafaf9]"
         >
-          <div className="mx-auto grid max-w-7xl items-center gap-14 px-5 py-24 lg:grid-cols-[0.8fr_1.2fr] lg:px-8 lg:py-32">
-            <div>
-              <SectionIntro
-                eyebrow="Tools and integrations"
-                title="Your agents can work where you already do."
-                body="Connect the apps your team uses every day. Your agents get the tools they need while you keep a clear view of what is connected."
-              />
-              <CheckList
-                items={[
-                  "Connect popular apps in a few clicks",
-                  "Control which tools each agent and team can use",
-                  "Bring your own tools when you need something custom",
-                ]}
-              />
-            </div>
-            <IntegrationBridge />
-          </div>
-        </section>
-
-        <section id="models" className="border-b border-stone-200 bg-[#fafaf9]">
           <div className="mx-auto max-w-7xl px-5 py-24 lg:px-8 lg:py-32">
             <SectionIntro
-              eyebrow="Models and runtimes"
-              title="Choose the right brain for every job."
-              body="Choose from leading AI providers and open source models. Create native Agent Commons agents, OpenClaw agents, and Hermes agents from the same simple workspace."
-              align="center"
+              eyebrow="CLI and SDK"
+              title="Build from the terminal or your codebase."
+              body="Create agents, choose their models and runtimes, run workflows, and manage cloud computers with the CLI or typed TypeScript SDK."
             />
-            <ModelOrbit />
-          </div>
-        </section>
-
-        <section
-          id="developers"
-          className="scroll-mt-16 border-b border-stone-200"
-        >
-          <div className="mx-auto max-w-7xl px-5 py-24 lg:px-8 lg:py-32">
-            <div className="grid items-end gap-8 lg:grid-cols-2">
-              <SectionIntro
-                eyebrow="CLI, SDK, and API"
-                title="A visual studio for everyone. A full platform for builders."
-                body="Use the web app when you want a clear visual workspace. Move to the CLI, TypeScript SDK, or API when you want scripts, CI, and complete programmatic control."
-              />
-              <div className="grid gap-3 sm:grid-cols-2 lg:justify-self-end">
-                {[
-                  "Typed SDK",
-                  "CLI workflows",
-                  "API access",
-                  "Local to cloud",
-                ].map((item) => (
-                  <span
-                    key={item}
-                    className="flex items-center gap-2 text-sm font-medium text-stone-600"
-                  >
-                    <Check className="h-4 w-4 text-emerald-600" />
-                    {item}
-                  </span>
-                ))}
-              </div>
-            </div>
-            <div className="mt-14 grid gap-5 lg:grid-cols-2">
-              <TerminalVisual />
-              <SdkVisual />
+            <div className="mx-auto mt-14 max-w-5xl">
+              <DeveloperVisual />
             </div>
           </div>
         </section>
@@ -620,115 +536,6 @@ export default function Home() {
           </div>
         </div>
       </footer>
-    </div>
-  );
-}
-
-function IntegrationBridge() {
-  return (
-    <div className="relative overflow-hidden rounded-[1.5rem] border border-stone-200 bg-[#fafaf9] p-5 sm:p-8">
-      <div className="absolute inset-0 opacity-50 [background-image:radial-gradient(#d6d3d1_1px,transparent_1px)] [background-size:20px_20px]" />
-      <div className="relative grid min-h-[410px] grid-cols-[1fr_auto_1fr] items-center gap-3 sm:gap-7">
-        <div className="space-y-4">
-          {INTEGRATIONS.slice(0, 4).map(([name, label], index) => (
-            <div
-              key={name}
-              className={`flex items-center gap-2.5 rounded-xl border border-stone-200 bg-white p-2.5 shadow-card ${
-                index % 2 ? "translate-x-2" : ""
-              }`}
-            >
-              <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-stone-50">
-                <BrandLogo name={name} size={17} />
-              </span>
-              <span className="hidden text-[11px] font-medium text-stone-600 sm:block">
-                {label}
-              </span>
-              <span className="ml-auto hidden h-2 w-2 rounded-full bg-emerald-500 sm:block" />
-            </div>
-          ))}
-        </div>
-        <div className="relative flex h-32 w-24 flex-col items-center justify-center rounded-[1.5rem] border border-stone-300 bg-stone-950 text-center text-white shadow-xl sm:h-40 sm:w-36">
-          <Wrench className="h-5 w-5" />
-          <p className="mt-3 text-xs font-semibold">Tool layer</p>
-          <p className="mt-1 hidden text-[9px] text-stone-400 sm:block">
-            One safe bridge
-          </p>
-          <span className="absolute -left-4 top-1/2 h-px w-4 bg-stone-400 sm:-left-7 sm:w-7" />
-          <span className="absolute -right-4 top-1/2 h-px w-4 bg-stone-400 sm:-right-7 sm:w-7" />
-        </div>
-        <div className="space-y-4">
-          {INTEGRATIONS.slice(4).map(([name, label], index) => (
-            <div
-              key={name}
-              className={`flex items-center gap-2.5 rounded-xl border border-stone-200 bg-white p-2.5 shadow-card ${
-                index % 2 ? "-translate-x-2" : ""
-              }`}
-            >
-              <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-stone-50">
-                <BrandLogo name={name} size={17} />
-              </span>
-              <span className="hidden text-[11px] font-medium text-stone-600 sm:block">
-                {label}
-              </span>
-              <span className="ml-auto hidden h-2 w-2 rounded-full bg-emerald-500 sm:block" />
-            </div>
-          ))}
-        </div>
-      </div>
-      <div className="relative mt-2 flex items-center justify-center">
-        <span className="inline-flex items-center gap-2 rounded-full border border-dashed border-stone-300 bg-white px-4 py-2 text-[11px] font-medium text-stone-500">
-          <Plus className="h-3.5 w-3.5" />
-          Bring your own tool
-        </span>
-      </div>
-    </div>
-  );
-}
-
-function ModelOrbit() {
-  const positions = [
-    "left-[7%] top-[8%]",
-    "left-[2%] top-[43%]",
-    "left-[12%] bottom-[5%]",
-    "right-[7%] top-[8%]",
-    "right-[2%] top-[43%]",
-    "right-[12%] bottom-[5%]",
-  ];
-  return (
-    <div className="relative mx-auto mt-16 min-h-[440px] max-w-4xl overflow-hidden rounded-[2rem] border border-stone-200 bg-white px-4 py-12 sm:min-h-[500px]">
-      <div className="absolute inset-0 opacity-40 [background-image:radial-gradient(#d6d3d1_1px,transparent_1px)] [background-size:22px_22px]" />
-      <div className="absolute left-1/2 top-1/2 h-[250px] w-[250px] -translate-x-1/2 -translate-y-1/2 rounded-full border border-stone-200 sm:h-[330px] sm:w-[330px]" />
-      <div className="absolute left-1/2 top-1/2 h-[150px] w-[150px] -translate-x-1/2 -translate-y-1/2 rounded-full border border-dashed border-stone-300 sm:h-[200px] sm:w-[200px]" />
-      <div className="absolute left-1/2 top-1/2 z-10 flex h-28 w-28 -translate-x-1/2 -translate-y-1/2 flex-col items-center justify-center rounded-[2rem] bg-stone-950 text-white shadow-xl sm:h-36 sm:w-36">
-        <Bot className="h-6 w-6" />
-        <p className="mt-3 text-xs font-semibold">Your agent</p>
-        <p className="mt-1 text-[9px] text-stone-400">Pick the best fit</p>
-      </div>
-      {MODELS.map(([name, label], index) => (
-        <div
-          key={name}
-          className={`absolute z-10 flex items-center gap-2 rounded-xl border border-stone-200 bg-white px-3 py-2.5 shadow-lg ${positions[index]}`}
-        >
-          <BrandLogo name={name} size={18} />
-          <span className="hidden text-[11px] font-medium text-stone-600 sm:inline">
-            {label}
-          </span>
-        </div>
-      ))}
-      <div className="absolute bottom-5 left-1/2 z-20 flex -translate-x-1/2 items-center gap-2 rounded-2xl border border-stone-200 bg-[#fafaf9] p-2 shadow-card">
-        <span className="flex h-9 items-center gap-2 rounded-xl bg-white px-3 text-[10px] font-medium ring-1 ring-stone-200">
-          <Image src="/ac-icon.svg" alt="" width={14} height={14} />
-          Native
-        </span>
-        <span className="flex h-9 items-center gap-2 rounded-xl bg-white px-3 text-[10px] font-medium ring-1 ring-stone-200">
-          <PawPrint className="h-3.5 w-3.5" />
-          OpenClaw
-        </span>
-        <span className="hidden h-9 items-center gap-2 rounded-xl bg-white px-3 text-[10px] font-medium ring-1 ring-stone-200 sm:flex">
-          <Feather className="h-3.5 w-3.5" />
-          Hermes
-        </span>
-      </div>
     </div>
   );
 }
