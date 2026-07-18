@@ -32,7 +32,10 @@ export function useDailyBonus(principalId: string | undefined) {
         const response = await fetch("/api/credits/daily", { method: "POST" });
         const payload = await response.json().catch(() => ({}));
         if (!response.ok) {
-          window.localStorage.removeItem(key);
+          // 4xx (campaign off, not claimable) is final for today; only
+          // transient server errors earn a retry on the next visit.
+          if (response.status >= 500) window.localStorage.removeItem(key);
+          else window.localStorage.setItem(key, "done");
           return;
         }
         window.localStorage.setItem(key, "done");
