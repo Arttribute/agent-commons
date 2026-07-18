@@ -29,12 +29,12 @@ import { BrandLogo } from "@/components/landing/brand-logo";
 import { ComputerVisual } from "@/components/landing/computer-visual";
 import { HeroComposer } from "@/components/landing/hero-composer";
 import { LandingNav } from "@/components/landing/landing-nav";
+import { WorkflowVisual } from "@/components/landing/workflow-visual";
 import {
   ProductMapVisual,
   SdkVisual,
   TeamVisual,
   TerminalVisual,
-  WorkflowVisual,
 } from "@/components/landing/visuals";
 
 const GITHUB_URL = "https://github.com/Arttribute/agent-commons";
@@ -75,7 +75,7 @@ function SectionIntro({
   align = "left",
 }: {
   eyebrow: string;
-  title: string;
+  title: React.ReactNode;
   body: string;
   align?: "left" | "center";
 }) {
@@ -86,7 +86,7 @@ function SectionIntro({
       }
     >
       <Eyebrow>{eyebrow}</Eyebrow>
-      <h2 className="mt-4 text-4xl font-semibold leading-[1.04] tracking-[-0.045em] text-stone-950 sm:text-5xl lg:text-[3.5rem]">
+      <h2 className="mt-4 text-[2.25rem] font-semibold leading-[1.06] tracking-[-0.04em] text-stone-950 sm:text-[2.7rem] lg:text-5xl">
         {title}
       </h2>
       <p
@@ -133,8 +133,12 @@ export default function Home() {
               <span className="h-2 w-2 rounded-full bg-emerald-500" />
               The platform for multi-agent work
             </div>
-            <h1 className="mx-auto mt-7 max-w-5xl text-[3.35rem] font-semibold leading-[0.98] tracking-[-0.06em] text-stone-950 sm:text-7xl lg:text-[5.6rem]">
-              Build agents. Run teams. Get work done.
+            <h1 className="mx-auto mt-7 max-w-4xl text-[3rem] font-semibold leading-[0.98] tracking-[-0.055em] text-stone-950 sm:text-[4rem] lg:text-[4.75rem]">
+              All your{" "}
+              <span className="bg-[linear-gradient(transparent_64%,rgba(182,246,211,0.78)_64%)]">
+                agents
+              </span>{" "}
+              in one place.
             </h1>
             <p className="mx-auto mt-7 max-w-2xl text-lg leading-8 text-stone-600 sm:text-xl">
               Create, deploy, and manage AI agents from one clear workspace.
@@ -260,7 +264,14 @@ export default function Home() {
             <div className="lg:pl-8">
               <SectionIntro
                 eyebrow="Teams, swarms, and fleets"
-                title="Turn one agent into a capable team."
+                title={
+                  <>
+                    One agent is useful. A{" "}
+                    <span className="bg-[linear-gradient(transparent_64%,rgba(200,238,255,0.92)_64%)]">
+                      team is powerful.
+                    </span>
+                  </>
+                }
                 body="Give each agent a clear role, then let the team share context and divide the work. You can lead the plan yourself or let a lead agent coordinate the run."
               />
               <CheckList
@@ -509,7 +520,7 @@ export default function Home() {
             <div className="absolute bottom-0 right-[10%] h-40 w-40 rounded-full bg-brand-lilac/10 blur-3xl" />
             <div className="relative">
               <Eyebrow>Ready when you are</Eyebrow>
-              <h2 className="mx-auto mt-5 max-w-4xl text-4xl font-semibold leading-[1.02] tracking-[-0.05em] sm:text-6xl lg:text-7xl">
+              <h2 className="mx-auto mt-5 max-w-4xl text-[2.5rem] font-semibold leading-[1.04] tracking-[-0.045em] sm:text-5xl lg:text-[3.5rem]">
                 Build your first agent. Grow into a fleet.
               </h2>
               <p className="mx-auto mt-6 max-w-xl text-lg leading-8 text-stone-400">

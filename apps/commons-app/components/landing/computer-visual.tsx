@@ -3,214 +3,237 @@
 import Image from "next/image";
 import { useEffect, useState } from "react";
 import {
+  ArrowLeft,
+  ArrowRight,
   Check,
+  ChevronRight,
   FileCode2,
-  FileText,
-  Folder,
-  Globe2,
-  MoreHorizontal,
+  FolderClosed,
+  Globe,
+  Moon,
+  RefreshCw,
+  Settings2,
   SquareTerminal,
 } from "lucide-react";
+import {
+  TrafficLights,
+  WindowFrame,
+} from "@/components/computers/desktop-window";
+import { MacFileIcon, MacFolderIcon } from "@/components/computers/mac-icons";
 
-function TrafficLights() {
-  return (
-    <span className="flex items-center gap-1.5">
-      <span className="h-2.5 w-2.5 rounded-full bg-stone-300" />
-      <span className="h-2.5 w-2.5 rounded-full bg-stone-300" />
-      <span className="h-2.5 w-2.5 rounded-full bg-stone-300" />
-    </span>
-  );
-}
+const APPS = [
+  { id: "browser", label: "Browser", icon: Globe },
+  { id: "code", label: "Code", icon: FileCode2 },
+  { id: "files", label: "Files", icon: FolderClosed },
+  { id: "terminal", label: "Terminal", icon: SquareTerminal },
+] as const;
 
-const COMPUTER_TABS = ["files", "terminal", "browser"] as const;
-type ComputerTab = (typeof COMPUTER_TABS)[number];
+const ROTATION = ["files", "terminal", "browser", "code"] as const;
+type ComputerApp = (typeof APPS)[number]["id"];
 
 export function ComputerVisual() {
-  const [tab, setTab] = useState<ComputerTab>("files");
+  const [app, setApp] = useState<ComputerApp>("files");
 
   useEffect(() => {
     const timer = window.setInterval(() => {
-      setTab((current) => {
-        const index = COMPUTER_TABS.indexOf(current);
-        return COMPUTER_TABS[(index + 1) % COMPUTER_TABS.length];
+      setApp((current) => {
+        const index = ROTATION.indexOf(current);
+        return ROTATION[(index + 1) % ROTATION.length];
       });
     }, 3600);
     return () => window.clearInterval(timer);
   }, []);
 
   return (
-    <div className="overflow-hidden rounded-[1.5rem] border border-stone-200 bg-[#e9ecec] shadow-[0_28px_80px_-38px_rgba(28,25,23,0.35)]">
-      <div className="flex h-11 items-center justify-between border-b border-black/10 bg-white/90 px-4">
-        <TrafficLights />
-        <span className="text-xs font-medium text-stone-600">
-          Scout&apos;s computer
-        </span>
-        <span className="flex items-center gap-1.5 text-[11px] font-medium text-emerald-700">
-          <span className="relative flex h-2 w-2">
-            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-50" />
+    <div className="overflow-hidden rounded-[1.5rem] border border-stone-200 bg-white shadow-[0_28px_80px_-38px_rgba(28,25,23,0.35)]">
+      <div className="flex h-11 items-center gap-2 border-b border-zinc-200/80 bg-white/90 px-2.5 backdrop-blur">
+        <TrafficLights className="mr-1 hidden sm:flex" tone="light" />
+        <button
+          type="button"
+          onClick={() => setApp("files")}
+          className="flex min-w-0 items-center gap-2 rounded-md border border-zinc-200 bg-white px-2.5 py-1.5 text-left shadow-sm"
+        >
+          <span className="relative flex h-2 w-2 shrink-0">
+            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-40" />
             <span className="relative h-2 w-2 rounded-full bg-emerald-500" />
           </span>
-          Running
-        </span>
-      </div>
+          <span className="flex min-w-0 flex-col leading-none">
+            <span className="truncate text-[11px] font-medium text-zinc-800">
+              Scout&apos;s computer
+            </span>
+            <span className="truncate text-[9px] uppercase tracking-wide text-zinc-400">
+              running
+            </span>
+          </span>
+        </button>
 
-      <div className="grid min-h-[390px] grid-cols-[58px_1fr] sm:grid-cols-[72px_1fr]">
-        <div className="flex flex-col items-center gap-2 border-r border-black/10 bg-stone-900 py-4">
-          {[
-            ["files", Folder],
-            ["terminal", SquareTerminal],
-            ["browser", Globe2],
-          ].map(([name, Icon]) => (
+        <span className="h-5 w-px bg-zinc-200" />
+
+        <div className="flex items-center gap-0.5 rounded-lg bg-zinc-100 p-0.5">
+          {APPS.map(({ id, label, icon: Icon }) => (
             <button
-              key={name as string}
+              key={id}
               type="button"
-              onClick={() => setTab(name as ComputerTab)}
-              aria-label={`Show ${name}`}
-              className={`flex h-10 w-10 items-center justify-center rounded-xl transition-colors ${
-                tab === name
-                  ? "bg-white text-stone-950"
-                  : "text-stone-500 hover:bg-white/10 hover:text-white"
+              title={label}
+              aria-label={`Show ${label}`}
+              onClick={() => setApp(id)}
+              className={`flex h-7 w-8 items-center justify-center rounded-md transition-colors ${
+                app === id
+                  ? "bg-white text-zinc-900 shadow-sm ring-1 ring-black/5"
+                  : "text-zinc-400 hover:text-zinc-700"
               }`}
             >
-              <Icon className="h-[18px] w-[18px]" />
+              <Icon className="h-4 w-4" />
             </button>
           ))}
-          <div className="mt-auto flex h-9 w-9 items-center justify-center rounded-full bg-brand-mint text-xs font-bold text-stone-900">
-            S
+        </div>
+
+        <div className="ml-auto hidden items-center gap-0.5 sm:flex">
+          {[Moon, RefreshCw, Settings2].map((Icon, index) => (
+            <span
+              key={index}
+              className="flex h-7 w-7 items-center justify-center rounded-md text-zinc-400"
+            >
+              <Icon className="h-3.5 w-3.5" />
+            </span>
+          ))}
+        </div>
+      </div>
+
+      <div className="relative min-h-[390px] overflow-hidden bg-[radial-gradient(circle_at_20%_10%,rgba(255,255,255,0.96),transparent_32%),linear-gradient(135deg,#eef2f2_0%,#e5e8e7_48%,#f2f0ed_100%)] p-3 sm:p-5">
+        <div className="absolute inset-0 opacity-30 [background-image:radial-gradient(#a8a29e_0.7px,transparent_0.7px)] [background-size:22px_22px]" />
+        <div className="relative mx-auto h-[354px] max-w-[650px]">
+          {app === "files" && <FilesWindow />}
+          {app === "terminal" && <TerminalWindow />}
+          {app === "browser" && <BrowserWindow />}
+          {app === "code" && <CodeWindow />}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function FilesWindow() {
+  const files = [
+    { name: "research", folder: true },
+    { name: "briefs", folder: true },
+    { name: "site", folder: true },
+    { name: "launch-plan.md", folder: false },
+    { name: "sources.json", folder: false },
+    { name: "homepage.tsx", folder: false },
+  ];
+
+  return (
+    <WindowFrame
+      tone="light"
+      icon={<FolderClosed className="h-3 w-3 text-zinc-400" />}
+      title="Workspace"
+      className="h-full"
+      bodyClassName="bg-white"
+      toolbar={
+        <div className="flex items-center gap-2 border-b border-zinc-200 bg-zinc-50/90 px-2 py-1.5">
+          <span className="flex h-6 w-6 items-center justify-center rounded text-zinc-400">
+            <ArrowLeft className="h-3.5 w-3.5" />
+          </span>
+          <div className="flex items-center gap-1 font-mono text-[11px] text-zinc-500">
+            workspace <ChevronRight className="h-3 w-3 opacity-60" /> projects
           </div>
         </div>
-
-        <div className="relative m-3 overflow-hidden rounded-xl border border-black/10 bg-white shadow-xl sm:m-5">
-          {tab === "files" && <FilesScreen />}
-          {tab === "terminal" && <TerminalScreen />}
-          {tab === "browser" && <BrowserScreen />}
+      }
+    >
+      <div className="flex h-full min-h-0">
+        <aside className="hidden w-36 shrink-0 border-r border-zinc-200 bg-zinc-50/80 p-2 sm:block">
+          <p className="px-2 py-1 text-[9px] font-semibold uppercase tracking-wide text-zinc-400">
+            Favorites
+          </p>
+          <p className="mt-1 flex items-center gap-2 rounded-md bg-zinc-200/70 px-2 py-1.5 text-[11px] font-medium text-zinc-700">
+            <FolderClosed className="h-3.5 w-3.5 text-indigo-400" /> Workspace
+          </p>
+        </aside>
+        <div className="grid flex-1 grid-cols-3 content-start gap-1 p-4 sm:grid-cols-4">
+          {files.map((file) => (
+            <div
+              key={file.name}
+              className="flex min-w-0 flex-col items-center gap-1 rounded-lg px-2 py-2.5 text-center"
+            >
+              <span className="flex h-12 items-center justify-center">
+                {file.folder ? (
+                  <MacFolderIcon className="h-11 w-auto" />
+                ) : (
+                  <MacFileIcon name={file.name} className="h-12 w-auto" />
+                )}
+              </span>
+              <span className="line-clamp-2 max-w-full break-all text-[10px] leading-tight text-zinc-700">
+                {file.name}
+              </span>
+            </div>
+          ))}
         </div>
       </div>
-
-      <div className="flex items-center justify-center gap-2 border-t border-black/10 bg-white/80 py-2.5">
-        {[
-          ["files", Folder],
-          ["terminal", SquareTerminal],
-          ["browser", Globe2],
-        ].map(([name, Icon]) => (
-          <button
-            key={name as string}
-            type="button"
-            onClick={() => setTab(name as ComputerTab)}
-            className={`flex items-center gap-1.5 rounded-full px-3 py-1 text-[11px] font-medium capitalize transition-colors ${
-              tab === name
-                ? "bg-stone-900 text-white"
-                : "text-stone-500 hover:bg-stone-100"
-            }`}
-          >
-            <Icon className="h-3 w-3" />
-            {name as string}
-          </button>
-        ))}
-      </div>
-    </div>
+    </WindowFrame>
   );
 }
 
-function FilesScreen() {
+function TerminalWindow() {
   return (
-    <div className="grid h-full min-h-[350px] grid-cols-[128px_1fr] text-stone-700 sm:grid-cols-[170px_1fr]">
-      <aside className="border-r border-stone-200 bg-stone-50 p-3">
-        <p className="mb-3 text-[10px] font-semibold uppercase tracking-[0.14em] text-stone-400">
-          Explorer
-        </p>
-        <div className="space-y-1 text-[11px]">
-          <p className="flex items-center gap-1.5 rounded-md bg-stone-200/70 px-2 py-1.5 font-medium">
-            <Folder className="h-3 w-3" /> morning-brief
+    <WindowFrame
+      icon={<SquareTerminal className="h-3 w-3 text-zinc-400" />}
+      title="agent@scout · zsh"
+      className="h-full"
+      bodyClassName="bg-zinc-950/95"
+    >
+      <div className="flex h-full flex-col font-mono text-[11px] leading-6 text-zinc-400 sm:text-xs">
+        <div className="flex-1 p-5 sm:p-6">
+          <p className="text-zinc-200">
+            <span className="text-emerald-400">❯</span> pnpm run deploy
           </p>
-          <p className="flex items-center gap-1.5 px-3 py-1">
-            <FileCode2 className="h-3 w-3 text-blue-500" />
-            index.ts
+          <p className="mt-3">Preparing always-on workspace...</p>
+          <p>Connecting Gmail and Slack tools...</p>
+          <p>Installing agent skills...</p>
+          <p className="mt-3 flex items-center gap-2 text-emerald-400">
+            <Check className="h-3.5 w-3.5" /> Computer is ready
           </p>
-          <p className="flex items-center gap-1.5 px-3 py-1">
-            <FileText className="h-3 w-3 text-amber-500" />
-            brief.md
-          </p>
-          <p className="flex items-center gap-1.5 px-3 py-1">
-            <FileCode2 className="h-3 w-3 text-violet-500" />
-            schedule.json
+          <p className="flex items-center gap-2 text-emerald-400">
+            <Check className="h-3.5 w-3.5" /> Morning brief scheduled for 07:00
           </p>
         </div>
-      </aside>
-      <div className="min-w-0">
-        <div className="flex h-9 items-center border-b border-stone-200 bg-stone-50 px-3 text-[10px] text-stone-500">
-          <FileCode2 className="mr-1.5 h-3 w-3 text-blue-500" /> index.ts{" "}
-          <span className="ml-auto">Saved</span>
+        <div className="flex items-center gap-2 border-t border-white/[0.07] bg-black/40 px-3 py-2">
+          <span className="text-emerald-400">❯</span>
+          <span className="inline-block h-3 w-1.5 animate-caret-blink bg-zinc-500" />
         </div>
-        <pre className="overflow-hidden p-4 font-mono text-[10px] leading-5 text-stone-600 sm:text-[11px]">
-          <code>
-            <span className="text-violet-600">import</span>
-            {" { inbox, slack } "}
-            <span className="text-violet-600">from</span>{" "}
-            <span className="text-emerald-700">&quot;@commons/tools&quot;</span>
-            {";\n\n"}
-            <span className="text-violet-600">export async function</span>
-            {" morningBrief() {\n  "}
-            <span className="text-violet-600">const</span>
-            {" messages = "}
-            <span className="text-violet-600">await</span>
-            {" inbox.unread();\n  "}
-            <span className="text-violet-600">const</span>
-            {" brief = "}
-            <span className="text-violet-600">await</span>
-            {" agent.summarize(messages);\n\n  "}
-            <span className="text-violet-600">await</span>
-            {" slack.post({\n    channel: "}
-            <span className="text-emerald-700">&quot;team-updates&quot;</span>
-            {",\n    text: brief,\n  });\n}"}
-          </code>
-        </pre>
       </div>
-    </div>
+    </WindowFrame>
   );
 }
 
-function TerminalScreen() {
+function BrowserWindow() {
   return (
-    <div className="min-h-[350px] bg-[#111211] p-5 font-mono text-[11px] leading-6 text-stone-400 sm:p-7 sm:text-xs">
-      <p className="text-stone-200">
-        <span className="text-emerald-400">scout</span>{" "}
-        <span className="text-stone-600">~/morning-brief</span> $ pnpm run
-        deploy
-      </p>
-      <p className="mt-3">Preparing always-on workspace…</p>
-      <p>Connecting Gmail and Slack tools…</p>
-      <p>Installing 4 agent skills…</p>
-      <p className="mt-3 flex items-center gap-2 text-emerald-400">
-        <Check className="h-3.5 w-3.5" /> Computer is ready
-      </p>
-      <p className="flex items-center gap-2 text-emerald-400">
-        <Check className="h-3.5 w-3.5" /> Workflow scheduled · weekdays 07:00
-      </p>
-      <p className="mt-4 text-stone-200">
-        <span className="text-emerald-400">scout</span>{" "}
-        <span className="text-stone-600">~/morning-brief</span> ${" "}
-        <span className="inline-block h-3 w-1.5 animate-caret-blink bg-stone-400 align-middle" />
-      </p>
-    </div>
-  );
-}
-
-function BrowserScreen() {
-  return (
-    <div className="min-h-[350px] bg-white">
-      <div className="flex h-10 items-center gap-2 border-b border-stone-200 bg-stone-50 px-3">
-        <span className="flex-1 rounded-md bg-white px-3 py-1.5 text-[10px] text-stone-400 ring-1 ring-stone-200">
-          preview.agentcommons.site
-        </span>
-        <MoreHorizontal className="h-4 w-4 text-stone-400" />
-      </div>
-      <div className="relative h-[310px] overflow-hidden">
+    <WindowFrame
+      tone="light"
+      icon={<Globe className="h-3 w-3 text-zinc-400" />}
+      title="Atelier North"
+      className="h-full"
+      bodyClassName="bg-white"
+      toolbar={
+        <div className="flex items-center gap-1.5 border-b border-zinc-200 bg-zinc-50 px-2 py-1.5">
+          <span className="flex items-center gap-1 px-1 text-zinc-400">
+            <ArrowLeft className="h-3.5 w-3.5" />
+            <ArrowRight className="h-3.5 w-3.5" />
+            <RefreshCw className="ml-1 h-3.5 w-3.5" />
+          </span>
+          <div className="flex h-7 min-w-0 flex-1 items-center gap-2 rounded-full border border-zinc-200 bg-white px-3 font-mono text-[10px] text-zinc-500">
+            <span className="h-2 w-2 rounded-full bg-emerald-500" />
+            preview.agentcommons.site
+          </div>
+        </div>
+      }
+    >
+      <div className="relative h-full min-h-[300px] overflow-hidden">
         <Image
           src="/landing/coastal-architecture.webp"
           alt="A generated preview of a modern architecture website"
           fill
-          sizes="(max-width: 768px) 80vw, 600px"
+          sizes="(max-width: 768px) 90vw, 650px"
           className="object-cover"
         />
         <div className="absolute inset-0 bg-gradient-to-r from-white/95 via-white/55 to-transparent" />
@@ -229,6 +252,42 @@ function BrowserScreen() {
           </span>
         </div>
       </div>
-    </div>
+    </WindowFrame>
+  );
+}
+
+function CodeWindow() {
+  return (
+    <WindowFrame
+      tone="light"
+      icon={<FileCode2 className="h-3 w-3 text-zinc-400" />}
+      title="homepage.tsx"
+      className="h-full"
+      bodyClassName="bg-white"
+    >
+      <div className="grid h-full grid-cols-[112px_1fr] text-zinc-700 sm:grid-cols-[150px_1fr]">
+        <aside className="border-r border-zinc-200 bg-zinc-50/80 p-3">
+          <p className="mb-3 text-[9px] font-semibold uppercase tracking-wide text-zinc-400">
+            Explorer
+          </p>
+          <p className="flex items-center gap-1.5 rounded-md bg-zinc-200/70 px-2 py-1.5 text-[10px] font-medium">
+            <FolderClosed className="h-3 w-3" /> site
+          </p>
+          <p className="mt-1 flex items-center gap-1.5 px-3 py-1 text-[10px]">
+            <FileCode2 className="h-3 w-3 text-blue-500" /> homepage.tsx
+          </p>
+        </aside>
+        <pre className="overflow-hidden p-4 font-mono text-[10px] leading-5 text-zinc-600 sm:text-[11px]">
+          <code>
+            <span className="text-violet-600">export default function</span>
+            {" Home() {\n  return (\n    <main>\n      <Hero\n        title="}
+            <span className="text-emerald-700">
+              &quot;Space, shaped by nature.&quot;
+            </span>
+            {"\n        projects={projects}\n      />\n    </main>\n  );\n}"}
+          </code>
+        </pre>
+      </div>
+    </WindowFrame>
   );
 }
