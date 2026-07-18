@@ -64,6 +64,9 @@ export default function ChatInputBox({
   onInitialPromptSent,
   footerLeft,
   placeholder = "Ask me something...",
+  allowComputer = true,
+  uiContext,
+  externalPrompt,
 }: {
   agentId: string;
   sessionId: string;
@@ -84,6 +87,9 @@ export default function ChatInputBox({
   /** Replaces the "+" attachments menu in the footer (e.g. an agent selector). */
   footerLeft?: React.ReactNode;
   placeholder?: string;
+  allowComputer?: boolean;
+  uiContext?: Record<string, unknown>;
+  externalPrompt?: { id: string; text: string } | null;
 }) {
   const isLaunchMode = Boolean(onLaunch);
   const accumulatedRef = useRef("");
@@ -166,6 +172,18 @@ export default function ChatInputBox({
     },
     onTool: (event) => {
       const toolName = event.toolName ?? event.tool ?? event.name ?? "tool";
+      if (
+        [
+          "proposeWorkflowChange",
+          "proposeAgentChange",
+          "proposeTaskChange",
+          "proposeSkillChange",
+          "proposeToolChange",
+          "createTask",
+        ].includes(toolName)
+      ) {
+        window.dispatchEvent(new CustomEvent("copilot-change-created"));
+      }
       const queue = runningToolActivitiesRef.current.get(toolName) ?? [];
       const activityId =
         queue.shift() ?? `tool:${toolName}:${++activitySequenceRef.current}`;
@@ -332,14 +350,14 @@ export default function ChatInputBox({
     (attachment) => attachment.status === "uploading",
   );
   const canUseComputer = Boolean(
-    computerConfig?.enabled && computerConfig?.allowUserSelect,
+    allowComputer && computerConfig?.enabled && computerConfig?.allowUserSelect,
   );
   const uploadedAttachments = attachments.filter(
     (attachment) => attachment.status === "uploaded" && attachment.fileId,
   );
 
   useEffect(() => {
-    if (isLaunchMode || !agentId) return;
+    if (isLaunchMode || !agentId || !allowComputer) return;
     let cancelled = false;
     async function loadComputerConfig() {
       try {
@@ -357,7 +375,7 @@ export default function ChatInputBox({
     return () => {
       cancelled = true;
     };
-  }, [agentId, isLaunchMode]);
+  }, [agentId, allowComputer, isLaunchMode]);
 
   useEffect(() => {
     if (
@@ -401,11 +419,12 @@ export default function ChatInputBox({
       return;
     }
 
-    const computerRequest = computerEnabled
-      ? {
-          enabled: true,
-        }
-      : undefined;
+    const computerRequest =
+      allowComputer && computerEnabled
+        ? {
+            enabled: true,
+          }
+        : undefined;
     const messageAttachments = uploadedAttachments.map((attachment) => ({
       fileId: attachment.fileId!,
       name: attachment.name,
@@ -446,6 +465,7 @@ export default function ChatInputBox({
     await stream({
       agentId,
       sessionId,
+      uiContext,
       messages: [{ role: "user", content: userMessage }],
       attachments: messageAttachments.map((attachment) => ({
         fileId: attachment.fileId,
@@ -465,6 +485,20 @@ export default function ChatInputBox({
     onInitialPromptSent?.();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialPrompt]);
+
+  const externalPromptIdRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (
+      !externalPrompt?.text ||
+      externalPromptIdRef.current === externalPrompt.id
+    ) {
+      return;
+    }
+    if (isLoading) return;
+    externalPromptIdRef.current = externalPrompt.id;
+    handleSend(externalPrompt.text);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [externalPrompt?.id, isLoading]);
 
   const openFilePicker = () => {
     if (isLoading) return;
@@ -713,63 +747,63 @@ export default function ChatInputBox({
             )}
             <div className="flex items-center gap-1">
               {!isLaunchMode && (
-              <div className="relative">
-                <button
-                  type="button"
-                  onClick={() => setThinkingMenuOpen((open) => !open)}
-                  disabled={!!isLoading}
-                  title="Thinking level"
-                  aria-label="Thinking level"
-                  className={cn(
-                    "flex items-center gap-1.5 rounded-lg p-1.5 transition-colors disabled:opacity-40",
-                    thinkingLevel === "auto"
-                      ? "text-muted-foreground hover:bg-muted hover:text-foreground"
-                      : "bg-muted/70 text-foreground hover:bg-muted",
-                  )}
-                >
-                  <Gauge className="h-4 w-4" />
-                  {thinkingLevel !== "auto" && (
-                    <span className="text-xs">
-                      {
-                        THINKING_LEVELS.find(
-                          (level) => level.key === thinkingLevel,
-                        )?.label
-                      }
-                    </span>
-                  )}
-                </button>
-                {thinkingMenuOpen && (
-                  <div className="absolute bottom-9 right-0 z-10 w-52 rounded-xl border border-border bg-popover p-1 shadow-floating">
-                    <p className="px-2 pb-1 pt-1.5 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-                      Thinking
-                    </p>
-                    {THINKING_LEVELS.map((level) => (
-                      <button
-                        key={level.key}
-                        type="button"
-                        onMouseDown={(event) => event.preventDefault()}
-                        onClick={() => {
-                          setThinkingLevel(level.key);
-                          setThinkingMenuOpen(false);
-                        }}
-                        className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm text-popover-foreground hover:bg-muted"
-                      >
-                        <span className="min-w-0 flex-1">
-                          <span className="block leading-tight">
-                            {level.label}
+                <div className="relative">
+                  <button
+                    type="button"
+                    onClick={() => setThinkingMenuOpen((open) => !open)}
+                    disabled={!!isLoading}
+                    title="Thinking level"
+                    aria-label="Thinking level"
+                    className={cn(
+                      "flex items-center gap-1.5 rounded-lg p-1.5 transition-colors disabled:opacity-40",
+                      thinkingLevel === "auto"
+                        ? "text-muted-foreground hover:bg-muted hover:text-foreground"
+                        : "bg-muted/70 text-foreground hover:bg-muted",
+                    )}
+                  >
+                    <Gauge className="h-4 w-4" />
+                    {thinkingLevel !== "auto" && (
+                      <span className="text-xs">
+                        {
+                          THINKING_LEVELS.find(
+                            (level) => level.key === thinkingLevel,
+                          )?.label
+                        }
+                      </span>
+                    )}
+                  </button>
+                  {thinkingMenuOpen && (
+                    <div className="absolute bottom-9 right-0 z-10 w-52 rounded-xl border border-border bg-popover p-1 shadow-floating">
+                      <p className="px-2 pb-1 pt-1.5 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                        Thinking
+                      </p>
+                      {THINKING_LEVELS.map((level) => (
+                        <button
+                          key={level.key}
+                          type="button"
+                          onMouseDown={(event) => event.preventDefault()}
+                          onClick={() => {
+                            setThinkingLevel(level.key);
+                            setThinkingMenuOpen(false);
+                          }}
+                          className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm text-popover-foreground hover:bg-muted"
+                        >
+                          <span className="min-w-0 flex-1">
+                            <span className="block leading-tight">
+                              {level.label}
+                            </span>
+                            <span className="block text-xs text-muted-foreground">
+                              {level.detail}
+                            </span>
                           </span>
-                          <span className="block text-xs text-muted-foreground">
-                            {level.detail}
-                          </span>
-                        </span>
-                        {thinkingLevel === level.key && (
-                          <Check className="h-3.5 w-3.5 shrink-0" />
-                        )}
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
+                          {thinkingLevel === level.key && (
+                            <Check className="h-3.5 w-3.5 shrink-0" />
+                          )}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
               )}
               <button
                 type="button"

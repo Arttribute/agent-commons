@@ -36,12 +36,14 @@ import { OwnerGuard, OwnerOnly } from '~/modules/auth';
 import { RuntimeDispatcherService } from './runtime/runtime-dispatcher.service';
 import { RuntimeManagementService } from './runtime/runtime-management.service';
 import { normalizeRuntimeType } from './runtime/runtime.types';
+import { CopilotUiContext } from './copilot-platform-guide';
 
 interface RunBody {
   agentId: string;
   messages: any[];
   sessionId?: string;
   cliContext?: string;
+  uiContext?: CopilotUiContext;
   cliTools?: Array<{
     name: string;
     description: string;

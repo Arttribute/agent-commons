@@ -49,7 +49,11 @@ function makeHarness(agentOverrides: Record<string, unknown> = {}) {
     createWorkflow: jest.fn().mockResolvedValue(workflow),
   };
   return {
-    service: new CopilotService(db as any, workflows as any),
+    service: new CopilotService(
+      db as any,
+      workflows as any,
+      { get: jest.fn() } as any,
+    ),
     db,
     workflows,
     getInserted: () => inserted,
@@ -143,5 +147,86 @@ describe('CopilotService', () => {
       removed: ['remove'],
       modified: ['keep'],
     });
+  });
+
+  it('repairs a disconnected start, work step, and end proposal', () => {
+    const harness = makeHarness();
+    const definition = (harness.service as any).normalizeWorkflowDefinition({
+      startNodeId: 'intake',
+      endNodeId: 'wrap_up',
+      nodes: [
+        { id: 'intake', type: 'input' },
+        { id: 'study', type: 'agent_processor' },
+        { id: 'wrap_up', type: 'output' },
+      ],
+      edges: [],
+    });
+
+    expect(definition.edges).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ source: 'intake', target: 'study' }),
+        expect.objectContaining({ source: 'study', target: 'wrap_up' }),
+      ]),
+    );
+  });
+
+  it('rebases proposal edits without discarding newer unrelated canvas work', () => {
+    const harness = makeHarness();
+    const result = (harness.service as any).rebaseWorkflowChange(
+      {
+        name: 'Current',
+        description: null,
+        definition: {
+          startNodeId: 'input',
+          endNodeId: 'output',
+          nodes: [
+            { id: 'input', type: 'input' },
+            { id: 'step', type: 'agent_processor', label: 'Old' },
+            { id: 'newer', type: 'transform' },
+            { id: 'output', type: 'output' },
+          ],
+          edges: [
+            { id: 'a', source: 'input', target: 'step' },
+            { id: 'b', source: 'step', target: 'newer' },
+            { id: 'c', source: 'newer', target: 'output' },
+          ],
+        },
+      },
+      {
+        name: 'Base',
+        description: null,
+        definition: {
+          startNodeId: 'input',
+          endNodeId: 'output',
+          nodes: [
+            { id: 'input', type: 'input' },
+            { id: 'step', type: 'agent_processor', label: 'Old' },
+            { id: 'output', type: 'output' },
+          ],
+          edges: [],
+        },
+      },
+      {
+        name: 'Base',
+        description: null,
+        definition: {
+          startNodeId: 'input',
+          endNodeId: 'output',
+          nodes: [
+            { id: 'input', type: 'input' },
+            { id: 'step', type: 'agent_processor', label: 'Updated' },
+            { id: 'output', type: 'output' },
+          ],
+          edges: [],
+        },
+      },
+    );
+
+    expect(result.definition.nodes).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: 'step', label: 'Updated' }),
+        expect.objectContaining({ id: 'newer' }),
+      ]),
+    );
   });
 });

@@ -72,9 +72,17 @@ export class CopilotController {
   }
 
   @Post('changes/:changeId/reject')
-  async reject(@Req() req: Request, @Param('changeId') changeId: string) {
+  async reject(
+    @Req() req: Request,
+    @Param('changeId') changeId: string,
+    @Body() body: { reason?: string } = {},
+  ) {
     return {
-      data: await this.copilot.rejectChange(this.ownerId(req), changeId),
+      data: await this.copilot.rejectChange(
+        this.ownerId(req),
+        changeId,
+        body.reason,
+      ),
     };
   }
 

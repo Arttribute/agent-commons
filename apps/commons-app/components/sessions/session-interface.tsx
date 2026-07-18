@@ -68,6 +68,12 @@ interface SessionInterfaceImprovedProps {
    * this bar instead of floating over the messages.
    */
   header?: React.ReactNode;
+  /** Copilot side chat deliberately omits the agent-computer surface. */
+  allowComputer?: boolean;
+  /** Content rendered as part of the conversation, above the composer. */
+  conversationAddon?: React.ReactNode;
+  uiContext?: Record<string, unknown>;
+  externalPrompt?: { id: string; text: string } | null;
 }
 
 function ExpandableToolCard({ tools }: { tools: Message[] }) {
@@ -128,6 +134,10 @@ export default function SessionInterfaceImproved({
   initialPrompt,
   onInitialPromptSent,
   header,
+  allowComputer = true,
+  conversationAddon,
+  uiContext,
+  externalPrompt,
 }: SessionInterfaceImprovedProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -229,7 +239,7 @@ export default function SessionInterfaceImproved({
   }, [sessionId]);
 
   const fetchAgentComputer = useCallback(async () => {
-    if (!agentId) return;
+    if (!agentId || !allowComputer) return;
     try {
       const res = await fetch(`/api/agents/${agentId}/computer`, {
         cache: "no-store",
@@ -242,7 +252,7 @@ export default function SessionInterfaceImproved({
     } catch {
       // Computer status is a lightweight hint here; the drawer can refresh itself.
     }
-  }, [agentId]);
+  }, [agentId, allowComputer]);
 
   useEffect(() => {
     fetchAgentComputer();
@@ -358,28 +368,29 @@ export default function SessionInterfaceImproved({
   // Clean up polling on unmount
   useEffect(() => () => stopTaskPolling(), [stopTaskPolling]);
 
-  const computerButton = !computerOpen ? (
-    <Button
-      type="button"
-      variant="ghost"
-      size="icon"
-      className={cn(
-        "relative h-8 w-8 shrink-0 rounded-lg text-muted-foreground hover:text-foreground",
-        !header && "absolute right-4 top-4 z-10",
-      )}
-      title="Agent computer"
-      aria-label="Agent computer"
-      onClick={() => {
-        setComputerOpen(true);
-        fetchAgentComputer();
-      }}
-    >
-      <Monitor className="h-4 w-4" />
-      {isActiveComputer(sessionComputer) && (
-        <span className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-red-500 ring-2 ring-background" />
-      )}
-    </Button>
-  ) : null;
+  const computerButton =
+    allowComputer && !computerOpen ? (
+      <Button
+        type="button"
+        variant="ghost"
+        size="icon"
+        className={cn(
+          "relative h-8 w-8 shrink-0 rounded-lg text-muted-foreground hover:text-foreground",
+          !header && "absolute right-4 top-4 z-10",
+        )}
+        title="Agent computer"
+        aria-label="Agent computer"
+        onClick={() => {
+          setComputerOpen(true);
+          fetchAgentComputer();
+        }}
+      >
+        <Monitor className="h-4 w-4" />
+        {isActiveComputer(sessionComputer) && (
+          <span className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-red-500 ring-2 ring-background" />
+        )}
+      </Button>
+    ) : null;
 
   return (
     <div
@@ -436,6 +447,7 @@ export default function SessionInterfaceImproved({
                       ))}
                     </div>
                   )}
+                  {conversationAddon}
                 </div>
                 <div ref={bottomRef} />
               </div>
@@ -487,6 +499,7 @@ export default function SessionInterfaceImproved({
                     );
                   });
                 })()}
+                {conversationAddon}
                 {/* Bottom marker for auto-scroll */}
                 <div ref={bottomRef} />
               </>
@@ -503,6 +516,9 @@ export default function SessionInterfaceImproved({
             disabled={isRedirecting || isLoadingSession}
             initialPrompt={initialPrompt}
             onInitialPromptSent={onInitialPromptSent}
+            allowComputer={allowComputer}
+            uiContext={uiContext}
+            externalPrompt={externalPrompt}
           />
         </div>
 
@@ -514,7 +530,7 @@ export default function SessionInterfaceImproved({
         />
       </div>
 
-      {computerOpen && (
+      {allowComputer && computerOpen && (
         <AgentComputerSurface
           agentId={agentId}
           activeTab={computerRuntimeTab}
@@ -522,7 +538,7 @@ export default function SessionInterfaceImproved({
           onClose={() => setComputerOpen(false)}
         />
       )}
-      {openProjectId && (
+      {allowComputer && openProjectId && (
         <CodeProjectSurface
           agentId={agentId}
           projectId={openProjectId}

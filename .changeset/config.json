@@ -7,10 +7,5 @@
   "access": "public",
   "baseBranch": "main",
   "updateInternalDependencies": "patch",
-  "ignore": [
-    "commons-api",
-    "commons-app",
-    "commons-courses",
-    "onchain"
-  ]
+  "ignore": ["commons-api", "commons-app", "commons-courses"]
 }

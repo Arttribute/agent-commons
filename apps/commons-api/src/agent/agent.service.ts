@@ -68,6 +68,11 @@ import {
   RUNTIME_CAPABILITIES,
   normalizeRuntimeType,
 } from './runtime/runtime.types';
+import { CopilotService } from './copilot.service';
+import {
+  COMMONS_COPILOT_OPERATING_GUIDE,
+  CopilotUiContext,
+} from './copilot-platform-guide';
 
 const got = import('got');
 
@@ -76,7 +81,9 @@ const app = typia.llm.application<CommonTool, 'chatgpt'>();
 const COMMONS_COPILOT_AVATAR = '/commons-copilot.png';
 const COMMONS_COPILOT_INSTRUCTIONS = `You are Commons Copilot, the user's native guide and co-creator inside Agent Commons. You understand the web Studio, API, SDK, and agc CLI, and help users create, inspect, test, and manage agents, tools, skills, tasks, workflows, spaces, and code projects.
 
-For platform management, inspect current resources before proposing changes. Workflow changes must go through proposeWorkflowChange so the platform can enforce the user's access mode and retain a reviewable, reversible record. Never claim a pending proposal has been applied. Use listCommonsResources to ground recommendations in the user's actual account. For code work in the CLI, use the provided local tools and respect their confirmation boundaries. Prefer small, valid, testable workflow graphs with explicit input/output nodes, typed mappings, and clear failure or approval paths.`;
+For platform management, inspect current resources before proposing changes. Use the typed proposal tool matching the resource the user requested. Never claim a pending proposal has been applied. Use listCommonsResources to ground recommendations in the user's actual account. For code work in the CLI, use the provided local tools and respect their confirmation boundaries. Prefer small, valid, testable workflow graphs with explicit input/output nodes, typed mappings, and clear failure or approval paths.
+
+${COMMONS_COPILOT_OPERATING_GUIDE}`;
 
 type StreamStatusState = 'queued' | 'running' | 'completed' | 'failed';
 type RunComputerRequest = {
@@ -179,6 +186,8 @@ export class AgentService implements OnModuleInit {
     private toolLoader: ToolLoaderService,
     @Inject(forwardRef(() => SpaceToolsService))
     private spaceTools: SpaceToolsService,
+    @Inject(forwardRef(() => CopilotService))
+    private copilotService: CopilotService,
   ) {}
 
   /* ─────────────────────────  INIT  ───────────────────────── */
@@ -670,6 +679,8 @@ export class AgentService implements OnModuleInit {
     maxTurns?: number;
     /** Extra text appended to the agent's system prompt (used by CLI for local tool manifest). */
     cliContext?: string;
+    /** Untrusted browser page hint; Commons Copilot re-verifies it server-side. */
+    uiContext?: CopilotUiContext;
     /**
      * Dynamic CLI tool catalog sent by the caller's own daemon/CLI process.
      * When present, this fully replaces the hardcoded CLI tool list below —
@@ -2043,6 +2054,15 @@ export class AgentService implements OnModuleInit {
           const memoryBlock = await this.memoryService
             .buildMemoryBlock(agentId, latestUserMsg ?? '')
             .catch(() => '');
+          const copilotContext =
+            agent.isDefault && agent.isSystemManaged
+              ? await this.copilotService
+                  .buildRunContext(agentId, initiator, props.uiContext)
+                  .catch(
+                    (error) =>
+                      `## Commons Copilot context\nLive context lookup failed: ${error.message}`,
+                  )
+              : '';
 
           // Build the extra content to append to the system prompt (memory + CLI context)
           const computerSelectionDetail = computerUnavailable
@@ -2075,6 +2095,7 @@ export class AgentService implements OnModuleInit {
 
           const extraSystemContent = [
             memoryBlock,
+            copilotContext,
             props.cliContext,
             computerSelectionBlock,
             computerPreparationBlock,
@@ -2856,10 +2877,18 @@ export class AgentService implements OnModuleInit {
     if (existing) {
       // Upgrade only the previous built-in avatar. User-selected profile images
       // remain untouched.
-      if (existing.avatar === '/ac-icon.svg') {
+      const needsAvatarUpgrade = existing.avatar === '/ac-icon.svg';
+      const needsInstructionUpgrade =
+        existing.instructions !== COMMONS_COPILOT_INSTRUCTIONS;
+      if (needsAvatarUpgrade || needsInstructionUpgrade) {
         const [updated] = await this.db
           .update(schema.agent)
-          .set({ avatar: COMMONS_COPILOT_AVATAR })
+          .set({
+            ...(needsAvatarUpgrade && { avatar: COMMONS_COPILOT_AVATAR }),
+            ...(needsInstructionUpgrade && {
+              instructions: COMMONS_COPILOT_INSTRUCTIONS,
+            }),
+          })
           .where(eq(schema.agent.agentId, existing.agentId))
           .returning();
         return updated ?? existing;

@@ -1,7 +1,7 @@
 "use client";
 
 import { use, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import {
   Activity,
   AlertTriangle,
@@ -1878,9 +1878,7 @@ function ObservabilityView({ agentId }: { agentId: string }) {
     <div className="min-h-0 overflow-auto">
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border/70 px-5 py-4">
         <div>
-          <h1 className="text-lg font-medium tracking-tight">
-            Observability
-          </h1>
+          <h1 className="text-lg font-medium tracking-tight">Observability</h1>
           <p className="mt-1 text-sm text-muted-foreground">
             Understand agent health, performance, tool behavior, and execution
             failures.
@@ -2621,6 +2619,9 @@ export default function AgentStudioPage({
 }) {
   const { agent: agentId } = use(params);
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const requestedSection = searchParams.get("section") as SectionKey | null;
+  const requestedSessionId = searchParams.get("session");
   const { authState } = useAuth();
   const userAddress = normalizePrincipalId(authState.walletAddress);
   const { agents } = useAgents(userAddress || undefined);
@@ -2644,7 +2645,14 @@ export default function AgentStudioPage({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const [activeSection, setActiveSection] = useState<SectionKey>("new-session");
+  const [activeSection, setActiveSection] = useState<SectionKey>(() =>
+    requestedSection &&
+    sections.some((section) => section.key === requestedSection)
+      ? requestedSection
+      : requestedSessionId
+        ? "sessions"
+        : "new-session",
+  );
   const [agent, setAgent] = useState<CommonAgent | null>(null);
   const [loading, setLoading] = useState(true);
   const [agentTools, setAgentTools] = useState<any[]>([]);
@@ -2757,15 +2765,35 @@ export default function AgentStudioPage({
     loadTasks();
   }, [loadTasks]);
 
+  const requestedSessionLoadedRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (
+      !requestedSessionId ||
+      requestedSessionLoadedRef.current === requestedSessionId
+    ) {
+      return;
+    }
+    requestedSessionLoadedRef.current = requestedSessionId;
+    setActiveSection("sessions");
+    loadSession(requestedSessionId);
+  }, [requestedSessionId, loadSession]);
+
   useEffect(() => {
     if (
       !selectedSession &&
       sessions[0]?.sessionId &&
+      !requestedSessionId &&
       activeSection !== "new-session"
     ) {
       loadSession(sessions[0].sessionId);
     }
-  }, [sessions, selectedSession, activeSection, loadSession]);
+  }, [
+    sessions,
+    selectedSession,
+    activeSection,
+    loadSession,
+    requestedSessionId,
+  ]);
 
   const newSessionInitRef = useRef(false);
   useEffect(() => {

@@ -44,7 +44,9 @@ export default function RootLayout({
           <AuthProvider>
             <SidebarProvider>
               <GlobalSearchProvider>
-                {children}
+                <div id="app-shell-content" className="h-full min-w-0">
+                  {children}
+                </div>
                 <FloatingCommonsCopilot />
                 <Toaster />
               </GlobalSearchProvider>

@@ -72,6 +72,105 @@ export interface CommonTool {
     agentId: string;
   }): Promise<any>;
 
+  /** Create or edit an agent. Never use a workflow proposal for this intent. */
+  proposeAgentChange(props: {
+    resourceId?: string;
+    summary: string;
+    data: {
+      name?: string;
+      instructions?: string;
+      persona?: string;
+      greeting?: string;
+      conversationStarters?: string[];
+      knowledgebase?: Array<{
+        title: string;
+        content: string;
+        usageComments?: string;
+      }>;
+      externalTools?: string[];
+      commonTools?: string[];
+      temperature?: number;
+      maxTokens?: number;
+      avatar?: string;
+      modelProvider?: string;
+      modelId?: string;
+      runtimeType?: 'native' | 'openclaw' | 'external';
+    };
+    agentId: string;
+  }): Promise<any>;
+
+  /** Create or edit a reusable Agent Commons skill. */
+  proposeSkillChange(props: {
+    resourceId?: string;
+    summary: string;
+    data: {
+      slug?: string;
+      name?: string;
+      description?: string;
+      instructions?: string;
+      tools?: string[];
+      triggers?: string[];
+      isPublic?: boolean;
+      tags?: string[];
+      icon?: string;
+    };
+    agentId: string;
+  }): Promise<any>;
+
+  /** Create or edit a custom tool definition. */
+  proposeToolChange(props: {
+    resourceId?: string;
+    summary: string;
+    data: {
+      name?: string;
+      displayName?: string;
+      description?: string;
+      schema?: {
+        type: 'function';
+        function: {
+          name: string;
+          description?: string;
+          parameters?: Record<string, any>;
+        };
+      };
+      apiSpec?: {
+        baseUrl: string;
+        path: string;
+        method: string;
+        headers?: Record<string, string>;
+        queryParams?: Record<string, string>;
+        bodyTemplate?: any;
+        authType?: 'none' | 'bearer' | 'api-key' | 'basic' | 'oauth2';
+        authKeyName?: string;
+        oauthProviderKey?: string;
+      };
+      inputSchema?: Record<string, any>;
+      outputSchema?: Record<string, any>;
+      category?: string;
+      visibility?: 'public' | 'private';
+      tags?: string[];
+      icon?: string;
+      version?: string;
+      rateLimitPerMinute?: number;
+      rateLimitPerHour?: number;
+    };
+    agentId: string;
+  }): Promise<any>;
+
+  /** Edit an existing current-platform task after resolving its taskId. */
+  proposeTaskChange(props: {
+    resourceId: string;
+    summary: string;
+    data: {
+      title?: string;
+      description?: string;
+      priority?: number;
+      /** ISO 8601 timestamp with an explicit timezone offset. */
+      scheduledFor?: Date;
+    };
+    agentId: string;
+  }): Promise<any>;
+
   createGoal(props: CreateGoalDto): Promise<any>;
   /** Text-to-speech for an agent inside a space */
   speakInSpace(props: {
@@ -151,7 +250,7 @@ export interface CommonTool {
 
   createTask(props: {
     agentId: string;
-    sessionId: string;
+    sessionId?: string;
     title: string;
     description?: string;
     executionMode?: 'single' | 'workflow' | 'sequential';
@@ -170,6 +269,21 @@ export interface CommonTool {
     /** Set true only after the user explicitly approves this exact task. */
     confirmed?: boolean;
   }): Promise<any>;
+
+  /** Load a platform skill's full instructions after inspecting the skill index. */
+  invoke_skill(props: {
+    skillSlug?: string;
+    url?: string;
+    message?: string;
+    agentId?: string;
+    apiKey?: string;
+    contextId?: string;
+  }): Promise<{
+    text: string;
+    taskId?: string;
+    state?: string;
+    artifacts?: any[];
+  }>;
   updateTaskProgress(props: {
     taskId: string;
     progress: number;
@@ -187,19 +301,6 @@ export interface CommonTool {
    */
   //getAgents(): any;
   //getAgentWithId(props: { id: string }): any;
-
-  // Previously for onchain tasks
-  // getTasks(): any;
-  // getTasksWithFilter(props: { where: { status?: 'open' | 'closed' } }): any;
-  // createTask(props: {
-  //   description: string;
-  //   reward: number;
-  //   resourceBased: boolean;
-  //   parentTaskId?: number;
-  //   maxParticipants: number;
-  // }): any;
-  // joinTask(props: { taskId: number }): any;
-  // completeTask(props: { taskId: number; resultantFile: string }): any;
 
   /**
    * Interact with an agent in the network
@@ -591,7 +692,6 @@ export class CommonToolService {
     private tasks: TaskService,
     @Inject(forwardRef(() => TaskExecutionService))
     private taskExecution: TaskExecutionService,
-    //@Inject(forwardRef(() => TaskService)) previous for onchain tasks
     //private task: TaskService,
     @Inject(forwardRef(() => OpenAIService))
     private openAI: OpenAIService,
@@ -658,11 +758,73 @@ export class CommonToolService {
     return this.copilot.proposeWorkflowChange(agentId, props);
   }
 
+  async proposeAgentChange(
+    props: {
+      resourceId?: string;
+      summary: string;
+      data: Record<string, any>;
+      agentId: string;
+    },
+    metadata?: { agentId?: string },
+  ) {
+    const agentId = this.requireToolAgentId(props.agentId, metadata);
+    return this.copilot.proposeAgentChange(agentId, props);
+  }
+
+  async proposeSkillChange(
+    props: {
+      resourceId?: string;
+      summary: string;
+      data: Record<string, any>;
+      agentId: string;
+    },
+    metadata?: { agentId?: string },
+  ) {
+    const agentId = this.requireToolAgentId(props.agentId, metadata);
+    return this.copilot.proposeSkillChange(agentId, props);
+  }
+
+  async proposeToolChange(
+    props: {
+      resourceId?: string;
+      summary: string;
+      data: Record<string, any>;
+      agentId: string;
+    },
+    metadata?: { agentId?: string },
+  ) {
+    const agentId = this.requireToolAgentId(props.agentId, metadata);
+    return this.copilot.proposeToolChange(agentId, props);
+  }
+
+  async proposeTaskChange(
+    props: {
+      resourceId: string;
+      summary: string;
+      data: {
+        title?: string;
+        description?: string;
+        priority?: number;
+        scheduledFor?: Date;
+      };
+      agentId: string;
+    },
+    metadata?: { agentId?: string },
+  ) {
+    const agentId = this.requireToolAgentId(props.agentId, metadata);
+    return this.copilot.proposeTaskChange(agentId, props);
+  }
+
   private requireToolAgentId(
     agentId?: string,
     metadata?: { agentId?: string },
   ) {
-    const resolved = agentId ?? metadata?.agentId;
+    if (metadata?.agentId && agentId && metadata.agentId !== agentId) {
+      throw new BadRequestException(
+        'agentId must match the authenticated calling agent',
+      );
+    }
+    const resolved = metadata?.agentId ?? agentId;
     if (!resolved) {
       throw new BadRequestException('agentId is required for this tool');
     }
@@ -907,7 +1069,7 @@ export class CommonToolService {
   async createTask(
     props: {
       agentId: string;
-      sessionId: string;
+      sessionId?: string;
       title: string;
       description?: string;
       executionMode?: 'single' | 'workflow' | 'sequential';
@@ -927,19 +1089,30 @@ export class CommonToolService {
     },
     metadata?: { agentId: string },
   ) {
-    // Agent-created tasks use the agent's ID as createdBy
-    const createdBy = metadata?.agentId || props.agentId;
-    await this.copilot.assertMutationAllowed(
-      createdBy,
-      'tasks',
-      props.confirmed === true,
-    );
+    const callingAgentId = metadata?.agentId || props.agentId;
 
     const { confirmed: _confirmed, ...taskProps } = props;
 
+    // Commons Copilot creates a reviewable user-owned task assigned to the
+    // explicitly selected target agent. This is the same task model shown in
+    // Studio; it never creates a hidden agent-owned/legacy task.
+    if (await this.copilot.isSystemCopilot(callingAgentId)) {
+      return this.copilot.proposeTaskChange(callingAgentId, {
+        summary: `Create task “${props.title}” for the selected agent`,
+        data: taskProps,
+      });
+    }
+
+    if (!taskProps.sessionId) {
+      throw new BadRequestException(
+        'sessionId is required when an ordinary agent creates a task',
+      );
+    }
+
     return await this.taskExecution.createTask({
       ...taskProps,
-      createdBy,
+      sessionId: taskProps.sessionId,
+      createdBy: callingAgentId,
       createdByType: 'agent',
     });
   }
@@ -967,141 +1140,6 @@ export class CommonToolService {
       props.metadata,
     );
   }
-
-  //Previously for onchain tasks
-  // getTasks(props?: { where?: { status?: string } }) {
-  //   const graphAPIKey = process.env.GRAPH_API_KEY;
-  //   const data = graphqlRequest.then(async (_) => {
-  //     const tasksDocument = _.gql`
-  //   	{
-  //   		tasks {
-  //   			id
-  // 			taskId
-  // 			creator
-  // 			metadata
-  // 			reward
-  // 			resourceBased
-  // 			status
-  // 			rewardsDistributed
-  // 			parentTaskId
-  // 			maxParticipants
-  // 			currentParticipants
-  // 			contributions {
-  // 			contributor
-  // 			value
-  // 			}
-  // 			subtasks
-  //   		}
-  //   	}
-  //   	`;
-  //     const tasksWithFilterDocument = _.gql`
-  //   	{
-  //   		tasks(where: ${props?.where}) {
-  //   			id
-  // 			taskId
-  // 			creator
-  // 			metadata
-  // 			reward
-  // 			resourceBased
-  // 			status
-  // 			rewardsDistributed
-  // 			parentTaskId
-  // 			maxParticipants
-  // 			currentParticipants
-  // 			contributions {
-  // 			contributor
-  // 			value
-  // 			}
-  // 			subtasks
-  //   		}
-  //   	}
-  //   	`;
-
-  //     return await _.request(
-  //       this.graphAPI,
-  //       props?.where ? tasksWithFilterDocument : tasksDocument,
-  //     );
-  //   });
-  //   return data;
-  // }
-  // getTasksWithFilter(props: { where: { status?: string } }) {
-  //   return this.getTasks({
-  //     where: props.where,
-  //   });
-  // }
-
-  // // @ts-expect-error
-  // async createTask(
-  //   props: {
-  //     name: string;
-  //     description: string;
-  //     thumbnail: string;
-  //     reward: number;
-  //     resourceBased: boolean;
-  //     parentTaskId?: number;
-  //     maxParticipants: number;
-  //   },
-  //   metadata: { agentId: string; privateKey: string },
-  // ) {
-  //   const taskMetadataJSON = {
-  //     name: props.name,
-  //     description: props.description,
-  //     image: props.thumbnail,
-  //     attributes: [],
-  //   };
-  //   //upload metadata to IPFS
-  //   const metadataFile = await this.pinataService.uploadJsonFile(
-  //     taskMetadataJSON,
-  //     'metadata.json',
-  //   );
-  //   //get ipfs file url
-  //   const cid = metadataFile.IpfsHash;
-  //   const taskMetadata = `https://${process.env.GATEWAY_URL ?? 'gateway.pinata.cloud'}/ipfs/${cid}`;
-
-  //   const task = await this.task.createTask({
-  //     ...props,
-  //     metadata: taskMetadata,
-  //     reward: BigInt(props.reward),
-  //     parentTaskId: BigInt(props.parentTaskId || 0),
-  //     maxParticipants: BigInt(props.maxParticipants),
-  //     agentId: metadata.agentId,
-  //   });
-
-  //   return task;
-  // }
-
-  // // @ts-expect-error
-  // async joinTask(
-  //   props: {
-  //     taskId: number;
-  //   },
-  //   metadata: { agentId: string; privateKey: string },
-  // ) {
-  //   const task = await this.task.joinTask({
-  //     ...props,
-  //     taskId: BigInt(props.taskId),
-  //     agentId: metadata.agentId,
-  //   });
-
-  //   return task;
-  // }
-
-  // // @ts-expect-error
-  // async completeTask(
-  //   props: {
-  //     taskId: number;
-  //     resultantFile: string;
-  //   },
-  //   metadata: { agentId: string; privateKey: string },
-  // ) {
-  //   const task = await this.task.completeTask({
-  //     ...props,
-  //     taskId: BigInt(props.taskId),
-  //     agentId: metadata.agentId,
-  //   });
-
-  //   return task;
-  // }
 
   interactWithAgent(props: {
     agentId: string;
