@@ -650,7 +650,7 @@ export default function ChatInputBox({
     <div
       ref={containerRef}
       className={cn(
-        "relative rounded-2xl bg-white border border-stone-200 shadow-composer transition-colors",
+        "relative rounded-2xl bg-white border border-stone-300 shadow-composer transition-colors",
         isDragging && "border-indigo-400 bg-indigo-50/40 dark:bg-indigo-950/20",
       )}
       onDragOver={(event) => {
