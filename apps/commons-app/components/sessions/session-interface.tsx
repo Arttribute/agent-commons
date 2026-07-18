@@ -440,13 +440,9 @@ export default function SessionInterfaceImproved({
                   </div>
                   {conversationStarters.length > 0 && (
                     <div
-                      // Equal-width cells that always fill the row; wraps to
-                      // fewer columns in narrow surfaces like the copilot panel.
-                      className="grid w-full gap-2"
-                      style={{
-                        gridTemplateColumns:
-                          "repeat(auto-fit, minmax(150px, 1fr))",
-                      }}
+                      // One row of equal-width cells, always filling the full
+                      // width — labels truncate rather than wrap or trail.
+                      className="grid w-full grid-flow-col auto-cols-fr gap-2"
                     >
                       {conversationStarters.map((starter) => (
                         <button

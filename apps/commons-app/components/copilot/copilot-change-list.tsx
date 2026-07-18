@@ -5,7 +5,6 @@ import Link from "next/link";
 import ReactFlow, { Background, Controls, ReactFlowProvider } from "reactflow";
 import "reactflow/dist/style.css";
 import { Check, ExternalLink, Eye, Loader2, RotateCcw, X } from "lucide-react";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -106,23 +105,18 @@ export function CopilotChangeList({
         <div
           key={change.changeId}
           className={cn(
-            "rounded-xl border border-border bg-background/95 shadow-sm",
+            "rounded-xl border border-border bg-white shadow-card",
             compact ? "p-3" : "p-4",
           )}
         >
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0">
-              <p className="text-sm font-medium">{change.title}</p>
-              <p className="mt-1 text-xs capitalize text-muted-foreground">
+              <p className="truncate text-sm text-foreground">{change.title}</p>
+              <p className="mt-0.5 text-xs capitalize text-muted-foreground">
                 {change.action} {change.resourceType}
               </p>
             </div>
-            <Badge
-              variant={change.status === "pending" ? "default" : "secondary"}
-              className="shrink-0 capitalize"
-            >
-              {change.status}
-            </Badge>
+            <ChangeStatus status={change.status} />
           </div>
 
           <ChangeSummary change={change} />
@@ -222,6 +216,21 @@ export function CopilotChangeList({
         onOpenChange={(open) => !open && setReviewing(null)}
       />
     </div>
+  );
+}
+
+function ChangeStatus({ status }: { status: CopilotChange["status"] }) {
+  const dot =
+    status === "pending"
+      ? "bg-amber-500"
+      : status === "applied"
+        ? "bg-emerald-500"
+        : "bg-muted-foreground/40";
+  return (
+    <span className="flex shrink-0 items-center gap-1.5 pt-0.5 text-[11px] capitalize text-muted-foreground">
+      <span className={cn("h-1.5 w-1.5 rounded-full", dot)} />
+      {status}
+    </span>
   );
 }
 

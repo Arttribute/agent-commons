@@ -84,12 +84,6 @@ const COMMONS_COPILOT_AVATAR = '/commons-copilot.png';
 const COMMONS_COPILOT_GREETING = 'What should we build today?';
 const LEGACY_COPILOT_GREETING =
   'I’m your Commons Copilot. I can help you build, test, and manage anything in Agent Commons—what should we make?';
-const LEGACY_COPILOT_STARTERS = [
-  'Design a workflow with me',
-  'Show me what is in my Agent Commons account',
-  'Help me create a new agent',
-  'Turn this process into an automated task',
-];
 const COMMONS_COPILOT_STARTERS = [
   {
     label: 'Create an agent',
@@ -2915,13 +2909,13 @@ export class AgentService implements OnModuleInit {
         existing.instructions !== COMMONS_COPILOT_INSTRUCTIONS;
       const needsGreetingUpgrade =
         existing.greeting === LEGACY_COPILOT_GREETING;
-      // Only the untouched built-in starter set is migrated to the rich
-      // {label, prompt} format; customized starters stay as the user wrote them.
+      // Every copilot still carrying plain-string starters moves to the rich
+      // {label, prompt} format so all users get the improved starter prompts.
       const needsStarterUpgrade =
-        Array.isArray(existing.conversationStarters) &&
-        existing.conversationStarters.length === LEGACY_COPILOT_STARTERS.length &&
-        existing.conversationStarters.every(
-          (starter, index) => starter === LEGACY_COPILOT_STARTERS[index],
+        !Array.isArray(existing.conversationStarters) ||
+        existing.conversationStarters.length === 0 ||
+        existing.conversationStarters.some(
+          (starter) => typeof starter === 'string',
         );
       if (
         needsAvatarUpgrade ||

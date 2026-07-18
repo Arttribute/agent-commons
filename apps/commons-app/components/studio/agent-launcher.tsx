@@ -114,13 +114,13 @@ export function StudioAgentLauncher({
         }
       />
       {starters.length > 0 && (
-        <div className="mt-3 flex flex-wrap justify-center gap-2">
+        <div className="mt-3 flex flex-nowrap justify-center gap-2">
           {starters.map((starter) => (
             <button
               key={starter.label}
               type="button"
               title={starter.prompt}
-              className="rounded-full border border-border bg-white px-3.5 py-1.5 text-sm text-muted-foreground shadow-card transition-colors hover:bg-muted hover:text-foreground"
+              className="min-w-0 max-w-[12rem] truncate rounded-full border border-border bg-white px-3.5 py-1.5 text-sm text-muted-foreground shadow-card transition-colors hover:bg-muted hover:text-foreground"
               onClick={() => setInputText(starter.prompt)}
             >
               {starter.label}

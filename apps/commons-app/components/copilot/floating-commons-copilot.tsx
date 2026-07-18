@@ -16,6 +16,7 @@ import { AgentProvider, useAgentContext } from "@/context/AgentContext";
 import { useAuth } from "@/context/AuthContext";
 import { AgentAvatar } from "@/components/agents/agent-avatar";
 import SessionInterface from "@/components/sessions/session-interface";
+import SessionsList from "@/components/sessions/sessions-list";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
@@ -49,6 +50,16 @@ const SCOPES = [
   ["tasks", "Tasks"],
 ] as const;
 
+const PANEL_WIDTH_KEY = "copilot-panel-width";
+const PANEL_MIN_WIDTH = 320;
+const PANEL_MAX_WIDTH = 560;
+const PANEL_DEFAULT_WIDTH = 340;
+
+function clampPanelWidth(value: number) {
+  if (!Number.isFinite(value)) return PANEL_DEFAULT_WIDTH;
+  return Math.min(PANEL_MAX_WIDTH, Math.max(PANEL_MIN_WIDTH, Math.round(value)));
+}
+
 export function FloatingCommonsCopilot() {
   return (
     <AgentProvider>
@@ -77,6 +88,39 @@ function FloatingCommonsCopilotInner() {
     text: string;
   } | null>(null);
   const [uiContext, setUiContext] = useState<Record<string, unknown>>({});
+  const [panelWidth, setPanelWidth] = useState(PANEL_DEFAULT_WIDTH);
+
+  useEffect(() => {
+    const stored = Number(window.localStorage.getItem(PANEL_WIDTH_KEY));
+    if (stored) setPanelWidth(clampPanelWidth(stored));
+  }, []);
+
+  // Keep the app shell's reserved margin in exact sync with the panel width
+  // so opening the copilot never leaves a trailing gap.
+  useEffect(() => {
+    document.documentElement.style.setProperty(
+      "--copilot-panel-width",
+      `${panelWidth}px`,
+    );
+  }, [panelWidth]);
+
+  const startPanelResize = (event: React.PointerEvent) => {
+    event.preventDefault();
+    const startX = event.clientX;
+    const startWidth = panelWidth;
+    let width = startWidth;
+    const onMove = (move: PointerEvent) => {
+      width = clampPanelWidth(startWidth + (startX - move.clientX));
+      setPanelWidth(width);
+    };
+    const onUp = () => {
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+      window.localStorage.setItem(PANEL_WIDTH_KEY, String(width));
+    };
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+  };
 
   const hidden = useMemo(
     () =>
@@ -289,7 +333,15 @@ function FloatingCommonsCopilotInner() {
       )}
 
       {open && (
-        <aside className="fixed inset-y-0 right-0 z-40 flex w-full flex-col border-l border-border bg-background shadow-xl lg:w-[300px]">
+        <aside className="fixed inset-y-0 right-0 z-40 flex w-full flex-col border-l border-border bg-background shadow-xl lg:w-[var(--copilot-panel-width,340px)]">
+          {/* Drag the left edge to resize; width persists across sessions. */}
+          <div
+            role="separator"
+            aria-orientation="vertical"
+            aria-label="Resize copilot panel"
+            onPointerDown={startPanelResize}
+            className="absolute inset-y-0 left-0 z-10 hidden w-1.5 cursor-col-resize touch-none hover:bg-border/80 lg:block"
+          />
           <div className="flex h-14 shrink-0 items-center gap-2 border-b px-3">
             <Link
               href={profileHref}
@@ -302,7 +354,7 @@ function FloatingCommonsCopilotInner() {
                 size={34}
               />
               <div className="min-w-0">
-                <p className="truncate text-sm font-semibold">{copilot.name}</p>
+                <p className="truncate text-sm font-medium">{copilot.name}</p>
                 <p className="truncate text-[11px] text-muted-foreground">
                   {sessionId
                     ? "Current Copilot session"
@@ -374,36 +426,19 @@ function FloatingCommonsCopilotInner() {
 
             {view === "sessions" && (
               <ScrollArea className="h-full">
-                <div className="space-y-1 p-3">
+                <div className="p-3">
                   <div className="px-2 pb-2 pt-1">
-                    <h2 className="text-sm font-semibold">Recent chats</h2>
+                    <h2 className="text-sm font-medium">Recent chats</h2>
                     <p className="mt-1 text-xs text-muted-foreground">
                       Continue an earlier Copilot session.
                     </p>
                   </div>
-                  {!sessions.length && (
-                    <p className="rounded-lg border border-dashed p-5 text-center text-xs text-muted-foreground">
-                      No previous chats yet.
-                    </p>
-                  )}
-                  {sessions.map((session) => (
-                    <button
-                      key={session.sessionId}
-                      type="button"
-                      onClick={() => openSession(session.sessionId)}
-                      className={cn(
-                        "w-full rounded-lg px-3 py-2.5 text-left transition hover:bg-muted",
-                        session.sessionId === sessionId && "bg-muted",
-                      )}
-                    >
-                      <p className="truncate text-sm font-medium">
-                        {session.title || "Untitled chat"}
-                      </p>
-                      <p className="mt-0.5 text-[11px] text-muted-foreground">
-                        {formatDate(session.updatedAt || session.createdAt)}
-                      </p>
-                    </button>
-                  ))}
+                  <SessionsList
+                    sessions={sessions}
+                    currentSessionId={sessionId}
+                    onSelect={(id) => void openSession(id)}
+                    emptyLabel="No previous chats yet."
+                  />
                 </div>
               </ScrollArea>
             )}
@@ -412,7 +447,7 @@ function FloatingCommonsCopilotInner() {
               <ScrollArea className="h-full">
                 <div className="space-y-5 p-4">
                   <div>
-                    <h2 className="text-sm font-semibold">Access policy</h2>
+                    <h2 className="text-sm font-medium">Access policy</h2>
                     <p className="mt-1 text-xs leading-5 text-muted-foreground">
                       Choose when Copilot may apply changes automatically.
                     </p>
@@ -618,17 +653,6 @@ function resourceContext(value: Record<string, any>) {
       .filter((key) => value[key] !== undefined)
       .map((key) => [key, value[key]]),
   );
-}
-
-function formatDate(value?: string) {
-  if (!value) return "";
-  const date = new Date(value);
-  return Number.isNaN(date.getTime())
-    ? ""
-    : new Intl.DateTimeFormat(undefined, {
-        dateStyle: "medium",
-        timeStyle: "short",
-      }).format(date);
 }
 
 function studioResourceUrl(type: string, id: string) {
