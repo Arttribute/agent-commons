@@ -5,6 +5,7 @@ import { useState, useEffect, useCallback } from "react";
 export function useSessions(agentId: string, userAddress: string) {
   const [sessions, setSessions] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+  const [loadedKey, setLoadedKey] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const fetchSessions = useCallback(async () => {
@@ -27,6 +28,7 @@ export function useSessions(agentId: string, userAddress: string) {
       setError(err instanceof Error ? err.message : "Unknown error");
       console.error("Error fetching sessions:", err);
     } finally {
+      setLoadedKey(`${agentId}:${userAddress}`);
       setIsLoading(false);
     }
   }, [agentId, userAddress]);
@@ -41,7 +43,9 @@ export function useSessions(agentId: string, userAddress: string) {
 
   return {
     sessions,
-    isLoading,
+    isLoading:
+      Boolean(agentId && userAddress) &&
+      (isLoading || loadedKey !== `${agentId}:${userAddress}`),
     error,
     refetchSessions,
   };

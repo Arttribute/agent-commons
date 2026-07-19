@@ -12,6 +12,7 @@ import { DatabaseService } from '~/modules/database/database.service';
 import type { CreditBalance, CreditLedgerInput } from './credit.types';
 
 type Tx = any;
+const NEW_USER_CREDIT_GRANT = 500;
 
 @Injectable()
 export class CreditService {
@@ -954,10 +955,40 @@ export class CreditService {
   }
 
   private async ensureAccount(tx: Tx, principalId: string) {
-    await tx
+    const [created] = await tx
       .insert(schema.creditAccount)
       .values({ principalId })
-      .onConflictDoNothing({ target: schema.creditAccount.principalId });
+      .onConflictDoNothing({ target: schema.creditAccount.principalId })
+      .returning({ principalId: schema.creditAccount.principalId });
+
+    // Commons Identity user IDs are canonical `usr_*` principals. Award the
+    // onboarding balance in the same transaction that creates their account,
+    // so parallel first requests cannot duplicate it and no browser input is
+    // trusted. Existing accounts are untouched.
+    if (created && principalId.startsWith('usr_')) {
+      await tx.insert(schema.creditLedgerEntry).values({
+        principalId,
+        principalType: 'user',
+        amount: NEW_USER_CREDIT_GRANT,
+        direction: 'grant',
+        eventType: 'new_user_welcome',
+        sourcePlatform: 'agent_commons',
+        idempotencyKey: `new-user-welcome:${principalId}`,
+        description: 'Welcome to Agent Commons',
+        metadata: { automatic: true },
+        createdBy: 'onboarding_service',
+        createdByType: 'service',
+        remainingAmount: NEW_USER_CREDIT_GRANT,
+      });
+      await tx
+        .update(schema.creditAccount)
+        .set({
+          balance: NEW_USER_CREDIT_GRANT,
+          lifetimeGranted: NEW_USER_CREDIT_GRANT,
+          updatedAt: new Date(),
+        })
+        .where(eq(schema.creditAccount.principalId, principalId));
+    }
     const [account] = await tx
       .select()
       .from(schema.creditAccount)

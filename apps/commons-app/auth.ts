@@ -7,6 +7,10 @@ const AUTH_SESSION_VERSION = (
   process.env.COMMONS_AUTH_SESSION_VERSION ?? "v2"
 ).replace(/[^a-zA-Z0-9_-]/g, "-");
 
+// Rotating refresh tokens can only be exchanged once. Coalesce parallel page
+// and API requests so they cannot invalidate one another and emit brief 401s.
+const refreshFlights = new Map<string, Promise<any>>();
+
 async function activateProduct(accessToken: unknown) {
   if (!issuer || typeof accessToken !== "string") return null;
   const response = await fetch(
@@ -17,14 +21,33 @@ async function activateProduct(accessToken: unknown) {
     },
   ).catch(() => null);
   if (!response?.ok) return null;
-  return response.json() as Promise<{
+  const identity = (await response.json()) as {
+    firstActivation?: boolean;
     userId?: string;
     workspaceId?: string | null;
     image?: string | null;
-  }>;
+  };
+  // Provision the new user's credit account during the first product
+  // activation. The credit service performs the 500-credit grant atomically;
+  // the normal studio balance request safely retries if this network call is
+  // unavailable during sign-in.
+  if (identity.firstActivation) {
+    await provisionCreditAccount(accessToken);
+  }
+  return identity;
 }
 
-async function refreshAccessToken(token: any) {
+async function provisionCreditAccount(accessToken: string) {
+  const apiUrl = process.env.NEXT_PUBLIC_NEST_API_BASE_URL?.replace(/\/$/, "");
+  if (!apiUrl) return;
+  await fetch(`${apiUrl}/v1/credits/balance`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+    cache: "no-store",
+    signal: AbortSignal.timeout(2_500),
+  }).catch(() => null);
+}
+
+async function performAccessTokenRefresh(token: any) {
   if (!issuer || !token.refreshToken) return token;
   try {
     const response = await fetch(`${issuer}/oauth2/token`, {
@@ -55,6 +78,18 @@ async function refreshAccessToken(token: any) {
   } catch {
     return { ...token, accessTokenError: "RefreshAccessTokenError" };
   }
+}
+
+async function refreshAccessToken(token: any) {
+  const key = String(token.refreshToken ?? "");
+  if (!key) return token;
+  const existing = refreshFlights.get(key);
+  if (existing) return existing;
+  const flight = performAccessTokenRefresh(token).finally(() => {
+    refreshFlights.delete(key);
+  });
+  refreshFlights.set(key, flight);
+  return flight;
 }
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
@@ -128,8 +163,16 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       session.user.id = String(token.identityUserId ?? token.sub ?? "");
       session.user.workspaceId = token.workspaceId as string | undefined;
       if (token.picture) session.user.image = String(token.picture);
-      session.accessToken = token.accessToken as string | undefined;
-      session.accessTokenError = token.accessTokenError as string | undefined;
+      // BFF routes need these values, but the browser does not. Keeping them
+      // non-enumerable prevents serialization from /api/auth/session and RSC.
+      Object.defineProperty(session, "accessToken", {
+        value: token.accessToken as string | undefined,
+        enumerable: false,
+      });
+      Object.defineProperty(session, "accessTokenError", {
+        value: token.accessTokenError as string | undefined,
+        enumerable: false,
+      });
       return session;
     },
   },

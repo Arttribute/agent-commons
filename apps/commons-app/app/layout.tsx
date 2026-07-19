@@ -9,6 +9,8 @@ import { Toaster } from "@/components/ui/toaster";
 import { SidebarProvider } from "@/context/SidebarContext";
 import { GlobalSearchProvider } from "@/context/SearchContext";
 import { FloatingCommonsCopilot } from "@/components/copilot/floating-commons-copilot";
+import { auth } from "@/auth";
+import type { Session } from "next-auth";
 
 const spaceGrotesk = Space_Grotesk({
   weight: ["400", "500", "600", "700"],
@@ -29,18 +31,35 @@ export const metadata: Metadata = {
     "Create, deploy, and manage AI agents and whole teams of them. Agent computers, workflows, integrations, and every major model in one place.",
 };
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  // Seed the client provider from the signed server cookie. Authenticated UI is
+  // now correct on the first render instead of waiting for /api/auth/session.
+  const serverSession = await auth();
+  const session: Session | null = serverSession?.user
+    ? {
+        expires: serverSession.expires,
+        authSessionVersion: serverSession.authSessionVersion,
+        user: {
+          id: serverSession.user.id,
+          workspaceId: serverSession.user.workspaceId,
+          name: serverSession.user.name,
+          email: serverSession.user.email,
+          image: serverSession.user.image,
+        },
+      }
+    : null;
+
   return (
     <html lang="en" suppressHydrationWarning>
       <body
         className={`${spaceGrotesk.className} ${spaceGrotesk.variable} ${geistMono.variable}`}
         suppressHydrationWarning
       >
-        <Providers>
+        <Providers session={session}>
           <AuthProvider>
             <SidebarProvider>
               <GlobalSearchProvider>

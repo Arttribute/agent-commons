@@ -36,7 +36,15 @@ export function useSpaces(opts: UseSpacesOptions) {
 
   const [spaces, setSpaces] = useState<SpaceListItem[]>([]);
   const [loading, setLoading] = useState(false);
+  const [loadedKey, setLoadedKey] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const requestKey = JSON.stringify({
+    memberId,
+    agentIds: agentIds ?? [],
+    includeMembers,
+    search: search ?? "",
+    publicOnly: Boolean(publicOnly),
+  });
 
   const fetchSpaces = useCallback(async () => {
     if (!memberId && (!agentIds || !agentIds.length) && !publicOnly) return;
@@ -67,13 +75,20 @@ export function useSpaces(opts: UseSpacesOptions) {
     } catch (e: any) {
       setError(e.message);
     } finally {
+      setLoadedKey(requestKey);
       setLoading(false);
     }
-  }, [memberId, agentIds, includeMembers, search, publicOnly]);
+  }, [memberId, agentIds, includeMembers, search, publicOnly, requestKey]);
 
   useEffect(() => {
     if (auto) fetchSpaces();
   }, [auto, fetchSpaces]);
 
-  return { spaces, loading, error, refetch: fetchSpaces };
+  const canLoad = Boolean(memberId || agentIds?.length || publicOnly);
+  return {
+    spaces,
+    loading: canLoad && auto && (loading || loadedKey !== requestKey),
+    error,
+    refetch: fetchSpaces,
+  };
 }

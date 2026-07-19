@@ -39,7 +39,9 @@ interface WalletBalance {
 
 function AgentWalletRow({ agent }: { agent: { agentId: string; name: string } }) {
   const [wallets, setWallets] = useState<WalletRecord[]>([]);
-  const [loading, setLoading] = useState(false);
+  // The list is unresolved the first time a row opens; start in loading state
+  // so an empty wallet message cannot flash before the effect begins.
+  const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
   const [expanded, setExpanded] = useState(false);
   const [balances, setBalances] = useState<Record<string, WalletBalance | null>>({});

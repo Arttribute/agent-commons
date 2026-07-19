@@ -1,4 +1,5 @@
 import { auth } from "@/auth";
+import type { Session } from "next-auth";
 import { normalizePrincipalId } from "@/lib/principal-id";
 
 const serviceTokenCache = new Map<string, { value: string; expiresAt: number }>();
@@ -10,6 +11,8 @@ type BackendAuthHeaderOptions = {
   preferServiceKey?: boolean;
   preferUserToken?: boolean;
   allowLegacyServiceKey?: boolean;
+  /** Reuse a session already resolved by the route to avoid duplicate work. */
+  session?: Session | null;
 };
 
 type ServiceAuthHeaderOptions = {
@@ -33,7 +36,9 @@ function envValue(name: string) {
 export async function backendAuthHeaders(
   options: BackendAuthHeaderOptions = {},
 ): Promise<Record<string, string>> {
-  const session = await auth();
+  const session = Object.prototype.hasOwnProperty.call(options, "session")
+    ? options.session
+    : await auth();
   const delegatedUserId = normalizePrincipalId(session?.user?.id);
   const delegatedHeaders: Record<string, string> = delegatedUserId
     ? { "x-initiator": delegatedUserId, "x-owner-id": delegatedUserId }

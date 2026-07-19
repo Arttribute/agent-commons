@@ -17,7 +17,7 @@ import { CreateWorkflowDialog } from "@/components/workflows/create-workflow-dia
 import { CreateToolDialog } from "@/components/tools/create-tool-dialog";
 import { TaskManagementView } from "@/components/tasks/task-management-view";
 import { SkillsMarketplaceView } from "@/components/skills/skills-marketplace-view";
-import { Loader2 } from "lucide-react";
+import { AlertCircle, Loader2 } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { CreateButton, PageHeader } from "@/components/layout/page-header";
 import { useRouter } from "next/navigation";
@@ -47,7 +47,12 @@ const StudioPage: NextPage = () => {
   // The launcher's footprint, so the floating agents can keep clear of it.
   const composerRef = useRef<HTMLDivElement>(null);
 
-  const { agents, loading: loadingAgents } = useAgents(
+  const {
+    agents,
+    loading: loadingAgents,
+    error: agentsError,
+    refresh: refreshAgents,
+  } = useAgents(
     activeTab === "agents" ? userAddress : undefined,
   );
 
@@ -128,6 +133,21 @@ const StudioPage: NextPage = () => {
                 <div className="flex h-full items-center justify-center">
                   <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
                 </div>
+              ) : agentsError ? (
+                <div className="flex h-full flex-col items-center justify-center text-center">
+                  <AlertCircle className="mb-3 h-6 w-6 text-red-500" />
+                  <p className="text-sm font-medium">Couldn’t load your agents</p>
+                  <p className="mt-1 max-w-sm text-xs text-muted-foreground">
+                    Your account is still signed in. The connection to Agent Commons was interrupted.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={refreshAgents}
+                    className="mt-4 rounded-lg border border-border bg-background px-3 py-1.5 text-xs font-medium transition-colors hover:bg-muted"
+                  >
+                    Try again
+                  </button>
+                </div>
               ) : agents.length === 0 ? (
                 <AgentsShowcase agents={agents} />
               ) : (
@@ -180,11 +200,13 @@ const StudioPage: NextPage = () => {
   }, [
     activeTab,
     loadingAgents,
+    agentsError,
     agents,
     pagedAgents,
     userAddress,
     registerSkillCreate,
     registerTaskCreate,
+    refreshAgents,
   ]);
 
   const createLabel = useMemo(() => {

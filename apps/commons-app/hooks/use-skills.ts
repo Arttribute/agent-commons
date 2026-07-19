@@ -5,6 +5,7 @@ import type { Skill, SkillIndex } from "@agent-commons/sdk";
 export function useSkills(filter?: { ownerId?: string; ownerType?: string; isPublic?: boolean }) {
   const [skills, setSkills] = useState<Skill[]>([]);
   const [loading, setLoading] = useState(false);
+  const [loadedKey, setLoadedKey] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const filterKey = JSON.stringify(filter);
@@ -24,6 +25,7 @@ export function useSkills(filter?: { ownerId?: string; ownerType?: string; isPub
     } catch (err: any) {
       setError(err.message);
     } finally {
+      setLoadedKey(filterKey);
       setLoading(false);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -31,12 +33,18 @@ export function useSkills(filter?: { ownerId?: string; ownerType?: string; isPub
 
   useEffect(() => { load(); }, [load]);
 
-  return { skills, loading, error, refresh: load };
+  return {
+    skills,
+    loading: loading || loadedKey !== filterKey,
+    error,
+    refresh: load,
+  };
 }
 
 export function useSkillIndex(ownerId?: string) {
   const [index, setIndex] = useState<SkillIndex[]>([]);
   const [loading, setLoading] = useState(false);
+  const [loadedOwner, setLoadedOwner] = useState<string | null | undefined>(undefined);
   const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
@@ -50,11 +58,17 @@ export function useSkillIndex(ownerId?: string) {
     } catch (err: any) {
       setError(err.message);
     } finally {
+      setLoadedOwner(ownerId ?? null);
       setLoading(false);
     }
   }, [ownerId]);
 
   useEffect(() => { load(); }, [load]);
 
-  return { index, loading, error, refresh: load };
+  return {
+    index,
+    loading: loading || loadedOwner !== (ownerId ?? null),
+    error,
+    refresh: load,
+  };
 }
