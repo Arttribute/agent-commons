@@ -22,6 +22,7 @@ import {
 import { ComputerVisual } from "@/components/landing/computer-visual";
 import { DeveloperVisual } from "@/components/landing/developer-visual";
 import { HeroComposer } from "@/components/landing/hero-composer";
+import { IntegrationCloud } from "@/components/landing/integration-cloud";
 import { LandingNav } from "@/components/landing/landing-nav";
 import { TeamVisual } from "@/components/landing/team-visual";
 import { WorkflowVisual } from "@/components/landing/workflow-visual";
@@ -302,6 +303,35 @@ export default function Home() {
                 </div>
               ))}
             </div>
+          </div>
+        </section>
+
+        <section
+          id="integrations"
+          className="scroll-mt-16 border-b border-stone-200"
+        >
+          <div className="mx-auto grid max-w-7xl items-center gap-14 px-5 py-24 lg:grid-cols-[0.82fr_1.18fr] lg:px-8 lg:py-32">
+            <div>
+              <SectionIntro
+                eyebrow="Tools and integrations"
+                title={
+                  <>
+                    Plug into the tools you{" "}
+                    <span className="inline-block rounded-md bg-teal-200 px-[0.1em] leading-[1.08]">
+                      already use.
+                    </span>
+                  </>
+                }
+                body="Connect your apps in a couple of clicks. For something custom, bring your own tools with an MCP server or API endpoint."
+              />
+              <Link
+                href="/studio/tools"
+                className="mt-8 inline-flex items-center gap-2 text-sm font-semibold text-stone-950"
+              >
+                Explore tools <ArrowRight className="h-4 w-4" />
+              </Link>
+            </div>
+            <IntegrationCloud />
           </div>
         </section>
 
