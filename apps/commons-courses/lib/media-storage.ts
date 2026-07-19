@@ -2,7 +2,7 @@ import { PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
 import { awsCredentialsProvider } from "@vercel/oidc-aws-credentials-provider";
 
 type UploadArgs = {
-  file: File;
+  file: Pick<File, "name" | "type">;
   data: Buffer;
   keyPrefix?: string;
 };

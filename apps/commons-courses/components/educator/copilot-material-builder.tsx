@@ -10,7 +10,7 @@ type ManagedCourse = {
 };
 
 type CopilotResult = {
-  mode: "course" | "skill_path";
+  mode: "course" | "workbook" | "skill_path";
   course: {
     title: string;
     slug: string;
@@ -29,7 +29,7 @@ export function CopilotMaterialBuilder({
 }: {
   courses: ManagedCourse[];
 }) {
-  const [mode, setMode] = useState<"course" | "skill_path">("course");
+  const [mode, setMode] = useState<"course" | "workbook" | "skill_path">("course");
   const [targetCourseSlug, setTargetCourseSlug] = useState(courses[0]?.slug || "");
   const [instructions, setInstructions] = useState("");
   const [files, setFiles] = useState<File[]>([]);
@@ -41,7 +41,7 @@ export function CopilotMaterialBuilder({
     () =>
       files.length > 0 &&
       !submitting &&
-      (mode === "course" || Boolean(targetCourseSlug)),
+      (mode !== "skill_path" || Boolean(targetCourseSlug)),
     [files.length, mode, submitting, targetCourseSlug]
   );
 
@@ -89,10 +89,13 @@ export function CopilotMaterialBuilder({
             <span className="text-sm font-bold text-slate-700">Create</span>
             <select
               value={mode}
-              onChange={(event) => setMode(event.target.value as "course" | "skill_path")}
+              onChange={(event) =>
+                setMode(event.target.value as "course" | "workbook" | "skill_path")
+              }
               className="mt-2 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-slate-400"
             >
               <option value="course">New draft course</option>
+              <option value="workbook">Interactive workbook</option>
               <option value="skill_path">Skill path for existing course</option>
             </select>
           </label>
@@ -102,7 +105,7 @@ export function CopilotMaterialBuilder({
             <select
               value={targetCourseSlug}
               onChange={(event) => setTargetCourseSlug(event.target.value)}
-              disabled={mode === "course" || courses.length === 0}
+              disabled={mode !== "skill_path" || courses.length === 0}
               className="mt-2 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none disabled:bg-slate-50 disabled:text-slate-400 focus:border-slate-400"
             >
               {courses.length ? (
@@ -134,12 +137,12 @@ export function CopilotMaterialBuilder({
             Upload course materials
           </span>
           <span className="mt-1 text-xs leading-5 text-slate-500">
-            PDF, images, Markdown, text, CSV, or JSON. Up to 8 files.
+            PDF, Word, spreadsheets, images, Markdown, text, CSV, or JSON. Up to 8 files.
           </span>
           <input
             type="file"
             multiple
-            accept=".pdf,.png,.jpg,.jpeg,.webp,.md,.markdown,.txt,.csv,.json,application/pdf,image/png,image/jpeg,image/webp,text/*"
+            accept=".pdf,.docx,.xlsx,.xls,.png,.jpg,.jpeg,.webp,.md,.markdown,.txt,.csv,.json,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,image/png,image/jpeg,image/webp,text/*"
             className="sr-only"
             onChange={(event) =>
               setFiles(Array.from(event.target.files || []).slice(0, 8))
@@ -198,9 +201,9 @@ export function CopilotMaterialBuilder({
               Draft created
             </p>
             <p className="mt-2 text-sm leading-6 text-lime-800">
-              {result.mode === "course"
-                ? `Created ${result.course.title}.`
-                : `Added ${result.skillPath?.title || "the skill path"} to ${result.course.title}.`}
+              {result.mode === "skill_path"
+                ? `Added ${result.skillPath?.title || "the skill path"} to ${result.course.title}.`
+                : `Created ${result.course.title}${result.mode === "workbook" ? " as an interactive workbook" : ""}.`}
             </p>
             <div className="mt-3 space-y-2">
               <ResultLink href={result.course.href} label="Open course draft" />

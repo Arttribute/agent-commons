@@ -94,6 +94,11 @@ var CommonsClient = class {
        * }
        */
       stream: (params) => this._streamAgentRun(params),
+      /** Resume a streamed run after executing a caller-owned CLI tool. */
+      submitCliToolResult: (requestId, result) => this.request("POST", "/v1/agents/cli-tool-result", {
+        requestId,
+        result
+      }),
       // ── Heartbeat ─────────────────────────────────────────────────────────
       /** Get the current heartbeat status for an agent. */
       getAutonomy: (agentId) => this.request("GET", `/v1/agents/${agentId}/autonomy`),

@@ -7,6 +7,7 @@ import {
   ensureEducatorCopilotProfile,
   type CopilotUser,
 } from "@/lib/educator-copilot-agent";
+import { uploadEducatorCopilotFiles } from "@/lib/educator-copilot-files";
 import {
   streamEducatorCopilotTurn,
   summarizeSessionTitle,
@@ -65,9 +66,20 @@ export async function POST(req: NextRequest) {
     email: result.session.email,
     name: userDoc?.name,
     role: result.session.role,
+    accessToken: result.session.accessToken,
+    accessTokenError: result.session.accessTokenError,
+    identityUserId: result.session.identityUserId,
+    identityWorkspaceId: result.session.identityWorkspaceId,
   };
 
-  const { profile, client, agentReady } = await ensureEducatorCopilotProfile(user);
+  const connection = await ensureEducatorCopilotProfile(user);
+  const {
+    profile,
+    client,
+    agentReady,
+    principalId,
+    platformAccessToken,
+  } = connection;
   const actionMode = profile.actionMode || "manual";
 
   let session: IEducatorCopilotSession | null = body.sessionId
@@ -89,13 +101,24 @@ export async function POST(req: NextRequest) {
     })) as IEducatorCopilotSession;
   }
 
+  // If an educator relinked their account, migrate existing local chats to the
+  // newly owned agent while replaying their saved local conversation once.
+  if (
+    profile.agentId &&
+    session.agentSessionId &&
+    (!session.agentId || session.agentId !== profile.agentId)
+  ) {
+    session.agentSessionId = undefined;
+  }
+  if (profile.agentId) session.agentId = profile.agentId;
+
   // Link this chat to a real Agent Commons session so model-side history persists.
   const hadAgentSession = Boolean(session.agentSessionId);
   if (client && agentReady && profile.agentId && !session.agentSessionId) {
     session.agentSessionId = await ensureAgentSession({
       client,
       agentId: profile.agentId,
-      initiator: user.id,
+      initiator: principalId || user.id,
       title: content,
     });
   }
@@ -105,14 +128,17 @@ export async function POST(req: NextRequest) {
   const materials = await Promise.all(
     files.map((file) => extractMaterial(file, { maxTextChars, includeImageData: false }))
   );
-  const agentFileIds =
-    client && agentReady && profile.agentId
-      ? await uploadFilesToAgentCommons(files, {
+  const uploadedFiles =
+    client && agentReady && profile.agentId && principalId && platformAccessToken
+      ? await uploadEducatorCopilotFiles(files, {
+          accessToken: platformAccessToken,
+          principalId,
           agentId: profile.agentId,
           sessionId: session.agentSessionId,
-          initiator: user.id,
+          workspaceId: user.identityWorkspaceId,
         })
       : [];
+  const agentFileIds = uploadedFiles.map((file) => file.fileId);
   const now = new Date();
   for (const [index, material] of materials.entries()) {
     session.materials.push({
@@ -166,8 +192,7 @@ export async function POST(req: NextRequest) {
 
   const runTurn = async (onEvent: (event: CopilotStreamEvent) => void | Promise<void>) => {
     if (!client || !agentReady || !profile.agentId) {
-      const reply =
-        "The educator copilot isn't connected to Agent Commons yet. An administrator needs to set AGENT_COMMONS_API_KEY (and optionally AGENT_COMMONS_API_URL) for this app, then I'll be fully operational.";
+      const reply = connection.connectionMessage || copilotConnectionFallback(connection.connectionStatus);
       await onEvent({ type: "token", content: reply });
       return {
         reply,
@@ -298,43 +323,18 @@ async function parseChatBody(req: NextRequest): Promise<ChatBody> {
   return ((await req.json().catch(() => ({}))) as ChatBody) || {};
 }
 
-async function uploadFilesToAgentCommons(
-  files: File[],
-  params: { agentId: string; sessionId?: string; initiator: string }
-) {
-  const apiKey = process.env.AGENT_COMMONS_API_KEY;
-  const baseUrl = (
-    process.env.AGENT_COMMONS_API_URL ||
-    process.env.NEXT_PUBLIC_AGENT_COMMONS_API_URL ||
-    "https://api.agentcommons.io"
-  ).replace(/\/$/, "");
-  if (!apiKey || !files.length) return [];
-
-  try {
-    const formData = new FormData();
-    for (const file of files) formData.append("files", file, file.name);
-    formData.append("agentId", params.agentId);
-    if (params.sessionId) formData.append("sessionId", params.sessionId);
-    const response = await fetch(`${baseUrl}/v1/files/upload`, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        "x-initiator": params.initiator,
-      },
-      body: formData,
-    });
-    if (!response.ok) return [];
-    const payload = (await response.json()) as {
-      data?: Array<{ fileId?: string }>;
-    };
-    return (payload.data || []).map((item) => item.fileId).filter(Boolean) as string[];
-  } catch {
-    return [];
-  }
-}
-
 function stringFormValue(value: FormDataEntryValue | null) {
   return typeof value === "string" ? value.trim() : undefined;
+}
+
+function copilotConnectionFallback(status: string) {
+  if (status === "account_unlinked") {
+    return "Link your Commons account in Copilot settings, then I can create your personal educator agent, memory, and connected workspace.";
+  }
+  if (status === "reauthorization_required") {
+    return "Reconnect your Commons account in Copilot settings so I can continue with your personal educator agent.";
+  }
+  return "Your personal educator agent is temporarily unavailable. Please try again in a moment.";
 }
 
 function serializeSession(session: IEducatorCopilotSession) {
