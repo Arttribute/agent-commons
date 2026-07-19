@@ -600,7 +600,7 @@ app.post("/api/identity/apps/:app/activate", async (c) => {
             ? (process.env.DASHBOARD_URL_COMMON_OS ??
               "https://os.agentcommons.io/dashboard")
             : (process.env.DASHBOARD_URL_AGENT_COMMONS ??
-              "https://www.agentcommons.io/agents"),
+              "https://www.agentcommons.io/studio/agents"),
       template: appId === "commonlabs" ? "commonlab" : "default",
     });
   }

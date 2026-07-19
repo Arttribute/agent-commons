@@ -20,7 +20,7 @@ The landing page. Shows featured agents, public workflows, and quick-start links
 
 ---
 
-### `/agents` — Agent Browser
+### `/studio/agents` — Agent Browser
 
 Lists all agents. You can filter by owner, search by name, or browse public agents. Click any agent card to open it.
 
@@ -31,7 +31,7 @@ Lists all agents. You can filter by owner, search by name, or browse public agen
 
 ---
 
-### `/agents/create` — Create Agent
+### `/studio/agents/create` — Create Agent
 
 A form to define your agent:
 

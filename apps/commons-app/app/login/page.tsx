@@ -1,9 +1,10 @@
 import Link from "next/link";
 import Image from "next/image";
-import { Check, ChevronDown, ShieldCheck } from "lucide-react";
+import { Check, ChevronDown } from "lucide-react";
 import { redirect } from "next/navigation";
 import { auth } from "@/auth";
 import { GoogleLogo } from "@/components/auth/google-logo";
+import { safeAuthCallback } from "@/lib/auth-callback";
 
 type Props = {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
@@ -11,8 +12,7 @@ type Props = {
 
 export default async function LoginPage({ searchParams }: Props) {
   const params = await searchParams;
-  const callbackUrl =
-    typeof params.callbackUrl === "string" ? params.callbackUrl : "/agents";
+  const callbackUrl = safeAuthCallback(params.callbackUrl);
   const oauthQuery =
     typeof params.oauth_query === "string" ? params.oauth_query : "";
   const error = typeof params.authError === "string" ? params.authError : "";
@@ -30,18 +30,11 @@ export default async function LoginPage({ searchParams }: Props) {
   }
 
   return (
-    <main className="relative h-screen overflow-y-auto bg-stone-50 text-stone-950">
-      <div className="pointer-events-none absolute inset-0 overflow-hidden" aria-hidden="true">
-        <div className="absolute -left-32 -top-40 h-[32rem] w-[32rem] rounded-full bg-amber-200/30 blur-3xl" />
-        <div className="absolute -bottom-48 -right-28 h-[32rem] w-[32rem] rounded-full bg-cyan-200/25 blur-3xl" />
-      </div>
-      <div className="relative mx-auto flex min-h-full w-full max-w-md flex-col justify-center px-5 py-10 sm:px-6">
+    <main className="h-screen overflow-y-auto bg-white text-stone-950">
+      <div className="mx-auto flex min-h-full w-full max-w-md flex-col justify-center px-5 py-10 sm:px-6">
         <Brand />
         <section className="rounded-2xl border border-stone-200 bg-white p-6 shadow-[0_24px_65px_rgba(28,25,23,0.08)] sm:p-8">
           <div className="mb-7">
-            <div className="mb-4 flex h-10 w-10 items-center justify-center rounded-xl bg-stone-950 text-white">
-              <ShieldCheck className="h-5 w-5" strokeWidth={1.8} />
-            </div>
             <h1 className="text-3xl font-semibold tracking-[-0.04em]">Welcome back</h1>
             <p className="mt-2 text-sm leading-6 text-stone-500">
               Sign in to continue to your agents and workspace.

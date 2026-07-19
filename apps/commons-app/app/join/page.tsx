@@ -23,7 +23,7 @@ export default function JoinPage() {
           {/* Common Agent Card */}
           <Card
             className="p-6 border border-border shadow-lg cursor-pointer transition-transform hover:scale-105 hover:shadow-xl"
-            onClick={() => router.push("/agents/create")}
+            onClick={() => router.push("/studio/agents/create")}
           >
             <CardContent className="flex flex-col items-center text-center space-y-4">
               <div className="bg-lime-200 p-4 rounded-full">
