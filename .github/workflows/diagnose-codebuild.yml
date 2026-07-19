@@ -68,17 +68,99 @@ jobs:
               --output text || echo "CodeBuild phases were readable, but this role cannot read CloudWatch logs."
           fi
 
-          if [ -n "$STACK_NAME" ]; then
-            echo "CloudFormation stack status:"
-            aws cloudformation describe-stacks \
-              --stack-name "$STACK_NAME" \
-              --query 'Stacks[0].{status:StackStatus,statusReason:StackStatusReason,lastUpdated:LastUpdatedTime}' \
-              --output json
+      - name: Inspect the failed service through the CodeBuild role
+        if: ${{ inputs.stack_name != '' }}
+        env:
+          BUILD_ID: ${{ inputs.build_id }}
+          DIAGNOSTIC_BUCKET: ${{ vars.AWS_SOURCE_BUCKET }}
+          STACK_NAME: ${{ inputs.stack_name }}
+        run: |
+          set -euo pipefail
 
-            echo "Recent failed or rollback stack events:"
-            aws cloudformation describe-stack-events \
-              --stack-name "$STACK_NAME" \
-              --max-items 100 \
-              --query 'StackEvents[?contains(ResourceStatus, `FAILED`) || contains(ResourceStatus, `ROLLBACK`)].{time:Timestamp,logicalId:LogicalResourceId,type:ResourceType,status:ResourceStatus,reason:ResourceStatusReason}' \
-              --output json
-          fi
+          project_name=${BUILD_ID%%:*}
+          diagnostic_key="agent-commons/diagnostics/service-deployment.json"
+
+          python -m pip install --quiet boto3
+          export DIAGNOSTIC_KEY="$diagnostic_key"
+          put_url=$(python - <<'PY'
+          import os
+          import boto3
+
+          print(
+              boto3.client("s3").generate_presigned_url(
+                  "put_object",
+                  Params={
+                      "Bucket": os.environ["DIAGNOSTIC_BUCKET"],
+                      "Key": os.environ["DIAGNOSTIC_KEY"],
+                  },
+                  ExpiresIn=900,
+              )
+          )
+          PY
+          )
+          echo "::add-mask::$put_url"
+
+          buildspec=$(cat <<'YAML'
+          version: 0.2
+          env:
+            shell: bash
+          phases:
+            build:
+              commands:
+                - |
+                  set -euo pipefail
+                  stack_json=$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --output json)
+                  service_arn=$(jq -r '.Stacks[0].Outputs[] | select(.OutputKey == "ServiceArn") | .OutputValue' <<<"$stack_json")
+                  service_json=$(aws ecs describe-express-gateway-service --service-arn "$service_arn" --output json)
+                  deployment_list=$(aws ecs list-service-deployments --service "$service_arn" --max-results 20 --output json)
+                  mapfile -t deployment_arns < <(jq -r '.serviceDeployments[]?.serviceDeploymentArn' <<<"$deployment_list")
+                  if (( ${#deployment_arns[@]} )); then
+                    deployments_json=$(aws ecs describe-service-deployments --service-deployment-arns "${deployment_arns[@]}" --output json)
+                  else
+                    deployments_json='{"serviceDeployments":[],"failures":[]}'
+                  fi
+                  jq -n \
+                    --argjson stack "$stack_json" \
+                    --argjson service "$service_json" \
+                    --argjson deploymentList "$deployment_list" \
+                    --argjson deployments "$deployments_json" \
+                    '{stack: $stack, service: $service, deploymentList: $deploymentList, deployments: $deployments}' \
+                    > /tmp/service-deployment.json
+                  curl --fail --silent --show-error -X PUT --data-binary @/tmp/service-deployment.json "$DIAGNOSTIC_PUT_URL"
+          YAML
+          )
+
+          environment_overrides=$(jq -nc \
+            --arg putUrl "$put_url" \
+            --arg stackName "$STACK_NAME" \
+            '[
+              {name:"DIAGNOSTIC_PUT_URL", value:$putUrl, type:"PLAINTEXT"},
+              {name:"STACK_NAME", value:$stackName, type:"PLAINTEXT"}
+            ]')
+
+          diagnostic_build_id=$(aws codebuild start-build \
+            --project-name "$project_name" \
+            --buildspec-override "$buildspec" \
+            --environment-variables-override "$environment_overrides" \
+            --query 'build.id' \
+            --output text)
+
+          while true; do
+            status=$(aws codebuild batch-get-builds \
+              --ids "$diagnostic_build_id" \
+              --query 'builds[0].buildStatus' \
+              --output text)
+            case "$status" in
+              SUCCEEDED) break ;;
+              FAILED|FAULT|STOPPED|TIMED_OUT)
+                aws codebuild batch-get-builds \
+                  --ids "$diagnostic_build_id" \
+                  --query 'builds[0].phases[*].{phase:phaseType,status:phaseStatus,contexts:contexts}' \
+                  --output json
+                exit 1
+                ;;
+              *) sleep 5 ;;
+            esac
+          done
+
+          aws s3 cp "s3://${DIAGNOSTIC_BUCKET}/${diagnostic_key}" -
