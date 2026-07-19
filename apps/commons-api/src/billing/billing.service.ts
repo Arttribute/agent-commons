@@ -1,5 +1,5 @@
 import { BadRequestException, Injectable, Logger } from '@nestjs/common';
-import { eq } from 'drizzle-orm';
+import { desc, eq } from 'drizzle-orm';
 import * as schema from '#/models/schema';
 import { DatabaseService } from '~/modules/database/database.service';
 import { StripeProvider } from './stripe.provider';
@@ -93,6 +93,18 @@ export class BillingService {
     if (!plan || planKey === 'free') {
       throw new BadRequestException('Invalid subscription plan');
     }
+    const existing = await this.db.query.subscription.findFirst({
+      where: eq(schema.subscription.principalId, principal.principalId),
+      orderBy: desc(schema.subscription.updatedAt),
+    });
+    if (
+      existing &&
+      ['active', 'trialing', 'past_due'].includes(existing.status)
+    ) {
+      // Keep one subscription per principal. Stripe Portal is configured to
+      // handle upgrades/downgrades without creating duplicate subscriptions.
+      return this.createPortalSession(principal);
+    }
     const customerId = await this.getOrCreateCustomer(principal);
     const session = await this.stripe.stripe.checkout.sessions.create({
       mode: 'subscription',
@@ -107,7 +119,8 @@ export class BillingService {
         env: this.appEnv(),
       },
     });
-    if (!session.url) throw new BadRequestException('Failed to create checkout');
+    if (!session.url)
+      throw new BadRequestException('Failed to create checkout');
     return { url: session.url };
   }
 
@@ -133,7 +146,8 @@ export class BillingService {
         env: this.appEnv(),
       },
     });
-    if (!session.url) throw new BadRequestException('Failed to create checkout');
+    if (!session.url)
+      throw new BadRequestException('Failed to create checkout');
     return { url: session.url };
   }
 
@@ -187,7 +201,8 @@ export class BillingService {
     ]);
     const defaultPm =
       customer && !('deleted' in customer)
-        ? ((customer.invoice_settings?.default_payment_method as string) ?? null)
+        ? ((customer.invoice_settings?.default_payment_method as string) ??
+          null)
         : null;
     return {
       defaultPaymentMethodId: defaultPm,
@@ -206,6 +221,7 @@ export class BillingService {
     const plan = await this.entitlements.getPlan(principalId);
     const row = await this.db.query.subscription.findFirst({
       where: eq(schema.subscription.principalId, principalId),
+      orderBy: desc(schema.subscription.updatedAt),
     });
     return {
       planKey: plan.key,
@@ -215,6 +231,25 @@ export class BillingService {
       status: row?.status ?? (plan.key === DEFAULT_PLAN ? 'free' : 'unknown'),
       currentPeriodEnd: row?.currentPeriodEnd ?? null,
       cancelAtPeriodEnd: row?.cancelAtPeriodEnd ?? false,
+    };
+  }
+
+  getCatalog() {
+    return {
+      creditsPerUsd: Number(process.env.CREDIT_UNITS_PER_USD || 1000),
+      plans: Object.values(PLANS).map((plan) => ({
+        key: plan.key,
+        name: plan.name,
+        priceUsd: plan.priceUsd,
+        monthlyCredits: plan.monthlyCredits,
+        entitlements: plan.entitlements,
+      })),
+      topups: Object.values(TOPUP_PACKS).map((pack) => ({
+        key: pack.key,
+        name: pack.name,
+        credits: pack.credits,
+        priceUsd: pack.priceUsd,
+      })),
     };
   }
 }

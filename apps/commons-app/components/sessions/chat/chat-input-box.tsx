@@ -2,9 +2,13 @@
 
 import { useEffect, useRef, useState } from "react";
 import type { StreamEvent } from "@agent-commons/sdk";
+import Link from "next/link";
 import {
   ArrowUp,
+  BatteryLow,
+  Check,
   FileText,
+  Gauge,
   ImageIcon,
   Loader2,
   Mic,
@@ -16,8 +20,20 @@ import {
 import { useAgentContext } from "@/context/AgentContext";
 import { useAgentStream } from "@/hooks/use-agent-stream";
 import { useVoiceRecorder } from "@/hooks/use-voice-recorder";
+import { useSessionRunStore } from "@/stores/session-run-store";
 import { VoiceRecorderPanel } from "./voice-recorder";
 import { cn } from "@/lib/utils";
+
+/** User-selectable model thinking depth for this conversation. */
+const THINKING_LEVELS = [
+  { key: "auto", label: "Auto", detail: "Let the agent decide" },
+  { key: "low", label: "Quick", detail: "Fastest responses" },
+  { key: "medium", label: "Balanced", detail: "Everyday tasks" },
+  { key: "high", label: "Thorough", detail: "Harder problems" },
+  { key: "xhigh", label: "Max", detail: "Deepest reasoning" },
+] as const;
+
+type ThinkingLevel = (typeof THINKING_LEVELS)[number]["key"];
 
 type UploadedAttachment = {
   localId: string;
@@ -48,6 +64,9 @@ export default function ChatInputBox({
   onInitialPromptSent,
   footerLeft,
   placeholder = "Ask me something...",
+  allowComputer = true,
+  uiContext,
+  externalPrompt,
 }: {
   agentId: string;
   sessionId: string;
@@ -68,6 +87,9 @@ export default function ChatInputBox({
   /** Replaces the "+" attachments menu in the footer (e.g. an agent selector). */
   footerLeft?: React.ReactNode;
   placeholder?: string;
+  allowComputer?: boolean;
+  uiContext?: Record<string, unknown>;
+  externalPrompt?: { id: string; text: string } | null;
 }) {
   const isLaunchMode = Boolean(onLaunch);
   const accumulatedRef = useRef("");
@@ -79,10 +101,47 @@ export default function ChatInputBox({
   const previewUrlsRef = useRef<Set<string>>(new Set());
   const [attachments, setAttachments] = useState<UploadedAttachment[]>([]);
   const [isDragging, setIsDragging] = useState(false);
-  const [menuOpen, setMenuOpen] = useState(false);
+  const [thinkingMenuOpen, setThinkingMenuOpen] = useState(false);
+  const [thinkingLevel, setThinkingLevel] = useState<ThinkingLevel>("auto");
+  const [outOfCredits, setOutOfCredits] = useState(false);
+  // Narrow surfaces (the copilot side panel) get the short one-line notice.
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [isNarrow, setIsNarrow] = useState(false);
+  useEffect(() => {
+    const node = containerRef.current;
+    if (!node || typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver((entries) => {
+      const width = entries[0]?.contentRect?.width ?? 0;
+      setIsNarrow(width > 0 && width < 400);
+    });
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, []);
+
+  // The composer is locked while out of credits, so re-check the balance
+  // whenever the user comes back (e.g. after topping up in another tab).
+  useEffect(() => {
+    if (!outOfCredits) return;
+    const recheck = async () => {
+      try {
+        const response = await fetch("/api/credits", { cache: "no-store" });
+        const payload = await response.json().catch(() => ({}));
+        if (response.ok && (payload?.data?.balance?.available ?? 0) > 0) {
+          setOutOfCredits(false);
+        }
+      } catch {
+        // Keep the banner; the next focus tries again.
+      }
+    };
+    window.addEventListener("focus", recheck);
+    return () => window.removeEventListener("focus", recheck);
+  }, [outOfCredits]);
   const [computerConfig, setComputerConfig] =
     useState<ComputerConfigState | null>(null);
   const [computerEnabled, setComputerEnabled] = useState(false);
+  const markRunning = useSessionRunStore((state) => state.markRunning);
+  const markCompleted = useSessionRunStore((state) => state.markCompleted);
+  const activeRunSessionRef = useRef<string>("");
   const {
     addMessage,
     updateStreamingMessage,
@@ -111,6 +170,7 @@ export default function ChatInputBox({
       const content =
         payload?.content ?? payload?.data?.content ?? accumulatedRef.current;
       finalizeStreamingMessage(content, payload?.metadata);
+      markCompleted(payload?.sessionId ?? activeRunSessionRef.current);
       if (payload?.sessionId && payload.sessionId !== sessionId) {
         onSessionCreated?.(payload.sessionId, payload.title ?? "");
       }
@@ -144,6 +204,18 @@ export default function ChatInputBox({
     },
     onTool: (event) => {
       const toolName = event.toolName ?? event.tool ?? event.name ?? "tool";
+      if (
+        [
+          "proposeWorkflowChange",
+          "proposeAgentChange",
+          "proposeTaskChange",
+          "proposeSkillChange",
+          "proposeToolChange",
+          "createTask",
+        ].includes(toolName)
+      ) {
+        window.dispatchEvent(new CustomEvent("copilot-change-created"));
+      }
       const queue = runningToolActivitiesRef.current.get(toolName) ?? [];
       const activityId =
         queue.shift() ?? `tool:${toolName}:${++activitySequenceRef.current}`;
@@ -273,6 +345,10 @@ export default function ChatInputBox({
       });
     },
     onError: (message) => {
+      markCompleted(activeRunSessionRef.current);
+      if (/insufficient credits|payment required/i.test(message)) {
+        setOutOfCredits(true);
+      }
       upsertStreamingActivity({
         id: `error:${++activitySequenceRef.current}`,
         kind: "status",
@@ -306,14 +382,14 @@ export default function ChatInputBox({
     (attachment) => attachment.status === "uploading",
   );
   const canUseComputer = Boolean(
-    computerConfig?.enabled && computerConfig?.allowUserSelect,
+    allowComputer && computerConfig?.enabled && computerConfig?.allowUserSelect,
   );
   const uploadedAttachments = attachments.filter(
     (attachment) => attachment.status === "uploaded" && attachment.fileId,
   );
 
   useEffect(() => {
-    if (isLaunchMode || !agentId) return;
+    if (isLaunchMode || !agentId || !allowComputer) return;
     let cancelled = false;
     async function loadComputerConfig() {
       try {
@@ -331,7 +407,7 @@ export default function ChatInputBox({
     return () => {
       cancelled = true;
     };
-  }, [agentId, isLaunchMode]);
+  }, [agentId, allowComputer, isLaunchMode]);
 
   useEffect(() => {
     if (
@@ -361,7 +437,8 @@ export default function ChatInputBox({
     if (
       (!baseText && uploadedAttachments.length === 0) ||
       isLoading ||
-      isUploading
+      isUploading ||
+      outOfCredits
     )
       return;
 
@@ -375,11 +452,12 @@ export default function ChatInputBox({
       return;
     }
 
-    const computerRequest = computerEnabled
-      ? {
-          enabled: true,
-        }
-      : undefined;
+    const computerRequest =
+      allowComputer && computerEnabled
+        ? {
+            enabled: true,
+          }
+        : undefined;
     const messageAttachments = uploadedAttachments.map((attachment) => ({
       fileId: attachment.fileId!,
       name: attachment.name,
@@ -389,6 +467,7 @@ export default function ChatInputBox({
       textPreview: attachment.textPreview,
     }));
     setInputText("");
+    setOutOfCredits(false);
     previewUrlsRef.current.forEach((previewUrl) =>
       URL.revokeObjectURL(previewUrl),
     );
@@ -397,6 +476,8 @@ export default function ChatInputBox({
     accumulatedRef.current = "";
     runningToolActivitiesRef.current.clear();
     activityArgsRef.current.clear();
+    activeRunSessionRef.current = sessionId;
+    markRunning(sessionId);
 
     addMessage({
       role: "human",
@@ -417,11 +498,13 @@ export default function ChatInputBox({
     await stream({
       agentId,
       sessionId,
+      uiContext,
       messages: [{ role: "user", content: userMessage }],
       attachments: messageAttachments.map((attachment) => ({
         fileId: attachment.fileId,
       })),
       computerRequest,
+      reasoningEffort: thinkingLevel === "auto" ? undefined : thinkingLevel,
     });
   };
 
@@ -436,9 +519,22 @@ export default function ChatInputBox({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialPrompt]);
 
+  const externalPromptIdRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (
+      !externalPrompt?.text ||
+      externalPromptIdRef.current === externalPrompt.id
+    ) {
+      return;
+    }
+    if (isLoading) return;
+    externalPromptIdRef.current = externalPrompt.id;
+    handleSend(externalPrompt.text);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [externalPrompt?.id, isLoading]);
+
   const openFilePicker = () => {
     if (isLoading) return;
-    setMenuOpen(false);
     fileInputRef.current?.click();
   };
 
@@ -552,8 +648,9 @@ export default function ChatInputBox({
 
   return (
     <div
+      ref={containerRef}
       className={cn(
-        "relative rounded-2xl bg-white border border-stone-300 shadow-sm transition-colors",
+        "relative rounded-2xl bg-white border border-stone-300 shadow-composer transition-colors",
         isDragging && "border-indigo-400 bg-indigo-50/40 dark:bg-indigo-950/20",
       )}
       onDragOver={(event) => {
@@ -584,31 +681,29 @@ export default function ChatInputBox({
           event.target.value = "";
         }}
       />
-      {(computerEnabled || attachments.length > 0) && (
+      {outOfCredits && (
+        <div className="flex items-center justify-between gap-3 rounded-t-2xl border-b border-border bg-stone-50/80 px-3.5 py-2.5">
+          <div className="flex min-w-0 items-center gap-2 text-sm">
+            <BatteryLow className="h-3.5 w-3.5 shrink-0 text-amber-500" />
+            <span className="truncate text-foreground">
+              You&rsquo;re out of credits{isNarrow ? "" : "."}
+            </span>
+            {!isNarrow && (
+              <span className="truncate text-muted-foreground">
+                Top up or upgrade to keep your agents running.
+              </span>
+            )}
+          </div>
+          <Link
+            href="/settings/billing"
+            className="shrink-0 rounded-lg bg-foreground px-2.5 py-1.5 text-xs font-medium text-background transition-opacity hover:opacity-85"
+          >
+            {isNarrow ? "Top up" : "Get credits"}
+          </Link>
+        </div>
+      )}
+      {attachments.length > 0 && (
         <div className="flex flex-wrap gap-2 px-3 pt-3">
-          {computerEnabled && (
-            <div className="flex max-w-full items-center gap-2 rounded-lg border border-border bg-muted/50 px-2 py-1.5 text-xs">
-              <span className="flex h-7 w-7 items-center justify-center rounded-md bg-background text-muted-foreground">
-                <Monitor className="h-4 w-4" />
-              </span>
-              <span className="min-w-0">
-                <span className="block max-w-44 truncate text-foreground">
-                  Agent&apos;s persistent computer
-                </span>
-                <span className="block text-muted-foreground">
-                  Same workspace in every chat
-                </span>
-              </span>
-              <button
-                type="button"
-                onClick={() => setComputerEnabled(false)}
-                className="rounded-md p-1 text-muted-foreground hover:bg-background hover:text-foreground"
-                title="Remove"
-              >
-                <X className="h-3.5 w-3.5" />
-              </button>
-            </div>
-          )}
           {attachments.map((attachment) => (
             <AttachmentChip
               key={attachment.localId}
@@ -648,61 +743,111 @@ export default function ChatInputBox({
             {footerLeft ? (
               <div className="min-w-0">{footerLeft}</div>
             ) : (
-              <div className="relative">
+              <div className="flex items-center gap-1">
                 <button
                   type="button"
-                  onClick={() => setMenuOpen((open) => !open)}
+                  onClick={openFilePicker}
                   disabled={!!isLoading}
                   title="Add photos & files"
+                  aria-label="Add photos & files"
                   className="rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-40"
                 >
                   <Plus className="h-4 w-4" />
                 </button>
-                {menuOpen && (
-                  <div className="absolute bottom-9 left-0 z-10 w-48 rounded-lg border border-border bg-popover p-1 shadow-lg">
-                    <button
-                      type="button"
-                      onMouseDown={(event) => event.preventDefault()}
-                      onClick={openFilePicker}
-                      className="flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-sm text-popover-foreground hover:bg-muted"
-                    >
-                      <Plus className="h-4 w-4" />
-                      <span>Add photos & files</span>
-                    </button>
-                    <button
-                      type="button"
-                      onMouseDown={(event) => event.preventDefault()}
-                      onClick={() => {
-                        if (!canUseComputer) return;
-                        setComputerEnabled((enabled) => !enabled);
-                        setMenuOpen(false);
-                      }}
-                      disabled={!canUseComputer}
-                      className={cn(
-                        "flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-sm text-popover-foreground hover:bg-muted",
-                        !canUseComputer &&
-                          "cursor-not-allowed opacity-50 hover:bg-transparent",
-                      )}
-                    >
-                      <Monitor className="h-4 w-4" />
-                      <span>
-                        {canUseComputer
-                          ? "Use agent’s computer"
-                          : "Agent computer unavailable"}
-                      </span>
-                    </button>
-                  </div>
+                {canUseComputer && (
+                  <button
+                    type="button"
+                    onClick={() => setComputerEnabled((enabled) => !enabled)}
+                    disabled={!!isLoading}
+                    title={
+                      computerEnabled
+                        ? "Agent computer on — same workspace in every chat"
+                        : "Use agent’s computer"
+                    }
+                    aria-label="Toggle agent computer"
+                    aria-pressed={computerEnabled}
+                    className={cn(
+                      "relative rounded-lg p-1.5 transition-colors disabled:opacity-40",
+                      computerEnabled
+                        ? "bg-indigo-50 text-indigo-600 hover:bg-indigo-100"
+                        : "text-muted-foreground hover:bg-muted hover:text-foreground",
+                    )}
+                  >
+                    <Monitor className="h-4 w-4" />
+                    {computerEnabled && (
+                      <span className="absolute right-1 top-1 h-1.5 w-1.5 rounded-full bg-indigo-500" />
+                    )}
+                  </button>
                 )}
               </div>
             )}
             <div className="flex items-center gap-1">
+              {!isLaunchMode && (
+                <div className="relative">
+                  <button
+                    type="button"
+                    onClick={() => setThinkingMenuOpen((open) => !open)}
+                    disabled={!!isLoading}
+                    title="Thinking level"
+                    aria-label="Thinking level"
+                    className={cn(
+                      "flex items-center gap-1.5 rounded-lg p-1.5 transition-colors disabled:opacity-40",
+                      thinkingLevel === "auto"
+                        ? "text-muted-foreground hover:bg-muted hover:text-foreground"
+                        : "bg-muted/70 text-foreground hover:bg-muted",
+                    )}
+                  >
+                    <Gauge className="h-4 w-4" />
+                    {thinkingLevel !== "auto" && (
+                      <span className="text-xs">
+                        {
+                          THINKING_LEVELS.find(
+                            (level) => level.key === thinkingLevel,
+                          )?.label
+                        }
+                      </span>
+                    )}
+                  </button>
+                  {thinkingMenuOpen && (
+                    <div className="absolute bottom-9 right-0 z-10 w-52 rounded-xl border border-border bg-popover p-1 shadow-floating">
+                      <p className="px-2 pb-1 pt-1.5 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                        Thinking
+                      </p>
+                      {THINKING_LEVELS.map((level) => (
+                        <button
+                          key={level.key}
+                          type="button"
+                          onMouseDown={(event) => event.preventDefault()}
+                          onClick={() => {
+                            setThinkingLevel(level.key);
+                            setThinkingMenuOpen(false);
+                          }}
+                          className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm text-popover-foreground hover:bg-muted"
+                        >
+                          <span className="min-w-0 flex-1">
+                            <span className="block leading-tight">
+                              {level.label}
+                            </span>
+                            <span className="block text-xs text-muted-foreground">
+                              {level.detail}
+                            </span>
+                          </span>
+                          {thinkingLevel === level.key && (
+                            <Check className="h-3.5 w-3.5 shrink-0" />
+                          )}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
               <button
                 type="button"
                 onClick={() => {
                   setVoiceError(null);
                   voice.start();
                 }}
-                disabled={!!isLoading || isUploading}
+                disabled={!!isLoading || isUploading || outOfCredits}
                 title="Dictate a message"
                 aria-label="Dictate a message"
                 className="rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-40"
@@ -714,7 +859,8 @@ export default function ChatInputBox({
                 disabled={
                   (!inputText.trim() && uploadedAttachments.length === 0) ||
                   !!isLoading ||
-                  isUploading
+                  isUploading ||
+                  outOfCredits
                 }
                 className="bg-foreground rounded-lg p-1.5 text-background transition-opacity disabled:opacity-40 hover:opacity-80"
               >

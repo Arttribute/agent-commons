@@ -1,5 +1,5 @@
 "use client";
-import React, { createContext, useContext, useEffect, useState } from "react";
+import React, { createContext, useContext, useEffect, useMemo } from "react";
 import {
   signOut as commonsSignOut,
   useSession,
@@ -45,54 +45,39 @@ interface AuthContextValue {
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 
 export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
-  const { data: session, status } = useSession();
+  const { data: session, status, update } = useSession();
   const ready = status !== "loading";
   const authenticated = status === "authenticated";
 
-  const [authState, setAuthState] = useState<AuthState>({});
+  // Derive this compatibility shape synchronously. Copying it in an effect
+  // used to add another anonymous render after NextAuth had resolved the user.
+  const authState = useMemo<AuthState>(() => {
+    if (!authenticated || !session?.user?.id) return {};
+    return {
+      idToken: "commons-session",
+      username:
+        session.user.name ||
+        session.user.email ||
+        session.user.id.slice(0, 12),
+      // Legacy UI calls this walletAddress, but it is the stable Commons user
+      // principal. On-chain actions still require a connected wallet.
+      walletAddress: session.user.id,
+      profileImage: session.user.image || "",
+      userId: session.user.id,
+      workspaceId: session.user.workspaceId,
+    };
+  }, [authenticated, session]);
 
-  // 1) On mount or changes in `user`, store needed details in localStorage
+  // Keep the compatibility cache in sync for non-React integrations. It is
+  // never read as proof of authentication.
   useEffect(() => {
     if (!ready) return;
-
-    // If not authenticated, clear everything
-    if (!authenticated || !session?.user) {
+    if (!authenticated) {
       localStorage.removeItem("authState");
-      setAuthState({});
       return;
     }
-
-    // If authenticated, gather user data
-    const storeAuthData = async () => {
-      try {
-        const username =
-          session.user.name ||
-          session.user.email ||
-          session.user.id.slice(0, 12);
-        // During the compatibility window, walletAddress doubles as the
-        // principal identifier in older UI code. Real onchain actions must
-        // still require an actual connected Privy wallet.
-        const walletAddress = session.user.id;
-        const profileImage = session.user.image || "";
-
-        const newState: AuthState = {
-          idToken: "commons-session",
-          username,
-          walletAddress,
-          profileImage,
-          userId: session.user.id,
-          workspaceId: session.user.workspaceId,
-        };
-
-        setAuthState(newState);
-        localStorage.setItem("authState", JSON.stringify(newState));
-      } catch (error) {
-        console.error("Error retrieving or storing tokens:", error);
-      }
-    };
-
-    storeAuthData();
-  }, [ready, authenticated, session]);
+    localStorage.setItem("authState", JSON.stringify(authState));
+  }, [ready, authenticated, authState]);
 
   // 2) Provide login, logout, and refresh
   const login = async () => {
@@ -113,12 +98,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   };
 
   const refresh = async () => {
-    // If you want to refresh from localStorage → set state
-    const stored = localStorage.getItem("authState");
-    if (stored) {
-      const parsed = JSON.parse(stored) as AuthState;
-      setAuthState(parsed);
-    }
+    await update();
   };
 
   const value: AuthContextValue = {

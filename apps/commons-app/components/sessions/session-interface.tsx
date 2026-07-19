@@ -17,6 +17,8 @@ import {
 import { AgentComputerSurface } from "@/components/computers/agent-computer-surface";
 import { CodeProjectSurface } from "@/components/code-projects/code-project-surface";
 import { cn } from "@/lib/utils";
+import { normalizeConversationStarters } from "@/lib/conversation-starters";
+import { AgentAvatar } from "@/components/agents/agent-avatar";
 import { useAgentContext } from "@/context/AgentContext";
 
 interface Message {
@@ -68,6 +70,12 @@ interface SessionInterfaceImprovedProps {
    * this bar instead of floating over the messages.
    */
   header?: React.ReactNode;
+  /** Copilot side chat deliberately omits the agent-computer surface. */
+  allowComputer?: boolean;
+  /** Content rendered as part of the conversation, above the composer. */
+  conversationAddon?: React.ReactNode;
+  uiContext?: Record<string, unknown>;
+  externalPrompt?: { id: string; text: string } | null;
 }
 
 function ExpandableToolCard({ tools }: { tools: Message[] }) {
@@ -128,6 +136,10 @@ export default function SessionInterfaceImproved({
   initialPrompt,
   onInitialPromptSent,
   header,
+  allowComputer = true,
+  conversationAddon,
+  uiContext,
+  externalPrompt,
 }: SessionInterfaceImprovedProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -146,13 +158,27 @@ export default function SessionInterfaceImproved({
     useState<ComputerRuntimeTab>("files");
   const [openProjectId, setOpenProjectId] = useState<string | null>(null);
 
+  // Surface width drives the empty-state layout: wide surfaces center the
+  // composer with one starter row; narrow ones (mobile, the copilot panel)
+  // keep the composer at the bottom and stack starters one per row.
+  const surfaceRef = useRef<HTMLDivElement>(null);
+  const [isNarrowSurface, setIsNarrowSurface] = useState(false);
+  useEffect(() => {
+    const node = surfaceRef.current;
+    if (!node || typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver((entries) => {
+      const width = entries[0]?.contentRect?.width ?? 0;
+      setIsNarrowSurface(width > 0 && width < 480);
+    });
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, []);
+
   const { messages, setInputText } = useAgentContext();
   const greeting = (agent as any)?.greeting as string | undefined;
-  const conversationStarters = Array.isArray(
+  const conversationStarters = normalizeConversationStarters(
     (agent as any)?.conversationStarters,
-  )
-    ? ((agent as any).conversationStarters as string[]).filter(Boolean)
-    : [];
+  );
 
   const groupedItems = useMemo(() => {
     type Item =
@@ -229,7 +255,7 @@ export default function SessionInterfaceImproved({
   }, [sessionId]);
 
   const fetchAgentComputer = useCallback(async () => {
-    if (!agentId) return;
+    if (!agentId || !allowComputer) return;
     try {
       const res = await fetch(`/api/agents/${agentId}/computer`, {
         cache: "no-store",
@@ -242,7 +268,7 @@ export default function SessionInterfaceImproved({
     } catch {
       // Computer status is a lightweight hint here; the drawer can refresh itself.
     }
-  }, [agentId]);
+  }, [agentId, allowComputer]);
 
   useEffect(() => {
     fetchAgentComputer();
@@ -358,29 +384,47 @@ export default function SessionInterfaceImproved({
   // Clean up polling on unmount
   useEffect(() => () => stopTaskPolling(), [stopTaskPolling]);
 
-  const computerButton = !computerOpen ? (
-    <Button
-      type="button"
-      variant={header ? "ghost" : "outline"}
-      size="icon"
-      className={cn(
-        "relative h-8 w-8 shrink-0 rounded-md",
-        !header &&
-          "absolute right-4 top-4 z-10 h-9 w-9 bg-background/95 shadow-sm backdrop-blur",
-      )}
-      title="Agent computer"
-      aria-label="Agent computer"
-      onClick={() => {
-        setComputerOpen(true);
-        fetchAgentComputer();
-      }}
-    >
-      <Monitor className="h-4 w-4" />
-      {isActiveComputer(sessionComputer) && (
-        <span className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-red-500 ring-2 ring-background" />
-      )}
-    </Button>
-  ) : null;
+  const computerButton =
+    allowComputer && !computerOpen ? (
+      <Button
+        type="button"
+        variant="ghost"
+        size="icon"
+        className={cn(
+          "relative h-8 w-8 shrink-0 rounded-lg text-muted-foreground hover:text-foreground",
+          !header && "absolute right-4 top-4 z-10",
+        )}
+        title="Agent computer"
+        aria-label="Agent computer"
+        onClick={() => {
+          setComputerOpen(true);
+          fetchAgentComputer();
+        }}
+      >
+        <Monitor className="h-4 w-4" />
+        {isActiveComputer(sessionComputer) && (
+          <span className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-red-500 ring-2 ring-background" />
+        )}
+      </Button>
+    ) : null;
+
+  const composer = (
+    <ChatInputBox
+      agentId={agentId}
+      sessionId={sessionId}
+      userId={userId || ""}
+      onSessionCreated={onSessionCreated}
+      disabled={isRedirecting || isLoadingSession}
+      initialPrompt={initialPrompt}
+      onInitialPromptSent={onInitialPromptSent}
+      allowComputer={allowComputer}
+      uiContext={uiContext}
+      externalPrompt={externalPrompt}
+    />
+  );
+
+  const showCenteredEmptyState =
+    !isNarrowSurface && !isLoadingSession && messages.length === 0;
 
   return (
     <div
@@ -392,6 +436,7 @@ export default function SessionInterfaceImproved({
           computer chip grow it upward by shrinking the messages area —
           nothing ever pushes the composer out of view. */}
       <div
+        ref={surfaceRef}
         className={cn(
           "relative flex min-h-0 min-w-0 flex-col",
           computerOpen ? "flex-1" : "w-full",
@@ -405,6 +450,42 @@ export default function SessionInterfaceImproved({
         ) : (
           computerButton
         )}
+        {showCenteredEmptyState ? (
+          <div className="min-h-0 flex-1 overflow-y-auto">
+            <div className="flex min-h-full flex-col items-center justify-center px-4 py-8">
+              <div className="w-full max-w-[46rem]">
+                <div className="mb-6 flex flex-col items-center gap-4 text-center">
+                  <AgentAvatar
+                    name={agent?.name}
+                    src={(agent as any)?.avatar}
+                    size={56}
+                  />
+                  {greeting && (
+                    <h2 className="text-xl font-normal tracking-tight text-foreground sm:text-2xl">
+                      {greeting}
+                    </h2>
+                  )}
+                </div>
+                {composer}
+                {conversationStarters.length > 0 && (
+                  <div className="mt-3 grid w-full grid-flow-col auto-cols-fr gap-2">
+                    {conversationStarters.map((starter) => (
+                      <button
+                        key={starter.label}
+                        type="button"
+                        title={starter.prompt}
+                        className="min-w-0 rounded-xl border border-border bg-white px-3 py-2.5 text-center text-sm text-muted-foreground shadow-card transition-colors hover:bg-muted hover:text-foreground"
+                        onClick={() => setInputText(starter.prompt)}
+                      >
+                        <span className="block truncate">{starter.label}</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        ) : (
         <ScrollArea className="min-h-0 flex-1" scrollHideDelay={100}>
           <div
             className="container mx-auto max-w-[46rem] px-4 pb-6 pt-4"
@@ -415,83 +496,104 @@ export default function SessionInterfaceImproved({
             ) : messages.length === 0 &&
               (greeting || conversationStarters.length > 0) ? (
               <div className="flex min-h-[45vh] flex-col justify-center py-8">
-                <div className="space-y-4">
-                  {greeting && (
-                    <div className="rounded-lg border border-border bg-muted/30 p-4">
-                      <p className="text-sm leading-6 text-foreground">
+                <div className="space-y-6">
+                  <div className="flex flex-col items-center gap-4 text-center">
+                    <AgentAvatar
+                      name={agent?.name}
+                      src={(agent as any)?.avatar}
+                      size={56}
+                    />
+                    {greeting && (
+                      <h2 className="text-xl font-normal tracking-tight text-foreground sm:text-2xl">
                         {greeting}
-                      </p>
-                    </div>
-                  )}
+                      </h2>
+                    )}
+                  </div>
                   {conversationStarters.length > 0 && (
-                    <div className="grid gap-2 sm:grid-cols-2">
+                    <div
+                      // Narrow surfaces stack starters one per row; wide
+                      // surfaces use the centered layout above instead.
+                      className="grid w-full grid-cols-1 gap-2"
+                    >
                       {conversationStarters.map((starter) => (
                         <button
-                          key={starter}
+                          key={starter.label}
                           type="button"
-                          className="rounded-lg border border-border px-3 py-2 text-left text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-                          onClick={() => setInputText(starter)}
+                          title={starter.prompt}
+                          className="min-w-0 rounded-xl border border-border bg-white px-3 py-2.5 text-center text-sm text-muted-foreground shadow-card transition-colors hover:bg-muted hover:text-foreground"
+                          onClick={() => setInputText(starter.prompt)}
                         >
-                          {starter}
+                          <span className="block truncate">{starter.label}</span>
                         </button>
                       ))}
                     </div>
                   )}
+                  {conversationAddon}
                 </div>
                 <div ref={bottomRef} />
               </div>
             ) : (
               <>
-                {groupedItems.map((item, index) => {
-                  if (item.type === "message") {
-                    const { message } = item;
-                    if (message.role === "user" || message.role === "human") {
-                      return (
-                        <InitiatorMessage
-                          key={index}
-                          message={message.content}
-                          timestamp={message.timestamp}
-                          metadata={message.metadata}
-                        />
-                      );
+                {(() => {
+                  // The agent identity row appears on the first agent message
+                  // after a user turn only — consecutive agent messages flow
+                  // together without repeating the avatar.
+                  let lastMessageRole: string | null = null;
+                  return groupedItems.map((item, index) => {
+                    if (item.type === "message") {
+                      const { message } = item;
+                      if (message.role === "user" || message.role === "human") {
+                        lastMessageRole = "human";
+                        return (
+                          <InitiatorMessage
+                            key={index}
+                            message={message.content}
+                            timestamp={message.timestamp}
+                            metadata={message.metadata}
+                          />
+                        );
+                      }
+                      if (message.role === "ai") {
+                        const showAgentHeader = lastMessageRole !== "ai";
+                        lastMessageRole = "ai";
+                        const key = message.isStreaming
+                          ? `ai-streaming-${index}`
+                          : index;
+                        return (
+                          <AgentOutput
+                            key={key}
+                            content={message.content}
+                            metadata={message.metadata}
+                            isStreaming={message.isStreaming}
+                            computer={sessionComputer}
+                            agentName={agent?.name}
+                            agentAvatar={(agent as any)?.avatar}
+                            showAgentHeader={showAgentHeader}
+                          />
+                        );
+                      }
+                      return null;
                     }
-                    if (message.role === "ai") {
-                      const key = message.isStreaming
-                        ? `ai-streaming-${index}`
-                        : index;
-                      return (
-                        <AgentOutput
-                          key={key}
-                          content={message.content}
-                          metadata={message.metadata}
-                          isStreaming={message.isStreaming}
-                          computer={sessionComputer}
-                        />
-                      );
-                    }
-                    return null;
-                  }
 
-                  return <ExpandableToolCard key={index} tools={item.tools} />;
-                })}
+                    return (
+                      <ExpandableToolCard key={index} tools={item.tools} />
+                    );
+                  });
+                })()}
+                {conversationAddon}
                 {/* Bottom marker for auto-scroll */}
                 <div ref={bottomRef} />
               </>
             )}
           </div>
         </ScrollArea>
+        )}
 
-        <div className="container mx-auto w-full max-w-[46rem] shrink-0 px-4 pb-4">
-          <ChatInputBox
-            agentId={agentId}
-            sessionId={sessionId}
-            userId={userId || ""}
-            onSessionCreated={onSessionCreated}
-            disabled={isRedirecting || isLoadingSession}
-            initialPrompt={initialPrompt}
-            onInitialPromptSent={onInitialPromptSent}
-          />
-        </div>
+        {!showCenteredEmptyState && (
+          <div className="container mx-auto w-full max-w-[46rem] shrink-0 px-4 pb-4">
+            {composer}
+          </div>
+        )}
 
         <ExecutionWidget
           sessionId={sessionId}
@@ -501,7 +603,7 @@ export default function SessionInterfaceImproved({
         />
       </div>
 
-      {computerOpen && (
+      {allowComputer && computerOpen && (
         <AgentComputerSurface
           agentId={agentId}
           activeTab={computerRuntimeTab}
@@ -509,7 +611,7 @@ export default function SessionInterfaceImproved({
           onClose={() => setComputerOpen(false)}
         />
       )}
-      {openProjectId && (
+      {allowComputer && openProjectId && (
         <CodeProjectSurface
           agentId={agentId}
           projectId={openProjectId}

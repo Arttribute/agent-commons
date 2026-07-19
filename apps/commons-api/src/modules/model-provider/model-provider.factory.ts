@@ -27,7 +27,9 @@ export class ModelProviderFactory {
       ...config,
     };
 
-    this.logger.debug(`Building model: ${resolved.provider}/${resolved.modelId}`);
+    this.logger.debug(
+      `Building model: ${resolved.provider}/${resolved.modelId}`,
+    );
 
     switch (resolved.provider as ModelProviderName) {
       case 'openai':
@@ -61,14 +63,27 @@ export class ModelProviderFactory {
     sessionModel: Record<string, any> | null | undefined,
     agentConfig?: Partial<ModelConfig>,
   ): BaseChatModel {
-    if (!sessionModel) return this.build(agentConfig);
+    return this.build(this.resolveSessionModel(sessionModel, agentConfig));
+  }
+
+  /** Resolve the exact model configuration used for both billing and runtime. */
+  resolveSessionModel(
+    sessionModel: Record<string, any> | null | undefined,
+    agentConfig?: Partial<ModelConfig>,
+  ): ModelConfig {
+    if (!sessionModel) {
+      return { ...DEFAULT_MODEL_CONFIG, ...agentConfig };
+    }
 
     // Support legacy format: { name: 'gpt-4o' }
     const provider =
-      sessionModel.provider ?? this.inferProviderFromModelName(sessionModel.name) ?? 'openai';
-    const modelId = sessionModel.modelId ?? sessionModel.name ?? DEFAULT_MODEL_CONFIG.modelId;
+      sessionModel.provider ??
+      this.inferProviderFromModelName(sessionModel.name) ??
+      'openai';
+    const modelId =
+      sessionModel.modelId ?? sessionModel.name ?? DEFAULT_MODEL_CONFIG.modelId;
 
-    return this.build({
+    return {
       provider,
       modelId,
       apiKey: sessionModel.apiKey ?? agentConfig?.apiKey,
@@ -76,21 +91,32 @@ export class ModelProviderFactory {
       temperature: sessionModel.temperature ?? agentConfig?.temperature,
       maxTokens: sessionModel.maxTokens ?? agentConfig?.maxTokens,
       topP: sessionModel.topP ?? agentConfig?.topP,
-      presencePenalty: sessionModel.presencePenalty ?? agentConfig?.presencePenalty,
-      frequencyPenalty: sessionModel.frequencyPenalty ?? agentConfig?.frequencyPenalty,
-      reasoningEffort: sessionModel.reasoningEffort ?? agentConfig?.reasoningEffort,
+      presencePenalty:
+        sessionModel.presencePenalty ?? agentConfig?.presencePenalty,
+      frequencyPenalty:
+        sessionModel.frequencyPenalty ?? agentConfig?.frequencyPenalty,
+      reasoningEffort:
+        sessionModel.reasoningEffort ?? agentConfig?.reasoningEffort,
       verbosity: sessionModel.verbosity ?? agentConfig?.verbosity,
-    });
+    };
   }
 
   /** Infer provider from a legacy model name string */
-  private inferProviderFromModelName(name?: string): ModelProviderName | undefined {
+  private inferProviderFromModelName(
+    name?: string,
+  ): ModelProviderName | undefined {
     if (!name) return undefined;
-    if (name.startsWith('gpt-') || name.startsWith('o1') || name.startsWith('o3')) return 'openai';
+    if (
+      name.startsWith('gpt-') ||
+      name.startsWith('o1') ||
+      name.startsWith('o3')
+    )
+      return 'openai';
     if (name.startsWith('grok-')) return 'xai';
     if (name.startsWith('claude-')) return 'anthropic';
     if (name.startsWith('gemini-')) return 'google';
-    if (name.startsWith('mistral-') || name.startsWith('mixtral-')) return 'mistral';
+    if (name.startsWith('mistral-') || name.startsWith('mixtral-'))
+      return 'mistral';
     if (name.startsWith('llama') || name.startsWith('qwen')) return 'ollama';
     return undefined;
   }

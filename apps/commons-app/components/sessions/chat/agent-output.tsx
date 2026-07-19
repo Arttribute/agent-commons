@@ -10,12 +10,12 @@ import remarkGfm from "remark-gfm";
 import rehypeRaw from "rehype-raw";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
+import { AgentAvatar } from "@/components/agents/agent-avatar";
 import type { StreamActivity } from "@/context/AgentContext";
 import { MiniComputer } from "@/components/computers/mini-computer";
 import type { AgentComputer } from "@/components/computers/computer-types";
 import {
   AlertCircle,
-  Bot,
   Brain,
   Check,
   ChevronDown,
@@ -53,6 +53,15 @@ interface AgentOutputProps {
   isStreaming?: boolean;
   /** The agent's persistent computer, used by the inline mini computer window. */
   computer?: AgentComputer | null;
+  /** Agent identity for the small header above the response. */
+  agentName?: string | null;
+  agentAvatar?: string | null;
+  /**
+   * Show the agent identity row above this message. The caller sets it on the
+   * first agent message after a user turn, so consecutive agent messages
+   * don't repeat the avatar.
+   */
+  showAgentHeader?: boolean;
 }
 
 export default function AgentOutput({
@@ -61,6 +70,9 @@ export default function AgentOutput({
   className,
   isStreaming,
   computer,
+  agentName,
+  agentAvatar,
+  showAgentHeader = false,
 }: AgentOutputProps) {
   const computerToolCalls = getComputerToolCalls(metadata?.toolCalls ?? []);
   const activities = normalizeActivities(
@@ -92,11 +104,16 @@ export default function AgentOutput({
 
   return (
     <div className={cn("prose max-w-none my-3", className)}>
-      <div className="flex items-start gap-2">
-        <div className="mt-0.5 shrink-0 h-6 w-6 rounded-full bg-indigo-50 flex items-center justify-center">
-          <Bot className="h-3.5 w-3.5 text-indigo-500" />
+      {showAgentHeader && (
+        <div className="not-prose mb-2 flex items-center gap-2">
+          <AgentAvatar name={agentName} src={agentAvatar} size={20} />
+          {agentName && (
+            <span className="text-xs text-muted-foreground">{agentName}</span>
+          )}
         </div>
-        <div className="flex-1 min-w-0">
+      )}
+      <div>
+        <div className="min-w-0">
           <ActivityTimeline
             activities={activities}
             durationMs={durationMs}

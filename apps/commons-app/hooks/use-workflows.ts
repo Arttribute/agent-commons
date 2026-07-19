@@ -6,6 +6,7 @@ import { parseEventStream } from "@/lib/sse";
 export function useWorkflows(ownerId?: string, ownerType?: 'user' | 'agent') {
   const [workflows, setWorkflows] = useState<Workflow[]>([]);
   const [loading, setLoading] = useState(false);
+  const [loadedKey, setLoadedKey] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
@@ -20,13 +21,20 @@ export function useWorkflows(ownerId?: string, ownerType?: 'user' | 'agent') {
     } catch (err: any) {
       setError(err.message);
     } finally {
+      setLoadedKey(`${ownerType}:${ownerId}`);
       setLoading(false);
     }
   }, [ownerId, ownerType]);
 
   useEffect(() => { load(); }, [load]);
 
-  return { workflows, loading, error, refresh: load };
+  const key = ownerId && ownerType ? `${ownerType}:${ownerId}` : null;
+  return {
+    workflows,
+    loading: Boolean(key) && (loading || loadedKey !== key),
+    error,
+    refresh: load,
+  };
 }
 
 export function useWorkflowExecutionStream(workflowId: string | undefined, executionId: string | undefined) {

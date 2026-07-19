@@ -74,8 +74,8 @@ export function BottomGuide({
             {statusLabel}
           </span>
           {creditReward ? (
-            <span className="shrink-0 text-xs font-bold text-slate-400">
-              +{creditReward}
+            <span className="shrink-0 text-xs font-medium text-slate-400">
+              reward eligible
             </span>
           ) : null}
         </div>
@@ -166,7 +166,9 @@ export function BottomGuide({
               disabled={!canSync || syncing}
               className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs font-bold text-slate-600 disabled:cursor-not-allowed disabled:opacity-40"
             >
-              {syncing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
+              {syncing ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : null}
               Save
             </button>
           ) : null}
@@ -179,7 +181,9 @@ export function BottomGuide({
               disabled={!canFinish || finishing}
               className="inline-flex items-center gap-1.5 rounded-lg bg-slate-950 px-3 py-1.5 text-xs font-bold text-white disabled:cursor-not-allowed disabled:opacity-40"
             >
-              {finishing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
+              {finishing ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : null}
               {/* Short label on mobile, full label on sm+ */}
               <span className="sm:hidden">Finish</span>
               <span className="hidden sm:inline">Finish sandbox</span>

@@ -12,6 +12,7 @@ import { PostgresSaver } from '@langchain/langgraph-checkpoint-postgres';
 import { ToolNode } from '@langchain/langgraph/prebuilt';
 import {
   BadRequestException,
+  ForbiddenException,
   Injectable,
   Logger,
   OnModuleInit,
@@ -22,7 +23,9 @@ import { ModelProviderFactory } from '~/modules/model-provider';
 import crypto from 'crypto';
 import dedent from 'dedent';
 import {
+  and,
   eq,
+  desc,
   InferInsertModel,
   InferSelectModel,
   inArray,
@@ -65,10 +68,49 @@ import {
   RUNTIME_CAPABILITIES,
   normalizeRuntimeType,
 } from './runtime/runtime.types';
+import { CopilotService } from './copilot.service';
+import {
+  COMMONS_COPILOT_OPERATING_GUIDE,
+  CopilotUiContext,
+} from './copilot-platform-guide';
 
 const got = import('got');
 
 const app = typia.llm.application<CommonTool, 'chatgpt'>();
+
+const COMMONS_COPILOT_AVATAR = '/commons-copilot.png';
+
+/** One-line session heading; must fit cleanly on a single line. */
+const COMMONS_COPILOT_GREETING = 'What should we build today?';
+const LEGACY_COPILOT_GREETING =
+  'I’m your Commons Copilot. I can help you build, test, and manage anything in Agent Commons—what should we make?';
+const COMMONS_COPILOT_STARTERS = [
+  {
+    label: 'Create an agent',
+    prompt:
+      'Help me create a new agent. Ask me 1-2 key questions about its purpose, then set it up with a one-line greeting and 2-4 rich conversation starters.',
+  },
+  {
+    label: 'Design a workflow',
+    prompt:
+      'Design a workflow with me. Start by asking what process I want to automate and what should trigger it.',
+  },
+  {
+    label: 'Automate a task',
+    prompt:
+      'Help me schedule an automated task. Ask me which agent should run it, what it should do, and when.',
+  },
+  {
+    label: 'Tour my account',
+    prompt:
+      'Show me what is in my Agent Commons account and suggest one improvement I could make today.',
+  },
+];
+const COMMONS_COPILOT_INSTRUCTIONS = `You are Commons Copilot, the user's native guide and co-creator inside Agent Commons. You understand the web Studio, API, SDK, and agc CLI, and help users create, inspect, test, and manage agents, tools, skills, tasks, workflows, spaces, and code projects.
+
+For platform management, inspect current resources before proposing changes. Use the typed proposal tool matching the resource the user requested. Never claim a pending proposal has been applied. Use listCommonsResources to ground recommendations in the user's actual account. For code work in the CLI, use the provided local tools and respect their confirmation boundaries. Prefer small, valid, testable workflow graphs with explicit input/output nodes, typed mappings, and clear failure or approval paths.
+
+${COMMONS_COPILOT_OPERATING_GUIDE}`;
 
 type StreamStatusState = 'queued' | 'running' | 'completed' | 'failed';
 type RunComputerRequest = {
@@ -108,6 +150,26 @@ const TRIVIAL_TURN_PATTERN = new RegExp(
     ')[\\s!.?,:;~*\\u{1F300}-\\u{1FAFF}\\u2600-\\u27BF]*$',
   'iu',
 );
+
+const REASONING_EFFORT_LEVELS = [
+  'none',
+  'minimal',
+  'low',
+  'medium',
+  'high',
+  'xhigh',
+] as const;
+
+/** Validates a caller-supplied reasoning effort; unknown values are dropped. */
+function normalizeReasoningEffortInput(
+  value: unknown,
+): (typeof REASONING_EFFORT_LEVELS)[number] | undefined {
+  if (typeof value !== 'string') return undefined;
+  const normalized = value.trim().toLowerCase();
+  return (REASONING_EFFORT_LEVELS as readonly string[]).includes(normalized)
+    ? (normalized as (typeof REASONING_EFFORT_LEVELS)[number])
+    : undefined;
+}
 
 @Injectable()
 export class AgentService implements OnModuleInit {
@@ -151,6 +213,8 @@ export class AgentService implements OnModuleInit {
     private toolLoader: ToolLoaderService,
     @Inject(forwardRef(() => SpaceToolsService))
     private spaceTools: SpaceToolsService,
+    @Inject(forwardRef(() => CopilotService))
+    private copilotService: CopilotService,
   ) {}
 
   /* ─────────────────────────  INIT  ───────────────────────── */
@@ -346,6 +410,16 @@ export class AgentService implements OnModuleInit {
       ${taskLines}
     `;
 
+    const copilotBlock = agent.isSystemManaged
+      ? dedent`
+          ## COMMONS COPILOT ROLE
+          You are the user's default native Commons Copilot. You can work from Studio, the API, SDK, or CLI.
+          Access mode: ${agent.copilotAccessMode ?? 'confirm'}
+          Automatic scopes: ${(agent.copilotScopes ?? []).join(', ') || 'none'}
+          Account mutations must use review-aware platform tools. Respect the returned requiresConfirmation flag and tell the user when a change is waiting in review.
+        `
+      : '';
+
     return dedent`You are an AI agent on the Agent Commons platform.
 
       ## YOUR IDENTITY
@@ -353,6 +427,7 @@ export class AgentService implements OnModuleInit {
       Name: ${agent.name ?? 'Unnamed Agent'}
       ${agent.persona ? `Persona: ${agent.persona}` : ''}
       ${agent.instructions ? `Instructions: ${agent.instructions}` : ''}
+      ${copilotBlock}
 
       Current date/time: ${currentTime.toISOString()}
       Session ID: ${sessionId}
@@ -631,6 +706,8 @@ export class AgentService implements OnModuleInit {
     maxTurns?: number;
     /** Extra text appended to the agent's system prompt (used by CLI for local tool manifest). */
     cliContext?: string;
+    /** Untrusted browser page hint; Commons Copilot re-verifies it server-side. */
+    uiContext?: CopilotUiContext;
     /**
      * Dynamic CLI tool catalog sent by the caller's own daemon/CLI process.
      * When present, this fully replaces the hardcoded CLI tool list below —
@@ -652,6 +729,8 @@ export class AgentService implements OnModuleInit {
       /** @deprecated Ignored; assigned computers are always persistent. */
       lifecycle?: 'persistent' | 'ephemeral';
     };
+    /** User-selected thinking depth for this turn; overrides the adaptive hint. */
+    reasoningEffort?: string;
   }): Observable<any> {
     return new Observable<any>((subscriber) => {
       // Keep SSE connection alive through proxies
@@ -683,6 +762,7 @@ export class AgentService implements OnModuleInit {
           props.computerRequest;
         let computerPreparationBlock = '';
         let computerUnavailable = false;
+        let creditReservationId: string | undefined;
         const emitStatus = (
           stage: string,
           status: StreamStatusState,
@@ -731,6 +811,17 @@ export class AgentService implements OnModuleInit {
 
         try {
           const agent = await this.getAgent({ agentId });
+          if (
+            agent.isSystemManaged &&
+            agent.isDefault &&
+            (!initiator ||
+              !agent.ownerUserId ||
+              agent.ownerUserId.toLowerCase() !== initiator.toLowerCase())
+          ) {
+            throw new ForbiddenException(
+              'Commons Copilot is private to its account owner',
+            );
+          }
           emitStatus('agent', 'completed', `Loaded ${agent.name ?? 'agent'}`);
 
           let isNewSession = false;
@@ -817,6 +908,61 @@ export class AgentService implements OnModuleInit {
                 isNewSession,
               },
             );
+          }
+
+          const sessionRecord = await this.session.getSession({
+            id: currentSessionId,
+          });
+          const decryptedApiKey = agent.modelApiKey
+            ? this.decryptApiKey(agent.modelApiKey)
+            : undefined;
+          const sessionModel = SessionService.decryptModelApiKey(
+            sessionRecord?.model as any,
+            this.encryption,
+          );
+          const effectiveModel = this.modelProviderFactory.resolveSessionModel(
+            sessionModel,
+            {
+              provider: (agent.modelProvider as any) ?? 'openai',
+              modelId: agent.modelId ?? 'gpt-5.4-mini',
+              apiKey: decryptedApiKey,
+              baseUrl: agent.modelBaseUrl ?? undefined,
+              temperature: agent.temperature ?? 0,
+              maxTokens: agent.maxTokens ?? undefined,
+              topP: agent.topP ?? undefined,
+              presencePenalty: agent.presencePenalty ?? undefined,
+              frequencyPenalty: agent.frequencyPenalty ?? undefined,
+              reasoningEffort: this.resolveAdaptiveReasoningEffort(props),
+            },
+          );
+          // A thinking level picked in the composer wins over both the
+          // session/agent defaults and the adaptive trivial-turn hint.
+          const requestedEffort = normalizeReasoningEffortInput(
+            props.reasoningEffort,
+          );
+          if (requestedEffort) effectiveModel.reasoningEffort = requestedEffort;
+
+          const billingOwnerId = agent.ownerUserId ?? agent.owner;
+          if (
+            !billingOwnerId &&
+            process.env.CREDIT_DEBITS_ENABLED !== 'false'
+          ) {
+            throw new ForbiddenException(
+              'This agent has no billable account owner.',
+            );
+          }
+          if (billingOwnerId) {
+            const reservation = await this.usageService.authorizeAgentRun({
+              principalId: billingOwnerId,
+              workspaceId: agent.workspaceId,
+              agentId,
+              sessionId: currentSessionId,
+              traceId,
+              provider: effectiveModel.provider,
+              modelId: effectiveModel.modelId,
+              isByok: !!effectiveModel.apiKey,
+            });
+            creditReservationId = reservation?.reservationId;
           }
 
           if (computerRequest?.enabled) {
@@ -964,7 +1110,7 @@ export class AgentService implements OnModuleInit {
 
           const toolDefs = await this.toolLoader.loadToolsForAgent({
             agentId,
-            userId: agent.owner ?? undefined,
+            userId: agent.ownerUserId ?? agent.owner ?? undefined,
             spaceId,
             staticToolDefs: staticDefs,
             spaceToolDefs: spaceToolDefs,
@@ -987,9 +1133,9 @@ export class AgentService implements OnModuleInit {
           const executedCalls: any[] = [];
           const llmRunStartedAt = new Map<string, number>();
           const usageContext = {
-            provider: (agent.modelProvider ?? 'openai') as any,
-            modelId: agent.modelId ?? 'gpt-5.4-mini',
-            isByok: !!agent.modelApiKey,
+            provider: effectiveModel.provider,
+            modelId: effectiveModel.modelId,
+            isByok: !!effectiveModel.apiKey,
           };
           const usageTotals = {
             inputTokens: 0,
@@ -1004,6 +1150,14 @@ export class AgentService implements OnModuleInit {
               _prompts: string[],
               runId: string,
             ) => {
+              await this.usageService.authorizeModelCall({
+                reservationId: creditReservationId,
+                provider: usageContext.provider,
+                modelId: usageContext.modelId,
+                prompts: _prompts,
+                maxOutputTokens: effectiveModel.maxTokens,
+                isByok: usageContext.isByok,
+              });
               if (runId) llmRunStartedAt.set(runId, performance.now());
               emitStatus('model', 'running', 'Thinking');
             },
@@ -1071,8 +1225,9 @@ export class AgentService implements OnModuleInit {
               const costUsd = calculateCost(
                 usageContext.provider,
                 usageContext.modelId,
-                Math.max(0, usage.inputTokens - usage.cachedTokens),
+                usage.inputTokens,
                 usage.outputTokens,
+                usage.cachedTokens,
               );
 
               usageTotals.inputTokens += usage.inputTokens;
@@ -1080,24 +1235,21 @@ export class AgentService implements OnModuleInit {
               usageTotals.cachedTokens += usage.cachedTokens;
               usageTotals.costUsd += costUsd;
 
-              this.usageService
-                .record({
-                  agentId,
-                  sessionId: currentSessionId as any,
-                  provider: usageContext.provider,
-                  modelId: usageContext.modelId,
-                  inputTokens: usage.inputTokens,
-                  outputTokens: usage.outputTokens,
-                  cachedTokens: usage.cachedTokens,
-                  totalTokens: usage.totalTokens,
-                  costUsd,
-                  isByok: usageContext.isByok,
-                  durationMs,
-                  traceId,
-                })
-                .catch((err) =>
-                  console.error('[UsageService] Failed to record event:', err),
-                );
+              await this.usageService.record({
+                agentId,
+                sessionId: currentSessionId as any,
+                provider: usageContext.provider,
+                modelId: usageContext.modelId,
+                inputTokens: usage.inputTokens,
+                outputTokens: usage.outputTokens,
+                cachedTokens: usage.cachedTokens,
+                totalTokens: usage.totalTokens,
+                costUsd,
+                isByok: usageContext.isByok,
+                durationMs,
+                traceId,
+                creditReservationId,
+              });
 
               console.log(
                 JSON.stringify({
@@ -1122,33 +1274,7 @@ export class AgentService implements OnModuleInit {
           });
 
           // ── Build LLM from agent/session model config (provider-agnostic) ──
-          const sessionRecord = await this.session.getSession({
-            id: currentSessionId,
-          });
-          const decryptedApiKey = agent.modelApiKey
-            ? this.decryptApiKey(agent.modelApiKey)
-            : undefined;
-          const sessionModel = SessionService.decryptModelApiKey(
-            sessionRecord?.model as any,
-            this.encryption,
-          );
-          const llm = this.modelProviderFactory.buildFromSessionModel(
-            sessionModel,
-            {
-              provider: (agent.modelProvider as any) ?? 'openai',
-              modelId: agent.modelId ?? 'gpt-5.4-mini',
-              apiKey: decryptedApiKey,
-              baseUrl: agent.modelBaseUrl ?? undefined,
-              temperature: agent.temperature ?? 0,
-              maxTokens: agent.maxTokens ?? undefined,
-              topP: agent.topP ?? undefined,
-              presencePenalty: agent.presencePenalty ?? undefined,
-              frequencyPenalty: agent.frequencyPenalty ?? undefined,
-              // Adaptive hint only — an explicit reasoningEffort on the
-              // session model always wins inside buildFromSessionModel.
-              reasoningEffort: this.resolveAdaptiveReasoningEffort(props),
-            },
-          );
+          const llm = this.modelProviderFactory.build(effectiveModel);
 
           // CLI tool schemas to expose to the LLM (only when cliContext is present).
           // When the caller (e.g. the CommonOS daemon) sends its own dynamic
@@ -1955,6 +2081,15 @@ export class AgentService implements OnModuleInit {
           const memoryBlock = await this.memoryService
             .buildMemoryBlock(agentId, latestUserMsg ?? '')
             .catch(() => '');
+          const copilotContext =
+            agent.isDefault && agent.isSystemManaged
+              ? await this.copilotService
+                  .buildRunContext(agentId, initiator, props.uiContext)
+                  .catch(
+                    (error) =>
+                      `## Commons Copilot context\nLive context lookup failed: ${error.message}`,
+                  )
+              : '';
 
           // Build the extra content to append to the system prompt (memory + CLI context)
           const computerSelectionDetail = computerUnavailable
@@ -1987,6 +2122,7 @@ export class AgentService implements OnModuleInit {
 
           const extraSystemContent = [
             memoryBlock,
+            copilotContext,
             props.cliContext,
             computerSelectionBlock,
             computerPreparationBlock,
@@ -2013,14 +2149,6 @@ export class AgentService implements OnModuleInit {
               } as any);
             }
           }
-
-          // Resolve effective provider/model for cost tracking
-          const effectiveProvider = (agent.modelProvider ?? 'openai') as any;
-          const effectiveModelId = agent.modelId ?? 'gpt-5.4-mini';
-          const isByok = !!agent.modelApiKey;
-          usageContext.provider = effectiveProvider;
-          usageContext.modelId = effectiveModelId;
-          usageContext.isByok = isByok;
 
           let loop = 0;
           const maxTaskCycles = Number(process.env.AGENT_MAX_TASK_CYCLES ?? 20);
@@ -2423,6 +2551,9 @@ export class AgentService implements OnModuleInit {
             });
           }
 
+          await this.usageService.finalizeAgentRun(creditReservationId);
+          creditReservationId = undefined;
+
           clearInterval(keepalive);
           unsubscribeProgress();
           subscriber.complete();
@@ -2460,6 +2591,14 @@ export class AgentService implements OnModuleInit {
             }
           }
         } catch (err) {
+          await this.usageService
+            .finalizeAgentRun(creditReservationId)
+            .catch((finalizeError) =>
+              this.logger.error(
+                `Failed to finalize credit reservation: ${finalizeError.message}`,
+              ),
+            );
+          creditReservationId = undefined;
           clearInterval(keepalive);
           unsubscribeProgress();
           const message = err instanceof Error ? err.message : String(err);
@@ -2664,7 +2803,45 @@ export class AgentService implements OnModuleInit {
     agentId: string,
     updateData: Partial<InferSelectModel<typeof schema.agent>>,
   ) {
-    const data = omit(updateData, ['wallet', 'agentId', 'createdAt']) as any;
+    const existing = await this.getAgent({ agentId });
+    const systemManagedSafeFields = [
+      'name',
+      'avatar',
+      'persona',
+      'greeting',
+      'conversationStarters',
+      'modelProvider',
+      'modelId',
+      'modelApiKey',
+      'modelBaseUrl',
+      'temperature',
+      'maxTokens',
+      'topP',
+      'presencePenalty',
+      'frequencyPenalty',
+      'ttsProvider',
+      'ttsVoice',
+    ];
+    const data = (
+      existing.isSystemManaged
+        ? Object.fromEntries(
+            Object.entries(updateData).filter(([key]) =>
+              systemManagedSafeFields.includes(key),
+            ),
+          )
+        : omit(updateData, [
+            'wallet',
+            'agentId',
+            'createdAt',
+            'owner',
+            'ownerUserId',
+            'workspaceId',
+            'isDefault',
+            'isSystemManaged',
+            'copilotAccessMode',
+            'copilotScopes',
+          ])
+    ) as any;
     if (data.modelApiKey) {
       data.modelApiKey = this.encryptApiKey(data.modelApiKey);
     }
@@ -2693,19 +2870,112 @@ export class AgentService implements OnModuleInit {
     return this.db.query.agent.findMany();
   }
   async getAgentsByOwner(owner: string) {
-    return this.db.query.agent.findMany({ where: (t) => eq(t.owner, owner) });
+    await this.ensureDefaultCopilot(owner);
+    return this.db.query.agent.findMany({
+      where: (t) => or(eq(t.ownerUserId, owner), eq(t.owner, owner)),
+      orderBy: (t) => [desc(this.lastActivityAt(t))],
+    });
+  }
+
+  /** Most recent session activity for an agent, falling back to its creation date. */
+  private lastActivityAt(t: typeof schema.agent._.columns) {
+    return sql`coalesce((select max(s.updated_at) from session s where s.agent_id = ${t.agentId}), ${t.createdAt})`;
   }
   async getAgentsForPrincipal(userId: string, workspaceId?: string | null) {
+    await this.ensureDefaultCopilot(userId, workspaceId);
     return this.db.query.agent.findMany({
       where: (t) =>
         workspaceId
           ? or(
               eq(t.ownerUserId, userId),
               eq(t.owner, userId),
-              eq(t.workspaceId, workspaceId),
+              and(eq(t.workspaceId, workspaceId), eq(t.isSystemManaged, false)),
             )
           : or(eq(t.ownerUserId, userId), eq(t.owner, userId)),
+      orderBy: (t) => [desc(this.lastActivityAt(t))],
     });
+  }
+
+  async ensureDefaultCopilot(userId: string, workspaceId?: string | null) {
+    if (!userId?.trim()) return null;
+    const existing = await this.db.query.agent.findFirst({
+      where: (t) => and(eq(t.ownerUserId, userId), eq(t.isDefault, true)),
+    });
+    if (existing) {
+      // Upgrade only built-in defaults. User-customized profile images,
+      // greetings, and starters remain untouched.
+      const needsAvatarUpgrade = existing.avatar === '/ac-icon.svg';
+      const needsInstructionUpgrade =
+        existing.instructions !== COMMONS_COPILOT_INSTRUCTIONS;
+      const needsGreetingUpgrade =
+        existing.greeting === LEGACY_COPILOT_GREETING;
+      // Every copilot still carrying plain-string starters moves to the rich
+      // {label, prompt} format so all users get the improved starter prompts.
+      const needsStarterUpgrade =
+        !Array.isArray(existing.conversationStarters) ||
+        existing.conversationStarters.length === 0 ||
+        existing.conversationStarters.some(
+          (starter) => typeof starter === 'string',
+        );
+      if (
+        needsAvatarUpgrade ||
+        needsInstructionUpgrade ||
+        needsGreetingUpgrade ||
+        needsStarterUpgrade
+      ) {
+        const [updated] = await this.db
+          .update(schema.agent)
+          .set({
+            ...(needsAvatarUpgrade && { avatar: COMMONS_COPILOT_AVATAR }),
+            ...(needsInstructionUpgrade && {
+              instructions: COMMONS_COPILOT_INSTRUCTIONS,
+            }),
+            ...(needsGreetingUpgrade && {
+              greeting: COMMONS_COPILOT_GREETING,
+            }),
+            ...(needsStarterUpgrade && {
+              conversationStarters: COMMONS_COPILOT_STARTERS,
+            }),
+          })
+          .where(eq(schema.agent.agentId, existing.agentId))
+          .returning();
+        return updated ?? existing;
+      }
+      return existing;
+    }
+
+    try {
+      return await this.createAgent({
+        value: {
+          name: 'Commons Copilot',
+          owner: userId,
+          ownerUserId: userId,
+          workspaceId: workspaceId ?? undefined,
+          instructions: COMMONS_COPILOT_INSTRUCTIONS,
+          persona:
+            'A calm, capable Agent Commons co-creator for building and operating agents, workflows, tools, skills, and tasks.',
+          greeting: COMMONS_COPILOT_GREETING,
+          conversationStarters: COMMONS_COPILOT_STARTERS,
+          avatar: COMMONS_COPILOT_AVATAR,
+          isDefault: true,
+          isSystemManaged: true,
+          copilotAccessMode: 'confirm',
+          copilotScopes: [],
+          runtimeType: 'native',
+          modelProvider: 'openai',
+          modelId: 'gpt-5.4-mini',
+        },
+      });
+    } catch (error: any) {
+      // Concurrent first requests may race; the partial unique index makes the
+      // loser harmless, so return the row created by the winner.
+      if (error?.code === '23505') {
+        return this.db.query.agent.findFirst({
+          where: (t) => and(eq(t.ownerUserId, userId), eq(t.isDefault, true)),
+        });
+      }
+      throw error;
+    }
   }
 
   //get agent session full chat

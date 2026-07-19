@@ -8,6 +8,24 @@ body {
   overflow: hidden;
 }
 
+#app-shell-content {
+  transition: margin-right 180ms ease;
+}
+
+@media (min-width: 1024px) {
+  /* Reserve exactly the copilot panel's width (kept in sync by the panel,
+     including user resizes) so no gap trails behind the open panel. */
+  html.commons-copilot-open #app-shell-content {
+    margin-right: var(--copilot-panel-width, 360px);
+  }
+}
+
+/* Proposal canvases reuse Studio workflow nodes without allowing their
+   inspector buttons to mutate the live editor underneath the dialog. */
+.copilot-workflow-preview .react-flow__node {
+  pointer-events: none !important;
+}
+
 /* Agent Commons brand accents — pastel highlights used across the app */
 :root {
   --brand-yellow: #fde68a;
@@ -234,13 +252,23 @@ body {
 .code-project-light nav,
 .code-project-light > div,
 .code-project-light [class*="bg-zinc"],
-.code-project-light [class*="bg-black"] { background-color: #fafafa !important; }
+.code-project-light [class*="bg-black"] {
+  background-color: #fafafa !important;
+}
 .code-project-light [class*="border-white"],
-.code-project-light [class*="border-zinc"] { border-color: #e4e4e7 !important; }
+.code-project-light [class*="border-zinc"] {
+  border-color: #e4e4e7 !important;
+}
 .code-project-light [class*="text-zinc-100"],
 .code-project-light [class*="text-zinc-200"],
-.code-project-light [class*="text-zinc-300"] { color: #27272a !important; }
+.code-project-light [class*="text-zinc-300"] {
+  color: #27272a !important;
+}
 .code-project-light [class*="text-zinc-400"],
 .code-project-light [class*="text-zinc-500"],
-.code-project-light [class*="text-zinc-600"] { color: #71717a !important; }
-.code-project-light iframe { background: white !important; }
+.code-project-light [class*="text-zinc-600"] {
+  color: #71717a !important;
+}
+.code-project-light iframe {
+  background: white !important;
+}

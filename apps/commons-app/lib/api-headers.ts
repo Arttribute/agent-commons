@@ -1,4 +1,5 @@
 import { auth } from "@/auth";
+import type { Session } from "next-auth";
 import { normalizePrincipalId } from "@/lib/principal-id";
 
 const serviceTokenCache = new Map<string, { value: string; expiresAt: number }>();
@@ -10,6 +11,8 @@ type BackendAuthHeaderOptions = {
   preferServiceKey?: boolean;
   preferUserToken?: boolean;
   allowLegacyServiceKey?: boolean;
+  /** Reuse a session already resolved by the route to avoid duplicate work. */
+  session?: Session | null;
 };
 
 type ServiceAuthHeaderOptions = {
@@ -33,7 +36,9 @@ function envValue(name: string) {
 export async function backendAuthHeaders(
   options: BackendAuthHeaderOptions = {},
 ): Promise<Record<string, string>> {
-  const session = await auth();
+  const session = Object.prototype.hasOwnProperty.call(options, "session")
+    ? options.session
+    : await auth();
   const delegatedUserId = normalizePrincipalId(session?.user?.id);
   const delegatedHeaders: Record<string, string> = delegatedUserId
     ? { "x-initiator": delegatedUserId, "x-owner-id": delegatedUserId }
@@ -84,6 +89,28 @@ export async function backendServiceAuthHeaders(
   if (serviceKey) return { Authorization: `Bearer ${serviceKey}` };
 
   return {};
+}
+
+/**
+ * Resolve an Agent Commons account id from an email via the identity service.
+ * Returns null when identity is unreachable, unconfigured, or has no match.
+ */
+export async function resolvePrincipalByEmail(
+  email: string,
+): Promise<string | null> {
+  const issuer = envValue("COMMONS_IDENTITY_ISSUER");
+  const token = await commonsIdentityServiceToken();
+  if (!issuer || !token) return null;
+  const base = issuer.replace(/\/api\/auth\/?$/, "");
+  const response = await fetch(
+    `${base}/api/identity/users/resolve?email=${encodeURIComponent(email)}`,
+    { headers: { Authorization: `Bearer ${token}` }, cache: "no-store" },
+  ).catch(() => null);
+  if (!response?.ok) return null;
+  const payload = (await response.json().catch(() => null)) as {
+    data?: { userId?: string };
+  } | null;
+  return payload?.data?.userId ?? null;
 }
 
 async function commonsIdentityServiceToken() {

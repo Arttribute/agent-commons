@@ -31,6 +31,11 @@ export function buildOpenAIModel(config: ModelConfig): ChatOpenAI {
     throw new Error('Custom model providers require modelBaseUrl');
   }
   const isGpt5 = config.provider === 'openai' && config.modelId.startsWith('gpt-5');
+  // gpt-5.1 and later replaced 'minimal' with 'none' and added 'xhigh';
+  // the original gpt-5 family only knows minimal→high. Sending an effort a
+  // snapshot doesn't support is a hard 400, so clamp per family.
+  const isVersionedGpt5 =
+    config.provider === 'openai' && /^gpt-5\.\d/.test(config.modelId);
   // o1/o3/o4 reasoning models also reject sampling params, and their effort
   // floor is 'low' (no none/minimal like the gpt-5 family).
   const isOSeries =
@@ -44,6 +49,11 @@ export function buildOpenAIModel(config: ModelConfig): ChatOpenAI {
     : undefined;
   if (isOSeries && reasoningEffort) {
     if (reasoningEffort === 'none' || reasoningEffort === 'minimal') reasoningEffort = 'low';
+    if (reasoningEffort === 'xhigh') reasoningEffort = 'high';
+  } else if (isVersionedGpt5 && reasoningEffort === 'minimal') {
+    reasoningEffort = 'none';
+  } else if (isGpt5 && !isVersionedGpt5 && reasoningEffort) {
+    if (reasoningEffort === 'none') reasoningEffort = 'minimal';
     if (reasoningEffort === 'xhigh') reasoningEffort = 'high';
   }
   const verbosity = isGpt5

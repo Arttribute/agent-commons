@@ -17,7 +17,13 @@ interface UseAgentStreamOptions {
 }
 
 /** Events that mean the run is over and no reconnect should be attempted. */
-const TERMINAL_EVENT_TYPES = new Set(["final", "completed", "failed", "cancelled", "error"]);
+const TERMINAL_EVENT_TYPES = new Set([
+  "final",
+  "completed",
+  "failed",
+  "cancelled",
+  "error",
+]);
 
 /** Consecutive failed reconnects (no events received) before giving up. */
 const MAX_RESUME_ATTEMPTS = 8;
@@ -26,22 +32,39 @@ type ResumableStreamEvent = StreamEvent & { seq?: number; runId?: string };
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
-export function useAgentStream(initiator: string, options: UseAgentStreamOptions = {}) {
+export function useAgentStream(
+  initiator: string,
+  options: UseAgentStreamOptions = {},
+) {
   const [streaming, setStreaming] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const abortRef = useRef<boolean>(false);
   const optionsRef = useRef(options);
-  useEffect(() => { optionsRef.current = options; });
+  useEffect(() => {
+    optionsRef.current = options;
+  });
 
   const stream = useCallback(
     async (params: {
       agentId: string;
       messages: ChatMessage[];
       sessionId?: string;
+      uiContext?: {
+        pathname?: string;
+        pageTitle?: string;
+        routeName?: string;
+        resourceType?: "agent" | "workflow" | "task" | "tool" | "skill";
+        resourceId?: string;
+        resource?: Record<string, unknown>;
+        timeZone?: string;
+        locale?: string;
+      };
       attachments?: Array<{ fileId: string }>;
       computerRequest?: {
         enabled: boolean;
       };
+      /** Per-turn thinking depth chosen in the composer; omit for auto. */
+      reasoningEffort?: "low" | "medium" | "high" | "xhigh";
     }) => {
       setStreaming(true);
       setError(null);
@@ -60,7 +83,8 @@ export function useAgentStream(initiator: string, options: UseAgentStreamOptions
         for await (const event of parseEventStream<ResumableStreamEvent>(res)) {
           if (abortRef.current) return;
           if (event.runId) runId = event.runId;
-          if (typeof event.seq === "number" && event.seq > lastSeq) lastSeq = event.seq;
+          if (typeof event.seq === "number" && event.seq > lastSeq)
+            lastSeq = event.seq;
           handleEvent(event, optionsRef.current);
           if (TERMINAL_EVENT_TYPES.has(event.type)) {
             finished = true;
@@ -77,7 +101,9 @@ export function useAgentStream(initiator: string, options: UseAgentStreamOptions
         });
 
         if (!res.ok) {
-          const err = await res.json().catch(() => ({ message: res.statusText }));
+          const err = await res
+            .json()
+            .catch(() => ({ message: res.statusText }));
           throw new Error(err.message ?? "Stream request failed");
         }
 
@@ -91,7 +117,9 @@ export function useAgentStream(initiator: string, options: UseAgentStreamOptions
         while (!finished && !abortRef.current && runId) {
           attempts += 1;
           if (attempts > MAX_RESUME_ATTEMPTS) {
-            throw new Error("Lost connection to the agent run after multiple reconnect attempts.");
+            throw new Error(
+              "Lost connection to the agent run after multiple reconnect attempts.",
+            );
           }
           await sleep(Math.min(500 * attempts, 4000));
           if (abortRef.current) break;
@@ -130,7 +158,9 @@ export function useAgentStream(initiator: string, options: UseAgentStreamOptions
     [initiator],
   );
 
-  const stop = useCallback(() => { abortRef.current = true; }, []);
+  const stop = useCallback(() => {
+    abortRef.current = true;
+  }, []);
 
   return { stream, stop, streaming, error };
 }

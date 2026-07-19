@@ -27,8 +27,12 @@ import {
   CreditBalance,
   CreditLedgerEntry,
   CreditWriteParams,
+  CreditCampaign,
+  CreditSummary,
+  CreditTransfer,
   SubscriptionInfo,
   PlanEntitlements,
+  BillingCatalog,
   FlagEvaluation,
   AgentMemory,
   MemoryStats,
@@ -57,6 +61,7 @@ import {
   AgentRuntime,
   AgentRuntimeConfig,
   AgentRuntimeType,
+  CopilotChange,
 } from "./types";
 
 export class CommonsClient {
@@ -329,8 +334,8 @@ export class CommonsClient {
       ): Promise<{ data: any }> => {
         const params =
           typeof paramsOrLegacyComputerId === "string"
-          ? legacyParams
-          : paramsOrLegacyComputerId;
+            ? legacyParams
+            : paramsOrLegacyComputerId;
         if (!params) {
           return Promise.reject(new TypeError("Browser options are required."));
         }
@@ -349,8 +354,8 @@ export class CommonsClient {
       ): Promise<{ data: AgentComputerEvent[] }> => {
         const limit =
           typeof limitOrLegacyComputerId === "number"
-          ? limitOrLegacyComputerId
-          : legacyLimit;
+            ? limitOrLegacyComputerId
+            : legacyLimit;
         return this.request(
           "GET",
           `/v1/agents/${agentId}/computer/events${limit ? `?limit=${limit}` : ""}`,
@@ -410,8 +415,8 @@ export class CommonsClient {
       ): Promise<{ data: any }> => {
         const params =
           typeof paramsOrLegacyComputerId === "string"
-          ? legacyParams
-          : paramsOrLegacyComputerId;
+            ? legacyParams
+            : paramsOrLegacyComputerId;
         if (!params) {
           return Promise.reject(new TypeError("Command options are required."));
         }
@@ -442,6 +447,39 @@ export class CommonsClient {
           `/v1/agents/tts/voices${qs ? `?${qs}` : ""}`,
         );
       },
+    };
+  }
+
+  get copilot() {
+    return {
+      get: (): Promise<{ data: Agent | null }> =>
+        this.request("GET", "/v1/copilot"),
+      updateSettings: (params: {
+        accessMode: "full" | "scoped" | "confirm";
+        scopes?: string[];
+      }): Promise<{ data: Agent }> =>
+        this.request("PUT", "/v1/copilot/settings", params),
+      listChanges: (filter?: {
+        status?: string;
+        resourceType?: string;
+        resourceId?: string;
+      }): Promise<{ data: CopilotChange[] }> => {
+        const query = new URLSearchParams();
+        if (filter?.status) query.set("status", filter.status);
+        if (filter?.resourceType)
+          query.set("resourceType", filter.resourceType);
+        if (filter?.resourceId) query.set("resourceId", filter.resourceId);
+        return this.request(
+          "GET",
+          `/v1/copilot/changes${query.size ? `?${query}` : ""}`,
+        );
+      },
+      acceptChange: (changeId: string): Promise<{ data: CopilotChange }> =>
+        this.request("POST", `/v1/copilot/changes/${changeId}/accept`),
+      rejectChange: (changeId: string): Promise<{ data: CopilotChange }> =>
+        this.request("POST", `/v1/copilot/changes/${changeId}/reject`),
+      revertChange: (changeId: string): Promise<{ data: CopilotChange }> =>
+        this.request("POST", `/v1/copilot/changes/${changeId}/revert`),
     };
   }
 
@@ -493,10 +531,10 @@ export class CommonsClient {
       execute: (
         workflowId: string,
         params: {
-        agentId?: string;
-        sessionId?: string;
-        inputData?: Record<string, any>;
-        userId?: string;
+          agentId?: string;
+          sessionId?: string;
+          inputData?: Record<string, any>;
+          userId?: string;
         },
       ): Promise<WorkflowExecution> =>
         this.request("POST", `/v1/workflows/${workflowId}/execute`, params),
@@ -533,8 +571,8 @@ export class CommonsClient {
         workflowId: string,
         executionId: string,
         params: {
-        approvalToken: string;
-        approvalData?: Record<string, any>;
+          approvalToken: string;
+          approvalData?: Record<string, any>;
         },
       ): Promise<{ success: boolean; executionId: string; action: string }> =>
         this.request(
@@ -548,8 +586,8 @@ export class CommonsClient {
         workflowId: string,
         executionId: string,
         params: {
-        approvalToken: string;
-        reason?: string;
+          approvalToken: string;
+          reason?: string;
         },
       ): Promise<{ success: boolean; executionId: string; action: string }> =>
         this.request(
@@ -1111,11 +1149,11 @@ export class CommonsClient {
       updateServer: (
         serverId: string,
         params: Partial<{
-        name: string;
-        description: string;
-        connectionConfig: Record<string, any>;
-        isPublic: boolean;
-        tags: string[];
+          name: string;
+          description: string;
+          connectionConfig: Record<string, any>;
+          isPublic: boolean;
+          tags: string[];
         }>,
       ): Promise<McpServer> =>
         this.request("PUT", `/v1/mcp/servers/${serverId}`, params),
@@ -1331,6 +1369,29 @@ export class CommonsClient {
         return this.request("GET", `/v1/credits/ledger${qs ? `?${qs}` : ""}`);
       },
 
+      summary: (): Promise<{ data: CreditSummary }> =>
+        this.request("GET", "/v1/credits/summary"),
+
+      campaigns: (): Promise<{ data: CreditCampaign[] }> =>
+        this.request("GET", "/v1/credits/campaigns"),
+
+      claimCampaign: (params: {
+        campaignKey: string;
+        eventId?: string;
+      }): Promise<{ data: { alreadyClaimed: boolean } }> =>
+        this.request("POST", "/v1/credits/campaigns/claim", params),
+
+      transfers: (): Promise<{ data: CreditTransfer[] }> =>
+        this.request("GET", "/v1/credits/transfers"),
+
+      gift: (params: {
+        recipientPrincipalId: string;
+        amount: number;
+        message?: string;
+        idempotencyKey: string;
+      }): Promise<{ data: CreditTransfer }> =>
+        this.request("POST", "/v1/credits/gifts", params),
+
       grant: (
         params: CreditWriteParams,
       ): Promise<{ data: CreditLedgerEntry }> =>
@@ -1347,6 +1408,10 @@ export class CommonsClient {
 
   get billing() {
     return {
+      /** Public product catalog served from the backend source of truth. */
+      catalog: (): Promise<{ data: BillingCatalog }> =>
+        this.request("GET", "/v1/billing/catalog"),
+
       /** Current plan, status, and entitlements for the caller. */
       subscription: (): Promise<{ data: SubscriptionInfo }> =>
         this.request("GET", "/v1/billing/subscription"),

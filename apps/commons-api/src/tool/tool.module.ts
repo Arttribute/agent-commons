@@ -22,6 +22,7 @@ import { EthereumToolService } from './tools/ethereum-tool.service';
 import { FilesModule } from '~/files';
 import { ComputerModule } from '~/computer';
 import { CodeProjectModule } from '~/code-project';
+import { UsageModule } from '~/modules/usage';
 
 @Module({
   imports: [
@@ -35,6 +36,7 @@ import { CodeProjectModule } from '~/code-project';
     FilesModule,
     ComputerModule,
     CodeProjectModule,
+    UsageModule,
   ],
   controllers: [
     ToolController,

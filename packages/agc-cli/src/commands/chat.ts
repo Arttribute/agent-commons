@@ -66,15 +66,24 @@ export function chatCommand(): Command {
     .description('Start an interactive chat REPL with an agent')
     .option('--agent <agentId>', 'Agent ID (or set defaultAgentId in config)')
     .option('--resume <sessionId>', 'Resume an existing session by ID')
-    .option('--computer', "Give the agent access to its persistent cloud computer")
+    .option('--computer', 'Give the agent access to its persistent cloud computer')
     .option('--no-stream', 'Disable token streaming (wait for full response)')
     .option('--no-local', 'Disable local file system access for the agent')
     .action(async (opts) => {
       const localEnabled = opts.local !== false;
       const cfg = loadConfig();
-      const agentId = opts.agent ?? cfg.defaultAgentId;
+      let agentId = opts.agent ?? cfg.defaultAgentId;
+      if (!agentId && cfg.initiator) {
+        try {
+          const listed = await makeClient().agents.list(cfg.initiator);
+          const agents = (listed as any)?.data ?? listed ?? [];
+          agentId = agents.find((agent: any) => agent.isDefault)?.agentId ?? agents[0]?.agentId;
+        } catch {
+          // Preserve the existing actionable error below when discovery fails.
+        }
+      }
       if (!agentId) {
-        console.error(c.error('Specify --agent <agentId> or set defaultAgentId with `agc config set defaultAgentId <id>`'));
+        console.error(c.error('No default agent is available. Specify --agent <agentId> or run `agc agents list`.'));
         process.exit(1);
       }
       if (!cfg.initiator) {
@@ -157,7 +166,7 @@ export function chatCommand(): Command {
       // ── Header ──────────────────────────────────────────────────────────────
       console.log(`\n${c.bold('Agent Commons Chat')}`);
       const headerRows: [string, string][] = [
-        ['Agent',   agentName ? `${agentName}  ${c.dim(agentId)}` : agentId],
+        ['Agent', agentName ? `${agentName}  ${c.dim(agentId)}` : agentId],
         ['Session', c.id(sessionId) + (isResume ? c.dim(' (resumed)') : c.dim(' (new)'))],
       ];
       if (walletLine) headerRows.push(['Wallet', walletLine]);
@@ -278,7 +287,7 @@ export function chatCommand(): Command {
 
           // Resolve @filepath references in the user's message.
           // e.g. "review @src/index.ts" → reads file and injects its content.
-          const atRefs = [...input.matchAll(/@([\S]+)/g)].map(m => m[1]);
+          const atRefs = [...input.matchAll(/@([\S]+)/g)].map((m) => m[1]);
           const fileContextBlocks: string[] = [];
           for (const ref of atRefs) {
             const content = readFileForContext(rootDir, ref);
@@ -343,7 +352,10 @@ export function chatCommand(): Command {
                 const argStr = toolArgSummary(displayName, args ?? {});
                 const isWaiting = displayName === 'wait_for_process';
 
-                if (hasOutput) { process.stdout.write('\n'); hasOutput = false; }
+                if (hasOutput) {
+                  process.stdout.write('\n');
+                  hasOutput = false;
+                }
 
                 // Write initial tool line (no newline — we'll rewrite it after)
                 process.stdout.write(`  ${c.dim('─')} ${c.bold(displayName)}${argStr ? '  ' + c.dim(argStr) : ''}`);
@@ -378,7 +390,9 @@ export function chatCommand(): Command {
                 readline.clearLine(process.stdout, 0);
                 const statusIcon = toolOk ? sym.ok : sym.fail;
                 const previewPart = preview ? `  ${c.dim(preview)}` : '';
-                process.stdout.write(`  ${c.dim('─')} ${c.bold(displayName)}${argStr ? '  ' + c.dim(argStr) : ''}  ${statusIcon}${previewPart}  ${c.dim('(' + elapsed + 's)')}\n`);
+                process.stdout.write(
+                  `  ${c.dim('─')} ${c.bold(displayName)}${argStr ? '  ' + c.dim(argStr) : ''}  ${statusIcon}${previewPart}  ${c.dim('(' + elapsed + 's)')}\n`,
+                );
 
                 appendSessionLog(sessionId, {
                   type: 'local_tool_result',
@@ -393,7 +407,7 @@ export function chatCommand(): Command {
                     method: 'POST',
                     headers: {
                       'Content-Type': 'application/json',
-                      'Authorization': `Bearer ${cfg.apiKey}`,
+                      Authorization: `Bearer ${cfg.apiKey}`,
                     },
                     body: JSON.stringify({ requestId, result }),
                   });
@@ -426,19 +440,25 @@ export function chatCommand(): Command {
                 // ── Cost/usage footer ──────────────────────────────────────
                 const usage = e?.payload?.usage;
                 if (usage) {
-                  const inputTok  = usage.inputTokens ?? 0;
+                  const inputTok = usage.inputTokens ?? 0;
                   const outputTok = usage.outputTokens ?? 0;
                   const cachedTok = usage.cachedTokens ?? 0;
-                  const total     = usage.totalTokens ?? (inputTok + outputTok);
-                  const cost      = typeof usage.costUsd === 'number' ? `$${usage.costUsd.toFixed(4)}` : '';
-                  const parts     = [total ? `${total.toLocaleString()} tokens` : '', cost].filter(Boolean);
+                  const total = usage.totalTokens ?? inputTok + outputTok;
+                  const cost = typeof usage.costUsd === 'number' ? `$${usage.costUsd.toFixed(4)}` : '';
+                  const parts = [total ? `${total.toLocaleString()} tokens` : '', cost].filter(Boolean);
                   if (parts.length) process.stdout.write('\n' + c.dim(`  ↳ ${parts.join(' · ')}`));
                   if (cachedTok > 0) process.stdout.write(c.dim(` (${cachedTok.toLocaleString()} cached)`));
                   appendSessionLog(sessionId, {
                     type: 'message',
                     role: 'assistant',
                     content: agentContent,
-                    usage: { inputTokens: inputTok, outputTokens: outputTok, cachedTokens: cachedTok, totalTokens: total, costUsd: usage.costUsd },
+                    usage: {
+                      inputTokens: inputTok,
+                      outputTokens: outputTok,
+                      cachedTokens: cachedTok,
+                      totalTokens: total,
+                      costUsd: usage.costUsd,
+                    },
                     timestamp: new Date().toISOString(),
                   });
                 } else {
@@ -462,15 +482,7 @@ export function chatCommand(): Command {
 
             // ── Local tool-call loop (recursive until no more tool calls) ───
             if (localToolsCfg && agentContent) {
-              await handleLocalToolLoop(
-                agentContent,
-                localToolsCfg,
-                client,
-                agentId,
-                sessionId,
-                appendSessionLog,
-                !!opts.computer,
-              );
+              await handleLocalToolLoop(agentContent, localToolsCfg, client, agentId, sessionId, appendSessionLog, !!opts.computer);
             }
           } catch (err) {
             process.stdout.write('\n');
@@ -550,7 +562,9 @@ async function handleLocalToolLoop(
   readline.cursorTo(process.stdout, 0);
   readline.clearLine(process.stdout, 0);
   const previewPart = preview ? `  ${c.dim(preview)}` : '';
-  process.stdout.write(`  ${c.dim('─')} ${c.bold(toolCall.tool)}${argStr ? '  ' + c.dim(argStr) : ''}  ${toolOk ? sym.ok : sym.fail}${previewPart}  ${c.dim('(' + elapsed + 's)')}\n`);
+  process.stdout.write(
+    `  ${c.dim('─')} ${c.bold(toolCall.tool)}${argStr ? '  ' + c.dim(argStr) : ''}  ${toolOk ? sym.ok : sym.fail}${previewPart}  ${c.dim('(' + elapsed + 's)')}\n`,
+  );
 
   const resultMsg = `[Tool result: ${toolCall.tool}]\n\`\`\`\n${result}\n\`\`\``;
 
@@ -592,8 +606,16 @@ async function handleLocalToolLoop(
         process.stdout.write(c.primary('agent') + c.dim(' › '));
       } else if (evt.type === 'final') {
         const txt = extractText((evt as any)?.payload);
-        if (txt && !followContent) { process.stdout.write(txt); followContent += txt; }
-        appendLog(sessionId, { type: 'message', role: 'assistant', content: followContent, timestamp: new Date().toISOString() });
+        if (txt && !followContent) {
+          process.stdout.write(txt);
+          followContent += txt;
+        }
+        appendLog(sessionId, {
+          type: 'message',
+          role: 'assistant',
+          content: followContent,
+          timestamp: new Date().toISOString(),
+        });
         break;
       } else if (evt.type === 'error') {
         console.error(`\n${sym.fail} ${c.error((evt as any).message ?? 'Stream error')}`);
@@ -608,16 +630,7 @@ async function handleLocalToolLoop(
   }
 
   // Recurse — the follow-up response may itself contain another tool call
-  await handleLocalToolLoop(
-    followContent,
-    cfg,
-    client,
-    agentId,
-    sessionId,
-    appendLog,
-    computerEnabled,
-    depth + 1,
-  );
+  await handleLocalToolLoop(followContent, cfg, client, agentId, sessionId, appendLog, computerEnabled, depth + 1);
 }
 
 /** Truncate a string to max chars, appending … if needed */
@@ -632,16 +645,26 @@ function truncate(s: string, max: number): string {
  */
 function toolArgSummary(toolName: string, args: Record<string, any>): string {
   switch (toolName) {
-    case 'read_file':        return truncate(args.path ?? '', 60);
-    case 'write_file':       return truncate(args.path ?? '', 60);
-    case 'delete_file':      return truncate(args.path ?? '', 60);
-    case 'list_directory':   return truncate(args.path ?? '.', 60);
-    case 'run_command':      return truncate(args.command ?? '', 60);
-    case 'start_process':    return truncate(args.command ?? '', 60);
-    case 'wait_for_process': return truncate(args.process_id ?? '', 20);
-    case 'process_status':   return truncate(args.process_id ?? '', 20);
-    case 'kill_process':     return truncate(args.process_id ?? '', 20);
-    case 'list_processes':   return '';
+    case 'read_file':
+      return truncate(args.path ?? '', 60);
+    case 'write_file':
+      return truncate(args.path ?? '', 60);
+    case 'delete_file':
+      return truncate(args.path ?? '', 60);
+    case 'list_directory':
+      return truncate(args.path ?? '.', 60);
+    case 'run_command':
+      return truncate(args.command ?? '', 60);
+    case 'start_process':
+      return truncate(args.command ?? '', 60);
+    case 'wait_for_process':
+      return truncate(args.process_id ?? '', 20);
+    case 'process_status':
+      return truncate(args.process_id ?? '', 20);
+    case 'kill_process':
+      return truncate(args.process_id ?? '', 20);
+    case 'list_processes':
+      return '';
     case 'search_files': {
       const parts = [args.pattern, args.query].filter(Boolean);
       return truncate(parts.join(' '), 60);
@@ -664,19 +687,20 @@ function toolResultPreview(toolName: string, result: string): string {
       const lines = result.split('\n').length;
       return `${lines} lines`;
     }
-    case 'write_file':    return 'written';
-    case 'delete_file':   return 'deleted';
+    case 'write_file':
+      return 'written';
+    case 'delete_file':
+      return 'deleted';
     case 'list_directory': {
       const count = result.split('\n').filter(Boolean).length;
       return `${count} entries`;
     }
     case 'run_command': {
-      const first = result.split('\n').find(l => l.trim());
+      const first = result.split('\n').find((l) => l.trim());
       return first ? truncate(first.trim(), 50) : 'done';
     }
     case 'start_process': {
-      const match = result.match(/process[_\s-]?id[:\s]+([a-zA-Z0-9_-]+)/i)
-                 ?? result.match(/"id"[:\s]+"([^"]+)"/);
+      const match = result.match(/process[_\s-]?id[:\s]+([a-zA-Z0-9_-]+)/i) ?? result.match(/"id"[:\s]+"([^"]+)"/);
       return match ? `pid ${match[1]}` : 'started';
     }
     case 'wait_for_process': {
@@ -689,7 +713,7 @@ function toolResultPreview(toolName: string, result: string): string {
       return `${count} match${count === 1 ? '' : 'es'}`;
     }
     default: {
-      const first = result.split('\n').find(l => l.trim());
+      const first = result.split('\n').find((l) => l.trim());
       return first ? truncate(first.trim(), 50) : '';
     }
   }

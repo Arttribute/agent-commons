@@ -6,6 +6,7 @@ import { parseEventStream } from "@/lib/sse";
 export function useTasks(filter: { sessionId?: string; agentId?: string; ownerId?: string; ownerType?: 'user' | 'agent' }) {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [loading, setLoading] = useState(false);
+  const [loadedKey, setLoadedKey] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
@@ -24,6 +25,7 @@ export function useTasks(filter: { sessionId?: string; agentId?: string; ownerId
     } catch (err: any) {
       setError(err.message);
     } finally {
+      setLoadedKey(taskFilterKey(filter));
       setLoading(false);
     }
   }, [filter.sessionId, filter.agentId, filter.ownerId, filter.ownerType]);
@@ -96,7 +98,32 @@ export function useTasks(filter: { sessionId?: string; agentId?: string; ownerId
     }
   }, []);
 
-  return { tasks, loading, error, refresh: load, createTask, cancelTask, updateTask, rescheduleTask };
+  const key = taskFilterKey(filter);
+  return {
+    tasks,
+    loading: Boolean(key) && (loading || loadedKey !== key),
+    error,
+    refresh: load,
+    createTask,
+    cancelTask,
+    updateTask,
+    rescheduleTask,
+  };
+}
+
+function taskFilterKey(filter: {
+  sessionId?: string;
+  agentId?: string;
+  ownerId?: string;
+  ownerType?: "user" | "agent";
+}) {
+  if (!filter.sessionId && !filter.agentId && !filter.ownerId) return null;
+  return [
+    filter.sessionId ?? "",
+    filter.agentId ?? "",
+    filter.ownerId ?? "",
+    filter.ownerType ?? "",
+  ].join(":");
 }
 
 export function useTaskStream(taskId: string | undefined) {

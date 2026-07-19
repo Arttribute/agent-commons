@@ -77,7 +77,7 @@ export const StepNode = memo(({ id, data, selected, type }: NodeProps<StepNodeDa
           )}
         </div>
 
-        {nodeType === "agent_processor" && data.agentAvatar && (
+        {nodeType === "agent_processor" && (
           <AgentAvatar
             name={data.label}
             src={data.agentAvatar}

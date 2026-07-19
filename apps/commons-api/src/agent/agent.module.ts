@@ -25,6 +25,8 @@ import { RuntimeManagementService } from './runtime/runtime-management.service';
 import { ExternalRuntimeService } from './runtime/external-runtime.service';
 import { RuntimeDispatcherService } from './runtime/runtime-dispatcher.service';
 import { RuntimeToolBridgeController } from './runtime/runtime-tool-bridge.controller';
+import { CopilotController } from './copilot.controller';
+import { CopilotService } from './copilot.service';
 
 @Module({
   imports: [
@@ -48,6 +50,7 @@ import { RuntimeToolBridgeController } from './runtime/runtime-tool-bridge.contr
     AgentToolsController,
     RuntimeController,
     RuntimeToolBridgeController,
+    CopilotController,
   ],
   providers: [
     AgentService,
@@ -58,6 +61,7 @@ import { RuntimeToolBridgeController } from './runtime/runtime-tool-bridge.contr
     RuntimeManagementService,
     ExternalRuntimeService,
     RuntimeDispatcherService,
+    CopilotService,
   ],
   exports: [
     AgentService,
@@ -66,6 +70,7 @@ import { RuntimeToolBridgeController } from './runtime/runtime-tool-bridge.contr
     RuntimeManagementService,
     ExternalRuntimeService,
     RuntimeDispatcherService,
+    CopilotService,
   ],
 })
 export class AgentModule {}

@@ -14,6 +14,8 @@ interface SessionsListProps {
   /** Live-typing title, provided by the agent workspace only. */
   streamingTitleSessionId?: string | null;
   streamingTitleText?: string;
+  /** Sessions with something awaiting the user (e.g. a copilot review). */
+  attentionSessionIds?: string[];
 }
 
 export default function SessionsList({
@@ -26,6 +28,7 @@ export default function SessionsList({
   emptyLabel = "No sessions yet",
   streamingTitleSessionId,
   streamingTitleText = "",
+  attentionSessionIds,
 }: SessionsListProps) {
   if (sessions.length === 0) {
     return (
@@ -44,6 +47,7 @@ export default function SessionsList({
           session={session}
           variant={variant}
           isActive={session.sessionId === currentSessionId}
+          needsAttention={attentionSessionIds?.includes(session.sessionId)}
           isStreamingTitle={session.sessionId === streamingTitleSessionId}
           streamingTitleText={streamingTitleText}
           onSelect={onSelect}

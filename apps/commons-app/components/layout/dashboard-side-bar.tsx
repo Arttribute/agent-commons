@@ -95,10 +95,10 @@ export function DashboardSideBar({ username }: { username: string }) {
               rightSlot={
                 <button
                   aria-label="Collapse sidebar"
-                  className="ml-2 text-muted-foreground hover:text-foreground"
+                  className="ml-2 text-foreground/70 hover:text-foreground"
                   onClick={() => setIsOpen(false)}
                 >
-                  <PanelRight className="h-5 w-5" />
+                  <PanelRight className="h-4 w-4" />
                 </button>
               }
             />
@@ -112,12 +112,12 @@ export function DashboardSideBar({ username }: { username: string }) {
                 title="Agent Commons"
               >
                 <div className="rounded-full border border-border p-[1px] bg-background">
-                  <span className="block h-8 w-8 overflow-hidden rounded-full border">
+                  <span className="block h-6 w-6 overflow-hidden rounded-full border">
                     <Image
                       src="/ac-icon.svg"
                       alt="Agent Commons Logo"
-                      width={32}
-                      height={32}
+                      width={24}
+                      height={24}
                       className="h-full w-full object-cover"
                     />
                   </span>
@@ -126,11 +126,11 @@ export function DashboardSideBar({ username }: { username: string }) {
             ) : (
               <button
                 onClick={() => setIsOpen(true)}
-                className="text-muted-foreground hover:text-foreground"
+                className="text-foreground/70 hover:text-foreground"
                 aria-label="Expand sidebar"
                 title="Open sidebar"
               >
-                <PanelLeft className="h-5 w-5" />
+                <PanelLeft className="h-4 w-4" />
               </button>
             )}
             <div className="flex flex-col items-center gap-3 mt-2">
@@ -170,14 +170,14 @@ export function DashboardSideBar({ username }: { username: string }) {
                 <button
                   key={key}
                   className={cn(
-                    "rounded-md p-1 hover:bg-accent text-muted-foreground hover:text-foreground",
+                    "rounded-md p-1.5 hover:bg-accent text-foreground/70 hover:text-foreground",
                     activeSection === key && "bg-accent text-accent-foreground",
                   )}
                   aria-label={label}
                   title={label}
                   onClick={() => router.push(path)}
                 >
-                  <Icon className="h-5 w-5" />
+                  <Icon className="h-4 w-4" strokeWidth={1.75} />
                 </button>
               ))}
               <SidebarMoreMenu collapsed activeSection={activeSection} />

@@ -31,6 +31,10 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
+import {
+  isRecentlyCompleted,
+  useSessionRunStore,
+} from "@/stores/session-run-store";
 
 export interface SessionItemData {
   sessionId: string;
@@ -43,6 +47,8 @@ export interface SessionItemData {
 interface SessionItemProps {
   session: SessionItemData;
   isActive?: boolean;
+  /** Show an attention dot (e.g. a copilot change awaiting review). */
+  needsAttention?: boolean;
   /** Live-typing title while the agent names a brand-new session. */
   isStreamingTitle?: boolean;
   streamingTitleText?: string;
@@ -62,6 +68,7 @@ interface SessionItemProps {
 export function SessionItem({
   session,
   isActive = false,
+  needsAttention = false,
   isStreamingTitle = false,
   streamingTitleText = "",
   variant = "sidebar",
@@ -86,6 +93,40 @@ export function SessionItem({
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
+
+  // Live-run indicators: a spinner while the agent is still working in this
+  // session, and a blue dot once a run finished that the user hasn't seen.
+  const isRunning = useSessionRunStore((state) =>
+    Boolean(state.running[session.sessionId]),
+  );
+  const completedAt = useSessionRunStore(
+    (state) => state.completed[session.sessionId],
+  );
+  const markSeen = useSessionRunStore((state) => state.markSeen);
+  useEffect(() => {
+    if (isActive) markSeen(session.sessionId);
+  }, [isActive, completedAt, markSeen, session.sessionId]);
+  const showRunSpinner = isRunning && !isActive;
+  const showDoneDot = !isActive && !isRunning && isRecentlyCompleted(completedAt);
+
+  const runIndicator = needsAttention ? (
+    <span
+      className="h-2 w-2 shrink-0 rounded-full bg-amber-500"
+      title="Has a change waiting for review"
+      aria-label="Needs review"
+    />
+  ) : showRunSpinner ? (
+    <Loader2
+      className="h-3.5 w-3.5 shrink-0 animate-spin text-muted-foreground"
+      aria-label="Agent is working"
+    />
+  ) : showDoneDot ? (
+    <span
+      className="h-2 w-2 shrink-0 rounded-full bg-blue-500"
+      title="Finished while you were away"
+      aria-label="Session completed"
+    />
+  ) : null;
 
   useEffect(() => {
     if (isEditing) {
@@ -279,6 +320,7 @@ export function SessionItem({
           </div>
         </div>
         <div className="ml-4 flex shrink-0 items-center gap-2">
+          {runIndicator}
           {isCli && (
             <Badge variant="outline" className="gap-1 text-[10px]">
               <Terminal className="h-2.5 w-2.5" />
@@ -308,6 +350,7 @@ export function SessionItem({
       )}
     >
       <div className="min-w-0 flex-1">{titleNode}</div>
+      {runIndicator}
       {saving ? (
         <Loader2 className="h-4 w-4 shrink-0 animate-spin text-muted-foreground" />
       ) : (

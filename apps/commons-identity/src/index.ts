@@ -523,6 +523,36 @@ app.get("/api/identity/me", async (c) => {
   return c.json({ user: session.user, workspaces: memberships.rows });
 });
 
+/**
+ * Service-to-service email → user id lookup, used by product apps (e.g.
+ * Agent Commons credit gifting) to address a user by email. Requires a valid
+ * client-credentials bearer token — user tokens are rejected so signed-in
+ * browsers cannot probe the directory.
+ */
+app.get("/api/identity/users/resolve", async (c) => {
+  const bearerToken = (c.req.header("authorization") ?? "").replace(/^Bearer\s+/i, "");
+  if (!bearerToken) return c.json({ error: "Unauthorized" }, 401);
+  const tokenRow = await database.query(
+    `select t."clientId", t."userId"
+       from "oauthAccessToken" t
+      where t.token = $1 and t."expiresAt" > now()
+      limit 1`,
+    [createHash("sha256").update(bearerToken).digest("base64url")],
+  );
+  const token = tokenRow.rows[0];
+  if (!token || token.userId) return c.json({ error: "Unauthorized" }, 401);
+  const email = (c.req.query("email") ?? "").trim().toLowerCase();
+  if (!email || !email.includes("@")) {
+    return c.json({ error: "A valid email query parameter is required" }, 400);
+  }
+  const user = await database.query(
+    `select id, email from "user" where lower(email) = $1 limit 1`,
+    [email],
+  );
+  if (!user.rows.length) return c.json({ error: "User not found" }, 404);
+  return c.json({ data: { userId: user.rows[0].id } });
+});
+
 app.post("/api/identity/apps/:app/activate", async (c) => {
   const bearerToken = (c.req.header("authorization") ?? "").replace(/^Bearer\s+/i, "");
   const session = await authService.api.getSession({ headers: c.req.raw.headers });

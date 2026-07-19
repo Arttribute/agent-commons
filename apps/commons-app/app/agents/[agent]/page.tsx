@@ -61,7 +61,7 @@ export default function PublicAgentPage() {
   if (!agent) return <div>Agent not found</div>;
 
   return (
-    <div className="flex h-screen bg-stone-50">
+    <div className="flex h-screen bg-page">
       <SessionsSideBar
         username={userAddress}
         sessions={sessions}

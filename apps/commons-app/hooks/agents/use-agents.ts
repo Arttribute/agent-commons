@@ -20,6 +20,7 @@ const CACHE_TTL = 1000 * 60 * 5; // 5 minutes
 export function useAgents(owner?: string, auto: boolean = true) {
   const [agents, setAgents] = useState<AgentItem[]>([]);
   const [loading, setLoading] = useState(false);
+  const [loadedOwner, setLoadedOwner] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const loadFromLocalStorage = (o: string) => {
@@ -55,17 +56,23 @@ export function useAgents(owner?: string, auto: boolean = true) {
           : Array.isArray(data.data)
             ? data.data
             : [];
-        const mapped: AgentItem[] = list.map((a: any) => ({
-          ...a,
-          agentId: a.agentId || a.agent_id || a.id,
-        }));
+        const mapped: AgentItem[] = list
+          .map((a: any) => ({
+            ...a,
+            agentId: a.agentId || a.agent_id || a.id,
+          }))
+          .sort(
+            (a: any, b: any) =>
+              Number(Boolean(b.isDefault)) - Number(Boolean(a.isDefault)),
+          );
         setAgents(mapped);
+        setLoadedOwner(owner);
         try {
           AGENTS_CACHE.set(owner, { ts: Date.now(), data: mapped });
           if (typeof window !== "undefined") {
             localStorage.setItem(
               `agents:${owner}`,
-              JSON.stringify({ ts: Date.now(), data: mapped })
+              JSON.stringify({ ts: Date.now(), data: mapped }),
             );
           }
         } catch (e) {
@@ -74,10 +81,11 @@ export function useAgents(owner?: string, auto: boolean = true) {
       } catch (e: any) {
         setError(e.message);
       } finally {
+        setLoadedOwner(owner);
         if (!background) setLoading(false);
       }
     },
-    [owner]
+    [owner],
   );
 
   useEffect(() => {
@@ -87,6 +95,7 @@ export function useAgents(owner?: string, auto: boolean = true) {
     const cached = AGENTS_CACHE.get(owner);
     if (cached && Date.now() - cached.ts < CACHE_TTL) {
       setAgents(cached.data);
+      setLoadedOwner(owner);
       // kick off a background refresh to keep cache fresh
       if (auto) fetchAgents({ background: true });
       return;
@@ -96,6 +105,7 @@ export function useAgents(owner?: string, auto: boolean = true) {
     const persisted = loadFromLocalStorage(owner);
     if (persisted) {
       setAgents(persisted.data);
+      setLoadedOwner(owner);
       AGENTS_CACHE.set(owner, persisted);
       // background refresh
       if (auto) fetchAgents({ background: true });
@@ -108,7 +118,7 @@ export function useAgents(owner?: string, auto: boolean = true) {
 
   return {
     agents,
-    loading,
+    loading: Boolean(owner) && (loading || loadedOwner !== owner),
     error,
     refetch: () => fetchAgents({ background: false }),
   };

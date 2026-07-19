@@ -2,23 +2,25 @@
 import React from "react";
 import { PrivyProvider } from "@privy-io/react-auth";
 import { SessionProvider } from "next-auth/react";
+import type { Session } from "next-auth";
 import { FlagsProvider } from "@/components/providers/flags-provider";
 
 type Props = {
   children: React.ReactNode;
+  session: Session | null;
 };
 
-export default function Providers({ children }: Props) {
+export default function Providers({ children, session }: Props) {
   const privyAppId = process.env.NEXT_PUBLIC_PRIVY_APP_ID;
   if (!privyAppId) {
     return (
-      <SessionProvider>
+      <SessionProvider session={session}>
         <FlagsProvider>{children}</FlagsProvider>
       </SessionProvider>
     );
   }
   return (
-    <SessionProvider>
+    <SessionProvider session={session}>
       <FlagsProvider>
       <PrivyProvider
         appId={privyAppId}

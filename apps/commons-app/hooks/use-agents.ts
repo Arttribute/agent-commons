@@ -5,6 +5,7 @@ import type { Agent, CreateAgentParams } from "@agent-commons/sdk";
 export function useAgents(owner?: string) {
   const [agents, setAgents] = useState<Agent[]>([]);
   const [loading, setLoading] = useState(false);
+  const [loadedOwner, setLoadedOwner] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
@@ -14,17 +15,26 @@ export function useAgents(owner?: string) {
     try {
       const res = await fetch(`/api/agents?owner=${encodeURIComponent(owner)}`);
       const data = await res.json();
+      if (!res.ok) throw new Error(data?.error || "Failed to load agents");
       setAgents(data.data ?? []);
     } catch (err: any) {
       setError(err.message);
     } finally {
+      setLoadedOwner(owner);
       setLoading(false);
     }
   }, [owner]);
 
   useEffect(() => { load(); }, [load]);
 
-  return { agents, loading, error, refresh: load };
+  return {
+    agents,
+    // Effects run after paint, so `loading` alone briefly reported false for a
+    // new owner and exposed the empty state. Treat unresolved keys as loading.
+    loading: Boolean(owner) && (loading || loadedOwner !== owner),
+    error,
+    refresh: load,
+  };
 }
 
 export function useAgent(agentId: string | undefined) {

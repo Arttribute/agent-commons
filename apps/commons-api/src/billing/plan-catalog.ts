@@ -3,11 +3,14 @@
  * shape is versioned and reviewable; Stripe price IDs come from env so staging
  * uses test prices and production uses live prices.
  *
- * Tiers (decided 2026-07-11):
- *   free  $0    ~500 credits/mo   native agents + basic chat, NO computer use
- *   plus  $20   ~5,000 credits    computer use: starter + standard profiles
- *   pro   $50   ~14,000 credits   + performance profiles
- *   max   $200  ~60,000 credits   + gpu profiles
+ * Product-facing tiers (reviewed 2026-07-16 against gross AWS cost):
+ *   free     $0     daily earned credits, no persistent computer
+ *   builder  $20    5,000 credits, 1 computer-enabled agent
+ *   pro      $50   15,000 credits, 3 computer-enabled agents
+ *   scale   $150   50,000 credits, 10 computer-enabled agents
+ *
+ * The stable internal keys remain plus/pro/max so existing Stripe subscriptions
+ * continue to resolve. The UI only exposes Builder/Pro/Scale names.
  *
  * Credits cover BOTH model tokens and per-minute computer use.
  */
@@ -22,6 +25,8 @@ export type ModelTier = 'frontier' | 'standard' | 'fast' | 'local';
 export interface PlanEntitlements {
   computerUse: boolean;
   allowedProfiles: ComputeProfile[];
+  /** Number of agents allowed to retain a persistent computer/workspace. */
+  maxComputerAgents: number;
   maxConcurrentComputers: number;
   modelTiers: ModelTier[];
   maxConcurrentRuns: number;
@@ -32,6 +37,7 @@ export interface Plan {
   name: string;
   /** Monthly credit grant (also the free-tier lazy monthly grant). */
   monthlyCredits: number;
+  priceUsd: number;
   /** Env var holding the Stripe price id for this plan (undefined for free). */
   stripePriceEnv?: string;
   entitlements: PlanEntitlements;
@@ -41,10 +47,12 @@ export const PLANS: Record<PlanKey, Plan> = {
   free: {
     key: 'free',
     name: 'Free',
-    monthlyCredits: 500,
+    monthlyCredits: 0,
+    priceUsd: 0,
     entitlements: {
       computerUse: false,
       allowedProfiles: [],
+      maxComputerAgents: 0,
       maxConcurrentComputers: 0,
       modelTiers: ['fast', 'standard', 'local'],
       maxConcurrentRuns: 2,
@@ -52,12 +60,14 @@ export const PLANS: Record<PlanKey, Plan> = {
   },
   plus: {
     key: 'plus',
-    name: 'Plus',
+    name: 'Builder',
     monthlyCredits: 5000,
+    priceUsd: 20,
     stripePriceEnv: 'STRIPE_PRICE_PLUS',
     entitlements: {
       computerUse: true,
       allowedProfiles: ['starter', 'standard'],
+      maxComputerAgents: 1,
       maxConcurrentComputers: 1,
       modelTiers: ['fast', 'standard', 'local', 'frontier'],
       maxConcurrentRuns: 4,
@@ -66,24 +76,28 @@ export const PLANS: Record<PlanKey, Plan> = {
   pro: {
     key: 'pro',
     name: 'Pro',
-    monthlyCredits: 14000,
+    monthlyCredits: 15000,
+    priceUsd: 50,
     stripePriceEnv: 'STRIPE_PRICE_PRO',
     entitlements: {
       computerUse: true,
       allowedProfiles: ['starter', 'standard', 'performance'],
-      maxConcurrentComputers: 3,
+      maxComputerAgents: 3,
+      maxConcurrentComputers: 2,
       modelTiers: ['fast', 'standard', 'local', 'frontier'],
       maxConcurrentRuns: 8,
     },
   },
   max: {
     key: 'max',
-    name: 'Max',
-    monthlyCredits: 60000,
+    name: 'Scale',
+    monthlyCredits: 50000,
+    priceUsd: 150,
     stripePriceEnv: 'STRIPE_PRICE_MAX',
     entitlements: {
       computerUse: true,
       allowedProfiles: ['starter', 'standard', 'performance', 'gpu'],
+      maxComputerAgents: 10,
       maxConcurrentComputers: 5,
       modelTiers: ['fast', 'standard', 'local', 'frontier'],
       maxConcurrentRuns: 16,
@@ -95,6 +109,7 @@ export const PLANS: Record<PlanKey, Plan> = {
 export interface TopupPack {
   key: string;
   name: string;
+  priceUsd: number;
   credits: number;
   /** Env var holding the Stripe price id for this pack. */
   stripePriceEnv: string;
@@ -104,19 +119,22 @@ export const TOPUP_PACKS: Record<string, TopupPack> = {
   small: {
     key: 'small',
     name: '$10 credit pack',
-    credits: 10000,
+    priceUsd: 10,
+    credits: 4000,
     stripePriceEnv: 'STRIPE_PRICE_TOPUP_SMALL',
   },
   medium: {
     key: 'medium',
     name: '$50 credit pack',
-    credits: 52500, // ~5% bonus
+    priceUsd: 50,
+    credits: 22000, // 10% volume bonus
     stripePriceEnv: 'STRIPE_PRICE_TOPUP_MEDIUM',
   },
   large: {
     key: 'large',
     name: '$100 credit pack',
-    credits: 110000, // ~10% bonus
+    priceUsd: 100,
+    credits: 48000, // 20% volume bonus
     stripePriceEnv: 'STRIPE_PRICE_TOPUP_LARGE',
   },
 };
@@ -129,7 +147,9 @@ export function planFromKey(key: string | null | undefined): Plan {
 }
 
 /** Resolve a plan key from a Stripe price id via the env-configured price map. */
-export function planKeyFromPriceId(priceId: string | null | undefined): PlanKey | null {
+export function planKeyFromPriceId(
+  priceId: string | null | undefined,
+): PlanKey | null {
   if (!priceId) return null;
   for (const plan of Object.values(PLANS)) {
     if (plan.stripePriceEnv && process.env[plan.stripePriceEnv] === priceId) {

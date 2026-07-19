@@ -92,7 +92,7 @@ export function CreateToolForm() {
       <Card className="bg-background border border-border h-[600px] flex flex-col">
         <div className="m-8">
           <div className="bg-cyan-300 w-48 h-8 -mb-8 rounded-lg"></div>
-          <h2 className="text-2xl font-semibold">Create New Tool</h2>
+          <h2 className="text-lg font-medium">Create New Tool</h2>
         </div>
         <CardContent className="flex flex-col flex-grow overflow-hidden">
           {error && <p className="text-red-500 text-sm mb-2">{error}</p>}

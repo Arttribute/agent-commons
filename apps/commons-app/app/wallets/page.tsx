@@ -39,7 +39,9 @@ interface WalletBalance {
 
 function AgentWalletRow({ agent }: { agent: { agentId: string; name: string } }) {
   const [wallets, setWallets] = useState<WalletRecord[]>([]);
-  const [loading, setLoading] = useState(false);
+  // The list is unresolved the first time a row opens; start in loading state
+  // so an empty wallet message cannot flash before the effect begins.
+  const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
   const [expanded, setExpanded] = useState(false);
   const [balances, setBalances] = useState<Record<string, WalletBalance | null>>({});
@@ -262,7 +264,7 @@ export default function WalletsPage() {
   const { agents, loading } = useAgents(userAddress || undefined);
 
   return (
-    <div className="h-screen overflow-hidden bg-stone-50">
+    <div className="h-screen overflow-hidden bg-page">
       <div className="flex h-screen">
         <DashboardSideBar username={userAddress} />
 
@@ -270,7 +272,7 @@ export default function WalletsPage() {
           {/* Header */}
           <div className="flex items-center justify-between px-6 py-4 border-b border-border/60 bg-background">
             <div>
-              <h1 className="text-xl font-semibold tracking-tight">Wallets</h1>
+              <h1 className="text-lg font-medium tracking-tight">Wallets</h1>
               <p className="text-sm text-muted-foreground mt-0.5">
                 Manage on-chain wallets for your agents — view balances, create new wallets
               </p>

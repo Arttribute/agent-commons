@@ -8,6 +8,7 @@ import { HumanMessage, SystemMessage } from '@langchain/core/messages';
 import { ChatCompletionMessageParam } from 'openai/resources/chat/completions.mjs';
 import { ModelProviderFactory } from '~/modules/model-provider';
 import { AgentService } from '~/agent/agent.service';
+import { CopilotService } from '~/agent/copilot.service';
 import { GoalService, CreateGoalDto } from '~/goal/goal.service';
 import { TaskService, CreateTaskDto, TaskContext } from '~/task/task.service';
 import { TaskExecutionService } from '~/task/task-execution.service';
@@ -19,6 +20,7 @@ import { PinataService } from '~/pinata/pinata.service';
 import { ToolSchema } from '~/tool/dto/tool.dto';
 import { SpaceTtsService } from '~/space/space-tts.service';
 import { ModuleRef } from '@nestjs/core';
+import { randomUUID } from 'crypto';
 import { WorkflowExecutorService } from '~/tool/workflow-executor.service';
 import { FilesService, LibraryService } from '~/files';
 import { ComputerService } from '~/computer';
@@ -27,6 +29,10 @@ import {
   type BrowserCheckAction,
   type CodeProjectFileInput,
 } from '~/code-project';
+import { DatabaseService } from '~/modules/database/database.service';
+import { UsageService } from '~/modules/usage';
+import * as schema from '#/models/schema';
+import { eq } from 'drizzle-orm';
 
 type ToolExecutionMetadata = {
   agentId?: string;
@@ -36,6 +42,135 @@ type ToolExecutionMetadata = {
 };
 
 export interface CommonTool {
+  /**
+   * Inspect the calling Commons Copilot owner's platform resources before
+   * designing or changing account state.
+   */
+  listCommonsResources(props: {
+    resourceTypes?: Array<
+      'agents' | 'tools' | 'skills' | 'tasks' | 'workflows'
+    >;
+    agentId: string;
+  }): Promise<Record<string, unknown>>;
+
+  /**
+   * Create a reviewable workflow proposal. Depending on the user's copilot
+   * access policy it is either applied immediately with undo history or held
+   * for explicit confirmation.
+   */
+  proposeWorkflowChange(props: {
+    workflowId?: string;
+    name?: string;
+    description?: string;
+    definition: {
+      startNodeId?: string;
+      endNodeId?: string;
+      nodes: Array<Record<string, unknown>>;
+      edges: Array<Record<string, unknown>>;
+    };
+    summary: string;
+    agentId: string;
+  }): Promise<any>;
+
+  /** Create or edit an agent. Never use a workflow proposal for this intent. */
+  proposeAgentChange(props: {
+    resourceId?: string;
+    summary: string;
+    data: {
+      name?: string;
+      instructions?: string;
+      persona?: string;
+      greeting?: string;
+      conversationStarters?: string[];
+      knowledgebase?: Array<{
+        title: string;
+        content: string;
+        usageComments?: string;
+      }>;
+      externalTools?: string[];
+      commonTools?: string[];
+      temperature?: number;
+      maxTokens?: number;
+      avatar?: string;
+      modelProvider?: string;
+      modelId?: string;
+      runtimeType?: 'native' | 'openclaw' | 'external';
+    };
+    agentId: string;
+  }): Promise<any>;
+
+  /** Create or edit a reusable Agent Commons skill. */
+  proposeSkillChange(props: {
+    resourceId?: string;
+    summary: string;
+    data: {
+      slug?: string;
+      name?: string;
+      description?: string;
+      instructions?: string;
+      tools?: string[];
+      triggers?: string[];
+      isPublic?: boolean;
+      tags?: string[];
+      icon?: string;
+    };
+    agentId: string;
+  }): Promise<any>;
+
+  /** Create or edit a custom tool definition. */
+  proposeToolChange(props: {
+    resourceId?: string;
+    summary: string;
+    data: {
+      name?: string;
+      displayName?: string;
+      description?: string;
+      schema?: {
+        type: 'function';
+        function: {
+          name: string;
+          description?: string;
+          parameters?: Record<string, any>;
+        };
+      };
+      apiSpec?: {
+        baseUrl: string;
+        path: string;
+        method: string;
+        headers?: Record<string, string>;
+        queryParams?: Record<string, string>;
+        bodyTemplate?: any;
+        authType?: 'none' | 'bearer' | 'api-key' | 'basic' | 'oauth2';
+        authKeyName?: string;
+        oauthProviderKey?: string;
+      };
+      inputSchema?: Record<string, any>;
+      outputSchema?: Record<string, any>;
+      category?: string;
+      visibility?: 'public' | 'private';
+      tags?: string[];
+      icon?: string;
+      version?: string;
+      rateLimitPerMinute?: number;
+      rateLimitPerHour?: number;
+    };
+    agentId: string;
+  }): Promise<any>;
+
+  /** Edit an existing current-platform task after resolving its taskId. */
+  proposeTaskChange(props: {
+    resourceId: string;
+    summary: string;
+    data: {
+      title?: string;
+      description?: string;
+      priority?: number;
+      /** ISO 8601 timestamp with an explicit timezone offset. */
+      scheduledFor?: Date;
+    };
+    agentId: string;
+  }): Promise<any>;
+
   createGoal(props: CreateGoalDto): Promise<any>;
   /** Text-to-speech for an agent inside a space */
   speakInSpace(props: {
@@ -115,7 +250,7 @@ export interface CommonTool {
 
   createTask(props: {
     agentId: string;
-    sessionId: string;
+    sessionId?: string;
     title: string;
     description?: string;
     executionMode?: 'single' | 'workflow' | 'sequential';
@@ -131,7 +266,24 @@ export interface CommonTool {
     recurringSessionMode?: 'same' | 'new';
     context?: Record<string, any>;
     priority?: number;
+    /** Set true only after the user explicitly approves this exact task. */
+    confirmed?: boolean;
   }): Promise<any>;
+
+  /** Load a platform skill's full instructions after inspecting the skill index. */
+  invoke_skill(props: {
+    skillSlug?: string;
+    url?: string;
+    message?: string;
+    agentId?: string;
+    apiKey?: string;
+    contextId?: string;
+  }): Promise<{
+    text: string;
+    taskId?: string;
+    state?: string;
+    artifacts?: any[];
+  }>;
   updateTaskProgress(props: {
     taskId: string;
     progress: number;
@@ -149,19 +301,6 @@ export interface CommonTool {
    */
   //getAgents(): any;
   //getAgentWithId(props: { id: string }): any;
-
-  // Previously for onchain tasks
-  // getTasks(): any;
-  // getTasksWithFilter(props: { where: { status?: 'open' | 'closed' } }): any;
-  // createTask(props: {
-  //   description: string;
-  //   reward: number;
-  //   resourceBased: boolean;
-  //   parentTaskId?: number;
-  //   maxParticipants: number;
-  // }): any;
-  // joinTask(props: { taskId: number }): any;
-  // completeTask(props: { taskId: number; resultantFile: string }): any;
 
   /**
    * Interact with an agent in the network
@@ -545,13 +684,14 @@ export interface CommonTool {
 export class CommonToolService {
   constructor(
     @Inject(forwardRef(() => AgentService)) private agent: AgentService,
+    @Inject(forwardRef(() => CopilotService))
+    private copilot: CopilotService,
     @Inject(forwardRef(() => GoalService))
     private goals: GoalService,
     @Inject(forwardRef(() => TaskService))
     private tasks: TaskService,
     @Inject(forwardRef(() => TaskExecutionService))
     private taskExecution: TaskExecutionService,
-    //@Inject(forwardRef(() => TaskService)) previous for onchain tasks
     //private task: TaskService,
     @Inject(forwardRef(() => OpenAIService))
     private openAI: OpenAIService,
@@ -568,13 +708,138 @@ export class CommonToolService {
     private skillService: SkillService,
     private modelProviderFactory: ModelProviderFactory,
     private moduleRef: ModuleRef,
+    private db: DatabaseService,
+    private usage: UsageService,
   ) {}
+
+  private async capabilityOwner(agentId: string) {
+    const agent = await this.db.query.agent.findFirst({
+      where: eq(schema.agent.agentId, agentId),
+    });
+    const principalId = agent?.ownerUserId || agent?.owner;
+    if (!principalId) {
+      throw new BadRequestException('The agent has no billable owner.');
+    }
+    return { principalId, workspaceId: agent?.workspaceId ?? null };
+  }
+
+  async listCommonsResources(
+    props: {
+      resourceTypes?: Array<
+        'agents' | 'tools' | 'skills' | 'tasks' | 'workflows'
+      >;
+      agentId: string;
+    },
+    metadata?: { agentId?: string },
+  ) {
+    return this.copilot.listResources(
+      this.requireToolAgentId(props.agentId, metadata),
+      props.resourceTypes ?? [],
+    );
+  }
+
+  async proposeWorkflowChange(
+    props: {
+      workflowId?: string;
+      name?: string;
+      description?: string;
+      definition: {
+        startNodeId?: string;
+        endNodeId?: string;
+        nodes: Array<Record<string, unknown>>;
+        edges: Array<Record<string, unknown>>;
+      };
+      summary: string;
+      agentId: string;
+    },
+    metadata?: { agentId?: string; sessionId?: string },
+  ) {
+    const agentId = this.requireToolAgentId(props.agentId, metadata);
+    return this.copilot.proposeWorkflowChange(agentId, {
+      ...props,
+      originSessionId: metadata?.sessionId,
+    });
+  }
+
+  async proposeAgentChange(
+    props: {
+      resourceId?: string;
+      summary: string;
+      data: Record<string, any>;
+      agentId: string;
+    },
+    metadata?: { agentId?: string; sessionId?: string },
+  ) {
+    const agentId = this.requireToolAgentId(props.agentId, metadata);
+    return this.copilot.proposeAgentChange(agentId, {
+      ...props,
+      originSessionId: metadata?.sessionId,
+    });
+  }
+
+  async proposeSkillChange(
+    props: {
+      resourceId?: string;
+      summary: string;
+      data: Record<string, any>;
+      agentId: string;
+    },
+    metadata?: { agentId?: string; sessionId?: string },
+  ) {
+    const agentId = this.requireToolAgentId(props.agentId, metadata);
+    return this.copilot.proposeSkillChange(agentId, {
+      ...props,
+      originSessionId: metadata?.sessionId,
+    });
+  }
+
+  async proposeToolChange(
+    props: {
+      resourceId?: string;
+      summary: string;
+      data: Record<string, any>;
+      agentId: string;
+    },
+    metadata?: { agentId?: string; sessionId?: string },
+  ) {
+    const agentId = this.requireToolAgentId(props.agentId, metadata);
+    return this.copilot.proposeToolChange(agentId, {
+      ...props,
+      originSessionId: metadata?.sessionId,
+    });
+  }
+
+  async proposeTaskChange(
+    props: {
+      resourceId: string;
+      summary: string;
+      data: {
+        title?: string;
+        description?: string;
+        priority?: number;
+        scheduledFor?: Date;
+      };
+      agentId: string;
+    },
+    metadata?: { agentId?: string; sessionId?: string },
+  ) {
+    const agentId = this.requireToolAgentId(props.agentId, metadata);
+    return this.copilot.proposeTaskChange(agentId, {
+      ...props,
+      originSessionId: metadata?.sessionId,
+    });
+  }
 
   private requireToolAgentId(
     agentId?: string,
     metadata?: { agentId?: string },
   ) {
-    const resolved = agentId ?? metadata?.agentId;
+    if (metadata?.agentId && agentId && metadata.agentId !== agentId) {
+      throw new BadRequestException(
+        'agentId must match the authenticated calling agent',
+      );
+    }
+    const resolved = metadata?.agentId ?? agentId;
     if (!resolved) {
       throw new BadRequestException('agentId is required for this tool');
     }
@@ -670,12 +935,15 @@ export class CommonToolService {
     };
   }
 
-  async webSearch(props: {
-    query: string;
-    count?: number;
-    freshness?: 'day' | 'week' | 'month' | 'year';
-    safeSearch?: 'off' | 'moderate' | 'strict';
-  }) {
+  async webSearch(
+    props: {
+      query: string;
+      count?: number;
+      freshness?: 'day' | 'week' | 'month' | 'year';
+      safeSearch?: 'off' | 'moderate' | 'strict';
+    },
+    metadata?: ToolExecutionMetadata,
+  ) {
     const query = props.query?.trim();
     if (!query) {
       throw new BadRequestException('webSearch requires a non-empty query');
@@ -687,6 +955,20 @@ export class CommonToolService {
         'webSearch is not configured. Set BRAVE_SEARCH_API_KEY to enable live web search.',
       );
     }
+
+    const agentId = this.requireToolAgentId(undefined, metadata);
+    const owner = await this.capabilityOwner(agentId);
+    const operationId = metadata?.toolCallId || randomUUID();
+    const costUsd = Number(process.env.BRAVE_SEARCH_COST_USD_PER_CALL || 0.005);
+    const reservation = await this.usage.authorizeCapability({
+      principalId: owner.principalId,
+      capability: 'web_search',
+      estimatedCostUsd: costUsd,
+      idempotencyKey: `capability:web-search:${operationId}`,
+      agentId,
+      sessionId: metadata?.sessionId,
+      metadata: { workspaceId: owner.workspaceId },
+    });
 
     const count = Math.max(1, Math.min(props.count ?? 8, 20));
     const freshnessMap = {
@@ -704,20 +986,36 @@ export class CommonToolService {
       url.searchParams.set('freshness', freshnessMap[props.freshness]);
     }
 
-    const response = await fetch(url.toString(), {
-      headers: {
-        Accept: 'application/json',
-        'X-Subscription-Token': apiKey,
-      },
-    });
+    let response: Response;
+    try {
+      response = await fetch(url.toString(), {
+        headers: {
+          Accept: 'application/json',
+          'X-Subscription-Token': apiKey,
+        },
+      });
+    } catch (error) {
+      await this.usage.releaseCapability(reservation?.reservationId);
+      throw error;
+    }
 
     if (!response.ok) {
+      await this.usage.releaseCapability(reservation?.reservationId);
       throw new BadRequestException(
         `webSearch provider returned ${response.status} ${response.statusText}`,
       );
     }
 
     const data: any = await response.json();
+    await this.usage.settleCapability({
+      reservationId: reservation?.reservationId,
+      capability: 'web_search',
+      actualCostUsd: costUsd,
+      idempotencyKey: `capability:web-search:${operationId}:capture`,
+      agentId,
+      sessionId: metadata?.sessionId,
+      metadata: { provider: 'brave', count },
+    });
     const results = (data.web?.results ?? []).map((item: any) => ({
       title: item.title,
       url: item.url,
@@ -732,21 +1030,27 @@ export class CommonToolService {
     };
   }
 
-  async deepSearch(props: {
-    query: string;
-    focus?: string;
-    maxResults?: number;
-    includeSources?: boolean;
-  }) {
+  async deepSearch(
+    props: {
+      query: string;
+      focus?: string;
+      maxResults?: number;
+      includeSources?: boolean;
+    },
+    metadata?: ToolExecutionMetadata,
+  ) {
     const query = props.focus
       ? `${props.query.trim()} ${props.focus.trim()}`
       : props.query.trim();
 
-    const search = await this.webSearch({
-      query,
-      count: Math.max(5, Math.min(props.maxResults ?? 12, 20)),
-      safeSearch: 'moderate',
-    });
+    const search = await this.webSearch(
+      {
+        query,
+        count: Math.max(5, Math.min(props.maxResults ?? 12, 20)),
+        safeSearch: 'moderate',
+      },
+      metadata,
+    );
 
     const summary =
       search.results.length > 0
@@ -761,19 +1065,26 @@ export class CommonToolService {
     };
   }
 
-  async speakInSpace(props: {
-    spaceId: string;
-    agentId: string;
-    text: string;
-    instructions?: string;
-  }) {
-    return this.spaceTts.speak(props);
+  async speakInSpace(
+    props: {
+      spaceId: string;
+      agentId: string;
+      text: string;
+      instructions?: string;
+    },
+    metadata?: ToolExecutionMetadata,
+  ) {
+    return this.spaceTts.speak({
+      ...props,
+      operationId: metadata?.toolCallId,
+      sessionId: metadata?.sessionId,
+    });
   }
 
   async createTask(
     props: {
       agentId: string;
-      sessionId: string;
+      sessionId?: string;
       title: string;
       description?: string;
       executionMode?: 'single' | 'workflow' | 'sequential';
@@ -789,15 +1100,34 @@ export class CommonToolService {
       recurringSessionMode?: 'same' | 'new';
       context?: Record<string, any>;
       priority?: number;
+      confirmed?: boolean;
     },
     metadata?: { agentId: string },
   ) {
-    // Agent-created tasks use the agent's ID as createdBy
-    const createdBy = metadata?.agentId || props.agentId;
+    const callingAgentId = metadata?.agentId || props.agentId;
+
+    const { confirmed: _confirmed, ...taskProps } = props;
+
+    // Commons Copilot creates a reviewable user-owned task assigned to the
+    // explicitly selected target agent. This is the same task model shown in
+    // Studio; it never creates a hidden agent-owned/legacy task.
+    if (await this.copilot.isSystemCopilot(callingAgentId)) {
+      return this.copilot.proposeTaskChange(callingAgentId, {
+        summary: `Create task “${props.title}” for the selected agent`,
+        data: taskProps,
+      });
+    }
+
+    if (!taskProps.sessionId) {
+      throw new BadRequestException(
+        'sessionId is required when an ordinary agent creates a task',
+      );
+    }
 
     return await this.taskExecution.createTask({
-      ...props,
-      createdBy,
+      ...taskProps,
+      sessionId: taskProps.sessionId,
+      createdBy: callingAgentId,
       createdByType: 'agent',
     });
   }
@@ -826,141 +1156,6 @@ export class CommonToolService {
     );
   }
 
-  //Previously for onchain tasks
-  // getTasks(props?: { where?: { status?: string } }) {
-  //   const graphAPIKey = process.env.GRAPH_API_KEY;
-  //   const data = graphqlRequest.then(async (_) => {
-  //     const tasksDocument = _.gql`
-  //   	{
-  //   		tasks {
-  //   			id
-  // 			taskId
-  // 			creator
-  // 			metadata
-  // 			reward
-  // 			resourceBased
-  // 			status
-  // 			rewardsDistributed
-  // 			parentTaskId
-  // 			maxParticipants
-  // 			currentParticipants
-  // 			contributions {
-  // 			contributor
-  // 			value
-  // 			}
-  // 			subtasks
-  //   		}
-  //   	}
-  //   	`;
-  //     const tasksWithFilterDocument = _.gql`
-  //   	{
-  //   		tasks(where: ${props?.where}) {
-  //   			id
-  // 			taskId
-  // 			creator
-  // 			metadata
-  // 			reward
-  // 			resourceBased
-  // 			status
-  // 			rewardsDistributed
-  // 			parentTaskId
-  // 			maxParticipants
-  // 			currentParticipants
-  // 			contributions {
-  // 			contributor
-  // 			value
-  // 			}
-  // 			subtasks
-  //   		}
-  //   	}
-  //   	`;
-
-  //     return await _.request(
-  //       this.graphAPI,
-  //       props?.where ? tasksWithFilterDocument : tasksDocument,
-  //     );
-  //   });
-  //   return data;
-  // }
-  // getTasksWithFilter(props: { where: { status?: string } }) {
-  //   return this.getTasks({
-  //     where: props.where,
-  //   });
-  // }
-
-  // // @ts-expect-error
-  // async createTask(
-  //   props: {
-  //     name: string;
-  //     description: string;
-  //     thumbnail: string;
-  //     reward: number;
-  //     resourceBased: boolean;
-  //     parentTaskId?: number;
-  //     maxParticipants: number;
-  //   },
-  //   metadata: { agentId: string; privateKey: string },
-  // ) {
-  //   const taskMetadataJSON = {
-  //     name: props.name,
-  //     description: props.description,
-  //     image: props.thumbnail,
-  //     attributes: [],
-  //   };
-  //   //upload metadata to IPFS
-  //   const metadataFile = await this.pinataService.uploadJsonFile(
-  //     taskMetadataJSON,
-  //     'metadata.json',
-  //   );
-  //   //get ipfs file url
-  //   const cid = metadataFile.IpfsHash;
-  //   const taskMetadata = `https://${process.env.GATEWAY_URL ?? 'gateway.pinata.cloud'}/ipfs/${cid}`;
-
-  //   const task = await this.task.createTask({
-  //     ...props,
-  //     metadata: taskMetadata,
-  //     reward: BigInt(props.reward),
-  //     parentTaskId: BigInt(props.parentTaskId || 0),
-  //     maxParticipants: BigInt(props.maxParticipants),
-  //     agentId: metadata.agentId,
-  //   });
-
-  //   return task;
-  // }
-
-  // // @ts-expect-error
-  // async joinTask(
-  //   props: {
-  //     taskId: number;
-  //   },
-  //   metadata: { agentId: string; privateKey: string },
-  // ) {
-  //   const task = await this.task.joinTask({
-  //     ...props,
-  //     taskId: BigInt(props.taskId),
-  //     agentId: metadata.agentId,
-  //   });
-
-  //   return task;
-  // }
-
-  // // @ts-expect-error
-  // async completeTask(
-  //   props: {
-  //     taskId: number;
-  //     resultantFile: string;
-  //   },
-  //   metadata: { agentId: string; privateKey: string },
-  // ) {
-  //   const task = await this.task.completeTask({
-  //     ...props,
-  //     taskId: BigInt(props.taskId),
-  //     agentId: metadata.agentId,
-  //   });
-
-  //   return task;
-  // }
-
   interactWithAgent(props: {
     agentId: string;
     messages?: ChatCompletionMessageParam[];
@@ -976,14 +1171,17 @@ export class CommonToolService {
    * @returns
    */
   /** Generate an image and persist it as a private S3-backed library item. */
-  async generateImage(props: {
-    prompt: string;
-    n?: number;
-    size?: '1024x1024' | '1024x1536' | '1536x1024' | 'auto';
-    quality?: 'low' | 'medium' | 'high' | 'auto';
-    agentId: string;
-    sessionId?: string;
-  }): Promise<
+  async generateImage(
+    props: {
+      prompt: string;
+      n?: number;
+      size?: '1024x1024' | '1024x1536' | '1536x1024' | 'auto';
+      quality?: 'low' | 'medium' | 'high' | 'auto';
+      agentId: string;
+      sessionId?: string;
+    },
+    metadata?: ToolExecutionMetadata,
+  ): Promise<
     {
       fileId: string;
       name: string;
@@ -992,26 +1190,70 @@ export class CommonToolService {
       model: string;
     }[]
   > {
-    const {
-      prompt,
-      n = 1,
-      size = '1024x1024',
-      quality = 'auto',
-    } = props;
+    const { prompt, n = 1, size = '1024x1024' } = props;
+    if (!Number.isInteger(n) || n < 1 || n > 4) {
+      throw new BadRequestException('Image count must be between 1 and 4.');
+    }
+    const quality =
+      props.quality === 'auto' || !props.quality ? 'medium' : props.quality;
     const model = process.env.OPENAI_IMAGE_MODEL || 'gpt-image-2';
+    if (
+      model !== 'gpt-image-2' &&
+      !process.env.OPENAI_IMAGE_OUTPUT_PRICE_USD_JSON
+    ) {
+      throw new BadRequestException(
+        `Image generation model ${model} is disabled until its price is configured.`,
+      );
+    }
+    const agentId = this.requireToolAgentId(props.agentId, metadata);
+    const owner = await this.capabilityOwner(agentId);
+    const operationId = metadata?.toolCallId || randomUUID();
+    const outputCostUsd = imageOutputCostUsd(size, quality) * n;
+    const promptCostUsd = (Math.ceil(prompt.length / 4) / 1_000_000) * 5;
+    const costUsd = outputCostUsd + promptCostUsd;
+    const reservation = await this.usage.authorizeCapability({
+      principalId: owner.principalId,
+      capability: 'image_generation',
+      estimatedCostUsd: costUsd,
+      idempotencyKey: `capability:image:${operationId}`,
+      agentId,
+      sessionId: props.sessionId,
+      metadata: {
+        model,
+        size,
+        quality,
+        count: n,
+        workspaceId: owner.workspaceId,
+      },
+    });
 
     // The Image API is the direct, single-turn generation surface. GPT Image
     // returns base64 image data by default; response_format is intentionally
     // omitted because GPT Image returns base64 data directly by default.
-    const response = await this.openAI.images.generate({
-      model,
-      prompt,
-      n,
-      size,
-      quality,
-      output_format: 'png',
-      moderation: 'auto',
-    } as any);
+    let response: any;
+    try {
+      response = await this.openAI.images.generate({
+        model,
+        prompt,
+        n,
+        size,
+        quality,
+        output_format: 'png',
+        moderation: 'auto',
+      } as any);
+    } catch (error) {
+      await this.usage.releaseCapability(reservation?.reservationId);
+      throw error;
+    }
+    await this.usage.settleCapability({
+      reservationId: reservation?.reservationId,
+      capability: 'image_generation',
+      actualCostUsd: costUsd,
+      idempotencyKey: `capability:image:${operationId}:capture`,
+      agentId,
+      sessionId: props.sessionId,
+      metadata: { provider: 'openai', model, size, quality, count: n },
+    });
 
     const results: Array<{
       fileId: string;
@@ -1111,7 +1353,12 @@ export class CommonToolService {
   }
 
   async searchLibraryArtifacts(
-    props: { query: string; limit?: number; agentId: string; sessionId?: string },
+    props: {
+      query: string;
+      limit?: number;
+      agentId: string;
+      sessionId?: string;
+    },
     metadata?: ToolExecutionMetadata,
   ) {
     const agentId = this.requireToolAgentId(props.agentId, metadata);
@@ -1778,4 +2025,43 @@ export class CommonToolService {
       artifacts: task?.artifacts,
     };
   }
+}
+
+/** Current GPT Image 2 output prices; reviewed against the provider catalog. */
+function imageOutputCostUsd(
+  size: '1024x1024' | '1024x1536' | '1536x1024' | 'auto',
+  quality: 'low' | 'medium' | 'high',
+) {
+  const configured = process.env.OPENAI_IMAGE_OUTPUT_PRICE_USD_JSON;
+  let prices: Record<string, Record<string, number>> = {
+    low: { '1024x1024': 0.006, '1024x1536': 0.005, '1536x1024': 0.005 },
+    medium: {
+      '1024x1024': 0.053,
+      '1024x1536': 0.041,
+      '1536x1024': 0.041,
+    },
+    high: { '1024x1024': 0.211, '1024x1536': 0.165, '1536x1024': 0.165 },
+  };
+  if (configured) {
+    try {
+      prices = JSON.parse(configured);
+    } catch {
+      throw new BadRequestException(
+        'OPENAI_IMAGE_OUTPUT_PRICE_USD_JSON is invalid.',
+      );
+    }
+  }
+  const selected = Object.values(prices[quality] ?? {}).filter(
+    (value) => Number.isFinite(value) && value > 0,
+  );
+  if (!selected.length) {
+    throw new BadRequestException(
+      `No image price is configured for quality ${quality}.`,
+    );
+  }
+  // The API's auto size can choose an arbitrary resolution. Reserve the
+  // highest catalogued cost for the selected quality.
+  if (size === 'auto') return Math.max(...selected);
+  const exact = prices[quality]?.[size];
+  return Number.isFinite(exact) && exact > 0 ? exact : Math.max(...selected);
 }

@@ -21,8 +21,8 @@ export function PageTitle({
   className?: string;
 }) {
   return (
-    <h1 className={cn("text-lg font-semibold tracking-tight", className)}>
-      <span className="inline-block rounded-md bg-teal-200 px-2 py-1 leading-none text-neutral-900">
+    <h1 className={cn("text-base font-medium tracking-tight", className)}>
+      <span className="inline-block rounded-md bg-teal-200 px-1.5 py-0.5 leading-snug text-neutral-900">
         {title}
       </span>
     </h1>
@@ -51,7 +51,7 @@ export function CreateButton({
             aria-label={label}
             onClick={onClick}
             className={cn(
-              "flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full border border-border bg-background text-foreground shadow-sm transition-colors hover:bg-muted",
+              "flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full border border-border bg-background text-foreground shadow-card transition-colors hover:bg-muted",
               className,
             )}
           >

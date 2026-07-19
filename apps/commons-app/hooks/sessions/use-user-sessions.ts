@@ -5,6 +5,7 @@ import { useState, useEffect, useCallback } from "react";
 export function useUserSessions(userAddress: string) {
   const [sessions, setSessions] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+  const [loadedUser, setLoadedUser] = useState<string | null>(null);
 
   const fetchSessions = useCallback(async () => {
     if (!userAddress) return;
@@ -21,6 +22,7 @@ export function useUserSessions(userAddress: string) {
     } catch (err) {
       console.error("Error fetching user sessions:", err);
     } finally {
+      setLoadedUser(userAddress);
       setIsLoading(false);
     }
   }, [userAddress]);
@@ -29,7 +31,13 @@ export function useUserSessions(userAddress: string) {
     fetchSessions();
   }, [fetchSessions]);
 
-  return { sessions, setSessions, isLoading, refetch: fetchSessions };
+  return {
+    sessions,
+    setSessions,
+    isLoading:
+      Boolean(userAddress) && (isLoading || loadedUser !== userAddress),
+    refetch: fetchSessions,
+  };
 }
 
 function formatSessionFetchError(status: number, data: any) {

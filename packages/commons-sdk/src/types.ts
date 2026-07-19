@@ -76,11 +76,34 @@ export interface Agent {
   isLiaison?: boolean;
   externalUrl?: string;
   createdAt: string;
+  isDefault?: boolean;
+  isSystemManaged?: boolean;
+  copilotAccessMode?: "full" | "scoped" | "confirm" | null;
+  copilotScopes?: string[];
   runtimeType?: AgentRuntimeType;
   runtimeVersion?: string | null;
   runtimeStatus?: AgentRuntimeStatus;
   runtimeConfig?: AgentRuntimeConfig;
   runtimeCapabilities?: Record<string, boolean>;
+}
+
+export interface CopilotChange {
+  changeId: string;
+  agentId: string;
+  ownerUserId: string;
+  scope: string;
+  resourceType: string;
+  resourceId?: string | null;
+  action: "create" | "update" | "delete";
+  status: "pending" | "applied" | "rejected" | "reverted";
+  title: string;
+  description?: string | null;
+  before?: unknown;
+  after?: unknown;
+  diff?: unknown;
+  createdAt: string;
+  reviewedAt?: string | null;
+  appliedAt?: string | null;
 }
 
 // ─── Agent Computer ─────────────────────────────────────────────────────────
@@ -1042,7 +1065,38 @@ export interface CreditBalance {
   principalId: string;
   workspaceId?: string | null;
   balance: number;
+  reserved: number;
+  available: number;
   currency: "credits";
+}
+
+export interface CreditCampaign {
+  campaignKey: string;
+  name: string;
+  description?: string | null;
+  rewardCredits: number;
+  triggerType: "once" | "daily" | "monthly" | "event";
+  sourcePlatform: CreditPlatform;
+  claimable: boolean;
+  claimed: boolean;
+}
+
+export interface CreditTransfer {
+  transferId: string;
+  senderPrincipalId: string;
+  recipientPrincipalId: string;
+  amount: number;
+  message?: string | null;
+  status: "completed" | "reversed";
+  createdAt: string;
+}
+
+export interface CreditSummary {
+  balance: CreditBalance;
+  month: { earned: number; spent: number };
+  recent: CreditLedgerEntry[];
+  campaigns: CreditCampaign[];
+  transfers: CreditTransfer[];
 }
 
 export interface CreditWriteParams {
@@ -1075,9 +1129,27 @@ export type ModelTier = "frontier" | "standard" | "fast" | "local";
 export interface PlanEntitlements {
   computerUse: boolean;
   allowedProfiles: ComputeProfile[];
+  maxComputerAgents: number;
   maxConcurrentComputers: number;
   modelTiers: ModelTier[];
   maxConcurrentRuns: number;
+}
+
+export interface BillingCatalog {
+  creditsPerUsd: number;
+  plans: Array<{
+    key: PlanKey;
+    name: string;
+    priceUsd: number;
+    monthlyCredits: number;
+    entitlements: PlanEntitlements;
+  }>;
+  topups: Array<{
+    key: string;
+    name: string;
+    credits: number;
+    priceUsd: number;
+  }>;
 }
 
 export interface SubscriptionInfo {
@@ -1118,8 +1190,8 @@ export interface AgentWallet {
 export interface WalletBalance {
   address: string;
   chainId: string;
-  native: string;  // ETH formatted
-  usdc: string;    // USDC formatted (6 decimals)
+  native: string; // ETH formatted
+  usdc: string; // USDC formatted (6 decimals)
 }
 
 export interface CreateWalletParams {

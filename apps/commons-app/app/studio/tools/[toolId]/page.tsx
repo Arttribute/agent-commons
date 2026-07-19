@@ -199,7 +199,7 @@ export default function ToolDetailPage({
   const apiSpec = tool.apiSpec;
 
   return (
-    <div className="flex h-full min-w-0 flex-col bg-stone-50">
+    <div className="flex h-full min-w-0 flex-col bg-page">
       {/* Header */}
       <div className="flex items-center justify-between gap-3 px-4 py-3">
         <div className="flex min-w-0 items-center gap-2">

@@ -38,16 +38,16 @@ export function SidebarMoreMenu({
             aria-label="More"
             title="More"
             className={cn(
-              "rounded-md p-1 text-muted-foreground hover:bg-accent hover:text-foreground data-[state=open]:bg-accent data-[state=open]:text-foreground",
+              "rounded-md p-1.5 text-foreground/70 hover:bg-accent hover:text-foreground data-[state=open]:bg-accent data-[state=open]:text-foreground",
               active && "bg-accent text-accent-foreground"
             )}
           >
-            <MoreHorizontal className="h-5 w-5" />
+            <MoreHorizontal className="h-4 w-4" />
           </button>
         ) : (
           <button
             className={cn(
-              "flex h-10 w-full items-center gap-2 rounded-md px-2 text-sm font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground data-[state=open]:bg-accent data-[state=open]:text-foreground",
+              "flex h-9 w-full items-center gap-2 rounded-md px-2 text-sm font-normal text-foreground/70 transition-colors hover:bg-muted hover:text-foreground data-[state=open]:bg-accent data-[state=open]:text-foreground",
               active && "bg-accent text-accent-foreground"
             )}
           >

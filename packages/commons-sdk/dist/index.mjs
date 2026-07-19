@@ -183,6 +183,26 @@ var CommonsClient = class {
       }
     };
   }
+  get copilot() {
+    return {
+      get: () => this.request("GET", "/v1/copilot"),
+      updateSettings: (params) => this.request("PUT", "/v1/copilot/settings", params),
+      listChanges: (filter) => {
+        const query = new URLSearchParams();
+        if (filter?.status) query.set("status", filter.status);
+        if (filter?.resourceType)
+          query.set("resourceType", filter.resourceType);
+        if (filter?.resourceId) query.set("resourceId", filter.resourceId);
+        return this.request(
+          "GET",
+          `/v1/copilot/changes${query.size ? `?${query}` : ""}`
+        );
+      },
+      acceptChange: (changeId) => this.request("POST", `/v1/copilot/changes/${changeId}/accept`),
+      rejectChange: (changeId) => this.request("POST", `/v1/copilot/changes/${changeId}/reject`),
+      revertChange: (changeId) => this.request("POST", `/v1/copilot/changes/${changeId}/revert`)
+    };
+  }
   // ── Run (non-streaming) ───────────────────────────────────────────────────
   get run() {
     return {
@@ -632,6 +652,11 @@ var CommonsClient = class {
         const qs = params.toString();
         return this.request("GET", `/v1/credits/ledger${qs ? `?${qs}` : ""}`);
       },
+      summary: () => this.request("GET", "/v1/credits/summary"),
+      campaigns: () => this.request("GET", "/v1/credits/campaigns"),
+      claimCampaign: (params) => this.request("POST", "/v1/credits/campaigns/claim", params),
+      transfers: () => this.request("GET", "/v1/credits/transfers"),
+      gift: (params) => this.request("POST", "/v1/credits/gifts", params),
       grant: (params) => this.request("POST", "/v1/credits/grants", params),
       debit: (params) => this.request("POST", "/v1/credits/debits", params)
     };
@@ -639,6 +664,8 @@ var CommonsClient = class {
   // ── Billing ────────────────────────────────────────────────────────────────
   get billing() {
     return {
+      /** Public product catalog served from the backend source of truth. */
+      catalog: () => this.request("GET", "/v1/billing/catalog"),
       /** Current plan, status, and entitlements for the caller. */
       subscription: () => this.request("GET", "/v1/billing/subscription"),
       /** Entitlements only (what paid features the caller may use). */
