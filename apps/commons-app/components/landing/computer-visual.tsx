@@ -185,13 +185,25 @@ function TerminalWindow() {
       <div className="flex h-full flex-col font-mono text-[11px] leading-6 text-zinc-400 sm:text-xs">
         <div className="flex-1 p-5 sm:p-6">
           <p className="text-zinc-200">
+            <span className="text-emerald-400">❯</span> pnpm run build
+          </p>
+          <p className="mt-2 text-zinc-500">
+            $ next build --project site
+          </p>
+          <p className="mt-2">
+            ✓ Compiled <span className="text-zinc-300">homepage.tsx</span>,{" "}
+            <span className="text-zinc-300">projects.tsx</span> (2.1s)
+          </p>
+          <p>✓ Generated 14 static pages</p>
+          <p className="text-zinc-500">
+            route / — 92.4 kB · route /projects — 87.1 kB
+          </p>
+          <p className="mt-3 text-zinc-200">
             <span className="text-emerald-400">❯</span> pnpm run deploy
           </p>
-          <p className="mt-3">Preparing always-on workspace...</p>
-          <p>Connecting Gmail and Slack tools...</p>
-          <p>Installing agent skills...</p>
-          <p className="mt-3 flex items-center gap-2 text-emerald-400">
-            <Check className="h-3.5 w-3.5" /> Computer is ready
+          <p className="mt-2">Uploading build to preview.agentcommons.site…</p>
+          <p className="flex items-center gap-2 text-emerald-400">
+            <Check className="h-3.5 w-3.5" /> Deployed in 6.8s
           </p>
           <p className="flex items-center gap-2 text-emerald-400">
             <Check className="h-3.5 w-3.5" /> Morning brief scheduled for 07:00
@@ -256,6 +268,69 @@ function BrowserWindow() {
   );
 }
 
+function CodeLines() {
+  const v = (text: string) => (
+    <span className="text-violet-600">{text}</span>
+  );
+  const s = (text: string) => (
+    <span className="text-emerald-700">{text}</span>
+  );
+  const lines: React.ReactNode[] = [
+    <>
+      {v("import")} {"{ Hero, ProjectGrid }"} {v("from")}{" "}
+      {s('"@/components/site"')};
+    </>,
+    <>
+      {v("import")} {"{ getProjects }"} {v("from")} {s('"@/lib/cms"')};
+    </>,
+    <>&nbsp;</>,
+    <>
+      {v("export const")} revalidate = 3600;
+    </>,
+    <>&nbsp;</>,
+    <>
+      {v("export default async function")} Home() {"{"}
+    </>,
+    <>
+      {"  "}
+      {v("const")} projects = {v("await")} getProjects({"{ featured: true }"});
+    </>,
+    <>&nbsp;</>,
+    <>
+      {"  "}
+      {v("return")} (
+    </>,
+    <>{"    <main>"}</>,
+    <>{"      <Hero"}</>,
+    <>
+      {"        title="}
+      {s('"Space, shaped by nature."')}
+    </>,
+    <>
+      {"        subtitle="}
+      {s('"Quiet homes for wild places."')}
+    </>,
+    <>{"      />"}</>,
+    <>{"      <ProjectGrid projects={projects} columns={3} />"}</>,
+    <>{"    </main>"}</>,
+    <>{"  );"}</>,
+    <>{"}"}</>,
+  ];
+
+  return (
+    <div className="overflow-hidden p-4 font-mono text-[10px] leading-[1.55] text-zinc-600 sm:text-[11px]">
+      {lines.map((line, index) => (
+        <div key={index} className="grid grid-cols-[22px_1fr]">
+          <span className="select-none pr-2 text-right text-zinc-300">
+            {index + 1}
+          </span>
+          <code className="whitespace-pre">{line}</code>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function CodeWindow() {
   return (
     <WindowFrame
@@ -277,16 +352,7 @@ function CodeWindow() {
             <FileCode2 className="h-3 w-3 text-blue-500" /> homepage.tsx
           </p>
         </aside>
-        <pre className="overflow-hidden p-4 font-mono text-[10px] leading-5 text-zinc-600 sm:text-[11px]">
-          <code>
-            <span className="text-violet-600">export default function</span>
-            {" Home() {\n  return (\n    <main>\n      <Hero\n        title="}
-            <span className="text-emerald-700">
-              &quot;Space, shaped by nature.&quot;
-            </span>
-            {"\n        projects={projects}\n      />\n    </main>\n  );\n}"}
-          </code>
-        </pre>
+        <CodeLines />
       </div>
     </WindowFrame>
   );

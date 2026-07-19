@@ -6,7 +6,6 @@ import { ArrowRight } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 
 const LINKS = [
-  { href: "/explore", label: "Explore" },
   { href: "https://docs.agentcommons.io/docs", label: "Docs", external: true },
   { href: "/plans", label: "Pricing" },
   {

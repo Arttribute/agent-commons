@@ -40,6 +40,7 @@ const nodes: Node[] = [
     data: {
       label: "Scout triages",
       nodeType: "agent_processor",
+      agentAvatar: "/mascots/builder-point.png",
       inputs: [{ name: "data", type: "object" }],
       outputs: [{ name: "result", type: "object" }],
     },

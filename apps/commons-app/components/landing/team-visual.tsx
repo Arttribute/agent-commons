@@ -22,6 +22,7 @@ const nodes: Node[] = [
     data: {
       label: "Lead",
       nodeType: "agent_processor",
+      agentAvatar: "/mascots/builder-point.png",
       outputs: [{ name: "task", type: "object" }],
     },
   },
@@ -32,6 +33,7 @@ const nodes: Node[] = [
     data: {
       label: "Research",
       nodeType: "agent_processor",
+      agentAvatar: "/mascots/builder-point.png",
       inputs: [{ name: "brief", type: "object" }],
       outputs: [{ name: "findings", type: "object" }],
     },
@@ -43,6 +45,7 @@ const nodes: Node[] = [
     data: {
       label: "Builder",
       nodeType: "agent_processor",
+      agentAvatar: "/mascots/builder-point.png",
       inputs: [{ name: "brief", type: "object" }],
       outputs: [{ name: "draft", type: "object" }],
     },
@@ -54,6 +57,7 @@ const nodes: Node[] = [
     data: {
       label: "Reviewer",
       nodeType: "agent_processor",
+      agentAvatar: "/mascots/builder-point.png",
       inputs: [{ name: "brief", type: "object" }],
       outputs: [{ name: "review", type: "object" }],
     },

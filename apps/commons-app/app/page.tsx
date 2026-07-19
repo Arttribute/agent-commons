@@ -2,11 +2,9 @@ import Image from "next/image";
 import Link from "next/link";
 import {
   ArrowRight,
-  Boxes,
   BrainCircuit,
   Check,
   Cloud,
-  FolderKanban,
   Github,
   Globe2,
   LockKeyhole,
@@ -19,11 +17,13 @@ import {
   Wrench,
   Zap,
 } from "lucide-react";
+import { BrandLogo } from "@/components/landing/brand-logo";
 import { ComputerVisual } from "@/components/landing/computer-visual";
 import { DeveloperVisual } from "@/components/landing/developer-visual";
 import { HeroComposer } from "@/components/landing/hero-composer";
 import { IntegrationCloud } from "@/components/landing/integration-cloud";
 import { LandingNav } from "@/components/landing/landing-nav";
+import { TasksVisual } from "@/components/landing/tasks-visual";
 import { TeamVisual } from "@/components/landing/team-visual";
 import { WorkflowVisual } from "@/components/landing/workflow-visual";
 
@@ -32,7 +32,7 @@ const START_URL = "/login?callbackUrl=/studio/agents";
 
 function Eyebrow({ children }: { children: React.ReactNode }) {
   return (
-    <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-stone-500">
+    <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-stone-500">
       {children}
     </p>
   );
@@ -56,11 +56,11 @@ function SectionIntro({
       }
     >
       <Eyebrow>{eyebrow}</Eyebrow>
-      <h2 className="mt-4 text-[2.25rem] font-semibold leading-[1.06] tracking-[-0.04em] text-stone-950 sm:text-[2.7rem] lg:text-5xl">
+      <h2 className="mt-4 text-[1.9rem] font-medium leading-[1.1] tracking-[-0.035em] text-stone-950 sm:text-[2.25rem] lg:text-[2.5rem]">
         {title}
       </h2>
       <p
-        className={`mt-5 text-lg leading-8 text-stone-600 ${
+        className={`mt-4 text-base leading-7 text-stone-600 ${
           align === "center" ? "mx-auto max-w-2xl" : "max-w-xl"
         }`}
       >
@@ -99,14 +99,14 @@ export default function Home() {
           <div className="pointer-events-none absolute left-[8%] top-32 h-32 w-32 rounded-full bg-brand-cyan/20 blur-3xl" />
           <div className="pointer-events-none absolute right-[7%] top-24 h-40 w-40 rounded-full bg-brand-lilac/20 blur-3xl" />
           <div className="relative mx-auto max-w-7xl px-5 pb-20 pt-20 text-center sm:pb-28 sm:pt-28 lg:px-8 lg:pt-32">
-            <h1 className="mx-auto max-w-6xl text-[2.8rem] font-semibold leading-[1] tracking-[-0.05em] text-stone-950 sm:text-[3.65rem] lg:whitespace-nowrap lg:text-[4.25rem]">
-              All your{" "}
+            <h1 className="mx-auto max-w-6xl text-[2.5rem] font-medium leading-[1.02] tracking-[-0.045em] text-stone-950 sm:text-[3.2rem] lg:whitespace-nowrap lg:text-[3.7rem]">
+              One home for all your{" "}
               <span className="inline-block rounded-md bg-teal-200 px-[0.1em] leading-[1.02]">
                 agents
-              </span>{" "}
-              in one place.
+              </span>
+              .
             </h1>
-            <p className="mx-auto mt-7 max-w-2xl text-lg leading-8 text-stone-600 sm:text-xl">
+            <p className="mx-auto mt-6 max-w-2xl text-base leading-7 text-stone-600 sm:text-lg sm:leading-8">
               Create, deploy, and manage AI agents from one clear workspace.
               Give them cloud computers, connect your tools, and coordinate a
               whole fleet without losing control.
@@ -120,14 +120,14 @@ export default function Home() {
             <div className="mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row">
               <Link
                 href={START_URL}
-                className="inline-flex h-12 items-center gap-2 rounded-full bg-stone-950 px-7 text-sm font-semibold text-white transition-all hover:-translate-y-0.5 hover:bg-stone-800"
+                className="inline-flex h-12 items-center gap-2 rounded-full bg-stone-950 px-7 text-sm font-medium text-white transition-all hover:-translate-y-0.5 hover:bg-stone-800"
               >
                 Start building free
                 <ArrowRight className="h-4 w-4" />
               </Link>
               <Link
                 href="/explore"
-                className="inline-flex h-12 items-center gap-2 rounded-full border border-stone-300 bg-white px-7 text-sm font-semibold text-stone-800 transition-colors hover:bg-stone-50"
+                className="inline-flex h-12 items-center gap-2 rounded-full border border-stone-300 bg-white px-7 text-sm font-medium text-stone-800 transition-colors hover:bg-stone-50"
               >
                 Explore the commons
               </Link>
@@ -184,13 +184,13 @@ export default function Home() {
                   >
                     <item.icon className="h-5 w-5" />
                   </span>
-                  <h3 className="mt-8 text-xl font-semibold tracking-[-0.025em]">
+                  <h3 className="mt-8 text-lg font-medium tracking-[-0.02em]">
                     {item.title}
                   </h3>
                   <p className="mt-3 text-sm leading-6 text-stone-600">
                     {item.body}
                   </p>
-                  <span className="mt-auto flex items-center gap-1 pt-6 text-xs font-semibold text-stone-800">
+                  <span className="mt-auto flex items-center gap-1 pt-6 text-xs font-medium text-stone-800">
                     See how it works{" "}
                     <ArrowRight className="h-3.5 w-3.5 transition-transform group-hover:translate-x-1" />
                   </span>
@@ -208,7 +208,7 @@ export default function Home() {
             <div>
               <SectionIntro
                 eyebrow="Agent computers"
-                title="A real computer for every agent."
+                title="A computer for every agent."
                 body="Your agents get a persistent workspace in the cloud. They can use files, run code, browse the web, and keep working when your laptop is closed."
               />
               <CheckList
@@ -221,7 +221,7 @@ export default function Home() {
               />
               <Link
                 href={START_URL}
-                className="mt-8 inline-flex items-center gap-2 text-sm font-semibold text-stone-950"
+                className="mt-8 inline-flex items-center gap-2 text-sm font-medium text-stone-950"
               >
                 Launch an agent computer <ArrowRight className="h-4 w-4" />
               </Link>
@@ -263,15 +263,22 @@ export default function Home() {
         >
           <div className="mx-auto max-w-7xl px-5 py-24 lg:px-8 lg:py-32">
             <SectionIntro
-              eyebrow="Visual workflows"
+              eyebrow="Workflows and tasks"
               title="Automation you can understand at a glance."
-              body="Connect triggers, agents, approvals, and app actions on a visual canvas. Follow every run as it happens and step in when a decision needs a person."
+              body="Connect triggers, agents, approvals, and app actions on a visual canvas — then schedule one-off or recurring tasks your agents pick up on time."
               align="center"
             />
-            <div className="mx-auto mt-14 max-w-5xl">
+            <div className="mx-auto mt-14 grid max-w-6xl items-start gap-6 lg:grid-cols-[1.18fr_0.82fr]">
               <WorkflowVisual />
+              <div className="lg:mt-16">
+                <TasksVisual />
+                <p className="mt-4 px-1 text-sm leading-6 text-stone-500">
+                  Tasks live on a calendar you can actually read — every
+                  scheduled and recurring job, right where you expect it.
+                </p>
+              </div>
             </div>
-            <div className="mx-auto mt-10 grid max-w-5xl gap-4 sm:grid-cols-3">
+            <div className="mx-auto mt-10 grid max-w-6xl gap-4 sm:grid-cols-3">
               {[
                 [
                   Zap,
@@ -294,7 +301,7 @@ export default function Home() {
                   className="rounded-2xl border border-stone-200 bg-white p-6"
                 >
                   <Icon className="h-5 w-5 text-stone-500" />
-                  <h3 className="mt-5 text-sm font-semibold">
+                  <h3 className="mt-5 text-sm font-medium">
                     {title as string}
                   </h3>
                   <p className="mt-2 text-sm leading-6 text-stone-600">
@@ -326,7 +333,7 @@ export default function Home() {
               />
               <Link
                 href="/studio/tools"
-                className="mt-8 inline-flex items-center gap-2 text-sm font-semibold text-stone-950"
+                className="mt-8 inline-flex items-center gap-2 text-sm font-medium text-stone-950"
               >
                 Explore tools <ArrowRight className="h-4 w-4" />
               </Link>
@@ -342,11 +349,54 @@ export default function Home() {
           <div className="mx-auto max-w-7xl px-5 py-24 lg:px-8 lg:py-32">
             <SectionIntro
               eyebrow="CLI and SDK"
-              title="Build from the terminal or your codebase."
-              body="Create agents, choose their models and runtimes, run workflows, and manage cloud computers with the CLI or typed TypeScript SDK."
+              title="Work from the terminal or your codebase."
+              body="The agc CLI brings your agents into any shell, and the typed TypeScript SDK puts the whole platform — agents, workflows, computers — a function call away."
             />
-            <div className="mx-auto mt-14 max-w-5xl">
+            <a
+              href="https://docs.agentcommons.io/docs"
+              target="_blank"
+              rel="noreferrer"
+              className="mt-6 inline-flex items-center gap-2 text-sm font-medium text-stone-950"
+            >
+              Read the SDK docs <ArrowRight className="h-4 w-4" />
+            </a>
+            <div className="mx-auto mt-12 max-w-5xl">
               <DeveloperVisual />
+            </div>
+          </div>
+        </section>
+
+        <section className="border-b border-stone-200">
+          <div className="mx-auto max-w-6xl px-5 py-20 text-center lg:px-8 lg:py-24">
+            <h2 className="text-[1.6rem] font-medium tracking-[-0.03em] text-stone-950 sm:text-[1.9rem]">
+              Any model. Any{" "}
+              <span className="inline-block rounded-md bg-teal-200 px-[0.12em] leading-[1.1]">
+                framework.
+              </span>
+            </h2>
+            <p className="mx-auto mt-3 max-w-xl text-sm leading-6 text-stone-600 sm:text-base sm:leading-7">
+              Bring models from OpenAI, Anthropic, Google, Mistral, or open
+              weights — and run agents natively or on managed frameworks like
+              OpenClaw and Hermes.
+            </p>
+            <div className="mt-9 flex flex-wrap items-center justify-center gap-3 sm:gap-4">
+              {[
+                ["openai-icon", "OpenAI", 26],
+                ["claude-icon", "Anthropic Claude", 26],
+                ["google-gemini", "Google Gemini", 26],
+                ["mistral-ai-icon", "Mistral", 26],
+                ["meta-icon", "Meta Llama", 26],
+                ["hugging-face-icon", "Hugging Face", 26],
+              ].map(([name, label, size]) => (
+                <span
+                  key={name as string}
+                  title={label as string}
+                  aria-label={label as string}
+                  className="flex h-14 w-14 items-center justify-center rounded-2xl border border-stone-200 bg-white shadow-card sm:h-16 sm:w-16"
+                >
+                  <BrandLogo name={name as string} size={size as number} />
+                </span>
+              ))}
             </div>
           </div>
         </section>
@@ -354,12 +404,12 @@ export default function Home() {
         <section className="border-b border-stone-200 bg-[#fafaf9]">
           <div className="mx-auto max-w-7xl px-5 py-24 lg:px-8 lg:py-32">
             <SectionIntro
-              eyebrow="All the AI fun in one place"
+              eyebrow="All the AI fun in one safe place"
               title="From a quick idea to a system that runs every day."
-              body="Prototype a website, talk with an agent live, build a skill, or automate a whole business process. The playful experiments and the serious operations live in one organized place."
+              body="Prototype a website, talk with an agent live, teach a skill, or automate a whole process. It all happens in one organized place, with a clear view of what is running and the ability to step in."
               align="center"
             />
-            <div className="mt-14 grid gap-px overflow-hidden rounded-[1.5rem] border border-stone-200 bg-stone-200 sm:grid-cols-2 lg:grid-cols-4">
+            <div className="mx-auto mt-14 grid max-w-5xl gap-4 sm:grid-cols-2 lg:grid-cols-3">
               {[
                 [
                   Globe2,
@@ -377,51 +427,6 @@ export default function Home() {
                   "Chat, speak, share context, and build together.",
                 ],
                 [
-                  Boxes,
-                  "Ship systems",
-                  "Turn a good experiment into repeatable production work.",
-                ],
-              ].map(([Icon, title, body], index) => (
-                <div
-                  key={title as string}
-                  className="min-h-[230px] bg-white p-7"
-                >
-                  <span
-                    className={`flex h-12 w-12 items-center justify-center rounded-2xl ${
-                      [
-                        "bg-brand-blue/35",
-                        "bg-brand-lilac/35",
-                        "bg-brand-pink/30",
-                        "bg-brand-mint/35",
-                      ][index]
-                    }`}
-                  >
-                    <Icon className="h-5 w-5" />
-                  </span>
-                  <h3 className="mt-8 text-lg font-semibold tracking-[-0.02em]">
-                    {title as string}
-                  </h3>
-                  <p className="mt-3 text-sm leading-6 text-stone-600">
-                    {body as string}
-                  </p>
-                </div>
-              ))}
-            </div>
-          </div>
-        </section>
-
-        <section className="border-b border-stone-200">
-          <div className="mx-auto grid max-w-7xl items-center gap-12 px-5 py-24 lg:grid-cols-2 lg:px-8 lg:py-32">
-            <div>
-              <SectionIntro
-                eyebrow="One safe place"
-                title="Move fast without losing the plot."
-                body="Agent Commons keeps computers, tools, workflows, and teams under one control layer. You get a clear view of what is running and the ability to step in."
-              />
-            </div>
-            <div className="grid gap-4 sm:grid-cols-2">
-              {[
-                [
                   ShieldCheck,
                   "Sandboxed work",
                   "Agent computers stay isolated from each other.",
@@ -429,25 +434,20 @@ export default function Home() {
                 [
                   LockKeyhole,
                   "Tool permissions",
-                  "Give each agent access only to approved tools.",
+                  "Each agent uses only the tools you approve.",
                 ],
                 [
                   Monitor,
                   "Visible activity",
                   "See work, runs, and outputs from one workspace.",
                 ],
-                [
-                  FolderKanban,
-                  "Organized context",
-                  "Keep teams, files, skills, and tasks together.",
-                ],
               ].map(([Icon, title, body]) => (
                 <div
                   key={title as string}
-                  className="rounded-2xl border border-stone-200 p-6"
+                  className="rounded-2xl border border-stone-200 bg-white p-6"
                 >
                   <Icon className="h-5 w-5 text-stone-500" />
-                  <h3 className="mt-5 text-sm font-semibold">
+                  <h3 className="mt-5 text-sm font-medium">
                     {title as string}
                   </h3>
                   <p className="mt-2 text-sm leading-6 text-stone-600">
@@ -466,7 +466,7 @@ export default function Home() {
             <div className="absolute bottom-0 right-[10%] h-40 w-40 rounded-full bg-brand-lilac/10 blur-3xl" />
             <div className="relative">
               <Eyebrow>Ready when you are</Eyebrow>
-              <h2 className="mx-auto mt-5 max-w-4xl text-[2.5rem] font-semibold leading-[1.04] tracking-[-0.045em] sm:text-5xl lg:text-[3.5rem]">
+              <h2 className="mx-auto mt-5 max-w-4xl text-[2.1rem] font-medium leading-[1.08] tracking-[-0.04em] sm:text-[2.6rem] lg:text-[3rem]">
                 Build your first agent. Grow into a fleet.
               </h2>
               <p className="mx-auto mt-6 max-w-xl text-lg leading-8 text-stone-400">
@@ -476,14 +476,14 @@ export default function Home() {
               <div className="mt-9 flex flex-col items-center justify-center gap-3 sm:flex-row">
                 <Link
                   href={START_URL}
-                  className="inline-flex h-12 items-center gap-2 rounded-full bg-white px-7 text-sm font-semibold text-stone-950 transition-transform hover:-translate-y-0.5"
+                  className="inline-flex h-12 items-center gap-2 rounded-full bg-white px-7 text-sm font-medium text-stone-950 transition-transform hover:-translate-y-0.5"
                 >
                   Get started free <ArrowRight className="h-4 w-4" />
                 </Link>
                 <Link
                   href={GITHUB_URL}
                   target="_blank"
-                  className="inline-flex h-12 items-center gap-2 rounded-full border border-stone-700 px-7 text-sm font-semibold text-white transition-colors hover:bg-stone-900"
+                  className="inline-flex h-12 items-center gap-2 rounded-full border border-stone-700 px-7 text-sm font-medium text-white transition-colors hover:bg-stone-900"
                 >
                   <Github className="h-4 w-4" />
                   View on GitHub
@@ -540,7 +540,7 @@ export default function Home() {
             },
           ].map((column) => (
             <div key={column.heading}>
-              <p className="text-xs font-semibold text-stone-900">
+              <p className="text-xs font-medium text-stone-900">
                 {column.heading}
               </p>
               <ul className="mt-4 space-y-3">
