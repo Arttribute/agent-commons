@@ -15,6 +15,11 @@ on:
         options:
           - production
           - staging
+      stack_name:
+        description: CloudFormation stack to inspect when deployment failed
+        required: false
+        default: agent-commons-api-service
+        type: string
 
 permissions:
   contents: read
@@ -35,6 +40,7 @@ jobs:
       - name: Show build phases and logs
         env:
           BUILD_ID: ${{ inputs.build_id }}
+          STACK_NAME: ${{ inputs.stack_name }}
         run: |
           set -euo pipefail
 
@@ -60,4 +66,19 @@ jobs:
               --limit 10000 \
               --query 'events[].message' \
               --output text || echo "CodeBuild phases were readable, but this role cannot read CloudWatch logs."
+          fi
+
+          if [ -n "$STACK_NAME" ]; then
+            echo "CloudFormation stack status:"
+            aws cloudformation describe-stacks \
+              --stack-name "$STACK_NAME" \
+              --query 'Stacks[0].{status:StackStatus,statusReason:StackStatusReason,lastUpdated:LastUpdatedTime}' \
+              --output json
+
+            echo "Recent failed or rollback stack events:"
+            aws cloudformation describe-stack-events \
+              --stack-name "$STACK_NAME" \
+              --max-items 100 \
+              --query 'StackEvents[?contains(ResourceStatus, `FAILED`) || contains(ResourceStatus, `ROLLBACK`)].{time:Timestamp,logicalId:LogicalResourceId,type:ResourceType,status:ResourceStatus,reason:ResourceStatusReason}' \
+              --output json
           fi
