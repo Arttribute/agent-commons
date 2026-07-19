@@ -100,6 +100,13 @@ jobs:
           )
           echo "::add-mask::$put_url"
 
+          printf '{"preflight":true}\n' > /tmp/service-deployment-preflight.json
+          curl --fail-with-body --silent --show-error \
+            -X PUT \
+            --data-binary @/tmp/service-deployment-preflight.json \
+            "$put_url"
+          aws s3 cp "s3://${DIAGNOSTIC_BUCKET}/${diagnostic_key}" - >/dev/null
+
           buildspec=$(cat <<'YAML'
           version: 0.2
           env:
@@ -109,24 +116,27 @@ jobs:
               commands:
                 - |
                   set -euo pipefail
-                  stack_json=$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --output json)
-                  service_arn=$(jq -r '.Stacks[0].Outputs[] | select(.OutputKey == "ServiceArn") | .OutputValue' <<<"$stack_json")
-                  service_json=$(aws ecs describe-express-gateway-service --service-arn "$service_arn" --output json)
-                  deployment_list=$(aws ecs list-service-deployments --service "$service_arn" --max-results 20 --output json)
-                  mapfile -t deployment_arns < <(jq -r '.serviceDeployments[]?.serviceDeploymentArn' <<<"$deployment_list")
-                  if (( ${#deployment_arns[@]} )); then
-                    deployments_json=$(aws ecs describe-service-deployments --service-deployment-arns "${deployment_arns[@]}" --output json)
-                  else
-                    deployments_json='{"serviceDeployments":[],"failures":[]}'
-                  fi
+                  stack_json=$(aws cloudformation describe-stacks \
+                    --stack-name "$STACK_NAME" \
+                    --query 'Stacks[0].{status:StackStatus,statusReason:StackStatusReason,lastUpdated:LastUpdatedTime,outputs:Outputs}' \
+                    --output json)
+                  service_arn=$(jq -r '.outputs[] | select(.OutputKey == "ServiceArn") | .OutputValue' <<<"$stack_json")
+                  service_json=$(aws ecs describe-express-gateway-service \
+                    --service-arn "$service_arn" \
+                    --query 'service.{serviceArn:serviceArn,serviceName:serviceName,status:status,currentDeployment:currentDeployment,updatedAt:updatedAt}' \
+                    --output json)
+                  deployment_list=$(aws ecs list-service-deployments \
+                    --service "$service_arn" \
+                    --max-results 20 \
+                    --query '{serviceDeployments:serviceDeployments[*].{arn:serviceDeploymentArn,status:status,statusReason:statusReason,createdAt:createdAt,startedAt:startedAt,finishedAt:finishedAt,targetRevision:targetServiceRevisionArn}}' \
+                    --output json)
                   jq -n \
                     --argjson stack "$stack_json" \
                     --argjson service "$service_json" \
                     --argjson deploymentList "$deployment_list" \
-                    --argjson deployments "$deployments_json" \
-                    '{stack: $stack, service: $service, deploymentList: $deploymentList, deployments: $deployments}' \
+                    '{stack: $stack, service: $service, deploymentList: $deploymentList}' \
                     > /tmp/service-deployment.json
-                  curl --fail --silent --show-error -X PUT --data-binary @/tmp/service-deployment.json "$DIAGNOSTIC_PUT_URL"
+                  curl --fail-with-body --silent --show-error -X PUT --data-binary @/tmp/service-deployment.json "$DIAGNOSTIC_PUT_URL"
           YAML
           )
 
