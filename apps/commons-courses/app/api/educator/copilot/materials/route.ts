@@ -1,6 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { normalizeCourseInput, type CourseInput } from "@/lib/course-input";
-import { ensureEducatorCopilotProfile } from "@/lib/educator-copilot-agent";
+import {
+  ensureAgentSession,
+  ensureEducatorCopilotProfile,
+} from "@/lib/educator-copilot-agent";
+import {
+  readEducatorCopilotFile,
+  uploadEducatorCopilotFiles,
+  type EducatorCopilotUploadedFile,
+} from "@/lib/educator-copilot-files";
 import {
   extractMaterial,
   formatMaterialContext,
@@ -9,11 +17,16 @@ import {
 import { requireEducator, buildManagedCoursesFilter, slugifyCourseTitle } from "@/lib/educator-auth";
 import { EDUCATOR_COPILOT_PEDAGOGY } from "@/lib/educator-copilot-policy";
 import { indexCourseForSearch } from "@/lib/search-indexers";
+import {
+  isS3MediaStorageConfigured,
+  uploadCourseMediaToS3,
+} from "@/lib/media-storage";
 import Course from "@/models/Course";
 import EducatorProfile from "@/models/EducatorProfile";
+import User from "@/models/User";
 import type { SkillPack } from "@/types/skills";
 
-type CopilotMode = "course" | "skill_path";
+type CopilotMode = "course" | "workbook" | "skill_path";
 
 type CopilotDraft = {
   title?: string;
@@ -25,11 +38,12 @@ type CopilotDraft = {
   modules?: NonNullable<CourseInput["modules"]>;
   skillPack?: SkillPack;
   notes?: string[];
+  tags?: string[];
 };
 
 const maxFiles = 8;
 const maxTotalBytes = 18 * 1024 * 1024;
-const maxTextChars = 22000;
+const maxTextChars = 60000;
 
 export async function POST(req: NextRequest) {
   const authResult = await requireEducator();
@@ -70,6 +84,7 @@ export async function POST(req: NextRequest) {
     instructions,
     materialText,
     images,
+    files,
     session: authResult.session,
   });
 
@@ -91,6 +106,7 @@ export async function POST(req: NextRequest) {
 
   const result = await createCourse({
     draft,
+    mode,
     session: authResult.session,
   });
   if (result instanceof NextResponse) return result;
@@ -99,16 +115,26 @@ export async function POST(req: NextRequest) {
 
 async function createCourse({
   draft,
+  mode,
   session,
 }: {
   draft: CopilotDraft;
+  mode: Exclude<CopilotMode, "skill_path">;
   session: NonNullable<Awaited<ReturnType<typeof requireEducator>>["session"]>;
 }) {
   const profile = await EducatorProfile.findOne({ userId: session.userId });
   const title = cleanText(draft.title) || "AI-generated course draft";
   const slug = await uniqueCourseSlug(title);
   const skillPack = normalizeSkillPackDraft(draft.skillPack, title);
-  const modules = normalizeModules(draft.modules, skillPack);
+  const modules = normalizeModules(draft.modules, skillPack).map((module) =>
+    mode === "workbook" && !module.assignment
+      ? {
+          ...module,
+          assignment:
+            "<p>Apply this section to your own context. Capture your answer, one example, and the next action you will take.</p>",
+        }
+      : module
+  );
   const normalized = normalizeCourseInput({
     title,
     slug,
@@ -128,6 +154,10 @@ async function createCourse({
     isFree: true,
     courseType: "self-paced",
     modules,
+    tags: [
+      ...(Array.isArray(draft.tags) ? draft.tags : []),
+      ...(mode === "workbook" ? ["workbook", "guided-practice"] : []),
+    ],
     skillPacks: [skillPack],
     published: false,
   });
@@ -149,7 +179,7 @@ async function createCourse({
   await indexCourseForSearch(course);
 
   return {
-    mode: "course",
+    mode,
     course: {
       title: course.title,
       slug: course.slug,
@@ -242,6 +272,7 @@ async function createDraft(input: {
   instructions: string;
   materialText: string;
   images: MaterialExtract[];
+  files: File[];
   session: NonNullable<Awaited<ReturnType<typeof requireEducator>>["session"]>;
 }): Promise<CopilotDraft> {
   const agentDraft = await draftWithAgentCommons(input);
@@ -261,20 +292,67 @@ async function draftWithAgentCommons(input: {
   mode: CopilotMode;
   instructions: string;
   materialText: string;
+  files: File[];
   session: NonNullable<Awaited<ReturnType<typeof requireEducator>>["session"]>;
 }) {
-  if (!input.materialText.trim()) return null;
-  const { profile, client, agentReady } = await ensureEducatorCopilotProfile({
+  if (!input.files.length) return null;
+  const userDoc = (await User.findById(input.session.userId)
+    .select("name")
+    .lean()) as { name?: string } | null;
+  const connection = await ensureEducatorCopilotProfile({
     id: input.session.userId,
     email: input.session.email,
+    name: userDoc?.name,
     role: input.session.role,
+    accessToken: input.session.accessToken,
+    accessTokenError: input.session.accessTokenError,
+    identityUserId: input.session.identityUserId,
+    identityWorkspaceId: input.session.identityWorkspaceId,
   });
+  const {
+    profile,
+    client,
+    agentReady,
+    principalId,
+    platformAccessToken,
+  } = connection;
   const agentId = profile.agentId;
-  if (!client || !agentReady || !agentId) return null;
+  if (
+    !client ||
+    !agentReady ||
+    !agentId ||
+    !principalId ||
+    !platformAccessToken
+  ) {
+    return null;
+  }
 
   try {
+    const agentSessionId = await ensureAgentSession({
+      client,
+      agentId,
+      initiator: principalId,
+      title: `Create ${input.mode} from uploaded materials`,
+    });
+    const uploadedFiles = await uploadEducatorCopilotFiles(input.files, {
+      accessToken: platformAccessToken,
+      principalId,
+      agentId,
+      sessionId: agentSessionId,
+      workspaceId: input.session.identityWorkspaceId,
+    });
+    const sourceVisuals = await persistSourceVisuals(uploadedFiles, {
+      accessToken: platformAccessToken,
+      principalId,
+      agentId,
+      sessionId: agentSessionId,
+      workspaceId: input.session.identityWorkspaceId,
+    });
     const result = await client.run.once({
       agentId,
+      sessionId: agentSessionId,
+      initiatorId: principalId,
+      attachments: uploadedFiles.map((file) => ({ fileId: file.fileId })),
       messages: [
         {
           role: "system",
@@ -286,14 +364,158 @@ async function draftWithAgentCommons(input: {
             mode: input.mode,
             educatorInstructions: input.instructions,
             materialText: input.materialText,
+            sourceVisuals,
+            visualInstructions:
+              "Use sourceVisuals assetUrl values on the lessons or challenges they illustrate. Preserve their page order and write useful assetAlt text. Do not invent asset URLs.",
           }),
         },
       ],
     });
-    return normalizeDraftJson(extractText(result), input);
+    const draft = normalizeDraftJson(extractText(result), input);
+    return draft ? applySourceVisuals(draft, sourceVisuals) : null;
   } catch {
     return null;
   }
+}
+
+type SourceVisual = {
+  sourceName: string;
+  pageNumber?: number;
+  assetUrl: string;
+  assetAlt: string;
+};
+
+async function persistSourceVisuals(
+  uploadedFiles: EducatorCopilotUploadedFile[],
+  access: {
+    accessToken: string;
+    principalId: string;
+    agentId: string;
+    sessionId?: string;
+    workspaceId?: string;
+  }
+): Promise<SourceVisual[]> {
+  if (!uploadedFiles.length || !isS3MediaStorageConfigured()) return [];
+
+  const candidates: Array<{
+    sourceName: string;
+    pageNumber?: number;
+    mimeType: string;
+    url: string;
+  }> = [];
+  for (const uploaded of uploadedFiles) {
+    const response = await readEducatorCopilotFile(uploaded.fileId, access, {
+      maxChars: 1,
+      includeImageUrls: true,
+    }).catch(() => null);
+    for (const artifact of response?.data?.artifacts || []) {
+      if (
+        artifact.url &&
+        artifact.mimeType?.startsWith("image/") &&
+        (artifact.kind === "image" || artifact.kind === "pdf_page_image")
+      ) {
+        candidates.push({
+          sourceName: uploaded.name || response?.data?.name || "source material",
+          pageNumber: artifact.pageNumber,
+          mimeType: artifact.mimeType,
+          url: artifact.url,
+        });
+      }
+      if (candidates.length >= 8) break;
+    }
+    if (candidates.length >= 8) break;
+  }
+
+  const visuals: SourceVisual[] = [];
+  for (const [index, candidate] of candidates.entries()) {
+    try {
+      const response = await fetch(candidate.url);
+      if (!response.ok) continue;
+      const data = Buffer.from(await response.arrayBuffer());
+      if (data.length > 8 * 1024 * 1024) continue;
+      const extension = candidate.mimeType.includes("webp")
+        ? "webp"
+        : candidate.mimeType.includes("jpeg") || candidate.mimeType.includes("jpg")
+          ? "jpg"
+          : "png";
+      const pageLabel = candidate.pageNumber
+        ? `page-${candidate.pageNumber}`
+        : `image-${index + 1}`;
+      const assetUrl = await uploadCourseMediaToS3({
+        file: {
+          name: `${safeSourceName(candidate.sourceName)}-${pageLabel}.${extension}`,
+          type: candidate.mimeType,
+        },
+        data,
+        keyPrefix: "course-media/copilot-sources",
+      });
+      visuals.push({
+        sourceName: candidate.sourceName,
+        pageNumber: candidate.pageNumber,
+        assetUrl,
+        assetAlt: candidate.pageNumber
+          ? `${candidate.sourceName}, page ${candidate.pageNumber}`
+          : `Visual from ${candidate.sourceName}`,
+      });
+    } catch {
+      // A failed visual should not block a text-grounded course draft.
+    }
+  }
+  return visuals;
+}
+
+function applySourceVisuals(draft: CopilotDraft, visuals: SourceVisual[]) {
+  if (!visuals.length) return draft;
+  let visualIndex = 0;
+  const modules = draft.modules?.map((module) => ({
+    ...module,
+    lessons: module.lessons?.map((lesson) => {
+      if (lesson.assetUrl || visualIndex >= visuals.length) return lesson;
+      const visual = visuals[visualIndex++];
+      return {
+        ...lesson,
+        assetUrl: visual.assetUrl,
+        assetAlt: lesson.assetAlt || visual.assetAlt,
+      };
+    }),
+  }));
+  let challengeVisualIndex = 0;
+  const skillPack = draft.skillPack
+    ? {
+        ...draft.skillPack,
+        challenges: draft.skillPack.challenges?.map((challenge) => {
+          if (challenge.assetUrl || challengeVisualIndex >= visuals.length) {
+            return challenge;
+          }
+          const visual = visuals[challengeVisualIndex++];
+          return {
+            ...challenge,
+            assetUrl: visual.assetUrl,
+            assetAlt: challenge.assetAlt || visual.assetAlt,
+          };
+        }),
+      }
+    : undefined;
+  return {
+    ...draft,
+    modules,
+    skillPack,
+    notes: [
+      ...(draft.notes || []),
+      `Extracted and organized ${visuals.length} source visual${visuals.length === 1 ? "" : "s"} from the uploaded material.`,
+    ],
+  };
+}
+
+function safeSourceName(value: string) {
+  return (
+    value
+      .replace(/\.[^.]+$/, "")
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "")
+      .slice(0, 60) || "source"
+  );
 }
 
 async function draftWithOpenAI(input: {
@@ -360,6 +582,7 @@ function copilotSystemPrompt() {
     "Use standard learning design: short introductions, meaningful examples, key ideas, challenging quizzes, and practical sandbox tasks when relevant.",
     "Create material directly inside the educator account as a draft. Keep it reviewable: complete lesson bodies, clear quiz feedback, and no placeholder copy.",
     "For skill paths, create a natural sequence that can sit alongside existing paths in the same course. Do not repeat prior modules unless the uploaded material requires a bridge.",
+    "For workbooks, organize the source into short guided sections with complete explanations, worked examples, reflection prompts, templates, and a concrete assignment in every module. The result is stored as an editable draft course so the educator can deliver it interactively.",
     "When adding sandbox work, use only supported sandbox capabilities: identity, system_prompt, skills, tools, tasks, workflows, memory, computer, chat, logs, and credits.",
     "Return only valid JSON.",
   ].join("\n");
@@ -382,7 +605,11 @@ function normalizeDraftJson(text: string, input: { mode: CopilotMode; materialTe
 function fallbackDraft(input: { mode: CopilotMode; materialText: string }) {
   const title =
     firstLikelyTitle(input.materialText) ||
-    (input.mode === "skill_path" ? "Generated Skill Path" : "Generated Course Draft");
+    (input.mode === "skill_path"
+      ? "Generated Skill Path"
+      : input.mode === "workbook"
+        ? "Generated Workbook Draft"
+        : "Generated Course Draft");
   const skillPack = normalizeSkillPackDraft(
     {
       enabled: true,
@@ -397,7 +624,10 @@ function fallbackDraft(input: { mode: CopilotMode; materialText: string }) {
 
   return {
     title,
-    tagline: "A practical draft generated from uploaded materials.",
+    tagline:
+      input.mode === "workbook"
+        ? "A guided, practical workbook generated from uploaded materials."
+        : "A practical draft generated from uploaded materials.",
     description: "Review and edit this AI-generated draft before publishing.",
     longDescription:
       "This course draft was generated from uploaded material. The educator should review lesson accuracy, examples, quiz challenge level, and sandbox scope before publishing.",
@@ -644,6 +874,7 @@ function moduleFromSkillPack(skillPack: SkillPack) {
     description:
       toRichText(skillPack.learnerPromise) ||
       "<p>Practice the skill path through focused lessons and checks.</p>",
+    assignment: undefined,
     lessons: skillPack.challenges.map((challenge) => ({
       title: challenge.title,
       duration: String(challenge.minutes || 7),
@@ -667,7 +898,8 @@ async function uniqueCourseSlug(title: string) {
 }
 
 function normalizeMode(value: FormDataEntryValue | null): CopilotMode {
-  return value === "skill_path" ? "skill_path" : "course";
+  if (value === "skill_path" || value === "workbook") return value;
+  return "course";
 }
 
 function stringFormValue(value: FormDataEntryValue | null) {
@@ -696,7 +928,16 @@ function extractText(value: unknown): string {
   if (Array.isArray(value)) return value.map(extractText).filter(Boolean).join("\n");
   if (typeof value === "object") {
     const record = value as Record<string, unknown>;
-    for (const key of ["content", "message", "text", "output", "response", "final"]) {
+    for (const key of [
+      "content",
+      "message",
+      "text",
+      "output",
+      "response",
+      "final",
+      "data",
+      "payload",
+    ]) {
       const text = extractText(record[key]);
       if (text) return text;
     }

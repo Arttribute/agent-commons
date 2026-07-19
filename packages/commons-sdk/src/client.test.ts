@@ -92,6 +92,19 @@ describe('client.agents', () => {
     expect(url).toBe('http://api.test/v1/agents/a1');
     expect(opts.method).toBe('PUT');
   });
+
+  it('submitCliToolResult — POSTs the result with client authorization', async () => {
+    const fetch = makeFetch({ data: { accepted: true } });
+    await makeClient(fetch).agents.submitCliToolResult('request-1', '{"ok":true}');
+    const [url, opts] = fetch.mock.calls[0];
+    expect(url).toBe('http://api.test/v1/agents/cli-tool-result');
+    expect(opts.method).toBe('POST');
+    expect(opts.headers.Authorization).toBe('Bearer test-key');
+    expect(JSON.parse(opts.body)).toEqual({
+      requestId: 'request-1',
+      result: '{"ok":true}',
+    });
+  });
 });
 
 // ── persistent computer ──────────────────────────────────────────────────────

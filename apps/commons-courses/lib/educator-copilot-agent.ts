@@ -1,6 +1,7 @@
 import { createHash } from "crypto";
-import type { CommonsClient } from "@agent-commons/sdk";
+import type { CommonsClient, CreateAgentParams } from "@agent-commons/sdk";
 import { getAgentCommonsClient } from "@/lib/agent-commons";
+import { platformServiceToken } from "@/lib/platform-service-token";
 import {
   EDUCATOR_COPILOT_PEDAGOGY,
   EDUCATOR_COPILOT_SAFETY,
@@ -14,12 +15,27 @@ export type CopilotUser = {
   email?: string | null;
   name?: string | null;
   role?: "learner" | "educator" | "admin";
+  accessToken?: string;
+  accessTokenError?: string;
+  identityUserId?: string;
+  identityWorkspaceId?: string;
 };
+
+export type CopilotConnectionStatus =
+  | "ready"
+  | "account_unlinked"
+  | "reauthorization_required"
+  | "service_unavailable"
+  | "provisioning_failed";
 
 export type CopilotProfileResult = {
   profile: IEducatorCopilotPreference;
   client: CommonsClient | null;
   agentReady: boolean;
+  connectionStatus: CopilotConnectionStatus;
+  connectionMessage?: string;
+  principalId?: string;
+  platformAccessToken?: string;
 };
 
 const DEFAULT_COPILOT_NAME = "Educator Copilot";
@@ -92,6 +108,8 @@ export function buildCopilotInstructions({
     [
       "Memory and personalization:",
       "- When the educator states a durable preference (tone, structure, quiz style, pacing, terminology) or an important fact about their teaching, save it with remember so future sessions honor it.",
+      "- Notice recurring editing choices and teaching patterns. Once a pattern is clear, save a short, specific procedural memory instead of making the educator repeat it.",
+      "- Recall relevant memories before substantial drafting and never treat a one-off request as a permanent preference unless the educator indicates it should persist.",
       "- Apply remembered preferences without being asked again.",
     ].join("\n"),
 
@@ -108,7 +126,11 @@ export function buildCopilotInstructions({
     .join("\n\n");
 }
 
-function buildAgentConfig(profile: IEducatorCopilotPreference, user: CopilotUser) {
+function buildAgentConfig(
+  profile: IEducatorCopilotPreference,
+  user: CopilotUser,
+  principalId: string
+): CreateAgentParams {
   const copilotName = profile.copilotName?.trim() || DEFAULT_COPILOT_NAME;
   const model = resolveCopilotModel(profile);
   return {
@@ -120,13 +142,21 @@ function buildAgentConfig(profile: IEducatorCopilotPreference, user: CopilotUser
     }),
     persona:
       "A sharp, warm, well-organized teaching operations partner. Concrete, direct, and never generic.",
+    owner: principalId,
+    ownerUserId: principalId,
+    workspaceId: user.identityWorkspaceId,
+    metadata: {
+      source: "commonlab_educator_copilot",
+      commonLabUserId: user.id,
+      educatorEmail: user.email || undefined,
+    },
     modelProvider: model.provider as never,
     modelId: model.modelId,
     temperature: 0.3,
   };
 }
 
-function fingerprintConfig(config: Record<string, unknown>) {
+function fingerprintConfig(config: unknown) {
   return createHash("sha256").update(JSON.stringify(config)).digest("hex").slice(0, 32);
 }
 
@@ -144,16 +174,61 @@ export async function ensureEducatorCopilotProfile(
     { new: true, upsert: true }
   )) as IEducatorCopilotPreference;
 
-  const client = getAgentCommonsClient(null, user.id);
-  if (!client) {
-    return { profile, client: null, agentReady: false };
+  const principalId = user.identityUserId?.trim();
+  if (!principalId) {
+    return {
+      profile,
+      client: null,
+      agentReady: false,
+      connectionStatus: "account_unlinked",
+      connectionMessage:
+        "Link your Commons account to give this educator copilot its own agent, memory, and connected tools.",
+    };
   }
 
-  const config = buildAgentConfig(profile, user);
+  const platformAccessToken =
+    user.accessToken ||
+    (await platformServiceToken(
+      "agent_commons",
+      "agents:read agents:write agents:run"
+    ));
+  const client = getAgentCommonsClient(platformAccessToken, principalId);
+  if (!client || !platformAccessToken) {
+    return {
+      profile,
+      client: null,
+      agentReady: false,
+      connectionStatus: user.accessTokenError
+        ? "reauthorization_required"
+        : "service_unavailable",
+      connectionMessage: user.accessTokenError
+        ? "Reconnect your Commons account so the copilot can access your agent again."
+        : "The Commons agent service is temporarily unavailable for this account.",
+      principalId,
+    };
+  }
+
+  if (profile.agentOwnerId && profile.agentOwnerId !== principalId) {
+    profile.agentId = undefined;
+    profile.agentConfigFingerprint = undefined;
+  }
+
+  const config = buildAgentConfig(profile, user, principalId);
   const fingerprint = fingerprintConfig(config);
 
-  if (profile.agentId && profile.agentConfigFingerprint === fingerprint) {
-    return { profile, client, agentReady: true };
+  if (
+    profile.agentId &&
+    profile.agentOwnerId === principalId &&
+    profile.agentConfigFingerprint === fingerprint
+  ) {
+    return {
+      profile,
+      client,
+      agentReady: true,
+      connectionStatus: "ready",
+      principalId,
+      platformAccessToken,
+    };
   }
 
   try {
@@ -169,12 +244,29 @@ export async function ensureEducatorCopilotProfile(
       const created = await client.agents.create(config);
       profile.agentId = created.data.agentId;
     }
+    profile.agentOwnerId = principalId;
     profile.agentConfigFingerprint = fingerprint;
     await profile.save();
-    return { profile, client, agentReady: true };
+    return {
+      profile,
+      client,
+      agentReady: true,
+      connectionStatus: "ready",
+      principalId,
+      platformAccessToken,
+    };
   } catch (error) {
     console.error("[educator-copilot] agent provisioning failed:", error);
-    return { profile, client, agentReady: false };
+    return {
+      profile,
+      client,
+      agentReady: false,
+      connectionStatus: "provisioning_failed",
+      connectionMessage:
+        "Your educator agent could not be prepared just now. Please retry in a moment.",
+      principalId,
+      platformAccessToken,
+    };
   }
 }
 

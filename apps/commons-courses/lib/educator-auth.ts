@@ -9,6 +9,10 @@ export type EducatorSession = {
   userId: string;
   email?: string | null;
   role: "learner" | "educator" | "admin";
+  accessToken?: string;
+  accessTokenError?: string;
+  identityUserId?: string;
+  identityWorkspaceId?: string;
 };
 
 function normalizeEmail(email?: string | null) {
@@ -64,8 +68,12 @@ export async function requireEducator() {
 
   await connectDB();
   const user = (await User.findById(session.user.id)
-    .select("role")
-    .lean()) as { role?: "learner" | "educator" | "admin" } | null;
+    .select("role identityUserId identityWorkspaceId")
+    .lean()) as {
+    role?: "learner" | "educator" | "admin";
+    identityUserId?: string;
+    identityWorkspaceId?: string;
+  } | null;
   const role = user?.role || session.user.role || "learner";
   if (role !== "educator" && role !== "admin") {
     return {
@@ -83,6 +91,13 @@ export async function requireEducator() {
       userId: session.user.id,
       email: session.user.email,
       role,
+      accessToken: session.accessToken,
+      accessTokenError: session.accessTokenError,
+      identityUserId: session.user.identityUserId || user?.identityUserId,
+      identityWorkspaceId:
+        session.user.identityWorkspaceId ||
+        session.user.workspaceId ||
+        user?.identityWorkspaceId,
     } satisfies EducatorSession,
   };
 }
@@ -99,12 +114,23 @@ export async function requireEducatorCourse(slug: string) {
 
   await connectDB();
   const user = (await User.findById(session.user.id)
-    .select("role")
-    .lean()) as { role?: "learner" | "educator" | "admin" } | null;
+    .select("role identityUserId identityWorkspaceId")
+    .lean()) as {
+    role?: "learner" | "educator" | "admin";
+    identityUserId?: string;
+    identityWorkspaceId?: string;
+  } | null;
   const currentSession = {
     userId: session.user.id,
     email: session.user.email,
     role: user?.role || session.user.role || "learner",
+    accessToken: session.accessToken,
+    accessTokenError: session.accessTokenError,
+    identityUserId: session.user.identityUserId || user?.identityUserId,
+    identityWorkspaceId:
+      session.user.identityWorkspaceId ||
+      session.user.workspaceId ||
+      user?.identityWorkspaceId,
   } satisfies EducatorSession;
 
   const course = await Course.findOne({ slug });

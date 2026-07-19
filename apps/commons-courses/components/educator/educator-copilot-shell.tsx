@@ -2,6 +2,7 @@
 
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
+import { signIn } from "next-auth/react";
 import {
   Bot,
   BookOpen,
@@ -425,7 +426,11 @@ export function EducatorCopilotShell() {
                   <p className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-[0.2em] text-slate-400">
                     {profile?.copilotName || "Educator copilot"}
                     <span
-                      title={profile?.agentReady ? "Connected" : "Limited mode"}
+                      title={
+                        profile?.agentReady
+                          ? "Connected to your Commons account"
+                          : profile?.connectionMessage || "Connection required"
+                      }
                       className={cn(
                         "inline-block h-1.5 w-1.5 rounded-full",
                         profile?.agentReady ? "bg-emerald-500" : "bg-amber-400"
@@ -601,7 +606,7 @@ export function EducatorCopilotShell() {
                       ref={fileInputRef}
                       type="file"
                       multiple
-                      accept=".pdf,.png,.jpg,.jpeg,.webp,.md,.markdown,.txt,.csv,.json,application/pdf,image/png,image/jpeg,image/webp,text/*"
+                      accept=".pdf,.docx,.xlsx,.xls,.png,.jpg,.jpeg,.webp,.md,.markdown,.txt,.csv,.json,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,image/png,image/jpeg,image/webp,text/*"
                       className="hidden"
                       onChange={(event) => {
                         setFiles((current) => [
@@ -1047,6 +1052,34 @@ function SettingsPanel({
 
   return (
     <div className="flex-1 space-y-6 overflow-y-auto p-4">
+      {profile && !profile.agentReady ? (
+        <section className="rounded-lg border border-amber-200 bg-amber-50 p-4">
+          <p className="text-sm font-black text-amber-950">
+            {profile.connectionStatus === "account_unlinked"
+              ? "Link your Commons account"
+              : "Reconnect your Commons account"}
+          </p>
+          <p className="mt-1 text-xs leading-5 text-amber-800">
+            {profile.connectionMessage ||
+              "Your personal educator agent needs access to your Commons account."}
+          </p>
+          {(profile.connectionStatus === "account_unlinked" ||
+            profile.connectionStatus === "reauthorization_required") && (
+            <button
+              type="button"
+              onClick={() =>
+                signIn("commons", {
+                  callbackUrl: `${window.location.pathname}${window.location.search}`,
+                })
+              }
+              className="mt-3 rounded-md bg-amber-950 px-3 py-2 text-xs font-bold text-white"
+            >
+              {profile.identityLinked ? "Reconnect Commons" : "Link Commons account"}
+            </button>
+          )}
+        </section>
+      ) : null}
+
       <section>
         <p className="mb-3 text-xs font-black uppercase tracking-widest text-slate-500">
           Action mode

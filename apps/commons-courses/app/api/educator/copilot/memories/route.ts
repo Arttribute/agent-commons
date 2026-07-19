@@ -7,6 +7,10 @@ async function copilotContext(sessionUser: {
   userId: string;
   email?: string | null;
   role: "learner" | "educator" | "admin";
+  accessToken?: string;
+  accessTokenError?: string;
+  identityUserId?: string;
+  identityWorkspaceId?: string;
 }) {
   const userDoc = (await User.findById(sessionUser.userId)
     .select("name")
@@ -16,6 +20,10 @@ async function copilotContext(sessionUser: {
     email: sessionUser.email,
     name: userDoc?.name,
     role: sessionUser.role,
+    accessToken: sessionUser.accessToken,
+    accessTokenError: sessionUser.accessTokenError,
+    identityUserId: sessionUser.identityUserId,
+    identityWorkspaceId: sessionUser.identityWorkspaceId,
   });
 }
 

@@ -189,6 +189,16 @@ export class CommonsClient {
       stream: (params: RunParams): AsyncGenerator<StreamEvent> =>
         this._streamAgentRun(params),
 
+      /** Resume a streamed run after executing a caller-owned CLI tool. */
+      submitCliToolResult: (
+        requestId: string,
+        result: string,
+      ): Promise<{ data?: unknown; message?: string }> =>
+        this.request("POST", "/v1/agents/cli-tool-result", {
+          requestId,
+          result,
+        }),
+
       // ── Heartbeat ─────────────────────────────────────────────────────────
 
       /** Get the current heartbeat status for an agent. */

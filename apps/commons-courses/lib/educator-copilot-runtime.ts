@@ -9,6 +9,7 @@ import {
 import { buildManagedCoursesFilter } from "@/lib/educator-auth";
 import Course from "@/models/Course";
 import Enrollment from "@/models/Enrollment";
+import EducatorProfile from "@/models/EducatorProfile";
 import type { IEducatorCopilotMaterial } from "@/models/EducatorCopilotSession";
 import type {
   EducatorCopilotAction,
@@ -36,6 +37,7 @@ const TOOL_LABELS: Record<string, string> = {
   list_students: "Looking up students",
   get_student: "Looking up a student",
   get_course_analytics: "Crunching analytics",
+  list_assignments: "Checking assignments and reviews",
   read_attachment: "Reading attached file",
   update_lesson: "Drafting a lesson edit",
   add_lesson: "Drafting a new lesson",
@@ -63,12 +65,14 @@ export async function buildWorkspaceSnapshot({
   pageContext,
   materials,
   priorConversation,
+  memories,
 }: {
   user: CopilotUser;
   actionMode: EducatorCopilotActionMode;
   pageContext?: EducatorCopilotPageContext;
   materials: IEducatorCopilotMaterial[];
   priorConversation?: Array<{ role: string; content: string }>;
+  memories?: Array<{ content: string; type?: string; savedAt?: string }>;
 }) {
   const filter =
     user.role === "admin"
@@ -83,6 +87,16 @@ export async function buildWorkspaceSnapshot({
     .sort({ updatedAt: -1 })
     .limit(40)
     .lean();
+  const educatorProfile = (await EducatorProfile.findOne({ userId: user.id })
+    .select("displayName bio organization plan")
+    .lean()) as
+    | {
+        displayName?: string;
+        bio?: string;
+        organization?: string;
+        plan?: string;
+      }
+    | null;
   const enrollmentCounts = await Enrollment.aggregate([
     { $match: { courseId: { $in: courses.map((c) => c._id) } } },
     { $group: { _id: "$courseId", students: { $sum: 1 } } },
@@ -101,6 +115,20 @@ export async function buildWorkspaceSnapshot({
   lines.push(
     `Educator: ${user.name || "Unknown"}${user.email ? ` <${user.email}>` : ""} (role: ${user.role || "educator"})`
   );
+  if (educatorProfile) {
+    lines.push(
+      `Teaching profile: ${[
+        educatorProfile.displayName,
+        educatorProfile.organization,
+        educatorProfile.plan ? `${educatorProfile.plan} plan` : undefined,
+      ]
+        .filter(Boolean)
+        .join(" · ")}`
+    );
+    if (educatorProfile.bio) {
+      lines.push(`Teaching bio: ${truncate(educatorProfile.bio, 600)}`);
+    }
+  }
   lines.push(
     `Action mode: ${actionMode.toUpperCase()} — ${
       actionMode === "auto"
@@ -173,6 +201,16 @@ export async function buildWorkspaceSnapshot({
     }
   }
 
+  if (memories?.length) {
+    lines.push("");
+    lines.push("Remembered educator preferences and context (apply when relevant):");
+    for (const memory of memories.slice(0, 12)) {
+      lines.push(
+        `- ${truncate(memory.content, 500)}${memory.type ? ` [${memory.type}]` : ""}`
+      );
+    }
+  }
+
   if (priorConversation?.length) {
     lines.push("");
     lines.push("Earlier conversation in this session (before it was linked to you):");
@@ -234,6 +272,7 @@ export async function streamEducatorCopilotTurn({
     pageContext,
     materials,
     priorConversation,
+    memories: await retrieveEducatorMemories(client, agentId, message),
   });
 
   let reply = "";
@@ -242,7 +281,7 @@ export async function streamEducatorCopilotTurn({
   const stream = client.agents.stream({
     agentId,
     sessionId: agentSessionId,
-    initiatorId: user.id,
+    initiatorId: user.identityUserId || user.id,
     messages: [{ role: "user", content: message }],
     cliContext,
     cliTools: educatorCopilotToolCatalog.map((tool) => ({
@@ -284,7 +323,7 @@ export async function streamEducatorCopilotTurn({
       await onEvent({ type: "activity", activity: { ...entry } });
 
       if (requestId) {
-        await postCliToolResult(requestId, result);
+        await postCliToolResult(client, requestId, result);
       }
     } else if (event.type === "toolStart" || event.type === "tool") {
       const toolName = event.toolName || event.tool || event.name;
@@ -325,24 +364,36 @@ export async function streamEducatorCopilotTurn({
 }
 
 /** Post a locally-executed tool result back so the waiting agent run continues. */
-async function postCliToolResult(requestId: string, result: string) {
-  const baseUrl = (
-    process.env.AGENT_COMMONS_API_URL ||
-    process.env.NEXT_PUBLIC_AGENT_COMMONS_API_URL ||
-    "https://api.agentcommons.io"
-  ).replace(/\/$/, "");
-  const apiKey = process.env.AGENT_COMMONS_API_KEY;
+async function postCliToolResult(
+  client: CommonsClient,
+  requestId: string,
+  result: string
+) {
   try {
-    await fetch(`${baseUrl}/v1/agents/cli-tool-result`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}),
-      },
-      body: JSON.stringify({ requestId, result }),
-    });
+    await client.agents.submitCliToolResult(requestId, result);
   } catch (error) {
     console.error("[educator-copilot] failed to post tool result:", error);
+  }
+}
+
+async function retrieveEducatorMemories(
+  client: CommonsClient,
+  agentId: string,
+  query: string
+) {
+  try {
+    const result = await client.memory.retrieve(
+      agentId,
+      query.trim() || "educator teaching preferences",
+      12
+    );
+    return (result.data || []).map((memory) => ({
+      content: memory.content,
+      type: memory.memoryType,
+      savedAt: memory.createdAt,
+    }));
+  } catch {
+    return [];
   }
 }
 

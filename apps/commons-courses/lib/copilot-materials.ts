@@ -136,6 +136,12 @@ function extractPdfStrings(value: string) {
 
 export function guessMimeType(name: string) {
   if (/\.pdf$/i.test(name)) return "application/pdf";
+  if (/\.docx$/i.test(name)) {
+    return "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+  }
+  if (/\.xlsx?$/i.test(name)) {
+    return "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+  }
   if (/\.(png|jpg|jpeg|webp)$/i.test(name)) return "image/*";
   if (/\.(md|markdown|txt|csv|json)$/i.test(name)) return "text/plain";
   return "application/octet-stream";

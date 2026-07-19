@@ -14,6 +14,10 @@ async function loadCopilotUser(sessionUser: {
   userId: string;
   email?: string | null;
   role: "learner" | "educator" | "admin";
+  accessToken?: string;
+  accessTokenError?: string;
+  identityUserId?: string;
+  identityWorkspaceId?: string;
 }): Promise<CopilotUser> {
   const userDoc = (await User.findById(sessionUser.userId)
     .select("name")
@@ -23,20 +27,33 @@ async function loadCopilotUser(sessionUser: {
     email: sessionUser.email,
     name: userDoc?.name,
     role: sessionUser.role,
+    accessToken: sessionUser.accessToken,
+    accessTokenError: sessionUser.accessTokenError,
+    identityUserId: sessionUser.identityUserId,
+    identityWorkspaceId: sessionUser.identityWorkspaceId,
   };
 }
 
-function serializeProfile(profile: IEducatorCopilotPreference, agentReady: boolean) {
+function serializeProfile(
+  profile: IEducatorCopilotPreference,
+  connection: Pick<
+    Awaited<ReturnType<typeof ensureEducatorCopilotProfile>>,
+    "agentReady" | "connectionStatus" | "connectionMessage" | "principalId"
+  >
+) {
   const model = resolveCopilotModel(profile);
   return {
     actionMode: profile.actionMode || "manual",
     agentId: profile.agentId,
-    agentReady,
+    agentReady: connection.agentReady,
     copilotName: profile.copilotName || "Educator Copilot",
     customInstructions: profile.customInstructions || "",
     modelProvider: profile.modelProvider || "",
     modelId: profile.modelId || "",
     effectiveModel: `${model.provider}/${model.modelId}`,
+    identityLinked: Boolean(connection.principalId),
+    connectionStatus: connection.connectionStatus,
+    connectionMessage: connection.connectionMessage,
   };
 }
 
@@ -45,11 +62,12 @@ export async function GET(req: NextRequest) {
   if (result.error || !result.session) return result.error;
 
   const user = await loadCopilotUser(result.session);
-  const { profile, client, agentReady } = await ensureEducatorCopilotProfile(user);
+  const connection = await ensureEducatorCopilotProfile(user);
+  const { profile, client } = connection;
 
   const full = req.nextUrl.searchParams.get("full") === "1";
   if (!full || !client || !profile.agentId) {
-    return NextResponse.json({ profile: serializeProfile(profile, agentReady) });
+    return NextResponse.json({ profile: serializeProfile(profile, connection) });
   }
 
   const [modelsResult, memoryStatsResult] = await Promise.allSettled([
@@ -58,7 +76,7 @@ export async function GET(req: NextRequest) {
   ]);
 
   return NextResponse.json({
-    profile: serializeProfile(profile, agentReady),
+    profile: serializeProfile(profile, connection),
     models:
       modelsResult.status === "fulfilled"
         ? (modelsResult.value.data || []).map((model: Record<string, unknown>) => ({
@@ -109,7 +127,8 @@ export async function PATCH(req: NextRequest) {
 
   // Re-provision so instruction/model changes reach the platform agent.
   const user = await loadCopilotUser(result.session);
-  const { profile, agentReady } = await ensureEducatorCopilotProfile(user);
+  const connection = await ensureEducatorCopilotProfile(user);
+  const { profile } = connection;
 
-  return NextResponse.json({ profile: serializeProfile(profile, agentReady) });
+  return NextResponse.json({ profile: serializeProfile(profile, connection) });
 }

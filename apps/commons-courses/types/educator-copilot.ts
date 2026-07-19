@@ -159,6 +159,14 @@ export type EducatorCopilotProfile = {
   modelProvider?: string;
   modelId?: string;
   effectiveModel?: string;
+  identityLinked: boolean;
+  connectionStatus:
+    | "ready"
+    | "account_unlinked"
+    | "reauthorization_required"
+    | "service_unavailable"
+    | "provisioning_failed";
+  connectionMessage?: string;
 };
 
 export type EducatorCopilotMemory = {

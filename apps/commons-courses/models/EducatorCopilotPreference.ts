@@ -9,6 +9,8 @@ export interface IEducatorCopilotPreference extends Document {
   userId: mongoose.Types.ObjectId;
   actionMode: "manual" | "auto";
   agentId?: string;
+  /** Commons Identity principal that owns the dedicated agent. */
+  agentOwnerId?: string;
   copilotName?: string;
   customInstructions?: string;
   modelProvider?: string;
@@ -28,6 +30,7 @@ const EducatorCopilotPreferenceSchema = new Schema<IEducatorCopilotPreference>(
       default: "manual",
     },
     agentId: { type: String, trim: true },
+    agentOwnerId: { type: String, trim: true },
     copilotName: { type: String, trim: true },
     customInstructions: { type: String, trim: true, maxlength: 6000 },
     modelProvider: { type: String, trim: true },

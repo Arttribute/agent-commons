@@ -109,6 +109,16 @@ export const educatorCopilotToolCatalog: CopilotToolDefinition[] = [
     },
   },
   {
+    name: "list_assignments",
+    description:
+      "List assignments across managed courses, including due dates, publication state, submission totals, and pending reviews. Scope with courseSlug when needed.",
+    parameters: {
+      type: "object",
+      properties: { courseSlug: { type: "string" } },
+      required: [],
+    },
+  },
+  {
     name: "read_attachment",
     description:
       "Read the full extracted text of a file the educator uploaded in this chat session. Use whenever the educator refers to an uploaded file.",
@@ -347,6 +357,8 @@ async function runTool(
       return toolGetStudent(ctx, args);
     case "get_course_analytics":
       return toolCourseAnalytics(ctx, args);
+    case "list_assignments":
+      return toolListAssignments(ctx, args);
     case "read_attachment":
       return toolReadAttachment(ctx, args);
     case "update_lesson":
@@ -664,6 +676,64 @@ async function toolCourseAnalytics(ctx: CopilotToolContext, args: Record<string,
       courseSlug: course.slug,
       status: course.published ? "published" : "draft",
       ...(metrics.get(String(course._id)) || {}),
+    })),
+  };
+}
+
+async function toolListAssignments(
+  ctx: CopilotToolContext,
+  args: Record<string, unknown>
+) {
+  const slug = cleanString(args.courseSlug);
+  const courses = await Course.find({
+    ...(slug ? { slug } : {}),
+    ...managedFilter(ctx.user),
+  })
+    .select("_id title slug")
+    .lean();
+  if (!courses.length) {
+    return { error: slug ? `No managed course "${slug}".` : "No managed courses." };
+  }
+  const courseById = new Map(
+    courses.map((course) => [String(course._id), { title: course.title, slug: course.slug }])
+  );
+  const assignments = await Assignment.find({
+    courseId: { $in: courses.map((course) => course._id) },
+  })
+    .sort({ dueAt: 1, updatedAt: -1 })
+    .limit(100)
+    .lean();
+  const submissionCounts = await Submission.aggregate([
+    { $match: { assignmentId: { $in: assignments.map((item) => item._id) } } },
+    {
+      $group: {
+        _id: "$assignmentId",
+        submissions: { $sum: 1 },
+        pendingReview: {
+          $sum: { $cond: [{ $eq: ["$status", "submitted"] }, 1, 0] },
+        },
+      },
+    },
+  ]);
+  const counts = new Map(
+    submissionCounts.map((item) => [String(item._id), item])
+  );
+  return {
+    total: assignments.length,
+    assignments: assignments.map((assignment) => ({
+      id: String(assignment._id),
+      course: courseById.get(String(assignment.courseId)),
+      title: assignment.title,
+      instructions: truncate(assignment.instructions, 600),
+      moduleIndex: assignment.moduleIndex,
+      lessonIndex: assignment.lessonIndex,
+      dueAt: assignment.dueAt,
+      points: assignment.points,
+      published: assignment.published,
+      acceptsText: assignment.acceptsText,
+      acceptsUrl: assignment.acceptsUrl,
+      submissions: counts.get(String(assignment._id))?.submissions || 0,
+      pendingReview: counts.get(String(assignment._id))?.pendingReview || 0,
     })),
   };
 }

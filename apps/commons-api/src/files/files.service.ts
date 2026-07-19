@@ -94,7 +94,7 @@ const DEFAULT_MAX_TEXT_CHARS = 250_000;
 const DEFAULT_PREVIEW_CHARS = 2_000;
 const DEFAULT_MAX_READ_CHARS = 12_000;
 const ABSOLUTE_MAX_READ_CHARS = 50_000;
-const DEFAULT_PDF_RENDER_PAGES = 3;
+const DEFAULT_PDF_RENDER_PAGES = 12;
 const DEFAULT_SIGNED_URL_SECONDS = 60 * 30;
 
 @Injectable()
@@ -651,7 +651,20 @@ export class FilesService {
         return {
           text: '',
           metadata,
-          artifacts: [],
+          // Keep a visual artifact alongside the original blob. Agent runs use
+          // artifact URLs for multimodal input; without this, an attached image
+          // was stored successfully but remained invisible to the model.
+          artifacts: [
+            {
+              kind: 'image',
+              fileName: originalName,
+              mimeType,
+              buffer,
+              width: metadata.width,
+              height: metadata.height,
+              metadata: { source: 'uploaded-image' },
+            },
+          ],
           status: 'ready',
         };
       }

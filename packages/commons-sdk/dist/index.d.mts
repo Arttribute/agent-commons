@@ -1089,6 +1089,11 @@ declare class CommonsClient {
          * }
          */
         stream: (params: RunParams) => AsyncGenerator<StreamEvent>;
+        /** Resume a streamed run after executing a caller-owned CLI tool. */
+        submitCliToolResult: (requestId: string, result: string) => Promise<{
+            data?: unknown;
+            message?: string;
+        }>;
         /** Get the current heartbeat status for an agent. */
         getAutonomy: (agentId: string) => Promise<{
             data: {

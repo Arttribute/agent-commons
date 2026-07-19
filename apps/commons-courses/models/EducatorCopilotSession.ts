@@ -37,6 +37,8 @@ export interface IEducatorCopilotSession extends Document {
   materials: IEducatorCopilotMaterial[];
   /** Agent Commons session id backing this chat (holds the model-side history). */
   agentSessionId?: string;
+  /** Dedicated agent this remote session belongs to (supports account relinking). */
+  agentId?: string;
   archived: boolean;
   createdAt: Date;
   updatedAt: Date;
@@ -81,6 +83,7 @@ const EducatorCopilotSessionSchema = new Schema<IEducatorCopilotSession>(
     messages: { type: [CopilotMessageSchema], default: [] },
     materials: { type: [CopilotMaterialSchema], default: [] },
     agentSessionId: { type: String, trim: true },
+    agentId: { type: String, trim: true },
     archived: { type: Boolean, default: false },
   },
   { timestamps: true }
