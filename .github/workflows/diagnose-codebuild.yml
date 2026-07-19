@@ -131,11 +131,25 @@ jobs:
                     --max-results 20 \
                     --query '{serviceDeployments:serviceDeployments[*].{arn:serviceDeploymentArn,status:status,statusReason:statusReason,createdAt:createdAt,startedAt:startedAt,finishedAt:finishedAt,targetRevision:targetServiceRevisionArn}}' \
                     --output json)
+                  available_secret_keys=$(aws secretsmanager get-secret-value \
+                    --secret-id "$RUNTIME_SECRET_ARN" \
+                    --query SecretString \
+                    --output text | jq -c 'keys | sort')
+                  required_secret_keys=$(sed \
+                    -e '/^[[:space:]]*#/d' \
+                    -e '/^[[:space:]]*$/d' \
+                    infra/aws/runtime-secret-keys.txt | jq -Rsc 'split("\n") | map(select(length > 0)) | sort')
+                  missing_secret_keys=$(jq -nc \
+                    --argjson required "$required_secret_keys" \
+                    --argjson available "$available_secret_keys" \
+                    '$required - $available')
                   jq -n \
                     --argjson stack "$stack_json" \
                     --argjson service "$service_json" \
                     --argjson deploymentList "$deployment_list" \
-                    '{stack: $stack, service: $service, deploymentList: $deploymentList}' \
+                    --argjson availableSecretKeys "$available_secret_keys" \
+                    --argjson missingSecretKeys "$missing_secret_keys" \
+                    '{stack: $stack, service: $service, deploymentList: $deploymentList, runtimeSecret: {availableKeys: $availableSecretKeys, missingKeys: $missingSecretKeys}}' \
                     > /tmp/service-deployment.json
                   curl --fail-with-body --silent --show-error -X PUT -H 'Content-Type:' --data-binary @/tmp/service-deployment.json "$DIAGNOSTIC_PUT_URL"
           YAML
