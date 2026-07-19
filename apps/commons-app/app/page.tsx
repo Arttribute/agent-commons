@@ -23,25 +23,24 @@ import { HeroComposer } from "@/components/landing/hero-composer";
 import { IntegrationCloud } from "@/components/landing/integration-cloud";
 import { LandingNav } from "@/components/landing/landing-nav";
 import { ModelCloud } from "@/components/landing/model-cloud";
+import { TeamVisual } from "@/components/landing/team-visual";
 
 const GITHUB_URL = "https://github.com/Arttribute/agent-commons";
 const START_URL = "/login?callbackUrl=/studio/agents";
 
-function Eyebrow({ children }: { children: React.ReactNode }) {
+function Highlight({ children }: { children: React.ReactNode }) {
   return (
-    <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-stone-500">
+    <span className="inline-block rounded-md border border-teal-300/70 bg-teal-200 px-[0.18em] leading-[1.15] text-stone-950">
       {children}
-    </p>
+    </span>
   );
 }
 
 function SectionIntro({
-  eyebrow,
   title,
   body,
   align = "left",
 }: {
-  eyebrow: string;
   title: React.ReactNode;
   body: React.ReactNode;
   align?: "left" | "center";
@@ -52,12 +51,11 @@ function SectionIntro({
         align === "center" ? "mx-auto max-w-3xl text-center" : "max-w-2xl"
       }
     >
-      <Eyebrow>{eyebrow}</Eyebrow>
-      <h2 className="mt-4 text-[1.9rem] font-medium leading-[1.1] tracking-[-0.035em] text-stone-950 sm:text-[2.25rem] lg:text-[2.5rem]">
+      <h2 className="text-[1.6rem] font-medium leading-[1.15] tracking-[-0.03em] text-stone-950 sm:text-[1.85rem]">
         {title}
       </h2>
       <p
-        className={`mt-4 text-base leading-7 text-stone-600 ${
+        className={`mt-3 text-[15px] leading-7 text-stone-600 sm:text-base ${
           align === "center" ? "mx-auto max-w-3xl" : "max-w-xl"
         }`}
       >
@@ -95,17 +93,13 @@ export default function Home() {
           <div className="absolute inset-0 opacity-35 [background-image:radial-gradient(#d6d3d1_0.8px,transparent_0.8px)] [background-size:22px_22px]" />
           <div className="pointer-events-none absolute left-[8%] top-32 h-32 w-32 rounded-full bg-brand-cyan/20 blur-3xl" />
           <div className="pointer-events-none absolute right-[7%] top-24 h-40 w-40 rounded-full bg-brand-lilac/20 blur-3xl" />
-          <div className="relative mx-auto max-w-7xl px-5 pb-20 pt-20 text-center sm:pb-28 sm:pt-28 lg:px-8 lg:pt-32">
-            <h1 className="mx-auto max-w-6xl text-[2.5rem] font-medium leading-[1.02] tracking-[-0.045em] text-stone-950 sm:text-[3.2rem] lg:whitespace-nowrap lg:text-[3.7rem]">
-              One home for all your{" "}
-              <span className="inline-block rounded-md bg-teal-200 px-[0.1em] leading-[1.02]">
-                agents
-              </span>
-              .
+          <div className="relative mx-auto max-w-7xl px-5 pb-16 pt-16 text-center sm:pb-24 sm:pt-24 lg:px-8 lg:pt-28">
+            <h1 className="mx-auto max-w-5xl text-[2.2rem] font-medium leading-[1.05] tracking-[-0.04em] text-stone-950 sm:text-[2.8rem] lg:whitespace-nowrap lg:text-[3.2rem]">
+              One home for all your <Highlight>agents</Highlight>.
             </h1>
-            <p className="mx-auto mt-6 max-w-2xl text-base leading-7 text-stone-600 sm:text-lg sm:leading-8">
-              Create, deploy, and manage AI agents from one clear workspace —
-              with cloud computers, connected tools, and your whole fleet under
+            <p className="mx-auto mt-5 max-w-2xl text-[15px] leading-7 text-stone-600 sm:text-base sm:leading-7">
+              Create, deploy, and manage AI agents from one clear workspace.
+              Cloud computers, connected tools, and your whole fleet under
               control.
             </p>
             <div className="mx-auto mt-10 max-w-[48rem]">
@@ -133,9 +127,8 @@ export default function Home() {
         </section>
 
         <section id="platform" className="border-b border-stone-200">
-          <div className="mx-auto max-w-7xl px-5 py-24 lg:px-8 lg:py-32">
+          <div className="mx-auto max-w-7xl px-5 py-16 lg:px-8 lg:py-24">
             <SectionIntro
-              eyebrow="One connected platform"
               title={
                 <span className="lg:whitespace-nowrap">
                   Everything an agent needs to do real work.
@@ -163,7 +156,7 @@ export default function Home() {
                   color: "bg-brand-cyan/35",
                   title: "Teams and fleets",
                   body: "Put agents into coordinated groups that plan, delegate, share context, and finish larger jobs together.",
-                  href: "#workflows",
+                  href: "#teams",
                 },
                 {
                   icon: Workflow,
@@ -183,14 +176,14 @@ export default function Home() {
                 <a
                   key={item.title}
                   href={item.href}
-                  className="group flex min-h-[260px] flex-col bg-white p-7 transition-colors hover:bg-stone-50 sm:p-8"
+                  className="group flex min-h-[225px] flex-col bg-white p-6 transition-colors hover:bg-stone-50 sm:p-8"
                 >
                   <span
                     className={`flex h-12 w-12 items-center justify-center rounded-2xl ${item.color}`}
                   >
                     <item.icon className="h-5 w-5" />
                   </span>
-                  <h3 className="mt-8 text-lg font-medium tracking-[-0.02em]">
+                  <h3 className="mt-7 text-base font-medium tracking-[-0.015em]">
                     {item.title}
                   </h3>
                   <p className="mt-3 text-sm leading-6 text-stone-600">
@@ -213,7 +206,6 @@ export default function Home() {
           <div className="mx-auto grid max-w-7xl items-center gap-14 px-5 py-24 lg:grid-cols-[0.78fr_1.22fr] lg:px-8 lg:py-32">
             <div>
               <SectionIntro
-                eyebrow="Agent computers"
                 title="A computer for every agent."
                 body="Your agents get a persistent workspace in the cloud. They can use files, run code, browse the web, and keep working when your laptop is closed."
               />
@@ -236,31 +228,45 @@ export default function Home() {
           </div>
         </section>
 
+        <section id="teams" className="scroll-mt-16 border-b border-stone-200">
+          <div className="mx-auto grid max-w-7xl items-center gap-12 px-5 py-16 lg:grid-cols-2 lg:px-8 lg:py-24">
+            <TeamVisual />
+            <div className="lg:pl-8">
+              <SectionIntro
+                title={
+                  <>
+                    Multi-agent <Highlight>teams.</Highlight>
+                  </>
+                }
+                body="Give each agent a clear role. The team shares context, tools, and files, and divides the work."
+              />
+              <CheckList
+                items={[
+                  "A focused role for every agent",
+                  "Shared context, tools, skills, and files",
+                  "Clear ownership and visible progress",
+                ]}
+              />
+            </div>
+          </div>
+        </section>
+
         <section
           id="workflows"
           className="scroll-mt-16 border-b border-stone-200 bg-[#fafaf9]"
         >
-          <div className="mx-auto grid max-w-7xl items-center gap-14 px-5 py-24 lg:grid-cols-[1.15fr_0.85fr] lg:px-8 lg:py-32">
+          <div className="mx-auto grid max-w-7xl items-center gap-12 px-5 py-16 lg:grid-cols-[1.12fr_0.88fr] lg:px-8 lg:py-24">
             <AutomationVisual />
             <div className="lg:pl-6">
               <SectionIntro
-                eyebrow="Teams, workflows, and tasks"
-                title={
-                  <>
-                    One agent is useful. A{" "}
-                    <span className="inline-block rounded-md bg-teal-200 px-[0.1em] leading-[1.08]">
-                      team is powerful.
-                    </span>
-                  </>
-                }
-                body="Wire agents and your tools into multi-agent workflows on one visual canvas, then schedule one-off or recurring tasks they pick up on time. Follow every run and step in when a decision needs a person."
+                title="Workflow automation and scheduled tasks."
+                body="Connect agents, tools, and approvals on one visual canvas. Schedule one-off or recurring tasks and follow every run."
               />
               <CheckList
                 items={[
-                  "Give every agent a focused role",
-                  "Automate across your connected tools",
-                  "Schedule one-off and recurring tasks",
-                  "Watch every run, with approvals where they matter",
+                  "Trigger on schedules, webhooks, or app events",
+                  "Approvals where they matter",
+                  "Every run visible, start to finish",
                 ]}
               />
               <Link
@@ -280,13 +286,10 @@ export default function Home() {
           <div className="mx-auto grid max-w-7xl items-center gap-14 px-5 py-24 lg:grid-cols-[0.82fr_1.18fr] lg:px-8 lg:py-32">
             <div>
               <SectionIntro
-                eyebrow="Tools and integrations"
                 title={
                   <>
                     Plug into the tools you{" "}
-                    <span className="inline-block rounded-md bg-teal-200 px-[0.1em] leading-[1.08]">
-                      already use.
-                    </span>
+                    <Highlight>already use.</Highlight>
                   </>
                 }
                 body="Connect your apps in a couple of clicks. For something custom, bring your own tools with an MCP server or API endpoint."
@@ -306,13 +309,12 @@ export default function Home() {
           id="developers"
           className="scroll-mt-16 border-b border-stone-200 bg-[#fafaf9]"
         >
-          <div className="mx-auto max-w-7xl px-5 py-24 lg:px-8 lg:py-32">
+          <div className="mx-auto max-w-7xl px-5 py-16 lg:px-8 lg:py-24">
             <div className="grid items-center gap-14 lg:grid-cols-[0.92fr_1.08fr]">
               <div>
                 <SectionIntro
-                  eyebrow="CLI and SDK"
                   title="Work from the terminal or your codebase."
-                  body="The agc CLI brings your agents into any shell, and the typed TypeScript SDK puts the whole platform — agents, workflows, computers — a function call away."
+                  body="The agc CLI brings your agents into any shell. The typed TypeScript SDK puts agents, workflows, and computers a function call away."
                 />
                 <a
                   href="https://docs.agentcommons.io/docs"
@@ -330,15 +332,12 @@ export default function Home() {
 
         <section className="border-b border-stone-200">
           <div className="mx-auto max-w-6xl px-5 py-20 text-center lg:px-8 lg:py-24">
-            <h2 className="text-[1.6rem] font-medium tracking-[-0.03em] text-stone-950 sm:text-[1.9rem]">
-              Any model. Any{" "}
-              <span className="inline-block rounded-md bg-teal-200 px-[0.12em] leading-[1.1]">
-                framework.
-              </span>
+            <h2 className="text-[1.5rem] font-medium tracking-[-0.03em] text-stone-950 sm:text-[1.75rem]">
+              Any model. Any <Highlight>framework.</Highlight>
             </h2>
             <p className="mx-auto mt-3 max-w-xl text-sm leading-6 text-stone-600 sm:text-base sm:leading-7">
               Bring models from OpenAI, Anthropic, Google, Mistral, or open
-              weights — and run agents natively or on managed frameworks like
+              weights. Run agents natively or on managed frameworks like
               OpenClaw and Hermes.
             </p>
             <div className="mt-6">
@@ -348,9 +347,8 @@ export default function Home() {
         </section>
 
         <section className="border-b border-stone-200 bg-[#fafaf9]">
-          <div className="mx-auto max-w-7xl px-5 py-24 lg:px-8 lg:py-32">
+          <div className="mx-auto max-w-7xl px-5 py-16 lg:px-8 lg:py-24">
             <SectionIntro
-              eyebrow="All the AI fun in one safe place"
               title="From a quick idea to a system that runs every day."
               body="Prototype a website, talk with an agent live, teach a skill, or automate a whole process. It all happens in one organized place, with a clear view of what is running and the ability to step in."
               align="center"
@@ -411,11 +409,10 @@ export default function Home() {
             <div className="absolute left-[10%] top-16 h-40 w-40 rounded-full bg-brand-cyan/10 blur-3xl" />
             <div className="absolute bottom-0 right-[10%] h-40 w-40 rounded-full bg-brand-lilac/10 blur-3xl" />
             <div className="relative">
-              <Eyebrow>Ready when you are</Eyebrow>
-              <h2 className="mx-auto mt-5 max-w-4xl text-[2.1rem] font-medium leading-[1.08] tracking-[-0.04em] sm:text-[2.6rem] lg:text-[3rem]">
+              <h2 className="mx-auto mt-2 max-w-4xl text-[1.8rem] font-medium leading-[1.1] tracking-[-0.035em] sm:text-[2.2rem] lg:text-[2.4rem]">
                 Build your first agent. Grow into a fleet.
               </h2>
-              <p className="mx-auto mt-6 max-w-xl text-lg leading-8 text-stone-400">
+              <p className="mx-auto mt-5 max-w-xl text-[15px] leading-7 text-stone-400 sm:text-base">
                 Start small, see the value, and add more capability as your work
                 grows.
               </p>

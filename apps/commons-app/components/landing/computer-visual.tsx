@@ -196,7 +196,7 @@ function TerminalWindow() {
           </p>
           <p>✓ Generated 14 static pages</p>
           <p className="text-zinc-500">
-            route / — 92.4 kB · route /projects — 87.1 kB
+            route / 92.4 kB · route /projects 87.1 kB
           </p>
           <p className="mt-3 text-zinc-200">
             <span className="text-emerald-400">❯</span> pnpm run deploy

@@ -18,13 +18,11 @@ const nodeTypes = {
 
 const edgeTypes = { colored: ColoredEdge };
 
-const MASCOT = "/mascots/builder-point.png";
-
 const nodes: Node[] = [
   {
     id: "gmail",
     type: "tool",
-    position: { x: 0, y: 130 },
+    position: { x: 0, y: 110 },
     data: {
       label: "New email",
       nodeType: "tool",
@@ -33,45 +31,21 @@ const nodes: Node[] = [
     },
   },
   {
-    id: "lead",
+    id: "agent",
     type: "agent_processor",
-    position: { x: 215, y: 130 },
+    position: { x: 230, y: 110 },
     data: {
-      label: "Lead plans",
+      label: "Scout triages",
       nodeType: "agent_processor",
-      agentAvatar: MASCOT,
+      agentAvatar: "/mascots/builder-point.png",
       inputs: [{ name: "data", type: "object" }],
-      outputs: [{ name: "plan", type: "object" }],
-    },
-  },
-  {
-    id: "research",
-    type: "agent_processor",
-    position: { x: 440, y: 20 },
-    data: {
-      label: "Research",
-      nodeType: "agent_processor",
-      agentAvatar: MASCOT,
-      inputs: [{ name: "brief", type: "object" }],
-      outputs: [{ name: "findings", type: "object" }],
-    },
-  },
-  {
-    id: "writer",
-    type: "agent_processor",
-    position: { x: 440, y: 235 },
-    data: {
-      label: "Writer",
-      nodeType: "agent_processor",
-      agentAvatar: MASCOT,
-      inputs: [{ name: "brief", type: "object" }],
-      outputs: [{ name: "draft", type: "object" }],
+      outputs: [{ name: "result", type: "object" }],
     },
   },
   {
     id: "linear",
     type: "tool",
-    position: { x: 665, y: 20 },
+    position: { x: 470, y: 10 },
     data: {
       label: "Create issue",
       nodeType: "tool",
@@ -83,7 +57,7 @@ const nodes: Node[] = [
   {
     id: "slack",
     type: "tool",
-    position: { x: 665, y: 235 },
+    position: { x: 470, y: 205 },
     data: {
       label: "Share update",
       nodeType: "tool",
@@ -103,46 +77,28 @@ const green = {
 
 const edges: Edge[] = [
   {
-    id: "gmail-lead",
+    id: "gmail-agent",
     source: "gmail",
-    target: "lead",
+    target: "agent",
     sourceHandle: "email",
     targetHandle: "data",
     type: "colored",
     data: green,
   },
   {
-    id: "lead-research",
-    source: "lead",
-    target: "research",
-    sourceHandle: "plan",
-    targetHandle: "brief",
-    type: "colored",
-    data: green,
-  },
-  {
-    id: "lead-writer",
-    source: "lead",
-    target: "writer",
-    sourceHandle: "plan",
-    targetHandle: "brief",
-    type: "colored",
-    data: green,
-  },
-  {
-    id: "research-linear",
-    source: "research",
+    id: "agent-linear",
+    source: "agent",
     target: "linear",
-    sourceHandle: "findings",
+    sourceHandle: "result",
     targetHandle: "input",
     type: "colored",
     data: green,
   },
   {
-    id: "writer-slack",
-    source: "writer",
+    id: "agent-slack",
+    source: "agent",
     target: "slack",
-    sourceHandle: "draft",
+    sourceHandle: "result",
     targetHandle: "input",
     type: "colored",
     data: green,
@@ -150,33 +106,27 @@ const edges: Edge[] = [
 ];
 
 /**
- * A free-flowing collage — no containing card — of the automation surface:
- * a multi-agent workflow wired into real tools, the editor's run chrome,
- * and the scheduled-tasks calendar floating alongside.
+ * A free-flowing collage of the automation surface: an agent workflow wired
+ * into real tools with the editor's run chrome, and the scheduled-tasks
+ * calendar tucked under the trigger to keep the composition compact.
  */
 export function AutomationVisual() {
   return (
-    <div className="relative min-h-[560px] sm:min-h-[600px]">
-      <div className="absolute left-[42%] top-[26%] h-52 w-52 -translate-x-1/2 -translate-y-1/2 rounded-full bg-teal-100/50 blur-3xl" />
-      <div className="absolute bottom-[16%] right-[14%] h-32 w-32 rounded-full bg-brand-lilac/15 blur-3xl" />
+    <div className="relative min-h-[470px] sm:min-h-[490px]">
+      <div className="absolute left-[46%] top-[28%] h-48 w-48 -translate-x-1/2 -translate-y-1/2 rounded-full bg-teal-100/50 blur-3xl" />
+      <div className="absolute bottom-[18%] left-[16%] h-28 w-28 rounded-full bg-brand-lilac/15 blur-3xl" />
 
-      {/* Editor chrome — title + run button, straight from the workflow editor */}
       <div className="pointer-events-none absolute left-0 top-0 z-20 flex items-center gap-1 rounded-2xl border border-stone-200 bg-white/95 p-1.5 shadow-floating backdrop-blur">
         <span className="flex h-9 items-center gap-2 rounded-xl px-3 text-xs font-medium text-stone-800">
           <Workflow className="h-4 w-4 text-stone-500" />
-          Launch ops
-        </span>
-        <span className="mx-0.5 h-5 w-px bg-stone-200" />
-        <span className="flex h-9 items-center rounded-xl bg-stone-100 px-3 text-[11px] text-stone-600">
-          3 agents · 3 tools
+          Support triage
         </span>
       </div>
       <div className="pointer-events-none absolute right-0 top-1 z-20 hidden items-center gap-1.5 rounded-xl bg-stone-950 px-3 py-2 text-[10px] font-medium text-white sm:flex">
         <Play className="h-3.5 w-3.5" /> Run workflow
       </div>
 
-      {/* The canvas itself floats free on the page background */}
-      <div className="absolute inset-x-0 top-10 h-[340px]">
+      <div className="absolute inset-x-0 top-9 h-[300px]">
         <ReactFlowProvider>
           <ReactFlow
             nodes={nodes}
@@ -195,18 +145,18 @@ export function AutomationVisual() {
             preventScrolling={false}
             proOptions={{ hideAttribution: true }}
             defaultEdgeOptions={{ type: "colored" }}
-            aria-label="Multi-agent workflow connected to tools"
+            aria-label="Agent workflow connected to tools"
           />
         </ReactFlowProvider>
       </div>
 
-      <div className="pointer-events-none absolute left-1 top-[370px] z-20 flex items-center gap-2 rounded-xl border border-stone-200 bg-white/95 px-3 py-2 text-[10px] font-medium text-emerald-700 shadow-card backdrop-blur sm:top-[382px]">
-        <Check className="h-3.5 w-3.5" /> 24 runs completed
+      {/* Calendar sits under the trigger, filling the quiet lower-left corner */}
+      <div className="absolute inset-x-4 bottom-0 z-10 sm:inset-x-auto sm:bottom-4 sm:left-0 sm:w-[310px]">
+        <TasksVisual />
       </div>
 
-      {/* Scheduled tasks calendar, floating into the flow */}
-      <div className="absolute inset-x-6 bottom-0 z-10 sm:inset-x-auto sm:right-0 sm:w-[380px]">
-        <TasksVisual />
+      <div className="pointer-events-none absolute bottom-1 right-0 z-20 hidden items-center gap-2 rounded-xl border border-stone-200 bg-white/95 px-3 py-2 text-[10px] font-medium text-emerald-700 shadow-card backdrop-blur sm:flex">
+        <Check className="h-3.5 w-3.5" /> 24 runs completed
       </div>
     </div>
   );
