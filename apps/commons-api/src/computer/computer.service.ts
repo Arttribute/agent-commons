@@ -172,6 +172,30 @@ export class ComputerService {
   ) {}
 
   /**
+   * Plan gate shared with flows that create computer-backed agents (managed
+   * runtimes). Throws a 402 `upgrade_required` when the owner's plan has no
+   * computer access so clients can open the plans dialog.
+   */
+  async assertComputerPlan(
+    ownerId: string | null | undefined,
+    message = 'Agent computers require a paid plan. Upgrade to Plus or higher to use computer features.',
+  ): Promise<void> {
+    if (process.env.BILLING_ENFORCEMENT === 'false') return;
+    if (!ownerId) return; // unowned/legacy agents are not gated
+    const ent = await this.entitlements.getEntitlements(ownerId);
+    if (!ent.computerUse) {
+      throw new HttpException(
+        {
+          code: 'upgrade_required',
+          feature: 'computer_use',
+          message,
+        },
+        HttpStatus.PAYMENT_REQUIRED,
+      );
+    }
+  }
+
+  /**
    * Enforce the caller's subscription entitlements before starting a computer.
    * Free plans cannot use computers at all; paid plans are limited to their
    * allowed resource profiles and a max concurrent-computer count. Gated behind
@@ -190,18 +214,8 @@ export class ComputerService {
     const ownerId = agent.ownerUserId ?? agent.owner;
     if (!ownerId) return; // unowned/legacy agents are not gated
 
+    await this.assertComputerPlan(ownerId);
     const ent = await this.entitlements.getEntitlements(ownerId);
-    if (!ent.computerUse) {
-      throw new HttpException(
-        {
-          code: 'upgrade_required',
-          feature: 'computer_use',
-          message:
-            'Agent computers require a paid plan. Upgrade to Plus or higher to use computer features.',
-        },
-        HttpStatus.PAYMENT_REQUIRED,
-      );
-    }
     if (!ent.allowedProfiles.includes(resourceProfile as ComputeProfile)) {
       throw new HttpException(
         {

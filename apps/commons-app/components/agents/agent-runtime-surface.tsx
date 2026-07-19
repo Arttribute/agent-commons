@@ -20,6 +20,11 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  UpgradeDialog,
+  upgradePromptFrom,
+  type UpgradePrompt,
+} from "@/components/billing/upgrade-dialog";
 
 type RuntimeState = {
   runtimeType: "native" | "openclaw" | "hermes" | "custom";
@@ -40,6 +45,9 @@ export function AgentRuntimeSurface({ agentId }: { agentId: string }) {
   const [loading, setLoading] = useState(true);
   const [action, setAction] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [upgradePrompt, setUpgradePrompt] = useState<UpgradePrompt | null>(
+    null,
+  );
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -83,6 +91,11 @@ export function AgentRuntimeSurface({ agentId }: { agentId: string }) {
         method: "POST",
       });
       const payload = await response.json();
+      const upgrade = upgradePromptFrom(response.status, payload);
+      if (upgrade) {
+        setUpgradePrompt(upgrade);
+        return;
+      }
       if (!response.ok)
         throw new Error(
           payload?.message || payload?.error || `Could not ${name} runtime`,
@@ -107,6 +120,11 @@ export function AgentRuntimeSurface({ agentId }: { agentId: string }) {
         body: JSON.stringify({ runtimeType, deploy: runtimeType !== "native" }),
       });
       const payload = await response.json();
+      const upgrade = upgradePromptFrom(response.status, payload);
+      if (upgrade) {
+        setUpgradePrompt(upgrade);
+        return;
+      }
       if (!response.ok)
         throw new Error(
           payload?.message || payload?.error || "Could not update runtime",
@@ -141,6 +159,12 @@ export function AgentRuntimeSurface({ agentId }: { agentId: string }) {
 
   return (
     <div className="grid gap-4">
+      <UpgradeDialog
+        prompt={upgradePrompt}
+        onOpenChange={(open) => {
+          if (!open) setUpgradePrompt(null);
+        }}
+      />
       {error && (
         <div className="flex items-start gap-2 rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">
           <TriangleAlert className="mt-0.5 h-4 w-4 shrink-0" />

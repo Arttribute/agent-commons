@@ -17,6 +17,11 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useAuth } from "@/context/AuthContext";
+import {
+  UpgradeDialog,
+  upgradePromptFrom,
+  type UpgradePrompt,
+} from "@/components/billing/upgrade-dialog";
 import type { AgentRuntimeType } from "@/types/agent";
 
 interface RegistryModel {
@@ -66,6 +71,9 @@ export default function CreateAgentPage() {
   });
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [upgradePrompt, setUpgradePrompt] = useState<UpgradePrompt | null>(
+    null,
+  );
 
   useEffect(() => {
     fetch("/api/models")
@@ -130,6 +138,12 @@ export default function CreateAgentPage() {
         }),
       });
       const data = await res.json().catch(() => ({}));
+      const upgrade = upgradePromptFrom(res.status, data);
+      if (upgrade) {
+        setUpgradePrompt(upgrade);
+        setCreating(false);
+        return;
+      }
       if (!res.ok) {
         throw new Error(
           data?.message || data?.error || "Failed to create agent",
@@ -159,6 +173,13 @@ export default function CreateAgentPage() {
         </Button>
         <PageTitle title="Create New Agent" />
       </div>
+
+      <UpgradeDialog
+        prompt={upgradePrompt}
+        onOpenChange={(open) => {
+          if (!open) setUpgradePrompt(null);
+        }}
+      />
 
       <div className="min-h-0 flex-1 overflow-y-auto">
         <form

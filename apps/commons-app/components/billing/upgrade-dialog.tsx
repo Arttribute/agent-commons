@@ -1,16 +1,13 @@
 "use client";
 
-import { useRouter } from "next/navigation";
 import {
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
   DialogDescription,
-  DialogFooter,
 } from "@/components/ui/dialog";
-import { Button } from "@/components/ui/button";
-import { Sparkles } from "lucide-react";
+import { PlansGrid } from "@/components/billing/plans-grid";
 
 export interface UpgradePrompt {
   code: string; // 'upgrade_required' | 'limit_reached'
@@ -18,6 +15,10 @@ export interface UpgradePrompt {
   message?: string;
 }
 
+/**
+ * Paywall dialog: shows the plans inline so the user can start checkout
+ * immediately instead of being bounced through an error message first.
+ */
 export function UpgradeDialog({
   prompt,
   onOpenChange,
@@ -25,42 +26,25 @@ export function UpgradeDialog({
   prompt: UpgradePrompt | null;
   onOpenChange: (open: boolean) => void;
 }) {
-  const router = useRouter();
   const open = prompt !== null;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-5xl">
         <DialogHeader>
-          <div className="mb-1 flex h-9 w-9 items-center justify-center rounded-full bg-indigo-100 text-indigo-600">
-            <Sparkles className="h-4 w-4" />
-          </div>
           <DialogTitle>
             {prompt?.code === "limit_reached"
               ? "Plan limit reached"
-              : "Upgrade required"}
+              : "Upgrade to continue"}
           </DialogTitle>
           <DialogDescription>
             {prompt?.message ??
-              "This feature is part of a paid plan. Upgrade to continue."}
+              "This feature is part of a paid plan. Pick a plan to continue."}
           </DialogDescription>
         </DialogHeader>
-        <DialogFooter className="mt-2">
-          <Button variant="outline" onClick={() => onOpenChange(false)}>
-            Not now
-          </Button>
-          <Button
-            onClick={() => {
-              onOpenChange(false);
-              const feature = prompt?.feature
-                ? `?feature=${encodeURIComponent(prompt.feature)}`
-                : "";
-              router.push(`/settings/billing${feature}`);
-            }}
-          >
-            View plans
-          </Button>
-        </DialogFooter>
+        <div className="pt-2">
+          <PlansGrid dense />
+        </div>
       </DialogContent>
     </Dialog>
   );
@@ -79,8 +63,13 @@ export function upgradePromptFrom(
   if (code === "upgrade_required" || code === "limit_reached") {
     return {
       code,
-      feature: body?.feature,
-      message: typeof body?.message === "string" ? body.message : undefined,
+      feature: body?.feature ?? body?.message?.feature,
+      message:
+        typeof body?.message === "string"
+          ? body.message
+          : typeof body?.message?.message === "string"
+            ? body.message.message
+            : undefined,
     };
   }
   // Generic 402 (e.g. insufficient credits) still surfaces an upgrade path.

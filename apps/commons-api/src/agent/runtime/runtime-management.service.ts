@@ -98,6 +98,13 @@ export class RuntimeManagementService {
         `Unsupported agent runtime: ${String(runtimeType)}`,
       );
     }
+    // Gate before any mutation so a free-plan switch never half-applies.
+    if (runtimeType !== 'native') {
+      await this.computers.assertComputerPlan(
+        agent.ownerUserId ?? agent.owner,
+        'This runtime runs on a dedicated agent computer, which requires a paid plan. Upgrade to Plus or higher to use it.',
+      );
+    }
     const runtimeConfig = this.normalizeConfig(
       input.config ?? (agent.runtimeConfig as RuntimeConfig),
       runtimeType,
