@@ -10,22 +10,19 @@ import {
   LockKeyhole,
   Monitor,
   Network,
-  RadioTower,
   ShieldCheck,
   Sparkles,
   Workflow,
   Wrench,
-  Zap,
 } from "lucide-react";
 import { BrandLogo } from "@/components/landing/brand-logo";
+import { AutomationVisual } from "@/components/landing/automation-visual";
 import { ComputerVisual } from "@/components/landing/computer-visual";
 import { DeveloperVisual } from "@/components/landing/developer-visual";
 import { HeroComposer } from "@/components/landing/hero-composer";
 import { IntegrationCloud } from "@/components/landing/integration-cloud";
 import { LandingNav } from "@/components/landing/landing-nav";
-import { TasksVisual } from "@/components/landing/tasks-visual";
-import { TeamVisual } from "@/components/landing/team-visual";
-import { WorkflowVisual } from "@/components/landing/workflow-visual";
+import { ModelCloud } from "@/components/landing/model-cloud";
 
 const GITHUB_URL = "https://github.com/Arttribute/agent-commons";
 const START_URL = "/login?callbackUrl=/studio/agents";
@@ -46,7 +43,7 @@ function SectionIntro({
 }: {
   eyebrow: string;
   title: React.ReactNode;
-  body: string;
+  body: React.ReactNode;
   align?: "left" | "center";
 }) {
   return (
@@ -61,7 +58,7 @@ function SectionIntro({
       </h2>
       <p
         className={`mt-4 text-base leading-7 text-stone-600 ${
-          align === "center" ? "mx-auto max-w-2xl" : "max-w-xl"
+          align === "center" ? "mx-auto max-w-3xl" : "max-w-xl"
         }`}
       >
         {body}
@@ -107,9 +104,9 @@ export default function Home() {
               .
             </h1>
             <p className="mx-auto mt-6 max-w-2xl text-base leading-7 text-stone-600 sm:text-lg sm:leading-8">
-              Create, deploy, and manage AI agents from one clear workspace.
-              Give them cloud computers, connect your tools, and coordinate a
-              whole fleet without losing control.
+              Create, deploy, and manage AI agents from one clear workspace —
+              with cloud computers, connected tools, and your whole fleet under
+              control.
             </p>
             <div className="mx-auto mt-10 max-w-[48rem]">
               <HeroComposer />
@@ -120,14 +117,14 @@ export default function Home() {
             <div className="mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row">
               <Link
                 href={START_URL}
-                className="inline-flex h-12 items-center gap-2 rounded-full bg-stone-950 px-7 text-sm font-medium text-white transition-all hover:-translate-y-0.5 hover:bg-stone-800"
+                className="inline-flex h-11 items-center gap-2 rounded-lg bg-stone-950 px-6 text-sm font-medium text-white transition-all hover:-translate-y-0.5 hover:bg-stone-800"
               >
                 Start building free
                 <ArrowRight className="h-4 w-4" />
               </Link>
               <Link
                 href="/explore"
-                className="inline-flex h-12 items-center gap-2 rounded-full border border-stone-300 bg-white px-7 text-sm font-medium text-stone-800 transition-colors hover:bg-stone-50"
+                className="inline-flex h-11 items-center gap-2 rounded-lg border border-stone-300 bg-white px-6 text-sm font-medium text-stone-800 transition-colors hover:bg-stone-50"
               >
                 Explore the commons
               </Link>
@@ -139,8 +136,17 @@ export default function Home() {
           <div className="mx-auto max-w-7xl px-5 py-24 lg:px-8 lg:py-32">
             <SectionIntro
               eyebrow="One connected platform"
-              title="Everything an agent needs to do real work."
-              body="Create agents, give them computers and tools, then coordinate them as teams and workflows."
+              title={
+                <span className="lg:whitespace-nowrap">
+                  Everything an agent needs to do real work.
+                </span>
+              }
+              body={
+                <span className="lg:whitespace-nowrap">
+                  Create agents, give them computers and tools, then coordinate
+                  them as teams and workflows.
+                </span>
+              }
               align="center"
             />
             <div className="mt-14 grid overflow-hidden rounded-[1.5rem] border border-stone-200 bg-stone-200 sm:grid-cols-2 sm:gap-px lg:grid-cols-4">
@@ -157,7 +163,7 @@ export default function Home() {
                   color: "bg-brand-cyan/35",
                   title: "Teams and fleets",
                   body: "Put agents into coordinated groups that plan, delegate, share context, and finish larger jobs together.",
-                  href: "#teams",
+                  href: "#workflows",
                 },
                 {
                   icon: Workflow,
@@ -230,12 +236,15 @@ export default function Home() {
           </div>
         </section>
 
-        <section id="teams" className="scroll-mt-16 border-b border-stone-200">
-          <div className="mx-auto grid max-w-7xl items-center gap-14 px-5 py-24 lg:grid-cols-2 lg:px-8 lg:py-32">
-            <TeamVisual />
-            <div className="lg:pl-8">
+        <section
+          id="workflows"
+          className="scroll-mt-16 border-b border-stone-200 bg-[#fafaf9]"
+        >
+          <div className="mx-auto grid max-w-7xl items-center gap-14 px-5 py-24 lg:grid-cols-[1.15fr_0.85fr] lg:px-8 lg:py-32">
+            <AutomationVisual />
+            <div className="lg:pl-6">
               <SectionIntro
-                eyebrow="Teams, swarms, and fleets"
+                eyebrow="Teams, workflows, and tasks"
                 title={
                   <>
                     One agent is useful. A{" "}
@@ -244,71 +253,22 @@ export default function Home() {
                     </span>
                   </>
                 }
-                body="Give each agent a clear role, then let the team share context and divide the work. You can lead the plan yourself or let a lead agent coordinate the run."
+                body="Wire agents and your tools into multi-agent workflows on one visual canvas, then schedule one-off or recurring tasks they pick up on time. Follow every run and step in when a decision needs a person."
               />
               <CheckList
                 items={[
                   "Give every agent a focused role",
-                  "Share context, tools, skills, and files",
-                  "Keep ownership and progress visible",
+                  "Automate across your connected tools",
+                  "Schedule one-off and recurring tasks",
+                  "Watch every run, with approvals where they matter",
                 ]}
               />
-            </div>
-          </div>
-        </section>
-
-        <section
-          id="workflows"
-          className="scroll-mt-16 border-b border-stone-200 bg-[#fafaf9]"
-        >
-          <div className="mx-auto max-w-7xl px-5 py-24 lg:px-8 lg:py-32">
-            <SectionIntro
-              eyebrow="Workflows and tasks"
-              title="Automation you can understand at a glance."
-              body="Connect triggers, agents, approvals, and app actions on a visual canvas — then schedule one-off or recurring tasks your agents pick up on time."
-              align="center"
-            />
-            <div className="mx-auto mt-14 grid max-w-6xl items-start gap-6 lg:grid-cols-[1.18fr_0.82fr]">
-              <WorkflowVisual />
-              <div className="lg:mt-16">
-                <TasksVisual />
-                <p className="mt-4 px-1 text-sm leading-6 text-stone-500">
-                  Tasks live on a calendar you can actually read — every
-                  scheduled and recurring job, right where you expect it.
-                </p>
-              </div>
-            </div>
-            <div className="mx-auto mt-10 grid max-w-6xl gap-4 sm:grid-cols-3">
-              {[
-                [
-                  Zap,
-                  "Start anywhere",
-                  "Run on a schedule, from a webhook, when an app changes, or whenever you ask.",
-                ],
-                [
-                  LockKeyhole,
-                  "Add approval",
-                  "Pause sensitive steps for a person to review before the workflow continues.",
-                ],
-                [
-                  RadioTower,
-                  "Watch every run",
-                  "See inputs, outputs, status, and errors without digging through hidden logs.",
-                ],
-              ].map(([Icon, title, body]) => (
-                <div
-                  key={title as string}
-                  className="rounded-2xl border border-stone-200 bg-white p-6"
-                >
-                  <Icon className="h-5 w-5 text-stone-500" />
-                  <h3 className="mt-5 text-sm font-medium">
-                    {title as string}
-                  </h3>
-                  <p className="mt-2 text-sm leading-6 text-stone-600">
-                    {body as string}
-                  </p>
-                </div>
-              ))}
+              <Link
+                href={START_URL}
+                className="mt-8 inline-flex items-center gap-2 text-sm font-medium text-stone-950"
+              >
+                Build a workflow <ArrowRight className="h-4 w-4" />
+              </Link>
             </div>
           </div>
         </section>
@@ -347,20 +307,22 @@ export default function Home() {
           className="scroll-mt-16 border-b border-stone-200 bg-[#fafaf9]"
         >
           <div className="mx-auto max-w-7xl px-5 py-24 lg:px-8 lg:py-32">
-            <SectionIntro
-              eyebrow="CLI and SDK"
-              title="Work from the terminal or your codebase."
-              body="The agc CLI brings your agents into any shell, and the typed TypeScript SDK puts the whole platform — agents, workflows, computers — a function call away."
-            />
-            <a
-              href="https://docs.agentcommons.io/docs"
-              target="_blank"
-              rel="noreferrer"
-              className="mt-6 inline-flex items-center gap-2 text-sm font-medium text-stone-950"
-            >
-              Read the SDK docs <ArrowRight className="h-4 w-4" />
-            </a>
-            <div className="mx-auto mt-12 max-w-5xl">
+            <div className="grid items-center gap-14 lg:grid-cols-[0.92fr_1.08fr]">
+              <div>
+                <SectionIntro
+                  eyebrow="CLI and SDK"
+                  title="Work from the terminal or your codebase."
+                  body="The agc CLI brings your agents into any shell, and the typed TypeScript SDK puts the whole platform — agents, workflows, computers — a function call away."
+                />
+                <a
+                  href="https://docs.agentcommons.io/docs"
+                  target="_blank"
+                  rel="noreferrer"
+                  className="mt-7 inline-flex items-center gap-2 text-sm font-medium text-stone-950"
+                >
+                  Read the SDK docs <ArrowRight className="h-4 w-4" />
+                </a>
+              </div>
               <DeveloperVisual />
             </div>
           </div>
@@ -379,24 +341,8 @@ export default function Home() {
               weights — and run agents natively or on managed frameworks like
               OpenClaw and Hermes.
             </p>
-            <div className="mt-9 flex flex-wrap items-center justify-center gap-3 sm:gap-4">
-              {[
-                ["openai-icon", "OpenAI", 26],
-                ["claude-icon", "Anthropic Claude", 26],
-                ["google-gemini", "Google Gemini", 26],
-                ["mistral-ai-icon", "Mistral", 26],
-                ["meta-icon", "Meta Llama", 26],
-                ["hugging-face-icon", "Hugging Face", 26],
-              ].map(([name, label, size]) => (
-                <span
-                  key={name as string}
-                  title={label as string}
-                  aria-label={label as string}
-                  className="flex h-14 w-14 items-center justify-center rounded-2xl border border-stone-200 bg-white shadow-card sm:h-16 sm:w-16"
-                >
-                  <BrandLogo name={name as string} size={size as number} />
-                </span>
-              ))}
+            <div className="mt-6">
+              <ModelCloud />
             </div>
           </div>
         </section>
@@ -476,14 +422,14 @@ export default function Home() {
               <div className="mt-9 flex flex-col items-center justify-center gap-3 sm:flex-row">
                 <Link
                   href={START_URL}
-                  className="inline-flex h-12 items-center gap-2 rounded-full bg-white px-7 text-sm font-medium text-stone-950 transition-transform hover:-translate-y-0.5"
+                  className="inline-flex h-11 items-center gap-2 rounded-lg bg-white px-6 text-sm font-medium text-stone-950 transition-transform hover:-translate-y-0.5"
                 >
                   Get started free <ArrowRight className="h-4 w-4" />
                 </Link>
                 <Link
                   href={GITHUB_URL}
                   target="_blank"
-                  className="inline-flex h-12 items-center gap-2 rounded-full border border-stone-700 px-7 text-sm font-medium text-white transition-colors hover:bg-stone-900"
+                  className="inline-flex h-11 items-center gap-2 rounded-lg border border-stone-700 px-6 text-sm font-medium text-white transition-colors hover:bg-stone-900"
                 >
                   <Github className="h-4 w-4" />
                   View on GitHub

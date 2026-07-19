@@ -49,7 +49,7 @@ export function LandingNav() {
           {signedIn ? (
             <Link
               href="/studio/agents"
-              className="flex items-center gap-1.5 rounded-full bg-stone-950 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-stone-700"
+              className="flex items-center gap-1.5 rounded-lg bg-stone-950 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-stone-700"
             >
               Open studio
               <ArrowRight className="h-3.5 w-3.5" />
@@ -58,13 +58,13 @@ export function LandingNav() {
             <>
               <Link
                 href="/login"
-                className="rounded-full px-3 py-1.5 text-sm text-stone-600 transition-colors hover:text-stone-900"
+                className="rounded-lg px-3 py-1.5 text-sm text-stone-600 transition-colors hover:text-stone-900"
               >
                 Log in
               </Link>
               <Link
                 href="/login?callbackUrl=/studio/agents"
-                className="rounded-full bg-stone-950 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-stone-700"
+                className="rounded-lg bg-stone-950 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-stone-700"
               >
                 Get started
               </Link>

@@ -10,7 +10,7 @@ export function DeveloperVisual() {
     <WindowFrame
       icon={<SquareTerminal className="h-3 w-3 text-zinc-400" />}
       title="agent-commons · zsh"
-      className="mx-auto max-w-3xl shadow-[0_28px_80px_-44px_rgba(28,25,23,0.4)]"
+      className="w-full max-w-[30rem] shadow-[0_28px_80px_-44px_rgba(28,25,23,0.4)] lg:ml-auto"
       bodyClassName="bg-zinc-950/95"
     >
       <div className="p-5 font-mono text-[11px] leading-6 text-zinc-400 sm:p-7 sm:text-xs">
