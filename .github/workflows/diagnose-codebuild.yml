@@ -1,0 +1,63 @@
+name: Diagnose AWS CodeBuild
+
+on:
+  workflow_dispatch:
+    inputs:
+      build_id:
+        description: Full CodeBuild build ID (project:uuid)
+        required: true
+        type: string
+      environment:
+        description: GitHub environment whose AWS role can read the build
+        required: true
+        default: production
+        type: choice
+        options:
+          - production
+          - staging
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  diagnose:
+    name: Read CodeBuild failure details
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v5
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - name: Show build phases and logs
+        env:
+          BUILD_ID: ${{ inputs.build_id }}
+        run: |
+          set -euo pipefail
+
+          aws codebuild batch-get-builds \
+            --ids "$BUILD_ID" \
+            --query 'builds[0].{status:buildStatus,currentPhase:currentPhase,startTime:startTime,endTime:endTime,phases:phases[*].{phase:phaseType,status:phaseStatus,durationSeconds:durationInSeconds,contexts:contexts},logs:logs}' \
+            --output json
+
+          log_group=$(aws codebuild batch-get-builds \
+            --ids "$BUILD_ID" \
+            --query 'builds[0].logs.groupName' \
+            --output text)
+          log_stream=$(aws codebuild batch-get-builds \
+            --ids "$BUILD_ID" \
+            --query 'builds[0].logs.streamName' \
+            --output text)
+
+          if [ -n "$log_group" ] && [ "$log_group" != "None" ] && \
+             [ -n "$log_stream" ] && [ "$log_stream" != "None" ]; then
+            aws logs get-log-events \
+              --log-group-name "$log_group" \
+              --log-stream-name "$log_stream" \
+              --limit 10000 \
+              --query 'events[].message' \
+              --output text || echo "CodeBuild phases were readable, but this role cannot read CloudWatch logs."
+          fi
