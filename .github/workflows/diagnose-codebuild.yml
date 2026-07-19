@@ -103,6 +103,7 @@ jobs:
           printf '{"preflight":true}\n' > /tmp/service-deployment-preflight.json
           curl --fail-with-body --silent --show-error \
             -X PUT \
+            -H 'Content-Type:' \
             --data-binary @/tmp/service-deployment-preflight.json \
             "$put_url"
           aws s3 cp "s3://${DIAGNOSTIC_BUCKET}/${diagnostic_key}" - >/dev/null
@@ -136,7 +137,7 @@ jobs:
                     --argjson deploymentList "$deployment_list" \
                     '{stack: $stack, service: $service, deploymentList: $deploymentList}' \
                     > /tmp/service-deployment.json
-                  curl --fail-with-body --silent --show-error -X PUT --data-binary @/tmp/service-deployment.json "$DIAGNOSTIC_PUT_URL"
+                  curl --fail-with-body --silent --show-error -X PUT -H 'Content-Type:' --data-binary @/tmp/service-deployment.json "$DIAGNOSTIC_PUT_URL"
           YAML
           )
 
