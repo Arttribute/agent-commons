@@ -1,8 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { signIn } from "@/auth";
+import { safeAuthCallback } from "@/lib/auth-callback";
 
 async function start(request: NextRequest, callbackUrl: string) {
   const origin = request.nextUrl.origin;
+  const safeCallbackUrl = safeAuthCallback(callbackUrl);
   if (
     !process.env.COMMONS_IDENTITY_ISSUER ||
     !process.env.COMMONS_IDENTITY_CLIENT_ID
@@ -20,7 +22,7 @@ async function start(request: NextRequest, callbackUrl: string) {
   try {
     authorizeUrl = await signIn("commons", {
       redirect: false,
-      redirectTo: new URL(callbackUrl, origin).toString(),
+      redirectTo: new URL(safeCallbackUrl, origin).toString(),
     });
   } catch (error) {
     console.error("[auth/native/start] Could not start Commons sign-in", {
@@ -52,15 +54,15 @@ async function start(request: NextRequest, callbackUrl: string) {
     return NextResponse.redirect(new URL("/login?authError=Could+not+prepare+sign-in", origin));
   }
   return NextResponse.redirect(
-    new URL(`/login?oauth_query=${encodeURIComponent(oauthQuery)}&callbackUrl=${encodeURIComponent(callbackUrl)}`, origin),
+    new URL(`/login?oauth_query=${encodeURIComponent(oauthQuery)}&callbackUrl=${encodeURIComponent(safeCallbackUrl)}`, origin),
   );
 }
 
 export async function GET(request: NextRequest) {
-  return start(request, request.nextUrl.searchParams.get("callbackUrl") ?? "/agents");
+  return start(request, request.nextUrl.searchParams.get("callbackUrl") ?? "");
 }
 
 export async function POST(request: NextRequest) {
   const form = await request.formData();
-  return start(request, String(form.get("callbackUrl") ?? "/agents"));
+  return start(request, String(form.get("callbackUrl") ?? ""));
 }

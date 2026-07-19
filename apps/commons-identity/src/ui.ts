@@ -2,19 +2,10 @@ const styles = `
   :root { color-scheme: light; font-family: "Space Grotesk", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
   * { box-sizing: border-box; }
   body { margin: 0; min-height: 100vh; display: grid; place-items: center; padding: 32px 16px;
-    background:
-      radial-gradient(circle at 15% 5%, rgba(253,230,138,.42), transparent 26rem),
-      radial-gradient(circle at 88% 92%, rgba(103,232,249,.22), transparent 24rem),
-      #fafaf9; color: #1c1917; }
+    background: #fff; color: #1c1917; }
   main { width: min(100%, 440px); padding: 36px; border: 1px solid #e7e5e4;
     border-radius: 16px; background: rgba(255,255,255,.96); box-shadow: 0 20px 55px rgba(28,25,23,.08); }
   .brand { display: flex; align-items: center; gap: 10px; margin-bottom: 34px; color: #1c1917; font-size: 15px; font-weight: 700; letter-spacing: -.01em; }
-  .brand-mark { position: relative; display: grid; grid-template-columns: repeat(2, 8px); gap: 2px; width: 22px; height: 22px; padding: 2px; border-radius: 6px; background: #1c1917; }
-  .brand-mark i { display: block; border-radius: 2px; }
-  .brand-mark i:nth-child(1) { background: #fde68a; }
-  .brand-mark i:nth-child(2) { background: #f9a8d4; }
-  .brand-mark i:nth-child(3) { background: #86efac; }
-  .brand-mark i:nth-child(4) { background: #67e8f9; }
   h1 { margin: 0 0 8px; font-size: 28px; line-height: 1.18; letter-spacing: -.035em; }
   p { color: #78716c; line-height: 1.55; }
   a { color: #292524; text-underline-offset: 3px; }
@@ -48,9 +39,9 @@ const styles = `
 export function page(title: string, body: string, script = "") {
   return `<!doctype html><html lang="en"><head><meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <meta name="color-scheme" content="light"><meta name="theme-color" content="#fafaf9">
+  <meta name="color-scheme" content="light"><meta name="theme-color" content="#ffffff">
   <title>${escapeHtml(title)} · Commons</title><style>${styles}</style></head>
-  <body><main><div class="brand"><span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i><i></i></span><span>Agent Commons</span></div>${body}</main>${script ? `<script>${script}</script>` : ""}</body></html>`;
+  <body><main><div class="brand"><span>Agent Commons</span></div>${body}</main>${script ? `<script>${script}</script>` : ""}</body></html>`;
 }
 
 export function escapeHtml(value: string) {

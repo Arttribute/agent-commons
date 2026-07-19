@@ -157,7 +157,7 @@ export function CreateSpaceForm({ creatorId, onCreated }: Props) {
             <label className="text-sm text-muted-foreground">Add Agents</label>
           </div>
           <Link
-            href="/agents/create"
+            href="/studio/agents/create"
             className="text-xs font-medium text-blue-600 hover:text-blue-700 flex items-center gap-1 transition-colors"
           >
             <Plus className="w-3 h-3" />
@@ -191,7 +191,7 @@ export function CreateSpaceForm({ creatorId, onCreated }: Props) {
                   Create an agent to add as a member
                 </p>
               </div>
-              <Link href="/agents/create">
+              <Link href="/studio/agents/create">
                 <Button
                   variant="outline"
                   size="sm"

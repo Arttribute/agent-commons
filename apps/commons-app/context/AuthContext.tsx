@@ -4,6 +4,7 @@ import {
   signOut as commonsSignOut,
   useSession,
 } from "next-auth/react";
+import { DEFAULT_AUTH_CALLBACK } from "@/lib/auth-callback";
 
 declare module "@privy-io/react-auth" {
   interface Google {
@@ -82,9 +83,8 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   // 2) Provide login, logout, and refresh
   const login = async () => {
     if (typeof window !== "undefined") {
-      const callbackUrl = `${window.location.pathname}${window.location.search}`;
       window.location.assign(
-        `/api/auth/native/start?direct=1&callbackUrl=${encodeURIComponent(callbackUrl || "/agents")}`,
+        `/api/auth/native/start?direct=1&callbackUrl=${encodeURIComponent(DEFAULT_AUTH_CALLBACK)}`,
       );
     }
   };
