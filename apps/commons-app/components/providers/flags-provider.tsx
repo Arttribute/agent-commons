@@ -8,6 +8,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
+import { useSession } from "next-auth/react";
 
 export interface FlagEvaluation {
   key: string;
@@ -32,10 +33,19 @@ const FlagsContext = createContext<FlagsContextValue>({
  * re-randomization — a user sees the same variant everywhere.
  */
 export function FlagsProvider({ children }: { children: ReactNode }) {
+  const { status } = useSession();
   const [flags, setFlags] = useState<Record<string, FlagEvaluation>>({});
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    if (status === "loading") return;
+    // Flags are evaluated per user, so there is nothing to ask for while signed
+    // out — skipping the call keeps public pages free of 401 console noise.
+    if (status !== "authenticated") {
+      setFlags({});
+      setLoading(false);
+      return;
+    }
     let cancelled = false;
     (async () => {
       try {
@@ -53,7 +63,7 @@ export function FlagsProvider({ children }: { children: ReactNode }) {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [status]);
 
   const value = useMemo(() => ({ flags, loading }), [flags, loading]);
   return <FlagsContext.Provider value={value}>{children}</FlagsContext.Provider>;

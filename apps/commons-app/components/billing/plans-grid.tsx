@@ -1,6 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { useSession } from "next-auth/react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
@@ -50,49 +51,139 @@ export function PlansGrid({
   dense?: boolean;
   showTopups?: boolean;
 }) {
+  const { status: sessionStatus } = useSession();
+  const signedIn = sessionStatus === "authenticated";
   const [sub, setSub] = useState<Subscription | null>(null);
   const [catalog, setCatalog] = useState<Catalog | null>(null);
+  const [status, setStatus] = useState<"loading" | "ready" | "error">(
+    "loading",
+  );
   const [busy, setBusy] = useState<string | null>(null);
 
   const load = useCallback(async () => {
-    try {
-      const [subRes, catalogRes] = await Promise.all([
-        fetch("/api/billing/subscription", { cache: "no-store" }),
-        fetch("/api/billing/catalog", { cache: "no-store" }),
-      ]);
-      setSub((await subRes.json().catch(() => ({})))?.data ?? null);
-      setCatalog((await catalogRes.json().catch(() => ({})))?.data ?? null);
-    } catch {
-      /* noop */
+    setStatus("loading");
+    // The catalog is public; the subscription is not. A signed-out visitor gets
+    // a 401 on the latter and still sees pricing, so only the catalog decides
+    // whether this component can render at all.
+    const [subRes, catalogRes] = await Promise.allSettled([
+      fetch("/api/billing/subscription", { cache: "no-store" }),
+      fetch("/api/billing/catalog", { cache: "no-store" }),
+    ]);
+    if (subRes.status === "fulfilled" && subRes.value.ok) {
+      const json = await subRes.value.json().catch(() => ({}));
+      setSub(json?.data ?? null);
+    } else {
+      setSub(null);
     }
+    if (catalogRes.status === "fulfilled" && catalogRes.value.ok) {
+      const json = await catalogRes.value.json().catch(() => ({}));
+      const data = json?.data ?? null;
+      if (data?.plans?.length) {
+        setCatalog(data);
+        setStatus("ready");
+        return;
+      }
+    }
+    setStatus("error");
   }, []);
 
   useEffect(() => {
     void load();
   }, [load]);
 
-  async function checkout(path: string, body: unknown, tag: string) {
-    setBusy(tag);
-    try {
-      const res = await fetch(path, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      });
-      const json = await res.json().catch(() => ({}));
-      if (json?.data?.url) window.location.href = json.data.url as string;
-      else setBusy(null);
-    } catch {
-      setBusy(null);
+  const checkout = useCallback(
+    async (kind: "sub" | "topup", key: string) => {
+      const tag = `${kind}-${key}`;
+      setBusy(tag);
+      try {
+        const res = await fetch(
+          kind === "sub"
+            ? "/api/billing/checkout/subscription"
+            : "/api/billing/checkout/topup",
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(
+              kind === "sub" ? { planKey: key } : { packKey: key },
+            ),
+          },
+        );
+        const json = await res.json().catch(() => ({}));
+        if (json?.data?.url) {
+          window.location.href = json.data.url as string;
+          return;
+        }
+        // A session can lapse between page load and click. Send the user
+        // through sign-in and resume the same purchase on the way back.
+        if (res.status === 401) {
+          const resume = `/plans?checkout=${kind}:${key}`;
+          window.location.href = `/login?callbackUrl=${encodeURIComponent(resume)}`;
+          return;
+        }
+        setBusy(null);
+      } catch {
+        setBusy(null);
+      }
+    },
+    [],
+  );
+
+  /**
+   * Begin a purchase. Signed-out visitors are sent to sign-in with a callback
+   * that reopens /plans and picks the purchase back up automatically.
+   */
+  function startCheckout(kind: "sub" | "topup", key: string) {
+    if (!signedIn) {
+      setBusy(`${kind}-${key}`);
+      const resume = `/plans?checkout=${kind}:${key}`;
+      window.location.href = `/login?callbackUrl=${encodeURIComponent(resume)}`;
+      return;
     }
+    void checkout(kind, key);
   }
+
+  // Resume a purchase the visitor started before signing in. Reading the query
+  // off `location` rather than useSearchParams keeps this component usable
+  // outside a Suspense boundary (it also renders inside the upgrade dialog).
+  const resumed = useRef(false);
+  useEffect(() => {
+    if (resumed.current || !signedIn) return;
+    const params = new URLSearchParams(window.location.search);
+    const intent = params.get("checkout");
+    if (!intent) return;
+    const [kind, key] = intent.split(":");
+    if ((kind !== "sub" && kind !== "topup") || !key) return;
+    resumed.current = true;
+    // Drop the param first so a declined checkout does not loop on reload.
+    params.delete("checkout");
+    const query = params.toString();
+    window.history.replaceState(
+      null,
+      "",
+      `${window.location.pathname}${query ? `?${query}` : ""}`,
+    );
+    void checkout(kind, key);
+  }, [signedIn, checkout]);
 
   const currentPlan = sub?.planKey ?? "free";
 
-  if (!catalog) {
+  if (status === "loading") {
     return (
       <div className="flex h-40 items-center justify-center">
         <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
+
+  if (status === "error" || !catalog) {
+    return (
+      <div className="flex h-40 flex-col items-center justify-center gap-3 text-center">
+        <p className="text-sm text-muted-foreground">
+          Plans could not be loaded right now.
+        </p>
+        <Button variant="outline" size="sm" onClick={() => void load()}>
+          Try again
+        </Button>
       </div>
     );
   }
@@ -169,13 +260,7 @@ export function PlansGrid({
                     className="w-full"
                     variant={copy.highlight ? "default" : "outline"}
                     disabled={busy !== null}
-                    onClick={() =>
-                      checkout(
-                        "/api/billing/checkout/subscription",
-                        { planKey: plan.key },
-                        `sub-${plan.key}`,
-                      )
-                    }
+                    onClick={() => startCheckout("sub", plan.key)}
                   >
                     {busy === `sub-${plan.key}` ? (
                       <Loader2 className="h-4 w-4 animate-spin" />
@@ -213,13 +298,7 @@ export function PlansGrid({
                   size="sm"
                   className="mt-4 w-full"
                   disabled={busy !== null}
-                  onClick={() =>
-                    checkout(
-                      "/api/billing/checkout/topup",
-                      { packKey: t.key },
-                      `topup-${t.key}`,
-                    )
-                  }
+                  onClick={() => startCheckout("topup", t.key)}
                 >
                   {busy === `topup-${t.key}` ? (
                     <Loader2 className="h-4 w-4 animate-spin" />
