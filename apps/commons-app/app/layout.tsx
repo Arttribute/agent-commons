@@ -29,6 +29,17 @@ const geistMono = Geist_Mono({
 const SITE_DESCRIPTION =
   "Create, deploy, and manage AI agents — and whole teams of them. Agent computers, workflows, integrations, and every major model, in one place.";
 
+// The /og image is served `immutable` for a year, so its URL must change when
+// the image does — otherwise social crawlers keep the previously scraped copy
+// forever. Tie the version to the deploy (commit SHA) so every deploy yields a
+// fresh URL that busts crawler/CDN caches.
+const OG_VERSION = (
+  process.env.VERCEL_GIT_COMMIT_SHA ||
+  process.env.NEXT_PUBLIC_COMMIT_SHA ||
+  "dev"
+).slice(0, 8);
+const OG_IMAGE_URL = `/og?v=${OG_VERSION}`;
+
 export const metadata: Metadata = {
   metadataBase: new URL(getAppBaseUrl()),
   title: {
@@ -45,7 +56,7 @@ export const metadata: Metadata = {
     description: SITE_DESCRIPTION,
     images: [
       {
-        url: "/og",
+        url: OG_IMAGE_URL,
         width: 1200,
         height: 630,
         alt: "Agent Commons — build, deploy, and orchestrate AI agents",
@@ -56,7 +67,7 @@ export const metadata: Metadata = {
     card: "summary_large_image",
     title: "Agent Commons — build, deploy, and orchestrate AI agents",
     description: SITE_DESCRIPTION,
-    images: ["/og"],
+    images: [OG_IMAGE_URL],
   },
 };
 
