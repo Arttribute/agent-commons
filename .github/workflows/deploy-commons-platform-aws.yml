@@ -41,37 +41,11 @@ jobs:
           role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
           aws-region: ${{ vars.AWS_REGION }}
 
-      # The platform (identity + gateway) has no staging twin — only
-      # commons-platform-production exists — so every staging push used to fail
-      # on a missing CodeBuild project. Skip with a notice instead, but only
-      # outside production: if the production project ever goes missing that is
-      # a real emergency and must stay a hard failure.
-      # Remove this once staging is bootstrapped (see
-      # infra/aws/STAGING-PRODUCTION-RUNBOOK.md step 2).
-      - name: Resolve deployment target
-        id: target
-        run: |
-          project="${{ vars.AWS_PLATFORM_CODEBUILD_PROJECT || 'commons-platform-production' }}"
-          found=$(aws codebuild batch-get-projects --names "$project" \
-            --query 'length(projects)' --output text 2>/dev/null || echo 0)
-          echo "project=$project" >> "$GITHUB_OUTPUT"
-          if [ "$found" = "1" ]; then
-            echo "exists=true" >> "$GITHUB_OUTPUT"
-          elif [ "${{ github.ref_name }}" = "main" ]; then
-            echo "::error::Production CodeBuild project '$project' not found."
-            exit 1
-          else
-            echo "exists=false" >> "$GITHUB_OUTPUT"
-            echo "::notice::No CodeBuild project '$project' for ${{ github.ref_name }} — skipping platform deploy. The staging platform is not bootstrapped; see infra/aws/STAGING-PRODUCTION-RUNBOOK.md step 2."
-          fi
-
       - name: Package source
-        if: steps.target.outputs.exists == 'true'
         run: git archive --format=zip --output=source.zip HEAD
 
       - name: Upload source to AWS
         id: source
-        if: steps.target.outputs.exists == 'true'
         run: |
           version_id=$(aws s3api put-object \
             --bucket "${{ vars.AWS_SOURCE_BUCKET }}" \
@@ -80,19 +54,40 @@ jobs:
             --query VersionId --output text)
           echo "version_id=$version_id" >> "$GITHUB_OUTPUT"
 
+      # The platform (identity + gateway) has no staging twin — only
+      # commons-platform-production exists — so every staging push used to fail
+      # on a missing CodeBuild project, and a permanently red deploy trains
+      # everyone to ignore it. Treat that one error as a skip, but only outside
+      # production: a missing production project is a real emergency.
+      # The deploy role can StartBuild but not BatchGetProjects, so this asks
+      # forgiveness rather than permission — probing first fails on IAM.
+      # Remove once staging is bootstrapped (STAGING-PRODUCTION-RUNBOOK.md §2).
       - name: Start CodeBuild deployment
         id: build
-        if: steps.target.outputs.exists == 'true'
         run: |
+          project="${{ vars.AWS_PLATFORM_CODEBUILD_PROJECT || 'commons-platform-production' }}"
+          set +e
           build_id=$(aws codebuild start-build \
-            --project-name "${{ steps.target.outputs.project }}" \
+            --project-name "$project" \
             --source-version "${{ steps.source.outputs.version_id }}" \
             --environment-variables-override name=DEPLOY_IDENTITY,value=true,type=PLAINTEXT \
-            --query 'build.id' --output text)
+            --query 'build.id' --output text 2>start-build.err)
+          status=$?
+          set -e
+          if [ "$status" -ne 0 ]; then
+            cat start-build.err >&2
+            if [ "${{ github.ref_name }}" != "main" ] \
+               && grep -q "Project cannot be found" start-build.err; then
+              echo "skipped=true" >> "$GITHUB_OUTPUT"
+              echo "::notice::No CodeBuild project '$project' for ${{ github.ref_name }} — skipping platform deploy. The staging platform is not bootstrapped; see infra/aws/STAGING-PRODUCTION-RUNBOOK.md step 2."
+              exit 0
+            fi
+            exit "$status"
+          fi
           echo "id=$build_id" >> "$GITHUB_OUTPUT"
 
       - name: Wait for deployment
-        if: steps.target.outputs.exists == 'true'
+        if: steps.build.outputs.skipped != 'true'
         run: |
           while true; do
             status=$(aws codebuild batch-get-builds \

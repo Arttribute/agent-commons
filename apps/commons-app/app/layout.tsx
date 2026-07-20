@@ -11,6 +11,7 @@ import { GlobalSearchProvider } from "@/context/SearchContext";
 import { FloatingCommonsCopilot } from "@/components/copilot/floating-commons-copilot";
 import { auth } from "@/auth";
 import type { Session } from "next-auth";
+import { getAppBaseUrl } from "@/lib/app-url";
 
 const spaceGrotesk = Space_Grotesk({
   weight: ["400", "500", "600", "700"],
@@ -25,10 +26,38 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
+const SITE_DESCRIPTION =
+  "Create, deploy, and manage AI agents — and whole teams of them. Agent computers, workflows, integrations, and every major model, in one place.";
+
 export const metadata: Metadata = {
-  title: "Agent Commons",
-  description:
-    "Create, deploy, and manage AI agents and whole teams of them. Agent computers, workflows, integrations, and every major model in one place.",
+  metadataBase: new URL(getAppBaseUrl()),
+  title: {
+    default: "Agent Commons",
+    template: "%s · Agent Commons",
+  },
+  description: SITE_DESCRIPTION,
+  applicationName: "Agent Commons",
+  openGraph: {
+    type: "website",
+    siteName: "Agent Commons",
+    url: getAppBaseUrl(),
+    title: "Agent Commons — build, deploy, and orchestrate AI agents",
+    description: SITE_DESCRIPTION,
+    images: [
+      {
+        url: "/og",
+        width: 1200,
+        height: 630,
+        alt: "Agent Commons — build, deploy, and orchestrate AI agents",
+      },
+    ],
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "Agent Commons — build, deploy, and orchestrate AI agents",
+    description: SITE_DESCRIPTION,
+    images: ["/og"],
+  },
 };
 
 export default async function RootLayout({
