@@ -43,12 +43,20 @@ export const metadata: Metadata = {
     url: getAppBaseUrl(),
     title: "Agent Commons — build, deploy, and orchestrate AI agents",
     description: SITE_DESCRIPTION,
+    images: [
+      {
+        url: "/og",
+        width: 1200,
+        height: 630,
+        alt: "Agent Commons — build, deploy, and orchestrate AI agents",
+      },
+    ],
   },
   twitter: {
     card: "summary_large_image",
     title: "Agent Commons — build, deploy, and orchestrate AI agents",
     description: SITE_DESCRIPTION,
-    images: ["/opengraph-image"],
+    images: ["/og"],
   },
 };
 

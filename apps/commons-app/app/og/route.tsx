@@ -2,20 +2,20 @@ import { ImageResponse } from "next/og";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 
-export const alt = "Agent Commons — build, deploy, and orchestrate AI agents";
-export const size = {
-  width: 1200,
-  height: 630,
-};
-export const contentType = "image/png";
+// Prerendered to a static PNG at build time (no runtime filesystem access),
+// and referenced explicitly from metadata so the social-embed image URL always
+// resolves against `metadataBase` (the canonical domain) rather than the
+// per-deployment *.vercel.app URL.
+export const dynamic = "force-static";
 
-// Local brand assets, inlined as data URIs so `next/og` can rasterize them.
+const size = { width: 1200, height: 630 };
+
 async function loadAsset(publicPath: string, mime: string) {
   const buf = await readFile(join(process.cwd(), "public", publicPath));
   return `data:${mime};base64,${buf.toString("base64")}`;
 }
 
-export default async function Image() {
+export async function GET() {
   const wordmark = await loadAsset("logo.jpg", "image/jpeg");
 
   return new ImageResponse(
