@@ -51,6 +51,11 @@ const nextConfig = {
     ],
   },
   experimental: {},
+  // Ensure the brand wordmark is bundled into the social-embed (opengraph-image)
+  // serverless function so `readFile` resolves in production, not just in dev.
+  outputFileTracingIncludes: {
+    "/opengraph-image": ["./public/logo.jpg"],
+  },
   eslint: {
     ignoreDuringBuilds: true,
   },
