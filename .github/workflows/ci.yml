@@ -53,3 +53,10 @@ jobs:
 
       - name: Test packages
         run: pnpm --filter './packages/*' run test --passWithNoTests
+
+      # The gateway fronts every /v1/* request and decides what is reachable
+      # without a credential, but nothing here used to exercise it — a broken
+      # public-route list reached production unnoticed. Staging cannot catch
+      # this either: it has no gateway in front of it.
+      - name: Test API gateway
+        run: pnpm --filter commons-api-gateway run test
