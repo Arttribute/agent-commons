@@ -51,10 +51,10 @@ const nextConfig = {
     ],
   },
   experimental: {},
-  // Ensure the brand wordmark is bundled with the social-embed image route so
+  // Ensure the brand lockup is bundled with the social-embed image route so
   // `readFile` resolves in production even if the route is ever server-rendered.
   outputFileTracingIncludes: {
-    "/og": ["./public/logo.jpg"],
+    "/og": ["./public/og-lockup.png"],
   },
   eslint: {
     ignoreDuringBuilds: true,
