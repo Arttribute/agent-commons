@@ -35,7 +35,11 @@ import { omit } from 'lodash';
 import { OwnerGuard, OwnerOnly } from '~/modules/auth';
 import { RuntimeDispatcherService } from './runtime/runtime-dispatcher.service';
 import { RuntimeManagementService } from './runtime/runtime-management.service';
-import { normalizeRuntimeType } from './runtime/runtime.types';
+import {
+  isManagedRuntime,
+  normalizeRuntimeType,
+} from './runtime/runtime.types';
+import { ComputerService } from '~/computer';
 import { CopilotUiContext } from './copilot-platform-guide';
 
 interface RunBody {
@@ -70,6 +74,7 @@ export class AgentController {
     private readonly pinata: PinataService,
     private readonly runtimeDispatcher: RuntimeDispatcherService,
     private readonly runtimes: RuntimeManagementService,
+    private readonly computers: ComputerService,
   ) {}
 
   @Post()
@@ -96,6 +101,12 @@ export class AgentController {
             workspaceId: principal.workspaceId ?? body.workspaceId,
           }
         : body;
+    if (isManagedRuntime(ownedBody.runtimeType)) {
+      await this.computers.assertComputerPlan(
+        (ownedBody.ownerUserId ?? ownedBody.owner) as string | undefined,
+        'This runtime runs on a dedicated agent computer, which requires a paid plan. Upgrade to Plus or higher to create it.',
+      );
+    }
     let agent = await this.agent.createAgent({
       value: ownedBody as InferInsertModel<typeof schema.agent>,
       commonsOwned: body.commonsOwned,

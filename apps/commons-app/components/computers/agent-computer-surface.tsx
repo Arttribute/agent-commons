@@ -243,6 +243,11 @@ export function AgentComputerSurface({
         body: JSON.stringify(computerConfigPatch(draft)),
       });
       const payload = await response.json();
+      const upgrade = upgradePromptFrom(response.status, payload);
+      if (upgrade) {
+        setUpgradePrompt(upgrade);
+        return;
+      }
       if (!response.ok) throw new Error(errorMessage(payload, "Could not save config"));
       const nextConfig = normalizeComputerConfig(payload.data);
       setConfig(nextConfig);
@@ -287,6 +292,11 @@ export function AgentComputerSurface({
         body: JSON.stringify({ enabled: true }),
       });
       const payload = await response.json();
+      const upgrade = upgradePromptFrom(response.status, payload);
+      if (upgrade) {
+        setUpgradePrompt(upgrade);
+        return;
+      }
       if (!response.ok) throw new Error(errorMessage(payload, "Could not enable computer"));
       const nextConfig = normalizeComputerConfig(payload.data);
       setConfig(nextConfig);
