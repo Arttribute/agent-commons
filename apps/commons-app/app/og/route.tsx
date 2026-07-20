@@ -16,7 +16,7 @@ async function loadAsset(publicPath: string, mime: string) {
 }
 
 export async function GET() {
-  const wordmark = await loadAsset("logo.jpg", "image/jpeg");
+  const lockup = await loadAsset("og-lockup.png", "image/png");
 
   return new ImageResponse(
     (
@@ -26,60 +26,41 @@ export async function GET() {
           height: "100%",
           display: "flex",
           flexDirection: "column",
-          justifyContent: "space-between",
+          alignItems: "center",
+          justifyContent: "center",
+          gap: 44,
           background: "#ffffff",
-          color: "#0f172a",
           padding: 80,
           fontFamily: "Arial, sans-serif",
         }}
       >
-        {/* Agent Commons wordmark */}
-        <div style={{ display: "flex" }}>
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={wordmark} height={224} alt="Agent Commons" />
-        </div>
+        {/* Mascot + Agent Commons wordmark lockup */}
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src={lockup} width={900} alt="Agent Commons" />
 
-        {/* Tagline + supporting line */}
-        <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
-          <div
-            style={{
-              maxWidth: 1010,
-              fontSize: 60,
-              lineHeight: 1.05,
-              fontWeight: 700,
-              letterSpacing: -1.5,
-            }}
-          >
-            Build, deploy, and orchestrate teams of AI agents.
-          </div>
-          <div
-            style={{
-              display: "flex",
-              gap: 16,
-              fontSize: 27,
-              color: "#475569",
-            }}
-          >
-            <span>Agent computers</span>
-            <span>·</span>
-            <span>Workflows</span>
-            <span>·</span>
-            <span>Integrations</span>
-            <span>·</span>
-            <span>Every major model</span>
-          </div>
-        </div>
-
-        {/* Brand-gradient accent bar */}
+        {/* One quiet line — the rest of the story lives in the embed description */}
         <div
           style={{
-            height: 12,
-            width: 420,
-            borderRadius: 999,
-            background:
-              "linear-gradient(90deg, #FDE68A 0%, #F9A8D4 30%, #D8B4FE 52%, #86EFAC 78%, #67E8F9 100%)",
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "center",
+            gap: 22,
           }}
-        />
+        >
+          <div style={{ fontSize: 30, color: "#64748b", letterSpacing: 0.2 }}>
+            Build, deploy &amp; orchestrate teams of AI agents
+          </div>
+          {/* Brand-gradient accent bar */}
+          <div
+            style={{
+              height: 10,
+              width: 300,
+              borderRadius: 999,
+              background:
+                "linear-gradient(90deg, #FDE68A 0%, #F9A8D4 30%, #D8B4FE 52%, #86EFAC 78%, #67E8F9 100%)",
+            }}
+          />
+        </div>
       </div>
     ),
     size
