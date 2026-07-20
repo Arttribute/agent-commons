@@ -120,6 +120,17 @@ export function createGatewayApp() {
       c.req.path,
     ),
   );
+  // Plan and top-up pricing is public marketing data with no user context. The
+  // /plans page renders it for signed-out visitors, so it must not sit behind
+  // the credential check below.
+  app.get("/v1/billing/catalog", (c) =>
+    publicProxy(
+      c,
+      "agent-commons",
+      process.env.AGENT_COMMONS_INTERNAL_URL,
+      c.req.path,
+    ),
+  );
   // Stripe posts webhooks with no Commons credential (it authenticates via the
   // stripe-signature header, verified downstream). Pass it through publicly,
   // preserving the raw body for signature verification.
