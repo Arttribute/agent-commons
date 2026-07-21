@@ -14,6 +14,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { WorkflowRunsPanel } from "./workflow-runs-panel";
 import { WorkflowIntegrationsPanel } from "./workflow-integrations-panel";
+import { WorkflowResult } from "@/components/workflows/result/workflow-result";
 import {
   Accordion,
   AccordionContent,
@@ -344,11 +345,9 @@ export function TestPanel({ workflowId }: TestPanelProps) {
 
               {/* Output */}
               {(execution.result ?? execution.outputData) != null && (
-                <div className="rounded-lg border border-emerald-200 bg-emerald-50/50 p-3">
-                  <p className="text-xs font-medium text-emerald-700 mb-1.5">Output</p>
-                  <pre className="text-[11px] text-emerald-800 overflow-auto max-h-40 font-mono whitespace-pre-wrap break-all">
-                    {JSON.stringify(execution.result ?? execution.outputData, null, 2)}
-                  </pre>
+                <div className="rounded-lg border border-emerald-200 bg-emerald-50/40 p-3 dark:border-emerald-900/40 dark:bg-emerald-950/20">
+                  <p className="mb-2 text-xs font-medium text-emerald-700 dark:text-emerald-400">Output</p>
+                  <WorkflowResult raw={execution.result ?? execution.outputData} />
                 </div>
               )}
 
@@ -376,9 +375,14 @@ export function TestPanel({ workflowId }: TestPanelProps) {
                             {(result as any)?.error && (
                               <p className="text-[11px] text-destructive px-2 pb-1">{(result as any).error}</p>
                             )}
-                            <pre className="text-[11px] bg-muted/50 p-2 rounded-md overflow-auto max-h-48 font-mono whitespace-pre-wrap break-all">
-                              {JSON.stringify((result as any)?.output ?? result, null, 2)}
-                            </pre>
+                            <div className="px-1 pb-1">
+                              <WorkflowResult
+                                value={(result as any)?.value}
+                                raw={(result as any)?.output ?? result}
+                                label={nodeId}
+                                compact
+                              />
+                            </div>
                           </AccordionContent>
                         </AccordionItem>
                       ))}

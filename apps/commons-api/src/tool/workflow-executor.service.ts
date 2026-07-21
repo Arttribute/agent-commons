@@ -16,6 +16,7 @@ import {
   WorkflowNodeError,
   AgentProcessorError,
 } from './workflow-errors';
+import { normalizeToolOutput, WorkflowValue } from './workflow-value';
 import * as schema from '../../models/schema';
 
 interface NodeExecutionContext {
@@ -32,6 +33,12 @@ interface NodeExecutionResult {
   nodeId: string;
   status: 'success' | 'error' | 'skipped';
   output?: any;
+  /**
+   * Presentation envelopes derived from `output`. Additive: `output` still
+   * holds the raw value used for wiring; `value` powers the context-aware
+   * results interpreter in the studio.
+   */
+  value?: WorkflowValue[];
   error?: string;
   duration: number;
 }
@@ -457,7 +464,20 @@ export class WorkflowExecutorService {
         // Process results
         let fatalError: Error | null = null;
         for (const result of results) {
+          const resultNode = nodes.find((n: any) => n.id === result.nodeId);
           nodeResults[result.nodeId] = { ...result };
+          // Additive: derive presentation envelopes for the results interpreter.
+          if (result.status === 'success' && result.output !== undefined) {
+            try {
+              nodeResults[result.nodeId].value = normalizeToolOutput(
+                result.output,
+                resultNode?.config?.outputPresentation,
+                resultNode?.label ?? resultNode?.config?.label,
+              );
+            } catch {
+              // Never let presentation normalization break execution.
+            }
+          }
           completedNodes.add(result.nodeId);
 
           if (result.status === 'error') {
