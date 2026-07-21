@@ -97,6 +97,10 @@ export type {
   CreatedApiKey,
   CreateApiKeyParams,
   ApiKeyPrincipalType,
+  // Workflow value envelope
+  WorkflowValue,
+  WorkflowValueKind,
+  OutputPresentation,
   // Billing
   PlanKey,
   ComputeProfile,

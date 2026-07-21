@@ -8,6 +8,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
 import { WorkflowExecution } from "@/types/workflow";
+import { WorkflowResult } from "@/components/workflows/result/workflow-result";
 import { AlertTriangle, CheckCircle2, Clock3, Copy, Loader2, RefreshCw, Search, XCircle } from "lucide-react";
 
 type WorkflowRunsPanelProps = {
@@ -273,9 +274,7 @@ export function WorkflowRunsPanel({ workflowId, refreshKey }: WorkflowRunsPanelP
                       {step.error ? (
                         <p className="break-words text-[11px] text-destructive">{step.error}</p>
                       ) : (
-                        <pre className="max-h-28 overflow-auto whitespace-pre-wrap break-all font-mono text-[10px] text-muted-foreground">
-                          {stringify(step.output)}
-                        </pre>
+                        <WorkflowResult value={step.value} raw={step.output} label={nodeId} compact />
                       )}
                     </div>
                   ))}
@@ -293,9 +292,7 @@ export function WorkflowRunsPanel({ workflowId, refreshKey }: WorkflowRunsPanelP
 
               <div className="space-y-2">
                 <p className="font-medium">Output</p>
-                <pre className="max-h-44 overflow-auto whitespace-pre-wrap break-all rounded-md bg-muted/50 p-2 font-mono text-[10px]">
-                  {stringify(selected.outputData ?? selected.result)}
-                </pre>
+                <WorkflowResult raw={selected.outputData ?? selected.result} compact />
               </div>
             </div>
           ) : (

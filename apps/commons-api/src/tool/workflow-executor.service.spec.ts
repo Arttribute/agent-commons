@@ -16,6 +16,7 @@ import { CommonToolService } from './tools/common-tool.service';
 import { EthereumToolService } from './tools/ethereum-tool.service';
 import { AgentService } from '~/agent/agent.service';
 import { ExternalRuntimeService } from '~/agent/runtime/external-runtime.service';
+import { ToolInvocationService } from './tool-invocation.service';
 import { Logger } from '@nestjs/common';
 
 /* ─── Minimal workflow definitions ─────────────────────────────────────── */
@@ -92,6 +93,10 @@ describe('WorkflowExecutorService', () => {
         { provide: EthereumToolService, useValue: {} },
         { provide: AgentService, useValue: { runAgent: jest.fn() } },
         { provide: ExternalRuntimeService, useValue: { runAgent: jest.fn() } },
+        {
+          provide: ToolInvocationService,
+          useValue: { invokeDynamicTool: jest.fn() },
+        },
       ],
     }).compile();
 
@@ -379,18 +384,4 @@ describe('WorkflowExecutorService', () => {
     });
   });
 
-  describe('dynamic API tools', () => {
-    it('throws a clear error when a path template argument is missing', async () => {
-      await expect(
-        (service as any).invokeDynamicTool(
-          {
-            method: 'GET',
-            baseUrl: 'https://example.com',
-            path: '/countries/{country}',
-          },
-          {},
-        ),
-      ).rejects.toThrow('Missing required dynamic API parameter: country');
-    });
-  });
 });

@@ -9,6 +9,7 @@ import { createHash, randomBytes, timingSafeEqual } from 'crypto';
 import { DatabaseService } from '../modules/database';
 import { ToolLoaderService } from './tool-loader.service';
 import { WorkflowExecutorService } from './workflow-executor.service';
+import { isAppIntegrationToolId, isUuid } from './app-tool.util';
 import * as schema from '../../models/schema';
 
 /**
@@ -184,6 +185,18 @@ export class WorkflowService {
     // 3. Validate that all tool nodes reference valid tools
     for (const node of nodes) {
       if (node.type === 'tool' && node.toolId) {
+        // App-integration ops ("service:op") and any other non-uuid id resolve
+        // by toolName at execution time. Never query the uuid toolId column
+        // with them — Postgres rejects the cast and aborts the whole save.
+        if (!isUuid(node.toolId)) {
+          if (isAppIntegrationToolId(node.toolId) || node.toolName) {
+            continue;
+          }
+          throw new BadRequestException(
+            `Tool ${node.toolId} not found in database or static tools for node ${node.id}`,
+          );
+        }
+
         // Check database first (for custom tools)
         let tool = await this.db.query.tool.findFirst({
           where: (t) => eq(t.toolId, node.toolId!),
@@ -204,6 +217,14 @@ export class WorkflowService {
         }
 
         if (!tool) {
+          // App integration ops (Gmail, Calendar, GitHub, …) are defined
+          // client-side and resolved at execution time by toolName. They must
+          // not block saving — otherwise the whole graph is dropped. Only a
+          // genuinely unknown id (a UUID-shaped tool that no longer exists and
+          // is not an app op / carries no toolName) is a hard error.
+          if (isAppIntegrationToolId(node.toolId) || node.toolName) {
+            continue;
+          }
           throw new BadRequestException(
             `Tool ${node.toolId} not found in database or static tools for node ${node.id}`,
           );

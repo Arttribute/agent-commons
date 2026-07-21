@@ -1227,3 +1227,42 @@ export interface CreateApiKeyParams {
 export interface CreatedApiKey extends ApiKey {
   key: string;
 }
+
+// ─── Workflow value envelope ──────────────────────────────────────────────────
+// String-first, presentation-aware contract every workflow node output is
+// normalized to. `text` is always present (canonical string); `kind` + `data`
+// drive the context-aware results interpreter. Mirror of the definitions in
+// apps/commons-api and apps/commons-app — keep the three in sync.
+
+export type WorkflowValueKind =
+  | "text"
+  | "markdown"
+  | "number"
+  | "boolean"
+  | "json"
+  | "image"
+  | "audio"
+  | "video"
+  | "file"
+  | "link"
+  | "email"
+  | "calendar_event"
+  | "tool_result";
+
+export interface WorkflowValue {
+  kind: WorkflowValueKind;
+  /** Canonical string representation — always present. */
+  text: string;
+  data?: Record<string, any>;
+  mime?: string;
+  label?: string;
+  meta?: Record<string, any>;
+}
+
+/** Optional hint a tool/node declares for how its output should be presented. */
+export interface OutputPresentation {
+  kind?: WorkflowValueKind;
+  textPath?: string;
+  fieldMap?: Record<string, string>;
+  label?: string;
+}

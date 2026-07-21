@@ -21,13 +21,13 @@ describe('WorkflowService', () => {
           id: 'node1',
           type: 'tool' as const,
           position: { x: 0, y: 0 },
-          toolId: 'tool-1',
+          toolId: '11111111-1111-4111-8111-111111111111',
         },
         {
           id: 'node2',
           type: 'tool' as const,
           position: { x: 100, y: 0 },
-          toolId: 'tool-2',
+          toolId: '22222222-2222-4222-8222-222222222222',
         },
       ],
       edges: [
@@ -147,6 +147,40 @@ describe('WorkflowService', () => {
       await expect(service.createWorkflow(createDto)).rejects.toThrow(
         BadRequestException,
       );
+    });
+
+    it('saves app integration nodes (Gmail/Calendar/GitHub) instead of dropping the graph', async () => {
+      // App ops carry a "service:op" toolId that is not a DB or static tool.
+      mockDb.query.tool.findFirst.mockClear();
+      mockDb.query.tool.findFirst.mockResolvedValue(null);
+      const definition = {
+        startNodeId: 'input',
+        endNodeId: 'send',
+        nodes: [
+          { id: 'input', type: 'input' as const, position: { x: 0, y: 0 } },
+          {
+            id: 'send',
+            type: 'tool' as const,
+            position: { x: 200, y: 0 },
+            toolId: 'google:gmail.sendEmail',
+            toolName: 'gmailSendEmail',
+          },
+        ],
+        edges: [{ id: 'e1', source: 'input', target: 'send', mapping: {} }],
+      };
+
+      const result = await service.createWorkflow({
+        name: 'Sheets to email',
+        definition,
+        ownerId: 'user-123',
+        ownerType: 'user' as const,
+      });
+
+      expect(result).toBeDefined();
+      expect(mockDb.insert).toHaveBeenCalled();
+      // The "google:..." id must never reach the uuid toolId column — querying
+      // it there throws "invalid input syntax for type uuid" and drops the save.
+      expect(mockDb.query.tool.findFirst).not.toHaveBeenCalled();
     });
   });
 
