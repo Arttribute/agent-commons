@@ -6,7 +6,7 @@ import type { LucideIcon } from "lucide-react";
 import { Bot, Grip, Hammer, Search, Shapes, Workflow, Wrench, X } from "lucide-react";
 import Link from "next/link";
 import type { ToolCatalogItem, WorkflowPaletteKind } from "@/lib/tools/catalog";
-import { APP_SERVICES, APP_WORKFLOW_OPS } from "@/lib/workflows/app-nodes";
+import type { Tool } from "@/types/tool";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -180,27 +180,64 @@ const flowNodes: PaletteNode[] = [
   },
 ];
 
-// App integration ops are defined client-side (lib/workflows/app-nodes)
-// because the catalog only lists apps at the service level for connection setup.
-const appNodes: PaletteNode[] = APP_WORKFLOW_OPS.map((op) => ({
-  id: op.id,
-  label: op.label,
-  description: op.description,
-  badge: op.service,
-  nodeType: "tool",
-  brand: getBrandIcon(op.toolName, op.service) ?? undefined,
-  dragData: {
-    type: "tool",
-    // Keep the full service name in the label — StepNode resolves its brand
-    // icon from toolName/label, and "Drive" alone wouldn't match the matcher.
-    label: `${op.service} · ${op.label}`,
-    description: op.description,
-    toolId: op.id,
-    toolName: op.toolName,
-    schema: op.schema,
-    outputs: op.outputs,
-  },
-}));
+/**
+ * App integration nodes are built from the REAL connected-app tools the catalog
+ * exposes (e.g. google_gmail_send_message) — each carries a genuine uuid toolId
+ * and executable name, so the node saves AND runs (OAuth is injected at run
+ * time). We deliberately don't surface aspirational ops that have no backing
+ * tool: a node you can drop but never run is worse than not offering it.
+ */
+function humanizeToolLabel(tool: Tool, service: string): string {
+  if (tool.displayName && tool.displayName !== tool.name) return tool.displayName;
+  const skip = new Set([service.toLowerCase(), "google", "workspace", "api"]);
+  const words = tool.name.split(/[_\s]+/).filter(Boolean);
+  const rest = words.filter((w) => !skip.has(w.toLowerCase()));
+  const text = (rest.length ? rest : words).join(" ");
+  return text.charAt(0).toUpperCase() + text.slice(1);
+}
+
+function appToolPaletteNode(tool: Tool, service: string): PaletteNode {
+  const label = humanizeToolLabel(tool, service);
+  return {
+    id: `apptool:${tool.toolId}`,
+    label,
+    description: tool.description,
+    badge: service,
+    nodeType: "tool",
+    brand: getBrandIcon(tool.name, service) ?? undefined,
+    dragData: {
+      type: "tool",
+      // Keep the service in the label so StepNode resolves its brand icon.
+      label: `${service} · ${label}`,
+      description: tool.description,
+      toolId: tool.toolId,
+      toolName: tool.name,
+      schema: tool.schema,
+    },
+  };
+}
+
+/** Group connectable-app catalog items into per-service palette sections. */
+function buildAppPalette(items: ToolCatalogItem[]): {
+  nodes: PaletteNode[];
+  services: string[];
+  connected: Map<string, boolean>;
+} {
+  const nodes: PaletteNode[] = [];
+  const services: string[] = [];
+  const connected = new Map<string, boolean>();
+  for (const item of items) {
+    if (item.connectionMode !== "oauth" || !item.tools?.length) continue;
+    const service = item.displayName;
+    if (!services.includes(service)) services.push(service);
+    connected.set(service, item.status === "connected");
+    for (const tool of item.tools) {
+      if (!tool?.toolId || !tool?.name) continue;
+      nodes.push(appToolPaletteNode(tool, service));
+    }
+  }
+  return { nodes, services, connected };
+}
 
 function catalogToPaletteNode(item: ToolCatalogItem): PaletteNode | null {
   if (!item.workflowNode) return null;
@@ -292,6 +329,8 @@ export function ToolSidebar({ userId }: ToolSidebarProps) {
     }
   };
 
+  const appPalette = useMemo(() => buildAppPalette(items), [items]);
+
   const paletteGroups = useMemo(() => {
     const paletteItems = items
       .map(catalogToPaletteNode)
@@ -299,28 +338,16 @@ export function ToolSidebar({ userId }: ToolSidebarProps) {
 
     return {
       flow: flowNodes,
-      apps: appNodes,
+      apps: appPalette.nodes,
       system: paletteItems.filter((node) => node.badge === "system"),
       custom: paletteItems.filter((node) => node.badge === "custom"),
       agents: paletteItems.filter((node) => node.badge === "agent"),
       workflows: paletteItems.filter((node) => node.badge === "workflow"),
     } satisfies Record<GroupKey, PaletteNode[]>;
-  }, [items]);
+  }, [items, appPalette]);
 
-  // Per-service connection state, matched against the studio/tools catalog
-  // (catalog cards are service-level: "Gmail", "Linear", "Notion MCP", …)
-  const serviceConnected = useMemo(() => {
-    const map = new Map<string, boolean>();
-    for (const service of APP_SERVICES) {
-      map.set(
-        service,
-        items.some(
-          (item) => item.status === "connected" && item.displayName.startsWith(service)
-        )
-      );
-    }
-    return map;
-  }, [items]);
+  const appServices = appPalette.services;
+  const serviceConnected = appPalette.connected;
 
   const group = GROUPS.find((entry) => entry.key === activeGroup);
   const query = search.trim().toLowerCase();
@@ -403,17 +430,21 @@ export function ToolSidebar({ userId }: ToolSidebarProps) {
 
           <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
             <div className="space-y-0.5 p-0.5">
-              {loading && group.key !== "flow" && group.key !== "apps" ? (
+              {loading && group.key !== "flow" ? (
                 [...Array(3)].map((_, index) => (
                   <Skeleton key={index} className="h-12 w-full rounded-xl" />
                 ))
               ) : visibleNodes.length === 0 ? (
                 <p className="py-6 text-center text-xs text-muted-foreground">
-                  {query ? "No matches" : group.empty}
+                  {query
+                    ? "No matches"
+                    : group.key === "apps"
+                      ? "Connect an app in Studio → Tools to use it here"
+                      : group.empty}
                 </p>
               ) : group.key === "apps" ? (
                 // Grouped by service, with a connection indicator per section
-                APP_SERVICES.map((service) => {
+                appServices.map((service) => {
                   const sectionNodes = visibleNodes.filter(
                     (node) => node.badge === service
                   );
