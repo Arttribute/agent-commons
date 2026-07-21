@@ -11,6 +11,7 @@ import { ModuleRef } from '@nestjs/core';
 import { and, desc, eq, or } from 'drizzle-orm';
 import { DatabaseService } from '~/modules/database';
 import { WorkflowService } from '~/tool/workflow.service';
+import { ToolService } from '~/tool/tool.service';
 import * as schema from '#/models/schema';
 import {
   COMMONS_COPILOT_OPERATING_GUIDE,
@@ -179,10 +180,16 @@ export class CopilotService {
       result.workflows = await this.workflows.listWorkflows(ownerId, 'user');
     }
     if (requested.includes('tools')) {
-      const [tools, keys, connections] = await Promise.all([
+      const [userTools, sharedTools, keys, connections] = await Promise.all([
         this.db.query.tool.findMany({
           where: (t) => eq(t.owner, ownerId),
           limit: 100,
+        }),
+        // Platform + public tools (connected apps like Gmail/Sheets/Calendar and
+        // published community tools) are wireable into workflow tool nodes too.
+        this.db.query.tool.findMany({
+          where: (t) => or(eq(t.visibility, 'platform'), eq(t.visibility, 'public')),
+          limit: 300,
         }),
         this.db.query.toolKey.findMany({
           where: (t) =>
@@ -208,7 +215,25 @@ export class CopilotService {
       const activeProviders = new Set(
         connections.map((item: any) => item.provider?.providerKey),
       );
-      result.tools = tools.map((tool: any) => {
+      // Merge user-owned + shared tools, dedupe by toolId, and hide the
+      // Copilot's own management/meta tools so they're never wired into a graph.
+      const META_TOOL_NAMES = new Set([
+        'proposeWorkflowChange',
+        'proposeAgentChange',
+        'proposeSkillChange',
+        'proposeToolChange',
+        'proposeTaskChange',
+        'listCommonsResources',
+        'createTask',
+        'updateGoalProgress',
+        'recomputeGoalProgress',
+      ]);
+      const mergedTools = new Map<string, any>();
+      for (const tool of [...userTools, ...sharedTools]) {
+        if (META_TOOL_NAMES.has(tool.name)) continue;
+        if (!mergedTools.has(tool.toolId)) mergedTools.set(tool.toolId, tool);
+      }
+      result.tools = Array.from(mergedTools.values()).map((tool: any) => {
         const authType = tool.apiSpec?.authType ?? 'none';
         const authKeyName = tool.apiSpec?.authKeyName;
         const oauthProviderKey = tool.apiSpec?.oauthProviderKey;
@@ -242,6 +267,10 @@ export class CopilotService {
               }
             : null,
           configuration: { configured, authType },
+          source:
+            tool.owner === ownerId
+              ? 'custom'
+              : (tool.visibility as string) ?? 'platform',
           studioUrl: resourceStudioUrl('tool', tool.toolId),
         };
       });
@@ -419,6 +448,7 @@ export class CopilotService {
     }
 
     const definition = this.normalizeWorkflowDefinition(proposal.definition);
+    await this.validateWorkflowResources(definition, ownerUserId);
     const after = {
       name: proposal.name?.trim() || before?.name,
       description:
@@ -974,6 +1004,81 @@ export class CopilotService {
         edges: mergeCollection('edges'),
       }),
     };
+  }
+
+  /**
+   * Reject placeholder graphs. Every `tool` node must resolve to a real tool
+   * (user-owned, platform, public, or a static platform tool) and every
+   * `agent_processor` node must name a real agent the user owns. This is what
+   * stops the Copilot from "successfully" saving a graph of generic
+   * input/transform/output nodes that never touch a real integration.
+   */
+  private async validateWorkflowResources(
+    definition: any,
+    ownerUserId: string,
+  ): Promise<void> {
+    const nodes: any[] = definition?.nodes ?? [];
+    const toolNodes = nodes.filter((n) => n.type === 'tool');
+    const agentNodes = nodes.filter((n) => n.type === 'agent_processor');
+    if (toolNodes.length === 0 && agentNodes.length === 0) return;
+
+    const owner = ownerUserId.toLowerCase();
+    const [dbTools, agents] = await Promise.all([
+      this.db.query.tool.findMany({
+        columns: { toolId: true, name: true, owner: true, visibility: true },
+        limit: 1000,
+      }),
+      this.db.query.agent.findMany({
+        where: (t) => or(eq(t.ownerUserId, ownerUserId), eq(t.owner, ownerUserId)),
+        columns: { agentId: true },
+        limit: 200,
+      }),
+    ]);
+
+    // Valid tool ids: static platform tools + user-owned + platform/public.
+    const validToolIds = new Set<string>();
+    try {
+      const toolService = this.moduleRef.get(ToolService, { strict: false });
+      for (const t of toolService.getStaticTools()) validToolIds.add(t.toolId);
+    } catch {
+      // ToolService unavailable — fall back to DB-resolved ids only.
+    }
+    for (const t of dbTools) {
+      const isOwned = (t.owner ?? '').toLowerCase() === owner;
+      if (isOwned || t.visibility === 'platform' || t.visibility === 'public') {
+        validToolIds.add(t.toolId);
+      }
+    }
+    const validAgentIds = new Set(agents.map((a) => a.agentId));
+
+    const problems: string[] = [];
+    for (const node of toolNodes) {
+      if (!node.toolId || !validToolIds.has(String(node.toolId))) {
+        problems.push(
+          `Node "${node.label ?? node.id}" is a tool node but its toolId ${
+            node.toolId ? `"${node.toolId}" is not a real tool` : 'is missing'
+          }.`,
+        );
+      }
+    }
+    for (const node of agentNodes) {
+      const agentId = node.config?.agentId;
+      if (!agentId || !validAgentIds.has(String(agentId))) {
+        problems.push(
+          `Node "${node.label ?? node.id}" is an agent node but config.agentId ${
+            agentId ? `"${agentId}" is not one of your agents` : 'is missing'
+          }.`,
+        );
+      }
+    }
+
+    if (problems.length) {
+      throw new BadRequestException(
+        `This workflow references resources that do not exist, so it would not actually run. ` +
+          `Call listCommonsResources to get the real toolId and agentId values, then wire them in:\n- ` +
+          problems.join('\n- '),
+      );
+    }
   }
 
   private normalizeWorkflowDefinition(definition: any) {

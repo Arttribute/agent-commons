@@ -1,7 +1,10 @@
 import { BadRequestException, ForbiddenException } from '@nestjs/common';
 import { CopilotService } from './copilot.service';
 
-function makeHarness(agentOverrides: Record<string, unknown> = {}) {
+function makeHarness(
+  agentOverrides: Record<string, unknown> = {},
+  resources: { tools?: any[]; agents?: any[] } = {},
+) {
   let inserted: any;
   const agent = {
     agentId: 'copilot-1',
@@ -14,7 +17,11 @@ function makeHarness(agentOverrides: Record<string, unknown> = {}) {
   };
   const db = {
     query: {
-      agent: { findFirst: jest.fn().mockResolvedValue(agent) },
+      agent: {
+        findFirst: jest.fn().mockResolvedValue(agent),
+        findMany: jest.fn().mockResolvedValue(resources.agents ?? []),
+      },
+      tool: { findMany: jest.fn().mockResolvedValue(resources.tools ?? []) },
       copilotChange: { findMany: jest.fn(), findFirst: jest.fn() },
     },
     insert: jest.fn(() => ({
@@ -90,6 +97,73 @@ describe('CopilotService', () => {
 
     expect(harness.workflows.updateWorkflow).toHaveBeenCalledTimes(1);
     expect(harness.db.update).toHaveBeenCalledTimes(1);
+    expect(result.requiresConfirmation).toBe(false);
+  });
+
+  it('rejects a workflow whose tool node references a tool that does not exist', async () => {
+    const harness = makeHarness();
+    await expect(
+      harness.service.proposeWorkflowChange('copilot-1', {
+        name: 'Sheets to email',
+        summary: 'placeholder graph',
+        definition: {
+          nodes: [
+            { id: 'input', type: 'input' },
+            { id: 'send', type: 'tool', toolId: 'not-a-real-tool', label: 'Send email' },
+            { id: 'output', type: 'output' },
+          ],
+          edges: [
+            { source: 'input', target: 'send' },
+            { source: 'send', target: 'output' },
+          ],
+        },
+      }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    expect(harness.workflows.createWorkflow).not.toHaveBeenCalled();
+  });
+
+  it('rejects an agent node whose config.agentId is not one of the user agents', async () => {
+    const harness = makeHarness({ copilotAccessMode: 'full' }, { agents: [] });
+    await expect(
+      harness.service.proposeWorkflowChange('copilot-1', {
+        name: 'Reply flow',
+        summary: 'missing agent',
+        definition: {
+          nodes: [
+            { id: 'draft', type: 'agent_processor', config: { agentId: 'ghost-agent' } },
+          ],
+          edges: [],
+        },
+      }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it('accepts a workflow that wires real tool and agent ids', async () => {
+    const harness = makeHarness(
+      { copilotAccessMode: 'full' },
+      {
+        tools: [{ toolId: 'tool-real', owner: 'user-1', visibility: 'private' }],
+        agents: [{ agentId: 'agent-real' }],
+      },
+    );
+    const result = await harness.service.proposeWorkflowChange('copilot-1', {
+      name: 'Sheets to email',
+      summary: 'real graph',
+      definition: {
+        nodes: [
+          { id: 'input', type: 'input' },
+          { id: 'draft', type: 'agent_processor', config: { agentId: 'agent-real' } },
+          { id: 'send', type: 'tool', toolId: 'tool-real', label: 'Send email' },
+          { id: 'output', type: 'output' },
+        ],
+        edges: [
+          { source: 'input', target: 'draft' },
+          { source: 'draft', target: 'send' },
+          { source: 'send', target: 'output' },
+        ],
+      },
+    });
+    expect(harness.workflows.createWorkflow).toHaveBeenCalledTimes(1);
     expect(result.requiresConfirmation).toBe(false);
   });
 

@@ -54,9 +54,17 @@ export interface CommonTool {
   }): Promise<Record<string, unknown>>;
 
   /**
-   * Create a reviewable workflow proposal. Depending on the user's copilot
-   * access policy it is either applied immediately with undo history or held
-   * for explicit confirmation.
+   * Create or edit a reviewable workflow (a saved DAG). Depending on the user's
+   * copilot access policy it is either applied immediately with undo history or
+   * held for explicit confirmation.
+   *
+   * A workflow is user-owned. Before calling this, ALWAYS call
+   * listCommonsResources to get the real toolId and agentId values you will
+   * wire in — never invent IDs and never emit generic placeholder nodes. Every
+   * `tool` node MUST carry a real `toolId`; every `agent_processor` node MUST
+   * carry `config.agentId`. Connect nodes with edges so data flows from the
+   * input/trigger to the output. The proposal is rejected if a tool/agent node
+   * does not resolve to a real resource.
    */
   proposeWorkflowChange(props: {
     workflowId?: string;
@@ -65,10 +73,54 @@ export interface CommonTool {
     definition: {
       startNodeId?: string;
       endNodeId?: string;
-      nodes: Array<Record<string, unknown>>;
-      edges: Array<Record<string, unknown>>;
+      nodes: Array<{
+        /** Stable node id referenced by edges (e.g. "read_row"). */
+        id: string;
+        /**
+         * tool = call a tool (needs toolId); agent_processor = have an agent
+         * reason/act (needs config.agentId); input/output = workflow entry/exit;
+         * condition/transform/loop/human_approval = control & data shaping.
+         */
+        type:
+          | 'input'
+          | 'output'
+          | 'tool'
+          | 'agent_processor'
+          | 'condition'
+          | 'transform'
+          | 'loop'
+          | 'human_approval';
+        /** Real toolId from listCommonsResources. REQUIRED for `tool` nodes. */
+        toolId?: string;
+        /** Short human label shown on the canvas (e.g. "Send Gmail reply"). */
+        label?: string;
+        /**
+         * Node settings. For agent_processor set `agentId` (real agent) and a
+         * natural-language `prompt`. For condition set `expression`; for
+         * transform set `mapping`; for loop set `itemsPath`/`toolId`; for
+         * human_approval set `prompt`.
+         */
+        config?: Record<string, unknown>;
+        position?: { x: number; y: number };
+      }>;
+      edges: Array<{
+        id?: string;
+        /** Source node id. */
+        source: string;
+        /** Target node id. */
+        target: string;
+        /** Output field on the source node. */
+        sourceHandle?: string;
+        /** Input field on the target node. */
+        targetHandle?: string;
+        /** Map source output fields to target input fields. */
+        mapping?: Record<string, string>;
+      }>;
     };
     summary: string;
+    /** Filled automatically with the acting Copilot agent — do not set this to
+     * the agent you want the workflow to use; put that in an agent node's
+     * config.agentId instead. */
     agentId: string;
   }): Promise<any>;
 
@@ -754,7 +806,15 @@ export class CommonToolService {
     },
     metadata?: { agentId?: string; sessionId?: string },
   ) {
-    const agentId = this.requireToolAgentId(props.agentId, metadata);
+    // Workflows are user-owned, not agent-owned. The `agentId` the model passes
+    // here is frequently the agent it wants to WIRE INTO the workflow (that
+    // belongs in a node's config.agentId), not the acting Copilot. Always run
+    // the proposal as the authenticated Copilot agent and never reject on a
+    // target mismatch — otherwise every "attach agent X" request 401s.
+    const agentId = metadata?.agentId ?? props.agentId;
+    if (!agentId) {
+      throw new BadRequestException('agentId is required for this tool');
+    }
     return this.copilot.proposeWorkflowChange(agentId, {
       ...props,
       originSessionId: metadata?.sessionId,

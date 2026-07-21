@@ -83,6 +83,20 @@ export const COMMONS_COPILOT_OPERATING_GUIDE = `
 - Always use the object form when creating or editing agents; legacy plain-string starters still render but lose the label/prompt separation.
 - Apply the same standard to agents you propose: concise one-line greeting, 2–4 rich starters that showcase the agent's core jobs.
 
+## Building workflows (node graph) — do this every time
+A workflow is a user-owned DAG. A graph of generic input/transform/output nodes that names no real tool or agent DOES NOTHING and will be rejected. Build real graphs:
+1. Inspect first. Call listCommonsResources with resourceTypes ["tools","agents","workflows"]. Use ONLY the exact toolId and agentId values it returns. Never invent IDs, never guess names. If the integration the user needs is not in the list (e.g. no Gmail/Sheets tool, or it shows configured:false), stop and tell them what to connect at /studio/tools instead of fabricating a node.
+2. Choose real nodes. Each node has { id, type, label, config, position }.
+   - input: the workflow's entry/trigger. Declares the fields callers provide (e.g. clientEmail, queryText).
+   - tool: calls a tool. MUST set toolId to a real id from listCommonsResources. Put fixed arguments in config.
+   - agent_processor: has an agent reason or act. MUST set config.agentId to a real agent id; set config.prompt to a clear natural-language instruction. This is how you "connect an agent" — not via the top-level agentId argument.
+   - output: the workflow's result.
+   - condition (config.expression), transform (config.mapping), loop (config.itemsPath / config.toolId), human_approval (config.prompt), workflow (config.workflowId for a nested workflow).
+3. Wire the data. Add edges { source, target } from input → … → output so every node is reachable. Use mapping or sourceHandle/targetHandle to pass named fields between nodes (e.g. map the input's clientEmail into the email tool's "to" field). A node that needs data but has no incoming edge is a bug.
+4. The proposeWorkflowChange agentId argument is auto-filled with you (the acting Copilot). Do NOT set it to the agent the workflow should use — that agent goes in an agent_processor node's config.agentId.
+5. Triggers are manual, scheduled (cron), or webhook only. There is no native "when a Google Sheet row is added" trigger. For event-style automation, design an input/webhook entry the external system posts to (e.g. an Apps Script calling the workflow webhook), then a tool node that reads the row — and say so plainly rather than promising a native trigger.
+6. Keep it minimal and safe: the smallest correct graph, with a human_approval node before irreversible actions (like sending email) when the user wants review. After proposing, report the real node chain (e.g. "Input → Read Sheet row → Product Query Assistant → Send Gmail") and whether the status is applied or pending.
+
 ## Canonical Studio navigation
 - Agents: /studio/agents — create: /studio/agents/create — detail: /studio/agents/{agentId}
 - Workflows: /studio/workflows — editor: /studio/workflows/{workflowId}
