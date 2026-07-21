@@ -148,6 +148,36 @@ describe('WorkflowService', () => {
         BadRequestException,
       );
     });
+
+    it('saves app integration nodes (Gmail/Calendar/GitHub) instead of dropping the graph', async () => {
+      // App ops carry a "service:op" toolId that is not a DB or static tool.
+      mockDb.query.tool.findFirst.mockResolvedValue(null);
+      const definition = {
+        startNodeId: 'input',
+        endNodeId: 'send',
+        nodes: [
+          { id: 'input', type: 'input' as const, position: { x: 0, y: 0 } },
+          {
+            id: 'send',
+            type: 'tool' as const,
+            position: { x: 200, y: 0 },
+            toolId: 'google:gmail.sendEmail',
+            toolName: 'gmailSendEmail',
+          },
+        ],
+        edges: [{ id: 'e1', source: 'input', target: 'send', mapping: {} }],
+      };
+
+      const result = await service.createWorkflow({
+        name: 'Sheets to email',
+        definition,
+        ownerId: 'user-123',
+        ownerType: 'user' as const,
+      });
+
+      expect(result).toBeDefined();
+      expect(mockDb.insert).toHaveBeenCalled();
+    });
   });
 
   describe('getWorkflow', () => {

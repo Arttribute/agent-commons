@@ -9,6 +9,7 @@ import { createHash, randomBytes, timingSafeEqual } from 'crypto';
 import { DatabaseService } from '../modules/database';
 import { ToolLoaderService } from './tool-loader.service';
 import { WorkflowExecutorService } from './workflow-executor.service';
+import { isAppIntegrationToolId } from './app-tool.util';
 import * as schema from '../../models/schema';
 
 /**
@@ -204,6 +205,14 @@ export class WorkflowService {
         }
 
         if (!tool) {
+          // App integration ops (Gmail, Calendar, GitHub, …) are defined
+          // client-side and resolved at execution time by toolName. They must
+          // not block saving — otherwise the whole graph is dropped. Only a
+          // genuinely unknown id (a UUID-shaped tool that no longer exists and
+          // is not an app op / carries no toolName) is a hard error.
+          if (isAppIntegrationToolId(node.toolId) || node.toolName) {
+            continue;
+          }
           throw new BadRequestException(
             `Tool ${node.toolId} not found in database or static tools for node ${node.id}`,
           );

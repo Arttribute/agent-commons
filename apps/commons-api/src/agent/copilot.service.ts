@@ -12,6 +12,7 @@ import { and, desc, eq, or } from 'drizzle-orm';
 import { DatabaseService } from '~/modules/database';
 import { WorkflowService } from '~/tool/workflow.service';
 import { ToolService } from '~/tool/tool.service';
+import { isAppIntegrationToolId } from '~/tool/app-tool.util';
 import * as schema from '#/models/schema';
 import {
   COMMONS_COPILOT_OPERATING_GUIDE,
@@ -1053,6 +1054,9 @@ export class CopilotService {
 
     const problems: string[] = [];
     for (const node of toolNodes) {
+      // App integration ops (e.g. "google:gmail.send") are resolved at run time
+      // by toolName, so they legitimately won't be in the DB/static catalog.
+      if (isAppIntegrationToolId(node.toolId)) continue;
       if (!node.toolId || !validToolIds.has(String(node.toolId))) {
         problems.push(
           `Node "${node.label ?? node.id}" is a tool node but its toolId ${
