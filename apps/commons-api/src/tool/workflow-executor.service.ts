@@ -17,7 +17,7 @@ import {
   AgentProcessorError,
 } from './workflow-errors';
 import { normalizeToolOutput, WorkflowValue } from './workflow-value';
-import { isAppIntegrationToolId } from './app-tool.util';
+import { isAppIntegrationToolId, isUuid } from './app-tool.util';
 import { ToolInvocationService } from './tool-invocation.service';
 import * as schema from '../../models/schema';
 
@@ -835,9 +835,11 @@ export class WorkflowExecutorService {
     const results: any[] = [];
     for (const item of items) {
       if (toolId) {
-        let tool: any = await this.db.query.tool.findFirst({
-          where: (t: any) => eq(t.toolId, toolId),
-        });
+        let tool: any = isUuid(toolId)
+          ? await this.db.query.tool.findFirst({
+              where: (t: any) => eq(t.toolId, toolId),
+            })
+          : null;
         if (!tool) {
           const staticTool = this.toolService
             .getStaticTools()
@@ -1141,7 +1143,9 @@ export class WorkflowExecutorService {
 
     let tool: any = null;
     try {
-      tool = context.toolId
+      // Only a UUID can match the uuid toolId column. App-integration ids
+      // ("service:op") are resolved by toolName further down.
+      tool = isUuid(context.toolId)
         ? await this.db.query.tool.findFirst({
             where: (t: any) => eq(t.toolId, context.toolId!),
           })
