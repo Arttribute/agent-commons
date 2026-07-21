@@ -13,16 +13,18 @@ import {
 } from '@nestjs/common';
 import { timingSafeEqual } from 'crypto';
 import { Public, RateLimitGuard, RateLimit } from '~/modules/auth';
-import { safeFetch } from '~/utils/safe-fetch';
 import { ChatCompletionMessageToolCall } from 'openai/resources/index.mjs';
 
 import { AgentService } from './agent.service';
 import { CommonToolService } from '~/tool/tools/common-tool.service';
 import { EthereumToolService } from '~/tool/tools/ethereum-tool.service';
 import { ToolService } from '~/tool/tool.service';
+import {
+  ToolInvocationService,
+  DynamicInvocationContext,
+} from '~/tool/tool-invocation.service';
 import { SpaceToolsService } from '~/space/space-tools.service';
 import { SessionService } from '~/session/session.service';
-import { OAuthTokenInjectionService } from '~/oauth/oauth-token-injection.service';
 import { DatabaseService } from '~/modules/database/database.service';
 import { McpToolDiscoveryService } from '~/mcp/mcp-tool-discovery.service';
 import * as schema from '#/models/schema';
@@ -44,13 +46,15 @@ export class AgentToolsController {
     private readonly toolService: ToolService,
     private readonly spaceTools: SpaceToolsService,
 
-    // OAuth and session services
+    // Session service (OAuth token injection now lives in ToolInvocationService)
     private readonly sessionService: SessionService,
-    private readonly oauthTokenInjection: OAuthTokenInjectionService,
 
     // Database and MCP services
     private readonly db: DatabaseService,
     private readonly mcpToolDiscovery: McpToolDiscoveryService,
+
+    // Shared OAuth-aware dynamic tool executor (also used by workflows)
+    private readonly toolInvocation: ToolInvocationService,
   ) {}
 
   @Post('tools')
@@ -104,10 +108,10 @@ export class AgentToolsController {
         ? this.spaceTools.findToolByName(functionName, spaceId)
         : this.spaceTools.findToolByName(functionName);
       if (spaceToolMatch) {
-        const result = await this.invokeDynamicTool(
+        const result = await this.toolInvocation.invokeDynamicTool(
           spaceToolMatch.tool.apiSpec,
           args,
-          metadata,
+          await this.resolveInjectionContext(metadata),
         );
         await this.logToolSuccess(executionLogId, startTime, result);
         return result;
@@ -169,10 +173,10 @@ export class AgentToolsController {
           await this.assertAgentToolEnabled(dbTool.toolId, functionName, agentId);
         }
         // => dynamic approach (API fetch)
-        const result = await this.invokeDynamicTool(
+        const result = await this.toolInvocation.invokeDynamicTool(
           dbTool.apiSpec,
           args,
-          metadata,
+          await this.resolveInjectionContext(metadata),
         );
         await this.logToolSuccess(executionLogId, startTime, result);
         return result;
@@ -280,274 +284,34 @@ export class AgentToolsController {
   }
 
   /**
-   * The "dynamic" approach for either DB-based or resource-based apiSpec:
-   * build a request to external API from the tool's `apiSpec`.
-   * Automatically injects OAuth tokens if required.
+   * Resolve the OAuth account context for a dynamic tool call: the session's
+   * initiator and the calling agent's owner. Delegated execution lives in
+   * ToolInvocationService (shared with the workflow executor).
    */
-  private async invokeDynamicTool(
-    apiSpec: {
-      method: string;
-      baseUrl: string;
-      path: string;
-      headers?: Record<string, string>;
-      queryParams?: Record<string, string>;
-      bodyTemplate?: any;
-      bodyTransform?: string;
-      authType?: string;
-      oauthProviderKey?: string;
-      oauthTokenLocation?: 'header' | 'query' | 'body';
-      oauthTokenKey?: string;
-      oauthTokenPrefix?: string;
-      requiresConfirmation?: boolean;
-    },
-    parsedArgs: Record<string, any>,
-    metadata: {
-      agentId: string;
-      sessionId?: string;
-      spaceId?: string;
-      privateKey?: string;
-    },
-  ): Promise<any> {
-    const { method, baseUrl, path, headers, queryParams, bodyTemplate } =
-      apiSpec;
+  private async resolveInjectionContext(metadata: {
+    agentId: string;
+    sessionId?: string;
+  }): Promise<DynamicInvocationContext> {
+    let sessionInitiator: string | undefined;
+    let agentOwnerId: string | undefined;
 
-    if (apiSpec.requiresConfirmation && parsedArgs.confirmed !== true) {
-      throw new BadRequestException(
-        'This public write action requires explicit user confirmation. Show the exact action and content to the user, then retry with confirmed=true only after they approve it.',
-      );
-    }
-
-    // 1) Build final URL with query params.
-    // Path segments are URI-encoded during substitution; query values must be
-    // substituted raw because URLSearchParams encodes them itself (encoding
-    // twice mangles RFC3339 timestamps etc. and upstream APIs reject them).
-    let finalUrl = `${baseUrl}${this.replaceTemplate(path, parsedArgs, { encode: true })}`;
-    const url = new URL(finalUrl);
-    if (queryParams) {
-      for (const [k, v] of Object.entries(queryParams)) {
-        const value = this.replaceTemplate(v, parsedArgs, { encode: false });
-        if (value !== '') {
-          url.searchParams.set(k, value);
-        }
-      }
-    }
-    finalUrl = url.toString();
-
-    // 2) Build request body for non-GET
-    let requestBody: any = undefined;
-    const methodUpper = method.toUpperCase();
-    if (['POST', 'PUT', 'PATCH'].includes(methodUpper)) {
-      if (apiSpec.bodyTransform) {
-        requestBody = this.applyBodyTransform(apiSpec.bodyTransform, parsedArgs);
-      } else if (bodyTemplate) {
-        requestBody = this.buildBodyFromTemplate(bodyTemplate, parsedArgs);
-      } else if (parsedArgs && Object.keys(parsedArgs).length > 0) {
-        // If no template, but args exist, send args as JSON body
-        requestBody = parsedArgs;
-      }
-    }
-
-    // 3) Prepare HTTP request
-    let httpRequest: {
-      url: string;
-      method: string;
-      headers: Record<string, string>;
-      body?: any;
-    } = {
-      url: finalUrl,
-      method,
-      headers: headers ?? {},
-      body: requestBody,
-    };
-
-    // 4) Inject OAuth token if required
-    if (apiSpec.authType === 'oauth2' && apiSpec.oauthProviderKey) {
+    if (metadata.sessionId) {
       try {
-        // Get session initiator and agent owner for OAuth resolution
-        let sessionInitiator: string | undefined;
-        let agentOwner: string | undefined;
-
-        if (metadata.sessionId) {
-          try {
-            const session = await this.sessionService.getSession({
-              id: metadata.sessionId,
-            });
-            sessionInitiator = session?.initiator || undefined;
-          } catch (err) {
-            console.warn('Failed to get session for OAuth resolution:', err);
-          }
-        }
-
-        // Get agent owner
-        if (metadata.agentId) {
-          const agent = await this.agent.getAgent({ agentId: metadata.agentId });
-          agentOwner = agent?.ownerUserId || agent?.owner || undefined;
-        }
-
-        // Inject OAuth token
-        httpRequest = await this.oauthTokenInjection.injectOAuthToken({
-          toolConfig: apiSpec,
-          sessionInitiator,
-          agentOwnerId: agentOwner,
-          httpRequest,
+        const session = await this.sessionService.getSession({
+          id: metadata.sessionId,
         });
-      } catch (oauthError: any) {
-        throw new BadRequestException(
-          `OAuth authorization failed for provider "${apiSpec.oauthProviderKey}": ${oauthError.message} ` +
-            `The user must connect (or reconnect) this provider in Studio → Tools before this tool can run.`,
-        );
+        sessionInitiator = session?.initiator || undefined;
+      } catch (err) {
+        console.warn('Failed to get session for OAuth resolution:', err);
       }
     }
 
-    // 5) Execute fetch (SSRF-guarded: the URL is user-controlled and we are
-    // injecting OAuth tokens / tool keys, so it must never reach internal hosts)
-    const response = await safeFetch(httpRequest.url, {
-      method: httpRequest.method,
-      headers: httpRequest.headers,
-      body: httpRequest.body ? JSON.stringify(httpRequest.body) : undefined,
-    });
-
-    if (!response.ok) {
-      // Surface the upstream error detail so the agent (and user) can see the
-      // real cause — e.g. Google's "Invalid value" or "insufficient scopes" —
-      // instead of an opaque status code.
-      const detail = await this.extractUpstreamError(response);
-      if (response.status === 401 || response.status === 403) {
-        throw new BadRequestException(
-          `Upstream API rejected the request (${response.status}): ${detail}. ` +
-            `The connected ${apiSpec.oauthProviderKey ?? 'API'} account is likely missing the required scopes — ` +
-            `the user should reconnect the provider and grant the needed permissions.`,
-        );
-      }
-      throw new BadRequestException(
-        `Upstream API error (${response.status} ${response.statusText}): ${detail}`,
-      );
+    if (metadata.agentId) {
+      const agent = await this.agent.getAgent({ agentId: metadata.agentId });
+      agentOwnerId = agent?.ownerUserId || agent?.owner || undefined;
     }
-    return await response.json();
-  }
 
-  /** Pull a human-readable error message out of an upstream API response. */
-  private async extractUpstreamError(response: Response): Promise<string> {
-    try {
-      const text = await response.text();
-      try {
-        const parsed = JSON.parse(text);
-        return (
-          parsed?.error?.message ??
-          parsed?.error_description ??
-          (typeof parsed?.error === 'string' ? parsed.error : undefined) ??
-          parsed?.message ??
-          text.slice(0, 500)
-        );
-      } catch {
-        return text.slice(0, 500) || response.statusText;
-      }
-    } catch {
-      return response.statusText;
-    }
-  }
-
-  /**
-   * Named body transforms for tools whose request body cannot be expressed as
-   * a JSON template (e.g. Gmail's base64url RFC822 `raw` message).
-   */
-  private applyBodyTransform(
-    transform: string,
-    args: Record<string, any>,
-  ): any {
-    switch (transform) {
-      case 'gmailRawMessage': {
-        const to = String(args.to ?? '').trim();
-        const subject = String(args.subject ?? '');
-        const body = String(args.body ?? '');
-        if (!to) {
-          throw new BadRequestException(
-            'Missing required "to" recipient for Gmail send',
-          );
-        }
-        const headers = [
-          `To: ${to}`,
-          args.cc ? `Cc: ${String(args.cc)}` : null,
-          args.bcc ? `Bcc: ${String(args.bcc)}` : null,
-          // RFC 2047 base64 encoding keeps non-ASCII subjects intact
-          `Subject: =?UTF-8?B?${Buffer.from(subject, 'utf8').toString('base64')}?=`,
-          'MIME-Version: 1.0',
-          'Content-Type: text/plain; charset="UTF-8"',
-          'Content-Transfer-Encoding: 7bit',
-        ].filter(Boolean);
-        const rfc822 = `${headers.join('\r\n')}\r\n\r\n${body}`;
-        const raw = Buffer.from(rfc822, 'utf8')
-          .toString('base64')
-          .replace(/\+/g, '-')
-          .replace(/\//g, '_')
-          .replace(/=+$/, '');
-        return { raw };
-      }
-      case 'xCreatePost': {
-        const text = String(args.text ?? '').trim();
-        if (!text) {
-          throw new BadRequestException('Post text is required');
-        }
-        if (text.length > 25_000) {
-          throw new BadRequestException('Post text is too long');
-        }
-        const replyToPostId = String(args.replyToPostId ?? '').trim();
-        const quotePostId = String(args.quotePostId ?? '').trim();
-        if (replyToPostId && quotePostId) {
-          throw new BadRequestException(
-            'A post cannot be both a reply and a quote; provide only one target',
-          );
-        }
-        return {
-          text,
-          ...(replyToPostId
-            ? { reply: { in_reply_to_tweet_id: replyToPostId } }
-            : {}),
-          ...(quotePostId ? { quote_tweet_id: quotePostId } : {}),
-        };
-      }
-      default:
-        throw new BadRequestException(`Unknown bodyTransform "${transform}"`);
-    }
-  }
-
-  private replaceTemplate(
-    template: string,
-    args: Record<string, any>,
-    options: { encode: boolean } = { encode: true },
-  ): string {
-    return template.replace(/\{([^}]+)\}/g, (_match, key) => {
-      const value = args[key];
-      if (value === undefined || value === null) return '';
-      return options.encode
-        ? encodeURIComponent(String(value))
-        : String(value);
-    });
-  }
-
-  /**
-   * Recursively replace placeholders in a JSON template object
-   */
-  private buildBodyFromTemplate(template: any, args: Record<string, any>): any {
-    if (Array.isArray(template)) {
-      return template.map((elem) => this.buildBodyFromTemplate(elem, args));
-    } else if (template && typeof template === 'object') {
-      const result: any = {};
-      for (const [key, val] of Object.entries(template)) {
-        result[key] = this.buildBodyFromTemplate(val, args);
-      }
-      return result;
-    } else if (typeof template === 'string') {
-      const matched = template.match(/^\{(.+)\}$/);
-      if (matched) {
-        const argKey = matched[1];
-        return args[argKey];
-      }
-      return template;
-    } else {
-      // number, boolean, etc.
-      return template;
-    }
+    return { sessionInitiator, agentOwnerId };
   }
 
   /**

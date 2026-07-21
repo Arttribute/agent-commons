@@ -17,12 +17,16 @@ import {
   AgentProcessorError,
 } from './workflow-errors';
 import { normalizeToolOutput, WorkflowValue } from './workflow-value';
+import { isAppIntegrationToolId } from './app-tool.util';
+import { ToolInvocationService } from './tool-invocation.service';
 import * as schema from '../../models/schema';
 
 interface NodeExecutionContext {
   nodeId: string;
   nodeType: string;
   toolId?: string;
+  /** Execution contract for app-integration nodes resolved by name. */
+  toolName?: string;
   workflowId?: string;
   inputs: Record<string, any>;
   config?: Record<string, any>;
@@ -81,6 +85,7 @@ export class WorkflowExecutorService {
     private readonly agentService: AgentService,
     @Inject(forwardRef(() => ExternalRuntimeService))
     private readonly externalRuntime: ExternalRuntimeService,
+    private readonly toolInvocation: ToolInvocationService,
   ) {}
 
   // ── Public: start a new execution ─────────────────────────────────────────
@@ -449,6 +454,7 @@ export class WorkflowExecutorService {
                 nodeId,
                 nodeType: node.type || 'tool',
                 toolId: node.toolId,
+                toolName: node.toolName ?? node.config?.toolName,
                 workflowId: definition.workflowId,
                 inputs: nodeInputs,
                 config: node.config,
@@ -1156,11 +1162,23 @@ export class WorkflowExecutorService {
           };
         }
       }
+      // App-integration nodes (Gmail, Calendar, GitHub, …) carry a client-side
+      // "service:op" toolId that has no row, but their toolName maps to a real
+      // DB tool (with an OAuth apiSpec). Resolve those — and any node that only
+      // supplied a toolName — by name, exactly like the agent runtime does.
+      if (!tool && (context.toolName || isAppIntegrationToolId(context.toolId))) {
+        const lookupName = context.toolName ?? context.toolId!;
+        try {
+          tool = await this.toolService.getToolByName(lookupName);
+        } catch {
+          tool = null;
+        }
+      }
       if (!tool) {
         return {
           nodeId: context.nodeId,
           status: 'error',
-          error: `Tool ${context.toolId} not found`,
+          error: `Tool ${context.toolName ?? context.toolId} not found`,
           duration: dur(),
         };
       }
@@ -1293,7 +1311,23 @@ export class WorkflowExecutorService {
     this.logger.log(`Invoking tool: ${functionName}`, cleanInputs);
 
     if (tool.apiSpec) {
-      return await this.invokeDynamicTool(tool.apiSpec, cleanInputs);
+      // Resolve the account whose OAuth connection this app tool acts under:
+      // the agent's owner when an agent is driving the run, otherwise the
+      // workflow's owning user.
+      let agentOwnerId = userId;
+      if (agentId) {
+        try {
+          const agent = await this.agentService.getAgent({ agentId });
+          agentOwnerId = agent?.ownerUserId || agent?.owner || userId;
+        } catch {
+          // Fall back to userId if the agent can't be resolved.
+        }
+      }
+      return await this.toolInvocation.invokeDynamicTool(
+        tool.apiSpec,
+        cleanInputs,
+        { agentOwnerId },
+      );
     }
 
     const staticService = [
@@ -1314,106 +1348,6 @@ export class WorkflowExecutorService {
     throw new Error(
       `No static, dynamic, or resource-based implementation found for tool "${functionName}"`,
     );
-  }
-
-  private async invokeDynamicTool(
-    apiSpec: {
-      method: string;
-      baseUrl: string;
-      path: string;
-      headers?: Record<string, string>;
-      queryParams?: Record<string, string>;
-      bodyTemplate?: any;
-    },
-    parsedArgs: Record<string, any>,
-  ): Promise<any> {
-    const { method, baseUrl, path, headers, queryParams, bodyTemplate } =
-      apiSpec;
-    this.assertTemplateInputs(path, parsedArgs);
-    if (queryParams) {
-      for (const value of Object.values(queryParams)) {
-        this.assertTemplateInputs(value, parsedArgs);
-      }
-    }
-
-    const url = new URL(
-      `${baseUrl}${this.replaceTemplate(path, parsedArgs, { encode: true })}`,
-    );
-    if (queryParams) {
-      for (const [k, v] of Object.entries(queryParams)) {
-        // Substitute raw: URLSearchParams encodes values itself, and encoding
-        // twice mangles RFC3339 timestamps and other reserved characters.
-        const value = this.replaceTemplate(v, parsedArgs, { encode: false });
-        if (value !== '') url.searchParams.set(k, value);
-      }
-    }
-    let requestBody: any;
-    if (['POST', 'PUT', 'PATCH'].includes(method.toUpperCase())) {
-      requestBody = bodyTemplate
-        ? this.buildBodyFromTemplate(bodyTemplate, parsedArgs)
-        : Object.keys(parsedArgs).length > 0
-          ? parsedArgs
-          : undefined;
-    }
-    const response = await fetch(url.toString(), {
-      method,
-      headers: headers ?? {},
-      body: requestBody ? JSON.stringify(requestBody) : undefined,
-    });
-    if (!response.ok) {
-      const detail = await response.text().then(
-        (t) => t.slice(0, 500) || response.statusText,
-        () => response.statusText,
-      );
-      throw new Error(`Dynamic API error: ${response.status} ${detail}`);
-    }
-    return await response.json();
-  }
-
-  private assertTemplateInputs(
-    template: string,
-    args: Record<string, any>,
-  ): void {
-    const missing = Array.from(template.matchAll(/\{([^}]+)\}/g))
-      .map((match) => match[1])
-      .filter(
-        (key) =>
-          args[key] === undefined || args[key] === null || args[key] === '',
-      );
-
-    if (missing.length) {
-      throw new Error(
-        `Missing required dynamic API parameter${missing.length > 1 ? 's' : ''}: ${missing.join(', ')}`,
-      );
-    }
-  }
-
-  private replaceTemplate(
-    template: string,
-    args: Record<string, any>,
-    options: { encode: boolean } = { encode: true },
-  ): string {
-    return template.replace(/\{([^}]+)\}/g, (_match, key) => {
-      const value = args[key];
-      if (value === undefined || value === null) return '';
-      return options.encode ? encodeURIComponent(String(value)) : String(value);
-    });
-  }
-
-  private buildBodyFromTemplate(template: any, args: Record<string, any>): any {
-    if (Array.isArray(template))
-      return template.map((e) => this.buildBodyFromTemplate(e, args));
-    if (template && typeof template === 'object') {
-      const result: any = {};
-      for (const [k, v] of Object.entries(template))
-        result[k] = this.buildBodyFromTemplate(v, args);
-      return result;
-    }
-    if (typeof template === 'string') {
-      const m = template.match(/^\{(.+)\}$/);
-      return m ? args[m[1]] : template;
-    }
-    return template;
   }
 
   // ── Input mapping ──────────────────────────────────────────────────────────

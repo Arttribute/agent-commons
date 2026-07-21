@@ -11,6 +11,8 @@ import { ToolAccessService } from './tool-access.service';
 import { ToolLoaderService } from './tool-loader.service';
 import { WorkflowService } from './workflow.service';
 import { WorkflowExecutorService } from './workflow-executor.service';
+import { ToolInvocationService } from './tool-invocation.service';
+import { OAuthModule } from '~/oauth/oauth.module';
 import { GoalModule } from '../goal';
 import { TaskModule } from '../task';
 import { PinataModule } from '~/pinata/pinata.module';
@@ -37,6 +39,7 @@ import { UsageModule } from '~/modules/usage';
     ComputerModule,
     CodeProjectModule,
     UsageModule,
+    OAuthModule,
   ],
   controllers: [
     ToolController,
@@ -52,6 +55,7 @@ import { UsageModule } from '~/modules/usage';
     ToolLoaderService,
     WorkflowService,
     WorkflowExecutorService,
+    ToolInvocationService,
     EthereumToolService,
     OwnerGuard,
   ],
@@ -63,6 +67,7 @@ import { UsageModule } from '~/modules/usage';
     ToolLoaderService,
     WorkflowService,
     WorkflowExecutorService,
+    ToolInvocationService,
     EthereumToolService,
   ],
 })
