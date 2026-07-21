@@ -335,7 +335,16 @@ export class ComputerService {
     const current = await this.getConfig(agentId);
     const next = this.normalizeConfigPatch(patch, current);
     if (next.enabled) {
-      await this.assertComputeEntitlement(agent, next.resourceProfile, false);
+      // A plain enable toggle (`{ enabled: true }`) carries no resourceProfile,
+      // so validate against the effective profile — the one the computer will
+      // actually run with — not the (possibly absent) patched value. Otherwise
+      // the entitlement check receives `undefined` and reports the bogus
+      // "undefined" computer profile even for a fully paid plan.
+      await this.assertComputeEntitlement(
+        agent,
+        next.resourceProfile ?? current.resourceProfile,
+        false,
+      );
       if (!current.enabled) await this.assertComputerSlot(agent);
     }
 

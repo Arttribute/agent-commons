@@ -228,6 +228,55 @@ describe('ComputerService', () => {
     ).toThrow(BadRequestException);
   });
 
+  it('enables a computer against the effective profile when the patch omits one', async () => {
+    // Reproduces the "undefined computer profile" upgrade error: the UI enable
+    // toggle sends only `{ enabled: true }`, so the normalized patch carries no
+    // resourceProfile. The entitlement check must fall back to the persisted
+    // profile ('standard') instead of validating `undefined`.
+    const getEntitlements = jest.fn().mockResolvedValue({
+      computerUse: true,
+      allowedProfiles: ['starter', 'standard'],
+      maxComputerAgents: 1,
+      maxConcurrentComputers: 1,
+      modelTiers: ['standard'],
+      maxConcurrentRuns: 4,
+    });
+    (service as any).entitlements = { getEntitlements };
+
+    jest
+      .spyOn(service as any, 'assertAgent')
+      .mockResolvedValue({ agentId: 'agent_1', ownerUserId: 'user_1' });
+    jest.spyOn(service, 'getConfig').mockResolvedValue({
+      configId: 'cfg_1',
+      agentId: 'agent_1',
+      enabled: false,
+      resourceProfile: 'standard',
+      resourceMode: 'elastic',
+      storageLimit: '20Gi',
+    } as any);
+    jest.spyOn(service as any, 'assertComputerSlot').mockResolvedValue(undefined);
+    jest.spyOn(service, 'getAssignedComputer').mockResolvedValue(null as any);
+
+    const returning = jest
+      .fn()
+      .mockResolvedValue([
+        { configId: 'cfg_1', enabled: true, resourceProfile: 'standard' },
+      ]);
+    db.update.mockReturnValue({
+      set: jest.fn().mockReturnValue({
+        where: jest.fn().mockReturnValue({ returning }),
+      }),
+    });
+
+    await expect(
+      service.updateConfig('agent_1', { enabled: true }),
+    ).resolves.toEqual(
+      expect.objectContaining({ enabled: true, resourceProfile: 'standard' }),
+    );
+    // Enforcement still ran — the paid plan was actually consulted.
+    expect(getEntitlements).toHaveBeenCalledWith('user_1');
+  });
+
   it('persists stop intent and supplies the legacy fleet fallback', async () => {
     const previousFleetId = process.env.COMMON_OS_FLEET_ID;
     process.env.COMMON_OS_FLEET_ID = 'fleet_1';
