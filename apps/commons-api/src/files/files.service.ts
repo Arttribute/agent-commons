@@ -94,8 +94,24 @@ const DEFAULT_MAX_TEXT_CHARS = 250_000;
 const DEFAULT_PREVIEW_CHARS = 2_000;
 const DEFAULT_MAX_READ_CHARS = 12_000;
 const ABSOLUTE_MAX_READ_CHARS = 50_000;
-const DEFAULT_PDF_RENDER_PAGES = 12;
+const DEFAULT_PDF_RENDER_PAGES = 24;
+const DEFAULT_PDF_EMBEDDED_IMAGE_PAGES = 40;
+const DEFAULT_PDF_EMBEDDED_IMAGES_PER_PAGE = 4;
+const DEFAULT_PDF_EMBEDDED_IMAGE_MIN_PIXELS = 40_000;
 const DEFAULT_SIGNED_URL_SECONDS = 60 * 30;
+
+export function rawImageChannels(
+  width: number,
+  height: number,
+  byteLength: number,
+): 1 | 3 | 4 | null {
+  const pixels = width * height;
+  if (!Number.isFinite(pixels) || pixels <= 0) return null;
+  if (byteLength === pixels) return 1;
+  if (byteLength === pixels * 3) return 3;
+  if (byteLength === pixels * 4) return 4;
+  return null;
+}
 
 @Injectable()
 export class FilesService {
@@ -372,7 +388,7 @@ export class FilesService {
     if (context.includeImageParts) {
       const maxImageParts = clamp(Number(context.maxImageParts ?? 4), 0, 8);
       const visualArtifacts = artifacts.filter((artifact) =>
-        ['image', 'pdf_page_image'].includes(artifact.role),
+        ['image', 'pdf_embedded_image', 'pdf_page_image'].includes(artifact.role),
       );
       for (const artifact of visualArtifacts.slice(0, maxImageParts)) {
         imageParts.push({
@@ -691,6 +707,14 @@ export class FilesService {
       Number(process.env.AGENT_FILE_PDF_TEXT_PAGES ?? 120),
     );
     const pageTexts: string[] = [];
+    const artifacts: ExtractedArtifact[] = [];
+    const embeddedImagePages = Math.min(
+      pdf.numPages,
+      Number(
+        process.env.AGENT_FILE_PDF_EMBEDDED_IMAGE_PAGES ??
+          DEFAULT_PDF_EMBEDDED_IMAGE_PAGES,
+      ),
+    );
     for (let pageNumber = 1; pageNumber <= maxTextPages; pageNumber += 1) {
       const page = await pdf.getPage(pageNumber);
       const textContent = await page.getTextContent();
@@ -701,9 +725,23 @@ export class FilesService {
         .replace(/\s+/g, ' ')
         .trim();
       if (text) pageTexts.push(`--- Page ${pageNumber} ---\n${text}`);
+      if (pageNumber <= embeddedImagePages) {
+        const pageImages = await this.extractPdfPageImages(
+          pdfjs,
+          page,
+          pageNumber,
+        ).catch((error) => {
+          this.logger.warn(
+            `Could not extract embedded images from PDF page ${pageNumber}: ${
+              error instanceof Error ? error.message : String(error)
+            }`,
+          );
+          return [];
+        });
+        artifacts.push(...pageImages);
+      }
     }
 
-    const artifacts: ExtractedArtifact[] = [];
     const renderPages = Math.min(
       pdf.numPages,
       Number(process.env.AGENT_FILE_PDF_RENDER_PAGES ?? DEFAULT_PDF_RENDER_PAGES),
@@ -739,11 +777,100 @@ export class FilesService {
       metadata: {
         pages: pdf.numPages,
         textPagesExtracted: maxTextPages,
-        renderedPages: artifacts.length,
+        embeddedImages: artifacts.filter(
+          (artifact) => artifact.kind === 'pdf_embedded_image',
+        ).length,
+        renderedPages: artifacts.filter(
+          (artifact) => artifact.kind === 'pdf_page_image',
+        ).length,
       },
       artifacts,
       status: text || artifacts.length ? 'ready' : 'partial',
     };
+  }
+
+  private async extractPdfPageImages(
+    pdfjs: any,
+    page: any,
+    pageNumber: number,
+  ): Promise<ExtractedArtifact[]> {
+    const operatorList = await page.getOperatorList();
+    const imageOperators = new Set([
+      pdfjs.OPS.paintImageXObject,
+      pdfjs.OPS.paintInlineImageXObject,
+    ]);
+    const maxImages = Number(
+      process.env.AGENT_FILE_PDF_EMBEDDED_IMAGES_PER_PAGE ??
+        DEFAULT_PDF_EMBEDDED_IMAGES_PER_PAGE,
+    );
+    const minPixels = Number(
+      process.env.AGENT_FILE_PDF_EMBEDDED_IMAGE_MIN_PIXELS ??
+        DEFAULT_PDF_EMBEDDED_IMAGE_MIN_PIXELS,
+    );
+    const seen = new Set<string>();
+    const artifacts: ExtractedArtifact[] = [];
+
+    for (let index = 0; index < operatorList.fnArray.length; index += 1) {
+      if (!imageOperators.has(operatorList.fnArray[index])) continue;
+      const argument = operatorList.argsArray[index]?.[0];
+      const identity = typeof argument === 'string' ? argument : `inline-${index}`;
+      if (seen.has(identity)) continue;
+      seen.add(identity);
+
+      const image =
+        typeof argument === 'string'
+          ? await this.resolvePdfImageObject(page, argument)
+          : argument;
+      const width = Number(image?.width ?? 0);
+      const height = Number(image?.height ?? 0);
+      const data = image?.data;
+      if (
+        !width ||
+        !height ||
+        width * height < minPixels ||
+        !data ||
+        !ArrayBuffer.isView(data)
+      ) {
+        continue;
+      }
+      const channels = rawImageChannels(width, height, data.byteLength);
+      if (!channels) continue;
+
+      const output = await sharp(Buffer.from(data.buffer, data.byteOffset, data.byteLength), {
+        raw: { width, height, channels },
+      })
+        .png({ compressionLevel: 8 })
+        .toBuffer();
+      const imageNumber = artifacts.length + 1;
+      artifacts.push({
+        kind: 'pdf_embedded_image',
+        fileName: `page-${pageNumber}-image-${imageNumber}.png`,
+        mimeType: 'image/png',
+        buffer: output,
+        pageNumber,
+        width,
+        height,
+        metadata: {
+          source: 'pdf-embedded-image',
+          imageNumber,
+          objectId: identity,
+        },
+      });
+      if (artifacts.length >= maxImages) break;
+    }
+
+    return artifacts;
+  }
+
+  private async resolvePdfImageObject(page: any, objectId: string) {
+    return new Promise<any>((resolve, reject) => {
+      try {
+        const value = page.objs.get(objectId, (resolved: any) => resolve(resolved));
+        if (value) resolve(value);
+      } catch (error) {
+        reject(error);
+      }
+    });
   }
 
   private async renderPdfPage(pdf: any, pageNumber: number) {
@@ -856,7 +983,11 @@ export class FilesService {
     return this.db.query.libraryBlob.findMany({
       where: (t) => and(
         eq(t.itemId, fileId),
-        or(eq(t.role, 'image'), eq(t.role, 'pdf_page_image')),
+        or(
+          eq(t.role, 'image'),
+          eq(t.role, 'pdf_embedded_image'),
+          eq(t.role, 'pdf_page_image'),
+        ),
       ),
       orderBy: (t) => t.createdAt,
     });

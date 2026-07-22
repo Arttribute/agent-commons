@@ -253,8 +253,8 @@ export function CopilotMaterialBuilder({
         <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
           <p className="text-sm font-medium text-slate-950">How your copilot builds</p>
           <ol className="mt-3 space-y-3 text-xs leading-5 text-slate-600">
-            <BuildStep number="1" text="Extracts source text, structure, tables, and useful visuals." />
-            <BuildStep number="2" text="Organizes concepts into a coherent learning sequence." />
+            <BuildStep number="1" text="Separates source text, structure, tables, and original PDF visuals." />
+            <BuildStep number="2" text="Matches each visual to the section it actually illustrates." />
             <BuildStep number="3" text="Creates activities and checks that support the learning goals." />
             <BuildStep number="4" text="Saves a private draft for educator review—not automatic publishing." />
           </ol>
