@@ -2,7 +2,18 @@
 
 import { FormEvent, useMemo, useState } from "react";
 import Link from "next/link";
-import { ArrowRight, FileUp, Loader2, Sparkles } from "lucide-react";
+import {
+  ArrowRight,
+  BookOpen,
+  Check,
+  FileText,
+  FileUp,
+  Layers3,
+  Loader2,
+  Sparkles,
+} from "lucide-react";
+
+type MaterialMode = "course" | "workbook" | "skill_path";
 
 type ManagedCourse = {
   title: string;
@@ -10,7 +21,7 @@ type ManagedCourse = {
 };
 
 type CopilotResult = {
-  mode: "course" | "workbook" | "skill_path";
+  mode: MaterialMode;
   course: {
     title: string;
     slug: string;
@@ -24,12 +35,33 @@ type CopilotResult = {
   notes?: string[];
 };
 
+const MATERIAL_MODES = [
+  {
+    value: "course" as const,
+    title: "Course",
+    description: "Modules, lessons, activities, and assessment",
+    icon: BookOpen,
+  },
+  {
+    value: "workbook" as const,
+    title: "Workbook",
+    description: "Guided explanations, exercises, and reflection",
+    icon: FileText,
+  },
+  {
+    value: "skill_path" as const,
+    title: "Skill pack",
+    description: "Focused challenges for an existing course",
+    icon: Layers3,
+  },
+];
+
 export function CopilotMaterialBuilder({
   courses,
 }: {
   courses: ManagedCourse[];
 }) {
-  const [mode, setMode] = useState<"course" | "workbook" | "skill_path">("course");
+  const [mode, setMode] = useState<MaterialMode>("course");
   const [targetCourseSlug, setTargetCourseSlug] = useState(courses[0]?.slug || "");
   const [instructions, setInstructions] = useState("");
   const [files, setFiles] = useState<File[]>([]);
@@ -76,37 +108,63 @@ export function CopilotMaterialBuilder({
 
   return (
     <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
-      <form onSubmit={submit} className="space-y-5 rounded-lg border border-slate-200 bg-white p-5">
+      <form onSubmit={submit} className="space-y-6 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
         <div>
-          <p className="text-sm font-black text-slate-950">Material upload</p>
+          <p className="text-sm font-medium text-slate-950">Build a learning resource</p>
           <p className="mt-1 text-sm leading-6 text-slate-500">
-            Upload source material and let the copilot create a reviewable draft course or skill path in your account.
+            Choose the learning format, give your copilot direction, and add the source files.
           </p>
         </div>
 
-        <div className="grid gap-3 sm:grid-cols-2">
-          <label className="rounded-lg border border-slate-200 p-3">
-            <span className="text-sm font-bold text-slate-700">Create</span>
-            <select
-              value={mode}
-              onChange={(event) =>
-                setMode(event.target.value as "course" | "workbook" | "skill_path")
-              }
-              className="mt-2 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-slate-400"
-            >
-              <option value="course">New draft course</option>
-              <option value="workbook">Interactive workbook</option>
-              <option value="skill_path">Skill path for existing course</option>
-            </select>
-          </label>
+        <fieldset>
+          <legend className="mb-2 text-xs font-medium uppercase tracking-wide text-slate-500">
+            Learning format
+          </legend>
+          <div className="grid gap-3 sm:grid-cols-3">
+            {MATERIAL_MODES.map((option) => {
+              const Icon = option.icon;
+              const selected = mode === option.value;
+              return (
+                <button
+                  key={option.value}
+                  type="button"
+                  onClick={() => setMode(option.value)}
+                  className={`rounded-xl border p-3 text-left transition ${
+                    selected
+                      ? "border-lime-400 bg-lime-50"
+                      : "border-slate-200 hover:bg-slate-50"
+                  }`}
+                >
+                  <span className="flex items-center justify-between gap-2">
+                    <Icon className="h-4 w-4 text-slate-700" />
+                    {selected ? (
+                      <span className="rounded-full bg-slate-950 p-0.5 text-white">
+                        <Check className="h-2.5 w-2.5" />
+                      </span>
+                    ) : null}
+                  </span>
+                  <span className="mt-3 block text-sm font-medium text-slate-950">
+                    {option.title}
+                  </span>
+                  <span className="mt-1 block text-xs leading-5 text-slate-500">
+                    {option.description}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        </fieldset>
 
-          <label className="rounded-lg border border-slate-200 p-3">
-            <span className="text-sm font-bold text-slate-700">Target course</span>
+        {mode === "skill_path" ? (
+          <label className="block rounded-xl border border-slate-200 bg-slate-50 p-3">
+            <span className="text-xs font-medium uppercase tracking-wide text-slate-500">
+              Add the skill pack to
+            </span>
             <select
               value={targetCourseSlug}
               onChange={(event) => setTargetCourseSlug(event.target.value)}
-              disabled={mode !== "skill_path" || courses.length === 0}
-              className="mt-2 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none disabled:bg-slate-50 disabled:text-slate-400 focus:border-slate-400"
+              disabled={courses.length === 0}
+              className="mt-2 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-slate-950 disabled:text-slate-400"
             >
               {courses.length ? (
                 courses.map((course) => (
@@ -115,29 +173,31 @@ export function CopilotMaterialBuilder({
                   </option>
                 ))
               ) : (
-                <option value="">No courses yet</option>
+                <option value="">Create a course first</option>
               )}
             </select>
           </label>
-        </div>
+        ) : null}
 
         <label className="block">
-          <span className="text-sm font-bold text-slate-700">Copilot instructions</span>
+          <span className="text-sm font-medium text-slate-700">Teaching direction</span>
           <textarea
             value={instructions}
             onChange={(event) => setInstructions(event.target.value)}
             placeholder="Example: keep the tone practical, create challenging quizzes, and add one sandbox task if the material supports it."
-            className="mt-2 min-h-32 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm leading-6 outline-none focus:border-slate-400"
+            className="mt-2 min-h-32 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm leading-6 outline-none focus:border-slate-950"
           />
         </label>
 
-        <label className="flex min-h-40 cursor-pointer flex-col items-center justify-center rounded-lg border border-dashed border-slate-300 bg-slate-50 px-4 py-6 text-center hover:bg-slate-100">
-          <FileUp className="mb-3 h-6 w-6 text-slate-400" />
-          <span className="text-sm font-bold text-slate-800">
-            Upload course materials
+        <label className="flex min-h-44 cursor-pointer flex-col items-center justify-center rounded-xl border border-dashed border-slate-300 bg-slate-50 px-4 py-6 text-center transition hover:border-lime-500 hover:bg-lime-50/50">
+          <span className="mb-3 rounded-full bg-white p-3 shadow-sm ring-1 ring-slate-200">
+            <FileUp className="h-5 w-5 text-slate-700" />
+          </span>
+          <span className="text-sm font-medium text-slate-900">
+            Add your source materials
           </span>
           <span className="mt-1 text-xs leading-5 text-slate-500">
-            PDF, Word, spreadsheets, images, Markdown, text, CSV, or JSON. Up to 8 files.
+            PDF, Word, spreadsheets, images, Markdown, text, CSV, or JSON · up to 8 files
           </span>
           <input
             type="file"
@@ -151,14 +211,15 @@ export function CopilotMaterialBuilder({
         </label>
 
         {files.length ? (
-          <div className="rounded-lg border border-slate-200 bg-white">
+          <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
             {files.map((file) => (
               <div
                 key={`${file.name}-${file.size}`}
                 className="flex items-center justify-between gap-3 border-b border-slate-100 px-3 py-2 text-sm last:border-b-0"
               >
-                <span className="truncate font-semibold text-slate-700">
-                  {file.name}
+                <span className="flex min-w-0 items-center gap-2 text-slate-700">
+                  <FileText className="h-4 w-4 shrink-0 text-slate-400" />
+                  <span className="truncate font-medium">{file.name}</span>
                 </span>
                 <span className="shrink-0 text-xs text-slate-400">
                   {Math.ceil(file.size / 1024)} KB
@@ -175,29 +236,41 @@ export function CopilotMaterialBuilder({
         <button
           type="submit"
           disabled={!canSubmit}
-          className="inline-flex items-center justify-center gap-2 rounded-lg bg-slate-950 px-5 py-3 text-sm font-bold text-white disabled:cursor-not-allowed disabled:opacity-45"
+          className="inline-flex items-center justify-center gap-2 rounded-lg bg-slate-950 px-5 py-3 text-sm font-medium text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-45"
         >
           {submitting ? (
             <Loader2 className="h-4 w-4 animate-spin" />
           ) : (
             <Sparkles className="h-4 w-4" />
           )}
-          Create draft
+          {submitting
+            ? "Building your draft…"
+            : `Create ${mode === "skill_path" ? "skill pack" : mode} draft`}
         </button>
       </form>
 
       <aside className="space-y-4">
-        <div className="rounded-lg border border-slate-200 bg-white p-4">
-          <p className="text-sm font-black text-slate-950">Copilot standard</p>
+        <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+          <p className="text-sm font-medium text-slate-950">How your copilot builds</p>
+          <ol className="mt-3 space-y-3 text-xs leading-5 text-slate-600">
+            <BuildStep number="1" text="Extracts source text, structure, tables, and useful visuals." />
+            <BuildStep number="2" text="Organizes concepts into a coherent learning sequence." />
+            <BuildStep number="3" text="Creates activities and checks that support the learning goals." />
+            <BuildStep number="4" text="Saves a private draft for educator review—not automatic publishing." />
+          </ol>
+        </div>
+
+        <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+          <p className="text-sm font-medium text-slate-950">CommonLab learning standard</p>
           <p className="mt-2 text-sm leading-6 text-slate-500">
-            The draft should follow the uploaded material, use consistent terminology,
-            avoid unsupported topics, include meaningful quizzes, and add a focused sandbox when the material supports practice.
+            Drafts stay grounded in your sources, preserve consistent terminology,
+            include meaningful practice, and use focused sandboxes only when hands-on work helps.
           </p>
         </div>
 
         {result ? (
-          <div className="rounded-lg border border-lime-200 bg-lime-50 p-4">
-            <p className="text-sm font-black text-lime-950">
+          <div className="rounded-2xl border border-lime-200 bg-lime-50 p-4 shadow-sm">
+            <p className="text-sm font-medium text-lime-950">
               Draft created
             </p>
             <p className="mt-2 text-sm leading-6 text-lime-800">
@@ -222,6 +295,17 @@ export function CopilotMaterialBuilder({
         ) : null}
       </aside>
     </div>
+  );
+}
+
+function BuildStep({ number, text }: { number: string; text: string }) {
+  return (
+    <li className="flex gap-2.5">
+      <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-lime-200 text-[10px] font-bold text-slate-950">
+        {number}
+      </span>
+      <span>{text}</span>
+    </li>
   );
 }
 

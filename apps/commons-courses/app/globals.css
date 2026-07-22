@@ -46,6 +46,16 @@ body {
   text-rendering: optimizeLegibility;
 }
 
+#educator-shell-content {
+  transition: margin-right 180ms ease;
+}
+
+@media (min-width: 1024px) {
+  html.educator-copilot-open #educator-shell-content {
+    margin-right: var(--educator-copilot-panel-width, 360px);
+  }
+}
+
 ::selection {
   background: #d9f99d;
   color: #0a0a0a;
