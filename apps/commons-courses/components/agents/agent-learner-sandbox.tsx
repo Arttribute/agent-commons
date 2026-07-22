@@ -7,7 +7,12 @@ import {
   useState,
   type MutableRefObject,
 } from "react";
-import { ExternalLink, Loader2 as SandboxLoader, X } from "lucide-react";
+import {
+  ArrowLeft,
+  ExternalLink,
+  Loader2 as SandboxLoader,
+  X,
+} from "lucide-react";
 import { ChatSurface } from "./agent-sandbox/chat-surface";
 import {
   ComputerPanel,
@@ -21,6 +26,7 @@ import {
 import { ConfigDrawer, ConfigRail } from "./agent-sandbox/config-shell";
 import { BottomGuide } from "./agent-sandbox/bottom-guide";
 import { LogsPanel } from "./agent-sandbox/logs-panel";
+import { SessionsSurface } from "./agent-sandbox/sessions-surface";
 import {
   SandboxCompletion,
   SandboxIntro,
@@ -33,6 +39,7 @@ import type {
   SandboxLog,
   SandboxResumeState,
   SandboxSection,
+  SandboxSession,
 } from "./agent-sandbox/types";
 import { targetToPanel } from "./agent-sandbox/types";
 import type { AgentSandboxConfig } from "@/types/skills";
@@ -43,6 +50,8 @@ type StreamEvent = {
   message?: string;
   toolName?: string;
   payload?: Record<string, unknown>;
+  sessionId?: string;
+  title?: string;
 };
 
 type HighlightRect = {
@@ -161,6 +170,11 @@ export function AgentLearnerSandbox({
   const [creditReward, setCreditReward] = useState(config.creditReward || 0);
   const [chatInput, setChatInput] = useState("");
   const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [sessions, setSessions] = useState<SandboxSession[]>([]);
+  const [currentSessionId, setCurrentSessionId] = useState(
+    `learner-session-${challengeId}`,
+  );
+  const [openedFromSessions, setOpenedFromSessions] = useState(false);
   const [logs, setLogs] = useState<SandboxLog[]>([
     {
       level: "info",
@@ -414,7 +428,12 @@ export function AgentLearnerSandbox({
   }
 
   function addLog(log: SandboxLog) {
-    setLogs((current) => [log, ...current].slice(0, 40));
+    setLogs((current) =>
+      [
+        { ...log, occurredAt: log.occurredAt || new Date().toISOString() },
+        ...current,
+      ].slice(0, 40),
+    );
   }
 
   function requireAuth() {
@@ -576,6 +595,9 @@ export function AgentLearnerSandbox({
     addLog({ level: "info", message: "Running the real agent..." });
 
     try {
+      const platformSessionId = sessions.find(
+        (session) => session.id === currentSessionId,
+      )?.platformSessionId;
       const response = await fetch(`/api/skills/${courseSlug}/sandbox/chat`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -585,6 +607,7 @@ export function AgentLearnerSandbox({
             role: message.role,
             content: message.content,
           })),
+          sessionId: platformSessionId,
         }),
       });
 
@@ -597,6 +620,8 @@ export function AgentLearnerSandbox({
       }
 
       let assistantText = "";
+      let returnedPlatformSessionId = platformSessionId;
+      let returnedTitle = "";
       const appendAssistantText = (delta: string) => {
         assistantText += delta;
         setMessages((current) => replaceLastAssistant(current, assistantText));
@@ -617,8 +642,14 @@ export function AgentLearnerSandbox({
             level: "success",
             message: `Tool call finished: ${toolName}.`,
           });
-        } else if (event.type === "final") {
+        } else if (event.type === "final" || event.type === "completed") {
           const finalText = extractStreamFinalText(event);
+          returnedPlatformSessionId =
+            event.sessionId ||
+            stringValue(event.payload?.sessionId) ||
+            returnedPlatformSessionId;
+          returnedTitle =
+            event.title || stringValue(event.payload?.title) || returnedTitle;
           if (finalText && !assistantText.trim()) {
             appendAssistantText(finalText);
           }
@@ -637,8 +668,16 @@ export function AgentLearnerSandbox({
         },
       ];
       setMessages(completedMessages);
+      const updatedSessions = upsertSession(completedMessages, {
+        platformSessionId: returnedPlatformSessionId,
+        title: returnedTitle,
+      });
       addLog({ level: "success", message: "Agent returned a live response." });
-      void persistSandboxState({ messages: completedMessages, chatInput: "" });
+      void persistSandboxState({
+        messages: completedMessages,
+        chatInput: "",
+        sessions: updatedSessions,
+      });
     } catch (error) {
       const message =
         error instanceof Error ? error.message : "The agent run failed.";
@@ -737,6 +776,57 @@ export function AgentLearnerSandbox({
     }
   }
 
+  function startNewSession() {
+    if (messages.length) upsertSession(messages);
+    setCurrentSessionId(`learner-session-${Date.now()}`);
+    setMessages([]);
+    setChatInput("");
+    setRunActivity(undefined);
+    setOpenedFromSessions(false);
+    setActivePanel("chat");
+  }
+
+  function openSession(session: SandboxSession) {
+    if (messages.length) upsertSession(messages);
+    setCurrentSessionId(session.id);
+    setMessages(session.messages);
+    setChatInput("");
+    setOpenedFromSessions(true);
+    setActivePanel("chat");
+  }
+
+  function upsertSession(
+    sessionMessages: ChatMessage[],
+    metadata: { platformSessionId?: string; title?: string } = {},
+  ) {
+    if (!sessionMessages.length) return sessions;
+    const now = new Date().toISOString();
+    const existing = sessions.find(
+      (session) => session.id === currentSessionId,
+    );
+    const firstUserMessage = sessionMessages.find(
+      (message) => message.role === "user",
+    )?.content;
+    const next: SandboxSession = {
+      id: currentSessionId,
+      platformSessionId:
+        metadata.platformSessionId || existing?.platformSessionId,
+      title:
+        metadata.title?.trim() ||
+        existing?.title ||
+        sessionTitle(firstUserMessage),
+      messages: sessionMessages,
+      createdAt: existing?.createdAt || now,
+      updatedAt: now,
+    };
+    const updated = [
+      next,
+      ...sessions.filter((session) => session.id !== next.id),
+    ];
+    setSessions(updated);
+    return updated;
+  }
+
   async function nextGuideStep() {
     const nextIndex = guideIndex + 1;
     if (nextIndex >= guide.length) {
@@ -769,12 +859,19 @@ export function AgentLearnerSandbox({
     <div className="relative flex h-full min-h-0 flex-1 overflow-hidden bg-white text-slate-950">
       <ConfigRail
         sections={visibleSections}
-        activeSection={activePanel}
+        activeSection={
+          openedFromSessions && activePanel === "chat"
+            ? "sessions"
+            : activePanel
+        }
         agentName={agentName}
         courseTitle={courseTitle}
         challengeTitle={challengeTitle || config.title}
         completed={completionSent}
-        onOpenSection={setActivePanel}
+        onOpenSection={(section) => {
+          setOpenedFromSessions(false);
+          setActivePanel(section);
+        }}
         onExit={onExit}
       />
 
@@ -782,11 +879,25 @@ export function AgentLearnerSandbox({
         <div className="relative flex min-h-0 flex-1 overflow-hidden">
           {activePanel === "chat" ? (
             <section className="flex min-h-0 min-w-0 flex-1 flex-col">
-              <WorkspaceHeader
-                title="New session"
-                subtitle="Create the agent, then test it through a live Agent Commons session."
-                agentStudioUrl={agentStudioUrl}
-              />
+              {openedFromSessions ? (
+                <div className="flex h-14 shrink-0 items-center gap-2 border-b border-slate-200 px-4">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setOpenedFromSessions(false);
+                      setActivePanel("sessions");
+                    }}
+                    className="flex h-8 w-8 items-center justify-center rounded-md text-slate-500 hover:bg-slate-100 hover:text-slate-950"
+                    aria-label="Back to sessions"
+                  >
+                    <ArrowLeft className="h-4 w-4" />
+                  </button>
+                  <p className="min-w-0 truncate text-sm font-medium text-slate-950">
+                    {sessions.find((session) => session.id === currentSessionId)
+                      ?.title || "Session"}
+                  </p>
+                </div>
+              ) : null}
               <ChatSurface
                 messages={messages}
                 sending={sending}
@@ -794,6 +905,7 @@ export function AgentLearnerSandbox({
                 createdAgentId={createdAgentId}
                 agentName={agentName}
                 brief={config.brief}
+                starters={sandboxConversationStarters(config)}
                 chatEndRef={chatEndRef}
                 activityLabel={runActivity}
                 placeholder={config.placeholders?.chatInput}
@@ -801,6 +913,13 @@ export function AgentLearnerSandbox({
                 onSend={sendMessage}
               />
             </section>
+          ) : activePanel === "sessions" ? (
+            <SessionsSurface
+              sessions={sessions}
+              currentSessionId={currentSessionId}
+              onCreate={startNewSession}
+              onSelect={openSession}
+            />
           ) : activePanel === "logs" ? (
             <section className="flex min-h-0 min-w-0 flex-1 flex-col">
               <WorkspaceHeader
@@ -1096,6 +1215,8 @@ export function AgentLearnerSandbox({
       creditReward,
       chatInput,
       messages,
+      sessions,
+      currentSessionId,
       logs,
       reviews,
       ...patch,
@@ -1142,6 +1263,25 @@ export function AgentLearnerSandbox({
       setCreditReward(state.creditReward);
     if (typeof state.chatInput === "string") setChatInput(state.chatInput);
     if (state.messages?.length) setMessages(state.messages);
+    const restoredSessionId =
+      state.currentSessionId || `learner-session-${challengeId}`;
+    if (state.sessions?.length) {
+      setSessions(state.sessions);
+    } else if (state.messages?.length) {
+      const restoredAt = new Date().toISOString();
+      setSessions([
+        {
+          id: restoredSessionId,
+          title: sessionTitle(
+            state.messages.find((message) => message.role === "user")?.content,
+          ),
+          messages: state.messages,
+          createdAt: restoredAt,
+          updatedAt: restoredAt,
+        },
+      ]);
+    }
+    if (state.currentSessionId) setCurrentSessionId(state.currentSessionId);
     if (state.logs?.length) setLogs(state.logs);
     if (state.reviews) setReviews(state.reviews);
   }
@@ -1185,6 +1325,7 @@ function WorkspaceHeader({
 const sandboxSectionOrder: SandboxSection[] = [
   "identity",
   "chat",
+  "sessions",
   "computer",
   "tasks",
   "tools",
@@ -1203,9 +1344,29 @@ function sandboxSections(config: AgentSandboxConfig): SandboxSection[] {
     if (section === "tools") {
       return capabilities.has("tools") || capabilities.has("connectors");
     }
+    if (section === "sessions") return capabilities.has("chat");
     return capabilities.has(section);
   });
   return visible.length ? visible : ["identity"];
+}
+
+function sandboxConversationStarters(config: AgentSandboxConfig) {
+  const starters = [
+    ...(config.taskTemplates || []).map((task) => task.title),
+    ...(config.workflowTemplates || []).map(
+      (workflow) => `Help me run ${workflow.name}`,
+    ),
+    ...(config.skillTemplates || []).map(
+      (skill) => `Use ${skill.name} to help me get started`,
+    ),
+  ];
+  return [...new Set(starters.filter(Boolean))].slice(0, 4);
+}
+
+function sessionTitle(value?: string) {
+  const normalized = value?.replace(/\s+/g, " ").trim();
+  if (!normalized) return "New session";
+  return normalized.length > 56 ? `${normalized.slice(0, 53)}...` : normalized;
 }
 
 function firstSandboxSection(config: AgentSandboxConfig): SandboxSection {
@@ -1267,9 +1428,14 @@ function parseSseFrame(frame: string) {
 
 function extractStreamFinalText(event: StreamEvent) {
   const payload = event.payload || {};
+  const nested =
+    payload.data && typeof payload.data === "object"
+      ? (payload.data as Record<string, unknown>)
+      : {};
   return (
     event.content ||
     stringValue(payload.content) ||
+    stringValue(nested.content) ||
     stringValue(payload.text) ||
     stringValue(payload.message) ||
     ""

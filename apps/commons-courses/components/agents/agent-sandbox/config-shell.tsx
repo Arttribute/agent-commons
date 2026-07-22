@@ -10,6 +10,7 @@ import {
   Database,
   Hammer,
   MessageSquarePlus,
+  MessageSquare,
   Monitor,
   Sparkles,
   TerminalSquare,
@@ -31,6 +32,11 @@ export const panelMeta: Record<
     label: "New session",
     description: "Create the agent, then test it in a live session.",
     icon: MessageSquarePlus,
+  },
+  sessions: {
+    label: "Sessions",
+    description: "Reopen conversations used to test this agent.",
+    icon: MessageSquare,
   },
   computer: {
     label: "Computer",
@@ -188,9 +194,7 @@ export function ConfigDrawer({
         <p className="mt-1 text-sm text-slate-500">{description}</p>
       </header>
       <div className="min-h-0 flex-1 overflow-y-auto p-4 sm:p-5">
-        <div className="mx-auto max-w-5xl rounded-lg border border-slate-200 bg-white p-4 sm:p-5">
-          {children}
-        </div>
+        <div className="mx-auto max-w-5xl">{children}</div>
       </div>
     </section>
   );

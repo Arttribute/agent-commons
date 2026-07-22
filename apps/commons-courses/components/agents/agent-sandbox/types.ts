@@ -3,6 +3,7 @@ import type { AgentSandboxStepTarget } from "@/types/skills";
 export type SandboxLog = {
   level: "success" | "warning" | "info" | "error";
   message: string;
+  occurredAt?: string;
 };
 
 export type ReviewResult = {
@@ -17,6 +18,15 @@ export type ReviewResult = {
 export type ChatMessage = {
   role: "user" | "assistant";
   content: string;
+};
+
+export type SandboxSession = {
+  id: string;
+  platformSessionId?: string;
+  title: string;
+  messages: ChatMessage[];
+  createdAt: string;
+  updatedAt: string;
 };
 
 export type SandboxResumeState = {
@@ -40,6 +50,8 @@ export type SandboxResumeState = {
   creditReward?: number;
   chatInput?: string;
   messages?: ChatMessage[];
+  sessions?: SandboxSession[];
+  currentSessionId?: string;
   logs?: SandboxLog[];
   reviews?: Record<string, ReviewResult>;
 };
@@ -53,7 +65,7 @@ export type ConfigPanel =
   | "memory"
   | "computer";
 
-export type SandboxSection = ConfigPanel | "chat" | "logs";
+export type SandboxSection = ConfigPanel | "chat" | "sessions" | "logs";
 
 export const targetToPanel: Partial<
   Record<AgentSandboxStepTarget, SandboxSection>
