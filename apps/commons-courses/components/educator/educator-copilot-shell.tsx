@@ -4,24 +4,24 @@ import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "re
 import { usePathname, useRouter } from "next/navigation";
 import { signIn } from "next-auth/react";
 import {
-  Bot,
+  ArrowUp,
   BookOpen,
   Brain,
   Check,
   ChevronRight,
+  Clock3,
   FileText,
   FilePlus2,
-  History,
+  FlaskConical,
   Highlighter,
   Layers,
   LoaderCircle,
+  MessageSquarePlus,
   Navigation,
   Paperclip,
   PenLine,
   Plug,
-  Plus,
-  Send,
-  Settings,
+  Settings2,
   Sparkles,
   Trash2,
   X,
@@ -53,11 +53,21 @@ type CopilotStreamEvent = {
 };
 
 const QUICK_PROMPTS = [
-  "Give me a snapshot of all my courses and students",
-  "What needs my attention this week?",
-  "Help me improve a lesson in this course",
-  "Draft a new module from a file I upload",
+  "Give me a snapshot of my courses and learners",
+  "What needs my attention as an educator this week?",
+  "Help me improve this lesson for active learning",
+  "Turn an uploaded PDF into a course, workbook, or skill pack",
 ];
+
+const PANEL_WIDTH_KEY = "educator-copilot-panel-width";
+const PANEL_MIN_WIDTH = 320;
+const PANEL_MAX_WIDTH = 560;
+const PANEL_DEFAULT_WIDTH = 360;
+
+function clampPanelWidth(value: number) {
+  if (!Number.isFinite(value)) return PANEL_DEFAULT_WIDTH;
+  return Math.min(PANEL_MAX_WIDTH, Math.max(PANEL_MIN_WIDTH, Math.round(value)));
+}
 
 export function EducatorCopilotShell() {
   const router = useRouter();
@@ -74,12 +84,48 @@ export function EducatorCopilotShell() {
   const [localNotice, setLocalNotice] = useState<string | null>(null);
   const [streamStatus, setStreamStatus] = useState<string | null>(null);
   const [streamActivity, setStreamActivity] = useState<EducatorCopilotToolActivity[]>([]);
+  const [panelWidth, setPanelWidth] = useState(PANEL_DEFAULT_WIDTH);
   const autoApplied = useRef(new Set<string>());
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
 
   const actionMode: EducatorCopilotActionMode = profile?.actionMode || "manual";
   const messages = useMemo(() => activeSession?.messages || [], [activeSession?.messages]);
+
+  useEffect(() => {
+    const stored = Number(window.localStorage.getItem(PANEL_WIDTH_KEY));
+    if (stored) setPanelWidth(clampPanelWidth(stored));
+  }, []);
+
+  useEffect(() => {
+    document.documentElement.style.setProperty(
+      "--educator-copilot-panel-width",
+      `${panelWidth}px`
+    );
+  }, [panelWidth]);
+
+  useEffect(() => {
+    document.documentElement.classList.toggle("educator-copilot-open", open);
+    return () => document.documentElement.classList.remove("educator-copilot-open");
+  }, [open]);
+
+  const startPanelResize = (event: React.PointerEvent) => {
+    event.preventDefault();
+    const startX = event.clientX;
+    const startWidth = panelWidth;
+    let width = startWidth;
+    const onMove = (move: PointerEvent) => {
+      width = clampPanelWidth(startWidth + (startX - move.clientX));
+      setPanelWidth(width);
+    };
+    const onUp = () => {
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+      window.localStorage.setItem(PANEL_WIDTH_KEY, String(width));
+    };
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+  };
 
   const updateLocalAction = useCallback(
     (
@@ -388,6 +434,11 @@ export function EducatorCopilotShell() {
         : "Ask about any of your courses, students, or materials — or upload a file and we'll build content from it.",
     [pathname]
   );
+  const pendingActionCount = messages.reduce(
+    (total, message) =>
+      total + (message.actions || []).filter((action) => action.status === "proposed").length,
+    0
+  );
 
   return (
     <>
@@ -401,99 +452,90 @@ export function EducatorCopilotShell() {
       <button
         type="button"
         aria-label="Open educator copilot"
-        onClick={() => setOpen(true)}
+        onClick={() => {
+          setOpen(true);
+          setPanel("chat");
+        }}
         className={cn(
-          "fixed bottom-5 right-5 z-40 inline-flex items-center gap-2 rounded-lg bg-slate-950 px-4 py-3 text-sm font-bold text-white shadow-lg transition hover:bg-slate-800",
+          "fixed bottom-5 right-5 z-40 rounded-full border border-slate-200 bg-white p-1 shadow-lg transition hover:-translate-y-0.5 hover:shadow-xl",
           open && "hidden"
         )}
       >
-        <Bot className="h-4 w-4" />
-        Copilot
+        <CopilotAvatar size="large" />
+        <span className="absolute -left-1 -top-1 rounded-full bg-slate-950 p-1 text-white shadow">
+          <Sparkles className="h-3 w-3" />
+        </span>
+        {pendingActionCount > 0 ? (
+          <span className="absolute -right-1 -top-1 flex h-5 min-w-5 items-center justify-center rounded-full bg-amber-500 px-1 text-[10px] font-semibold text-white">
+            {pendingActionCount}
+          </span>
+        ) : null}
       </button>
 
       {open ? (
-        <div className="fixed inset-0 z-50 flex justify-end bg-slate-950/20">
-          <button
-            type="button"
-            aria-label="Close educator copilot"
-            className="hidden flex-1 md:block"
-            onClick={() => setOpen(false)}
+        <aside className="fixed inset-y-0 right-0 z-50 flex w-full flex-col border-l border-slate-200 bg-white shadow-xl lg:w-[var(--educator-copilot-panel-width,360px)]">
+          <div
+            role="separator"
+            aria-orientation="vertical"
+            aria-label="Resize educator copilot panel"
+            onPointerDown={startPanelResize}
+            className="absolute inset-y-0 left-0 z-10 hidden w-1.5 cursor-col-resize touch-none hover:bg-slate-200/80 lg:block"
           />
-          <aside className="flex h-full w-full max-w-md flex-col border-l border-slate-200 bg-white shadow-xl">
-            <header className="border-b border-slate-100 p-4">
-              <div className="flex items-start justify-between gap-3">
-                <div className="min-w-0">
-                  <p className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-[0.2em] text-slate-400">
-                    {profile?.copilotName || "Educator copilot"}
-                    <span
-                      title={
-                        profile?.agentReady
-                          ? "Connected to your Commons account"
-                          : profile?.connectionMessage || "Connection required"
-                      }
-                      className={cn(
-                        "inline-block h-1.5 w-1.5 rounded-full",
-                        profile?.agentReady ? "bg-emerald-500" : "bg-amber-400"
-                      )}
-                    />
-                  </p>
-                  <h2 className="mt-1 truncate text-base font-bold text-slate-950">
-                    {activeSession?.title || "Course assistant"}
-                  </h2>
-                </div>
-                <button
-                  type="button"
-                  aria-label="Close educator copilot"
-                  className="rounded-md p-1.5 text-slate-500 hover:bg-slate-100"
-                  onClick={() => setOpen(false)}
-                >
-                  <X className="h-4 w-4" />
-                </button>
-              </div>
-              <div className="mt-4 flex items-center gap-2">
-                <IconButton
-                  label="Previous sessions"
-                  active={panel === "sessions"}
-                  onClick={() => setPanel(panel === "sessions" ? "chat" : "sessions")}
-                >
-                  <History className="h-4 w-4" />
-                </IconButton>
-                <IconButton label="New session" onClick={createSession}>
-                  <Plus className="h-4 w-4" />
-                </IconButton>
-                <IconButton
-                  label="Settings"
-                  active={panel === "settings"}
-                  onClick={() => setPanel(panel === "settings" ? "chat" : "settings")}
-                >
-                  <Settings className="h-4 w-4" />
-                </IconButton>
-                <button
-                  type="button"
-                  onClick={() => updateActionMode(actionMode === "auto" ? "manual" : "auto")}
-                  title={
-                    actionMode === "auto"
-                      ? "Auto: safe actions run without approval. Click for Manual."
-                      : "Manual: you approve every action. Click for Auto."
-                  }
-                  className={cn(
-                    "ml-auto inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-xs font-bold transition",
-                    actionMode === "auto"
-                      ? "border-emerald-600 bg-emerald-50 text-emerald-700"
-                      : "border-slate-200 text-slate-500 hover:border-slate-950 hover:text-slate-950"
-                  )}
-                >
+          <header className="flex h-14 shrink-0 items-center gap-2 border-b border-slate-200 px-3">
+            <button
+              type="button"
+              onClick={() => setPanel("chat")}
+              className="flex min-w-0 flex-1 items-center gap-2.5 rounded-lg p-1 text-left transition hover:bg-slate-100"
+            >
+              <CopilotAvatar />
+              <span className="min-w-0">
+                <span className="flex items-center gap-1.5">
+                  <span className="truncate text-sm font-medium text-slate-950">
+                    {profile?.copilotName || "Educator Copilot"}
+                  </span>
                   <span
+                    title={
+                      profile?.agentReady
+                        ? "Connected to your Commons account"
+                        : profile?.connectionMessage || "Connection required"
+                    }
                     className={cn(
-                      "inline-block h-1.5 w-1.5 rounded-full",
-                      actionMode === "auto" ? "bg-emerald-500" : "bg-slate-400"
+                      "h-1.5 w-1.5 shrink-0 rounded-full",
+                      profile?.agentReady ? "bg-emerald-500" : "bg-amber-400"
                     )}
                   />
-                  {actionMode === "auto" ? "Auto" : "Manual"}
-                </button>
-              </div>
-            </header>
+                </span>
+                <span className="block truncate text-[11px] text-slate-500">
+                  {activeSession?.id
+                    ? activeSession.title || "Current Copilot session"
+                    : "CommonLab educator copilot"}
+                </span>
+              </span>
+            </button>
 
+            <IconButton
+              label="Recent chats"
+              active={panel === "sessions"}
+              onClick={() => setPanel("sessions")}
+            >
+              <Clock3 className="h-4 w-4" />
+            </IconButton>
+            <IconButton
+              label="Copilot settings"
+              active={panel === "settings"}
+              onClick={() => setPanel("settings")}
+            >
+              <Settings2 className="h-4 w-4" />
+            </IconButton>
+            <IconButton label="New chat" onClick={createSession}>
+              <MessageSquarePlus className="h-4 w-4" />
+            </IconButton>
+            <IconButton label="Close Copilot" onClick={() => setOpen(false)}>
+              <X className="h-4 w-4" />
+            </IconButton>
+          </header>
+
+          <div className="min-h-0 flex-1">
             {panel === "sessions" ? (
               <SessionsPanel
                 booted={booted}
@@ -509,24 +551,24 @@ export function EducatorCopilotShell() {
                 onModeChange={updateActionMode}
               />
             ) : (
-              <>
-                <div ref={scrollRef} className="flex-1 overflow-y-auto p-4">
+              <div className="flex h-full min-h-0 flex-col">
+                <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto px-3 py-4">
                   {messages.length === 0 ? (
-                    <div className="mt-8 text-center">
-                      <Sparkles className="mx-auto mb-3 h-5 w-5 text-slate-400" />
-                      <p className="text-sm font-semibold text-slate-800">
+                    <div className="flex min-h-full flex-col items-center justify-center py-8 text-center">
+                      <CopilotAvatar size="empty" />
+                      <p className="text-sm font-medium text-slate-950">
                         Your workspace, one question away.
                       </p>
-                      <p className="mx-auto mt-1 max-w-xs text-sm leading-6 text-slate-500">
+                      <p className="mx-auto mt-1 max-w-xs text-xs leading-5 text-slate-500">
                         {emptyState}
                       </p>
-                      <div className="mx-auto mt-5 flex max-w-xs flex-col gap-2">
+                      <div className="mx-auto mt-5 flex w-full max-w-xs flex-col gap-2">
                         {QUICK_PROMPTS.map((prompt) => (
                           <button
                             key={prompt}
                             type="button"
                             onClick={(event) => sendMessage(event, prompt)}
-                            className="rounded-lg border border-slate-200 px-3 py-2 text-left text-xs font-semibold text-slate-600 transition hover:border-slate-950 hover:text-slate-950"
+                            className="rounded-xl border border-slate-200 px-3 py-2.5 text-left text-xs text-slate-600 transition hover:bg-slate-50 hover:text-slate-950"
                           >
                             {prompt}
                           </button>
@@ -534,11 +576,12 @@ export function EducatorCopilotShell() {
                       </div>
                     </div>
                   ) : (
-                    <div className="space-y-3">
+                    <div className="space-y-1">
                       {messages.map((message, index) => (
                         <MessageBubble
                           key={message.id}
                           message={message}
+                          agentName={profile?.copilotName || "Educator Copilot"}
                           isStreamingTarget={
                             loading &&
                             index === messages.length - 1 &&
@@ -549,8 +592,8 @@ export function EducatorCopilotShell() {
                         />
                       ))}
                       {loading && streamStatus ? (
-                        <div className="mr-10 inline-flex items-center gap-2 rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-500">
-                          <LoaderCircle className="h-4 w-4 animate-spin" />
+                        <div className="inline-flex items-center gap-2 py-2 text-xs text-slate-500">
+                          <LoaderCircle className="h-3.5 w-3.5 animate-spin" />
                           {streamStatus}
                         </div>
                       ) : null}
@@ -562,33 +605,34 @@ export function EducatorCopilotShell() {
                     </p>
                   ) : null}
                 </div>
-                <form onSubmit={sendMessage} className="border-t border-slate-100 p-3">
-                  {files.length ? (
-                    <div className="mb-2 flex flex-wrap gap-2">
-                      {files.map((file, index) => (
-                        <span
-                          key={`${file.name}-${index}`}
-                          className="inline-flex max-w-full items-center gap-1 rounded-md border border-slate-200 bg-slate-50 px-2 py-1 text-xs font-semibold text-slate-600"
-                        >
-                          <FileText className="h-3.5 w-3.5 flex-shrink-0" />
-                          <span className="max-w-40 truncate">{file.name}</span>
-                          <button
-                            type="button"
-                            aria-label={`Remove ${file.name}`}
-                            onClick={() =>
-                              setFiles((current) =>
-                                current.filter((_, fileIndex) => fileIndex !== index)
-                              )
-                            }
-                            className="rounded text-slate-400 hover:text-rose-600"
+
+                <form onSubmit={sendMessage} className="shrink-0 border-t border-slate-200 p-3">
+                  <div className="rounded-2xl border border-stone-300 bg-white shadow-sm">
+                    {files.length ? (
+                      <div className="flex flex-wrap gap-2 px-3 pt-3">
+                        {files.map((file, index) => (
+                          <span
+                            key={`${file.name}-${index}`}
+                            className="inline-flex max-w-full items-center gap-1.5 rounded-lg border border-slate-200 bg-slate-50 px-2 py-1.5 text-xs text-slate-600"
                           >
-                            <X className="h-3 w-3" />
-                          </button>
-                        </span>
-                      ))}
-                    </div>
-                  ) : null}
-                  <div className="flex items-end gap-2 rounded-lg border border-slate-200 bg-white p-2">
+                            <FileText className="h-3.5 w-3.5 shrink-0" />
+                            <span className="max-w-40 truncate">{file.name}</span>
+                            <button
+                              type="button"
+                              aria-label={`Remove ${file.name}`}
+                              onClick={() =>
+                                setFiles((current) =>
+                                  current.filter((_, fileIndex) => fileIndex !== index)
+                                )
+                              }
+                              className="rounded text-slate-400 hover:text-rose-600"
+                            >
+                              <X className="h-3 w-3" />
+                            </button>
+                          </span>
+                        ))}
+                      </div>
+                    ) : null}
                     <textarea
                       value={input}
                       onChange={(event) => setInput(event.target.value)}
@@ -600,7 +644,7 @@ export function EducatorCopilotShell() {
                       }}
                       placeholder="Ask about your courses, students, or this page…"
                       rows={2}
-                      className="max-h-28 min-h-10 flex-1 resize-none border-0 bg-transparent text-sm outline-none placeholder:text-slate-400"
+                      className="h-16 w-full resize-none rounded-2xl bg-transparent p-3 text-sm outline-none placeholder:text-slate-400"
                     />
                     <input
                       ref={fileInputRef}
@@ -616,29 +660,36 @@ export function EducatorCopilotShell() {
                         event.currentTarget.value = "";
                       }}
                     />
-                    <button
-                      type="button"
-                      aria-label="Attach files"
-                      title="Attach files"
-                      onClick={() => fileInputRef.current?.click()}
-                      className="rounded-md border border-slate-200 p-2 text-slate-500 hover:bg-slate-50"
-                    >
-                      <Paperclip className="h-4 w-4" />
-                    </button>
-                    <button
-                      type="submit"
-                      disabled={loading || (input.trim().length === 0 && files.length === 0)}
-                      aria-label="Send message"
-                      className="rounded-md bg-slate-950 p-2 text-white disabled:opacity-40"
-                    >
-                      <Send className="h-4 w-4" />
-                    </button>
+                    <div className="flex items-center justify-between px-2 pb-2">
+                      <button
+                        type="button"
+                        aria-label="Add photos and files"
+                        title="Add photos and files"
+                        onClick={() => fileInputRef.current?.click()}
+                        disabled={loading}
+                        className="rounded-lg p-1.5 text-slate-500 transition hover:bg-slate-100 hover:text-slate-950 disabled:opacity-40"
+                      >
+                        <Paperclip className="h-4 w-4" />
+                      </button>
+                      <button
+                        type="submit"
+                        disabled={loading || (input.trim().length === 0 && files.length === 0)}
+                        aria-label="Send message"
+                        className="rounded-lg bg-slate-950 p-1.5 text-white transition hover:opacity-80 disabled:opacity-40"
+                      >
+                        {loading ? (
+                          <LoaderCircle className="h-4 w-4 animate-spin" />
+                        ) : (
+                          <ArrowUp className="h-4 w-4" />
+                        )}
+                      </button>
+                    </div>
                   </div>
                 </form>
-              </>
+              </div>
             )}
-          </aside>
-        </div>
+          </div>
+        </aside>
       ) : null}
     </>
   );
@@ -646,94 +697,98 @@ export function EducatorCopilotShell() {
 
 function MessageBubble({
   message,
+  agentName,
   isStreamingTarget,
   liveActivity,
   onDecision,
 }: {
   message: EducatorCopilotMessage;
+  agentName: string;
   isStreamingTarget: boolean;
   liveActivity: EducatorCopilotToolActivity[];
   onDecision: (action: EducatorCopilotAction, decision: "approve" | "reject") => void;
 }) {
   const activity = isStreamingTarget ? liveActivity : message.activity || [];
+  const isUser = message.role === "user";
   return (
-    <div
-      className={cn(
-        "rounded-lg px-3 py-2 text-sm leading-6",
-        message.role === "user"
-          ? "ml-10 bg-slate-950 text-white"
-          : "mr-6 border border-slate-200 bg-white text-slate-700"
-      )}
-    >
-      {activity.length ? (
-        <div className="mb-2 flex flex-wrap gap-1.5">
-          {activity.map((item, index) => (
-            <span
-              key={`${item.tool}-${index}`}
-              className={cn(
-                "inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-semibold",
-                item.status === "running"
-                  ? "border-sky-200 bg-sky-50 text-sky-700"
-                  : item.status === "error"
-                    ? "border-rose-200 bg-rose-50 text-rose-600"
-                    : "border-slate-200 bg-slate-50 text-slate-500"
-              )}
-            >
-              {item.status === "running" ? (
-                <LoaderCircle className="h-3 w-3 animate-spin" />
-              ) : (
-                <Check className="h-3 w-3" />
-              )}
-              {item.label}
-            </span>
-          ))}
-        </div>
-      ) : null}
-      {message.content ? (
-        message.role === "assistant" ? (
-          <RichTextRenderer
-            value={message.content}
-            className="space-y-2 text-sm leading-6 [&_h2]:text-base [&_h3]:text-sm [&_h4]:text-sm"
-          />
-        ) : (
-          <p className="whitespace-pre-wrap">{message.content}</p>
-        )
-      ) : isStreamingTarget ? (
-        <span className="inline-flex items-center gap-2 text-slate-400">
-          <LoaderCircle className="h-3.5 w-3.5 animate-spin" />
-          Working…
-        </span>
-      ) : null}
-      {message.attachments?.length ? (
-        <div className="mt-2 space-y-1">
-          {message.attachments.map((attachment, index) => (
-            <div
-              key={`${attachment.name}-${index}`}
-              className={cn(
-                "flex items-center gap-2 rounded-md px-2 py-1 text-xs",
-                message.role === "user"
-                  ? "bg-white/10 text-white/85"
-                  : "bg-slate-50 text-slate-600"
-              )}
-            >
-              <FileText className="h-3.5 w-3.5 flex-shrink-0" />
-              <span className="truncate">{attachment.name}</span>
-              {attachment.status === "uploaded" ? (
-                <span className="ml-auto text-[10px] font-bold uppercase tracking-wide opacity-70">
-                  synced
-                </span>
-              ) : null}
-            </div>
-          ))}
-        </div>
-      ) : null}
-      {message.actions?.length ? (
-        <div className="mt-3 space-y-2">
-          {message.actions.map((action) => (
-            <ActionCard key={action.id} action={action} onDecision={onDecision} />
-          ))}
-        </div>
-      ) : null}
+    <div className={cn("my-3", isUser ? "flex justify-end" : "mr-2")}>
+      <div className={cn(isUser ? "max-w-[80%] rounded-2xl rounded-tr-sm bg-lime-100 px-4 py-2.5" : "w-full")}>
+        {!isUser ? (
+          <div className="mb-2 flex items-center gap-2">
+            <CopilotAvatar size="message" />
+            <span className="truncate text-xs text-slate-500">{agentName}</span>
+          </div>
+        ) : null}
+        {activity.length ? (
+          <div className="mb-2 flex flex-wrap gap-1.5">
+            {activity.map((item, index) => (
+              <span
+                key={`${item.tool}-${index}`}
+                className={cn(
+                  "inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-medium",
+                  item.status === "running"
+                    ? "border-sky-200 bg-sky-50 text-sky-700"
+                    : item.status === "error"
+                      ? "border-rose-200 bg-rose-50 text-rose-600"
+                      : "border-slate-200 bg-slate-50 text-slate-500"
+                )}
+              >
+                {item.status === "running" ? (
+                  <LoaderCircle className="h-3 w-3 animate-spin" />
+                ) : (
+                  <Check className="h-3 w-3" />
+                )}
+                {item.label}
+              </span>
+            ))}
+          </div>
+        ) : null}
+        {message.content ? (
+          isUser ? (
+            <p className="whitespace-pre-wrap text-sm leading-relaxed text-slate-900">
+              {message.content}
+            </p>
+          ) : (
+            <RichTextRenderer
+              value={message.content}
+              className="space-y-2 text-sm leading-6 text-slate-700 [&_h2]:text-base [&_h3]:text-sm [&_h4]:text-sm"
+            />
+          )
+        ) : isStreamingTarget ? (
+          <span className="inline-flex items-center gap-2 text-sm text-slate-400">
+            <LoaderCircle className="h-3.5 w-3.5 animate-spin" />
+            Working…
+          </span>
+        ) : null}
+        {message.attachments?.length ? (
+          <div className="mt-2 space-y-1">
+            {message.attachments.map((attachment, index) => (
+              <div
+                key={`${attachment.name}-${index}`}
+                className={cn(
+                  "flex items-center gap-2 rounded-md px-2 py-1 text-xs",
+                  isUser ? "bg-white/60 text-slate-700" : "bg-slate-50 text-slate-600"
+                )}
+              >
+                <FileText className="h-3.5 w-3.5 shrink-0" />
+                <span className="truncate">{attachment.name}</span>
+                {attachment.status === "uploaded" ? (
+                  <span className="ml-auto text-[10px] font-medium uppercase tracking-wide opacity-70">
+                    synced
+                  </span>
+                ) : null}
+              </div>
+            ))}
+          </div>
+        ) : null}
+        {message.actions?.length ? (
+          <div className="mt-3 space-y-2">
+            {message.actions.map((action) => (
+              <ActionCard key={action.id} action={action} onDecision={onDecision} />
+            ))}
+          </div>
+        ) : null}
+      </div>
     </div>
   );
 }
@@ -837,10 +892,13 @@ function SessionsPanel({
   onArchive: (id: string) => void;
 }) {
   return (
-    <div className="flex-1 overflow-y-auto p-4">
-      <p className="mb-3 text-xs font-black uppercase tracking-widest text-slate-500">
-        Previous sessions
-      </p>
+    <div className="h-full overflow-y-auto p-3">
+      <div className="px-2 pb-2 pt-1">
+        <h2 className="text-sm font-medium text-slate-950">Recent chats</h2>
+        <p className="mt-1 text-xs leading-5 text-slate-500">
+          Continue earlier planning, course, and material sessions.
+        </p>
+      </div>
       {!booted ? (
         <p className="text-sm text-slate-500">Loading sessions…</p>
       ) : sessions.length === 0 ? (
@@ -851,8 +909,10 @@ function SessionsPanel({
             <div
               key={session.id}
               className={cn(
-                "group rounded-lg border p-3",
-                activeId === session.id ? "border-slate-950" : "border-slate-200"
+                "group rounded-xl border p-3 transition hover:bg-slate-50",
+                activeId === session.id
+                  ? "border-slate-950 bg-slate-50"
+                  : "border-slate-200"
               )}
             >
               <button
@@ -1051,7 +1111,13 @@ function SettingsPanel({
   const actionMode = profile?.actionMode || "manual";
 
   return (
-    <div className="flex-1 space-y-6 overflow-y-auto p-4">
+    <div className="h-full space-y-6 overflow-y-auto p-4">
+      <div>
+        <h2 className="text-sm font-medium text-slate-950">Copilot settings</h2>
+        <p className="mt-1 text-xs leading-5 text-slate-500">
+          Shape how your teaching copilot works, remembers, and connects.
+        </p>
+      </div>
       {profile && !profile.agentReady ? (
         <section className="rounded-lg border border-amber-200 bg-amber-50 p-4">
           <p className="text-sm font-black text-amber-950">
@@ -1314,11 +1380,21 @@ function ModeOption({
       type="button"
       onClick={onClick}
       className={cn(
-        "w-full rounded-lg border p-3 text-left",
-        checked ? "border-slate-950 bg-white" : "border-slate-200 bg-slate-50"
+        "w-full rounded-xl border p-3 text-left transition",
+        checked
+          ? "border-lime-400 bg-lime-50"
+          : "border-slate-200 bg-white hover:bg-slate-50"
       )}
     >
-      <span className="text-sm font-black text-slate-950">{title}</span>
+      <span className="flex items-center gap-2 text-sm font-medium text-slate-950">
+        <span
+          className={cn(
+            "h-3.5 w-3.5 rounded-full border",
+            checked ? "border-[4px] border-slate-950" : "border-slate-300"
+          )}
+        />
+        {title}
+      </span>
       <span className="mt-1 block text-xs leading-5 text-slate-500">{body}</span>
     </button>
   );
@@ -1342,12 +1418,49 @@ function IconButton({
       title={label}
       onClick={onClick}
       className={cn(
-        "inline-flex h-9 w-9 items-center justify-center rounded-md border text-slate-600",
-        active ? "border-slate-950 bg-slate-950 text-white" : "border-slate-200 bg-white"
+        "inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-slate-500 transition hover:bg-slate-100 hover:text-slate-950",
+        active && "bg-slate-100 text-slate-950"
       )}
     >
       {children}
     </button>
+  );
+}
+
+function CopilotAvatar({
+  size = "header",
+}: {
+  size?: "header" | "large" | "empty" | "message";
+}) {
+  return (
+    <span
+      aria-hidden="true"
+      className={cn(
+        "relative flex shrink-0 items-center justify-center rounded-full bg-slate-950 text-lime-300 ring-1 ring-slate-200",
+        size === "large"
+          ? "h-[52px] w-[52px]"
+          : size === "empty"
+            ? "mb-3 h-12 w-12"
+            : size === "message"
+              ? "h-5 w-5"
+            : "h-[34px] w-[34px]"
+      )}
+    >
+      <FlaskConical
+        className={cn(
+          size === "large"
+            ? "h-6 w-6"
+            : size === "empty"
+              ? "h-5 w-5"
+              : size === "message"
+                ? "h-2.5 w-2.5"
+                : "h-4 w-4"
+        )}
+      />
+      {size !== "message" ? (
+        <span className="absolute bottom-0.5 right-0.5 h-2 w-2 rounded-full border border-slate-950 bg-lime-300" />
+      ) : null}
+    </span>
   );
 }
 

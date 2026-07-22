@@ -3,7 +3,7 @@ import { EducatorCopilotShell } from "@/components/educator/educator-copilot-she
 export default function EducatorLayout({ children }: { children: React.ReactNode }) {
   return (
     <>
-      {children}
+      <div id="educator-shell-content">{children}</div>
       <EducatorCopilotShell />
     </>
   );
