@@ -33,7 +33,7 @@ export type SandboxResumeState = {
   computerCommand?: string;
   computerOutput?: string;
   taskTitle?: string;
-  activePanel?: ConfigPanel;
+  activePanel?: SandboxSection;
   guideIndex?: number;
   createdAgentId?: string;
   completionSent?: boolean;
@@ -53,7 +53,11 @@ export type ConfigPanel =
   | "memory"
   | "computer";
 
-export const targetToPanel: Partial<Record<AgentSandboxStepTarget, ConfigPanel>> = {
+export type SandboxSection = ConfigPanel | "chat" | "logs";
+
+export const targetToPanel: Partial<
+  Record<AgentSandboxStepTarget, SandboxSection>
+> = {
   identity: "identity",
   system_prompt: "identity",
   skills: "skills",
@@ -63,4 +67,7 @@ export const targetToPanel: Partial<Record<AgentSandboxStepTarget, ConfigPanel>>
   workflows: "workflows",
   memory: "memory",
   computer: "computer",
+  chat: "chat",
+  logs: "logs",
+  publish: "chat",
 };

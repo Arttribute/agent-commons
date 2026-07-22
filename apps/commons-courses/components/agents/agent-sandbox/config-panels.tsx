@@ -36,54 +36,79 @@ import {
 
 export function IdentityPanel({
   agentName,
+  persona,
   systemPrompt,
+  showIdentity,
+  showSystemPrompt,
   placeholders,
   reviewEnabled,
   review,
   reviewing,
   onNameChange,
+  onPersonaChange,
   onPromptChange,
   onReview,
 }: {
   agentName: string;
+  persona: string;
   systemPrompt: string;
+  showIdentity: boolean;
+  showSystemPrompt: boolean;
   placeholders?: AgentSandboxConfig["placeholders"];
   reviewEnabled: boolean;
   review?: ReviewResult;
   reviewing: boolean;
   onNameChange: (value: string) => void;
+  onPersonaChange: (value: string) => void;
   onPromptChange: (value: string) => void;
   onReview: () => void;
 }) {
   return (
     <div className="space-y-4" data-sandbox-target="identity">
-      <Field
-        label="Agent name"
-        value={agentName}
-        placeholder={placeholders?.agentName || "Study Coach"}
-        onChange={onNameChange}
-        target="agent-name"
-      />
-      <label className="block">
-        <span className="text-xs font-bold text-slate-600">System prompt</span>
-        <textarea
-          data-sandbox-target="system-prompt"
-          value={systemPrompt}
-          placeholder={
-            placeholders?.systemPrompt ||
-            "You are a helpful agent. Explain your goal, tone, boundaries, and when to use connected tools."
-          }
-          onChange={(event) => onPromptChange(event.target.value)}
-          className="mt-1.5 min-h-40 w-full resize-y rounded-lg border border-slate-200 px-3 py-2 text-sm leading-6 outline-none focus:border-slate-400"
-        />
-      </label>
-      {reviewEnabled ? (
-        <div data-sandbox-target="review-box">
-          <ReviewBox
-            result={review}
-            loading={reviewing}
-            onReview={onReview}
+      {showIdentity ? (
+        <>
+          <Field
+            label="Agent name"
+            value={agentName}
+            placeholder={placeholders?.agentName || "Study Coach"}
+            onChange={onNameChange}
+            target="agent-name"
           />
+          <label className="block">
+            <span className="text-xs font-bold text-slate-600">Persona</span>
+            <textarea
+              data-sandbox-target="agent-persona"
+              value={persona}
+              placeholder={
+                placeholders?.persona ||
+                "A practical planning assistant for learners"
+              }
+              onChange={(event) => onPersonaChange(event.target.value)}
+              className="mt-1.5 min-h-24 w-full resize-y rounded-lg border border-slate-200 px-3 py-2 text-sm leading-6 outline-none focus:border-slate-400"
+            />
+          </label>
+        </>
+      ) : null}
+      {showSystemPrompt ? (
+        <label className="block">
+          <span className="text-xs font-bold text-slate-600">
+            System prompt
+          </span>
+          <textarea
+            data-sandbox-target="system-prompt"
+            value={systemPrompt}
+            placeholder={
+              placeholders?.systemPrompt ||
+              "You are a helpful agent. Explain your goal, tone, boundaries, and when to use connected tools."
+            }
+            onChange={(event) => onPromptChange(event.target.value)}
+            className="mt-1.5 min-h-40 w-full resize-y rounded-lg border border-slate-200 px-3 py-2 text-sm leading-6 outline-none focus:border-slate-400"
+          />
+        </label>
+      ) : null}
+      {showSystemPrompt && reviewEnabled ? (
+        <div data-sandbox-target="review-box">
+          <ReviewBox result={review} loading={reviewing} onReview={onReview} />
         </div>
       ) : null}
     </div>
@@ -144,7 +169,8 @@ export function SkillsPanel({
         <div className="divide-y divide-slate-100 rounded-xl border border-slate-200 overflow-hidden">
           {listItems.map((skill) => {
             const active = skill.id === selectedId;
-            const description = skillInstructions[skill.id] || skill.instructions;
+            const description =
+              skillInstructions[skill.id] || skill.instructions;
             return (
               <button
                 key={skill.id}
@@ -154,11 +180,16 @@ export function SkillsPanel({
                   "flex w-full items-center gap-3 px-3 py-2.5 text-left transition-colors",
                   active
                     ? "bg-slate-50 border-l-2 border-l-slate-900"
-                    : "bg-white hover:bg-slate-50 border-l-2 border-l-transparent"
+                    : "bg-white hover:bg-slate-50 border-l-2 border-l-transparent",
                 )}
               >
                 <span className="min-w-0 flex-1">
-                  <span className={cn("block truncate text-sm font-bold", active ? "text-slate-900" : "text-slate-800")}>
+                  <span
+                    className={cn(
+                      "block truncate text-sm font-bold",
+                      active ? "text-slate-900" : "text-slate-800",
+                    )}
+                  >
                     {skill.name}
                   </span>
                   <span className="mt-0.5 block truncate text-xs text-slate-500">
@@ -168,10 +199,14 @@ export function SkillsPanel({
                 <span
                   className={cn(
                     "flex h-4 w-4 shrink-0 items-center justify-center rounded-full border-2 transition-colors",
-                    active ? "border-slate-900 bg-slate-900" : "border-slate-300 bg-white"
+                    active
+                      ? "border-slate-900 bg-slate-900"
+                      : "border-slate-300 bg-white",
                   )}
                 >
-                  {active ? <Check className="h-2.5 w-2.5 text-white" strokeWidth={3} /> : null}
+                  {active ? (
+                    <Check className="h-2.5 w-2.5 text-white" strokeWidth={3} />
+                  ) : null}
                 </span>
               </button>
             );
@@ -193,8 +228,12 @@ export function SkillsPanel({
           </span>
           <textarea
             data-sandbox-target="skill-instructions"
-            value={skillInstructions[selectedSkill.id] || selectedSkill.instructions}
-            placeholder={placeholder || "Write the steps this agent should follow..."}
+            value={
+              skillInstructions[selectedSkill.id] || selectedSkill.instructions
+            }
+            placeholder={
+              placeholder || "Write the steps this agent should follow..."
+            }
             onChange={(event) =>
               onInstructionChange(selectedSkill.id, event.target.value)
             }
@@ -207,7 +246,9 @@ export function SkillsPanel({
             data-sandbox-target="skill-instructions"
             value={draft}
             onChange={(event) => setDraft(event.target.value)}
-            placeholder={placeholder || "Describe a skill this agent should use..."}
+            placeholder={
+              placeholder || "Describe a skill this agent should use..."
+            }
             className="min-h-32 w-full resize-y rounded-lg border border-slate-200 px-3 py-2 text-sm leading-6 outline-none placeholder:text-slate-400 focus:border-slate-400"
           />
           <button
@@ -243,7 +284,7 @@ export function ToolsPanel({
   googleConnectUrl: string;
 }) {
   const hasSelectedGoogleTool = tools.some(
-    (tool) => selected.includes(tool.id) && isGoogleTool(tool)
+    (tool) => selected.includes(tool.id) && isGoogleTool(tool),
   );
 
   return (
@@ -273,12 +314,12 @@ export function ToolsPanel({
                     onChange(
                       checked
                         ? selected.filter((id) => id !== tool.id)
-                        : [...selected, tool.id]
+                        : [...selected, tool.id],
                     )
                   }
                   className={cn(
                     "flex w-full items-center gap-3 px-3 py-3 text-left transition-colors",
-                    checked ? "bg-slate-50" : "bg-white hover:bg-slate-50"
+                    checked ? "bg-slate-50" : "bg-white hover:bg-slate-50",
                   )}
                 >
                   <WorkspaceIcon kind={tool.connectorKind} />
@@ -297,7 +338,7 @@ export function ToolsPanel({
                       "flex h-5 w-5 shrink-0 items-center justify-center rounded-full border-2 transition-colors",
                       checked
                         ? "border-slate-900 bg-slate-900"
-                        : "border-slate-300 bg-white"
+                        : "border-slate-300 bg-white",
                     )}
                   >
                     {checked ? (
@@ -313,8 +354,12 @@ export function ToolsPanel({
                     data-sandbox-target="connect-google"
                   >
                     <p className="mb-2.5 text-xs leading-5 text-slate-500">
-                      Connect your Google account to give this agent real access to{" "}
-                      <span className="font-semibold text-slate-700">{tool.name}</span>.
+                      Connect your Google account to give this agent real access
+                      to{" "}
+                      <span className="font-semibold text-slate-700">
+                        {tool.name}
+                      </span>
+                      .
                     </p>
                     <a
                       href={scopedGoogleConnectUrl(googleConnectUrl, tool)}
@@ -377,12 +422,12 @@ export function TasksPanel({
                   onChange(
                     checked
                       ? selected.filter((id) => id !== task.id)
-                      : [...selected, task.id]
+                      : [...selected, task.id],
                   )
                 }
                 className={cn(
                   "flex w-full items-start gap-3 px-3 py-3 text-left transition-colors",
-                  checked ? "bg-slate-50" : "bg-white hover:bg-slate-50"
+                  checked ? "bg-slate-50" : "bg-white hover:bg-slate-50",
                 )}
               >
                 <span className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-slate-600">
@@ -429,7 +474,8 @@ export function WorkflowPanel({
   onSelect: (id: string) => void;
   onRun: () => void;
 }) {
-  const selected = workflows.find((workflow) => workflow.id === selectedId) || workflows[0];
+  const selected =
+    workflows.find((workflow) => workflow.id === selectedId) || workflows[0];
 
   return (
     <div className="space-y-3" data-sandbox-target="workflows">
@@ -449,7 +495,7 @@ export function WorkflowPanel({
                   onClick={() => onSelect(workflow.id)}
                   className={cn(
                     "flex w-full items-center gap-3 px-3 py-2.5 text-left",
-                    active ? "bg-slate-50" : "bg-white hover:bg-slate-50"
+                    active ? "bg-slate-50" : "bg-white hover:bg-slate-50",
                   )}
                 >
                   <Workflow className="h-4 w-4 shrink-0 text-slate-500" />
@@ -477,7 +523,11 @@ export function WorkflowPanel({
                 </p>
               ) : null}
               <div className="mt-3 space-y-2">
-                <ComponentRow label="Trigger" value={selected.trigger} tone="rose" />
+                <ComponentRow
+                  label="Trigger"
+                  value={selected.trigger}
+                  tone="rose"
+                />
                 {selected.nodes.map((node, index) => (
                   <ComponentRow
                     key={`${node}-${index}`}
@@ -605,12 +655,20 @@ export function ComputerPanel({
             </p>
             <p className="mt-1 text-xs leading-5 text-slate-600">
               This environment behaves like a small isolated code workspace. Try{" "}
-              <span className="font-mono font-semibold text-slate-900">ls</span>,{" "}
+              <span className="font-mono font-semibold text-slate-900">ls</span>
+              ,{" "}
               <span className="font-mono font-semibold text-slate-900">
                 cat team-plan.json
-              </span>,{" "}
-              <span className="font-mono font-semibold text-slate-900">pwd</span>, or{" "}
-              <span className="font-mono font-semibold text-slate-900">run team</span>.
+              </span>
+              ,{" "}
+              <span className="font-mono font-semibold text-slate-900">
+                pwd
+              </span>
+              , or{" "}
+              <span className="font-mono font-semibold text-slate-900">
+                run team
+              </span>
+              .
             </p>
           </div>
         </div>
@@ -619,7 +677,10 @@ export function ComputerPanel({
       {files.length ? (
         <div className="overflow-hidden rounded-xl border border-slate-200">
           {files.map((file) => (
-            <details key={file.path} className="border-b border-slate-100 last:border-b-0">
+            <details
+              key={file.path}
+              className="border-b border-slate-100 last:border-b-0"
+            >
               <summary className="cursor-pointer bg-white px-3 py-2 text-sm font-bold text-slate-800">
                 {file.path}
               </summary>
@@ -692,10 +753,12 @@ function CheckCircle({ checked }: { checked: boolean }) {
     <span
       className={cn(
         "flex h-5 w-5 shrink-0 items-center justify-center rounded-full border-2 transition-colors",
-        checked ? "border-slate-900 bg-slate-900" : "border-slate-300 bg-white"
+        checked ? "border-slate-900 bg-slate-900" : "border-slate-300 bg-white",
       )}
     >
-      {checked ? <Check className="h-3 w-3 text-white" strokeWidth={3} /> : null}
+      {checked ? (
+        <Check className="h-3 w-3 text-white" strokeWidth={3} />
+      ) : null}
     </span>
   );
 }
@@ -718,7 +781,9 @@ function ComponentRow({
 
   return (
     <div className="flex items-start gap-2 rounded-lg border border-slate-100 bg-slate-50 p-2">
-      <span className={cn("rounded px-2 py-1 text-[11px] font-black", toneClass)}>
+      <span
+        className={cn("rounded px-2 py-1 text-[11px] font-black", toneClass)}
+      >
         {label}
       </span>
       <span className="min-w-0 flex-1 text-xs leading-5 text-slate-600">
@@ -745,15 +810,23 @@ function isGoogleTool(tool: AgentSandboxToolTemplate) {
   );
 }
 
-function scopedGoogleConnectUrl(baseUrl: string, tool: AgentSandboxToolTemplate) {
+function scopedGoogleConnectUrl(
+  baseUrl: string,
+  tool: AgentSandboxToolTemplate,
+) {
   const url = new URL(baseUrl);
   url.searchParams.set("tool", tool.connectorKind || tool.id);
   url.searchParams.set("label", tool.name);
-  url.searchParams.set("scopes", googleToolScopes(tool.connectorKind).join(" "));
+  url.searchParams.set(
+    "scopes",
+    googleToolScopes(tool.connectorKind).join(" "),
+  );
   return url.toString();
 }
 
-function googleToolScopes(connectorKind?: AgentSandboxToolTemplate["connectorKind"]) {
+function googleToolScopes(
+  connectorKind?: AgentSandboxToolTemplate["connectorKind"],
+) {
   const base = ["openid", "email", "profile"];
   if (connectorKind === "google_calendar") {
     return [
@@ -793,7 +866,10 @@ function WorkspaceIcon({ kind }: { kind?: string }) {
   }
   if (kind === "google_calendar") {
     return (
-      <BrandIconBox color={`#${siGooglecalendar.hex}`} label={siGooglecalendar.title}>
+      <BrandIconBox
+        color={`#${siGooglecalendar.hex}`}
+        label={siGooglecalendar.title}
+      >
         <path d={siGooglecalendar.path} />
       </BrandIconBox>
     );
@@ -807,7 +883,10 @@ function WorkspaceIcon({ kind }: { kind?: string }) {
   }
   if (kind === "google_sheets") {
     return (
-      <BrandIconBox color={`#${siGooglesheets.hex}`} label={siGooglesheets.title}>
+      <BrandIconBox
+        color={`#${siGooglesheets.hex}`}
+        label={siGooglesheets.title}
+      >
         <path d={siGooglesheets.path} />
       </BrandIconBox>
     );
@@ -940,7 +1019,10 @@ function oneLine(value?: string) {
 }
 
 function customSkillTitle(value?: string) {
-  const firstLine = (value || "").split("\n").map((line) => line.trim()).find(Boolean);
+  const firstLine = (value || "")
+    .split("\n")
+    .map((line) => line.trim())
+    .find(Boolean);
   if (!firstLine) return "Custom skill";
   return firstLine.length > 42 ? `${firstLine.slice(0, 39)}...` : firstLine;
 }

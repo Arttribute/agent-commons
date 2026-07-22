@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import { ArrowUp, Loader2, Paperclip } from "lucide-react";
+import { ArrowUp, Bot, Loader2, Paperclip } from "lucide-react";
 import { RichTextRenderer } from "@/components/rich-text-renderer";
 import { cn } from "@/lib/utils";
 import type { ChatMessage } from "./types";
@@ -11,6 +11,8 @@ type ChatSurfaceProps = {
   sending: boolean;
   chatInput: string;
   createdAgentId?: string;
+  agentName?: string;
+  brief?: string;
   chatEndRef: React.RefObject<HTMLDivElement | null>;
   activityLabel?: string;
   placeholder?: string;
@@ -23,6 +25,8 @@ export function ChatSurface({
   sending,
   chatInput,
   createdAgentId,
+  agentName,
+  brief,
   chatEndRef,
   activityLabel,
   placeholder,
@@ -55,11 +59,22 @@ export function ChatSurface({
       {/* Messages / empty state */}
       {isEmpty ? (
         <div className="flex min-h-0 flex-1 items-center justify-center px-4">
-          <p className="text-center text-sm text-slate-400">
-            {createdAgentId
-              ? "Send a message to start chatting with your agent"
-              : "Create the agent first, then chat here"}
-          </p>
+          <div className="max-w-lg text-center">
+            <span className="mx-auto flex h-12 w-12 items-center justify-center rounded-full border border-slate-200 bg-slate-50 text-slate-700">
+              <Bot className="h-5 w-5" />
+            </span>
+            <h2 className="mt-4 text-xl font-medium tracking-tight text-slate-950">
+              {createdAgentId
+                ? `What should ${agentName || "your agent"} work on?`
+                : `Build ${agentName || "your agent"}, then start a session`}
+            </h2>
+            <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-slate-500">
+              {createdAgentId
+                ? brief ||
+                  "Send a message to test the agent with the setup you created."
+                : "Complete the required setup sections and create the agent. This session will run against the real Agent Commons agent."}
+            </p>
+          </div>
         </div>
       ) : (
         <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4">
@@ -149,7 +164,7 @@ function ChatBubble({ role, content }: ChatMessage) {
           "max-w-[85%] rounded-2xl px-4 py-3 text-sm leading-6",
           assistant
             ? "rounded-bl-md bg-slate-100 text-slate-800"
-            : "rounded-br-md bg-slate-950 text-white"
+            : "rounded-br-md bg-slate-950 text-white",
         )}
       >
         {assistant ? (

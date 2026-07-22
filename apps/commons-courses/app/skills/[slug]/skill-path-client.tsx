@@ -206,6 +206,7 @@ export default function SkillPathClient({
     (item) => item.id === challenge.id,
   );
   const locked = currentIndex > unlockedIndex;
+  const isSandboxChallenge = !locked && Boolean(challenge.sandbox?.enabled);
   const completionPct = Math.round(
     (progress.completedChallenges.length / pack.challenges.length) * 100,
   );
@@ -320,92 +321,105 @@ export default function SkillPathClient({
       <Confetti ref={confettiRef} />
       <Nav />
       <main className="flex h-dvh flex-col overflow-hidden pt-16">
-        <header className="border-b border-slate-200 bg-white px-4 py-3 sm:px-6">
-          <div className="mx-auto flex max-w-6xl items-center gap-3">
-            <Link
-              href="/skills"
-              className="hidden items-center gap-1.5 text-sm font-bold text-slate-500 hover:text-slate-900 sm:inline-flex"
-            >
-              <ArrowLeft className="h-4 w-4" />
-              Skills
-            </Link>
-            <button
-              type="button"
-              onClick={() => setDrawerOpen(true)}
-              className="inline-flex rounded-lg border border-slate-200 p-2 text-slate-600 sm:hidden"
-              aria-label="Open daily path"
-            >
-              <Route className="h-4 w-4" />
-            </button>
-            <div className="min-w-0 flex-1">
-              <p className="truncate text-xs font-bold uppercase tracking-widest text-slate-500">
-                {pack.title}
-              </p>
-              <div className="mt-1 h-2 overflow-hidden rounded-full bg-slate-100">
-                <div
-                  className="h-full rounded-full bg-slate-950"
-                  style={{ width: `${completionPct}%` }}
+        {!isSandboxChallenge ? (
+          <header className="border-b border-slate-200 bg-white px-4 py-3 sm:px-6">
+            <div className="mx-auto flex max-w-6xl items-center gap-3">
+              <Link
+                href="/skills"
+                className="hidden items-center gap-1.5 text-sm font-bold text-slate-500 hover:text-slate-900 sm:inline-flex"
+              >
+                <ArrowLeft className="h-4 w-4" />
+                Skills
+              </Link>
+              <button
+                type="button"
+                onClick={() => setDrawerOpen(true)}
+                className="inline-flex rounded-lg border border-slate-200 p-2 text-slate-600 sm:hidden"
+                aria-label="Open daily path"
+              >
+                <Route className="h-4 w-4" />
+              </button>
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-xs font-bold uppercase tracking-widest text-slate-500">
+                  {pack.title}
+                </p>
+                <div className="mt-1 h-2 overflow-hidden rounded-full bg-slate-100">
+                  <div
+                    className="h-full rounded-full bg-slate-950"
+                    style={{ width: `${completionPct}%` }}
+                  />
+                </div>
+              </div>
+              <div className="flex shrink-0 items-center gap-2">
+                <Pill
+                  icon={Flame}
+                  label={String(progress.streak)}
+                  color="text-orange-500"
+                />
+                <Pill
+                  icon={Zap}
+                  label={String(progress.points)}
+                  color="text-sky-500"
                 />
               </div>
             </div>
-            <div className="flex shrink-0 items-center gap-2">
-              <Pill
-                icon={Flame}
-                label={String(progress.streak)}
-                color="text-orange-500"
-              />
-              <Pill
-                icon={Zap}
-                label={String(progress.points)}
-                color="text-sky-500"
-              />
-            </div>
-          </div>
-        </header>
+          </header>
+        ) : null}
 
-        <div className="grid min-h-0 w-full flex-1 grid-cols-1 gap-0 sm:grid-cols-[240px_minmax(0,1fr)]">
-          <aside className="hidden border-r border-slate-200 bg-slate-50 p-3 sm:block">
-            <DailyPath
-              pack={pack}
-              progress={progress}
-              selectedId={challenge.id}
-              unlockedIndex={unlockedIndex}
-              onSelect={selectChallenge}
-            />
-          </aside>
+        <div
+          className={cn(
+            "min-h-0 w-full flex-1",
+            isSandboxChallenge
+              ? "flex"
+              : "grid grid-cols-1 gap-0 sm:grid-cols-[240px_minmax(0,1fr)]",
+          )}
+        >
+          {!isSandboxChallenge ? (
+            <aside className="hidden border-r border-slate-200 bg-slate-50 p-3 sm:block">
+              <DailyPath
+                pack={pack}
+                progress={progress}
+                selectedId={challenge.id}
+                unlockedIndex={unlockedIndex}
+                onSelect={selectChallenge}
+              />
+            </aside>
+          ) : null}
 
           <section
             className={cn(
-              "min-h-0 px-4 py-4 sm:px-6",
-              !locked && challenge.sandbox?.enabled
-                ? "flex flex-col overflow-hidden"
-                : "overflow-y-auto",
+              "min-h-0",
+              isSandboxChallenge
+                ? "flex flex-1 flex-col overflow-hidden"
+                : "overflow-y-auto px-4 py-4 sm:px-6",
             )}
           >
             <div
               className={cn(
                 "mx-auto flex w-full flex-col",
-                !locked && challenge.sandbox?.enabled
+                isSandboxChallenge
                   ? "min-h-0 max-w-none flex-1"
                   : "min-h-full max-w-3xl",
               )}
             >
-              <div className="mb-3 flex items-center justify-between gap-3">
-                <div>
-                  <p className="text-xs font-bold uppercase tracking-widest text-slate-500">
-                    Day {challenge.day}
-                  </p>
-                  <h1 className="text-2xl font-semibold tracking-tight text-slate-950 sm:text-3xl">
-                    {challenge.title}
-                  </h1>
+              {!isSandboxChallenge ? (
+                <div className="mb-3 flex items-center justify-between gap-3">
+                  <div>
+                    <p className="text-xs font-bold uppercase tracking-widest text-slate-500">
+                      Day {challenge.day}
+                    </p>
+                    <h1 className="text-2xl font-semibold tracking-tight text-slate-950 sm:text-3xl">
+                      {challenge.title}
+                    </h1>
+                  </div>
+                  {completed ? (
+                    <span className="inline-flex items-center gap-1.5 rounded-md bg-[#B8F56D] px-2.5 py-1 text-xs font-black">
+                      <BadgeCheck className="h-4 w-4" />
+                      Done
+                    </span>
+                  ) : null}
                 </div>
-                {completed ? (
-                  <span className="inline-flex items-center gap-1.5 rounded-md bg-[#B8F56D] px-2.5 py-1 text-xs font-black">
-                    <BadgeCheck className="h-4 w-4" />
-                    Done
-                  </span>
-                ) : null}
-              </div>
+              ) : null}
 
               {locked ? (
                 <LockedState />
@@ -418,7 +432,12 @@ export default function SkillPathClient({
                   completed={completed}
                   authenticated={progress.authenticated}
                   signInHref={`/auth/signin?callbackUrl=${encodeURIComponent(pathname)}`}
+                  courseTitle={pack.title}
+                  challengeTitle={`Day ${challenge.day}: ${challenge.title}`}
                   onComplete={completeSandboxChallenge}
+                  onExit={() => {
+                    window.location.href = "/skills";
+                  }}
                   onContinue={
                     pack.challenges[currentIndex + 1]
                       ? () =>
