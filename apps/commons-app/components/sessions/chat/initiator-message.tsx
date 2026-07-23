@@ -1,8 +1,10 @@
 "use client";
 
 import { useLayoutEffect, useRef, useState } from "react";
-import { ChevronDown, FileText, ImageIcon, Monitor, Table2 } from "lucide-react";
+import { ChevronDown, Monitor } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { ArtifactCard } from "@/components/artifacts/artifact-card";
+import type { ArtifactRef } from "@/lib/artifacts";
 
 /**
  * Collapsed height for long user messages. Kept just under the point where a
@@ -26,11 +28,18 @@ interface InitiatorMessageProps {
       enabled: boolean;
     };
   };
+  onOpenArtifact?: (artifact: ArtifactRef) => void;
 }
 
-export default function InitiatorMessage({ message, metadata }: InitiatorMessageProps) {
+export default function InitiatorMessage({
+  message,
+  metadata,
+  onOpenArtifact,
+}: InitiatorMessageProps) {
   const attachments = metadata?.attachments ?? [];
-  const computerRequest = metadata?.computerRequest?.enabled ? metadata.computerRequest : null;
+  const computerRequest = metadata?.computerRequest?.enabled
+    ? metadata.computerRequest
+    : null;
 
   const textRef = useRef<HTMLParagraphElement>(null);
   const [overflows, setOverflows] = useState(false);
@@ -55,9 +64,23 @@ export default function InitiatorMessage({ message, metadata }: InitiatorMessage
                 <span>Agent&apos;s persistent computer</span>
               </span>
             )}
-            {attachments.map((attachment) => (
-              <AttachmentPill key={attachment.fileId} attachment={attachment} />
-            ))}
+            {attachments.map((attachment) =>
+              onOpenArtifact ? (
+                <ArtifactCard
+                  key={attachment.fileId}
+                  artifact={attachment}
+                  onOpen={onOpenArtifact}
+                  compact
+                />
+              ) : (
+                <span
+                  key={attachment.fileId}
+                  className="rounded-md bg-white/60 px-2 py-1 text-xs text-gray-800"
+                >
+                  {attachment.name}
+                </span>
+              ),
+            )}
           </div>
         )}
         <div className="relative">
@@ -93,36 +116,4 @@ export default function InitiatorMessage({ message, metadata }: InitiatorMessage
       </div>
     </div>
   );
-}
-
-function AttachmentPill({
-  attachment,
-}: {
-  attachment: {
-    name: string;
-    mimeType: string;
-    kind?: string;
-    sizeBytes?: number;
-  };
-}) {
-  const Icon = attachment.mimeType.startsWith("image/")
-    ? ImageIcon
-    : attachment.kind === "spreadsheet" || attachment.name.match(/\.(xlsx|xls|csv)$/i)
-      ? Table2
-      : FileText;
-  return (
-    <span className="flex max-w-full items-center gap-1.5 rounded-md bg-white/60 px-2 py-1 text-xs text-gray-800">
-      <Icon className="h-3.5 w-3.5 shrink-0" />
-      <span className="max-w-40 truncate">{attachment.name}</span>
-      {attachment.sizeBytes ? (
-        <span className="shrink-0 text-gray-500">{formatBytes(attachment.sizeBytes)}</span>
-      ) : null}
-    </span>
-  );
-}
-
-function formatBytes(bytes: number) {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }

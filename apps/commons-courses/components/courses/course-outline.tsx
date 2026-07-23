@@ -54,7 +54,7 @@ export function CourseOutline({
       {modules.map((module, i) => (
         <div
           key={i}
-          className="border border-slate-200 rounded-xl overflow-hidden"
+          className="overflow-hidden rounded-lg border border-slate-200"
         >
           <button
             onClick={() => toggle(i)}
@@ -100,7 +100,7 @@ export function CourseOutline({
                     className={cn(
                       "flex items-center gap-3 px-5 py-3.5 border-b border-slate-50 last:border-0",
                       canAccess
-                        ? "hover:bg-blue-50/40 cursor-pointer"
+                        ? "cursor-pointer hover:bg-lime-50/40"
                         : "opacity-60"
                     )}
                   >

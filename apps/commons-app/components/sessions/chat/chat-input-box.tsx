@@ -7,14 +7,11 @@ import {
   ArrowUp,
   BatteryLow,
   Check,
-  FileText,
   Gauge,
-  ImageIcon,
   Loader2,
   Mic,
   Monitor,
   Plus,
-  Table2,
   X,
 } from "lucide-react";
 import { useAgentContext } from "@/context/AgentContext";
@@ -23,6 +20,7 @@ import { useVoiceRecorder } from "@/hooks/use-voice-recorder";
 import { useSessionRunStore } from "@/stores/session-run-store";
 import { VoiceRecorderPanel } from "./voice-recorder";
 import { cn } from "@/lib/utils";
+import { ArtifactIcon } from "@/components/artifacts/artifact-icon";
 
 /** User-selectable model thinking depth for this conversation. */
 const THINKING_LEVELS = [
@@ -675,7 +673,6 @@ export default function ChatInputBox({
         type="file"
         multiple
         className="hidden"
-        accept="image/*,.pdf,.txt,.md,.csv,.json,.docx,.xlsx,.xls"
         onChange={(event) => {
           if (event.target.files) uploadFiles(event.target.files);
           event.target.value = "";
@@ -885,13 +882,6 @@ function AttachmentChip({
   attachment: UploadedAttachment;
   onRemove: () => void;
 }) {
-  const Icon = attachment.mimeType.startsWith("image/")
-    ? ImageIcon
-    : attachment.kind === "spreadsheet" ||
-        attachment.name.match(/\.(xlsx|xls|csv)$/i)
-      ? Table2
-      : FileText;
-
   return (
     <div className="flex max-w-full items-center gap-2 rounded-lg border border-border bg-muted/50 px-2 py-1.5 text-xs">
       {attachment.previewUrl ? (
@@ -903,7 +893,7 @@ function AttachmentChip({
         />
       ) : (
         <span className="flex h-7 w-7 items-center justify-center rounded-md bg-background text-muted-foreground">
-          <Icon className="h-4 w-4" />
+          <ArtifactIcon artifact={attachment} className="h-4 w-4" />
         </span>
       )}
       <span className="min-w-0">

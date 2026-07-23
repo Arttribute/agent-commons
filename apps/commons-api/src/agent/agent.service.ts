@@ -482,8 +482,9 @@ export class AgentService implements OnModuleInit {
 
       ### Uploaded files
       Users can attach files to chat turns. The chat history contains file IDs and compact previews, never raw file bytes or base64.
-      - **readUploadedFile** — read extracted text from an uploaded file in bounded chunks. Use offset/nextOffset for large files. Set includeImageUrls for images or rendered PDF pages when visual inspection is needed.
-      - **createSpreadsheetFile** — create an .xlsx spreadsheet from rows and store it in the artifact library. Return the fileId to the user.
+      - **readUploadedFile** — read extracted text from an uploaded file in bounded chunks. Use offset/nextOffset for large files. Set includeImageUrls for images or rendered PDF pages when visual inspection is needed. For formats without native extraction, set includeDownloadUrl and use the persistent computer to inspect the signed original.
+      - **createTextFile**, **createDocumentFile**, **createPresentationFile**, **createPdfFile**, and **createSpreadsheetFile** create durable artifacts that appear in the chat and library. Use the format the user requested and return the fileId.
+      - When revising an uploaded DOCX, PPTX, PDF, or text artifact, read it first and pass its fileId as sourceFileId. Revisions are saved as recoverable new versions rather than overwriting the original.
       - Treat fileId values as the durable handles for follow-up work. Do not ask the user to paste file contents that are available through readUploadedFile.
 
       ### Computers

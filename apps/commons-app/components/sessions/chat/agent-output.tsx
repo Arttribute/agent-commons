@@ -2,7 +2,7 @@
 
 import type React from "react";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { atomDark } from "react-syntax-highlighter/dist/esm/styles/prism";
 import ReactMarkdown from "react-markdown";
@@ -14,6 +14,8 @@ import { AgentAvatar } from "@/components/agents/agent-avatar";
 import type { StreamActivity } from "@/context/AgentContext";
 import { MiniComputer } from "@/components/computers/mini-computer";
 import type { AgentComputer } from "@/components/computers/computer-types";
+import { ArtifactCard } from "@/components/artifacts/artifact-card";
+import { collectArtifactRefs, type ArtifactRef } from "@/lib/artifacts";
 import {
   AlertCircle,
   Brain,
@@ -62,6 +64,7 @@ interface AgentOutputProps {
    * don't repeat the avatar.
    */
   showAgentHeader?: boolean;
+  onOpenArtifact?: (artifact: ArtifactRef) => void;
 }
 
 export default function AgentOutput({
@@ -73,6 +76,7 @@ export default function AgentOutput({
   agentName,
   agentAvatar,
   showAgentHeader = false,
+  onOpenArtifact,
 }: AgentOutputProps) {
   const computerToolCalls = getComputerToolCalls(metadata?.toolCalls ?? []);
   const activities = normalizeActivities(
@@ -85,6 +89,15 @@ export default function AgentOutput({
   const hasComputerUse =
     computerActivities.length > 0 || computerToolCalls.length > 0;
   const durationMs = metadata?.durationMs;
+  const generatedArtifacts = useMemo(
+    () =>
+      collectArtifactRefs(
+        (metadata?.toolCalls ?? [])
+          .filter((call) => isArtifactCreationTool(call.name))
+          .map((call) => call.result),
+      ),
+    [metadata?.toolCalls],
+  );
 
   if (
     !content &&
@@ -248,12 +261,30 @@ export default function AgentOutput({
           >
             {content}
           </ReactMarkdown>
+          {onOpenArtifact && generatedArtifacts.length > 0 && (
+            <div className="not-prose mt-3 grid gap-2">
+              {generatedArtifacts.map((artifact) => (
+                <ArtifactCard
+                  key={artifact.fileId}
+                  artifact={artifact}
+                  onOpen={onOpenArtifact}
+                />
+              ))}
+            </div>
+          )}
           {isStreaming && Boolean(content) && (
             <span className="ml-0.5 inline-block h-4 w-1.5 animate-pulse rounded-sm bg-indigo-400 align-middle" />
           )}
         </div>
       </div>
     </div>
+  );
+}
+
+function isArtifactCreationTool(name: string) {
+  return (
+    /^(create.*File|generateImage|save.*ToLibrary)$/i.test(name) ||
+    name === "publishCodeProject"
   );
 }
 

@@ -33,6 +33,10 @@ import { DatabaseService } from '~/modules/database/database.service';
 import { UsageService } from '~/modules/usage';
 import * as schema from '#/models/schema';
 import { eq } from 'drizzle-orm';
+import {
+  executeWebSearch,
+  resolveWebSearchConfig,
+} from './web-search.provider';
 
 type ToolExecutionMetadata = {
   agentId?: string;
@@ -413,6 +417,7 @@ export interface CommonTool {
     offset?: number;
     maxChars?: number;
     includeImageUrls?: boolean;
+    includeDownloadUrl?: boolean;
     pageNumber?: number;
     agentId: string;
     sessionId?: string;
@@ -426,6 +431,12 @@ export interface CommonTool {
     nextOffset: number | null;
     totalChars: number;
     truncated: boolean;
+    download?: {
+      name: string;
+      mimeType: string;
+      url: string;
+      expiresInSeconds: number;
+    };
     artifacts: Array<{
       artifactId: string;
       kind: string;
@@ -454,6 +465,55 @@ export interface CommonTool {
       name: string;
       rows: Array<Record<string, any> | any[]>;
     }>;
+    agentId: string;
+    sessionId?: string;
+  }): Promise<any>;
+
+  /** Create a text, Markdown, code, JSON, XML, HTML, or CSV artifact. */
+  createTextFile(props: {
+    fileName: string;
+    content: string;
+    mimeType?: string;
+    sourceFileId?: string;
+    agentId: string;
+    sessionId?: string;
+  }): Promise<any>;
+
+  /** Create a styled Word document. Use sourceFileId when revising a file. */
+  createDocumentFile(props: {
+    fileName: string;
+    title?: string;
+    sections: Array<{
+      heading?: string;
+      paragraphs?: string[];
+      bullets?: string[];
+    }>;
+    sourceFileId?: string;
+    agentId: string;
+    sessionId?: string;
+  }): Promise<any>;
+
+  /** Create a widescreen PowerPoint presentation. */
+  createPresentationFile(props: {
+    fileName: string;
+    title?: string;
+    slides: Array<{
+      title: string;
+      subtitle?: string;
+      bullets?: string[];
+      notes?: string;
+    }>;
+    sourceFileId?: string;
+    agentId: string;
+    sessionId?: string;
+  }): Promise<any>;
+
+  /** Create a clean paginated PDF document. */
+  createPdfFile(props: {
+    fileName: string;
+    title?: string;
+    sections: Array<{ heading?: string; body: string }>;
+    sourceFileId?: string;
     agentId: string;
     sessionId?: string;
   }): Promise<any>;
@@ -1009,83 +1069,60 @@ export class CommonToolService {
       throw new BadRequestException('webSearch requires a non-empty query');
     }
 
-    const apiKey = process.env.BRAVE_SEARCH_API_KEY;
-    if (!apiKey) {
-      throw new BadRequestException(
-        'webSearch is not configured. Set BRAVE_SEARCH_API_KEY to enable live web search.',
-      );
-    }
-
-    const agentId = this.requireToolAgentId(undefined, metadata);
-    const owner = await this.capabilityOwner(agentId);
+    const config = resolveWebSearchConfig();
     const operationId = metadata?.toolCallId || randomUUID();
-    const costUsd = Number(process.env.BRAVE_SEARCH_COST_USD_PER_CALL || 0.005);
-    const reservation = await this.usage.authorizeCapability({
-      principalId: owner.principalId,
-      capability: 'web_search',
-      estimatedCostUsd: costUsd,
-      idempotencyKey: `capability:web-search:${operationId}`,
-      agentId,
-      sessionId: metadata?.sessionId,
-      metadata: { workspaceId: owner.workspaceId },
-    });
-
     const count = Math.max(1, Math.min(props.count ?? 8, 20));
-    const freshnessMap = {
-      day: 'pd',
-      week: 'pw',
-      month: 'pm',
-      year: 'py',
-    } as const;
+    const agentId = this.requireToolAgentId(undefined, metadata);
+    let reservation: Awaited<ReturnType<UsageService['authorizeCapability']>> =
+      null;
 
-    const url = new URL('https://api.search.brave.com/res/v1/web/search');
-    url.searchParams.set('q', query);
-    url.searchParams.set('count', String(count));
-    url.searchParams.set('safesearch', props.safeSearch ?? 'moderate');
-    if (props.freshness) {
-      url.searchParams.set('freshness', freshnessMap[props.freshness]);
+    if (config.costUsdPerCall > 0) {
+      const owner = await this.capabilityOwner(agentId);
+      reservation = await this.usage.authorizeCapability({
+        principalId: owner.principalId,
+        capability: 'web_search',
+        estimatedCostUsd: config.costUsdPerCall,
+        idempotencyKey: `capability:web-search:${operationId}`,
+        agentId,
+        sessionId: metadata?.sessionId,
+        metadata: {
+          workspaceId: owner.workspaceId,
+          provider: config.provider,
+        },
+      });
     }
 
-    let response: Response;
+    let results;
     try {
-      response = await fetch(url.toString(), {
-        headers: {
-          Accept: 'application/json',
-          'X-Subscription-Token': apiKey,
-        },
+      results = await executeWebSearch(config, {
+        query,
+        count,
+        freshness: props.freshness,
+        safeSearch: props.safeSearch ?? 'moderate',
       });
     } catch (error) {
       await this.usage.releaseCapability(reservation?.reservationId);
       throw error;
     }
 
-    if (!response.ok) {
-      await this.usage.releaseCapability(reservation?.reservationId);
-      throw new BadRequestException(
-        `webSearch provider returned ${response.status} ${response.statusText}`,
-      );
+    if (config.costUsdPerCall > 0) {
+      await this.usage.settleCapability({
+        reservationId: reservation?.reservationId,
+        capability: 'web_search',
+        actualCostUsd: config.costUsdPerCall,
+        idempotencyKey: `capability:web-search:${operationId}:capture`,
+        agentId,
+        sessionId: metadata?.sessionId,
+        metadata: {
+          provider: config.provider,
+          count,
+        },
+      });
     }
-
-    const data: any = await response.json();
-    await this.usage.settleCapability({
-      reservationId: reservation?.reservationId,
-      capability: 'web_search',
-      actualCostUsd: costUsd,
-      idempotencyKey: `capability:web-search:${operationId}:capture`,
-      agentId,
-      sessionId: metadata?.sessionId,
-      metadata: { provider: 'brave', count },
-    });
-    const results = (data.web?.results ?? []).map((item: any) => ({
-      title: item.title,
-      url: item.url,
-      description: item.description,
-      publishedAt: item.age,
-    }));
 
     return {
       query,
-      provider: 'brave',
+      provider: config.provider,
       results,
     };
   }
@@ -1397,6 +1434,7 @@ export class CommonToolService {
     offset?: number;
     maxChars?: number;
     includeImageUrls?: boolean;
+    includeDownloadUrl?: boolean;
     pageNumber?: number;
     agentId: string;
     sessionId?: string;
@@ -1408,6 +1446,7 @@ export class CommonToolService {
       offset: props.offset,
       maxChars: props.maxChars,
       includeImageUrls: props.includeImageUrls,
+      includeDownloadUrl: props.includeDownloadUrl,
       pageNumber: props.pageNumber,
     });
   }
@@ -1447,6 +1486,59 @@ export class CommonToolService {
       ownerId: props.agentId,
       ownerType: 'agent',
     });
+  }
+
+  async createTextFile(props: {
+    fileName: string;
+    content: string;
+    mimeType?: string;
+    sourceFileId?: string;
+    agentId: string;
+    sessionId?: string;
+  }) {
+    return this.files.createTextFile(props);
+  }
+
+  async createDocumentFile(props: {
+    fileName: string;
+    title?: string;
+    sections: Array<{
+      heading?: string;
+      paragraphs?: string[];
+      bullets?: string[];
+    }>;
+    sourceFileId?: string;
+    agentId: string;
+    sessionId?: string;
+  }) {
+    return this.files.createDocumentFile(props);
+  }
+
+  async createPresentationFile(props: {
+    fileName: string;
+    title?: string;
+    slides: Array<{
+      title: string;
+      subtitle?: string;
+      bullets?: string[];
+      notes?: string;
+    }>;
+    sourceFileId?: string;
+    agentId: string;
+    sessionId?: string;
+  }) {
+    return this.files.createPresentationFile(props);
+  }
+
+  async createPdfFile(props: {
+    fileName: string;
+    title?: string;
+    sections: Array<{ heading?: string; body: string }>;
+    sourceFileId?: string;
+    agentId: string;
+    sessionId?: string;
+  }) {
+    return this.files.createPdfFile(props);
   }
 
   async startAgentComputer(

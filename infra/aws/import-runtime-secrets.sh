@@ -23,6 +23,13 @@ fi
 payload='{}'
 missing=()
 
+is_optional_key() {
+  case "$1" in
+    BRAVE_SEARCH_API_KEY) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
 aws_cli() {
   if [[ -d /opt/homebrew/opt/expat/lib ]]; then
     DYLD_LIBRARY_PATH=/opt/homebrew/opt/expat/lib aws "$@"
@@ -35,7 +42,9 @@ while IFS= read -r key; do
   [[ -z "$key" || "$key" == \#* ]] && continue
   value=$(sed -n "s/^${key}=//p" "$ENV_FILE" | tail -n 1)
   if [[ -z "$value" ]]; then
-    missing+=("$key")
+    if ! is_optional_key "$key"; then
+      missing+=("$key")
+    fi
     continue
   fi
   payload=$(jq --arg key "$key" --arg value "$value" '. + {($key): $value}' <<<"$payload")
