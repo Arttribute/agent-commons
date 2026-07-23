@@ -1,7 +1,18 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, type MutableRefObject } from "react";
-import { ExternalLink, Loader2 as SandboxLoader, Terminal, X } from "lucide-react";
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type MutableRefObject,
+} from "react";
+import {
+  ArrowLeft,
+  ExternalLink,
+  Loader2 as SandboxLoader,
+  X,
+} from "lucide-react";
 import { ChatSurface } from "./agent-sandbox/chat-surface";
 import {
   ComputerPanel,
@@ -15,14 +26,20 @@ import {
 import { ConfigDrawer, ConfigRail } from "./agent-sandbox/config-shell";
 import { BottomGuide } from "./agent-sandbox/bottom-guide";
 import { LogsPanel } from "./agent-sandbox/logs-panel";
-import { SandboxCompletion, SandboxIntro } from "./agent-sandbox/sandbox-framing";
-import { formatApiError, logDotClass } from "./agent-sandbox/status-utils";
+import { SessionsSurface } from "./agent-sandbox/sessions-surface";
+import {
+  SandboxCompletion,
+  SandboxIntro,
+} from "./agent-sandbox/sandbox-framing";
+import { formatApiError } from "./agent-sandbox/status-utils";
 import type {
   ChatMessage,
   ConfigPanel,
   ReviewResult,
   SandboxLog,
   SandboxResumeState,
+  SandboxSection,
+  SandboxSession,
 } from "./agent-sandbox/types";
 import { targetToPanel } from "./agent-sandbox/types";
 import type { AgentSandboxConfig } from "@/types/skills";
@@ -33,6 +50,8 @@ type StreamEvent = {
   message?: string;
   toolName?: string;
   payload?: Record<string, unknown>;
+  sessionId?: string;
+  title?: string;
 };
 
 type HighlightRect = {
@@ -49,12 +68,15 @@ type Props = {
   completed: boolean;
   authenticated: boolean;
   signInHref: string;
+  courseTitle?: string;
+  challengeTitle?: string;
   onComplete: (payload: {
     agentId?: string;
     simulated: boolean;
     creditReward: number;
   }) => void;
   onContinue?: () => void;
+  onExit?: () => void;
 };
 
 export function AgentLearnerSandbox({
@@ -64,18 +86,21 @@ export function AgentLearnerSandbox({
   completed,
   authenticated,
   signInHref,
+  courseTitle,
+  challengeTitle,
   onComplete,
   onContinue,
+  onExit,
 }: Props) {
   const [introOpen, setIntroOpen] = useState(Boolean(config.intro?.enabled));
   const [agentName, setAgentName] = useState(config.starterAgent?.name || "");
   const [persona, setPersona] = useState(config.starterAgent?.persona || "");
   const [systemPrompt, setSystemPrompt] = useState(
-    config.starterAgent?.systemPrompt || ""
+    config.starterAgent?.systemPrompt || "",
   );
   const [selectedSkills, setSelectedSkills] = useState<string[]>(
     config.starterSkillIds ??
-      (config.skillTemplates || []).slice(0, 1).map((skill) => skill.id)
+      (config.skillTemplates || []).slice(0, 1).map((skill) => skill.id),
   );
   const [skillInstructions, setSkillInstructions] = useState<
     Record<string, string>
@@ -84,19 +109,19 @@ export function AgentLearnerSandbox({
       (config.skillTemplates || []).map((skill) => [
         skill.id,
         skill.instructions,
-      ])
-    )
+      ]),
+    ),
   );
   const [selectedTools, setSelectedTools] = useState<string[]>(
     config.starterToolIds ??
-      (config.toolTemplates || []).slice(0, 1).map((tool) => tool.id)
+      (config.toolTemplates || []).slice(0, 1).map((tool) => tool.id),
   );
   const [selectedTasks, setSelectedTasks] = useState<string[]>(
     config.starterTaskIds ??
-      (config.taskTemplates || []).slice(0, 1).map((task) => task.id)
+      (config.taskTemplates || []).slice(0, 1).map((task) => task.id),
   );
   const [selectedWorkflowId, setSelectedWorkflowId] = useState(
-    config.workflowTemplates?.[0]?.id || ""
+    config.workflowTemplates?.[0]?.id || "",
   );
   const [workflowResult, setWorkflowResult] = useState<string[]>([]);
   const [memoryEntries, setMemoryEntries] = useState<Record<string, string>>(
@@ -105,20 +130,20 @@ export function AgentLearnerSandbox({
         (config.memoryTemplates || []).map((memory) => [
           memory.id,
           memory.content,
-        ])
-      )
+        ]),
+      ),
   );
   const [computerCommand, setComputerCommand] = useState(
-    config.computerTemplate?.starterCommand || "ls"
+    config.computerTemplate?.starterCommand || "ls",
   );
   const [computerOutput, setComputerOutput] = useState("");
   const [taskTitle, setTaskTitle] = useState("Plan a realistic study week");
-  const [activePanel, setActivePanel] = useState<ConfigPanel>("identity");
+  const [activePanel, setActivePanel] = useState<SandboxSection>(() =>
+    firstSandboxSection(config),
+  );
   // True while we check the server for a previously-saved sandbox state.
   // Prevents flashing the intro screen before we know whether to skip it.
   const [sandboxLoading, setSandboxLoading] = useState(authenticated);
-  const [drawerOpen, setDrawerOpen] = useState(false);
-  const [logsOpen, setLogsOpen] = useState(false);
   const [guideIndex, setGuideIndex] = useState(0);
   const [guideVisible, setGuideVisible] = useState(true);
   const [creating, setCreating] = useState(false);
@@ -127,7 +152,9 @@ export function AgentLearnerSandbox({
   const [finishing, setFinishing] = useState(false);
   const [reviewing, setReviewing] = useState<string | null>(null);
   const [runActivity, setRunActivity] = useState<string | undefined>();
-  const [highlightRect, setHighlightRect] = useState<HighlightRect | null>(null);
+  const [highlightRect, setHighlightRect] = useState<HighlightRect | null>(
+    null,
+  );
   const highlightedElementRef = useRef<{
     element: HTMLElement;
     boxShadow: string;
@@ -143,6 +170,11 @@ export function AgentLearnerSandbox({
   const [creditReward, setCreditReward] = useState(config.creditReward || 0);
   const [chatInput, setChatInput] = useState("");
   const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [sessions, setSessions] = useState<SandboxSession[]>([]);
+  const [currentSessionId, setCurrentSessionId] = useState(
+    `learner-session-${challengeId}`,
+  );
+  const [openedFromSessions, setOpenedFromSessions] = useState(false);
   const [logs, setLogs] = useState<SandboxLog[]>([
     {
       level: "info",
@@ -152,19 +184,37 @@ export function AgentLearnerSandbox({
   ]);
   const chatEndRef = useRef<HTMLDivElement | null>(null);
 
-  const guide = config.guideSteps || [];
+  const visibleSections = useMemo(() => sandboxSections(config), [config]);
+  const guide = useMemo(
+    () =>
+      (config.guideSteps || []).filter((step) => {
+        const section = targetToPanel[step.target];
+        return !section || visibleSections.includes(section);
+      }),
+    [config.guideSteps, visibleSections],
+  );
   const activeStep = guide[guideIndex];
-  const reviewTargets = config.review?.enabled ? config.review.targets || [] : [];
+  const visibleCapabilities = useMemo(
+    () => new Set(config.capabilities || []),
+    [config.capabilities],
+  );
+  const reviewTargets = config.review?.enabled
+    ? config.review.targets || []
+    : [];
   const promptReviewPassed =
     config.review?.required === false ||
     !reviewTargets.includes("system_prompt") ||
     reviews.system_prompt?.passed;
   const needsGoogleConnection = selectedTools.some((toolId) => {
     const tool = config.toolTemplates?.find((item) => item.id === toolId);
-    return tool?.connectorKind?.startsWith("google_") || tool?.connectorKind === "gmail";
+    return (
+      tool?.connectorKind?.startsWith("google_") ||
+      tool?.connectorKind === "gmail"
+    );
   });
   const appUrl =
-    process.env.NEXT_PUBLIC_AGENT_COMMONS_APP_URL || "https://www.agentcommons.io";
+    process.env.NEXT_PUBLIC_AGENT_COMMONS_APP_URL ||
+    "https://www.agentcommons.io";
   const [sandboxReturnUrl, setSandboxReturnUrl] = useState("");
   const googleConnectUrl = `${appUrl.replace(/\/$/, "")}/oauth/connect?provider=google_workspace&returnUrl=${encodeURIComponent(sandboxReturnUrl || "/studio/tools")}`;
   const agentStudioUrl = createdAgentId
@@ -176,14 +226,44 @@ export function AgentLearnerSandbox({
     systemPrompt.trim().length > 40 &&
     promptReviewPassed;
 
+  const hasUserMessage = messages.some((message) => message.role === "user");
+  const requiredCapabilities = (config.requiredCapabilities || []).filter(
+    (capability) => visibleCapabilities.has(capability),
+  );
+  const unmetRequirements = requiredCapabilities.filter((capability) => {
+    if (capability === "identity") return agentName.trim().length <= 1;
+    if (capability === "system_prompt") return systemPrompt.trim().length <= 40;
+    if (capability === "skills") return selectedSkills.length === 0;
+    if (capability === "tools" || capability === "connectors") {
+      return selectedTools.length === 0;
+    }
+    if (capability === "tasks") return selectedTasks.length === 0;
+    if (capability === "workflows") return workflowResult.length === 0;
+    if (capability === "memory") {
+      return !Object.values(memoryEntries).some((entry) => entry.trim());
+    }
+    if (capability === "computer") return !computerOutput.trim();
+    if (capability === "chat") return !hasUserMessage;
+    if (capability === "logs") return logs.length <= 1;
+    return false;
+  });
   const statusLabel = useMemo(() => {
     if (completionSent) return "Completed";
-    if (createdAgentId) return "Agent created. Test it in chat.";
-    if (!promptReviewPassed) return "System prompt review required";
-    return "Create the agent in Agent Commons";
-  }, [completionSent, createdAgentId, promptReviewPassed]);
-  const lastLog = logs[0];
-  const hasUserMessage = messages.some((message) => message.role === "user");
+    if (!createdAgentId) {
+      return !promptReviewPassed
+        ? "System prompt review required"
+        : "Create the agent in Agent Commons";
+    }
+    if (unmetRequirements.length) {
+      return `${unmetRequirements.length} required workspace step${unmetRequirements.length === 1 ? "" : "s"} remaining`;
+    }
+    return "Agent is ready to finish";
+  }, [
+    completionSent,
+    createdAgentId,
+    promptReviewPassed,
+    unmetRequirements.length,
+  ]);
 
   useEffect(() => {
     if (!authenticated) {
@@ -194,7 +274,7 @@ export function AgentLearnerSandbox({
     async function loadSandboxState() {
       try {
         const response = await fetch(
-          `/api/skills/${courseSlug}/sandbox?challengeId=${encodeURIComponent(challengeId)}`
+          `/api/skills/${courseSlug}/sandbox?challengeId=${encodeURIComponent(challengeId)}`,
         ).catch(() => null);
         if (!response?.ok) return;
         const payload = (await response.json().catch(() => ({}))) as {
@@ -210,8 +290,8 @@ export function AgentLearnerSandbox({
     return () => {
       cancelled = true;
     };
-  // State setters are stable; this should only reload when the sandbox identity changes.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // State setters are stable; this should only reload when the sandbox identity changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [authenticated, challengeId, courseSlug]);
 
   useEffect(() => {
@@ -227,22 +307,28 @@ export function AgentLearnerSandbox({
 
     let frameId = 0;
     let active = true;
-    const primarySelector = activeStep.targetSelector?.trim() || defaultGuideSelector(activeStep.target);
-    const panel = targetToPanel[activeStep.target as keyof typeof targetToPanel];
+    const primarySelector =
+      activeStep.targetSelector?.trim() ||
+      defaultGuideSelector(activeStep.target);
+    const panel =
+      targetToPanel[activeStep.target as keyof typeof targetToPanel];
     const railSelector = panel ? `[data-sandbox-target="rail-${panel}"]` : null;
 
     // Use React state — not CSS position — to decide whether the primary element is
     // currently accessible. This avoids a flicker on load where getBoundingClientRect
     // fires before the CSS transform is applied and returns a stale on-screen position.
-    const primaryIsVisible = !panel || (drawerOpen && activePanel === panel);
+    const primaryIsVisible = !panel || activePanel === panel;
 
     const measure = () => {
       if (!active) return;
       let finalEl: HTMLElement | null = null;
 
       if (primaryIsVisible) {
-        const el = primarySelector ? document.querySelector(primarySelector) : null;
-        if (el instanceof HTMLElement && el.getBoundingClientRect().width > 0) finalEl = el;
+        const el = primarySelector
+          ? document.querySelector(primarySelector)
+          : null;
+        if (el instanceof HTMLElement && el.getBoundingClientRect().width > 0)
+          finalEl = el;
       }
 
       // Drawer is closed or showing a different panel — highlight the rail icon instead
@@ -263,7 +349,7 @@ export function AgentLearnerSandbox({
         setHighlightRect(
           isInViewport
             ? { top: r.top, left: r.left, width: r.width, height: r.height }
-            : null
+            : null,
         );
       } else {
         clearGuideHighlight(highlightedElementRef);
@@ -280,7 +366,8 @@ export function AgentLearnerSandbox({
     const tick = () => {
       if (!active) return;
       measure();
-      if (performance.now() - startMs < 600) frameId = requestAnimationFrame(tick);
+      if (performance.now() - startMs < 600)
+        frameId = requestAnimationFrame(tick);
     };
 
     const onViewUpdate = () => {
@@ -290,9 +377,15 @@ export function AgentLearnerSandbox({
 
     const timeout = window.setTimeout(() => {
       if (primaryIsVisible) {
-        const el = primarySelector ? document.querySelector(primarySelector) : null;
+        const el = primarySelector
+          ? document.querySelector(primarySelector)
+          : null;
         if (el instanceof HTMLElement) {
-          el.scrollIntoView({ block: "nearest", inline: "nearest", behavior: "smooth" });
+          el.scrollIntoView({
+            block: "nearest",
+            inline: "nearest",
+            behavior: "smooth",
+          });
         }
       }
       frameId = requestAnimationFrame(tick);
@@ -309,13 +402,13 @@ export function AgentLearnerSandbox({
       window.removeEventListener("resize", onViewUpdate);
       window.removeEventListener("scroll", onViewUpdate, true);
     };
-  }, [activeStep, guideVisible, drawerOpen, logsOpen, activePanel]);
+  }, [activeStep, guideVisible, activePanel]);
 
   // Hold the correct screen until server state is known — prevents the intro
   // screen from flashing before we discover the user already has a saved agent.
   if (sandboxLoading) {
     return (
-      <div className="relative flex min-h-0 flex-1 items-center justify-center overflow-hidden rounded-xl border border-slate-200 bg-white">
+      <div className="relative flex h-full min-h-0 flex-1 items-center justify-center overflow-hidden bg-white">
         <SandboxLoader className="h-5 w-5 animate-spin text-slate-300" />
       </div>
     );
@@ -323,7 +416,7 @@ export function AgentLearnerSandbox({
 
   if (introOpen && !completed) {
     return (
-      <div className="relative flex min-h-0 flex-1 overflow-hidden rounded-xl border border-slate-200 bg-white text-slate-950">
+      <div className="relative flex h-full min-h-0 flex-1 overflow-hidden bg-white text-slate-950">
         <SandboxIntro
           intro={config.intro}
           title={config.title}
@@ -335,7 +428,12 @@ export function AgentLearnerSandbox({
   }
 
   function addLog(log: SandboxLog) {
-    setLogs((current) => [log, ...current].slice(0, 40));
+    setLogs((current) =>
+      [
+        { ...log, occurredAt: log.occurredAt || new Date().toISOString() },
+        ...current,
+      ].slice(0, 40),
+    );
   }
 
   function requireAuth() {
@@ -347,7 +445,10 @@ export function AgentLearnerSandbox({
   async function createAgent() {
     if (requireAuth() || creating || !canCreate) return;
     setCreating(true);
-    addLog({ level: "info", message: "Creating a real Agent Commons agent..." });
+    addLog({
+      level: "info",
+      message: "Creating a real Agent Commons agent...",
+    });
 
     const response = await fetch(`/api/skills/${courseSlug}/sandbox`, {
       method: "POST",
@@ -380,7 +481,7 @@ export function AgentLearnerSandbox({
         level: "error",
         message: formatApiError(
           payload,
-          "Agent Commons did not create a real agent. The lesson cannot continue with a mock agent."
+          "Agent Commons did not create a real agent. The lesson cannot continue with a mock agent.",
         ),
       });
       return;
@@ -412,7 +513,7 @@ export function AgentLearnerSandbox({
 
   async function syncAgent(
     reason = "Saved agent changes.",
-    statePatch?: Partial<SandboxResumeState>
+    statePatch?: Partial<SandboxResumeState>,
   ) {
     if (requireAuth() || syncing || !createdAgentId) return false;
     setSyncing(true);
@@ -450,7 +551,7 @@ export function AgentLearnerSandbox({
         level: "error",
         message: formatApiError(
           payload,
-          "Could not save this agent change yet."
+          "Could not save this agent change yet.",
         ),
       });
       return false;
@@ -481,7 +582,10 @@ export function AgentLearnerSandbox({
     const synced = await syncAgent("Saved latest changes before chat.");
     if (!synced) return;
 
-    const userMessage: ChatMessage = { role: "user", content: chatInput.trim() };
+    const userMessage: ChatMessage = {
+      role: "user",
+      content: chatInput.trim(),
+    };
     const nextMessages = [...messages, userMessage];
     setMessages(nextMessages);
     setChatInput("");
@@ -491,6 +595,9 @@ export function AgentLearnerSandbox({
     addLog({ level: "info", message: "Running the real agent..." });
 
     try {
+      const platformSessionId = sessions.find(
+        (session) => session.id === currentSessionId,
+      )?.platformSessionId;
       const response = await fetch(`/api/skills/${courseSlug}/sandbox/chat`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -500,6 +607,7 @@ export function AgentLearnerSandbox({
             role: message.role,
             content: message.content,
           })),
+          sessionId: platformSessionId,
         }),
       });
 
@@ -512,6 +620,8 @@ export function AgentLearnerSandbox({
       }
 
       let assistantText = "";
+      let returnedPlatformSessionId = platformSessionId;
+      let returnedTitle = "";
       const appendAssistantText = (delta: string) => {
         assistantText += delta;
         setMessages((current) => replaceLastAssistant(current, assistantText));
@@ -528,9 +638,18 @@ export function AgentLearnerSandbox({
         } else if (event.type === "toolEnd") {
           const toolName = event.toolName || "tool";
           setRunActivity("Agent is continuing");
-          addLog({ level: "success", message: `Tool call finished: ${toolName}.` });
-        } else if (event.type === "final") {
+          addLog({
+            level: "success",
+            message: `Tool call finished: ${toolName}.`,
+          });
+        } else if (event.type === "final" || event.type === "completed") {
           const finalText = extractStreamFinalText(event);
+          returnedPlatformSessionId =
+            event.sessionId ||
+            stringValue(event.payload?.sessionId) ||
+            returnedPlatformSessionId;
+          returnedTitle =
+            event.title || stringValue(event.payload?.title) || returnedTitle;
           if (finalText && !assistantText.trim()) {
             appendAssistantText(finalText);
           }
@@ -549,12 +668,23 @@ export function AgentLearnerSandbox({
         },
       ];
       setMessages(completedMessages);
+      const updatedSessions = upsertSession(completedMessages, {
+        platformSessionId: returnedPlatformSessionId,
+        title: returnedTitle,
+      });
       addLog({ level: "success", message: "Agent returned a live response." });
-      void persistSandboxState({ messages: completedMessages, chatInput: "" });
+      void persistSandboxState({
+        messages: completedMessages,
+        chatInput: "",
+        sessions: updatedSessions,
+      });
     } catch (error) {
-      const message = error instanceof Error ? error.message : "The agent run failed.";
+      const message =
+        error instanceof Error ? error.message : "The agent run failed.";
       setMessages((current) => [
-        ...current.filter((item, index) => item.content || index < current.length - 1),
+        ...current.filter(
+          (item, index) => item.content || index < current.length - 1,
+        ),
         { role: "assistant", content: `Run failed: ${message}` },
       ]);
       addLog({ level: "error", message });
@@ -565,7 +695,14 @@ export function AgentLearnerSandbox({
   }
 
   async function finishSandbox() {
-    if (requireAuth() || finishing || !createdAgentId || !hasUserMessage) return;
+    if (
+      requireAuth() ||
+      finishing ||
+      !createdAgentId ||
+      unmetRequirements.length > 0
+    ) {
+      return;
+    }
     setFinishing(true);
     await syncAgent("Saved final sandbox state.", { completionSent: true });
     setCompletionSent(true);
@@ -586,7 +723,7 @@ export function AgentLearnerSandbox({
             .filter((skill) => selectedSkills.includes(skill.id))
             .map(
               (skill) =>
-                `${skill.name}\n${skillInstructions[skill.id] || skill.instructions}`
+                `${skill.name}\n${skillInstructions[skill.id] || skill.instructions}`,
             )
             .join("\n\n");
     if (!content.trim()) return;
@@ -634,10 +771,60 @@ export function AgentLearnerSandbox({
   function openGuideIndex(index: number) {
     const step = guide[index];
     const panel = step?.target ? targetToPanel[step.target] : undefined;
-    if (panel) {
+    if (panel && visibleSections.includes(panel)) {
       setActivePanel(panel);
-      setDrawerOpen(true);
     }
+  }
+
+  function startNewSession() {
+    if (messages.length) upsertSession(messages);
+    setCurrentSessionId(`learner-session-${Date.now()}`);
+    setMessages([]);
+    setChatInput("");
+    setRunActivity(undefined);
+    setOpenedFromSessions(false);
+    setActivePanel("chat");
+  }
+
+  function openSession(session: SandboxSession) {
+    if (messages.length) upsertSession(messages);
+    setCurrentSessionId(session.id);
+    setMessages(session.messages);
+    setChatInput("");
+    setOpenedFromSessions(true);
+    setActivePanel("chat");
+  }
+
+  function upsertSession(
+    sessionMessages: ChatMessage[],
+    metadata: { platformSessionId?: string; title?: string } = {},
+  ) {
+    if (!sessionMessages.length) return sessions;
+    const now = new Date().toISOString();
+    const existing = sessions.find(
+      (session) => session.id === currentSessionId,
+    );
+    const firstUserMessage = sessionMessages.find(
+      (message) => message.role === "user",
+    )?.content;
+    const next: SandboxSession = {
+      id: currentSessionId,
+      platformSessionId:
+        metadata.platformSessionId || existing?.platformSessionId,
+      title:
+        metadata.title?.trim() ||
+        existing?.title ||
+        sessionTitle(firstUserMessage),
+      messages: sessionMessages,
+      createdAt: existing?.createdAt || now,
+      updatedAt: now,
+    };
+    const updated = [
+      next,
+      ...sessions.filter((session) => session.id !== next.id),
+    ];
+    setSessions(updated);
+    return updated;
   }
 
   async function nextGuideStep() {
@@ -649,7 +836,9 @@ export function AgentLearnerSandbox({
     setGuideIndex(nextIndex);
     setGuideVisible(true);
     if (createdAgentId) {
-      await syncAgent("Saved changes before moving on.", { guideIndex: nextIndex });
+      await syncAgent("Saved changes before moving on.", {
+        guideIndex: nextIndex,
+      });
     }
     openGuideIndex(nextIndex);
   }
@@ -659,91 +848,101 @@ export function AgentLearnerSandbox({
     setGuideIndex(nextIndex);
     setGuideVisible(true);
     if (createdAgentId) {
-      await syncAgent("Saved changes before moving back.", { guideIndex: nextIndex });
+      await syncAgent("Saved changes before moving back.", {
+        guideIndex: nextIndex,
+      });
     }
     openGuideIndex(nextIndex);
   }
 
   return (
-    <div className="relative flex min-h-0 flex-1 overflow-hidden rounded-xl border border-slate-200 bg-white text-slate-950">
+    <div className="relative flex h-full min-h-0 flex-1 overflow-hidden bg-white text-slate-950">
       <ConfigRail
-        activePanel={activePanel}
-        drawerOpen={drawerOpen}
-        onToggleDrawer={() => setDrawerOpen((value) => !value)}
-        onOpenPanel={(panel) => {
-          setActivePanel(panel);
-          setDrawerOpen(true);
+        sections={visibleSections}
+        activeSection={
+          openedFromSessions && activePanel === "chat"
+            ? "sessions"
+            : activePanel
+        }
+        agentName={agentName}
+        courseTitle={courseTitle}
+        challengeTitle={challengeTitle || config.title}
+        completed={completionSent}
+        onOpenSection={(section) => {
+          setOpenedFromSessions(false);
+          setActivePanel(section);
         }}
+        onExit={onExit}
       />
 
       <main className="flex min-w-0 flex-1 flex-col overflow-hidden">
-        <header className="flex items-center justify-between gap-3 border-b border-slate-200 px-4 py-3">
-          <div className="min-w-0">
-            <p className="truncate text-xs font-bold uppercase tracking-widest text-slate-500">
-              Agent Commons sandbox
-            </p>
-            <h2 className="truncate text-lg font-semibold">
-              {agentName || "Untitled agent"}
-            </h2>
-          </div>
-          <div className="flex items-center gap-2">
-            {agentStudioUrl ? (
-              <a
-                href={agentStudioUrl}
-                target="_blank"
-                rel="noreferrer"
-                className="hidden items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-2 text-xs font-bold text-slate-700 sm:inline-flex"
-              >
-                <ExternalLink className="h-3.5 w-3.5" />
-                Open in Agent Commons
-              </a>
-            ) : null}
-            <button
-              type="button"
-              onClick={() => setLogsOpen((value) => !value)}
-              className="relative rounded-lg border border-slate-200 p-2 text-slate-600"
-              aria-label="Toggle logs"
-            >
-              <Terminal className="h-4 w-4" />
-              {lastLog ? (
-                <span
-                  className={logDotClass(lastLog.level)}
-                  aria-hidden="true"
-                />
-              ) : null}
-            </button>
-          </div>
-        </header>
-
         <div className="relative flex min-h-0 flex-1 overflow-hidden">
-          <ConfigDrawer
-            open={drawerOpen}
-            panel={activePanel}
-            onClose={() => setDrawerOpen(false)}
-          >
-            {renderConfigPanel()}
-          </ConfigDrawer>
-          <ChatSurface
-            messages={messages}
-            sending={sending}
-            chatInput={chatInput}
-            createdAgentId={createdAgentId}
-            chatEndRef={chatEndRef}
-            activityLabel={runActivity}
-            placeholder={config.placeholders?.chatInput}
-            onInputChange={setChatInput}
-            onSend={sendMessage}
-          />
-          {logsOpen ? (
-            <div className="absolute inset-y-0 right-0 z-40 w-full max-w-sm border-l border-slate-200 bg-white shadow-2xl sm:w-96">
-              <LogsPanel logs={logs} onClose={() => setLogsOpen(false)} />
+          {activePanel === "chat" ? (
+            <section className="flex min-h-0 min-w-0 flex-1 flex-col">
+              {openedFromSessions ? (
+                <div className="flex h-14 shrink-0 items-center gap-2 border-b border-slate-200 px-4">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setOpenedFromSessions(false);
+                      setActivePanel("sessions");
+                    }}
+                    className="flex h-8 w-8 items-center justify-center rounded-md text-slate-500 hover:bg-slate-100 hover:text-slate-950"
+                    aria-label="Back to sessions"
+                  >
+                    <ArrowLeft className="h-4 w-4" />
+                  </button>
+                  <p className="min-w-0 truncate text-sm font-medium text-slate-950">
+                    {sessions.find((session) => session.id === currentSessionId)
+                      ?.title || "Session"}
+                  </p>
+                </div>
+              ) : null}
+              <ChatSurface
+                messages={messages}
+                sending={sending}
+                chatInput={chatInput}
+                createdAgentId={createdAgentId}
+                agentName={agentName}
+                brief={config.brief}
+                starters={sandboxConversationStarters(config)}
+                chatEndRef={chatEndRef}
+                activityLabel={runActivity}
+                placeholder={config.placeholders?.chatInput}
+                onInputChange={setChatInput}
+                onSend={sendMessage}
+              />
+            </section>
+          ) : activePanel === "sessions" ? (
+            <SessionsSurface
+              sessions={sessions}
+              currentSessionId={currentSessionId}
+              onCreate={startNewSession}
+              onSelect={openSession}
+            />
+          ) : activePanel === "logs" ? (
+            <section className="flex min-h-0 min-w-0 flex-1 flex-col">
+              <WorkspaceHeader
+                title="Observability"
+                subtitle="Inspect agent, tool, and sandbox activity as you work."
+                agentStudioUrl={agentStudioUrl}
+              />
+              <LogsPanel logs={logs} showHeader={false} />
+            </section>
+          ) : (
+            <div className="min-h-0 min-w-0 flex-1">
+              <ConfigDrawer panel={activePanel as ConfigPanel}>
+                {renderConfigPanel()}
+              </ConfigDrawer>
             </div>
-          ) : null}
+          )}
           {completionSent ? (
             <div className="pointer-events-auto absolute inset-x-3 top-3 z-30 sm:inset-x-auto sm:right-3 sm:w-80">
               <SandboxCompletion
                 completion={config.completion}
-                creditReward={creditReward}
+                creditReward={
+                  visibleCapabilities.has("credits") ? creditReward : 0
+                }
                 onContinue={onContinue}
               />
             </div>
@@ -753,7 +952,7 @@ export function AgentLearnerSandbox({
         <BottomGuide
           statusLabel={statusLabel}
           completed={completionSent}
-          creditReward={creditReward}
+          creditReward={visibleCapabilities.has("credits") ? creditReward : 0}
           activeStep={activeStep}
           guideIndex={guideIndex}
           guideLength={guide.length}
@@ -771,7 +970,11 @@ export function AgentLearnerSandbox({
           syncing={syncing}
           canSync={Boolean(createdAgentId) && !syncing}
           finishing={finishing}
-          canFinish={Boolean(createdAgentId) && hasUserMessage && !completionSent}
+          canFinish={
+            Boolean(createdAgentId) &&
+            unmetRequirements.length === 0 &&
+            !completionSent
+          }
         />
       </main>
       <GuideTour
@@ -793,12 +996,16 @@ export function AgentLearnerSandbox({
       return (
         <IdentityPanel
           agentName={agentName}
+          persona={persona}
           systemPrompt={systemPrompt}
+          showIdentity={visibleCapabilities.has("identity")}
+          showSystemPrompt={visibleCapabilities.has("system_prompt")}
           placeholders={config.placeholders}
           reviewEnabled={reviewTargets.includes("system_prompt")}
           review={reviews.system_prompt}
           reviewing={reviewing === "system_prompt"}
           onNameChange={setAgentName}
+          onPersonaChange={setPersona}
           onPromptChange={(value) => {
             setSystemPrompt(value);
             setReviews((current) => {
@@ -836,7 +1043,10 @@ export function AgentLearnerSandbox({
           }}
           onAddSkill={(value) => {
             const id = `custom-skill-${Date.now()}`;
-            setSkillInstructions((current) => ({ ...current, [id]: value.trim() }));
+            setSkillInstructions((current) => ({
+              ...current,
+              [id]: value.trim(),
+            }));
             setSelectedSkills([id]);
             setReviews((current) => {
               const rest = { ...current };
@@ -908,8 +1118,9 @@ export function AgentLearnerSandbox({
 
   function runWorkflowSimulation() {
     const workflow =
-      config.workflowTemplates?.find((item) => item.id === selectedWorkflowId) ||
-      config.workflowTemplates?.[0];
+      config.workflowTemplates?.find(
+        (item) => item.id === selectedWorkflowId,
+      ) || config.workflowTemplates?.[0];
     if (!workflow) return;
     const lines = [
       `trigger -> ${workflow.trigger}`,
@@ -918,19 +1129,25 @@ export function AgentLearnerSandbox({
       "simulation -> completed inside the learning sandbox",
     ];
     setWorkflowResult(lines);
-    addLog({ level: "success", message: `Simulated workflow: ${workflow.name}.` });
+    addLog({
+      level: "success",
+      message: `Simulated workflow: ${workflow.name}.`,
+    });
   }
 
   function runComputerCommand() {
     const files = config.computerTemplate?.files || [];
-    const command = computerCommand.trim() || config.computerTemplate?.starterCommand || "ls";
+    const command =
+      computerCommand.trim() || config.computerTemplate?.starterCommand || "ls";
     let output = "";
     if (command === "ls" || command === "ls .") {
-      output = files.map((file) => file.path).join("\n") || "workspace is empty";
+      output =
+        files.map((file) => file.path).join("\n") || "workspace is empty";
     } else if (["run team", "node runtime.js", "npm start"].includes(command)) {
       const workflow =
-        config.workflowTemplates?.find((item) => item.id === selectedWorkflowId) ||
-        config.workflowTemplates?.[0];
+        config.workflowTemplates?.find(
+          (item) => item.id === selectedWorkflowId,
+        ) || config.workflowTemplates?.[0];
       const selectedRoleNames = (config.skillTemplates || [])
         .filter((skill) => selectedSkills.includes(skill.id))
         .map((skill) => skill.name);
@@ -956,7 +1173,8 @@ export function AgentLearnerSandbox({
     } else if (command.startsWith("cat ")) {
       const target = command.slice(4).trim();
       const file = files.find((item) => item.path === target);
-      output = file?.content || `cat: ${target}: no such file in sandbox workspace`;
+      output =
+        file?.content || `cat: ${target}: no such file in sandbox workspace`;
     } else if (command === "pwd") {
       output = `/${config.computerTemplate?.workspaceName || "sandbox-workspace"}`;
     } else {
@@ -967,11 +1185,14 @@ export function AgentLearnerSandbox({
       ].join("\n");
     }
     setComputerOutput(output);
-    addLog({ level: "success", message: `Ran lightweight computer command: ${command}.` });
+    addLog({
+      level: "success",
+      message: `Ran lightweight computer command: ${command}.`,
+    });
   }
 
   function buildSandboxState(
-    patch: Partial<SandboxResumeState> = {}
+    patch: Partial<SandboxResumeState> = {},
   ): SandboxResumeState {
     return {
       agentName,
@@ -994,6 +1215,8 @@ export function AgentLearnerSandbox({
       creditReward,
       chatInput,
       messages,
+      sessions,
+      currentSessionId,
       logs,
       reviews,
       ...patch,
@@ -1025,7 +1248,9 @@ export function AgentLearnerSandbox({
       setComputerOutput(state.computerOutput);
     }
     if (state.taskTitle) setTaskTitle(state.taskTitle);
-    if (state.activePanel) setActivePanel(state.activePanel);
+    if (state.activePanel && visibleSections.includes(state.activePanel)) {
+      setActivePanel(state.activePanel);
+    }
     if (typeof state.guideIndex === "number") setGuideIndex(state.guideIndex);
     if (state.createdAgentId) {
       setCreatedAgentId(state.createdAgentId);
@@ -1034,15 +1259,124 @@ export function AgentLearnerSandbox({
     if (typeof state.completionSent === "boolean") {
       setCompletionSent(state.completionSent || completed);
     }
-    if (typeof state.creditReward === "number") setCreditReward(state.creditReward);
+    if (typeof state.creditReward === "number")
+      setCreditReward(state.creditReward);
     if (typeof state.chatInput === "string") setChatInput(state.chatInput);
     if (state.messages?.length) setMessages(state.messages);
+    const restoredSessionId =
+      state.currentSessionId || `learner-session-${challengeId}`;
+    if (state.sessions?.length) {
+      setSessions(state.sessions);
+    } else if (state.messages?.length) {
+      const restoredAt = new Date().toISOString();
+      setSessions([
+        {
+          id: restoredSessionId,
+          title: sessionTitle(
+            state.messages.find((message) => message.role === "user")?.content,
+          ),
+          messages: state.messages,
+          createdAt: restoredAt,
+          updatedAt: restoredAt,
+        },
+      ]);
+    }
+    if (state.currentSessionId) setCurrentSessionId(state.currentSessionId);
     if (state.logs?.length) setLogs(state.logs);
     if (state.reviews) setReviews(state.reviews);
   }
 }
 
-function replaceLastAssistant(messages: ChatMessage[], content: string): ChatMessage[] {
+function WorkspaceHeader({
+  title,
+  subtitle,
+  agentStudioUrl,
+}: {
+  title: string;
+  subtitle: string;
+  agentStudioUrl?: string;
+}) {
+  return (
+    <header className="flex shrink-0 items-center justify-between gap-4 border-b border-slate-200 bg-white px-5 py-4">
+      <div className="min-w-0">
+        <h1 className="truncate text-lg font-medium tracking-tight text-slate-950">
+          {title}
+        </h1>
+        <p className="mt-1 hidden truncate text-sm text-slate-500 sm:block">
+          {subtitle}
+        </p>
+      </div>
+      {agentStudioUrl ? (
+        <a
+          href={agentStudioUrl}
+          target="_blank"
+          rel="noreferrer"
+          className="inline-flex shrink-0 items-center gap-1.5 rounded-md border border-slate-200 px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50"
+        >
+          <ExternalLink className="h-3.5 w-3.5" />
+          <span className="hidden sm:inline">Open in Agent Commons</span>
+          <span className="sm:hidden">Open</span>
+        </a>
+      ) : null}
+    </header>
+  );
+}
+
+const sandboxSectionOrder: SandboxSection[] = [
+  "identity",
+  "chat",
+  "sessions",
+  "computer",
+  "tasks",
+  "tools",
+  "skills",
+  "workflows",
+  "memory",
+  "logs",
+];
+
+function sandboxSections(config: AgentSandboxConfig): SandboxSection[] {
+  const capabilities = new Set(config.capabilities || []);
+  const visible = sandboxSectionOrder.filter((section) => {
+    if (section === "identity") {
+      return capabilities.has("identity") || capabilities.has("system_prompt");
+    }
+    if (section === "tools") {
+      return capabilities.has("tools") || capabilities.has("connectors");
+    }
+    if (section === "sessions") return capabilities.has("chat");
+    return capabilities.has(section);
+  });
+  return visible.length ? visible : ["identity"];
+}
+
+function sandboxConversationStarters(config: AgentSandboxConfig) {
+  const starters = [
+    ...(config.taskTemplates || []).map((task) => task.title),
+    ...(config.workflowTemplates || []).map(
+      (workflow) => `Help me run ${workflow.name}`,
+    ),
+    ...(config.skillTemplates || []).map(
+      (skill) => `Use ${skill.name} to help me get started`,
+    ),
+  ];
+  return [...new Set(starters.filter(Boolean))].slice(0, 4);
+}
+
+function sessionTitle(value?: string) {
+  const normalized = value?.replace(/\s+/g, " ").trim();
+  if (!normalized) return "New session";
+  return normalized.length > 56 ? `${normalized.slice(0, 53)}...` : normalized;
+}
+
+function firstSandboxSection(config: AgentSandboxConfig): SandboxSection {
+  return sandboxSections(config)[0];
+}
+
+function replaceLastAssistant(
+  messages: ChatMessage[],
+  content: string,
+): ChatMessage[] {
   const next = [...messages];
   for (let index = next.length - 1; index >= 0; index -= 1) {
     if (next[index].role === "assistant") {
@@ -1094,9 +1428,14 @@ function parseSseFrame(frame: string) {
 
 function extractStreamFinalText(event: StreamEvent) {
   const payload = event.payload || {};
+  const nested =
+    payload.data && typeof payload.data === "object"
+      ? (payload.data as Record<string, unknown>)
+      : {};
   return (
     event.content ||
     stringValue(payload.content) ||
+    stringValue(nested.content) ||
     stringValue(payload.text) ||
     stringValue(payload.message) ||
     ""
@@ -1135,7 +1474,7 @@ function applyGuideHighlight(
     borderRadius: string;
     outline: string;
     outlineOffset: string;
-  } | null>
+  } | null>,
 ) {
   if (!element) {
     clearGuideHighlight(ref);
@@ -1159,8 +1498,7 @@ function applyGuideHighlight(
   element.style.borderRadius = element.style.borderRadius || "0.75rem";
   element.style.outline = "2px solid rgba(14,165,233,0.95)";
   element.style.outlineOffset = "2px";
-  element.style.boxShadow =
-    "0 0 0 5px rgba(14,165,233,0.14)";
+  element.style.boxShadow = "0 0 0 5px rgba(14,165,233,0.14)";
 }
 
 function clearGuideHighlight(
@@ -1172,7 +1510,7 @@ function clearGuideHighlight(
     borderRadius: string;
     outline: string;
     outlineOffset: string;
-  } | null>
+  } | null>,
 ) {
   const current = ref.current;
   if (!current) return;
@@ -1221,7 +1559,9 @@ function GuideTour({
   // or the message input. Query the actual send button position at render time.
   const sendEl = document.querySelector('[data-sandbox-target="send-button"]');
   const safeBottom =
-    sendEl instanceof HTMLElement ? sendEl.getBoundingClientRect().top - 8 : vh - 70;
+    sendEl instanceof HTMLElement
+      ? sendEl.getBoundingClientRect().top - 8
+      : vh - 70;
 
   // Prefer side placement (right → left) to avoid covering the focused element
   // above or below. Fall back to bottom/top only when there truly is no side room.
@@ -1236,7 +1576,9 @@ function GuideTour({
             : "top"
       : placement;
 
-  const style = isMobile ? {} : tourDialogStyle(rect, resolved, gap, dialogW, dialogH, vw, safeBottom);
+  const style = isMobile
+    ? {}
+    : tourDialogStyle(rect, resolved, gap, dialogW, dialogH, vw, safeBottom);
   const isLast = guideIndex + 1 >= guideLength;
 
   if (isMobile) {
@@ -1257,7 +1599,9 @@ function GuideTour({
             </button>
           </div>
           <p className="mt-1.5 text-sm font-bold leading-snug">{step.title}</p>
-          <p className="mt-1 text-xs leading-relaxed text-slate-500">{step.body}</p>
+          <p className="mt-1 text-xs leading-relaxed text-slate-500">
+            {step.body}
+          </p>
           <div className="mt-3 flex items-center justify-between gap-2">
             <button
               type="button"
@@ -1301,7 +1645,9 @@ function GuideTour({
         </div>
         <div className="px-3 pb-0 pt-1.5">
           <p className="text-sm font-bold leading-snug">{step.title}</p>
-          <p className="mt-1 text-xs leading-relaxed text-slate-500">{step.body}</p>
+          <p className="mt-1 text-xs leading-relaxed text-slate-500">
+            {step.body}
+          </p>
         </div>
         <div className="flex items-center justify-between px-3 py-2.5">
           <button
@@ -1332,15 +1678,18 @@ function tourDialogStyle(
   dialogW: number,
   dialogH: number,
   vw: number,
-  safeBottom: number
+  safeBottom: number,
 ) {
   const clampX = (v: number) => Math.max(12, Math.min(v, vw - dialogW - 12));
   // Never let the dialog's bottom edge reach the chat input / send button row
   const clampY = (v: number) => Math.max(12, Math.min(v, safeBottom - dialogH));
   const cx = rect.left + rect.width / 2 - dialogW / 2;
   const cy = rect.top + rect.height / 2 - dialogH / 2;
-  if (placement === "top") return { left: clampX(cx), top: clampY(rect.top - dialogH - gap) };
-  if (placement === "right") return { left: clampX(rect.left + rect.width + gap), top: clampY(cy) };
-  if (placement === "left") return { left: clampX(rect.left - dialogW - gap), top: clampY(cy) };
+  if (placement === "top")
+    return { left: clampX(cx), top: clampY(rect.top - dialogH - gap) };
+  if (placement === "right")
+    return { left: clampX(rect.left + rect.width + gap), top: clampY(cy) };
+  if (placement === "left")
+    return { left: clampX(rect.left - dialogW - gap), top: clampY(cy) };
   return { left: clampX(cx), top: clampY(rect.top + rect.height + gap) };
 }

@@ -341,13 +341,14 @@ async function draftWithAgentCommons(input: {
       sessionId: agentSessionId,
       workspaceId: input.session.identityWorkspaceId,
     });
-    const sourceVisuals = await persistSourceVisuals(uploadedFiles, {
+    const sourceDocuments = await prepareSourceDocuments(uploadedFiles, {
       accessToken: platformAccessToken,
       principalId,
       agentId,
       sessionId: agentSessionId,
       workspaceId: input.session.identityWorkspaceId,
     });
+    const sourceVisuals = sourceDocuments.visuals;
     const result = await client.run.once({
       agentId,
       sessionId: agentSessionId,
@@ -360,14 +361,23 @@ async function draftWithAgentCommons(input: {
         },
         {
           role: "user",
-          content: JSON.stringify({
-            mode: input.mode,
-            educatorInstructions: input.instructions,
-            materialText: input.materialText,
-            sourceVisuals,
-            visualInstructions:
-              "Use sourceVisuals assetUrl values on the lessons or challenges they illustrate. Preserve their page order and write useful assetAlt text. Do not invent asset URLs.",
-          }),
+          content: [
+            {
+              type: "text",
+              text: JSON.stringify({
+                mode: input.mode,
+                educatorInstructions: input.instructions,
+                materialText: sourceDocuments.extractedText || input.materialText,
+                sourceVisuals,
+                visualInstructions:
+                  "Each sourceVisual is followed by its image in the same order. Match visuals to lessons and challenges using pageText and the actual image content. Use only the supplied assetUrl values, keep text out of images, preserve source order when it reflects the learning sequence, and write useful assetAlt text. Do not invent asset URLs.",
+              }),
+            },
+            ...sourceVisuals.map((visual) => ({
+              type: "image_url" as const,
+              image_url: { url: visual.assetUrl },
+            })),
+          ],
         },
       ],
     });
@@ -381,11 +391,19 @@ async function draftWithAgentCommons(input: {
 type SourceVisual = {
   sourceName: string;
   pageNumber?: number;
+  sourceKind?: string;
+  sectionTitle?: string;
+  pageText?: string;
   assetUrl: string;
   assetAlt: string;
 };
 
-async function persistSourceVisuals(
+type PreparedSourceDocuments = {
+  extractedText: string;
+  visuals: SourceVisual[];
+};
+
+async function prepareSourceDocuments(
   uploadedFiles: EducatorCopilotUploadedFile[],
   access: {
     accessToken: string;
@@ -394,36 +412,67 @@ async function persistSourceVisuals(
     sessionId?: string;
     workspaceId?: string;
   }
-): Promise<SourceVisual[]> {
-  if (!uploadedFiles.length || !isS3MediaStorageConfigured()) return [];
-
+): Promise<PreparedSourceDocuments> {
+  if (!uploadedFiles.length) return { extractedText: "", visuals: [] };
+  const canPersistVisuals = isS3MediaStorageConfigured();
+  const extractedParts: string[] = [];
   const candidates: Array<{
     sourceName: string;
     pageNumber?: number;
+    sourceKind?: string;
+    sectionTitle?: string;
+    pageText?: string;
     mimeType: string;
     url: string;
   }> = [];
   for (const uploaded of uploadedFiles) {
     const response = await readEducatorCopilotFile(uploaded.fileId, access, {
-      maxChars: 1,
-      includeImageUrls: true,
+      maxChars: 50_000,
+      includeImageUrls: canPersistVisuals,
     }).catch(() => null);
-    for (const artifact of response?.data?.artifacts || []) {
+    const extracted = response?.data?.content || "";
+    if (extracted) {
+      extractedParts.push(
+        `File: ${uploaded.name || response?.data?.name || "source material"}\n${extracted}`
+      );
+    }
+    const pageText = splitPdfPageText(extracted);
+    const artifacts = response?.data?.artifacts || [];
+    const pagesWithEmbeddedImages = new Set(
+      artifacts
+        .filter((artifact) => artifact.kind === "pdf_embedded_image")
+        .map((artifact) => artifact.pageNumber)
+        .filter((page): page is number => typeof page === "number")
+    );
+    for (const artifact of artifacts) {
       if (
         artifact.url &&
         artifact.mimeType?.startsWith("image/") &&
-        (artifact.kind === "image" || artifact.kind === "pdf_page_image")
+        (artifact.kind === "image" ||
+          artifact.kind === "pdf_embedded_image" ||
+          artifact.kind === "pdf_page_image") &&
+        !(
+          artifact.kind === "pdf_page_image" &&
+          artifact.pageNumber &&
+          pagesWithEmbeddedImages.has(artifact.pageNumber)
+        )
       ) {
+        const sectionText = artifact.pageNumber
+          ? pageText.get(artifact.pageNumber) || ""
+          : "";
         candidates.push({
           sourceName: uploaded.name || response?.data?.name || "source material",
           pageNumber: artifact.pageNumber,
+          sourceKind: artifact.kind,
+          sectionTitle: inferSectionTitle(sectionText),
+          pageText: sectionText.slice(0, 2_400),
           mimeType: artifact.mimeType,
           url: artifact.url,
         });
       }
-      if (candidates.length >= 8) break;
+      if (candidates.length >= 32) break;
     }
-    if (candidates.length >= 8) break;
+    if (candidates.length >= 32) break;
   }
 
   const visuals: SourceVisual[] = [];
@@ -439,7 +488,7 @@ async function persistSourceVisuals(
           ? "jpg"
           : "png";
       const pageLabel = candidate.pageNumber
-        ? `page-${candidate.pageNumber}`
+        ? `page-${candidate.pageNumber}-visual-${index + 1}`
         : `image-${index + 1}`;
       const assetUrl = await uploadCourseMediaToS3({
         file: {
@@ -452,48 +501,53 @@ async function persistSourceVisuals(
       visuals.push({
         sourceName: candidate.sourceName,
         pageNumber: candidate.pageNumber,
+        sourceKind: candidate.sourceKind,
+        sectionTitle: candidate.sectionTitle,
+        pageText: candidate.pageText,
         assetUrl,
         assetAlt: candidate.pageNumber
-          ? `${candidate.sourceName}, page ${candidate.pageNumber}`
+          ? `Source visual from ${candidate.sourceName}, page ${candidate.pageNumber}${
+              candidate.sectionTitle ? `: ${candidate.sectionTitle}` : ""
+            }`
           : `Visual from ${candidate.sourceName}`,
       });
     } catch {
       // A failed visual should not block a text-grounded course draft.
     }
   }
-  return visuals;
+  return {
+    extractedText: extractedParts.join("\n\n").slice(0, maxTextChars),
+    visuals,
+  };
 }
 
 function applySourceVisuals(draft: CopilotDraft, visuals: SourceVisual[]) {
   if (!visuals.length) return draft;
-  let visualIndex = 0;
+  const lessonVisuals = createVisualMatcher(visuals);
   const modules = draft.modules?.map((module) => ({
     ...module,
-    lessons: module.lessons?.map((lesson) => {
-      if (lesson.assetUrl || visualIndex >= visuals.length) return lesson;
-      const visual = visuals[visualIndex++];
-      return {
-        ...lesson,
-        assetUrl: visual.assetUrl,
-        assetAlt: lesson.assetAlt || visual.assetAlt,
-      };
-    }),
+    lessons: module.lessons?.map((lesson) =>
+      lessonVisuals.assign(lesson, [
+        module.title,
+        module.description,
+        lesson.title,
+        lesson.description,
+      ])
+    ),
   }));
-  let challengeVisualIndex = 0;
+  const challengeVisuals = createVisualMatcher(visuals);
   const skillPack = draft.skillPack
     ? {
         ...draft.skillPack,
-        challenges: draft.skillPack.challenges?.map((challenge) => {
-          if (challenge.assetUrl || challengeVisualIndex >= visuals.length) {
-            return challenge;
-          }
-          const visual = visuals[challengeVisualIndex++];
-          return {
-            ...challenge,
-            assetUrl: visual.assetUrl,
-            assetAlt: challenge.assetAlt || visual.assetAlt,
-          };
-        }),
+        challenges: draft.skillPack.challenges?.map((challenge) =>
+          challengeVisuals.assign(challenge, [
+            challenge.title,
+            challenge.shortTitle,
+            challenge.hook,
+            challenge.lesson,
+            ...(challenge.keyIdeas || []),
+          ])
+        ),
       }
     : undefined;
   return {
@@ -505,6 +559,112 @@ function applySourceVisuals(draft: CopilotDraft, visuals: SourceVisual[]) {
       `Extracted and organized ${visuals.length} source visual${visuals.length === 1 ? "" : "s"} from the uploaded material.`,
     ],
   };
+}
+
+function createVisualMatcher(visuals: SourceVisual[]) {
+  const available = [...visuals];
+  const allowedUrls = new Set(visuals.map((visual) => visual.assetUrl));
+  return {
+    assign<T extends { assetUrl?: string; assetAlt?: string }>(
+      item: T,
+      textParts: Array<string | undefined>
+    ): T {
+      const requested = item.assetUrl && allowedUrls.has(item.assetUrl)
+        ? available.findIndex((visual) => visual.assetUrl === item.assetUrl)
+        : -1;
+      const index = requested >= 0
+        ? requested
+        : bestVisualIndex(textParts.filter(Boolean).join(" "), available);
+      if (index < 0) {
+        const sanitized = { ...item };
+        delete sanitized.assetUrl;
+        delete sanitized.assetAlt;
+        return sanitized;
+      }
+      const [visual] = available.splice(index, 1);
+      return {
+        ...item,
+        assetUrl: visual.assetUrl,
+        assetAlt: item.assetAlt || visual.assetAlt,
+      };
+    },
+  };
+}
+
+function bestVisualIndex(content: string, visuals: SourceVisual[]) {
+  if (!visuals.length) return -1;
+  const contentTokens = significantTokens(content);
+  if (!contentTokens.size) return 0;
+  let bestIndex = 0;
+  let bestScore = -1;
+  for (const [index, visual] of visuals.entries()) {
+    const visualTokens = significantTokens(
+      `${visual.sectionTitle || ""} ${visual.pageText || ""}`
+    );
+    let score = 0;
+    for (const token of contentTokens) {
+      if (visualTokens.has(token)) score += 1;
+    }
+    if (score > bestScore) {
+      bestScore = score;
+      bestIndex = index;
+    }
+  }
+  return bestIndex;
+}
+
+function significantTokens(value: string) {
+  const stopWords = new Set([
+    "about",
+    "after",
+    "again",
+    "also",
+    "because",
+    "before",
+    "being",
+    "from",
+    "have",
+    "into",
+    "lesson",
+    "material",
+    "more",
+    "that",
+    "their",
+    "there",
+    "these",
+    "they",
+    "this",
+    "through",
+    "what",
+    "when",
+    "where",
+    "which",
+    "with",
+    "would",
+  ]);
+  return new Set(
+    value
+      .toLowerCase()
+      .replace(/<[^>]*>/g, " ")
+      .match(/[a-z0-9]{4,}/g)
+      ?.filter((token) => !stopWords.has(token)) || []
+  );
+}
+
+function splitPdfPageText(content: string) {
+  const pages = new Map<number, string>();
+  const matches = [...content.matchAll(/--- Page (\d+) ---\n([\s\S]*?)(?=\n\n--- Page \d+ ---|$)/g)];
+  for (const match of matches) {
+    pages.set(Number(match[1]), match[2].replace(/\s+/g, " ").trim());
+  }
+  return pages;
+}
+
+function inferSectionTitle(pageText: string) {
+  const text = pageText.replace(/\s+/g, " ").trim();
+  if (!text) return undefined;
+  const sentence = text.match(/^(.{8,100}?)(?:[.!?]| {2,})/)?.[1];
+  return (sentence || text.slice(0, 80)).trim();
 }
 
 function safeSourceName(value: string) {
@@ -579,6 +739,8 @@ function copilotSystemPrompt() {
     "You are the CommonLab educator course copilot.",
     "Create rigorous, accessible course material from uploaded educator materials.",
     EDUCATOR_COPILOT_PEDAGOGY,
+    "For PDFs, treat page text and embedded visuals as separate source elements. Organize the text into clean explanations, then attach each original visual only to the lesson or challenge whose subject it actually illustrates.",
+    "Never flatten a PDF page screenshot into lesson copy when a separated embedded visual is available. Do not place prose inside generated images or use a visual merely because it appears next in the file.",
     "Use standard learning design: short introductions, meaningful examples, key ideas, challenging quizzes, and practical sandbox tasks when relevant.",
     "Create material directly inside the educator account as a draft. Keep it reviewable: complete lesson bodies, clear quiz feedback, and no placeholder copy.",
     "For skill paths, create a natural sequence that can sit alongside existing paths in the same course. Do not repeat prior modules unless the uploaded material requires a bridge.",

@@ -1,123 +1,201 @@
 "use client";
 
-import { useEffect, useState, type ReactNode } from "react";
+import type { ReactNode } from "react";
 import {
+  ArrowLeft,
   Bot,
   CalendarClock,
+  CheckCircle2,
+  ChevronRight,
   Database,
   Hammer,
+  MessageSquarePlus,
+  MessageSquare,
   Monitor,
-  PanelLeft,
   Sparkles,
+  TerminalSquare,
   Workflow,
-  X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import type { ConfigPanel } from "./types";
+import type { ConfigPanel, SandboxSection } from "./types";
 
-export const panelMeta: Record<ConfigPanel, { label: string; icon: typeof Bot }> = {
-  identity: { label: "Identity", icon: Bot },
-  skills: { label: "Skills", icon: Sparkles },
-  tools: { label: "Tools", icon: Hammer },
-  tasks: { label: "Tasks", icon: CalendarClock },
-  workflows: { label: "Workflow", icon: Workflow },
-  memory: { label: "Memory", icon: Database },
-  computer: { label: "Computer", icon: Monitor },
+export const panelMeta: Record<
+  SandboxSection,
+  { label: string; description: string; icon: typeof Bot }
+> = {
+  identity: {
+    label: "Agent setup",
+    description: "Identity and behavior for your agent.",
+    icon: Bot,
+  },
+  chat: {
+    label: "New session",
+    description: "Create the agent, then test it in a live session.",
+    icon: MessageSquarePlus,
+  },
+  sessions: {
+    label: "Sessions",
+    description: "Reopen conversations used to test this agent.",
+    icon: MessageSquare,
+  },
+  computer: {
+    label: "Computer",
+    description: "Explore the agent's scoped learning workspace.",
+    icon: Monitor,
+  },
+  tasks: {
+    label: "Tasks",
+    description: "Choose the routines this agent should carry out.",
+    icon: CalendarClock,
+  },
+  tools: {
+    label: "Tools",
+    description: "Give the agent access to the right connectors.",
+    icon: Hammer,
+  },
+  skills: {
+    label: "Skills",
+    description: "Add reusable instructions to the agent.",
+    icon: Sparkles,
+  },
+  workflows: {
+    label: "Workflows",
+    description: "Build and run the lesson's workflow shape.",
+    icon: Workflow,
+  },
+  memory: {
+    label: "Memory",
+    description: "Organize the context the agent can remember.",
+    icon: Database,
+  },
+  logs: {
+    label: "Observability",
+    description: "Inspect agent, tool, and sandbox activity.",
+    icon: TerminalSquare,
+  },
 };
 
 export function ConfigRail({
-  activePanel,
-  drawerOpen,
-  onToggleDrawer,
-  onOpenPanel,
+  sections,
+  activeSection,
+  agentName,
+  courseTitle,
+  challengeTitle,
+  completed,
+  onOpenSection,
+  onExit,
 }: {
-  activePanel: ConfigPanel;
-  drawerOpen: boolean;
-  onToggleDrawer: () => void;
-  onOpenPanel: (panel: ConfigPanel) => void;
+  sections: SandboxSection[];
+  activeSection: SandboxSection;
+  agentName: string;
+  courseTitle?: string;
+  challengeTitle?: string;
+  completed: boolean;
+  onOpenSection: (section: SandboxSection) => void;
+  onExit?: () => void;
 }) {
   return (
-    <aside className="z-20 flex w-14 shrink-0 flex-col items-center border-r border-slate-200 bg-slate-50 py-3">
-      <button
-        type="button"
-        onClick={onToggleDrawer}
-        className="mb-3 rounded-lg border border-slate-200 bg-white p-2 text-slate-700"
-        aria-label="Open agent configuration"
-      >
-        <PanelLeft className="h-4 w-4" />
-      </button>
-      <div className="flex flex-1 flex-col gap-2">
-        {(Object.keys(panelMeta) as ConfigPanel[]).map((panel) => {
-          const Icon = panelMeta[panel].icon;
+    <aside className="flex h-full min-h-0 w-14 shrink-0 flex-col overflow-hidden border-r border-slate-200 bg-white md:w-[260px]">
+      <div className="shrink-0 border-b border-slate-200 p-2 md:p-3">
+        <div className="flex items-center gap-2">
+          {onExit ? (
+            <button
+              type="button"
+              onClick={onExit}
+              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md text-slate-500 hover:bg-slate-100 hover:text-slate-950"
+              aria-label="Back to skills"
+            >
+              <ArrowLeft className="h-4 w-4" />
+            </button>
+          ) : null}
+          <div className="hidden min-w-0 flex-1 md:block">
+            <p className="truncate text-xs font-medium text-slate-500">
+              {courseTitle || "Learning sandbox"}
+            </p>
+            <p className="truncate text-sm font-semibold text-slate-950">
+              {challengeTitle || "Agent workspace"}
+            </p>
+          </div>
+        </div>
+      </div>
+
+      <div className="hidden shrink-0 border-b border-slate-200 p-3 md:block">
+        <div className="flex items-center gap-3 rounded-lg border border-slate-200 bg-slate-50/70 p-3">
+          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-slate-950 text-white">
+            <Bot className="h-4 w-4" />
+          </span>
+          <div className="min-w-0 flex-1">
+            <p className="truncate text-sm font-medium text-slate-950">
+              {agentName || "Untitled agent"}
+            </p>
+            <p className="mt-0.5 flex items-center gap-1 text-xs text-slate-500">
+              {completed ? (
+                <CheckCircle2 className="h-3.5 w-3.5 text-green-600" />
+              ) : null}
+              {completed ? "Sandbox complete" : "Learner workspace"}
+            </p>
+          </div>
+        </div>
+      </div>
+
+      <nav className="min-h-0 flex-1 space-y-1 overflow-y-auto p-2">
+        {sections.map((section) => {
+          const { icon: Icon, label } = panelMeta[section];
+          const active = activeSection === section;
           return (
             <button
-              key={panel}
+              key={section}
               type="button"
-              data-sandbox-target={`rail-${panel}`}
-              onClick={() => onOpenPanel(panel)}
+              data-sandbox-target={`rail-${section}`}
+              onClick={() => onOpenSection(section)}
               className={cn(
-                "rounded-lg p-2",
-                activePanel === panel && drawerOpen
-                  ? "bg-slate-950 text-white"
-                  : "text-slate-500 hover:bg-white hover:text-slate-950"
+                "flex h-10 w-full items-center justify-center gap-2 rounded-md px-2 text-left text-sm transition-colors md:justify-start",
+                active
+                  ? "bg-slate-100 text-slate-950"
+                  : "text-slate-500 hover:bg-slate-50 hover:text-slate-950",
               )}
-              aria-label={panelMeta[panel].label}
+              title={label}
+              aria-label={label}
             >
-              <Icon className="h-4 w-4" />
+              <Icon className="h-4 w-4 shrink-0" />
+              <span className="hidden min-w-0 flex-1 truncate md:block">
+                {label}
+              </span>
+              {active ? (
+                <ChevronRight className="hidden h-3.5 w-3.5 md:block" />
+              ) : null}
             </button>
           );
         })}
-      </div>
+      </nav>
     </aside>
   );
 }
 
 export function ConfigDrawer({
-  open,
   panel,
-  onClose,
   children,
 }: {
-  open: boolean;
+  open?: boolean;
   panel: ConfigPanel;
-  onClose: () => void;
+  onClose?: () => void;
   children: ReactNode;
 }) {
-  // Suppress the slide transition on initial mount. Without this, some browsers
-  // briefly render the drawer at transform:none then animate it off-screen,
-  // making the sandbox look squished for ~150ms on first load.
-  const [mounted, setMounted] = useState(false);
-  useEffect(() => {
-    const id = window.requestAnimationFrame(() => setMounted(true));
-    return () => window.cancelAnimationFrame(id);
-  }, []);
-
-  const Icon = panelMeta[panel].icon;
+  const { icon: Icon, label, description } = panelMeta[panel];
   return (
-    <div
-      className={cn(
-        "absolute inset-y-0 left-0 z-40 max-h-full w-full border-r border-slate-200 bg-white shadow-xl lg:w-[min(420px,calc(100%-3.5rem))]",
-        mounted && "transition-transform",
-        open ? "translate-x-0" : "-translate-x-full"
-      )}
-    >
-      <div className="flex h-full min-h-0 flex-col">
-        <header className="flex items-center justify-between border-b border-slate-200 px-4 py-3">
-          <div className="flex items-center gap-2">
-            <Icon className="h-4 w-4 text-slate-500" />
-            <h3 className="text-sm font-black">{panelMeta[panel].label}</h3>
-          </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="rounded-lg p-2 text-slate-500 hover:bg-slate-100"
-            aria-label="Close configuration"
-          >
-            <X className="h-4 w-4" />
-          </button>
-        </header>
-        <div className="min-h-0 flex-1 overflow-y-auto p-4">{children}</div>
+    <section className="flex h-full min-h-0 flex-col overflow-hidden bg-slate-50/40">
+      <header className="shrink-0 border-b border-slate-200 bg-white px-5 py-4">
+        <div className="flex items-center gap-2">
+          <Icon className="h-4 w-4 text-slate-500" />
+          <h1 className="text-lg font-medium tracking-tight text-slate-950">
+            {label}
+          </h1>
+        </div>
+        <p className="mt-1 text-sm text-slate-500">{description}</p>
+      </header>
+      <div className="min-h-0 flex-1 overflow-y-auto p-4 sm:p-5">
+        <div className="mx-auto max-w-5xl">{children}</div>
       </div>
-    </div>
+    </section>
   );
 }

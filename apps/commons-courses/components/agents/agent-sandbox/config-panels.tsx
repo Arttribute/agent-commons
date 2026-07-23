@@ -1,17 +1,18 @@
 "use client";
 
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import {
   CalendarClock,
   Check,
+  ChevronRight,
   Database,
   ExternalLink,
   Hammer,
+  FileText,
   Loader2,
   Monitor,
   Play,
   Plus,
-  Server,
   Sparkles,
   Workflow,
   X,
@@ -36,55 +37,118 @@ import {
 
 export function IdentityPanel({
   agentName,
+  persona,
   systemPrompt,
+  showIdentity,
+  showSystemPrompt,
   placeholders,
   reviewEnabled,
   review,
   reviewing,
   onNameChange,
+  onPersonaChange,
   onPromptChange,
   onReview,
 }: {
   agentName: string;
+  persona: string;
   systemPrompt: string;
+  showIdentity: boolean;
+  showSystemPrompt: boolean;
   placeholders?: AgentSandboxConfig["placeholders"];
   reviewEnabled: boolean;
   review?: ReviewResult;
   reviewing: boolean;
   onNameChange: (value: string) => void;
+  onPersonaChange: (value: string) => void;
   onPromptChange: (value: string) => void;
   onReview: () => void;
 }) {
   return (
     <div className="space-y-4" data-sandbox-target="identity">
-      <Field
-        label="Agent name"
-        value={agentName}
-        placeholder={placeholders?.agentName || "Study Coach"}
-        onChange={onNameChange}
-        target="agent-name"
-      />
-      <label className="block">
-        <span className="text-xs font-bold text-slate-600">System prompt</span>
-        <textarea
-          data-sandbox-target="system-prompt"
-          value={systemPrompt}
-          placeholder={
-            placeholders?.systemPrompt ||
-            "You are a helpful agent. Explain your goal, tone, boundaries, and when to use connected tools."
-          }
-          onChange={(event) => onPromptChange(event.target.value)}
-          className="mt-1.5 min-h-40 w-full resize-y rounded-lg border border-slate-200 px-3 py-2 text-sm leading-6 outline-none focus:border-slate-400"
-        />
-      </label>
-      {reviewEnabled ? (
-        <div data-sandbox-target="review-box">
-          <ReviewBox
-            result={review}
-            loading={reviewing}
-            onReview={onReview}
-          />
-        </div>
+      {showIdentity ? (
+        <StudioPanel title="Profile">
+          <div className="grid gap-5 sm:grid-cols-[140px_minmax(0,1fr)]">
+            <div className="flex flex-col items-center gap-2 sm:items-start">
+              <span className="flex h-24 w-24 items-center justify-center rounded-full bg-slate-950 text-2xl font-semibold text-white">
+                {(agentName || "A").trim().charAt(0).toUpperCase()}
+              </span>
+              <span className="rounded-full border border-slate-200 bg-slate-50 px-2 py-1 text-[11px] font-semibold text-slate-600">
+                Private sandbox
+              </span>
+            </div>
+            <div className="space-y-4">
+              <Field
+                label="Agent name"
+                value={agentName}
+                placeholder={placeholders?.agentName || "Study Coach"}
+                onChange={onNameChange}
+                target="agent-name"
+              />
+              <p className="text-xs leading-5 text-slate-500">
+                This learner-only profile mirrors how the agent will appear in
+                sessions. Nothing is published outside this course.
+              </p>
+            </div>
+          </div>
+        </StudioPanel>
+      ) : null}
+      {showIdentity || showSystemPrompt ? (
+        <StudioPanel title="Behavior">
+          <div className="space-y-5">
+            {showIdentity ? (
+              <label className="block">
+                <span className="text-sm font-medium text-slate-800">
+                  Persona
+                </span>
+                <p className="mt-0.5 text-xs text-slate-500">
+                  Describe the voice, role, and point of view this agent uses.
+                </p>
+                <textarea
+                  data-sandbox-target="agent-persona"
+                  value={persona}
+                  placeholder={
+                    placeholders?.persona ||
+                    "A practical planning assistant for learners"
+                  }
+                  onChange={(event) => onPersonaChange(event.target.value)}
+                  className="mt-2 min-h-28 w-full resize-y rounded-md border border-slate-300 px-3 py-2 text-sm leading-6 outline-none focus:border-slate-500"
+                />
+              </label>
+            ) : null}
+            {showSystemPrompt ? (
+              <label className="block border-t border-slate-100 pt-5">
+                <span className="text-sm font-medium text-slate-800">
+                  System prompt
+                </span>
+                <p className="mt-0.5 text-xs text-slate-500">
+                  Set the agent&apos;s goal, boundaries, and tool-use rules.
+                </p>
+                <textarea
+                  data-sandbox-target="system-prompt"
+                  value={systemPrompt}
+                  placeholder={
+                    placeholders?.systemPrompt ||
+                    "You are a helpful agent. Explain your goal, tone, boundaries, and when to use connected tools."
+                  }
+                  onChange={(event) => onPromptChange(event.target.value)}
+                  className="mt-2 min-h-52 w-full resize-y rounded-md border border-slate-300 px-3 py-2 font-mono text-sm leading-6 outline-none focus:border-slate-500"
+                />
+              </label>
+            ) : null}
+          </div>
+        </StudioPanel>
+      ) : null}
+      {showSystemPrompt && reviewEnabled ? (
+        <StudioPanel title="Prompt review">
+          <div data-sandbox-target="review-box">
+            <ReviewBox
+              result={review}
+              loading={reviewing}
+              onReview={onReview}
+            />
+          </div>
+        </StudioPanel>
       ) : null}
     </div>
   );
@@ -139,94 +203,131 @@ export function SkillsPanel({
   ];
 
   return (
-    <div className="space-y-3" data-sandbox-target="skills">
-      {listItems.length ? (
-        <div className="divide-y divide-slate-100 rounded-xl border border-slate-200 overflow-hidden">
+    <div
+      className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_380px]"
+      data-sandbox-target="skills"
+    >
+      <StudioPanel
+        title="Agent skills"
+        action={
+          <span className="rounded-full bg-slate-100 px-2 py-1 text-[11px] font-semibold text-slate-600">
+            {listItems.length} available
+          </span>
+        }
+      >
+        <p className="mb-4 text-xs leading-5 text-slate-500">
+          Select a reusable instruction set to attach to this course agent.
+        </p>
+        <div className="divide-y divide-slate-100 overflow-hidden rounded-md border border-slate-200">
           {listItems.map((skill) => {
             const active = skill.id === selectedId;
-            const description = skillInstructions[skill.id] || skill.instructions;
+            const description =
+              skillInstructions[skill.id] || skill.instructions;
             return (
               <button
                 key={skill.id}
                 type="button"
                 onClick={() => onChange(active ? [] : [skill.id])}
                 className={cn(
-                  "flex w-full items-center gap-3 px-3 py-2.5 text-left transition-colors",
-                  active
-                    ? "bg-slate-50 border-l-2 border-l-slate-900"
-                    : "bg-white hover:bg-slate-50 border-l-2 border-l-transparent"
+                  "flex w-full items-center gap-3 px-3 py-3 text-left transition-colors",
+                  active ? "bg-slate-50" : "bg-white hover:bg-slate-50",
                 )}
               >
+                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-amber-50 text-amber-700">
+                  <Sparkles className="h-4 w-4" />
+                </span>
                 <span className="min-w-0 flex-1">
-                  <span className={cn("block truncate text-sm font-bold", active ? "text-slate-900" : "text-slate-800")}>
+                  <span className="block truncate text-sm font-medium text-slate-900">
                     {skill.name}
                   </span>
                   <span className="mt-0.5 block truncate text-xs text-slate-500">
-                    {oneLine(description) || "No description yet."}
+                    {oneLine(description) || "No instructions yet."}
                   </span>
                 </span>
-                <span
-                  className={cn(
-                    "flex h-4 w-4 shrink-0 items-center justify-center rounded-full border-2 transition-colors",
-                    active ? "border-slate-900 bg-slate-900" : "border-slate-300 bg-white"
-                  )}
-                >
-                  {active ? <Check className="h-2.5 w-2.5 text-white" strokeWidth={3} /> : null}
-                </span>
+                <CheckCircle checked={active} />
               </button>
             );
           })}
+          {!listItems.length ? (
+            <p className="p-5 text-center text-sm text-slate-500">
+              No lesson skills have been configured yet.
+            </p>
+          ) : null}
         </div>
-      ) : null}
-      {selectedSkill ? (
-        <label className="block">
-          <span className="flex items-center justify-between gap-2 text-xs font-bold text-slate-600">
-            <span className="truncate">{selectedSkill.name}</span>
+      </StudioPanel>
+
+      <StudioPanel title={selectedSkill ? "Edit skill" : "Create a skill"}>
+        {selectedSkill ? (
+          <div>
+            <div className="mb-3 flex items-center justify-between gap-2">
+              <div className="min-w-0">
+                <p className="truncate text-sm font-medium text-slate-900">
+                  {selectedSkill.name}
+                </p>
+                <p className="text-xs text-slate-500">Markdown instructions</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => onChange([])}
+                className="rounded-md p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+                aria-label="Close skill"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <textarea
+              data-sandbox-target="skill-instructions"
+              value={
+                skillInstructions[selectedSkill.id] ||
+                selectedSkill.instructions
+              }
+              placeholder={
+                placeholder || "Write the steps this agent should follow..."
+              }
+              onChange={(event) =>
+                onInstructionChange(selectedSkill.id, event.target.value)
+              }
+              className="min-h-72 w-full resize-y rounded-md border border-slate-300 px-3 py-2 font-mono text-sm leading-6 outline-none focus:border-slate-500"
+            />
+          </div>
+        ) : (
+          <div>
+            <p className="mb-3 text-xs leading-5 text-slate-500">
+              Write a focused process the agent can reuse during a session.
+            </p>
+            <textarea
+              data-sandbox-target="skill-instructions"
+              value={draft}
+              onChange={(event) => setDraft(event.target.value)}
+              placeholder={
+                placeholder || "Describe a skill this agent should use..."
+              }
+              className="min-h-56 w-full resize-y rounded-md border border-slate-300 px-3 py-2 font-mono text-sm leading-6 outline-none placeholder:text-slate-400 focus:border-slate-500"
+            />
             <button
               type="button"
-              onClick={() => onChange([])}
-              className="inline-flex items-center gap-1 rounded-md px-1.5 py-1 text-slate-500 hover:bg-slate-100"
+              onClick={() => {
+                onAddSkill(draft);
+                setDraft("");
+              }}
+              disabled={!draft.trim()}
+              className="mt-3 inline-flex items-center gap-1.5 rounded-md bg-slate-950 px-3 py-2 text-xs font-semibold text-white disabled:cursor-not-allowed disabled:opacity-35"
             >
-              <X className="h-3.5 w-3.5" />
-              Close
+              <Plus className="h-3.5 w-3.5" />
+              Add skill
             </button>
-          </span>
-          <textarea
-            data-sandbox-target="skill-instructions"
-            value={skillInstructions[selectedSkill.id] || selectedSkill.instructions}
-            placeholder={placeholder || "Write the steps this agent should follow..."}
-            onChange={(event) =>
-              onInstructionChange(selectedSkill.id, event.target.value)
-            }
-            className="mt-1.5 min-h-44 w-full resize-y rounded-lg border border-slate-200 px-3 py-2 text-sm leading-6 outline-none focus:border-slate-400"
-          />
-        </label>
-      ) : (
-        <div>
-          <textarea
-            data-sandbox-target="skill-instructions"
-            value={draft}
-            onChange={(event) => setDraft(event.target.value)}
-            placeholder={placeholder || "Describe a skill this agent should use..."}
-            className="min-h-32 w-full resize-y rounded-lg border border-slate-200 px-3 py-2 text-sm leading-6 outline-none placeholder:text-slate-400 focus:border-slate-400"
-          />
-          <button
-            type="button"
-            onClick={() => {
-              onAddSkill(draft);
-              setDraft("");
-            }}
-            disabled={!draft.trim()}
-            className="mt-2 inline-flex items-center gap-1.5 rounded-lg bg-slate-950 px-3 py-2 text-xs font-bold text-white disabled:cursor-not-allowed disabled:opacity-35"
-          >
-            <Plus className="h-3.5 w-3.5" />
-            Add skill
-          </button>
-        </div>
-      )}
-      {reviewEnabled ? (
-        <ReviewBox result={review} loading={reviewing} onReview={onReview} />
-      ) : null}
+          </div>
+        )}
+        {reviewEnabled ? (
+          <div className="mt-4 border-t border-slate-100 pt-4">
+            <ReviewBox
+              result={review}
+              loading={reviewing}
+              onReview={onReview}
+            />
+          </div>
+        ) : null}
+      </StudioPanel>
     </div>
   );
 }
@@ -242,109 +343,171 @@ export function ToolsPanel({
   onChange: (items: string[]) => void;
   googleConnectUrl: string;
 }) {
+  const [activeToolId, setActiveToolId] = useState(tools[0]?.id || "");
+  const [filter, setFilter] = useState<"all" | "connected" | "available">(
+    "all",
+  );
+  const activeTool = tools.find((tool) => tool.id === activeToolId) || tools[0];
+  const visibleTools = tools.filter((tool) => {
+    if (filter === "connected") return selected.includes(tool.id);
+    if (filter === "available") return !selected.includes(tool.id);
+    return true;
+  });
   const hasSelectedGoogleTool = tools.some(
-    (tool) => selected.includes(tool.id) && isGoogleTool(tool)
+    (tool) => selected.includes(tool.id) && isGoogleTool(tool),
   );
 
   return (
-    <div className="space-y-3" data-sandbox-target="tools">
-      {tools.length === 0 ? (
-        <p className="rounded-lg border border-dashed border-slate-300 p-3 text-sm text-slate-500">
-          No tools configured for this lesson.
-        </p>
-      ) : (
-        <div className="divide-y divide-slate-100 rounded-xl border border-slate-200 overflow-hidden">
-          {tools.map((tool) => {
+    <div
+      className="grid min-h-[540px] overflow-hidden rounded-lg border border-slate-200 bg-white lg:grid-cols-[320px_minmax(0,1fr)]"
+      data-sandbox-target="tools"
+    >
+      <div className="border-b border-slate-200 lg:border-b-0 lg:border-r">
+        <div className="border-b border-slate-200 p-4">
+          <div className="flex items-center justify-between">
+            <h2 className="text-sm font-medium text-slate-950">Tools</h2>
+            <span className="text-xs text-slate-500">
+              {selected.length} enabled
+            </span>
+          </div>
+          <div className="mt-3 flex gap-1 rounded-md bg-slate-100 p-1">
+            {(["all", "connected", "available"] as const).map((item) => (
+              <button
+                key={item}
+                type="button"
+                onClick={() => setFilter(item)}
+                className={cn(
+                  "flex-1 rounded px-2 py-1 text-[11px] font-medium capitalize",
+                  filter === item
+                    ? "bg-white text-slate-900 shadow-sm"
+                    : "text-slate-500 hover:text-slate-900",
+                )}
+              >
+                {item}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div className="max-h-[430px] overflow-y-auto p-2">
+          {visibleTools.map((tool) => {
             const checked = selected.includes(tool.id);
-            const isGoogle = isGoogleTool(tool);
+            const active = tool.id === activeTool?.id;
             return (
-              <div
+              <button
                 key={tool.id}
+                type="button"
                 data-sandbox-target={
                   tool.id === "google-calendar" ||
                   tool.connectorKind === "google_calendar"
                     ? "tool-google-calendar"
                     : undefined
                 }
+                onClick={() => setActiveToolId(tool.id)}
+                className={cn(
+                  "mb-1 flex w-full items-center gap-3 rounded-md px-3 py-2.5 text-left",
+                  active ? "bg-slate-100" : "hover:bg-slate-50",
+                )}
               >
-                <button
-                  type="button"
-                  onClick={() =>
-                    onChange(
-                      checked
-                        ? selected.filter((id) => id !== tool.id)
-                        : [...selected, tool.id]
-                    )
-                  }
-                  className={cn(
-                    "flex w-full items-center gap-3 px-3 py-3 text-left transition-colors",
-                    checked ? "bg-slate-50" : "bg-white hover:bg-slate-50"
-                  )}
-                >
-                  <WorkspaceIcon kind={tool.connectorKind} />
-                  <span className="min-w-0 flex-1">
-                    <span className="block text-sm font-semibold text-slate-900">
-                      {tool.name}
-                    </span>
-                    {tool.description ? (
-                      <span className="mt-0.5 block text-xs leading-4 text-slate-500">
-                        {tool.description}
-                      </span>
-                    ) : null}
+                <WorkspaceIcon kind={tool.connectorKind} />
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-sm font-medium text-slate-900">
+                    {tool.name}
                   </span>
-                  <span
-                    className={cn(
-                      "flex h-5 w-5 shrink-0 items-center justify-center rounded-full border-2 transition-colors",
-                      checked
-                        ? "border-slate-900 bg-slate-900"
-                        : "border-slate-300 bg-white"
-                    )}
-                  >
-                    {checked ? (
-                      <Check className="h-3 w-3 text-white" strokeWidth={3} />
-                    ) : null}
+                  <span className="text-[11px] text-slate-500">
+                    {checked ? "Enabled" : "Not enabled"}
                   </span>
-                </button>
-
-                {/* Inline connect panel — shown when this Google tool is selected */}
-                {checked && isGoogle ? (
-                  <div
-                    className="border-t border-slate-100 bg-white px-4 py-3"
-                    data-sandbox-target="connect-google"
-                  >
-                    <p className="mb-2.5 text-xs leading-5 text-slate-500">
-                      Connect your Google account to give this agent real access to{" "}
-                      <span className="font-semibold text-slate-700">{tool.name}</span>.
-                    </p>
-                    <a
-                      href={scopedGoogleConnectUrl(googleConnectUrl, tool)}
-                      className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 shadow-sm transition-colors hover:bg-slate-50"
-                    >
-                      <GoogleColorLogo className="h-3.5 w-3.5" />
-                      Connect {tool.name}
-                      <ExternalLink className="h-3 w-3 text-slate-400" />
-                    </a>
-                  </div>
-                ) : null}
-              </div>
+                </span>
+                <ChevronRight className="h-4 w-4 text-slate-400" />
+              </button>
             );
           })}
+          {!visibleTools.length ? (
+            <p className="px-3 py-8 text-center text-xs text-slate-500">
+              No tools match this filter.
+            </p>
+          ) : null}
         </div>
-      )}
+      </div>
 
-      {/* Fallback connect link when no Google tool is selected */}
-      {!hasSelectedGoogleTool ? (
-        <div data-sandbox-target="connect-google">
-          <a
-            href={googleConnectUrl}
-            className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm font-semibold text-slate-700 transition-colors hover:bg-slate-50"
-          >
-            <GoogleColorLogo className="h-4 w-4" />
+      <div className="p-5 sm:p-7">
+        {activeTool ? (
+          <div className="mx-auto max-w-xl">
+            <div className="flex items-start gap-4">
+              <WorkspaceIcon kind={activeTool.connectorKind} />
+              <div className="min-w-0 flex-1">
+                <h2 className="text-lg font-medium text-slate-950">
+                  {activeTool.name}
+                </h2>
+                <p className="mt-1 text-sm leading-6 text-slate-500">
+                  {activeTool.description ||
+                    "Give this agent access to the selected capability."}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() =>
+                  onChange(
+                    selected.includes(activeTool.id)
+                      ? selected.filter((id) => id !== activeTool.id)
+                      : [...selected, activeTool.id],
+                  )
+                }
+                className={cn(
+                  "relative h-6 w-11 shrink-0 rounded-full transition-colors",
+                  selected.includes(activeTool.id)
+                    ? "bg-slate-950"
+                    : "bg-slate-300",
+                )}
+                aria-label={`${selected.includes(activeTool.id) ? "Disable" : "Enable"} ${activeTool.name}`}
+              >
+                <span
+                  className={cn(
+                    "absolute top-1 h-4 w-4 rounded-full bg-white transition-transform",
+                    selected.includes(activeTool.id)
+                      ? "translate-x-6"
+                      : "translate-x-1",
+                  )}
+                />
+              </button>
+            </div>
+
+            <div className="mt-8 rounded-md border border-slate-200 bg-slate-50 p-4">
+              <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
+                Connection
+              </p>
+              {isGoogleTool(activeTool) ? (
+                <div className="mt-3" data-sandbox-target="connect-google">
+                  <p className="mb-3 text-sm leading-6 text-slate-600">
+                    Connect Google Workspace so this agent can use the scopes
+                    selected for this lesson.
+                  </p>
+                  <a
+                    href={scopedGoogleConnectUrl(googleConnectUrl, activeTool)}
+                    className="inline-flex items-center gap-2 rounded-md border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-700 shadow-sm hover:bg-slate-50"
+                  >
+                    <GoogleColorLogo className="h-4 w-4" />
+                    Connect {activeTool.name}
+                    <ExternalLink className="h-3.5 w-3.5 text-slate-400" />
+                  </a>
+                </div>
+              ) : (
+                <p className="mt-2 text-sm text-slate-500">
+                  This lesson tool needs no external account connection.
+                </p>
+              )}
+            </div>
+          </div>
+        ) : (
+          <div className="flex h-full items-center justify-center text-sm text-slate-500">
+            No tools configured for this lesson.
+          </div>
+        )}
+        {!activeTool && !hasSelectedGoogleTool ? (
+          <a href={googleConnectUrl} className="sr-only">
             Connect Google Workspace
-            <ExternalLink className="h-3.5 w-3.5 text-slate-400" />
           </a>
-        </div>
-      ) : null}
+        ) : null}
+      </div>
     </div>
   );
 }
@@ -359,60 +522,78 @@ export function TasksPanel({
   onChange: (items: string[]) => void;
 }) {
   return (
-    <div className="space-y-3" data-sandbox-target="tasks">
-      {tasks.length === 0 ? (
-        <p className="rounded-lg border border-dashed border-slate-300 p-3 text-sm text-slate-500">
-          No scheduled tasks configured for this lesson.
-        </p>
-      ) : (
-        <div className="divide-y divide-slate-100 overflow-hidden rounded-xl border border-slate-200">
-          {tasks.map((task) => {
-            const checked = selected.includes(task.id);
-            return (
-              <button
-                key={task.id}
-                type="button"
-                data-sandbox-target={`task-${task.id}`}
-                onClick={() =>
-                  onChange(
-                    checked
-                      ? selected.filter((id) => id !== task.id)
-                      : [...selected, task.id]
-                  )
-                }
-                className={cn(
-                  "flex w-full items-start gap-3 px-3 py-3 text-left transition-colors",
-                  checked ? "bg-slate-50" : "bg-white hover:bg-slate-50"
-                )}
-              >
-                <span className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-slate-600">
-                  <CalendarClock className="h-4 w-4" />
-                </span>
-                <span className="min-w-0 flex-1">
-                  <span className="block text-sm font-bold text-slate-900">
-                    {task.title}
+    <StudioPanel
+      title="Scheduled tasks"
+      action={
+        <span className="rounded-full bg-slate-100 px-2 py-1 text-[11px] font-semibold text-slate-600">
+          {selected.length} active
+        </span>
+      }
+    >
+      <div className="space-y-4" data-sandbox-target="tasks">
+        {tasks.length === 0 ? (
+          <p className="rounded-md border border-dashed border-slate-300 p-5 text-center text-sm text-slate-500">
+            No scheduled tasks configured for this lesson.
+          </p>
+        ) : (
+          <div className="divide-y divide-slate-100 overflow-hidden rounded-md border border-slate-200">
+            {tasks.map((task) => {
+              const checked = selected.includes(task.id);
+              return (
+                <button
+                  key={task.id}
+                  type="button"
+                  data-sandbox-target={`task-${task.id}`}
+                  onClick={() =>
+                    onChange(
+                      checked
+                        ? selected.filter((id) => id !== task.id)
+                        : [...selected, task.id],
+                    )
+                  }
+                  className={cn(
+                    "flex w-full items-start gap-3 px-3 py-3 text-left transition-colors",
+                    checked ? "bg-slate-50" : "bg-white hover:bg-slate-50",
+                  )}
+                >
+                  <span className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-slate-600">
+                    <CalendarClock className="h-4 w-4" />
                   </span>
-                  <span className="mt-0.5 block text-xs font-semibold text-slate-500">
-                    {task.schedule}
-                  </span>
-                  {task.description ? (
-                    <span className="mt-1 block text-xs leading-5 text-slate-500">
-                      {task.description}
+                  <span className="min-w-0 flex-1">
+                    <span className="block text-sm font-bold text-slate-900">
+                      {task.title}
                     </span>
-                  ) : null}
-                </span>
-                <CheckCircle checked={checked} />
-              </button>
-            );
-          })}
-        </div>
-      )}
-      <p className="text-xs leading-5 text-slate-500">
-        Scheduled tasks are instructions that tell the agent when a routine
-        should run. This sandbox records the design without starting a real
-        background job.
-      </p>
-    </div>
+                    <span className="mt-0.5 block text-xs font-semibold text-slate-500">
+                      {task.schedule}
+                    </span>
+                    {task.description ? (
+                      <span className="mt-1 block text-xs leading-5 text-slate-500">
+                        {task.description}
+                      </span>
+                    ) : null}
+                  </span>
+                  <span
+                    className={cn(
+                      "mt-1 rounded-full px-2 py-1 text-[10px] font-semibold",
+                      checked
+                        ? "bg-green-50 text-green-700"
+                        : "bg-slate-100 text-slate-500",
+                    )}
+                  >
+                    {checked ? "Active" : "Paused"}
+                  </span>
+                  <CheckCircle checked={checked} />
+                </button>
+              );
+            })}
+          </div>
+        )}
+        <p className="text-xs leading-5 text-slate-500">
+          Tasks model the studio scheduling experience without starting a real
+          background job from a learner workspace.
+        </p>
+      </div>
+    </StudioPanel>
   );
 }
 
@@ -429,55 +610,77 @@ export function WorkflowPanel({
   onSelect: (id: string) => void;
   onRun: () => void;
 }) {
-  const selected = workflows.find((workflow) => workflow.id === selectedId) || workflows[0];
+  const selected =
+    workflows.find((workflow) => workflow.id === selectedId) || workflows[0];
 
   return (
-    <div className="space-y-3" data-sandbox-target="workflows">
+    <div
+      className="grid gap-4 lg:grid-cols-[320px_minmax(0,1fr)]"
+      data-sandbox-target="workflows"
+    >
       {workflows.length === 0 ? (
-        <p className="rounded-lg border border-dashed border-slate-300 p-3 text-sm text-slate-500">
-          No workflow configured for this lesson.
-        </p>
+        <StudioPanel title="Workflows">
+          <p className="rounded-md border border-dashed border-slate-300 p-5 text-center text-sm text-slate-500">
+            No workflow configured for this lesson.
+          </p>
+        </StudioPanel>
       ) : (
         <>
-          <div className="divide-y divide-slate-100 overflow-hidden rounded-xl border border-slate-200">
-            {workflows.map((workflow) => {
-              const active = workflow.id === selected?.id;
-              return (
-                <button
-                  key={workflow.id}
-                  type="button"
-                  onClick={() => onSelect(workflow.id)}
-                  className={cn(
-                    "flex w-full items-center gap-3 px-3 py-2.5 text-left",
-                    active ? "bg-slate-50" : "bg-white hover:bg-slate-50"
-                  )}
-                >
-                  <Workflow className="h-4 w-4 shrink-0 text-slate-500" />
-                  <span className="min-w-0 flex-1">
-                    <span className="block truncate text-sm font-bold text-slate-900">
-                      {workflow.name}
+          <StudioPanel title="Workflows">
+            <div className="divide-y divide-slate-100 overflow-hidden rounded-md border border-slate-200">
+              {workflows.map((workflow) => {
+                const active = workflow.id === selected?.id;
+                return (
+                  <button
+                    key={workflow.id}
+                    type="button"
+                    onClick={() => onSelect(workflow.id)}
+                    className={cn(
+                      "flex w-full items-center gap-3 px-3 py-3 text-left",
+                      active ? "bg-slate-50" : "bg-white hover:bg-slate-50",
+                    )}
+                  >
+                    <Workflow className="h-4 w-4 shrink-0 text-slate-500" />
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-sm font-medium text-slate-900">
+                        {workflow.name}
+                      </span>
+                      <span className="mt-0.5 block truncate text-xs text-slate-500">
+                        Trigger: {workflow.trigger}
+                      </span>
                     </span>
-                    <span className="mt-0.5 block truncate text-xs text-slate-500">
-                      Trigger: {workflow.trigger}
-                    </span>
-                  </span>
-                  <CheckCircle checked={active} />
-                </button>
-              );
-            })}
-          </div>
+                    <ChevronRight className="h-4 w-4 text-slate-400" />
+                  </button>
+                );
+              })}
+            </div>
+          </StudioPanel>
           {selected ? (
-            <div className="rounded-xl border border-slate-200 bg-white p-3">
-              <p className="text-xs font-bold uppercase tracking-widest text-slate-400">
-                Workflow components
-              </p>
+            <StudioPanel
+              title={selected.name}
+              action={
+                <button
+                  type="button"
+                  data-sandbox-target="workflow-run"
+                  onClick={onRun}
+                  className="inline-flex items-center gap-2 rounded-md bg-slate-950 px-3 py-2 text-xs font-semibold text-white"
+                >
+                  <Play className="h-3.5 w-3.5" />
+                  Run simulation
+                </button>
+              }
+            >
               {selected.description ? (
-                <p className="mt-2 text-sm leading-6 text-slate-600">
+                <p className="text-sm leading-6 text-slate-600">
                   {selected.description}
                 </p>
               ) : null}
-              <div className="mt-3 space-y-2">
-                <ComponentRow label="Trigger" value={selected.trigger} tone="rose" />
+              <div className="mt-4 space-y-2">
+                <ComponentRow
+                  label="Trigger"
+                  value={selected.trigger}
+                  tone="rose"
+                />
                 {selected.nodes.map((node, index) => (
                   <ComponentRow
                     key={`${node}-${index}`}
@@ -495,23 +698,14 @@ export function WorkflowPanel({
                   />
                 ))}
               </div>
-              <button
-                type="button"
-                data-sandbox-target="workflow-run"
-                onClick={onRun}
-                className="mt-3 inline-flex items-center gap-2 rounded-lg bg-slate-950 px-3 py-2 text-xs font-bold text-white"
-              >
-                <Play className="h-3.5 w-3.5" />
-                Run simulation
-              </button>
-            </div>
-          ) : null}
-          {result.length ? (
-            <div className="rounded-xl border border-slate-200 bg-slate-950 p-3 font-mono text-xs leading-5 text-slate-100">
-              {result.map((line) => (
-                <div key={line}>{line}</div>
-              ))}
-            </div>
+              {result.length ? (
+                <div className="mt-4 rounded-md bg-slate-950 p-3 font-mono text-xs leading-5 text-slate-100">
+                  {result.map((line) => (
+                    <div key={line}>{line}</div>
+                  ))}
+                </div>
+              ) : null}
+            </StudioPanel>
           ) : null}
         </>
       )}
@@ -528,36 +722,55 @@ export function MemoryPanel({
   entries: Record<string, string>;
   onChange: (id: string, value: string) => void;
 }) {
+  const filled = memories.filter((memory) =>
+    (entries[memory.id] ?? memory.content).trim(),
+  ).length;
   return (
-    <div className="space-y-3" data-sandbox-target="memory">
-      {memories.length === 0 ? (
-        <p className="rounded-lg border border-dashed border-slate-300 p-3 text-sm text-slate-500">
-          No memory records configured for this lesson.
+    <div className="space-y-4" data-sandbox-target="memory">
+      <div className="grid overflow-hidden rounded-lg border border-slate-200 bg-white sm:grid-cols-3">
+        <MemoryStat label="Records" value={String(memories.length)} />
+        <MemoryStat label="With context" value={String(filled)} />
+        <MemoryStat
+          label="Memory types"
+          value={String(new Set(memories.map((memory) => memory.type)).size)}
+        />
+      </div>
+      <StudioPanel title="Agent memory">
+        <p className="mb-4 text-xs leading-5 text-slate-500">
+          Shape the durable context available to the agent in this lesson. These
+          records stay scoped to the learner sandbox.
         </p>
-      ) : (
-        memories.map((memory) => (
-          <label
-            key={memory.id}
-            data-sandbox-target={`memory-${memory.type}`}
-            className="block rounded-xl border border-slate-200 bg-white p-3"
-          >
-            <span className="flex items-center justify-between gap-2">
-              <span className="inline-flex items-center gap-2 text-sm font-bold text-slate-900">
-                <Database className="h-4 w-4 text-slate-500" />
-                {memory.label}
-              </span>
-              <span className={memoryBadgeClass(memory.type)}>
-                {memory.type} memory
-              </span>
-            </span>
-            <textarea
-              value={entries[memory.id] ?? memory.content}
-              onChange={(event) => onChange(memory.id, event.target.value)}
-              className="mt-3 min-h-24 w-full resize-y rounded-lg border border-slate-200 px-3 py-2 text-sm leading-6 outline-none focus:border-slate-400"
-            />
-          </label>
-        ))
-      )}
+        {memories.length === 0 ? (
+          <p className="rounded-md border border-dashed border-slate-300 p-5 text-center text-sm text-slate-500">
+            No memory records configured for this lesson.
+          </p>
+        ) : (
+          <div className="grid gap-3 md:grid-cols-2">
+            {memories.map((memory) => (
+              <label
+                key={memory.id}
+                data-sandbox-target={`memory-${memory.type}`}
+                className="block rounded-md border border-slate-200 bg-white p-4 transition-shadow hover:shadow-sm"
+              >
+                <span className="flex items-center justify-between gap-2">
+                  <span className="inline-flex items-center gap-2 text-sm font-medium text-slate-900">
+                    <Database className="h-4 w-4 text-slate-500" />
+                    {memory.label}
+                  </span>
+                  <span className={memoryBadgeClass(memory.type)}>
+                    {memory.type}
+                  </span>
+                </span>
+                <textarea
+                  value={entries[memory.id] ?? memory.content}
+                  onChange={(event) => onChange(memory.id, event.target.value)}
+                  className="mt-3 min-h-28 w-full resize-y rounded-md border border-slate-200 bg-slate-50/50 px-3 py-2 text-sm leading-6 outline-none focus:border-slate-400 focus:bg-white"
+                />
+              </label>
+            ))}
+          </div>
+        )}
+      </StudioPanel>
     </div>
   );
 }
@@ -576,86 +789,138 @@ export function ComputerPanel({
   onRun: () => void;
 }) {
   const files = template?.files || [];
+  const [selectedPath, setSelectedPath] = useState(files[0]?.path || "");
+  const selectedFile =
+    files.find((file) => file.path === selectedPath) || files[0];
 
   return (
-    <div className="space-y-3" data-sandbox-target="computer">
-      <div className="rounded-xl border border-slate-200 bg-white p-3">
-        <div className="flex items-start gap-3">
-          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-slate-600">
-            <Monitor className="h-4 w-4" />
-          </span>
+    <div
+      className="overflow-hidden rounded-lg border border-slate-300 bg-slate-950 shadow-sm"
+      data-sandbox-target="computer"
+    >
+      <div className="flex items-center justify-between border-b border-slate-700 bg-slate-900 px-4 py-3 text-white">
+        <div className="flex min-w-0 items-center gap-3">
+          <Monitor className="h-4 w-4 text-slate-400" />
           <div className="min-w-0">
-            <p className="text-sm font-bold text-slate-900">
+            <p className="truncate text-sm font-medium">
               {template?.workspaceName || "Sandbox workspace"}
             </p>
-            <p className="mt-1 text-xs leading-5 text-slate-500">
-              {template?.isolationMode ||
-                "A scoped workspace for safe, lightweight practice."}
+            <p className="truncate text-[11px] text-slate-400">
+              {template?.isolationMode || "Scoped learner runtime"}
             </p>
           </div>
         </div>
+        <span className="flex items-center gap-1.5 text-[11px] text-emerald-400">
+          <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
+          Ready
+        </span>
       </div>
 
-      <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
-        <div className="flex items-start gap-2">
-          <Server className="mt-0.5 h-4 w-4 shrink-0 text-slate-500" />
-          <div>
-            <p className="text-xs font-bold uppercase tracking-widest text-slate-500">
-              Lightweight runtime
-            </p>
-            <p className="mt-1 text-xs leading-5 text-slate-600">
-              This environment behaves like a small isolated code workspace. Try{" "}
-              <span className="font-mono font-semibold text-slate-900">ls</span>,{" "}
-              <span className="font-mono font-semibold text-slate-900">
-                cat team-plan.json
-              </span>,{" "}
-              <span className="font-mono font-semibold text-slate-900">pwd</span>, or{" "}
-              <span className="font-mono font-semibold text-slate-900">run team</span>.
-            </p>
+      <div className="grid min-h-[520px] md:grid-cols-[230px_minmax(0,1fr)]">
+        <aside className="border-b border-slate-800 bg-slate-900/80 md:border-b-0 md:border-r">
+          <p className="px-3 py-3 text-[10px] font-semibold uppercase tracking-widest text-slate-500">
+            Explorer
+          </p>
+          <div className="px-2 pb-3">
+            {files.map((file) => (
+              <button
+                key={file.path}
+                type="button"
+                onClick={() => setSelectedPath(file.path)}
+                className={cn(
+                  "flex w-full items-center gap-2 rounded px-2 py-2 text-left text-xs",
+                  file.path === selectedFile?.path
+                    ? "bg-slate-700 text-white"
+                    : "text-slate-400 hover:bg-slate-800 hover:text-white",
+                )}
+              >
+                <FileText className="h-3.5 w-3.5 shrink-0" />
+                <span className="truncate">{file.path}</span>
+              </button>
+            ))}
+            {!files.length ? (
+              <p className="px-2 py-4 text-xs text-slate-500">No files</p>
+            ) : null}
           </div>
-        </div>
-      </div>
+        </aside>
 
-      {files.length ? (
-        <div className="overflow-hidden rounded-xl border border-slate-200">
-          {files.map((file) => (
-            <details key={file.path} className="border-b border-slate-100 last:border-b-0">
-              <summary className="cursor-pointer bg-white px-3 py-2 text-sm font-bold text-slate-800">
-                {file.path}
-              </summary>
-              <pre className="max-h-44 overflow-auto bg-slate-50 p-3 text-xs leading-5 text-slate-600">
-                {file.content}
+        <div className="flex min-w-0 flex-col">
+          <div className="min-h-0 flex-1">
+            <div className="border-b border-slate-800 bg-slate-900 px-4 py-2 text-xs text-slate-400">
+              {selectedFile?.path || "Terminal"}
+            </div>
+            <pre className="max-h-64 min-h-52 overflow-auto p-4 font-mono text-xs leading-6 text-slate-300">
+              {selectedFile?.content ||
+                "# Select a file or use the terminal below."}
+            </pre>
+          </div>
+          <div className="border-t border-slate-800 bg-black/30 p-4">
+            <p className="mb-2 text-[10px] font-semibold uppercase tracking-widest text-slate-500">
+              Terminal
+            </p>
+            <div className="flex items-center gap-2 font-mono text-sm">
+              <span className="text-emerald-400">$</span>
+              <input
+                data-sandbox-target="computer-command"
+                value={command}
+                placeholder={template?.starterCommand || "ls"}
+                onChange={(event) => onCommandChange(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") onRun();
+                }}
+                className="min-w-0 flex-1 bg-transparent text-slate-100 outline-none placeholder:text-slate-600"
+              />
+              <button
+                type="button"
+                onClick={onRun}
+                className="rounded bg-slate-700 px-2.5 py-1.5 text-xs font-medium text-white hover:bg-slate-600"
+              >
+                Run
+              </button>
+            </div>
+            {output ? (
+              <pre className="mt-3 max-h-36 overflow-auto whitespace-pre-wrap font-mono text-xs leading-5 text-slate-300">
+                {output}
               </pre>
-            </details>
-          ))}
+            ) : (
+              <p className="mt-3 text-xs text-slate-600">
+                Try ls, pwd, cat &lt;file&gt;, or run team.
+              </p>
+            )}
+          </div>
         </div>
-      ) : null}
-
-      <div className="rounded-xl border border-slate-200 bg-white p-3">
-        <label className="block">
-          <span className="text-xs font-bold text-slate-600">Command</span>
-          <input
-            data-sandbox-target="computer-command"
-            value={command}
-            placeholder={template?.starterCommand || "ls"}
-            onChange={(event) => onCommandChange(event.target.value)}
-            className="mt-1.5 w-full rounded-lg border border-slate-200 px-3 py-2 font-mono text-sm outline-none focus:border-slate-400"
-          />
-        </label>
-        <button
-          type="button"
-          onClick={onRun}
-          className="mt-3 inline-flex items-center gap-2 rounded-lg bg-slate-950 px-3 py-2 text-xs font-bold text-white"
-        >
-          <Play className="h-3.5 w-3.5" />
-          Run command
-        </button>
-        {output ? (
-          <pre className="mt-3 max-h-56 overflow-auto rounded-lg bg-slate-950 p-3 font-mono text-xs leading-5 text-slate-100">
-            {output}
-          </pre>
-        ) : null}
       </div>
+    </div>
+  );
+}
+
+function StudioPanel({
+  title,
+  action,
+  children,
+}: {
+  title: string;
+  action?: ReactNode;
+  children: ReactNode;
+}) {
+  return (
+    <section className="overflow-hidden rounded-lg border border-slate-200 bg-white">
+      <header className="flex min-h-14 items-center justify-between gap-3 border-b border-slate-200 px-4 py-3">
+        <h2 className="text-sm font-medium text-slate-950">{title}</h2>
+        {action}
+      </header>
+      <div className="p-4">{children}</div>
+    </section>
+  );
+}
+
+function MemoryStat({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="border-b border-slate-200 px-4 py-3 last:border-b-0 sm:border-b-0 sm:border-r sm:last:border-r-0">
+      <p className="text-[11px] font-medium uppercase tracking-wide text-slate-500">
+        {label}
+      </p>
+      <p className="mt-1 text-xl font-medium text-slate-950">{value}</p>
     </div>
   );
 }
@@ -692,10 +957,12 @@ function CheckCircle({ checked }: { checked: boolean }) {
     <span
       className={cn(
         "flex h-5 w-5 shrink-0 items-center justify-center rounded-full border-2 transition-colors",
-        checked ? "border-slate-900 bg-slate-900" : "border-slate-300 bg-white"
+        checked ? "border-slate-900 bg-slate-900" : "border-slate-300 bg-white",
       )}
     >
-      {checked ? <Check className="h-3 w-3 text-white" strokeWidth={3} /> : null}
+      {checked ? (
+        <Check className="h-3 w-3 text-white" strokeWidth={3} />
+      ) : null}
     </span>
   );
 }
@@ -718,7 +985,9 @@ function ComponentRow({
 
   return (
     <div className="flex items-start gap-2 rounded-lg border border-slate-100 bg-slate-50 p-2">
-      <span className={cn("rounded px-2 py-1 text-[11px] font-black", toneClass)}>
+      <span
+        className={cn("rounded px-2 py-1 text-[11px] font-black", toneClass)}
+      >
         {label}
       </span>
       <span className="min-w-0 flex-1 text-xs leading-5 text-slate-600">
@@ -745,15 +1014,23 @@ function isGoogleTool(tool: AgentSandboxToolTemplate) {
   );
 }
 
-function scopedGoogleConnectUrl(baseUrl: string, tool: AgentSandboxToolTemplate) {
+function scopedGoogleConnectUrl(
+  baseUrl: string,
+  tool: AgentSandboxToolTemplate,
+) {
   const url = new URL(baseUrl);
   url.searchParams.set("tool", tool.connectorKind || tool.id);
   url.searchParams.set("label", tool.name);
-  url.searchParams.set("scopes", googleToolScopes(tool.connectorKind).join(" "));
+  url.searchParams.set(
+    "scopes",
+    googleToolScopes(tool.connectorKind).join(" "),
+  );
   return url.toString();
 }
 
-function googleToolScopes(connectorKind?: AgentSandboxToolTemplate["connectorKind"]) {
+function googleToolScopes(
+  connectorKind?: AgentSandboxToolTemplate["connectorKind"],
+) {
   const base = ["openid", "email", "profile"];
   if (connectorKind === "google_calendar") {
     return [
@@ -793,7 +1070,10 @@ function WorkspaceIcon({ kind }: { kind?: string }) {
   }
   if (kind === "google_calendar") {
     return (
-      <BrandIconBox color={`#${siGooglecalendar.hex}`} label={siGooglecalendar.title}>
+      <BrandIconBox
+        color={`#${siGooglecalendar.hex}`}
+        label={siGooglecalendar.title}
+      >
         <path d={siGooglecalendar.path} />
       </BrandIconBox>
     );
@@ -807,7 +1087,10 @@ function WorkspaceIcon({ kind }: { kind?: string }) {
   }
   if (kind === "google_sheets") {
     return (
-      <BrandIconBox color={`#${siGooglesheets.hex}`} label={siGooglesheets.title}>
+      <BrandIconBox
+        color={`#${siGooglesheets.hex}`}
+        label={siGooglesheets.title}
+      >
         <path d={siGooglesheets.path} />
       </BrandIconBox>
     );
@@ -940,7 +1223,10 @@ function oneLine(value?: string) {
 }
 
 function customSkillTitle(value?: string) {
-  const firstLine = (value || "").split("\n").map((line) => line.trim()).find(Boolean);
+  const firstLine = (value || "")
+    .split("\n")
+    .map((line) => line.trim())
+    .find(Boolean);
   if (!firstLine) return "Custom skill";
   return firstLine.length > 42 ? `${firstLine.slice(0, 39)}...` : firstLine;
 }

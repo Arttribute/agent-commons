@@ -3,6 +3,7 @@ import type { AgentSandboxStepTarget } from "@/types/skills";
 export type SandboxLog = {
   level: "success" | "warning" | "info" | "error";
   message: string;
+  occurredAt?: string;
 };
 
 export type ReviewResult = {
@@ -19,6 +20,15 @@ export type ChatMessage = {
   content: string;
 };
 
+export type SandboxSession = {
+  id: string;
+  platformSessionId?: string;
+  title: string;
+  messages: ChatMessage[];
+  createdAt: string;
+  updatedAt: string;
+};
+
 export type SandboxResumeState = {
   agentName?: string;
   persona?: string;
@@ -33,13 +43,15 @@ export type SandboxResumeState = {
   computerCommand?: string;
   computerOutput?: string;
   taskTitle?: string;
-  activePanel?: ConfigPanel;
+  activePanel?: SandboxSection;
   guideIndex?: number;
   createdAgentId?: string;
   completionSent?: boolean;
   creditReward?: number;
   chatInput?: string;
   messages?: ChatMessage[];
+  sessions?: SandboxSession[];
+  currentSessionId?: string;
   logs?: SandboxLog[];
   reviews?: Record<string, ReviewResult>;
 };
@@ -53,7 +65,11 @@ export type ConfigPanel =
   | "memory"
   | "computer";
 
-export const targetToPanel: Partial<Record<AgentSandboxStepTarget, ConfigPanel>> = {
+export type SandboxSection = ConfigPanel | "chat" | "sessions" | "logs";
+
+export const targetToPanel: Partial<
+  Record<AgentSandboxStepTarget, SandboxSection>
+> = {
   identity: "identity",
   system_prompt: "identity",
   skills: "skills",
@@ -63,4 +79,7 @@ export const targetToPanel: Partial<Record<AgentSandboxStepTarget, ConfigPanel>>
   workflows: "workflows",
   memory: "memory",
   computer: "computer",
+  chat: "chat",
+  logs: "logs",
+  publish: "chat",
 };
