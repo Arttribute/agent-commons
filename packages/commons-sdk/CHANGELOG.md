@@ -1,5 +1,21 @@
 # @agent-commons/sdk
 
+## 0.5.0
+
+### Minor Changes
+
+- 94c1e85: Add the native Commons Copilot API surface and make `agc chat` discover the user's platform-provisioned default agent when no explicit agent is configured.
+- 4f02f4c: Add billing and feature-flag surfaces.
+
+  SDK: `client.billing` (subscription, entitlements, subscribe, topup, portal) and
+  `client.flags` (all, evaluate), plus `SubscriptionInfo`, `PlanEntitlements`,
+  `PlanKey`, and `FlagEvaluation` types.
+
+  CLI: `agc credits` (balance, ledger) and `agc billing` (status, upgrade, topup).
+
+- 8c43cb9: Add typed workflow field mappings, multi-agent coordination metadata, and the complete authenticated workflow execution lifecycle to the public TypeScript SDK surface.
+- 4506380: Add the string-first `WorkflowValue` envelope (`WorkflowValueKind`, `WorkflowValue`, `OutputPresentation`) to the public SDK surface. This is the presentation-aware contract every workflow node output is normalized to, powering the context-aware results interpreter in the studio.
+
 ## 0.4.0
 
 ### Minor Changes
