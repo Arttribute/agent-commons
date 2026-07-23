@@ -32,7 +32,8 @@ export class FilesController {
   )
   async uploadFiles(
     @UploadedFiles() files: Express.Multer.File[],
-    @Body() body: {
+    @Body()
+    body: {
       agentId?: string;
       sessionId?: string;
       workspaceId?: string;
@@ -80,7 +81,11 @@ export class FilesController {
     @Req() req: any,
   ) {
     const principal = req.principal as
-      | { principalId: string; principalType: 'user' | 'agent' | 'service'; workspaceId?: string | null }
+      | {
+          principalId: string;
+          principalType: 'user' | 'agent' | 'service';
+          workspaceId?: string | null;
+        }
       | undefined;
     const ownerId =
       principal?.principalType === 'user'
@@ -103,11 +108,16 @@ export class FilesController {
     @Query('offset') offset: string | undefined,
     @Query('maxChars') maxChars: string | undefined,
     @Query('includeImageUrls') includeImageUrls: string | undefined,
+    @Query('includeDownloadUrl') includeDownloadUrl: string | undefined,
     @Headers('x-initiator') initiatorHeader: string | undefined,
     @Req() req: any,
   ) {
     const principal = req.principal as
-      | { principalId: string; principalType: 'user' | 'agent' | 'service'; workspaceId?: string | null }
+      | {
+          principalId: string;
+          principalType: 'user' | 'agent' | 'service';
+          workspaceId?: string | null;
+        }
       | undefined;
     const ownerId =
       principal?.principalType === 'user'
@@ -122,6 +132,7 @@ export class FilesController {
       offset: offset ? Number(offset) : undefined,
       maxChars: maxChars ? Number(maxChars) : undefined,
       includeImageUrls: includeImageUrls === 'true',
+      includeDownloadUrl: includeDownloadUrl === 'true',
     });
     return { data };
   }

@@ -71,6 +71,12 @@ export class LibraryController {
     return this.library.download(itemId, principalFrom(req));
   }
 
+  @Get(':itemId/preview')
+  @RateLimit({ limit: 120, windowMs: 60_000, keyStrategy: 'user' })
+  preview(@Req() req: Request, @Param('itemId') itemId: string) {
+    return this.library.preview(itemId, principalFrom(req));
+  }
+
   @Patch(':itemId')
   update(
     @Req() req: Request,

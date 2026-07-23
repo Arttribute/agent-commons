@@ -20,6 +20,8 @@ import { cn } from "@/lib/utils";
 import { normalizeConversationStarters } from "@/lib/conversation-starters";
 import { AgentAvatar } from "@/components/agents/agent-avatar";
 import { useAgentContext } from "@/context/AgentContext";
+import { ArtifactSurface } from "@/components/artifacts/artifact-surface";
+import type { ArtifactRef } from "@/lib/artifacts";
 
 interface Message {
   role: string;
@@ -157,6 +159,7 @@ export default function SessionInterfaceImproved({
   const [computerRuntimeTab, setComputerRuntimeTab] =
     useState<ComputerRuntimeTab>("files");
   const [openProjectId, setOpenProjectId] = useState<string | null>(null);
+  const [openArtifact, setOpenArtifact] = useState<ArtifactRef | null>(null);
 
   // Surface width drives the empty-state layout: wide surfaces center the
   // composer with one starter row; narrow ones (mobile, the copilot panel)
@@ -312,6 +315,7 @@ export default function SessionInterfaceImproved({
         ?.projectId;
       if (projectId) {
         setComputerOpen(false);
+        setOpenArtifact(null);
         setOpenProjectId(projectId);
       }
     };
@@ -397,6 +401,8 @@ export default function SessionInterfaceImproved({
         title="Agent computer"
         aria-label="Agent computer"
         onClick={() => {
+          setOpenArtifact(null);
+          setOpenProjectId(null);
           setComputerOpen(true);
           fetchAgentComputer();
         }}
@@ -439,7 +445,7 @@ export default function SessionInterfaceImproved({
         ref={surfaceRef}
         className={cn(
           "relative flex min-h-0 min-w-0 flex-col",
-          computerOpen ? "flex-1" : "w-full",
+          computerOpen || openProjectId || openArtifact ? "flex-1" : "w-full",
         )}
       >
         {header ? (
@@ -486,107 +492,122 @@ export default function SessionInterfaceImproved({
             </div>
           </div>
         ) : (
-        <ScrollArea className="min-h-0 flex-1" scrollHideDelay={100}>
-          <div
-            className="container mx-auto max-w-[46rem] px-4 pb-6 pt-4"
-            ref={scrollRef}
-          >
-            {isLoadingSession && messages.length === 0 ? (
-              <ChatLoadingIndicator />
-            ) : messages.length === 0 &&
-              (greeting || conversationStarters.length > 0) ? (
-              <div className="flex min-h-[45vh] flex-col justify-center py-8">
-                <div className="space-y-6">
-                  <div className="flex flex-col items-center gap-4 text-center">
-                    <AgentAvatar
-                      name={agent?.name}
-                      src={(agent as any)?.avatar}
-                      size={56}
-                    />
-                    {greeting && (
-                      <h2 className="text-xl font-normal tracking-tight text-foreground sm:text-2xl">
-                        {greeting}
-                      </h2>
-                    )}
-                  </div>
-                  {conversationStarters.length > 0 && (
-                    <div
-                      // Narrow surfaces stack starters one per row; wide
-                      // surfaces use the centered layout above instead.
-                      className="grid w-full grid-cols-1 gap-2"
-                    >
-                      {conversationStarters.map((starter) => (
-                        <button
-                          key={starter.label}
-                          type="button"
-                          title={starter.prompt}
-                          className="min-w-0 rounded-xl border border-border bg-white px-3 py-2.5 text-center text-sm text-muted-foreground shadow-card transition-colors hover:bg-muted hover:text-foreground"
-                          onClick={() => setInputText(starter.prompt)}
-                        >
-                          <span className="block truncate">{starter.label}</span>
-                        </button>
-                      ))}
+          <ScrollArea className="min-h-0 flex-1" scrollHideDelay={100}>
+            <div
+              className="container mx-auto max-w-[46rem] px-4 pb-6 pt-4"
+              ref={scrollRef}
+            >
+              {isLoadingSession && messages.length === 0 ? (
+                <ChatLoadingIndicator />
+              ) : messages.length === 0 &&
+                (greeting || conversationStarters.length > 0) ? (
+                <div className="flex min-h-[45vh] flex-col justify-center py-8">
+                  <div className="space-y-6">
+                    <div className="flex flex-col items-center gap-4 text-center">
+                      <AgentAvatar
+                        name={agent?.name}
+                        src={(agent as any)?.avatar}
+                        size={56}
+                      />
+                      {greeting && (
+                        <h2 className="text-xl font-normal tracking-tight text-foreground sm:text-2xl">
+                          {greeting}
+                        </h2>
+                      )}
                     </div>
-                  )}
-                  {conversationAddon}
+                    {conversationStarters.length > 0 && (
+                      <div
+                        // Narrow surfaces stack starters one per row; wide
+                        // surfaces use the centered layout above instead.
+                        className="grid w-full grid-cols-1 gap-2"
+                      >
+                        {conversationStarters.map((starter) => (
+                          <button
+                            key={starter.label}
+                            type="button"
+                            title={starter.prompt}
+                            className="min-w-0 rounded-xl border border-border bg-white px-3 py-2.5 text-center text-sm text-muted-foreground shadow-card transition-colors hover:bg-muted hover:text-foreground"
+                            onClick={() => setInputText(starter.prompt)}
+                          >
+                            <span className="block truncate">
+                              {starter.label}
+                            </span>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                    {conversationAddon}
+                  </div>
+                  <div ref={bottomRef} />
                 </div>
-                <div ref={bottomRef} />
-              </div>
-            ) : (
-              <>
-                {(() => {
-                  // The agent identity row appears on the first agent message
-                  // after a user turn only — consecutive agent messages flow
-                  // together without repeating the avatar.
-                  let lastMessageRole: string | null = null;
-                  return groupedItems.map((item, index) => {
-                    if (item.type === "message") {
-                      const { message } = item;
-                      if (message.role === "user" || message.role === "human") {
-                        lastMessageRole = "human";
-                        return (
-                          <InitiatorMessage
-                            key={index}
-                            message={message.content}
-                            timestamp={message.timestamp}
-                            metadata={message.metadata}
-                          />
-                        );
+              ) : (
+                <>
+                  {(() => {
+                    // The agent identity row appears on the first agent message
+                    // after a user turn only — consecutive agent messages flow
+                    // together without repeating the avatar.
+                    let lastMessageRole: string | null = null;
+                    return groupedItems.map((item, index) => {
+                      if (item.type === "message") {
+                        const { message } = item;
+                        if (
+                          message.role === "user" ||
+                          message.role === "human"
+                        ) {
+                          lastMessageRole = "human";
+                          return (
+                            <InitiatorMessage
+                              key={index}
+                              message={message.content}
+                              timestamp={message.timestamp}
+                              metadata={message.metadata}
+                              onOpenArtifact={(artifact) => {
+                                setComputerOpen(false);
+                                setOpenProjectId(null);
+                                setOpenArtifact(artifact);
+                              }}
+                            />
+                          );
+                        }
+                        if (message.role === "ai") {
+                          const showAgentHeader = lastMessageRole !== "ai";
+                          lastMessageRole = "ai";
+                          const key = message.isStreaming
+                            ? `ai-streaming-${index}`
+                            : index;
+                          return (
+                            <AgentOutput
+                              key={key}
+                              content={message.content}
+                              metadata={message.metadata}
+                              isStreaming={message.isStreaming}
+                              computer={sessionComputer}
+                              agentName={agent?.name}
+                              agentAvatar={(agent as any)?.avatar}
+                              showAgentHeader={showAgentHeader}
+                              onOpenArtifact={(artifact) => {
+                                setComputerOpen(false);
+                                setOpenProjectId(null);
+                                setOpenArtifact(artifact);
+                              }}
+                            />
+                          );
+                        }
+                        return null;
                       }
-                      if (message.role === "ai") {
-                        const showAgentHeader = lastMessageRole !== "ai";
-                        lastMessageRole = "ai";
-                        const key = message.isStreaming
-                          ? `ai-streaming-${index}`
-                          : index;
-                        return (
-                          <AgentOutput
-                            key={key}
-                            content={message.content}
-                            metadata={message.metadata}
-                            isStreaming={message.isStreaming}
-                            computer={sessionComputer}
-                            agentName={agent?.name}
-                            agentAvatar={(agent as any)?.avatar}
-                            showAgentHeader={showAgentHeader}
-                          />
-                        );
-                      }
-                      return null;
-                    }
 
-                    return (
-                      <ExpandableToolCard key={index} tools={item.tools} />
-                    );
-                  });
-                })()}
-                {conversationAddon}
-                {/* Bottom marker for auto-scroll */}
-                <div ref={bottomRef} />
-              </>
-            )}
-          </div>
-        </ScrollArea>
+                      return (
+                        <ExpandableToolCard key={index} tools={item.tools} />
+                      );
+                    });
+                  })()}
+                  {conversationAddon}
+                  {/* Bottom marker for auto-scroll */}
+                  <div ref={bottomRef} />
+                </>
+              )}
+            </div>
+          </ScrollArea>
         )}
 
         {!showCenteredEmptyState && (
@@ -617,6 +638,16 @@ export default function SessionInterfaceImproved({
           projectId={openProjectId}
           autoRefresh={Boolean(isStreaming)}
           onClose={() => setOpenProjectId(null)}
+        />
+      )}
+      {openArtifact && (
+        <ArtifactSurface
+          artifact={openArtifact}
+          onClose={() => setOpenArtifact(null)}
+          onRevise={(artifact) => {
+            const name = artifact.name || "this artifact";
+            setInputText(`Please revise "${name}": `);
+          }}
         />
       )}
     </div>

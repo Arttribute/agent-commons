@@ -64,7 +64,9 @@ export class LibraryService {
           )
         : undefined,
       this.viewCondition(filters.view),
-      filters.source ? eq(schema.libraryItem.source, filters.source) : undefined,
+      filters.source
+        ? eq(schema.libraryItem.source, filters.source)
+        : undefined,
       filters.favorite ? eq(schema.libraryItem.isFavorite, true) : undefined,
       filters.sessionId
         ? eq(schema.libraryItem.sourceSessionId, filters.sessionId)
@@ -91,17 +93,21 @@ export class LibraryService {
       items.map(async (item) => ({
         ...this.publicItem(item),
         sessionTitle: item.sourceSessionId
-          ? titleBySession.get(item.sourceSessionId) ?? 'Untitled chat'
+          ? (titleBySession.get(item.sourceSessionId) ?? 'Untitled chat')
           : null,
         previewUrl:
-          item.kind === 'image'
+          (await this.files.createPreviewUrl(item.itemId, {
+            ownerId: principal.principalId,
+            workspaceId: principal.workspaceId ?? undefined,
+          })) ??
+          (item.kind === 'image'
             ? (
                 await this.files.createDownloadUrl(item.itemId, {
                   ownerId: principal.principalId,
                   workspaceId: principal.workspaceId ?? undefined,
                 })
               ).url
-            : null,
+            : null),
       })),
     );
   }
@@ -147,6 +153,37 @@ export class LibraryService {
       agentId:
         principal.principalType === 'agent' ? principal.principalId : undefined,
     });
+  }
+
+  async preview(itemId: string, principal: LibraryPrincipal) {
+    const item = await this.getAccessible(itemId, principal);
+    const context = {
+      agentId:
+        principal.principalType === 'agent' ? principal.principalId : undefined,
+      ownerId:
+        principal.principalType === 'user' ? principal.principalId : undefined,
+      workspaceId: principal.workspaceId ?? undefined,
+    };
+    const [content, download, inline] = await Promise.all([
+      this.files.readFileForAgent({
+        fileId: itemId,
+        ...context,
+        maxChars: 50_000,
+        includeImageUrls: true,
+      }),
+      this.files.createDownloadUrl(itemId, context),
+      this.files.createInlineUrl(itemId, context),
+    ]);
+    await this.audit(itemId, principal, 'previewed');
+    return {
+      ...this.publicItem(item),
+      content: content.content,
+      totalChars: content.totalChars,
+      truncated: content.truncated,
+      artifacts: content.artifacts,
+      download,
+      inline,
+    };
   }
 
   async update(
@@ -439,7 +476,10 @@ export class LibraryService {
   }
 
   private async embedQuery(query: string) {
-    if (!process.env.OPENAI_API_KEY || process.env.ARTIFACT_EMBEDDINGS_DISABLED === 'true') {
+    if (
+      !process.env.OPENAI_API_KEY ||
+      process.env.ARTIFACT_EMBEDDINGS_DISABLED === 'true'
+    ) {
       return null;
     }
     try {
@@ -479,6 +519,20 @@ export class LibraryService {
   private viewCondition(view?: string) {
     if (!view || view === 'all') return undefined;
     if (view === 'images') return eq(schema.libraryItem.kind, 'image');
+    if (view === 'documents') {
+      return inArray(schema.libraryItem.kind, [
+        'document',
+        'pdf',
+        'presentation',
+        'spreadsheet',
+        'text',
+        'code',
+        'csv',
+      ]);
+    }
+    if (view === 'media') {
+      return inArray(schema.libraryItem.kind, ['audio', 'video']);
+    }
     if (view === 'apps') return eq(schema.libraryItem.kind, 'app');
     if (view === 'files') {
       return sql<boolean>`${schema.libraryItem.kind} NOT IN ('image', 'app')`;
@@ -501,8 +555,7 @@ export class LibraryService {
 
   private async getOwned(itemId: string, principal: LibraryPrincipal) {
     const item = await this.db.query.libraryItem.findFirst({
-      where: (table) =>
-        and(eq(table.itemId, itemId), isNull(table.deletedAt)),
+      where: (table) => and(eq(table.itemId, itemId), isNull(table.deletedAt)),
     });
     if (!item) throw new NotFoundException('Artifact not found');
     if (!this.isOwner(item, principal)) {

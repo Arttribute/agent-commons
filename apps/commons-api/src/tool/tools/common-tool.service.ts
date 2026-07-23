@@ -413,6 +413,7 @@ export interface CommonTool {
     offset?: number;
     maxChars?: number;
     includeImageUrls?: boolean;
+    includeDownloadUrl?: boolean;
     pageNumber?: number;
     agentId: string;
     sessionId?: string;
@@ -426,6 +427,12 @@ export interface CommonTool {
     nextOffset: number | null;
     totalChars: number;
     truncated: boolean;
+    download?: {
+      name: string;
+      mimeType: string;
+      url: string;
+      expiresInSeconds: number;
+    };
     artifacts: Array<{
       artifactId: string;
       kind: string;
@@ -454,6 +461,55 @@ export interface CommonTool {
       name: string;
       rows: Array<Record<string, any> | any[]>;
     }>;
+    agentId: string;
+    sessionId?: string;
+  }): Promise<any>;
+
+  /** Create a text, Markdown, code, JSON, XML, HTML, or CSV artifact. */
+  createTextFile(props: {
+    fileName: string;
+    content: string;
+    mimeType?: string;
+    sourceFileId?: string;
+    agentId: string;
+    sessionId?: string;
+  }): Promise<any>;
+
+  /** Create a styled Word document. Use sourceFileId when revising a file. */
+  createDocumentFile(props: {
+    fileName: string;
+    title?: string;
+    sections: Array<{
+      heading?: string;
+      paragraphs?: string[];
+      bullets?: string[];
+    }>;
+    sourceFileId?: string;
+    agentId: string;
+    sessionId?: string;
+  }): Promise<any>;
+
+  /** Create a widescreen PowerPoint presentation. */
+  createPresentationFile(props: {
+    fileName: string;
+    title?: string;
+    slides: Array<{
+      title: string;
+      subtitle?: string;
+      bullets?: string[];
+      notes?: string;
+    }>;
+    sourceFileId?: string;
+    agentId: string;
+    sessionId?: string;
+  }): Promise<any>;
+
+  /** Create a clean paginated PDF document. */
+  createPdfFile(props: {
+    fileName: string;
+    title?: string;
+    sections: Array<{ heading?: string; body: string }>;
+    sourceFileId?: string;
     agentId: string;
     sessionId?: string;
   }): Promise<any>;
@@ -1397,6 +1453,7 @@ export class CommonToolService {
     offset?: number;
     maxChars?: number;
     includeImageUrls?: boolean;
+    includeDownloadUrl?: boolean;
     pageNumber?: number;
     agentId: string;
     sessionId?: string;
@@ -1408,6 +1465,7 @@ export class CommonToolService {
       offset: props.offset,
       maxChars: props.maxChars,
       includeImageUrls: props.includeImageUrls,
+      includeDownloadUrl: props.includeDownloadUrl,
       pageNumber: props.pageNumber,
     });
   }
@@ -1447,6 +1505,59 @@ export class CommonToolService {
       ownerId: props.agentId,
       ownerType: 'agent',
     });
+  }
+
+  async createTextFile(props: {
+    fileName: string;
+    content: string;
+    mimeType?: string;
+    sourceFileId?: string;
+    agentId: string;
+    sessionId?: string;
+  }) {
+    return this.files.createTextFile(props);
+  }
+
+  async createDocumentFile(props: {
+    fileName: string;
+    title?: string;
+    sections: Array<{
+      heading?: string;
+      paragraphs?: string[];
+      bullets?: string[];
+    }>;
+    sourceFileId?: string;
+    agentId: string;
+    sessionId?: string;
+  }) {
+    return this.files.createDocumentFile(props);
+  }
+
+  async createPresentationFile(props: {
+    fileName: string;
+    title?: string;
+    slides: Array<{
+      title: string;
+      subtitle?: string;
+      bullets?: string[];
+      notes?: string;
+    }>;
+    sourceFileId?: string;
+    agentId: string;
+    sessionId?: string;
+  }) {
+    return this.files.createPresentationFile(props);
+  }
+
+  async createPdfFile(props: {
+    fileName: string;
+    title?: string;
+    sections: Array<{ heading?: string; body: string }>;
+    sourceFileId?: string;
+    agentId: string;
+    sessionId?: string;
+  }) {
+    return this.files.createPdfFile(props);
   }
 
   async startAgentComputer(
