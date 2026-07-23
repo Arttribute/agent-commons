@@ -1,0 +1,14 @@
+use_default_settings: true
+
+general:
+  debug: false
+  instance_name: Agent Commons Search
+
+search:
+  safe_search: 1
+  formats:
+    - json
+
+server:
+  limiter: false
+  image_proxy: false

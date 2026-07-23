@@ -24,7 +24,7 @@ var __toESM = (mod, isNodeMode, target) => (target = mod != null ? __create(__ge
 ));
 
 // src/bin.ts
-var import_commander18 = require("commander");
+var import_commander19 = require("commander");
 var import_path5 = require("path");
 var import_os4 = require("os");
 var import_child_process3 = require("child_process");
@@ -160,7 +160,7 @@ var sym = {
   bullet: import_chalk.default.dim("\u2022"),
   dot: import_chalk.default.dim("\xB7")
 };
-function banner(version = "0.2.4") {
+function banner(version = "0.3.0") {
   const line = import_chalk.default.cyan("  \u2500".padEnd(2) + "\u2500".repeat(44));
   console.log("");
   console.log(line);
@@ -2611,9 +2611,17 @@ function chatCommand() {
   return new import_commander9.Command("chat").description("Start an interactive chat REPL with an agent").option("--agent <agentId>", "Agent ID (or set defaultAgentId in config)").option("--resume <sessionId>", "Resume an existing session by ID").option("--computer", "Give the agent access to its persistent cloud computer").option("--no-stream", "Disable token streaming (wait for full response)").option("--no-local", "Disable local file system access for the agent").action(async (opts) => {
     const localEnabled = opts.local !== false;
     const cfg = loadConfig();
-    const agentId = opts.agent ?? cfg.defaultAgentId;
+    let agentId = opts.agent ?? cfg.defaultAgentId;
+    if (!agentId && cfg.initiator) {
+      try {
+        const listed = await makeClient().agents.list(cfg.initiator);
+        const agents = listed?.data ?? listed ?? [];
+        agentId = agents.find((agent) => agent.isDefault)?.agentId ?? agents[0]?.agentId;
+      } catch {
+      }
+    }
     if (!agentId) {
-      console.error(c.error("Specify --agent <agentId> or set defaultAgentId with `agc config set defaultAgentId <id>`"));
+      console.error(c.error("No default agent is available. Specify --agent <agentId> or run `agc agents list`."));
       process.exit(1);
     }
     if (!cfg.initiator) {
@@ -2876,8 +2884,10 @@ ${sym.fail} ${c.error(err.message ?? String(err))}`);
               readline4.clearLine(process.stdout, 0);
               const statusIcon = toolOk ? sym.ok : sym.fail;
               const previewPart = preview ? `  ${c.dim(preview)}` : "";
-              process.stdout.write(`  ${c.dim("\u2500")} ${c.bold(displayName)}${argStr ? "  " + c.dim(argStr) : ""}  ${statusIcon}${previewPart}  ${c.dim("(" + elapsed + "s)")}
-`);
+              process.stdout.write(
+                `  ${c.dim("\u2500")} ${c.bold(displayName)}${argStr ? "  " + c.dim(argStr) : ""}  ${statusIcon}${previewPart}  ${c.dim("(" + elapsed + "s)")}
+`
+              );
               appendSessionLog(sessionId, {
                 type: "local_tool_result",
                 tool: toolName,
@@ -2889,7 +2899,7 @@ ${sym.fail} ${c.error(err.message ?? String(err))}`);
                   method: "POST",
                   headers: {
                     "Content-Type": "application/json",
-                    "Authorization": `Bearer ${cfg.apiKey}`
+                    Authorization: `Bearer ${cfg.apiKey}`
                   },
                   body: JSON.stringify({ requestId, result })
                 });
@@ -2934,7 +2944,13 @@ ${sym.fail} ${c.error(err.message ?? String(err))}`);
                   type: "message",
                   role: "assistant",
                   content: agentContent,
-                  usage: { inputTokens: inputTok, outputTokens: outputTok, cachedTokens: cachedTok, totalTokens: total, costUsd: usage.costUsd },
+                  usage: {
+                    inputTokens: inputTok,
+                    outputTokens: outputTok,
+                    cachedTokens: cachedTok,
+                    totalTokens: total,
+                    costUsd: usage.costUsd
+                  },
                   timestamp: (/* @__PURE__ */ new Date()).toISOString()
                 });
               } else {
@@ -2957,15 +2973,7 @@ ${sym.fail} ${c.error(event.message ?? "Stream error")}`);
           if (thinkingSpinner.isSpinning) thinkingSpinner.stop();
           process.stdout.write("\n");
           if (localToolsCfg && agentContent) {
-            await handleLocalToolLoop(
-              agentContent,
-              localToolsCfg,
-              client,
-              agentId,
-              sessionId,
-              appendSessionLog,
-              !!opts.computer
-            );
+            await handleLocalToolLoop(agentContent, localToolsCfg, client, agentId, sessionId, appendSessionLog, !!opts.computer);
           }
         } catch (err) {
           process.stdout.write("\n");
@@ -3020,8 +3028,10 @@ async function handleLocalToolLoop(agentText, cfg, client, agentId, sessionId, a
   readline4.cursorTo(process.stdout, 0);
   readline4.clearLine(process.stdout, 0);
   const previewPart = preview ? `  ${c.dim(preview)}` : "";
-  process.stdout.write(`  ${c.dim("\u2500")} ${c.bold(toolCall.tool)}${argStr ? "  " + c.dim(argStr) : ""}  ${toolOk ? sym.ok : sym.fail}${previewPart}  ${c.dim("(" + elapsed + "s)")}
-`);
+  process.stdout.write(
+    `  ${c.dim("\u2500")} ${c.bold(toolCall.tool)}${argStr ? "  " + c.dim(argStr) : ""}  ${toolOk ? sym.ok : sym.fail}${previewPart}  ${c.dim("(" + elapsed + "s)")}
+`
+  );
   const resultMsg = `[Tool result: ${toolCall.tool}]
 \`\`\`
 ${result}
@@ -3066,7 +3076,12 @@ ${result}
           process.stdout.write(txt);
           followContent += txt;
         }
-        appendLog(sessionId, { type: "message", role: "assistant", content: followContent, timestamp: (/* @__PURE__ */ new Date()).toISOString() });
+        appendLog(sessionId, {
+          type: "message",
+          role: "assistant",
+          content: followContent,
+          timestamp: (/* @__PURE__ */ new Date()).toISOString()
+        });
         break;
       } else if (evt.type === "error") {
         console.error(`
@@ -3080,16 +3095,7 @@ ${sym.fail} ${c.error(evt.message ?? "Stream error")}`);
     console.error(`${sym.fail} ${c.error(err?.message ?? String(err))}`);
     return;
   }
-  await handleLocalToolLoop(
-    followContent,
-    cfg,
-    client,
-    agentId,
-    sessionId,
-    appendLog,
-    computerEnabled,
-    depth + 1
-  );
+  await handleLocalToolLoop(followContent, cfg, client, agentId, sessionId, appendLog, computerEnabled, depth + 1);
 }
 function truncate(s, max) {
   const str = String(s ?? "");
@@ -4243,8 +4249,114 @@ function usageCommand() {
   return cmd;
 }
 
-// src/commands/logs.ts
+// src/commands/billing.ts
 var import_commander16 = require("commander");
+function creditsCommand() {
+  const cmd = new import_commander16.Command("credits").description("View your credit balance and ledger");
+  cmd.command("balance", { isDefault: true }).description("Show your current credit balance").option("--json", "Output as JSON").action(async (opts) => {
+    const spinner = spin("Fetching balance\u2026");
+    try {
+      const client = makeClient();
+      const res = await client.credits.balance();
+      spinner.stop();
+      if (opts.json) return jsonOut(res.data);
+      section("Credits");
+      detail([["Balance", String(res?.data?.balance ?? 0)]]);
+    } catch (e) {
+      spinner.stop();
+      console.error(c.error(e.message));
+      process.exit(1);
+    }
+  });
+  cmd.command("ledger").description("Show recent credit ledger entries").option("--limit <n>", "Max entries", "20").option("--json", "Output as JSON").action(async (opts) => {
+    const spinner = spin("Fetching ledger\u2026");
+    try {
+      const client = makeClient();
+      const res = await client.credits.ledger({ limit: Number(opts.limit) });
+      spinner.stop();
+      const rows = res?.data ?? [];
+      if (opts.json) return jsonOut(rows);
+      section("Credit ledger");
+      for (const e of rows) {
+        const sign = e.amount >= 0 ? "+" : "";
+        console.log(
+          `${c.dim(new Date(e.createdAt).toLocaleString())}  ${sign}${e.amount}  ${e.description || e.eventType}`
+        );
+      }
+      if (!rows.length) console.log(c.dim("No entries."));
+    } catch (e) {
+      spinner.stop();
+      console.error(c.error(e.message));
+      process.exit(1);
+    }
+  });
+  return cmd;
+}
+function billingCommand() {
+  const cmd = new import_commander16.Command("billing").description("Manage your subscription and top-ups");
+  cmd.command("status", { isDefault: true }).description("Show your current plan and entitlements").option("--json", "Output as JSON").action(async (opts) => {
+    const spinner = spin("Fetching plan\u2026");
+    try {
+      const client = makeClient();
+      const res = await client.billing.subscription();
+      spinner.stop();
+      if (opts.json) return jsonOut(res.data);
+      const d = res.data;
+      section("Subscription");
+      detail([
+        ["Plan", `${d.planName} (${d.planKey})`],
+        ["Status", d.status],
+        ["Monthly credits", String(d.monthlyCredits)],
+        ["Computer use", d.entitlements?.computerUse ? "yes" : "no"],
+        [
+          "Renews",
+          d.currentPeriodEnd ? new Date(d.currentPeriodEnd).toLocaleDateString() : void 0
+        ]
+      ]);
+    } catch (e) {
+      spinner.stop();
+      console.error(c.error(e.message));
+      process.exit(1);
+    }
+  });
+  cmd.command("upgrade <plan>").description("Start a checkout to upgrade (plus | pro | max)").action(async (plan) => {
+    try {
+      const client = makeClient();
+      const res = await client.billing.subscribe(plan);
+      const url = res?.data?.url;
+      if (!url) {
+        console.error(c.error("Could not create checkout session"));
+        process.exit(1);
+      }
+      console.log(c.dim("Opening checkout in your browser:"));
+      console.log(url);
+      await openBrowser(url);
+    } catch (e) {
+      console.error(c.error(e.message));
+      process.exit(1);
+    }
+  });
+  cmd.command("topup <pack>").description("Buy a one-time credit pack (small | medium | large)").action(async (pack) => {
+    try {
+      const client = makeClient();
+      const res = await client.billing.topup(pack);
+      const url = res?.data?.url;
+      if (!url) {
+        console.error(c.error("Could not create checkout session"));
+        process.exit(1);
+      }
+      console.log(url);
+      await openBrowser(url);
+    } catch (e) {
+      console.error(c.error(e.message));
+      process.exit(1);
+    }
+  });
+  return cmd;
+}
+
+// src/commands/logs.ts
+var import_commander17 = require("commander");
 var STATUS_COLOR = {
   success: (s) => c.bold(s),
   error: (s) => c.error(s),
@@ -4254,7 +4366,7 @@ function colorStatus(status) {
   return (STATUS_COLOR[status] ?? c.dim)(status);
 }
 function logsCommand() {
-  const cmd = new import_commander16.Command("logs").description("View agent activity logs");
+  const cmd = new import_commander17.Command("logs").description("View agent activity logs");
   cmd.command("list").alias("ls").description("List recent log entries for an agent").option("--agent <agentId>", "Agent ID (defaults to configured agent)").option("--session <sessionId>", "Filter by session ID").option("--status <status>", "Filter: success | error | warning").option("--limit <n>", "Max entries to show", "50").option("--json", "Output as JSON").action(async (opts) => {
     const cfg = loadConfig();
     const agentId = opts.agent ?? cfg.defaultAgentId;
@@ -4329,7 +4441,7 @@ function logsCommand() {
 }
 
 // src/commands/computer.ts
-var import_commander17 = require("commander");
+var import_commander18 = require("commander");
 var RESOURCE_PROFILES = [
   "starter",
   "standard",
@@ -4435,7 +4547,7 @@ function addAgentOption(command) {
   return command.option("--agent <agentId>", "Agent ID (defaults to configured agent)");
 }
 function computerCommand() {
-  const command = new import_commander17.Command("computer").description("Manage an agent's one persistent cloud computer");
+  const command = new import_commander18.Command("computer").description("Manage an agent's one persistent cloud computer");
   addAgentOption(command.command("status").description("Show persistent cloud computer status")).option("--json", "Output as JSON").action(async (opts) => {
     let agentId;
     try {
@@ -4745,8 +4857,8 @@ async function pickAgentInteractively(action) {
   }
   return agentId;
 }
-var program = new import_commander18.Command();
-program.name("agc").description("Agent Commons CLI \u2014 interact with the Agent Commons platform").version("0.2.4", "-v, --version").action(async () => {
+var program = new import_commander19.Command();
+program.name("agc").description("Agent Commons CLI \u2014 interact with the Agent Commons platform").version("0.3.0", "-v, --version").action(async () => {
   await interactiveMenu();
 });
 program.hook("preAction", async (_thisCommand, actionCommand) => {
@@ -4773,6 +4885,8 @@ program.addCommand(modelsCommand());
 program.addCommand(memoryCommand());
 program.addCommand(usageCommand());
 program.addCommand(logsCommand());
+program.addCommand(creditsCommand());
+program.addCommand(billingCommand());
 program.on("command:*", () => {
   console.error(
     `

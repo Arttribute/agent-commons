@@ -61,6 +61,23 @@ Parameters:
     Type: String
     Default: "true"
     AllowedValues: ["true", "false"]
+  WebSearchProvider:
+    Type: String
+    Default: none
+    AllowedValues: [none, brave, searxng]
+    Description: Enables Brave API search or a separately hosted SearXNG instance.
+  SearchImageUri:
+    Type: String
+    Default: ""
+    Description: Authenticated SearXNG image; required when WebSearchProvider is searxng.
+  SearchSharedKey:
+    Type: String
+    Default: ""
+    NoEcho: true
+    Description: Ephemeral shared key used only between commons-api and SearXNG.
+  SearxngSearchCostUsdPerCall:
+    Type: String
+    Default: "0"
   BraveSearchCostUsdPerCall:
     Type: String
     Default: "0.005"
@@ -77,8 +94,40 @@ Parameters:
 Conditions:
   IsProduction: !Equals [!Ref Environment, production]
   IsXOAuthEnabled: !Equals [!Ref XOAuthEnabled, "true"]
+  IsBraveSearch: !Equals [!Ref WebSearchProvider, brave]
+  IsSearxngSearch: !Equals [!Ref WebSearchProvider, searxng]
 
 Resources:
+  SearchService:
+    Type: AWS::ECS::ExpressGatewayService
+    Condition: IsSearxngSearch
+    Properties:
+      ServiceName: !Sub agent-commons-search-${Environment}
+      Cluster: default
+      ExecutionRoleArn: !Ref ExecutionRoleArn
+      InfrastructureRoleArn: !Ref InfrastructureRoleArn
+      Cpu: "512"
+      Memory: "1024"
+      HealthCheckPath: /healthz
+      PrimaryContainer:
+        Image: !Ref SearchImageUri
+        ContainerPort: 8080
+        Environment:
+          - Name: SEARXNG_API_KEY
+            Value: !Ref SearchSharedKey
+          - Name: SEARXNG_SECRET
+            Value: !Ref SearchSharedKey
+      ScalingTarget:
+        MinTaskCount: 1
+        MaxTaskCount: 1
+        AutoScalingMetric: AVERAGE_CPU
+        AutoScalingTargetValue: 70
+      Tags:
+        - Key: Organization
+          Value: agent-commons
+        - Key: Project
+          Value: agent-commons-search
+
   ApiService:
     Type: AWS::ECS::ExpressGatewayService
     Properties:
@@ -130,6 +179,31 @@ Resources:
             Value: !Ref CreditGiftDailyLimit
           - Name: DISTRIBUTED_RATE_LIMIT_ENABLED
             Value: !Ref DistributedRateLimitEnabled
+          - !If
+            - IsBraveSearch
+            - Name: WEB_SEARCH_PROVIDER
+              Value: brave
+            - !Ref AWS::NoValue
+          - !If
+            - IsSearxngSearch
+            - Name: WEB_SEARCH_PROVIDER
+              Value: searxng
+            - !Ref AWS::NoValue
+          - !If
+            - IsSearxngSearch
+            - Name: SEARXNG_BASE_URL
+              Value: !Sub "https://${SearchService.Endpoint}"
+            - !Ref AWS::NoValue
+          - !If
+            - IsSearxngSearch
+            - Name: SEARXNG_API_KEY
+              Value: !Ref SearchSharedKey
+            - !Ref AWS::NoValue
+          - !If
+            - IsSearxngSearch
+            - Name: SEARXNG_SEARCH_COST_USD_PER_CALL
+              Value: !Ref SearxngSearchCostUsdPerCall
+            - !Ref AWS::NoValue
           - Name: BRAVE_SEARCH_COST_USD_PER_CALL
             Value: !Ref BraveSearchCostUsdPerCall
           - Name: OPENAI_TRANSCRIPTION_COST_USD_PER_MINUTE
@@ -164,6 +238,11 @@ Resources:
             ValueFrom: !Sub "${RuntimeSecretArn}:WALLET_PRIVATE_KEY::"
           - Name: OPENAI_API_KEY
             ValueFrom: !Sub "${RuntimeSecretArn}:OPENAI_API_KEY::"
+          - !If
+            - IsBraveSearch
+            - Name: BRAVE_SEARCH_API_KEY
+              ValueFrom: !Sub "${RuntimeSecretArn}:BRAVE_SEARCH_API_KEY::"
+            - !Ref AWS::NoValue
           - Name: GRAPH_API_KEY
             ValueFrom: !Sub "${RuntimeSecretArn}:GRAPH_API_KEY::"
           - Name: SUPABASE_URL
@@ -266,3 +345,9 @@ Outputs:
     Value: !GetAtt ApiService.Endpoint
   ServiceArn:
     Value: !GetAtt ApiService.ServiceArn
+  SearchEndpoint:
+    Condition: IsSearxngSearch
+    Value: !GetAtt SearchService.Endpoint
+  SearchServiceArn:
+    Condition: IsSearxngSearch
+    Value: !GetAtt SearchService.ServiceArn

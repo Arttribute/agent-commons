@@ -50,6 +50,28 @@ infra/aws/import-runtime-secrets.sh apps/commons-api/.env \
   agent-commons/commons-api/production
 ```
 
+Live web search can use either Brave or a self-hosted SearXNG instance:
+
+```dotenv
+# Managed provider
+BRAVE_SEARCH_API_KEY=...
+
+# Or self-hosted (JSON must be enabled in SearXNG search.formats)
+WEB_SEARCH_PROVIDER=searxng
+SEARXNG_BASE_URL=https://search.internal.example
+SEARXNG_SEARCH_COST_USD_PER_CALL=0
+```
+
+Staging defaults to the repository's authenticated SearXNG container and
+production defaults to `none`. The deployment builds both API and search
+images, rotates an ephemeral shared key, deploys SearXNG as a separate ECS
+Express service, and smoke-tests its JSON endpoint. Set the CodeBuild
+`WEB_SEARCH_PROVIDER` environment variable only to override this default.
+
+The ECS template only injects the Brave secret when Brave is explicitly
+selected. `SEARXNG_SEARCH_COST_USD_PER_CALL` can optionally meter measured
+self-hosted infrastructure cost; it defaults to zero.
+
 ## Deploy and cut over
 
 Run the `Deploy commons-api to AWS` workflow. It builds the API image, pushes it

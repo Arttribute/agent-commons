@@ -15,18 +15,19 @@ import { EthereumToolService } from './tools/ethereum-tool.service';
 import { AgentService } from '~/agent/agent.service';
 import { ExternalRuntimeService } from '~/agent/runtime/external-runtime.service';
 import { Logger } from '@nestjs/common';
+import { ToolInvocationService } from './tool-invocation.service';
 
 /* ── Workflow with a single approval node ──────────────────────────────── */
 
 function approvalWorkflowDef() {
   return {
     nodes: [
-      { id: 'n-in',       type: 'input',    data: {} },
+      { id: 'n-in', type: 'input', data: {} },
       { id: 'n-approval', type: 'approval', data: { prompt: 'Please review' } },
-      { id: 'n-out',      type: 'output',   data: {} },
+      { id: 'n-out', type: 'output', data: {} },
     ],
     edges: [
-      { id: 'e1', source: 'n-in',       target: 'n-approval' },
+      { id: 'e1', source: 'n-in', target: 'n-approval' },
       { id: 'e2', source: 'n-approval', target: 'n-out' },
     ],
   };
@@ -45,11 +46,11 @@ function makeDb() {
   const insertValues = jest
     .fn()
     .mockReturnValue({ returning: insertReturning });
-  const insert          = jest.fn().mockReturnValue({ values: insertValues });
+  const insert = jest.fn().mockReturnValue({ values: insertValues });
 
   // Update captures state transitions
   const updateWhere = jest.fn().mockImplementation(async () => undefined);
-  const updateSet   = jest.fn().mockImplementation((v: any) => {
+  const updateSet = jest.fn().mockImplementation((v: any) => {
     if (v.status) states.push(v.status);
     if (v.pausedAtNode) pausedData = { ...v };
     return { where: updateWhere };
@@ -64,20 +65,20 @@ function makeDb() {
 
   // Paused execution returned by query for approve/reject
   const pausedExecution = () => ({
-    executionId:       'exec-hitl',
-    status:            'awaiting_approval',
-    approvalToken:     'tok-test',
-    pausedAtNode:      'n-approval',
+    executionId: 'exec-hitl',
+    status: 'awaiting_approval',
+    approvalToken: 'tok-test',
+    pausedAtNode: 'n-approval',
     pausedNodeOutputs: { 'n-in': { result: 'input processed' } },
-    inputData:         { x: 1 },
-    agentId:           null,
-    workflow:          { definition: approvalWorkflowDef() },
+    inputData: { x: 1 },
+    agentId: null,
+    workflow: { definition: approvalWorkflowDef() },
   });
 
   const query = {
-    workflow:          { findFirst: jest.fn().mockResolvedValue(workflowRow) },
+    workflow: { findFirst: jest.fn().mockResolvedValue(workflowRow) },
     workflowExecution: { findFirst: jest.fn().mockResolvedValue(null) },
-    tool:              { findFirst: jest.fn().mockResolvedValue(null) },
+    tool: { findFirst: jest.fn().mockResolvedValue(null) },
   };
 
   return {
@@ -103,7 +104,7 @@ describe('HITL integration — WorkflowExecutorService', () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         WorkflowExecutorService,
-        { provide: DatabaseService,     useValue: db },
+        { provide: DatabaseService, useValue: db },
         {
           provide: ToolLoaderService,
           useValue: { loadTool: jest.fn().mockResolvedValue(null) },
@@ -115,10 +116,14 @@ describe('HITL integration — WorkflowExecutorService', () => {
             getStaticTools: jest.fn().mockReturnValue([]),
           },
         },
-        { provide: CommonToolService,   useValue: {} },
+        { provide: CommonToolService, useValue: {} },
         { provide: EthereumToolService, useValue: {} },
-        { provide: AgentService,        useValue: { runAgent: jest.fn() } },
+        { provide: AgentService, useValue: { runAgent: jest.fn() } },
         { provide: ExternalRuntimeService, useValue: { runAgent: jest.fn() } },
+        {
+          provide: ToolInvocationService,
+          useValue: { invokeDynamicTool: jest.fn() },
+        },
       ],
     }).compile();
 
@@ -137,17 +142,17 @@ describe('HITL integration — WorkflowExecutorService', () => {
       jest
         .spyOn(service as any, 'executeGraphWalker')
         .mockImplementation(async () => {
-        // Simulate what the real walker does: update DB to awaiting_approval
+          // Simulate what the real walker does: update DB to awaiting_approval
           await db
             .update(null)
             .set({
-          status: 'awaiting_approval',
-          approvalToken: 'tok-test',
-          pausedAtNode: 'n-approval',
-          pausedNodeOutputs: { 'n-in': { result: 'done' } },
+              status: 'awaiting_approval',
+              approvalToken: 'tok-test',
+              pausedAtNode: 'n-approval',
+              pausedNodeOutputs: { 'n-in': { result: 'done' } },
             })
             .where(null);
-      });
+        });
 
       const execId = await service.executeWorkflow({
         workflowId: 'wf-hitl',
@@ -172,9 +177,9 @@ describe('HITL integration — WorkflowExecutorService', () => {
       const walkerSpy = jest
         .spyOn(service as any, 'executeGraphWalker')
         .mockImplementation(async () => {
-        // Simulate completion after resume
-        await db.update(null).set({ status: 'completed' }).where(null);
-      });
+          // Simulate completion after resume
+          await db.update(null).set({ status: 'completed' }).where(null);
+        });
 
       await service.approveExecution('exec-hitl', 'tok-test', {
         note: 'approved',
@@ -184,15 +189,15 @@ describe('HITL integration — WorkflowExecutorService', () => {
       expect(db._states).toContain('running');
       expect(walkerSpy).toHaveBeenCalledWith(
         'exec-hitl',
-        expect.any(Object),   // workflow definition
-        undefined,             // agentId (null coerced to undefined in the service)
-        undefined,             // userId
-        { x: 1 },             // inputData
+        expect.any(Object), // workflow definition
+        undefined, // agentId (null coerced to undefined in the service)
+        undefined, // userId
+        { x: 1 }, // inputData
         expect.objectContaining({
           'n-approval': expect.objectContaining({ approved: true }),
         }),
-        'n-approval',          // resumeFromNode
-        0,                     // workflowDepth (top-level resume)
+        'n-approval', // resumeFromNode
+        0, // workflowDepth (top-level resume)
       );
     });
 
@@ -213,9 +218,9 @@ describe('HITL integration — WorkflowExecutorService', () => {
             _in: any,
             resumeOutputs: any,
           ) => {
-          capturedResumeOutputs = resumeOutputs ?? {};
-        },
-      );
+            capturedResumeOutputs = resumeOutputs ?? {};
+          },
+        );
 
       await service.approveExecution('exec-hitl', 'tok-test', {
         reviewer: 'alice',
@@ -278,10 +283,10 @@ describe('HITL integration — WorkflowExecutorService', () => {
   describe('executeApprovalNode()', () => {
     it('throws HumanApprovalPauseError synchronously when invoked by the walker', async () => {
       const context = {
-        nodeId:  'n-approval',
-        toolId:  undefined,
-        inputs:  {},
-        config:  { prompt: 'Review this action' },
+        nodeId: 'n-approval',
+        toolId: undefined,
+        inputs: {},
+        config: { prompt: 'Review this action' },
         nodeType: 'approval',
       };
 

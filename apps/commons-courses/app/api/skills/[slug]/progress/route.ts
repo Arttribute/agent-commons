@@ -42,6 +42,16 @@ type SkillProgressSignal = {
   status: "pending" | "verified";
 };
 
+type SandboxAgentRecord = {
+  ownerUserId?: string;
+  owner?: string;
+  metadata?: {
+    source?: string;
+    challengeId?: string;
+    courseSlug?: string;
+  };
+};
+
 export async function GET(
   _req: NextRequest,
   { params }: { params: Promise<{ slug: string }> },
@@ -239,11 +249,11 @@ export async function POST(
         { status: 409 },
       );
     }
-    let createdAgent: { data?: Record<string, any> };
+    let createdAgent: { data?: SandboxAgentRecord };
     try {
       createdAgent = (await client.agents.get(
         body.sandboxCompletion.agentId,
-      )) as { data?: Record<string, any> };
+      )) as { data?: SandboxAgentRecord };
     } catch {
       return NextResponse.json(
         { error: "The sandbox completion could not be verified." },

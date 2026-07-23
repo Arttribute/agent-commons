@@ -11,6 +11,7 @@ import { AgentService } from '~/agent/agent.service';
 import { ExternalRuntimeService } from '~/agent/runtime/external-runtime.service';
 import { DatabaseService } from '~/modules/database/database.service';
 import { Logger } from '@nestjs/common';
+import { ToolInvocationService } from './tool-invocation.service';
 
 /**
  * Integration tests for the complete workflow, task, and tool orchestration system
@@ -52,13 +53,11 @@ describe('Workflow Integration Tests', () => {
           findMany: jest.fn(),
         },
         tool: {
-          findFirst: jest
-            .fn()
-            .mockResolvedValue({
-              toolId: 'mock-tool',
-              name: 'mock-tool',
-              description: 'mock',
-            }),
+          findFirst: jest.fn().mockResolvedValue({
+            toolId: 'mock-tool',
+            name: 'mock-tool',
+            description: 'mock',
+          }),
           findMany: jest.fn().mockResolvedValue([]),
         },
         toolPermission: {
@@ -97,10 +96,14 @@ describe('Workflow Integration Tests', () => {
             getStaticTools: jest.fn().mockReturnValue([]),
           },
         },
-        { provide: CommonToolService,   useValue: {} },
+        { provide: CommonToolService, useValue: {} },
         { provide: EthereumToolService, useValue: {} },
-        { provide: AgentService,        useValue: { runAgent: jest.fn() } },
+        { provide: AgentService, useValue: { runAgent: jest.fn() } },
         { provide: ExternalRuntimeService, useValue: { runAgent: jest.fn() } },
+        {
+          provide: ToolInvocationService,
+          useValue: { invokeDynamicTool: jest.fn() },
+        },
       ],
     }).compile();
 
@@ -130,6 +133,7 @@ describe('Workflow Integration Tests', () => {
             type: 'tool' as const,
             position: { x: 0, y: 0 },
             toolId: 'http-get-tool',
+            toolName: 'httpGet',
             config: { url: 'https://api.example.com/data' },
           },
           {
@@ -137,6 +141,7 @@ describe('Workflow Integration Tests', () => {
             type: 'tool' as const,
             position: { x: 100, y: 0 },
             toolId: 'json-parser-tool',
+            toolName: 'parseJson',
             config: {},
           },
           {
@@ -144,6 +149,7 @@ describe('Workflow Integration Tests', () => {
             type: 'tool' as const,
             position: { x: 200, y: 0 },
             toolId: 'database-insert-tool',
+            toolName: 'databaseInsert',
             config: {},
           },
         ],
@@ -240,30 +246,35 @@ describe('Workflow Integration Tests', () => {
             position: { x: 0, y: 0 },
             type: 'tool' as const,
             toolId: 'trigger-tool',
+            toolName: 'trigger',
           },
           {
             id: 'fetch-api1',
             position: { x: 0, y: 0 },
             type: 'tool' as const,
             toolId: 'http-get-tool',
+            toolName: 'httpGet',
           },
           {
             id: 'fetch-api2',
             position: { x: 0, y: 0 },
             type: 'tool' as const,
             toolId: 'http-get-tool',
+            toolName: 'httpGet',
           },
           {
             id: 'fetch-api3',
             position: { x: 0, y: 0 },
             type: 'tool' as const,
             toolId: 'http-get-tool',
+            toolName: 'httpGet',
           },
           {
             id: 'merge',
             position: { x: 0, y: 0 },
             type: 'tool' as const,
             toolId: 'merge-tool',
+            toolName: 'merge',
           },
         ],
         edges: [
