@@ -1,5 +1,26 @@
 # @agent-commons/cli
 
+## 0.4.0
+
+### Minor Changes
+
+- 94c1e85: Add the native Commons Copilot API surface and make `agc chat` discover the user's platform-provisioned default agent when no explicit agent is configured.
+- 4f02f4c: Add billing and feature-flag surfaces.
+
+  SDK: `client.billing` (subscription, entitlements, subscribe, topup, portal) and
+  `client.flags` (all, evaluate), plus `SubscriptionInfo`, `PlanEntitlements`,
+  `PlanKey`, and `FlagEvaluation` types.
+
+  CLI: `agc credits` (balance, ledger) and `agc billing` (status, upgrade, topup).
+
+### Patch Changes
+
+- Updated dependencies [94c1e85]
+- Updated dependencies [4f02f4c]
+- Updated dependencies [8c43cb9]
+- Updated dependencies [4506380]
+  - @agent-commons/sdk@0.5.0
+
 ## 0.3.0
 
 ### Minor Changes
