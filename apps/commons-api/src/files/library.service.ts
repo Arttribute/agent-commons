@@ -161,7 +161,7 @@ export class LibraryService {
       agentId:
         principal.principalType === 'agent' ? principal.principalId : undefined,
       ownerId:
-        principal.principalType === 'user' ? principal.principalId : undefined,
+        principal.principalType === 'agent' ? undefined : principal.principalId,
       workspaceId: principal.workspaceId ?? undefined,
     };
     const [content, download, inline] = await Promise.all([
