@@ -1,5 +1,11 @@
 import JSZip from 'jszip';
-import { classifyFile, FilesService, normalizeMimeType } from './files.service';
+import { PDFDict, PDFDocument, PDFName, StandardFonts } from 'pdf-lib';
+import {
+  classifyFile,
+  FilesService,
+  normalizeMimeType,
+  revisePdfBufferPreservingLayout,
+} from './files.service';
 
 describe('FilesService document support', () => {
   const service = new FilesService({} as any, {} as any, {} as any);
@@ -114,5 +120,63 @@ describe('FilesService document support', () => {
       agentId: 'agent-test',
     })) as any;
     expect(pdf.buffer.subarray(0, 5).toString()).toBe('%PDF-');
+  });
+
+  it('revises PDF text without replacing the source page or font resources', async () => {
+    const source = await PDFDocument.create();
+    const page = source.addPage([612, 792]);
+    const font = await source.embedFont(StandardFonts.TimesRoman);
+    page.drawText('Original project statement', {
+      x: 72,
+      y: 700,
+      size: 12,
+      font,
+    });
+    const sourceBuffer = Buffer.from(await source.save());
+    const pdfjsPage = {
+      getTextContent: async () => ({
+        items: [
+          {
+            str: 'Original project statement',
+            fontName: 'g_d0_f1',
+            transform: [12, 0, 0, 12, 72, 700],
+            width: font.widthOfTextAtSize('Original project statement', 12),
+            height: 12,
+          },
+        ],
+      }),
+      getOperatorList: async () => ({}),
+      commonObjs: {
+        get: () => ({ name: StandardFonts.TimesRoman }),
+      },
+    };
+
+    const revisedBuffer = await revisePdfBufferPreservingLayout(
+      sourceBuffer,
+      [
+        {
+          find: 'Original project statement',
+          replace: 'Revised project statement',
+        },
+      ],
+      {
+        document: {
+          numPages: 1,
+          getPage: async () => pdfjsPage,
+        },
+      },
+    );
+    const revised = await PDFDocument.load(revisedBuffer);
+
+    expect(revised.getPageCount()).toBe(1);
+    expect(revised.getPage(0).getSize()).toEqual({ width: 612, height: 792 });
+    const fontResources = revised
+      .getPage(0)
+      .node.Resources()
+      ?.lookup(PDFName.of('Font'), PDFDict);
+    expect(fontResources ? [...fontResources.entries()].length : 0).toBe(1);
+    expect(revisedBuffer.subarray(0, 5).toString()).toBe('%PDF-');
+
+    expect(revisedBuffer).not.toEqual(sourceBuffer);
   });
 });

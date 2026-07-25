@@ -244,6 +244,16 @@ function ArtifactPreviewBody({ preview }: { preview: ArtifactPreview }) {
     );
   }
 
+  if (kind === "pdf" && inlineUrl) {
+    return (
+      <iframe
+        src={`${inlineUrl}#toolbar=0&navpanes=0&view=FitH`}
+        title={preview.name}
+        className="min-h-0 flex-1 border-0 bg-stone-100"
+      />
+    );
+  }
+
   if (kind === "pdf" && visualPages.length) {
     return (
       <div className="min-h-0 flex-1 overflow-y-auto bg-stone-200/70 p-4 sm:p-7">
@@ -269,16 +279,6 @@ function ArtifactPreviewBody({ preview }: { preview: ArtifactPreview }) {
           ) : null}
         </div>
       </div>
-    );
-  }
-
-  if (kind === "pdf" && inlineUrl) {
-    return (
-      <iframe
-        src={inlineUrl}
-        title={preview.name}
-        className="min-h-0 flex-1 border-0 bg-stone-100"
-      />
     );
   }
 

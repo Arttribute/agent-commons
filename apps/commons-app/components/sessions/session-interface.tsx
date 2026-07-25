@@ -646,7 +646,15 @@ export default function SessionInterfaceImproved({
           onClose={() => setOpenArtifact(null)}
           onRevise={(artifact) => {
             const name = artifact.name || "this artifact";
-            setInputText(`Please revise "${name}": `);
+            const preservationNote =
+              artifact.kind === "pdf" ||
+              artifact.mimeType === "application/pdf" ||
+              name.toLowerCase().endsWith(".pdf")
+                ? " Preserve its existing fonts, styling, spacing, and page layout."
+                : "";
+            setInputText(
+              `Please revise "${name}" (fileId: ${artifact.fileId}).${preservationNote} `,
+            );
           }}
         />
       )}

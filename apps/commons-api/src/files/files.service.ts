@@ -20,7 +20,25 @@ import mammoth from 'mammoth';
 import * as XLSX from 'xlsx';
 import JSZip from 'jszip';
 import PptxGenJS from 'pptxgenjs';
-import { PDFDocument, StandardFonts, rgb } from 'pdf-lib';
+import path from 'node:path';
+import {
+  PDFArray,
+  PDFDict,
+  PDFDocument,
+  PDFHexString,
+  PDFName,
+  PDFNumber,
+  StandardFonts,
+  beginText,
+  endText,
+  popGraphicsState,
+  pushGraphicsState,
+  rgb,
+  setFillingColor,
+  setFontAndSize,
+  setTextMatrix,
+  showText,
+} from 'pdf-lib';
 import { v4 as uuidv4 } from 'uuid';
 import { DatabaseService } from '~/modules/database/database.service';
 import { OpenAIService } from '~/modules/openai/openai.service';
@@ -71,6 +89,7 @@ type PersistFileInput = {
   source?: 'upload' | 'agent_generated';
   metadata?: Record<string, any>;
   storageProvider?: 's3' | 'ipfs';
+  extractedTextOverride?: string;
 };
 
 type ExtractedArtifact = {
@@ -96,6 +115,15 @@ type ExtractionResult = {
   artifacts: ExtractedArtifact[];
   status: 'ready' | 'partial' | 'failed';
   error?: string;
+};
+
+export type PdfTextReplacement = {
+  /** Exact text copied from readUploadedFile, without the page marker. */
+  find: string;
+  /** Replacement text. It must fit within the original text region. */
+  replace: string;
+  /** One-based occurrence when the same passage appears more than once. */
+  occurrence?: number;
 };
 
 const DEFAULT_MAX_TEXT_CHARS = 250_000;
@@ -444,11 +472,75 @@ export class FilesService {
   async createPdfFile(input: {
     fileName: string;
     title?: string;
-    sections: Array<{ heading?: string; body: string }>;
+    sections?: Array<{ heading?: string; body: string }>;
+    replacements?: PdfTextReplacement[];
     agentId: string;
     sessionId?: string;
     sourceFileId?: string;
   }) {
+    if (input.sourceFileId) {
+      if (!input.replacements?.length) {
+        throw new BadRequestException(
+          'PDF revisions require replacements with exact find and replace text so the original typography and layout can be preserved.',
+        );
+      }
+      const source = await this.getFileOrThrow(input.sourceFileId);
+      await this.assertCanAccess(source, {
+        agentId: input.agentId,
+        sessionId: input.sessionId,
+      });
+      if (
+        source.kind !== 'pdf' &&
+        source.mimeType !== 'application/pdf' &&
+        !source.name.toLowerCase().endsWith('.pdf')
+      ) {
+        throw new BadRequestException(
+          'sourceFileId must reference a PDF artifact',
+        );
+      }
+      const sourceBlobs = await this.getBlobs(source.itemId);
+      const original = sourceBlobs.find((blob) => blob.role === 'original');
+      if (!original) {
+        throw new NotFoundException('The source PDF is unavailable');
+      }
+      const sourceBuffer = await this.downloadBlobBuffer(original);
+      const buffer = await revisePdfBufferPreservingLayout(
+        sourceBuffer,
+        input.replacements.slice(0, 100),
+      );
+      const extractedTextBlob = sourceBlobs.find(
+        (blob) => blob.role === 'extracted_text',
+      );
+      const extractedTextOverride = extractedTextBlob
+        ? applyPdfTextReplacements(
+            await this.downloadText(
+              extractedTextBlob.storageBucket,
+              extractedTextBlob.storagePath,
+            ),
+            input.replacements,
+          )
+        : undefined;
+      return this.persistFile({
+        buffer,
+        originalName: ensureExtension(
+          sanitizeFileName(input.fileName || source.name),
+          '.pdf',
+        ),
+        mimeType: 'application/pdf',
+        agentId: input.agentId,
+        sessionId: input.sessionId,
+        ownerId: input.agentId,
+        ownerType: 'agent',
+        source: 'agent_generated',
+        extractedTextOverride,
+        metadata: {
+          ...versionMetadata(input.sourceFileId),
+          revisionMode: 'format_preserving_text_replacement',
+          replacementCount: input.replacements.length,
+        },
+      });
+    }
+
     if (!input.sections?.length) {
       throw new BadRequestException('A PDF requires at least one section');
     }
@@ -860,6 +952,9 @@ export class FilesService {
         error: message,
       };
     }
+    if (input.extractedTextOverride !== undefined) {
+      extraction.text = input.extractedTextOverride;
+    }
 
     const persistedArtifacts: PersistedArtifact[] = [];
     if (kind === 'image') {
@@ -1075,10 +1170,17 @@ export class FilesService {
 
   private async extractPdf(buffer: Buffer): Promise<ExtractionResult> {
     const pdfjs = (await import('pdfjs-dist/legacy/build/pdf.mjs')) as any;
+    const pdfjsRoot = path.dirname(require.resolve('pdfjs-dist/package.json'));
     const loadingTask = pdfjs.getDocument({
       data: new Uint8Array(buffer),
       disableWorker: true,
-      useSystemFonts: true,
+      // Docker images do not necessarily contain Helvetica/Times/Courier.
+      // Always point pdf.js at its packaged fonts so rendered artifacts match
+      // the actual PDF instead of silently dropping most glyphs.
+      useSystemFonts: false,
+      standardFontDataUrl: `${path.join(pdfjsRoot, 'standard_fonts')}${path.sep}`,
+      cMapUrl: `${path.join(pdfjsRoot, 'cmaps')}${path.sep}`,
+      cMapPacked: true,
     });
     const pdf = await loadingTask.promise;
     const maxTextPages = Math.min(
@@ -1656,6 +1758,28 @@ export class FilesService {
     return streamToString((response as any).Body);
   }
 
+  private async downloadBlobBuffer(blob: {
+    storageBucket: string;
+    storagePath: string;
+  }) {
+    if (blob.storageBucket === 'ipfs') {
+      const data = await this.pinata.fetchFile(blob.storagePath);
+      if (Buffer.isBuffer(data)) return data;
+      if (typeof data === 'string') return Buffer.from(data);
+      if (data instanceof Blob) return Buffer.from(await data.arrayBuffer());
+      if (data instanceof ArrayBuffer) return Buffer.from(data);
+      if (data instanceof Uint8Array) return Buffer.from(data);
+      throw new BadRequestException('The source PDF could not be downloaded');
+    }
+    const response = await this.s3().send(
+      new GetObjectCommand({
+        Bucket: blob.storageBucket,
+        Key: blob.storagePath,
+      }) as any,
+    );
+    return streamToBuffer((response as any).Body);
+  }
+
   private async createSignedUrl(bucket: string, path: string) {
     if (bucket === 'ipfs') {
       const gateway = (process.env.GATEWAY_URL || 'gateway.pinata.cloud')
@@ -2219,6 +2343,584 @@ function wrapPdfText(text: string, maxCharacters: number) {
   return lines;
 }
 
+type PdfTextItem = {
+  str: string;
+  fontName: string;
+  transform: number[];
+  width: number;
+  height: number;
+};
+
+type IndexedPdfTextItem = PdfTextItem & {
+  text: string;
+  start: number;
+  end: number;
+  x: number;
+  y: number;
+  fontSize: number;
+};
+
+type PdfPageTextIndex = {
+  pageNumber: number;
+  text: string;
+  items: IndexedPdfTextItem[];
+  pdfjsPage: any;
+};
+
+/**
+ * Makes bounded text edits directly on top of the source PDF. Untouched page
+ * content, geometry, graphics, and font resources remain byte-for-byte
+ * represented in the resulting document; replacement glyphs use the same
+ * embedded font resource as the selected source passage.
+ */
+export async function revisePdfBufferPreservingLayout(
+  sourceBuffer: Buffer,
+  replacements: PdfTextReplacement[],
+  locatorOverride?: {
+    document: any;
+    destroy?: () => Promise<void> | void;
+  },
+): Promise<Buffer> {
+  if (!replacements.length) {
+    throw new BadRequestException('At least one PDF replacement is required');
+  }
+
+  let sourcePdf: any;
+  let destroyLocator: (() => Promise<void> | void) | undefined;
+  if (locatorOverride) {
+    sourcePdf = locatorOverride.document;
+    destroyLocator = locatorOverride.destroy;
+  } else {
+    const pdfjs = (await import('pdfjs-dist/legacy/build/pdf.mjs')) as any;
+    const pdfjsRoot = path.dirname(require.resolve('pdfjs-dist/package.json'));
+    const loadingTask = pdfjs.getDocument({
+      data: new Uint8Array(sourceBuffer),
+      disableWorker: true,
+      useSystemFonts: false,
+      standardFontDataUrl: `${path.join(pdfjsRoot, 'standard_fonts')}${path.sep}`,
+      cMapUrl: `${path.join(pdfjsRoot, 'cmaps')}${path.sep}`,
+      cMapPacked: true,
+    });
+    sourcePdf = await loadingTask.promise;
+    destroyLocator = () => loadingTask.destroy?.();
+  }
+
+  try {
+    const document = await PDFDocument.load(sourceBuffer, {
+      updateMetadata: false,
+    });
+    if (document.getPageCount() !== sourcePdf.numPages) {
+      throw new BadRequestException('The source PDF page index is invalid');
+    }
+
+    const pages: PdfPageTextIndex[] = [];
+    for (
+      let pageNumber = 1;
+      pageNumber <= sourcePdf.numPages;
+      pageNumber += 1
+    ) {
+      const pdfjsPage = await sourcePdf.getPage(pageNumber);
+      const textContent = await pdfjsPage.getTextContent();
+      await pdfjsPage.getOperatorList();
+      pages.push(
+        indexPdfPageText(
+          pageNumber,
+          pdfjsPage,
+          textContent.items as PdfTextItem[],
+        ),
+      );
+    }
+
+    const occupiedItems = new Set<string>();
+    for (const replacement of replacements) {
+      const find = normalizePdfSearchText(replacement.find);
+      if (!find) {
+        throw new BadRequestException('PDF replacement find text is empty');
+      }
+      const match = findPdfTextMatch(pages, find, replacement.occurrence ?? 1);
+      const selectedItems = match.page.items.filter(
+        (item) => item.end > match.start && item.start < match.end,
+      );
+      if (!selectedItems.length) {
+        throw new BadRequestException(
+          `Could not map PDF text "${previewErrorText(find)}" to a visible text region`,
+        );
+      }
+
+      for (const item of selectedItems) {
+        const key = `${match.page.pageNumber}:${item.start}:${item.end}`;
+        if (occupiedItems.has(key)) {
+          throw new BadRequestException(
+            'PDF replacements overlap. Combine them into one larger exact replacement.',
+          );
+        }
+        occupiedItems.add(key);
+      }
+
+      const fontNames = new Set(selectedItems.map((item) => item.fontName));
+      if (fontNames.size !== 1) {
+        throw new BadRequestException(
+          `The passage "${previewErrorText(find)}" crosses differently styled text. Split it into one replacement per style.`,
+        );
+      }
+      if (
+        selectedItems.some(
+          (item) =>
+            Math.abs(item.transform[1] ?? 0) > 0.01 ||
+            Math.abs(item.transform[2] ?? 0) > 0.01,
+        )
+      ) {
+        throw new BadRequestException(
+          'Rotated PDF text cannot yet be revised without changing its layout.',
+        );
+      }
+
+      const first = selectedItems[0];
+      const last = selectedItems[selectedItems.length - 1];
+      const prefix =
+        match.start > first.start
+          ? first.text.slice(0, match.start - first.start)
+          : '';
+      const suffix =
+        match.end < last.end ? last.text.slice(match.end - last.start) : '';
+      const replacementText = normalizePdfReplacementText(
+        [prefix, replacement.replace, suffix].filter(Boolean).join(' '),
+      );
+      const targetPage = document.getPage(match.page.pageNumber - 1);
+      const font = resolvePdfFontResource(
+        targetPage,
+        match.page.pdfjsPage,
+        first.fontName,
+      );
+      const metrics = createPdfFontMetrics(font.dictionary);
+      assertPdfFontSupportsText(metrics, replacementText, font.baseFont);
+
+      const lines = groupPdfItemsIntoLines(selectedItems);
+      const fontSize = median(selectedItems.map((item) => item.fontSize));
+      if (
+        selectedItems.some(
+          (item) =>
+            Math.abs(item.fontSize - fontSize) > Math.max(0.5, fontSize * 0.08),
+        )
+      ) {
+        throw new BadRequestException(
+          `The passage "${previewErrorText(find)}" mixes font sizes. Split it into smaller replacements.`,
+        );
+      }
+      const minX = Math.min(...lines.map((line) => line.minX));
+      const rightMargin = Math.max(36, Math.min(minX, 90));
+      const maxLineWidth = targetPage.getWidth() - minX - rightMargin;
+      const wrapped = wrapTextToPdfWidth(
+        replacementText,
+        maxLineWidth,
+        fontSize,
+        metrics.widthOfTextAtSize,
+      );
+      if (wrapped.length > lines.length) {
+        throw new BadRequestException(
+          `The replacement for "${previewErrorText(find)}" needs ${wrapped.length} lines but the original region has ${lines.length}. Shorten the replacement or split the edit.`,
+        );
+      }
+
+      for (const line of lines) {
+        targetPage.drawRectangle({
+          x: Math.max(0, line.minX - 1.5),
+          y: Math.max(0, line.baseline - fontSize * 0.28),
+          width: Math.min(
+            targetPage.getWidth() - line.minX + 1.5,
+            line.maxX - line.minX + 3,
+          ),
+          height: fontSize * 1.24,
+          color: rgb(1, 1, 1),
+          borderWidth: 0,
+        });
+      }
+
+      for (let index = 0; index < wrapped.length; index += 1) {
+        const line = wrapped[index];
+        const baseline = lines[index]?.baseline;
+        if (baseline === undefined) {
+          throw new BadRequestException(
+            'The PDF replacement does not fit the original text region',
+          );
+        }
+        const operators = [
+          pushGraphicsState(),
+          beginText(),
+          setFillingColor(rgb(0, 0, 0)),
+          setFontAndSize(font.resourceName, fontSize),
+        ];
+        let cursorX = lines[index].minX;
+        const words = line.split(' ').filter(Boolean);
+        for (const word of words) {
+          operators.push(
+            setTextMatrix(1, 0, 0, 1, cursorX, baseline),
+            showText(metrics.encode(word)),
+          );
+          cursorX += metrics.widthOfTextAtSize(`${word} `, fontSize);
+        }
+        operators.push(endText(), popGraphicsState());
+        targetPage.pushOperators(...operators);
+      }
+    }
+
+    return Buffer.from(
+      await document.save({
+        useObjectStreams: false,
+        addDefaultPage: false,
+        updateFieldAppearances: false,
+      }),
+    );
+  } finally {
+    await destroyLocator?.();
+  }
+}
+
+function indexPdfPageText(
+  pageNumber: number,
+  pdfjsPage: any,
+  rawItems: PdfTextItem[],
+): PdfPageTextIndex {
+  let text = '';
+  const items: IndexedPdfTextItem[] = [];
+  for (const item of rawItems) {
+    if (!item || typeof item.str !== 'string') continue;
+    const normalized = normalizePdfSearchText(item.str);
+    if (!normalized) continue;
+    if (text) text += ' ';
+    const start = text.length;
+    text += normalized;
+    const fontSize = Math.hypot(
+      Number(item.transform?.[0] ?? 0),
+      Number(item.transform?.[1] ?? 0),
+    );
+    items.push({
+      ...item,
+      text: normalized,
+      start,
+      end: text.length,
+      x: Number(item.transform?.[4] ?? 0),
+      y: Number(item.transform?.[5] ?? 0),
+      fontSize: fontSize || Number(item.height) || 12,
+    });
+  }
+  return { pageNumber, text, items, pdfjsPage };
+}
+
+function findPdfTextMatch(
+  pages: PdfPageTextIndex[],
+  find: string,
+  requestedOccurrence: number,
+) {
+  const occurrence = Math.max(1, Math.floor(requestedOccurrence));
+  let seen = 0;
+  for (const page of pages) {
+    let offset = 0;
+    while (offset <= page.text.length - find.length) {
+      const start = page.text.indexOf(find, offset);
+      if (start < 0) break;
+      seen += 1;
+      if (seen === occurrence) {
+        return { page, start, end: start + find.length };
+      }
+      offset = start + Math.max(1, find.length);
+    }
+  }
+  throw new BadRequestException(
+    `Could not find occurrence ${occurrence} of "${previewErrorText(find)}" in the source PDF. Copy the exact passage from readUploadedFile.`,
+  );
+}
+
+function resolvePdfFontResource(
+  page: any,
+  pdfjsPage: any,
+  pdfjsFontName: string,
+) {
+  const pdfjsFont = pdfjsPage.commonObjs.get(pdfjsFontName);
+  const expectedName = String(pdfjsFont?.name || '').replace(/^\//, '');
+  const resources = page.node.Resources();
+  const fonts = resources?.lookupMaybe(PDFName.of('Font'), PDFDict);
+  if (!fonts) {
+    throw new BadRequestException('The selected PDF text has no font resource');
+  }
+  for (const [resourceName, value] of fonts.entries()) {
+    const dictionary = page.doc.context.lookup(value, PDFDict);
+    const baseFont = dictionary.lookupMaybe(PDFName.of('BaseFont'), PDFName);
+    const baseFontName = baseFont?.decodeText() || '';
+    if (
+      baseFontName === expectedName ||
+      removePdfFontSubset(baseFontName) === removePdfFontSubset(expectedName)
+    ) {
+      return {
+        resourceName,
+        dictionary,
+        baseFont: baseFontName || expectedName || resourceName.decodeText(),
+      };
+    }
+  }
+  throw new BadRequestException(
+    `Could not reuse the original PDF font "${expectedName || pdfjsFontName}"`,
+  );
+}
+
+function createPdfFontMetrics(dictionary: PDFDict) {
+  const firstChar =
+    dictionary.lookupMaybe(PDFName.of('FirstChar'), PDFNumber)?.asNumber() ?? 0;
+  const widths = dictionary.lookupMaybe(PDFName.of('Widths'), PDFArray);
+  const descriptor = dictionary.lookupMaybe(
+    PDFName.of('FontDescriptor'),
+    PDFDict,
+  );
+  const missingWidth =
+    descriptor
+      ?.lookupMaybe(PDFName.of('MissingWidth'), PDFNumber)
+      ?.asNumber() ?? 500;
+  const charSetValue = descriptor?.lookup(PDFName.of('CharSet')) as
+    | { decodeText?: () => string }
+    | undefined;
+  const charSet = charSetValue?.decodeText?.().split('/').filter(Boolean);
+
+  const widthAtCode = (code: number) => {
+    if (!widths) return code === 32 ? 278 : 500;
+    const index = code - firstChar;
+    if (index < 0 || index >= widths.size()) return missingWidth;
+    return widths.lookup(index, PDFNumber).asNumber();
+  };
+  return {
+    charSet: charSet ? new Set(charSet) : undefined,
+    encode(text: string) {
+      return PDFHexString.of(
+        Buffer.from(text, 'latin1').toString('hex').toUpperCase(),
+      );
+    },
+    widthOfTextAtSize(text: string, size: number) {
+      return (
+        [...text].reduce(
+          (total, character) => total + widthAtCode(character.charCodeAt(0)),
+          0,
+        ) *
+        (size / 1000)
+      );
+    },
+  };
+}
+
+function assertPdfFontSupportsText(
+  metrics: ReturnType<typeof createPdfFontMetrics>,
+  text: string,
+  fontName: string,
+) {
+  if (!metrics.charSet) return;
+  const missing = new Set<string>();
+  for (const character of text) {
+    if (character === ' ') continue;
+    const glyph = pdfGlyphName(character);
+    if (!glyph || !metrics.charSet.has(glyph)) missing.add(character);
+  }
+  if (missing.size) {
+    throw new BadRequestException(
+      `The source PDF embeds a subset of ${fontName} without these replacement glyphs: ${[...missing].join(' ')}. Rephrase the replacement using characters already present in the document so the original font can be preserved.`,
+    );
+  }
+}
+
+function groupPdfItemsIntoLines(items: IndexedPdfTextItem[]) {
+  const sorted = [...items].sort((left, right) => {
+    if (
+      Math.abs(right.y - left.y) >
+      Math.max(left.fontSize, right.fontSize) * 0.45
+    ) {
+      return right.y - left.y;
+    }
+    return left.x - right.x;
+  });
+  const lines: Array<{
+    baseline: number;
+    minX: number;
+    maxX: number;
+    items: IndexedPdfTextItem[];
+  }> = [];
+  for (const item of sorted) {
+    const line = lines.find(
+      (candidate) =>
+        Math.abs(candidate.baseline - item.y) <=
+        Math.max(1.5, item.fontSize * 0.35),
+    );
+    if (line) {
+      line.items.push(item);
+      line.minX = Math.min(line.minX, item.x);
+      line.maxX = Math.max(line.maxX, item.x + item.width);
+    } else {
+      lines.push({
+        baseline: item.y,
+        minX: item.x,
+        maxX: item.x + item.width,
+        items: [item],
+      });
+    }
+  }
+  return lines.sort((left, right) => right.baseline - left.baseline);
+}
+
+function wrapTextToPdfWidth(
+  text: string,
+  maxWidth: number,
+  fontSize: number,
+  widthOfTextAtSize: (text: string, size: number) => number,
+) {
+  const words = text.split(/\s+/).filter(Boolean);
+  if (!words.length) return [''];
+  const lines: string[] = [];
+  let current = '';
+  for (const word of words) {
+    if (widthOfTextAtSize(word, fontSize) > maxWidth) {
+      throw new BadRequestException(
+        `The word "${previewErrorText(word)}" is wider than the original PDF text region`,
+      );
+    }
+    const candidate = current ? `${current} ${word}` : word;
+    if (current && widthOfTextAtSize(candidate, fontSize) > maxWidth) {
+      lines.push(current);
+      current = word;
+    } else {
+      current = candidate;
+    }
+  }
+  if (current) lines.push(current);
+  return lines;
+}
+
+function normalizePdfSearchText(text: string) {
+  return String(text ?? '')
+    .replace(/\u00a0/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function normalizePdfReplacementText(text: string) {
+  return normalizePdfSearchText(text)
+    .replace(/[‘’]/g, "'")
+    .replace(/[“”]/g, '"')
+    .replace(/[–—]/g, '-')
+    .replace(/…/g, '...')
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^\x20-\x7e]/g, '');
+}
+
+function applyPdfTextReplacements(
+  extractedText: string,
+  replacements: PdfTextReplacement[],
+) {
+  let output = extractedText;
+  for (const replacement of replacements) {
+    const find = normalizePdfSearchText(replacement.find);
+    if (!find) continue;
+    const indexed = indexNormalizedText(output);
+    const match = findNthText(indexed.text, find, replacement.occurrence ?? 1);
+    if (!match) continue;
+    const start = indexed.originalOffsets[match.start] ?? 0;
+    const lastNormalizedIndex = match.end - 1;
+    const end =
+      (indexed.originalOffsets[lastNormalizedIndex] ?? output.length - 1) + 1;
+    output =
+      output.slice(0, start) +
+      normalizePdfReplacementText(replacement.replace) +
+      output.slice(end);
+  }
+  return output;
+}
+
+function indexNormalizedText(text: string) {
+  let normalized = '';
+  const originalOffsets: number[] = [];
+  let pendingSpace: number | undefined;
+  for (let index = 0; index < text.length; index += 1) {
+    const character = text[index];
+    if (/\s/.test(character)) {
+      if (normalized && pendingSpace === undefined) pendingSpace = index;
+      continue;
+    }
+    if (pendingSpace !== undefined) {
+      normalized += ' ';
+      originalOffsets.push(pendingSpace);
+      pendingSpace = undefined;
+    }
+    normalized += character;
+    originalOffsets.push(index);
+  }
+  return { text: normalized.trim(), originalOffsets };
+}
+
+function findNthText(text: string, find: string, requestedOccurrence: number) {
+  const occurrence = Math.max(1, Math.floor(requestedOccurrence));
+  let seen = 0;
+  let offset = 0;
+  while (offset <= text.length - find.length) {
+    const start = text.indexOf(find, offset);
+    if (start < 0) return null;
+    seen += 1;
+    if (seen === occurrence) return { start, end: start + find.length };
+    offset = start + Math.max(1, find.length);
+  }
+  return null;
+}
+
+function removePdfFontSubset(name: string) {
+  return name.replace(/^[A-Z]{6}\+/, '');
+}
+
+function median(values: number[]) {
+  const sorted = [...values].sort((left, right) => left - right);
+  const middle = Math.floor(sorted.length / 2);
+  return sorted.length % 2
+    ? sorted[middle]
+    : (sorted[middle - 1] + sorted[middle]) / 2;
+}
+
+function previewErrorText(text: string) {
+  return text.length > 72 ? `${text.slice(0, 69)}...` : text;
+}
+
+function pdfGlyphName(character: string) {
+  if (/^[A-Za-z]$/.test(character)) return character;
+  const names: Record<string, string> = {
+    '0': 'zero',
+    '1': 'one',
+    '2': 'two',
+    '3': 'three',
+    '4': 'four',
+    '5': 'five',
+    '6': 'six',
+    '7': 'seven',
+    '8': 'eight',
+    '9': 'nine',
+    "'": 'quoteright',
+    '"': 'quotedbl',
+    ',': 'comma',
+    '-': 'hyphen',
+    '.': 'period',
+    '/': 'slash',
+    ':': 'colon',
+    ';': 'semicolon',
+    '?': 'question',
+    '!': 'exclam',
+    '@': 'at',
+    '&': 'ampersand',
+    '(': 'parenleft',
+    ')': 'parenright',
+    '[': 'bracketleft',
+    ']': 'bracketright',
+    '+': 'plus',
+    '=': 'equal',
+    '%': 'percent',
+    '#': 'numbersign',
+    '|': 'bar',
+    _: 'underscore',
+  };
+  return names[character];
+}
+
 async function buildDocxBuffer(input: {
   title?: string;
   sections: Array<{
@@ -2430,5 +3132,26 @@ async function streamToString(body: any): Promise<string> {
     });
     body.on('error', reject);
     body.on('end', () => resolve(Buffer.concat(chunks).toString('utf8')));
+  });
+}
+
+async function streamToBuffer(body: any): Promise<Buffer> {
+  if (!body) return Buffer.alloc(0);
+  if (typeof body.transformToByteArray === 'function') {
+    return Buffer.from(await body.transformToByteArray());
+  }
+  if (body instanceof Uint8Array) return Buffer.from(body);
+  return new Promise((resolve, reject) => {
+    const chunks: Buffer[] = [];
+    body.on('data', (chunk: Buffer | Uint8Array | string) => {
+      if (Buffer.isBuffer(chunk)) chunks.push(chunk);
+      else if (typeof chunk === 'string') chunks.push(Buffer.from(chunk));
+      else
+        chunks.push(
+          Buffer.from(chunk.buffer, chunk.byteOffset, chunk.byteLength),
+        );
+    });
+    body.on('error', reject);
+    body.on('end', () => resolve(Buffer.concat(chunks)));
   });
 }

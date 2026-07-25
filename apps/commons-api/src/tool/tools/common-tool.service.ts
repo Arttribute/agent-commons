@@ -508,11 +508,19 @@ export interface CommonTool {
     sessionId?: string;
   }): Promise<any>;
 
-  /** Create a clean paginated PDF document. */
+  /**
+   * Create a clean PDF, or preserve an existing PDF's layout with exact text
+   * replacements when sourceFileId is supplied.
+   */
   createPdfFile(props: {
     fileName: string;
     title?: string;
-    sections: Array<{ heading?: string; body: string }>;
+    sections?: Array<{ heading?: string; body: string }>;
+    replacements?: Array<{
+      find: string;
+      replace: string;
+      occurrence?: number;
+    }>;
     sourceFileId?: string;
     agentId: string;
     sessionId?: string;
@@ -1533,7 +1541,12 @@ export class CommonToolService {
   async createPdfFile(props: {
     fileName: string;
     title?: string;
-    sections: Array<{ heading?: string; body: string }>;
+    sections?: Array<{ heading?: string; body: string }>;
+    replacements?: Array<{
+      find: string;
+      replace: string;
+      occurrence?: number;
+    }>;
     sourceFileId?: string;
     agentId: string;
     sessionId?: string;
