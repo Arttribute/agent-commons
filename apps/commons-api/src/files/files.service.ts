@@ -2,6 +2,7 @@ import * as schema from '#/models/schema';
 import {
   BadRequestException,
   Injectable,
+  InternalServerErrorException,
   Logger,
   NotFoundException,
 } from '@nestjs/common';
@@ -418,95 +419,120 @@ export class FilesService {
       }
     }
 
-    const images = await this.loadPresentationImages(
-      input.slides,
-      input.agentId,
-      input.sessionId,
-    );
-    const theme = normalizePresentationTheme(input.theme);
-    const pptx = new PptxGenJS();
-    pptx.layout = 'LAYOUT_WIDE';
-    pptx.author = 'Agent Commons';
-    pptx.subject = input.title || 'Agent Commons presentation';
-    pptx.title =
-      input.title || input.slides[0].title || 'Agent Commons presentation';
-    pptx.company = 'Agent Commons';
-    pptx.theme = {
-      headFontFace: theme.headFontFace,
-      bodyFontFace: theme.bodyFontFace,
-    };
-    for (const [index, spec] of input.slides.entries()) {
-      const slide = pptx.addSlide();
-      addPresentationSlide(
-        pptx,
-        slide,
-        spec,
-        theme,
-        images.get(spec.imageFileId ?? ''),
-        index,
+    let stage = 'loading source images';
+    try {
+      const images = await this.loadPresentationImages(
+        input.slides,
+        input.agentId,
+        input.sessionId,
       );
-      if (spec.notes?.trim()) slide.addNotes(spec.notes.trim());
-    }
-    const output = await pptx.write({ outputType: 'nodebuffer' });
-    const buffer = Buffer.isBuffer(output)
-      ? output
-      : Buffer.from(output as ArrayBuffer);
-    const previewArtifacts = await Promise.all(
-      input.slides.map((slide, index) =>
-        renderPresentationPreview(
+      stage = 'composing slides';
+      const theme = normalizePresentationTheme(input.theme);
+      const pptx = new PptxGenJS();
+      pptx.layout = 'LAYOUT_WIDE';
+      pptx.author = 'Agent Commons';
+      pptx.subject = input.title || 'Agent Commons presentation';
+      pptx.title =
+        input.title || input.slides[0].title || 'Agent Commons presentation';
+      pptx.company = 'Agent Commons';
+      pptx.theme = {
+        headFontFace: theme.headFontFace,
+        bodyFontFace: theme.bodyFontFace,
+      };
+      for (const [index, spec] of input.slides.entries()) {
+        const slide = pptx.addSlide();
+        addPresentationSlide(
+          pptx,
           slide,
+          spec,
           theme,
-          images.get(slide.imageFileId ?? ''),
+          images.get(spec.imageFileId ?? ''),
           index,
+        );
+        if (spec.notes?.trim()) slide.addNotes(spec.notes.trim());
+      }
+
+      stage = 'writing the PPTX package';
+      const output = await pptx.write({ outputType: 'nodebuffer' });
+      const buffer = Buffer.isBuffer(output)
+        ? output
+        : Buffer.from(output as ArrayBuffer);
+
+      stage = 'rendering slide previews';
+      const previewArtifacts = await Promise.all(
+        input.slides.map((slide, index) =>
+          renderPresentationPreview(
+            slide,
+            theme,
+            images.get(slide.imageFileId ?? ''),
+            index,
+          ),
         ),
-      ),
-    );
-    const imageSlides = input.slides.filter(
-      (slide) => slide.imageFileId,
-    ).length;
-    const notesSlides = input.slides.filter((slide) =>
-      Boolean(slide.notes?.trim()),
-    ).length;
-    const qualityReport = {
-      requestedFormat: 'pptx',
-      slideCount: input.slides.length,
-      imageSlides,
-      embeddedImageCount: images.size,
-      notesSlides,
-      previewSlides: previewArtifacts.length,
-      warnings: [
-        ...(imageSlides && imageSlides !== images.size
-          ? [
-              'One or more source images are intentionally reused across slides.',
-            ]
-          : []),
-        ...(notesSlides < input.slides.length
-          ? [
-              `${input.slides.length - notesSlides} slide(s) do not include speaker notes.`,
-            ]
-          : []),
-      ],
-    };
-    const file = await this.persistFile({
-      buffer,
-      originalName: ensureExtension(
-        sanitizeFileName(input.fileName || 'presentation.pptx'),
-        '.pptx',
-      ),
-      mimeType:
-        'application/vnd.openxmlformats-officedocument.presentationml.presentation',
-      agentId: input.agentId,
-      sessionId: input.sessionId,
-      ownerId: input.agentId,
-      ownerType: 'agent',
-      source: 'agent_generated',
-      metadata: {
-        ...versionMetadata(input.sourceFileId),
-        qualityReport,
-      },
-      additionalArtifacts: previewArtifacts,
-    });
-    return { ...file, qualityReport };
+      );
+      const imageSlides = input.slides.filter(
+        (slide) => slide.imageFileId,
+      ).length;
+      const notesSlides = input.slides.filter((slide) =>
+        Boolean(slide.notes?.trim()),
+      ).length;
+      const qualityReport = {
+        requestedFormat: 'pptx',
+        slideCount: input.slides.length,
+        imageSlides,
+        embeddedImageCount: images.size,
+        notesSlides,
+        previewSlides: previewArtifacts.length,
+        warnings: [
+          ...(imageSlides && imageSlides !== images.size
+            ? [
+                'One or more source images are intentionally reused across slides.',
+              ]
+            : []),
+          ...(notesSlides < input.slides.length
+            ? [
+                `${input.slides.length - notesSlides} slide(s) do not include speaker notes.`,
+              ]
+            : []),
+        ],
+      };
+
+      stage = 'persisting the presentation artifact';
+      const file = await this.persistFile({
+        buffer,
+        originalName: ensureExtension(
+          sanitizeFileName(input.fileName || 'presentation.pptx'),
+          '.pptx',
+        ),
+        mimeType:
+          'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+        agentId: input.agentId,
+        sessionId: input.sessionId,
+        ownerId: input.agentId,
+        ownerType: 'agent',
+        source: 'agent_generated',
+        metadata: {
+          ...versionMetadata(input.sourceFileId),
+          qualityReport,
+        },
+        additionalArtifacts: previewArtifacts,
+      });
+      return { ...file, qualityReport };
+    } catch (error) {
+      if (
+        error instanceof BadRequestException ||
+        error instanceof NotFoundException
+      ) {
+        throw error;
+      }
+      const detail =
+        error instanceof Error ? error.stack || error.message : String(error);
+      this.logger.error(
+        `Presentation generation failed while ${stage}: ${detail}`,
+      );
+      throw new InternalServerErrorException(
+        `Presentation generation failed while ${stage}`,
+      );
+    }
   }
 
   private async loadPresentationImages(
