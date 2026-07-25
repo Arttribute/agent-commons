@@ -127,7 +127,11 @@ export class AgentController {
     @Req() req: any,
   ) {
     const principal = req.principal as
-      | { principalId: string; principalType: 'user' | 'agent' | 'service' }
+      | {
+          principalId: string;
+          principalType: 'user' | 'agent' | 'service';
+          workspaceId?: string | null;
+        }
       | undefined;
     const initiator =
       principal?.principalType === 'user'
@@ -136,11 +140,19 @@ export class AgentController {
     // collect only the final message; use lastValueFrom
     const { lastValueFrom } = await import('rxjs');
     return lastValueFrom(
-      this.runtimeDispatcher.runAgent({ ...body, initiator }).pipe(
-        // The final emission from runAgent will contain the full data
-        filter((chunk) => chunk.type === 'final'),
-        map((chunk) => chunk.payload),
-      ),
+      this.runtimeDispatcher
+        .runAgent({
+          ...body,
+          initiator,
+          ...(principal?.principalType === 'user'
+            ? { workspaceId: principal.workspaceId ?? undefined }
+            : {}),
+        })
+        .pipe(
+          // The final emission from runAgent will contain the full data
+          filter((chunk) => chunk.type === 'final'),
+          map((chunk) => chunk.payload),
+        ),
     );
   }
 
@@ -155,7 +167,11 @@ export class AgentController {
   ) {
     // Accept initiator from header (SDK / proxied web requests) or body (direct callers).
     const principal = req.principal as
-      | { principalId: string; principalType: 'user' | 'agent' | 'service' }
+      | {
+          principalId: string;
+          principalType: 'user' | 'agent' | 'service';
+          workspaceId?: string | null;
+        }
       | undefined;
     const initiator =
       principal?.principalType === 'user'
@@ -169,7 +185,14 @@ export class AgentController {
     return this.runStreams
       .start(
         runId,
-        this.runtimeDispatcher.runAgent({ ...body, stream: true, initiator }),
+        this.runtimeDispatcher.runAgent({
+          ...body,
+          stream: true,
+          initiator,
+          ...(principal?.principalType === 'user'
+            ? { workspaceId: principal.workspaceId ?? undefined }
+            : {}),
+        }),
       )
       .pipe(map((data) => ({ data })));
   }

@@ -714,6 +714,8 @@ export class AgentService implements OnModuleInit {
     checkpointThreadId?: string;
     spaceId?: string;
     initiator: string;
+    /** Authenticated workspace used to authorize shared Library attachments. */
+    workspaceId?: string;
     parentSessionId?: string;
     stream?: boolean; // ✅ stream flag
     turnCount?: number;
@@ -2046,6 +2048,7 @@ export class AgentService implements OnModuleInit {
                       agentId,
                       sessionId: currentSessionId,
                       ownerId: initiator,
+                      workspaceId: props.workspaceId,
                       includeImageParts: this.supportsImageInputs(
                         agent.modelProvider,
                         agent.modelId,

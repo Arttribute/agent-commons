@@ -21,7 +21,12 @@ export async function POST(request: NextRequest) {
   }
 
   const body = await request.json();
-  const ownedBody = { ...body, initiator: user.userId, initiatorId: user.userId };
+  const ownedBody = {
+    ...body,
+    initiator: user.userId,
+    initiatorId: user.userId,
+    workspaceId: user.workspaceId,
+  };
 
   const upstream = await fetch(`${baseUrl}/v1/agents/run/stream`, {
     method: "POST",
