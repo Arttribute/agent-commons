@@ -2245,11 +2245,18 @@ export class AgentService implements OnModuleInit {
               } as any);
             }
 
+            // The durable session history above is the cross-run source of
+            // truth. Scope LangGraph checkpoints to this invocation so prior
+            // tool messages cannot replay expired signed artifact URLs into a
+            // later model request. The same scoped checkpoint is still reused
+            // for every task cycle within this run.
+            const runCheckpointThreadId =
+              checkpointThreadId ?? `${currentSessionId}:${traceId}`;
             const result = await graph.invoke(
               { messages },
               {
                 configurable: {
-                  thread_id: checkpointThreadId ?? currentSessionId,
+                  thread_id: runCheckpointThreadId,
                 },
                 recursionLimit: Number(
                   process.env.AGENT_GRAPH_RECURSION_LIMIT ?? 100,

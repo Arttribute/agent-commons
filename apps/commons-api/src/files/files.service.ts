@@ -92,6 +92,7 @@ type PersistFileInput = {
   storageProvider?: 's3' | 'ipfs';
   extractedTextOverride?: string;
   additionalArtifacts?: ExtractedArtifact[];
+  onPersistenceStage?: (stage: string) => void;
 };
 
 type ExtractedArtifact = {
@@ -515,6 +516,9 @@ export class FilesService {
           qualityReport,
         },
         additionalArtifacts: previewArtifacts,
+        onPersistenceStage: (persistenceStage) => {
+          stage = persistenceStage;
+        },
       });
       return { ...file, qualityReport };
     } catch (error) {
@@ -1001,6 +1005,8 @@ export class FilesService {
   private async persistFile(
     input: PersistFileInput,
   ): Promise<FileAttachmentRef> {
+    const updateStage = (stage: string) => input.onPersistenceStage?.(stage);
+    updateStage('validating the presentation artifact');
     const maxBytes = Number(
       process.env.AGENT_FILE_UPLOAD_MAX_BYTES ?? 50 * 1024 * 1024,
     );
@@ -1020,13 +1026,18 @@ export class FilesService {
       .createHash('sha256')
       .update(input.buffer)
       .digest('hex');
+    updateStage('resolving presentation ownership');
     const ownership = await this.resolveOwnership(input);
+    updateStage('resolving presentation storage');
     const storageProvider = await this.resolveStorageProvider(
       ownership.ownerUserId,
       input.storageProvider,
     );
     const bucket = storageProvider === 's3' ? this.bucketName() : 'ipfs';
-    if (storageProvider === 's3') await this.ensureBucket();
+    if (storageProvider === 's3') {
+      updateStage('checking presentation storage');
+      await this.ensureBucket();
+    }
     const ownerSegment = crypto
       .createHash('sha256')
       .update(input.workspaceId || ownership.ownerUserId)
@@ -1044,6 +1055,7 @@ export class FilesService {
     ]
       .filter(Boolean)
       .join('/');
+    updateStage('storing the PPTX file');
     const original = await this.storeBuffer(
       storageProvider,
       bucket,
@@ -1056,6 +1068,7 @@ export class FilesService {
 
     let extraction: ExtractionResult;
     try {
+      updateStage('extracting presentation text');
       extraction = await this.extractFile(
         input.buffer,
         originalName,
@@ -1101,6 +1114,9 @@ export class FilesService {
     }
 
     for (const artifact of extraction.artifacts) {
+      updateStage(
+        `storing presentation preview ${artifact.pageNumber ?? persistedArtifacts.length + 1}`,
+      );
       const artifactPath = `${basePath}/derived/${sanitizeFileName(artifact.fileName)}`;
       const storedArtifact = await this.storeBuffer(
         storageProvider,
@@ -1128,6 +1144,7 @@ export class FilesService {
       ? `${basePath}/derived/extracted.txt`
       : undefined;
     if (textStoragePath) {
+      updateStage('storing extracted presentation text');
       const storedText = await this.storeBuffer(
         storageProvider,
         bucket,
@@ -1139,6 +1156,7 @@ export class FilesService {
       textStoragePath = storedText.path;
     }
 
+    updateStage('creating the presentation library record');
     const [file] = await this.db
       .insert(schema.libraryItem)
       .values({
@@ -1172,6 +1190,7 @@ export class FilesService {
       })
       .returning();
 
+    updateStage('creating presentation blob records');
     await this.db.insert(schema.libraryBlob).values([
       {
         itemId: fileId,
@@ -1214,6 +1233,7 @@ export class FilesService {
     ]);
 
     if (input.sessionId) {
+      updateStage('linking the presentation to the session');
       await this.db
         .insert(schema.libraryLink)
         .values({
@@ -1223,7 +1243,9 @@ export class FilesService {
         })
         .onConflictDoNothing();
     }
+    updateStage('indexing presentation text');
     await this.indexText(fileId, text);
+    updateStage('auditing presentation creation');
     await this.audit(
       fileId,
       input.ownerType ?? 'user',
@@ -1231,6 +1253,7 @@ export class FilesService {
       'created',
     );
 
+    updateStage('loading the completed presentation');
     const artifacts = await this.getArtifacts(fileId);
     return this.toAttachmentRef(file, artifacts);
   }
