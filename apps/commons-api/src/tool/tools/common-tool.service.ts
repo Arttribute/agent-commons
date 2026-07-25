@@ -493,26 +493,58 @@ export interface CommonTool {
     sessionId?: string;
   }): Promise<any>;
 
-  /** Create a widescreen PowerPoint presentation. */
+  /**
+   * Create a widescreen, image-aware PowerPoint presentation. Use uploaded
+   * image fileIds for full-bleed or split layouts and preserve PPTX fidelity.
+   */
   createPresentationFile(props: {
     fileName: string;
     title?: string;
     slides: Array<{
-      title: string;
+      title?: string;
       subtitle?: string;
       bullets?: string[];
       notes?: string;
+      layout?:
+        | 'title'
+        | 'title-and-content'
+        | 'section'
+        | 'overview'
+        | 'takeaways'
+        | 'full-bleed-image'
+        | 'image-left'
+        | 'image-right';
+      imageFileId?: string;
+      imageFit?: 'cover' | 'contain';
+      backgroundColor?: string;
+      accentColor?: string;
     }>;
+    theme?: {
+      headFontFace?: string;
+      bodyFontFace?: string;
+      backgroundColor?: string;
+      textColor?: string;
+      mutedTextColor?: string;
+      accentColors?: string[];
+    };
     sourceFileId?: string;
     agentId: string;
     sessionId?: string;
   }): Promise<any>;
 
-  /** Create a clean paginated PDF document. */
+  /**
+   * Create a clean PDF, or preserve an existing PDF's layout with exact text
+   * replacements when sourceFileId is supplied.
+   */
   createPdfFile(props: {
     fileName: string;
     title?: string;
-    sections: Array<{ heading?: string; body: string }>;
+    sections?: Array<{ heading?: string; body: string }>;
+    replacements?: Array<{
+      find: string;
+      replace: string;
+      occurrence?: number;
+    }>;
     sourceFileId?: string;
     agentId: string;
     sessionId?: string;
@@ -1518,11 +1550,32 @@ export class CommonToolService {
     fileName: string;
     title?: string;
     slides: Array<{
-      title: string;
+      title?: string;
       subtitle?: string;
       bullets?: string[];
       notes?: string;
+      layout?:
+        | 'title'
+        | 'title-and-content'
+        | 'section'
+        | 'overview'
+        | 'takeaways'
+        | 'full-bleed-image'
+        | 'image-left'
+        | 'image-right';
+      imageFileId?: string;
+      imageFit?: 'cover' | 'contain';
+      backgroundColor?: string;
+      accentColor?: string;
     }>;
+    theme?: {
+      headFontFace?: string;
+      bodyFontFace?: string;
+      backgroundColor?: string;
+      textColor?: string;
+      mutedTextColor?: string;
+      accentColors?: string[];
+    };
     sourceFileId?: string;
     agentId: string;
     sessionId?: string;
@@ -1533,7 +1586,12 @@ export class CommonToolService {
   async createPdfFile(props: {
     fileName: string;
     title?: string;
-    sections: Array<{ heading?: string; body: string }>;
+    sections?: Array<{ heading?: string; body: string }>;
+    replacements?: Array<{
+      find: string;
+      replace: string;
+      occurrence?: number;
+    }>;
     sourceFileId?: string;
     agentId: string;
     sessionId?: string;

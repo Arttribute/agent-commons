@@ -20,7 +20,25 @@ import mammoth from 'mammoth';
 import * as XLSX from 'xlsx';
 import JSZip from 'jszip';
 import PptxGenJS from 'pptxgenjs';
-import { PDFDocument, StandardFonts, rgb } from 'pdf-lib';
+import path from 'node:path';
+import {
+  PDFArray,
+  PDFDict,
+  PDFDocument,
+  PDFHexString,
+  PDFName,
+  PDFNumber,
+  StandardFonts,
+  beginText,
+  endText,
+  popGraphicsState,
+  pushGraphicsState,
+  rgb,
+  setFillingColor,
+  setFontAndSize,
+  setTextMatrix,
+  showText,
+} from 'pdf-lib';
 import { v4 as uuidv4 } from 'uuid';
 import { DatabaseService } from '~/modules/database/database.service';
 import { OpenAIService } from '~/modules/openai/openai.service';
@@ -71,6 +89,8 @@ type PersistFileInput = {
   source?: 'upload' | 'agent_generated';
   metadata?: Record<string, any>;
   storageProvider?: 's3' | 'ipfs';
+  extractedTextOverride?: string;
+  additionalArtifacts?: ExtractedArtifact[];
 };
 
 type ExtractedArtifact = {
@@ -96,6 +116,54 @@ type ExtractionResult = {
   artifacts: ExtractedArtifact[];
   status: 'ready' | 'partial' | 'failed';
   error?: string;
+};
+
+type LoadedPresentationImage = {
+  fileId: string;
+  name: string;
+  mimeType: string;
+  buffer: Buffer;
+  dataUri: string;
+  width: number;
+  height: number;
+};
+
+export type PdfTextReplacement = {
+  /** Exact text copied from readUploadedFile, without the page marker. */
+  find: string;
+  /** Replacement text. It must fit within the original text region. */
+  replace: string;
+  /** One-based occurrence when the same passage appears more than once. */
+  occurrence?: number;
+};
+
+export type PresentationTheme = {
+  headFontFace?: string;
+  bodyFontFace?: string;
+  backgroundColor?: string;
+  textColor?: string;
+  mutedTextColor?: string;
+  accentColors?: string[];
+};
+
+export type PresentationSlideSpec = {
+  title?: string;
+  subtitle?: string;
+  bullets?: string[];
+  notes?: string;
+  layout?:
+    | 'title'
+    | 'title-and-content'
+    | 'section'
+    | 'overview'
+    | 'takeaways'
+    | 'full-bleed-image'
+    | 'image-left'
+    | 'image-right';
+  imageFileId?: string;
+  imageFit?: 'cover' | 'contain';
+  backgroundColor?: string;
+  accentColor?: string;
 };
 
 const DEFAULT_MAX_TEXT_CHARS = 250_000;
@@ -323,12 +391,8 @@ export class FilesService {
   async createPresentationFile(input: {
     fileName: string;
     title?: string;
-    slides: Array<{
-      title: string;
-      subtitle?: string;
-      bullets?: string[];
-      notes?: string;
-    }>;
+    slides: PresentationSlideSpec[];
+    theme?: PresentationTheme;
     agentId: string;
     sessionId?: string;
     sourceFileId?: string;
@@ -341,90 +405,89 @@ export class FilesService {
     if (input.slides.length > 100) {
       throw new BadRequestException('Presentations support up to 100 slides');
     }
+    for (const [index, slide] of input.slides.entries()) {
+      if (!slide.title?.trim() && !slide.imageFileId) {
+        throw new BadRequestException(
+          `Slide ${index + 1} requires a title or imageFileId`,
+        );
+      }
+      if (slide.layout === 'full-bleed-image' && !slide.imageFileId) {
+        throw new BadRequestException(
+          `Slide ${index + 1} uses full-bleed-image and requires imageFileId`,
+        );
+      }
+    }
+
+    const images = await this.loadPresentationImages(
+      input.slides,
+      input.agentId,
+      input.sessionId,
+    );
+    const theme = normalizePresentationTheme(input.theme);
     const pptx = new PptxGenJS();
     pptx.layout = 'LAYOUT_WIDE';
     pptx.author = 'Agent Commons';
     pptx.subject = input.title || 'Agent Commons presentation';
-    pptx.title = input.title || input.slides[0].title;
+    pptx.title =
+      input.title || input.slides[0].title || 'Agent Commons presentation';
     pptx.company = 'Agent Commons';
     pptx.theme = {
-      headFontFace: 'Aptos Display',
-      bodyFontFace: 'Aptos',
+      headFontFace: theme.headFontFace,
+      bodyFontFace: theme.bodyFontFace,
     };
     for (const [index, spec] of input.slides.entries()) {
       const slide = pptx.addSlide();
-      slide.background = { color: index === 0 ? '111827' : 'F8FAFC' };
-      slide.addShape(pptx.ShapeType.rect, {
-        x: 0,
-        y: 0,
-        w: 0.12,
-        h: 7.5,
-        line: { color: '6366F1', transparency: 100 },
-        fill: { color: '6366F1' },
-      });
-      slide.addText(spec.title, {
-        x: 0.72,
-        y: index === 0 ? 2.15 : 0.55,
-        w: 11.7,
-        h: index === 0 ? 1.2 : 0.75,
-        fontFace: 'Aptos Display',
-        fontSize: index === 0 ? 31 : 24,
-        bold: true,
-        color: index === 0 ? 'FFFFFF' : '111827',
-        margin: 0,
-        breakLine: false,
-        fit: 'shrink',
-      });
-      if (spec.subtitle?.trim()) {
-        slide.addText(spec.subtitle.trim(), {
-          x: 0.75,
-          y: index === 0 ? 3.55 : 1.45,
-          w: 11.2,
-          h: 0.75,
-          fontSize: index === 0 ? 16 : 13,
-          color: index === 0 ? 'CBD5E1' : '64748B',
-          margin: 0,
-          fit: 'shrink',
-        });
-      }
-      if (spec.bullets?.length) {
-        slide.addText(
-          spec.bullets.slice(0, 12).map((text) => ({
-            text,
-            options: { bullet: { indent: 18 }, hanging: 4, breakLine: true },
-          })),
-          {
-            x: 0.9,
-            y: index === 0 ? 4.45 : 2.2,
-            w: 11.1,
-            h: index === 0 ? 2 : 4.3,
-            fontSize: index === 0 ? 15 : 18,
-            color: index === 0 ? 'E2E8F0' : '334155',
-            paraSpaceAfter: 12,
-            valign: 'top',
-            margin: 0,
-            breakLine: false,
-            fit: 'shrink',
-          },
-        );
-      }
-      slide.addText(String(index + 1).padStart(2, '0'), {
-        x: 12,
-        y: 7.05,
-        w: 0.65,
-        h: 0.2,
-        fontSize: 8,
-        color: index === 0 ? '94A3B8' : '94A3B8',
-        align: 'right',
-        margin: 0,
-      });
+      addPresentationSlide(
+        pptx,
+        slide,
+        spec,
+        theme,
+        images.get(spec.imageFileId ?? ''),
+        index,
+      );
       if (spec.notes?.trim()) slide.addNotes(spec.notes.trim());
     }
     const output = await pptx.write({ outputType: 'nodebuffer' });
     const buffer = Buffer.isBuffer(output)
       ? output
       : Buffer.from(output as ArrayBuffer);
-    return this.persistFile({
+    const previewArtifacts = await Promise.all(
+      input.slides.map((slide, index) =>
+        renderPresentationPreview(
+          slide,
+          theme,
+          images.get(slide.imageFileId ?? ''),
+          index,
+        ),
+      ),
+    );
+    const imageSlides = input.slides.filter(
+      (slide) => slide.imageFileId,
+    ).length;
+    const notesSlides = input.slides.filter((slide) =>
+      Boolean(slide.notes?.trim()),
+    ).length;
+    const qualityReport = {
+      requestedFormat: 'pptx',
+      slideCount: input.slides.length,
+      imageSlides,
+      embeddedImageCount: images.size,
+      notesSlides,
+      previewSlides: previewArtifacts.length,
+      warnings: [
+        ...(imageSlides && imageSlides !== images.size
+          ? [
+              'One or more source images are intentionally reused across slides.',
+            ]
+          : []),
+        ...(notesSlides < input.slides.length
+          ? [
+              `${input.slides.length - notesSlides} slide(s) do not include speaker notes.`,
+            ]
+          : []),
+      ],
+    };
+    const file = await this.persistFile({
       buffer,
       originalName: ensureExtension(
         sanitizeFileName(input.fileName || 'presentation.pptx'),
@@ -437,18 +500,140 @@ export class FilesService {
       ownerId: input.agentId,
       ownerType: 'agent',
       source: 'agent_generated',
-      metadata: versionMetadata(input.sourceFileId),
+      metadata: {
+        ...versionMetadata(input.sourceFileId),
+        qualityReport,
+      },
+      additionalArtifacts: previewArtifacts,
     });
+    return { ...file, qualityReport };
+  }
+
+  private async loadPresentationImages(
+    slides: PresentationSlideSpec[],
+    agentId: string,
+    sessionId?: string,
+  ) {
+    const fileIds = [
+      ...new Set(
+        slides
+          .map((slide) => slide.imageFileId)
+          .filter((fileId): fileId is string => Boolean(fileId)),
+      ),
+    ];
+    const loaded = new Map<string, LoadedPresentationImage>();
+    for (const fileId of fileIds) {
+      const file = await this.getFileOrThrow(fileId);
+      await this.assertCanAccess(file, { agentId, sessionId });
+      if (file.kind !== 'image' && !file.mimeType.startsWith('image/')) {
+        throw new BadRequestException(
+          `${file.name} is not an image and cannot be embedded in a slide`,
+        );
+      }
+      const original = (await this.getBlobs(file.itemId)).find(
+        (blob) => blob.role === 'original',
+      );
+      if (!original) {
+        throw new BadRequestException(
+          `The original image bytes for ${file.name} are unavailable`,
+        );
+      }
+      const buffer = await this.downloadBlobBuffer(original);
+      const metadata = await sharp(buffer).metadata();
+      if (!metadata.width || !metadata.height) {
+        throw new BadRequestException(
+          `The dimensions for ${file.name} could not be read`,
+        );
+      }
+      const mimeType = normalizePresentationImageMime(
+        file.mimeType,
+        metadata.format,
+      );
+      loaded.set(fileId, {
+        fileId,
+        name: file.name,
+        mimeType,
+        buffer,
+        dataUri: `data:${mimeType};base64,${buffer.toString('base64')}`,
+        width: metadata.width,
+        height: metadata.height,
+      });
+    }
+    return loaded;
   }
 
   async createPdfFile(input: {
     fileName: string;
     title?: string;
-    sections: Array<{ heading?: string; body: string }>;
+    sections?: Array<{ heading?: string; body: string }>;
+    replacements?: PdfTextReplacement[];
     agentId: string;
     sessionId?: string;
     sourceFileId?: string;
   }) {
+    if (input.sourceFileId) {
+      if (!input.replacements?.length) {
+        throw new BadRequestException(
+          'PDF revisions require replacements with exact find and replace text so the original typography and layout can be preserved.',
+        );
+      }
+      const source = await this.getFileOrThrow(input.sourceFileId);
+      await this.assertCanAccess(source, {
+        agentId: input.agentId,
+        sessionId: input.sessionId,
+      });
+      if (
+        source.kind !== 'pdf' &&
+        source.mimeType !== 'application/pdf' &&
+        !source.name.toLowerCase().endsWith('.pdf')
+      ) {
+        throw new BadRequestException(
+          'sourceFileId must reference a PDF artifact',
+        );
+      }
+      const sourceBlobs = await this.getBlobs(source.itemId);
+      const original = sourceBlobs.find((blob) => blob.role === 'original');
+      if (!original) {
+        throw new NotFoundException('The source PDF is unavailable');
+      }
+      const sourceBuffer = await this.downloadBlobBuffer(original);
+      const buffer = await revisePdfBufferPreservingLayout(
+        sourceBuffer,
+        input.replacements.slice(0, 100),
+      );
+      const extractedTextBlob = sourceBlobs.find(
+        (blob) => blob.role === 'extracted_text',
+      );
+      const extractedTextOverride = extractedTextBlob
+        ? applyPdfTextReplacements(
+            await this.downloadText(
+              extractedTextBlob.storageBucket,
+              extractedTextBlob.storagePath,
+            ),
+            input.replacements,
+          )
+        : undefined;
+      return this.persistFile({
+        buffer,
+        originalName: ensureExtension(
+          sanitizeFileName(input.fileName || source.name),
+          '.pdf',
+        ),
+        mimeType: 'application/pdf',
+        agentId: input.agentId,
+        sessionId: input.sessionId,
+        ownerId: input.agentId,
+        ownerType: 'agent',
+        source: 'agent_generated',
+        extractedTextOverride,
+        metadata: {
+          ...versionMetadata(input.sourceFileId),
+          revisionMode: 'format_preserving_text_replacement',
+          replacementCount: input.replacements.length,
+        },
+      });
+    }
+
     if (!input.sections?.length) {
       throw new BadRequestException('A PDF requires at least one section');
     }
@@ -684,7 +869,9 @@ export class FilesService {
     if (context.includeImageParts) {
       const maxImageParts = clamp(Number(context.maxImageParts ?? 4), 0, 8);
       const visualArtifacts = artifacts.filter((artifact) =>
-        ['image', 'pdf_embedded_image', 'pdf_page_image'].includes(artifact.role),
+        ['image', 'pdf_embedded_image', 'pdf_page_image'].includes(
+          artifact.role,
+        ),
       );
       for (const artifact of visualArtifacts.slice(0, maxImageParts)) {
         imageParts.push({
@@ -858,6 +1045,16 @@ export class FilesService {
         artifacts: [],
         status: 'failed',
         error: message,
+      };
+    }
+    if (input.extractedTextOverride !== undefined) {
+      extraction.text = input.extractedTextOverride;
+    }
+    if (input.additionalArtifacts?.length) {
+      extraction.artifacts.push(...input.additionalArtifacts);
+      extraction.metadata = {
+        ...extraction.metadata,
+        derivedArtifactCount: extraction.artifacts.length,
       };
     }
 
@@ -1075,10 +1272,17 @@ export class FilesService {
 
   private async extractPdf(buffer: Buffer): Promise<ExtractionResult> {
     const pdfjs = (await import('pdfjs-dist/legacy/build/pdf.mjs')) as any;
+    const pdfjsRoot = path.dirname(require.resolve('pdfjs-dist/package.json'));
     const loadingTask = pdfjs.getDocument({
       data: new Uint8Array(buffer),
       disableWorker: true,
-      useSystemFonts: true,
+      // Docker images do not necessarily contain Helvetica/Times/Courier.
+      // Always point pdf.js at its packaged fonts so rendered artifacts match
+      // the actual PDF instead of silently dropping most glyphs.
+      useSystemFonts: false,
+      standardFontDataUrl: `${path.join(pdfjsRoot, 'standard_fonts')}${path.sep}`,
+      cMapUrl: `${path.join(pdfjsRoot, 'cmaps')}${path.sep}`,
+      cMapPacked: true,
     });
     const pdf = await loadingTask.promise;
     const maxTextPages = Math.min(
@@ -1196,7 +1400,8 @@ export class FilesService {
     for (let index = 0; index < operatorList.fnArray.length; index += 1) {
       if (!imageOperators.has(operatorList.fnArray[index])) continue;
       const argument = operatorList.argsArray[index]?.[0];
-      const identity = typeof argument === 'string' ? argument : `inline-${index}`;
+      const identity =
+        typeof argument === 'string' ? argument : `inline-${index}`;
       if (seen.has(identity)) continue;
       seen.add(identity);
 
@@ -1219,9 +1424,12 @@ export class FilesService {
       const channels = rawImageChannels(width, height, data.byteLength);
       if (!channels) continue;
 
-      const output = await sharp(Buffer.from(data.buffer, data.byteOffset, data.byteLength), {
-        raw: { width, height, channels },
-      })
+      const output = await sharp(
+        Buffer.from(data.buffer, data.byteOffset, data.byteLength),
+        {
+          raw: { width, height, channels },
+        },
+      )
         .png({ compressionLevel: 8 })
         .toBuffer();
       const imageNumber = artifacts.length + 1;
@@ -1248,7 +1456,9 @@ export class FilesService {
   private async resolvePdfImageObject(page: any, objectId: string) {
     return new Promise<any>((resolve, reject) => {
       try {
-        const value = page.objs.get(objectId, (resolved: any) => resolve(resolved));
+        const value = page.objs.get(objectId, (resolved: any) =>
+          resolve(resolved),
+        );
         if (value) resolve(value);
       } catch (error) {
         reject(error);
@@ -1656,6 +1866,28 @@ export class FilesService {
     return streamToString((response as any).Body);
   }
 
+  private async downloadBlobBuffer(blob: {
+    storageBucket: string;
+    storagePath: string;
+  }) {
+    if (blob.storageBucket === 'ipfs') {
+      const data = await this.pinata.fetchFile(blob.storagePath);
+      if (Buffer.isBuffer(data)) return data;
+      if (typeof data === 'string') return Buffer.from(data);
+      if (data instanceof Blob) return Buffer.from(await data.arrayBuffer());
+      if (data instanceof ArrayBuffer) return Buffer.from(data);
+      if (data instanceof Uint8Array) return Buffer.from(data);
+      throw new BadRequestException('The source PDF could not be downloaded');
+    }
+    const response = await this.s3().send(
+      new GetObjectCommand({
+        Bucket: blob.storageBucket,
+        Key: blob.storagePath,
+      }) as any,
+    );
+    return streamToBuffer((response as any).Body);
+  }
+
   private async createSignedUrl(bucket: string, path: string) {
     if (bucket === 'ipfs') {
       const gateway = (process.env.GATEWAY_URL || 'gateway.pinata.cloud')
@@ -1996,6 +2228,530 @@ export class FilesService {
   }
 }
 
+type NormalizedPresentationTheme = Required<PresentationTheme>;
+
+function normalizePresentationTheme(
+  input?: PresentationTheme,
+): NormalizedPresentationTheme {
+  const accents = (input?.accentColors ?? [])
+    .map(normalizeHexColor)
+    .filter(Boolean);
+  return {
+    headFontFace: input?.headFontFace?.trim() || 'Aptos Display',
+    bodyFontFace: input?.bodyFontFace?.trim() || 'Aptos',
+    backgroundColor: normalizeHexColor(input?.backgroundColor) || 'F8FAFC',
+    textColor: normalizeHexColor(input?.textColor) || '111827',
+    mutedTextColor: normalizeHexColor(input?.mutedTextColor) || '64748B',
+    accentColors:
+      accents.length > 0
+        ? accents
+        : ['7CF2C4', 'FFE166', '8FE8F7', 'DFFF63', 'F8A8C4'],
+  };
+}
+
+function normalizeHexColor(value?: string) {
+  const normalized = String(value ?? '')
+    .trim()
+    .replace(/^#/, '')
+    .toUpperCase();
+  return /^[0-9A-F]{6}$/.test(normalized) ? normalized : '';
+}
+
+function normalizePresentationImageMime(declaredMime: string, format?: string) {
+  if (/^image\/(png|jpeg|gif)$/i.test(declaredMime)) return declaredMime;
+  if (format === 'jpeg' || format === 'jpg') return 'image/jpeg';
+  if (format === 'gif') return 'image/gif';
+  return 'image/png';
+}
+
+function addPresentationSlide(
+  pptx: PptxGenJS,
+  slide: any,
+  spec: PresentationSlideSpec,
+  theme: NormalizedPresentationTheme,
+  image: LoadedPresentationImage | undefined,
+  index: number,
+) {
+  const layout = spec.layout ?? (index === 0 ? 'title' : 'title-and-content');
+  const background =
+    normalizeHexColor(spec.backgroundColor) || theme.backgroundColor;
+  const accent =
+    normalizeHexColor(spec.accentColor) ||
+    theme.accentColors[index % theme.accentColors.length];
+  slide.background = { color: background };
+
+  if (layout === 'full-bleed-image' && image) {
+    slide.addImage({
+      data: image.dataUri,
+      ...(spec.imageFit === 'contain'
+        ? containImageInBox(image, { x: 0, y: 0, w: 13.333, h: 7.5 })
+        : coverImageOverBox(image, { x: 0, y: 0, w: 13.333, h: 7.5 })),
+    });
+    return;
+  }
+
+  if (layout === 'title' || layout === 'section') {
+    slide.addShape(pptx.ShapeType.roundRect, {
+      x: 0.72,
+      y: layout === 'title' ? 1.62 : 0.84,
+      w: 2.05,
+      h: 0.18,
+      rectRadius: 0.08,
+      line: { color: accent, transparency: 100 },
+      fill: { color: accent },
+    });
+    slide.addText(spec.title?.trim() || '', {
+      x: 0.72,
+      y: layout === 'title' ? 2.06 : 1.32,
+      w: 11.5,
+      h: layout === 'title' ? 1.35 : 1.05,
+      fontFace: theme.headFontFace,
+      fontSize: layout === 'title' ? 33 : 29,
+      bold: true,
+      color: theme.textColor,
+      margin: 0,
+      fit: 'shrink',
+      breakLine: false,
+    });
+    if (spec.subtitle?.trim()) {
+      slide.addText(spec.subtitle.trim(), {
+        x: 0.75,
+        y: layout === 'title' ? 3.57 : 2.6,
+        w: 10.6,
+        h: 0.95,
+        fontFace: theme.bodyFontFace,
+        fontSize: layout === 'title' ? 16 : 15,
+        color: theme.mutedTextColor,
+        margin: 0,
+        fit: 'shrink',
+      });
+    }
+    addPresentationBullets(
+      slide,
+      spec.bullets,
+      theme,
+      0.82,
+      layout === 'title' ? 4.65 : 3.65,
+      11.2,
+      layout === 'title' ? 1.65 : 2.55,
+      16,
+    );
+    addSlideNumber(slide, index, theme.mutedTextColor);
+    return;
+  }
+
+  addPresentationHeader(pptx, slide, spec.title?.trim() || '', theme, accent);
+
+  if (layout === 'overview' || layout === 'takeaways') {
+    const cards = (spec.bullets ?? []).slice(0, 6).map(splitCardBullet);
+    const columns = cards.length <= 4 ? 2 : 3;
+    const rows = Math.ceil(cards.length / columns);
+    const gap = 0.3;
+    const cardWidth = (11.75 - gap * (columns - 1)) / columns;
+    const cardHeight = Math.min(2.05, (4.75 - gap * (rows - 1)) / rows);
+    for (const [cardIndex, card] of cards.entries()) {
+      const column = cardIndex % columns;
+      const row = Math.floor(cardIndex / columns);
+      const x = 0.8 + column * (cardWidth + gap);
+      const y = 1.7 + row * (cardHeight + gap);
+      const cardAccent =
+        theme.accentColors[(index + cardIndex) % theme.accentColors.length];
+      slide.addShape(pptx.ShapeType.roundRect, {
+        x,
+        y,
+        w: cardWidth,
+        h: cardHeight,
+        rectRadius: 0.08,
+        line: { color: cardAccent, width: 1.2 },
+        fill: { color: cardAccent, transparency: 78 },
+      });
+      slide.addShape(pptx.ShapeType.roundRect, {
+        x: x + 0.24,
+        y: y + 0.27,
+        w: 0.48,
+        h: 0.35,
+        rectRadius: 0.05,
+        line: { color: cardAccent, transparency: 100 },
+        fill: { color: cardAccent },
+      });
+      slide.addText(String(cardIndex + 1).padStart(2, '0'), {
+        x: x + 0.24,
+        y: y + 0.31,
+        w: 0.48,
+        h: 0.16,
+        fontFace: theme.bodyFontFace,
+        fontSize: 8,
+        bold: true,
+        color: theme.textColor,
+        align: 'center',
+        margin: 0,
+      });
+      slide.addText(card.heading, {
+        x: x + 0.86,
+        y: y + 0.21,
+        w: cardWidth - 1.08,
+        h: 0.48,
+        fontFace: theme.headFontFace,
+        fontSize: 15,
+        bold: true,
+        color: theme.textColor,
+        margin: 0,
+        fit: 'shrink',
+      });
+      slide.addText(card.body, {
+        x: x + 0.28,
+        y: y + 0.83,
+        w: cardWidth - 0.56,
+        h: cardHeight - 1.05,
+        fontFace: theme.bodyFontFace,
+        fontSize: 11.5,
+        color: theme.mutedTextColor,
+        margin: 0,
+        valign: 'top',
+        fit: 'shrink',
+      });
+    }
+    if (spec.subtitle?.trim()) {
+      slide.addText(spec.subtitle.trim(), {
+        x: 0.84,
+        y: 6.67,
+        w: 10.9,
+        h: 0.32,
+        fontFace: theme.bodyFontFace,
+        fontSize: 10.5,
+        color: theme.mutedTextColor,
+        margin: 0,
+        align: 'center',
+        fit: 'shrink',
+      });
+    }
+    addSlideNumber(slide, index, theme.mutedTextColor);
+    return;
+  }
+
+  if ((layout === 'image-left' || layout === 'image-right') && image) {
+    const imageOnLeft = layout === 'image-left';
+    const imageBox = {
+      x: imageOnLeft ? 0.8 : 7.03,
+      y: 1.62,
+      w: 5.5,
+      h: 4.95,
+    };
+    slide.addShape(pptx.ShapeType.roundRect, {
+      ...imageBox,
+      line: { color: 'E2E8F0', width: 1 },
+      fill: { color: 'FFFFFF' },
+      shadow: {
+        type: 'outer',
+        color: 'CBD5E1',
+        blur: 1.5,
+        angle: 45,
+        distance: 1,
+        opacity: 0.2,
+      },
+    });
+    slide.addImage({
+      data: image.dataUri,
+      ...containImageInBox(image, {
+        x: imageBox.x + 0.12,
+        y: imageBox.y + 0.12,
+        w: imageBox.w - 0.24,
+        h: imageBox.h - 0.24,
+      }),
+    });
+    const textX = imageOnLeft ? 6.72 : 0.82;
+    addPresentationBullets(
+      slide,
+      spec.bullets,
+      theme,
+      textX,
+      2.0,
+      5.65,
+      4.25,
+      16,
+    );
+    if (spec.subtitle?.trim()) {
+      slide.addText(spec.subtitle.trim(), {
+        x: textX,
+        y: 1.5,
+        w: 5.65,
+        h: 0.36,
+        fontFace: theme.bodyFontFace,
+        fontSize: 11,
+        color: theme.mutedTextColor,
+        margin: 0,
+        fit: 'shrink',
+      });
+    }
+    addSlideNumber(slide, index, theme.mutedTextColor);
+    return;
+  }
+
+  if (spec.subtitle?.trim()) {
+    slide.addText(spec.subtitle.trim(), {
+      x: 0.82,
+      y: 1.48,
+      w: 11.55,
+      h: 0.52,
+      fontFace: theme.bodyFontFace,
+      fontSize: 12,
+      color: theme.mutedTextColor,
+      margin: 0,
+      fit: 'shrink',
+    });
+  }
+  addPresentationBullets(
+    slide,
+    spec.bullets,
+    theme,
+    0.92,
+    spec.subtitle?.trim() ? 2.2 : 1.82,
+    11.35,
+    spec.subtitle?.trim() ? 4.3 : 4.7,
+    18,
+  );
+  addSlideNumber(slide, index, theme.mutedTextColor);
+}
+
+function addPresentationHeader(
+  pptx: PptxGenJS,
+  slide: any,
+  title: string,
+  theme: NormalizedPresentationTheme,
+  accent: string,
+) {
+  slide.addShape(pptx.ShapeType.roundRect, {
+    x: 0.72,
+    y: 0.42,
+    w: 0.22,
+    h: 0.72,
+    rectRadius: 0.05,
+    line: { color: accent, transparency: 100 },
+    fill: { color: accent },
+  });
+  slide.addText(title, {
+    x: 1.14,
+    y: 0.42,
+    w: 11.1,
+    h: 0.72,
+    fontFace: theme.headFontFace,
+    fontSize: 25,
+    bold: true,
+    color: theme.textColor,
+    margin: 0,
+    fit: 'shrink',
+  });
+}
+
+function addPresentationBullets(
+  slide: any,
+  bullets: string[] | undefined,
+  theme: NormalizedPresentationTheme,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  fontSize: number,
+) {
+  if (!bullets?.length) return;
+  slide.addText(
+    bullets.slice(0, 12).map((text) => ({
+      text,
+      options: {
+        bullet: { indent: 18 },
+        hanging: 4,
+        breakLine: true,
+      },
+    })),
+    {
+      x,
+      y,
+      w,
+      h,
+      fontFace: theme.bodyFontFace,
+      fontSize,
+      color: theme.textColor,
+      paraSpaceAfter: 13,
+      valign: 'top',
+      margin: 0,
+      breakLine: false,
+      fit: 'shrink',
+    },
+  );
+}
+
+function addSlideNumber(slide: any, index: number, color: string) {
+  slide.addText(String(index + 1).padStart(2, '0'), {
+    x: 12.05,
+    y: 7.05,
+    w: 0.62,
+    h: 0.2,
+    fontSize: 8,
+    color,
+    align: 'right',
+    margin: 0,
+  });
+}
+
+function splitCardBullet(text: string) {
+  const parts = String(text).split(/\s+(?:—|–|-)\s+/, 2);
+  return {
+    heading: parts[0]?.trim() || 'Key point',
+    body: parts[1]?.trim() || parts[0]?.trim() || '',
+  };
+}
+
+function containImageInBox(
+  image: Pick<LoadedPresentationImage, 'width' | 'height'>,
+  box: { x: number; y: number; w: number; h: number },
+) {
+  const scale = Math.min(box.w / image.width, box.h / image.height);
+  const width = image.width * scale;
+  const height = image.height * scale;
+  return {
+    x: box.x + (box.w - width) / 2,
+    y: box.y + (box.h - height) / 2,
+    w: width,
+    h: height,
+  };
+}
+
+function coverImageOverBox(
+  image: Pick<LoadedPresentationImage, 'width' | 'height'>,
+  box: { x: number; y: number; w: number; h: number },
+) {
+  const scale = Math.max(box.w / image.width, box.h / image.height);
+  const width = image.width * scale;
+  const height = image.height * scale;
+  return {
+    x: box.x + (box.w - width) / 2,
+    y: box.y + (box.h - height) / 2,
+    w: width,
+    h: height,
+  };
+}
+
+async function renderPresentationPreview(
+  spec: PresentationSlideSpec,
+  theme: NormalizedPresentationTheme,
+  image: LoadedPresentationImage | undefined,
+  index: number,
+): Promise<ExtractedArtifact> {
+  const layout = spec.layout ?? (index === 0 ? 'title' : 'title-and-content');
+  let buffer: Buffer;
+  if (layout === 'full-bleed-image' && image) {
+    buffer = await sharp(image.buffer)
+      .resize(1280, 720, {
+        fit: spec.imageFit === 'contain' ? 'contain' : 'cover',
+        background: '#ffffff',
+      })
+      .png()
+      .toBuffer();
+  } else {
+    const background =
+      normalizeHexColor(spec.backgroundColor) || theme.backgroundColor;
+    const accent =
+      normalizeHexColor(spec.accentColor) ||
+      theme.accentColors[index % theme.accentColors.length];
+    const cards =
+      layout === 'overview' || layout === 'takeaways'
+        ? (spec.bullets ?? []).slice(0, 6).map(splitCardBullet)
+        : [];
+    const bodyLines =
+      cards.length === 0
+        ? (spec.bullets ?? [])
+            .slice(0, 8)
+            .flatMap((bullet) => wrapPreviewText(`• ${bullet}`, 62))
+        : [];
+    const cardMarkup = cards
+      .map((card, cardIndex) => {
+        const columns = cards.length <= 4 ? 2 : 3;
+        const width = columns === 2 ? 548 : 356;
+        const x = 78 + (cardIndex % columns) * (width + 26);
+        const y = 176 + Math.floor(cardIndex / columns) * 214;
+        const color =
+          theme.accentColors[(index + cardIndex) % theme.accentColors.length];
+        const heading = wrapPreviewText(card.heading, columns === 2 ? 30 : 20)
+          .slice(0, 2)
+          .map(
+            (line, lineIndex) =>
+              `<tspan x="${x + 78}" dy="${lineIndex ? 27 : 0}">${escapeXml(line)}</tspan>`,
+          )
+          .join('');
+        const body = wrapPreviewText(card.body, columns === 2 ? 48 : 30)
+          .slice(0, 3)
+          .map(
+            (line, lineIndex) =>
+              `<tspan x="${x + 24}" dy="${lineIndex ? 24 : 0}">${escapeXml(line)}</tspan>`,
+          )
+          .join('');
+        return `<rect x="${x}" y="${y}" width="${width}" height="184" rx="18" fill="#${color}" fill-opacity=".2" stroke="#${color}" stroke-width="2"/>
+          <rect x="${x + 22}" y="${y + 24}" width="42" height="32" rx="8" fill="#${color}"/>
+          <text x="${x + 43}" y="${y + 45}" text-anchor="middle" font-size="13" font-weight="700" fill="#${theme.textColor}">${String(cardIndex + 1).padStart(2, '0')}</text>
+          <text x="${x + 78}" y="${y + 46}" font-size="24" font-weight="700" fill="#${theme.textColor}">${heading}</text>
+          <text x="${x + 24}" y="${y + 96}" font-size="19" fill="#${theme.mutedTextColor}">${body}</text>`;
+      })
+      .join('');
+    const imageMarkup = image
+      ? `<image href="${image.dataUri}" x="${layout === 'image-right' ? 690 : 75}" y="164" width="520" height="475" preserveAspectRatio="xMidYMid meet"/>`
+      : '';
+    const bodyX = layout === 'image-left' ? 650 : 88;
+    const bodyWidth =
+      layout === 'image-left' || layout === 'image-right' ? 520 : 1100;
+    const svg = `<svg width="1280" height="720" viewBox="0 0 1280 720" xmlns="http://www.w3.org/2000/svg">
+      <rect width="1280" height="720" fill="#${background}"/>
+      <rect x="70" y="42" width="20" height="70" rx="8" fill="#${accent}"/>
+      <text x="112" y="94" font-family="${escapeXml(theme.headFontFace)}, Arial, sans-serif" font-size="46" font-weight="700" fill="#${theme.textColor}">${escapeXml(spec.title ?? '')}</text>
+      ${imageMarkup}
+      ${cardMarkup}
+      ${
+        cards.length
+          ? ''
+          : `<text x="${bodyX}" y="190" font-family="${escapeXml(theme.bodyFontFace)}, Arial, sans-serif" font-size="28" fill="#${theme.textColor}">
+          ${bodyLines
+            .map(
+              (line, lineIndex) =>
+                `<tspan x="${bodyX}" dy="${lineIndex ? 43 : 0}">${escapeXml(line.slice(0, bodyWidth / 14))}</tspan>`,
+            )
+            .join('')}
+        </text>`
+      }
+      <text x="1210" y="685" text-anchor="end" font-family="${escapeXml(theme.bodyFontFace)}, Arial, sans-serif" font-size="15" fill="#${theme.mutedTextColor}">${String(index + 1).padStart(2, '0')}</text>
+    </svg>`;
+    buffer = await sharp(Buffer.from(svg)).png().toBuffer();
+  }
+  return {
+    kind: 'presentation_slide_image',
+    fileName: `slide-${String(index + 1).padStart(3, '0')}.png`,
+    mimeType: 'image/png',
+    buffer,
+    pageNumber: index + 1,
+    width: 1280,
+    height: 720,
+    metadata: {
+      source: 'generated_presentation_preview',
+      layout,
+      imageFileId: spec.imageFileId,
+    },
+  };
+}
+
+function wrapPreviewText(value: string, maxCharacters: number) {
+  const words = String(value).trim().split(/\s+/).filter(Boolean);
+  const lines: string[] = [];
+  let line = '';
+  for (const word of words) {
+    if (line && `${line} ${word}`.length > maxCharacters) {
+      lines.push(line);
+      line = word;
+    } else {
+      line = line ? `${line} ${word}` : word;
+    }
+  }
+  if (line) lines.push(line);
+  return lines;
+}
+
 function samePrincipal(left: string, right: string) {
   return left.trim().toLowerCase() === right.trim().toLowerCase();
 }
@@ -2219,6 +2975,584 @@ function wrapPdfText(text: string, maxCharacters: number) {
   return lines;
 }
 
+type PdfTextItem = {
+  str: string;
+  fontName: string;
+  transform: number[];
+  width: number;
+  height: number;
+};
+
+type IndexedPdfTextItem = PdfTextItem & {
+  text: string;
+  start: number;
+  end: number;
+  x: number;
+  y: number;
+  fontSize: number;
+};
+
+type PdfPageTextIndex = {
+  pageNumber: number;
+  text: string;
+  items: IndexedPdfTextItem[];
+  pdfjsPage: any;
+};
+
+/**
+ * Makes bounded text edits directly on top of the source PDF. Untouched page
+ * content, geometry, graphics, and font resources remain byte-for-byte
+ * represented in the resulting document; replacement glyphs use the same
+ * embedded font resource as the selected source passage.
+ */
+export async function revisePdfBufferPreservingLayout(
+  sourceBuffer: Buffer,
+  replacements: PdfTextReplacement[],
+  locatorOverride?: {
+    document: any;
+    destroy?: () => Promise<void> | void;
+  },
+): Promise<Buffer> {
+  if (!replacements.length) {
+    throw new BadRequestException('At least one PDF replacement is required');
+  }
+
+  let sourcePdf: any;
+  let destroyLocator: (() => Promise<void> | void) | undefined;
+  if (locatorOverride) {
+    sourcePdf = locatorOverride.document;
+    destroyLocator = locatorOverride.destroy;
+  } else {
+    const pdfjs = (await import('pdfjs-dist/legacy/build/pdf.mjs')) as any;
+    const pdfjsRoot = path.dirname(require.resolve('pdfjs-dist/package.json'));
+    const loadingTask = pdfjs.getDocument({
+      data: new Uint8Array(sourceBuffer),
+      disableWorker: true,
+      useSystemFonts: false,
+      standardFontDataUrl: `${path.join(pdfjsRoot, 'standard_fonts')}${path.sep}`,
+      cMapUrl: `${path.join(pdfjsRoot, 'cmaps')}${path.sep}`,
+      cMapPacked: true,
+    });
+    sourcePdf = await loadingTask.promise;
+    destroyLocator = () => loadingTask.destroy?.();
+  }
+
+  try {
+    const document = await PDFDocument.load(sourceBuffer, {
+      updateMetadata: false,
+    });
+    if (document.getPageCount() !== sourcePdf.numPages) {
+      throw new BadRequestException('The source PDF page index is invalid');
+    }
+
+    const pages: PdfPageTextIndex[] = [];
+    for (
+      let pageNumber = 1;
+      pageNumber <= sourcePdf.numPages;
+      pageNumber += 1
+    ) {
+      const pdfjsPage = await sourcePdf.getPage(pageNumber);
+      const textContent = await pdfjsPage.getTextContent();
+      await pdfjsPage.getOperatorList();
+      pages.push(
+        indexPdfPageText(
+          pageNumber,
+          pdfjsPage,
+          textContent.items as PdfTextItem[],
+        ),
+      );
+    }
+
+    const occupiedItems = new Set<string>();
+    for (const replacement of replacements) {
+      const find = normalizePdfSearchText(replacement.find);
+      if (!find) {
+        throw new BadRequestException('PDF replacement find text is empty');
+      }
+      const match = findPdfTextMatch(pages, find, replacement.occurrence ?? 1);
+      const selectedItems = match.page.items.filter(
+        (item) => item.end > match.start && item.start < match.end,
+      );
+      if (!selectedItems.length) {
+        throw new BadRequestException(
+          `Could not map PDF text "${previewErrorText(find)}" to a visible text region`,
+        );
+      }
+
+      for (const item of selectedItems) {
+        const key = `${match.page.pageNumber}:${item.start}:${item.end}`;
+        if (occupiedItems.has(key)) {
+          throw new BadRequestException(
+            'PDF replacements overlap. Combine them into one larger exact replacement.',
+          );
+        }
+        occupiedItems.add(key);
+      }
+
+      const fontNames = new Set(selectedItems.map((item) => item.fontName));
+      if (fontNames.size !== 1) {
+        throw new BadRequestException(
+          `The passage "${previewErrorText(find)}" crosses differently styled text. Split it into one replacement per style.`,
+        );
+      }
+      if (
+        selectedItems.some(
+          (item) =>
+            Math.abs(item.transform[1] ?? 0) > 0.01 ||
+            Math.abs(item.transform[2] ?? 0) > 0.01,
+        )
+      ) {
+        throw new BadRequestException(
+          'Rotated PDF text cannot yet be revised without changing its layout.',
+        );
+      }
+
+      const first = selectedItems[0];
+      const last = selectedItems[selectedItems.length - 1];
+      const prefix =
+        match.start > first.start
+          ? first.text.slice(0, match.start - first.start)
+          : '';
+      const suffix =
+        match.end < last.end ? last.text.slice(match.end - last.start) : '';
+      const replacementText = normalizePdfReplacementText(
+        [prefix, replacement.replace, suffix].filter(Boolean).join(' '),
+      );
+      const targetPage = document.getPage(match.page.pageNumber - 1);
+      const font = resolvePdfFontResource(
+        targetPage,
+        match.page.pdfjsPage,
+        first.fontName,
+      );
+      const metrics = createPdfFontMetrics(font.dictionary);
+      assertPdfFontSupportsText(metrics, replacementText, font.baseFont);
+
+      const lines = groupPdfItemsIntoLines(selectedItems);
+      const fontSize = median(selectedItems.map((item) => item.fontSize));
+      if (
+        selectedItems.some(
+          (item) =>
+            Math.abs(item.fontSize - fontSize) > Math.max(0.5, fontSize * 0.08),
+        )
+      ) {
+        throw new BadRequestException(
+          `The passage "${previewErrorText(find)}" mixes font sizes. Split it into smaller replacements.`,
+        );
+      }
+      const minX = Math.min(...lines.map((line) => line.minX));
+      const rightMargin = Math.max(36, Math.min(minX, 90));
+      const maxLineWidth = targetPage.getWidth() - minX - rightMargin;
+      const wrapped = wrapTextToPdfWidth(
+        replacementText,
+        maxLineWidth,
+        fontSize,
+        metrics.widthOfTextAtSize,
+      );
+      if (wrapped.length > lines.length) {
+        throw new BadRequestException(
+          `The replacement for "${previewErrorText(find)}" needs ${wrapped.length} lines but the original region has ${lines.length}. Shorten the replacement or split the edit.`,
+        );
+      }
+
+      for (const line of lines) {
+        targetPage.drawRectangle({
+          x: Math.max(0, line.minX - 1.5),
+          y: Math.max(0, line.baseline - fontSize * 0.28),
+          width: Math.min(
+            targetPage.getWidth() - line.minX + 1.5,
+            line.maxX - line.minX + 3,
+          ),
+          height: fontSize * 1.24,
+          color: rgb(1, 1, 1),
+          borderWidth: 0,
+        });
+      }
+
+      for (let index = 0; index < wrapped.length; index += 1) {
+        const line = wrapped[index];
+        const baseline = lines[index]?.baseline;
+        if (baseline === undefined) {
+          throw new BadRequestException(
+            'The PDF replacement does not fit the original text region',
+          );
+        }
+        const operators = [
+          pushGraphicsState(),
+          beginText(),
+          setFillingColor(rgb(0, 0, 0)),
+          setFontAndSize(font.resourceName, fontSize),
+        ];
+        let cursorX = lines[index].minX;
+        const words = line.split(' ').filter(Boolean);
+        for (const word of words) {
+          operators.push(
+            setTextMatrix(1, 0, 0, 1, cursorX, baseline),
+            showText(metrics.encode(word)),
+          );
+          cursorX += metrics.widthOfTextAtSize(`${word} `, fontSize);
+        }
+        operators.push(endText(), popGraphicsState());
+        targetPage.pushOperators(...operators);
+      }
+    }
+
+    return Buffer.from(
+      await document.save({
+        useObjectStreams: false,
+        addDefaultPage: false,
+        updateFieldAppearances: false,
+      }),
+    );
+  } finally {
+    await destroyLocator?.();
+  }
+}
+
+function indexPdfPageText(
+  pageNumber: number,
+  pdfjsPage: any,
+  rawItems: PdfTextItem[],
+): PdfPageTextIndex {
+  let text = '';
+  const items: IndexedPdfTextItem[] = [];
+  for (const item of rawItems) {
+    if (!item || typeof item.str !== 'string') continue;
+    const normalized = normalizePdfSearchText(item.str);
+    if (!normalized) continue;
+    if (text) text += ' ';
+    const start = text.length;
+    text += normalized;
+    const fontSize = Math.hypot(
+      Number(item.transform?.[0] ?? 0),
+      Number(item.transform?.[1] ?? 0),
+    );
+    items.push({
+      ...item,
+      text: normalized,
+      start,
+      end: text.length,
+      x: Number(item.transform?.[4] ?? 0),
+      y: Number(item.transform?.[5] ?? 0),
+      fontSize: fontSize || Number(item.height) || 12,
+    });
+  }
+  return { pageNumber, text, items, pdfjsPage };
+}
+
+function findPdfTextMatch(
+  pages: PdfPageTextIndex[],
+  find: string,
+  requestedOccurrence: number,
+) {
+  const occurrence = Math.max(1, Math.floor(requestedOccurrence));
+  let seen = 0;
+  for (const page of pages) {
+    let offset = 0;
+    while (offset <= page.text.length - find.length) {
+      const start = page.text.indexOf(find, offset);
+      if (start < 0) break;
+      seen += 1;
+      if (seen === occurrence) {
+        return { page, start, end: start + find.length };
+      }
+      offset = start + Math.max(1, find.length);
+    }
+  }
+  throw new BadRequestException(
+    `Could not find occurrence ${occurrence} of "${previewErrorText(find)}" in the source PDF. Copy the exact passage from readUploadedFile.`,
+  );
+}
+
+function resolvePdfFontResource(
+  page: any,
+  pdfjsPage: any,
+  pdfjsFontName: string,
+) {
+  const pdfjsFont = pdfjsPage.commonObjs.get(pdfjsFontName);
+  const expectedName = String(pdfjsFont?.name || '').replace(/^\//, '');
+  const resources = page.node.Resources();
+  const fonts = resources?.lookupMaybe(PDFName.of('Font'), PDFDict);
+  if (!fonts) {
+    throw new BadRequestException('The selected PDF text has no font resource');
+  }
+  for (const [resourceName, value] of fonts.entries()) {
+    const dictionary = page.doc.context.lookup(value, PDFDict);
+    const baseFont = dictionary.lookupMaybe(PDFName.of('BaseFont'), PDFName);
+    const baseFontName = baseFont?.decodeText() || '';
+    if (
+      baseFontName === expectedName ||
+      removePdfFontSubset(baseFontName) === removePdfFontSubset(expectedName)
+    ) {
+      return {
+        resourceName,
+        dictionary,
+        baseFont: baseFontName || expectedName || resourceName.decodeText(),
+      };
+    }
+  }
+  throw new BadRequestException(
+    `Could not reuse the original PDF font "${expectedName || pdfjsFontName}"`,
+  );
+}
+
+function createPdfFontMetrics(dictionary: PDFDict) {
+  const firstChar =
+    dictionary.lookupMaybe(PDFName.of('FirstChar'), PDFNumber)?.asNumber() ?? 0;
+  const widths = dictionary.lookupMaybe(PDFName.of('Widths'), PDFArray);
+  const descriptor = dictionary.lookupMaybe(
+    PDFName.of('FontDescriptor'),
+    PDFDict,
+  );
+  const missingWidth =
+    descriptor
+      ?.lookupMaybe(PDFName.of('MissingWidth'), PDFNumber)
+      ?.asNumber() ?? 500;
+  const charSetValue = descriptor?.lookup(PDFName.of('CharSet')) as
+    | { decodeText?: () => string }
+    | undefined;
+  const charSet = charSetValue?.decodeText?.().split('/').filter(Boolean);
+
+  const widthAtCode = (code: number) => {
+    if (!widths) return code === 32 ? 278 : 500;
+    const index = code - firstChar;
+    if (index < 0 || index >= widths.size()) return missingWidth;
+    return widths.lookup(index, PDFNumber).asNumber();
+  };
+  return {
+    charSet: charSet ? new Set(charSet) : undefined,
+    encode(text: string) {
+      return PDFHexString.of(
+        Buffer.from(text, 'latin1').toString('hex').toUpperCase(),
+      );
+    },
+    widthOfTextAtSize(text: string, size: number) {
+      return (
+        [...text].reduce(
+          (total, character) => total + widthAtCode(character.charCodeAt(0)),
+          0,
+        ) *
+        (size / 1000)
+      );
+    },
+  };
+}
+
+function assertPdfFontSupportsText(
+  metrics: ReturnType<typeof createPdfFontMetrics>,
+  text: string,
+  fontName: string,
+) {
+  if (!metrics.charSet) return;
+  const missing = new Set<string>();
+  for (const character of text) {
+    if (character === ' ') continue;
+    const glyph = pdfGlyphName(character);
+    if (!glyph || !metrics.charSet.has(glyph)) missing.add(character);
+  }
+  if (missing.size) {
+    throw new BadRequestException(
+      `The source PDF embeds a subset of ${fontName} without these replacement glyphs: ${[...missing].join(' ')}. Rephrase the replacement using characters already present in the document so the original font can be preserved.`,
+    );
+  }
+}
+
+function groupPdfItemsIntoLines(items: IndexedPdfTextItem[]) {
+  const sorted = [...items].sort((left, right) => {
+    if (
+      Math.abs(right.y - left.y) >
+      Math.max(left.fontSize, right.fontSize) * 0.45
+    ) {
+      return right.y - left.y;
+    }
+    return left.x - right.x;
+  });
+  const lines: Array<{
+    baseline: number;
+    minX: number;
+    maxX: number;
+    items: IndexedPdfTextItem[];
+  }> = [];
+  for (const item of sorted) {
+    const line = lines.find(
+      (candidate) =>
+        Math.abs(candidate.baseline - item.y) <=
+        Math.max(1.5, item.fontSize * 0.35),
+    );
+    if (line) {
+      line.items.push(item);
+      line.minX = Math.min(line.minX, item.x);
+      line.maxX = Math.max(line.maxX, item.x + item.width);
+    } else {
+      lines.push({
+        baseline: item.y,
+        minX: item.x,
+        maxX: item.x + item.width,
+        items: [item],
+      });
+    }
+  }
+  return lines.sort((left, right) => right.baseline - left.baseline);
+}
+
+function wrapTextToPdfWidth(
+  text: string,
+  maxWidth: number,
+  fontSize: number,
+  widthOfTextAtSize: (text: string, size: number) => number,
+) {
+  const words = text.split(/\s+/).filter(Boolean);
+  if (!words.length) return [''];
+  const lines: string[] = [];
+  let current = '';
+  for (const word of words) {
+    if (widthOfTextAtSize(word, fontSize) > maxWidth) {
+      throw new BadRequestException(
+        `The word "${previewErrorText(word)}" is wider than the original PDF text region`,
+      );
+    }
+    const candidate = current ? `${current} ${word}` : word;
+    if (current && widthOfTextAtSize(candidate, fontSize) > maxWidth) {
+      lines.push(current);
+      current = word;
+    } else {
+      current = candidate;
+    }
+  }
+  if (current) lines.push(current);
+  return lines;
+}
+
+function normalizePdfSearchText(text: string) {
+  return String(text ?? '')
+    .replace(/\u00a0/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function normalizePdfReplacementText(text: string) {
+  return normalizePdfSearchText(text)
+    .replace(/[‘’]/g, "'")
+    .replace(/[“”]/g, '"')
+    .replace(/[–—]/g, '-')
+    .replace(/…/g, '...')
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^\x20-\x7e]/g, '');
+}
+
+function applyPdfTextReplacements(
+  extractedText: string,
+  replacements: PdfTextReplacement[],
+) {
+  let output = extractedText;
+  for (const replacement of replacements) {
+    const find = normalizePdfSearchText(replacement.find);
+    if (!find) continue;
+    const indexed = indexNormalizedText(output);
+    const match = findNthText(indexed.text, find, replacement.occurrence ?? 1);
+    if (!match) continue;
+    const start = indexed.originalOffsets[match.start] ?? 0;
+    const lastNormalizedIndex = match.end - 1;
+    const end =
+      (indexed.originalOffsets[lastNormalizedIndex] ?? output.length - 1) + 1;
+    output =
+      output.slice(0, start) +
+      normalizePdfReplacementText(replacement.replace) +
+      output.slice(end);
+  }
+  return output;
+}
+
+function indexNormalizedText(text: string) {
+  let normalized = '';
+  const originalOffsets: number[] = [];
+  let pendingSpace: number | undefined;
+  for (let index = 0; index < text.length; index += 1) {
+    const character = text[index];
+    if (/\s/.test(character)) {
+      if (normalized && pendingSpace === undefined) pendingSpace = index;
+      continue;
+    }
+    if (pendingSpace !== undefined) {
+      normalized += ' ';
+      originalOffsets.push(pendingSpace);
+      pendingSpace = undefined;
+    }
+    normalized += character;
+    originalOffsets.push(index);
+  }
+  return { text: normalized.trim(), originalOffsets };
+}
+
+function findNthText(text: string, find: string, requestedOccurrence: number) {
+  const occurrence = Math.max(1, Math.floor(requestedOccurrence));
+  let seen = 0;
+  let offset = 0;
+  while (offset <= text.length - find.length) {
+    const start = text.indexOf(find, offset);
+    if (start < 0) return null;
+    seen += 1;
+    if (seen === occurrence) return { start, end: start + find.length };
+    offset = start + Math.max(1, find.length);
+  }
+  return null;
+}
+
+function removePdfFontSubset(name: string) {
+  return name.replace(/^[A-Z]{6}\+/, '');
+}
+
+function median(values: number[]) {
+  const sorted = [...values].sort((left, right) => left - right);
+  const middle = Math.floor(sorted.length / 2);
+  return sorted.length % 2
+    ? sorted[middle]
+    : (sorted[middle - 1] + sorted[middle]) / 2;
+}
+
+function previewErrorText(text: string) {
+  return text.length > 72 ? `${text.slice(0, 69)}...` : text;
+}
+
+function pdfGlyphName(character: string) {
+  if (/^[A-Za-z]$/.test(character)) return character;
+  const names: Record<string, string> = {
+    '0': 'zero',
+    '1': 'one',
+    '2': 'two',
+    '3': 'three',
+    '4': 'four',
+    '5': 'five',
+    '6': 'six',
+    '7': 'seven',
+    '8': 'eight',
+    '9': 'nine',
+    "'": 'quoteright',
+    '"': 'quotedbl',
+    ',': 'comma',
+    '-': 'hyphen',
+    '.': 'period',
+    '/': 'slash',
+    ':': 'colon',
+    ';': 'semicolon',
+    '?': 'question',
+    '!': 'exclam',
+    '@': 'at',
+    '&': 'ampersand',
+    '(': 'parenleft',
+    ')': 'parenright',
+    '[': 'bracketleft',
+    ']': 'bracketright',
+    '+': 'plus',
+    '=': 'equal',
+    '%': 'percent',
+    '#': 'numbersign',
+    '|': 'bar',
+    _: 'underscore',
+  };
+  return names[character];
+}
+
 async function buildDocxBuffer(input: {
   title?: string;
   sections: Array<{
@@ -2430,5 +3764,26 @@ async function streamToString(body: any): Promise<string> {
     });
     body.on('error', reject);
     body.on('end', () => resolve(Buffer.concat(chunks).toString('utf8')));
+  });
+}
+
+async function streamToBuffer(body: any): Promise<Buffer> {
+  if (!body) return Buffer.alloc(0);
+  if (typeof body.transformToByteArray === 'function') {
+    return Buffer.from(await body.transformToByteArray());
+  }
+  if (body instanceof Uint8Array) return Buffer.from(body);
+  return new Promise((resolve, reject) => {
+    const chunks: Buffer[] = [];
+    body.on('data', (chunk: Buffer | Uint8Array | string) => {
+      if (Buffer.isBuffer(chunk)) chunks.push(chunk);
+      else if (typeof chunk === 'string') chunks.push(Buffer.from(chunk));
+      else
+        chunks.push(
+          Buffer.from(chunk.buffer, chunk.byteOffset, chunk.byteLength),
+        );
+    });
+    body.on('error', reject);
+    body.on('end', () => resolve(Buffer.concat(chunks)));
   });
 }

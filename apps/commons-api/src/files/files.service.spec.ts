@@ -1,5 +1,12 @@
 import JSZip from 'jszip';
-import { classifyFile, FilesService, normalizeMimeType } from './files.service';
+import { PDFDict, PDFDocument, PDFName, StandardFonts } from 'pdf-lib';
+import sharp from 'sharp';
+import {
+  classifyFile,
+  FilesService,
+  normalizeMimeType,
+  revisePdfBufferPreservingLayout,
+} from './files.service';
 
 describe('FilesService document support', () => {
   const service = new FilesService({} as any, {} as any, {} as any);
@@ -80,7 +87,7 @@ describe('FilesService document support', () => {
     expect(result.text).toContain('data/results.csv');
   });
 
-  it('creates valid DOCX and PDF artifact bytes', async () => {
+  it('creates valid DOCX, PPTX, and PDF artifact bytes', async () => {
     const generationService = new FilesService({} as any, {} as any, {} as any);
     jest
       .spyOn(generationService as any, 'persistFile')
@@ -107,6 +114,40 @@ describe('FilesService document support', () => {
     expect(documentText.text).toContain('Launch brief');
     expect(documentText.text).toContain('Review with product');
 
+    const presentation = (await generationService.createPresentationFile({
+      fileName: 'launch.pptx',
+      title: 'Launch plan',
+      slides: [
+        {
+          title: 'Launch plan',
+          subtitle: 'A polished presentation',
+          layout: 'title',
+          notes: 'Open with the objective.',
+        },
+        {
+          title: 'What we will cover',
+          layout: 'overview',
+          bullets: [
+            'Audience — Who the launch serves',
+            'Message — What customers should remember',
+            'Channels — Where the story appears',
+            'Measurement — How success is evaluated',
+          ],
+          notes: 'Preview the four sections.',
+        },
+      ],
+      agentId: 'agent-test',
+    })) as any;
+    const presentationZip = await JSZip.loadAsync(presentation.buffer);
+    expect(presentation.buffer.subarray(0, 2).toString()).toBe('PK');
+    expect(
+      Object.keys(presentationZip.files).filter((name) =>
+        /^ppt\/slides\/slide\d+\.xml$/.test(name),
+      ),
+    ).toHaveLength(2);
+    expect(presentation.additionalArtifacts).toHaveLength(2);
+    expect(presentation.metadata.qualityReport.requestedFormat).toBe('pptx');
+
     const pdf = (await generationService.createPdfFile({
       fileName: 'summary.pdf',
       title: 'Summary',
@@ -114,5 +155,165 @@ describe('FilesService document support', () => {
       agentId: 'agent-test',
     })) as any;
     expect(pdf.buffer.subarray(0, 5).toString()).toBe('%PDF-');
+  });
+
+  it('embeds uploaded images in PPTX slides and generates slide previews', async () => {
+    const imageBuffer = await sharp({
+      create: {
+        width: 1920,
+        height: 1080,
+        channels: 3,
+        background: '#7cf2c4',
+      },
+    })
+      .png()
+      .toBuffer();
+    const db = {
+      query: {
+        libraryItem: {
+          findFirst: jest.fn().mockResolvedValue({
+            itemId: 'image-1',
+            name: 'lesson.png',
+            mimeType: 'image/png',
+            kind: 'image',
+            sourceAgentId: 'agent-test',
+            sourceSessionId: 'session-test',
+            ownerUserId: 'user-test',
+            workspaceId: null,
+            status: 'ready',
+            deletedAt: null,
+          }),
+        },
+        libraryBlob: {
+          findMany: jest.fn().mockResolvedValue([
+            {
+              role: 'original',
+              storageBucket: 'test',
+              storagePath: 'lesson.png',
+            },
+          ]),
+        },
+        libraryGrant: { findFirst: jest.fn() },
+      },
+    };
+    const generationService = new FilesService(db as any, {} as any, {} as any);
+    jest
+      .spyOn(generationService as any, 'downloadBlobBuffer')
+      .mockResolvedValue(imageBuffer);
+    jest
+      .spyOn(generationService as any, 'persistFile')
+      .mockImplementation(async (input: any) => input);
+
+    const presentation = (await generationService.createPresentationFile({
+      fileName: 'visual-lesson.pptx',
+      title: 'Visual lesson',
+      slides: [
+        {
+          layout: 'full-bleed-image',
+          imageFileId: 'image-1',
+          imageFit: 'cover',
+          notes: 'Introduce the lesson.',
+        },
+        {
+          title: 'Key takeaways',
+          layout: 'takeaways',
+          bullets: [
+            'Preserve — Keep the supplied artwork pristine',
+            'Compose — Add editable supporting content',
+          ],
+          notes: 'Close with the two principles.',
+        },
+      ],
+      theme: {
+        headFontFace: 'Courier New',
+        bodyFontFace: 'Courier New',
+        accentColors: ['7CF2C4', 'FFE166'],
+      },
+      agentId: 'agent-test',
+      sessionId: 'session-test',
+    })) as any;
+
+    const zip = await JSZip.loadAsync(presentation.buffer);
+    const media = Object.keys(zip.files).filter((name) =>
+      /^ppt\/media\/[^/]+$/.test(name),
+    );
+    const notes = Object.keys(zip.files).filter((name) =>
+      /^ppt\/notesSlides\/notesSlide\d+\.xml$/.test(name),
+    );
+    expect(media).toHaveLength(1);
+    expect(notes).toHaveLength(2);
+    expect(presentation.additionalArtifacts).toHaveLength(2);
+    expect(
+      presentation.additionalArtifacts.every(
+        (artifact: any) =>
+          artifact.kind === 'presentation_slide_image' &&
+          artifact.buffer.subarray(1, 4).toString() === 'PNG',
+      ),
+    ).toBe(true);
+    expect(presentation.metadata.qualityReport).toMatchObject({
+      slideCount: 2,
+      imageSlides: 1,
+      embeddedImageCount: 1,
+      notesSlides: 2,
+      previewSlides: 2,
+    });
+  });
+
+  it('revises PDF text without replacing the source page or font resources', async () => {
+    const source = await PDFDocument.create();
+    const page = source.addPage([612, 792]);
+    const font = await source.embedFont(StandardFonts.TimesRoman);
+    page.drawText('Original project statement', {
+      x: 72,
+      y: 700,
+      size: 12,
+      font,
+    });
+    const sourceBuffer = Buffer.from(await source.save());
+    const pdfjsPage = {
+      getTextContent: async () => ({
+        items: [
+          {
+            str: 'Original project statement',
+            fontName: 'g_d0_f1',
+            transform: [12, 0, 0, 12, 72, 700],
+            width: font.widthOfTextAtSize('Original project statement', 12),
+            height: 12,
+          },
+        ],
+      }),
+      getOperatorList: async () => ({}),
+      commonObjs: {
+        get: () => ({ name: StandardFonts.TimesRoman }),
+      },
+    };
+
+    const revisedBuffer = await revisePdfBufferPreservingLayout(
+      sourceBuffer,
+      [
+        {
+          find: 'Original project statement',
+          replace: 'Revised project statement',
+        },
+      ],
+      {
+        document: {
+          numPages: 1,
+          getPage: async () => pdfjsPage,
+        },
+      },
+    );
+    const revised = await PDFDocument.load(revisedBuffer);
+
+    expect(revised.getPageCount()).toBe(1);
+    expect(revised.getPage(0).getSize()).toEqual({ width: 612, height: 792 });
+    const fontResources = revised
+      .getPage(0)
+      .node.Resources()
+      ?.lookup(PDFName.of('Font'), PDFDict);
+    expect(fontResources ? [...fontResources.entries()].length : 0).toBe(1);
+    expect(revisedBuffer.subarray(0, 5).toString()).toBe('%PDF-');
+
+    expect(revisedBuffer).not.toEqual(sourceBuffer);
   });
 });

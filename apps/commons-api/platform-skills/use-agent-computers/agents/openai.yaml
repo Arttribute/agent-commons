@@ -1,0 +1,4 @@
+interface:
+  display_name: "Use Agent Computers"
+  short_description: "Execute and verify computer-backed work"
+  default_prompt: "Use $use-agent-computers to complete and verify this task on the agent computer."

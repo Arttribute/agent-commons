@@ -73,6 +73,7 @@ import {
   COMMONS_COPILOT_OPERATING_GUIDE,
   CopilotUiContext,
 } from './copilot-platform-guide';
+import { SkillService } from '~/skill/skill.service';
 
 const got = import('got');
 
@@ -206,6 +207,7 @@ export class AgentService implements OnModuleInit {
     private activityService: ActivityService,
     private filesService: FilesService,
     private computerService: ComputerService,
+    private skillService: SkillService,
     @Inject(forwardRef(() => TaskService)) private tasks: TaskService,
     @Inject(forwardRef(() => TaskExecutionService))
     private taskExecution: TaskExecutionService,
@@ -390,6 +392,7 @@ export class AgentService implements OnModuleInit {
       createdAt?: Date | null;
     }> = [],
     computerBlock = '',
+    skillsBlock = '',
   ): string {
     const currentTime = new Date();
 
@@ -434,6 +437,7 @@ export class AgentService implements OnModuleInit {
       ${memoryBlock}
       ${taskBlock}
       ${computerBlock}
+      ${skillsBlock}
       ${childSessionsInfo}
 
       ## AUTONOMOUS EXECUTION CONTRACT
@@ -483,8 +487,9 @@ export class AgentService implements OnModuleInit {
       ### Uploaded files
       Users can attach files to chat turns. The chat history contains file IDs and compact previews, never raw file bytes or base64.
       - **readUploadedFile** — read extracted text from an uploaded file in bounded chunks. Use offset/nextOffset for large files. Set includeImageUrls for images or rendered PDF pages when visual inspection is needed. For formats without native extraction, set includeDownloadUrl and use the persistent computer to inspect the signed original.
-      - **createTextFile**, **createDocumentFile**, **createPresentationFile**, **createPdfFile**, and **createSpreadsheetFile** create durable artifacts that appear in the chat and library. Use the format the user requested and return the fileId.
+      - **createTextFile**, **createDocumentFile**, **createPresentationFile**, **createPdfFile**, and **createSpreadsheetFile** create durable artifacts that appear in the chat and library. Use the exact format the user requested and return the fileId. Never silently substitute PDF for PPTX, DOCX for PDF, or another format. If a creation call fails, inspect and correct the arguments, retry the requested format, and report a blocker only after the requested path is genuinely unavailable.
       - When revising an uploaded DOCX, PPTX, PDF, or text artifact, read it first and pass its fileId as sourceFileId. Revisions are saved as recoverable new versions rather than overwriting the original.
+      - PDF revisions must preserve the source document's typography, spacing, page geometry, graphics, and overall visual hierarchy. Call createPdfFile with sourceFileId and replacements (not sections). Each replacement must contain an exact find passage copied from readUploadedFile, without the "--- Page N ---" marker, plus the meaningfully revised replace text. Prefer the largest coherent same-style passage that changes, keep replacement copy concise enough for the original region, and never rebuild or redesign an uploaded PDF unless the user explicitly asks for a redesign. If a replacement reports mixed styles, overflow, or unavailable subset-font glyphs, split or rephrase it and retry.
       - Treat fileId values as the durable handles for follow-up work. Do not ask the user to paste file contents that are available through readUploadedFile.
 
       ### Computers
@@ -554,20 +559,27 @@ export class AgentService implements OnModuleInit {
     sessionId: string,
     firstUserMessage = '',
   ) {
-    const [agent, childSessions, memoryBlock, sessionTasks, computerBlock] =
-      await Promise.all([
-        this.getAgent({ agentId }),
-        this.getChildSessions(sessionId),
-        firstUserMessage
-          ? this.memoryService
-              .buildMemoryBlock(agentId, firstUserMessage)
-              .catch(() => '')
-          : Promise.resolve(''),
-        this.taskExecution.listSessionTasks(sessionId).catch(() => []),
-        this.computerService
-          .buildComputerPrompt(agentId, sessionId)
-          .catch(() => ''),
-      ]);
+    const [
+      agent,
+      childSessions,
+      memoryBlock,
+      sessionTasks,
+      computerBlock,
+      skillsBlock,
+    ] = await Promise.all([
+      this.getAgent({ agentId }),
+      this.getChildSessions(sessionId),
+      firstUserMessage
+        ? this.memoryService
+            .buildMemoryBlock(agentId, firstUserMessage)
+            .catch(() => '')
+        : Promise.resolve(''),
+      this.taskExecution.listSessionTasks(sessionId).catch(() => []),
+      this.computerService
+        .buildComputerPrompt(agentId, sessionId)
+        .catch(() => ''),
+      this.skillService.buildPromptIndex(agentId).catch(() => ''),
+    ]);
     const childSessionsInfo =
       childSessions.length > 0
         ? `\n\nEXISTING CHILD SESSIONS:\nYou have the following ongoing conversations with other agents. Use these sessionIds to continue existing conversations instead of starting new ones:\n${childSessions.map((cs) => `- Agent ${cs.childAgentId}: ${cs.title || 'Untitled conversation'} (sessionId=${cs.childSessionId}, started: ${cs.createdAt})`).join('\n')}`
@@ -583,6 +595,7 @@ export class AgentService implements OnModuleInit {
           memoryBlock,
           sessionTasks,
           computerBlock,
+          skillsBlock,
         ),
       },
     ];
@@ -1919,6 +1932,7 @@ export class AgentService implements OnModuleInit {
               memoryBlock,
               sessionTasks,
               computerBlock,
+              skillsBlock,
             ] = await Promise.all([
               this.getAgent({ agentId }),
               this.getChildSessions(currentSessionId),
@@ -1933,6 +1947,7 @@ export class AgentService implements OnModuleInit {
               this.computerService
                 .buildComputerPrompt(agentId, currentSessionId)
                 .catch(() => ''),
+              this.skillService.buildPromptIndex(agentId).catch(() => ''),
             ]);
             const childSessionsInfo =
               childSessions.length > 0
@@ -1949,6 +1964,7 @@ export class AgentService implements OnModuleInit {
                 memoryBlock,
                 sessionTasks,
                 computerBlock,
+                skillsBlock,
               ),
             } as any);
             emitStatus('context', 'completed', 'Conversation context ready');
@@ -2033,8 +2049,14 @@ export class AgentService implements OnModuleInit {
                         agent.modelProvider,
                         agent.modelId,
                       ),
-                      maxImageParts: Number(
-                        process.env.AGENT_FILE_PROMPT_IMAGE_PARTS ?? 4,
+                      maxImageParts: Math.min(
+                        8,
+                        Math.max(
+                          Number(
+                            process.env.AGENT_FILE_PROMPT_IMAGE_PARTS ?? 8,
+                          ),
+                          props.attachments!.length,
+                        ),
                       ),
                     },
                   );
