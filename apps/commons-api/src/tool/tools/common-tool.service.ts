@@ -41,6 +41,7 @@ import {
 type ToolExecutionMetadata = {
   agentId?: string;
   sessionId?: string;
+  ownerId?: string;
   runId?: string;
   toolCallId?: string;
 };
@@ -1461,20 +1462,24 @@ export class CommonToolService {
     };
   }
 
-  async readUploadedFile(props: {
-    fileId: string;
-    offset?: number;
-    maxChars?: number;
-    includeImageUrls?: boolean;
-    includeDownloadUrl?: boolean;
-    pageNumber?: number;
-    agentId: string;
-    sessionId?: string;
-  }) {
+  async readUploadedFile(
+    props: {
+      fileId: string;
+      offset?: number;
+      maxChars?: number;
+      includeImageUrls?: boolean;
+      includeDownloadUrl?: boolean;
+      pageNumber?: number;
+      agentId: string;
+      sessionId?: string;
+    },
+    metadata?: ToolExecutionMetadata,
+  ) {
     return this.files.readFileForAgent({
       fileId: props.fileId,
       agentId: props.agentId,
       sessionId: props.sessionId,
+      ownerId: metadata?.ownerId,
       offset: props.offset,
       maxChars: props.maxChars,
       includeImageUrls: props.includeImageUrls,
@@ -1546,57 +1551,69 @@ export class CommonToolService {
     return this.files.createDocumentFile(props);
   }
 
-  async createPresentationFile(props: {
-    fileName: string;
-    title?: string;
-    slides: Array<{
+  async createPresentationFile(
+    props: {
+      fileName: string;
       title?: string;
-      subtitle?: string;
-      bullets?: string[];
-      notes?: string;
-      layout?:
-        | 'title'
-        | 'title-and-content'
-        | 'section'
-        | 'overview'
-        | 'takeaways'
-        | 'full-bleed-image'
-        | 'image-left'
-        | 'image-right';
-      imageFileId?: string;
-      imageFit?: 'cover' | 'contain';
-      backgroundColor?: string;
-      accentColor?: string;
-    }>;
-    theme?: {
-      headFontFace?: string;
-      bodyFontFace?: string;
-      backgroundColor?: string;
-      textColor?: string;
-      mutedTextColor?: string;
-      accentColors?: string[];
-    };
-    sourceFileId?: string;
-    agentId: string;
-    sessionId?: string;
-  }) {
-    return this.files.createPresentationFile(props);
+      slides: Array<{
+        title?: string;
+        subtitle?: string;
+        bullets?: string[];
+        notes?: string;
+        layout?:
+          | 'title'
+          | 'title-and-content'
+          | 'section'
+          | 'overview'
+          | 'takeaways'
+          | 'full-bleed-image'
+          | 'image-left'
+          | 'image-right';
+        imageFileId?: string;
+        imageFit?: 'cover' | 'contain';
+        backgroundColor?: string;
+        accentColor?: string;
+      }>;
+      theme?: {
+        headFontFace?: string;
+        bodyFontFace?: string;
+        backgroundColor?: string;
+        textColor?: string;
+        mutedTextColor?: string;
+        accentColors?: string[];
+      };
+      sourceFileId?: string;
+      agentId: string;
+      sessionId?: string;
+    },
+    metadata?: ToolExecutionMetadata,
+  ) {
+    return this.files.createPresentationFile({
+      ...props,
+      ownerId: metadata?.ownerId,
+    });
   }
 
-  async createPdfFile(props: {
-    fileName: string;
-    title?: string;
-    sections?: Array<{ heading?: string; body: string }>;
-    replacements?: Array<{
-      find: string;
-      replace: string;
-      occurrence?: number;
-    }>;
-    sourceFileId?: string;
-    agentId: string;
-    sessionId?: string;
-  }) {
-    return this.files.createPdfFile(props);
+  async createPdfFile(
+    props: {
+      fileName: string;
+      title?: string;
+      sections?: Array<{ heading?: string; body: string }>;
+      replacements?: Array<{
+        find: string;
+        replace: string;
+        occurrence?: number;
+      }>;
+      sourceFileId?: string;
+      agentId: string;
+      sessionId?: string;
+    },
+    metadata?: ToolExecutionMetadata,
+  ) {
+    return this.files.createPdfFile({
+      ...props,
+      ownerId: metadata?.ownerId,
+    });
   }
 
   async startAgentComputer(

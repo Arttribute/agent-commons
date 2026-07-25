@@ -397,6 +397,7 @@ export class FilesService {
     theme?: PresentationTheme;
     agentId: string;
     sessionId?: string;
+    ownerId?: string;
     sourceFileId?: string;
   }) {
     if (!input.slides?.length) {
@@ -426,6 +427,7 @@ export class FilesService {
         input.slides,
         input.agentId,
         input.sessionId,
+        input.ownerId,
       );
       stage = 'composing slides';
       const theme = normalizePresentationTheme(input.theme);
@@ -543,6 +545,7 @@ export class FilesService {
     slides: PresentationSlideSpec[],
     agentId: string,
     sessionId?: string,
+    ownerId?: string,
   ) {
     const fileIds = [
       ...new Set(
@@ -554,7 +557,7 @@ export class FilesService {
     const loaded = new Map<string, LoadedPresentationImage>();
     for (const fileId of fileIds) {
       const file = await this.getFileOrThrow(fileId);
-      await this.assertCanAccess(file, { agentId, sessionId });
+      await this.assertCanAccess(file, { agentId, sessionId, ownerId });
       if (file.kind !== 'image' && !file.mimeType.startsWith('image/')) {
         throw new BadRequestException(
           `${file.name} is not an image and cannot be embedded in a slide`,
@@ -599,6 +602,7 @@ export class FilesService {
     replacements?: PdfTextReplacement[];
     agentId: string;
     sessionId?: string;
+    ownerId?: string;
     sourceFileId?: string;
   }) {
     if (input.sourceFileId) {
@@ -611,6 +615,7 @@ export class FilesService {
       await this.assertCanAccess(source, {
         agentId: input.agentId,
         sessionId: input.sessionId,
+        ownerId: input.ownerId,
       });
       if (
         source.kind !== 'pdf' &&

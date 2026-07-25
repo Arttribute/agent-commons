@@ -69,6 +69,7 @@ export class AgentToolsController {
         agentId: string;
         privateKey?: string;
         sessionId?: string;
+        ownerId?: string;
         spaceId?: string;
         runId?: string;
         toolCallId?: string;
@@ -207,8 +208,10 @@ export class AgentToolsController {
           args && typeof args === 'object'
             ? {
                 ...args,
-                agentId: args.agentId ?? metadata.agentId,
-                sessionId: args.sessionId ?? metadata.sessionId,
+                // Identity and session context are supplied by the trusted
+                // runtime, never by model-authored tool arguments.
+                agentId: metadata.agentId,
+                sessionId: metadata.sessionId,
               }
             : args;
         // @ts-expect-error because we know it's a function

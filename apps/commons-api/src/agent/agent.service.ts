@@ -1535,6 +1535,7 @@ export class AgentService implements OnModuleInit {
                           metadata: {
                             agentId,
                             sessionId: currentSessionId,
+                            ownerId: initiator,
                             spaceId,
                             runId: traceId,
                             toolCallId: config.toolCall?.id,
