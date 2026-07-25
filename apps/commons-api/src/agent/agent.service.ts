@@ -578,7 +578,9 @@ export class AgentService implements OnModuleInit {
       this.computerService
         .buildComputerPrompt(agentId, sessionId)
         .catch(() => ''),
-      this.skillService.buildPromptIndex(agentId).catch(() => ''),
+      this.skillService
+        .buildPromptIndex(agentId, firstUserMessage)
+        .catch(() => ''),
     ]);
     const childSessionsInfo =
       childSessions.length > 0
@@ -1948,7 +1950,9 @@ export class AgentService implements OnModuleInit {
               this.computerService
                 .buildComputerPrompt(agentId, currentSessionId)
                 .catch(() => ''),
-              this.skillService.buildPromptIndex(agentId).catch(() => ''),
+              this.skillService
+                .buildPromptIndex(agentId, firstUserText)
+                .catch(() => ''),
             ]);
             const childSessionsInfo =
               childSessions.length > 0
