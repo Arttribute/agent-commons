@@ -252,6 +252,17 @@ export class CreditService {
         account = { ...account, reserved: account.reserved + extension };
       }
 
+      // Release the portion being captured before debiting the balance.
+      // PostgreSQL checks reserved <= balance after every statement, so
+      // debiting first can violate the invariant transiently even though the
+      // completed transaction would be valid.
+      await tx
+        .update(schema.creditAccount)
+        .set({
+          reserved: sql`${schema.creditAccount.reserved} - ${input.amount}`,
+          updatedAt: new Date(),
+        })
+        .where(eq(schema.creditAccount.principalId, reservation.principalId));
       const entry = await this.insertLedgerAndApplyAccount(tx, {
         principalId: reservation.principalId,
         principalType: 'user',
@@ -274,13 +285,6 @@ export class CreditService {
         createdByType: 'service',
         expiresAt: undefined,
       });
-      await tx
-        .update(schema.creditAccount)
-        .set({
-          reserved: sql`${schema.creditAccount.reserved} - ${input.amount}`,
-          updatedAt: new Date(),
-        })
-        .where(eq(schema.creditAccount.principalId, reservation.principalId));
       await tx
         .update(schema.creditReservation)
         .set({
@@ -349,6 +353,16 @@ export class CreditService {
         0,
         minimumCapture - reservation.capturedAmount,
       );
+      // Release this reservation before applying any final platform debit.
+      // Keeping the reservation in place while decreasing balance violates
+      // reserved <= balance for fully reserved accounts.
+      await tx
+        .update(schema.creditAccount)
+        .set({
+          reserved: sql`greatest(0, ${schema.creditAccount.reserved} - ${reservedToRelease})`,
+          updatedAt: new Date(),
+        })
+        .where(eq(schema.creditAccount.principalId, reservation.principalId));
       if (minimumDue > 0) {
         const due = Math.min(
           minimumDue,
@@ -378,13 +392,6 @@ export class CreditService {
         });
         reservation.capturedAmount += due;
       }
-      await tx
-        .update(schema.creditAccount)
-        .set({
-          reserved: sql`greatest(0, ${schema.creditAccount.reserved} - ${reservedToRelease})`,
-          updatedAt: new Date(),
-        })
-        .where(eq(schema.creditAccount.principalId, reservation.principalId));
       const [updated] = await tx
         .update(schema.creditReservation)
         .set({
