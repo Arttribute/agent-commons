@@ -283,6 +283,33 @@ function ArtifactPreviewBody({ preview }: { preview: ArtifactPreview }) {
   }
 
   if (kind === "presentation") {
+    if (visualPages.length) {
+      return (
+        <div className="min-h-0 flex-1 overflow-y-auto bg-stone-200/70 p-4 sm:p-6">
+          <div className="mx-auto max-w-4xl space-y-5">
+            {visualPages.map((slide, index) => (
+              <figure key={slide.artifactId}>
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={slide.url}
+                  alt={`${preview.name}, slide ${slide.pageNumber || index + 1}`}
+                  className="aspect-video w-full rounded-md bg-white object-contain shadow-lg"
+                />
+                <figcaption className="mt-1 text-center text-[10px] text-stone-500">
+                  Slide {slide.pageNumber || index + 1}
+                </figcaption>
+              </figure>
+            ))}
+            {pageCount > visualPages.length ? (
+              <p className="py-3 text-center text-xs text-stone-500">
+                Previewing {visualPages.length} of {pageCount} slides. Download
+                to view the complete presentation.
+              </p>
+            ) : null}
+          </div>
+        </div>
+      );
+    }
     const slides = splitPresentation(
       preview.content || preview.textPreview || "",
     );

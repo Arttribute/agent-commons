@@ -70,6 +70,7 @@ COPY --from=build /deploy ./
 COPY --from=build /workspace/apps/commons-api/migrations ./migrations
 # scripts/migrate.mjs runs versioned migrations in-container (see buildspec).
 COPY --from=build /workspace/apps/commons-api/scripts ./scripts
+COPY --from=build /workspace/apps/commons-api/platform-skills ./platform-skills
 
 EXPOSE 8080
 

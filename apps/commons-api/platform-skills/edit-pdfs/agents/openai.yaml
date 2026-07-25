@@ -1,0 +1,4 @@
+interface:
+  display_name: "Edit PDFs"
+  short_description: "Edit PDFs while preserving visual fidelity"
+  default_prompt: "Use $edit-pdfs to revise this PDF without losing its original design."

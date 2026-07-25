@@ -90,6 +90,7 @@ type PersistFileInput = {
   metadata?: Record<string, any>;
   storageProvider?: 's3' | 'ipfs';
   extractedTextOverride?: string;
+  additionalArtifacts?: ExtractedArtifact[];
 };
 
 type ExtractedArtifact = {
@@ -117,6 +118,16 @@ type ExtractionResult = {
   error?: string;
 };
 
+type LoadedPresentationImage = {
+  fileId: string;
+  name: string;
+  mimeType: string;
+  buffer: Buffer;
+  dataUri: string;
+  width: number;
+  height: number;
+};
+
 export type PdfTextReplacement = {
   /** Exact text copied from readUploadedFile, without the page marker. */
   find: string;
@@ -124,6 +135,35 @@ export type PdfTextReplacement = {
   replace: string;
   /** One-based occurrence when the same passage appears more than once. */
   occurrence?: number;
+};
+
+export type PresentationTheme = {
+  headFontFace?: string;
+  bodyFontFace?: string;
+  backgroundColor?: string;
+  textColor?: string;
+  mutedTextColor?: string;
+  accentColors?: string[];
+};
+
+export type PresentationSlideSpec = {
+  title?: string;
+  subtitle?: string;
+  bullets?: string[];
+  notes?: string;
+  layout?:
+    | 'title'
+    | 'title-and-content'
+    | 'section'
+    | 'overview'
+    | 'takeaways'
+    | 'full-bleed-image'
+    | 'image-left'
+    | 'image-right';
+  imageFileId?: string;
+  imageFit?: 'cover' | 'contain';
+  backgroundColor?: string;
+  accentColor?: string;
 };
 
 const DEFAULT_MAX_TEXT_CHARS = 250_000;
@@ -351,12 +391,8 @@ export class FilesService {
   async createPresentationFile(input: {
     fileName: string;
     title?: string;
-    slides: Array<{
-      title: string;
-      subtitle?: string;
-      bullets?: string[];
-      notes?: string;
-    }>;
+    slides: PresentationSlideSpec[];
+    theme?: PresentationTheme;
     agentId: string;
     sessionId?: string;
     sourceFileId?: string;
@@ -369,90 +405,89 @@ export class FilesService {
     if (input.slides.length > 100) {
       throw new BadRequestException('Presentations support up to 100 slides');
     }
+    for (const [index, slide] of input.slides.entries()) {
+      if (!slide.title?.trim() && !slide.imageFileId) {
+        throw new BadRequestException(
+          `Slide ${index + 1} requires a title or imageFileId`,
+        );
+      }
+      if (slide.layout === 'full-bleed-image' && !slide.imageFileId) {
+        throw new BadRequestException(
+          `Slide ${index + 1} uses full-bleed-image and requires imageFileId`,
+        );
+      }
+    }
+
+    const images = await this.loadPresentationImages(
+      input.slides,
+      input.agentId,
+      input.sessionId,
+    );
+    const theme = normalizePresentationTheme(input.theme);
     const pptx = new PptxGenJS();
     pptx.layout = 'LAYOUT_WIDE';
     pptx.author = 'Agent Commons';
     pptx.subject = input.title || 'Agent Commons presentation';
-    pptx.title = input.title || input.slides[0].title;
+    pptx.title =
+      input.title || input.slides[0].title || 'Agent Commons presentation';
     pptx.company = 'Agent Commons';
     pptx.theme = {
-      headFontFace: 'Aptos Display',
-      bodyFontFace: 'Aptos',
+      headFontFace: theme.headFontFace,
+      bodyFontFace: theme.bodyFontFace,
     };
     for (const [index, spec] of input.slides.entries()) {
       const slide = pptx.addSlide();
-      slide.background = { color: index === 0 ? '111827' : 'F8FAFC' };
-      slide.addShape(pptx.ShapeType.rect, {
-        x: 0,
-        y: 0,
-        w: 0.12,
-        h: 7.5,
-        line: { color: '6366F1', transparency: 100 },
-        fill: { color: '6366F1' },
-      });
-      slide.addText(spec.title, {
-        x: 0.72,
-        y: index === 0 ? 2.15 : 0.55,
-        w: 11.7,
-        h: index === 0 ? 1.2 : 0.75,
-        fontFace: 'Aptos Display',
-        fontSize: index === 0 ? 31 : 24,
-        bold: true,
-        color: index === 0 ? 'FFFFFF' : '111827',
-        margin: 0,
-        breakLine: false,
-        fit: 'shrink',
-      });
-      if (spec.subtitle?.trim()) {
-        slide.addText(spec.subtitle.trim(), {
-          x: 0.75,
-          y: index === 0 ? 3.55 : 1.45,
-          w: 11.2,
-          h: 0.75,
-          fontSize: index === 0 ? 16 : 13,
-          color: index === 0 ? 'CBD5E1' : '64748B',
-          margin: 0,
-          fit: 'shrink',
-        });
-      }
-      if (spec.bullets?.length) {
-        slide.addText(
-          spec.bullets.slice(0, 12).map((text) => ({
-            text,
-            options: { bullet: { indent: 18 }, hanging: 4, breakLine: true },
-          })),
-          {
-            x: 0.9,
-            y: index === 0 ? 4.45 : 2.2,
-            w: 11.1,
-            h: index === 0 ? 2 : 4.3,
-            fontSize: index === 0 ? 15 : 18,
-            color: index === 0 ? 'E2E8F0' : '334155',
-            paraSpaceAfter: 12,
-            valign: 'top',
-            margin: 0,
-            breakLine: false,
-            fit: 'shrink',
-          },
-        );
-      }
-      slide.addText(String(index + 1).padStart(2, '0'), {
-        x: 12,
-        y: 7.05,
-        w: 0.65,
-        h: 0.2,
-        fontSize: 8,
-        color: index === 0 ? '94A3B8' : '94A3B8',
-        align: 'right',
-        margin: 0,
-      });
+      addPresentationSlide(
+        pptx,
+        slide,
+        spec,
+        theme,
+        images.get(spec.imageFileId ?? ''),
+        index,
+      );
       if (spec.notes?.trim()) slide.addNotes(spec.notes.trim());
     }
     const output = await pptx.write({ outputType: 'nodebuffer' });
     const buffer = Buffer.isBuffer(output)
       ? output
       : Buffer.from(output as ArrayBuffer);
-    return this.persistFile({
+    const previewArtifacts = await Promise.all(
+      input.slides.map((slide, index) =>
+        renderPresentationPreview(
+          slide,
+          theme,
+          images.get(slide.imageFileId ?? ''),
+          index,
+        ),
+      ),
+    );
+    const imageSlides = input.slides.filter(
+      (slide) => slide.imageFileId,
+    ).length;
+    const notesSlides = input.slides.filter((slide) =>
+      Boolean(slide.notes?.trim()),
+    ).length;
+    const qualityReport = {
+      requestedFormat: 'pptx',
+      slideCount: input.slides.length,
+      imageSlides,
+      embeddedImageCount: images.size,
+      notesSlides,
+      previewSlides: previewArtifacts.length,
+      warnings: [
+        ...(imageSlides && imageSlides !== images.size
+          ? [
+              'One or more source images are intentionally reused across slides.',
+            ]
+          : []),
+        ...(notesSlides < input.slides.length
+          ? [
+              `${input.slides.length - notesSlides} slide(s) do not include speaker notes.`,
+            ]
+          : []),
+      ],
+    };
+    const file = await this.persistFile({
       buffer,
       originalName: ensureExtension(
         sanitizeFileName(input.fileName || 'presentation.pptx'),
@@ -465,8 +500,66 @@ export class FilesService {
       ownerId: input.agentId,
       ownerType: 'agent',
       source: 'agent_generated',
-      metadata: versionMetadata(input.sourceFileId),
+      metadata: {
+        ...versionMetadata(input.sourceFileId),
+        qualityReport,
+      },
+      additionalArtifacts: previewArtifacts,
     });
+    return { ...file, qualityReport };
+  }
+
+  private async loadPresentationImages(
+    slides: PresentationSlideSpec[],
+    agentId: string,
+    sessionId?: string,
+  ) {
+    const fileIds = [
+      ...new Set(
+        slides
+          .map((slide) => slide.imageFileId)
+          .filter((fileId): fileId is string => Boolean(fileId)),
+      ),
+    ];
+    const loaded = new Map<string, LoadedPresentationImage>();
+    for (const fileId of fileIds) {
+      const file = await this.getFileOrThrow(fileId);
+      await this.assertCanAccess(file, { agentId, sessionId });
+      if (file.kind !== 'image' && !file.mimeType.startsWith('image/')) {
+        throw new BadRequestException(
+          `${file.name} is not an image and cannot be embedded in a slide`,
+        );
+      }
+      const original = (await this.getBlobs(file.itemId)).find(
+        (blob) => blob.role === 'original',
+      );
+      if (!original) {
+        throw new BadRequestException(
+          `The original image bytes for ${file.name} are unavailable`,
+        );
+      }
+      const buffer = await this.downloadBlobBuffer(original);
+      const metadata = await sharp(buffer).metadata();
+      if (!metadata.width || !metadata.height) {
+        throw new BadRequestException(
+          `The dimensions for ${file.name} could not be read`,
+        );
+      }
+      const mimeType = normalizePresentationImageMime(
+        file.mimeType,
+        metadata.format,
+      );
+      loaded.set(fileId, {
+        fileId,
+        name: file.name,
+        mimeType,
+        buffer,
+        dataUri: `data:${mimeType};base64,${buffer.toString('base64')}`,
+        width: metadata.width,
+        height: metadata.height,
+      });
+    }
+    return loaded;
   }
 
   async createPdfFile(input: {
@@ -776,7 +869,9 @@ export class FilesService {
     if (context.includeImageParts) {
       const maxImageParts = clamp(Number(context.maxImageParts ?? 4), 0, 8);
       const visualArtifacts = artifacts.filter((artifact) =>
-        ['image', 'pdf_embedded_image', 'pdf_page_image'].includes(artifact.role),
+        ['image', 'pdf_embedded_image', 'pdf_page_image'].includes(
+          artifact.role,
+        ),
       );
       for (const artifact of visualArtifacts.slice(0, maxImageParts)) {
         imageParts.push({
@@ -954,6 +1049,13 @@ export class FilesService {
     }
     if (input.extractedTextOverride !== undefined) {
       extraction.text = input.extractedTextOverride;
+    }
+    if (input.additionalArtifacts?.length) {
+      extraction.artifacts.push(...input.additionalArtifacts);
+      extraction.metadata = {
+        ...extraction.metadata,
+        derivedArtifactCount: extraction.artifacts.length,
+      };
     }
 
     const persistedArtifacts: PersistedArtifact[] = [];
@@ -1298,7 +1400,8 @@ export class FilesService {
     for (let index = 0; index < operatorList.fnArray.length; index += 1) {
       if (!imageOperators.has(operatorList.fnArray[index])) continue;
       const argument = operatorList.argsArray[index]?.[0];
-      const identity = typeof argument === 'string' ? argument : `inline-${index}`;
+      const identity =
+        typeof argument === 'string' ? argument : `inline-${index}`;
       if (seen.has(identity)) continue;
       seen.add(identity);
 
@@ -1321,9 +1424,12 @@ export class FilesService {
       const channels = rawImageChannels(width, height, data.byteLength);
       if (!channels) continue;
 
-      const output = await sharp(Buffer.from(data.buffer, data.byteOffset, data.byteLength), {
-        raw: { width, height, channels },
-      })
+      const output = await sharp(
+        Buffer.from(data.buffer, data.byteOffset, data.byteLength),
+        {
+          raw: { width, height, channels },
+        },
+      )
         .png({ compressionLevel: 8 })
         .toBuffer();
       const imageNumber = artifacts.length + 1;
@@ -1350,7 +1456,9 @@ export class FilesService {
   private async resolvePdfImageObject(page: any, objectId: string) {
     return new Promise<any>((resolve, reject) => {
       try {
-        const value = page.objs.get(objectId, (resolved: any) => resolve(resolved));
+        const value = page.objs.get(objectId, (resolved: any) =>
+          resolve(resolved),
+        );
         if (value) resolve(value);
       } catch (error) {
         reject(error);
@@ -2118,6 +2226,530 @@ export class FilesService {
       action,
     });
   }
+}
+
+type NormalizedPresentationTheme = Required<PresentationTheme>;
+
+function normalizePresentationTheme(
+  input?: PresentationTheme,
+): NormalizedPresentationTheme {
+  const accents = (input?.accentColors ?? [])
+    .map(normalizeHexColor)
+    .filter(Boolean);
+  return {
+    headFontFace: input?.headFontFace?.trim() || 'Aptos Display',
+    bodyFontFace: input?.bodyFontFace?.trim() || 'Aptos',
+    backgroundColor: normalizeHexColor(input?.backgroundColor) || 'F8FAFC',
+    textColor: normalizeHexColor(input?.textColor) || '111827',
+    mutedTextColor: normalizeHexColor(input?.mutedTextColor) || '64748B',
+    accentColors:
+      accents.length > 0
+        ? accents
+        : ['7CF2C4', 'FFE166', '8FE8F7', 'DFFF63', 'F8A8C4'],
+  };
+}
+
+function normalizeHexColor(value?: string) {
+  const normalized = String(value ?? '')
+    .trim()
+    .replace(/^#/, '')
+    .toUpperCase();
+  return /^[0-9A-F]{6}$/.test(normalized) ? normalized : '';
+}
+
+function normalizePresentationImageMime(declaredMime: string, format?: string) {
+  if (/^image\/(png|jpeg|gif)$/i.test(declaredMime)) return declaredMime;
+  if (format === 'jpeg' || format === 'jpg') return 'image/jpeg';
+  if (format === 'gif') return 'image/gif';
+  return 'image/png';
+}
+
+function addPresentationSlide(
+  pptx: PptxGenJS,
+  slide: any,
+  spec: PresentationSlideSpec,
+  theme: NormalizedPresentationTheme,
+  image: LoadedPresentationImage | undefined,
+  index: number,
+) {
+  const layout = spec.layout ?? (index === 0 ? 'title' : 'title-and-content');
+  const background =
+    normalizeHexColor(spec.backgroundColor) || theme.backgroundColor;
+  const accent =
+    normalizeHexColor(spec.accentColor) ||
+    theme.accentColors[index % theme.accentColors.length];
+  slide.background = { color: background };
+
+  if (layout === 'full-bleed-image' && image) {
+    slide.addImage({
+      data: image.dataUri,
+      ...(spec.imageFit === 'contain'
+        ? containImageInBox(image, { x: 0, y: 0, w: 13.333, h: 7.5 })
+        : coverImageOverBox(image, { x: 0, y: 0, w: 13.333, h: 7.5 })),
+    });
+    return;
+  }
+
+  if (layout === 'title' || layout === 'section') {
+    slide.addShape(pptx.ShapeType.roundRect, {
+      x: 0.72,
+      y: layout === 'title' ? 1.62 : 0.84,
+      w: 2.05,
+      h: 0.18,
+      rectRadius: 0.08,
+      line: { color: accent, transparency: 100 },
+      fill: { color: accent },
+    });
+    slide.addText(spec.title?.trim() || '', {
+      x: 0.72,
+      y: layout === 'title' ? 2.06 : 1.32,
+      w: 11.5,
+      h: layout === 'title' ? 1.35 : 1.05,
+      fontFace: theme.headFontFace,
+      fontSize: layout === 'title' ? 33 : 29,
+      bold: true,
+      color: theme.textColor,
+      margin: 0,
+      fit: 'shrink',
+      breakLine: false,
+    });
+    if (spec.subtitle?.trim()) {
+      slide.addText(spec.subtitle.trim(), {
+        x: 0.75,
+        y: layout === 'title' ? 3.57 : 2.6,
+        w: 10.6,
+        h: 0.95,
+        fontFace: theme.bodyFontFace,
+        fontSize: layout === 'title' ? 16 : 15,
+        color: theme.mutedTextColor,
+        margin: 0,
+        fit: 'shrink',
+      });
+    }
+    addPresentationBullets(
+      slide,
+      spec.bullets,
+      theme,
+      0.82,
+      layout === 'title' ? 4.65 : 3.65,
+      11.2,
+      layout === 'title' ? 1.65 : 2.55,
+      16,
+    );
+    addSlideNumber(slide, index, theme.mutedTextColor);
+    return;
+  }
+
+  addPresentationHeader(pptx, slide, spec.title?.trim() || '', theme, accent);
+
+  if (layout === 'overview' || layout === 'takeaways') {
+    const cards = (spec.bullets ?? []).slice(0, 6).map(splitCardBullet);
+    const columns = cards.length <= 4 ? 2 : 3;
+    const rows = Math.ceil(cards.length / columns);
+    const gap = 0.3;
+    const cardWidth = (11.75 - gap * (columns - 1)) / columns;
+    const cardHeight = Math.min(2.05, (4.75 - gap * (rows - 1)) / rows);
+    for (const [cardIndex, card] of cards.entries()) {
+      const column = cardIndex % columns;
+      const row = Math.floor(cardIndex / columns);
+      const x = 0.8 + column * (cardWidth + gap);
+      const y = 1.7 + row * (cardHeight + gap);
+      const cardAccent =
+        theme.accentColors[(index + cardIndex) % theme.accentColors.length];
+      slide.addShape(pptx.ShapeType.roundRect, {
+        x,
+        y,
+        w: cardWidth,
+        h: cardHeight,
+        rectRadius: 0.08,
+        line: { color: cardAccent, width: 1.2 },
+        fill: { color: cardAccent, transparency: 78 },
+      });
+      slide.addShape(pptx.ShapeType.roundRect, {
+        x: x + 0.24,
+        y: y + 0.27,
+        w: 0.48,
+        h: 0.35,
+        rectRadius: 0.05,
+        line: { color: cardAccent, transparency: 100 },
+        fill: { color: cardAccent },
+      });
+      slide.addText(String(cardIndex + 1).padStart(2, '0'), {
+        x: x + 0.24,
+        y: y + 0.31,
+        w: 0.48,
+        h: 0.16,
+        fontFace: theme.bodyFontFace,
+        fontSize: 8,
+        bold: true,
+        color: theme.textColor,
+        align: 'center',
+        margin: 0,
+      });
+      slide.addText(card.heading, {
+        x: x + 0.86,
+        y: y + 0.21,
+        w: cardWidth - 1.08,
+        h: 0.48,
+        fontFace: theme.headFontFace,
+        fontSize: 15,
+        bold: true,
+        color: theme.textColor,
+        margin: 0,
+        fit: 'shrink',
+      });
+      slide.addText(card.body, {
+        x: x + 0.28,
+        y: y + 0.83,
+        w: cardWidth - 0.56,
+        h: cardHeight - 1.05,
+        fontFace: theme.bodyFontFace,
+        fontSize: 11.5,
+        color: theme.mutedTextColor,
+        margin: 0,
+        valign: 'top',
+        fit: 'shrink',
+      });
+    }
+    if (spec.subtitle?.trim()) {
+      slide.addText(spec.subtitle.trim(), {
+        x: 0.84,
+        y: 6.67,
+        w: 10.9,
+        h: 0.32,
+        fontFace: theme.bodyFontFace,
+        fontSize: 10.5,
+        color: theme.mutedTextColor,
+        margin: 0,
+        align: 'center',
+        fit: 'shrink',
+      });
+    }
+    addSlideNumber(slide, index, theme.mutedTextColor);
+    return;
+  }
+
+  if ((layout === 'image-left' || layout === 'image-right') && image) {
+    const imageOnLeft = layout === 'image-left';
+    const imageBox = {
+      x: imageOnLeft ? 0.8 : 7.03,
+      y: 1.62,
+      w: 5.5,
+      h: 4.95,
+    };
+    slide.addShape(pptx.ShapeType.roundRect, {
+      ...imageBox,
+      line: { color: 'E2E8F0', width: 1 },
+      fill: { color: 'FFFFFF' },
+      shadow: {
+        type: 'outer',
+        color: 'CBD5E1',
+        blur: 1.5,
+        angle: 45,
+        distance: 1,
+        opacity: 0.2,
+      },
+    });
+    slide.addImage({
+      data: image.dataUri,
+      ...containImageInBox(image, {
+        x: imageBox.x + 0.12,
+        y: imageBox.y + 0.12,
+        w: imageBox.w - 0.24,
+        h: imageBox.h - 0.24,
+      }),
+    });
+    const textX = imageOnLeft ? 6.72 : 0.82;
+    addPresentationBullets(
+      slide,
+      spec.bullets,
+      theme,
+      textX,
+      2.0,
+      5.65,
+      4.25,
+      16,
+    );
+    if (spec.subtitle?.trim()) {
+      slide.addText(spec.subtitle.trim(), {
+        x: textX,
+        y: 1.5,
+        w: 5.65,
+        h: 0.36,
+        fontFace: theme.bodyFontFace,
+        fontSize: 11,
+        color: theme.mutedTextColor,
+        margin: 0,
+        fit: 'shrink',
+      });
+    }
+    addSlideNumber(slide, index, theme.mutedTextColor);
+    return;
+  }
+
+  if (spec.subtitle?.trim()) {
+    slide.addText(spec.subtitle.trim(), {
+      x: 0.82,
+      y: 1.48,
+      w: 11.55,
+      h: 0.52,
+      fontFace: theme.bodyFontFace,
+      fontSize: 12,
+      color: theme.mutedTextColor,
+      margin: 0,
+      fit: 'shrink',
+    });
+  }
+  addPresentationBullets(
+    slide,
+    spec.bullets,
+    theme,
+    0.92,
+    spec.subtitle?.trim() ? 2.2 : 1.82,
+    11.35,
+    spec.subtitle?.trim() ? 4.3 : 4.7,
+    18,
+  );
+  addSlideNumber(slide, index, theme.mutedTextColor);
+}
+
+function addPresentationHeader(
+  pptx: PptxGenJS,
+  slide: any,
+  title: string,
+  theme: NormalizedPresentationTheme,
+  accent: string,
+) {
+  slide.addShape(pptx.ShapeType.roundRect, {
+    x: 0.72,
+    y: 0.42,
+    w: 0.22,
+    h: 0.72,
+    rectRadius: 0.05,
+    line: { color: accent, transparency: 100 },
+    fill: { color: accent },
+  });
+  slide.addText(title, {
+    x: 1.14,
+    y: 0.42,
+    w: 11.1,
+    h: 0.72,
+    fontFace: theme.headFontFace,
+    fontSize: 25,
+    bold: true,
+    color: theme.textColor,
+    margin: 0,
+    fit: 'shrink',
+  });
+}
+
+function addPresentationBullets(
+  slide: any,
+  bullets: string[] | undefined,
+  theme: NormalizedPresentationTheme,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  fontSize: number,
+) {
+  if (!bullets?.length) return;
+  slide.addText(
+    bullets.slice(0, 12).map((text) => ({
+      text,
+      options: {
+        bullet: { indent: 18 },
+        hanging: 4,
+        breakLine: true,
+      },
+    })),
+    {
+      x,
+      y,
+      w,
+      h,
+      fontFace: theme.bodyFontFace,
+      fontSize,
+      color: theme.textColor,
+      paraSpaceAfter: 13,
+      valign: 'top',
+      margin: 0,
+      breakLine: false,
+      fit: 'shrink',
+    },
+  );
+}
+
+function addSlideNumber(slide: any, index: number, color: string) {
+  slide.addText(String(index + 1).padStart(2, '0'), {
+    x: 12.05,
+    y: 7.05,
+    w: 0.62,
+    h: 0.2,
+    fontSize: 8,
+    color,
+    align: 'right',
+    margin: 0,
+  });
+}
+
+function splitCardBullet(text: string) {
+  const parts = String(text).split(/\s+(?:—|–|-)\s+/, 2);
+  return {
+    heading: parts[0]?.trim() || 'Key point',
+    body: parts[1]?.trim() || parts[0]?.trim() || '',
+  };
+}
+
+function containImageInBox(
+  image: Pick<LoadedPresentationImage, 'width' | 'height'>,
+  box: { x: number; y: number; w: number; h: number },
+) {
+  const scale = Math.min(box.w / image.width, box.h / image.height);
+  const width = image.width * scale;
+  const height = image.height * scale;
+  return {
+    x: box.x + (box.w - width) / 2,
+    y: box.y + (box.h - height) / 2,
+    w: width,
+    h: height,
+  };
+}
+
+function coverImageOverBox(
+  image: Pick<LoadedPresentationImage, 'width' | 'height'>,
+  box: { x: number; y: number; w: number; h: number },
+) {
+  const scale = Math.max(box.w / image.width, box.h / image.height);
+  const width = image.width * scale;
+  const height = image.height * scale;
+  return {
+    x: box.x + (box.w - width) / 2,
+    y: box.y + (box.h - height) / 2,
+    w: width,
+    h: height,
+  };
+}
+
+async function renderPresentationPreview(
+  spec: PresentationSlideSpec,
+  theme: NormalizedPresentationTheme,
+  image: LoadedPresentationImage | undefined,
+  index: number,
+): Promise<ExtractedArtifact> {
+  const layout = spec.layout ?? (index === 0 ? 'title' : 'title-and-content');
+  let buffer: Buffer;
+  if (layout === 'full-bleed-image' && image) {
+    buffer = await sharp(image.buffer)
+      .resize(1280, 720, {
+        fit: spec.imageFit === 'contain' ? 'contain' : 'cover',
+        background: '#ffffff',
+      })
+      .png()
+      .toBuffer();
+  } else {
+    const background =
+      normalizeHexColor(spec.backgroundColor) || theme.backgroundColor;
+    const accent =
+      normalizeHexColor(spec.accentColor) ||
+      theme.accentColors[index % theme.accentColors.length];
+    const cards =
+      layout === 'overview' || layout === 'takeaways'
+        ? (spec.bullets ?? []).slice(0, 6).map(splitCardBullet)
+        : [];
+    const bodyLines =
+      cards.length === 0
+        ? (spec.bullets ?? [])
+            .slice(0, 8)
+            .flatMap((bullet) => wrapPreviewText(`• ${bullet}`, 62))
+        : [];
+    const cardMarkup = cards
+      .map((card, cardIndex) => {
+        const columns = cards.length <= 4 ? 2 : 3;
+        const width = columns === 2 ? 548 : 356;
+        const x = 78 + (cardIndex % columns) * (width + 26);
+        const y = 176 + Math.floor(cardIndex / columns) * 214;
+        const color =
+          theme.accentColors[(index + cardIndex) % theme.accentColors.length];
+        const heading = wrapPreviewText(card.heading, columns === 2 ? 30 : 20)
+          .slice(0, 2)
+          .map(
+            (line, lineIndex) =>
+              `<tspan x="${x + 78}" dy="${lineIndex ? 27 : 0}">${escapeXml(line)}</tspan>`,
+          )
+          .join('');
+        const body = wrapPreviewText(card.body, columns === 2 ? 48 : 30)
+          .slice(0, 3)
+          .map(
+            (line, lineIndex) =>
+              `<tspan x="${x + 24}" dy="${lineIndex ? 24 : 0}">${escapeXml(line)}</tspan>`,
+          )
+          .join('');
+        return `<rect x="${x}" y="${y}" width="${width}" height="184" rx="18" fill="#${color}" fill-opacity=".2" stroke="#${color}" stroke-width="2"/>
+          <rect x="${x + 22}" y="${y + 24}" width="42" height="32" rx="8" fill="#${color}"/>
+          <text x="${x + 43}" y="${y + 45}" text-anchor="middle" font-size="13" font-weight="700" fill="#${theme.textColor}">${String(cardIndex + 1).padStart(2, '0')}</text>
+          <text x="${x + 78}" y="${y + 46}" font-size="24" font-weight="700" fill="#${theme.textColor}">${heading}</text>
+          <text x="${x + 24}" y="${y + 96}" font-size="19" fill="#${theme.mutedTextColor}">${body}</text>`;
+      })
+      .join('');
+    const imageMarkup = image
+      ? `<image href="${image.dataUri}" x="${layout === 'image-right' ? 690 : 75}" y="164" width="520" height="475" preserveAspectRatio="xMidYMid meet"/>`
+      : '';
+    const bodyX = layout === 'image-left' ? 650 : 88;
+    const bodyWidth =
+      layout === 'image-left' || layout === 'image-right' ? 520 : 1100;
+    const svg = `<svg width="1280" height="720" viewBox="0 0 1280 720" xmlns="http://www.w3.org/2000/svg">
+      <rect width="1280" height="720" fill="#${background}"/>
+      <rect x="70" y="42" width="20" height="70" rx="8" fill="#${accent}"/>
+      <text x="112" y="94" font-family="${escapeXml(theme.headFontFace)}, Arial, sans-serif" font-size="46" font-weight="700" fill="#${theme.textColor}">${escapeXml(spec.title ?? '')}</text>
+      ${imageMarkup}
+      ${cardMarkup}
+      ${
+        cards.length
+          ? ''
+          : `<text x="${bodyX}" y="190" font-family="${escapeXml(theme.bodyFontFace)}, Arial, sans-serif" font-size="28" fill="#${theme.textColor}">
+          ${bodyLines
+            .map(
+              (line, lineIndex) =>
+                `<tspan x="${bodyX}" dy="${lineIndex ? 43 : 0}">${escapeXml(line.slice(0, bodyWidth / 14))}</tspan>`,
+            )
+            .join('')}
+        </text>`
+      }
+      <text x="1210" y="685" text-anchor="end" font-family="${escapeXml(theme.bodyFontFace)}, Arial, sans-serif" font-size="15" fill="#${theme.mutedTextColor}">${String(index + 1).padStart(2, '0')}</text>
+    </svg>`;
+    buffer = await sharp(Buffer.from(svg)).png().toBuffer();
+  }
+  return {
+    kind: 'presentation_slide_image',
+    fileName: `slide-${String(index + 1).padStart(3, '0')}.png`,
+    mimeType: 'image/png',
+    buffer,
+    pageNumber: index + 1,
+    width: 1280,
+    height: 720,
+    metadata: {
+      source: 'generated_presentation_preview',
+      layout,
+      imageFileId: spec.imageFileId,
+    },
+  };
+}
+
+function wrapPreviewText(value: string, maxCharacters: number) {
+  const words = String(value).trim().split(/\s+/).filter(Boolean);
+  const lines: string[] = [];
+  let line = '';
+  for (const word of words) {
+    if (line && `${line} ${word}`.length > maxCharacters) {
+      lines.push(line);
+      line = word;
+    } else {
+      line = line ? `${line} ${word}` : word;
+    }
+  }
+  if (line) lines.push(line);
+  return lines;
 }
 
 function samePrincipal(left: string, right: string) {

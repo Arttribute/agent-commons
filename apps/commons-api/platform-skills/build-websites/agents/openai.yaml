@@ -1,0 +1,4 @@
+interface:
+  display_name: "Build Websites"
+  short_description: "Build, publish, and verify polished websites"
+  default_prompt: "Use $build-websites to build and verify a polished website for this brief."

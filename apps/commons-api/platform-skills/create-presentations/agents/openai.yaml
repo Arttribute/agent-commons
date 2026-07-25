@@ -1,0 +1,4 @@
+interface:
+  display_name: "Create Presentations"
+  short_description: "Build polished, verified PowerPoint decks"
+  default_prompt: "Use $create-presentations to build a polished PowerPoint from my content and visual assets."

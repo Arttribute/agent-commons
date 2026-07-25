@@ -1,0 +1,4 @@
+interface:
+  display_name: "Create Documents"
+  short_description: "Create and revise professional documents"
+  default_prompt: "Use $create-documents to create a polished document from my material."
