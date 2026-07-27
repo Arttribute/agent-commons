@@ -2,6 +2,7 @@ import { oauthProvider } from "@better-auth/oauth-provider";
 import { bearer, deviceAuthorization, jwt } from "better-auth/plugins";
 import bcrypt from "bcryptjs";
 import { createCommonsId } from "@/lib/ids";
+import { PLATFORM_SCOPES } from "@/lib/platform-api";
 
 const AUTH_SESSION_VERSION = (
   process.env.COMMONS_AUTH_SESSION_VERSION ?? "v2"
@@ -267,6 +268,12 @@ export function commonsAuthOptions(database: unknown) {
               (user as { defaultWorkspaceId?: string }).defaultWorkspaceId ??
               null,
             actor_type: "user",
+            // First-party Commons sessions represent the user's account, so
+            // their short-lived platform JWT must carry the same capabilities
+            // exposed to the CLI and web app. Project API keys and third-party
+            // OAuth clients remain restricted to their explicitly granted
+            // scopes.
+            scopes: [...PLATFORM_SCOPES],
           }),
         },
       }),
@@ -278,14 +285,7 @@ export function commonsAuthOptions(database: unknown) {
           "profile",
           "email",
           "offline_access",
-          "activity:read",
-          "agents:create",
-          "agents:read",
-          "agents:write",
-          "agents:run",
-          "compute:read",
-          "compute:write",
-          "usage:read",
+          ...PLATFORM_SCOPES,
         ],
         validAudiences: ["commons-platform"],
         accessTokenExpiresIn: 15 * 60,

@@ -32,6 +32,7 @@ await database.query(
 
 const { commonsAuthOptions } = await import("../lib/auth-config");
 const { ensureOAuthClient } = await import("../lib/oauth-client-store");
+const { PLATFORM_SCOPES } = await import("../lib/platform-api");
 const auth = betterAuth(commonsAuthOptions(database));
 const { createIdentityApp } = await import("../src/index");
 const app = createIdentityApp(auth as never, database as never);
@@ -241,6 +242,13 @@ const platformClaims = JSON.parse(
   Buffer.from(platformToken.token.split(".")[1]!, "base64url").toString("utf8"),
 ) as Record<string, unknown>;
 assert(platformClaims.sub === user.rows[0].id, "CLI JWT has the wrong subject");
+assert(
+  Array.isArray(platformClaims.scopes) &&
+    PLATFORM_SCOPES.every((scope) =>
+      (platformClaims.scopes as unknown[]).includes(scope),
+    ),
+  "CLI JWT is missing Commons account platform scopes",
+);
 
 const jwks = await app.request(
   "http://identity.test/api/auth/.well-known/jwks.json",
