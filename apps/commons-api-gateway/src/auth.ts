@@ -37,6 +37,7 @@ export async function authenticate(
       actorId: "legacy",
       actorType: token.startsWith("cos_agent_") ? "agent" : "user",
       scopes: [
+        "agents:create",
         "agents:read",
         "agents:write",
         "agents:run",

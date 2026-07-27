@@ -1,4 +1,8 @@
-export { CommonsClient, CommonsError } from "./client";
+export {
+  CommonsClient,
+  CommonsError,
+  type CommonsRequestOptions,
+} from "./client";
 export {
   buildWorkflowTemplate,
   listWorkflowTemplates,
@@ -97,6 +101,10 @@ export type {
   CreatedApiKey,
   CreateApiKeyParams,
   ApiKeyPrincipalType,
+  DeveloperProjectEnvironment,
+  DeveloperProject,
+  DeveloperApiKey,
+  CreatedDeveloperApiKey,
   // Workflow value envelope
   WorkflowValue,
   WorkflowValueKind,
@@ -119,6 +127,24 @@ export type {
   CreditWriteParams,
   // Feature flags
   FlagEvaluation,
+  ActivityEvent,
+  AgentLog,
+  FileArtifact,
+  FileContent,
+  UploadFileInput,
+  LibraryItem,
+  LibraryGrant,
+  LibraryShareLink,
+  Space,
+  SpaceMember,
+  SpaceMessage,
+  CodeProject,
+  CodeProjectFile,
+  Goal,
+  OAuthProvider,
+  OAuthConnection,
+  BillingInvoice,
+  BillingPaymentMethod,
   CommonsClientConfig,
 } from "./types";
 export type {

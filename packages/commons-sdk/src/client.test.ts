@@ -7,7 +7,9 @@ function makeFetch(body: unknown, status = 200) {
     ok: status >= 200 && status < 300,
     status,
     statusText: status === 200 ? 'OK' : 'Error',
+    headers: { get: jest.fn().mockReturnValue('application/json') },
     json: jest.fn().mockResolvedValue(body),
+    text: jest.fn().mockResolvedValue(typeof body === 'string' ? body : ''),
     body: null,
   });
 }
@@ -47,6 +49,11 @@ describe('CommonsClient', () => {
     const client = makeClient(fetch);
     await expect(client.agents.get('missing')).rejects.toBeInstanceOf(CommonsError);
     await expect(client.agents.get('missing')).rejects.toMatchObject({ status: 404 });
+  });
+
+  it('accepts successful 204 responses without parsing JSON', async () => {
+    const fetch = makeFetch(undefined, 204);
+    await expect(makeClient(fetch).request('DELETE', '/v1/example')).resolves.toBeUndefined();
   });
 });
 
@@ -436,6 +443,122 @@ describe('client.usage', () => {
     const fetch = makeFetch({ data: agg });
     await makeClient(fetch).usage.getSessionUsage('s1');
     expect(fetch.mock.calls[0][0]).toBe('http://api.test/v1/usage/sessions/s1');
+  });
+});
+
+// ── recently added platform parity surfaces ──────────────────────────────────
+
+describe('platform parity surfaces', () => {
+  it('uses the actual tool-permission routes', async () => {
+    const listFetch = makeFetch({ success: true, data: [] });
+    await makeClient(listFetch).toolPermissions.listForTool('tool/1');
+    expect(listFetch.mock.calls[0][0]).toBe(
+      'http://api.test/v1/tool-permissions/tool/tool%2F1',
+    );
+
+    const revokeFetch = makeFetch({ success: true });
+    await makeClient(revokeFetch).toolPermissions.revoke('permission-1');
+    expect(revokeFetch.mock.calls[0][0]).toBe(
+      'http://api.test/v1/tool-permissions/permission-1',
+    );
+  });
+
+  it('supports OAuth connection get and update', async () => {
+    const getFetch = makeFetch({ connection: { connectionId: 'conn-1' } });
+    await makeClient(getFetch).oauth.getConnection('conn-1');
+    expect(getFetch.mock.calls[0][0]).toBe(
+      'http://api.test/v1/oauth/connections/conn-1',
+    );
+
+    const updateFetch = makeFetch({ success: true, connection: {} });
+    await makeClient(updateFetch).oauth.updateConnection('conn-1', {
+      displayName: 'Work',
+    });
+    expect(updateFetch.mock.calls[0][1].method).toBe('PUT');
+    expect(JSON.parse(updateFetch.mock.calls[0][1].body)).toEqual({
+      displayName: 'Work',
+    });
+  });
+
+  it('exposes logs through a typed public namespace', async () => {
+    const fetch = makeFetch({ data: [] });
+    await makeClient(fetch).logs.list('agent-1', {
+      sessionId: 'session-1',
+      limit: 25,
+    });
+    expect(fetch.mock.calls[0][0]).toBe(
+      'http://api.test/v1/logs/agents/agent-1?sessionId=session-1&limit=25',
+    );
+  });
+
+  it('uploads files as multipart data without forcing a JSON content type', async () => {
+    const fetch = makeFetch({ data: [] });
+    await makeClient(fetch).files.upload(
+      [{ data: new Blob(['hello']), name: 'hello.txt' }],
+      { agentId: 'agent-1' },
+    );
+    const options = fetch.mock.calls[0][1];
+    expect(options.body).toBeInstanceOf(FormData);
+    expect(options.headers['Content-Type']).toBeUndefined();
+    expect(options.headers.Authorization).toBe('Bearer test-key');
+  });
+
+  it('sends required creator headers when creating a space', async () => {
+    const fetch = makeFetch({ data: { spaceId: 'space-1' } });
+    await makeClient(fetch).spaces.create(
+      { name: 'Builders' },
+      { id: 'user-1', type: 'human' },
+    );
+    expect(fetch.mock.calls[0][1].headers).toMatchObject({
+      'x-creator-id': 'user-1',
+      'x-creator-type': 'human',
+    });
+  });
+});
+
+describe('developer projects and API keys', () => {
+  function identityClient(fetch: jest.Mock) {
+    return new CommonsClient({
+      baseUrl: 'http://api.test',
+      identityUrl: 'http://identity.test/api/auth',
+      identityToken: 'account-session',
+      fetch: fetch as any,
+    });
+  }
+
+  it('lists developer projects through Commons Identity', async () => {
+    const fetch = makeFetch({ data: [] });
+    await identityClient(fetch).developer.listProjects();
+    expect(fetch.mock.calls[0][0]).toBe(
+      'http://identity.test/api/platform/projects',
+    );
+    expect(fetch.mock.calls[0][1]).toMatchObject({
+      method: 'GET',
+      credentials: 'include',
+      headers: { Authorization: 'Bearer account-session' },
+    });
+  });
+
+  it('creates scoped project API keys', async () => {
+    const fetch = makeFetch({ data: { key: 'csk_test_secret' } });
+    await identityClient(fetch).developer.createApiKey('project/1', {
+      name: 'CI',
+      scopes: ['agents:read', 'agents:run'],
+    });
+    expect(fetch.mock.calls[0][0]).toBe(
+      'http://identity.test/api/platform/projects/project%2F1/api-keys',
+    );
+    expect(JSON.parse(fetch.mock.calls[0][1].body)).toEqual({
+      name: 'CI',
+      scopes: ['agents:read', 'agents:run'],
+    });
+  });
+
+  it('revokes project API keys and accepts an empty response', async () => {
+    const fetch = makeFetch(undefined, 204);
+    await expect(
+      identityClient(fetch).developer.revokeApiKey('key-1'),
+    ).resolves.toBeUndefined();
   });
 });
 

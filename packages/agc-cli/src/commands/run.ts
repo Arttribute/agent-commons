@@ -168,11 +168,7 @@ export function runCommand(): Command {
             readline.clearLine(process.stdout, 0);
             process.stdout.write(`  ${c.dim('─')} ${c.bold(displayName)}  ${toolOk ? sym.ok : sym.fail}  ${c.dim('(' + elapsed + 's)')}\n`);
             try {
-              await fetch(`${cfg.apiUrl}/v1/agents/cli-tool-result`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${cfg.apiKey}` },
-                body: JSON.stringify({ requestId, result }),
-              });
+              await client.agents.submitCliToolResult(requestId, result);
             } catch { /* non-fatal */ }
           } else if (event.type === 'toolStart') {
             lastToolName = (event as any).toolName ?? '';

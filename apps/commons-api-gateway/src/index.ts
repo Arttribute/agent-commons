@@ -176,11 +176,7 @@ export function createGatewayApp() {
     c.set("principal", principal);
     const required = requiredScope(c.req.method, c.req.path);
     const granted = new Set(principal.scopes);
-    if (
-      required &&
-      !granted.has(required) &&
-      !(required === "agents:write" && granted.has("agents:create"))
-    ) {
+    if (required && !granted.has(required)) {
       return c.json(
         {
           error: {
@@ -369,6 +365,9 @@ function requiredScope(method: string, path: string) {
   }
   if (/\/agents\/(?:run|[^/]+\/trigger)/.test(path)) return "agents:run";
   if (path.startsWith("/v1/agents")) {
+    if (method === "POST" && /^\/v1\/agents\/?$/.test(path)) {
+      return "agents:create";
+    }
     return method === "GET" || method === "HEAD"
       ? "agents:read"
       : "agents:write";

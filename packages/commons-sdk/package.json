@@ -1,12 +1,33 @@
 {
   "name": "@agent-commons/sdk",
   "version": "0.4.0",
-  "description": "Typed client SDK for the Agent Commons API",
+  "description": "Official TypeScript SDK for building, running, and managing agents on Agent Commons",
+  "license": "MIT",
+  "keywords": [
+    "agent-commons",
+    "ai-agents",
+    "agent-sdk",
+    "typescript",
+    "workflows",
+    "mcp",
+    "a2a"
+  ],
+  "homepage": "https://docs.agentcommons.io/docs/sdk",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Arttribute/agent-commons.git",
+    "directory": "packages/commons-sdk"
+  },
+  "bugs": {
+    "url": "https://github.com/Arttribute/agent-commons/issues"
+  },
   "main": "./dist/index.cjs",
   "module": "./dist/index.mjs",
   "types": "./dist/index.d.ts",
   "files": [
-    "dist"
+    "dist",
+    "README.md",
+    "LICENSE"
   ],
   "sideEffects": false,
   "exports": {
@@ -23,6 +44,9 @@
   },
   "publishConfig": {
     "access": "public"
+  },
+  "engines": {
+    "node": ">=18"
   },
   "dependencies": {},
   "devDependencies": {

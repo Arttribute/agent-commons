@@ -9,6 +9,7 @@ type Database = {
 };
 
 export const PLATFORM_SCOPES = [
+  "agents:create",
   "agents:read",
   "agents:write",
   "agents:run",

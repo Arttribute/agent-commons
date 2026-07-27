@@ -34,10 +34,10 @@ export function logsCommand(): Command {
       const spinner = spin('Fetching logs…');
       try {
         const client = makeClient();
-        // Fetch via the backend URL directly through the base client request
-        const qs = new URLSearchParams({ limit: opts.limit });
-        if (opts.session) qs.set('sessionId', opts.session);
-        const res = await (client as any).request('GET', `/v1/logs/agents/${agentId}?${qs}`);
+        const res = await client.logs.list(agentId, {
+          limit: Number(opts.limit),
+          sessionId: opts.session,
+        });
         let logs: any[] = (res as any)?.data ?? res ?? [];
         if (opts.status) logs = logs.filter((l: any) => l.status === opts.status);
         spinner.stop();
@@ -60,7 +60,7 @@ export function logsCommand(): Command {
           console.log('');
         });
       } catch (err) {
-        spin('').stop();
+        spinner.stop();
         printError(err);
         process.exit(1);
       }
@@ -82,7 +82,9 @@ export function logsCommand(): Command {
       const spinner = spin('Fetching error logs…');
       try {
         const client = makeClient();
-        const res = await (client as any).request('GET', `/v1/logs/agents/${agentId}?limit=${opts.limit}`);
+        const res = await client.logs.list(agentId, {
+          limit: Number(opts.limit),
+        });
         const errors = ((res as any)?.data ?? []).filter((l: any) => l.status === 'error');
         spinner.stop();
         if (opts.json) return jsonOut(errors);

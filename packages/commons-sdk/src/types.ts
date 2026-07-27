@@ -720,13 +720,16 @@ export interface ToolKey {
 
 export interface CreateToolKeyParams {
   toolId?: string;
-  ownerId: string;
-  ownerType: "user" | "agent";
+  /** @deprecated Ownership is derived from the authenticated principal. */
+  ownerId?: string;
+  /** @deprecated Ownership is derived from the authenticated principal. */
+  ownerType?: "user" | "agent";
   keyName: string;
   value: string;
   displayName?: string;
   description?: string;
-  keyType?: string;
+  keyType?: "api-key" | "bearer-token" | "oauth-token" | "secret";
+  expiresAt?: string;
 }
 
 // ─── Tool Permission ──────────────────────────────────────────────────────────
@@ -868,6 +871,13 @@ export interface McpPrompt {
 export interface CommonsClientConfig {
   /** Defaults to the unified Commons API platform. */
   baseUrl?: string;
+  /** Commons Identity origin used for developer projects and project API keys. */
+  identityUrl?: string;
+  /**
+   * Commons account session or OAuth access token for Commons Identity.
+   * This is distinct from `apiKey`, which authenticates platform API calls.
+   */
+  identityToken?: string;
   apiKey?: string;
   initiator?: string;
   /** Fetch implementation — defaults to global fetch */
@@ -1171,6 +1181,199 @@ export interface FlagEvaluation {
   payload?: unknown;
 }
 
+// ─── Platform resources ─────────────────────────────────────────────────────
+
+export interface ActivityEvent {
+  eventId?: string;
+  actorId: string;
+  actorType?: "user" | "agent" | "service" | string;
+  eventType: string;
+  resourceType?: string | null;
+  resourceId?: string | null;
+  metadata?: Record<string, unknown> | null;
+  createdAt: string;
+}
+
+export interface AgentLog {
+  logId?: string;
+  agentId: string;
+  sessionId?: string | null;
+  action?: string;
+  message?: string | null;
+  status?: "success" | "error" | "warning" | string;
+  responseTime?: number | null;
+  tools?: unknown[];
+  timestamp: string;
+  [key: string]: unknown;
+}
+
+export interface FileArtifact {
+  fileId: string;
+  name?: string;
+  originalName?: string;
+  mimeType?: string;
+  size?: number;
+  storageProvider?: "s3" | "ipfs" | string;
+  agentId?: string | null;
+  sessionId?: string | null;
+  ownerId?: string | null;
+  workspaceId?: string | null;
+  createdAt?: string;
+  [key: string]: unknown;
+}
+
+export interface FileContent {
+  fileId?: string;
+  content?: string;
+  mimeType?: string;
+  offset?: number;
+  nextOffset?: number | null;
+  truncated?: boolean;
+  imageUrls?: string[];
+  downloadUrl?: string;
+  [key: string]: unknown;
+}
+
+export interface UploadFileInput {
+  data: Blob;
+  name?: string;
+}
+
+export interface LibraryItem extends FileArtifact {
+  itemId?: string;
+  description?: string | null;
+  isFavorite?: boolean;
+  source?: string;
+  grants?: LibraryGrant[];
+  shareLinks?: LibraryShareLink[];
+}
+
+export interface LibraryGrant {
+  grantId: string;
+  subjectType: "user" | "agent" | "workspace";
+  subjectId: string;
+  permission: "read" | "edit" | "manage";
+  expiresAt?: string | null;
+  [key: string]: unknown;
+}
+
+export interface LibraryShareLink {
+  shareId: string;
+  token?: string;
+  url?: string;
+  expiresAt?: string | null;
+  [key: string]: unknown;
+}
+
+export interface Space {
+  spaceId: string;
+  name: string;
+  description?: string | null;
+  visibility?: string;
+  createdBy?: string;
+  createdByType?: "agent" | "human";
+  createdAt?: string;
+  updatedAt?: string;
+  members?: SpaceMember[];
+  [key: string]: unknown;
+}
+
+export interface SpaceMember {
+  memberId: string;
+  memberType: "agent" | "human";
+  role?: string;
+  status?: string;
+  permissions?: Record<string, unknown>;
+  [key: string]: unknown;
+}
+
+export interface SpaceMessage {
+  messageId: string;
+  spaceId: string;
+  senderId: string;
+  senderType: "agent" | "human";
+  content: string;
+  metadata?: Record<string, unknown>;
+  createdAt?: string;
+  updatedAt?: string;
+  [key: string]: unknown;
+}
+
+export interface CodeProjectFile {
+  path: string;
+  content: string;
+}
+
+export interface CodeProject {
+  projectId: string;
+  agentId: string;
+  name: string;
+  description?: string | null;
+  sessionId?: string | null;
+  files?: CodeProjectFile[];
+  previewSlug?: string | null;
+  previewUrl?: string | null;
+  createdAt?: string;
+  updatedAt?: string;
+  [key: string]: unknown;
+}
+
+export interface Goal {
+  goalId: string;
+  status: "pending" | "started" | "completed" | "failed";
+  progress: number;
+  title?: string;
+  description?: string;
+  agentId?: string;
+  [key: string]: unknown;
+}
+
+export interface OAuthProvider {
+  providerKey: string;
+  displayName: string;
+  isActive: boolean;
+  scopes?: string[];
+  scopeGroups?: Record<string, string[]>;
+  [key: string]: unknown;
+}
+
+export interface OAuthConnection {
+  connectionId: string;
+  providerKey: string;
+  providerDisplayName?: string;
+  providerUserId?: string | null;
+  providerUserEmail?: string | null;
+  providerUserName?: string | null;
+  scopes: string[];
+  status: string;
+  lastUsedAt?: string | null;
+  expiresAt?: string | null;
+  metadata?: Record<string, unknown> | null;
+  [key: string]: unknown;
+}
+
+export interface BillingInvoice {
+  id: string;
+  status?: string | null;
+  currency?: string;
+  amountDue?: number;
+  amountPaid?: number;
+  created?: number | string;
+  hostedInvoiceUrl?: string | null;
+  invoicePdf?: string | null;
+  [key: string]: unknown;
+}
+
+export interface BillingPaymentMethod {
+  id: string;
+  type: string;
+  brand?: string;
+  last4?: string;
+  expMonth?: number;
+  expYear?: number;
+  [key: string]: unknown;
+}
+
 // ─── Wallet ───────────────────────────────────────────────────────────────────
 
 export type WalletType = "eoa" | "erc4337" | "external";
@@ -1225,6 +1428,40 @@ export interface CreateApiKeyParams {
 
 /** Returned only on creation — the plaintext key is never available again. */
 export interface CreatedApiKey extends ApiKey {
+  key: string;
+}
+
+// ─── Developer projects and project API keys ────────────────────────────────
+
+export type DeveloperProjectEnvironment =
+  | "production"
+  | "development"
+  | "staging";
+
+export interface DeveloperProject {
+  id: string;
+  workspaceId: string;
+  name: string;
+  slug: string;
+  environment: DeveloperProjectEnvironment;
+  status: string;
+  createdAt: string;
+}
+
+export interface DeveloperApiKey {
+  id: string;
+  projectId: string;
+  keyPrefix: string;
+  name: string;
+  scopes: string[];
+  status: string;
+  expiresAt?: string | null;
+  lastUsedAt?: string | null;
+  createdAt: string;
+}
+
+export interface CreatedDeveloperApiKey extends DeveloperApiKey {
+  /** Plaintext key — shown once at creation time. */
   key: string;
 }
 

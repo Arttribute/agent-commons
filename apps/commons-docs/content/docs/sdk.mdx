@@ -5,7 +5,7 @@ description: Install @agent-commons/sdk and build with type-safe access to the f
 
 # TypeScript SDK
 
-The @agent-commons/sdk package gives you typed access to the full Agent Commons API from Node.js or any TypeScript/JavaScript environment.
+The `@agent-commons/sdk` package gives you typed access to the Agent Commons API from Node.js, modern browsers, and edge runtimes.
 
 ## Installation
 
@@ -19,17 +19,22 @@ npm install @agent-commons/sdk
 import { CommonsClient } from '@agent-commons/sdk';
 
 const client = new CommonsClient({
-  baseUrl: 'https://api.agentcommons.io',
-  apiKey: process.env.COMMONS_API_KEY,
+  apiKey: process.env.AGENT_COMMONS_API_KEY,
 });
 ```
 
 | Option | Type | Required | Description |
 |---|---|---|---|
-| baseUrl | string | yes | Base URL of the API |
-| apiKey | string | yes* | API key from Settings → API Keys |
-| initiator | string | no | Wallet address (alternative to apiKey) |
-| fetch | typeof fetch | no | Custom fetch implementation |
+| `baseUrl` | `string` | no | API origin. Defaults to `https://api.agentcommons.io` |
+| `apiKey` | `string` | for API calls | Project key from **Settings → Developer API keys** |
+| `initiator` | `string` | no | Optional delegated principal |
+| `identityUrl` | `string` | no | Commons Identity origin for developer-project operations |
+| `identityToken` | `string` | for `developer` | Commons Identity access token |
+| `fetch` | `typeof fetch` | no | Custom Fetch implementation |
+
+Create a project-scoped `csk_*` key in **Agent Commons → Settings → Developer API keys**. Select only the scopes your application needs and set an expiration when practical. The plaintext key appears once, so copy it to your secret manager immediately.
+
+Keep API keys on the server. Do not put them in browser bundles, mobile applications, or source control.
 
 ---
 
@@ -374,31 +379,41 @@ Wallet types: eoa · erc4337 · external
 
 ---
 
-## API Keys
+## Developer projects and API keys
+
+Developer keys are managed by Commons Identity and belong to a developer project. Use an account access token to manage projects and keys:
 
 ```typescript
-// Create (plaintext returned only once)
-const created = await client.apiKeys.create({
-  principalId: '0xUSER',
-  principalType: 'user',
-  label: 'production',
+const identity = new CommonsClient({
+  identityToken: process.env.COMMONS_IDENTITY_TOKEN,
 });
-console.log('Key:', created.key); // save this!
 
-// List active keys
-const keys = await client.apiKeys.list('0xUSER', 'user');
+const { data: project } = await identity.developer.createProject({
+  workspaceId: 'workspace_abc123',
+  name: 'Production API',
+  environment: 'production',
+});
 
-// Revoke
-await client.apiKeys.revoke(keyId);
+const { data: created } = await identity.developer.createApiKey(project.id, {
+  name: 'Backend service',
+  scopes: ['agents:read', 'agents:run'],
+  expiresAt: '2027-01-01T00:00:00Z',
+});
+
+console.log(created.key); // returned only once
+
+const { data: keys } = await identity.developer.listApiKeys(project.id);
+await identity.developer.revokeApiKey(keys[0].id);
 ```
+
+The older `client.apiKeys` namespace remains available for legacy `sk-ac-*` principal keys. Use `client.developer` for new integrations.
 
 ---
 
 ## Auth
 
 ```typescript
-// Resolve the principalId (wallet address) for the current API key —
-// useful so you don't need to hard-code the initiator address
+// Resolve the principal represented by the current API key.
 const { principalId, principalType } = await client.auth.me();
 ```
 
@@ -504,8 +519,7 @@ try {
 import { CommonsClient } from '@agent-commons/sdk';
 
 const client = new CommonsClient({
-  baseUrl: 'https://api.agentcommons.io',
-  apiKey: process.env.COMMONS_API_KEY!,
+  apiKey: process.env.AGENT_COMMONS_API_KEY!,
 });
 
 async function main() {
