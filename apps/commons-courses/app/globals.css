@@ -60,3 +60,44 @@ body {
   background: #d9f99d;
   color: #0a0a0a;
 }
+
+.studio-label {
+  margin-bottom: 0.4rem;
+  display: block;
+  font-size: 0.625rem;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: #94a3b8;
+}
+
+.studio-input {
+  display: block;
+  width: 100%;
+  border-radius: 0.75rem;
+  border: 1px solid #e2e8f0;
+  background: #ffffff;
+  padding: 0.625rem 0.75rem;
+  font-size: 0.75rem;
+  color: #0f172a;
+  outline: none;
+  transition:
+    border-color 120ms ease,
+    box-shadow 120ms ease;
+}
+
+.studio-input:focus {
+  border-color: #64748b;
+  box-shadow: 0 0 0 3px rgb(100 116 139 / 0.1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

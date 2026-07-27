@@ -6,6 +6,10 @@ import { CourseOutline } from "@/components/courses/course-outline";
 import { CoursePaymentOptions } from "@/components/courses/course-payment-options";
 import { EnrolledBanner } from "@/components/courses/enrolled-banner";
 import { EnrollmentAwareActions } from "@/components/courses/enrollment-aware-actions";
+import {
+  CourseExperienceGallery,
+  type CourseExperienceCard,
+} from "@/components/courses/course-experience-gallery";
 import { AnalyticsTracker } from "@/components/analytics/analytics-tracker";
 import { RichTextRenderer } from "@/components/rich-text-renderer";
 import { auth } from "@/lib/auth";
@@ -13,6 +17,9 @@ import { getAppBaseUrl } from "@/lib/app-url";
 import { connectDB } from "@/lib/db";
 import Course from "@/models/Course";
 import Enrollment from "@/models/Enrollment";
+import ExperienceProject from "@/models/ExperienceProject";
+import ExperienceRevision from "@/models/ExperienceRevision";
+import type { ExperienceDocument } from "@/types/experience";
 import {
   ArrowRight,
   ArrowLeft,
@@ -364,6 +371,55 @@ export default async function CoursePage({ params, searchParams }: Props) {
   const presentation = getCoursePresentation(course);
   const isAiQuickWins = isAiQuickWinsCourse(course);
   const outlineModules = toOutlineModules(course.modules);
+  const experienceProjects = (await ExperienceProject.find({
+    courseId: course._id,
+    status: "published",
+    publishedRevisionId: { $exists: true },
+  })
+    .select("_id isFreePreview publishedRevisionId")
+    .sort({ publishedAt: -1 })
+    .lean()) as Array<{
+    _id: unknown;
+    isFreePreview: boolean;
+    publishedRevisionId: unknown;
+  }>;
+  const experienceRevisions = (await ExperienceRevision.find({
+    _id: {
+      $in: experienceProjects.map(
+        (experience) => experience.publishedRevisionId,
+      ),
+    },
+  })
+    .select("_id document")
+    .lean()) as Array<{ _id: unknown; document: ExperienceDocument }>;
+  const experienceRevisionById = new Map(
+    experienceRevisions.map((revision) => [
+      String(revision._id),
+      revision.document,
+    ]),
+  );
+  const experiences: CourseExperienceCard[] = experienceProjects.flatMap(
+    (experience) => {
+      const document = experienceRevisionById.get(
+        String(experience.publishedRevisionId),
+      );
+      return document
+        ? [
+            {
+              id: String(experience._id),
+              title: document.title,
+              description:
+                document.description ||
+                "An immersive learning experience.",
+              estimatedMinutes: document.estimatedMinutes || 8,
+              sceneCount: document.scenes.length,
+              isFreePreview: experience.isFreePreview,
+              theme: document.theme,
+            },
+          ]
+        : [];
+    },
+  );
 
   const totalMinutes = course.modules
     .flatMap((m) => m.lessons)
@@ -499,6 +555,9 @@ export default async function CoursePage({ params, searchParams }: Props) {
               ...(presentation.projectExamples?.length
                 ? [["#projects", "What you will build"]]
                 : []),
+              ...(experiences.length
+                ? [["#experiences", "Experiences"]]
+                : []),
               ["#curriculum", "Curriculum"],
             ].map(([href, label]) => (
               <a
@@ -562,6 +621,13 @@ export default async function CoursePage({ params, searchParams }: Props) {
             </div>
           </section>
         ) : null}
+
+        <CourseExperienceGallery
+          courseSlug={course.slug}
+          courseIsFree={course.isFree}
+          isEnrolled={isEnrolled}
+          experiences={experiences}
+        />
 
         <section id="curriculum" className="scroll-mt-32 bg-white">
           <div className="mx-auto max-w-7xl px-4 py-16 sm:px-6 lg:px-8 lg:py-20">
