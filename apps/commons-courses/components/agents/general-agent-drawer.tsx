@@ -1,7 +1,7 @@
 "use client";
 
 import { FormEvent, useState } from "react";
-import { Compass, MessageSquare, Send, X } from "lucide-react";
+import { Compass, MessageSquare, Send, Sparkles, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { CourseAgentMessage, CourseAgentViewContext } from "@/types/course-agent";
 
@@ -69,8 +69,8 @@ export function GeneralAgentDrawer({ context }: Props) {
           open && "hidden"
         )}
       >
-        <Compass className="h-4 w-4" />
-        Assistant
+        <Sparkles className="h-4 w-4" />
+        Learning copilot
       </button>
 
       {open && (
@@ -85,10 +85,10 @@ export function GeneralAgentDrawer({ context }: Props) {
             <header className="flex items-start justify-between gap-3 border-b border-slate-100 p-4">
               <div>
                 <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-slate-400">
-                  CommonLab assistant
+                  CommonLab copilot
                 </p>
                 <h2 className="mt-1 text-base font-bold text-slate-950">
-                  Navigate your workspace
+                  Find your next learning step
                 </h2>
               </div>
               <button
@@ -106,11 +106,11 @@ export function GeneralAgentDrawer({ context }: Props) {
                 <div className="mt-10 text-center">
                   <Compass className="mx-auto mb-3 h-5 w-5 text-slate-400" />
                   <p className="text-sm font-semibold text-slate-800">
-                    Ask across what you can access.
+                    Where would you like to go?
                   </p>
                   <p className="mx-auto mt-1 max-w-xs text-sm leading-6 text-slate-500">
-                    I can help find courses, continue lessons, locate
-                    assignments, and navigate your educator or learner work.
+                    I can help you resume a lesson, find an assignment, choose
+                    what to practise, or navigate CommonLab.
                   </p>
                 </div>
               ) : (
