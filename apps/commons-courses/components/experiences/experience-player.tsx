@@ -10,16 +10,18 @@ import {
   ChevronRight,
   GripVertical,
   Headphones,
+  Globe2,
+  FileCheck2,
   Loader2,
   Move,
   PackageCheck,
   RotateCcw,
   Search,
-  Sparkles,
   Volume2,
   X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { ImmersiveStage } from "@/components/experiences/immersive-stage";
 import {
   evaluateExperienceScene,
   type ExperienceInteractionAnswer,
@@ -64,20 +66,23 @@ export function ExperiencePlayer({
   const [loading, setLoading] = useState(!preview && Boolean(courseSlug && experienceId));
   const [submitting, setSubmitting] = useState(false);
   const [muted, setMuted] = useState(false);
+  const [shotState, setShotState] = useState({ sceneId: "", index: 0 });
   const scene = useMemo(
     () =>
       document.scenes.find((item) => item.id === progress.currentSceneId) ||
       document.scenes[0],
     [document.scenes, progress.currentSceneId],
   );
+  const shotIndex = shotState.sceneId === scene?.id ? shotState.index : 0;
+  const activeShot = scene?.shots?.[shotIndex];
   const character = document.characters.find(
-    (item) => item.id === scene?.characterId,
+    (item) =>
+      item.id === (activeShot?.speakerCharacterId || scene?.characterId),
   );
   const sceneNumber = Math.max(
     1,
     document.scenes.findIndex((item) => item.id === scene?.id) + 1,
   );
-  const showStageVisual = Boolean(character || scene?.backgroundUrl);
 
   useEffect(() => {
     if (preview || !courseSlug || !experienceId) {
@@ -117,12 +122,14 @@ export function ExperiencePlayer({
           body: JSON.stringify({
             action:
             scene.type === "choice" ||
+              scene.type === "world-map" ||
               scene.type === "quiz" ||
               scene.type === "hotspot" ||
               scene.type === "collect" ||
               scene.type === "sort" ||
               scene.type === "match" ||
-              scene.type === "sequence"
+              scene.type === "sequence" ||
+              scene.type === "evidence"
                 ? "answer"
                 : "advance",
             sceneId: scene.id,
@@ -220,8 +227,9 @@ export function ExperiencePlayer({
   function listen() {
     if (muted || !scene || !("speechSynthesis" in window)) return;
     window.speechSynthesis.cancel();
+    const spokenShot = scene.shots?.[shotIndex];
     const utterance = new SpeechSynthesisUtterance(
-      `${scene.title}. ${scene.body}`,
+      `${spokenShot?.title || scene.title}. ${spokenShot?.body || scene.body}`,
     );
     utterance.rate = 0.95;
     window.speechSynthesis.speak(utterance);
@@ -240,22 +248,32 @@ export function ExperiencePlayer({
     (progress.completedSceneIds.length / document.scenes.length) * 100,
   );
   const theme = document.theme;
+  const atFinalBeat =
+    !scene.shots?.length || shotIndex >= scene.shots.length - 1;
+  const displayTitle = activeShot?.title || scene.title;
+  const displayBody = activeShot?.body || scene.body;
+  const panelMode = scene.interactionLayout || "panel";
 
   return (
     <div
-      className="relative flex min-h-[560px] w-full flex-col overflow-hidden text-white"
+      className="relative flex min-h-[640px] w-full flex-col overflow-hidden text-white lg:min-h-[720px]"
       style={{
         backgroundColor: theme.background,
         color: theme.text,
       }}
     >
-      <Atmosphere kind={theme.atmosphere} accent={theme.accent} />
-      <header className="relative z-20 flex items-center gap-3 border-b border-white/10 bg-black/10 px-4 py-3 backdrop-blur-xl sm:px-6">
+      <ImmersiveStage
+        document={document}
+        scene={scene}
+        shot={activeShot}
+        muted={muted}
+      />
+      <header className="relative z-[110] flex items-center gap-3 px-4 py-3 sm:px-6">
         {onClose ? (
           <button
             type="button"
             onClick={onClose}
-            className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-white/15 bg-white/10 hover:bg-white/15"
+            className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-white/15 bg-slate-950/55 shadow-xl backdrop-blur-xl hover:bg-slate-950/75"
             aria-label="Close preview"
           >
             <X className="h-4 w-4" />
@@ -263,15 +281,22 @@ export function ExperiencePlayer({
         ) : courseSlug ? (
           <Link
             href={`/courses/${courseSlug}`}
-            className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-white/15 bg-white/10 hover:bg-white/15"
+            className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-white/15 bg-slate-950/55 shadow-xl backdrop-blur-xl hover:bg-slate-950/75"
             aria-label="Back to course"
           >
             <ArrowLeft className="h-4 w-4" />
           </Link>
         ) : null}
-        <div className="min-w-0 flex-1">
-          <p className="truncate text-xs font-bold">{document.title}</p>
-          <div className="mt-1 h-1 max-w-60 overflow-hidden rounded-full bg-white/15">
+        <div className="min-w-0 flex-1 rounded-full border border-white/10 bg-slate-950/48 px-4 py-2 shadow-xl backdrop-blur-xl">
+          <div className="flex items-center justify-between gap-3">
+            <p className="truncate text-[10px] font-black uppercase tracking-[0.15em]">
+              {document.title}
+            </p>
+            <span className="text-[9px] font-bold text-white/45">
+              {sceneNumber} / {document.scenes.length}
+            </span>
+          </div>
+          <div className="mt-1.5 h-1 overflow-hidden rounded-full bg-white/15">
             <div
               className="h-full rounded-full transition-all duration-500"
               style={{
@@ -281,51 +306,50 @@ export function ExperiencePlayer({
             />
           </div>
         </div>
-        <span className="hidden rounded-full border border-white/10 bg-white/10 px-3 py-1 text-[10px] font-bold uppercase tracking-[0.14em] sm:inline-flex">
+        <span className="hidden rounded-full border border-white/15 bg-slate-950/55 px-3 py-2 text-[10px] font-bold uppercase tracking-[0.14em] shadow-xl backdrop-blur-xl sm:inline-flex">
           {preview ? "Preview" : `${progress.score} pts`}
         </span>
         <button
           type="button"
           onClick={() => setMuted((value) => !value)}
-          className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-white/15 bg-white/10 hover:bg-white/15"
+          className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-white/15 bg-slate-950/55 shadow-xl backdrop-blur-xl hover:bg-slate-950/75"
           aria-label={muted ? "Turn sound on" : "Mute sound"}
         >
-          {muted ? <Volume2 className="h-4 w-4 opacity-40" /> : <Headphones className="h-4 w-4" />}
+          {muted ? (
+            <Volume2 className="h-4 w-4 opacity-40" />
+          ) : (
+            <Headphones className="h-4 w-4" />
+          )}
         </button>
       </header>
 
-      <main className="relative z-10 flex min-w-0 flex-1 items-stretch">
+      <main
+        className={cn(
+          "relative z-[100] flex min-w-0 flex-1 px-4 pb-5 pt-24 sm:px-6 sm:pb-7",
+          panelMode === "overlay"
+            ? "items-end justify-center"
+            : "items-end justify-end",
+        )}
+      >
         <div
           className={cn(
-            "mx-auto grid min-w-0 w-full max-w-full items-center gap-8 px-5 py-10 sm:px-8 lg:px-12",
-            showStageVisual
-              ? "max-w-7xl lg:grid-cols-[minmax(280px,0.85fr)_minmax(420px,1.15fr)]"
-              : "max-w-5xl",
+            "min-w-0 w-full",
+            panelMode === "overlay"
+              ? "max-w-5xl"
+              : panelMode === "diegetic"
+                ? "max-w-2xl lg:mr-[4vw]"
+                : "max-w-xl lg:mr-[3vw]",
           )}
         >
-          {showStageVisual ? (
-            <div className="relative flex min-h-[290px] items-end justify-center">
-            {scene.backgroundUrl ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img
-                src={scene.backgroundUrl}
-                alt=""
-                className="absolute inset-0 h-full w-full rounded-[2rem] object-cover opacity-45"
-              />
-            ) : null}
-            {character ? (
-              <CharacterPortrait character={character} accent={theme.accent} />
-            ) : (
-              <div className="relative flex h-64 w-64 items-center justify-center rounded-[2.5rem] border border-white/15 bg-white/10 backdrop-blur-md">
-                <Sparkles className="h-16 w-16 opacity-50" />
-              </div>
-            )}
-            </div>
-          ) : null}
-
           <section
-            className="relative min-w-0 w-full max-w-full overflow-hidden rounded-[2rem] border border-white/15 p-5 shadow-2xl backdrop-blur-xl sm:p-7"
-            style={{ backgroundColor: `${theme.surface}E8` }}
+            className={cn(
+              "relative min-w-0 w-full max-w-full overflow-hidden border border-white/15 p-5 shadow-[0_30px_90px_rgba(0,0,0,.48)] backdrop-blur-2xl sm:p-7",
+              panelMode === "overlay"
+                ? "rounded-[1.6rem] bg-slate-950/72"
+                : panelMode === "diegetic"
+                  ? "rounded-[1.5rem] bg-slate-950/82 ring-1 ring-cyan-200/10"
+                  : "rounded-[1.6rem] bg-slate-950/78",
+            )}
           >
             <div className="mb-5 flex items-center justify-between gap-3">
               <span
@@ -334,12 +358,24 @@ export function ExperiencePlayer({
               >
                 {scene.eyebrow || `Scene ${sceneNumber}`}
               </span>
-              <span className="text-xs font-bold text-white/45">
-                {sceneNumber} / {document.scenes.length}
-              </span>
+              {scene.shots?.length ? (
+                <span className="flex items-center gap-1.5">
+                  {scene.shots.map((shot, index) => (
+                    <span
+                      key={shot.id}
+                      className={cn(
+                        "h-1.5 rounded-full transition-all",
+                        index === shotIndex
+                          ? "w-6 bg-white"
+                          : "w-1.5 bg-white/25",
+                      )}
+                    />
+                  ))}
+                </span>
+              ) : null}
             </div>
-            <h1 className="text-2xl font-bold leading-tight sm:text-4xl">
-              {scene.title}
+            <h1 className="text-2xl font-bold leading-tight text-balance sm:text-4xl">
+              {displayTitle}
             </h1>
             {character ? (
               <p className="mt-2 text-xs font-bold uppercase tracking-[0.16em] text-white/45">
@@ -347,20 +383,20 @@ export function ExperiencePlayer({
               </p>
             ) : null}
             <p className="mt-5 whitespace-pre-wrap text-sm leading-7 text-white/78 sm:text-base">
-              {scene.body}
+              {displayBody}
             </p>
 
-            {scene.type === "explainer" && scene.mediaUrl ? (
+            {atFinalBeat && scene.type === "explainer" && scene.mediaUrl ? (
               <MediaCard scene={scene} />
             ) : null}
-            {scene.type === "hotspot" ? (
+            {atFinalBeat && scene.type === "hotspot" ? (
               <HotspotActivity
                 scene={scene}
                 disabled={submitting || Boolean(pendingProgress)}
                 onSelect={(id) => void act(id)}
               />
             ) : null}
-            {scene.type === "collect" ? (
+            {atFinalBeat && scene.type === "collect" ? (
               <CollectActivity
                 key={scene.id}
                 scene={scene}
@@ -368,7 +404,8 @@ export function ExperiencePlayer({
                 onComplete={(answer) => void act(undefined, answer)}
               />
             ) : null}
-            {scene.type === "sort" || scene.type === "match" ? (
+            {atFinalBeat &&
+            (scene.type === "sort" || scene.type === "match") ? (
               <SortMatchActivity
                 key={scene.id}
                 scene={scene}
@@ -376,7 +413,7 @@ export function ExperiencePlayer({
                 onComplete={(answer) => void act(undefined, answer)}
               />
             ) : null}
-            {scene.type === "sequence" ? (
+            {atFinalBeat && scene.type === "sequence" ? (
               <SequenceActivity
                 key={scene.id}
                 scene={scene}
@@ -384,7 +421,24 @@ export function ExperiencePlayer({
                 onComplete={(answer) => void act(undefined, answer)}
               />
             ) : null}
-            {scene.type === "choice" ? (
+            {atFinalBeat && scene.type === "world-map" ? (
+              <WorldMapActivity
+                scene={scene}
+                document={document}
+                disabled={submitting || Boolean(pendingProgress)}
+                onSelect={(id) => void act(id)}
+              />
+            ) : null}
+            {atFinalBeat && scene.type === "evidence" ? (
+              <EvidenceActivity
+                key={scene.id}
+                scene={scene}
+                document={document}
+                disabled={submitting || Boolean(pendingProgress)}
+                onComplete={(answer) => void act(undefined, answer)}
+              />
+            ) : null}
+            {atFinalBeat && scene.type === "choice" ? (
               <div className="mt-6 grid gap-3">
                 {scene.choices?.map((choice, index) => (
                   <button
@@ -413,7 +467,7 @@ export function ExperiencePlayer({
                 ))}
               </div>
             ) : null}
-            {scene.type === "quiz" ? (
+            {atFinalBeat && scene.type === "quiz" ? (
               <div className="mt-6">
                 <p className="mb-3 text-sm font-bold">{scene.prompt}</p>
                 <div className="grid gap-2">
@@ -499,12 +553,23 @@ export function ExperiencePlayer({
                 ) : (
                   <button
                     type="button"
-                    onClick={() => void act()}
+                    onClick={() => {
+                      if (scene.shots?.length && !atFinalBeat) {
+                        setShotState({
+                          sceneId: scene.id,
+                          index: shotIndex + 1,
+                        });
+                      } else {
+                        void act();
+                      }
+                    }}
                     disabled={submitting || Boolean(pendingProgress)}
                     className="inline-flex items-center gap-2 rounded-xl px-5 py-3 text-sm font-black disabled:opacity-50"
                     style={{ backgroundColor: theme.accent, color: theme.background }}
                   >
-                    Continue
+                    {scene.shots?.length && !atFinalBeat
+                      ? "Continue story"
+                      : "Continue"}
                     <ChevronRight className="h-4 w-4" />
                   </button>
                 )}
@@ -525,39 +590,178 @@ export function ExperiencePlayer({
   );
 }
 
-function CharacterPortrait({
-  character,
-  accent,
+function WorldMapActivity({
+  scene,
+  document,
+  disabled,
+  onSelect,
 }: {
-  character: ExperienceDocument["characters"][number];
-  accent: string;
+  scene: ExperienceScene;
+  document: ExperienceDocument;
+  disabled: boolean;
+  onSelect: (id: string) => void;
 }) {
-  if (character.imageUrl) {
-    return (
-      // eslint-disable-next-line @next/next/no-img-element
-      <img
-        src={character.imageUrl}
-        alt={`${character.name}, ${character.role}`}
-        className="relative z-10 max-h-[430px] w-auto max-w-full object-contain drop-shadow-2xl"
-      />
-    );
-  }
   return (
-    <div className="relative z-10 flex h-72 w-60 flex-col items-center justify-end">
-      <div
-        className="absolute bottom-2 h-48 w-44 rounded-[48%_48%_22%_22%] shadow-2xl"
-        style={{ backgroundColor: character.accent }}
-      />
-      <div className="absolute bottom-36 flex h-32 w-32 items-center justify-center rounded-[44%] border-[8px] border-white/20 bg-slate-100 text-5xl font-black text-slate-900 shadow-xl">
-        {character.name.slice(0, 1).toUpperCase()}
-        <span
-          className="absolute -right-3 top-9 h-5 w-5 rounded-full"
-          style={{ backgroundColor: accent }}
-        />
-      </div>
-      <p className="relative z-10 mb-10 max-w-40 text-center text-sm font-black text-slate-950">
-        {character.name}
+    <div className="mt-6">
+      <p className="mb-3 flex items-center gap-2 text-sm font-bold">
+        <Globe2 className="h-4 w-4" />
+        {scene.prompt || "Choose the next destination"}
       </p>
+      <div className="relative min-h-72 overflow-hidden rounded-[1.5rem] border border-cyan-100/15 bg-[radial-gradient(circle_at_48%_42%,#357088_0,#173744_42%,#07141e_72%)] shadow-inner">
+        <div className="absolute left-1/2 top-1/2 h-60 w-60 -translate-x-1/2 -translate-y-1/2 rounded-full border border-cyan-100/25 bg-[radial-gradient(circle_at_35%_30%,#7dc2b0_0,#326f68_28%,#173c52_58%,#071722_74%)] shadow-[inset_-30px_-20px_60px_rgba(0,0,0,.55),0_0_50px_rgba(100,230,255,.15)]">
+          <div className="absolute inset-[14%] rounded-full border border-white/10" />
+          <div className="absolute inset-[28%] rounded-full border border-white/10" />
+        </div>
+        {scene.choices?.map((choice) => {
+          const location = document.world.locations.find(
+            (candidate) => candidate.id === choice.locationId,
+          );
+          return (
+            <button
+              key={choice.id}
+              type="button"
+              disabled={disabled}
+              onClick={() => onSelect(choice.id)}
+              className="group absolute -translate-x-1/2 -translate-y-1/2 text-left disabled:opacity-50"
+              style={{
+                left: `${location?.x ?? 50}%`,
+                top: `${location?.y ?? 50}%`,
+              }}
+            >
+              <span
+                className="block h-4 w-4 rounded-full border-2 border-white bg-cyan-300 shadow-[0_0_0_7px_rgba(103,232,249,.16),0_0_18px_rgba(103,232,249,.8)] transition group-hover:scale-125"
+                style={{ backgroundColor: location?.accent }}
+              />
+              <span className="absolute left-5 top-1/2 w-max max-w-40 -translate-y-1/2 rounded-lg border border-white/10 bg-slate-950/82 px-2.5 py-1.5 shadow-xl backdrop-blur">
+                <span className="block text-[10px] font-black uppercase tracking-[0.12em]">
+                  {location?.name || choice.label}
+                </span>
+                {choice.description ? (
+                  <span className="mt-0.5 block text-[9px] leading-4 text-white/50">
+                    {choice.description}
+                  </span>
+                ) : null}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function EvidenceActivity({
+  scene,
+  document,
+  disabled,
+  onComplete,
+}: {
+  scene: ExperienceScene;
+  document: ExperienceDocument;
+  disabled: boolean;
+  onComplete: (answer: ExperienceInteractionAnswer) => void;
+}) {
+  const evidence = scene.evidence || [];
+  const [current, setCurrent] = useState(0);
+  const [decisions, setDecisions] = useState<
+    Record<string, "approve" | "reject">
+  >({});
+  const item = evidence[current];
+  if (!item) return null;
+  const assetUrl = document.assets.find(
+    (asset) => asset.id === item.assetId,
+  )?.url;
+
+  function decide(decision: "approve" | "reject") {
+    setDecisions((values) => ({ ...values, [item.id]: decision }));
+    if (current < evidence.length - 1) {
+      window.setTimeout(() => setCurrent((value) => value + 1), 180);
+    }
+  }
+
+  return (
+    <div className="mt-6">
+      <p className="mb-3 flex items-center gap-2 text-sm font-bold">
+        <FileCheck2 className="h-4 w-4" />
+        {scene.prompt || "Verify the evidence"}
+      </p>
+      <div className="overflow-hidden rounded-2xl border border-white/12 bg-[#f4efe4] text-slate-950 shadow-2xl">
+        <div className="flex items-center justify-between border-b border-slate-900/10 px-4 py-3">
+          <span className="text-[10px] font-black uppercase tracking-[0.16em] text-slate-500">
+            Record {current + 1} of {evidence.length}
+          </span>
+          <span className="text-[10px] font-bold text-slate-400">
+            {Object.keys(decisions).length} reviewed
+          </span>
+        </div>
+        {item.imageUrl || assetUrl ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={item.imageUrl || assetUrl}
+            alt=""
+            className="max-h-44 w-full object-cover"
+          />
+        ) : null}
+        <div className="p-5">
+          <h3 className="text-lg font-black">{item.title}</h3>
+          <p className="mt-2 text-sm font-semibold leading-6 text-slate-700">
+            {item.summary}
+          </p>
+          {item.details ? (
+            <p className="mt-3 rounded-xl bg-slate-900/[0.06] p-3 text-xs leading-5 text-slate-600">
+              {item.details}
+            </p>
+          ) : null}
+          <div className="mt-5 grid grid-cols-2 gap-3">
+            <button
+              type="button"
+              disabled={disabled}
+              onClick={() => decide("reject")}
+              className="rounded-xl border border-rose-200 bg-white px-4 py-3 text-xs font-black text-rose-700 transition hover:bg-rose-50 disabled:opacity-40"
+            >
+              Reject
+            </button>
+            <button
+              type="button"
+              disabled={disabled}
+              onClick={() => decide("approve")}
+              className="rounded-xl bg-slate-950 px-4 py-3 text-xs font-black text-white transition hover:bg-slate-800 disabled:opacity-40"
+            >
+              Approve
+            </button>
+          </div>
+        </div>
+      </div>
+      <div className="mt-3 flex items-center justify-between gap-3">
+        <div className="flex gap-1.5">
+          {evidence.map((record, index) => (
+            <button
+              type="button"
+              key={record.id}
+              onClick={() => setCurrent(index)}
+              className={cn(
+                "h-2 rounded-full transition-all",
+                index === current
+                  ? "w-6 bg-white"
+                  : decisions[record.id]
+                    ? "w-2 bg-emerald-300"
+                    : "w-2 bg-white/25",
+              )}
+              aria-label={`Open record ${index + 1}`}
+            />
+          ))}
+        </div>
+        <button
+          type="button"
+          disabled={
+            disabled || Object.keys(decisions).length !== evidence.length
+          }
+          onClick={() => onComplete({ decisions })}
+          className="rounded-xl bg-white px-4 py-2.5 text-xs font-black text-slate-950 disabled:opacity-35"
+        >
+          Submit verification
+        </button>
+      </div>
     </div>
   );
 }
@@ -983,35 +1187,6 @@ function SequenceActivity({
         Check sequence
         <ChevronRight className="h-4 w-4" />
       </button>
-    </div>
-  );
-}
-
-function Atmosphere({
-  kind,
-  accent,
-}: {
-  kind: ExperienceDocument["theme"]["atmosphere"];
-  accent: string;
-}) {
-  return (
-    <div className="pointer-events-none absolute inset-0 overflow-hidden">
-      <div
-        className={cn(
-          "absolute -left-24 -top-24 h-80 w-80 rounded-full blur-3xl",
-          kind === "dunes" ? "opacity-20" : "opacity-30",
-        )}
-        style={{ backgroundColor: accent }}
-      />
-      <div className="absolute -bottom-32 right-0 h-96 w-96 rounded-full bg-violet-500/15 blur-3xl" />
-      <div
-        className="absolute inset-0 opacity-[0.08]"
-        style={{
-          backgroundImage:
-            "radial-gradient(circle at 1px 1px, white 1px, transparent 0)",
-          backgroundSize: "28px 28px",
-        }}
-      />
     </div>
   );
 }

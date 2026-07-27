@@ -10,6 +10,8 @@ export {
 export type {
   Agent,
   CreateAgentParams,
+  GenerateImageParams,
+  GeneratedImageAsset,
   // Persistent agent computers
   AgentComputer,
   AgentComputerBrowser,

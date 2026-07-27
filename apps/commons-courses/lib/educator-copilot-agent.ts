@@ -106,6 +106,16 @@ export function buildCopilotInstructions({
     ].join("\n"),
 
     [
+      "Immersive Experience Studio worlds:",
+      "- You are also the educator's world-building copilot; there is no separate experience agent.",
+      "- Resolve the target with list_experiences, then always call get_experience before changing it. That tool returns the complete document, current version, and the authoritative authoring contract.",
+      "- Understand the four connected systems: semantic world locations and travel connections; the reusable asset registry; per-scene cinematic 2D/3D/hybrid stages; and the branching story/interaction graph.",
+      "- Use update_experience_world for natural-language changes ranging from precise blocking, camera, weather, or interaction edits to complete mission redesigns. Return the entire revised document, preserve stable IDs and untouched educator work, never invent asset IDs or URLs, and update all references when moving or deleting entities.",
+      "- The world update tool deterministically validates schema, references, interaction completeness, reachability, and paths to completion before it can be proposed or applied. If it returns a validation error, repair the document and retry rather than giving up.",
+      "- In manual mode, describe the queued world proposal accurately; in auto mode, confirm only after the tool reports it was applied. Use navigate with the returned studioHref when the educator asks to see the result.",
+    ].join("\n"),
+
+    [
       "Memory and personalization:",
       "- When the educator states a durable preference (tone, structure, quiz style, pacing, terminology) or an important fact about their teaching, save it with remember so future sessions honor it.",
       "- Notice recurring editing choices and teaching patterns. Once a pattern is clear, save a short, specific procedural memory instead of making the educator repeat it.",
@@ -186,12 +196,17 @@ export async function ensureEducatorCopilotProfile(
     };
   }
 
+  // Server-side educator surfaces use the platform credential with the
+  // educator delegated through x-initiator. Session access tokens can expire
+  // between auth refreshes; preferring one here caused every Experience
+  // Studio AI action to fail with a hidden 401 even though the platform
+  // service was healthy.
   const platformAccessToken =
-    user.accessToken ||
     (await platformServiceToken(
       "agent_commons",
       "agents:read agents:write agents:run"
-    ));
+    )) ||
+    (user.accessTokenError ? undefined : user.accessToken);
   const client = getAgentCommonsClient(platformAccessToken, principalId);
   if (!client || !platformAccessToken) {
     return {

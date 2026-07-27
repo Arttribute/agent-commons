@@ -1,3 +1,5 @@
+import type { ExperienceDocument } from "@/types/experience";
+
 export type EducatorCopilotActionMode = "manual" | "auto";
 
 export type EducatorCopilotActionStatus =
@@ -99,6 +101,13 @@ export type EducatorCopilotAction =
         keyIdeas?: string[];
         microTask?: string;
       };
+    })
+  | (ActionBase & {
+      type: "update_experience_world";
+      courseSlug: string;
+      experienceId: string;
+      baseVersion: number;
+      document: ExperienceDocument;
     });
 
 export type EducatorCopilotToolActivity = {

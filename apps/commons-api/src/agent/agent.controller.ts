@@ -17,6 +17,8 @@ import {
   UseGuards,
   UseInterceptors,
   UploadedFile,
+  Inject,
+  forwardRef,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { memoryStorage } from 'multer';
@@ -37,6 +39,7 @@ import { RuntimeDispatcherService } from './runtime/runtime-dispatcher.service';
 import { RuntimeManagementService } from './runtime/runtime-management.service';
 import { normalizeRuntimeType } from './runtime/runtime.types';
 import { CopilotUiContext } from './copilot-platform-guide';
+import { CommonToolService } from '~/tool/tools/common-tool.service';
 
 interface RunBody {
   agentId: string;
@@ -70,6 +73,8 @@ export class AgentController {
     private readonly pinata: PinataService,
     private readonly runtimeDispatcher: RuntimeDispatcherService,
     private readonly runtimes: RuntimeManagementService,
+    @Inject(forwardRef(() => CommonToolService))
+    private readonly commonTools: CommonToolService,
   ) {}
 
   @Post()
@@ -322,6 +327,53 @@ export class AgentController {
       throw new BadRequestException('Unable to update agent');
     }
     return { data: omit(updated, ['wallet', 'modelApiKey']) };
+  }
+
+  /**
+   * Direct image generation for first-party authoring surfaces.
+   *
+   * This intentionally bypasses an LLM tool-selection turn: the caller has
+   * already made the image-generation decision. Ownership, usage
+   * authorization, billing, and durable file persistence remain centralized
+   * in CommonToolService.
+   */
+  @Post(':agentId/assets/images')
+  @UseGuards(OwnerGuard)
+  @OwnerOnly({ table: 'agent', idParam: 'agentId' })
+  async generateAgentImage(
+    @Param('agentId') agentId: string,
+    @Body()
+    body: {
+      prompt: string;
+      n?: number;
+      size?: '1024x1024' | '1024x1536' | '1536x1024' | 'auto';
+      quality?: 'low' | 'medium' | 'high' | 'auto';
+      sessionId?: string;
+      operationId?: string;
+    },
+  ) {
+    const prompt = body.prompt?.trim();
+    if (!prompt || prompt.length > 8000) {
+      throw new BadRequestException(
+        'Image prompt must be between 1 and 8,000 characters.',
+      );
+    }
+    const data = await this.commonTools.generateImage(
+      {
+        prompt,
+        n: body.n,
+        size: body.size,
+        quality: body.quality,
+        agentId,
+        sessionId: body.sessionId,
+      },
+      {
+        agentId,
+        sessionId: body.sessionId,
+        toolCallId: body.operationId?.trim().slice(0, 200),
+      },
+    );
+    return { data };
   }
 
   // Upload a new profile image for the agent (stored on IPFS via Pinata) and
