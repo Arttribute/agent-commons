@@ -3,6 +3,7 @@ import Link from "next/link";
 import { auth } from "@/lib/auth";
 import { Nav } from "@/components/nav";
 import { GeneralAgentDrawer } from "@/components/agents/general-agent-drawer";
+import { LearnerProfileDialog } from "@/components/learning/learner-profile-dialog";
 import { connectDB } from "@/lib/db";
 import Enrollment from "@/models/Enrollment";
 import { BookOpen, ArrowRight, Clock } from "lucide-react";
@@ -27,6 +28,9 @@ export default async function DashboardPage() {
           visibleText: "User dashboard with enrolled courses and progress",
         }}
       />
+      {session.user.role === "learner" ? (
+        <LearnerProfileDialog autoPrompt showTrigger={false} />
+      ) : null}
       <div className="pt-24 pb-16 max-w-5xl mx-auto px-6 lg:px-12">
         {/* Header */}
         <div className="mb-12">

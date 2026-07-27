@@ -9,6 +9,176 @@ import { DatabaseService } from '../modules/database';
 import { EncryptionService } from '../modules/encryption';
 import * as oauthSchema from '../../models/oauth-schema';
 
+type PlatformProviderDefinition = Omit<
+  oauthSchema.OAuthProviderConfig,
+  'clientId' | 'clientSecret'
+> & {
+  clientIdEnv: string;
+  clientSecretEnv: string;
+};
+
+const PLATFORM_PROVIDER_DEFINITIONS: PlatformProviderDefinition[] = [
+  {
+    providerKey: 'google_workspace',
+    displayName: 'Google Workspace',
+    description:
+      'Connect Google Workspace for Gmail, Drive, Calendar, Docs, Sheets, Classroom, and related tools.',
+    logoUrl:
+      'https://www.gstatic.com/images/branding/product/1x/googleg_48dp.png',
+    authUrl: 'https://accounts.google.com/o/oauth2/v2/auth',
+    tokenUrl: 'https://oauth2.googleapis.com/token',
+    revokeUrl: 'https://oauth2.googleapis.com/revoke',
+    userInfoUrl: 'https://www.googleapis.com/oauth2/v2/userinfo',
+    clientIdEnv: 'GOOGLE_OAUTH_CLIENT_ID',
+    clientSecretEnv: 'GOOGLE_OAUTH_CLIENT_SECRET',
+    scopes: {
+      default: ['openid', 'email', 'profile'],
+      classroom: [
+        'https://www.googleapis.com/auth/classroom.courses.readonly',
+        'https://www.googleapis.com/auth/classroom.announcements',
+        'https://www.googleapis.com/auth/classroom.coursework.students',
+        'https://www.googleapis.com/auth/classroom.coursework.me',
+        'https://www.googleapis.com/auth/classroom.rosters.readonly',
+      ],
+      drive: [
+        'https://www.googleapis.com/auth/drive.readonly',
+        'https://www.googleapis.com/auth/drive.file',
+      ],
+      calendar: [
+        'https://www.googleapis.com/auth/calendar.readonly',
+        'https://www.googleapis.com/auth/calendar.events',
+      ],
+      gmail: [
+        'https://www.googleapis.com/auth/gmail.readonly',
+        'https://www.googleapis.com/auth/gmail.send',
+      ],
+      docs: [
+        'https://www.googleapis.com/auth/documents',
+        'https://www.googleapis.com/auth/drive.file',
+      ],
+      sheets: [
+        'https://www.googleapis.com/auth/spreadsheets',
+        'https://www.googleapis.com/auth/drive.file',
+      ],
+      slides: [
+        'https://www.googleapis.com/auth/presentations',
+        'https://www.googleapis.com/auth/drive.file',
+      ],
+    },
+    authorizationParams: {
+      access_type: 'offline',
+      prompt: 'consent',
+      include_granted_scopes: 'true',
+    },
+    tokenParams: {},
+    isPlatform: true,
+  },
+  {
+    providerKey: 'github',
+    displayName: 'GitHub',
+    description:
+      'Connect GitHub for repository access, issues, pull requests, code context, and project exports.',
+    logoUrl:
+      'https://github.githubassets.com/images/modules/logos_page/GitHub-Mark.png',
+    authUrl: 'https://github.com/login/oauth/authorize',
+    tokenUrl: 'https://github.com/login/oauth/access_token',
+    revokeUrl: 'https://api.github.com/applications/{client_id}/token',
+    userInfoUrl: 'https://api.github.com/user',
+    clientIdEnv: 'GITHUB_OAUTH_CLIENT_ID',
+    clientSecretEnv: 'GITHUB_OAUTH_CLIENT_SECRET',
+    scopes: {
+      default: ['read:user', 'user:email'],
+      repo: ['repo'],
+      issues: ['repo'],
+      pull_requests: ['repo'],
+      workflow: ['workflow'],
+      org: ['read:org'],
+      gist: ['gist'],
+      packages: ['read:packages', 'write:packages'],
+    },
+    authorizationParams: {},
+    tokenParams: {},
+    isPlatform: true,
+  },
+  {
+    providerKey: 'slack',
+    displayName: 'Slack',
+    description:
+      'Connect Slack for workspace messages, channels, files, and team updates.',
+    logoUrl:
+      'https://a.slack-edge.com/80588/marketing/img/icons/icon_slack_hash_colored.png',
+    authUrl: 'https://slack.com/oauth/v2/authorize',
+    tokenUrl: 'https://slack.com/api/oauth.v2.access',
+    revokeUrl: 'https://slack.com/api/auth.revoke',
+    userInfoUrl: 'https://slack.com/api/auth.test',
+    clientIdEnv: 'SLACK_OAUTH_CLIENT_ID',
+    clientSecretEnv: 'SLACK_OAUTH_CLIENT_SECRET',
+    scopes: {
+      default: ['channels:read', 'chat:write'],
+      messages: [
+        'channels:history',
+        'groups:history',
+        'im:history',
+        'mpim:history',
+      ],
+      files: ['files:read', 'files:write'],
+      users: ['users:read', 'users:read.email'],
+      commands: ['commands'],
+    },
+    authorizationParams: {},
+    tokenParams: {},
+    isPlatform: true,
+  },
+  {
+    providerKey: 'canva',
+    displayName: 'Canva',
+    description:
+      'Connect Canva to create, read, and export designs through Canva Connect APIs.',
+    logoUrl: 'https://static.canva.com/static/images/favicon-1.ico',
+    authUrl: 'https://www.canva.com/api/oauth/authorize',
+    tokenUrl: 'https://api.canva.com/rest/v1/oauth/token',
+    revokeUrl: 'https://api.canva.com/rest/v1/oauth/revoke',
+    userInfoUrl: 'https://api.canva.com/rest/v1/users/me/profile',
+    clientIdEnv: 'CANVA_OAUTH_CLIENT_ID',
+    clientSecretEnv: 'CANVA_OAUTH_CLIENT_SECRET',
+    scopes: {
+      default: ['profile:read', 'design:meta:read'],
+      designs: [
+        'profile:read',
+        'design:meta:read',
+        'design:content:read',
+        'design:content:write',
+      ],
+      assets: ['asset:read', 'asset:write'],
+      folders: ['folder:read', 'folder:write'],
+    },
+    authorizationParams: {},
+    tokenParams: {},
+    isPlatform: true,
+  },
+  {
+    providerKey: 'x',
+    displayName: 'X (Twitter)',
+    description:
+      'Connect an X account so approved agents can read, search, publish, reply to, and delete posts.',
+    logoUrl: 'https://abs.twimg.com/favicons/twitter.3.ico',
+    authUrl: 'https://x.com/i/oauth2/authorize',
+    tokenUrl: 'https://api.x.com/2/oauth2/token',
+    revokeUrl: 'https://api.x.com/2/oauth2/revoke',
+    userInfoUrl:
+      'https://api.x.com/2/users/me?user.fields=id,name,username,profile_image_url',
+    clientIdEnv: 'X_OAUTH_CLIENT_ID',
+    clientSecretEnv: 'X_OAUTH_CLIENT_SECRET',
+    scopes: {
+      default: ['tweet.read', 'users.read', 'offline.access'],
+      publish: ['tweet.read', 'tweet.write', 'users.read', 'offline.access'],
+    },
+    authorizationParams: {},
+    tokenParams: {},
+    isPlatform: true,
+  },
+];
+
 /**
  * OAuthProviderService
  *
@@ -31,69 +201,65 @@ export class OAuthProviderService implements OnModuleInit {
   ) {}
 
   async onModuleInit() {
-    await this.syncXProviderFromEnvironment();
+    await this.syncPlatformProvidersFromEnvironment();
   }
 
   /**
-   * X connections use one platform OAuth app. End users only see the normal
-   * "Connect X" consent screen; operators provide the app credentials once
-   * through the runtime secret. Keeping this sync in the application makes a
-   * deploy self-configuring and avoids a separate production database command.
+   * Platform connections use centrally managed OAuth apps. Operators provide
+   * each app's credentials through runtime secrets; startup upserts the
+   * encrypted provider record so deploys do not depend on a legacy, ad-hoc
+   * database seed command.
    */
-  private async syncXProviderFromEnvironment() {
-    const clientId =
-      process.env.X_OAUTH_CLIENT_ID ?? process.env.TWITTER_OAUTH_CLIENT_ID;
-    const clientSecret =
-      process.env.X_OAUTH_CLIENT_SECRET ??
-      process.env.TWITTER_OAUTH_CLIENT_SECRET;
-    if (!clientId || !clientSecret) {
-      this.logger.warn(
-        'X OAuth is unavailable: set X_OAUTH_CLIENT_ID and X_OAUTH_CLIENT_SECRET',
-      );
-      return;
-    }
-
-    const config: oauthSchema.OAuthProviderConfig = {
-      providerKey: 'x',
-      displayName: 'X (Twitter)',
-      description:
-        'Connect an X account so approved agents can read, search, publish, reply to, and delete posts.',
-      logoUrl: 'https://abs.twimg.com/favicons/twitter.3.ico',
-      authUrl: 'https://x.com/i/oauth2/authorize',
-      tokenUrl: 'https://api.x.com/2/oauth2/token',
-      revokeUrl: 'https://api.x.com/2/oauth2/revoke',
-      userInfoUrl:
-        'https://api.x.com/2/users/me?user.fields=id,name,username,profile_image_url',
-      clientId,
-      clientSecret,
-      scopes: {
-        default: ['tweet.read', 'users.read', 'offline.access'],
-        publish: [
-          'tweet.read',
-          'tweet.write',
-          'users.read',
-          'offline.access',
-        ],
-      },
-      authorizationParams: {},
-      tokenParams: {},
-      isPlatform: true,
-    };
-
-    try {
-      const existing = await this.db.query.oauthProvider.findFirst({
-        where: (provider: any) => eq(provider.providerKey, 'x'),
-      });
-      if (existing) {
-        await this.updateProvider('x', config);
-      } else {
-        await this.createProvider(config);
+  private async syncPlatformProvidersFromEnvironment() {
+    for (const definition of PLATFORM_PROVIDER_DEFINITIONS) {
+      let clientId = process.env[definition.clientIdEnv];
+      let clientSecret = process.env[definition.clientSecretEnv];
+      if (definition.providerKey === 'x') {
+        clientId ??= process.env.TWITTER_OAUTH_CLIENT_ID;
+        clientSecret ??= process.env.TWITTER_OAUTH_CLIENT_SECRET;
       }
-      this.logger.log('X OAuth provider is configured');
-    } catch (error: any) {
-      // A provider outage must not prevent the whole API from booting. The
-      // provider stays absent and the UI reports that platform setup is needed.
-      this.logger.error(`Could not configure X OAuth: ${error.message}`);
+
+      if (!clientId && !clientSecret) continue;
+      if (!clientId || !clientSecret) {
+        this.logger.warn(
+          `${definition.displayName} OAuth is disabled because ${definition.clientIdEnv} and ${definition.clientSecretEnv} must both be set`,
+        );
+        continue;
+      }
+
+      const {
+        clientIdEnv: _clientIdEnv,
+        clientSecretEnv: _clientSecretEnv,
+        ...providerDefinition
+      } = definition;
+      const config: oauthSchema.OAuthProviderConfig = {
+        ...providerDefinition,
+        clientId,
+        clientSecret,
+      };
+
+      try {
+        const aliases = providerAliases(definition.providerKey);
+        const existing = await this.db.query.oauthProvider.findFirst({
+          where: (provider: any) =>
+            aliases.length > 1
+              ? or(...aliases.map((key) => eq(provider.providerKey, key)))
+              : eq(provider.providerKey, definition.providerKey),
+        });
+        if (existing) {
+          await this.updateProvider(definition.providerKey, config);
+          await this.setProviderActive(definition.providerKey, true);
+        } else {
+          await this.createProvider(config);
+        }
+        this.logger.log(`${definition.displayName} OAuth is configured`);
+      } catch (error: any) {
+        // One provider's configuration must not prevent the API or the other
+        // providers from starting.
+        this.logger.error(
+          `Could not configure ${definition.displayName} OAuth: ${error.message}`,
+        );
+      }
     }
   }
 
@@ -153,12 +319,15 @@ export class OAuthProviderService implements OnModuleInit {
    * @returns Provider configuration
    */
   async getProvider(providerKey: string) {
+    const exactProvider = await this.db.query.oauthProvider.findFirst({
+      where: (p: any) => eq(p.providerKey, providerKey),
+    });
+    if (exactProvider) return this.sanitizeProvider(exactProvider);
+
     const providerKeys = providerAliases(providerKey);
     const provider = await this.db.query.oauthProvider.findFirst({
       where: (p: any) =>
-        providerKeys.length > 1
-          ? or(...providerKeys.map((key) => eq(p.providerKey, key)))
-          : eq(p.providerKey, providerKey),
+        or(...providerKeys.map((key) => eq(p.providerKey, key))),
     });
 
     if (!provider) {
@@ -201,7 +370,9 @@ export class OAuthProviderService implements OnModuleInit {
     const conditions: any[] = [];
 
     if (filters?.isPlatform !== undefined) {
-      conditions.push(eq(oauthSchema.oauthProvider.isPlatform, filters.isPlatform));
+      conditions.push(
+        eq(oauthSchema.oauthProvider.isPlatform, filters.isPlatform),
+      );
     }
 
     if (filters?.isActive !== undefined) {
@@ -213,7 +384,9 @@ export class OAuthProviderService implements OnModuleInit {
     }
 
     if (filters?.ownerType) {
-      conditions.push(eq(oauthSchema.oauthProvider.ownerType, filters.ownerType));
+      conditions.push(
+        eq(oauthSchema.oauthProvider.ownerType, filters.ownerType),
+      );
     }
 
     const providers = await this.db.query.oauthProvider.findMany({
@@ -250,6 +423,9 @@ export class OAuthProviderService implements OnModuleInit {
         scopes: updates.scopes,
         authorizationParams: updates.authorizationParams,
         tokenParams: updates.tokenParams,
+        isPlatform: updates.isPlatform,
+        ownerId: updates.ownerId,
+        ownerType: updates.ownerType,
         updatedAt: new Date(),
       };
 
@@ -339,7 +515,8 @@ export class OAuthProviderService implements OnModuleInit {
    */
   async getDecryptedClientSecret(providerId: string): Promise<string> {
     const provider = await this.db.query.oauthProvider.findFirst({
-      where: (p: any) => and(eq(p.providerId, providerId), eq(p.isActive, true)),
+      where: (p: any) =>
+        and(eq(p.providerId, providerId), eq(p.isActive, true)),
     });
 
     if (!provider) {

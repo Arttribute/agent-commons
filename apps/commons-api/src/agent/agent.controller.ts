@@ -35,11 +35,7 @@ import { omit } from 'lodash';
 import { OwnerGuard, OwnerOnly } from '~/modules/auth';
 import { RuntimeDispatcherService } from './runtime/runtime-dispatcher.service';
 import { RuntimeManagementService } from './runtime/runtime-management.service';
-import {
-  isManagedRuntime,
-  normalizeRuntimeType,
-} from './runtime/runtime.types';
-import { ComputerService } from '~/computer';
+import { normalizeRuntimeType } from './runtime/runtime.types';
 import { CopilotUiContext } from './copilot-platform-guide';
 
 interface RunBody {
@@ -74,7 +70,6 @@ export class AgentController {
     private readonly pinata: PinataService,
     private readonly runtimeDispatcher: RuntimeDispatcherService,
     private readonly runtimes: RuntimeManagementService,
-    private readonly computers: ComputerService,
   ) {}
 
   @Post()
@@ -101,12 +96,6 @@ export class AgentController {
             workspaceId: principal.workspaceId ?? body.workspaceId,
           }
         : body;
-    if (isManagedRuntime(ownedBody.runtimeType)) {
-      await this.computers.assertComputerPlan(
-        (ownedBody.ownerUserId ?? ownedBody.owner) as string | undefined,
-        'This runtime runs on a dedicated agent computer, which requires a paid plan. Upgrade to Plus or higher to create it.',
-      );
-    }
     let agent = await this.agent.createAgent({
       value: ownedBody as InferInsertModel<typeof schema.agent>,
       commonsOwned: body.commonsOwned,
@@ -127,7 +116,11 @@ export class AgentController {
     @Req() req: any,
   ) {
     const principal = req.principal as
-      | { principalId: string; principalType: 'user' | 'agent' | 'service' }
+      | {
+          principalId: string;
+          principalType: 'user' | 'agent' | 'service';
+          workspaceId?: string | null;
+        }
       | undefined;
     const initiator =
       principal?.principalType === 'user'
@@ -136,11 +129,19 @@ export class AgentController {
     // collect only the final message; use lastValueFrom
     const { lastValueFrom } = await import('rxjs');
     return lastValueFrom(
-      this.runtimeDispatcher.runAgent({ ...body, initiator }).pipe(
-        // The final emission from runAgent will contain the full data
-        filter((chunk) => chunk.type === 'final'),
-        map((chunk) => chunk.payload),
-      ),
+      this.runtimeDispatcher
+        .runAgent({
+          ...body,
+          initiator,
+          ...(principal?.principalType === 'user'
+            ? { workspaceId: principal.workspaceId ?? undefined }
+            : {}),
+        })
+        .pipe(
+          // The final emission from runAgent will contain the full data
+          filter((chunk) => chunk.type === 'final'),
+          map((chunk) => chunk.payload),
+        ),
     );
   }
 
@@ -155,7 +156,11 @@ export class AgentController {
   ) {
     // Accept initiator from header (SDK / proxied web requests) or body (direct callers).
     const principal = req.principal as
-      | { principalId: string; principalType: 'user' | 'agent' | 'service' }
+      | {
+          principalId: string;
+          principalType: 'user' | 'agent' | 'service';
+          workspaceId?: string | null;
+        }
       | undefined;
     const initiator =
       principal?.principalType === 'user'
@@ -169,7 +174,14 @@ export class AgentController {
     return this.runStreams
       .start(
         runId,
-        this.runtimeDispatcher.runAgent({ ...body, stream: true, initiator }),
+        this.runtimeDispatcher.runAgent({
+          ...body,
+          stream: true,
+          initiator,
+          ...(principal?.principalType === 'user'
+            ? { workspaceId: principal.workspaceId ?? undefined }
+            : {}),
+        }),
       )
       .pipe(map((data) => ({ data })));
   }

@@ -8,6 +8,8 @@ import {
   BatteryLow,
   Check,
   Gauge,
+  HardDriveUpload,
+  LibraryBig,
   Loader2,
   Mic,
   Monitor,
@@ -21,6 +23,16 @@ import { useSessionRunStore } from "@/stores/session-run-store";
 import { VoiceRecorderPanel } from "./voice-recorder";
 import { cn } from "@/lib/utils";
 import { ArtifactIcon } from "@/components/artifacts/artifact-icon";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
+  LibraryPickerDialog,
+  type LibraryPickerItem,
+} from "./library-picker-dialog";
 
 /** User-selectable model thinking depth for this conversation. */
 const THINKING_LEVELS = [
@@ -99,6 +111,7 @@ export default function ChatInputBox({
   const previewUrlsRef = useRef<Set<string>>(new Set());
   const [attachments, setAttachments] = useState<UploadedAttachment[]>([]);
   const [isDragging, setIsDragging] = useState(false);
+  const [libraryOpen, setLibraryOpen] = useState(false);
   const [thinkingMenuOpen, setThinkingMenuOpen] = useState(false);
   const [thinkingLevel, setThinkingLevel] = useState<ThinkingLevel>("auto");
   const [outOfCredits, setOutOfCredits] = useState(false);
@@ -635,6 +648,32 @@ export default function ChatInputBox({
     });
   };
 
+  const addLibraryAttachments = (items: LibraryPickerItem[]) => {
+    setAttachments((current) => {
+      const attachedFileIds = new Set(
+        current
+          .map((attachment) => attachment.fileId)
+          .filter((fileId): fileId is string => Boolean(fileId)),
+      );
+      const additions = items
+        .filter((item) => !attachedFileIds.has(item.itemId))
+        .map(
+          (item): UploadedAttachment => ({
+            localId: createLocalId(),
+            fileId: item.itemId,
+            name: item.name,
+            mimeType: item.mimeType,
+            kind: item.kind,
+            sizeBytes: item.sizeBytes,
+            status: "uploaded",
+            textPreview: item.textPreview,
+            previewUrl: item.previewUrl ?? undefined,
+          }),
+        );
+      return [...current, ...additions];
+    });
+  };
+
   useEffect(() => {
     return () => {
       previewUrlsRef.current.forEach((previewUrl) =>
@@ -677,6 +716,14 @@ export default function ChatInputBox({
           if (event.target.files) uploadFiles(event.target.files);
           event.target.value = "";
         }}
+      />
+      <LibraryPickerDialog
+        open={libraryOpen}
+        onOpenChange={setLibraryOpen}
+        attachedFileIds={uploadedAttachments.map(
+          (attachment) => attachment.fileId!,
+        )}
+        onAdd={addLibraryAttachments}
       />
       {outOfCredits && (
         <div className="flex items-center justify-between gap-3 rounded-t-2xl border-b border-border bg-stone-50/80 px-3.5 py-2.5">
@@ -741,16 +788,29 @@ export default function ChatInputBox({
               <div className="min-w-0">{footerLeft}</div>
             ) : (
               <div className="flex items-center gap-1">
-                <button
-                  type="button"
-                  onClick={openFilePicker}
-                  disabled={!!isLoading}
-                  title="Add photos & files"
-                  aria-label="Add photos & files"
-                  className="rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-40"
-                >
-                  <Plus className="h-4 w-4" />
-                </button>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <button
+                      type="button"
+                      disabled={!!isLoading || isLaunchMode}
+                      title="Add photos & files"
+                      aria-label="Add photos & files"
+                      className="rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-40"
+                    >
+                      <Plus className="h-4 w-4" />
+                    </button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="start" side="top" className="w-52">
+                    <DropdownMenuItem onSelect={openFilePicker}>
+                      <HardDriveUpload className="mr-2 h-4 w-4" />
+                      Upload from device
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onSelect={() => setLibraryOpen(true)}>
+                      <LibraryBig className="mr-2 h-4 w-4" />
+                      Choose from Library
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
                 {canUseComputer && (
                   <button
                     type="button"

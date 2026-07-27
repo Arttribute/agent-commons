@@ -808,6 +808,7 @@ export class FilesService {
       agentId?: string;
       sessionId?: string;
       ownerId?: string;
+      workspaceId?: string;
       includeImageParts?: boolean;
       maxImageParts?: number;
     },

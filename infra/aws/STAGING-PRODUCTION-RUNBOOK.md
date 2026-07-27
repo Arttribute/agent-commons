@@ -132,12 +132,23 @@ Recommended values:
 - `SPACE_RTC_TICKET_SECRET` — `openssl rand -hex 32` (distinct per env).
 - `MANAGEMENT_KEY_ENABLED` — `true` during migration, flip to `false` once no
   management-key callers remain (watch the API logs for `management-key` warns).
-- `X_OAUTH_CLIENT_ID` / `X_OAUTH_CLIENT_SECRET` — the confidential X developer
-  app used for one-click account connections. Register
-  `https://<web-domain>/api/oauth/callback/x` and enable OAuth 2.0 with PKCE.
-  After both fields exist in the runtime secret, set the API CodeBuild
-  environment variable `X_OAUTH_ENABLED=true`; it remains `false` by default so
-  environments without an X app still deploy safely.
+- OAuth apps — add each enabled provider's client ID and client secret to the
+  runtime secret, register its exact callback URL, and then enable its CodeBuild
+  flag. All flags default to `false`, so a missing optional secret never blocks
+  an environment deployment:
+  - Google: `GOOGLE_OAUTH_*`, `GOOGLE_OAUTH_ENABLED=true`, callback
+    `https://<web-domain>/api/oauth/callback/google_workspace`.
+  - GitHub: `GITHUB_OAUTH_*`, `GITHUB_OAUTH_ENABLED=true`, callback
+    `https://<web-domain>/api/oauth/callback/github`.
+  - Slack: `SLACK_OAUTH_*`, `SLACK_OAUTH_ENABLED=true`, callback
+    `https://<web-domain>/api/oauth/callback/slack`.
+  - Canva: `CANVA_OAUTH_*`, `CANVA_OAUTH_ENABLED=true`, callback
+    `https://<web-domain>/api/oauth/callback/canva`; enable Authorization Code
+    with PKCE in Canva.
+  - X: `X_OAUTH_*`, `X_OAUTH_ENABLED=true`, callback
+    `https://<web-domain>/api/oauth/callback/x`; enable OAuth 2.0 with PKCE.
+  Set `APP_ORIGIN` in CodeBuild only when the web origin differs from the
+  environment default.
 - Staging `COMMON_OS_FLEET_ID` / `COMMON_OS_API_KEY` — a **separate staging
   fleet** on the same CommonOS deployment.
 

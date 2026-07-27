@@ -34,6 +34,30 @@ Parameters:
     Type: String
     Default: https://api.agentcommons.io
     Description: Public API origin used by shared managed runtimes to call back to this environment.
+  AppOrigin:
+    Type: String
+    Default: https://www.agentcommons.io
+    Description: Web application origin used to construct OAuth callback URLs.
+  GoogleOAuthEnabled:
+    Type: String
+    Default: "false"
+    AllowedValues: ["true", "false"]
+    Description: Inject Google OAuth app credentials after both keys exist in the runtime secret.
+  GitHubOAuthEnabled:
+    Type: String
+    Default: "false"
+    AllowedValues: ["true", "false"]
+    Description: Inject GitHub OAuth app credentials after both keys exist in the runtime secret.
+  SlackOAuthEnabled:
+    Type: String
+    Default: "false"
+    AllowedValues: ["true", "false"]
+    Description: Inject Slack OAuth app credentials after both keys exist in the runtime secret.
+  CanvaOAuthEnabled:
+    Type: String
+    Default: "false"
+    AllowedValues: ["true", "false"]
+    Description: Inject Canva OAuth app credentials after both keys exist in the runtime secret.
   XOAuthEnabled:
     Type: String
     Default: "false"
@@ -93,6 +117,10 @@ Parameters:
 
 Conditions:
   IsProduction: !Equals [!Ref Environment, production]
+  IsGoogleOAuthEnabled: !Equals [!Ref GoogleOAuthEnabled, "true"]
+  IsGitHubOAuthEnabled: !Equals [!Ref GitHubOAuthEnabled, "true"]
+  IsSlackOAuthEnabled: !Equals [!Ref SlackOAuthEnabled, "true"]
+  IsCanvaOAuthEnabled: !Equals [!Ref CanvaOAuthEnabled, "true"]
   IsXOAuthEnabled: !Equals [!Ref XOAuthEnabled, "true"]
   IsBraveSearch: !Equals [!Ref WebSearchProvider, brave]
   IsSearxngSearch: !Equals [!Ref WebSearchProvider, searxng]
@@ -161,6 +189,8 @@ Resources:
             Value: !Ref AgentFilesS3Prefix
           - Name: AGENT_COMMONS_API_URL
             Value: !Ref AgentCommonsApiUrl
+          - Name: APP_ORIGIN
+            Value: !Ref AppOrigin
           # Pricing and rate-limit controls are operational configuration, not
           # secrets. Keeping them as ordinary task environment values lets a
           # deployment use safe defaults even when an older runtime secret has
@@ -293,6 +323,46 @@ Resources:
             ValueFrom: !Sub "${RuntimeSecretArn}:SPACE_RTC_TICKET_SECRET::"
           - Name: MANAGEMENT_KEY_ENABLED
             ValueFrom: !Sub "${RuntimeSecretArn}:MANAGEMENT_KEY_ENABLED::"
+          - !If
+            - IsGoogleOAuthEnabled
+            - Name: GOOGLE_OAUTH_CLIENT_ID
+              ValueFrom: !Sub "${RuntimeSecretArn}:GOOGLE_OAUTH_CLIENT_ID::"
+            - !Ref AWS::NoValue
+          - !If
+            - IsGoogleOAuthEnabled
+            - Name: GOOGLE_OAUTH_CLIENT_SECRET
+              ValueFrom: !Sub "${RuntimeSecretArn}:GOOGLE_OAUTH_CLIENT_SECRET::"
+            - !Ref AWS::NoValue
+          - !If
+            - IsGitHubOAuthEnabled
+            - Name: GITHUB_OAUTH_CLIENT_ID
+              ValueFrom: !Sub "${RuntimeSecretArn}:GITHUB_OAUTH_CLIENT_ID::"
+            - !Ref AWS::NoValue
+          - !If
+            - IsGitHubOAuthEnabled
+            - Name: GITHUB_OAUTH_CLIENT_SECRET
+              ValueFrom: !Sub "${RuntimeSecretArn}:GITHUB_OAUTH_CLIENT_SECRET::"
+            - !Ref AWS::NoValue
+          - !If
+            - IsSlackOAuthEnabled
+            - Name: SLACK_OAUTH_CLIENT_ID
+              ValueFrom: !Sub "${RuntimeSecretArn}:SLACK_OAUTH_CLIENT_ID::"
+            - !Ref AWS::NoValue
+          - !If
+            - IsSlackOAuthEnabled
+            - Name: SLACK_OAUTH_CLIENT_SECRET
+              ValueFrom: !Sub "${RuntimeSecretArn}:SLACK_OAUTH_CLIENT_SECRET::"
+            - !Ref AWS::NoValue
+          - !If
+            - IsCanvaOAuthEnabled
+            - Name: CANVA_OAUTH_CLIENT_ID
+              ValueFrom: !Sub "${RuntimeSecretArn}:CANVA_OAUTH_CLIENT_ID::"
+            - !Ref AWS::NoValue
+          - !If
+            - IsCanvaOAuthEnabled
+            - Name: CANVA_OAUTH_CLIENT_SECRET
+              ValueFrom: !Sub "${RuntimeSecretArn}:CANVA_OAUTH_CLIENT_SECRET::"
+            - !Ref AWS::NoValue
           - !If
             - IsXOAuthEnabled
             - Name: X_OAUTH_CLIENT_ID

@@ -76,6 +76,7 @@ export interface ToolCatalogItem {
   oauthScopes?: string[];
   /** Scopes actually granted on the live OAuth connection, when one exists */
   grantedScopes?: string[];
+  oauthConnectionId?: string;
   connectUrl?: string;
   mcpTemplate?: McpServerTemplate;
   tool?: Tool;
@@ -133,6 +134,17 @@ function grantedScopesFor(
   return [...scopes];
 }
 
+function oauthConnectionFor(
+  connections: OAuthConnection[],
+  keys: string[],
+): OAuthConnection | undefined {
+  return connections.find(
+    (connection) =>
+      keys.includes(connection.providerKey) &&
+      (connection.status ?? "active") === "active",
+  );
+}
+
 function oauthStatus(
   providers: OAuthProvider[],
   connections: OAuthConnection[],
@@ -172,7 +184,8 @@ const googleWorkspaceSeed = [
   {
     id: "google:gmail",
     displayName: "Gmail",
-    description: "Search, read, draft, and send email with user-approved scopes.",
+    description:
+      "Search, read, draft, and send email with user-approved scopes.",
     icon: "Mail",
     tags: ["email", "communication", "oauth"],
     scopes: [
@@ -209,7 +222,8 @@ const googleWorkspaceSeed = [
   {
     id: "google:docs",
     displayName: "Google Docs",
-    description: "Read, create, and update Docs with narrow file access where possible.",
+    description:
+      "Read, create, and update Docs with narrow file access where possible.",
     icon: "FileText",
     tags: ["documents", "writing", "oauth"],
     scopes: [
@@ -245,7 +259,8 @@ const googleWorkspaceSeed = [
   {
     id: "google:chat",
     displayName: "Google Chat",
-    description: "Read spaces and send team messages through approved Chat scopes.",
+    description:
+      "Read spaces and send team messages through approved Chat scopes.",
     icon: "MessagesSquare",
     tags: ["chat", "team", "oauth"],
     scopes: ["https://www.googleapis.com/auth/chat.messages"],
@@ -254,7 +269,8 @@ const googleWorkspaceSeed = [
   {
     id: "google:people",
     displayName: "Google Contacts",
-    description: "Look up people and contact context for communication workflows.",
+    description:
+      "Look up people and contact context for communication workflows.",
     icon: "UsersRound",
     tags: ["contacts", "identity", "oauth"],
     scopes: ["https://www.googleapis.com/auth/contacts.readonly"],
@@ -312,7 +328,8 @@ const oauthAppSeed = [
   {
     id: "oauth:github",
     displayName: "GitHub",
-    description: "Use repository, issue, pull request, and code context from GitHub.",
+    description:
+      "Use repository, issue, pull request, and code context from GitHub.",
     icon: "Github",
     providerKeys: ["github"],
     scopes: ["read:user", "user:email", "repo"],
@@ -322,7 +339,8 @@ const oauthAppSeed = [
   {
     id: "oauth:slack",
     displayName: "Slack",
-    description: "Search messages, retrieve context, and send workspace updates.",
+    description:
+      "Search messages, retrieve context, and send workspace updates.",
     icon: "MessageSquare",
     providerKeys: ["slack"],
     scopes: [
@@ -342,7 +360,8 @@ const mcpSeed = [
   {
     id: "mcp:fetch",
     displayName: "Fetch",
-    description: "Fetch web pages and convert them into model-friendly content.",
+    description:
+      "Fetch web pages and convert them into model-friendly content.",
     icon: "Globe2",
     tags: ["web", "reference", "mcp"],
     docs: "https://github.com/modelcontextprotocol/servers",
@@ -362,7 +381,11 @@ const mcpSeed = [
     template: {
       connectionType: "stdio",
       command: "npx",
-      args: ["-y", "@modelcontextprotocol/server-filesystem", "$ALLOWED_DIRECTORY"],
+      args: [
+        "-y",
+        "@modelcontextprotocol/server-filesystem",
+        "$ALLOWED_DIRECTORY",
+      ],
       env: { ALLOWED_DIRECTORY: "" },
       requiredEnv: ["ALLOWED_DIRECTORY"],
     },
@@ -396,7 +419,8 @@ const mcpSeed = [
   {
     id: "mcp:github",
     displayName: "GitHub MCP",
-    description: "Official GitHub MCP server for repos, issues, pull requests, and code search.",
+    description:
+      "Official GitHub MCP server for repos, issues, pull requests, and code search.",
     icon: "Github",
     tags: ["code", "devtools", "mcp"],
     docs: "https://github.com/github/github-mcp-server",
@@ -410,7 +434,8 @@ const mcpSeed = [
   {
     id: "mcp:playwright",
     displayName: "Playwright MCP",
-    description: "Browser automation using accessibility snapshots instead of screenshots.",
+    description:
+      "Browser automation using accessibility snapshots instead of screenshots.",
     icon: "PanelTopOpen",
     tags: ["browser", "automation", "mcp"],
     docs: "https://playwright.dev/docs/getting-started-mcp",
@@ -435,7 +460,8 @@ const mcpSeed = [
   {
     id: "mcp:postgres",
     displayName: "PostgreSQL",
-    description: "Inspect schemas and query Postgres data from governed workflows.",
+    description:
+      "Inspect schemas and query Postgres data from governed workflows.",
     icon: "Database",
     tags: ["database", "sql", "mcp"],
     docs: "https://modelcontextprotocol.io/examples",
@@ -465,7 +491,8 @@ const mcpSeed = [
   {
     id: "mcp:stripe",
     displayName: "Stripe",
-    description: "Connect payment and billing operations through API-backed tools.",
+    description:
+      "Connect payment and billing operations through API-backed tools.",
     icon: "CreditCard",
     tags: ["payments", "billing", "api"],
     docs: "https://docs.stripe.com/api",
@@ -538,6 +565,10 @@ export function buildToolCatalog(params: {
       authProviderKey: googleProviderKey,
       oauthScopes: [...item.scopes],
       grantedScopes: grantedScopesFor(connections, GOOGLE_PROVIDER_ALIASES),
+      oauthConnectionId: oauthConnectionFor(
+        connections,
+        GOOGLE_PROVIDER_ALIASES,
+      )?.connectionId,
       connectUrl,
       tools: itemTools,
     };
@@ -545,7 +576,9 @@ export function buildToolCatalog(params: {
 
   const oauthItems = oauthAppSeed.map((item) => {
     const status = oauthStatus(providers, connections, [...item.providerKeys]);
-    const providerKey = findProvider(providers, [...item.providerKeys])?.providerKey ?? item.providerKeys[0];
+    const providerKey =
+      findProvider(providers, [...item.providerKeys])?.providerKey ??
+      item.providerKeys[0];
     const connectUrl = `/oauth/connect?provider=${encodeURIComponent(
       providerKey,
     )}&scopes=${encodeURIComponent(item.scopes.join(" "))}&label=${encodeURIComponent(
@@ -580,6 +613,8 @@ export function buildToolCatalog(params: {
       authProviderKey: providerKey,
       oauthScopes: [...item.scopes],
       grantedScopes: grantedScopesFor(connections, [...item.providerKeys]),
+      oauthConnectionId: oauthConnectionFor(connections, [...item.providerKeys])
+        ?.connectionId,
       connectUrl,
       tools: itemTools,
     };
@@ -587,7 +622,9 @@ export function buildToolCatalog(params: {
 
   const mcpItems = mcpSeed.map((item) => {
     const connected = mcpServers.some((server) =>
-      server.name.toLowerCase().includes(item.displayName.toLowerCase().split(" ")[0]),
+      server.name
+        .toLowerCase()
+        .includes(item.displayName.toLowerCase().split(" ")[0]),
     );
     const status: ToolCatalogStatus = connected ? "connected" : "available";
     return {
@@ -625,7 +662,8 @@ export function buildToolCatalog(params: {
     id: `system:${tool.toolId}`,
     name: tool.name,
     displayName: tool.displayName || tool.name,
-    description: tool.description || "Platform-supported capability available to agents.",
+    description:
+      tool.description || "Platform-supported capability available to agents.",
     category: "system" as const,
     categoryLabel: "Platform Tools",
     connectionMode: "system" as const,
@@ -674,7 +712,10 @@ export function buildToolCatalog(params: {
     id: `agent:${agent.agentId}`,
     name: agent.name,
     displayName: agent.name,
-    description: agent.description || agent.persona || "Use this agent as a reasoning step in a workflow.",
+    description:
+      agent.description ||
+      agent.persona ||
+      "Use this agent as a reasoning step in a workflow.",
     category: "agents" as const,
     categoryLabel: "Agent Processors",
     connectionMode: "agent" as const,
@@ -691,7 +732,8 @@ export function buildToolCatalog(params: {
       agentId: agent.agentId,
       config: {
         agentId: agent.agentId,
-        prompt: "Process the provided workflow data and return a concise structured result.",
+        prompt:
+          "Process the provided workflow data and return a concise structured result.",
       },
     },
   }));
@@ -700,7 +742,9 @@ export function buildToolCatalog(params: {
     id: `workflow:${workflow.workflowId}`,
     name: workflow.name,
     displayName: workflow.name,
-    description: workflow.description || "Reusable workflow that can run as a composed workflow node.",
+    description:
+      workflow.description ||
+      "Reusable workflow that can run as a composed workflow node.",
     category: "workflows" as const,
     categoryLabel: "Workflow Invocations",
     connectionMode: "workflow" as const,

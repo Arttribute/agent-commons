@@ -1,5 +1,10 @@
 # OAuth 2.0 System Migration Guide
 
+> Legacy local-database guide. Do not run this ad-hoc migration in current
+> staging or production. Those environments use `scripts/migrate.mjs`; provider
+> records are synchronized from runtime credentials at API startup. See
+> `../../../docs/oauth-connectors.md`.
+
 This guide will help you run the OAuth migration to update your Supabase database with the new OAuth tables.
 
 ## Prerequisites

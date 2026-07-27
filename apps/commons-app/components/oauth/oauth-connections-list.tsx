@@ -1,20 +1,20 @@
-'use client';
+"use client";
 
-import { useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useState } from "react";
+import { useRouter } from "next/navigation";
 import {
   useOAuthProviders,
   useOAuthConnections,
-} from '@/hooks/use-oauth-connections';
-import { OAuthConnection, OAuthConnectionStatus } from '@/types/oauth';
-import { Button } from '@/components/ui/button';
+} from "@/hooks/use-oauth-connections";
+import { OAuthConnection, OAuthConnectionStatus } from "@/types/oauth";
+import { Button } from "@/components/ui/button";
 import {
   Card,
   CardContent,
   CardDescription,
   CardHeader,
   CardTitle,
-} from '@/components/ui/card';
+} from "@/components/ui/card";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -24,7 +24,7 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from '@/components/ui/alert-dialog';
+} from "@/components/ui/alert-dialog";
 import {
   CheckCircle,
   XCircle,
@@ -34,16 +34,16 @@ import {
   RefreshCw,
   TestTube,
   Plus,
-} from 'lucide-react';
+} from "lucide-react";
 
 interface OAuthConnectionsListProps {
   ownerId: string;
-  ownerType?: 'user' | 'agent';
+  ownerType?: "user" | "agent";
 }
 
 export function OAuthConnectionsList({
   ownerId,
-  ownerType = 'user',
+  ownerType = "user",
 }: OAuthConnectionsListProps) {
   const router = useRouter();
   const { providers, loading: providersLoading } = useOAuthProviders();
@@ -119,28 +119,26 @@ export function OAuthConnectionsList({
   const getStatusText = (status: OAuthConnectionStatus) => {
     switch (status) {
       case OAuthConnectionStatus.ACTIVE:
-        return 'Active';
+        return "Active";
       case OAuthConnectionStatus.EXPIRED:
-        return 'Expired';
+        return "Expired";
       case OAuthConnectionStatus.REVOKED:
-        return 'Revoked';
+        return "Revoked";
       case OAuthConnectionStatus.ERROR:
-        return 'Error';
+        return "Error";
       default:
-        return 'Unknown';
+        return "Unknown";
     }
   };
 
   const loading = providersLoading || connectionsLoading;
 
   // Get connected provider keys
-  const connectedProviderKeys = new Set(
-    connections.map((c) => c.providerKey)
-  );
+  const connectedProviderKeys = new Set(connections.map((c) => c.providerKey));
 
   // Available providers (not yet connected)
   const availableProviders = providers.filter(
-    (p) => !connectedProviderKeys.has(p.providerKey) && p.isActive
+    (p) => !connectedProviderKeys.has(p.providerKey) && p.isActive,
   );
 
   if (loading) {
@@ -180,7 +178,7 @@ export function OAuthConnectionsList({
                           {connection.providerDisplayName}
                         </CardTitle>
                         <CardDescription>
-                          {connection.providerUserEmail || 'No email'}
+                          {connection.providerUserEmail || "No email"}
                         </CardDescription>
                       </div>
                     </div>
@@ -196,10 +194,10 @@ export function OAuthConnectionsList({
                   <div className="flex items-center justify-between">
                     <div className="text-sm text-muted-foreground dark:text-muted-foreground">
                       <p>
-                        Last used:{' '}
+                        Last used:{" "}
                         {connection.lastUsedAt
                           ? new Date(connection.lastUsedAt).toLocaleDateString()
-                          : 'Never'}
+                          : "Never"}
                       </p>
                       <p>Usage count: {connection.usageCount}</p>
                     </div>
@@ -213,15 +211,17 @@ export function OAuthConnectionsList({
                         <TestTube className="h-4 w-4 mr-1" />
                         Test
                       </Button>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => handleRefresh(connection.connectionId)}
-                        disabled={actionLoading === connection.connectionId}
-                      >
-                        <RefreshCw className="h-4 w-4 mr-1" />
-                        Refresh
-                      </Button>
+                      {connection.canRefresh && (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => handleRefresh(connection.connectionId)}
+                          disabled={actionLoading === connection.connectionId}
+                        >
+                          <RefreshCw className="h-4 w-4 mr-1" />
+                          Refresh
+                        </Button>
+                      )}
                       <Button
                         size="sm"
                         variant="destructive"
@@ -254,7 +254,10 @@ export function OAuthConnectionsList({
           <h3 className="text-lg font-semibold mb-4">Available Providers</h3>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             {availableProviders.map((provider) => (
-              <Card key={provider.providerId} className="cursor-pointer hover:shadow-lg transition-shadow">
+              <Card
+                key={provider.providerId}
+                className="cursor-pointer hover:shadow-lg transition-shadow"
+              >
                 <CardHeader>
                   <div className="flex items-center space-x-3 mb-2">
                     {provider.logoUrl && (
@@ -304,7 +307,7 @@ export function OAuthConnectionsList({
           <AlertDialogHeader>
             <AlertDialogTitle>Revoke OAuth Connection?</AlertDialogTitle>
             <AlertDialogDescription>
-              Are you sure you want to revoke your{' '}
+              Are you sure you want to revoke your{" "}
               {selectedConnection?.providerDisplayName} connection? This will
               disable all tools that use this OAuth connection. This action
               cannot be undone.

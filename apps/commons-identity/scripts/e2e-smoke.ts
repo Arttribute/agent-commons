@@ -100,6 +100,75 @@ assert(
   user.rows[0]?.defaultWorkspaceId?.startsWith("wsp_"),
   "personal workspace was not created",
 );
+await database.query(
+  `update "user" set "emailVerified" = true where id = $1`,
+  [user.rows[0].id],
+);
+const signin = await app.request("http://identity.test/api/auth/sign-in/email", {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({
+    email: "identity-test@example.com",
+    password: "correct-horse-battery-staple",
+  }),
+});
+assert(signin.ok, `email sign-in failed: ${signin.status} ${await signin.text()}`);
+const signinCookie = signin.headers.get("set-cookie")?.split(";")[0];
+assert(signinCookie, "email sign-in did not create a browser session");
+
+const platformAccessToken = "e2e-platform-access-token";
+await database.query(
+  `insert into "oauthAccessToken"
+    (id, token, "clientId", "userId", "expiresAt", "createdAt", scopes)
+   values ($1, $2, $3, $4, $5, $6, $7)`,
+  [
+    crypto.randomUUID(),
+    createHash("sha256").update(platformAccessToken).digest("base64url"),
+    webClient.client_id,
+    user.rows[0].id,
+    new Date(Date.now() + 60_000),
+    new Date(),
+    JSON.stringify(["openid", "profile"]),
+  ],
+);
+const projectsResponse = await app.request(
+  "http://identity.test/api/platform/projects",
+  { headers: { Authorization: `Bearer ${platformAccessToken}` } },
+);
+assert(
+  projectsResponse.ok,
+  `bearer project listing failed: ${projectsResponse.status}`,
+);
+const projects = (await projectsResponse.json()) as {
+  data?: Array<{ id: string }>;
+};
+assert(projects.data?.[0]?.id, "default developer project was not listed");
+
+const projectKeyResponse = await app.request(
+  `http://identity.test/api/platform/projects/${projects.data![0].id}/api-keys`,
+  {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${platformAccessToken}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      name: "E2E key",
+      scopes: ["agents:create", "agents:read"],
+    }),
+  },
+);
+assert(
+  projectKeyResponse.status === 201,
+  `project key creation failed: ${projectKeyResponse.status}`,
+);
+const projectKey = (await projectKeyResponse.json()) as {
+  data?: { id?: string; key?: string };
+};
+assert(
+  projectKey.data?.key?.startsWith("csk_"),
+  "project key secret was not returned",
+);
 
 const device = await app.request("http://identity.test/api/auth/device/code", {
   method: "POST",
@@ -112,6 +181,66 @@ const device = await app.request("http://identity.test/api/auth/device/code", {
 assert(device.ok, `device authorization failed: ${device.status}`);
 const deviceBody = await device.json();
 assert(deviceBody.user_code && deviceBody.device_code, "device codes missing");
+const deviceClaim = await app.request(
+  `http://identity.test/api/auth/device?user_code=${encodeURIComponent(deviceBody.user_code)}`,
+  { headers: { Cookie: signinCookie } },
+);
+assert(
+  deviceClaim.ok,
+  `device claim failed: ${deviceClaim.status} ${await deviceClaim.text()}`,
+);
+const deviceApproval = await app.request(
+  "http://identity.test/api/auth/device/approve",
+  {
+    method: "POST",
+    headers: {
+      Cookie: signinCookie,
+      "Content-Type": "application/json",
+      Origin: "http://identity.test",
+    },
+    body: JSON.stringify({ userCode: deviceBody.user_code }),
+  },
+);
+assert(
+  deviceApproval.ok,
+  `device approval failed: ${deviceApproval.status} ${await deviceApproval.text()}`,
+);
+const deviceTokenResponse = await app.request(
+  "http://identity.test/api/auth/device/token",
+  {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      grant_type: "urn:ietf:params:oauth:grant-type:device_code",
+      device_code: deviceBody.device_code,
+      client_id: "commons-cli",
+    }),
+  },
+);
+assert(
+  deviceTokenResponse.ok,
+  `device token exchange failed: ${deviceTokenResponse.status} ${await deviceTokenResponse.clone().text()}`,
+);
+const deviceToken = (await deviceTokenResponse.json()) as {
+  access_token?: string;
+};
+assert(deviceToken.access_token, "device token response did not include a token");
+const platformTokenResponse = await app.request(
+  "http://identity.test/api/auth/token",
+  { headers: { Authorization: `Bearer ${deviceToken.access_token}` } },
+);
+assert(
+  platformTokenResponse.ok,
+  `platform token exchange failed: ${platformTokenResponse.status} ${await platformTokenResponse.clone().text()}`,
+);
+const platformToken = (await platformTokenResponse.json()) as {
+  token?: string;
+};
+assert(platformToken.token, "platform token response did not include a JWT");
+const platformClaims = JSON.parse(
+  Buffer.from(platformToken.token.split(".")[1]!, "base64url").toString("utf8"),
+) as Record<string, unknown>;
+assert(platformClaims.sub === user.rows[0].id, "CLI JWT has the wrong subject");
 
 const jwks = await app.request(
   "http://identity.test/api/auth/.well-known/jwks.json",
@@ -167,7 +296,9 @@ console.log(
       authorizationCodePkce: true,
       canonicalUser: user.rows[0].id,
       workspace: user.rows[0].defaultWorkspaceId,
-      deviceAuthorization: true,
+      developerProjects: true,
+      projectApiKeys: true,
+      deviceCliSignIn: true,
       jwks: true,
       clientCredentials: true,
     },

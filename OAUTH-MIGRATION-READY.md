@@ -1,4 +1,10 @@
-# 🚀 OAuth 2.0 System - Migration Ready
+# OAuth 2.0 System
+
+> Historical implementation note: provider seeding in
+> `migrations/add-oauth-system.mjs` is retained for old local databases only.
+> Current staging/production deploys use the ordered versioned migrations, and
+> `commons-api` upserts enabled provider metadata and encrypted credentials from
+> runtime secrets at startup. See `docs/oauth-connectors.md`.
 
 ## ✅ What's Been Completed
 

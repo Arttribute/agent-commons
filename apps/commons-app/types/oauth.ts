@@ -20,16 +20,16 @@ export interface OAuthProviderDetails extends OAuthProvider {
 
 // OAuth Connection
 export enum OAuthConnectionStatus {
-  ACTIVE = 'active',
-  EXPIRED = 'expired',
-  REVOKED = 'revoked',
-  ERROR = 'error',
+  ACTIVE = "active",
+  EXPIRED = "expired",
+  REVOKED = "revoked",
+  ERROR = "error",
 }
 
 export interface OAuthConnection {
   connectionId: string;
   ownerId: string;
-  ownerType: 'user' | 'agent';
+  ownerType: "user" | "agent";
   providerKey: string;
   providerDisplayName: string;
   providerLogoUrl: string;
@@ -37,9 +37,10 @@ export interface OAuthConnection {
   providerUserName: string;
   scopes: string[];
   status: OAuthConnectionStatus;
+  canRefresh: boolean;
   displayName?: string;
   description?: string;
-  accessTokenExpiresAt: Date | string;
+  accessTokenExpiresAt?: Date | string;
   lastRefreshedAt?: Date | string;
   lastUsedAt?: Date | string;
   usageCount: number;
@@ -102,7 +103,7 @@ export interface UpdateOAuthConnectionResponse {
 export interface RefreshOAuthTokenResponse {
   success: boolean;
   connectionId: string;
-  accessTokenExpiresAt: string;
+  accessTokenExpiresAt?: string;
   lastRefreshedAt: string;
 }
 
@@ -118,6 +119,6 @@ export interface TestOAuthConnectionResponse {
   status: OAuthConnectionStatus;
   providerUserEmail?: string;
   accessTokenValid: boolean;
-  accessTokenExpiresAt: string;
+  accessTokenExpiresAt?: string;
   error?: string;
 }

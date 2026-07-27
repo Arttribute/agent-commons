@@ -12,7 +12,9 @@ import {
 import { scopedVectorSearch } from "@/lib/vector-search";
 import Course from "@/models/Course";
 import Enrollment from "@/models/Enrollment";
+import LearnerProfile from "@/models/LearnerProfile";
 import type { CourseAgentConfig, CourseAgentMessage } from "@/types/course-agent";
+import type { LearnerProfileData } from "@/types/learner-profile";
 
 type ChatBody = {
   courseSlug?: string;
@@ -107,6 +109,14 @@ export async function POST(req: NextRequest) {
           .select("completedLessons progress accessLevel")
           .lean()) as LearnerProgress | null)
       : null;
+  const learnerProfile =
+    role === "learner"
+      ? ((await LearnerProfile.findOne({ userId: session.user.id })
+          .select(
+            "personalizationEnabled roleOrContext domain interests goals preferredFormats guidanceStyle customContext allowUsageLearning usageSignals",
+          )
+          .lean()) as Partial<LearnerProfileData> | null)
+      : null;
   const searchResults = await scopedVectorSearch({
     scope: searchScope,
     query: body.message,
@@ -124,6 +134,7 @@ export async function POST(req: NextRequest) {
     context: body.context,
     searchResults,
     learnerProgress,
+    learnerProfile,
     educatorAnalytics,
   });
 

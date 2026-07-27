@@ -68,7 +68,9 @@ export class OAuthStateService {
         })
         .returning();
 
-      this.logger.debug(`Created OAuth state ${stateId} for user ${params.ownerId}`);
+      this.logger.debug(
+        `Created OAuth state ${stateId} for user ${params.ownerId}`,
+      );
 
       return state;
     } catch (error: any) {
@@ -104,6 +106,34 @@ export class OAuthStateService {
       throw new Error('State has expired');
     }
 
+    return state;
+  }
+
+  /**
+   * Atomically validate and consume a state before exchanging the authorization
+   * code. Deleting only after the provider call leaves a replay window where
+   * two callbacks can exchange the same state concurrently.
+   */
+  async consumeState(stateId: string) {
+    const now = new Date();
+    const [state] = await this.db
+      .delete(oauthSchema.oauthState)
+      .where(
+        and(
+          eq(oauthSchema.oauthState.stateId, stateId),
+          gt(oauthSchema.oauthState.expiresAt, now),
+        ),
+      )
+      .returning();
+
+    if (!state) {
+      // Clean up an expired row if one exists; callers receive the same safe
+      // error for missing, expired, and already-consumed states.
+      await this.db
+        .delete(oauthSchema.oauthState)
+        .where(eq(oauthSchema.oauthState.stateId, stateId));
+      throw new NotFoundException('Invalid or expired OAuth state');
+    }
     return state;
   }
 
@@ -182,8 +212,7 @@ export class OAuthStateService {
     const now = new Date();
 
     const states = await this.db.query.oauthState.findMany({
-      where: (s: any) =>
-        and(eq(s.ownerId, ownerId), gt(s.expiresAt, now)),
+      where: (s: any) => and(eq(s.ownerId, ownerId), gt(s.expiresAt, now)),
     });
 
     return states.length;

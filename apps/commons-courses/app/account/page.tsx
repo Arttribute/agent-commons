@@ -3,6 +3,7 @@
 import { FormEvent, useEffect, useState } from "react";
 import Link from "next/link";
 import { Nav } from "@/components/nav";
+import { LearnerProfileDialog } from "@/components/learning/learner-profile-dialog";
 
 type AccountUser = {
   name: string;
@@ -79,6 +80,24 @@ export default function AccountPage() {
               <span className="font-bold text-slate-900">Sign-in:</span>{" "}
               {user?.authProvider === "google" ? "Google" : "Email and password"}
             </p>
+          </div>
+        </section>
+
+        <section
+          id="learning-profile"
+          className="mb-6 rounded-xl border border-slate-200 p-5"
+        >
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <h2 className="text-lg font-bold text-slate-900">
+                Learning preferences
+              </h2>
+              <p className="mt-1 max-w-xl text-sm leading-6 text-slate-500">
+                Choose the contexts and learning views your copilot can use.
+                Your educator&apos;s original content is never replaced.
+              </p>
+            </div>
+            <LearnerProfileDialog buttonLabel="Edit preferences" />
           </div>
         </section>
 

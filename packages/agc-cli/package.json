@@ -1,14 +1,35 @@
 {
   "name": "@agent-commons/cli",
   "version": "0.3.0",
-  "description": "Agent Commons CLI — chat, run, and manage agents from your terminal",
+  "description": "Official Agent Commons CLI for building, running, and managing AI agents from the terminal",
   "license": "MIT",
+  "keywords": [
+    "agent-commons",
+    "ai-agents",
+    "cli",
+    "terminal",
+    "workflows",
+    "mcp",
+    "automation"
+  ],
+  "homepage": "https://docs.agentcommons.io/docs/cli",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Arttribute/agent-commons.git",
+    "directory": "packages/agc-cli"
+  },
+  "bugs": {
+    "url": "https://github.com/Arttribute/agent-commons/issues"
+  },
+  "preferGlobal": true,
   "bin": {
     "agc": "./dist/bin.js"
   },
   "main": "./dist/bin.js",
   "files": [
-    "dist"
+    "dist",
+    "README.md",
+    "LICENSE"
   ],
   "scripts": {
     "build": "tsup",

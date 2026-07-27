@@ -22,6 +22,7 @@ import {
   upgradePromptFrom,
   type UpgradePrompt,
 } from "@/components/billing/upgrade-dialog";
+import { useEntitlements } from "@/hooks/use-entitlements";
 import type { AgentRuntimeType } from "@/types/agent";
 
 interface RegistryModel {
@@ -57,6 +58,7 @@ const runtimeDescriptions: Record<string, string> = {
 export default function CreateAgentPage() {
   const router = useRouter();
   const { authState } = useAuth();
+  const { entitlements } = useEntitlements();
   const userAddress = authState.walletAddress?.toLowerCase();
 
   const [models, setModels] = useState<RegistryModel[]>([]);
@@ -105,6 +107,24 @@ export default function CreateAgentPage() {
 
   const canSubmit =
     Boolean(form.name.trim()) && Boolean(userAddress) && !creating;
+
+  const selectRuntime = (runtimeType: AgentRuntimeType) => {
+    if (runtimeType !== "native" && entitlements && !entitlements.computerUse) {
+      const runtimeName =
+        runtimeType === "openclaw"
+          ? "OpenClaw"
+          : runtimeType === "hermes"
+            ? "Hermes"
+            : "A custom runtime";
+      setUpgradePrompt({
+        code: "upgrade_required",
+        feature: "computer_use",
+        message: `${runtimeName} needs a dedicated agent computer. Upgrade to Plus or higher to use it.`,
+      });
+      return;
+    }
+    setForm((current) => ({ ...current, runtimeType }));
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -234,12 +254,7 @@ export default function CreateAgentPage() {
 
           <div className="grid gap-1.5">
             <Label>Runtime</Label>
-            <Select
-              value={form.runtimeType}
-              onValueChange={(value: AgentRuntimeType) =>
-                setForm((f) => ({ ...f, runtimeType: value }))
-              }
-            >
+            <Select value={form.runtimeType} onValueChange={selectRuntime}>
               <SelectTrigger>
                 <SelectValue />
               </SelectTrigger>
@@ -253,6 +268,7 @@ export default function CreateAgentPage() {
             <p className="text-xs leading-5 text-muted-foreground">
               {runtimeDescriptions[form.runtimeType] ??
                 runtimeDescriptions.native}
+              {form.runtimeType !== "native" && " Paid plan required."}
             </p>
           </div>
 
@@ -299,9 +315,7 @@ export default function CreateAgentPage() {
                       {model.displayName || model.modelId}
                     </SelectItem>
                   ))}
-                  <SelectItem value={CUSTOM_MODEL}>
-                    Type a model ID…
-                  </SelectItem>
+                  <SelectItem value={CUSTOM_MODEL}>Type a model ID…</SelectItem>
                 </SelectContent>
               </Select>
             </div>

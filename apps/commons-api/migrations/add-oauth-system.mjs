@@ -118,7 +118,7 @@ const providerDefinitions = [
     logoUrl: 'https://github.githubassets.com/images/modules/logos_page/GitHub-Mark.png',
     authUrl: 'https://github.com/login/oauth/authorize',
     tokenUrl: 'https://github.com/login/oauth/access_token',
-    revokeUrl: 'https://api.x.com/2/oauth2/revoke',
+    revokeUrl: 'https://api.github.com/applications/{client_id}/token',
     userInfoUrl: 'https://api.github.com/user',
     clientIdEnv: 'GITHUB_OAUTH_CLIENT_ID',
     clientSecretEnv: 'GITHUB_OAUTH_CLIENT_SECRET',

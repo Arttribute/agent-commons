@@ -36,6 +36,7 @@ import {
   OAuthConnectionDto,
 } from './dto/oauth.dto';
 import { Public } from '../modules/auth/public.decorator';
+import { resolveCallerId } from '../modules/auth/owner.guard';
 
 function redirectOAuthError(res: Response, code = 'oauth_failed') {
   return res.redirect(`/oauth/error?code=${encodeURIComponent(code)}`);
@@ -49,7 +50,9 @@ function redactSecrets(value: string) {
 }
 
 function getSafeErrorMessage(error: unknown) {
-  return error instanceof Error ? redactSecrets(error.message) : 'Unknown error';
+  return error instanceof Error
+    ? redactSecrets(error.message)
+    : 'Unknown error';
 }
 
 @Controller({ version: '1', path: 'oauth' })
@@ -59,6 +62,56 @@ export class OAuthController {
     private readonly connectionService: OAuthConnectionService,
     private readonly flowService: OAuthFlowService,
   ) {}
+
+  private async requireOwnedConnection(req: Request, connectionId: string) {
+    const callerId = resolveCallerId(req);
+    if (!callerId) {
+      throw new HttpException(
+        'User identity required',
+        HttpStatus.UNAUTHORIZED,
+      );
+    }
+
+    const connection = await this.connectionService.getConnection(connectionId);
+    if (
+      connection.ownerType !== 'user' ||
+      connection.ownerId.toLowerCase() !== callerId.toLowerCase()
+    ) {
+      // Do not reveal whether another user's connection ID exists.
+      throw new HttpException('Connection not found', HttpStatus.NOT_FOUND);
+    }
+    return connection;
+  }
+
+  private async toConnectionDto(conn: any): Promise<OAuthConnectionDto> {
+    const [provider, canRefresh] = await Promise.all([
+      this.providerService.getProviderById(conn.providerId),
+      this.connectionService.hasRefreshToken(conn.connectionId),
+    ]);
+    return {
+      connectionId: conn.connectionId,
+      ownerId: conn.ownerId,
+      ownerType: conn.ownerType as 'user' | 'agent',
+      providerKey: provider.providerKey,
+      providerDisplayName: provider.displayName,
+      providerLogoUrl: provider.logoUrl || '',
+      providerUserEmail: conn.providerUserEmail || '',
+      providerUserName: conn.providerUserName || '',
+      scopes: conn.scopes || [],
+      status: conn.status as any,
+      canRefresh,
+      displayName: conn.displayName || undefined,
+      description: conn.description || undefined,
+      accessTokenExpiresAt: conn.accessTokenExpiresAt || undefined,
+      lastRefreshedAt: conn.lastRefreshedAt || undefined,
+      lastUsedAt: conn.lastUsedAt || undefined,
+      usageCount: conn.usageCount || 0,
+      lastError: conn.lastError || undefined,
+      lastErrorAt: conn.lastErrorAt || undefined,
+      createdAt: conn.createdAt,
+      updatedAt: conn.updatedAt,
+    };
+  }
 
   // ==================== Provider Endpoints ====================
 
@@ -200,12 +253,20 @@ export class OAuthController {
         return redirectOAuthError(res, 'provider_authorization_failed');
       }
 
+      if (!query.code) {
+        return redirectOAuthError(res, 'missing_authorization_code');
+      }
+
       // Exchange code for tokens
       const result = await this.flowService.handleCallback({
         code: query.code,
         state: query.state,
         redirectUri: `${req.protocol}://${req.get('host')}/api/oauth/callback/${providerKey}`,
+        expectedProviderKey: providerKey,
       });
+      if (result.providerKey !== providerKey) {
+        throw new Error('OAuth callback provider does not match state');
+      }
 
       // Redirect to success page
       return res.redirect(
@@ -233,46 +294,20 @@ export class OAuthController {
     @Query('ownerType') ownerType: 'user' | 'agent' = 'user',
     @Req() req: Request,
   ): Promise<ListOAuthConnectionsResponseDto> {
-    const principal = (req as any).principal;
-    const effectiveOwnerId =
-      principal?.principalType === 'user' ? principal.principalId : ownerId;
-    const effectiveOwnerType =
-      principal?.principalType === 'user' ? 'user' : ownerType;
+    const effectiveOwnerId = resolveCallerId(req);
+    if (!effectiveOwnerId) {
+      throw new HttpException(
+        'User identity required',
+        HttpStatus.UNAUTHORIZED,
+      );
+    }
     const connections = await this.connectionService.listConnections({
       ownerId: effectiveOwnerId,
-      ownerType: effectiveOwnerType as any,
+      ownerType: 'user',
     });
 
-    // Fetch provider info for each connection
     const connectionsWithProviderInfo = await Promise.all(
-      connections.map(async (conn) => {
-        const provider = await this.providerService.getProviderById(
-          conn.providerId,
-        );
-
-        return {
-          connectionId: conn.connectionId,
-          ownerId: conn.ownerId,
-          ownerType: conn.ownerType as 'user' | 'agent',
-          providerKey: provider?.providerKey || '',
-          providerDisplayName: provider?.displayName || '',
-          providerLogoUrl: provider?.logoUrl || '',
-          providerUserEmail: conn.providerUserEmail || '',
-          providerUserName: conn.providerUserName || '',
-          scopes: conn.scopes || [],
-          status: conn.status as any,
-          displayName: conn.displayName || undefined,
-          description: conn.description || undefined,
-          accessTokenExpiresAt: conn.accessTokenExpiresAt,
-          lastRefreshedAt: conn.lastRefreshedAt || undefined,
-          lastUsedAt: conn.lastUsedAt || undefined,
-          usageCount: conn.usageCount || 0,
-          lastError: conn.lastError || undefined,
-          lastErrorAt: conn.lastErrorAt || undefined,
-          createdAt: conn.createdAt,
-          updatedAt: conn.updatedAt,
-        } as OAuthConnectionDto;
-      }),
+      connections.map((conn) => this.toConnectionDto(conn)),
     );
 
     return { connections: connectionsWithProviderInfo };
@@ -285,39 +320,10 @@ export class OAuthController {
   @Get('connections/:connectionId')
   async getConnection(
     @Param('connectionId') connectionId: string,
+    @Req() req: Request,
   ): Promise<GetOAuthConnectionResponseDto> {
-    const conn = await this.connectionService.getConnection(connectionId);
-
-    if (!conn) {
-      throw new HttpException('Connection not found', HttpStatus.NOT_FOUND);
-    }
-
-    const provider = await this.providerService.getProviderById(conn.providerId);
-
-    const connectionDto: OAuthConnectionDto = {
-      connectionId: conn.connectionId,
-      ownerId: conn.ownerId,
-      ownerType: conn.ownerType as 'user' | 'agent',
-      providerKey: provider?.providerKey || '',
-      providerDisplayName: provider?.displayName || '',
-      providerLogoUrl: provider?.logoUrl || '',
-      providerUserEmail: conn.providerUserEmail || '',
-      providerUserName: conn.providerUserName || '',
-      scopes: conn.scopes || [],
-      status: conn.status as any,
-      displayName: conn.displayName || undefined,
-      description: conn.description || undefined,
-      accessTokenExpiresAt: conn.accessTokenExpiresAt,
-      lastRefreshedAt: conn.lastRefreshedAt || undefined,
-      lastUsedAt: conn.lastUsedAt || undefined,
-      usageCount: conn.usageCount || 0,
-      lastError: conn.lastError || undefined,
-      lastErrorAt: conn.lastErrorAt || undefined,
-      createdAt: conn.createdAt,
-      updatedAt: conn.updatedAt,
-    };
-
-    return { connection: connectionDto };
+    const conn = await this.requireOwnedConnection(req, connectionId);
+    return { connection: await this.toConnectionDto(conn) };
   }
 
   /**
@@ -328,40 +334,18 @@ export class OAuthController {
   async updateConnection(
     @Param('connectionId') connectionId: string,
     @Body() dto: UpdateOAuthConnectionDto,
+    @Req() req: Request,
   ): Promise<UpdateOAuthConnectionResponseDto> {
+    await this.requireOwnedConnection(req, connectionId);
     const updated = await this.connectionService.updateConnection(
       connectionId,
       dto,
     );
 
-    const provider = await this.providerService.getProviderById(
-      updated.providerId,
-    );
-
-    const connectionDto: OAuthConnectionDto = {
-      connectionId: updated.connectionId,
-      ownerId: updated.ownerId,
-      ownerType: updated.ownerType as 'user' | 'agent',
-      providerKey: provider?.providerKey || '',
-      providerDisplayName: provider?.displayName || '',
-      providerLogoUrl: provider?.logoUrl || '',
-      providerUserEmail: updated.providerUserEmail || '',
-      providerUserName: updated.providerUserName || '',
-      scopes: updated.scopes || [],
-      status: updated.status as any,
-      displayName: updated.displayName || undefined,
-      description: updated.description || undefined,
-      accessTokenExpiresAt: updated.accessTokenExpiresAt,
-      lastRefreshedAt: updated.lastRefreshedAt || undefined,
-      lastUsedAt: updated.lastUsedAt || undefined,
-      usageCount: updated.usageCount || 0,
-      lastError: updated.lastError || undefined,
-      lastErrorAt: updated.lastErrorAt || undefined,
-      createdAt: updated.createdAt,
-      updatedAt: updated.updatedAt,
+    return {
+      success: true,
+      connection: await this.toConnectionDto(updated),
     };
-
-    return { success: true, connection: connectionDto };
   }
 
   /**
@@ -371,8 +355,10 @@ export class OAuthController {
   @Delete('connections/:connectionId')
   async revokeConnection(
     @Param('connectionId') connectionId: string,
+    @Req() req: Request,
   ): Promise<RevokeOAuthConnectionResponseDto> {
     try {
+      await this.requireOwnedConnection(req, connectionId);
       await this.flowService.revokeToken(connectionId);
 
       return {
@@ -381,6 +367,7 @@ export class OAuthController {
         message: 'Connection revoked successfully',
       };
     } catch (error) {
+      if (error instanceof HttpException) throw error;
       console.error('Revoke connection error:', error);
 
       throw new HttpException(
@@ -397,20 +384,30 @@ export class OAuthController {
   @Post('connections/:connectionId/refresh')
   async refreshToken(
     @Param('connectionId') connectionId: string,
+    @Req() req: Request,
   ): Promise<RefreshOAuthTokenResponseDto> {
     try {
+      await this.requireOwnedConnection(req, connectionId);
+      if (!(await this.connectionService.hasRefreshToken(connectionId))) {
+        throw new HttpException(
+          'This provider issued a non-expiring token and does not support refresh for this connection',
+          HttpStatus.BAD_REQUEST,
+        );
+      }
       await this.flowService.refreshAccessToken(connectionId);
 
       // Get updated connection to return fresh data
-      const connection = await this.connectionService.getConnection(connectionId);
+      const connection =
+        await this.connectionService.getConnection(connectionId);
 
       return {
         success: true,
         connectionId,
-        accessTokenExpiresAt: connection.accessTokenExpiresAt,
+        accessTokenExpiresAt: connection.accessTokenExpiresAt || undefined,
         lastRefreshedAt: connection.lastRefreshedAt || connection.updatedAt,
       };
     } catch (error) {
+      if (error instanceof HttpException) throw error;
       console.error('Refresh token error:', error);
 
       throw new HttpException(
@@ -427,18 +424,13 @@ export class OAuthController {
   @Get('connections/:connectionId/test')
   async testConnection(
     @Param('connectionId') connectionId: string,
+    @Req() req: Request,
   ): Promise<TestOAuthConnectionResponseDto> {
     try {
+      await this.requireOwnedConnection(req, connectionId);
+      const accessTokenValid =
+        await this.flowService.validateToken(connectionId);
       const conn = await this.connectionService.getConnection(connectionId);
-
-      if (!conn) {
-        throw new HttpException('Connection not found', HttpStatus.NOT_FOUND);
-      }
-
-      // Check if token is expired
-      const now = new Date();
-      const isExpired = conn.accessTokenExpiresAt < now;
-      const accessTokenValid = !isExpired && conn.status === 'active';
 
       return {
         success: true,
@@ -446,10 +438,11 @@ export class OAuthController {
         status: conn.status as any,
         providerUserEmail: conn.providerUserEmail || undefined,
         accessTokenValid,
-        accessTokenExpiresAt: conn.accessTokenExpiresAt,
+        accessTokenExpiresAt: conn.accessTokenExpiresAt || undefined,
         error: conn.lastError || undefined,
       };
     } catch (error) {
+      if (error instanceof HttpException) throw error;
       console.error('Test connection error:', error);
 
       throw new HttpException(

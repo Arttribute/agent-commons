@@ -2,11 +2,12 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Loader2, ShieldCheck } from "lucide-react";
+import { Loader2, ShieldCheck, Unplug } from "lucide-react";
 import type { ToolCatalogItem } from "@/lib/tools/catalog";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
+import { useToast } from "@/hooks/use-toast";
 
 /** Friendly names for well-known OAuth scopes; falls back to the scope's tail */
 const SCOPE_LABELS: Record<string, { label: string; hint: string }> = {
@@ -109,29 +110,36 @@ export function ScopePermissions({
   subtitle?: string;
 }) {
   const router = useRouter();
+  const { toast } = useToast();
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [applying, setApplying] = useState(false);
+  const [disconnecting, setDisconnecting] = useState(false);
 
   const requested = useMemo(() => item.oauthScopes ?? [], [item]);
-  const granted = useMemo(
-    () => new Set(item.grantedScopes ?? []),
-    [item]
-  );
+  const granted = useMemo(() => new Set(item.grantedScopes ?? []), [item]);
   const connected = item.status === "connected";
   const providerUnavailable = item.status === "needs_configuration";
+  const connectionLabel = [
+    "google_workspace",
+    "google",
+    "google_oauth",
+  ].includes(item.authProviderKey ?? "")
+    ? "Google Workspace account (all Google tools)"
+    : `${item.displayName} account`;
 
   useEffect(() => {
     // Connected: reflect what's actually granted. Not connected: propose all.
     setSelected(
       new Set(
-        connected ? requested.filter((scope) => granted.has(scope)) : requested
-      )
+        connected ? requested.filter((scope) => granted.has(scope)) : requested,
+      ),
     );
   }, [item.id, connected, requested, granted]);
 
   if (requested.length === 0 || !item.authProviderKey) return null;
 
   const toggle = (scope: string) => {
+    if (granted.has(scope)) return;
     setSelected((current) => {
       const next = new Set(current);
       if (next.has(scope)) next.delete(scope);
@@ -149,6 +157,42 @@ export function ScopePermissions({
     setApplying(true);
     const url = `/oauth/connect?provider=${encodeURIComponent(item.authProviderKey!)}&scopes=${encodeURIComponent([...selected].join(" "))}&label=${encodeURIComponent(item.displayName)}&returnUrl=${encodeURIComponent(returnUrl)}`;
     router.push(url);
+  };
+
+  const disconnect = async () => {
+    if (!item.oauthConnectionId) return;
+    if (
+      !window.confirm(
+        `Disconnect the ${connectionLabel}? Agents and tools will immediately lose this account access.`,
+      )
+    ) {
+      return;
+    }
+    setDisconnecting(true);
+    try {
+      const response = await fetch(
+        `/api/oauth/connections/${item.oauthConnectionId}`,
+        { method: "DELETE" },
+      );
+      if (!response.ok) {
+        const payload = await response.json().catch(() => ({}));
+        throw new Error(
+          payload.message || payload.error || "Could not disconnect account",
+        );
+      }
+      window.location.assign(returnUrl);
+    } catch (error) {
+      toast({
+        title: "Disconnect failed",
+        description:
+          error instanceof Error
+            ? error.message
+            : "Could not disconnect account",
+        variant: "destructive",
+      });
+    } finally {
+      setDisconnecting(false);
+    }
   };
 
   return (
@@ -178,7 +222,7 @@ export function ScopePermissions({
                         "rounded-full px-1.5 py-px text-[10px] font-medium",
                         isGranted
                           ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-300/15 dark:text-emerald-300"
-                          : "bg-muted text-muted-foreground"
+                          : "bg-muted text-muted-foreground",
                       )}
                     >
                       {isGranted ? "granted" : "not granted"}
@@ -186,10 +230,16 @@ export function ScopePermissions({
                   )}
                 </div>
                 <p className="truncate text-xs text-muted-foreground">{hint}</p>
+                {isGranted && (
+                  <p className="text-[10px] text-muted-foreground">
+                    Disconnect the account to remove this granted permission.
+                  </p>
+                )}
               </div>
               <Switch
                 checked={selected.has(scope)}
                 onCheckedChange={() => toggle(scope)}
+                disabled={isGranted}
                 aria-label={`Allow: ${label}`}
               />
             </div>
@@ -203,24 +253,43 @@ export function ScopePermissions({
             ? `${item.displayName} needs its platform OAuth app configured before accounts can connect.`
             : "Access is granted on your workspace connection and applies to agents that use this tool."}
         </p>
-        <Button
-          size="sm"
-          className="h-8 shrink-0"
-          onClick={apply}
-          disabled={
-            providerUnavailable ||
-            applying ||
-            selected.size === 0 ||
-            (connected && !dirty)
-          }
-        >
-          {applying && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-          {providerUnavailable
-            ? "Platform setup required"
-            : connected
-              ? "Update access"
-              : "Connect"}
-        </Button>
+        <div className="flex shrink-0 items-center gap-2">
+          {connected && item.oauthConnectionId && (
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-8"
+              onClick={disconnect}
+              disabled={disconnecting || applying}
+            >
+              {disconnecting ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <Unplug className="h-3.5 w-3.5" />
+              )}
+              Disconnect
+            </Button>
+          )}
+          <Button
+            size="sm"
+            className="h-8"
+            onClick={apply}
+            disabled={
+              providerUnavailable ||
+              applying ||
+              disconnecting ||
+              selected.size === 0 ||
+              (connected && !dirty)
+            }
+          >
+            {applying && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+            {providerUnavailable
+              ? "Platform setup required"
+              : connected
+                ? "Add permissions"
+                : "Connect"}
+          </Button>
+        </div>
       </div>
     </div>
   );

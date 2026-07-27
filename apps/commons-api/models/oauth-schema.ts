@@ -109,10 +109,11 @@ export const oauthConnection = pgTable(
       withTimezone: true,
     }),
 
-    // Encrypted Refresh Token (CRITICAL for long-term access)
-    encryptedRefreshToken: text('encrypted_refresh_token').notNull(),
-    refreshTokenIv: text('refresh_token_iv').notNull(),
-    refreshTokenTag: text('refresh_token_tag').notNull(),
+    // Refresh tokens are optional. Providers such as GitHub OAuth Apps issue
+    // non-expiring access tokens without a refresh token.
+    encryptedRefreshToken: text('encrypted_refresh_token'),
+    refreshTokenIv: text('refresh_token_iv'),
+    refreshTokenTag: text('refresh_token_tag'),
 
     // Optional ID Token (OIDC providers like Google)
     encryptedIdToken: text('encrypted_id_token'),
@@ -277,7 +278,7 @@ export interface OAuthProviderConfig {
  */
 export interface OAuthTokenSet {
   accessToken: string;
-  refreshToken: string;
+  refreshToken?: string;
   idToken?: string;
   expiresAt?: Date;
 }

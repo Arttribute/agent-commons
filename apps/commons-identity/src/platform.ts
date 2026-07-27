@@ -29,7 +29,26 @@ export function createPlatformRouter(
     const session = await authService.api.getSession({
       headers: request.headers,
     });
-    return session?.user ?? null;
+    if (session?.user) return session.user;
+
+    // Product apps keep the Commons OAuth access token in their server-side
+    // session. Accept that token here so they can proxy developer-project
+    // management without forwarding cross-domain browser cookies.
+    const bearer = (request.headers.get("authorization") ?? "").replace(
+      /^Bearer\s+/i,
+      "",
+    );
+    if (!bearer) return null;
+    const result = await database.query(
+      `select u.id, u.name, u.email, u."emailVerified",
+              u.image, u."defaultWorkspaceId"
+         from "oauthAccessToken" t
+         join "user" u on u.id = t."userId"
+        where t.token = $1 and t."expiresAt" > now()
+        limit 1`,
+      [createHash("sha256").update(bearer).digest("base64url")],
+    );
+    return result.rows[0] ?? null;
   }
 
   router.get("/scopes", (c) => c.json({ data: PLATFORM_SCOPES }));
@@ -51,6 +70,15 @@ export function createPlatformRouter(
     }>();
     if (!body.workspaceId || !body.name?.trim()) {
       return c.json({ error: "workspaceId and name are required" }, 400);
+    }
+    if (
+      body.environment &&
+      !["production", "development", "staging"].includes(body.environment)
+    ) {
+      return c.json(
+        { error: "environment must be production, development, or staging" },
+        400,
+      );
     }
     try {
       const project = await createProject(database, {
@@ -92,6 +120,24 @@ export function createPlatformRouter(
       expiresAt?: string | null;
     }>();
     if (!body.name?.trim()) return c.json({ error: "name is required" }, 400);
+    const invalidScope = body.scopes?.find(
+      (scope) => !PLATFORM_SCOPES.includes(scope as any),
+    );
+    if (invalidScope) {
+      return c.json({ error: `unsupported scope: ${invalidScope}` }, 400);
+    }
+    if (body.expiresAt) {
+      const expiresAt = new Date(body.expiresAt);
+      if (
+        Number.isNaN(expiresAt.getTime()) ||
+        expiresAt.getTime() <= Date.now()
+      ) {
+        return c.json(
+          { error: "expiresAt must be a future ISO 8601 timestamp" },
+          400,
+        );
+      }
+    }
     try {
       const key = await createProjectApiKey(database, {
         projectId: c.req.param("projectId"),

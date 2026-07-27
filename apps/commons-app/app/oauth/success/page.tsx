@@ -1,26 +1,29 @@
-'use client';
+"use client";
 
-import { Suspense, useEffect, useState } from 'react';
-import { useSearchParams, useRouter } from 'next/navigation';
-import { CheckCircle } from 'lucide-react';
+import { Suspense, useEffect, useState } from "react";
+import { useSearchParams, useRouter } from "next/navigation";
+import { CheckCircle } from "lucide-react";
+import { safeInternalReturnUrl } from "@/lib/safe-return-url";
 
 function OAuthSuccessContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const [countdown, setCountdown] = useState(3);
   const [storedReturnUrl, setStoredReturnUrl] = useState<string | null>(null);
-  const [storedProviderLabel, setStoredProviderLabel] = useState<string | null>(null);
+  const [storedProviderLabel, setStoredProviderLabel] = useState<string | null>(
+    null,
+  );
 
-  const connectionId = searchParams.get('connectionId');
-  const provider = searchParams.get('provider');
-  const returnUrl = searchParams.get('returnUrl') || '/studio';
+  const connectionId = searchParams.get("connectionId");
+  const provider = searchParams.get("provider");
+  const returnUrl = safeInternalReturnUrl(searchParams.get("returnUrl"));
 
   useEffect(() => {
-    setStoredReturnUrl(window.sessionStorage.getItem('oauthReturnUrl'));
-    setStoredProviderLabel(window.sessionStorage.getItem('oauthProviderLabel'));
+    setStoredReturnUrl(window.sessionStorage.getItem("oauthReturnUrl"));
+    setStoredProviderLabel(window.sessionStorage.getItem("oauthProviderLabel"));
   }, []);
 
-  const destination = storedReturnUrl || returnUrl;
+  const destination = safeInternalReturnUrl(storedReturnUrl, returnUrl);
 
   useEffect(() => {
     // Auto-redirect after 3 seconds
@@ -28,8 +31,8 @@ function OAuthSuccessContent() {
       setCountdown((prev) => {
         if (prev <= 1) {
           clearInterval(timer);
-          window.sessionStorage.removeItem('oauthReturnUrl');
-          window.sessionStorage.removeItem('oauthProviderLabel');
+          window.sessionStorage.removeItem("oauthReturnUrl");
+          window.sessionStorage.removeItem("oauthProviderLabel");
           router.push(destination);
           return 0;
         }
@@ -41,8 +44,8 @@ function OAuthSuccessContent() {
   }, [router, destination]);
 
   const handleContinue = () => {
-    window.sessionStorage.removeItem('oauthReturnUrl');
-    window.sessionStorage.removeItem('oauthProviderLabel');
+    window.sessionStorage.removeItem("oauthReturnUrl");
+    window.sessionStorage.removeItem("oauthProviderLabel");
     router.push(destination);
   };
 
@@ -65,8 +68,8 @@ function OAuthSuccessContent() {
             {storedProviderLabel
               ? `${storedProviderLabel} has been connected successfully.`
               : provider
-              ? `Your ${provider.replace('_', ' ')} account has been connected successfully.`
-              : 'Your OAuth account has been connected successfully.'}
+                ? `Your ${provider.replace("_", " ")} account has been connected successfully.`
+                : "Your OAuth account has been connected successfully."}
           </p>
 
           {/* Connection Details */}
@@ -100,7 +103,7 @@ function OAuthSuccessContent() {
 
             {/* Countdown */}
             <p className="text-sm text-gray-500 dark:text-gray-400">
-              Redirecting in {countdown} second{countdown !== 1 ? 's' : ''}...
+              Redirecting in {countdown} second{countdown !== 1 ? "s" : ""}...
             </p>
           </div>
         </div>
@@ -111,14 +114,16 @@ function OAuthSuccessContent() {
 
 export default function OAuthSuccessPage() {
   return (
-    <Suspense fallback={
-      <div className="h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-900">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-gray-900 dark:border-white mx-auto"></div>
-          <p className="mt-4 text-gray-600 dark:text-gray-400">Loading...</p>
+    <Suspense
+      fallback={
+        <div className="h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-900">
+          <div className="text-center">
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-gray-900 dark:border-white mx-auto"></div>
+            <p className="mt-4 text-gray-600 dark:text-gray-400">Loading...</p>
+          </div>
         </div>
-      </div>
-    }>
+      }
+    >
       <OAuthSuccessContent />
     </Suspense>
   );

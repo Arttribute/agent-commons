@@ -1,20 +1,21 @@
-'use client';
+"use client";
 
-import { Suspense, useEffect, useState } from 'react';
-import { useSearchParams, useRouter } from 'next/navigation';
-import { XCircle, AlertTriangle } from 'lucide-react';
+import { Suspense, useEffect, useState } from "react";
+import { useSearchParams, useRouter } from "next/navigation";
+import { XCircle, AlertTriangle } from "lucide-react";
+import { safeInternalReturnUrl } from "@/lib/safe-return-url";
 
 function OAuthErrorContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const [storedReturnUrl, setStoredReturnUrl] = useState<string | null>(null);
 
-  const message = searchParams.get('message') || 'An unknown error occurred';
-  const returnUrl = searchParams.get('returnUrl') || '/studio';
-  const destination = storedReturnUrl || returnUrl;
+  const message = searchParams.get("message") || "An unknown error occurred";
+  const returnUrl = safeInternalReturnUrl(searchParams.get("returnUrl"));
+  const destination = safeInternalReturnUrl(storedReturnUrl, returnUrl);
 
   useEffect(() => {
-    setStoredReturnUrl(window.sessionStorage.getItem('oauthReturnUrl'));
+    setStoredReturnUrl(window.sessionStorage.getItem("oauthReturnUrl"));
   }, []);
 
   const handleRetry = () => {
@@ -110,7 +111,13 @@ function OAuthErrorContent() {
 
 export default function OAuthErrorPage() {
   return (
-    <Suspense fallback={<div className="h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-900">Loading...</div>}>
+    <Suspense
+      fallback={
+        <div className="h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-900">
+          Loading...
+        </div>
+      }
+    >
       <OAuthErrorContent />
     </Suspense>
   );

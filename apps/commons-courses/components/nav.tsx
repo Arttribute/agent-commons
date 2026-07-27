@@ -147,6 +147,13 @@ export function Nav() {
                     <Settings className="h-4 w-4" />
                     Account settings
                   </ProfileMenuLink>
+                  <ProfileMenuLink
+                    href="/account#learning-profile"
+                    onClick={() => setProfileOpen(false)}
+                  >
+                    <FlaskConical className="h-4 w-4" />
+                    Learning preferences
+                  </ProfileMenuLink>
                   <button
                     onClick={() => signOut()}
                     className="flex w-full items-center gap-3 px-4 py-3 text-left text-sm text-slate-700 transition-colors hover:bg-slate-50"
@@ -261,6 +268,13 @@ export function Nav() {
                 onClick={() => setMobileOpen(false)}
               >
                 Account
+              </Link>
+              <Link
+                href="/account#learning-profile"
+                className="text-sm text-slate-700"
+                onClick={() => setMobileOpen(false)}
+              >
+                Learning preferences
               </Link>
               <button
                 onClick={() => signOut()}

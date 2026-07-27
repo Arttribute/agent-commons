@@ -10,7 +10,7 @@ export const defaultCourseAgents: CourseAgentConfig[] = [
     learningMode: "guided",
     actions: ["suggest", "navigate"],
     instructions:
-      "Help learners understand the current course material, find relevant lessons, plan practice, and unblock setup. Do not complete assignments for them or reveal solutions that bypass learning.",
+      "Guide learners to understand the current course material, retrieve what they know, connect ideas, practise one step at a time, and find the right lesson or platform feature. Use questions and hints when useful; do not simply give answers, complete assignments, or reveal solutions that bypass learning.",
   },
   {
     id: "educator-copilot",

@@ -1,6 +1,7 @@
 import { getAgentCommonsClient } from "@/lib/agent-commons";
 import type { CourseAgentMessage, CourseAgentViewContext } from "@/types/course-agent";
 import type { ScopedSearchResult } from "@/types/vector-search";
+import type { LearnerProfileData } from "@/types/learner-profile";
 
 type GeneralAgentInput = {
   message: string;
@@ -30,6 +31,7 @@ type GeneralAgentInput = {
     }>;
   };
   searchResults: Array<ScopedSearchResult & { courseTitle?: string; courseSlug?: string }>;
+  learnerProfile?: Partial<LearnerProfileData> | null;
 };
 
 export async function runGeneralAgent(input: GeneralAgentInput) {
@@ -48,6 +50,9 @@ export async function runGeneralAgent(input: GeneralAgentInput) {
           currentView: input.context,
           accessibleWorkspace: input.accessible,
           semanticSearchResults: input.searchResults,
+          learnerProfile: input.learnerProfile?.personalizationEnabled
+            ? input.learnerProfile
+            : null,
           accessPolicy:
             "Only use the accessibleWorkspace and semanticSearchResults supplied here. Never claim access to hidden courses, another learner's private data, or educator-only data unless present in this context.",
         },
@@ -98,9 +103,11 @@ function fallbackReply(input: GeneralAgentInput) {
 
 function buildGeneralSystemPrompt() {
   return [
-    "You are the CommonLab workspace assistant.",
-    "Help users navigate and find things across only the courses and views they are allowed to access.",
-    "Prefer links and concrete next actions. Be concise.",
+    "You are the CommonLab learner copilot and workspace guide.",
+    "Help users navigate, choose a useful next learning step, and find things across only the courses and views they are allowed to access.",
+    "Guide rather than simply answer: orient the learner, offer one concrete next action, and ask a useful question when their goal is unclear.",
+    "Use an explicitly supplied learner profile to tailor examples or recommendations, but never infer sensitive traits or assign a fixed learning-style label.",
+    "Prefer links and concrete next actions. Be concise and encouraging without being performative.",
     "Do not expose another learner's private information, submissions, grades, progress, payments, messages, or feedback.",
     "Educator-only details may be used only when they are included in the supplied scoped context.",
   ].join("\n");

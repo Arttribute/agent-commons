@@ -1,10 +1,11 @@
-'use client';
+"use client";
 
-import { Suspense, useState, useEffect, useCallback } from 'react';
-import { useSearchParams, useRouter } from 'next/navigation';
-import { useSession } from 'next-auth/react';
-import { OAuthProvider, OAuthProviderDetails } from '@/types/oauth';
-import { useToast } from '@/hooks/use-toast';
+import { Suspense, useState, useEffect, useCallback } from "react";
+import { useSearchParams, useRouter } from "next/navigation";
+import { useSession } from "next-auth/react";
+import { OAuthProvider, OAuthProviderDetails } from "@/types/oauth";
+import { useToast } from "@/hooks/use-toast";
+import { safeInternalReturnUrl } from "@/lib/safe-return-url";
 
 function OAuthConnectContent() {
   const searchParams = useSearchParams();
@@ -16,49 +17,54 @@ function OAuthConnectContent() {
   const [connecting, setConnecting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const providerKey = searchParams.get('provider');
-  const returnUrl = searchParams.get('returnUrl') || '/studio';
-  const requestedScopes = searchParams.get('scopes');
-  const toolLabel = searchParams.get('label');
+  const providerKey = searchParams.get("provider");
+  const returnUrl = safeInternalReturnUrl(searchParams.get("returnUrl"));
+  const requestedScopes = searchParams.get("scopes");
+  const toolLabel = searchParams.get("label");
 
-  const fetchProvider = useCallback(async (key: string) => {
-    try {
-      let res = await fetch(`/api/oauth/providers/${key}`);
-      if (!res.ok && key === 'google_workspace') {
-        const providersRes = await fetch('/api/oauth/providers');
-        const providersData = await providersRes.json().catch(() => ({}));
-        const alias = providersData.providers?.find((item: OAuthProvider) =>
-          ['google_workspace', 'google', 'google_oauth'].includes(item.providerKey)
-        );
-        if (alias?.providerKey && alias.providerKey !== key) {
-          res = await fetch(`/api/oauth/providers/${alias.providerKey}`);
+  const fetchProvider = useCallback(
+    async (key: string) => {
+      try {
+        let res = await fetch(`/api/oauth/providers/${key}`);
+        if (!res.ok && key === "google_workspace") {
+          const providersRes = await fetch("/api/oauth/providers");
+          const providersData = await providersRes.json().catch(() => ({}));
+          const alias = providersData.providers?.find((item: OAuthProvider) =>
+            ["google_workspace", "google", "google_oauth"].includes(
+              item.providerKey,
+            ),
+          );
+          if (alias?.providerKey && alias.providerKey !== key) {
+            res = await fetch(`/api/oauth/providers/${alias.providerKey}`);
+          }
         }
+        if (!res.ok) {
+          const data = await res.json().catch(() => ({}));
+          throw new Error(data.error || "Failed to fetch provider");
+        }
+        const data = await res.json();
+        setProvider(data.provider);
+      } catch (error) {
+        console.error("Error fetching provider:", error);
+        toast({
+          title: "Error",
+          description: "Failed to load OAuth provider",
+          variant: "destructive",
+        });
+        router.push(returnUrl);
+      } finally {
+        setLoading(false);
       }
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        throw new Error(data.error || 'Failed to fetch provider');
-      }
-      const data = await res.json();
-      setProvider(data.provider);
-    } catch (error) {
-      console.error('Error fetching provider:', error);
-      toast({
-        title: 'Error',
-        description: 'Failed to load OAuth provider',
-        variant: 'destructive',
-      });
-      router.push(returnUrl);
-    } finally {
-      setLoading(false);
-    }
-  }, [returnUrl, router, toast]);
+    },
+    [returnUrl, router, toast],
+  );
 
   useEffect(() => {
     if (!providerKey) {
       toast({
-        title: 'Error',
-        description: 'Missing provider parameter',
-        variant: 'destructive',
+        title: "Error",
+        description: "Missing provider parameter",
+        variant: "destructive",
       });
       router.push(returnUrl);
       return;
@@ -69,16 +75,17 @@ function OAuthConnectContent() {
   }, [fetchProvider, providerKey, returnUrl, router, toast]);
 
   useEffect(() => {
-    if (status !== 'unauthenticated') return;
-    window.sessionStorage.setItem('oauthReturnUrl', returnUrl);
-    if (toolLabel) window.sessionStorage.setItem('oauthProviderLabel', toolLabel);
+    if (status !== "unauthenticated") return;
+    window.sessionStorage.setItem("oauthReturnUrl", returnUrl);
+    if (toolLabel)
+      window.sessionStorage.setItem("oauthProviderLabel", toolLabel);
     const current = `${window.location.pathname}${window.location.search}`;
     window.location.href = `/api/auth/native/start?direct=1&callbackUrl=${encodeURIComponent(current)}`;
   }, [returnUrl, status, toolLabel]);
 
   const handleConnect = async () => {
     if (!providerKey || !provider) return;
-    if (status !== 'authenticated') {
+    if (status !== "authenticated") {
       const current = `${window.location.pathname}${window.location.search}`;
       window.location.href = `/api/auth/native/start?direct=1&callbackUrl=${encodeURIComponent(current)}`;
       return;
@@ -88,16 +95,22 @@ function OAuthConnectContent() {
     setError(null);
 
     try {
-      window.sessionStorage.setItem('oauthReturnUrl', returnUrl);
-      window.sessionStorage.setItem('oauthProviderLabel', toolLabel || provider.displayName);
+      window.sessionStorage.setItem("oauthReturnUrl", returnUrl);
+      window.sessionStorage.setItem(
+        "oauthProviderLabel",
+        toolLabel || provider.displayName,
+      );
       const scopes = requestedScopes
-        ? requestedScopes.split(/\s+/).map((scope) => scope.trim()).filter(Boolean)
+        ? requestedScopes
+            .split(/\s+/)
+            .map((scope) => scope.trim())
+            .filter(Boolean)
         : provider.defaultScopes;
       // Initiate OAuth flow
-      const res = await fetch('/api/oauth/connect', {
-        method: 'POST',
+      const res = await fetch("/api/oauth/connect", {
+        method: "POST",
         headers: {
-          'Content-Type': 'application/json',
+          "Content-Type": "application/json",
         },
         body: JSON.stringify({
           providerKey: provider.providerKey,
@@ -109,9 +122,11 @@ function OAuthConnectContent() {
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
         const message =
-          typeof data.error === 'string'
+          typeof data.error === "string"
             ? data.error
-            : data.error?.message || data.message || 'Failed to initiate OAuth flow';
+            : data.error?.message ||
+              data.message ||
+              "Failed to initiate OAuth flow";
         throw new Error(message);
       }
 
@@ -120,13 +135,16 @@ function OAuthConnectContent() {
       // Redirect to OAuth provider's authorization page
       window.location.href = data.authorizationUrl;
     } catch (error) {
-      console.error('Error connecting:', error);
-      const message = error instanceof Error ? error.message : 'Failed to connect to OAuth provider';
+      console.error("Error connecting:", error);
+      const message =
+        error instanceof Error
+          ? error.message
+          : "Failed to connect to OAuth provider";
       setError(message);
       toast({
-        title: 'Error',
+        title: "Error",
         description: message,
-        variant: 'destructive',
+        variant: "destructive",
       });
       setConnecting(false);
     }
@@ -172,10 +190,10 @@ function OAuthConnectContent() {
             {toolLabel
               ? `Authorize the scopes needed for ${toolLabel}.`
               : provider.description ||
-              `Connect your ${provider.displayName} account to enable tools that require access to your ${provider.displayName} data.`}
+                `Connect your ${provider.displayName} account to enable tools that require access to your ${provider.displayName} data.`}
           </p>
 
-          {status === 'unauthenticated' && (
+          {status === "unauthenticated" && (
             <div className="mb-6 rounded-lg border border-blue-200 bg-blue-50 p-4 text-left text-sm text-blue-900">
               Preparing your secure connection...
             </div>
@@ -196,21 +214,25 @@ function OAuthConnectContent() {
               {(requestedScopes
                 ? requestedScopes.split(/\s+/).filter(Boolean)
                 : provider.defaultScopes
-              ).slice(0, 3).map((scope, index) => (
-                <li key={index} className="flex items-start">
-                  <span className="mr-2">•</span>
-                  <span className="break-all">{scope}</span>
-                </li>
-              ))}
+              )
+                .slice(0, 3)
+                .map((scope, index) => (
+                  <li key={index} className="flex items-start">
+                    <span className="mr-2">•</span>
+                    <span className="break-all">{scope}</span>
+                  </li>
+                ))}
               {(requestedScopes
                 ? requestedScopes.split(/\s+/).filter(Boolean)
                 : provider.defaultScopes
               ).length > 3 && (
                 <li className="text-gray-500 dark:text-gray-500 italic">
-                  and {(requestedScopes
+                  and{" "}
+                  {(requestedScopes
                     ? requestedScopes.split(/\s+/).filter(Boolean)
                     : provider.defaultScopes
-                  ).length - 3} more...
+                  ).length - 3}{" "}
+                  more...
                 </li>
               )}
             </ul>
@@ -223,7 +245,9 @@ function OAuthConnectContent() {
               disabled={connecting}
               className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white font-semibold py-3 px-4 rounded-lg transition-colors"
             >
-              {connecting ? 'Connecting...' : `Connect ${toolLabel || provider.displayName}`}
+              {connecting
+                ? "Connecting..."
+                : `Connect ${toolLabel || provider.displayName}`}
             </button>
 
             <button
@@ -248,14 +272,16 @@ function OAuthConnectContent() {
 
 export default function OAuthConnectPage() {
   return (
-    <Suspense fallback={
-      <div className="h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-900">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-gray-900 dark:border-white mx-auto"></div>
-          <p className="mt-4 text-gray-600 dark:text-gray-400">Loading...</p>
+    <Suspense
+      fallback={
+        <div className="h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-900">
+          <div className="text-center">
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-gray-900 dark:border-white mx-auto"></div>
+            <p className="mt-4 text-gray-600 dark:text-gray-400">Loading...</p>
+          </div>
         </div>
-      </div>
-    }>
+      }
+    >
       <OAuthConnectContent />
     </Suspense>
   );

@@ -7,6 +7,7 @@ import { Nav } from "@/components/nav";
 import { AssignmentSubmissions } from "@/components/courses/assignment-submissions";
 import { AnalyticsTracker, useAnalytics } from "@/components/analytics/analytics-tracker";
 import { CourseAgentDrawer } from "@/components/course-agents/course-agent-drawer";
+import { LearningStudio } from "@/components/learning/learning-studio";
 import { RichTextRenderer } from "@/components/rich-text-renderer";
 import {
   CheckCircle,
@@ -564,7 +565,15 @@ export default function LearnPage({ params }: Props) {
               {/* Lesson description / summary */}
               {currentLesson?.description && (
                 <div className="prose prose-sm max-w-none">
-                  <h3 className="text-base font-bold text-slate-900 mb-3">Lesson Summary</h3>
+                  <LearningStudio
+                    courseSlug={slug}
+                    courseTitle={course.title}
+                    contentTitle={currentLesson.title}
+                    source={currentLesson.description}
+                  />
+                  <h3 className="text-base font-bold text-slate-900 mb-3">
+                    Educator&apos;s lesson
+                  </h3>
                   <RichTextRenderer value={currentLesson.description} />
                 </div>
               )}

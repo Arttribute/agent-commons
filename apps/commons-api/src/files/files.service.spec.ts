@@ -259,6 +259,57 @@ describe('FilesService document support', () => {
     });
   });
 
+  it('allows workspace Library files to be attached to a chat', async () => {
+    const db = {
+      query: {
+        libraryItem: {
+          findMany: jest.fn().mockResolvedValue([
+            {
+              itemId: 'workspace-file',
+              name: 'shared-brief.pdf',
+              mimeType: 'application/pdf',
+              kind: 'pdf',
+              sizeBytes: 2048,
+              sourceAgentId: null,
+              sourceSessionId: 'another-session',
+              ownerUserId: 'another-user',
+              workspaceId: 'workspace-test',
+              status: 'ready',
+              textPreview: 'Shared launch brief',
+              extractedTextChars: 19,
+              createdAt: new Date(),
+            },
+          ]),
+        },
+        libraryBlob: {
+          findMany: jest.fn().mockResolvedValue([]),
+        },
+        libraryGrant: {
+          findFirst: jest.fn(),
+        },
+      },
+    };
+    const workspaceService = new FilesService(db as any, {} as any, {} as any);
+
+    const result = await workspaceService.getAttachmentSummaries(
+      [{ fileId: 'workspace-file' }],
+      {
+        agentId: 'agent-test',
+        sessionId: 'session-test',
+        ownerId: 'user-test',
+        workspaceId: 'workspace-test',
+      },
+    );
+
+    expect(result.attachments).toEqual([
+      expect.objectContaining({
+        fileId: 'workspace-file',
+        name: 'shared-brief.pdf',
+      }),
+    ]);
+    expect(db.query.libraryGrant.findFirst).not.toHaveBeenCalled();
+  });
+
   it('revises PDF text without replacing the source page or font resources', async () => {
     const source = await PDFDocument.create();
     const page = source.addPage([612, 792]);

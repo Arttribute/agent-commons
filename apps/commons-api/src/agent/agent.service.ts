@@ -66,6 +66,7 @@ import { ComputerService } from '~/computer';
 import { agentRunProgress } from './run-progress';
 import {
   RUNTIME_CAPABILITIES,
+  isManagedRuntime,
   normalizeRuntimeType,
 } from './runtime/runtime.types';
 import { CopilotService } from './copilot.service';
@@ -249,6 +250,12 @@ export class AgentService implements OnModuleInit {
 
     const runtimeType = normalizeRuntimeType(insertValue.runtimeType);
     insertValue.runtimeType = runtimeType;
+    if (isManagedRuntime(runtimeType)) {
+      await this.computerService.assertComputerPlan(
+        (insertValue.ownerUserId ?? agentOwner) as string | undefined,
+        'OpenClaw, Hermes, and custom runtimes run on a dedicated agent computer, which requires a paid plan. Upgrade to Plus or higher to create one.',
+      );
+    }
     insertValue.runtimeStatus ??=
       runtimeType === 'native' ? 'ready' : 'stopped';
     insertValue.runtimeConfig ??= {
@@ -716,6 +723,8 @@ export class AgentService implements OnModuleInit {
     checkpointThreadId?: string;
     spaceId?: string;
     initiator: string;
+    /** Authenticated workspace used to authorize shared Library attachments. */
+    workspaceId?: string;
     parentSessionId?: string;
     stream?: boolean; // ✅ stream flag
     turnCount?: number;
@@ -2050,6 +2059,7 @@ export class AgentService implements OnModuleInit {
                       agentId,
                       sessionId: currentSessionId,
                       ownerId: initiator,
+                      workspaceId: props.workspaceId,
                       includeImageParts: this.supportsImageInputs(
                         agent.modelProvider,
                         agent.modelId,
@@ -2882,6 +2892,12 @@ export class AgentService implements OnModuleInit {
     }
     if (data.runtimeType !== undefined) {
       const runtimeType = normalizeRuntimeType(data.runtimeType);
+      if (isManagedRuntime(runtimeType)) {
+        await this.computerService.assertComputerPlan(
+          existing.ownerUserId ?? existing.owner,
+          'OpenClaw, Hermes, and custom runtimes run on a dedicated agent computer, which requires a paid plan. Upgrade to Plus or higher to use one.',
+        );
+      }
       data.runtimeType = runtimeType;
       data.runtimeCapabilities = RUNTIME_CAPABILITIES[runtimeType];
       data.runtimeUpdatedAt = new Date();

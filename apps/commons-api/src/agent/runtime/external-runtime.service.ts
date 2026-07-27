@@ -20,6 +20,7 @@ export type RuntimeRunInput = {
   messages?: Array<{ role: string; content: unknown }>;
   sessionId?: string;
   initiator: string;
+  workspaceId?: string;
   parentSessionId?: string;
   stream?: boolean;
   attachments?: Array<{ fileId: string }>;
@@ -184,6 +185,7 @@ export class ExternalRuntimeService {
                   agentId: props.agentId,
                   sessionId,
                   ownerId: props.initiator,
+                  workspaceId: props.workspaceId,
                   includeImageParts: false,
                 })
               : Promise.resolve({

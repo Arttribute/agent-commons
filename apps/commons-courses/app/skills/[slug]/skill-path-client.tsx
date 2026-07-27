@@ -19,6 +19,7 @@ import { LoadingScreen } from "@/components/loading-screen";
 import { Confetti, type ConfettiRef } from "@/components/magicui/confetti";
 import { RichTextRenderer } from "@/components/rich-text-renderer";
 import { AgentLearnerSandbox } from "@/components/agents/agent-learner-sandbox";
+import { LearningStudio } from "@/components/learning/learning-studio";
 import { cn } from "@/lib/utils";
 import type { CourseSkillPack, SkillChallenge } from "@/types/skills";
 
@@ -499,6 +500,8 @@ export default function SkillPathClient({
               ) : (
                 <LessonView
                   challenge={challenge}
+                  courseSlug={pack.skillSlug}
+                  courseTitle={pack.title}
                   authenticated={progress.authenticated}
                   signInHref={`/auth/signin?callbackUrl=${encodeURIComponent(pathname)}`}
                   hasQuiz={challenge.questions.length > 0}
@@ -547,6 +550,8 @@ export default function SkillPathClient({
 
 function LessonView({
   challenge,
+  courseSlug,
+  courseTitle,
   authenticated,
   signInHref,
   hasQuiz,
@@ -555,6 +560,8 @@ function LessonView({
   onComplete,
 }: {
   challenge: SkillChallenge;
+  courseSlug: string;
+  courseTitle: string;
   authenticated: boolean;
   signInHref: string;
   hasQuiz: boolean;
@@ -581,6 +588,15 @@ function LessonView({
             {challenge.hook}
           </p>
         ) : null}
+        <LearningStudio
+          courseSlug={courseSlug}
+          courseTitle={courseTitle}
+          contentTitle={challenge.title}
+          source={[challenge.hook, challenge.lesson, ...challenge.keyIdeas]
+            .filter(Boolean)
+            .join("\n\n")}
+          compact
+        />
         <RichTextRenderer value={challenge.lesson} />
       </div>
 

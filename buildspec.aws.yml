@@ -15,6 +15,8 @@ phases:
       - MAX_TASKS="${MAX_TASKS:-4}"
       - if [ -z "${WEB_SEARCH_PROVIDER:-}" ]; then if [ "$ENVIRONMENT" = "staging" ]; then WEB_SEARCH_PROVIDER=searxng; else WEB_SEARCH_PROVIDER=none; fi; fi
       - export WEB_SEARCH_PROVIDER
+      - if [ -z "${APP_ORIGIN:-}" ]; then if [ "$ENVIRONMENT" = "production" ]; then APP_ORIGIN=https://www.agentcommons.io; else APP_ORIGIN=https://staging.agentcommons.io; fi; fi
+      - export APP_ORIGIN
       - IMAGE_TAG="${CODEBUILD_RESOLVED_SOURCE_VERSION:-manual}-${CODEBUILD_BUILD_NUMBER}"
       - IMAGE_URI="${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${ECR_REPOSITORY}:${IMAGE_TAG}"
       - SEARCH_IMAGE_URI="${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${ECR_REPOSITORY}:${IMAGE_TAG}-search"
@@ -61,6 +63,11 @@ phases:
         TaskRoleArn="$TASK_ROLE_ARN"
         InfrastructureRoleArn="$INFRASTRUCTURE_ROLE_ARN"
         RuntimeSecretArn="$RUNTIME_SECRET_ARN"
+        AppOrigin="$APP_ORIGIN"
+        GoogleOAuthEnabled="${GOOGLE_OAUTH_ENABLED:-false}"
+        GitHubOAuthEnabled="${GITHUB_OAUTH_ENABLED:-false}"
+        SlackOAuthEnabled="${SLACK_OAUTH_ENABLED:-false}"
+        CanvaOAuthEnabled="${CANVA_OAUTH_ENABLED:-false}"
         XOAuthEnabled="${X_OAUTH_ENABLED:-false}"
         AgentCommonsApiUrl="${AGENT_COMMONS_API_URL:-https://api.agentcommons.io}"
         AgentFilesS3Bucket="$AGENT_FILES_S3_BUCKET"

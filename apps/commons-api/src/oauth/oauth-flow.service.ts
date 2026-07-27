@@ -26,11 +26,16 @@ type ProviderUserIdentity = {
   name?: string;
 };
 
+function optionalString(value: unknown) {
+  return value === undefined || value === null ? undefined : String(value);
+}
+
 function providerRuntimeConfig(providerKey: string): ProviderRuntimeConfig {
   switch (providerKey) {
     case 'canva':
       return {
         pkce: true,
+        tokenClientAuth: 'basic',
         revokeRefreshToken: true,
         includeClientCredentialsOnRevoke: true,
       };
@@ -92,18 +97,19 @@ function extractProviderUserIdentity(
 ): ProviderUserIdentity {
   if (providerKey === 'slack') {
     return {
-      id:
+      id: optionalString(
         userInfo?.user_id ||
-        userInfo?.bot_id ||
-        tokenPayload?.authed_user?.id ||
-        tokenPayload?.bot_user_id,
+          userInfo?.bot_id ||
+          tokenPayload?.authed_user?.id ||
+          tokenPayload?.bot_user_id,
+      ),
       name: userInfo?.user || userInfo?.team || tokenPayload?.team?.name,
     };
   }
 
   if (providerKey === 'canva') {
     return {
-      id: userInfo?.user?.id || userInfo?.profile?.id,
+      id: optionalString(userInfo?.user?.id || userInfo?.profile?.id),
       email: userInfo?.user?.email || userInfo?.profile?.email,
       name: userInfo?.profile?.display_name || userInfo?.user?.display_name,
     };
@@ -111,16 +117,48 @@ function extractProviderUserIdentity(
 
   if (providerKey === 'x' || providerKey === 'twitter') {
     return {
-      id: userInfo?.data?.id,
+      id: optionalString(userInfo?.data?.id),
       name: userInfo?.data?.username || userInfo?.data?.name,
     };
   }
 
   return {
-    id: userInfo?.id || userInfo?.sub,
+    id: optionalString(userInfo?.id || userInfo?.sub),
     email: userInfo?.email,
     name: userInfo?.name || userInfo?.login,
   };
+}
+
+async function fetchProviderUserInfo(
+  providerKey: string,
+  userInfoUrl: string,
+  accessToken: string,
+) {
+  const headers = {
+    Authorization: `Bearer ${accessToken}`,
+    Accept: 'application/json',
+    ...(providerKey === 'github'
+      ? { 'X-GitHub-Api-Version': '2022-11-28' }
+      : {}),
+  };
+  const response = await fetch(userInfoUrl, { headers });
+  if (!response.ok) return null;
+
+  const userInfo: any = await response.json();
+  if (providerKey === 'github' && !userInfo?.email) {
+    const emailResponse = await fetch('https://api.github.com/user/emails', {
+      headers,
+    });
+    if (emailResponse.ok) {
+      const emailPayload: unknown = await emailResponse.json();
+      const emails: any[] = Array.isArray(emailPayload) ? emailPayload : [];
+      const preferred =
+        emails.find((email) => email?.primary && email?.verified) ??
+        emails.find((email) => email?.verified);
+      if (preferred?.email) userInfo.email = preferred.email;
+    }
+  }
+  return userInfo;
 }
 
 /**
@@ -139,6 +177,10 @@ function extractProviderUserIdentity(
 @Injectable()
 export class OAuthFlowService {
   private readonly logger = new Logger(OAuthFlowService.name);
+  private readonly refreshInFlight = new Map<
+    string,
+    Promise<{ accessToken: string; expiresAt?: Date }>
+  >();
 
   constructor(
     private readonly providerService: OAuthProviderService,
@@ -259,9 +301,7 @@ export class OAuthFlowService {
         state: state.stateId,
       };
     } catch (error: any) {
-      this.logger.error(
-        `Failed to initiate OAuth flow: ${error.message}`,
-      );
+      this.logger.error(`Failed to initiate OAuth flow: ${error.message}`);
       throw error;
     }
   }
@@ -276,6 +316,7 @@ export class OAuthFlowService {
     code: string; // Authorization code from provider
     state: string; // State parameter for CSRF validation
     redirectUri: string; // Must match the redirect_uri used in initiate
+    expectedProviderKey?: string; // Callback route must match the state provider
   }): Promise<{
     connectionId: string;
     userId: string;
@@ -283,22 +324,27 @@ export class OAuthFlowService {
   }> {
     try {
       // Validate state (CSRF check)
-      const stateRecord = await this.stateService.getState(params.state);
-
-      if (!stateRecord) {
-        throw new BadRequestException('Invalid or expired state parameter');
-      }
+      const stateRecord = await this.stateService.consumeState(params.state);
       const redirectUri = stateRecord.redirectUri || params.redirectUri;
 
       // Get provider configuration
       const provider = await this.providerService.getProviderById(
         stateRecord.providerId,
       );
+      if (
+        params.expectedProviderKey &&
+        provider.providerKey !== params.expectedProviderKey
+      ) {
+        throw new BadRequestException(
+          'OAuth callback provider does not match state',
+        );
+      }
       const runtimeConfig = providerRuntimeConfig(provider.providerKey);
 
       // Get decrypted client secret
-      const clientSecret =
-        await this.providerService.getDecryptedClientSecret(provider.providerId);
+      const clientSecret = await this.providerService.getDecryptedClientSecret(
+        provider.providerId,
+      );
 
       // Exchange authorization code for tokens
       const tokenParams = new URLSearchParams({
@@ -351,9 +397,7 @@ export class OAuthFlowService {
         this.logger.error(
           `Token exchange failed: ${tokenResponse.status} ${errorText}`,
         );
-        throw new Error(
-          `Token exchange failed: ${tokenResponse.statusText}`,
-        );
+        throw new Error(`Token exchange failed: ${tokenResponse.statusText}`);
       }
 
       const tokens: any = await tokenResponse.json();
@@ -363,37 +407,29 @@ export class OAuthFlowService {
         throw new Error('No access token received from provider');
       }
 
-      if (!tokenSet.refreshToken) {
+      if (!tokenSet.refreshToken && tokenSet.expiresIn) {
         this.logger.warn(
-          'No refresh token received - long-term access may not be possible',
+          `No refresh token received for expiring ${provider.providerKey} access token`,
         );
       }
 
       // Calculate access token expiry
       let accessTokenExpiresAt: Date | undefined;
       if (tokenSet.expiresIn) {
-        accessTokenExpiresAt = new Date(
-          Date.now() + tokenSet.expiresIn * 1000,
-        );
+        accessTokenExpiresAt = new Date(Date.now() + tokenSet.expiresIn * 1000);
       }
 
       // Fetch user info from provider (if supported)
       let providerUserInfo: any = null;
       if (provider.userInfoUrl && tokenSet.accessToken) {
         try {
-          const userInfoResponse = await fetch(provider.userInfoUrl, {
-            headers: {
-              Authorization: `Bearer ${tokenSet.accessToken}`,
-            },
-          });
-
-          if (userInfoResponse.ok) {
-            providerUserInfo = await userInfoResponse.json();
-          }
-        } catch (error) {
-          this.logger.warn(
-            `Failed to fetch user info from provider: ${error}`,
+          providerUserInfo = await fetchProviderUserInfo(
+            provider.providerKey,
+            provider.userInfoUrl,
+            tokenSet.accessToken,
           );
+        } catch (error) {
+          this.logger.warn(`Failed to fetch user info from provider: ${error}`);
         }
       }
 
@@ -417,7 +453,7 @@ export class OAuthFlowService {
         providerId: provider.providerId,
         accessToken: tokenSet.accessToken,
         accessTokenExpiresAt,
-        refreshToken: tokenSet.refreshToken || '',
+        refreshToken: tokenSet.refreshToken,
         idToken: tokenSet.idToken,
         scopes: grantedScopes,
         providerUserId: providerUserIdentity.id,
@@ -425,9 +461,6 @@ export class OAuthFlowService {
         providerUserName: providerUserIdentity.name,
         providerMetadata: providerUserInfo,
       });
-
-      // Delete state (one-time use)
-      await this.stateService.deleteState(params.state);
 
       this.logger.log(
         `Completed OAuth flow for user ${stateRecord.ownerId} with provider ${provider.providerKey}`,
@@ -439,9 +472,7 @@ export class OAuthFlowService {
         providerKey: provider.providerKey,
       };
     } catch (error: any) {
-      this.logger.error(
-        `Failed to handle OAuth callback: ${error.message}`,
-      );
+      this.logger.error(`Failed to handle OAuth callback: ${error.message}`);
       throw error;
     }
   }
@@ -456,14 +487,53 @@ export class OAuthFlowService {
     accessToken: string;
     expiresAt?: Date;
   }> {
+    const existing = this.refreshInFlight.get(connectionId);
+    if (existing) return existing;
+
+    const refresh = this.connectionService
+      .withRefreshLock(connectionId, async () => {
+        // A different API replica may have completed the refresh while this
+        // caller waited for the advisory lock.
+        const current =
+          await this.connectionService.getConnection(connectionId);
+        const refreshedRecently =
+          current.lastRefreshedAt &&
+          Date.now() - new Date(current.lastRefreshedAt).getTime() < 30_000;
+        if (
+          current.status === 'active' &&
+          refreshedRecently &&
+          !(await this.connectionService.needsRefresh(connectionId))
+        ) {
+          const tokens =
+            await this.connectionService.getDecryptedTokens(connectionId);
+          return {
+            accessToken: tokens.accessToken,
+            expiresAt: tokens.expiresAt,
+          };
+        }
+        return this.refreshAccessTokenOnce(connectionId);
+      })
+      .finally(() => {
+        if (this.refreshInFlight.get(connectionId) === refresh) {
+          this.refreshInFlight.delete(connectionId);
+        }
+      });
+    this.refreshInFlight.set(connectionId, refresh);
+    return refresh;
+  }
+
+  private async refreshAccessTokenOnce(connectionId: string): Promise<{
+    accessToken: string;
+    expiresAt?: Date;
+  }> {
     try {
       // Get connection and verify it's active
       const connection =
         await this.connectionService.getConnection(connectionId);
 
-      if (connection.status !== 'active') {
+      if (connection.status === 'revoked') {
         throw new Error(
-          `Connection is not active (status: ${connection.status})`,
+          'Connection has been revoked and cannot be refreshed',
         );
       }
 
@@ -474,16 +544,19 @@ export class OAuthFlowService {
       const runtimeConfig = providerRuntimeConfig(provider.providerKey);
 
       // Get decrypted tokens
-      const tokens =
-        await this.connectionService.getDecryptedTokens(connectionId);
+      const tokens = await this.connectionService.getDecryptedTokens(
+        connectionId,
+        { allowInactive: true },
+      );
 
       if (!tokens.refreshToken) {
         throw new Error('No refresh token available for this connection');
       }
 
       // Get decrypted client secret
-      const clientSecret =
-        await this.providerService.getDecryptedClientSecret(provider.providerId);
+      const clientSecret = await this.providerService.getDecryptedClientSecret(
+        provider.providerId,
+      );
 
       // Request new access token using refresh token
       const tokenParams = new URLSearchParams({
@@ -532,9 +605,7 @@ export class OAuthFlowService {
           `Token refresh failed: ${tokenResponse.statusText}`,
         );
 
-        throw new Error(
-          `Token refresh failed: ${tokenResponse.statusText}`,
-        );
+        throw new Error(`Token refresh failed: ${tokenResponse.statusText}`);
       }
 
       const newTokens: any = await tokenResponse.json();
@@ -606,44 +677,78 @@ export class OAuthFlowService {
             await this.connectionService.getDecryptedTokens(connectionId);
           const runtimeConfig = providerRuntimeConfig(provider.providerKey);
 
-          // Revoke access token
-          const revokeParams = new URLSearchParams({
-            token:
-              runtimeConfig.revokeRefreshToken && tokens.refreshToken
-                ? tokens.refreshToken
-                : tokens.accessToken,
-          });
-
-          let revokeAuthorization: string | undefined;
-          if (runtimeConfig.includeClientCredentialsOnRevoke) {
+          let revokeResponse: Response;
+          if (provider.providerKey === 'github') {
+            // GitHub OAuth Apps use their application-management REST API for
+            // revocation rather than an RFC 7009 form endpoint.
             const clientSecret =
               await this.providerService.getDecryptedClientSecret(
                 provider.providerId,
               );
-            if (runtimeConfig.tokenClientAuth === 'basic') {
-              revokeAuthorization = `Basic ${Buffer.from(
-                `${provider.clientId}:${clientSecret}`,
-              ).toString('base64')}`;
-            } else {
-              revokeParams.append('client_id', provider.clientId);
-              revokeParams.append('client_secret', clientSecret);
+            const revokeUrl = provider.revokeUrl.replace(
+              '{client_id}',
+              encodeURIComponent(provider.clientId),
+            );
+            revokeResponse = await fetch(revokeUrl, {
+              method: 'DELETE',
+              headers: {
+                Authorization: `Basic ${Buffer.from(
+                  `${provider.clientId}:${clientSecret}`,
+                ).toString('base64')}`,
+                Accept: 'application/vnd.github+json',
+                'X-GitHub-Api-Version': '2022-11-28',
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({ access_token: tokens.accessToken }),
+            });
+          } else {
+            const revokeParams = new URLSearchParams({
+              token:
+                runtimeConfig.revokeRefreshToken && tokens.refreshToken
+                  ? tokens.refreshToken
+                  : tokens.accessToken,
+            });
+
+            let revokeAuthorization: string | undefined;
+            if (runtimeConfig.includeClientCredentialsOnRevoke) {
+              const clientSecret =
+                await this.providerService.getDecryptedClientSecret(
+                  provider.providerId,
+                );
+              if (runtimeConfig.tokenClientAuth === 'basic') {
+                revokeAuthorization = `Basic ${Buffer.from(
+                  `${provider.clientId}:${clientSecret}`,
+                ).toString('base64')}`;
+              } else {
+                revokeParams.append('client_id', provider.clientId);
+                revokeParams.append('client_secret', clientSecret);
+              }
             }
+
+            revokeResponse = await fetch(provider.revokeUrl, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/x-www-form-urlencoded',
+                ...(revokeAuthorization
+                  ? { Authorization: revokeAuthorization }
+                  : {}),
+              },
+              body: revokeParams.toString(),
+            });
           }
 
-          const revokeResponse = await fetch(provider.revokeUrl, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/x-www-form-urlencoded',
-              ...(revokeAuthorization
-                ? { Authorization: revokeAuthorization }
-                : {}),
-            },
-            body: revokeParams.toString(),
-          });
+          let revokeSucceeded = revokeResponse.ok;
+          let revokeError = revokeResponse.statusText;
+          if (revokeResponse.ok && provider.providerKey === 'slack') {
+            const payload: any = await revokeResponse.json();
+            revokeSucceeded =
+              payload?.ok !== false && payload?.revoked !== false;
+            revokeError = payload?.error || 'Slack did not revoke the token';
+          }
 
-          if (!revokeResponse.ok) {
+          if (!revokeSucceeded) {
             this.logger.warn(
-              `Failed to revoke token at provider: ${revokeResponse.statusText}`,
+              `Failed to revoke token at provider: ${revokeError}`,
             );
           } else {
             this.logger.log(
@@ -651,9 +756,7 @@ export class OAuthFlowService {
             );
           }
         } catch (error) {
-          this.logger.warn(
-            `Error revoking token at provider: ${error}`,
-          );
+          this.logger.warn(`Error revoking token at provider: ${error}`);
           // Continue with local deletion even if remote revocation fails
         }
       }
@@ -661,9 +764,7 @@ export class OAuthFlowService {
       // Delete connection from database
       await this.connectionService.deleteConnection(connectionId);
 
-      this.logger.log(
-        `Revoked and deleted connection ${connectionId}`,
-      );
+      this.logger.log(`Revoked and deleted connection ${connectionId}`);
     } catch (error: any) {
       this.logger.error(
         `Failed to revoke token for connection ${connectionId}: ${error.message}`,
@@ -679,32 +780,54 @@ export class OAuthFlowService {
    * @returns True if token is valid and not expired
    */
   async validateToken(connectionId: string): Promise<boolean> {
-    try {
-      const connection =
-        await this.connectionService.getConnection(connectionId);
+    const connection = await this.connectionService.getConnection(connectionId);
+    if (connection.status !== 'active') return false;
 
-      // Check if connection is active
-      if (connection.status !== 'active') {
+    const provider = await this.providerService.getProviderById(
+      connection.providerId,
+    );
+    if (!provider.userInfoUrl) {
+      // No validation endpoint is configured, so expiry/status is the best
+      // available signal.
+      return (
+        !connection.accessTokenExpiresAt ||
+        new Date(connection.accessTokenExpiresAt) > new Date()
+      );
+    }
+
+    const accessToken = await this.getFreshAccessToken(connectionId);
+    const response = await fetch(provider.userInfoUrl, {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        Accept: 'application/json',
+        ...(provider.providerKey === 'github'
+          ? { 'X-GitHub-Api-Version': '2022-11-28' }
+          : {}),
+      },
+    });
+
+    let providerRejected = !response.ok;
+    let providerError = `${response.status} ${response.statusText}`.trim();
+    if (response.ok && provider.providerKey === 'slack') {
+      const payload: any = await response.json();
+      providerRejected = payload?.ok === false;
+      providerError = payload?.error || 'Slack rejected the token';
+    }
+
+    if (providerRejected) {
+      if (response.status < 500) {
+        await this.connectionService.recordError(
+          connectionId,
+          `Provider token validation failed: ${providerError}`,
+        );
         return false;
       }
-
-      // Check if token is expired
-      if (connection.accessTokenExpiresAt) {
-        const now = new Date();
-        if (now > new Date(connection.accessTokenExpiresAt)) {
-          return false;
-        }
-      }
-
-      // Optionally: Make a lightweight API call to verify token works
-      // For now, just check expiry and status
-      return true;
-    } catch (error) {
-      this.logger.error(
-        `Failed to validate token for connection ${connectionId}: ${error}`,
+      throw new Error(
+        `Provider token validation is temporarily unavailable: ${providerError}`,
       );
-      return false;
     }
+
+    return true;
   }
 
   /**

@@ -12,7 +12,9 @@ import {
 import { scopedVectorSearch } from "@/lib/vector-search";
 import Course from "@/models/Course";
 import Enrollment from "@/models/Enrollment";
+import LearnerProfile from "@/models/LearnerProfile";
 import type { CourseAgentMessage, CourseAgentViewContext } from "@/types/course-agent";
+import type { LearnerProfileData } from "@/types/learner-profile";
 
 type Body = {
   message?: string;
@@ -66,6 +68,13 @@ export async function POST(req: NextRequest) {
     .select("_id title slug")
     .sort({ updatedAt: -1 })
     .lean()) as unknown as EducatorCourse[];
+  const learnerProfile = (await LearnerProfile.findOne({
+    userId: session.user.id,
+  })
+    .select(
+      "personalizationEnabled roleOrContext domain interests goals preferredFormats guidanceStyle customContext allowUsageLearning usageSignals",
+    )
+    .lean()) as Partial<LearnerProfileData> | null;
 
   const learnerCourses = enrollments
     .map((enrollment) => {
@@ -168,6 +177,7 @@ export async function POST(req: NextRequest) {
       })),
     },
     searchResults: searchResults.slice(0, 10),
+    learnerProfile,
   });
 
   return NextResponse.json({ reply });

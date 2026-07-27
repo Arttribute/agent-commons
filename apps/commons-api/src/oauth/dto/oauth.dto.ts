@@ -34,7 +34,8 @@ export interface InitiateOAuthFlowResponseDto {
 
 export class OAuthCallbackQueryDto {
   @IsString()
-  code!: string; // Authorization code from provider
+  @IsOptional()
+  code?: string; // Omitted when the provider redirects back with an error
 
   @IsString()
   state!: string; // CSRF token
@@ -95,9 +96,10 @@ export interface OAuthConnectionDto {
   providerUserName: string;
   scopes: string[];
   status: OAuthConnectionStatus;
+  canRefresh: boolean;
   displayName?: string;
   description?: string;
-  accessTokenExpiresAt: Date;
+  accessTokenExpiresAt?: Date;
   lastRefreshedAt?: Date;
   lastUsedAt?: Date;
   usageCount: number;
@@ -120,7 +122,7 @@ export interface GetOAuthConnectionResponseDto {
 export interface RefreshOAuthTokenResponseDto {
   success: boolean;
   connectionId: string;
-  accessTokenExpiresAt: Date;
+  accessTokenExpiresAt?: Date;
   lastRefreshedAt: Date;
 }
 
@@ -140,7 +142,7 @@ export interface TestOAuthConnectionResponseDto {
   status: OAuthConnectionStatus;
   providerUserEmail?: string;
   accessTokenValid: boolean;
-  accessTokenExpiresAt: Date;
+  accessTokenExpiresAt?: Date;
   error?: string;
 }
 

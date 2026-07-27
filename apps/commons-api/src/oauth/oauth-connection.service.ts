@@ -39,7 +39,7 @@ export class OAuthConnectionService {
     providerId: string;
     accessToken: string;
     accessTokenExpiresAt?: Date;
-    refreshToken: string;
+    refreshToken?: string;
     idToken?: string;
     scopes: string[];
     providerUserId?: string;
@@ -52,7 +52,9 @@ export class OAuthConnectionService {
     try {
       // Encrypt tokens
       const accessTokenEnc = this.encryption.encrypt(params.accessToken);
-      const refreshTokenEnc = this.encryption.encrypt(params.refreshToken);
+      const refreshTokenEnc = params.refreshToken
+        ? this.encryption.encrypt(params.refreshToken)
+        : null;
       const idTokenEnc = params.idToken
         ? this.encryption.encrypt(params.idToken)
         : null;
@@ -99,9 +101,9 @@ export class OAuthConnectionService {
           accessTokenIv: accessTokenEnc.iv,
           accessTokenTag: accessTokenEnc.tag,
           accessTokenExpiresAt: params.accessTokenExpiresAt,
-          encryptedRefreshToken: refreshTokenEnc.encryptedValue,
-          refreshTokenIv: refreshTokenEnc.iv,
-          refreshTokenTag: refreshTokenEnc.tag,
+          encryptedRefreshToken: refreshTokenEnc?.encryptedValue,
+          refreshTokenIv: refreshTokenEnc?.iv,
+          refreshTokenTag: refreshTokenEnc?.tag,
           encryptedIdToken: idTokenEnc?.encryptedValue,
           idTokenIv: idTokenEnc?.iv,
           idTokenTag: idTokenEnc?.tag,
@@ -419,6 +421,7 @@ export class OAuthConnectionService {
    */
   async getDecryptedTokens(
     connectionId: string,
+    options: { allowInactive?: boolean } = {},
   ): Promise<oauthSchema.OAuthTokenSet> {
     const connection = await this.db.query.oauthConnection.findFirst({
       where: (c: any) => eq(c.connectionId, connectionId),
@@ -429,7 +432,7 @@ export class OAuthConnectionService {
     }
 
     // Check if connection is active
-    if (connection.status !== 'active') {
+    if (connection.status !== 'active' && !options.allowInactive) {
       this.logger.warn(
         `Connection ${connectionId} is not active (status: ${connection.status})`,
       );
@@ -446,12 +449,22 @@ export class OAuthConnectionService {
         connection.accessTokenTag,
       );
 
-      // Decrypt refresh token
-      const refreshToken = this.encryption.decrypt(
-        connection.encryptedRefreshToken,
-        connection.refreshTokenIv,
-        connection.refreshTokenTag,
-      );
+      // Providers such as GitHub OAuth Apps may issue access tokens without a
+      // refresh token. Older rows can contain an encrypted empty string, so
+      // normalize that legacy representation to undefined as well.
+      let refreshToken: string | undefined;
+      if (
+        connection.encryptedRefreshToken &&
+        connection.refreshTokenIv &&
+        connection.refreshTokenTag
+      ) {
+        refreshToken =
+          this.encryption.decrypt(
+            connection.encryptedRefreshToken,
+            connection.refreshTokenIv,
+            connection.refreshTokenTag,
+          ) || undefined;
+      }
 
       // Decrypt ID token if present
       let idToken: string | undefined;
@@ -479,6 +492,48 @@ export class OAuthConnectionService {
       );
       throw new Error('Failed to decrypt tokens');
     }
+  }
+
+  async hasRefreshToken(connectionId: string): Promise<boolean> {
+    const connection = await this.db.query.oauthConnection.findFirst({
+      where: (c: any) => eq(c.connectionId, connectionId),
+    });
+    if (
+      !connection?.encryptedRefreshToken ||
+      !connection.refreshTokenIv ||
+      !connection.refreshTokenTag
+    ) {
+      return false;
+    }
+    try {
+      return Boolean(
+        this.encryption.decrypt(
+          connection.encryptedRefreshToken,
+          connection.refreshTokenIv,
+          connection.refreshTokenTag,
+        ),
+      );
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * Serialize refresh-token rotation across API replicas. This matters for
+   * providers such as Slack and Canva whose refresh tokens rotate on use.
+   */
+  async withRefreshLock<T>(
+    connectionId: string,
+    operation: () => Promise<T>,
+  ): Promise<T> {
+    return this.db.transaction(async (tx) => {
+      await tx.execute(drizzleSql`
+        SELECT pg_advisory_xact_lock(
+          hashtextextended(${`oauth-refresh:${connectionId}`}, 0)
+        )
+      `);
+      return operation();
+    });
   }
 
   /**
