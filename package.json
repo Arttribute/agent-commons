@@ -161,7 +161,9 @@
       "@xhmikosr/decompress@<10.2.1": ">=10.2.1",
       "ws@>=8.0.0 <8.21.0": ">=8.21.0",
       "ws@>=7.0.0 <7.5.11": ">=7.5.11",
-      "next": "15.5.20"
+      "commons-app>next": "15.5.20",
+      "commons-docs>next": "15.5.20",
+      "commons-courses>next": "16.2.12"
     }
   },
   "packageManager": "pnpm@9.15.3"
