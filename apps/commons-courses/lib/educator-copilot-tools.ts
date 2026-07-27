@@ -3,10 +3,16 @@ import { Types } from "mongoose";
 import type { CommonsClient } from "@agent-commons/sdk";
 import type { CopilotUser } from "@/lib/educator-copilot-agent";
 import { buildManagedCoursesFilter } from "@/lib/educator-auth";
+import {
+  describeExperienceCopilotImpact,
+  EXPERIENCE_COPILOT_WORLD_GUIDE,
+} from "@/lib/experience-ai";
+import { normalizeExperienceDocument } from "@/lib/experience-schema";
 import { indexCourseForSearch } from "@/lib/search-indexers";
 import Assignment from "@/models/Assignment";
 import Course from "@/models/Course";
 import Enrollment from "@/models/Enrollment";
+import ExperienceProject from "@/models/ExperienceProject";
 import Submission from "@/models/Submission";
 import type { IEducatorCopilotMaterial } from "@/models/EducatorCopilotSession";
 import type {
@@ -70,6 +76,36 @@ export const educatorCopilotToolCatalog: CopilotToolDefinition[] = [
         },
       },
       required: ["courseSlug"],
+    },
+  },
+  {
+    name: "list_experiences",
+    description:
+      "List immersive learning experiences the educator owns, including experience IDs, course, status, world title, and scene/location counts. Use this to resolve the experience the educator names before reading or editing it.",
+    parameters: {
+      type: "object",
+      properties: {
+        courseSlug: {
+          type: "string",
+          description: "Optional course slug from list_courses.",
+        },
+      },
+      required: [],
+    },
+  },
+  {
+    name: "get_experience",
+    description:
+      "Read one complete immersive experience and the authoritative world-authoring contract. Always call this before editing a world so you have its current version, stable IDs, asset registry, locations, stage compositions, characters, story routes, and interactions.",
+    parameters: {
+      type: "object",
+      properties: {
+        experienceId: {
+          type: "string",
+          description: "Experience ID from list_experiences.",
+        },
+      },
+      required: ["experienceId"],
     },
   },
   {
@@ -267,6 +303,59 @@ export const educatorCopilotToolCatalog: CopilotToolDefinition[] = [
     },
   },
   {
+    name: "update_experience_world",
+    description:
+      "Replace an experience draft with a complete revised schemaVersion 2 document after reading it with get_experience. Use for both focused manipulations and broad world redesigns. Preserve stable IDs and untouched data. The server validates every reference and every route before it can become a reviewable action.",
+    parameters: {
+      type: "object",
+      properties: {
+        experienceId: { type: "string" },
+        baseVersion: {
+          type: "number",
+          description: "Current draftVersion returned by get_experience.",
+        },
+        document: {
+          type: "object",
+          required: [
+            "schemaVersion",
+            "title",
+            "subtitle",
+            "description",
+            "estimatedMinutes",
+            "objectives",
+            "startSceneId",
+            "theme",
+            "world",
+            "assets",
+            "characters",
+            "scenes",
+          ],
+          properties: {
+            schemaVersion: { type: "number", const: 2 },
+            title: { type: "string" },
+            subtitle: { type: "string" },
+            description: { type: "string" },
+            estimatedMinutes: { type: "number" },
+            objectives: { type: "array", items: { type: "string" } },
+            startSceneId: { type: "string" },
+            theme: { type: "object" },
+            world: { type: "object" },
+            assets: { type: "array", items: { type: "object" } },
+            characters: { type: "array", items: { type: "object" } },
+            scenes: { type: "array", items: { type: "object" } },
+          },
+          additionalProperties: false,
+        },
+        reason: {
+          type: "string",
+          description:
+            "Short, concrete summary of what changed and how it satisfies the educator's request.",
+        },
+      },
+      required: ["experienceId", "baseVersion", "document"],
+    },
+  },
+  {
     name: "navigate",
     description:
       "Take the educator to a page in the educator console (or a public course/skill page). Use hrefs from the workspace snapshot's navigation map.",
@@ -351,6 +440,10 @@ async function runTool(
       return toolListCourses(ctx);
     case "get_course":
       return toolGetCourse(ctx, args);
+    case "list_experiences":
+      return toolListExperiences(ctx, args);
+    case "get_experience":
+      return toolGetExperience(ctx, args);
     case "list_students":
       return toolListStudents(ctx, args);
     case "get_student":
@@ -368,6 +461,8 @@ async function runTool(
     case "update_course_overview":
     case "update_skill_challenge":
       return toolContentWrite(ctx, name, args);
+    case "update_experience_world":
+      return toolExperienceWrite(ctx, args);
     case "navigate":
       return toolNavigate(ctx, args);
     case "highlight":
@@ -542,6 +637,92 @@ async function toolGetCourse(ctx: CopilotToolContext, args: Record<string, unkno
         })
       ),
     })),
+  };
+}
+
+async function toolListExperiences(
+  ctx: CopilotToolContext,
+  args: Record<string, unknown>,
+) {
+  const slug = cleanString(args.courseSlug);
+  const courses = await Course.find({
+    ...(slug ? { slug } : {}),
+    ...managedFilter(ctx.user),
+  })
+    .select("_id title slug")
+    .lean();
+  if (!courses.length) {
+    return {
+      error: slug
+        ? `No managed course with slug "${slug}".`
+        : "No managed courses were found.",
+    };
+  }
+  const courseById = new Map(
+    courses.map((course) => [String(course._id), course]),
+  );
+  const projects = await ExperienceProject.find({
+    courseId: { $in: courses.map((course) => course._id) },
+  })
+    .select(
+      "_id courseId title description status draftVersion draft updatedAt",
+    )
+    .sort({ updatedAt: -1 })
+    .limit(80)
+    .lean();
+
+  return {
+    totalExperiences: projects.length,
+    experiences: projects.map((project) => {
+      const document = normalizeExperienceDocument(project.draft);
+      const course = courseById.get(String(project.courseId));
+      return {
+        experienceId: String(project._id),
+        title: project.title,
+        description: project.description,
+        courseTitle: course?.title,
+        courseSlug: course?.slug,
+        status: project.status,
+        draftVersion: project.draftVersion,
+        worldTitle: document.world.title,
+        sceneCount: document.scenes.length,
+        locationCount: document.world.locations.length,
+        characterCount: document.characters.length,
+        assetCount: document.assets.length,
+        studioHref: `/educator/experience-studio/${String(project._id)}`,
+        updatedAt: project.updatedAt,
+      };
+    }),
+  };
+}
+
+async function toolGetExperience(
+  ctx: CopilotToolContext,
+  args: Record<string, unknown>,
+) {
+  const experienceId = cleanString(args.experienceId);
+  if (!experienceId || !Types.ObjectId.isValid(experienceId)) {
+    return {
+      error:
+        "A valid experienceId from list_experiences is required.",
+    };
+  }
+  const project = await findManagedExperience(ctx.user, experienceId);
+  if (!project) {
+    return {
+      error:
+        "Experience not found or it does not belong to a course this educator manages.",
+    };
+  }
+  const document = normalizeExperienceDocument(project.draft);
+  return {
+    experienceId: String(project._id),
+    courseSlug: project.courseSlug,
+    status: project.status,
+    draftVersion: project.draftVersion,
+    studioHref: `/educator/experience-studio/${String(project._id)}`,
+    authoringContract: EXPERIENCE_COPILOT_WORLD_GUIDE,
+    document,
   };
 }
 
@@ -800,6 +981,94 @@ async function toolContentWrite(
     status: "proposed",
     note: "Manual mode: the change is queued as an action card the educator must approve. Tell them it is ready for review — do not claim it is applied.",
     actionLabel: action.label,
+  };
+}
+
+async function toolExperienceWrite(
+  ctx: CopilotToolContext,
+  args: Record<string, unknown>,
+) {
+  const experienceId = cleanString(args.experienceId);
+  const baseVersion = toIndex(args.baseVersion);
+  if (
+    !experienceId ||
+    !Types.ObjectId.isValid(experienceId) ||
+    baseVersion === null
+  ) {
+    return {
+      error:
+        "experienceId and the current baseVersion from get_experience are required.",
+    };
+  }
+  const project = await findManagedExperience(ctx.user, experienceId);
+  if (!project) {
+    return {
+      error:
+        "Experience not found or it does not belong to a managed course.",
+    };
+  }
+  if (project.draftVersion !== baseVersion) {
+    return {
+      error: `The experience changed after it was read (current draftVersion ${project.draftVersion}). Call get_experience again before editing.`,
+    };
+  }
+
+  let document;
+  try {
+    document = normalizeExperienceDocument(args.document, { publish: true });
+  } catch (error) {
+    return {
+      error: `The proposed world failed deterministic validation: ${
+        error instanceof Error ? error.message : "invalid experience document"
+      }. Repair the complete document and call update_experience_world again.`,
+    };
+  }
+  const before = normalizeExperienceDocument(project.draft);
+  const impact = describeExperienceCopilotImpact(before, document);
+  const action: Extract<
+    EducatorCopilotAction,
+    { type: "update_experience_world" }
+  > = {
+    id: randomUUID(),
+    type: "update_experience_world",
+    label: `Update immersive world “${document.world.title}”`,
+    courseSlug: project.courseSlug,
+    experienceId,
+    baseVersion,
+    document,
+    reason:
+      cleanString(args.reason) ||
+      "Validated world, stage, story, and interaction update.",
+    preview: formatExperienceImpact(impact),
+    status: "proposed",
+    safety: "content_write",
+  };
+
+  if (ctx.actionMode === "auto") {
+    const applied = await applyEducatorCopilotAction({
+      user: ctx.user,
+      action,
+    });
+    ctx.recordAction(applied);
+    return {
+      status: applied.status,
+      detail: applied.result,
+      studioHref: `/educator/experience-studio/${experienceId}`,
+      note:
+        applied.status === "applied"
+          ? "The validated world edit was applied in auto mode."
+          : "The world edit could not be applied.",
+    };
+  }
+
+  ctx.recordAction(action);
+  return {
+    status: "proposed",
+    actionLabel: action.label,
+    impact: action.preview,
+    studioHref: `/educator/experience-studio/${experienceId}`,
+    note:
+      "Manual mode: the complete validated world edit is queued for educator approval. Do not claim it is already applied.",
   };
 }
 
@@ -1066,6 +1335,51 @@ export async function applyEducatorCopilotAction({
     };
   }
 
+  if (action.type === "update_experience_world") {
+    try {
+      const project = await findManagedExperience(user, action.experienceId);
+      if (!project) {
+        return {
+          ...action,
+          status: "failed",
+          result: "Experience not found.",
+        };
+      }
+      if (project.draftVersion !== action.baseVersion) {
+        return {
+          ...action,
+          status: "failed",
+          result:
+            "The experience changed after this proposal was created. Ask the copilot to reread it and prepare a fresh edit.",
+        };
+      }
+      const document = normalizeExperienceDocument(action.document, {
+        publish: true,
+      });
+      project.draft = document;
+      project.title = document.title;
+      project.description = document.description;
+      project.draftVersion += 1;
+      project.updatedBy = new Types.ObjectId(user.id);
+      project.markModified("draft");
+      await project.save();
+      return {
+        ...action,
+        status: "applied",
+        result: `Updated “${document.world.title}” as draft v${project.draftVersion}.`,
+      };
+    } catch (error) {
+      return {
+        ...action,
+        status: "failed",
+        result:
+          error instanceof Error
+            ? error.message
+            : "The world edit could not be saved.",
+      };
+    }
+  }
+
   const course = await findManagedCourse(user, action.courseSlug);
   if (!course) {
     return { ...action, status: "failed", result: "Course not found." };
@@ -1196,6 +1510,16 @@ async function findManagedCourse(user: CopilotUser, slug: string) {
   return Course.findOne(filter);
 }
 
+async function findManagedExperience(user: CopilotUser, experienceId: string) {
+  const project = await ExperienceProject.findById(experienceId);
+  if (!project) return null;
+  const course = await Course.exists({
+    _id: project.courseId,
+    ...managedFilter(user),
+  });
+  return course ? project : null;
+}
+
 function recountCourse(course: {
   modules?: Array<{ lessons?: unknown[] }>;
   lessonsCount?: number;
@@ -1287,6 +1611,25 @@ function previewFromPatch(patch: Record<string, unknown>) {
     })
     .join("\n")
     .slice(0, 900);
+}
+
+function formatExperienceImpact(
+  impact: ReturnType<typeof describeExperienceCopilotImpact>,
+) {
+  const rows: string[] = [];
+  for (const [key, value] of Object.entries(impact)) {
+    const label = key.slice(0, 1).toUpperCase() + key.slice(1);
+    if (value.added.length) {
+      rows.push(`${label} added: ${value.added.join(", ")}`);
+    }
+    if (value.modified.length) {
+      rows.push(`${label} changed: ${value.modified.join(", ")}`);
+    }
+    if (value.removed.length) {
+      rows.push(`${label} removed: ${value.removed.join(", ")}`);
+    }
+  }
+  return rows.join("\n").slice(0, 1200) || "World metadata updated.";
 }
 
 function cleanString(value: unknown) {

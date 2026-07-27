@@ -1,4 +1,5 @@
 import { PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
+import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { awsCredentialsProvider } from "@vercel/oidc-aws-credentials-provider";
 
 type UploadArgs = {
@@ -47,6 +48,49 @@ export async function uploadCourseMediaToS3({
   );
 
   return `${publicBaseUrl.replace(/\/+$/, "")}/${key}`;
+}
+
+export async function createCourseMediaUpload({
+  fileName,
+  contentType,
+  keyPrefix = "course-media",
+}: {
+  fileName: string;
+  contentType: string;
+  keyPrefix?: string;
+}) {
+  const bucket = process.env.COURSE_MEDIA_S3_BUCKET;
+  const region = process.env.COURSE_MEDIA_S3_REGION;
+  const publicBaseUrl =
+    process.env.COURSE_MEDIA_CDN_URL || process.env.COURSE_MEDIA_PUBLIC_URL;
+  if (!bucket || !region || !publicBaseUrl) {
+    throw new Error("Course media S3 storage is not configured.");
+  }
+  const key = [
+    keyPrefix.replace(/^\/|\/$/g, ""),
+    new Date().toISOString().slice(0, 10),
+    `${crypto.randomUUID()}-${safeFilename(fileName)}`,
+  ].join("/");
+  const client = createCourseMediaS3Client(region);
+  const uploadUrl = await getSignedUrl(
+    client as never,
+    new PutObjectCommand({
+      Bucket: bucket,
+      Key: key,
+      ContentType: contentType,
+      CacheControl: "public, max-age=31536000, immutable",
+    }) as never,
+    { expiresIn: 10 * 60 },
+  );
+  return {
+    uploadUrl,
+    url: `${publicBaseUrl.replace(/\/+$/, "")}/${key}`,
+    key,
+    headers: {
+      "Content-Type": contentType,
+      "Cache-Control": "public, max-age=31536000, immutable",
+    },
+  };
 }
 
 function createCourseMediaS3Client(region: string) {

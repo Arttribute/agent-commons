@@ -100,6 +100,30 @@ describe('client.agents', () => {
     expect(opts.method).toBe('PUT');
   });
 
+  it('generateImage — POSTs a deterministic image request to the owned agent asset endpoint', async () => {
+    const fetch = makeFetch({
+      data: [{ fileId: 'file-1', name: 'world.png', prompt: 'A world', model: 'gpt-image-2' }],
+    });
+    const { data } = await makeClient(fetch).agents.generateImage('agent/a', {
+      prompt: 'A world',
+      n: 1,
+      size: '1536x1024',
+      quality: 'high',
+      operationId: 'experience-1-world',
+    });
+    const [url, opts] = fetch.mock.calls[0];
+    expect(url).toBe('http://api.test/v1/agents/agent%2Fa/assets/images');
+    expect(opts.method).toBe('POST');
+    expect(JSON.parse(opts.body)).toEqual({
+      prompt: 'A world',
+      n: 1,
+      size: '1536x1024',
+      quality: 'high',
+      operationId: 'experience-1-world',
+    });
+    expect(data[0].fileId).toBe('file-1');
+  });
+
   it('submitCliToolResult — POSTs the result with client authorization', async () => {
     const fetch = makeFetch({ data: { accepted: true } });
     await makeClient(fetch).agents.submitCliToolResult('request-1', '{"ok":true}');

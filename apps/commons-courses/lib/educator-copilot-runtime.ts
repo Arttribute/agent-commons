@@ -10,6 +10,7 @@ import { buildManagedCoursesFilter } from "@/lib/educator-auth";
 import Course from "@/models/Course";
 import Enrollment from "@/models/Enrollment";
 import EducatorProfile from "@/models/EducatorProfile";
+import ExperienceProject from "@/models/ExperienceProject";
 import type { IEducatorCopilotMaterial } from "@/models/EducatorCopilotSession";
 import type {
   EducatorCopilotAction,
@@ -34,6 +35,8 @@ export type CopilotTurnResult = {
 const TOOL_LABELS: Record<string, string> = {
   list_courses: "Checking your courses",
   get_course: "Reading course structure",
+  list_experiences: "Finding immersive experiences",
+  get_experience: "Reading the world model",
   list_students: "Looking up students",
   get_student: "Looking up a student",
   get_course_analytics: "Crunching analytics",
@@ -45,6 +48,7 @@ const TOOL_LABELS: Record<string, string> = {
   update_module: "Drafting a module edit",
   update_course_overview: "Drafting overview copy",
   update_skill_challenge: "Drafting a challenge edit",
+  update_experience_world: "Validating a world edit",
   navigate: "Preparing navigation",
   highlight: "Locating page element",
   remember: "Saving a preference",
@@ -97,15 +101,29 @@ export async function buildWorkspaceSnapshot({
         plan?: string;
       }
     | null;
-  const enrollmentCounts = await Enrollment.aggregate([
-    { $match: { courseId: { $in: courses.map((c) => c._id) } } },
-    { $group: { _id: "$courseId", students: { $sum: 1 } } },
+  const [enrollmentCounts, experienceCounts] = await Promise.all([
+    Enrollment.aggregate([
+      { $match: { courseId: { $in: courses.map((c) => c._id) } } },
+      { $group: { _id: "$courseId", students: { $sum: 1 } } },
+    ]),
+    ExperienceProject.aggregate([
+      { $match: { courseId: { $in: courses.map((c) => c._id) } } },
+      { $group: { _id: "$courseId", experiences: { $sum: 1 } } },
+    ]),
   ]);
   const studentsByCourse = new Map<string, number>(
     enrollmentCounts.map((row: { _id: Types.ObjectId; students: number }) => [
       String(row._id),
       row.students,
     ])
+  );
+  const experiencesByCourse = new Map<string, number>(
+    experienceCounts.map(
+      (row: { _id: Types.ObjectId; experiences: number }) => [
+        String(row._id),
+        row.experiences,
+      ],
+    ),
   );
 
   const currentSlug = extractCourseSlug(pageContext?.path || "");
@@ -148,7 +166,9 @@ export async function buildWorkspaceSnapshot({
     lines.push(
       `- "${course.title}" | slug: ${course.slug} | ${course.published ? "published" : "draft"} | ${
         studentsByCourse.get(String(course._id)) || 0
-      } students | ${modules.length} modules / ${lessonCount} lessons${
+      } students | ${modules.length} modules / ${lessonCount} lessons | ${
+        experiencesByCourse.get(String(course._id)) || 0
+      } immersive experiences${
         course.slug === currentSlug ? " | ← currently open in the UI" : ""
       }`
     );
@@ -167,7 +187,7 @@ export async function buildWorkspaceSnapshot({
     ].join("\n")
   );
   lines.push(
-    "- Per course: /educator/courses/<slug> (dashboard), /content (modules & lessons editor), /skills (skill paths), /students, /assignments, /analytics, /edit (course settings), /collaborators, /payments, /access, /notifications"
+    "- Per course: /educator/courses/<slug> (dashboard), /content (modules & lessons editor), /experiences (immersive worlds), /skills (skill paths), /students, /assignments, /analytics, /edit (course settings), /collaborators, /payments, /access, /notifications"
   );
 
   if (pageContext) {

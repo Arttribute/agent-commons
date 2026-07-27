@@ -14,33 +14,40 @@ import {
   ArrowLeft,
   ArrowUp,
   Bot,
+  Box,
   Check,
   ChevronDown,
   CircleAlert,
   Eye,
   Gamepad2,
+  Globe2,
   ImagePlus,
   Layers3,
+  Library,
   Loader2,
   Monitor,
-  Palette,
   PanelLeftClose,
   Plus,
+  RotateCcw,
   Save,
   Sparkles,
   Trash2,
   Users,
+  UploadCloud,
   WandSparkles,
   X,
 } from "lucide-react";
 import { ExperiencePlayer } from "@/components/experiences/experience-player";
 import { cn } from "@/lib/utils";
 import {
+  createDefaultStage,
   createScene,
   experienceSceneTypes,
   sceneTypeLabel,
 } from "@/lib/experience-schema";
 import type {
+  ExperienceAsset,
+  ExperienceAssetKind,
   ExperienceCharacter,
   ExperienceDocument,
   ExperienceProjectDTO,
@@ -48,8 +55,23 @@ import type {
   ExperienceSceneType,
 } from "@/types/experience";
 
-type StudioTab = "story" | "cast" | "world" | "ai";
+type StudioTab = "story" | "cast" | "world" | "assets" | "ai";
 type SaveState = "saved" | "saving" | "unsaved" | "error";
+type AiEntityImpact = {
+  added: string[];
+  removed: string[];
+  modified: string[];
+};
+type AiProposal = {
+  document: ExperienceDocument;
+  summary: string;
+  impact: {
+    scenes: AiEntityImpact;
+    locations: AiEntityImpact;
+    characters: AiEntityImpact;
+    assets: AiEntityImpact;
+  };
+};
 
 export function ExperienceStudio({ experienceId }: { experienceId: string }) {
   const [project, setProject] = useState<ExperienceProjectDTO | null>(null);
@@ -57,6 +79,8 @@ export function ExperienceStudio({ experienceId }: { experienceId: string }) {
   const [tab, setTab] = useState<StudioTab>("story");
   const [selectedSceneId, setSelectedSceneId] = useState("");
   const [selectedCharacterId, setSelectedCharacterId] = useState("");
+  const [selectedLocationId, setSelectedLocationId] = useState("");
+  const [selectedAssetId, setSelectedAssetId] = useState("");
   const [saveState, setSaveState] = useState<SaveState>("saved");
   const [error, setError] = useState("");
   const [previewOpen, setPreviewOpen] = useState(false);
@@ -64,7 +88,15 @@ export function ExperienceStudio({ experienceId }: { experienceId: string }) {
   const [uploading, setUploading] = useState("");
   const [aiBrief, setAiBrief] = useState("");
   const [aiLoading, setAiLoading] = useState(false);
+  const [aiProposal, setAiProposal] = useState<AiProposal | null>(null);
+  const [aiUndoDraft, setAiUndoDraft] =
+    useState<ExperienceDocument | null>(null);
   const [generatingCharacter, setGeneratingCharacter] = useState(false);
+  const [assetBusy, setAssetBusy] = useState(false);
+  const [assetBrief, setAssetBrief] = useState("");
+  const [assetKind, setAssetKind] = useState<
+    "background" | "prop" | "map" | "illustration"
+  >("background");
   const [railOpen, setRailOpen] = useState(true);
   const lastSaved = useRef("");
   const versionRef = useRef(1);
@@ -83,6 +115,12 @@ export function ExperienceStudio({ experienceId }: { experienceId: string }) {
         lastSaved.current = JSON.stringify(experience.draft);
         setSelectedSceneId(experience.draft.startSceneId);
         setSelectedCharacterId(experience.draft.characters[0]?.id || "");
+        setSelectedLocationId(
+          experience.draft.world.startLocationId ||
+            experience.draft.world.locations[0]?.id ||
+            "",
+        );
+        setSelectedAssetId(experience.draft.assets[0]?.id || "");
       })
       .catch((reason) =>
         setError(reason instanceof Error ? reason.message : "Could not load experience."),
@@ -146,6 +184,12 @@ export function ExperienceStudio({ experienceId }: { experienceId: string }) {
   const character = draft?.characters.find(
     (item) => item.id === selectedCharacterId,
   );
+  const location = draft?.world.locations.find(
+    (item) => item.id === selectedLocationId,
+  );
+  const selectedAsset = draft?.assets.find(
+    (item) => item.id === selectedAssetId,
+  );
   const previewDocument = useMemo(
     () =>
       draft
@@ -161,6 +205,7 @@ export function ExperienceStudio({ experienceId }: { experienceId: string }) {
   );
 
   function updateDraft(updater: (current: ExperienceDocument) => ExperienceDocument) {
+    setAiUndoDraft(null);
     setDraft((current) => (current ? updater(current) : current));
   }
 
@@ -242,6 +287,224 @@ export function ExperienceStudio({ experienceId }: { experienceId: string }) {
     }));
   }
 
+  function addLocation() {
+    const nextId = `location-${crypto.randomUUID().slice(0, 8)}`;
+    updateDraft((current) => {
+      const previous = current.world.locations.at(-1);
+      return {
+        ...current,
+        world: {
+          ...current.world,
+          startLocationId: current.world.startLocationId || nextId,
+          locations: [
+            ...current.world.locations.map((item) =>
+              item.id === previous?.id
+                ? {
+                    ...item,
+                    connections: Array.from(
+                      new Set([...item.connections, nextId]),
+                    ),
+                  }
+                : item,
+            ),
+            {
+              id: nextId,
+              name: "New location",
+              description: "Describe the learning purpose and atmosphere.",
+              x: Math.min(85, 24 + current.world.locations.length * 13),
+              y: 50,
+              accent: current.theme.accent,
+              connections: previous ? [previous.id] : [],
+            },
+          ],
+        },
+      };
+    });
+    setSelectedLocationId(nextId);
+    setTab("world");
+  }
+
+  function updateLocation(
+    patch: Partial<ExperienceDocument["world"]["locations"][number]>,
+  ) {
+    if (!location) return;
+    updateDraft((current) => ({
+      ...current,
+      world: {
+        ...current.world,
+        locations: current.world.locations.map((item) =>
+          item.id === location.id ? { ...item, ...patch } : item,
+        ),
+      },
+    }));
+  }
+
+  async function uploadAsset(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    const kind = assetKindForFile(file);
+    if (!kind) {
+      setError("Upload an image, MP4/WebM video, audio file, or GLB model.");
+      event.target.value = "";
+      return;
+    }
+    setAssetBusy(true);
+    setError("");
+    try {
+      const prepared = await fetch(
+        `/api/educator/experiences/${experienceId}/assets/upload`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            name: file.name,
+            type: normalizedAssetMime(file, kind),
+            size: file.size,
+            kind,
+          }),
+        },
+      );
+      const target = await prepared.json().catch(() => ({}));
+      if (!prepared.ok || !target.uploadUrl || !target.url) {
+        throw new Error(target.error || "The upload could not be prepared.");
+      }
+      const uploaded = await fetch(target.uploadUrl, {
+        method: "PUT",
+        headers: target.headers,
+        body: file,
+      });
+      if (!uploaded.ok) {
+        throw new Error(`The asset upload failed (${uploaded.status}).`);
+      }
+      const asset: ExperienceAsset = {
+        id: `asset-${crypto.randomUUID().slice(0, 12)}`,
+        name: file.name.replace(/\.[^.]+$/, ""),
+        kind,
+        url: target.url,
+        mimeType: normalizedAssetMime(file, kind),
+        source: "upload",
+      };
+      updateDraft((current) => ({
+        ...current,
+        assets: [...current.assets, asset],
+      }));
+      setSelectedAssetId(asset.id);
+      setTab("assets");
+    } catch (reason) {
+      setError(
+        reason instanceof Error ? reason.message : "The asset upload failed.",
+      );
+    } finally {
+      setAssetBusy(false);
+      event.target.value = "";
+    }
+  }
+
+  async function generateWorldAsset() {
+    if (!draft || !assetBrief.trim()) return;
+    setAssetBusy(true);
+    setError("");
+    const response = await fetch(
+      `/api/educator/experiences/${experienceId}/assist/asset`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          kind: assetKind,
+          name:
+            location?.name ||
+            `${assetKind.slice(0, 1).toUpperCase()}${assetKind.slice(1)}`,
+          prompt: assetBrief,
+          artDirection: draft.world.artDirection,
+        }),
+      },
+    );
+    const data = await response.json().catch(() => ({}));
+    setAssetBusy(false);
+    if (!response.ok || !data.asset) {
+      setError(data.error || "The world asset could not be generated.");
+      return;
+    }
+    const asset = data.asset as ExperienceAsset;
+    updateDraft((current) => ({
+      ...current,
+      assets: [...current.assets, asset],
+    }));
+    setSelectedAssetId(asset.id);
+    if (assetKind === "background" && location) {
+      updateLocation({ backgroundAssetId: asset.id });
+    }
+    setTab("assets");
+  }
+
+  function placeAsset(asset: ExperienceAsset, action: "scene" | "location") {
+    if (action === "location" && location) {
+      if (asset.kind === "audio") {
+        updateLocation({ ambientAudioAssetId: asset.id });
+      } else if (asset.kind === "model3d") {
+        updateLocation({ environmentModelAssetId: asset.id });
+      } else if (asset.kind === "image") {
+        updateLocation({ backgroundAssetId: asset.id });
+      }
+      return;
+    }
+    if (!scene) return;
+    const stage = scene.stage || createDefaultStage(scene.locationId);
+    if (asset.kind === "model3d") {
+      updateScene({
+        stage: {
+          ...stage,
+          mode: stage.mode === "2d" ? "hybrid" : stage.mode,
+          three: {
+            background: draft?.theme.background || "#091421",
+            cameraPosition: [0, 2, 8],
+            cameraTarget: [0, 0, 0],
+            nodes: [
+              ...(stage.three?.nodes || []),
+              {
+                id: `node-${crypto.randomUUID().slice(0, 8)}`,
+                name: asset.name,
+                kind: "model",
+                assetId: asset.id,
+                position: [0, 0, 0],
+                rotation: [0, 0, 0],
+                scale: [1, 1, 1],
+                animation: "none",
+              },
+            ],
+          },
+        },
+      });
+      return;
+    }
+    if (asset.kind === "image" || asset.kind === "video") {
+      updateScene({
+        stage: {
+          ...stage,
+          layers: [
+            ...stage.layers,
+            {
+              id: `layer-${crypto.randomUUID().slice(0, 8)}`,
+              name: asset.name,
+              kind: asset.kind,
+              assetId: asset.id,
+              x: 0,
+              y: 0,
+              width: 100,
+              height: 100,
+              depth: stage.layers.length ? 0 : -10,
+              opacity: 1,
+              parallax: asset.kind === "image" ? 0.08 : 0,
+              fit: "cover",
+              blendMode: "normal",
+              animation: asset.kind === "image" ? "ken-burns" : "none",
+            },
+          ],
+        },
+      });
+    }
+  }
+
   async function upload(
     event: ChangeEvent<HTMLInputElement>,
     target: "scene-media" | "scene-background" | "character",
@@ -293,23 +556,87 @@ export function ExperienceStudio({ experienceId }: { experienceId: string }) {
     if (!draft || !aiBrief.trim()) return;
     setAiLoading(true);
     setError("");
-    const response = await fetch(
-      `/api/educator/experiences/${experienceId}/assist`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ brief: aiBrief, document: draft }),
-      },
-    );
-    const data = await response.json().catch(() => ({}));
-    setAiLoading(false);
-    if (!response.ok || !data.document) {
-      setError(data.error || "The copilot could not prepare a draft.");
-      return;
+    try {
+      const response = await fetch(
+        `/api/educator/experiences/${experienceId}/assist`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            brief: aiBrief,
+            document: draft,
+            focus: {
+              tab,
+              sceneId: selectedSceneId,
+              locationId: selectedLocationId,
+              characterId: selectedCharacterId,
+              assetId: selectedAssetId,
+            },
+          }),
+        },
+      );
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok || !data.document) {
+        setError(data.error || "The copilot could not prepare a draft.");
+        return;
+      }
+      setAiProposal({
+        document: data.document,
+        summary:
+          data.summary || "The copilot prepared a validated world update.",
+        impact: data.impact || emptyAiImpact(),
+      });
+    } catch (reason) {
+      setError(
+        reason instanceof Error
+          ? reason.message
+          : "The copilot could not prepare a draft.",
+      );
+    } finally {
+      setAiLoading(false);
     }
-    setDraft(data.document);
-    setSelectedSceneId(data.document.startSceneId);
+  }
+
+  function applyAiProposal() {
+    if (!draft || !aiProposal) return;
+    const next = aiProposal.document;
+    setAiUndoDraft(draft);
+    setDraft(next);
+    setSelectedSceneId(
+      next.scenes.some((item) => item.id === selectedSceneId)
+        ? selectedSceneId
+        : next.startSceneId,
+    );
+    setSelectedLocationId(
+      next.world.locations.some((item) => item.id === selectedLocationId)
+        ? selectedLocationId
+        : next.world.startLocationId || next.world.locations[0]?.id || "",
+    );
+    setSelectedCharacterId(
+      next.characters.some((item) => item.id === selectedCharacterId)
+        ? selectedCharacterId
+        : next.characters[0]?.id || "",
+    );
+    setSelectedAssetId(
+      next.assets.some((item) => item.id === selectedAssetId)
+        ? selectedAssetId
+        : next.assets[0]?.id || "",
+    );
+    setAiProposal(null);
+    setAiBrief("");
     setTab("story");
+  }
+
+  function undoAiProposal() {
+    if (!aiUndoDraft) return;
+    setDraft(aiUndoDraft);
+    setSelectedSceneId(aiUndoDraft.startSceneId);
+    setSelectedLocationId(
+      aiUndoDraft.world.startLocationId ||
+        aiUndoDraft.world.locations[0]?.id ||
+        "",
+    );
+    setAiUndoDraft(null);
   }
 
   async function generateCharacterArtwork() {
@@ -325,7 +652,7 @@ export function ExperienceStudio({ experienceId }: { experienceId: string }) {
           name: character.name,
           role: character.role,
           description: character.description,
-          world: `${draft.theme.name}, ${draft.theme.atmosphere} atmosphere`,
+          world: `${draft.world.title}. ${draft.world.artDirection}`,
         }),
       },
     );
@@ -484,10 +811,19 @@ export function ExperienceStudio({ experienceId }: { experienceId: string }) {
             />
             <StudioTabButton
               active={tab === "world"}
-              icon={Palette}
+              icon={Globe2}
               label="World"
               onClick={() => {
                 setTab("world");
+                setRailOpen(true);
+              }}
+            />
+            <StudioTabButton
+              active={tab === "assets"}
+              icon={Library}
+              label="Assets"
+              onClick={() => {
+                setTab("assets");
                 setRailOpen(true);
               }}
             />
@@ -533,20 +869,48 @@ export function ExperienceStudio({ experienceId }: { experienceId: string }) {
               {tab === "world" ? (
                 <WorldPanel
                   draft={draft}
-                  onChange={(patch) =>
+                  selectedId={selectedLocationId}
+                  onSelect={setSelectedLocationId}
+                  onAdd={addLocation}
+                  onThemeChange={(patch) =>
                     updateDraft((current) => ({
                       ...current,
                       theme: { ...current.theme, ...patch },
                     }))
                   }
+                  onWorldChange={(patch) =>
+                    updateDraft((current) => ({
+                      ...current,
+                      world: { ...current.world, ...patch },
+                    }))
+                  }
+                />
+              ) : null}
+              {tab === "assets" ? (
+                <AssetPanel
+                  assets={draft.assets}
+                  selectedId={selectedAssetId}
+                  busy={assetBusy}
+                  brief={assetBrief}
+                  generationKind={assetKind}
+                  onSelect={setSelectedAssetId}
+                  onUpload={uploadAsset}
+                  onBriefChange={setAssetBrief}
+                  onKindChange={setAssetKind}
+                  onGenerate={() => void generateWorldAsset()}
                 />
               ) : null}
               {tab === "ai" ? (
                 <AiPanel
                   value={aiBrief}
                   loading={aiLoading}
+                  proposal={aiProposal}
+                  canUndo={Boolean(aiUndoDraft)}
                   onChange={setAiBrief}
                   onSubmit={askAi}
+                  onApply={applyAiProposal}
+                  onDiscard={() => setAiProposal(null)}
+                  onUndo={undoAiProposal}
                 />
               ) : null}
             </div>
@@ -581,6 +945,19 @@ export function ExperienceStudio({ experienceId }: { experienceId: string }) {
               onChange={updateCharacter}
               onUpload={(event) => void upload(event, "character")}
               onGenerate={() => void generateCharacterArtwork()}
+            />
+          ) : tab === "world" && location ? (
+            <LocationInspector
+              location={location}
+              assets={draft.assets}
+              onChange={updateLocation}
+            />
+          ) : tab === "assets" && selectedAsset ? (
+            <AssetInspector
+              asset={selectedAsset}
+              hasLocation={Boolean(location)}
+              hasScene={Boolean(scene)}
+              onPlace={placeAsset}
             />
           ) : scene ? (
             <SceneInspector
@@ -811,10 +1188,18 @@ function CastPanel({
 
 function WorldPanel({
   draft,
-  onChange,
+  selectedId,
+  onSelect,
+  onAdd,
+  onThemeChange,
+  onWorldChange,
 }: {
   draft: ExperienceDocument;
-  onChange: (patch: Partial<ExperienceDocument["theme"]>) => void;
+  selectedId: string;
+  onSelect: (id: string) => void;
+  onAdd: () => void;
+  onThemeChange: (patch: Partial<ExperienceDocument["theme"]>) => void;
+  onWorldChange: (patch: Partial<ExperienceDocument["world"]>) => void;
 }) {
   const themes: ExperienceDocument["theme"][] = [
     {
@@ -857,39 +1242,289 @@ function WorldPanel({
   return (
     <div>
       <p className="text-[10px] font-black uppercase tracking-[0.16em] text-slate-400">
-        Visual system
+        World builder
       </p>
-      <h2 className="mt-1 text-lg font-bold">World</h2>
+      <h2 className="mt-1 text-lg font-bold">{draft.world.title}</h2>
       <p className="mt-2 text-xs leading-5 text-slate-500">
-        Theme tokens keep every scene and character treatment harmonized.
+        Build reusable locations and one shared art bible for a harmonized
+        story world.
       </p>
       <div className="mt-5 space-y-3">
-        {themes.map((theme) => (
+        <Field label="World title">
+          <input
+            value={draft.world.title}
+            onChange={(event) => onWorldChange({ title: event.target.value })}
+            className="studio-input"
+          />
+        </Field>
+        <Field label="World logline">
+          <textarea
+            value={draft.world.logline}
+            onChange={(event) => onWorldChange({ logline: event.target.value })}
+            rows={3}
+            className="studio-input resize-none leading-5"
+          />
+        </Field>
+        <Field label="Map presentation">
+          <select
+            value={draft.world.mapStyle}
+            onChange={(event) =>
+              onWorldChange({
+                mapStyle: event.target.value as ExperienceDocument["world"]["mapStyle"],
+              })
+            }
+            className="studio-input"
+          >
+            <option value="orbital">Cinematic globe</option>
+            <option value="atlas">Illustrated atlas</option>
+            <option value="none">No world map</option>
+          </select>
+        </Field>
+        <Field label="Shared art bible">
+          <textarea
+            value={draft.world.artDirection}
+            onChange={(event) =>
+              onWorldChange({ artDirection: event.target.value })
+            }
+            rows={6}
+            className="studio-input resize-none leading-5"
+          />
+        </Field>
+      </div>
+
+      <div className="mt-7 flex items-center justify-between">
+        <div>
+          <p className="text-[10px] font-black uppercase tracking-[0.16em] text-slate-400">
+            World graph
+          </p>
+          <h3 className="mt-1 text-sm font-bold">Locations</h3>
+        </div>
+        <button
+          type="button"
+          onClick={onAdd}
+          className="inline-flex h-8 items-center gap-1 rounded-lg bg-slate-950 px-2.5 text-[10px] font-black text-white"
+        >
+          <Plus className="h-3 w-3" />
+          Add
+        </button>
+      </div>
+      <div className="relative mt-3 h-44 overflow-hidden rounded-2xl border border-slate-200 bg-[radial-gradient(circle_at_50%_45%,#d8eef1,#edf2f4_55%,#d7dee3)]">
+        {draft.world.locations.map((item) => (
           <button
-            key={theme.name}
+            key={item.id}
             type="button"
-            onClick={() => onChange(theme)}
+            onClick={() => onSelect(item.id)}
+            title={item.name}
+            className={cn(
+              "absolute h-4 w-4 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white shadow-[0_0_0_5px_rgba(15,23,42,.08)] transition hover:scale-125",
+              selectedId === item.id && "scale-125 ring-2 ring-slate-950/20",
+            )}
+            style={{
+              left: `${item.x}%`,
+              top: `${item.y}%`,
+              backgroundColor: item.accent || draft.theme.accent,
+            }}
+          />
+        ))}
+      </div>
+      <div className="mt-3 space-y-2">
+        {draft.world.locations.map((item) => (
+          <button
+            key={item.id}
+            type="button"
+            onClick={() => onSelect(item.id)}
             className={cn(
               "flex w-full items-center gap-3 rounded-xl border p-3 text-left",
-              draft.theme.name === theme.name
-                ? "border-slate-950 ring-2 ring-slate-950/10"
-                : "border-slate-200 hover:border-slate-300",
+              selectedId === item.id
+                ? "border-slate-950 bg-slate-950 text-white"
+                : "border-slate-200",
             )}
           >
             <span
-              className="h-11 w-16 rounded-lg border border-black/10"
-              style={{
-                background: `linear-gradient(135deg, ${theme.background}, ${theme.accent})`,
-              }}
+              className="h-3 w-3 rounded-full"
+              style={{ background: item.accent || draft.theme.accent }}
             />
-            <span>
-              <span className="block text-xs font-bold">{theme.name}</span>
-              <span className="mt-1 block text-[10px] capitalize text-slate-400">
-                {theme.atmosphere}
+            <span className="min-w-0 flex-1">
+              <span className="block truncate text-xs font-bold">{item.name}</span>
+              <span
+                className={cn(
+                  "mt-0.5 block text-[9px]",
+                  selectedId === item.id ? "text-white/45" : "text-slate-400",
+                )}
+              >
+                {item.connections.length} connections
               </span>
             </span>
           </button>
         ))}
+      </div>
+
+      <div className="mt-7">
+        <p className="text-[10px] font-black uppercase tracking-[0.16em] text-slate-400">
+          Interface palette
+        </p>
+      </div>
+      <div className="mt-3 grid grid-cols-4 gap-2">
+        {themes.map((theme) => (
+          <button
+            key={theme.name}
+            type="button"
+            onClick={() => onThemeChange(theme)}
+            title={theme.name}
+            className={cn(
+              "h-10 rounded-xl border",
+              draft.theme.name === theme.name
+                ? "border-slate-950 ring-2 ring-slate-950/10"
+                : "border-slate-200 hover:border-slate-300",
+            )}
+            style={{
+              background: `linear-gradient(135deg, ${theme.background}, ${theme.accent})`,
+            }}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function AssetPanel({
+  assets,
+  selectedId,
+  busy,
+  brief,
+  generationKind,
+  onSelect,
+  onUpload,
+  onBriefChange,
+  onKindChange,
+  onGenerate,
+}: {
+  assets: ExperienceAsset[];
+  selectedId: string;
+  busy: boolean;
+  brief: string;
+  generationKind: "background" | "prop" | "map" | "illustration";
+  onSelect: (id: string) => void;
+  onUpload: (event: ChangeEvent<HTMLInputElement>) => void;
+  onBriefChange: (value: string) => void;
+  onKindChange: (
+    value: "background" | "prop" | "map" | "illustration",
+  ) => void;
+  onGenerate: () => void;
+}) {
+  return (
+    <div>
+      <p className="text-[10px] font-black uppercase tracking-[0.16em] text-slate-400">
+        Reusable library
+      </p>
+      <div className="mt-1 flex items-center justify-between gap-3">
+        <h2 className="text-lg font-bold">World assets</h2>
+        <label className="inline-flex h-9 cursor-pointer items-center gap-1.5 rounded-xl bg-slate-950 px-3 text-[10px] font-black text-white">
+          {busy ? (
+            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+          ) : (
+            <UploadCloud className="h-3.5 w-3.5" />
+          )}
+          Upload
+          <input
+            type="file"
+            accept="image/*,video/mp4,video/webm,audio/*,.glb,.gltf"
+            className="sr-only"
+            disabled={busy}
+            onChange={onUpload}
+          />
+        </label>
+      </div>
+      <p className="mt-2 text-xs leading-5 text-slate-500">
+        Images, video, ambient audio, and glTF/GLB models can be reused across
+        every scene and location.
+      </p>
+
+      <div className="mt-5 grid grid-cols-2 gap-2">
+        {assets.map((asset) => (
+          <button
+            key={asset.id}
+            type="button"
+            onClick={() => onSelect(asset.id)}
+            className={cn(
+              "overflow-hidden rounded-xl border bg-white text-left",
+              selectedId === asset.id
+                ? "border-slate-950 ring-2 ring-slate-950/10"
+                : "border-slate-200",
+            )}
+          >
+            <div className="flex h-24 items-center justify-center bg-slate-100">
+              {asset.kind === "image" ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={asset.thumbnailUrl || asset.url}
+                  alt=""
+                  className="h-full w-full object-cover"
+                />
+              ) : asset.kind === "model3d" ? (
+                <Box className="h-8 w-8 text-slate-400" />
+              ) : (
+                <Library className="h-8 w-8 text-slate-400" />
+              )}
+            </div>
+            <div className="p-2.5">
+              <p className="truncate text-[11px] font-bold">{asset.name}</p>
+              <p className="mt-0.5 text-[9px] uppercase tracking-[0.12em] text-slate-400">
+                {asset.kind}
+              </p>
+            </div>
+          </button>
+        ))}
+        {!assets.length ? (
+          <div className="col-span-2 rounded-2xl border border-dashed border-slate-300 p-5 text-center text-xs leading-5 text-slate-400">
+            Upload an asset or generate your first world background below.
+          </div>
+        ) : null}
+      </div>
+
+      <div className="mt-7 rounded-2xl border border-violet-100 bg-violet-50/65 p-3">
+        <span className="inline-flex items-center gap-1.5 text-[10px] font-black uppercase tracking-[0.14em] text-violet-700">
+          <WandSparkles className="h-3.5 w-3.5" />
+          Generate with your copilot
+        </span>
+        <select
+          value={generationKind}
+          onChange={(event) =>
+            onKindChange(
+              event.target.value as
+                | "background"
+                | "prop"
+                | "map"
+                | "illustration",
+            )
+          }
+          className="studio-input mt-3"
+        >
+          <option value="background">Cinematic background</option>
+          <option value="prop">Interactive prop</option>
+          <option value="map">World map plate</option>
+          <option value="illustration">Story illustration</option>
+        </select>
+        <textarea
+          value={brief}
+          onChange={(event) => onBriefChange(event.target.value)}
+          rows={5}
+          placeholder="A lush research forest at blue hour, layered canopy, an open clearing for characters, luminous field equipment…"
+          className="studio-input mt-2 resize-none leading-5"
+        />
+        <button
+          type="button"
+          disabled={busy || !brief.trim()}
+          onClick={onGenerate}
+          className="mt-2 inline-flex w-full items-center justify-center gap-2 rounded-xl bg-violet-700 px-3 py-3 text-xs font-black text-white disabled:opacity-45"
+        >
+          {busy ? (
+            <Loader2 className="h-4 w-4 animate-spin" />
+          ) : (
+            <Sparkles className="h-4 w-4" />
+          )}
+          Generate asset
+        </button>
       </div>
     </div>
   );
@@ -898,31 +1533,103 @@ function WorldPanel({
 function AiPanel({
   value,
   loading,
+  proposal,
+  canUndo,
   onChange,
   onSubmit,
+  onApply,
+  onDiscard,
+  onUndo,
 }: {
   value: string;
   loading: boolean;
+  proposal: AiProposal | null;
+  canUndo: boolean;
   onChange: (value: string) => void;
   onSubmit: () => void;
+  onApply: () => void;
+  onDiscard: () => void;
+  onUndo: () => void;
 }) {
+  const impact = proposal ? summarizeAiImpact(proposal.impact) : [];
   return (
     <div>
       <span className="inline-flex items-center gap-1.5 rounded-full bg-violet-50 px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.14em] text-violet-700">
         <WandSparkles className="h-3 w-3" />
         Agent Commons
       </span>
-      <h2 className="mt-3 text-lg font-bold">Build with your copilot</h2>
+      <h2 className="mt-3 text-lg font-bold">Direct your educator copilot</h2>
       <p className="mt-2 text-xs leading-5 text-slate-500">
-        Describe the learner, source material, objectives, and setting. The
-        copilot proposes a complete structured draft; nothing publishes
-        automatically.
+        This is the same account-level copilot used across your educator
+        workspace. It knows this course structure and your remembered teaching
+        preferences. It understands locations, world routes, layered stages,
+        actors, cameras, 3D objects, assets, story branches, and every supported
+        interaction.
       </p>
+      <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-3">
+        <p className="text-[10px] font-black uppercase tracking-[0.14em] text-slate-400">
+          Try a precise direction
+        </p>
+        <p className="mt-2 text-[11px] leading-5 text-slate-600">
+          “Move Dr. Amina to the left, push the camera in, add rain, and make
+          this scene a diegetic evidence check.” Or ask for a complete new
+          mission arc across several connected locations.
+        </p>
+      </div>
+
+      {proposal ? (
+        <div className="mt-4 rounded-2xl border border-violet-200 bg-violet-50/70 p-3.5">
+          <div className="flex items-center gap-2 text-xs font-bold text-violet-950">
+            <Check className="h-4 w-4 text-violet-600" />
+            Validated proposal ready
+          </div>
+          <p className="mt-2 text-[11px] leading-5 text-violet-900/70">
+            {proposal.summary}
+          </p>
+          {impact.length ? (
+            <div className="mt-3 flex flex-wrap gap-1.5">
+              {impact.map((item) => (
+                <span
+                  key={item}
+                  className="rounded-full bg-white px-2 py-1 text-[9px] font-black uppercase tracking-[0.08em] text-violet-700 shadow-sm"
+                >
+                  {item}
+                </span>
+              ))}
+            </div>
+          ) : (
+            <p className="mt-3 text-[10px] text-violet-700">
+              Narrative or presentation metadata updated.
+            </p>
+          )}
+          <div className="mt-4 grid grid-cols-2 gap-2">
+            <button
+              type="button"
+              onClick={onDiscard}
+              className="rounded-xl border border-violet-200 bg-white px-3 py-2.5 text-[11px] font-bold text-violet-800"
+            >
+              Discard
+            </button>
+            <button
+              type="button"
+              onClick={onApply}
+              className="inline-flex items-center justify-center gap-1.5 rounded-xl bg-violet-700 px-3 py-2.5 text-[11px] font-bold text-white"
+            >
+              <Check className="h-3.5 w-3.5" />
+              Apply changes
+            </button>
+          </div>
+          <p className="mt-2 text-[9px] leading-4 text-violet-700/70">
+            The current draft remains untouched until you apply this proposal.
+          </p>
+        </div>
+      ) : null}
+
       <textarea
         value={value}
         onChange={(event) => onChange(event.target.value)}
-        rows={10}
-        placeholder="For first-year nursing students, turn the lesson on triage into a case investigation in a remote clinic…"
+        rows={8}
+        placeholder="Change this location into a stormy night clinic, keep the course facts intact, and add a meaningful evidence interaction…"
         className="mt-5 w-full resize-none rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-xs leading-5 outline-none focus:border-slate-400"
       />
       <button
@@ -936,11 +1643,21 @@ function AiPanel({
         ) : (
           <Sparkles className="h-4 w-4 text-[#B8F56D]" />
         )}
-        Propose storyboard
+        {proposal ? "Prepare another proposal" : "Edit world with copilot"}
       </button>
+      {canUndo ? (
+        <button
+          type="button"
+          onClick={onUndo}
+          className="mt-2 inline-flex w-full items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-[11px] font-bold text-slate-600 hover:bg-slate-50"
+        >
+          <RotateCcw className="h-3.5 w-3.5" />
+          Undo last copilot edit
+        </button>
+      ) : null}
       <p className="mt-3 text-[10px] leading-4 text-slate-400">
-        The generated document is validated against the engine schema before it
-        can enter the studio.
+        Proposals are declarative, course-grounded, reference-checked, and
+        route-validated. Nothing publishes automatically.
       </p>
     </div>
   );
@@ -1045,7 +1762,70 @@ function SceneInspector({
             ))}
           </select>
         </Field>
-        {scene.type !== "choice" && scene.type !== "completion" ? (
+        <Field label="World location">
+          <select
+            value={scene.locationId || ""}
+            onChange={(event) => {
+              const locationId = event.target.value || undefined;
+              onChange({
+                locationId,
+                stage: {
+                  ...(scene.stage || createDefaultStage(locationId)),
+                  locationId,
+                },
+              });
+            }}
+            className="studio-input"
+          >
+            <option value="">Use world default</option>
+            {draft.world.locations.map((location) => (
+              <option key={location.id} value={location.id}>
+                {location.name}
+              </option>
+            ))}
+          </select>
+        </Field>
+        <Field label="Interaction presentation">
+          <select
+            value={scene.interactionLayout || "panel"}
+            onChange={(event) =>
+              onChange({
+                interactionLayout: event.target
+                  .value as ExperienceScene["interactionLayout"],
+              })
+            }
+            className="studio-input"
+          >
+            <option value="overlay">Cinematic subtitle overlay</option>
+            <option value="panel">Mission panel</option>
+            <option value="diegetic">In-world device</option>
+          </select>
+        </Field>
+        <Field label="Mission label">
+          <input
+            value={scene.missionLabel || ""}
+            onChange={(event) => onChange({ missionLabel: event.target.value })}
+            placeholder="Mission 02 · Evidence sweep"
+            className="studio-input"
+          />
+        </Field>
+        <Field label="Learner objective">
+          <textarea
+            value={scene.objective || ""}
+            onChange={(event) => onChange({ objective: event.target.value })}
+            rows={2}
+            className="studio-input resize-none"
+          />
+        </Field>
+        <CinematicStageEditor
+          scene={scene}
+          draft={draft}
+          onChange={onChange}
+        />
+        <ShotEditor scene={scene} draft={draft} onChange={onChange} />
+        {scene.type !== "choice" &&
+        scene.type !== "world-map" &&
+        scene.type !== "completion" ? (
           <Field label="Next scene">
             <select
               value={scene.nextSceneId || ""}
@@ -1066,7 +1846,7 @@ function SceneInspector({
           </Field>
         ) : null}
 
-        {scene.type === "choice" ? (
+        {scene.type === "choice" || scene.type === "world-map" ? (
           <ChoiceEditor scene={scene} draft={draft} onChange={onChange} />
         ) : null}
         {scene.type === "quiz" ? (
@@ -1084,6 +1864,9 @@ function SceneInspector({
         {scene.type === "sequence" ? (
           <SequenceEditor scene={scene} onChange={onChange} />
         ) : null}
+        {scene.type === "evidence" ? (
+          <EvidenceEditor scene={scene} onChange={onChange} />
+        ) : null}
         {[
           "quiz",
           "hotspot",
@@ -1091,6 +1874,7 @@ function SceneInspector({
           "sort",
           "match",
           "sequence",
+          "evidence",
         ].includes(scene.type) ? (
           <>
             <Field label="Prompt">
@@ -1142,6 +1926,482 @@ function SceneInspector({
         />
       </div>
     </div>
+  );
+}
+
+function CinematicStageEditor({
+  scene,
+  draft,
+  onChange,
+}: {
+  scene: ExperienceScene;
+  draft: ExperienceDocument;
+  onChange: (patch: Partial<ExperienceScene>) => void;
+}) {
+  const stage = scene.stage || createDefaultStage(scene.locationId);
+  const updateStage = (patch: Partial<NonNullable<ExperienceScene["stage"]>>) =>
+    onChange({ stage: { ...stage, ...patch } });
+  return (
+    <details className="rounded-2xl border border-slate-200 p-3" open>
+      <summary className="cursor-pointer text-[10px] font-black uppercase tracking-[0.14em] text-slate-600">
+        Cinematic stage
+      </summary>
+      <div className="mt-4 space-y-4">
+        <Field label="Render mode">
+          <select
+            value={stage.mode}
+            onChange={(event) =>
+              updateStage({
+                mode: event.target.value as NonNullable<
+                  ExperienceScene["stage"]
+                >["mode"],
+                three:
+                  event.target.value === "2d"
+                    ? stage.three
+                    : stage.three || {
+                        background: draft.theme.background,
+                        cameraPosition: [0, 2, 8],
+                        cameraTarget: [0, 0, 0],
+                        nodes: [],
+                      },
+              })
+            }
+            className="studio-input"
+          >
+            <option value="2d">Layered 2D world</option>
+            <option value="3d">Interactive 3D world</option>
+            <option value="hybrid">Hybrid 2D + 3D</option>
+          </select>
+        </Field>
+        <Field label="Camera transition">
+          <select
+            value={stage.camera.transition}
+            onChange={(event) =>
+              updateStage({
+                camera: {
+                  ...stage.camera,
+                  transition: event.target.value as typeof stage.camera.transition,
+                },
+              })
+            }
+            className="studio-input"
+          >
+            <option value="cut">Cut</option>
+            <option value="fade">Cinematic fade</option>
+            <option value="pan">Camera pan</option>
+            <option value="zoom">Push in</option>
+            <option value="portal">Portal</option>
+          </select>
+        </Field>
+        <div className="grid grid-cols-2 gap-2">
+          <Field label="Camera zoom">
+            <input
+              type="number"
+              min={0.25}
+              max={4}
+              step={0.05}
+              value={stage.camera.zoom}
+              onChange={(event) =>
+                updateStage({
+                  camera: {
+                    ...stage.camera,
+                    zoom: Number(event.target.value),
+                  },
+                })
+              }
+              className="studio-input"
+            />
+          </Field>
+          <Field label="Weather">
+            <select
+              value={stage.effects.weather}
+              onChange={(event) =>
+                updateStage({
+                  effects: {
+                    ...stage.effects,
+                    weather: event.target.value as typeof stage.effects.weather,
+                  },
+                })
+              }
+              className="studio-input"
+            >
+              <option value="none">None</option>
+              <option value="rain">Rain</option>
+              <option value="snow">Snow</option>
+              <option value="dust">Dust</option>
+              <option value="fireflies">Fireflies</option>
+            </select>
+          </Field>
+        </div>
+
+        <div>
+          <p className="studio-label">Composited layers</p>
+          <div className="space-y-2">
+            {stage.layers.map((layer) => (
+              <div
+                key={layer.id}
+                className="rounded-xl border border-slate-200 p-2.5"
+              >
+                <div className="flex items-center gap-2">
+                  <input
+                    value={layer.name}
+                    onChange={(event) =>
+                      updateStage({
+                        layers: stage.layers.map((item) =>
+                          item.id === layer.id
+                            ? { ...item, name: event.target.value }
+                            : item,
+                        ),
+                      })
+                    }
+                    className="studio-input"
+                  />
+                  <button
+                    type="button"
+                    onClick={() =>
+                      updateStage({
+                        layers: stage.layers.filter(
+                          (item) => item.id !== layer.id,
+                        ),
+                      })
+                    }
+                    className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-slate-300 hover:bg-rose-50 hover:text-rose-600"
+                    aria-label={`Remove ${layer.name}`}
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+                <div className="mt-2 grid grid-cols-3 gap-2">
+                  <label>
+                    <span className="mb-1 block text-[8px] font-black uppercase text-slate-400">
+                      Depth
+                    </span>
+                    <input
+                      type="number"
+                      min={-100}
+                      max={100}
+                      value={layer.depth}
+                      onChange={(event) =>
+                        updateStage({
+                          layers: stage.layers.map((item) =>
+                            item.id === layer.id
+                              ? { ...item, depth: Number(event.target.value) }
+                              : item,
+                          ),
+                        })
+                      }
+                      className="studio-input"
+                    />
+                  </label>
+                  <label>
+                    <span className="mb-1 block text-[8px] font-black uppercase text-slate-400">
+                      Parallax
+                    </span>
+                    <input
+                      type="number"
+                      min={-2}
+                      max={2}
+                      step={0.05}
+                      value={layer.parallax}
+                      onChange={(event) =>
+                        updateStage({
+                          layers: stage.layers.map((item) =>
+                            item.id === layer.id
+                              ? { ...item, parallax: Number(event.target.value) }
+                              : item,
+                          ),
+                        })
+                      }
+                      className="studio-input"
+                    />
+                  </label>
+                  <label>
+                    <span className="mb-1 block text-[8px] font-black uppercase text-slate-400">
+                      Opacity
+                    </span>
+                    <input
+                      type="number"
+                      min={0}
+                      max={1}
+                      step={0.1}
+                      value={layer.opacity}
+                      onChange={(event) =>
+                        updateStage({
+                          layers: stage.layers.map((item) =>
+                            item.id === layer.id
+                              ? { ...item, opacity: Number(event.target.value) }
+                              : item,
+                          ),
+                        })
+                      }
+                      className="studio-input"
+                    />
+                  </label>
+                </div>
+              </div>
+            ))}
+            {!stage.layers.length ? (
+              <p className="rounded-xl bg-slate-50 p-3 text-[10px] leading-5 text-slate-400">
+                Add an image or video from Assets. The selected location
+                background is used automatically when no layers exist.
+              </p>
+            ) : null}
+          </div>
+        </div>
+
+        <div>
+          <div className="flex items-center justify-between">
+            <p className="studio-label">Actor blocking</p>
+            <button
+              type="button"
+              disabled={!draft.characters.length}
+              onClick={() =>
+                updateStage({
+                  actors: [
+                    ...stage.actors,
+                    {
+                      characterId: draft.characters[0].id,
+                      x: 24,
+                      y: 101,
+                      scale: 1,
+                      depth: 5,
+                      entrance: "rise",
+                    },
+                  ],
+                })
+              }
+              className="text-[9px] font-black uppercase text-slate-500"
+            >
+              + Actor
+            </button>
+          </div>
+          <div className="space-y-2">
+            {stage.actors.map((actor, actorIndex) => (
+              <div
+                key={`${actor.characterId}-${actorIndex}`}
+                className="rounded-xl border border-slate-200 p-2.5"
+              >
+                <select
+                  value={actor.characterId}
+                  onChange={(event) =>
+                    updateStage({
+                      actors: stage.actors.map((item, index) =>
+                        index === actorIndex
+                          ? { ...item, characterId: event.target.value }
+                          : item,
+                      ),
+                    })
+                  }
+                  className="studio-input"
+                >
+                  {draft.characters.map((character) => (
+                    <option key={character.id} value={character.id}>
+                      {character.name}
+                    </option>
+                  ))}
+                </select>
+                <div className="mt-2 grid grid-cols-3 gap-2">
+                  {(["x", "y", "scale"] as const).map((key) => (
+                    <label key={key}>
+                      <span className="mb-1 block text-[8px] font-black uppercase text-slate-400">
+                        {key}
+                      </span>
+                      <input
+                        type="number"
+                        step={key === "scale" ? 0.1 : 1}
+                        value={actor[key]}
+                        onChange={(event) =>
+                          updateStage({
+                            actors: stage.actors.map((item, index) =>
+                              index === actorIndex
+                                ? {
+                                    ...item,
+                                    [key]: Number(event.target.value),
+                                  }
+                                : item,
+                            ),
+                          })
+                        }
+                        className="studio-input"
+                      />
+                    </label>
+                  ))}
+                </div>
+                <button
+                  type="button"
+                  onClick={() =>
+                    updateStage({
+                      actors: stage.actors.filter(
+                        (_item, index) => index !== actorIndex,
+                      ),
+                    })
+                  }
+                  className="mt-2 text-[9px] font-black uppercase text-rose-500"
+                >
+                  Remove actor
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {stage.mode !== "2d" ? (
+          <div className="rounded-xl bg-slate-950 p-3 text-white">
+            <p className="text-[9px] font-black uppercase tracking-[0.14em] text-white/45">
+              3D scene
+            </p>
+            <p className="mt-1 text-[10px] leading-5 text-white/55">
+              {(stage.three?.nodes.length || 0).toString()} nodes. Add GLB
+              models from Assets or build a safe procedural primitive.
+            </p>
+            <button
+              type="button"
+              onClick={() =>
+                updateStage({
+                  three: {
+                    background:
+                      stage.three?.background || draft.theme.background,
+                    cameraPosition: stage.three?.cameraPosition || [0, 2, 8],
+                    cameraTarget: stage.three?.cameraTarget || [0, 0, 0],
+                    environmentAssetId: stage.three?.environmentAssetId,
+                    nodes: [
+                      ...(stage.three?.nodes || []),
+                      {
+                        id: `node-${crypto.randomUUID().slice(0, 8)}`,
+                        name: "Learning object",
+                        kind: "box",
+                        position: [0, 0, 0],
+                        rotation: [0, 0, 0],
+                        scale: [1, 1, 1],
+                        color: draft.theme.accent,
+                        metallic: 0.1,
+                        roughness: 0.55,
+                        animation: "rotate",
+                      },
+                    ],
+                  },
+                })
+              }
+              className="mt-3 inline-flex w-full items-center justify-center gap-2 rounded-lg bg-white px-3 py-2 text-[10px] font-black text-slate-950"
+            >
+              <Box className="h-3.5 w-3.5" />
+              Add procedural object
+            </button>
+          </div>
+        ) : null}
+      </div>
+    </details>
+  );
+}
+
+function ShotEditor({
+  scene,
+  draft,
+  onChange,
+}: {
+  scene: ExperienceScene;
+  draft: ExperienceDocument;
+  onChange: (patch: Partial<ExperienceScene>) => void;
+}) {
+  return (
+    <details className="rounded-2xl border border-slate-200 p-3">
+      <summary className="cursor-pointer text-[10px] font-black uppercase tracking-[0.14em] text-slate-600">
+        Storyboard beats ({scene.shots?.length || 0})
+      </summary>
+      <div className="mt-3 space-y-3">
+        {scene.shots?.map((shot, index) => (
+          <div key={shot.id} className="rounded-xl bg-slate-50 p-3">
+            <div className="flex items-center gap-2">
+              <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-slate-950 text-[9px] font-black text-white">
+                {index + 1}
+              </span>
+              <input
+                value={shot.title || ""}
+                onChange={(event) =>
+                  onChange({
+                    shots: scene.shots?.map((item) =>
+                      item.id === shot.id
+                        ? { ...item, title: event.target.value }
+                        : item,
+                    ),
+                  })
+                }
+                placeholder="Beat title"
+                className="studio-input"
+              />
+              <button
+                type="button"
+                onClick={() =>
+                  onChange({
+                    shots: scene.shots?.filter((item) => item.id !== shot.id),
+                  })
+                }
+                className="text-slate-300 hover:text-rose-500"
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+              </button>
+            </div>
+            <textarea
+              value={shot.body}
+              onChange={(event) =>
+                onChange({
+                  shots: scene.shots?.map((item) =>
+                    item.id === shot.id
+                      ? { ...item, body: event.target.value }
+                      : item,
+                  ),
+                })
+              }
+              rows={3}
+              className="studio-input mt-2 resize-none leading-5"
+            />
+            <select
+              value={shot.speakerCharacterId || ""}
+              onChange={(event) =>
+                onChange({
+                  shots: scene.shots?.map((item) =>
+                    item.id === shot.id
+                      ? {
+                          ...item,
+                          speakerCharacterId:
+                            event.target.value || undefined,
+                        }
+                      : item,
+                  ),
+                })
+              }
+              className="studio-input mt-2"
+            >
+              <option value="">Narrator</option>
+              {draft.characters.map((character) => (
+                <option key={character.id} value={character.id}>
+                  {character.name}
+                </option>
+              ))}
+            </select>
+          </div>
+        ))}
+        <button
+          type="button"
+          onClick={() =>
+            onChange({
+              shots: [
+                ...(scene.shots || []),
+                {
+                  id: `shot-${crypto.randomUUID().slice(0, 8)}`,
+                  body: scene.body || "Write the next story beat.",
+                  speakerCharacterId: scene.characterId,
+                },
+              ],
+            })
+          }
+          className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-dashed border-slate-300 px-3 py-2.5 text-[10px] font-black text-slate-500"
+        >
+          <Plus className="h-3.5 w-3.5" />
+          Add story beat
+        </button>
+      </div>
+    </details>
   );
 }
 
@@ -1204,6 +2464,31 @@ function ChoiceEditor({
             placeholder="Optional consequence or context"
             className="studio-input mt-2"
           />
+          {scene.type === "world-map" ? (
+            <select
+              value={choice.locationId || ""}
+              onChange={(event) =>
+                onChange({
+                  choices: scene.choices?.map((item) =>
+                    item.id === choice.id
+                      ? {
+                          ...item,
+                          locationId: event.target.value || undefined,
+                        }
+                      : item,
+                  ),
+                })
+              }
+              className="studio-input mt-2"
+            >
+              <option value="">Choose map location</option>
+              {draft.world.locations.map((location) => (
+                <option key={location.id} value={location.id}>
+                  {location.name}
+                </option>
+              ))}
+            </select>
+          ) : null}
           <select
             value={choice.nextSceneId || ""}
             onChange={(event) =>
@@ -1830,6 +3115,329 @@ function SequenceEditor({
   );
 }
 
+function EvidenceEditor({
+  scene,
+  onChange,
+}: {
+  scene: ExperienceScene;
+  onChange: (patch: Partial<ExperienceScene>) => void;
+}) {
+  return (
+    <div className="space-y-2">
+      <label className="studio-label">Evidence dossiers</label>
+      {scene.evidence?.map((record, index) => (
+        <div key={record.id} className="rounded-xl border border-slate-200 p-3">
+          <div className="flex items-center gap-2">
+            <input
+              value={record.title}
+              onChange={(event) =>
+                onChange({
+                  evidence: scene.evidence?.map((item) =>
+                    item.id === record.id
+                      ? { ...item, title: event.target.value }
+                      : item,
+                  ),
+                })
+              }
+              className="studio-input"
+              aria-label={`Evidence ${index + 1}`}
+            />
+            <button
+              type="button"
+              disabled={(scene.evidence?.length || 0) <= 1}
+              onClick={() =>
+                onChange({
+                  evidence: scene.evidence?.filter(
+                    (item) => item.id !== record.id,
+                  ),
+                })
+              }
+              className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-slate-200 text-slate-300 hover:text-rose-600 disabled:opacity-20"
+              aria-label={`Remove evidence ${index + 1}`}
+            >
+              <Trash2 className="h-4 w-4" />
+            </button>
+          </div>
+          <textarea
+            value={record.summary}
+            onChange={(event) =>
+              onChange({
+                evidence: scene.evidence?.map((item) =>
+                  item.id === record.id
+                    ? { ...item, summary: event.target.value }
+                    : item,
+                ),
+              })
+            }
+            rows={3}
+            placeholder="Facts the learner must review"
+            className="studio-input mt-2 resize-none leading-5"
+          />
+          <select
+            value={record.correctDecision}
+            onChange={(event) =>
+              onChange({
+                evidence: scene.evidence?.map((item) =>
+                  item.id === record.id
+                    ? {
+                        ...item,
+                        correctDecision: event.target.value as
+                          | "approve"
+                          | "reject",
+                      }
+                    : item,
+                ),
+              })
+            }
+            className="studio-input mt-2"
+          >
+            <option value="approve">Correct decision: Approve</option>
+            <option value="reject">Correct decision: Reject</option>
+          </select>
+          <textarea
+            value={record.explanation || ""}
+            onChange={(event) =>
+              onChange({
+                evidence: scene.evidence?.map((item) =>
+                  item.id === record.id
+                    ? { ...item, explanation: event.target.value }
+                    : item,
+                ),
+              })
+            }
+            rows={2}
+            placeholder="Why this is the correct decision"
+            className="studio-input mt-2 resize-none"
+          />
+        </div>
+      ))}
+      <button
+        type="button"
+        disabled={(scene.evidence?.length || 0) >= 16}
+        onClick={() =>
+          onChange({
+            evidence: [
+              ...(scene.evidence || []),
+              {
+                id: crypto.randomUUID(),
+                title: "New evidence record",
+                summary: "Describe the evidence.",
+                correctDecision: "approve",
+              },
+            ],
+          })
+        }
+        className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-dashed border-slate-300 px-3 py-2.5 text-xs font-bold text-slate-500"
+      >
+        <Plus className="h-3.5 w-3.5" />
+        Add dossier
+      </button>
+    </div>
+  );
+}
+
+function LocationInspector({
+  location,
+  assets,
+  onChange,
+}: {
+  location: ExperienceDocument["world"]["locations"][number];
+  assets: ExperienceAsset[];
+  onChange: (
+    patch: Partial<ExperienceDocument["world"]["locations"][number]>,
+  ) => void;
+}) {
+  return (
+    <div>
+      <p className="text-[10px] font-black uppercase tracking-[0.16em] text-slate-400">
+        Location inspector
+      </p>
+      <h2 className="mt-1 text-lg font-bold">{location.name}</h2>
+      <div className="mt-5 space-y-4">
+        <Field label="Location name">
+          <input
+            value={location.name}
+            onChange={(event) => onChange({ name: event.target.value })}
+            className="studio-input"
+          />
+        </Field>
+        <Field label="Story purpose">
+          <textarea
+            value={location.description}
+            onChange={(event) => onChange({ description: event.target.value })}
+            rows={5}
+            className="studio-input resize-none leading-5"
+          />
+        </Field>
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="Map X">
+            <input
+              type="number"
+              min={0}
+              max={100}
+              value={location.x}
+              onChange={(event) =>
+                onChange({
+                  x: Math.max(0, Math.min(100, Number(event.target.value))),
+                })
+              }
+              className="studio-input"
+            />
+          </Field>
+          <Field label="Map Y">
+            <input
+              type="number"
+              min={0}
+              max={100}
+              value={location.y}
+              onChange={(event) =>
+                onChange({
+                  y: Math.max(0, Math.min(100, Number(event.target.value))),
+                })
+              }
+              className="studio-input"
+            />
+          </Field>
+        </div>
+        <Field label="Location accent">
+          <input
+            type="color"
+            value={location.accent || "#71E0E7"}
+            onChange={(event) => onChange({ accent: event.target.value })}
+            className="h-11 w-full rounded-xl border border-slate-200 bg-white p-1"
+          />
+        </Field>
+        <AssetSelect
+          label="Establishing background"
+          value={location.backgroundAssetId}
+          assets={assets.filter((asset) => asset.kind === "image")}
+          onChange={(value) => onChange({ backgroundAssetId: value })}
+        />
+        <AssetSelect
+          label="Ambient audio"
+          value={location.ambientAudioAssetId}
+          assets={assets.filter((asset) => asset.kind === "audio")}
+          onChange={(value) => onChange({ ambientAudioAssetId: value })}
+        />
+        <AssetSelect
+          label="3D environment"
+          value={location.environmentModelAssetId}
+          assets={assets.filter((asset) => asset.kind === "model3d")}
+          onChange={(value) =>
+            onChange({ environmentModelAssetId: value })
+          }
+        />
+        <p className="rounded-xl bg-slate-50 p-3 text-[10px] leading-5 text-slate-500">
+          {location.connections.length
+            ? `${location.connections.length} world-map connection${
+                location.connections.length === 1 ? "" : "s"
+              } configured.`
+            : "This location has no map connection yet. New locations are automatically linked to the previous one."}
+        </p>
+      </div>
+    </div>
+  );
+}
+
+function AssetInspector({
+  asset,
+  hasLocation,
+  hasScene,
+  onPlace,
+}: {
+  asset: ExperienceAsset;
+  hasLocation: boolean;
+  hasScene: boolean;
+  onPlace: (asset: ExperienceAsset, action: "scene" | "location") => void;
+}) {
+  return (
+    <div>
+      <p className="text-[10px] font-black uppercase tracking-[0.16em] text-slate-400">
+        Asset inspector
+      </p>
+      <h2 className="mt-1 break-words text-lg font-bold">{asset.name}</h2>
+      <span className="mt-2 inline-flex rounded-full bg-slate-100 px-2.5 py-1 text-[9px] font-black uppercase tracking-[0.14em] text-slate-500">
+        {asset.kind} · {asset.source || "external"}
+      </span>
+      {asset.kind === "image" ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={asset.url}
+          alt={asset.alt || ""}
+          className="mt-5 max-h-72 w-full rounded-2xl border border-slate-200 object-cover"
+        />
+      ) : (
+        <div className="mt-5 flex h-40 items-center justify-center rounded-2xl border border-slate-200 bg-slate-50">
+          {asset.kind === "model3d" ? (
+            <Box className="h-12 w-12 text-slate-300" />
+          ) : (
+            <Library className="h-12 w-12 text-slate-300" />
+          )}
+        </div>
+      )}
+      <div className="mt-5 space-y-2">
+        <button
+          type="button"
+          disabled={!hasScene || asset.kind === "audio"}
+          onClick={() => onPlace(asset, "scene")}
+          className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-slate-950 px-4 py-3 text-xs font-black text-white disabled:opacity-35"
+        >
+          <Layers3 className="h-4 w-4" />
+          Add to selected scene
+        </button>
+        <button
+          type="button"
+          disabled={!hasLocation}
+          onClick={() => onPlace(asset, "location")}
+          className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-slate-200 px-4 py-3 text-xs font-black text-slate-700 disabled:opacity-35"
+        >
+          <Globe2 className="h-4 w-4" />
+          Set on selected location
+        </button>
+      </div>
+      {asset.prompt ? (
+        <div className="mt-5 rounded-xl bg-violet-50 p-3">
+          <p className="text-[9px] font-black uppercase tracking-[0.14em] text-violet-600">
+            Generation direction
+          </p>
+          <p className="mt-2 text-[10px] leading-5 text-violet-900/65">
+            {asset.prompt}
+          </p>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function AssetSelect({
+  label,
+  value,
+  assets,
+  onChange,
+}: {
+  label: string;
+  value?: string;
+  assets: ExperienceAsset[];
+  onChange: (value?: string) => void;
+}) {
+  return (
+    <Field label={label}>
+      <select
+        value={value || ""}
+        onChange={(event) => onChange(event.target.value || undefined)}
+        className="studio-input"
+      >
+        <option value="">None</option>
+        {assets.map((asset) => (
+          <option key={asset.id} value={asset.id}>
+            {asset.name}
+          </option>
+        ))}
+      </select>
+    </Field>
+  );
+}
+
 function CharacterInspector({
   character,
   uploading,
@@ -1951,6 +3559,57 @@ function UploadField({
       </div>
     </Field>
   );
+}
+
+function emptyAiImpact(): AiProposal["impact"] {
+  const empty = () => ({ added: [], removed: [], modified: [] });
+  return {
+    scenes: empty(),
+    locations: empty(),
+    characters: empty(),
+    assets: empty(),
+  };
+}
+
+function summarizeAiImpact(impact: AiProposal["impact"]) {
+  const labels: Array<[keyof AiProposal["impact"], string]> = [
+    ["scenes", "scenes"],
+    ["locations", "locations"],
+    ["characters", "characters"],
+    ["assets", "assets"],
+  ];
+  return labels.flatMap(([key, label]) => {
+    const entity = impact[key];
+    return [
+      entity.added.length ? `${entity.added.length} ${label} added` : "",
+      entity.modified.length ? `${entity.modified.length} ${label} changed` : "",
+      entity.removed.length ? `${entity.removed.length} ${label} removed` : "",
+    ].filter(Boolean);
+  });
+}
+
+function assetKindForFile(file: File): ExperienceAssetKind | null {
+  if (file.type.startsWith("image/")) return "image";
+  if (file.type.startsWith("video/")) return "video";
+  if (file.type.startsWith("audio/")) return "audio";
+  if (
+    file.name.toLowerCase().endsWith(".glb") ||
+    file.name.toLowerCase().endsWith(".gltf") ||
+    file.type === "model/gltf-binary" ||
+    file.type === "model/gltf+json"
+  ) {
+    return "model3d";
+  }
+  return null;
+}
+
+function normalizedAssetMime(file: File, kind: ExperienceAssetKind) {
+  if (kind === "model3d") {
+    return file.name.toLowerCase().endsWith(".gltf")
+      ? "model/gltf+json"
+      : "model/gltf-binary";
+  }
+  return file.type;
 }
 
 function Field({

@@ -4,6 +4,7 @@ export type ExperienceInteractionAnswer = {
   itemIds?: string[];
   placements?: Record<string, string>;
   order?: string[];
+  decisions?: Record<string, "approve" | "reject">;
 };
 
 export type ExperienceSceneEvaluation = {
@@ -16,7 +17,7 @@ export function evaluateExperienceScene(
   answerId?: string,
   answer?: ExperienceInteractionAnswer,
 ): ExperienceSceneEvaluation {
-  if (scene.type === "choice") {
+  if (scene.type === "choice" || scene.type === "world-map") {
     const choice = scene.choices?.find((item) => item.id === answerId);
     return { correct: Boolean(choice), nextSceneId: choice?.nextSceneId };
   }
@@ -63,6 +64,18 @@ export function evaluateExperienceScene(
       scene.items?.every((item, index) => order[index] === item.id);
     return {
       correct: Boolean(correct),
+      nextSceneId: correct ? scene.nextSceneId : undefined,
+    };
+  }
+  if (scene.type === "evidence") {
+    const decisions = answer?.decisions || {};
+    const correct =
+      Boolean(scene.evidence?.length) &&
+      scene.evidence!.every(
+        (item) => decisions[item.id] === item.correctDecision,
+      );
+    return {
+      correct,
       nextSceneId: correct ? scene.nextSceneId : undefined,
     };
   }

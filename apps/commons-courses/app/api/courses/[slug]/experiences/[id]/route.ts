@@ -7,6 +7,7 @@ import Enrollment from "@/models/Enrollment";
 import ExperienceProject from "@/models/ExperienceProject";
 import ExperienceRevision from "@/models/ExperienceRevision";
 import type { ExperienceDocument } from "@/types/experience";
+import { normalizeExperienceDocument } from "@/lib/experience-schema";
 
 type CourseRecord = {
   _id: Types.ObjectId;
@@ -97,7 +98,7 @@ export async function GET(
       revisionId: String(revision._id),
       version: revision.version,
       contentHash: revision.contentHash,
-      document: revision.document,
+      document: normalizeExperienceDocument(revision.document),
     },
   });
 }
