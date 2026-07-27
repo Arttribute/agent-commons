@@ -178,7 +178,7 @@ var sym = {
   bullet: import_chalk.default.dim("\u2022"),
   dot: import_chalk.default.dim("\xB7")
 };
-function banner(version = "0.3.0") {
+function banner(version = "0.4.0") {
   console.log("");
   console.log(import_chalk.default.cyan("        \u25C7"));
   console.log(import_chalk.default.cyan("    \u256D\u2500\u2500\u2500\u2534\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u256E"));
@@ -1241,7 +1241,10 @@ ${sym.ok} Authorize the connection in your browser:`);
         ["Account", connection.providerUserEmail ?? connection.providerUserName ?? ""],
         ["Status", connection.status],
         ["Scopes", connection.scopes.join(", ")],
-        ["Expires", connection.expiresAt ?? c.dim("(not reported)")]
+        [
+          "Expires",
+          connection.accessTokenExpiresAt ?? connection.expiresAt ?? c.dim("(does not expire)")
+        ]
       ]);
     } catch (err) {
       spinner.stop();
@@ -5471,7 +5474,7 @@ async function pickAgentInteractively(action) {
   return agentId2;
 }
 var program = new import_commander22.Command();
-program.name("agc").description("Agent Commons CLI \u2014 interact with the Agent Commons platform").version("0.3.0", "-v, --version").showHelpAfterError("(run `agc --help` for usage)").configureHelp({
+program.name("agc").description("Agent Commons CLI \u2014 interact with the Agent Commons platform").version("0.4.0", "-v, --version").showHelpAfterError("(run `agc --help` for usage)").configureHelp({
   sortOptions: true,
   sortSubcommands: true
 }).addHelpText(
