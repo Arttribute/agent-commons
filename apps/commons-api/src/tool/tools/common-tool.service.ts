@@ -42,6 +42,7 @@ type ToolExecutionMetadata = {
   agentId?: string;
   sessionId?: string;
   ownerId?: string;
+  attachmentFileIds?: string[];
   runId?: string;
   toolCallId?: string;
 };
@@ -1591,6 +1592,7 @@ export class CommonToolService {
     return this.files.createPresentationFile({
       ...props,
       ownerId: metadata?.ownerId,
+      requiredImageFileIds: metadata?.attachmentFileIds,
     });
   }
 

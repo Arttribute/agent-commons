@@ -231,6 +231,7 @@ describe('FilesService document support', () => {
       },
       agentId: 'agent-test',
       sessionId: 'session-test',
+      requiredImageFileIds: ['image-1', 'image-2'],
     })) as any;
 
     const zip = await JSZip.loadAsync(presentation.buffer);
@@ -240,9 +241,9 @@ describe('FilesService document support', () => {
     const notes = Object.keys(zip.files).filter((name) =>
       /^ppt\/notesSlides\/notesSlide\d+\.xml$/.test(name),
     );
-    expect(media).toHaveLength(1);
-    expect(notes).toHaveLength(2);
-    expect(presentation.additionalArtifacts).toHaveLength(2);
+    expect(media).toHaveLength(2);
+    expect(notes).toHaveLength(3);
+    expect(presentation.additionalArtifacts).toHaveLength(3);
     expect(
       presentation.additionalArtifacts.every(
         (artifact: any) =>
@@ -251,11 +252,12 @@ describe('FilesService document support', () => {
       ),
     ).toBe(true);
     expect(presentation.metadata.qualityReport).toMatchObject({
-      slideCount: 2,
-      imageSlides: 1,
-      embeddedImageCount: 1,
-      notesSlides: 2,
-      previewSlides: 2,
+      slideCount: 3,
+      imageSlides: 2,
+      embeddedImageCount: 2,
+      notesSlides: 3,
+      previewSlides: 3,
+      autoIncludedImageSlides: 1,
     });
   });
 

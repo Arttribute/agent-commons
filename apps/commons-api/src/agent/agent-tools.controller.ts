@@ -70,6 +70,7 @@ export class AgentToolsController {
         privateKey?: string;
         sessionId?: string;
         ownerId?: string;
+        attachmentFileIds?: string[];
         spaceId?: string;
         runId?: string;
         toolCallId?: string;

@@ -1348,6 +1348,7 @@ export interface OAuthConnection {
   status: string;
   canRefresh?: boolean;
   lastUsedAt?: string | null;
+  accessTokenExpiresAt?: string | null;
   expiresAt?: string | null;
   metadata?: Record<string, unknown> | null;
   [key: string]: unknown;

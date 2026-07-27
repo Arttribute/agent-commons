@@ -398,6 +398,7 @@ export class FilesService {
     agentId: string;
     sessionId?: string;
     ownerId?: string;
+    requiredImageFileIds?: string[];
     sourceFileId?: string;
   }) {
     if (!input.slides?.length) {
@@ -405,10 +406,20 @@ export class FilesService {
         'A presentation requires at least one slide',
       );
     }
-    if (input.slides.length > 100) {
+    const { slides, autoIncludedImageSlides } =
+      await this.includeRequiredPresentationImages(
+        input.slides,
+        input.requiredImageFileIds,
+        {
+          agentId: input.agentId,
+          sessionId: input.sessionId,
+          ownerId: input.ownerId,
+        },
+      );
+    if (slides.length > 100) {
       throw new BadRequestException('Presentations support up to 100 slides');
     }
-    for (const [index, slide] of input.slides.entries()) {
+    for (const [index, slide] of slides.entries()) {
       if (!slide.title?.trim() && !slide.imageFileId) {
         throw new BadRequestException(
           `Slide ${index + 1} requires a title or imageFileId`,
@@ -424,7 +435,7 @@ export class FilesService {
     let stage = 'loading source images';
     try {
       const images = await this.loadPresentationImages(
-        input.slides,
+        slides,
         input.agentId,
         input.sessionId,
         input.ownerId,
@@ -436,13 +447,13 @@ export class FilesService {
       pptx.author = 'Agent Commons';
       pptx.subject = input.title || 'Agent Commons presentation';
       pptx.title =
-        input.title || input.slides[0].title || 'Agent Commons presentation';
+        input.title || slides[0].title || 'Agent Commons presentation';
       pptx.company = 'Agent Commons';
       pptx.theme = {
         headFontFace: theme.headFontFace,
         bodyFontFace: theme.bodyFontFace,
       };
-      for (const [index, spec] of input.slides.entries()) {
+      for (const [index, spec] of slides.entries()) {
         const slide = pptx.addSlide();
         addPresentationSlide(
           pptx,
@@ -463,7 +474,7 @@ export class FilesService {
 
       stage = 'rendering slide previews';
       const previewArtifacts = await Promise.all(
-        input.slides.map((slide, index) =>
+        slides.map((slide, index) =>
           renderPresentationPreview(
             slide,
             theme,
@@ -472,28 +483,29 @@ export class FilesService {
           ),
         ),
       );
-      const imageSlides = input.slides.filter(
+      const imageSlides = slides.filter(
         (slide) => slide.imageFileId,
       ).length;
-      const notesSlides = input.slides.filter((slide) =>
+      const notesSlides = slides.filter((slide) =>
         Boolean(slide.notes?.trim()),
       ).length;
       const qualityReport = {
         requestedFormat: 'pptx',
-        slideCount: input.slides.length,
+        slideCount: slides.length,
         imageSlides,
         embeddedImageCount: images.size,
         notesSlides,
         previewSlides: previewArtifacts.length,
+        autoIncludedImageSlides,
         warnings: [
           ...(imageSlides && imageSlides !== images.size
             ? [
                 'One or more source images are intentionally reused across slides.',
               ]
             : []),
-          ...(notesSlides < input.slides.length
+          ...(notesSlides < slides.length
             ? [
-                `${input.slides.length - notesSlides} slide(s) do not include speaker notes.`,
+                `${slides.length - notesSlides} slide(s) do not include speaker notes.`,
               ]
             : []),
         ],
@@ -539,6 +551,55 @@ export class FilesService {
         `Presentation generation failed while ${stage}`,
       );
     }
+  }
+
+  private async includeRequiredPresentationImages(
+    slides: PresentationSlideSpec[],
+    requiredFileIds: string[] | undefined,
+    context: {
+      agentId?: string;
+      sessionId?: string;
+      ownerId?: string;
+    },
+  ) {
+    const requiredImages: string[] = [];
+    for (const fileId of [
+      ...new Set((requiredFileIds ?? []).filter(Boolean)),
+    ]) {
+      const file = await this.getFileOrThrow(fileId);
+      await this.assertCanAccess(file, context);
+      if (file.kind === 'image' || file.mimeType.startsWith('image/')) {
+        requiredImages.push(fileId);
+      }
+    }
+    const included = new Set(
+      slides
+        .map((slide) => slide.imageFileId)
+        .filter((fileId): fileId is string => Boolean(fileId)),
+    );
+    const missing = requiredImages.filter((fileId) => !included.has(fileId));
+    if (!missing.length) {
+      return { slides, autoIncludedImageSlides: 0 };
+    }
+    const additions: PresentationSlideSpec[] = missing.map((imageFileId) => ({
+      layout: 'full-bleed-image',
+      imageFileId,
+      imageFit: 'contain',
+      notes:
+        'Present this supplied source artwork in sequence and connect its teaching point to the surrounding slides.',
+    }));
+    const insertAt =
+      slides.length > 1 && !slides.at(-1)?.imageFileId
+        ? slides.length - 1
+        : slides.length;
+    return {
+      slides: [
+        ...slides.slice(0, insertAt),
+        ...additions,
+        ...slides.slice(insertAt),
+      ],
+      autoIncludedImageSlides: additions.length,
+    };
   }
 
   private async loadPresentationImages(

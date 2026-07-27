@@ -127,7 +127,7 @@ export function connectionsCommand(): Command {
           ['Scopes', connection.scopes.join(', ')],
           [
             'Expires',
-            (connection as any).accessTokenExpiresAt ??
+            connection.accessTokenExpiresAt ??
               connection.expiresAt ??
               c.dim('(does not expire)'),
           ],

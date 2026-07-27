@@ -1547,6 +1547,10 @@ export class AgentService implements OnModuleInit {
                             agentId,
                             sessionId: currentSessionId,
                             ownerId: initiator,
+                            attachmentFileIds:
+                              props.attachments?.map(
+                                (attachment) => attachment.fileId,
+                              ) ?? [],
                             spaceId,
                             runId: traceId,
                             toolCallId: config.toolCall?.id,
