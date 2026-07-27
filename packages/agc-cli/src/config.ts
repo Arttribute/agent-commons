@@ -1,4 +1,11 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs';
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  renameSync,
+  writeFileSync,
+} from 'fs';
 import { homedir } from 'os';
 import { join } from 'path';
 import { CommonsClient } from '@agent-commons/sdk';
@@ -11,6 +18,8 @@ export interface AgcConfig {
   accessToken?: string;
   accessTokenExpiresAt?: number;
   userId?: string;
+  userEmail?: string;
+  userName?: string;
   workspaceId?: string;
   apiKey?: string;
   initiator?: string;
@@ -27,6 +36,15 @@ export const DEFAULT_IDENTITY_URL =
 export const DEFAULT_IDENTITY_CLIENT_ID =
   process.env.COMMONS_IDENTITY_CLIENT_ID ?? 'commons-cli';
 
+function readStoredConfig(): Partial<AgcConfig> {
+  if (!existsSync(CONFIG_FILE)) return {};
+  try {
+    return JSON.parse(readFileSync(CONFIG_FILE, 'utf8'));
+  } catch {
+    return {};
+  }
+}
+
 export function loadConfig(): AgcConfig {
   // Env vars take precedence over file
   const fromEnv: Partial<AgcConfig> = {
@@ -38,14 +56,7 @@ export function loadConfig(): AgcConfig {
     ...(process.env.AGC_AGENT_ID && { defaultAgentId: process.env.AGC_AGENT_ID }),
   };
 
-  let fromFile: Partial<AgcConfig> = {};
-  if (existsSync(CONFIG_FILE)) {
-    try {
-      fromFile = JSON.parse(readFileSync(CONFIG_FILE, 'utf8'));
-    } catch {
-      // ignore corrupt config
-    }
-  }
+  const fromFile = readStoredConfig();
 
   return {
     apiUrl: DEFAULT_API_URL,
@@ -57,34 +68,46 @@ export function loadConfig(): AgcConfig {
 }
 
 export function saveConfig(updates: Partial<AgcConfig>): void {
-  const current = loadConfig();
-  const next = { ...current, ...updates };
-  if (!existsSync(CONFIG_DIR)) mkdirSync(CONFIG_DIR, { recursive: true });
-  writeFileSync(CONFIG_FILE, JSON.stringify(next, null, 2), { mode: 0o600 });
+  const next = {
+    apiUrl: DEFAULT_API_URL,
+    identityUrl: DEFAULT_IDENTITY_URL,
+    identityClientId: DEFAULT_IDENTITY_CLIENT_ID,
+    ...readStoredConfig(),
+    ...updates,
+  };
+  if (!existsSync(CONFIG_DIR)) {
+    mkdirSync(CONFIG_DIR, { recursive: true, mode: 0o700 });
+  }
+  chmodSync(CONFIG_DIR, 0o700);
+  const temporaryFile = join(CONFIG_DIR, `.config-${process.pid}.tmp`);
+  writeFileSync(temporaryFile, JSON.stringify(next, null, 2) + '\n', {
+    mode: 0o600,
+  });
+  renameSync(temporaryFile, CONFIG_FILE);
+  chmodSync(CONFIG_FILE, 0o600);
 }
 
 export function clearConfig(): void {
-  if (existsSync(CONFIG_FILE)) {
-    writeFileSync(
-      CONFIG_FILE,
-      JSON.stringify(
-        {
-          apiUrl: DEFAULT_API_URL,
-          identityUrl: DEFAULT_IDENTITY_URL,
-          identityClientId: DEFAULT_IDENTITY_CLIENT_ID,
-        },
-        null,
-        2,
-      ),
-      { mode: 0o600 },
-    );
-  }
+  saveConfig({
+    sessionToken: undefined,
+    accessToken: undefined,
+    accessTokenExpiresAt: undefined,
+    userId: undefined,
+    userEmail: undefined,
+    userName: undefined,
+    workspaceId: undefined,
+    apiKey: undefined,
+    initiator: undefined,
+    defaultAgentId: undefined,
+  });
 }
 
 export function makeClient(overrides?: Partial<AgcConfig>): CommonsClient {
   const cfg = { ...loadConfig(), ...overrides };
   return new CommonsClient({
     baseUrl: cfg.apiUrl,
+    identityUrl: cfg.identityUrl,
+    identityToken: cfg.sessionToken,
     apiKey: cfg.accessToken ?? cfg.apiKey,
     initiator: cfg.userId ?? cfg.initiator,
   });
@@ -102,6 +125,7 @@ function decodeJwtPayload(token: string): Record<string, unknown> {
 
 export async function ensureAccessToken(): Promise<AgcConfig> {
   const cfg = loadConfig();
+  if (cfg.accessToken && !cfg.sessionToken) return cfg;
   if (cfg.apiKey && !cfg.sessionToken) return cfg;
   if (
     cfg.accessToken &&
@@ -116,8 +140,13 @@ export async function ensureAccessToken(): Promise<AgcConfig> {
     `${cfg.identityUrl.replace(/\/$/, '')}/api/auth/token`,
     { headers: { Authorization: `Bearer ${cfg.sessionToken}` } },
   );
-  if (!response.ok) {
+  if (response.status === 401 || response.status === 403) {
     throw new Error('Your Commons login has expired. Run `agc login` again.');
+  }
+  if (!response.ok) {
+    throw new Error(
+      `Commons Identity is unavailable (${response.status}). Please try again.`,
+    );
   }
   const data = (await response.json()) as { token?: string };
   if (!data.token) throw new Error('Commons Identity did not return an access token.');
@@ -127,6 +156,8 @@ export async function ensureAccessToken(): Promise<AgcConfig> {
     accessTokenExpiresAt:
       typeof claims.exp === 'number' ? claims.exp * 1000 : Date.now() + 10 * 60 * 1000,
     userId: typeof claims.sub === 'string' ? claims.sub : cfg.userId,
+    userEmail: typeof claims.email === 'string' ? claims.email : cfg.userEmail,
+    userName: typeof claims.name === 'string' ? claims.name : cfg.userName,
     workspaceId:
       typeof claims.workspace_id === 'string' ? claims.workspace_id : cfg.workspaceId,
     initiator: typeof claims.sub === 'string' ? claims.sub : cfg.initiator,

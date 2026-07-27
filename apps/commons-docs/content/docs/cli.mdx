@@ -5,7 +5,7 @@ description: Terminal-first access to Agent Commons with the agc command.
 
 # CLI Reference
 
-The agc command-line tool gives you full access to Agent Commons from your terminal — with an interactive menu, streaming chat, and scriptable output.
+The `agc` command-line tool gives you full access to Agent Commons from your terminal, with secure browser sign-in, an interactive menu, streaming chat, and scriptable output.
 
 ## Installation
 
@@ -17,41 +17,52 @@ npm install -g @agent-commons/cli
 
 ## Interactive menu
 
-Running agc with no arguments opens a full interactive menu — no commands to memorise:
+Running `agc` with no arguments opens the interactive menu:
 
 ```bash
 agc
 ```
 
-Use **↑ / ↓** arrow keys to navigate, **Enter** to select. The menu covers every feature: Chat, Run, Sessions, Agents, Tasks, Workflows, MCP, Skills, Wallet, Usage, Logs, and Config.
+Use **↑ / ↓** to navigate and **Enter** to select. The menu covers chat, runs, sessions, agents, tasks, workflows, files, code projects, developer API keys, MCP, skills, wallets, usage, logs, and configuration.
 
-If no credentials are saved yet, the menu automatically launches the setup wizard.
+If you have not signed in, the menu starts the sign-in flow.
 
 ---
 
 ## Authentication
 
-### First-time setup
+### Sign in with your Commons account
 
 ```bash
 agc login
 ```
 
-A three-step guided wizard runs:
+The CLI creates a short-lived device authorization request, opens Agent Commons in your browser, and waits for you to approve it. Your terminal never asks for your password.
 
-1. **API Endpoint** — defaults to https://api.agentcommons.io. Press Enter to accept.
-2. **API Key** — your browser opens automatically to **[agentcommons.io/settings](https://www.agentcommons.io/settings)**. Generate a key there, paste it in the terminal.
-3. **Wallet address** — your 0x… identity used as the request initiator.
+If you are working on a remote host, print the approval URL instead:
 
-Credentials are stored in ~/.agc/config.json (mode 0600).
+```bash
+agc login --no-browser
+```
+
+The CLI stores its account session in `~/.agc/config.json` with file mode `0600`. It refreshes short-lived API access tokens when needed.
+
+### Use a project API key
+
+For CI and other non-interactive environments, pass a project-scoped `csk_*` key:
+
+```bash
+agc login --api-key "$AGC_API_KEY"
+```
+
+Create and scope project keys in **Agent Commons → Settings → Developer API keys** or with the `agc keys` commands after account sign-in. Treat keys as server-side secrets.
 
 ### Other auth commands
 
 ```bash
-agc logout            # clear stored credentials
-agc whoami            # show config + verify API connectivity
-agc config get        # show all config values
-agc config set apiKey sk-ac-xxxx   # update a single value
+agc logout       # clear locally stored credentials
+agc whoami       # show the active account or API-key principal
+agc config get   # show configuration with secrets masked
 ```
 
 ### Environment variables
@@ -59,13 +70,35 @@ agc config set apiKey sk-ac-xxxx   # update a single value
 You can set credentials via env vars instead of running agc login:
 
 ```bash
-export AGC_API_KEY=sk-ac-xxxx
+export AGC_API_KEY=csk_your_project_key
 export AGC_API_URL=https://api.agentcommons.io   # optional — this is the default
-export AGC_INITIATOR=0xYourWalletAddress
 export AGC_AGENT_ID=agent_abc123                 # optional default agent
 ```
 
 Env vars take precedence over the config file.
+
+---
+
+## Developer projects and API keys
+
+Developer API keys belong to a project, include explicit scopes, and can have an expiration date. The plaintext key is returned only when you create it.
+
+```bash
+agc keys projects list
+agc keys projects create --name "Local development" --environment development
+agc keys scopes
+
+agc keys create \
+  --name "CI deploy" \
+  --project <projectId> \
+  --scopes agents:read,agents:run \
+  --expires 2027-01-01T00:00:00Z
+
+agc keys list --project <projectId>
+agc keys revoke <keyId>
+```
+
+Use `agc api-keys` as an alias for `agc keys`.
 
 ---
 
@@ -210,6 +243,8 @@ agc run --agent <agentId> "Now check each dependency for known issues" \
 agc sessions list
 agc sessions list --agent <agentId>
 agc sessions get <sessionId>
+agc sessions rename <sessionId> "New title"
+agc sessions delete <sessionId>
 ```
 
 Session logs from `agc chat` and `agc run --local` are written to `~/.agc/sessions/<sessionId>.jsonl`. Each line is a JSON record of the message or tool call.
@@ -225,13 +260,10 @@ agc task list --status running
 
 agc task create \
   --title "Daily briefing" \
-  --description "Summarize overnight news" \
   --agent <agentId> \
-  --cron "0 8 * * 1-5" \
-  --recurring
+  --input '{"topic":"overnight news"}'
 
-agc task execute <taskId>      # run immediately + stream output
-agc task stream <taskId>       # stream status of a running task
+agc task execute <taskId> --watch
 agc task cancel <taskId>
 ```
 
@@ -243,8 +275,27 @@ agc task cancel <taskId>
 agc workflow list
 agc workflow get <workflowId>
 agc workflow create --file workflow.json
-agc workflow execute <workflowId> --inputs '{"url":"https://example.com"}'
+agc workflow run <workflowId> --input '{"url":"https://example.com"}' --watch
 ```
+
+---
+
+## Library and code projects
+
+```bash
+agc library list
+agc library upload ./report.pdf ./notes.md
+agc library favorite <itemId>
+agc library delete <itemId>
+
+agc projects list --agent <agentId>
+agc projects create --agent <agentId> --name "Dashboard"
+agc projects write <projectId> files.json --agent <agentId>
+agc projects publish <projectId> --agent <agentId>
+agc projects export <projectId> --agent <agentId>
+```
+
+Set a default agent with `agc config set defaultAgentId <agentId>` to omit repeated `--agent` flags.
 
 ---
 
@@ -255,8 +306,8 @@ agc tools list
 agc tools list --type mcp
 agc tools list --type custom
 agc tools create --file tool.json
-agc tools invoke <toolId> --input '{"city":"Nairobi"}'
-agc tools add-key <toolId> --value "sk-abc123" --label prod
+agc tools get <toolId>
+agc tools exec weather --agent <agentId> --args '{"city":"Nairobi"}'
 ```
 
 ---
@@ -265,9 +316,10 @@ agc tools add-key <toolId> --value "sk-abc123" --label prod
 
 ```bash
 agc mcp list
-agc mcp connect --name "GitHub Tools" --type sse --url https://mcp.example.com/sse
-agc mcp connect --name "Filesystem" --type stdio \
+agc mcp add --name "GitHub Tools" --type sse --url https://mcp.example.com/sse
+agc mcp add --name "Filesystem" --type stdio \
   --command "npx -y @modelcontextprotocol/server-filesystem /data"
+agc mcp connect <serverId>
 agc mcp sync <serverId>
 agc mcp tools <serverId>
 agc mcp disconnect <serverId>
@@ -280,8 +332,8 @@ agc mcp disconnect <serverId>
 ```bash
 agc wallet list --agent <agentId>
 agc wallet create --agent <agentId> --label main
-agc wallet balance <walletId>
-agc wallet transfer <walletId> --to 0xADDRESS --amount 5.0 --token USDC
+agc wallet balance --agent <agentId>
+agc wallet send --agent <agentId> --to 0xADDRESS --amount 5.0 --token USDC
 ```
 
 ---
@@ -290,8 +342,8 @@ agc wallet transfer <walletId> --to 0xADDRESS --amount 5.0 --token USDC
 
 ```bash
 agc memory list --agent <agentId>
-agc memory add --agent <agentId> --type semantic --content "User prefers short answers"
-agc memory search --agent <agentId> --query "user preferences"
+agc memory create --agent <agentId> --type semantic --content "User prefers short answers"
+agc memory search --agent <agentId> "user preferences"
 agc memory delete <memoryId>
 ```
 
@@ -300,9 +352,8 @@ agc memory delete <memoryId>
 ## Models
 
 ```bash
-agc models list                   # all supported models
-agc models list --provider openai
-agc models info anthropic         # details about a provider
+agc models ls                   # all supported models
+agc models ls --provider openai
 ```
 
 ---
@@ -312,20 +363,23 @@ agc models info anthropic         # details about a provider
 ```bash
 agc skills list                   # all available skills
 agc skills get <skillId>
-agc skills create --file skill.yaml
+agc skills create \
+  --slug concise-review \
+  --name "Concise review" \
+  --instructions "Review changes and report actionable findings."
 ```
 
 ---
 
-## Usage & Logs
+## Usage and logs
 
 ```bash
-agc usage
-agc usage --agent <agentId>
+agc usage agents
+agc usage agent <agentId>
 
-agc logs
-agc logs --agent <agentId>
-agc logs --task <taskId>
+agc logs list --agent <agentId>
+agc logs list --agent <agentId> --session <sessionId>
+agc logs errors --agent <agentId>
 ```
 
 ---

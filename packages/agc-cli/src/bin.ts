@@ -1,9 +1,6 @@
 declare const __CLI_VERSION__: string;
 
 import { Command } from 'commander';
-import { existsSync } from 'fs';
-import { join } from 'path';
-import { homedir } from 'os';
 import { spawn } from 'child_process';
 import { loginCommand, logoutCommand, whoamiCommand, configCommand } from './commands/login.js';
 import { agentsCommand } from './commands/agents.js';
@@ -23,10 +20,11 @@ import { usageCommand } from './commands/usage.js';
 import { billingCommand, creditsCommand } from './commands/billing.js';
 import { logsCommand } from './commands/logs.js';
 import { computerCommand } from './commands/computer.js';
+import { libraryCommand } from './commands/library.js';
+import { projectsCommand } from './commands/projects.js';
+import { apiKeysCommand } from './commands/api-keys.js';
 import { banner, select, spin, c, sym } from './ui.js';
 import { loadConfig, saveConfig, makeClient, ensureAccessToken } from './config.js';
-
-const CONFIG_FILE = join(homedir(), '.agc', 'config.json');
 
 // ── Interactive top-level menu ────────────────────────────────────────────────
 
@@ -54,6 +52,7 @@ async function interactiveMenu(): Promise<void> {
   type MenuAction =
     | 'chat' | 'run' | 'computer' | 'sessions' | 'agents'
     | 'tasks' | 'workflows' | 'mcp' | 'skills'
+    | 'library' | 'projects' | 'keys'
     | 'wallet' | 'usage' | 'logs' | 'config' | 'exit';
 
   const action = await select<MenuAction>('What would you like to do?', [
@@ -66,6 +65,9 @@ async function interactiveMenu(): Promise<void> {
     { label: 'Workflows',                  value: 'workflows', hint: 'agc workflow list' },
     { label: 'MCP servers',                value: 'mcp',       hint: 'agc mcp list'      },
     { label: 'Skills',                     value: 'skills',    hint: 'agc skills list'   },
+    { label: 'Library & files',            value: 'library',   hint: 'agc library list'  },
+    { label: 'Code projects',              value: 'projects',  hint: 'agc projects list' },
+    { label: 'Developer API keys',         value: 'keys',      hint: 'agc keys list'      },
     { label: 'Wallet & balance',           value: 'wallet',    hint: 'agc wallet balance'},
     { label: 'Usage & cost',               value: 'usage',     hint: 'agc usage'         },
     { label: 'Logs',                       value: 'logs',      hint: 'agc logs'          },
@@ -102,6 +104,9 @@ async function interactiveMenu(): Promise<void> {
     workflows: ['workflow', 'list'],
     mcp:       ['mcp', 'list'],
     skills:    ['skills', 'list'],
+    library:   ['library', 'list'],
+    projects:  ['projects', 'list'],
+    keys:      ['keys', 'list'],
     wallet:    ['wallet', 'balance'],
     usage:     ['usage'],
     logs:      ['logs'],
@@ -149,7 +154,7 @@ async function pickAgentInteractively(action: 'chat' | 'run' | 'computer'): Prom
     spinner.stop();
   } catch {
     spinner.stop();
-    console.log(`\n  ${c.warn('⚠')}  Could not fetch agents. Check your API key and connection.\n`);
+    console.log(`\n  ${c.warn('⚠')}  Could not fetch agents. Check your sign-in and connection.\n`);
     return null;
   }
 
@@ -200,6 +205,23 @@ program
   .name('agc')
   .description('Agent Commons CLI — interact with the Agent Commons platform')
   .version(__CLI_VERSION__, '-v, --version')
+  .showHelpAfterError('(run `agc --help` for usage)')
+  .configureHelp({
+    sortOptions: true,
+    sortSubcommands: true,
+  })
+  .addHelpText(
+    'after',
+    `
+Examples:
+  $ agc login
+  $ agc agents list
+  $ agc run --agent <id> "Summarize this week"
+  $ agc keys create --name "CI" --scopes agents:read,agents:run
+
+Docs: https://docs.agentcommons.io/docs/cli
+`,
+  )
   // When invoked with no subcommand, show the interactive menu
   .action(async () => {
     await interactiveMenu();
@@ -221,6 +243,9 @@ program.addCommand(agentsCommand());
 program.addCommand(sessionsCommand());
 program.addCommand(toolsCommand());
 program.addCommand(connectionsCommand());
+program.addCommand(libraryCommand());
+program.addCommand(projectsCommand());
+program.addCommand(apiKeysCommand());
 
 // Workflows
 program.addCommand(workflowCommand());
@@ -267,4 +292,7 @@ program.on('command:*', () => {
   process.exit(1);
 });
 
-program.parse(process.argv);
+program.parseAsync(process.argv).catch((error) => {
+  console.error(`\n  ${sym.fail} ${c.error(error instanceof Error ? error.message : String(error))}\n`);
+  process.exitCode = 1;
+});
