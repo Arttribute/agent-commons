@@ -20,7 +20,9 @@ Running `agc` with no arguments opens a full interactive menu — no commands to
 agc
 ```
 
-Use **↑ / ↓** arrow keys to navigate, **Enter** to select. The menu covers every feature: Chat, Run, Sessions, Agents, Tasks, Workflows, MCP, Skills, Wallet, Usage, Logs, and Config.
+Use **↑ / ↓** arrow keys to navigate and **Enter** to select. The menu covers
+chat, runs, sessions, agents, tasks, workflows, MCP, skills, library files, code
+projects, developer keys, wallets, usage, logs, and configuration.
 
 If no credentials are saved yet, the menu automatically launches the setup wizard.
 
@@ -28,41 +30,56 @@ If no credentials are saved yet, the menu automatically launches the setup wizar
 
 ## Authentication
 
-### First-time setup
+### Commons account sign-in
 
 ```bash
 agc login
 ```
 
-A three-step guided wizard runs:
+The CLI starts a standard device authorization flow. It opens Commons Identity
+in your browser and displays a one-time code. Approve the request with your
+Commons account; your password and API keys never enter the terminal.
 
-1. **API Endpoint** — defaults to `https://api.agentcommons.io`. Press Enter to accept.
-2. **API Key** — your browser opens automatically to **agentcommons.io/settings**. Generate a key there, paste it in the terminal.
-3. **Wallet address** — your `0x…` identity used as the request initiator.
-
-Credentials are stored in `~/.agc/config.json` (mode `0600`).
+Credentials are stored in `~/.agc/config.json` with user-only permissions. The
+CLI exchanges the account session for short-lived platform access tokens.
 
 ### Other auth commands
 
 ```bash
-agc logout                         # clear stored credentials
-agc whoami                         # show config + verify API connectivity
-agc config get                     # show all config values
-agc config set apiKey sk-ac-xxxx   # update a single value
+agc logout                         # clear local credentials
+agc whoami                         # show account + verify API access
+agc config get                     # show non-secret configuration
+agc config set defaultAgentId ...  # set a preferred agent
 ```
 
 ### Environment variables
 
-You can set credentials via env vars instead of running `agc login`:
+For CI or other non-interactive automation, create a project-scoped `csk_*`
+developer key and supply it through the environment:
 
 ```bash
-export AGC_API_KEY=sk-ac-xxxx
+export AGC_API_KEY=csk_test_xxxx
 export AGC_API_URL=https://api.agentcommons.io   # optional — this is the default
-export AGC_INITIATOR=0xYourWalletAddress
 export AGC_AGENT_ID=agent_abc123                 # optional default agent
 ```
 
 Env vars take precedence over the config file.
+
+### Developer projects and API keys
+
+```bash
+agc keys projects list
+agc keys scopes
+agc keys create \
+  --name "CI" \
+  --project prj_... \
+  --scopes agents:read,agents:run
+agc keys list --project prj_...
+agc keys revoke key_...
+```
+
+Interactive use should prefer `agc login`. Developer keys are for SDKs,
+servers, CI, and automation.
 
 ---
 
@@ -212,16 +229,14 @@ agc task create \
 ```bash
 agc task create \
   --title "Morning briefing" \
-  --description "Summarize overnight news" \
   --agent agent_abc123 \
-  --cron "0 8 * * 1-5" \
-  --recurring
+  --input '{"topic":"overnight news"}'
 ```
 
 ### Execute a task
 
 ```bash
-agc task execute task_abc123
+agc task execute task_abc123 --watch
 ```
 
 Runs the task immediately and streams output to the terminal.
@@ -232,12 +247,6 @@ Runs the task immediately and streams output to the terminal.
 agc task list
 agc task list --agent agent_abc123
 agc task list --status running
-```
-
-### Monitor a task
-
-```bash
-agc task stream task_abc123
 ```
 
 ### Cancel a task
@@ -283,7 +292,7 @@ agc workflow get workflow_abc123
 ### Execute a workflow
 
 ```bash
-agc workflow execute workflow_abc123 --inputs '{"url":"https://example.com"}'
+agc workflow run workflow_abc123 --input '{"url":"https://example.com"}' --watch
 ```
 
 Streams output as each node completes.
@@ -309,28 +318,24 @@ agc tools create --file tool.json
 ### Invoke a tool
 
 ```bash
-agc tools invoke tool_abc123 --input '{"city":"Nairobi"}'
-```
-
-### Add an API key to a tool
-
-```bash
-agc tools add-key tool_abc123 --value "sk-abc123" --label "prod"
+agc tools exec weather --agent agent_abc123 --args '{"city":"Nairobi"}'
 ```
 
 ---
 
 ## MCP Servers
 
-### Connect an MCP server
+### Add and connect an MCP server
 
 ```bash
 # SSE/HTTP server
-agc mcp connect --name "GitHub Tools" --type sse --url https://mcp.example.com/sse
+agc mcp add --name "GitHub Tools" --type sse --url https://mcp.example.com/sse
 
 # stdio server
-agc mcp connect --name "Filesystem" --type stdio \
+agc mcp add --name "Filesystem" --type stdio \
   --command "npx -y @modelcontextprotocol/server-filesystem /data"
+
+agc mcp connect server_abc123
 ```
 
 ### Sync tools
@@ -363,9 +368,9 @@ agc mcp disconnect server_abc123
 
 ```bash
 agc wallet create --agent agent_abc123 --label main
-agc wallet balance wallet_abc123
+agc wallet balance --agent agent_abc123
 agc wallet list --agent agent_abc123
-agc wallet transfer wallet_abc123 --to 0xADDRESS --amount 5.0 --token USDC
+agc wallet send --agent agent_abc123 --to 0xADDRESS --amount 5.0 --token USDC
 ```
 
 ---
@@ -374,8 +379,8 @@ agc wallet transfer wallet_abc123 --to 0xADDRESS --amount 5.0 --token USDC
 
 ```bash
 agc memory list --agent agent_abc123
-agc memory add --agent agent_abc123 --content "User prefers bullet lists" --type semantic
-agc memory search --agent agent_abc123 --query "user preferences"
+agc memory create --agent agent_abc123 --content "User prefers bullet lists" --type semantic
+agc memory search --agent agent_abc123 "user preferences"
 agc memory delete memory_abc123
 ```
 
@@ -384,9 +389,8 @@ agc memory delete memory_abc123
 ## Models
 
 ```bash
-agc models list                   # all supported models
-agc models list --provider openai
-agc models info anthropic         # details about a provider
+agc models ls                   # all supported models
+agc models ls --provider openai
 ```
 
 ---
@@ -396,7 +400,8 @@ agc models info anthropic         # details about a provider
 ```bash
 agc skills list                   # all available skills
 agc skills get skill_abc123
-agc skills create --file skill.yaml
+agc skills create --slug concise-review --name "Concise review" \
+  --instructions "Review changes and report actionable findings."
 ```
 
 ---
@@ -404,12 +409,11 @@ agc skills create --file skill.yaml
 ## Usage and Logs
 
 ```bash
-agc usage                          # your overall usage
-agc usage --agent agent_abc123     # usage for a specific agent
+agc usage agents                   # usage across your agents
+agc usage agent agent_abc123       # usage for a specific agent
 
-agc logs                           # stream live logs
-agc logs --agent agent_abc123      # logs for a specific agent
-agc logs --task task_abc123        # logs for a task
+agc logs list --agent agent_abc123
+agc logs errors --agent agent_abc123
 ```
 
 ---
@@ -420,7 +424,7 @@ All commands default to a human-readable table or text output. Add `--json` to g
 
 ```bash
 agc agents list --json
-agc run --agent agent_abc123 --message "Hello" --json
+agc run --agent agent_abc123 "Hello" --json
 ```
 
 ---

@@ -117,5 +117,41 @@ export function sessionsCommand(): Command {
       }
     });
 
+  cmd
+    .command('rename <sessionId> <title>')
+    .description('Rename a session')
+    .option('--json', 'Output as JSON')
+    .action(async (sessionId: string, title: string, opts) => {
+      const spinner = spin('Renaming session…');
+      try {
+        const result = await makeClient().sessions.rename(sessionId, title);
+        spinner.stop();
+        if (opts.json) return jsonOut(result.data);
+        console.log(`\n${sym.ok} Session renamed to ${c.bold(result.data.title ?? title)}`);
+      } catch (err) {
+        spinner.stop();
+        printError(err);
+        process.exit(1);
+      }
+    });
+
+  cmd
+    .command('delete <sessionId>')
+    .description('Delete a session')
+    .option('--json', 'Output as JSON')
+    .action(async (sessionId: string, opts) => {
+      const spinner = spin('Deleting session…');
+      try {
+        const result = await makeClient().sessions.delete(sessionId);
+        spinner.stop();
+        if (opts.json) return jsonOut(result.data);
+        console.log(`\n${sym.ok} Session deleted.`);
+      } catch (err) {
+        spinner.stop();
+        printError(err);
+        process.exit(1);
+      }
+    });
+
   return cmd;
 }

@@ -581,13 +581,16 @@ interface ToolKey {
 }
 interface CreateToolKeyParams {
     toolId?: string;
-    ownerId: string;
-    ownerType: "user" | "agent";
+    /** @deprecated Ownership is derived from the authenticated principal. */
+    ownerId?: string;
+    /** @deprecated Ownership is derived from the authenticated principal. */
+    ownerType?: "user" | "agent";
     keyName: string;
     value: string;
     displayName?: string;
     description?: string;
-    keyType?: string;
+    keyType?: "api-key" | "bearer-token" | "oauth-token" | "secret";
+    expiresAt?: string;
 }
 interface ToolPermission {
     id: string;
@@ -713,6 +716,13 @@ interface McpPrompt {
 interface CommonsClientConfig {
     /** Defaults to the unified Commons API platform. */
     baseUrl?: string;
+    /** Commons Identity origin used for developer projects and project API keys. */
+    identityUrl?: string;
+    /**
+     * Commons account session or OAuth access token for Commons Identity.
+     * This is distinct from `apiKey`, which authenticates platform API calls.
+     */
+    identityToken?: string;
     apiKey?: string;
     initiator?: string;
     /** Fetch implementation — defaults to global fetch */
@@ -970,6 +980,179 @@ interface FlagEvaluation {
     variant: string | null;
     payload?: unknown;
 }
+interface ActivityEvent {
+    eventId?: string;
+    actorId: string;
+    actorType?: "user" | "agent" | "service" | string;
+    eventType: string;
+    resourceType?: string | null;
+    resourceId?: string | null;
+    metadata?: Record<string, unknown> | null;
+    createdAt: string;
+}
+interface AgentLog {
+    logId?: string;
+    agentId: string;
+    sessionId?: string | null;
+    action?: string;
+    message?: string | null;
+    status?: "success" | "error" | "warning" | string;
+    responseTime?: number | null;
+    tools?: unknown[];
+    timestamp: string;
+    [key: string]: unknown;
+}
+interface FileArtifact {
+    fileId: string;
+    name?: string;
+    originalName?: string;
+    mimeType?: string;
+    size?: number;
+    storageProvider?: "s3" | "ipfs" | string;
+    agentId?: string | null;
+    sessionId?: string | null;
+    ownerId?: string | null;
+    workspaceId?: string | null;
+    createdAt?: string;
+    [key: string]: unknown;
+}
+interface FileContent {
+    fileId?: string;
+    content?: string;
+    mimeType?: string;
+    offset?: number;
+    nextOffset?: number | null;
+    truncated?: boolean;
+    imageUrls?: string[];
+    downloadUrl?: string;
+    [key: string]: unknown;
+}
+interface UploadFileInput {
+    data: Blob;
+    name?: string;
+}
+interface LibraryItem extends FileArtifact {
+    itemId?: string;
+    description?: string | null;
+    isFavorite?: boolean;
+    source?: string;
+    grants?: LibraryGrant[];
+    shareLinks?: LibraryShareLink[];
+}
+interface LibraryGrant {
+    grantId: string;
+    subjectType: "user" | "agent" | "workspace";
+    subjectId: string;
+    permission: "read" | "edit" | "manage";
+    expiresAt?: string | null;
+    [key: string]: unknown;
+}
+interface LibraryShareLink {
+    shareId: string;
+    token?: string;
+    url?: string;
+    expiresAt?: string | null;
+    [key: string]: unknown;
+}
+interface Space {
+    spaceId: string;
+    name: string;
+    description?: string | null;
+    visibility?: string;
+    createdBy?: string;
+    createdByType?: "agent" | "human";
+    createdAt?: string;
+    updatedAt?: string;
+    members?: SpaceMember[];
+    [key: string]: unknown;
+}
+interface SpaceMember {
+    memberId: string;
+    memberType: "agent" | "human";
+    role?: string;
+    status?: string;
+    permissions?: Record<string, unknown>;
+    [key: string]: unknown;
+}
+interface SpaceMessage {
+    messageId: string;
+    spaceId: string;
+    senderId: string;
+    senderType: "agent" | "human";
+    content: string;
+    metadata?: Record<string, unknown>;
+    createdAt?: string;
+    updatedAt?: string;
+    [key: string]: unknown;
+}
+interface CodeProjectFile {
+    path: string;
+    content: string;
+}
+interface CodeProject {
+    projectId: string;
+    agentId: string;
+    name: string;
+    description?: string | null;
+    sessionId?: string | null;
+    files?: CodeProjectFile[];
+    previewSlug?: string | null;
+    previewUrl?: string | null;
+    createdAt?: string;
+    updatedAt?: string;
+    [key: string]: unknown;
+}
+interface Goal {
+    goalId: string;
+    status: "pending" | "started" | "completed" | "failed";
+    progress: number;
+    title?: string;
+    description?: string;
+    agentId?: string;
+    [key: string]: unknown;
+}
+interface OAuthProvider {
+    providerKey: string;
+    displayName: string;
+    isActive: boolean;
+    scopes?: string[];
+    scopeGroups?: Record<string, string[]>;
+    [key: string]: unknown;
+}
+interface OAuthConnection {
+    connectionId: string;
+    providerKey: string;
+    providerDisplayName?: string;
+    providerUserId?: string | null;
+    providerUserEmail?: string | null;
+    providerUserName?: string | null;
+    scopes: string[];
+    status: string;
+    lastUsedAt?: string | null;
+    expiresAt?: string | null;
+    metadata?: Record<string, unknown> | null;
+    [key: string]: unknown;
+}
+interface BillingInvoice {
+    id: string;
+    status?: string | null;
+    currency?: string;
+    amountDue?: number;
+    amountPaid?: number;
+    created?: number | string;
+    hostedInvoiceUrl?: string | null;
+    invoicePdf?: string | null;
+    [key: string]: unknown;
+}
+interface BillingPaymentMethod {
+    id: string;
+    type: string;
+    brand?: string;
+    last4?: string;
+    expMonth?: number;
+    expYear?: number;
+    [key: string]: unknown;
+}
 type WalletType = "eoa" | "erc4337" | "external";
 interface AgentWallet {
     id: string;
@@ -1015,6 +1198,31 @@ interface CreateApiKeyParams {
 interface CreatedApiKey extends ApiKey {
     key: string;
 }
+type DeveloperProjectEnvironment = "production" | "development" | "staging";
+interface DeveloperProject {
+    id: string;
+    workspaceId: string;
+    name: string;
+    slug: string;
+    environment: DeveloperProjectEnvironment;
+    status: string;
+    createdAt: string;
+}
+interface DeveloperApiKey {
+    id: string;
+    projectId: string;
+    keyPrefix: string;
+    name: string;
+    scopes: string[];
+    status: string;
+    expiresAt?: string | null;
+    lastUsedAt?: string | null;
+    createdAt: string;
+}
+interface CreatedDeveloperApiKey extends DeveloperApiKey {
+    /** Plaintext key — shown once at creation time. */
+    key: string;
+}
 type WorkflowValueKind = "text" | "markdown" | "number" | "boolean" | "json" | "image" | "audio" | "video" | "file" | "link" | "email" | "calendar_event" | "tool_result";
 interface WorkflowValue {
     kind: WorkflowValueKind;
@@ -1033,14 +1241,27 @@ interface OutputPresentation {
     label?: string;
 }
 
+interface CommonsRequestOptions {
+    headers?: Record<string, string>;
+    signal?: AbortSignal;
+}
 declare class CommonsClient {
     private readonly baseUrl;
+    private readonly identityUrl;
+    private readonly identityToken?;
     private readonly apiKey?;
     private readonly initiator?;
     private readonly _fetch;
     constructor(config: CommonsClientConfig);
     private headers;
-    private request;
+    /**
+     * Call an API route that is not yet represented by a resource namespace.
+     * Most applications should use the typed helpers below.
+     */
+    request<T>(method: string, path: string, body?: unknown, options?: CommonsRequestOptions): Promise<T>;
+    private errorPayload;
+    private errorMessage;
+    private identityRequest;
     get models(): {
         /** List all available LLM models from the registry */
         list: () => Promise<{
@@ -1081,6 +1302,13 @@ declare class CommonsClient {
         restartRuntime: (agentId: string) => Promise<{
             data: AgentRuntime;
         }>;
+        manageRuntimeChannel: (agentId: string, channel: string, action: string, params?: {
+            pairingCode?: string;
+            target?: string;
+            message?: string;
+        }) => Promise<{
+            data: unknown;
+        }>;
         /** List tools assigned to an agent. */
         listTools: (agentId: string) => Promise<{
             data: any[];
@@ -1089,6 +1317,13 @@ declare class CommonsClient {
         addTool: (agentId: string, params: {
             toolId: string;
             usageComments?: string;
+        }) => Promise<{
+            data: any;
+        }>;
+        /** Update an agent tool assignment. */
+        updateTool: (assignmentId: string, params: {
+            usageComments?: string;
+            enabled?: boolean;
         }) => Promise<{
             data: any;
         }>;
@@ -1197,8 +1432,18 @@ declare class CommonsClient {
         readComputerFile: (agentId: string, pathOrLegacyComputerId: string, legacyPath?: string) => Promise<{
             data: ComputerFile;
         }>;
+        writeComputerFile: (agentId: string, params: {
+            path: string;
+            content: string;
+            encoding?: "utf8" | "base64";
+        }) => Promise<{
+            data: ComputerFile;
+        }>;
         openComputerBrowser: (agentId: string, paramsOrLegacyComputerId: ComputerBrowserOpenParams | string, legacyParams?: ComputerBrowserOpenParams) => Promise<{
             data: any;
+        }>;
+        testComputerBrowser: (agentId: string) => Promise<{
+            data: Record<string, unknown>;
         }>;
         listComputerEvents: (agentId: string, limitOrLegacyComputerId?: number | string, legacyLimit?: number) => Promise<{
             data: AgentComputerEvent[];
@@ -1282,11 +1527,34 @@ declare class CommonsClient {
             tags?: string[];
         }) => Promise<Workflow>;
         list: (ownerId: string, ownerType: "user" | "agent") => Promise<Workflow[]>;
+        discoverPublic: (filter?: {
+            category?: string;
+            tags?: string[];
+            limit?: number;
+        }) => Promise<Workflow[]>;
         get: (workflowId: string) => Promise<Workflow>;
         update: (workflowId: string, updates: Partial<Workflow>) => Promise<Workflow>;
         delete: (workflowId: string) => Promise<{
             success: boolean;
         }>;
+        fork: (workflowId: string, params: {
+            newOwnerId: string;
+            newOwnerType: "user" | "agent";
+            customizations?: {
+                name?: string;
+                description?: string;
+                isPublic?: boolean;
+            };
+        }) => Promise<Workflow>;
+        getWebhook: (workflowId: string) => Promise<Record<string, unknown>>;
+        rotateWebhookToken: (workflowId: string) => Promise<{
+            token: string;
+            webhookUrl: string;
+        }>;
+        disableWebhook: (workflowId: string) => Promise<{
+            success: boolean;
+        }>;
+        executeWebhook: (token: string, payload: unknown, query?: Record<string, string>) => Promise<unknown>;
         execute: (workflowId: string, params: {
             agentId?: string;
             sessionId?: string;
@@ -1395,6 +1663,18 @@ declare class CommonsClient {
         getFull: (sessionId: string) => Promise<{
             data: any;
         }>;
+        /** Rename a session. */
+        rename: (sessionId: string, title: string) => Promise<{
+            data: Session;
+        }>;
+        /** Delete a session and its owned session data. */
+        delete: (sessionId: string) => Promise<{
+            data: unknown;
+        }>;
+        /** Get the full chat transcript for a session. */
+        getChat: (sessionId: string) => Promise<{
+            data: unknown;
+        }>;
     };
     get tools(): {
         list: (filter?: {
@@ -1425,11 +1705,11 @@ declare class CommonsClient {
     get oauth(): {
         /** List OAuth providers available on the platform (Google Workspace, GitHub, …). */
         listProviders: () => Promise<{
-            providers: any[];
+            providers: OAuthProvider[];
         }>;
         /** Get one provider's details, including its scope groups. */
         getProvider: (providerKey: string) => Promise<{
-            provider: any;
+            provider: OAuthProvider;
         }>;
         /**
          * List the caller's OAuth connections (the accounts agents act with).
@@ -1439,7 +1719,19 @@ declare class CommonsClient {
             ownerId?: string;
             ownerType?: "user" | "agent";
         }) => Promise<{
-            connections: any[];
+            connections: OAuthConnection[];
+        }>;
+        /** Get one OAuth connection. */
+        getConnection: (connectionId: string) => Promise<{
+            connection: OAuthConnection;
+        }>;
+        /** Update connection metadata or its active status. */
+        updateConnection: (connectionId: string, params: {
+            displayName?: string;
+            isActive?: boolean;
+        }) => Promise<{
+            success: boolean;
+            connection: OAuthConnection;
         }>;
         /**
          * Start an OAuth connect flow. Returns the authorization URL the user
@@ -1472,11 +1764,7 @@ declare class CommonsClient {
         }>;
     };
     get toolKeys(): {
-        list: (filter: {
-            ownerId?: string;
-            ownerType?: string;
-            toolId?: string;
-        }) => Promise<{
+        list: () => Promise<{
             success: boolean;
             data: ToolKey[];
         }>;
@@ -1484,27 +1772,111 @@ declare class CommonsClient {
             success: boolean;
             data: ToolKey;
         }>;
+        get: (keyId: string) => Promise<{
+            success: boolean;
+            data: ToolKey;
+        }>;
+        updateMetadata: (keyId: string, params: {
+            displayName?: string;
+            description?: string;
+            isActive?: boolean;
+            expiresAt?: string;
+        }) => Promise<{
+            success: boolean;
+            data: ToolKey;
+        }>;
+        updateValue: (keyId: string, value: string) => Promise<{
+            success: boolean;
+            data: unknown;
+        }>;
+        test: (keyId: string) => Promise<{
+            success: boolean;
+            data: unknown;
+        }>;
+        mapToTool: (params: {
+            toolId: string;
+            keyId: string;
+            contextId: string;
+            contextType: "user" | "agent" | "global";
+            priority?: number;
+        }) => Promise<{
+            success: boolean;
+            data: unknown;
+        }>;
+        removeMapping: (mappingId: string) => Promise<{
+            success: boolean;
+        }>;
         delete: (keyId: string) => Promise<{
             success: boolean;
         }>;
     };
     get toolPermissions(): {
-        list: (toolId?: string) => Promise<{
+        /** @deprecated Use listForTool with a tool ID. */
+        list: (toolId: string) => Promise<{
             success: boolean;
             data: ToolPermission[];
+        }>;
+        listForTool: (toolId: string) => Promise<{
+            success: boolean;
+            data: ToolPermission[];
+        }>;
+        listForSubject: (subjectId: string, subjectType: "user" | "agent") => Promise<{
+            success: boolean;
+            data: ToolPermission[];
+        }>;
+        accessibleTools: (subjectId: string, subjectType: "user" | "agent") => Promise<{
+            success: boolean;
+            data: Tool[];
         }>;
         grant: (params: {
             toolId: string;
             subjectId: string;
             subjectType: "user" | "agent";
             permission: "read" | "execute" | "admin";
-            grantedBy?: string;
+            grantedBy: string;
+            expiresAt?: string;
         }) => Promise<{
             success: boolean;
             data: ToolPermission;
         }>;
+        batchGrant: (params: {
+            toolId: string;
+            subjects: Array<{
+                subjectId: string;
+                subjectType: "user" | "agent";
+            }>;
+            permission: "read" | "execute" | "admin";
+            grantedBy: string;
+            expiresAt?: string;
+        }) => Promise<{
+            success: boolean;
+            data: ToolPermission[];
+        }>;
         revoke: (permissionId: string) => Promise<{
             success: boolean;
+        }>;
+        check: (params: {
+            toolId: string;
+            subjectId: string;
+            subjectType: "user" | "agent";
+            permission: "read" | "execute" | "admin";
+        }) => Promise<{
+            success: boolean;
+            data: {
+                hasPermission: boolean;
+            };
+        }>;
+        checkAgentAccess: (toolId: string, agentId: string, userId?: string) => Promise<{
+            success: boolean;
+            data: unknown;
+        }>;
+        transferOwnership: (params: {
+            toolId: string;
+            newOwnerId: string;
+            newOwnerType: "user" | "agent";
+        }) => Promise<{
+            success: boolean;
+            data: Tool;
         }>;
     };
     get skills(): {
@@ -1580,6 +1952,38 @@ declare class CommonsClient {
             principalType: string | null;
         }>;
     };
+    get developer(): {
+        scopes: () => Promise<{
+            data: string[];
+        }>;
+        listProjects: () => Promise<{
+            data: DeveloperProject[];
+        }>;
+        createProject: (params: {
+            workspaceId: string;
+            name: string;
+            environment?: DeveloperProjectEnvironment;
+        }) => Promise<{
+            data: DeveloperProject;
+        }>;
+        listApiKeys: (projectId: string) => Promise<{
+            data: DeveloperApiKey[];
+        }>;
+        createApiKey: (projectId: string, params: {
+            name: string;
+            scopes?: string[];
+            expiresAt?: string | null;
+        }) => Promise<{
+            data: CreatedDeveloperApiKey;
+        }>;
+        revokeApiKey: (keyId: string) => Promise<void>;
+    };
+    /**
+     * Legacy per-principal keys (`sk-ac-*`).
+     *
+     * New developer integrations should use `client.developer`, which creates
+     * project-scoped `csk_*` keys with explicit environments and scopes.
+     */
     get apiKeys(): {
         /**
          * Generate a new API key for a principal (user or agent).
@@ -1749,6 +2153,298 @@ declare class CommonsClient {
             data: UsageAggregation;
         }>;
     };
+    get activity(): {
+        list: (filter?: {
+            actorId?: string;
+            eventType?: string;
+            since?: string;
+            limit?: number;
+        }) => Promise<{
+            data: ActivityEvent[];
+        }>;
+    };
+    get logs(): {
+        list: (agentId: string, filter?: {
+            sessionId?: string;
+            limit?: number;
+        }) => Promise<{
+            data: AgentLog[];
+        }>;
+        observability: (agentId: string, filter?: {
+            from?: string;
+            to?: string;
+            limit?: number;
+        }) => Promise<Record<string, unknown>>;
+    };
+    get files(): {
+        upload: (files: UploadFileInput[], params?: {
+            agentId?: string;
+            sessionId?: string;
+            workspaceId?: string;
+            storageProvider?: "s3" | "ipfs";
+        }) => Promise<{
+            data: FileArtifact[];
+        }>;
+        get: (fileId: string, context?: {
+            agentId?: string;
+            sessionId?: string;
+        }) => Promise<{
+            data: FileArtifact;
+        }>;
+        content: (fileId: string, options?: {
+            agentId?: string;
+            sessionId?: string;
+            offset?: number;
+            maxChars?: number;
+            includeImageUrls?: boolean;
+            includeDownloadUrl?: boolean;
+        }) => Promise<{
+            data: FileContent;
+        }>;
+    };
+    get library(): {
+        list: (filter?: {
+            query?: string;
+            view?: string;
+            source?: string;
+            favorite?: boolean;
+            sessionId?: string;
+            limit?: number;
+            offset?: number;
+        }) => Promise<{
+            data: LibraryItem[];
+            total?: number;
+        }>;
+        get: (itemId: string) => Promise<{
+            data: LibraryItem;
+        }>;
+        download: (itemId: string) => Promise<Record<string, unknown>>;
+        preview: (itemId: string) => Promise<Record<string, unknown>>;
+        update: (itemId: string, params: {
+            name?: string;
+            description?: string;
+            isFavorite?: boolean;
+        }) => Promise<{
+            data: LibraryItem;
+        }>;
+        delete: (itemId: string) => Promise<{
+            success?: boolean;
+        }>;
+        storagePreference: () => Promise<{
+            data?: {
+                defaultStorageProvider: "s3" | "ipfs";
+            };
+            defaultStorageProvider?: "s3" | "ipfs";
+        }>;
+        setStoragePreference: (defaultStorageProvider: "s3" | "ipfs") => Promise<{
+            data?: {
+                defaultStorageProvider: "s3" | "ipfs";
+            };
+            defaultStorageProvider?: "s3" | "ipfs";
+        }>;
+        grant: (itemId: string, params: {
+            subjectType: "user" | "agent" | "workspace";
+            subjectId: string;
+            permission?: "read" | "edit" | "manage";
+            expiresAt?: string | null;
+        }) => Promise<{
+            data: LibraryGrant;
+        }>;
+        revokeGrant: (itemId: string, grantId: string) => Promise<{
+            success?: boolean;
+        }>;
+        createShareLink: (itemId: string, expiresAt?: string | null) => Promise<{
+            data: LibraryShareLink;
+        }>;
+        revokeShareLink: (itemId: string, shareId: string) => Promise<{
+            success?: boolean;
+        }>;
+        resolveShare: (token: string) => Promise<{
+            data: LibraryItem;
+        }>;
+    };
+    get spaces(): {
+        list: (filter?: {
+            memberId?: string;
+            memberType?: "agent" | "human";
+            agentIds?: string[];
+            publicOnly?: boolean;
+            search?: string;
+            includeMembers?: boolean;
+            limit?: number;
+            offset?: number;
+        }) => Promise<{
+            data: Space[];
+            total?: number;
+            limit?: number;
+            offset?: number;
+        }>;
+        create: (params: {
+            name: string;
+            description?: string;
+            sessionId?: string;
+            isPublic?: boolean;
+            maxMembers?: number;
+            image?: string;
+            settings?: Record<string, unknown>;
+        }, creator: {
+            id: string;
+            type: "agent" | "human";
+        }) => Promise<{
+            data: Space;
+        }>;
+        get: (spaceId: string) => Promise<{
+            data: Space;
+        }>;
+        getFull: (spaceId: string) => Promise<{
+            data: Space;
+        }>;
+        update: (spaceId: string, params: Partial<{
+            name: string;
+            description: string;
+            sessionId: string;
+            isPublic: boolean;
+            maxMembers: number;
+            image: string;
+            settings: Record<string, unknown>;
+        }>) => Promise<{
+            data: Space;
+        }>;
+        delete: (spaceId: string) => Promise<{
+            success?: boolean;
+        }>;
+        issueRtcTicket: (spaceId: string) => Promise<{
+            data: {
+                ticket: string;
+            };
+        }>;
+        listMembers: (spaceId: string) => Promise<{
+            data: SpaceMember[];
+        }>;
+        addMember: (spaceId: string, params: {
+            memberId: string;
+            memberType: "agent" | "human";
+            role?: string;
+            permissions?: Record<string, unknown>;
+        }) => Promise<{
+            data: SpaceMember;
+        }>;
+        updateMember: (spaceId: string, memberId: string, memberType: "agent" | "human", params: {
+            role?: string;
+            permissions?: Record<string, unknown>;
+            status?: string;
+        }) => Promise<{
+            data: SpaceMember;
+        }>;
+        removeMember: (spaceId: string, memberId: string, memberType: "agent" | "human") => Promise<{
+            success?: boolean;
+        }>;
+        listMessages: (spaceId: string, filter?: {
+            limit?: number;
+            offset?: number;
+            memberId?: string;
+        }) => Promise<{
+            data: SpaceMessage[];
+        }>;
+        sendMessage: (spaceId: string, params: {
+            content: string;
+            targetType?: "broadcast" | "direct" | "group";
+            targetIds?: string[];
+            messageType?: string;
+            metadata?: Record<string, unknown>;
+            sessionId?: string;
+        }, sender: {
+            id: string;
+            type: "agent" | "human";
+        }) => Promise<{
+            data: SpaceMessage;
+        }>;
+        updateMessage: (spaceId: string, messageId: string, params: {
+            content?: string;
+            metadata?: Record<string, unknown>;
+        }) => Promise<{
+            data: SpaceMessage;
+        }>;
+        deleteMessage: (spaceId: string, messageId: string) => Promise<{
+            success?: boolean;
+        }>;
+    };
+    get projects(): {
+        list: (agentId: string) => Promise<{
+            data: CodeProject[];
+        }>;
+        create: (agentId: string, params: {
+            name: string;
+            description?: string;
+            sessionId?: string;
+            files?: CodeProjectFile[];
+        }) => Promise<{
+            data: CodeProject;
+        }>;
+        get: (agentId: string, projectId: string) => Promise<{
+            data: CodeProject;
+        }>;
+        writeFiles: (agentId: string, projectId: string, files: CodeProjectFile[], replace?: boolean) => Promise<{
+            data: CodeProject;
+        }>;
+        publish: (agentId: string, projectId: string) => Promise<{
+            data: Record<string, unknown>;
+        }>;
+        verify: (agentId: string, projectId: string, actions?: Array<Record<string, unknown>>) => Promise<{
+            data: Record<string, unknown>;
+        }>;
+        exportToComputer: (agentId: string, projectId: string, params?: {
+            directory?: string;
+            sessionId?: string;
+        }) => Promise<{
+            data: Record<string, unknown>;
+        }>;
+        exportToGitHub: (agentId: string, projectId: string, params?: {
+            repositoryName?: string;
+            private?: boolean;
+        }) => Promise<{
+            data: Record<string, unknown>;
+        }>;
+    };
+    get goals(): {
+        create: (params: Record<string, unknown>) => Promise<{
+            data: Goal;
+        }>;
+        get: (goalId: string) => Promise<{
+            data: Goal;
+        }>;
+        updateProgress: (goalId: string, progress: number, status: Goal["status"]) => Promise<{
+            data: Goal;
+        }>;
+    };
+    get audio(): {
+        transcribe: (file: UploadFileInput, options?: {
+            durationMs?: number;
+            idempotencyKey?: string;
+        }) => Promise<{
+            data: {
+                text: string;
+            };
+        }>;
+    };
+    get liaisons(): {
+        create: (params: {
+            name: string;
+            owner: string;
+            externalOwner: string;
+            persona?: string;
+            instructions?: string;
+            externalUrl?: string;
+            externalEndpoint?: string;
+        }) => Promise<{
+            data: Agent;
+            liaisonKey: string;
+            note: string;
+        }>;
+        interact: (liaisonAgentId: string, liaisonKey: string, message?: string) => Promise<{
+            data: unknown;
+        }>;
+    };
     get credits(): {
         balance: (filter?: {
             principalId?: string;
@@ -1807,6 +2503,14 @@ declare class CommonsClient {
         /** Entitlements only (what paid features the caller may use). */
         entitlements: () => Promise<{
             data: PlanEntitlements;
+        }>;
+        /** Stripe invoice history for the caller. */
+        invoices: () => Promise<{
+            data: BillingInvoice[];
+        }>;
+        /** Saved Stripe payment methods for the caller. */
+        paymentMethods: () => Promise<{
+            data: BillingPaymentMethod[];
         }>;
         /** Create a Stripe Checkout session for a subscription plan. */
         subscribe: (planKey: "plus" | "pro" | "max") => Promise<{
@@ -1880,4 +2584,4 @@ declare function listWorkflowTemplates(): readonly [{
 }];
 declare function buildWorkflowTemplate(templateName: WorkflowTemplateName, ctx: WorkflowTemplateContext): WorkflowTemplateBuild;
 
-export { type A2AArtifact, type A2ADataPart, type A2AFilePart, type A2AMessage, type A2AMessagePart, type A2ASendTaskParams, type A2ASkill, type A2ATask, type A2ATaskState, type A2ATextPart, type Agent, type AgentCard, type AgentComputer, type AgentComputerBrowser, type AgentComputerConfig, type AgentComputerDesiredState, type AgentComputerEvent, type AgentComputerGpu, type AgentComputerGpuType, type AgentComputerInstance, type AgentComputerLifecycle, type AgentComputerResourceMode, type AgentComputerResourceProfile, type AgentComputerResources, type AgentComputerStatus, type AgentComputerTerminal, type AgentMemory, type AgentWallet, type ApiKey, type ApiKeyPrincipalType, type BillingCatalog, type ChatMessage, CommonsClient, type CommonsClientConfig, CommonsError, type ComputeProfile, type ComputerActionParams, type ComputerBrowserOpenParams, type ComputerCommandParams, type ComputerConfigUpdate, type ComputerFile, type ComputerGpu, type ComputerGpuType, type ComputerLifecycle, type ComputerNetworkAccess, type ComputerPersistence, type ComputerResizeParams, type ComputerResourceMode, type ComputerResourceProfile, type ComputerResourceUpdate, type ComputerResources, type CreateAgentParams, type CreateApiKeyParams, type CreateMemoryParams, type CreateSkillParams, type CreateTaskParams, type CreateToolKeyParams, type CreateToolParams, type CreateWalletParams, type CreatedApiKey, type CreditBalance, type CreditCampaign, type CreditDirection, type CreditLedgerEntry, type CreditPlatform, type CreditSummary, type CreditTransfer, type CreditWriteParams, type FlagEvaluation, type McpConnectionType, type McpPrompt, type McpResource, type McpServer, type MemorySourceType, type MemoryStats, type MemoryType, type ModelConfig, type ModelProvider, type ModelTier, type OutputPresentation, type PlanEntitlements, type PlanKey, type RunParams, type Session, type Skill, type SkillIndex, type StreamEvent, type StreamEventType, type SubscriptionInfo, type Task, type Tool, type ToolKey, type ToolPermission, type UpdateMemoryParams, type UsageAggregation, type UsageEvent, type WalletBalance, type WalletType, type Workflow, type WorkflowDefinition, type WorkflowEdge, type WorkflowExecution, type WorkflowNode, type WorkflowNodeType, type WorkflowTemplateBuild, type WorkflowTemplateContext, type WorkflowTemplateName, type WorkflowTemplateTool, type WorkflowValue, type WorkflowValueKind, buildWorkflowTemplate, listWorkflowTemplates };
+export { type A2AArtifact, type A2ADataPart, type A2AFilePart, type A2AMessage, type A2AMessagePart, type A2ASendTaskParams, type A2ASkill, type A2ATask, type A2ATaskState, type A2ATextPart, type ActivityEvent, type Agent, type AgentCard, type AgentComputer, type AgentComputerBrowser, type AgentComputerConfig, type AgentComputerDesiredState, type AgentComputerEvent, type AgentComputerGpu, type AgentComputerGpuType, type AgentComputerInstance, type AgentComputerLifecycle, type AgentComputerResourceMode, type AgentComputerResourceProfile, type AgentComputerResources, type AgentComputerStatus, type AgentComputerTerminal, type AgentLog, type AgentMemory, type AgentWallet, type ApiKey, type ApiKeyPrincipalType, type BillingCatalog, type BillingInvoice, type BillingPaymentMethod, type ChatMessage, type CodeProject, type CodeProjectFile, CommonsClient, type CommonsClientConfig, CommonsError, type CommonsRequestOptions, type ComputeProfile, type ComputerActionParams, type ComputerBrowserOpenParams, type ComputerCommandParams, type ComputerConfigUpdate, type ComputerFile, type ComputerGpu, type ComputerGpuType, type ComputerLifecycle, type ComputerNetworkAccess, type ComputerPersistence, type ComputerResizeParams, type ComputerResourceMode, type ComputerResourceProfile, type ComputerResourceUpdate, type ComputerResources, type CreateAgentParams, type CreateApiKeyParams, type CreateMemoryParams, type CreateSkillParams, type CreateTaskParams, type CreateToolKeyParams, type CreateToolParams, type CreateWalletParams, type CreatedApiKey, type CreatedDeveloperApiKey, type CreditBalance, type CreditCampaign, type CreditDirection, type CreditLedgerEntry, type CreditPlatform, type CreditSummary, type CreditTransfer, type CreditWriteParams, type DeveloperApiKey, type DeveloperProject, type DeveloperProjectEnvironment, type FileArtifact, type FileContent, type FlagEvaluation, type Goal, type LibraryGrant, type LibraryItem, type LibraryShareLink, type McpConnectionType, type McpPrompt, type McpResource, type McpServer, type MemorySourceType, type MemoryStats, type MemoryType, type ModelConfig, type ModelProvider, type ModelTier, type OAuthConnection, type OAuthProvider, type OutputPresentation, type PlanEntitlements, type PlanKey, type RunParams, type Session, type Skill, type SkillIndex, type Space, type SpaceMember, type SpaceMessage, type StreamEvent, type StreamEventType, type SubscriptionInfo, type Task, type Tool, type ToolKey, type ToolPermission, type UpdateMemoryParams, type UploadFileInput, type UsageAggregation, type UsageEvent, type WalletBalance, type WalletType, type Workflow, type WorkflowDefinition, type WorkflowEdge, type WorkflowExecution, type WorkflowNode, type WorkflowNodeType, type WorkflowTemplateBuild, type WorkflowTemplateContext, type WorkflowTemplateName, type WorkflowTemplateTool, type WorkflowValue, type WorkflowValueKind, buildWorkflowTemplate, listWorkflowTemplates };

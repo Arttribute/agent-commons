@@ -1,6 +1,6 @@
 import chalk from 'chalk';
 import ora, { Ora } from 'ora';
-import { exec } from 'child_process';
+import { spawn } from 'child_process';
 
 // ── Colors & symbols ──────────────────────────────────────────────────────────
 
@@ -28,18 +28,18 @@ export const sym = {
 declare const __CLI_VERSION__: string;
 
 export function banner(version = __CLI_VERSION__): void {
-  const line = chalk.cyan('  ─'.padEnd(2) + '─'.repeat(44));
   console.log('');
-  console.log(line);
+  console.log(chalk.cyan('        ◇'));
+  console.log(chalk.cyan('    ╭───┴────────────────────────────────╮'));
   console.log(
-    chalk.cyan('  │ ') +
-    chalk.bold.white(' ◈  Agent Commons') +
-    chalk.dim('  ·  CLI') +
-    '  ' +
-    chalk.cyan(`v${version}`),
+    chalk.cyan('    │  ') +
+      chalk.bold.white('AGENT COMMONS') +
+      chalk.dim('  //  CLI') +
+      chalk.cyan(`  v${version}`) +
+      chalk.cyan('  │'),
   );
-  console.log(chalk.cyan('  │ ') + chalk.dim('  The Open AI Agent Network  ·  agentcommons.io'));
-  console.log(line);
+  console.log(chalk.cyan('    ╰────────────────────────────────────╯'));
+  console.log(chalk.dim('       Build · run · connect · collaborate'));
   console.log('');
 }
 
@@ -122,11 +122,20 @@ export async function select<T>(
 // ── Browser opener ────────────────────────────────────────────────────────────
 
 export function openBrowser(url: string): void {
-  const cmd =
-    process.platform === 'darwin' ? `open "${url}"` :
-    process.platform === 'win32'  ? `start "" "${url}"` :
-                                    `xdg-open "${url}"`;
-  exec(cmd, () => { /* ignore errors — user still sees the URL */ });
+  const command =
+    process.platform === 'darwin'
+      ? { file: 'open', args: [url] }
+      : process.platform === 'win32'
+        ? { file: 'cmd', args: ['/c', 'start', '', url] }
+        : { file: 'xdg-open', args: [url] };
+  const child = spawn(command.file, command.args, {
+    detached: true,
+    stdio: 'ignore',
+  });
+  child.on('error', () => {
+    // The URL is always printed as a manual fallback.
+  });
+  child.unref();
 }
 
 // ── Spinner ───────────────────────────────────────────────────────────────────
@@ -191,9 +200,9 @@ export function relativeTime(iso: string): string {
 
 export function printError(err: unknown): void {
   if (err instanceof Error) {
-    console.error(c.error(`\nError: ${err.message}`));
+    console.error(`\n  ${sym.fail} ${c.error(err.message)}\n`);
   } else {
-    console.error(c.error(`\nUnknown error: ${String(err)}`));
+    console.error(`\n  ${sym.fail} ${c.error(String(err))}\n`);
   }
 }
 

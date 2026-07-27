@@ -14,7 +14,11 @@ export default function SettingsPage() {
       <div className="flex h-screen">
         <DashboardSideBar username={walletAddress} />
         <div className="flex-1 min-w-0">
-          <SettingsPanel walletAddress={walletAddress} className="h-screen" />
+          <SettingsPanel
+            walletAddress={walletAddress}
+            workspaceId={authState.workspaceId}
+            className="h-screen"
+          />
         </div>
       </div>
     </div>

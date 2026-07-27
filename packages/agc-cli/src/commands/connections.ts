@@ -1,6 +1,6 @@
 import { Command } from 'commander';
 import { loadConfig, makeClient } from '../config.js';
-import { c, sym, table, detail, section, relativeTime, spin, printError, jsonOut } from '../ui.js';
+import { c, sym, table, detail, section, relativeTime, spin, printError, jsonOut, openBrowser } from '../ui.js';
 
 export function connectionsCommand(): Command {
   const cmd = new Command('connections').description(
@@ -80,6 +80,7 @@ export function connectionsCommand(): Command {
     .command('connect <providerKey>')
     .description('Connect an account: prints an authorization URL to open in your browser')
     .option('--scopes <scopes>', 'Space-separated OAuth scopes to request')
+    .option('--no-browser', 'Do not open the authorization URL automatically')
     .option('--json', 'Output as JSON')
     .action(async (providerKey: string, opts) => {
       const cfg = loadConfig();
@@ -96,9 +97,70 @@ export function connectionsCommand(): Command {
         });
         spinner.stop();
         if (opts.json) return jsonOut(res);
-        console.log(`\n${sym.ok} Open this URL in your browser to authorize:`);
+        if (opts.browser !== false) openBrowser(res.authorizationUrl);
+        console.log(`\n${sym.ok} Authorize the connection in your browser:`);
         console.log(`\n  ${c.id(res.authorizationUrl)}\n`);
         console.log(c.dim('  After approving, the connection appears in `agc connections list`.'));
+      } catch (err) {
+        spinner.stop();
+        printError(err);
+        process.exit(1);
+      }
+    });
+
+  cmd
+    .command('get <connectionId>')
+    .description('Show a connected account')
+    .option('--json', 'Output as JSON')
+    .action(async (connectionId: string, opts) => {
+      const spinner = spin('Fetching connection…');
+      try {
+        const result = await makeClient().oauth.getConnection(connectionId);
+        spinner.stop();
+        if (opts.json) return jsonOut(result.connection);
+        const connection = result.connection;
+        detail([
+          ['Connection ID', c.id(connection.connectionId)],
+          ['Provider', connection.providerDisplayName ?? connection.providerKey],
+          ['Account', connection.providerUserEmail ?? connection.providerUserName ?? ''],
+          ['Status', connection.status],
+          ['Scopes', connection.scopes.join(', ')],
+          ['Expires', connection.expiresAt ?? c.dim('(not reported)')],
+        ]);
+      } catch (err) {
+        spinner.stop();
+        printError(err);
+        process.exit(1);
+      }
+    });
+
+  cmd
+    .command('refresh <connectionId>')
+    .description('Refresh a connected account token')
+    .action(async (connectionId: string) => {
+      const spinner = spin('Refreshing connection…');
+      try {
+        await makeClient().oauth.refresh(connectionId);
+        spinner.stop();
+        console.log(`${sym.ok} Connection refreshed.`);
+      } catch (err) {
+        spinner.stop();
+        printError(err);
+        process.exit(1);
+      }
+    });
+
+  cmd
+    .command('rename <connectionId> <name>')
+    .description('Set a friendly name for a connected account')
+    .action(async (connectionId: string, name: string) => {
+      const spinner = spin('Updating connection…');
+      try {
+        await makeClient().oauth.updateConnection(connectionId, {
+          displayName: name,
+        });
+        spinner.stop();
+        console.log(`${sym.ok} Connection renamed to ${c.bold(name)}.`);
       } catch (err) {
         spinner.stop();
         printError(err);
