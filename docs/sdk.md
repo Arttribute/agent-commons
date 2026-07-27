@@ -20,8 +20,7 @@ pnpm add @agent-commons/sdk
 import { CommonsClient } from '@agent-commons/sdk';
 
 const client = new CommonsClient({
-  baseUrl: 'https://api.agentcommons.io',
-  apiKey: process.env.COMMONS_API_KEY,
+  apiKey: process.env.AGENT_COMMONS_API_KEY,
 });
 ```
 
@@ -29,10 +28,16 @@ Configuration options:
 
 | Option | Type | Required | Description |
 |---|---|---|---|
-| `baseUrl` | `string` | yes | Base URL of the API |
-| `apiKey` | `string` | yes* | API key from Settings → API Keys |
-| `initiator` | `string` | no | Wallet address (alternative to apiKey) |
+| `baseUrl` | `string` | no | API origin; defaults to `https://api.agentcommons.io` |
+| `apiKey` | `string` | yes* | Project-scoped `csk_*` key from Settings → Developer API keys |
+| `initiator` | `string` | no | Optional delegated Commons principal ID |
+| `identityUrl` | `string` | no | Commons Identity origin for developer-project management |
+| `identityToken` | `string` | no | Account session/OAuth token for developer-project management |
 | `fetch` | `typeof fetch` | no | Custom fetch implementation (default: global fetch) |
+
+Create separate developer projects for production, development, and CI. Grant
+only the scopes an integration needs, copy the plaintext key when it is shown,
+and keep it in a server-side secret manager.
 
 ---
 
@@ -535,30 +540,34 @@ Wallet types: `'eoa'` | `'erc4337'` | `'external'`
 ## Auth
 
 ```typescript
-// Resolve the principalId (wallet address) for the current API key
-// Useful so you don't need to hard-code the initiator address
+// Resolve the stable Commons principal represented by this credential
 const { principalId, principalType } = await client.auth.me();
 ```
 
 ---
 
-## API Keys
+## Developer projects and API keys
 
 ```typescript
-// Generate a new API key (plaintext returned only once)
-const created = await client.apiKeys.create({
-  principalId: '0xUSER',
-  principalType: 'user',
-  label: 'production',
+const account = new CommonsClient({
+  identityUrl: 'https://auth.agentcommons.io',
+  identityToken: process.env.COMMONS_ACCOUNT_TOKEN,
 });
-console.log('Key:', created.key); // save this!
 
-// List active keys (values not included)
-const keys = await client.apiKeys.list('0xUSER', 'user');
+const { data: projects } = await account.developer.listProjects();
+const { data: created } = await account.developer.createApiKey(projects[0].id, {
+  name: 'CI',
+  scopes: ['agents:read', 'agents:run'],
+});
+console.log(created.key); // plaintext is returned once
 
-// Revoke a key
-await client.apiKeys.revoke(keyId);
+const { data: keys } = await account.developer.listApiKeys(projects[0].id);
+await account.developer.revokeApiKey(keys[0].id);
 ```
+
+The legacy `client.apiKeys` namespace continues to manage per-principal
+`sk-ac-*` credentials for compatibility. New integrations should use
+project-scoped `csk_*` keys.
 
 ---
 

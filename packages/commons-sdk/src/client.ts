@@ -62,10 +62,39 @@ import {
   AgentRuntimeConfig,
   AgentRuntimeType,
   CopilotChange,
+  ActivityEvent,
+  AgentLog,
+  FileArtifact,
+  FileContent,
+  UploadFileInput,
+  LibraryItem,
+  LibraryGrant,
+  LibraryShareLink,
+  Space,
+  SpaceMember,
+  SpaceMessage,
+  CodeProject,
+  CodeProjectFile,
+  Goal,
+  OAuthProvider,
+  OAuthConnection,
+  BillingInvoice,
+  BillingPaymentMethod,
+  DeveloperProject,
+  DeveloperProjectEnvironment,
+  DeveloperApiKey,
+  CreatedDeveloperApiKey,
 } from "./types";
+
+export interface CommonsRequestOptions {
+  headers?: Record<string, string>;
+  signal?: AbortSignal;
+}
 
 export class CommonsClient {
   private readonly baseUrl: string;
+  private readonly identityUrl: string;
+  private readonly identityToken?: string;
   private readonly apiKey?: string;
   private readonly initiator?: string;
   private readonly _fetch: typeof fetch;
@@ -75,6 +104,12 @@ export class CommonsClient {
       /\/$/,
       "",
     );
+    this.identityUrl = (
+      config.identityUrl ?? "https://auth.agentcommons.io"
+    )
+      .replace(/\/api\/auth\/?$/, "")
+      .replace(/\/$/, "");
+    this.identityToken = config.identityToken;
     this.apiKey = config.apiKey;
     this.initiator = config.initiator;
     this._fetch = config.fetch ?? fetch;
@@ -82,28 +117,110 @@ export class CommonsClient {
 
   // ── Helpers ───────────────────────────────────────────────────────────────
 
-  private headers(extra?: Record<string, string>): Record<string, string> {
-    const h: Record<string, string> = { "Content-Type": "application/json" };
+  private headers(
+    extra?: Record<string, string>,
+    json = true,
+  ): Record<string, string> {
+    const h: Record<string, string> = {};
+    if (json) h["Content-Type"] = "application/json";
     if (this.apiKey) h["Authorization"] = `Bearer ${this.apiKey}`;
     if (this.initiator) h["x-initiator"] = this.initiator;
     return { ...h, ...extra };
   }
 
-  private async request<T>(
+  /**
+   * Call an API route that is not yet represented by a resource namespace.
+   * Most applications should use the typed helpers below.
+   */
+  async request<T>(
+    method: string,
+    path: string,
+    body?: unknown,
+    options: CommonsRequestOptions = {},
+  ): Promise<T> {
+    const isFormData =
+      typeof FormData !== "undefined" && body instanceof FormData;
+    const res = await this._fetch(`${this.baseUrl}${path}`, {
+      method,
+      headers: this.headers(options.headers, !isFormData),
+      body:
+        body === undefined
+          ? undefined
+          : isFormData
+            ? body
+            : JSON.stringify(body),
+      signal: options.signal,
+    });
+    if (!res.ok) {
+      const err = await this.errorPayload(res);
+      throw new CommonsError(
+        this.errorMessage(err, res.statusText),
+        res.status,
+        err,
+      );
+    }
+    if (res.status === 204) return undefined as T;
+    const contentType = res.headers.get("content-type") ?? "";
+    if (!contentType.includes("json")) {
+      return (await res.text()) as T;
+    }
+    return res.json() as Promise<T>;
+  }
+
+  private async errorPayload(res: Response): Promise<unknown> {
+    const contentType = res.headers.get("content-type") ?? "";
+    if (contentType.includes("json")) {
+      return res.json().catch(() => ({ message: res.statusText }));
+    }
+    const message = await res.text().catch(() => "");
+    return { message: message || res.statusText };
+  }
+
+  private errorMessage(error: unknown, fallback: string): string {
+    if (!error || typeof error !== "object") return fallback;
+    if ("message" in error && typeof error.message === "string") {
+      return error.message;
+    }
+    if ("error" in error) {
+      if (typeof error.error === "string") return error.error;
+      if (
+        error.error &&
+        typeof error.error === "object" &&
+        "message" in error.error &&
+        typeof error.error.message === "string"
+      ) {
+        return error.error.message;
+      }
+    }
+    return fallback;
+  }
+
+  private async identityRequest<T>(
     method: string,
     path: string,
     body?: unknown,
   ): Promise<T> {
-    const res = await this._fetch(`${this.baseUrl}${path}`, {
-      method,
-      headers: this.headers(),
-      body: body !== undefined ? JSON.stringify(body) : undefined,
-    });
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({ message: res.statusText }));
-      throw new CommonsError(err.message ?? res.statusText, res.status, err);
+    const headers: Record<string, string> = {};
+    if (body !== undefined) headers["Content-Type"] = "application/json";
+    if (this.identityToken) {
+      headers.Authorization = `Bearer ${this.identityToken}`;
     }
-    return res.json() as Promise<T>;
+    const response = await this._fetch(`${this.identityUrl}${path}`, {
+      method,
+      headers,
+      credentials: "include",
+      body: body === undefined ? undefined : JSON.stringify(body),
+    });
+    if (!response.ok) {
+      const error = await this.errorPayload(response);
+      throw new CommonsError(
+        this.errorMessage(error, response.statusText),
+        response.status,
+        error,
+      );
+    }
+    if (response.status === 204) return undefined as T;
+    return response.json() as Promise<T>;
   }
 
   // ── Models ────────────────────────────────────────────────────────────────
@@ -158,6 +275,18 @@ export class CommonsClient {
       restartRuntime: (agentId: string): Promise<{ data: AgentRuntime }> =>
         this.request("POST", `/v1/agents/${agentId}/runtime/restart`),
 
+      manageRuntimeChannel: (
+        agentId: string,
+        channel: string,
+        action: string,
+        params: { pairingCode?: string; target?: string; message?: string } = {},
+      ): Promise<{ data: unknown }> =>
+        this.request(
+          "POST",
+          `/v1/agents/${encodeURIComponent(agentId)}/runtime/channels/${encodeURIComponent(channel)}/${encodeURIComponent(action)}`,
+          params,
+        ),
+
       /** List tools assigned to an agent. */
       listTools: (agentId: string): Promise<{ data: any[] }> =>
         this.request("GET", `/v1/agents/${agentId}/tools`),
@@ -169,9 +298,23 @@ export class CommonsClient {
       ): Promise<{ data: any }> =>
         this.request("POST", `/v1/agents/${agentId}/tools`, params),
 
+      /** Update an agent tool assignment. */
+      updateTool: (
+        assignmentId: string,
+        params: { usageComments?: string; enabled?: boolean },
+      ): Promise<{ data: any }> =>
+        this.request(
+          "PATCH",
+          `/v1/agents/tools/${encodeURIComponent(assignmentId)}`,
+          params,
+        ),
+
       /** Remove a tool assignment from an agent. */
       removeTool: (assignmentId: string): Promise<void> =>
-        this.request("DELETE", `/v1/agents/tools/${assignmentId}`),
+        this.request(
+          "DELETE",
+          `/v1/agents/tools/${encodeURIComponent(assignmentId)}`,
+        ),
 
       /** Create a liaison agent for an external agent. */
       createLiaison: (params: Record<string, any>): Promise<any> =>
@@ -336,6 +479,16 @@ export class CommonsClient {
         );
       },
 
+      writeComputerFile: (
+        agentId: string,
+        params: { path: string; content: string; encoding?: "utf8" | "base64" },
+      ): Promise<{ data: ComputerFile }> =>
+        this.request(
+          "POST",
+          `/v1/agents/${encodeURIComponent(agentId)}/computer/files/write`,
+          params,
+        ),
+
       openComputerBrowser: (
         agentId: string,
         paramsOrLegacyComputerId: ComputerBrowserOpenParams | string,
@@ -355,6 +508,15 @@ export class CommonsClient {
           params,
         );
       },
+
+      testComputerBrowser: (
+        agentId: string,
+      ): Promise<{ data: Record<string, unknown> }> =>
+        this.request(
+          "POST",
+          `/v1/agents/${encodeURIComponent(agentId)}/computer/browser/test`,
+          {},
+        ),
 
       listComputerEvents: (
         agentId: string,
@@ -526,6 +688,21 @@ export class CommonsClient {
           `/v1/workflows?ownerId=${ownerId}&ownerType=${ownerType}`,
         ),
 
+      discoverPublic: (filter?: {
+        category?: string;
+        tags?: string[];
+        limit?: number;
+      }): Promise<Workflow[]> => {
+        const query = new URLSearchParams();
+        if (filter?.category) query.set("category", filter.category);
+        if (filter?.tags?.length) query.set("tags", filter.tags.join(","));
+        if (filter?.limit) query.set("limit", String(filter.limit));
+        return this.request(
+          "GET",
+          `/v1/workflows/public${query.size ? `?${query}` : ""}`,
+        );
+      },
+
       get: (workflowId: string): Promise<Workflow> =>
         this.request("GET", `/v1/workflows/${workflowId}`),
 
@@ -537,6 +714,60 @@ export class CommonsClient {
 
       delete: (workflowId: string): Promise<{ success: boolean }> =>
         this.request("DELETE", `/v1/workflows/${workflowId}`),
+
+      fork: (
+        workflowId: string,
+        params: {
+          newOwnerId: string;
+          newOwnerType: "user" | "agent";
+          customizations?: {
+            name?: string;
+            description?: string;
+            isPublic?: boolean;
+          };
+        },
+      ): Promise<Workflow> =>
+        this.request(
+          "POST",
+          `/v1/workflows/${encodeURIComponent(workflowId)}/fork`,
+          params,
+        ),
+
+      getWebhook: (workflowId: string): Promise<Record<string, unknown>> =>
+        this.request(
+          "GET",
+          `/v1/workflows/${encodeURIComponent(workflowId)}/webhook`,
+        ),
+
+      rotateWebhookToken: (
+        workflowId: string,
+      ): Promise<{ token: string; webhookUrl: string }> =>
+        this.request(
+          "POST",
+          `/v1/workflows/${encodeURIComponent(workflowId)}/webhook-token`,
+          {},
+        ),
+
+      disableWebhook: (
+        workflowId: string,
+      ): Promise<{ success: boolean }> =>
+        this.request(
+          "DELETE",
+          `/v1/workflows/${encodeURIComponent(workflowId)}/webhook-token`,
+        ),
+
+      executeWebhook: (
+        token: string,
+        payload: unknown,
+        query?: Record<string, string>,
+      ): Promise<unknown> => {
+        const search = query ? new URLSearchParams(query).toString() : "";
+        return this.request(
+          "POST",
+          `/v1/workflows/webhooks/${encodeURIComponent(token)}${search ? `?${search}` : ""}`,
+          payload,
+        );
+      },
 
       execute: (
         workflowId: string,
@@ -709,6 +940,31 @@ export class CommonsClient {
       /** Get full session with history, tasks, childSessions, and spaces. */
       getFull: (sessionId: string): Promise<{ data: any }> =>
         this.request("GET", `/v1/sessions/${sessionId}/full`),
+
+      /** Rename a session. */
+      rename: (
+        sessionId: string,
+        title: string,
+      ): Promise<{ data: import("./types").Session }> =>
+        this.request(
+          "PATCH",
+          `/v1/sessions/${encodeURIComponent(sessionId)}`,
+          { title },
+        ),
+
+      /** Delete a session and its owned session data. */
+      delete: (sessionId: string): Promise<{ data: unknown }> =>
+        this.request(
+          "DELETE",
+          `/v1/sessions/${encodeURIComponent(sessionId)}`,
+        ),
+
+      /** Get the full chat transcript for a session. */
+      getChat: (sessionId: string): Promise<{ data: unknown }> =>
+        this.request(
+          "GET",
+          `/v1/agents/sessions/${encodeURIComponent(sessionId)}/chat`,
+        ),
     };
   }
 
@@ -752,11 +1008,13 @@ export class CommonsClient {
   get oauth() {
     return {
       /** List OAuth providers available on the platform (Google Workspace, GitHub, …). */
-      listProviders: (): Promise<{ providers: any[] }> =>
+      listProviders: (): Promise<{ providers: OAuthProvider[] }> =>
         this.request("GET", "/v1/oauth/providers"),
 
       /** Get one provider's details, including its scope groups. */
-      getProvider: (providerKey: string): Promise<{ provider: any }> =>
+      getProvider: (
+        providerKey: string,
+      ): Promise<{ provider: OAuthProvider }> =>
         this.request(
           "GET",
           `/v1/oauth/providers/${encodeURIComponent(providerKey)}`,
@@ -769,10 +1027,30 @@ export class CommonsClient {
       listConnections: (params?: {
         ownerId?: string;
         ownerType?: "user" | "agent";
-      }): Promise<{ connections: any[] }> => {
+      }): Promise<{ connections: OAuthConnection[] }> => {
         const q = params ? new URLSearchParams(params as any).toString() : "";
         return this.request("GET", `/v1/oauth/connections${q ? `?${q}` : ""}`);
       },
+
+      /** Get one OAuth connection. */
+      getConnection: (
+        connectionId: string,
+      ): Promise<{ connection: OAuthConnection }> =>
+        this.request(
+          "GET",
+          `/v1/oauth/connections/${encodeURIComponent(connectionId)}`,
+        ),
+
+      /** Update connection metadata or its active status. */
+      updateConnection: (
+        connectionId: string,
+        params: { displayName?: string; isActive?: boolean },
+      ): Promise<{ success: boolean; connection: OAuthConnection }> =>
+        this.request(
+          "PUT",
+          `/v1/oauth/connections/${encodeURIComponent(connectionId)}`,
+          params,
+        ),
 
       /**
        * Start an OAuth connect flow. Returns the authorization URL the user
@@ -790,7 +1068,10 @@ export class CommonsClient {
 
       /** Refresh a connection's access token now. */
       refresh: (connectionId: string): Promise<{ success: boolean }> =>
-        this.request("POST", `/v1/oauth/connections/${connectionId}/refresh`),
+        this.request(
+          "POST",
+          `/v1/oauth/connections/${encodeURIComponent(connectionId)}/refresh`,
+        ),
 
       /** Check whether a connection's token is valid. */
       test: (
@@ -801,11 +1082,18 @@ export class CommonsClient {
         accessTokenValid: boolean;
         providerUserEmail?: string;
         error?: string;
-      }> => this.request("GET", `/v1/oauth/connections/${connectionId}/test`),
+      }> =>
+        this.request(
+          "GET",
+          `/v1/oauth/connections/${encodeURIComponent(connectionId)}/test`,
+        ),
 
       /** Revoke a connection and delete its tokens. */
       revoke: (connectionId: string): Promise<{ success: boolean }> =>
-        this.request("DELETE", `/v1/oauth/connections/${connectionId}`),
+        this.request(
+          "DELETE",
+          `/v1/oauth/connections/${encodeURIComponent(connectionId)}`,
+        ),
     };
   }
 
@@ -813,22 +1101,76 @@ export class CommonsClient {
 
   get toolKeys() {
     return {
-      list: (filter: {
-        ownerId?: string;
-        ownerType?: string;
-        toolId?: string;
-      }): Promise<{ success: boolean; data: ToolKey[] }> => {
-        const q = new URLSearchParams(filter as any).toString();
-        return this.request("GET", `/v1/tool-keys${q ? `?${q}` : ""}`);
-      },
+      list: (): Promise<{ success: boolean; data: ToolKey[] }> =>
+        this.request("GET", "/v1/tool-keys"),
 
       create: (
         params: CreateToolKeyParams,
       ): Promise<{ success: boolean; data: ToolKey }> =>
         this.request("POST", "/v1/tool-keys", params),
 
+      get: (keyId: string): Promise<{ success: boolean; data: ToolKey }> =>
+        this.request(
+          "GET",
+          `/v1/tool-keys/${encodeURIComponent(keyId)}`,
+        ),
+
+      updateMetadata: (
+        keyId: string,
+        params: {
+          displayName?: string;
+          description?: string;
+          isActive?: boolean;
+          expiresAt?: string;
+        },
+      ): Promise<{ success: boolean; data: ToolKey }> =>
+        this.request(
+          "PUT",
+          `/v1/tool-keys/${encodeURIComponent(keyId)}/metadata`,
+          params,
+        ),
+
+      updateValue: (
+        keyId: string,
+        value: string,
+      ): Promise<{ success: boolean; data: unknown }> =>
+        this.request(
+          "PUT",
+          `/v1/tool-keys/${encodeURIComponent(keyId)}/value`,
+          { value },
+        ),
+
+      test: (
+        keyId: string,
+      ): Promise<{ success: boolean; data: unknown }> =>
+        this.request(
+          "POST",
+          `/v1/tool-keys/${encodeURIComponent(keyId)}/test`,
+          {},
+        ),
+
+      mapToTool: (params: {
+        toolId: string;
+        keyId: string;
+        contextId: string;
+        contextType: "user" | "agent" | "global";
+        priority?: number;
+      }): Promise<{ success: boolean; data: unknown }> =>
+        this.request("POST", "/v1/tool-keys/map", params),
+
+      removeMapping: (
+        mappingId: string,
+      ): Promise<{ success: boolean }> =>
+        this.request(
+          "DELETE",
+          `/v1/tool-keys/map/${encodeURIComponent(mappingId)}`,
+        ),
+
       delete: (keyId: string): Promise<{ success: boolean }> =>
-        this.request("DELETE", `/v1/tool-keys/${keyId}`),
+        this.request(
+          "DELETE",
+          `/v1/tool-keys/${encodeURIComponent(keyId)}`,
+        ),
     };
   }
 
@@ -836,11 +1178,43 @@ export class CommonsClient {
 
   get toolPermissions() {
     return {
+      /** @deprecated Use listForTool with a tool ID. */
       list: (
-        toolId?: string,
+        toolId: string,
+      ): Promise<{ success: boolean; data: ToolPermission[] }> =>
+        this.request(
+          "GET",
+          `/v1/tool-permissions/tool/${encodeURIComponent(toolId)}`,
+        ),
+
+      listForTool: (
+        toolId: string,
+      ): Promise<{ success: boolean; data: ToolPermission[] }> =>
+        this.request(
+          "GET",
+          `/v1/tool-permissions/tool/${encodeURIComponent(toolId)}`,
+        ),
+
+      listForSubject: (
+        subjectId: string,
+        subjectType: "user" | "agent",
       ): Promise<{ success: boolean; data: ToolPermission[] }> => {
-        const q = toolId ? `?toolId=${toolId}` : "";
-        return this.request("GET", `/v1/tool-permissions${q}`);
+        const query = new URLSearchParams({ subjectId, subjectType });
+        return this.request(
+          "GET",
+          `/v1/tool-permissions/subject?${query}`,
+        );
+      },
+
+      accessibleTools: (
+        subjectId: string,
+        subjectType: "user" | "agent",
+      ): Promise<{ success: boolean; data: Tool[] }> => {
+        const query = new URLSearchParams({ subjectId, subjectType });
+        return this.request(
+          "GET",
+          `/v1/tool-permissions/accessible-tools?${query}`,
+        );
       },
 
       grant: (params: {
@@ -848,12 +1222,63 @@ export class CommonsClient {
         subjectId: string;
         subjectType: "user" | "agent";
         permission: "read" | "execute" | "admin";
-        grantedBy?: string;
+        grantedBy: string;
+        expiresAt?: string;
       }): Promise<{ success: boolean; data: ToolPermission }> =>
         this.request("POST", "/v1/tool-permissions/grant", params),
 
+      batchGrant: (params: {
+        toolId: string;
+        subjects: Array<{
+          subjectId: string;
+          subjectType: "user" | "agent";
+        }>;
+        permission: "read" | "execute" | "admin";
+        grantedBy: string;
+        expiresAt?: string;
+      }): Promise<{ success: boolean; data: ToolPermission[] }> =>
+        this.request("POST", "/v1/tool-permissions/batch-grant", params),
+
       revoke: (permissionId: string): Promise<{ success: boolean }> =>
-        this.request("DELETE", `/v1/tool-permissions/revoke/${permissionId}`),
+        this.request(
+          "DELETE",
+          `/v1/tool-permissions/${encodeURIComponent(permissionId)}`,
+        ),
+
+      check: (params: {
+        toolId: string;
+        subjectId: string;
+        subjectType: "user" | "agent";
+        permission: "read" | "execute" | "admin";
+      }): Promise<{ success: boolean; data: { hasPermission: boolean } }> =>
+        this.request(
+          "GET",
+          `/v1/tool-permissions/check?${new URLSearchParams(params)}`,
+        ),
+
+      checkAgentAccess: (
+        toolId: string,
+        agentId: string,
+        userId?: string,
+      ): Promise<{ success: boolean; data: unknown }> => {
+        const query = new URLSearchParams({ toolId, agentId });
+        if (userId) query.set("userId", userId);
+        return this.request(
+          "GET",
+          `/v1/tool-permissions/check-agent-access?${query}`,
+        );
+      },
+
+      transferOwnership: (params: {
+        toolId: string;
+        newOwnerId: string;
+        newOwnerType: "user" | "agent";
+      }): Promise<{ success: boolean; data: Tool }> =>
+        this.request(
+          "POST",
+          "/v1/tool-permissions/transfer-ownership",
+          params,
+        ),
     };
   }
 
@@ -972,8 +1397,61 @@ export class CommonsClient {
     };
   }
 
-  // ── API Keys ──────────────────────────────────────────────────────────────
+  // ── Developer projects and project API keys ──────────────────────────────
 
+  get developer() {
+    return {
+      scopes: (): Promise<{ data: string[] }> =>
+        this.identityRequest("GET", "/api/platform/scopes"),
+
+      listProjects: (): Promise<{ data: DeveloperProject[] }> =>
+        this.identityRequest("GET", "/api/platform/projects"),
+
+      createProject: (params: {
+        workspaceId: string;
+        name: string;
+        environment?: DeveloperProjectEnvironment;
+      }): Promise<{ data: DeveloperProject }> =>
+        this.identityRequest("POST", "/api/platform/projects", params),
+
+      listApiKeys: (
+        projectId: string,
+      ): Promise<{ data: DeveloperApiKey[] }> =>
+        this.identityRequest(
+          "GET",
+          `/api/platform/projects/${encodeURIComponent(projectId)}/api-keys`,
+        ),
+
+      createApiKey: (
+        projectId: string,
+        params: {
+          name: string;
+          scopes?: string[];
+          expiresAt?: string | null;
+        },
+      ): Promise<{ data: CreatedDeveloperApiKey }> =>
+        this.identityRequest(
+          "POST",
+          `/api/platform/projects/${encodeURIComponent(projectId)}/api-keys`,
+          params,
+        ),
+
+      revokeApiKey: (keyId: string): Promise<void> =>
+        this.identityRequest(
+          "DELETE",
+          `/api/platform/api-keys/${encodeURIComponent(keyId)}`,
+        ),
+    };
+  }
+
+  // ── Legacy principal API keys ─────────────────────────────────────────────
+
+  /**
+   * Legacy per-principal keys (`sk-ac-*`).
+   *
+   * New developer integrations should use `client.developer`, which creates
+   * project-scoped `csk_*` keys with explicit environments and scopes.
+   */
   get apiKeys() {
     return {
       /**
@@ -1351,6 +1829,632 @@ export class CommonsClient {
     };
   }
 
+  // ── Activity and logs ────────────────────────────────────────────────────
+
+  get activity() {
+    return {
+      list: (filter?: {
+        actorId?: string;
+        eventType?: string;
+        since?: string;
+        limit?: number;
+      }): Promise<{ data: ActivityEvent[] }> => {
+        const query = new URLSearchParams();
+        if (filter?.actorId) query.set("actorId", filter.actorId);
+        if (filter?.eventType) query.set("eventType", filter.eventType);
+        if (filter?.since) query.set("since", filter.since);
+        if (filter?.limit) query.set("limit", String(filter.limit));
+        return this.request(
+          "GET",
+          `/v1/activity/events${query.size ? `?${query}` : ""}`,
+        );
+      },
+    };
+  }
+
+  get logs() {
+    return {
+      list: (
+        agentId: string,
+        filter?: { sessionId?: string; limit?: number },
+      ): Promise<{ data: AgentLog[] }> => {
+        const query = new URLSearchParams();
+        if (filter?.sessionId) query.set("sessionId", filter.sessionId);
+        if (filter?.limit) query.set("limit", String(filter.limit));
+        return this.request(
+          "GET",
+          `/v1/logs/agents/${encodeURIComponent(agentId)}${query.size ? `?${query}` : ""}`,
+        );
+      },
+
+      observability: (
+        agentId: string,
+        filter?: { from?: string; to?: string; limit?: number },
+      ): Promise<Record<string, unknown>> => {
+        const query = new URLSearchParams();
+        if (filter?.from) query.set("from", filter.from);
+        if (filter?.to) query.set("to", filter.to);
+        if (filter?.limit) query.set("limit", String(filter.limit));
+        return this.request(
+          "GET",
+          `/v1/logs/agents/${encodeURIComponent(agentId)}/observability${query.size ? `?${query}` : ""}`,
+        );
+      },
+    };
+  }
+
+  // ── Files and library ────────────────────────────────────────────────────
+
+  get files() {
+    return {
+      upload: (
+        files: UploadFileInput[],
+        params?: {
+          agentId?: string;
+          sessionId?: string;
+          workspaceId?: string;
+          storageProvider?: "s3" | "ipfs";
+        },
+      ): Promise<{ data: FileArtifact[] }> => {
+        const body = new FormData();
+        for (const file of files) {
+          body.append("files", file.data, file.name);
+        }
+        if (params?.agentId) body.set("agentId", params.agentId);
+        if (params?.sessionId) body.set("sessionId", params.sessionId);
+        if (params?.workspaceId) body.set("workspaceId", params.workspaceId);
+        if (params?.storageProvider)
+          body.set("storageProvider", params.storageProvider);
+        return this.request("POST", "/v1/files/upload", body);
+      },
+
+      get: (
+        fileId: string,
+        context?: { agentId?: string; sessionId?: string },
+      ): Promise<{ data: FileArtifact }> => {
+        const query = new URLSearchParams();
+        if (context?.agentId) query.set("agentId", context.agentId);
+        if (context?.sessionId) query.set("sessionId", context.sessionId);
+        return this.request(
+          "GET",
+          `/v1/files/${encodeURIComponent(fileId)}${query.size ? `?${query}` : ""}`,
+        );
+      },
+
+      content: (
+        fileId: string,
+        options?: {
+          agentId?: string;
+          sessionId?: string;
+          offset?: number;
+          maxChars?: number;
+          includeImageUrls?: boolean;
+          includeDownloadUrl?: boolean;
+        },
+      ): Promise<{ data: FileContent }> => {
+        const query = new URLSearchParams();
+        if (options?.agentId) query.set("agentId", options.agentId);
+        if (options?.sessionId) query.set("sessionId", options.sessionId);
+        if (options?.offset !== undefined)
+          query.set("offset", String(options.offset));
+        if (options?.maxChars !== undefined)
+          query.set("maxChars", String(options.maxChars));
+        if (options?.includeImageUrls !== undefined)
+          query.set("includeImageUrls", String(options.includeImageUrls));
+        if (options?.includeDownloadUrl !== undefined)
+          query.set("includeDownloadUrl", String(options.includeDownloadUrl));
+        return this.request(
+          "GET",
+          `/v1/files/${encodeURIComponent(fileId)}/content${query.size ? `?${query}` : ""}`,
+        );
+      },
+    };
+  }
+
+  get library() {
+    return {
+      list: (filter?: {
+        query?: string;
+        view?: string;
+        source?: string;
+        favorite?: boolean;
+        sessionId?: string;
+        limit?: number;
+        offset?: number;
+      }): Promise<{ data: LibraryItem[]; total?: number }> => {
+        const query = new URLSearchParams();
+        if (filter?.query) query.set("query", filter.query);
+        if (filter?.view) query.set("view", filter.view);
+        if (filter?.source) query.set("source", filter.source);
+        if (filter?.favorite !== undefined)
+          query.set("favorite", String(filter.favorite));
+        if (filter?.sessionId) query.set("sessionId", filter.sessionId);
+        if (filter?.limit !== undefined)
+          query.set("limit", String(filter.limit));
+        if (filter?.offset !== undefined)
+          query.set("offset", String(filter.offset));
+        return this.request(
+          "GET",
+          `/v1/library${query.size ? `?${query}` : ""}`,
+        );
+      },
+
+      get: (itemId: string): Promise<{ data: LibraryItem }> =>
+        this.request(
+          "GET",
+          `/v1/library/${encodeURIComponent(itemId)}`,
+        ),
+
+      download: (itemId: string): Promise<Record<string, unknown>> =>
+        this.request(
+          "GET",
+          `/v1/library/${encodeURIComponent(itemId)}/download`,
+        ),
+
+      preview: (itemId: string): Promise<Record<string, unknown>> =>
+        this.request(
+          "GET",
+          `/v1/library/${encodeURIComponent(itemId)}/preview`,
+        ),
+
+      update: (
+        itemId: string,
+        params: {
+          name?: string;
+          description?: string;
+          isFavorite?: boolean;
+        },
+      ): Promise<{ data: LibraryItem }> =>
+        this.request(
+          "PATCH",
+          `/v1/library/${encodeURIComponent(itemId)}`,
+          params,
+        ),
+
+      delete: (itemId: string): Promise<{ success?: boolean }> =>
+        this.request(
+          "DELETE",
+          `/v1/library/${encodeURIComponent(itemId)}`,
+        ),
+
+      storagePreference: (): Promise<{
+        data?: { defaultStorageProvider: "s3" | "ipfs" };
+        defaultStorageProvider?: "s3" | "ipfs";
+      }> => this.request("GET", "/v1/library/preferences/storage"),
+
+      setStoragePreference: (
+        defaultStorageProvider: "s3" | "ipfs",
+      ): Promise<{
+        data?: { defaultStorageProvider: "s3" | "ipfs" };
+        defaultStorageProvider?: "s3" | "ipfs";
+      }> =>
+        this.request("PATCH", "/v1/library/preferences/storage", {
+          defaultStorageProvider,
+        }),
+
+      grant: (
+        itemId: string,
+        params: {
+          subjectType: "user" | "agent" | "workspace";
+          subjectId: string;
+          permission?: "read" | "edit" | "manage";
+          expiresAt?: string | null;
+        },
+      ): Promise<{ data: LibraryGrant }> =>
+        this.request(
+          "POST",
+          `/v1/library/${encodeURIComponent(itemId)}/grants`,
+          params,
+        ),
+
+      revokeGrant: (
+        itemId: string,
+        grantId: string,
+      ): Promise<{ success?: boolean }> =>
+        this.request(
+          "DELETE",
+          `/v1/library/${encodeURIComponent(itemId)}/grants/${encodeURIComponent(grantId)}`,
+        ),
+
+      createShareLink: (
+        itemId: string,
+        expiresAt?: string | null,
+      ): Promise<{ data: LibraryShareLink }> =>
+        this.request(
+          "POST",
+          `/v1/library/${encodeURIComponent(itemId)}/share-links`,
+          { expiresAt },
+        ),
+
+      revokeShareLink: (
+        itemId: string,
+        shareId: string,
+      ): Promise<{ success?: boolean }> =>
+        this.request(
+          "DELETE",
+          `/v1/library/${encodeURIComponent(itemId)}/share-links/${encodeURIComponent(shareId)}`,
+        ),
+
+      resolveShare: (token: string): Promise<{ data: LibraryItem }> =>
+        this.request(
+          "GET",
+          `/v1/shared/artifacts/${encodeURIComponent(token)}`,
+        ),
+    };
+  }
+
+  // ── Spaces, projects, and goals ──────────────────────────────────────────
+
+  get spaces() {
+    return {
+      list: (filter?: {
+        memberId?: string;
+        memberType?: "agent" | "human";
+        agentIds?: string[];
+        publicOnly?: boolean;
+        search?: string;
+        includeMembers?: boolean;
+        limit?: number;
+        offset?: number;
+      }): Promise<{
+        data: Space[];
+        total?: number;
+        limit?: number;
+        offset?: number;
+      }> => {
+        const query = new URLSearchParams();
+        if (filter?.memberId) query.set("memberId", filter.memberId);
+        if (filter?.memberType) query.set("memberType", filter.memberType);
+        if (filter?.agentIds?.length)
+          query.set("agentIds", filter.agentIds.join(","));
+        if (filter?.publicOnly !== undefined)
+          query.set("publicOnly", String(filter.publicOnly));
+        if (filter?.search) query.set("search", filter.search);
+        if (filter?.includeMembers !== undefined)
+          query.set("includeMembers", String(filter.includeMembers));
+        if (filter?.limit !== undefined)
+          query.set("limit", String(filter.limit));
+        if (filter?.offset !== undefined)
+          query.set("offset", String(filter.offset));
+        return this.request(
+          "GET",
+          `/v1/spaces${query.size ? `?${query}` : ""}`,
+        );
+      },
+
+      create: (
+        params: {
+          name: string;
+          description?: string;
+          sessionId?: string;
+          isPublic?: boolean;
+          maxMembers?: number;
+          image?: string;
+          settings?: Record<string, unknown>;
+        },
+        creator: { id: string; type: "agent" | "human" },
+      ): Promise<{ data: Space }> =>
+        this.request("POST", "/v1/spaces", params, {
+          headers: {
+            "x-creator-id": creator.id,
+            "x-creator-type": creator.type,
+          },
+        }),
+
+      get: (spaceId: string): Promise<{ data: Space }> =>
+        this.request(
+          "GET",
+          `/v1/spaces/${encodeURIComponent(spaceId)}`,
+        ),
+
+      getFull: (spaceId: string): Promise<{ data: Space }> =>
+        this.request(
+          "GET",
+          `/v1/spaces/${encodeURIComponent(spaceId)}/full`,
+        ),
+
+      update: (
+        spaceId: string,
+        params: Partial<{
+          name: string;
+          description: string;
+          sessionId: string;
+          isPublic: boolean;
+          maxMembers: number;
+          image: string;
+          settings: Record<string, unknown>;
+        }>,
+      ): Promise<{ data: Space }> =>
+        this.request(
+          "PUT",
+          `/v1/spaces/${encodeURIComponent(spaceId)}`,
+          params,
+        ),
+
+      delete: (spaceId: string): Promise<{ success?: boolean }> =>
+        this.request(
+          "DELETE",
+          `/v1/spaces/${encodeURIComponent(spaceId)}`,
+        ),
+
+      issueRtcTicket: (
+        spaceId: string,
+      ): Promise<{ data: { ticket: string } }> =>
+        this.request(
+          "POST",
+          `/v1/spaces/${encodeURIComponent(spaceId)}/rtc-ticket`,
+          {},
+        ),
+
+      listMembers: (
+        spaceId: string,
+      ): Promise<{ data: SpaceMember[] }> =>
+        this.request(
+          "GET",
+          `/v1/spaces/${encodeURIComponent(spaceId)}/members`,
+        ),
+
+      addMember: (
+        spaceId: string,
+        params: {
+          memberId: string;
+          memberType: "agent" | "human";
+          role?: string;
+          permissions?: Record<string, unknown>;
+        },
+      ): Promise<{ data: SpaceMember }> =>
+        this.request(
+          "POST",
+          `/v1/spaces/${encodeURIComponent(spaceId)}/members`,
+          params,
+        ),
+
+      updateMember: (
+        spaceId: string,
+        memberId: string,
+        memberType: "agent" | "human",
+        params: {
+          role?: string;
+          permissions?: Record<string, unknown>;
+          status?: string;
+        },
+      ): Promise<{ data: SpaceMember }> =>
+        this.request(
+          "PUT",
+          `/v1/spaces/${encodeURIComponent(spaceId)}/members/${encodeURIComponent(memberId)}?memberType=${memberType}`,
+          params,
+        ),
+
+      removeMember: (
+        spaceId: string,
+        memberId: string,
+        memberType: "agent" | "human",
+      ): Promise<{ success?: boolean }> =>
+        this.request(
+          "DELETE",
+          `/v1/spaces/${encodeURIComponent(spaceId)}/members/${encodeURIComponent(memberId)}?memberType=${memberType}`,
+        ),
+
+      listMessages: (
+        spaceId: string,
+        filter?: { limit?: number; offset?: number; memberId?: string },
+      ): Promise<{ data: SpaceMessage[] }> => {
+        const query = new URLSearchParams();
+        if (filter?.limit !== undefined)
+          query.set("limit", String(filter.limit));
+        if (filter?.offset !== undefined)
+          query.set("offset", String(filter.offset));
+        if (filter?.memberId) query.set("memberId", filter.memberId);
+        return this.request(
+          "GET",
+          `/v1/spaces/${encodeURIComponent(spaceId)}/messages${query.size ? `?${query}` : ""}`,
+        );
+      },
+
+      sendMessage: (
+        spaceId: string,
+        params: {
+          content: string;
+          targetType?: "broadcast" | "direct" | "group";
+          targetIds?: string[];
+          messageType?: string;
+          metadata?: Record<string, unknown>;
+          sessionId?: string;
+        },
+        sender: { id: string; type: "agent" | "human" },
+      ): Promise<{ data: SpaceMessage }> =>
+        this.request(
+          "POST",
+          `/v1/spaces/${encodeURIComponent(spaceId)}/messages`,
+          params,
+          {
+            headers: {
+              "x-sender-id": sender.id,
+              "x-sender-type": sender.type,
+            },
+          },
+        ),
+
+      updateMessage: (
+        spaceId: string,
+        messageId: string,
+        params: { content?: string; metadata?: Record<string, unknown> },
+      ): Promise<{ data: SpaceMessage }> =>
+        this.request(
+          "PUT",
+          `/v1/spaces/${encodeURIComponent(spaceId)}/messages/${encodeURIComponent(messageId)}`,
+          params,
+        ),
+
+      deleteMessage: (
+        spaceId: string,
+        messageId: string,
+      ): Promise<{ success?: boolean }> =>
+        this.request(
+          "DELETE",
+          `/v1/spaces/${encodeURIComponent(spaceId)}/messages/${encodeURIComponent(messageId)}`,
+        ),
+    };
+  }
+
+  get projects() {
+    const base = (agentId: string) =>
+      `/v1/agents/${encodeURIComponent(agentId)}/projects`;
+    return {
+      list: (agentId: string): Promise<{ data: CodeProject[] }> =>
+        this.request("GET", base(agentId)),
+
+      create: (
+        agentId: string,
+        params: {
+          name: string;
+          description?: string;
+          sessionId?: string;
+          files?: CodeProjectFile[];
+        },
+      ): Promise<{ data: CodeProject }> =>
+        this.request("POST", base(agentId), params),
+
+      get: (
+        agentId: string,
+        projectId: string,
+      ): Promise<{ data: CodeProject }> =>
+        this.request(
+          "GET",
+          `${base(agentId)}/${encodeURIComponent(projectId)}`,
+        ),
+
+      writeFiles: (
+        agentId: string,
+        projectId: string,
+        files: CodeProjectFile[],
+        replace = false,
+      ): Promise<{ data: CodeProject }> =>
+        this.request(
+          "PUT",
+          `${base(agentId)}/${encodeURIComponent(projectId)}/files`,
+          { files, replace },
+        ),
+
+      publish: (
+        agentId: string,
+        projectId: string,
+      ): Promise<{ data: Record<string, unknown> }> =>
+        this.request(
+          "POST",
+          `${base(agentId)}/${encodeURIComponent(projectId)}/publish`,
+          {},
+        ),
+
+      verify: (
+        agentId: string,
+        projectId: string,
+        actions?: Array<Record<string, unknown>>,
+      ): Promise<{ data: Record<string, unknown> }> =>
+        this.request(
+          "POST",
+          `${base(agentId)}/${encodeURIComponent(projectId)}/verify`,
+          { actions },
+        ),
+
+      exportToComputer: (
+        agentId: string,
+        projectId: string,
+        params?: { directory?: string; sessionId?: string },
+      ): Promise<{ data: Record<string, unknown> }> =>
+        this.request(
+          "POST",
+          `${base(agentId)}/${encodeURIComponent(projectId)}/export`,
+          params ?? {},
+        ),
+
+      exportToGitHub: (
+        agentId: string,
+        projectId: string,
+        params?: { repositoryName?: string; private?: boolean },
+      ): Promise<{ data: Record<string, unknown> }> =>
+        this.request(
+          "POST",
+          `${base(agentId)}/${encodeURIComponent(projectId)}/github`,
+          params ?? {},
+        ),
+    };
+  }
+
+  get goals() {
+    return {
+      create: (
+        params: Record<string, unknown>,
+      ): Promise<{ data: Goal }> =>
+        this.request("POST", "/v1/goals", params),
+
+      get: (goalId: string): Promise<{ data: Goal }> =>
+        this.request("GET", `/v1/goals/${encodeURIComponent(goalId)}`),
+
+      updateProgress: (
+        goalId: string,
+        progress: number,
+        status: Goal["status"],
+      ): Promise<{ data: Goal }> =>
+        this.request(
+          "PUT",
+          `/v1/goals/${encodeURIComponent(goalId)}`,
+          { progress, status },
+        ),
+    };
+  }
+
+  // ── Audio and liaison agents ─────────────────────────────────────────────
+
+  get audio() {
+    return {
+      transcribe: (
+        file: UploadFileInput,
+        options?: {
+          durationMs?: number;
+          idempotencyKey?: string;
+        },
+      ): Promise<{ data: { text: string } }> => {
+        const body = new FormData();
+        body.append("file", file.data, file.name);
+        if (options?.durationMs !== undefined)
+          body.set("durationMs", String(options.durationMs));
+        return this.request("POST", "/v1/audio/transcriptions", body, {
+          headers: options?.idempotencyKey
+            ? { "x-idempotency-key": options.idempotencyKey }
+            : undefined,
+        });
+      },
+    };
+  }
+
+  get liaisons() {
+    return {
+      create: (params: {
+        name: string;
+        owner: string;
+        externalOwner: string;
+        persona?: string;
+        instructions?: string;
+        externalUrl?: string;
+        externalEndpoint?: string;
+      }): Promise<{ data: Agent; liaisonKey: string; note: string }> =>
+        this.request("POST", "/v1/liaison", params),
+
+      interact: (
+        liaisonAgentId: string,
+        liaisonKey: string,
+        message?: string,
+      ): Promise<{ data: unknown }> =>
+        this.request(
+          "POST",
+          "/v1/liaison/interact",
+          { liaisonAgentId, message },
+          { headers: { "x-api-key": liaisonKey } },
+        ),
+    };
+  }
+
   // ── Credits ──────────────────────────────────────────────────────────────
 
   get credits() {
@@ -1429,6 +2533,14 @@ export class CommonsClient {
       /** Entitlements only (what paid features the caller may use). */
       entitlements: (): Promise<{ data: PlanEntitlements }> =>
         this.request("GET", "/v1/billing/entitlements"),
+
+      /** Stripe invoice history for the caller. */
+      invoices: (): Promise<{ data: BillingInvoice[] }> =>
+        this.request("GET", "/v1/billing/invoices"),
+
+      /** Saved Stripe payment methods for the caller. */
+      paymentMethods: (): Promise<{ data: BillingPaymentMethod[] }> =>
+        this.request("GET", "/v1/billing/payment-methods"),
 
       /** Create a Stripe Checkout session for a subscription plan. */
       subscribe: (

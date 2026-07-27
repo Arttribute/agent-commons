@@ -403,14 +403,7 @@ export function chatCommand(): Command {
 
                 // POST result back to backend so the waiting tool node resolves
                 try {
-                  await fetch(`${cfg.apiUrl}/v1/agents/cli-tool-result`, {
-                    method: 'POST',
-                    headers: {
-                      'Content-Type': 'application/json',
-                      Authorization: `Bearer ${cfg.apiKey}`,
-                    },
-                    body: JSON.stringify({ requestId, result }),
-                  });
+                  await client.agents.submitCliToolResult(requestId, result);
                 } catch (postErr: any) {
                   console.error(c.warn(`\n  [local] Failed to submit tool result: ${postErr?.message}`));
                 }
