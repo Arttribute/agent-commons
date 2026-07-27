@@ -1,6 +1,8 @@
 import {
   Agent,
   CreateAgentParams,
+  GenerateImageParams,
+  GeneratedImageAsset,
   RunParams,
   StreamEvent,
   Workflow,
@@ -251,6 +253,20 @@ export class CommonsClient {
         params: Partial<CreateAgentParams>,
       ): Promise<{ data: Agent }> =>
         this.request("PUT", `/v1/agents/${agentId}`, params),
+
+      /**
+       * Generate durable image assets for this agent without routing a
+       * deterministic image operation through an LLM tool-selection turn.
+       */
+      generateImage: (
+        agentId: string,
+        params: GenerateImageParams,
+      ): Promise<{ data: GeneratedImageAsset[] }> =>
+        this.request(
+          "POST",
+          `/v1/agents/${encodeURIComponent(agentId)}/assets/images`,
+          params,
+        ),
 
       getRuntime: (agentId: string): Promise<{ data: AgentRuntime }> =>
         this.request("GET", `/v1/agents/${agentId}/runtime`),

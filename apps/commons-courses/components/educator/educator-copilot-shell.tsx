@@ -13,6 +13,7 @@ import {
   FileText,
   FilePlus2,
   FlaskConical,
+  Globe2,
   Highlighter,
   Layers,
   LoaderCircle,
@@ -56,6 +57,7 @@ const QUICK_PROMPTS = [
   "Give me a snapshot of my courses and learners",
   "What needs my attention as an educator this week?",
   "Help me improve this lesson for active learning",
+  "Help me reshape one of my immersive learning worlds",
   "Turn an uploaded PDF into a course, workbook, or skill pack",
 ];
 
@@ -805,6 +807,8 @@ function actionIcon(action: EducatorCopilotAction) {
       return <FilePlus2 className="mt-0.5 h-4 w-4 text-violet-600" />;
     case "update_course_overview":
       return <BookOpen className="mt-0.5 h-4 w-4 text-amber-600" />;
+    case "update_experience_world":
+      return <Globe2 className="mt-0.5 h-4 w-4 text-violet-600" />;
     case "update_course_lesson":
     case "update_module":
     case "update_skill_challenge":

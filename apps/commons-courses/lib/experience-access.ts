@@ -5,6 +5,7 @@ import { NextResponse } from "next/server";
 import { buildManagedCoursesFilter, requireEducator } from "@/lib/educator-auth";
 import Course from "@/models/Course";
 import ExperienceProject from "@/models/ExperienceProject";
+import { normalizeExperienceDocument } from "@/lib/experience-schema";
 
 export async function requireEducatorExperience(id: string) {
   const authResult = await requireEducator();
@@ -89,7 +90,7 @@ export function serializeExperienceProject(project: {
     publishedVersion: project.publishedVersion,
     publishedAt: project.publishedAt?.toISOString(),
     isFreePreview: project.isFreePreview,
-    draft: project.draft,
+    draft: normalizeExperienceDocument(project.draft),
     updatedAt: project.updatedAt.toISOString(),
     createdAt: project.createdAt.toISOString(),
   };

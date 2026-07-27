@@ -14,6 +14,100 @@
   --animate-rise: rise 0.45s ease-out both;
 }
 
+@keyframes experience-drift {
+  0%, 100% { translate: -1.5% 0; }
+  50% { translate: 1.5% -0.8%; }
+}
+
+@keyframes experience-float {
+  0%, 100% { translate: 0 0; }
+  50% { translate: 0 -1.5%; }
+}
+
+@keyframes experience-pulse {
+  0%, 100% { filter: brightness(0.92); }
+  50% { filter: brightness(1.12); }
+}
+
+@keyframes experience-ken-burns {
+  0% { scale: 1.01; }
+  100% { scale: 1.08; }
+}
+
+@keyframes experience-grain {
+  0%, 100% { transform: translate(0, 0); }
+  25% { transform: translate(3%, -2%); }
+  50% { transform: translate(-2%, 3%); }
+  75% { transform: translate(2%, 2%); }
+}
+
+@keyframes experience-weather-fall {
+  from { background-position: 0 -120px; }
+  to { background-position: 45px 180px; }
+}
+
+@keyframes experience-fireflies {
+  0%, 100% { background-position: 0 0, 30px 10px; opacity: 0.45; }
+  50% { background-position: 22px -30px, -10px 36px; opacity: 0.9; }
+}
+
+.experience-layer-drift { animation: experience-drift 14s ease-in-out infinite; }
+.experience-layer-float { animation: experience-float 7s ease-in-out infinite; }
+.experience-layer-pulse { animation: experience-pulse 4s ease-in-out infinite; }
+.experience-layer-ken-burns { animation: experience-ken-burns 18s ease-in-out alternate infinite; }
+.experience-grain {
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 180 180' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.92' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='.65'/%3E%3C/svg%3E");
+  animation: experience-grain .3s steps(2) infinite;
+}
+.experience-particle-field {
+  background-image:
+    radial-gradient(circle, currentColor 0 1.5px, transparent 2px),
+    radial-gradient(circle, currentColor 0 1px, transparent 1.5px);
+  background-position: 0 0, 23px 31px;
+  background-size: 64px 64px, 47px 47px;
+  filter: drop-shadow(0 0 7px currentColor);
+}
+.experience-weather-rain {
+  background-image: repeating-linear-gradient(105deg, transparent 0 14px, rgba(190,225,255,.62) 15px 16px, transparent 17px 30px);
+  background-size: 70px 120px;
+  animation: experience-weather-fall .75s linear infinite;
+}
+.experience-weather-snow {
+  background-image: radial-gradient(circle, white 0 2px, transparent 2.5px);
+  background-size: 42px 55px;
+  animation: experience-weather-fall 5s linear infinite;
+}
+.experience-weather-dust {
+  background-image: radial-gradient(circle, rgba(255,215,150,.8) 0 1px, transparent 2px);
+  background-size: 34px 28px;
+  animation: experience-drift 8s ease-in-out infinite;
+}
+.experience-weather-fireflies {
+  background-image:
+    radial-gradient(circle, #d9ff8c 0 2px, transparent 3px),
+    radial-gradient(circle, #8fffea 0 1px, transparent 2px);
+  background-size: 88px 78px, 57px 69px;
+  filter: drop-shadow(0 0 7px #c9ff87);
+  animation: experience-fireflies 7s ease-in-out infinite;
+}
+.experience-weather-static { animation: none !important; }
+.experience-actor-fade { animation: experience-pulse .7s ease-out 1; }
+.experience-actor-rise { animation: experience-float .9s ease-out 1; }
+.experience-actor-slide-left { animation: experience-drift .9s ease-out 1; }
+.experience-actor-slide-right { animation: experience-drift .9s ease-out reverse 1; }
+
+@media (prefers-reduced-motion: reduce) {
+  .experience-layer-drift,
+  .experience-layer-float,
+  .experience-layer-pulse,
+  .experience-layer-ken-burns,
+  .experience-grain,
+  [class*="experience-weather-"],
+  [class*="experience-actor-"] {
+    animation: none !important;
+  }
+}
+
 @keyframes rise {
   from {
     opacity: 0;

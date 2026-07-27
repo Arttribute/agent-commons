@@ -104,6 +104,15 @@ var CommonsClient = class {
       list: (owner) => this.request("GET", `/v1/agents${owner ? `?owner=${owner}` : ""}`),
       get: (agentId) => this.request("GET", `/v1/agents/${agentId}`),
       update: (agentId, params) => this.request("PUT", `/v1/agents/${agentId}`, params),
+      /**
+       * Generate durable image assets for this agent without routing a
+       * deterministic image operation through an LLM tool-selection turn.
+       */
+      generateImage: (agentId, params) => this.request(
+        "POST",
+        `/v1/agents/${encodeURIComponent(agentId)}/assets/images`,
+        params
+      ),
       getRuntime: (agentId) => this.request("GET", `/v1/agents/${agentId}/runtime`),
       configureRuntime: (agentId, params) => this.request("PUT", `/v1/agents/${agentId}/runtime`, params),
       deployRuntime: (agentId) => this.request("POST", `/v1/agents/${agentId}/runtime/deploy`),

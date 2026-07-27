@@ -13,6 +13,7 @@ import ExperienceProgress from "@/models/ExperienceProgress";
 import ExperienceProject from "@/models/ExperienceProject";
 import ExperienceRevision from "@/models/ExperienceRevision";
 import type { ExperienceDocument, ExperienceProgressDTO } from "@/types/experience";
+import { normalizeExperienceDocument } from "@/lib/experience-schema";
 
 type ProgressBody = {
   action?: "advance" | "answer" | "reset";
@@ -258,7 +259,7 @@ async function loadPublishedExperience(
     course,
     project,
     revision,
-    document: revision.document as ExperienceDocument,
+    document: normalizeExperienceDocument(revision.document),
   } as const;
 }
 

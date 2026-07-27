@@ -412,6 +412,24 @@ export interface CreateAgentParams {
   runtimeConfig?: AgentRuntimeConfig;
 }
 
+export interface GenerateImageParams {
+  prompt: string;
+  n?: number;
+  size?: "1024x1024" | "1024x1536" | "1536x1024" | "auto";
+  quality?: "low" | "medium" | "high" | "auto";
+  sessionId?: string;
+  /** Stable caller-provided identifier used to make capability billing idempotent. */
+  operationId?: string;
+}
+
+export interface GeneratedImageAsset {
+  fileId: string;
+  name: string;
+  url?: string;
+  prompt: string;
+  model: string;
+}
+
 // ─── Session ──────────────────────────────────────────────────────────────────
 
 export interface Session {
