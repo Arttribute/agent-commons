@@ -6,6 +6,7 @@ import type {
   CourseAgentMessage,
   CourseAgentViewContext,
 } from "@/types/course-agent";
+import type { LearnerProfileData } from "@/types/learner-profile";
 
 export type RuntimeCourse = {
   title: string;
@@ -31,6 +32,7 @@ type RuntimeInput = {
     progress?: number;
     accessLevel?: string;
   } | null;
+  learnerProfile?: Partial<LearnerProfileData> | null;
   educatorAnalytics?: Record<string, unknown> | null;
 };
 
@@ -96,12 +98,24 @@ function fallbackCourseAgentReply(input: RuntimeInput) {
 }
 
 function buildRunMessages(input: RuntimeInput) {
+  const learnerTeachingPolicy =
+    input.role === "learner"
+      ? [
+          "Act as a learning copilot, not an answer machine.",
+          "First identify the learner's current understanding or goal when it is unclear.",
+          "Use a short cycle: orient, ask or model one step, invite the learner to try, then give feedback.",
+          "Prefer retrieval prompts, hints, worked analogies, and reflection before a full direct answer.",
+          "Adapt examples only from the explicit learner profile. State when an example is an added contextual aid, and preserve the educator's original meaning.",
+          "Never describe the learner as a fixed learning-style category.",
+        ].join("\n")
+      : "";
   const system = [
     input.agent.instructions,
     "You are embedded in Commons Courses as a context-aware course assistant.",
     "Respect the supplied courseAgentPolicy and scopedCourseContext.",
     "For learners, teach through hints, explanations, retrieval, and setup help. Do not complete graded work or reveal hidden answers.",
     "For educators, support course delivery, analytics interpretation, course operations, and drafting within the configured action policy.",
+    learnerTeachingPolicy,
   ]
     .filter(Boolean)
     .join("\n\n");
@@ -169,6 +183,20 @@ function buildScopedContext(input: RuntimeInput) {
         input.agent.dataScope === "course_content_and_progress"
           ? input.learnerProgress
           : null,
+      learnerProfile: input.learnerProfile?.personalizationEnabled
+        ? {
+            roleOrContext: input.learnerProfile.roleOrContext,
+            domain: input.learnerProfile.domain,
+            interests: input.learnerProfile.interests,
+            goals: input.learnerProfile.goals,
+            preferredFormats: input.learnerProfile.preferredFormats,
+            guidanceStyle: input.learnerProfile.guidanceStyle,
+            customContext: input.learnerProfile.customContext,
+            usageSignals: input.learnerProfile.allowUsageLearning
+              ? input.learnerProfile.usageSignals
+              : undefined,
+          }
+        : null,
     };
   }
 
