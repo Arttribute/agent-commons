@@ -75,6 +75,7 @@ import {
   CopilotUiContext,
 } from './copilot-platform-guide';
 import { SkillService } from '~/skill/skill.service';
+import { durableRole, restoreSessionMessages } from '~/session/session-history';
 
 const got = import('got');
 
@@ -1987,33 +1988,12 @@ export class AgentService implements OnModuleInit {
             } as any);
             emitStatus('context', 'completed', 'Conversation context ready');
 
-            if (
-              currentSession?.history &&
-              Array.isArray(currentSession.history)
-            ) {
-              // Load user and assistant messages only — skip system messages since we inject fresh persona above
-              const validHistoryMessages = currentSession.history.filter(
-                (entry: any) =>
-                  entry.role === 'user' || entry.role === 'assistant',
-              );
-              messages.push(
-                ...validHistoryMessages.map((historyEntry: any) => {
-                  let content = historyEntry.content ?? '';
-                  if (typeof content === 'string' && content.startsWith('[')) {
-                    try {
-                      content = JSON.parse(content);
-                    } catch {
-                      // keep as string if parse fails
-                    }
-                  }
-                  return {
-                    type: historyEntry.role,
-                    role: historyEntry.role,
-                    content,
-                  };
-                }),
-              );
-            }
+            // Durable history is the cross-run source of truth. LangChain
+            // persists these roles as human/ai, so normalize them back to
+            // user/assistant before invoking the isolated run checkpoint.
+            messages.push(
+              ...(restoreSessionMessages(currentSession?.history) as any[]),
+            );
           }
 
           if (spaceId) {
@@ -2481,7 +2461,15 @@ export class AgentService implements OnModuleInit {
             // metadata. Prior entries align as an in-order prefix because both
             // saves serialize the same thread through the same pipeline.
             const previousEntries = existingHistory.filter(
-              (entry: any) => entry.metadata?.source !== 'agent_speech',
+              (entry: any) =>
+                durableRole(entry.role) !== null &&
+                !(
+                  durableRole(entry.role) === 'ai' &&
+                  (entry.content === null ||
+                    entry.content === undefined ||
+                    (typeof entry.content === 'string' &&
+                      !entry.content.trim()))
+                ),
             );
             let previousIndex = 0;
 
@@ -2490,42 +2478,44 @@ export class AgentService implements OnModuleInit {
             const lastHumanIndex = entryRoles.lastIndexOf('human');
 
             // Create new history entries from the current agent run
-            const newHistoryEntries = messageHistories.map((m, index) => {
-              const role = entryRoles[index];
-              const rawContent = this.serializeHistoryContent(m.content);
-              const content = this.stripAttachmentManifest(rawContent);
-              const isCurrentAttachmentTurn =
-                index === lastHumanIndex &&
-                Boolean(attachmentContext?.attachments?.length) &&
-                rawContent.includes('## Uploaded Files');
+            const newHistoryEntries = messageHistories
+              .map((m, index) => {
+                const role = entryRoles[index];
+                const rawContent = this.serializeHistoryContent(m.content);
+                const content = this.stripAttachmentManifest(rawContent);
+                const isCurrentAttachmentTurn =
+                  index === lastHumanIndex &&
+                  Boolean(attachmentContext?.attachments?.length) &&
+                  rawContent.includes('## Uploaded Files');
 
-              const previous = previousEntries[previousIndex];
-              const inherited =
-                previous &&
-                previous.role === role &&
-                previous.content === content
-                  ? ((previousIndex += 1), previous)
-                  : undefined;
+                const previous = previousEntries[previousIndex];
+                const inherited =
+                  previous &&
+                  durableRole(previous.role) === durableRole(role) &&
+                  previous.content === content
+                    ? ((previousIndex += 1), previous)
+                    : undefined;
 
-              const fresh: Record<string, any> = {};
-              if (index === lastAiIndex) {
-                if (toolCalls.length) fresh.toolCalls = toolCalls;
-                if (resolvedAgentCalls.length)
-                  fresh.agentCalls = resolvedAgentCalls;
-                fresh.durationMs = runDurationMs;
-              }
-              if (isCurrentAttachmentTurn)
-                fresh.attachments = attachmentContext?.attachments;
-              if (index === lastHumanIndex && computerRequest)
-                fresh.computerRequest = computerRequest;
+                const fresh: Record<string, any> = {};
+                if (index === lastAiIndex) {
+                  if (toolCalls.length) fresh.toolCalls = toolCalls;
+                  if (resolvedAgentCalls.length)
+                    fresh.agentCalls = resolvedAgentCalls;
+                  fresh.durationMs = runDurationMs;
+                }
+                if (isCurrentAttachmentTurn)
+                  fresh.attachments = attachmentContext?.attachments;
+                if (index === lastHumanIndex && computerRequest)
+                  fresh.computerRequest = computerRequest;
 
-              return {
-                role,
-                content,
-                timestamp: inherited?.timestamp ?? new Date().toISOString(),
-                metadata: { ...(inherited?.metadata ?? {}), ...fresh },
-              };
-            });
+                return {
+                  role,
+                  content,
+                  timestamp: inherited?.timestamp ?? new Date().toISOString(),
+                  metadata: { ...(inherited?.metadata ?? {}), ...fresh },
+                };
+              })
+              .filter((entry) => entry.metadata?.source !== 'agent_speech');
 
             // Merge and sort by timestamp to maintain chronological order
             const mergedHistory = [

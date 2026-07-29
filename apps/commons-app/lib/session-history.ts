@@ -48,35 +48,41 @@ export function normalizeSessionHistory(history: unknown): HistoryEntry[] {
   for (const raw of history) {
     const entry = raw as HistoryEntry;
     if (!entry || typeof entry !== "object") continue;
-    const role = entry.role;
+    const role = entry.role === "assistant" ? "ai" : entry.role;
+    const normalizedEntry = role === entry.role ? entry : { ...entry, role };
 
     if (role === "tool") {
-      pendingTools.push(entry);
+      pendingTools.push(normalizedEntry);
       continue;
     }
 
-    if (role === "ai" || role === "assistant") {
+    if (role === "ai") {
       const hasContent =
-        typeof entry.content === "string"
-          ? entry.content.trim().length > 0
-          : Boolean(entry.content);
+        typeof normalizedEntry.content === "string"
+          ? normalizedEntry.content.trim().length > 0
+          : Boolean(normalizedEntry.content);
       const hasRunMetadata = Boolean(
-        entry.metadata?.toolCalls?.length || entry.metadata?.agentCalls?.length,
+        normalizedEntry.metadata?.toolCalls?.length ||
+          normalizedEntry.metadata?.agentCalls?.length,
       );
       if (!hasContent && !hasRunMetadata && !pendingTools.length) continue;
       const copy: HistoryEntry = {
-        ...entry,
-        metadata: { ...(entry.metadata ?? {}) },
+        ...normalizedEntry,
+        metadata: { ...(normalizedEntry.metadata ?? {}) },
       };
       attachPendingTools(copy);
-      if (!hasContent && !Boolean(copy.metadata?.toolCalls?.length) && !hasRunMetadata) {
+      if (
+        !hasContent &&
+        !Boolean(copy.metadata?.toolCalls?.length) &&
+        !hasRunMetadata
+      ) {
         continue;
       }
       result.push(withTimestamp(copy));
       continue;
     }
 
-    result.push(withTimestamp(entry));
+    result.push(withTimestamp(normalizedEntry));
   }
 
   // Tool entries with no AI message after them (e.g. interrupted run) —

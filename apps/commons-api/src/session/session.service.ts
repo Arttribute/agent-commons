@@ -5,13 +5,30 @@ import {
   InternalServerErrorException,
   NotFoundException,
 } from '@nestjs/common';
-import { and, eq, InferInsertModel, InferSelectModel, sql, desc } from 'drizzle-orm';
+import {
+  and,
+  eq,
+  InferInsertModel,
+  InferSelectModel,
+  sql,
+  desc,
+} from 'drizzle-orm';
 import { DatabaseService } from '~/modules/database/database.service';
 import * as schema from '#/models/schema';
 import { first } from 'lodash';
 import { inArray } from 'drizzle-orm';
 import { v4 as uuidv4 } from 'uuid';
 import { EncryptionService } from '~/modules/encryption';
+
+const sessionSummaryColumns = {
+  sessionId: true,
+  title: true,
+  initiator: true,
+  initiatorType: true,
+  agentId: true,
+  createdAt: true,
+  updatedAt: true,
+} as const;
 
 @Injectable()
 export class SessionService {
@@ -20,18 +37,30 @@ export class SessionService {
     private encryption: EncryptionService,
   ) {}
 
-  private encryptModelApiKey(model: Record<string, any> | null | undefined): Record<string, any> | null | undefined {
+  private encryptModelApiKey(
+    model: Record<string, any> | null | undefined,
+  ): Record<string, any> | null | undefined {
     if (!model?.apiKey) return model;
     const { encryptedValue, iv, tag } = this.encryption.encrypt(model.apiKey);
     return { ...model, apiKey: `enc:${iv}:${tag}:${encryptedValue}` };
   }
 
-  static decryptModelApiKey(model: Record<string, any> | null | undefined, encryption: EncryptionService): Record<string, any> | null | undefined {
+  static decryptModelApiKey(
+    model: Record<string, any> | null | undefined,
+    encryption: EncryptionService,
+  ): Record<string, any> | null | undefined {
     if (!model?.apiKey) return model;
     const stored: string = model.apiKey;
     if (!stored.startsWith('enc:')) return model; // plaintext (legacy)
     const [, iv, tag, encryptedValue] = stored.split(':');
     return { ...model, apiKey: encryption.decrypt(encryptedValue, iv, tag) };
+  }
+
+  private publicModel(model: Record<string, any> | null | undefined) {
+    if (!model?.apiKey) return model ?? {};
+    const safeModel = { ...model };
+    delete safeModel.apiKey;
+    return safeModel;
   }
 
   public async createSession(props: {
@@ -90,7 +119,9 @@ export class SessionService {
         sessionId: uuidv4(),
         agentId,
         initiator: initiator ?? `space:${spaceId}`,
-        model: this.encryptModelApiKey(model as any) ?? ({ name: 'gpt-5.4-mini' } as any),
+        model:
+          this.encryptModelApiKey(model as any) ??
+          ({ name: 'gpt-5.4-mini' } as any),
         spaces: { spaceIds: [spaceId] },
         parentSessionId: parentSessionId ?? undefined,
         title: title ?? null,
@@ -111,7 +142,8 @@ export class SessionService {
     //search for sessions where parentSessionId matches the sessionId and return them as child sessions
     const childSessions = await this.db.query.session.findMany({
       where: (t) => eq(t.parentSessionId, props.id),
-      orderBy: (t) => t.createdAt,
+      columns: sessionSummaryColumns,
+      orderBy: (t) => [desc(t.updatedAt), desc(t.createdAt)],
     });
     //return session with child sessions as an array
     const sessionData = {
@@ -125,7 +157,8 @@ export class SessionService {
   public async getSessionsByAgentId(agentId: string) {
     const sessions = await this.db.query.session.findMany({
       where: (t) => eq(t.agentId, agentId),
-      orderBy: (t) => t.createdAt,
+      columns: sessionSummaryColumns,
+      orderBy: (t) => [desc(t.updatedAt), desc(t.createdAt)],
     });
     return sessions;
   }
@@ -146,7 +179,7 @@ export class SessionService {
       ...sessionEntry,
       history: sessionEntry.history || [],
       metrics: sessionEntry.metrics || {},
-      model: sessionEntry.model || {},
+      model: this.publicModel(sessionEntry.model),
       query: sessionEntry.query || {},
     };
   }
@@ -162,37 +195,33 @@ export class SessionService {
       throw new NotFoundException(`Session with ID ${id} not found`);
     }
 
-    // Get all tasks for this session (goals are deprecated)
-    const tasks = await this.db.query.task.findMany({
-      where: (t) => eq(t.sessionId, id),
-      orderBy: (t) => t.createdAt,
-    });
-
-    //search for sessions where parentSessionId matches the sessionId and return them as child sessions
-    const childSessions = await this.db.query.session.findMany({
-      where: (t) => eq(t.parentSessionId, props.id),
-      orderBy: (t) => t.createdAt,
-    });
-
-    // Get space details if spaces column contains space IDs
-    let spaceDetails: any = [];
-    if (sessionEntry.spaces && Array.isArray((sessionEntry.spaces as any).spaceIds) && (sessionEntry.spaces as any).spaceIds.length > 0) {
-      console.log(
-        `Fetching spaces for session ${id} with space IDs:`,
-        sessionEntry.spaces.spaceIds,
-      );
-      spaceDetails = await this.db.query.space.findMany({
-        where: (s) => inArray(s.spaceId, sessionEntry.spaces!.spaceIds),
-      });
-    }
-    console.log('Space details:', spaceDetails);
+    const spaceIds = Array.isArray(sessionEntry.spaces?.spaceIds)
+      ? sessionEntry.spaces.spaceIds
+      : [];
+    const [tasks, childSessions, spaceDetails] = await Promise.all([
+      // Goals are deprecated; tasks remain a flat session-level list.
+      this.db.query.task.findMany({
+        where: (t) => eq(t.sessionId, id),
+        orderBy: (t) => t.createdAt,
+      }),
+      this.db.query.session.findMany({
+        where: (t) => eq(t.parentSessionId, props.id),
+        columns: sessionSummaryColumns,
+        orderBy: (t) => [desc(t.updatedAt), desc(t.createdAt)],
+      }),
+      spaceIds.length
+        ? this.db.query.space.findMany({
+            where: (s) => inArray(s.spaceId, spaceIds),
+          })
+        : Promise.resolve([]),
+    ]);
 
     // Return history as is, without modifying the roles
     return {
       ...sessionEntry,
       history: sessionEntry.history || [],
       metrics: sessionEntry.metrics || {},
-      model: sessionEntry.model || {},
+      model: this.publicModel(sessionEntry.model),
       query: sessionEntry.query || {},
       tasks: tasks || [], // Return tasks as flat array (goals are deprecated)
       childSessions: childSessions || [],
@@ -205,9 +234,13 @@ export class SessionService {
     delta: Partial<InferInsertModel<typeof schema.session>>;
   }) {
     const { id, delta } = props;
-    const encrypted = delta.model !== undefined
-      ? { ...delta, model: this.encryptModelApiKey(delta.model as any) as any }
-      : delta;
+    const encrypted =
+      delta.model !== undefined
+        ? {
+            ...delta,
+            model: this.encryptModelApiKey(delta.model as any) as any,
+          }
+        : delta;
     const sessionEntry = await this.db
       .update(schema.session)
       .set(encrypted)
@@ -225,8 +258,17 @@ export class SessionService {
       .update(schema.session)
       .set({ title, updatedAt: new Date() })
       .where(eq(schema.session.sessionId, id))
-      .returning();
-    if (!updated) throw new NotFoundException(`Session with ID ${id} not found`);
+      .returning({
+        sessionId: schema.session.sessionId,
+        title: schema.session.title,
+        initiator: schema.session.initiator,
+        initiatorType: schema.session.initiatorType,
+        agentId: schema.session.agentId,
+        createdAt: schema.session.createdAt,
+        updatedAt: schema.session.updatedAt,
+      });
+    if (!updated)
+      throw new NotFoundException(`Session with ID ${id} not found`);
     return updated;
   }
 
@@ -244,7 +286,8 @@ export class SessionService {
       .delete(schema.session)
       .where(eq(schema.session.sessionId, id))
       .returning({ sessionId: schema.session.sessionId });
-    if (!deleted) throw new NotFoundException(`Session with ID ${id} not found`);
+    if (!deleted)
+      throw new NotFoundException(`Session with ID ${id} not found`);
     return deleted;
   }
 
@@ -278,14 +321,9 @@ export class SessionService {
     const sessions = await this.db.query.session.findMany({
       where: (s) => eq(s.initiator, initiator),
       columns: {
-        sessionId: true,
-        title: true,
-        initiator: true,
-        agentId: true,
-        createdAt: true,
-        updatedAt: true,
+        ...sessionSummaryColumns,
       },
-      orderBy: (s) => desc(s.createdAt),
+      orderBy: (s) => [desc(s.updatedAt), desc(s.createdAt)],
     });
     return sessions;
   }
@@ -299,14 +337,9 @@ export class SessionService {
     const sessions = await this.db.query.session.findMany({
       where: (s) => and(eq(s.agentId, agentId), eq(s.initiator, initiator)),
       columns: {
-        sessionId: true,
-        title: true,
-        initiator: true,
-        agentId: true,
-        createdAt: true,
-        updatedAt: true,
+        ...sessionSummaryColumns,
       },
-      orderBy: (s) => desc(s.createdAt),
+      orderBy: (s) => [desc(s.updatedAt), desc(s.createdAt)],
     });
     return sessions;
   }

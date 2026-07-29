@@ -14,21 +14,28 @@ import { normalizePrincipalId } from "@/lib/principal-id";
 export default function SessionsPage() {
   const { authState } = useAuth();
   const userAddress = normalizePrincipalId(authState.walletAddress);
-  const { sessions, setSessions, isLoading } = useUserSessions(userAddress);
+  const { sessions, setSessions, isLoading, error, refetch } =
+    useUserSessions(userAddress);
   const { renameSession, deleteSession } = useSessionMutations();
   const [filter, setFilter] = useState<"all" | "cli" | "web">("all");
 
   const filtered = useMemo(() => {
     let list = sessions;
-    if (filter === "cli") list = list.filter((s) => s.initiatorType === "cli" || s.source === "cli");
-    if (filter === "web") list = list.filter((s) => s.initiatorType !== "cli" && s.source !== "cli");
+    if (filter === "cli")
+      list = list.filter(
+        (s) => s.initiatorType === "cli" || s.source === "cli",
+      );
+    if (filter === "web")
+      list = list.filter(
+        (s) => s.initiatorType !== "cli" && s.source !== "cli",
+      );
     return list;
   }, [sessions, filter]);
 
   const handleRename = async (sessionId: string, title: string) => {
     const prev = sessions;
     setSessions((list) =>
-      list.map((s) => (s.sessionId === sessionId ? { ...s, title } : s))
+      list.map((s) => (s.sessionId === sessionId ? { ...s, title } : s)),
     );
     const ok = await renameSession(sessionId, title);
     if (!ok) setSessions(prev);
@@ -72,13 +79,17 @@ export default function SessionsPage() {
                   "flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors",
                   filter === f
                     ? "bg-foreground text-background"
-                    : "bg-muted text-muted-foreground hover:text-foreground"
+                    : "bg-muted text-muted-foreground hover:text-foreground",
                 )}
               >
                 {f === "cli" && <Terminal className="h-3 w-3" />}
                 {f === "web" && <Globe className="h-3 w-3" />}
                 {f === "all" && <MessageSquare className="h-3 w-3" />}
-                {f === "all" ? "All sessions" : f === "cli" ? "CLI runs" : "Web sessions"}
+                {f === "all"
+                  ? "All sessions"
+                  : f === "cli"
+                    ? "CLI runs"
+                    : "Web sessions"}
                 {f === "all" && !isLoading && (
                   <span className="ml-0.5 opacity-60">({sessions.length})</span>
                 )}
@@ -92,14 +103,29 @@ export default function SessionsPage() {
               <div className="flex items-center justify-center h-40">
                 <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
               </div>
+            ) : error ? (
+              <div className="flex h-40 flex-col items-center justify-center gap-3">
+                <p className="text-sm text-destructive">
+                  Sessions could not be loaded
+                </p>
+                <button
+                  type="button"
+                  className="rounded-md border border-border px-3 py-1.5 text-xs font-medium hover:bg-muted"
+                  onClick={refetch}
+                >
+                  Try again
+                </button>
+              </div>
             ) : filtered.length === 0 ? (
               <div className="flex flex-col items-center justify-center h-40 gap-3">
                 <MessageSquare className="h-8 w-8 text-muted-foreground/30" />
                 <p className="text-sm text-muted-foreground">No sessions yet</p>
                 <p className="text-xs text-muted-foreground/60">
                   Start a conversation with an agent or run{" "}
-                  <code className="bg-muted px-1 py-0.5 rounded text-[11px]">agc chat</code> in
-                  the terminal
+                  <code className="bg-muted px-1 py-0.5 rounded text-[11px]">
+                    agc chat
+                  </code>{" "}
+                  in the terminal
                 </p>
               </div>
             ) : (
