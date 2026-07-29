@@ -887,7 +887,7 @@ function sessionsCommand() {
     const spinner = spin("Fetching sessions\u2026");
     try {
       const client = makeClient();
-      const agentId2 = opts.agent ?? cfg.defaultAgentId;
+      const agentId2 = opts.agent;
       const res = agentId2 ? await client.sessions.list(agentId2, cfg.initiator) : await client.sessions.listByUser(cfg.initiator);
       const sessions = res?.data ?? res ?? [];
       spinner.stop();
