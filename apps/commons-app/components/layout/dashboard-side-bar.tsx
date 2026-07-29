@@ -30,7 +30,8 @@ export function DashboardSideBar({ username }: { username: string }) {
   const pathname = usePathname();
   const router = useRouter();
 
-  const { sessions, setSessions, isLoading } = useUserSessions(username);
+  const { sessions, setSessions, isLoading, error, refetch } =
+    useUserSessions(username);
   const { renameSession, deleteSession } = useSessionMutations();
 
   const isLockedDetailRoute = useMemo(() => {
@@ -210,6 +211,14 @@ export function DashboardSideBar({ username }: { username: string }) {
                   />
                 ))}
               </div>
+            ) : error ? (
+              <button
+                type="button"
+                className="mx-2 my-3 rounded-md border border-border px-3 py-2 text-xs text-muted-foreground hover:bg-muted hover:text-foreground"
+                onClick={refetch}
+              >
+                Retry sessions
+              </button>
             ) : (
               <SessionsList
                 sessions={sessions}
