@@ -506,77 +506,99 @@ export const agentComputerEvent = pgTable(
 
 /* ─────────────────────────  SESSION  ───────────────────────── */
 
-export const session = pgTable('session', {
-  sessionId: uuid('session_id')
-    .default(sql`uuid_generate_v4()`)
-    .primaryKey(),
+export const session = pgTable(
+  'session',
+  {
+    sessionId: uuid('session_id')
+      .default(sql`uuid_generate_v4()`)
+      .primaryKey(),
 
-  agentId: text('agent_id').notNull(),
+    agentId: text('agent_id').notNull(),
 
-  title: text('title'),
-  initiator: text('initiator'), // wallet address of user or agent
+    title: text('title'),
+    initiator: text('initiator'), // wallet address of user or agent
 
-  model: jsonb('model').$type<{
-    name?: string; // Legacy field - keep for backward compat
-    provider?: string; // 'openai' | 'anthropic' | 'google' | 'mistral' | 'groq' | 'ollama'
-    modelId?: string; // e.g. 'claude-sonnet-4-6', 'gpt-4o'
-    apiKey?: string; // BYOK — encrypted at rest
-    baseUrl?: string; // For custom endpoints
-    temperature?: number;
-    maxTokens?: number;
-    topP?: number;
-    presencePenalty?: number;
-    frequencyPenalty?: number;
-    reasoningEffort?: 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh';
-    verbosity?: 'low' | 'medium' | 'high';
-  }>(),
+    model: jsonb('model').$type<{
+      name?: string; // Legacy field - keep for backward compat
+      provider?: string; // 'openai' | 'anthropic' | 'google' | 'mistral' | 'groq' | 'ollama'
+      modelId?: string; // e.g. 'claude-sonnet-4-6', 'gpt-4o'
+      apiKey?: string; // BYOK — encrypted at rest
+      baseUrl?: string; // For custom endpoints
+      temperature?: number;
+      maxTokens?: number;
+      topP?: number;
+      presencePenalty?: number;
+      frequencyPenalty?: number;
+      reasoningEffort?:
+        | 'none'
+        | 'minimal'
+        | 'low'
+        | 'medium'
+        | 'high'
+        | 'xhigh';
+      verbosity?: 'low' | 'medium' | 'high';
+    }>(),
 
-  query: jsonb('query').$type<{
-    text: string;
-    timestamp: string;
-    metadata?: Record<string, any>;
-  }>(),
-
-  history: jsonb('history').$type<
-    Array<{
-      role: string;
-      content: string;
+    query: jsonb('query').$type<{
+      text: string;
       timestamp: string;
       metadata?: Record<string, any>;
-    }>
-  >(),
+    }>(),
 
-  metrics: jsonb('metrics').$type<{
-    totalTokens?: number;
-    responseTime?: number;
-    toolCalls?: number;
-    errorCount?: number;
-  }>(),
+    history: jsonb('history').$type<
+      Array<{
+        role: string;
+        content: string;
+        timestamp: string;
+        metadata?: Record<string, any>;
+      }>
+    >(),
 
-  endedAt: timestamp('ended_at', { withTimezone: true }),
+    metrics: jsonb('metrics').$type<{
+      totalTokens?: number;
+      responseTime?: number;
+      toolCalls?: number;
+      errorCount?: number;
+    }>(),
 
-  // 'web' | 'cli' — where this session was initiated from.
-  // Column already exists in DB (phase14 migration); default is 'web'.
-  initiatorType: text('initiator_type').default('web'),
+    endedAt: timestamp('ended_at', { withTimezone: true }),
 
-  // Canonical session identity remains in Agent Commons. Runtime-specific
-  // session handles are optional adapter metadata and never replace it.
-  runtimeType: text('runtime_type').default('native').notNull(),
-  runtimeSessionId: text('runtime_session_id'),
+    // 'web' | 'cli' — where this session was initiated from.
+    // Column already exists in DB (phase14 migration); default is 'web'.
+    initiatorType: text('initiator_type').default('web'),
 
-  // Keep as JSON list of space IDs for now (not relational)
-  spaces: jsonb('spaces').$type<{ spaceIds: string[] }>(),
+    // Canonical session identity remains in Agent Commons. Runtime-specific
+    // session handles are optional adapter metadata and never replace it.
+    runtimeType: text('runtime_type').default('native').notNull(),
+    runtimeSessionId: text('runtime_session_id'),
 
-  // Make this a UUID so we can reference session.sessionId
-  parentSessionId: uuid('parent_session'),
+    // Keep as JSON list of space IDs for now (not relational)
+    spaces: jsonb('spaces').$type<{ spaceIds: string[] }>(),
 
-  createdAt: timestamp('created_at', { withTimezone: true })
-    .default(sql`timezone('utc', now())`)
-    .notNull(),
-  updatedAt: timestamp('updated_at', { withTimezone: true })
-    .default(sql`timezone('utc', now())`)
-    .notNull(),
-});
+    // Make this a UUID so we can reference session.sessionId
+    parentSessionId: uuid('parent_session'),
+
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .default(sql`timezone('utc', now())`)
+      .notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true })
+      .default(sql`timezone('utc', now())`)
+      .notNull(),
+  },
+  (table) => ({
+    initiatorUpdatedIdx: index('idx_session_initiator_updated').on(
+      table.initiator,
+      table.updatedAt,
+      table.createdAt,
+    ),
+    agentInitiatorUpdatedIdx: index('idx_session_agent_initiator_updated').on(
+      table.agentId,
+      table.initiator,
+      table.updatedAt,
+      table.createdAt,
+    ),
+  }),
+);
 
 /* ─────────────────────────  ARTIFACT LIBRARY  ───────────────────────── */
 

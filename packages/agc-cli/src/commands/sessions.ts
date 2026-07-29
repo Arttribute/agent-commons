@@ -20,7 +20,10 @@ export function sessionsCommand(): Command {
       const spinner = spin('Fetching sessions…');
       try {
         const client = makeClient();
-        const agentId = opts.agent ?? cfg.defaultAgentId;
+        // Listing without --agent must include every session owned by the
+        // current user. Falling back to defaultAgentId silently hid sessions
+        // belonging to every other agent.
+        const agentId = opts.agent;
         const res = agentId
           ? await client.sessions.list(agentId, cfg.initiator)
           : await client.sessions.listByUser(cfg.initiator);
