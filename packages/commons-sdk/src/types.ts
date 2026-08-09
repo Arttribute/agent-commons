@@ -1240,13 +1240,41 @@ export interface FileArtifact {
   [key: string]: unknown;
 }
 
+export interface FileContentDownload {
+  itemId?: string;
+  name?: string;
+  mimeType?: string;
+  url?: string;
+  [key: string]: unknown;
+}
+
+export interface FileContentArtifact {
+  artifactId?: string;
+  kind?: string;
+  mimeType?: string;
+  pageNumber?: number | null;
+  width?: number | null;
+  height?: number | null;
+  url?: string;
+  [key: string]: unknown;
+}
+
 export interface FileContent {
   fileId?: string;
+  name?: string;
   content?: string;
   mimeType?: string;
+  kind?: string;
+  status?: string;
   offset?: number;
   nextOffset?: number | null;
+  totalChars?: number;
   truncated?: boolean;
+  textPreview?: string | null;
+  metadata?: Record<string, unknown>;
+  download?: FileContentDownload;
+  artifacts?: FileContentArtifact[];
+  /** Convenience aliases returned alongside the structured fields. */
   imageUrls?: string[];
   downloadUrl?: string;
   [key: string]: unknown;

@@ -11,6 +11,52 @@ import {
 describe('FilesService document support', () => {
   const service = new FilesService({} as any, {} as any, {} as any);
 
+  it('returns structured and SDK-compatible URLs for uploaded images', async () => {
+    const imageService = new FilesService({} as any, {} as any, {} as any);
+    jest.spyOn(imageService as any, 'getFileOrThrow').mockResolvedValue({
+      itemId: 'image-1',
+      name: 'lesson.png',
+      mimeType: 'image/png',
+      kind: 'image',
+      status: 'ready',
+      textPreview: '',
+      metadata: {},
+    });
+    jest.spyOn(imageService as any, 'assertCanAccess').mockResolvedValue(undefined);
+    jest.spyOn(imageService as any, 'getBlobs').mockResolvedValue([]);
+    jest.spyOn(imageService as any, 'getArtifacts').mockResolvedValue([
+      {
+        blobId: 'artifact-1',
+        role: 'image',
+        mimeType: 'image/png',
+        storageBucket: 'uploads',
+        storagePath: 'lesson.png',
+      },
+    ]);
+    jest.spyOn(imageService as any, 'signedOriginal').mockResolvedValue({
+      itemId: 'image-1',
+      name: 'lesson.png',
+      mimeType: 'image/png',
+      url: 'https://files.example/original.png',
+    });
+    jest
+      .spyOn(imageService as any, 'createSignedUrl')
+      .mockResolvedValue('https://files.example/artifact.png');
+
+    const result = await imageService.readFileForAgent({
+      fileId: 'image-1',
+      agentId: 'agent-1',
+      includeDownloadUrl: true,
+      includeImageUrls: true,
+      maxChars: 1,
+    });
+
+    expect(result.download?.url).toBe('https://files.example/original.png');
+    expect(result.downloadUrl).toBe('https://files.example/original.png');
+    expect(result.artifacts[0]?.url).toBe('https://files.example/artifact.png');
+    expect(result.imageUrls).toEqual(['https://files.example/artifact.png']);
+  });
+
   it.each([
     ['report.docx', '', 'document'],
     ['deck.pptx', '', 'presentation'],

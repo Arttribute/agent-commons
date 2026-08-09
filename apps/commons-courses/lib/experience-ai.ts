@@ -1,6 +1,7 @@
 import "server-only";
 
 import { CommonsError, type CommonsClient } from "@agent-commons/sdk";
+import { resolveEducatorCopilotImageUrl } from "@/lib/educator-copilot-files";
 import type { ICourse } from "@/models/Course";
 import { uploadCourseMediaToS3 } from "@/lib/media-storage";
 import type { ExperienceDocument } from "@/types/experience";
@@ -159,8 +160,7 @@ export async function generateAndPersistExperienceImage({
     includeDownloadUrl: true,
     maxChars: 1,
   });
-  const sourceUrl =
-    content.data.downloadUrl || content.data.imageUrls?.[0] || artifact.url;
+  const sourceUrl = resolveEducatorCopilotImageUrl(content.data) || artifact.url;
   if (!sourceUrl) {
     throw new Error("The generated artwork has no downloadable source.");
   }

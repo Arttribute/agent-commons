@@ -527,6 +527,32 @@ describe('platform parity surfaces', () => {
     expect(options.headers.Authorization).toBe('Bearer test-key');
   });
 
+  it('reads structured file image URLs and compatibility aliases', async () => {
+    const fetch = makeFetch({
+      data: {
+        fileId: 'file-1',
+        download: { url: 'https://files.example/original.png' },
+        downloadUrl: 'https://files.example/original.png',
+        artifacts: [{ kind: 'image', url: 'https://files.example/artifact.png' }],
+        imageUrls: ['https://files.example/artifact.png'],
+      },
+    });
+    const { data } = await makeClient(fetch).files.content('file-1', {
+      agentId: 'agent-1',
+      sessionId: 'session-1',
+      includeDownloadUrl: true,
+      includeImageUrls: true,
+    });
+
+    expect(fetch.mock.calls[0][0]).toBe(
+      'http://api.test/v1/files/file-1/content?agentId=agent-1&sessionId=session-1&includeImageUrls=true&includeDownloadUrl=true',
+    );
+    expect(data.download?.url).toBe('https://files.example/original.png');
+    expect(data.artifacts?.[0]?.url).toBe('https://files.example/artifact.png');
+    expect(data.downloadUrl).toBe(data.download?.url);
+    expect(data.imageUrls).toEqual(['https://files.example/artifact.png']);
+  });
+
   it('sends required creator headers when creating a space', async () => {
     const fetch = makeFetch({ data: { spaceId: 'space-1' } });
     await makeClient(fetch).spaces.create(

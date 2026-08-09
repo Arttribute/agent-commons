@@ -133,6 +133,8 @@ export type {
   AgentLog,
   FileArtifact,
   FileContent,
+  FileContentArtifact,
+  FileContentDownload,
   UploadFileInput,
   LibraryItem,
   LibraryGrant,

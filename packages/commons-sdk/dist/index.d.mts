@@ -1032,13 +1032,39 @@ interface FileArtifact {
     createdAt?: string;
     [key: string]: unknown;
 }
+interface FileContentDownload {
+    itemId?: string;
+    name?: string;
+    mimeType?: string;
+    url?: string;
+    [key: string]: unknown;
+}
+interface FileContentArtifact {
+    artifactId?: string;
+    kind?: string;
+    mimeType?: string;
+    pageNumber?: number | null;
+    width?: number | null;
+    height?: number | null;
+    url?: string;
+    [key: string]: unknown;
+}
 interface FileContent {
     fileId?: string;
+    name?: string;
     content?: string;
     mimeType?: string;
+    kind?: string;
+    status?: string;
     offset?: number;
     nextOffset?: number | null;
+    totalChars?: number;
     truncated?: boolean;
+    textPreview?: string | null;
+    metadata?: Record<string, unknown>;
+    download?: FileContentDownload;
+    artifacts?: FileContentArtifact[];
+    /** Convenience aliases returned alongside the structured fields. */
     imageUrls?: string[];
     downloadUrl?: string;
     [key: string]: unknown;
@@ -2609,4 +2635,4 @@ declare function listWorkflowTemplates(): readonly [{
 }];
 declare function buildWorkflowTemplate(templateName: WorkflowTemplateName, ctx: WorkflowTemplateContext): WorkflowTemplateBuild;
 
-export { type A2AArtifact, type A2ADataPart, type A2AFilePart, type A2AMessage, type A2AMessagePart, type A2ASendTaskParams, type A2ASkill, type A2ATask, type A2ATaskState, type A2ATextPart, type ActivityEvent, type Agent, type AgentCard, type AgentComputer, type AgentComputerBrowser, type AgentComputerConfig, type AgentComputerDesiredState, type AgentComputerEvent, type AgentComputerGpu, type AgentComputerGpuType, type AgentComputerInstance, type AgentComputerLifecycle, type AgentComputerResourceMode, type AgentComputerResourceProfile, type AgentComputerResources, type AgentComputerStatus, type AgentComputerTerminal, type AgentLog, type AgentMemory, type AgentWallet, type ApiKey, type ApiKeyPrincipalType, type BillingCatalog, type BillingInvoice, type BillingPaymentMethod, type ChatMessage, type CodeProject, type CodeProjectFile, CommonsClient, type CommonsClientConfig, CommonsError, type CommonsRequestOptions, type ComputeProfile, type ComputerActionParams, type ComputerBrowserOpenParams, type ComputerCommandParams, type ComputerConfigUpdate, type ComputerFile, type ComputerGpu, type ComputerGpuType, type ComputerLifecycle, type ComputerNetworkAccess, type ComputerPersistence, type ComputerResizeParams, type ComputerResourceMode, type ComputerResourceProfile, type ComputerResourceUpdate, type ComputerResources, type CreateAgentParams, type CreateApiKeyParams, type CreateMemoryParams, type CreateSkillParams, type CreateTaskParams, type CreateToolKeyParams, type CreateToolParams, type CreateWalletParams, type CreatedApiKey, type CreatedDeveloperApiKey, type CreditBalance, type CreditCampaign, type CreditDirection, type CreditLedgerEntry, type CreditPlatform, type CreditSummary, type CreditTransfer, type CreditWriteParams, type DeveloperApiKey, type DeveloperProject, type DeveloperProjectEnvironment, type FileArtifact, type FileContent, type FlagEvaluation, type GenerateImageParams, type GeneratedImageAsset, type Goal, type LibraryGrant, type LibraryItem, type LibraryShareLink, type McpConnectionType, type McpPrompt, type McpResource, type McpServer, type MemorySourceType, type MemoryStats, type MemoryType, type ModelConfig, type ModelProvider, type ModelTier, type OAuthConnection, type OAuthProvider, type OutputPresentation, type PlanEntitlements, type PlanKey, type RunParams, type Session, type Skill, type SkillIndex, type Space, type SpaceMember, type SpaceMessage, type StreamEvent, type StreamEventType, type SubscriptionInfo, type Task, type Tool, type ToolKey, type ToolPermission, type UpdateMemoryParams, type UploadFileInput, type UsageAggregation, type UsageEvent, type WalletBalance, type WalletType, type Workflow, type WorkflowDefinition, type WorkflowEdge, type WorkflowExecution, type WorkflowNode, type WorkflowNodeType, type WorkflowTemplateBuild, type WorkflowTemplateContext, type WorkflowTemplateName, type WorkflowTemplateTool, type WorkflowValue, type WorkflowValueKind, buildWorkflowTemplate, listWorkflowTemplates };
+export { type A2AArtifact, type A2ADataPart, type A2AFilePart, type A2AMessage, type A2AMessagePart, type A2ASendTaskParams, type A2ASkill, type A2ATask, type A2ATaskState, type A2ATextPart, type ActivityEvent, type Agent, type AgentCard, type AgentComputer, type AgentComputerBrowser, type AgentComputerConfig, type AgentComputerDesiredState, type AgentComputerEvent, type AgentComputerGpu, type AgentComputerGpuType, type AgentComputerInstance, type AgentComputerLifecycle, type AgentComputerResourceMode, type AgentComputerResourceProfile, type AgentComputerResources, type AgentComputerStatus, type AgentComputerTerminal, type AgentLog, type AgentMemory, type AgentWallet, type ApiKey, type ApiKeyPrincipalType, type BillingCatalog, type BillingInvoice, type BillingPaymentMethod, type ChatMessage, type CodeProject, type CodeProjectFile, CommonsClient, type CommonsClientConfig, CommonsError, type CommonsRequestOptions, type ComputeProfile, type ComputerActionParams, type ComputerBrowserOpenParams, type ComputerCommandParams, type ComputerConfigUpdate, type ComputerFile, type ComputerGpu, type ComputerGpuType, type ComputerLifecycle, type ComputerNetworkAccess, type ComputerPersistence, type ComputerResizeParams, type ComputerResourceMode, type ComputerResourceProfile, type ComputerResourceUpdate, type ComputerResources, type CreateAgentParams, type CreateApiKeyParams, type CreateMemoryParams, type CreateSkillParams, type CreateTaskParams, type CreateToolKeyParams, type CreateToolParams, type CreateWalletParams, type CreatedApiKey, type CreatedDeveloperApiKey, type CreditBalance, type CreditCampaign, type CreditDirection, type CreditLedgerEntry, type CreditPlatform, type CreditSummary, type CreditTransfer, type CreditWriteParams, type DeveloperApiKey, type DeveloperProject, type DeveloperProjectEnvironment, type FileArtifact, type FileContent, type FileContentArtifact, type FileContentDownload, type FlagEvaluation, type GenerateImageParams, type GeneratedImageAsset, type Goal, type LibraryGrant, type LibraryItem, type LibraryShareLink, type McpConnectionType, type McpPrompt, type McpResource, type McpServer, type MemorySourceType, type MemoryStats, type MemoryType, type ModelConfig, type ModelProvider, type ModelTier, type OAuthConnection, type OAuthProvider, type OutputPresentation, type PlanEntitlements, type PlanKey, type RunParams, type Session, type Skill, type SkillIndex, type Space, type SpaceMember, type SpaceMessage, type StreamEvent, type StreamEventType, type SubscriptionInfo, type Task, type Tool, type ToolKey, type ToolPermission, type UpdateMemoryParams, type UploadFileInput, type UsageAggregation, type UsageEvent, type WalletBalance, type WalletType, type Workflow, type WorkflowDefinition, type WorkflowEdge, type WorkflowExecution, type WorkflowNode, type WorkflowNodeType, type WorkflowTemplateBuild, type WorkflowTemplateContext, type WorkflowTemplateName, type WorkflowTemplateTool, type WorkflowValue, type WorkflowValueKind, buildWorkflowTemplate, listWorkflowTemplates };

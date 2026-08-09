@@ -19,6 +19,18 @@ export type EducatorCopilotUploadedFile = {
   artifacts?: EducatorCopilotFileArtifact[];
 };
 
+export type EducatorCopilotFileContent = {
+  fileId: string;
+  name?: string;
+  content?: string;
+  nextOffset?: number | null;
+  totalChars?: number;
+  download?: { url?: string } | string;
+  downloadUrl?: string;
+  imageUrls?: string[];
+  artifacts?: EducatorCopilotFileArtifact[];
+};
+
 type AgentFileAccess = {
   accessToken: string;
   principalId: string;
@@ -77,7 +89,12 @@ export async function uploadEducatorCopilotFiles(
 export async function readEducatorCopilotFile(
   fileId: string,
   access: AgentFileAccess,
-  options: { offset?: number; maxChars?: number; includeImageUrls?: boolean } = {}
+  options: {
+    offset?: number;
+    maxChars?: number;
+    includeImageUrls?: boolean;
+    includeDownloadUrl?: boolean;
+  } = {}
 ) {
   const query = new URLSearchParams({
     agentId: access.agentId,
@@ -85,6 +102,7 @@ export async function readEducatorCopilotFile(
     offset: String(Math.max(0, options.offset || 0)),
     maxChars: String(Math.max(1, options.maxChars || 24000)),
     includeImageUrls: String(Boolean(options.includeImageUrls)),
+    includeDownloadUrl: String(Boolean(options.includeDownloadUrl)),
   });
   const response = await fetch(
     `${agentCommonsBaseUrl()}/v1/files/${encodeURIComponent(fileId)}/content?${query}`,
@@ -92,13 +110,40 @@ export async function readEducatorCopilotFile(
   );
   if (!response.ok) return null;
   return (await response.json()) as {
-    data?: {
-      fileId: string;
-      name?: string;
-      content?: string;
-      nextOffset?: number | null;
-      totalChars?: number;
-      artifacts?: EducatorCopilotFileArtifact[];
-    };
+    data?: EducatorCopilotFileContent;
   };
+}
+
+/**
+ * Resolve an image URL across the structured file API response and the SDK's
+ * convenience aliases. Supporting both shapes keeps image workflows working
+ * during API/client rolling deployments.
+ */
+export function resolveEducatorCopilotImageUrl(value: unknown) {
+  const data = value && typeof value === "object" ? (value as Record<string, unknown>) : {};
+  const directDownload = stringValue(data.downloadUrl);
+  if (directDownload) return directDownload;
+
+  const download = data.download;
+  if (typeof download === "string" && download.trim()) return download.trim();
+  if (download && typeof download === "object") {
+    const url = stringValue((download as Record<string, unknown>).url);
+    if (url) return url;
+  }
+
+  const imageUrls = Array.isArray(data.imageUrls) ? data.imageUrls : [];
+  const imageUrl = imageUrls.map(stringValue).find(Boolean);
+  if (imageUrl) return imageUrl;
+
+  const artifacts = Array.isArray(data.artifacts) ? data.artifacts : [];
+  for (const artifact of artifacts) {
+    if (!artifact || typeof artifact !== "object") continue;
+    const url = stringValue((artifact as Record<string, unknown>).url);
+    if (url) return url;
+  }
+  return undefined;
+}
+
+function stringValue(value: unknown) {
+  return typeof value === "string" && value.trim() ? value.trim() : undefined;
 }
