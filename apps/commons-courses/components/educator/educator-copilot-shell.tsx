@@ -86,6 +86,9 @@ export function EducatorCopilotShell() {
   const [localNotice, setLocalNotice] = useState<string | null>(null);
   const [streamStatus, setStreamStatus] = useState<string | null>(null);
   const [streamActivity, setStreamActivity] = useState<EducatorCopilotToolActivity[]>([]);
+  const [pendingDecisions, setPendingDecisions] = useState<
+    Record<string, "approve" | "reject">
+  >({});
   const [panelWidth, setPanelWidth] = useState(PANEL_DEFAULT_WIDTH);
   const autoApplied = useRef(new Set<string>());
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -410,23 +413,43 @@ export function EducatorCopilotShell() {
       }
       return;
     }
-    const res = await fetch("/api/educator/copilot/actions", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        sessionId: activeSession.id,
-        actionId: action.id,
-        decision,
-      }),
-    });
-    const data = await res.json();
-    if (!res.ok) {
-      setLocalNotice(data.error || "Could not apply action.");
-      return;
+    if (pendingDecisions[action.id]) return;
+    setLocalNotice(null);
+    setPendingDecisions((current) => ({ ...current, [action.id]: decision }));
+    try {
+      const res = await fetch("/api/educator/copilot/actions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          sessionId: activeSession.id,
+          actionId: action.id,
+          decision,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setLocalNotice(data.error || "Could not apply action.");
+        return;
+      }
+      updateLocalAction(action.id, {
+        status: data.action.status,
+        result: data.action.result,
+      });
+      setSessions((current) => upsertSession(current, data.session));
+      if (data.action?.status === "applied") router.refresh();
+    } catch {
+      setLocalNotice(
+        decision === "approve"
+          ? "Could not apply that change. Please try again."
+          : "Could not reject that change. Please try again."
+      );
+    } finally {
+      setPendingDecisions((current) => {
+        const next = { ...current };
+        delete next[action.id];
+        return next;
+      });
     }
-    setActiveSession(data.session);
-    setSessions((current) => upsertSession(current, summarizeSession(data.session)));
-    if (data.action?.status === "applied") router.refresh();
   }
 
   const emptyState = useMemo(
@@ -590,6 +613,7 @@ export function EducatorCopilotShell() {
                             message.role === "assistant"
                           }
                           liveActivity={streamActivity}
+                          pendingDecisions={pendingDecisions}
                           onDecision={decideAction}
                         />
                       ))}
@@ -702,12 +726,14 @@ function MessageBubble({
   agentName,
   isStreamingTarget,
   liveActivity,
+  pendingDecisions,
   onDecision,
 }: {
   message: EducatorCopilotMessage;
   agentName: string;
   isStreamingTarget: boolean;
   liveActivity: EducatorCopilotToolActivity[];
+  pendingDecisions: Record<string, "approve" | "reject">;
   onDecision: (action: EducatorCopilotAction, decision: "approve" | "reject") => void;
 }) {
   const activity = isStreamingTarget ? liveActivity : message.activity || [];
@@ -786,7 +812,12 @@ function MessageBubble({
         {message.actions?.length ? (
           <div className="mt-3 space-y-2">
             {message.actions.map((action) => (
-              <ActionCard key={action.id} action={action} onDecision={onDecision} />
+              <ActionCard
+                key={action.id}
+                action={action}
+                pendingDecision={pendingDecisions[action.id]}
+                onDecision={onDecision}
+              />
             ))}
           </div>
         ) : null}
@@ -802,6 +833,7 @@ function actionIcon(action: EducatorCopilotAction) {
     case "navigate":
       return <Navigation className="mt-0.5 h-4 w-4 text-slate-500" />;
     case "add_module":
+    case "create_skill_path":
       return <Layers className="mt-0.5 h-4 w-4 text-violet-600" />;
     case "add_lesson":
       return <FilePlus2 className="mt-0.5 h-4 w-4 text-violet-600" />;
@@ -811,6 +843,7 @@ function actionIcon(action: EducatorCopilotAction) {
       return <Globe2 className="mt-0.5 h-4 w-4 text-violet-600" />;
     case "update_course_lesson":
     case "update_module":
+    case "update_skill_path":
     case "update_skill_challenge":
       return <PenLine className="mt-0.5 h-4 w-4 text-amber-600" />;
     default:
@@ -820,12 +853,16 @@ function actionIcon(action: EducatorCopilotAction) {
 
 function ActionCard({
   action,
+  pendingDecision,
   onDecision,
 }: {
   action: EducatorCopilotAction;
+  pendingDecision?: "approve" | "reject";
   onDecision: (action: EducatorCopilotAction, decision: "approve" | "reject") => void;
 }) {
   const done = ["applied", "rejected", "blocked", "failed"].includes(action.status);
+  const pendingLabel =
+    pendingDecision === "approve" ? "Applying…" : pendingDecision === "reject" ? "Rejecting…" : null;
   return (
     <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
       <div className="flex items-start gap-2">
@@ -856,24 +893,37 @@ function ActionCard({
                 : "bg-white text-slate-500"
           )}
         >
-          {action.status}
+          {pendingLabel || action.status}
         </span>
         {!done ? (
           <>
             <button
               type="button"
               onClick={() => onDecision(action, "approve")}
-              className="ml-auto inline-flex items-center gap-1 rounded-md bg-slate-950 px-2.5 py-1.5 text-xs font-bold text-white"
+              disabled={Boolean(pendingDecision)}
+              className="ml-auto inline-flex items-center gap-1 rounded-md bg-slate-950 px-2.5 py-1.5 text-xs font-bold text-white transition disabled:cursor-wait disabled:opacity-60"
             >
-              <Check className="h-3.5 w-3.5" />
-              {action.type === "navigate" || action.type === "highlight" ? "Run" : "Approve"}
+              {pendingDecision === "approve" ? (
+                <LoaderCircle className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <Check className="h-3.5 w-3.5" />
+              )}
+              {pendingDecision === "approve"
+                ? "Applying…"
+                : action.type === "navigate" || action.type === "highlight"
+                  ? "Run"
+                  : "Approve"}
             </button>
             <button
               type="button"
               onClick={() => onDecision(action, "reject")}
-              className="rounded-md border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-bold text-slate-600"
+              disabled={Boolean(pendingDecision)}
+              className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-bold text-slate-600 transition disabled:cursor-wait disabled:opacity-60"
             >
-              Reject
+              {pendingDecision === "reject" ? (
+                <LoaderCircle className="h-3.5 w-3.5 animate-spin" />
+              ) : null}
+              {pendingDecision === "reject" ? "Rejecting…" : "Reject"}
             </button>
           </>
         ) : null}
