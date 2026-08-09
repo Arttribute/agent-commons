@@ -8,6 +8,7 @@ import {
   EXPERIENCE_COPILOT_WORLD_GUIDE,
 } from "@/lib/experience-ai";
 import { normalizeExperienceDocument } from "@/lib/experience-schema";
+import { uploadCourseMediaToS3 } from "@/lib/media-storage";
 import { indexCourseForSearch } from "@/lib/search-indexers";
 import Assignment from "@/models/Assignment";
 import Course from "@/models/Course";
@@ -21,6 +22,7 @@ import type {
   EducatorCopilotLessonDraft,
   EducatorCopilotPageContext,
 } from "@/types/educator-copilot";
+import type { SkillChallenge, SkillPack, SkillQuestion } from "@/types/skills";
 
 /** JSON-schema tool catalog handed to the agent run as cliTools. */
 export type CopilotToolDefinition = {
@@ -51,6 +53,78 @@ const lessonPatchProperties = {
   assetUrl: { type: "string" },
   assetAlt: { type: "string" },
   isFree: { type: "boolean" },
+};
+
+const skillQuestionProperties = {
+  id: { type: "string" },
+  prompt: { type: "string" },
+  options: { type: "array", items: { type: "string" } },
+  answerIndex: { type: "number" },
+  explanation: { type: "string" },
+};
+
+const skillChallengeProperties = {
+  id: { type: "string" },
+  title: { type: "string" },
+  shortTitle: { type: "string" },
+  minutes: { type: "number" },
+  points: { type: "number" },
+  streakBoost: { type: "number" },
+  assetUrl: {
+    type: "string",
+    description: "Existing durable course-media URL. Prefer assetAttachmentName for a chat upload.",
+  },
+  assetAttachmentName: {
+    type: "string",
+    description:
+      "Exact image filename from this chat. The tool persists it to course media and sets assetUrl.",
+  },
+  assetAlt: { type: "string" },
+  accentColor: { type: "string" },
+  audioCue: { type: "string", enum: ["spark", "focus", "complete"] },
+  hook: { type: "string" },
+  lesson: {
+    type: "string",
+    description: "Full challenge lesson body in markdown or safe HTML.",
+  },
+  keyIdeas: { type: "array", items: { type: "string" } },
+  microTask: { type: "string" },
+  questions: {
+    type: "array",
+    items: {
+      type: "object",
+      properties: skillQuestionProperties,
+      required: ["prompt", "options", "answerIndex"],
+    },
+  },
+};
+
+const skillPathProperties = {
+  slug: { type: "string" },
+  enabled: {
+    type: "boolean",
+    description: "Whether the skill path is published to learners (defaults to true when creating).",
+  },
+  title: { type: "string" },
+  subtitle: { type: "string" },
+  coverUrl: {
+    type: "string",
+    description: "Existing durable course-media URL. Prefer coverAttachmentName for a chat upload.",
+  },
+  coverAttachmentName: {
+    type: "string",
+    description:
+      "Exact banner image filename from this chat. The tool persists it to course media and sets coverUrl.",
+  },
+  learnerPromise: { type: "string" },
+  challenges: {
+    type: "array",
+    items: {
+      type: "object",
+      properties: skillChallengeProperties,
+      required: ["title", "lesson"],
+    },
+  },
 };
 
 export const educatorCopilotToolCatalog: CopilotToolDefinition[] = [
@@ -278,8 +352,45 @@ export const educatorCopilotToolCatalog: CopilotToolDefinition[] = [
     },
   },
   {
+    name: "create_skill_path",
+    description:
+      "Create a complete new skill path/badge sequence on a managed course, including its banner, daily challenge images, lesson copy, and quiz questions. Use exact uploaded filenames in coverAttachmentName and assetAttachmentName; this educator-console tool persists those uploads as durable course media. In manual mode it queues one approval card; in auto mode it applies immediately.",
+    parameters: {
+      type: "object",
+      properties: {
+        courseSlug: { type: "string" },
+        skillPath: {
+          type: "object",
+          properties: skillPathProperties,
+          required: ["title", "challenges"],
+        },
+        reason: { type: "string" },
+      },
+      required: ["courseSlug", "skillPath"],
+    },
+  },
+  {
+    name: "update_skill_path",
+    description:
+      "Update an existing skill path's metadata, banner, publication state, or (when explicitly requested) replace its complete challenge sequence. Call get_course first and identify it by skillPackSlug. For a single challenge edit use update_skill_challenge so other challenges are preserved.",
+    parameters: {
+      type: "object",
+      properties: {
+        courseSlug: { type: "string" },
+        skillPackSlug: { type: "string" },
+        patch: {
+          type: "object",
+          properties: skillPathProperties,
+        },
+        reason: { type: "string" },
+      },
+      required: ["courseSlug", "skillPackSlug", "patch"],
+    },
+  },
+  {
     name: "update_skill_challenge",
-    description: "Revise a skill-path challenge (hook, lesson body, key ideas, micro task).",
+    description:
+      "Revise an existing skill-path challenge, including its lesson copy, badge image, scoring, and quiz questions. Use assetAttachmentName to persist an image uploaded in this chat.",
     parameters: {
       type: "object",
       properties: {
@@ -288,14 +399,7 @@ export const educatorCopilotToolCatalog: CopilotToolDefinition[] = [
         skillPackSlug: { type: "string" },
         patch: {
           type: "object",
-          properties: {
-            title: { type: "string" },
-            shortTitle: { type: "string" },
-            hook: { type: "string" },
-            lesson: { type: "string", description: "Full challenge lesson body in markdown" },
-            keyIdeas: { type: "array", items: { type: "string" } },
-            microTask: { type: "string" },
-          },
+          properties: skillChallengeProperties,
         },
         reason: { type: "string" },
       },
@@ -459,6 +563,8 @@ async function runTool(
     case "add_module":
     case "update_module":
     case "update_course_overview":
+    case "create_skill_path":
+    case "update_skill_path":
     case "update_skill_challenge":
       return toolContentWrite(ctx, name, args);
     case "update_experience_world":
@@ -618,10 +724,14 @@ async function toolGetCourse(ctx: CopilotToolContext, args: Record<string, unkno
         })
       ),
     })),
-    skillPacks: packs.map((pack) => ({
-      skillPackSlug: pack.slug,
+    skillPacks: packs.map((pack, packIndex) => ({
+      skillPackSlug: pack.slug || (packIndex === 0 && course.skillPack ? course.slug : undefined),
+      storage: packIndex === 0 && course.skillPack ? "primary" : "additional",
       title: pack.title,
       enabled: pack.enabled,
+      subtitle: pack.subtitle,
+      coverUrl: pack.coverUrl,
+      learnerPromise: truncate(pack.learnerPromise as string, textLimit),
       challenges: ((pack.challenges as Array<Record<string, unknown>>) || []).map(
         (challenge) => ({
           challengeId: challenge.id,
@@ -629,6 +739,13 @@ async function toolGetCourse(ctx: CopilotToolContext, args: Record<string, unkno
           title: challenge.title,
           hook: truncate(challenge.hook as string, full ? 1200 : 200),
           lesson: truncate(challenge.lesson as string, textLimit),
+          minutes: challenge.minutes,
+          points: challenge.points,
+          streakBoost: challenge.streakBoost,
+          assetUrl: challenge.assetUrl,
+          assetAlt: challenge.assetAlt,
+          accentColor: challenge.accentColor,
+          audioCue: challenge.audioCue,
           keyIdeas: challenge.keyIdeas,
           microTask: truncate(challenge.microTask as string, full ? 1200 : 200),
           questionCount: Array.isArray(challenge.questions)
@@ -949,18 +1066,24 @@ async function toolContentWrite(
   name: string,
   args: Record<string, unknown>
 ) {
-  const action = buildContentAction(name, args);
+  const requestedCourseSlug = cleanString(args.courseSlug);
+  if (!requestedCourseSlug) {
+    return { error: "courseSlug is required." };
+  }
+  // Authorize the educator before persisting any uploaded images or recording
+  // an action against the course.
+  const course = await findManagedCourse(ctx.user, requestedCourseSlug);
+  if (!course) {
+    return { error: `No managed course with slug "${requestedCourseSlug}".` };
+  }
+
+  const preparedArgs = await persistSkillPathAttachments(ctx, name, args);
+  const action = buildContentAction(name, preparedArgs);
   if (!action) {
     return {
       error:
         "Invalid or empty change. Check required fields (courseSlug, indexes, and a non-empty patch/draft).",
     };
-  }
-
-  // Verify the course really belongs to this educator before recording anything.
-  const course = await findManagedCourse(ctx.user, action.courseSlug);
-  if (!course) {
-    return { error: `No managed course with slug "${action.courseSlug}".` };
   }
 
   if (ctx.actionMode === "auto") {
@@ -982,6 +1105,136 @@ async function toolContentWrite(
     note: "Manual mode: the change is queued as an action card the educator must approve. Tell them it is ready for review — do not claim it is applied.",
     actionLabel: action.label,
   };
+}
+
+async function persistSkillPathAttachments(
+  ctx: CopilotToolContext,
+  name: string,
+  args: Record<string, unknown>
+) {
+  if (
+    name !== "create_skill_path" &&
+    name !== "update_skill_path" &&
+    name !== "update_skill_challenge"
+  ) {
+    return args;
+  }
+
+  const prepared = { ...args };
+  const attachmentNames = new Set<string>();
+  const uploadedImageName = (value: unknown) => {
+    const candidate = cleanString(value)?.toLowerCase();
+    if (!candidate) return undefined;
+    return ctx.materials.find(
+      (material) =>
+        material.type.startsWith("image/") && material.name.toLowerCase() === candidate
+    )?.name;
+  };
+  const collect = (value: unknown) => {
+    const input = asRecord(value);
+    const coverName =
+      cleanString(input.coverAttachmentName) || uploadedImageName(input.coverUrl);
+    const assetName =
+      cleanString(input.assetAttachmentName) || uploadedImageName(input.assetUrl);
+    if (coverName) attachmentNames.add(coverName);
+    if (assetName) attachmentNames.add(assetName);
+    for (const challenge of Array.isArray(input.challenges) ? input.challenges : []) {
+      const challengeInput = asRecord(challenge);
+      const challengeName =
+        cleanString(challengeInput.assetAttachmentName) ||
+        uploadedImageName(challengeInput.assetUrl);
+      if (challengeName) attachmentNames.add(challengeName);
+    }
+  };
+
+  if (name === "create_skill_path") collect(args.skillPath);
+  else collect(args.patch);
+
+  if (!attachmentNames.size) return prepared;
+  const persisted = new Map(
+    await Promise.all(
+      [...attachmentNames].map(async (attachmentName) => [
+        attachmentName,
+        await persistUploadedSkillImage(ctx, attachmentName),
+      ] as const)
+    )
+  );
+
+  const replace = (value: unknown) => {
+    const input = { ...asRecord(value) };
+    const coverName =
+      cleanString(input.coverAttachmentName) || uploadedImageName(input.coverUrl);
+    if (coverName) input.coverUrl = persisted.get(coverName);
+    delete input.coverAttachmentName;
+    const assetName =
+      cleanString(input.assetAttachmentName) || uploadedImageName(input.assetUrl);
+    if (assetName) input.assetUrl = persisted.get(assetName);
+    delete input.assetAttachmentName;
+    if (Array.isArray(input.challenges)) {
+      input.challenges = input.challenges.map((challenge) => replace(challenge));
+    }
+    return input;
+  };
+
+  if (name === "create_skill_path") prepared.skillPath = replace(args.skillPath);
+  else prepared.patch = replace(args.patch);
+  return prepared;
+}
+
+async function persistUploadedSkillImage(
+  ctx: CopilotToolContext,
+  attachmentName: string
+) {
+  const query = attachmentName.toLowerCase();
+  const exact = ctx.materials.find((material) => material.name.toLowerCase() === query);
+  const partial = ctx.materials.filter((material) =>
+    material.name.toLowerCase().includes(query)
+  );
+  const material = exact || (partial.length === 1 ? partial[0] : undefined);
+  if (!material) {
+    const detail = partial.length > 1 ? "matches more than one upload" : "was not uploaded";
+    throw new Error(
+      `Image attachment “${attachmentName}” ${detail}. Use an exact filename from read_attachment.`
+    );
+  }
+  if (!material.type.startsWith("image/")) {
+    throw new Error(`Attachment “${material.name}” is not an image.`);
+  }
+  if (!material.fileId || !ctx.client || !ctx.agentId) {
+    throw new Error(
+      `Attachment “${material.name}” is not available from durable file storage. Upload it again and retry.`
+    );
+  }
+
+  const content = await ctx.client.files.content(material.fileId, {
+    agentId: ctx.agentId,
+    sessionId: ctx.agentSessionId,
+    includeImageUrls: true,
+    includeDownloadUrl: true,
+    maxChars: 1,
+  });
+  const sourceUrl = content.data.downloadUrl || content.data.imageUrls?.[0];
+  if (!sourceUrl) {
+    throw new Error(`Attachment “${material.name}” has no downloadable image source.`);
+  }
+  const source = await fetch(sourceUrl);
+  if (!source.ok) {
+    throw new Error(`Could not download attachment “${material.name}” (${source.status}).`);
+  }
+  const responseType = source.headers.get("content-type") || "";
+  const mimeType = responseType.startsWith("image/") ? responseType : material.type;
+  if (!mimeType.startsWith("image/")) {
+    throw new Error(`Attachment “${material.name}” did not resolve to an image.`);
+  }
+  const data = Buffer.from(await source.arrayBuffer());
+  if (!data.length || data.length > 20 * 1024 * 1024) {
+    throw new Error(`Attachment “${material.name}” has an unsupported image size.`);
+  }
+  return uploadCourseMediaToS3({
+    file: { name: material.name, type: mimeType },
+    data,
+    keyPrefix: "course-media/copilot-skill-paths",
+  });
 }
 
 async function toolExperienceWrite(
@@ -1081,6 +1334,8 @@ type ContentWriteAction = Extract<
       | "add_module"
       | "update_module"
       | "update_course_overview"
+      | "create_skill_path"
+      | "update_skill_path"
       | "update_skill_challenge";
   }
 >;
@@ -1208,6 +1463,42 @@ function buildContentAction(
       courseSlug,
       patch,
       preview: previewFromPatch(patch),
+    };
+  }
+
+  if (name === "create_skill_path") {
+    const skillPath = sanitizeSkillPathDraft(args.skillPath, { requireChallenges: true });
+    if (!skillPath) return null;
+    return {
+      ...base,
+      type: "create_skill_path",
+      label: `Create skill path “${skillPath.title}” (${skillPath.challenges.length} challenge${skillPath.challenges.length === 1 ? "" : "s"})`,
+      courseSlug,
+      skillPath,
+      preview: [
+        skillPath.enabled ? "Published to learners" : "Saved as unpublished",
+        skillPath.coverUrl ? "Banner image included" : "No banner image",
+        ...skillPath.challenges.map((challenge, index) =>
+          `${index + 1}. ${challenge.title}${challenge.assetUrl ? " · image included" : ""}`
+        ),
+      ]
+        .join("\n")
+        .slice(0, 1200),
+    };
+  }
+
+  if (name === "update_skill_path") {
+    const skillPackSlug = cleanString(args.skillPackSlug);
+    const patch = sanitizeSkillPathPatch(args.patch);
+    if (!skillPackSlug || !Object.keys(patch).length) return null;
+    return {
+      ...base,
+      type: "update_skill_path",
+      label: `Update skill path${patch.title ? `: ${patch.title}` : ` ${skillPackSlug}`}`,
+      courseSlug,
+      skillPackSlug,
+      patch,
+      preview: previewSkillPathPatch(patch),
     };
   }
 
@@ -1435,6 +1726,76 @@ export async function applyEducatorCopilotAction({
         Object.assign(course, action.patch);
         break;
       }
+      case "create_skill_path": {
+        const existingPacks = [
+          ...(course.skillPack ? [course.skillPack] : []),
+          ...((course.skillPacks as SkillPack[]) || []),
+        ];
+        if (
+          existingPacks.some(
+            (pack) =>
+              pack.slug === action.skillPath.slug ||
+              pack.title?.toLowerCase() === action.skillPath.title.toLowerCase()
+          )
+        ) {
+          return {
+            ...action,
+            status: "failed",
+            result:
+              "A skill path with this slug or title already exists in the course. Read the course again and update that path instead.",
+          };
+        }
+        if (
+          action.skillPath.slug &&
+          (await skillPathSlugExists(action.skillPath.slug, course._id))
+        ) {
+          return {
+            ...action,
+            status: "failed",
+            result:
+              "That skill-path slug is already used by another course. Choose a distinct slug and retry.",
+          };
+        }
+        course.skillPacks = [
+          ...((course.skillPacks as SkillPack[]) || []),
+          action.skillPath,
+        ];
+        course.markModified("skillPacks");
+        break;
+      }
+      case "update_skill_path": {
+        const primary = course.skillPack as SkillPack | undefined;
+        const additional = (course.skillPacks as SkillPack[]) || [];
+        const pack =
+          (primary &&
+          (primary.slug === action.skillPackSlug ||
+            (!primary.slug && action.skillPackSlug === course.slug))
+            ? primary
+            : undefined) ||
+          additional.find((candidate) => candidate.slug === action.skillPackSlug);
+        if (!pack) {
+          return { ...action, status: "failed", result: "Skill path not found." };
+        }
+        if (
+          action.patch.slug &&
+          action.patch.slug !== pack.slug &&
+          ([primary, ...additional].some(
+            (candidate) => candidate && candidate !== pack && candidate.slug === action.patch.slug
+          ) ||
+            (await skillPathSlugExists(action.patch.slug, course._id)))
+        ) {
+          return {
+            ...action,
+            status: "failed",
+            result:
+              "That skill-path slug is already used by another course. Choose a distinct slug and retry.",
+          };
+        }
+        Object.assign(pack, action.patch);
+        course.markModified("skillPack");
+        course.markModified("skillPacks");
+        break;
+      }
       case "update_skill_challenge": {
         const packs = [
           ...(course.skillPack ? [course.skillPack] : []),
@@ -1488,6 +1849,10 @@ function appliedSummary(action: EducatorCopilotAction) {
       return "Module updated.";
     case "update_course_overview":
       return "Course overview updated.";
+    case "create_skill_path":
+      return `Created skill path “${action.skillPath.title}” with ${action.skillPath.challenges.length} challenge(s).`;
+    case "update_skill_path":
+      return "Skill path updated.";
     case "update_skill_challenge":
       return "Skill challenge updated.";
     default:
@@ -1508,6 +1873,15 @@ async function findManagedCourse(user: CopilotUser, slug: string) {
           }),
         };
   return Course.findOne(filter);
+}
+
+async function skillPathSlugExists(slug: string, currentCourseId: unknown) {
+  return Boolean(
+    await Course.exists({
+      _id: { $ne: currentCourseId },
+      $or: [{ slug }, { "skillPack.slug": slug }, { "skillPacks.slug": slug }],
+    })
+  );
 }
 
 async function findManagedExperience(user: CopilotUser, experienceId: string) {
@@ -1585,22 +1959,157 @@ function sanitizeLessonDraft(value: unknown): EducatorCopilotLessonDraft | null 
 }
 
 function sanitizeSkillChallengePatch(value: unknown) {
-  const input = value && typeof value === "object" ? (value as Record<string, unknown>) : {};
-  const patch: Record<string, unknown> = {};
-  for (const key of ["title", "shortTitle", "hook", "lesson", "microTask"]) {
+  const input = asRecord(value);
+  const patch: Partial<Omit<SkillChallenge, "id" | "day">> = {};
+  for (const key of [
+    "title",
+    "shortTitle",
+    "assetUrl",
+    "assetAlt",
+    "accentColor",
+    "hook",
+    "lesson",
+    "microTask",
+  ] as const) {
     const next = cleanString(input[key]);
     if (next !== undefined) patch[key] = next;
+  }
+  for (const key of ["minutes", "points", "streakBoost"] as const) {
+    const next = nonNegativeInteger(input[key]);
+    if (next !== undefined && (key !== "minutes" || next > 0)) patch[key] = next;
+  }
+  const audioCue = cleanString(input.audioCue);
+  if (audioCue === "spark" || audioCue === "focus" || audioCue === "complete") {
+    patch.audioCue = audioCue;
   }
   if (Array.isArray(input.keyIdeas)) {
     patch.keyIdeas = input.keyIdeas
       .map((idea) => cleanString(idea))
-      .filter(Boolean)
-      .slice(0, 6);
+      .filter((idea): idea is string => Boolean(idea))
+      .slice(0, 8);
   }
-  return patch as Extract<
+  if (Array.isArray(input.questions)) {
+    patch.questions = input.questions
+      .map(sanitizeSkillQuestion)
+      .filter((question): question is SkillQuestion => Boolean(question));
+  }
+  return patch;
+}
+
+function sanitizeSkillQuestion(value: unknown, index = 0): SkillQuestion | null {
+  const input = asRecord(value);
+  const prompt = cleanString(input.prompt);
+  const options = Array.isArray(input.options)
+    ? input.options
+        .map((option) => cleanString(option))
+        .filter((option): option is string => Boolean(option))
+        .slice(0, 8)
+    : [];
+  const answerIndex = toIndex(input.answerIndex);
+  if (!prompt || options.length < 2 || answerIndex === null || answerIndex >= options.length) {
+    return null;
+  }
+  return {
+    id: cleanString(input.id) || `q${index + 1}`,
+    prompt,
+    options,
+    answerIndex,
+    explanation: cleanString(input.explanation),
+  };
+}
+
+function sanitizeSkillChallengeDraft(value: unknown, index: number): SkillChallenge | null {
+  const input = asRecord(value);
+  const title = cleanString(input.title);
+  const lesson = cleanString(input.lesson);
+  if (!title || !lesson) return null;
+  const patch = sanitizeSkillChallengePatch(input);
+  return {
+    id: cleanString(input.id) || `day-${index + 1}`,
+    day: index + 1,
+    title,
+    minutes: patch.minutes || 6,
+    points: patch.points ?? 60,
+    streakBoost: patch.streakBoost ?? 1,
+    shortTitle: patch.shortTitle,
+    assetUrl: patch.assetUrl,
+    assetAlt: patch.assetAlt,
+    accentColor: patch.accentColor || "#B8F56D",
+    audioCue: patch.audioCue || "focus",
+    hook: patch.hook,
+    lesson,
+    keyIdeas: patch.keyIdeas || [],
+    microTask: patch.microTask,
+    questions: patch.questions || [],
+  };
+}
+
+function sanitizeSkillPathDraft(
+  value: unknown,
+  options: { requireChallenges: boolean }
+): SkillPack | null {
+  const input = asRecord(value);
+  const title = cleanString(input.title);
+  if (!title) return null;
+  const challenges = (Array.isArray(input.challenges) ? input.challenges : [])
+    .map(sanitizeSkillChallengeDraft)
+    .filter((challenge): challenge is SkillChallenge => Boolean(challenge));
+  if (options.requireChallenges && !challenges.length) return null;
+  const usedIds = new Set<string>();
+  for (const [index, challenge] of challenges.entries()) {
+    const baseId = safeSlug(challenge.id) || `day-${index + 1}`;
+    let id = baseId;
+    let suffix = 2;
+    while (usedIds.has(id)) id = `${baseId}-${suffix++}`;
+    challenge.id = id;
+    challenge.day = index + 1;
+    usedIds.add(id);
+  }
+  return {
+    slug: safeSlug(cleanString(input.slug) || title),
+    enabled: typeof input.enabled === "boolean" ? input.enabled : true,
+    title,
+    subtitle: cleanString(input.subtitle),
+    coverUrl: cleanString(input.coverUrl),
+    learnerPromise: cleanString(input.learnerPromise),
+    challenges,
+  };
+}
+
+function sanitizeSkillPathPatch(value: unknown) {
+  const input = asRecord(value);
+  const patch: Extract<
     EducatorCopilotAction,
-    { type: "update_skill_challenge" }
-  >["patch"];
+    { type: "update_skill_path" }
+  >["patch"] = {};
+  for (const key of ["title", "subtitle", "coverUrl", "learnerPromise"] as const) {
+    const next = cleanString(input[key]);
+    if (next !== undefined) patch[key] = next;
+  }
+  const slug = cleanString(input.slug);
+  if (slug) patch.slug = safeSlug(slug);
+  if (typeof input.enabled === "boolean") patch.enabled = input.enabled;
+  if (Array.isArray(input.challenges)) {
+    patch.challenges = input.challenges
+      .map(sanitizeSkillChallengeDraft)
+      .filter((challenge): challenge is SkillChallenge => Boolean(challenge));
+  }
+  return patch;
+}
+
+function previewSkillPathPatch(
+  patch: Extract<EducatorCopilotAction, { type: "update_skill_path" }>["patch"]
+) {
+  const metadata = Object.entries(patch)
+    .filter(([key]) => key !== "challenges")
+    .map(([key, value]) => `${key}: ${String(value)}`);
+  if (patch.challenges) {
+    metadata.push(
+      `Challenges (${patch.challenges.length}):`,
+      ...patch.challenges.map((challenge, index) => `${index + 1}. ${challenge.title}`)
+    );
+  }
+  return metadata.join("\n").slice(0, 1200);
 }
 
 function previewFromPatch(patch: Record<string, unknown>) {
@@ -1634,6 +2143,24 @@ function formatExperienceImpact(
 
 function cleanString(value: unknown) {
   return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+
+function asRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" ? (value as Record<string, unknown>) : {};
+}
+
+function safeSlug(value: string) {
+  return value
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "")
+    .slice(0, 90);
+}
+
+function nonNegativeInteger(value: unknown) {
+  const num = typeof value === "string" ? Number(value) : value;
+  if (typeof num !== "number" || !Number.isFinite(num) || num < 0) return undefined;
+  return Math.floor(num);
 }
 
 function truncate(value: unknown, max: number) {

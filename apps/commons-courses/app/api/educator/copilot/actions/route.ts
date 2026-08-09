@@ -85,7 +85,6 @@ export async function POST(req: NextRequest) {
       currentPath: session.currentPath,
       createdAt: session.createdAt,
       updatedAt: session.updatedAt,
-      messages: session.messages || [],
     },
   });
 }
