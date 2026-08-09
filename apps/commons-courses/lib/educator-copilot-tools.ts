@@ -3,6 +3,7 @@ import { Types } from "mongoose";
 import type { CommonsClient } from "@agent-commons/sdk";
 import type { CopilotUser } from "@/lib/educator-copilot-agent";
 import { buildManagedCoursesFilter } from "@/lib/educator-auth";
+import { resolveEducatorCopilotImageUrl } from "@/lib/educator-copilot-files";
 import {
   describeExperienceCopilotImpact,
   EXPERIENCE_COPILOT_WORLD_GUIDE,
@@ -51,6 +52,11 @@ const lessonPatchProperties = {
     description: "Full lesson body in markdown. Write complete content, not placeholders.",
   },
   assetUrl: { type: "string" },
+  assetAttachmentName: {
+    type: "string",
+    description:
+      "Exact image filename from this chat. The tool persists it to course media and sets assetUrl.",
+  },
   assetAlt: { type: "string" },
   isFree: { type: "boolean" },
 };
@@ -244,7 +250,7 @@ export const educatorCopilotToolCatalog: CopilotToolDefinition[] = [
   {
     name: "update_lesson",
     description:
-      "Revise an existing lesson (title, duration, body, media, free flag). In manual mode this queues a proposal for the educator to approve; in auto mode it applies immediately.",
+      "Revise an existing lesson (title, duration, body, media, free flag). For a chat-uploaded image use its exact filename in assetAttachmentName so it is persisted as durable course media. In manual mode this queues a proposal for the educator to approve; in auto mode it applies immediately.",
     parameters: {
       type: "object",
       properties: {
@@ -259,7 +265,8 @@ export const educatorCopilotToolCatalog: CopilotToolDefinition[] = [
   },
   {
     name: "add_lesson",
-    description: "Add a new lesson to an existing module.",
+    description:
+      "Add a new lesson to an existing module. For a chat-uploaded image use its exact filename in assetAttachmentName.",
     parameters: {
       type: "object",
       properties: {
@@ -278,7 +285,7 @@ export const educatorCopilotToolCatalog: CopilotToolDefinition[] = [
   {
     name: "add_module",
     description:
-      "Add a whole new module with its lessons — the building block for creating course content (e.g. from an uploaded document). Propose one module per call so the educator can review each.",
+      "Add a whole new module with its lessons — the building block for creating course content (e.g. from an uploaded document). Lesson images can use exact chat filenames in assetAttachmentName. Propose one module per call so the educator can review each.",
     parameters: {
       type: "object",
       properties: {
@@ -1077,7 +1084,7 @@ async function toolContentWrite(
     return { error: `No managed course with slug "${requestedCourseSlug}".` };
   }
 
-  const preparedArgs = await persistSkillPathAttachments(ctx, name, args);
+  const preparedArgs = await persistContentAttachments(ctx, name, args);
   const action = buildContentAction(name, preparedArgs);
   if (!action) {
     return {
@@ -1107,12 +1114,15 @@ async function toolContentWrite(
   };
 }
 
-async function persistSkillPathAttachments(
+async function persistContentAttachments(
   ctx: CopilotToolContext,
   name: string,
   args: Record<string, unknown>
 ) {
   if (
+    name !== "update_lesson" &&
+    name !== "add_lesson" &&
+    name !== "add_module" &&
     name !== "create_skill_path" &&
     name !== "update_skill_path" &&
     name !== "update_skill_challenge"
@@ -1130,7 +1140,7 @@ async function persistSkillPathAttachments(
         material.type.startsWith("image/") && material.name.toLowerCase() === candidate
     )?.name;
   };
-  const collect = (value: unknown) => {
+  const collect = (value: unknown): void => {
     const input = asRecord(value);
     const coverName =
       cleanString(input.coverAttachmentName) || uploadedImageName(input.coverUrl);
@@ -1138,16 +1148,16 @@ async function persistSkillPathAttachments(
       cleanString(input.assetAttachmentName) || uploadedImageName(input.assetUrl);
     if (coverName) attachmentNames.add(coverName);
     if (assetName) attachmentNames.add(assetName);
-    for (const challenge of Array.isArray(input.challenges) ? input.challenges : []) {
-      const challengeInput = asRecord(challenge);
-      const challengeName =
-        cleanString(challengeInput.assetAttachmentName) ||
-        uploadedImageName(challengeInput.assetUrl);
-      if (challengeName) attachmentNames.add(challengeName);
+    for (const key of ["challenges", "lessons"] as const) {
+      for (const child of Array.isArray(input[key]) ? input[key] : []) {
+        collect(child);
+      }
     }
   };
 
   if (name === "create_skill_path") collect(args.skillPath);
+  else if (name === "add_lesson") collect(args.lesson);
+  else if (name === "add_module") collect(args.module);
   else collect(args.patch);
 
   if (!attachmentNames.size) return prepared;
@@ -1155,12 +1165,12 @@ async function persistSkillPathAttachments(
     await Promise.all(
       [...attachmentNames].map(async (attachmentName) => [
         attachmentName,
-        await persistUploadedSkillImage(ctx, attachmentName),
+        await persistUploadedCopilotImage(ctx, attachmentName),
       ] as const)
     )
   );
 
-  const replace = (value: unknown) => {
+  const replace = (value: unknown): Record<string, unknown> => {
     const input = { ...asRecord(value) };
     const coverName =
       cleanString(input.coverAttachmentName) || uploadedImageName(input.coverUrl);
@@ -1170,18 +1180,22 @@ async function persistSkillPathAttachments(
       cleanString(input.assetAttachmentName) || uploadedImageName(input.assetUrl);
     if (assetName) input.assetUrl = persisted.get(assetName);
     delete input.assetAttachmentName;
-    if (Array.isArray(input.challenges)) {
-      input.challenges = input.challenges.map((challenge) => replace(challenge));
+    for (const key of ["challenges", "lessons"] as const) {
+      if (Array.isArray(input[key])) {
+        input[key] = input[key].map((child) => replace(child));
+      }
     }
     return input;
   };
 
   if (name === "create_skill_path") prepared.skillPath = replace(args.skillPath);
+  else if (name === "add_lesson") prepared.lesson = replace(args.lesson);
+  else if (name === "add_module") prepared.module = replace(args.module);
   else prepared.patch = replace(args.patch);
   return prepared;
 }
 
-async function persistUploadedSkillImage(
+async function persistUploadedCopilotImage(
   ctx: CopilotToolContext,
   attachmentName: string
 ) {
@@ -1213,7 +1227,7 @@ async function persistUploadedSkillImage(
     includeDownloadUrl: true,
     maxChars: 1,
   });
-  const sourceUrl = content.data.downloadUrl || content.data.imageUrls?.[0];
+  const sourceUrl = resolveEducatorCopilotImageUrl(content.data);
   if (!sourceUrl) {
     throw new Error(`Attachment “${material.name}” has no downloadable image source.`);
   }
@@ -1233,7 +1247,7 @@ async function persistUploadedSkillImage(
   return uploadCourseMediaToS3({
     file: { name: material.name, type: mimeType },
     data,
-    keyPrefix: "course-media/copilot-skill-paths",
+    keyPrefix: "course-media/copilot-content",
   });
 }
 

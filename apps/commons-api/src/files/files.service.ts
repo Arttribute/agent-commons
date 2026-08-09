@@ -828,6 +828,26 @@ export class FilesService {
       ? artifacts.filter((artifact) => artifact.pageNumber === input.pageNumber)
       : artifacts;
 
+    const download = input.includeDownloadUrl
+      ? await this.signedOriginal(file)
+      : undefined;
+    const resolvedArtifacts = await Promise.all(
+      filteredArtifacts.map(async (artifact) => ({
+        artifactId: artifact.blobId,
+        kind: artifact.role,
+        mimeType: artifact.mimeType,
+        pageNumber: artifact.pageNumber,
+        width: artifact.width,
+        height: artifact.height,
+        url: input.includeImageUrls
+          ? await this.createSignedUrl(
+              artifact.storageBucket,
+              artifact.storagePath,
+            )
+          : undefined,
+      })),
+    );
+
     return {
       fileId: file.itemId,
       name: file.name,
@@ -841,25 +861,15 @@ export class FilesService {
       truncated: nextOffset < fullText.length,
       textPreview: file.textPreview,
       metadata: file.metadata ?? {},
-      download: input.includeDownloadUrl
-        ? await this.signedOriginal(file)
-        : undefined,
-      artifacts: await Promise.all(
-        filteredArtifacts.map(async (artifact) => ({
-          artifactId: artifact.blobId,
-          kind: artifact.role,
-          mimeType: artifact.mimeType,
-          pageNumber: artifact.pageNumber,
-          width: artifact.width,
-          height: artifact.height,
-          url: input.includeImageUrls
-            ? await this.createSignedUrl(
-                artifact.storageBucket,
-                artifact.storagePath,
-              )
-            : undefined,
-        })),
-      ),
+      // Keep the structured fields used by agent tools while also returning
+      // the SDK's documented convenience aliases. Older and newer clients can
+      // therefore consume the same response during rolling deployments.
+      download,
+      downloadUrl: download?.url,
+      artifacts: resolvedArtifacts,
+      imageUrls: resolvedArtifacts
+        .map((artifact) => artifact.url)
+        .filter((url): url is string => Boolean(url)),
     };
   }
 
