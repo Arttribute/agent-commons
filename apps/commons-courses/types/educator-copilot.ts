@@ -1,4 +1,5 @@
 import type { ExperienceDocument } from "@/types/experience";
+import type { SkillChallenge, SkillPack } from "@/types/skills";
 
 export type EducatorCopilotActionMode = "manual" | "auto";
 
@@ -89,18 +90,24 @@ export type EducatorCopilotAction =
       };
     })
   | (ActionBase & {
+      type: "create_skill_path";
+      courseSlug: string;
+      skillPath: SkillPack;
+    })
+  | (ActionBase & {
+      type: "update_skill_path";
+      courseSlug: string;
+      skillPackSlug: string;
+      patch: Partial<Omit<SkillPack, "challenges">> & {
+        challenges?: SkillChallenge[];
+      };
+    })
+  | (ActionBase & {
       type: "update_skill_challenge";
       courseSlug: string;
       skillPackSlug?: string;
       challengeId: string;
-      patch: {
-        title?: string;
-        shortTitle?: string;
-        hook?: string;
-        lesson?: string;
-        keyIdeas?: string[];
-        microTask?: string;
-      };
+      patch: Partial<Omit<SkillChallenge, "id" | "day">>;
     })
   | (ActionBase & {
       type: "update_experience_world";

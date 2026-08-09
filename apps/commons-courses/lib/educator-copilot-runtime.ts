@@ -47,6 +47,8 @@ const TOOL_LABELS: Record<string, string> = {
   add_module: "Drafting a new module",
   update_module: "Drafting a module edit",
   update_course_overview: "Drafting overview copy",
+  create_skill_path: "Drafting a new skill path",
+  update_skill_path: "Drafting a skill path edit",
   update_skill_challenge: "Drafting a challenge edit",
   update_experience_world: "Validating a world edit",
   navigate: "Preparing navigation",
