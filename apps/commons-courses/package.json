@@ -9,6 +9,7 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
+    "test": "node --test --experimental-strip-types lib/*.test.mts",
     "lint": "eslint",
     "migrate:ai-fluency-media:s3": "node scripts/migrate-ai-fluency-media-to-s3.mjs",
     "seed:make-agent-powerful-skill": "node scripts/seed-make-agent-powerful-skill.mjs",
