@@ -76,6 +76,7 @@ import {
 } from './copilot-platform-guide';
 import { SkillService } from '~/skill/skill.service';
 import { durableRole, restoreSessionMessages } from '~/session/session-history';
+import { filterPlatformToolsForAgent } from './copilot-tool-policy';
 
 const got = import('got');
 
@@ -1108,7 +1109,11 @@ export class AgentService implements OnModuleInit {
 
           // ✅ Load tools using centralized ToolLoaderService
           emitStatus('tools', 'running', 'Loading available tools');
-          const staticDefs = map(app.functions, (_) => ({
+          const visiblePlatformTools = filterPlatformToolsForAgent(
+            app.functions,
+            agent,
+          );
+          const staticDefs = map(visiblePlatformTools, (_) => ({
             type: 'function',
             function: {
               ..._,

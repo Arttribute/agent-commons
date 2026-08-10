@@ -361,7 +361,7 @@ export const educatorCopilotToolCatalog: CopilotToolDefinition[] = [
   {
     name: "create_skill_path",
     description:
-      "Create a complete new skill path/badge sequence on a managed course, including its banner, daily challenge images, lesson copy, and quiz questions. Use exact uploaded filenames in coverAttachmentName and assetAttachmentName; this educator-console tool persists those uploads as durable course media. In manual mode it queues one approval card; in auto mode it applies immediately.",
+      "Create a complete new skill path/badge sequence on a managed course, including its banner, daily challenge images, lesson copy, and quiz questions. This is the authorized educator-console route for course skill paths; do not use Agent Commons listCommonsResources or proposeSkillChange. Use exact uploaded filenames in coverAttachmentName and assetAttachmentName; this tool persists those uploads as durable course media. In manual mode it queues one approval card; in auto mode it applies immediately.",
     parameters: {
       type: "object",
       properties: {

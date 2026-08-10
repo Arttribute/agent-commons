@@ -10,9 +10,10 @@ type UploadArgs = {
 
 export function isS3MediaStorageConfigured() {
   return Boolean(
-    process.env.COURSE_MEDIA_S3_BUCKET &&
-      process.env.COURSE_MEDIA_S3_REGION &&
-      (process.env.COURSE_MEDIA_CDN_URL || process.env.COURSE_MEDIA_PUBLIC_URL)
+    environmentValue("COURSE_MEDIA_S3_BUCKET") &&
+      environmentValue("COURSE_MEDIA_S3_REGION") &&
+      (environmentValue("COURSE_MEDIA_CDN_URL") ||
+        environmentValue("COURSE_MEDIA_PUBLIC_URL"))
   );
 }
 
@@ -21,10 +22,11 @@ export async function uploadCourseMediaToS3({
   data,
   keyPrefix = "course-media",
 }: UploadArgs) {
-  const bucket = process.env.COURSE_MEDIA_S3_BUCKET;
-  const region = process.env.COURSE_MEDIA_S3_REGION;
+  const bucket = environmentValue("COURSE_MEDIA_S3_BUCKET");
+  const region = environmentValue("COURSE_MEDIA_S3_REGION");
   const publicBaseUrl =
-    process.env.COURSE_MEDIA_CDN_URL || process.env.COURSE_MEDIA_PUBLIC_URL;
+    environmentValue("COURSE_MEDIA_CDN_URL") ||
+    environmentValue("COURSE_MEDIA_PUBLIC_URL");
 
   if (!bucket || !region || !publicBaseUrl) {
     throw new Error("Course media S3 storage is not configured.");
@@ -59,10 +61,11 @@ export async function createCourseMediaUpload({
   contentType: string;
   keyPrefix?: string;
 }) {
-  const bucket = process.env.COURSE_MEDIA_S3_BUCKET;
-  const region = process.env.COURSE_MEDIA_S3_REGION;
+  const bucket = environmentValue("COURSE_MEDIA_S3_BUCKET");
+  const region = environmentValue("COURSE_MEDIA_S3_REGION");
   const publicBaseUrl =
-    process.env.COURSE_MEDIA_CDN_URL || process.env.COURSE_MEDIA_PUBLIC_URL;
+    environmentValue("COURSE_MEDIA_CDN_URL") ||
+    environmentValue("COURSE_MEDIA_PUBLIC_URL");
   if (!bucket || !region || !publicBaseUrl) {
     throw new Error("Course media S3 storage is not configured.");
   }
@@ -94,7 +97,7 @@ export async function createCourseMediaUpload({
 }
 
 function createCourseMediaS3Client(region: string) {
-  const roleArn = process.env.AWS_ROLE_ARN || process.env.COURSE_MEDIA_AWS_ROLE_ARN;
+  const roleArn = resolveCourseMediaAwsRoleArn();
   if (!roleArn) return new S3Client({ region });
 
   return new S3Client({
@@ -106,6 +109,42 @@ function createCourseMediaS3Client(region: string) {
       roleSessionName: "commonlab-course-media",
     }),
   });
+}
+
+export function resolveCourseMediaAwsRoleArn(
+  environment?: Partial<
+    Record<"COURSE_MEDIA_AWS_ROLE_ARN" | "AWS_ROLE_ARN", string | undefined>
+  >,
+) {
+  const source = environment || process.env;
+  const roleArn = [
+    source.COURSE_MEDIA_AWS_ROLE_ARN,
+    source.AWS_ROLE_ARN,
+  ]
+    .map((value) => value?.trim())
+    .find(Boolean);
+  if (!roleArn) return undefined;
+
+  const [prefix, partition, service, region, accountId, resource] =
+    roleArn.split(":");
+  const isIamRoleArn =
+    prefix === "arn" &&
+    Boolean(partition) &&
+    service === "iam" &&
+    region === "" &&
+    /^\d{12}$/.test(accountId || "") &&
+    Boolean(resource?.startsWith("role/") && resource.length > "role/".length) &&
+    !/\s/.test(roleArn);
+  if (!isIamRoleArn) {
+    throw new Error(
+      "Course media AWS role ARN is invalid. Configure COURSE_MEDIA_AWS_ROLE_ARN with a complete IAM role ARN.",
+    );
+  }
+  return roleArn;
+}
+
+function environmentValue(name: string) {
+  return process.env[name]?.trim() || undefined;
 }
 
 function safeFilename(filename: string) {
