@@ -41,6 +41,7 @@ const TOOL_LABELS: Record<string, string> = {
   get_student: "Looking up a student",
   get_course_analytics: "Crunching analytics",
   list_assignments: "Checking assignments and reviews",
+  list_live_sessions: "Checking live sessions",
   read_attachment: "Reading attached file",
   update_lesson: "Drafting a lesson edit",
   add_lesson: "Drafting a new lesson",
@@ -51,6 +52,7 @@ const TOOL_LABELS: Record<string, string> = {
   update_skill_path: "Drafting a skill path edit",
   update_skill_challenge: "Drafting a challenge edit",
   update_experience_world: "Validating a world edit",
+  create_live_session: "Designing a live session",
   navigate: "Preparing navigation",
   highlight: "Locating page element",
   remember: "Saving a preference",
@@ -189,7 +191,7 @@ export async function buildWorkspaceSnapshot({
     ].join("\n")
   );
   lines.push(
-    "- Per course: /educator/courses/<slug> (dashboard), /content (modules & lessons editor), /experiences (immersive worlds), /skills (skill paths), /students, /assignments, /analytics, /edit (course settings), /collaborators, /payments, /access, /notifications"
+    "- Per course: /educator/courses/<slug> (dashboard), /content (modules & lessons editor), /live (live and in-person sessions), /experiences (immersive worlds), /skills (skill paths), /students, /assignments, /analytics, /edit (course settings), /collaborators, /payments, /access, /notifications"
   );
 
   if (pageContext) {

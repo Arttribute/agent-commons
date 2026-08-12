@@ -19,6 +19,7 @@ import {
   Menu,
   PanelLeftClose,
   PanelLeftOpen,
+  Radio,
   Users,
   X,
 } from "lucide-react";
@@ -39,6 +40,7 @@ const navGroups = [
       { label: "Dashboard", href: "", icon: LayoutDashboard },
       { label: "Course info", href: "edit", icon: FileText },
       { label: "Content", href: "content", icon: BookOpen },
+      { label: "Live sessions", href: "live", icon: Radio },
       { label: "Experiences", href: "experiences", icon: Gamepad2 },
       { label: "Skill badges", href: "skills", icon: Award },
       { label: "Assignments", href: "assignments", icon: ClipboardList },

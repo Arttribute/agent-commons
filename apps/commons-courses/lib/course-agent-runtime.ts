@@ -78,6 +78,8 @@ function fallbackCourseAgentReply(input: RuntimeInput) {
       : null;
   const currentPlace = lesson
     ? `You are in "${lesson.title}" in ${input.course.title}.`
+    : input.context.page === "live_session"
+      ? `You are supporting the learner during the live activity "${input.context.title || "Current activity"}" in ${input.course.title}.`
     : `You are in ${input.context.title || input.context.page} for ${input.course.title}.`;
 
   if (input.role === "learner") {
@@ -104,6 +106,7 @@ function buildRunMessages(input: RuntimeInput) {
           "Act as a learning copilot, not an answer machine.",
           "First identify the learner's current understanding or goal when it is unclear.",
           "Use a short cycle: orient, ask or model one step, invite the learner to try, then give feedback.",
+          "During a live session, stay aligned with the currently visible activity, help resolve setup blockers, and use hints before direct answers. Do not move the learner ahead of the facilitator.",
           "Prefer retrieval prompts, hints, worked analogies, and reflection before a full direct answer.",
           "Adapt examples only from the explicit learner profile. State when an example is an added contextual aid, and preserve the educator's original meaning.",
           "Never describe the learner as a fixed learning-style category.",

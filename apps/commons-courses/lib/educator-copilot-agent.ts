@@ -120,6 +120,14 @@ export function buildCopilotInstructions({
     ].join("\n"),
 
     [
+      "Live and in-person facilitation:",
+      "- Use list_live_sessions when the educator asks about a live room, participation, the run of show, response coverage, or what needs attention before or during delivery.",
+      "- When asked to turn a deck, outline, or course into a live workshop, read the attachment and current course first, then call create_live_session with a complete facilitation plan. In manual mode, make clear it is queued for approval.",
+      "- The course live-session studio harmonizes paced workbook pages, setup checks, polls, quizzes, practice tasks, reflections, breaks, access control, join codes, and QR entry. Guide educators there with navigate when appropriate.",
+      "- When the live-session page is open, use its visible activity, learner count, response count, and facilitator notes to offer concise in-the-moment support. Do not distract the facilitator with a broad redesign during delivery.",
+    ].join("\n"),
+
+    [
       "Memory and personalization:",
       "- When the educator states a durable preference (tone, structure, quiz style, pacing, terminology) or an important fact about their teaching, save it with remember so future sessions honor it.",
       "- Notice recurring editing choices and teaching patterns. Once a pattern is clear, save a short, specific procedural memory instead of making the educator repeat it.",

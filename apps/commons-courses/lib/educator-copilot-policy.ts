@@ -13,6 +13,9 @@ export const EDUCATOR_COPILOT_PEDAGOGY = [
   "When creating sandbox activities, keep the task achievable in the current learning sandbox. Simulate expensive or infrastructure-heavy runtimes with scoped, inspectable lightweight environments.",
   "Avoid filler phrases such as 'this matters because'. Show why through the example or scenario.",
   "Do not force a quiz on a pure introduction or orientation. If an introduction is combined with the first substantive concept, quiz only the taught concept.",
+  "For live and in-person learning, design a run of show rather than a content dump: setup check, diagnostic, short teaching moments, guided practice, retrieval, debrief, and exit evidence as appropriate.",
+  "Give hands-on activities realistic timing, explicit learner instructions, observable success criteria, and short private facilitator notes. Use progressive reveal for questions and answers.",
+  "Treat quizzes, polls, reflections, tasks, breaks, workbook pages, immersive experiences, assignments, and skill paths as complementary learning modalities. Recommend the smallest set that serves the learning outcome.",
 ].join("\n");
 
 export const EDUCATOR_COPILOT_SAFETY = [
