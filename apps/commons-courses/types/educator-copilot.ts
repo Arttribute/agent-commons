@@ -1,5 +1,6 @@
 import type { ExperienceDocument } from "@/types/experience";
 import type { SkillChallenge, SkillPack } from "@/types/skills";
+import type { LiveActivity, LiveSessionAccess, LiveSessionPace } from "@/types/live-session";
 
 export type EducatorCopilotActionMode = "manual" | "auto";
 
@@ -115,6 +116,17 @@ export type EducatorCopilotAction =
       experienceId: string;
       baseVersion: number;
       document: ExperienceDocument;
+    })
+  | (ActionBase & {
+      type: "create_live_session";
+      courseSlug: string;
+      session: {
+        title: string;
+        description?: string;
+        pace: LiveSessionPace;
+        access: LiveSessionAccess;
+        activities: LiveActivity[];
+      };
     });
 
 export type EducatorCopilotToolActivity = {

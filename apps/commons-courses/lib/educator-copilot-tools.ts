@@ -10,11 +10,15 @@ import {
 } from "@/lib/experience-ai";
 import { normalizeExperienceDocument } from "@/lib/experience-schema";
 import { uploadCourseMediaToS3 } from "@/lib/media-storage";
+import { createJoinCode, normalizeActivities } from "@/lib/live-session-input";
 import { indexCourseForSearch } from "@/lib/search-indexers";
 import Assignment from "@/models/Assignment";
 import Course from "@/models/Course";
 import Enrollment from "@/models/Enrollment";
 import ExperienceProject from "@/models/ExperienceProject";
+import LiveParticipant from "@/models/LiveParticipant";
+import LiveResponse from "@/models/LiveResponse";
+import LiveSession from "@/models/LiveSession";
 import Submission from "@/models/Submission";
 import type { IEducatorCopilotMaterial } from "@/models/EducatorCopilotSession";
 import type {
@@ -24,6 +28,7 @@ import type {
   EducatorCopilotPageContext,
 } from "@/types/educator-copilot";
 import type { SkillChallenge, SkillPack, SkillQuestion } from "@/types/skills";
+import type { LiveActivity } from "@/types/live-session";
 
 /** JSON-schema tool catalog handed to the agent run as cliTools. */
 export type CopilotToolDefinition = {
@@ -235,6 +240,22 @@ export const educatorCopilotToolCatalog: CopilotToolDefinition[] = [
     },
   },
   {
+    name: "list_live_sessions",
+    description:
+      "List live and in-person course sessions with their run of show, room status, join code, participation, and response counts. Use this for facilitation prep, live room checks, and post-session reflection.",
+    parameters: {
+      type: "object",
+      properties: {
+        courseSlug: { type: "string", description: "Optional course slug from list_courses" },
+        status: {
+          type: "string",
+          enum: ["draft", "lobby", "live", "ended"],
+        },
+      },
+      required: [],
+    },
+  },
+  {
     name: "read_attachment",
     description:
       "Read the full extracted text of a file the educator uploaded in this chat session. Use whenever the educator refers to an uploaded file.",
@@ -261,6 +282,66 @@ export const educatorCopilotToolCatalog: CopilotToolDefinition[] = [
         reason: { type: "string", description: "One line: why this change helps" },
       },
       required: ["courseSlug", "moduleIndex", "lessonIndex", "patch"],
+    },
+  },
+  {
+    name: "create_live_session",
+    description:
+      "Create a complete live or in-person facilitation plan for a managed course. Use after reading source material and the course. Build an intentional run of show from workbook pages, setup checks, polls, quizzes, reflections, practice tasks, and breaks. This is approval-gated in manual mode.",
+    parameters: {
+      type: "object",
+      properties: {
+        courseSlug: { type: "string" },
+        title: { type: "string" },
+        description: { type: "string" },
+        pace: { type: "string", enum: ["facilitator", "learner"] },
+        access: { type: "string", enum: ["enrolled", "invited", "open"] },
+        activities: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: {
+              type: {
+                type: "string",
+                enum: [
+                  "content",
+                  "setup_check",
+                  "poll",
+                  "quiz",
+                  "reflection",
+                  "task",
+                  "break",
+                ],
+              },
+              title: { type: "string" },
+              prompt: { type: "string" },
+              instructions: { type: "string" },
+              successCriteria: { type: "string" },
+              facilitatorNotes: { type: "string" },
+              resourceUrl: { type: "string" },
+              estimatedMinutes: { type: "number" },
+              required: { type: "boolean" },
+              randomizeOptions: { type: "boolean" },
+              showResults: { type: "boolean" },
+              points: { type: "number" },
+              options: {
+                type: "array",
+                items: {
+                  type: "object",
+                  properties: {
+                    label: { type: "string" },
+                    isCorrect: { type: "boolean" },
+                  },
+                  required: ["label"],
+                },
+              },
+            },
+            required: ["type", "title"],
+          },
+        },
+        reason: { type: "string" },
+      },
+      required: ["courseSlug", "title", "activities"],
     },
   },
   {
@@ -563,6 +644,8 @@ async function runTool(
       return toolCourseAnalytics(ctx, args);
     case "list_assignments":
       return toolListAssignments(ctx, args);
+    case "list_live_sessions":
+      return toolListLiveSessions(ctx, args);
     case "read_attachment":
       return toolReadAttachment(ctx, args);
     case "update_lesson":
@@ -573,6 +656,7 @@ async function runTool(
     case "create_skill_path":
     case "update_skill_path":
     case "update_skill_challenge":
+    case "create_live_session":
       return toolContentWrite(ctx, name, args);
     case "update_experience_world":
       return toolExperienceWrite(ctx, args);
@@ -815,6 +899,98 @@ async function toolListExperiences(
         assetCount: document.assets.length,
         studioHref: `/educator/experience-studio/${String(project._id)}`,
         updatedAt: project.updatedAt,
+      };
+    }),
+  };
+}
+
+async function toolListLiveSessions(
+  ctx: CopilotToolContext,
+  args: Record<string, unknown>,
+) {
+  const courseSlug = cleanString(args.courseSlug);
+  const status = cleanString(args.status);
+  const courses = await Course.find({
+    ...(courseSlug ? { slug: courseSlug } : {}),
+    ...managedFilter(ctx.user),
+  })
+    .select("_id title slug")
+    .lean();
+  if (!courses.length) {
+    return {
+      error: courseSlug
+        ? `No managed course with slug "${courseSlug}".`
+        : "No managed courses were found.",
+    };
+  }
+  const courseById = new Map(
+    courses.map((course) => [String(course._id), course]),
+  );
+  const sessions = await LiveSession.find({
+    courseId: { $in: courses.map((course) => course._id) },
+    ...(status && ["draft", "lobby", "live", "ended"].includes(status)
+      ? { status }
+      : {}),
+  })
+    .sort({ updatedAt: -1 })
+    .limit(80)
+    .lean();
+  const sessionIds = sessions.map((session) => session._id);
+  const [participantRows, responseRows] = await Promise.all([
+    LiveParticipant.aggregate([
+      { $match: { sessionId: { $in: sessionIds } } },
+      { $group: { _id: "$sessionId", count: { $sum: 1 } } },
+    ]),
+    LiveResponse.aggregate([
+      { $match: { sessionId: { $in: sessionIds } } },
+      { $group: { _id: { sessionId: "$sessionId", activityId: "$activityId" }, count: { $sum: 1 } } },
+    ]),
+  ]);
+  const participantsBySession = new Map(
+    participantRows.map((row: { _id: Types.ObjectId; count: number }) => [
+      String(row._id),
+      row.count,
+    ]),
+  );
+  const responsesBySession = new Map<string, Map<string, number>>();
+  for (const row of responseRows as Array<{
+    _id: { sessionId: Types.ObjectId; activityId: string };
+    count: number;
+  }>) {
+    const key = String(row._id.sessionId);
+    const counts = responsesBySession.get(key) || new Map<string, number>();
+    counts.set(row._id.activityId, row.count);
+    responsesBySession.set(key, counts);
+  }
+  return {
+    totalSessions: sessions.length,
+    sessions: sessions.map((session) => {
+      const course = courseById.get(String(session.courseId));
+      const responseCounts = responsesBySession.get(String(session._id));
+      return {
+        sessionId: String(session._id),
+        title: session.title,
+        courseTitle: course?.title,
+        courseSlug: course?.slug,
+        status: session.status,
+        pace: session.pace,
+        access: session.access,
+        joinCode: session.joinCode,
+        participants: participantsBySession.get(String(session._id)) || 0,
+        scheduledStart: session.scheduledStart,
+        currentActivityId: session.currentActivityId,
+        activities: session.activities.map((activity: LiveActivity, index: number) => ({
+          index,
+          id: activity.id,
+          type: activity.type,
+          title: activity.title,
+          status: activity.status,
+          estimatedMinutes: activity.estimatedMinutes,
+          required: activity.required,
+          responses: responseCounts?.get(activity.id) || 0,
+        })),
+        facilitatorHref: `/educator/courses/${course?.slug}/live/${String(session._id)}`,
+        updatedAt: session.updatedAt,
       };
     }),
   };
@@ -1350,7 +1526,8 @@ type ContentWriteAction = Extract<
       | "update_course_overview"
       | "create_skill_path"
       | "update_skill_path"
-      | "update_skill_challenge";
+      | "update_skill_challenge"
+      | "create_live_session";
   }
 >;
 
@@ -1367,6 +1544,38 @@ function buildContentAction(
     status: "proposed" as const,
     safety: "content_write" as const,
   };
+
+  if (name === "create_live_session") {
+    const title = cleanString(args.title);
+    const activities = normalizeActivities(args.activities);
+    if (!title || !activities.length) return null;
+    const pace = args.pace === "learner" ? "learner" : "facilitator";
+    const access =
+      args.access === "open" || args.access === "invited"
+        ? args.access
+        : "enrolled";
+    return {
+      ...base,
+      type: "create_live_session",
+      label: `Create live session “${title}”`,
+      courseSlug,
+      session: {
+        title,
+        description: cleanString(args.description),
+        pace,
+        access,
+        activities,
+      },
+      preview: activities
+        .map(
+          (activity, index) =>
+            `${index + 1}. ${activity.title} · ${activity.type}${
+              activity.estimatedMinutes ? ` · ${activity.estimatedMinutes} min` : ""
+            }`,
+        )
+        .join("\n"),
+    };
+  }
 
   if (name === "update_lesson") {
     const patch = sanitizeLessonPatch(args.patch);
@@ -1691,6 +1900,27 @@ export async function applyEducatorCopilotAction({
   }
 
   try {
+    if (action.type === "create_live_session") {
+      let joinCode = createJoinCode();
+      while (await LiveSession.exists({ joinCode })) joinCode = createJoinCode();
+      const liveSession = await LiveSession.create({
+        ...action.session,
+        courseId: course._id,
+        courseSlug: course.slug,
+        joinCode,
+        settings: {
+          allowLateJoin: true,
+          showParticipantNames: false,
+          showLeaderboard: false,
+        },
+        createdBy: user.id,
+      });
+      return {
+        ...action,
+        status: "applied",
+        result: `Created the live session. Review and facilitate it at /educator/courses/${course.slug}/live/${String(liveSession._id)}.`,
+      };
+    }
     switch (action.type) {
       case "update_course_lesson": {
         const modules = Array.isArray(course.modules) ? course.modules : [];
