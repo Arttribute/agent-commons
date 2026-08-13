@@ -7,7 +7,8 @@ export type CourseMaterialRecord = {
   size: number;
   kind: "presentation" | "pdf";
   visibility: "course" | "live";
-  fileId: string;
+  fileId?: string;
+  storage: "commons" | "gridfs";
   status: string;
   textPreview?: string;
   createdAt: string;

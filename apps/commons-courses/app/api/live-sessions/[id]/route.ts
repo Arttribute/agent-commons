@@ -46,13 +46,9 @@ export async function GET(
       status: { $ne: "cancelled" },
     });
     if (!enrolled) {
-      if (!course.isFree) {
-        return NextResponse.json({ error: "Enroll in the course before joining this session." }, { status: 403 });
-      }
-      await Enrollment.findOneAndUpdate(
-        { userId: currentUser.user.id, courseId: session.courseId },
-        { $setOnInsert: { status: "active", paymentStatus: "free", accessLevel: "full" } },
-        { upsert: true },
+      return NextResponse.json(
+        { error: "This is a private course session. Ask your educator to add you before joining." },
+        { status: 403 },
       );
     }
   }
