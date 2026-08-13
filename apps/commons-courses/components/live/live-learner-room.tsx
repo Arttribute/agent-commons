@@ -113,6 +113,7 @@ export function LiveLearnerRoom({ sessionId }: { sessionId: string }) {
             message:
               data.error || "Enroll in this course to join the live session.",
           });
+          sessionRef.current = null;
           setSession(null);
           setNotice("");
         } else if (!quiet) {
@@ -288,17 +289,18 @@ export function LiveLearnerRoom({ sessionId }: { sessionId: string }) {
     });
     const data = await res.json().catch(() => ({}));
     if (res.ok) {
-      setSession((current) =>
-        current
-          ? {
-              ...current,
-              responses: {
-                ...current.responses,
-                [activity.id]: data.response as LiveResponseRecord,
-              },
-            }
-          : current,
-      );
+      setSession((current) => {
+        if (!current) return current;
+        const next = {
+          ...current,
+          responses: {
+            ...current.responses,
+            [activity.id]: data.response as LiveResponseRecord,
+          },
+        };
+        sessionRef.current = next;
+        return next;
+      });
       if (session?.pace === "learner") goNext();
     } else setNotice(data.error || "Could not save your response.");
     setSubmitting(false);
