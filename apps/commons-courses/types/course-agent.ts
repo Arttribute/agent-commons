@@ -8,10 +8,7 @@ export type CourseAgentDataScope =
 
 export type CourseAgentAction = "suggest" | "draft" | "fill_view" | "navigate";
 
-export type CourseAgentLearningMode =
-  | "socratic"
-  | "guided"
-  | "direct_support";
+export type CourseAgentLearningMode = "socratic" | "guided" | "direct_support";
 
 export interface CourseAgentConfig {
   id: string;
@@ -27,6 +24,7 @@ export interface CourseAgentConfig {
 
 export interface CourseAgentViewContext {
   page: string;
+  liveSessionId?: string;
   title?: string;
   moduleIndex?: number;
   lessonIndex?: number;

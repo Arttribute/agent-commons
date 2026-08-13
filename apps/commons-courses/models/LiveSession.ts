@@ -79,6 +79,19 @@ const LiveSessionSettingsSchema = new Schema<LiveSessionSettings>(
     allowLateJoin: { type: Boolean, default: true },
     showParticipantNames: { type: Boolean, default: false },
     showLeaderboard: { type: Boolean, default: false },
+    learnerCopilot: {
+      type: new Schema(
+        {
+          enabled: { type: Boolean, default: true },
+          explainCurrentActivity: { type: Boolean, default: true },
+          coachResponses: { type: Boolean, default: true },
+          useCourseMaterials: { type: Boolean, default: true },
+          giveDirectExplanations: { type: Boolean, default: false },
+        },
+        { _id: false },
+      ),
+      default: () => ({}),
+    },
   },
   { _id: false },
 );

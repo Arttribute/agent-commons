@@ -182,6 +182,10 @@ export function LiveLearnerRoom({ sessionId }: { sessionId: string }) {
         status: state.status,
         pace: state.pace,
         currentActivityId: state.currentActivityId,
+        settings: {
+          ...current.settings,
+          learnerCopilot: state.learnerCopilot,
+        },
         stateVersion: state.stateVersion,
         activities,
       };
@@ -540,21 +544,24 @@ export function LiveLearnerRoom({ sessionId }: { sessionId: string }) {
           setWorkbookOpen(false);
         }}
       />
-      <CourseAgentDrawer
-        courseSlug={session.courseSlug}
-        role="learner"
-        context={{
-          page: "live_session",
-          title: activity?.title || session.title,
-          visibleText: [
-            activity?.prompt,
-            activity?.instructions,
-            activity?.successCriteria,
-          ]
-            .filter(Boolean)
-            .join("\n"),
-        }}
-      />
+      {session.settings.learnerCopilot.enabled ? (
+        <CourseAgentDrawer
+          courseSlug={session.courseSlug}
+          role="learner"
+          context={{
+            page: "live_session",
+            liveSessionId: session.id,
+            title: activity?.title || session.title,
+            visibleText: [
+              activity?.prompt,
+              activity?.instructions,
+              activity?.successCriteria,
+            ]
+              .filter(Boolean)
+              .join("\n"),
+          }}
+        />
+      ) : null}
     </main>
   );
 }

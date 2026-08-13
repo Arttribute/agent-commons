@@ -6,6 +6,10 @@ import type {
   LiveSessionAccess,
   LiveSessionPace,
 } from "@/types/live-session";
+import {
+  defaultLiveLearnerCopilotPolicy,
+  normalizeLiveLearnerCopilotPolicy,
+} from "@/lib/live-copilot-policy";
 
 const activityTypes: LiveActivityType[] = [
   "content",
@@ -67,11 +71,17 @@ export function normalizeActivities(input: unknown): LiveActivity[] {
 }
 
 export function normalizeSessionCreate(input: unknown) {
-  const body = input && typeof input === "object" ? (input as Record<string, unknown>) : {};
+  const body =
+    input && typeof input === "object"
+      ? (input as Record<string, unknown>)
+      : {};
   const title = clean(body.title) || "New live session";
-  const pace: LiveSessionPace = body.pace === "learner" ? "learner" : "facilitator";
+  const pace: LiveSessionPace =
+    body.pace === "learner" ? "learner" : "facilitator";
   const access: LiveSessionAccess =
-    body.access === "open" || body.access === "invited" ? body.access : "enrolled";
+    body.access === "open" || body.access === "invited"
+      ? body.access
+      : "enrolled";
   const template = body.template === "blank" ? "blank" : "facilitated_workshop";
   return {
     title,
@@ -85,28 +95,46 @@ export function normalizeSessionCreate(input: unknown) {
       allowLateJoin: true,
       showParticipantNames: false,
       showLeaderboard: false,
+      learnerCopilot: defaultLiveLearnerCopilotPolicy,
     },
   };
 }
 
 export function normalizeSessionPatch(input: unknown) {
-  const body = input && typeof input === "object" ? (input as Record<string, unknown>) : {};
+  const body =
+    input && typeof input === "object"
+      ? (input as Record<string, unknown>)
+      : {};
   const patch: Record<string, unknown> = {};
-  if ("title" in body) patch.title = clean(body.title) || "Untitled live session";
+  if ("title" in body)
+    patch.title = clean(body.title) || "Untitled live session";
   if ("description" in body) patch.description = clean(body.description);
-  if (body.pace === "facilitator" || body.pace === "learner") patch.pace = body.pace;
-  if (body.access === "enrolled" || body.access === "invited" || body.access === "open") {
+  if (body.pace === "facilitator" || body.pace === "learner")
+    patch.pace = body.pace;
+  if (
+    body.access === "enrolled" ||
+    body.access === "invited" ||
+    body.access === "open"
+  ) {
     patch.access = body.access;
   }
-  if ("invitedEmails" in body) patch.invitedEmails = normalizeEmails(body.invitedEmails);
-  if ("scheduledStart" in body) patch.scheduledStart = normalizeDate(body.scheduledStart);
-  if ("activities" in body) patch.activities = normalizeActivities(body.activities);
+  if ("invitedEmails" in body)
+    patch.invitedEmails = normalizeEmails(body.invitedEmails);
+  if ("scheduledStart" in body)
+    patch.scheduledStart = normalizeDate(body.scheduledStart);
+  if ("activities" in body)
+    patch.activities = normalizeActivities(body.activities);
   if (body.settings && typeof body.settings === "object") {
     const settings = body.settings as Record<string, unknown>;
     patch.settings = {
       allowLateJoin: settings.allowLateJoin !== false,
       showParticipantNames: Boolean(settings.showParticipantNames),
       showLeaderboard: Boolean(settings.showLeaderboard),
+      learnerCopilot: normalizeLiveLearnerCopilotPolicy(
+        settings.learnerCopilot && typeof settings.learnerCopilot === "object"
+          ? settings.learnerCopilot
+          : undefined,
+      ),
     };
   }
   return patch;
@@ -132,7 +160,9 @@ export function createFacilitatedWorkshopTemplate(): LiveActivity[] {
       title: "Opening diagnostic",
       prompt: "How confident are you with today’s topic?",
       instructions: "Choose the response that best describes you right now.",
-      options: ["1 · New to this", "2", "3", "4", "5 · Very confident"].map(option),
+      options: ["1 · New to this", "2", "3", "4", "5 · Very confident"].map(
+        option,
+      ),
       showResults: true,
       required: true,
       estimatedMinutes: 3,
@@ -149,10 +179,12 @@ export function createFacilitatedWorkshopTemplate(): LiveActivity[] {
       type: "task",
       title: "Guided practice",
       prompt: "Try the demonstrated move on the provided example.",
-      instructions: "Work individually or in pairs, then submit a short note or link to your artefact.",
+      instructions:
+        "Work individually or in pairs, then submit a short note or link to your artefact.",
       successCriteria:
         "You can show the completed artefact and explain one decision you made.",
-      facilitatorNotes: "Give a time check halfway through and invite one pair to share.",
+      facilitatorNotes:
+        "Give a time check halfway through and invite one pair to share.",
       required: true,
       estimatedMinutes: 20,
     }),
@@ -160,11 +192,20 @@ export function createFacilitatedWorkshopTemplate(): LiveActivity[] {
       type: "quiz",
       title: "Retrieval check",
       prompt: "Which option best applies the idea we just practised?",
-      instructions: "Answer on your own first. We will discuss the reasoning together.",
+      instructions:
+        "Answer on your own first. We will discuss the reasoning together.",
       options: [
         { id: randomUUID(), label: "Add the correct answer", isCorrect: true },
-        { id: randomUUID(), label: "Add a plausible distractor", isCorrect: false },
-        { id: randomUUID(), label: "Add another plausible distractor", isCorrect: false },
+        {
+          id: randomUUID(),
+          label: "Add a plausible distractor",
+          isCorrect: false,
+        },
+        {
+          id: randomUUID(),
+          label: "Add another plausible distractor",
+          isCorrect: false,
+        },
       ],
       randomizeOptions: true,
       showResults: true,
@@ -176,14 +217,16 @@ export function createFacilitatedWorkshopTemplate(): LiveActivity[] {
       type: "break",
       title: "Break",
       prompt: "Stand up, recharge, and return ready for the next block.",
-      facilitatorNotes: "Close this activity when the room is ready to continue.",
+      facilitatorNotes:
+        "Close this activity when the room is ready to continue.",
       estimatedMinutes: 15,
     }),
     createActivity({
       type: "reflection",
       title: "Exit reflection",
       prompt: "What will you apply first, and what still feels unclear?",
-      instructions: "Write one concrete next step and one question for the facilitator.",
+      instructions:
+        "Write one concrete next step and one question for the facilitator.",
       showResults: false,
       required: true,
       estimatedMinutes: 5,
@@ -224,7 +267,9 @@ function normalizeEmails(input: unknown) {
     new Set(
       values
         .map((value) => clean(value)?.toLowerCase())
-        .filter((value): value is string => Boolean(value && value.includes("@"))),
+        .filter((value): value is string =>
+          Boolean(value && value.includes("@")),
+        ),
     ),
   ).slice(0, 2_000);
 }
@@ -246,7 +291,9 @@ function cleanUrl(input: unknown) {
   if (!value) return undefined;
   try {
     const url = new URL(value);
-    return url.protocol === "https:" || url.protocol === "http:" ? value : undefined;
+    return url.protocol === "https:" || url.protocol === "http:"
+      ? value
+      : undefined;
   } catch {
     return undefined;
   }
