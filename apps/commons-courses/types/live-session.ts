@@ -44,6 +44,15 @@ export type LiveSessionSettings = {
   allowLateJoin: boolean;
   showParticipantNames: boolean;
   showLeaderboard: boolean;
+  learnerCopilot: LiveLearnerCopilotPolicy;
+};
+
+export type LiveLearnerCopilotPolicy = {
+  enabled: boolean;
+  explainCurrentActivity: boolean;
+  coachResponses: boolean;
+  useCourseMaterials: boolean;
+  giveDirectExplanations: boolean;
 };
 
 export type LiveSessionRecord = {
@@ -75,6 +84,7 @@ export type LiveSessionState = {
   pace: LiveSessionPace;
   currentActivityId?: string;
   currentActivity?: LiveActivity;
+  learnerCopilot: LiveLearnerCopilotPolicy;
   stateVersion: number;
   activityStatuses: Record<string, LiveActivityStatus>;
   serverTime: string;

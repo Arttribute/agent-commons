@@ -3,6 +3,7 @@ import { Types } from "mongoose";
 import { auth } from "@/lib/auth";
 import { connectDB } from "@/lib/db";
 import { getCourseCollaboratorRole } from "@/lib/educator-auth";
+import { normalizeLiveLearnerCopilotPolicy } from "@/lib/live-copilot-policy";
 import {
   learnerSafeActivities,
   resolveCurrentActivityId,
@@ -36,7 +37,7 @@ export async function GET(
 
   await connectDB();
   const session = await LiveSession.findById(id).select(
-    "courseId status pace access invitedEmails currentActivityId stateVersion activities settings.allowLateJoin",
+    "courseId status pace access invitedEmails currentActivityId stateVersion activities settings",
   );
   if (!session || session.status === "draft") {
     return NextResponse.json(
@@ -122,6 +123,9 @@ export async function GET(
         currentActivity: currentActivity
           ? learnerSafeActivities([currentActivity])[0]
           : undefined,
+        learnerCopilot: normalizeLiveLearnerCopilotPolicy(
+          session.settings?.learnerCopilot,
+        ),
         stateVersion: session.stateVersion || 0,
         activityStatuses: Object.fromEntries(
           session.activities.map((activity: LiveActivity) => [

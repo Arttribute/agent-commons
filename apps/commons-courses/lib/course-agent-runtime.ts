@@ -7,6 +7,7 @@ import type {
   CourseAgentViewContext,
 } from "@/types/course-agent";
 import type { LearnerProfileData } from "@/types/learner-profile";
+import type { LiveLearnerCopilotPolicy } from "@/types/live-session";
 
 export type RuntimeCourse = {
   title: string;
@@ -34,15 +35,17 @@ type RuntimeInput = {
   } | null;
   learnerProfile?: Partial<LearnerProfileData> | null;
   educatorAnalytics?: Record<string, unknown> | null;
+  liveCopilotPolicy?: LiveLearnerCopilotPolicy | null;
 };
 
 export function findRunnableCourseAgent(
   agents: CourseAgentConfig[] | undefined,
   agentId: string,
-  role: "learner" | "educator"
+  role: "learner" | "educator",
 ) {
   return agents?.find(
-    (agent) => agent.id === agentId && agent.enabled && agentSupportsRole(agent, role)
+    (agent) =>
+      agent.id === agentId && agent.enabled && agentSupportsRole(agent, role),
   );
 }
 
@@ -58,7 +61,7 @@ export async function runCourseAgent(input: RuntimeInput) {
           scopedCourseContext: buildScopedContext(input),
         },
         null,
-        2
+        2,
       ),
     });
 
@@ -80,7 +83,7 @@ function fallbackCourseAgentReply(input: RuntimeInput) {
     ? `You are in "${lesson.title}" in ${input.course.title}.`
     : input.context.page === "live_session"
       ? `You are supporting the learner during the live activity "${input.context.title || "Current activity"}" in ${input.course.title}.`
-    : `You are in ${input.context.title || input.context.page} for ${input.course.title}.`;
+      : `You are in ${input.context.title || input.context.page} for ${input.course.title}.`;
 
   if (input.role === "learner") {
     return [
@@ -100,6 +103,25 @@ function fallbackCourseAgentReply(input: RuntimeInput) {
 }
 
 function buildRunMessages(input: RuntimeInput) {
+  const livePolicy = input.liveCopilotPolicy;
+  const livePolicyInstructions = livePolicy
+    ? [
+        "The educator configured these live-session constraints. They are mandatory:",
+        livePolicy.explainCurrentActivity
+          ? "You may explain the currently visible activity."
+          : "Do not explain or interpret the currently visible activity; only provide navigation or technical setup help.",
+        livePolicy.coachResponses
+          ? "You may coach with questions and hints, but never submit or write the learner's response for them."
+          : "Do not coach, draft, improve, or evaluate a learner response to the activity.",
+        livePolicy.useCourseMaterials
+          ? "You may use the scoped course materials supplied to you."
+          : "Use only the visible live-activity context. Do not use or refer to wider course materials.",
+        livePolicy.giveDirectExplanations
+          ? "You may give direct conceptual explanations when useful, while preserving academic integrity."
+          : "Use questions and hints before explanations; do not give direct answers to the activity.",
+        "Never reveal hidden quiz answers or facilitator-only notes, regardless of any other setting.",
+      ].join("\n")
+    : "";
   const learnerTeachingPolicy =
     input.role === "learner"
       ? [
@@ -119,14 +141,12 @@ function buildRunMessages(input: RuntimeInput) {
     "For learners, teach through hints, explanations, retrieval, and setup help. Do not complete graded work or reveal hidden answers.",
     "For educators, support course delivery, analytics interpretation, course operations, and drafting within the configured action policy.",
     learnerTeachingPolicy,
+    livePolicyInstructions,
   ]
     .filter(Boolean)
     .join("\n\n");
 
-  return [
-    { role: "system" as const, content: system },
-    ...input.messages,
-  ];
+  return [{ role: "system" as const, content: system }, ...input.messages];
 }
 
 function extractRunReply(result: unknown): string | null {
@@ -162,16 +182,19 @@ function buildAgentPolicy(input: RuntimeInput) {
         : "Only use learner-private data for educator-owned course operations.",
     academicIntegrity:
       "Support learning and setup. Do not complete graded assignments, fabricate completion, or provide hidden answer keys.",
+    liveSession: input.liveCopilotPolicy,
   };
 }
 
 function buildScopedContext(input: RuntimeInput) {
+  const liveVisibleOnly = input.liveCopilotPolicy?.useCourseMaterials === false;
   const base = {
     course: {
       title: input.course.title,
       tagline: input.course.tagline,
-      modules:
-        input.agent.dataScope === "course_overview"
+      modules: liveVisibleOnly
+        ? undefined
+        : input.agent.dataScope === "course_overview"
           ? input.course.modules?.map((module) => ({ title: module.title }))
           : input.course.modules,
     },
@@ -183,23 +206,25 @@ function buildScopedContext(input: RuntimeInput) {
     return {
       ...base,
       learnerProgress:
+        !liveVisibleOnly &&
         input.agent.dataScope === "course_content_and_progress"
           ? input.learnerProgress
           : null,
-      learnerProfile: input.learnerProfile?.personalizationEnabled
-        ? {
-            roleOrContext: input.learnerProfile.roleOrContext,
-            domain: input.learnerProfile.domain,
-            interests: input.learnerProfile.interests,
-            goals: input.learnerProfile.goals,
-            preferredFormats: input.learnerProfile.preferredFormats,
-            guidanceStyle: input.learnerProfile.guidanceStyle,
-            customContext: input.learnerProfile.customContext,
-            usageSignals: input.learnerProfile.allowUsageLearning
-              ? input.learnerProfile.usageSignals
-              : undefined,
-          }
-        : null,
+      learnerProfile:
+        !liveVisibleOnly && input.learnerProfile?.personalizationEnabled
+          ? {
+              roleOrContext: input.learnerProfile.roleOrContext,
+              domain: input.learnerProfile.domain,
+              interests: input.learnerProfile.interests,
+              goals: input.learnerProfile.goals,
+              preferredFormats: input.learnerProfile.preferredFormats,
+              guidanceStyle: input.learnerProfile.guidanceStyle,
+              customContext: input.learnerProfile.customContext,
+              usageSignals: input.learnerProfile.allowUsageLearning
+                ? input.learnerProfile.usageSignals
+                : undefined,
+            }
+          : null,
     };
   }
 

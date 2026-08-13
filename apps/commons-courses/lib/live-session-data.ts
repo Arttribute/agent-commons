@@ -1,5 +1,6 @@
 import type { Types } from "mongoose";
 import { normalizeCourseTheme, type CourseTheme } from "@/lib/course-theme";
+import { normalizeLiveLearnerCopilotPolicy } from "@/lib/live-copilot-policy";
 import LiveParticipant from "@/models/LiveParticipant";
 import LiveResponse from "@/models/LiveResponse";
 import type { ILiveSession } from "@/models/LiveSession";
@@ -133,7 +134,14 @@ function serializeBase(
     currentActivityId,
     stateVersion: session.stateVersion || 0,
     activities: session.activities || [],
-    settings: session.settings,
+    settings: {
+      allowLateJoin: session.settings?.allowLateJoin !== false,
+      showParticipantNames: Boolean(session.settings?.showParticipantNames),
+      showLeaderboard: Boolean(session.settings?.showLeaderboard),
+      learnerCopilot: normalizeLiveLearnerCopilotPolicy(
+        session.settings?.learnerCopilot,
+      ),
+    },
     participantCount,
     responseCounts,
     createdAt: session.createdAt.toISOString(),
