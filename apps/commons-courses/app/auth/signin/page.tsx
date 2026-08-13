@@ -12,7 +12,11 @@ export default async function SignInPage({ searchParams }: Props) {
   const callbackUrl = safeAuthCallback(params.callbackUrl);
   const oauthQuery =
     typeof params.oauth_query === "string" ? params.oauth_query : "";
-  const error = typeof params.authError === "string" ? params.authError : "";
+  const error = typeof params.authError === "string"
+    ? params.authError
+    : typeof params.error === "string"
+      ? "Sign-in did not finish. Please try again; you will still return to your original page."
+      : "";
   const registered = params.registered === "1";
   const identityUrl =
     process.env.COMMONS_IDENTITY_ISSUER?.replace(/\/api\/auth\/?$/, "") ??
@@ -31,6 +35,7 @@ export default async function SignInPage({ searchParams }: Props) {
         initialOauthQuery={oauthQuery}
         error={error}
         registered={registered}
+        directGoogle={callbackUrl.startsWith("/live/") && Boolean(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET)}
       />
     </Shell>
   );

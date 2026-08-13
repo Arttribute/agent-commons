@@ -30,6 +30,7 @@ export type LiveActivity = {
   successCriteria?: string;
   facilitatorNotes?: string;
   resourceUrl?: string;
+  materialId?: string;
   estimatedMinutes?: number;
   status: LiveActivityStatus;
   required: boolean;
@@ -59,12 +60,22 @@ export type LiveSessionRecord = {
   invitedEmails: string[];
   scheduledStart?: string;
   currentActivityId?: string;
+  stateVersion: number;
   activities: LiveActivity[];
   settings: LiveSessionSettings;
   participantCount: number;
   responseCounts: Record<string, number>;
   createdAt: string;
   updatedAt: string;
+};
+
+export type LiveSessionState = {
+  status: LiveSessionStatus;
+  pace: LiveSessionPace;
+  currentActivityId?: string;
+  stateVersion: number;
+  activityStatuses: Record<string, LiveActivityStatus>;
+  serverTime: string;
 };
 
 export type LiveParticipantRecord = {
@@ -103,4 +114,3 @@ export type LearnerLiveSession = Omit<
   responses: Record<string, LiveResponseRecord>;
   results: Record<string, LiveActivityResults>;
 };
-

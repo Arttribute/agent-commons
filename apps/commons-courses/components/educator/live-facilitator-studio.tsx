@@ -34,6 +34,8 @@ import type {
   LiveParticipantRecord,
   LiveSessionRecord,
 } from "@/types/live-session";
+import type { CourseMaterialRecord } from "@/types/course-material";
+import { CourseMaterialViewer } from "@/components/course-material-viewer";
 
 type StudioData = {
   session: LiveSessionRecord;
@@ -59,6 +61,7 @@ export function LiveFacilitatorStudio({ sessionId }: { sessionId: string }) {
   const [running, setRunning] = useState(false);
   const [notice, setNotice] = useState("");
   const [addOpen, setAddOpen] = useState(false);
+  const [materials, setMaterials] = useState<CourseMaterialRecord[]>([]);
 
   const load = useCallback(async (quiet = false) => {
     if (!quiet) setNotice("");
@@ -77,10 +80,17 @@ export function LiveFacilitatorStudio({ sessionId }: { sessionId: string }) {
     return () => window.clearTimeout(timer);
   }, [load]);
   useEffect(() => {
-    if (data?.session.status !== "live" && data?.session.status !== "lobby") return;
+    const slug = data?.session.courseSlug;
+    if (!slug) return;
+    void fetch(`/api/educator/courses/${slug}/materials`, { cache: "no-store" })
+      .then((res) => res.ok ? res.json() : null)
+      .then((body) => setMaterials(body?.materials || []));
+  }, [data?.session.courseSlug]);
+  useEffect(() => {
+    if (tab === "plan" || (data?.session.status !== "live" && data?.session.status !== "lobby")) return;
     const interval = window.setInterval(() => void load(true), 3000);
     return () => window.clearInterval(interval);
-  }, [data?.session.status, load]);
+  }, [data?.session.status, load, tab]);
 
   const selected = data?.session.activities.find((activity) => activity.id === selectedId);
   const current = data?.session.activities.find((activity) => activity.id === data.session.currentActivityId);
@@ -133,7 +143,18 @@ export function LiveFacilitatorStudio({ sessionId }: { sessionId: string }) {
     });
     const next = await res.json().catch(() => ({}));
     if (res.ok) {
-      await load(true);
+      setData((currentData) => currentData ? { ...currentData, session: next.session } : currentData);
+      const active = next.session?.activities?.find((item: LiveActivity) => item.id === next.session.currentActivityId);
+      setNotice(commandName === "activate" || commandName === "start"
+        ? `Learners are now seeing ${active?.title || "the active activity"}.`
+        : commandName === "close_activity"
+          ? "Responses are closed. Learners still see this activity while you debrief."
+          : commandName === "open_lobby"
+            ? "Lobby open. Learners can join; activities remain hidden until you begin."
+            : commandName === "end"
+              ? "Session ended. Learner responses are saved."
+              : "Live room updated.");
+      void load(true);
       if (commandName === "open_lobby") setTab("share");
       if (commandName === "start" || commandName === "activate") setTab("facilitate");
     } else setNotice(next.error || "Could not update the live room.");
@@ -204,12 +225,12 @@ export function LiveFacilitatorStudio({ sessionId }: { sessionId: string }) {
         <div className="flex flex-wrap gap-2">
           {data.session.status === "draft" ? (
             <button onClick={() => command("open_lobby")} disabled={running} className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-bold text-slate-700 hover:bg-slate-50">
-              <MonitorUp className="h-4 w-4" /> Open lobby
+              <MonitorUp className="h-4 w-4" /> Open room for joining
             </button>
           ) : null}
           {data.session.status === "lobby" ? (
             <button onClick={() => command("start")} disabled={running || !data.session.activities.length} className="inline-flex items-center gap-2 rounded-xl bg-slate-950 px-4 py-2.5 text-sm font-bold text-white disabled:opacity-40">
-              <Play className="h-4 w-4" /> Start session
+              <Play className="h-4 w-4" /> Present first activity
             </button>
           ) : null}
           {data.session.status === "live" ? (
@@ -262,7 +283,7 @@ export function LiveFacilitatorStudio({ sessionId }: { sessionId: string }) {
               <div className="mt-4 flex flex-wrap gap-4"><Toggle checked={data.session.settings.allowLateJoin} onChange={(value) => updateSession({ settings: { ...data.session.settings, allowLateJoin: value } })} label="Allow late join" /><Toggle checked={data.session.settings.showParticipantNames} onChange={(value) => updateSession({ settings: { ...data.session.settings, showParticipantNames: value } })} label="Names in private results" /><Toggle checked={data.session.settings.showLeaderboard} onChange={(value) => updateSession({ settings: { ...data.session.settings, showLeaderboard: value } })} label="Leaderboard" /></div>
             </section>
 
-            {selected ? <ActivityEditor activity={selected} index={data.session.activities.findIndex((activity) => activity.id === selected.id)} onChange={(patch) => updateActivity(selected.id, patch)} onMove={(direction) => moveActivity(selected.id, direction)} onRemove={() => removeActivity(selected.id)} /> : null}
+            {selected ? <ActivityEditor activity={selected} materials={materials} index={data.session.activities.findIndex((activity) => activity.id === selected.id)} onChange={(patch) => updateActivity(selected.id, patch)} onMove={(direction) => moveActivity(selected.id, direction)} onRemove={() => removeActivity(selected.id)} /> : null}
             <div className="sticky bottom-4 flex justify-end"><button onClick={savePlan} disabled={saving} className="inline-flex items-center gap-2 rounded-xl bg-slate-950 px-5 py-3 text-sm font-bold text-white shadow-lg disabled:opacity-50">{saving ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />} Save plan</button></div>
           </div>
         </div>
@@ -274,12 +295,13 @@ export function LiveFacilitatorStudio({ sessionId }: { sessionId: string }) {
             {current ? (
               <>
                 <div className="border-b border-slate-100 p-6 sm:p-8">
-                  <div className="flex items-center justify-between gap-3"><span className="rounded-full bg-red-50 px-2.5 py-1 text-[10px] font-bold uppercase tracking-widest text-red-700">Open now</span><span className="text-xs text-slate-400">{current.estimatedMinutes ? `${current.estimatedMinutes} min` : activityLabel(current.type)}</span></div>
+                  <div className="flex items-center justify-between gap-3"><span className={cn("rounded-full px-2.5 py-1 text-[10px] font-bold uppercase tracking-widest", current.status === "open" ? "bg-red-50 text-red-700" : "bg-slate-100 text-slate-600")}>{current.status === "open" ? "Learners see this now" : "Responses closed · still presented"}</span><span className="text-xs text-slate-400">{current.estimatedMinutes ? `${current.estimatedMinutes} min` : activityLabel(current.type)}</span></div>
                   <p className="mt-6 text-xs font-bold uppercase tracking-[0.18em] text-slate-400">{activityLabel(current.type)}</p>
                   <h3 className="mt-2 text-3xl font-bold tracking-tight text-slate-950">{current.title}</h3>
                   {current.prompt ? <p className="mt-4 text-lg leading-8 text-slate-700">{current.prompt}</p> : null}
                   {current.facilitatorNotes ? <div className="mt-6 rounded-xl bg-amber-50 p-4"><p className="text-[10px] font-bold uppercase tracking-wide text-amber-700">Private facilitator note</p><p className="mt-1 text-sm leading-6 text-amber-900">{current.facilitatorNotes}</p></div> : null}
                 </div>
+                {current.materialId ? <div className="border-b border-slate-100 p-4 sm:p-6"><CourseMaterialViewer materialId={current.materialId} compact /></div> : null}
                 <LiveResults activity={current} results={data.results[current.id]} responses={data.session.responseCounts[current.id] || 0} participants={data.session.participantCount} />
                 <div className="flex flex-col gap-3 border-t border-slate-100 bg-slate-50 p-4 sm:flex-row sm:items-center sm:justify-between sm:px-6">
                   <button onClick={() => command("close_activity", current.id)} disabled={running || current.status === "closed"} className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-bold text-slate-700 disabled:opacity-40"><LockKeyhole className="h-4 w-4" /> Close responses</button>
@@ -328,7 +350,7 @@ function Toggle({ checked, onChange, label }: { checked: boolean; onChange: (val
 
 function AddMenu({ onAdd }: { onAdd: (type: LiveActivityType) => void }) { return <div className="mb-3 grid gap-1 rounded-xl border border-slate-200 bg-slate-50 p-2">{activityChoices.map((choice) => <button key={choice.type} onClick={() => onAdd(choice.type)} className="rounded-lg px-3 py-2 text-left hover:bg-white"><span className="block text-xs font-bold text-slate-800">{choice.label}</span><span className="block text-[10px] text-slate-400">{choice.hint}</span></button>)}</div>; }
 
-function ActivityEditor({ activity, index, onChange, onMove, onRemove }: { activity: LiveActivity; index: number; onChange: (patch: Partial<LiveActivity>) => void; onMove: (direction: -1 | 1) => void; onRemove: () => void }) {
+function ActivityEditor({ activity, materials, index, onChange, onMove, onRemove }: { activity: LiveActivity; materials: CourseMaterialRecord[]; index: number; onChange: (patch: Partial<LiveActivity>) => void; onMove: (direction: -1 | 1) => void; onRemove: () => void }) {
   function updateOption(id: string, patch: Partial<LiveActivity["options"][number]>) { onChange({ options: activity.options.map((option) => option.id === id ? { ...option, ...patch } : option) }); }
   function addOption() { onChange({ options: [...activity.options, { id: crypto.randomUUID(), label: `Option ${activity.options.length + 1}`, isCorrect: false }] }); }
   return <section className="rounded-2xl border border-slate-200 bg-white p-5 sm:p-6">
@@ -339,7 +361,7 @@ function ActivityEditor({ activity, index, onChange, onMove, onRemove }: { activ
     <Field label="Learner instructions"><textarea rows={4} value={activity.instructions || ""} onChange={(event) => onChange({ instructions: event.target.value })} className={`${inputClass} resize-y`} /></Field>
     {(activity.type === "task" || activity.type === "reflection") ? <Field label="Success criteria"><textarea rows={2} value={activity.successCriteria || ""} onChange={(event) => onChange({ successCriteria: event.target.value })} className={`${inputClass} resize-y`} /></Field> : null}
     <Field label="Private facilitator notes"><textarea rows={2} value={activity.facilitatorNotes || ""} onChange={(event) => onChange({ facilitatorNotes: event.target.value })} className={`${inputClass} resize-y`} /></Field>
-    <div className="mt-4 grid gap-4 md:grid-cols-2"><Field label="Resource link"><input type="url" value={activity.resourceUrl || ""} onChange={(event) => onChange({ resourceUrl: event.target.value })} placeholder="https://…" className={inputClass} /></Field>{activity.type === "quiz" ? <Field label="Points"><input type="number" min={0} value={activity.points} onChange={(event) => onChange({ points: Number(event.target.value) || 0 })} className={inputClass} /></Field> : null}</div>
+    <div className="mt-4 grid gap-4 md:grid-cols-2"><Field label="Course material"><select value={activity.materialId || ""} onChange={(event) => onChange({ materialId: event.target.value || undefined })} className={inputClass}><option value="">No attached material</option>{materials.map((material) => <option key={material.id} value={material.id}>{material.name}</option>)}</select></Field><Field label="External resource link"><input type="url" value={activity.resourceUrl || ""} onChange={(event) => onChange({ resourceUrl: event.target.value })} placeholder="https://…" className={inputClass} /></Field>{activity.type === "quiz" ? <Field label="Points"><input type="number" min={0} value={activity.points} onChange={(event) => onChange({ points: Number(event.target.value) || 0 })} className={inputClass} /></Field> : null}</div>
     {["poll", "quiz", "setup_check"].includes(activity.type) ? <div className="mt-5 rounded-xl border border-slate-200 p-4"><div className="flex items-center justify-between"><p className="text-xs font-bold uppercase tracking-wide text-slate-600">Response options</p><button onClick={addOption} className="inline-flex items-center gap-1 text-xs font-bold text-slate-700"><Plus className="h-3.5 w-3.5" /> Add option</button></div><div className="mt-3 space-y-2">{activity.options.map((option) => <div key={option.id} className="flex items-center gap-2"><button type="button" onClick={() => activity.type === "quiz" && updateOption(option.id, { isCorrect: !option.isCorrect })} className={cn("flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border", option.isCorrect ? "border-emerald-500 bg-emerald-50 text-emerald-700" : "border-slate-200 text-slate-300")} title={activity.type === "quiz" ? "Mark correct answer" : undefined}>{activity.type === "quiz" ? <Check className="h-4 w-4" /> : <MoreHorizontal className="h-4 w-4" />}</button><input value={option.label} onChange={(event) => updateOption(option.id, { label: event.target.value })} className="min-w-0 flex-1 rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-slate-400" /><button onClick={() => onChange({ options: activity.options.filter((item) => item.id !== option.id) })} className="p-2 text-slate-300 hover:text-red-600"><Trash2 className="h-4 w-4" /></button></div>)}</div><div className="mt-4 flex flex-wrap gap-4"><Toggle checked={activity.randomizeOptions} onChange={(value) => onChange({ randomizeOptions: value })} label="Shuffle per learner" /><Toggle checked={activity.showResults} onChange={(value) => onChange({ showResults: value })} label="Reveal results after close" /></div></div> : null}
     <div className="mt-5 flex flex-wrap gap-4"><Toggle checked={activity.required} onChange={(value) => onChange({ required: value })} label="Required activity" /></div>
   </section>;

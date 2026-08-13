@@ -319,6 +319,7 @@ export const educatorCopilotToolCatalog: CopilotToolDefinition[] = [
               successCriteria: { type: "string" },
               facilitatorNotes: { type: "string" },
               resourceUrl: { type: "string" },
+              materialId: { type: "string", description: "ID of a private course material to present inside this activity." },
               estimatedMinutes: { type: "number" },
               required: { type: "boolean" },
               randomizeOptions: { type: "boolean" },

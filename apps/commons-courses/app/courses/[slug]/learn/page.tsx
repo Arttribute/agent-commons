@@ -16,6 +16,7 @@ import {
   Circle,
   Lock,
   Menu,
+  Presentation,
   X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -532,6 +533,7 @@ export default function LearnPage({ params }: Props) {
                 {currentLesson?.title}
               </h1>
             </div>
+            <Link href={`/courses/${slug}/materials`} className="inline-flex flex-shrink-0 items-center gap-1.5 rounded-lg border border-slate-200 px-2.5 py-2 text-xs font-bold text-slate-600 hover:bg-slate-50"><Presentation className="h-3.5 w-3.5" /><span className="hidden sm:inline">Materials</span></Link>
             <span className="text-xs text-slate-400 flex-shrink-0">{currentLesson?.duration}</span>
           </div>
 
