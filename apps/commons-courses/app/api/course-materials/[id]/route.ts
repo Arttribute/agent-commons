@@ -43,6 +43,23 @@ export async function GET(
     });
     if (!enrolled) return NextResponse.json({ error: "This material is limited to course participants." }, { status: 403 });
   }
+  if (material.storage === "gridfs" && material.gridFsId) {
+    return NextResponse.json({
+      material: {
+        id: String(material._id),
+        name: material.name,
+        mimeType: material.mimeType,
+        kind: material.kind,
+        content: material.textPreview || "",
+        imageUrls: (material.slideGridFsIds || []).map(
+          (_item: unknown, index: number) => `/api/course-materials/${material._id}/slides/${index}`,
+        ),
+        downloadUrl: `/api/course-materials/${material._id}/download`,
+        embeddable: false,
+      },
+    }, { headers: { "Cache-Control": "private, no-store" } });
+  }
+  if (!material.fileId) return NextResponse.json({ error: "Material file is unavailable." }, { status: 410 });
   const accessToken = process.env.AGENT_COMMONS_API_KEY || currentUser.accessToken;
   if (!accessToken) return NextResponse.json({ error: "Material storage is temporarily unavailable." }, { status: 503 });
   const response = await readEducatorCopilotFile(material.fileId, {
@@ -61,6 +78,7 @@ export async function GET(
       content: response.data.content || "",
       imageUrls: response.data.imageUrls || [],
       downloadUrl,
+      embeddable: true,
     },
   }, { headers: { "Cache-Control": "private, no-store" } });
 }

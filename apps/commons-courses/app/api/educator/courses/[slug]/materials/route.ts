@@ -60,6 +60,7 @@ export async function POST(
     ownerUserId: result.session.userId,
     ownerPrincipalId: principalId,
     fileId: item.fileId,
+    storage: "commons",
     name: item.name || files[index].name,
     mimeType: item.mimeType || files[index].type,
     size: files[index].size,

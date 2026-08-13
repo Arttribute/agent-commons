@@ -12,6 +12,7 @@ export function serializeCourseMaterial(material: ICourseMaterial): CourseMateri
     kind: material.kind,
     visibility: material.visibility,
     fileId: material.fileId,
+    storage: material.storage || "commons",
     status: material.status,
     textPreview: material.textPreview,
     createdAt: material.createdAt.toISOString(),
