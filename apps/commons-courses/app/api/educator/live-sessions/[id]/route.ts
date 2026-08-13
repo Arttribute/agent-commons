@@ -27,11 +27,16 @@ export async function GET(
 ) {
   const { id } = await params;
   const authResult = await authorize(id);
-  if (!authResult) return NextResponse.json({ error: "Session not found." }, { status: 404 });
+  if (!authResult)
+    return NextResponse.json({ error: "Session not found." }, { status: 404 });
   if (authResult.error) return authResult.error;
   const { session, result } = authResult;
   const [serialized, participants, results] = await Promise.all([
-    serializeEducatorLiveSession(session, result.course.title, result.course.theme),
+    serializeEducatorLiveSession(
+      session,
+      result.course.title,
+      result.course.theme,
+    ),
     getParticipants(session._id),
     getSessionResults(session, session.settings.showParticipantNames),
   ]);
@@ -44,24 +49,30 @@ export async function PATCH(
 ) {
   const { id } = await params;
   const authResult = await authorize(id);
-  if (!authResult) return NextResponse.json({ error: "Session not found." }, { status: 404 });
+  if (!authResult)
+    return NextResponse.json({ error: "Session not found." }, { status: 404 });
   if (authResult.error) return authResult.error;
   const { session, result } = authResult;
   const body = await req.json().catch(() => ({}));
-  const record = body && typeof body === "object" ? (body as Record<string, unknown>) : {};
+  const record =
+    body && typeof body === "object" ? (body as Record<string, unknown>) : {};
   const patch = normalizeSessionPatch(body);
 
   if (record.command === "open_lobby") {
     session.status = "lobby";
   } else if (record.command === "start") {
     session.status = "live";
-    const current = session.activities.find((activity: LiveActivity) => activity.id === session.currentActivityId && activity.status === "open");
+    const current = session.activities.find(
+      (activity: LiveActivity) =>
+        activity.id === session.currentActivityId && activity.status === "open",
+    );
     const first = current || session.activities[0];
     if (first) {
       if (session.pace === "learner") {
         for (const activity of session.activities) activity.status = "open";
       } else {
-        for (const activity of session.activities) activity.status = activity.id === first.id ? "open" : "closed";
+        for (const activity of session.activities)
+          activity.status = activity.id === first.id ? "open" : "closed";
       }
       session.currentActivityId = first.id;
     }
@@ -71,20 +82,37 @@ export async function PATCH(
       if (activity.status === "open") activity.status = "closed";
     }
   } else if (record.command === "activate") {
-    const activityId = typeof record.activityId === "string" ? record.activityId : "";
-    if (!session.activities.some((activity: LiveActivity) => activity.id === activityId)) {
-      return NextResponse.json({ error: "Activity not found." }, { status: 404 });
+    const activityId =
+      typeof record.activityId === "string" ? record.activityId : "";
+    if (
+      !session.activities.some(
+        (activity: LiveActivity) => activity.id === activityId,
+      )
+    ) {
+      return NextResponse.json(
+        { error: "Activity not found." },
+        { status: 404 },
+      );
     }
     session.status = "live";
     session.currentActivityId = activityId;
     for (const activity of session.activities) {
       if (activity.id === activityId) activity.status = "open";
-      else if (activity.status === "open") activity.status = "closed";
+      else if (session.pace === "facilitator" && activity.status === "open") {
+        activity.status = "closed";
+      }
     }
   } else if (record.command === "close_activity") {
-    const activityId = typeof record.activityId === "string" ? record.activityId : "";
-    const activity = session.activities.find((item: LiveActivity) => item.id === activityId);
-    if (!activity) return NextResponse.json({ error: "Activity not found." }, { status: 404 });
+    const activityId =
+      typeof record.activityId === "string" ? record.activityId : "";
+    const activity = session.activities.find(
+      (item: LiveActivity) => item.id === activityId,
+    );
+    if (!activity)
+      return NextResponse.json(
+        { error: "Activity not found." },
+        { status: 404 },
+      );
     activity.status = "closed";
   } else if (Object.keys(patch).length) {
     session.set(patch);
@@ -94,6 +122,10 @@ export async function PATCH(
   session.markModified("activities");
   await session.save();
   return NextResponse.json({
-    session: await serializeEducatorLiveSession(session, result.course.title, result.course.theme),
+    session: await serializeEducatorLiveSession(
+      session,
+      result.course.title,
+      result.course.theme,
+    ),
   });
 }

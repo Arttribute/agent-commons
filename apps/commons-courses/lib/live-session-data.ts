@@ -3,6 +3,7 @@ import { normalizeCourseTheme, type CourseTheme } from "@/lib/course-theme";
 import LiveParticipant from "@/models/LiveParticipant";
 import LiveResponse from "@/models/LiveResponse";
 import type { ILiveSession } from "@/models/LiveSession";
+export { learnerSafeActivities } from "@/lib/live-activity-serialization";
 import type {
   LiveActivity,
   LiveActivityResults,
@@ -29,9 +30,18 @@ export async function serializeEducatorLiveSession(
     ]),
   ]);
   const responseCounts = Object.fromEntries(
-    responseCountRows.map((row: { _id: string; count: number }) => [row._id, row.count]),
+    responseCountRows.map((row: { _id: string; count: number }) => [
+      row._id,
+      row.count,
+    ]),
   );
-  return serializeBase(session, courseTitle, courseTheme, participantCount, responseCounts);
+  return serializeBase(
+    session,
+    courseTitle,
+    courseTheme,
+    participantCount,
+    responseCounts,
+  );
 }
 
 export async function getParticipants(sessionId: Types.ObjectId) {
@@ -80,7 +90,10 @@ export async function getLearnerResponses(
   sessionId: Types.ObjectId,
   participantId: Types.ObjectId,
 ) {
-  const responses = await LiveResponse.find({ sessionId, participantId }).lean();
+  const responses = await LiveResponse.find({
+    sessionId,
+    participantId,
+  }).lean();
   return Object.fromEntries(
     responses.map((response) => [
       response.activityId,
@@ -93,21 +106,6 @@ export async function getLearnerResponses(
       } satisfies LiveResponseRecord,
     ]),
   );
-}
-
-export function learnerSafeActivities(activities: LiveActivity[]) {
-  return activities.map((activity) => ({
-    ...activity,
-    facilitatorNotes: undefined,
-    options: activity.options.map((option) => ({
-      id: option.id,
-      label: option.label,
-      isCorrect:
-        activity.status === "closed" && activity.showResults
-          ? Boolean(option.isCorrect)
-          : undefined,
-    })),
-  }));
 }
 
 function serializeBase(
@@ -143,12 +141,18 @@ function serializeBase(
   };
 }
 
-export function resolveCurrentActivityId(session: Pick<ILiveSession, "status" | "currentActivityId" | "activities">) {
+export function resolveCurrentActivityId(
+  session: Pick<ILiveSession, "status" | "currentActivityId" | "activities">,
+) {
   if (session.status !== "live" && session.status !== "ended") return undefined;
   const selected = session.activities.find(
-    (activity) => activity.id === session.currentActivityId && activity.status !== "draft",
+    (activity) =>
+      activity.id === session.currentActivityId && activity.status !== "draft",
   );
-  return selected?.id || session.activities.find((activity) => activity.status === "open")?.id;
+  return (
+    selected?.id ||
+    session.activities.find((activity) => activity.status === "open")?.id
+  );
 }
 
 function buildActivityResults(
@@ -172,7 +176,9 @@ function buildActivityResults(
         id: option.id,
         label: option.label,
         count: responses.filter((response) => {
-          const values = Array.isArray(response.value) ? response.value : [response.value];
+          const values = Array.isArray(response.value)
+            ? response.value
+            : [response.value];
           return values.includes(option.id);
         }).length,
       })),

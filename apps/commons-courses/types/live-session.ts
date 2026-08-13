@@ -74,6 +74,7 @@ export type LiveSessionState = {
   status: LiveSessionStatus;
   pace: LiveSessionPace;
   currentActivityId?: string;
+  currentActivity?: LiveActivity;
   stateVersion: number;
   activityStatuses: Record<string, LiveActivityStatus>;
   serverTime: string;
