@@ -82,6 +82,7 @@ export type CourseInput = {
       description?: string;
       assetUrl?: string;
       assetAlt?: string;
+      labWorkspaceId?: string;
       isFree?: boolean;
     }>;
   }>;
@@ -638,6 +639,7 @@ export function normalizeCourseInput(input: CourseInput) {
               description: sanitizeRichTextHtml(lesson.description) || undefined,
               assetUrl: normalizeImageUrl(lesson.assetUrl),
               assetAlt: lesson.assetAlt?.trim() || undefined,
+              labWorkspaceId: lesson.labWorkspaceId?.trim() || undefined,
             }))
           : [],
       }))

@@ -38,6 +38,7 @@ export function createActivity(
     facilitatorNotes: clean(input.facilitatorNotes),
     resourceUrl: cleanUrl(input.resourceUrl),
     materialId: clean(input.materialId),
+    labWorkspaceId: clean(input.labWorkspaceId),
     estimatedMinutes: clampNumber(input.estimatedMinutes, 1, 480),
     status:
       input.status === "open" || input.status === "closed"

@@ -8,6 +8,7 @@ import { AssignmentSubmissions } from "@/components/courses/assignment-submissio
 import { AnalyticsTracker, useAnalytics } from "@/components/analytics/analytics-tracker";
 import { CourseAgentDrawer } from "@/components/course-agents/course-agent-drawer";
 import { LearningStudio } from "@/components/learning/learning-studio";
+import { LearnerLabWorkspace } from "@/components/labs/learner-lab-workspace";
 import { RichTextRenderer } from "@/components/rich-text-renderer";
 import {
   CheckCircle,
@@ -33,6 +34,7 @@ interface LessonData {
   description?: string;
   assetUrl?: string;
   assetAlt?: string;
+  labWorkspaceId?: string;
   isFree: boolean;
 }
 
@@ -581,6 +583,10 @@ export default function LearnPage({ params }: Props) {
                   <RichTextRenderer value={currentLesson.description} />
                 </div>
               )}
+
+              {currentLesson?.labWorkspaceId ? (
+                <LearnerLabWorkspace workspaceId={currentLesson.labWorkspaceId} />
+              ) : null}
 
               {/* Module assignment (show on last lesson of each module) */}
               {lessonIdx === currentModule?.lessons.length - 1 &&
