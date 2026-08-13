@@ -18,11 +18,17 @@ export async function GET(
 ) {
   const currentUser = await auth();
   if (!currentUser?.user?.id) {
-    return NextResponse.json({ error: "Unauthorized." }, { status: 401, headers: noStore });
+    return NextResponse.json(
+      { error: "Unauthorized." },
+      { status: 401, headers: noStore },
+    );
   }
   const { id } = await params;
   if (!Types.ObjectId.isValid(id)) {
-    return NextResponse.json({ error: "Session not found." }, { status: 404, headers: noStore });
+    return NextResponse.json(
+      { error: "Session not found." },
+      { status: 404, headers: noStore },
+    );
   }
 
   await connectDB();
@@ -30,22 +36,46 @@ export async function GET(
     "courseId status pace access invitedEmails currentActivityId stateVersion activities.id activities.status settings.allowLateJoin",
   );
   if (!session || session.status === "draft") {
-    return NextResponse.json({ error: "Session not found." }, { status: 404, headers: noStore });
+    return NextResponse.json(
+      { error: "Session not found." },
+      { status: 404, headers: noStore },
+    );
   }
 
   const [course, participant] = await Promise.all([
-    Course.findById(session.courseId).select("published educator collaborators"),
-    LiveParticipant.exists({ sessionId: session._id, userId: currentUser.user.id }),
+    Course.findById(session.courseId).select(
+      "published educator collaborators",
+    ),
+    LiveParticipant.exists({
+      sessionId: session._id,
+      userId: currentUser.user.id,
+    }),
   ]);
   if (!course?.published) {
-    return NextResponse.json({ error: "Session not found." }, { status: 404, headers: noStore });
+    return NextResponse.json(
+      { error: "Session not found." },
+      { status: 404, headers: noStore },
+    );
   }
   const email = currentUser.user.email?.trim().toLowerCase() || "";
-  const managesCourse = currentUser.user.role === "admin"
-    || course.educator?.userId?.toString() === currentUser.user.id
-    || Boolean(getCourseCollaboratorRole(course, { userId: currentUser.user.id, email: currentUser.user.email }));
-  if (!managesCourse && session.access === "invited" && !session.invitedEmails.includes(email)) {
-    return NextResponse.json({ error: "This session is limited to invited learners." }, { status: 403, headers: noStore });
+  const managesCourse =
+    currentUser.user.role === "admin" ||
+    course.educator?.userId?.toString() === currentUser.user.id ||
+    Boolean(
+      getCourseCollaboratorRole(course, {
+        userId: currentUser.user.id,
+        email: currentUser.user.email,
+      }),
+    );
+  if (
+    !managesCourse &&
+    session.access === "invited" &&
+    !session.invitedEmails.includes(email)
+  ) {
+    return NextResponse.json(
+      { error: "This session is limited to invited learners." },
+      { status: 403, headers: noStore },
+    );
   }
   if (!managesCourse && session.access === "enrolled") {
     const enrolled = await Enrollment.exists({
@@ -54,25 +84,43 @@ export async function GET(
       status: { $ne: "cancelled" },
     });
     if (!enrolled) {
-      return NextResponse.json({ error: "You no longer have access to this course." }, { status: 403, headers: noStore });
+      return NextResponse.json(
+        {
+          code: "ENROLLMENT_REQUIRED",
+          error: "Enroll in this course to continue in the live session.",
+        },
+        { status: 403, headers: noStore },
+      );
     }
   }
-  if (!participant || (session.status === "live" && !session.settings.allowLateJoin)) {
+  if (
+    !participant ||
+    (session.status === "live" && !session.settings.allowLateJoin)
+  ) {
     if (!participant) {
-      return NextResponse.json({ error: "Re-enter the live room to continue." }, { status: 409, headers: noStore });
+      return NextResponse.json(
+        { error: "Re-enter the live room to continue." },
+        { status: 409, headers: noStore },
+      );
     }
   }
 
-  return NextResponse.json({
+  return NextResponse.json(
+    {
     state: {
       status: session.status,
       pace: session.pace,
       currentActivityId: resolveCurrentActivityId(session),
       stateVersion: session.stateVersion || 0,
       activityStatuses: Object.fromEntries(
-        session.activities.map((activity: LiveActivity) => [activity.id, activity.status]),
+          session.activities.map((activity: LiveActivity) => [
+            activity.id,
+            activity.status,
+          ]),
       ),
       serverTime: new Date().toISOString(),
     },
-  }, { headers: noStore });
+    },
+    { headers: noStore },
+  );
 }

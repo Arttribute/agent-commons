@@ -38,7 +38,7 @@ export async function POST(req: NextRequest) {
     if (!course.isFree) {
       return NextResponse.json(
         { error: "This course requires payment." },
-        { status: 402 }
+        { status: 402 },
       );
     }
 
@@ -47,6 +47,15 @@ export async function POST(req: NextRequest) {
       courseId,
     });
     if (existing) {
+      if (existing.status === "cancelled") {
+        existing.status = "active";
+        existing.accessLevel = "full";
+        existing.paymentStatus = "free";
+        existing.accessSource = "free";
+        existing.enrolledAt = new Date();
+        await existing.save();
+        return NextResponse.json(existing);
+      }
       return NextResponse.json({ error: "Already enrolled." }, { status: 409 });
     }
 
@@ -63,7 +72,7 @@ export async function POST(req: NextRequest) {
         instructor: course.instructor,
         duration: course.duration,
         settings: course.emailSettings,
-      }
+      },
     );
 
     return NextResponse.json(enrollment, { status: 201 });

@@ -32,16 +32,31 @@ export async function GET(
   if (!session || session.status === "draft") {
     return NextResponse.json({ error: "Session not found." }, { status: 404 });
   }
-  const course = await Course.findById(session.courseId).select("title published isFree educator collaborators theme");
+  const course = await Course.findById(session.courseId).select(
+    "title published isFree educator collaborators theme",
+  );
   if (!course?.published) {
     return NextResponse.json({ error: "Session not found." }, { status: 404 });
   }
   const email = currentUser.user.email?.trim().toLowerCase() || "";
-  const managesCourse = currentUser.user.role === "admin"
-    || course.educator?.userId?.toString() === currentUser.user.id
-    || Boolean(getCourseCollaboratorRole(course, { userId: currentUser.user.id, email: currentUser.user.email }));
-  if (!managesCourse && session.access === "invited" && !session.invitedEmails.includes(email)) {
-    return NextResponse.json({ error: "This session is limited to invited learners." }, { status: 403 });
+  const managesCourse =
+    currentUser.user.role === "admin" ||
+    course.educator?.userId?.toString() === currentUser.user.id ||
+    Boolean(
+      getCourseCollaboratorRole(course, {
+        userId: currentUser.user.id,
+        email: currentUser.user.email,
+      }),
+    );
+  if (
+    !managesCourse &&
+    session.access === "invited" &&
+    !session.invitedEmails.includes(email)
+  ) {
+    return NextResponse.json(
+      { error: "This session is limited to invited learners." },
+      { status: 403 },
+    );
   }
   if (!managesCourse && session.access === "enrolled") {
     const enrolled = await Enrollment.exists({
@@ -51,7 +66,16 @@ export async function GET(
     });
     if (!enrolled) {
       return NextResponse.json(
-        { error: "This is a private course session. Ask your educator to add you before joining." },
+        {
+          code: "ENROLLMENT_REQUIRED",
+          error: `Enroll in ${course.title} to join this live session.`,
+          course: {
+            id: String(course._id),
+            title: course.title,
+            slug: session.courseSlug,
+            isFree: course.isFree,
+          },
+        },
         { status: 403 },
       );
     }
@@ -62,23 +86,34 @@ export async function GET(
       userId: currentUser.user.id,
     });
     if (!existing) {
-      return NextResponse.json({ error: "This session has ended." }, { status: 410 });
+      return NextResponse.json(
+        { error: "This session has ended." },
+        { status: 410 },
+      );
     }
   }
-  if (!managesCourse && !session.settings.allowLateJoin && session.status === "live") {
+  if (
+    !managesCourse &&
+    !session.settings.allowLateJoin &&
+    session.status === "live"
+  ) {
     const existing = await LiveParticipant.exists({
       sessionId: session._id,
       userId: currentUser.user.id,
     });
     if (!existing) {
-      return NextResponse.json({ error: "Joining is now closed." }, { status: 403 });
+      return NextResponse.json(
+        { error: "Joining is now closed." },
+        { status: 403 },
+      );
     }
   }
   const participant = await LiveParticipant.findOneAndUpdate(
     { sessionId: session._id, userId: currentUser.user.id },
     {
       $set: {
-        displayName: currentUser.user.name || currentUser.user.email || "Learner",
+        displayName:
+          currentUser.user.name || currentUser.user.email || "Learner",
         email,
         lastSeenAt: new Date(),
         status: session.status === "ended" ? "completed" : "active",
@@ -94,11 +129,14 @@ export async function GET(
   ]);
   const visibleResults = Object.fromEntries(
     Object.entries(results).filter(([activityId]) => {
-      const activity = session.activities.find((item: LiveActivity) => item.id === activityId);
+      const activity = session.activities.find(
+        (item: LiveActivity) => item.id === activityId,
+      );
       return activity?.showResults && activity.status === "closed";
     }),
   );
-  return NextResponse.json({
+  return NextResponse.json(
+    {
     session: {
       ...base,
       invitedEmails: undefined,
@@ -114,5 +152,7 @@ export async function GET(
       responses,
       results: visibleResults,
     },
-  }, { headers: { "Cache-Control": "private, no-store, max-age=0" } });
+    },
+    { headers: { "Cache-Control": "private, no-store, max-age=0" } },
+  );
 }

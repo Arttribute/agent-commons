@@ -10,6 +10,7 @@ import {
   ChevronRight,
   CircleStop,
   Clipboard,
+  Download,
   ExternalLink,
   GripVertical,
   Link2,
@@ -23,6 +24,7 @@ import {
   Radio,
   Save,
   Settings2,
+  Share2,
   Trash2,
   Users,
 } from "lucide-react";
@@ -211,6 +213,7 @@ export function LiveFacilitatorStudio({ sessionId }: { sessionId: string }) {
   const joinPath = `/live/${data.session.id}`;
   const joinUrl = typeof window === "undefined" ? joinPath : `${window.location.origin}${joinPath}`;
   const joinPortal = typeof window === "undefined" ? "/join" : `${window.location.origin}/join`;
+  const qrPath = `/api/educator/live-sessions/${data.session.id}/qr`;
 
   return (
     <div style={getCourseThemeStyle(data.session.courseTheme) as CSSProperties} className="space-y-5" data-copilot-target="live-facilitation-studio">
@@ -328,13 +331,13 @@ export function LiveFacilitatorStudio({ sessionId }: { sessionId: string }) {
             <div className="mt-8 grid items-center gap-8 sm:grid-cols-[220px_1fr] sm:text-left">
               <div className="rounded-2xl bg-white p-3">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={`https://quickchart.io/qr?size=420&margin=1&text=${encodeURIComponent(joinUrl)}`} alt={`QR code to join ${data.session.title}`} className="aspect-square w-full" />
+                <img src={`${qrPath}?format=png`} alt={`QR code to join ${data.session.title}`} className="aspect-square w-full" />
               </div>
               <div><p className="text-sm text-slate-400">Scan the QR code, or visit</p><p className="mt-1 break-all text-lg font-bold">{joinPortal}</p><p className="mt-6 text-sm text-slate-400">Enter code</p><p className="mt-1 text-5xl font-bold tracking-[0.16em] text-[#B8F56D]">{formatCode(data.session.joinCode)}</p></div>
             </div>
           </section>
           <aside className="space-y-5">
-            <section className="rounded-2xl border border-slate-200 bg-white p-5"><h3 className="text-sm font-bold text-slate-950">Share options</h3><div className="mt-4 space-y-2"><CopyButton label="Copy direct join link" value={joinUrl} icon={Link2} /><CopyButton label="Copy six-digit code" value={data.session.joinCode} icon={Clipboard} /><a href={joinUrl} target="_blank" className="flex w-full items-center gap-3 rounded-xl border border-slate-200 px-3 py-3 text-sm font-bold text-slate-700 hover:bg-slate-50"><ExternalLink className="h-4 w-4" /> Preview learner view</a></div></section>
+            <section className="rounded-2xl border border-slate-200 bg-white p-5"><h3 className="text-sm font-bold text-slate-950">Share options</h3><p className="mt-1 text-xs leading-5 text-slate-400">Use the QR code in slides, handouts, messages, or signage.</p><div className="mt-4 space-y-2"><a href={`${qrPath}?format=png&download=1`} download className="flex w-full items-center gap-3 rounded-xl border border-slate-200 px-3 py-3 text-sm font-bold text-slate-700 hover:bg-slate-50"><Download className="h-4 w-4" /> Download QR code · PNG</a><a href={`${qrPath}?format=svg&download=1`} download className="flex w-full items-center gap-3 rounded-xl border border-slate-200 px-3 py-3 text-sm font-bold text-slate-700 hover:bg-slate-50"><Download className="h-4 w-4" /> Download QR code · SVG</a><ShareQrButton qrUrl={`${qrPath}?format=png`} joinUrl={joinUrl} title={data.session.title} /><CopyButton label="Copy direct join link" value={joinUrl} icon={Link2} /><CopyButton label="Copy six-digit code" value={data.session.joinCode} icon={Clipboard} /><a href={joinUrl} target="_blank" className="flex w-full items-center gap-3 rounded-xl border border-slate-200 px-3 py-3 text-sm font-bold text-slate-700 hover:bg-slate-50"><ExternalLink className="h-4 w-4" /> Preview learner view</a></div></section>
             <section className="rounded-2xl border border-slate-200 bg-white p-5"><h3 className="text-sm font-bold text-slate-950">Join policy</h3><dl className="mt-4 space-y-3 text-xs"><ShareRow label="Access" value={data.session.access === "open" ? "Anyone with link" : data.session.access === "invited" ? "Invited emails" : "Enrolled learners"} /><ShareRow label="Pace" value={data.session.pace === "facilitator" ? "You control it" : "Learners control it"} /><ShareRow label="Late join" value={data.session.settings.allowLateJoin ? "Allowed" : "Locked after start"} /></dl></section>
           </aside>
         </div>
@@ -376,6 +379,7 @@ function LiveResults({ activity, results, responses, participants }: { activity:
 function IconButton({ label, onClick, icon: Icon, danger }: { label: string; onClick: () => void; icon: typeof ArrowUp; danger?: boolean }) { return <button type="button" aria-label={label} title={label} onClick={onClick} className={cn("rounded-lg border border-slate-200 p-2 text-slate-500 hover:bg-slate-50", danger && "hover:border-red-200 hover:bg-red-50 hover:text-red-600")}><Icon className="h-4 w-4" /></button>; }
 function SessionStatus({ status }: { status: LiveSessionRecord["status"] }) { return <span className={cn("inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[10px] font-bold uppercase tracking-widest", status === "live" ? "bg-red-50 text-red-700" : status === "lobby" ? "bg-cyan-50 text-cyan-700" : status === "ended" ? "bg-slate-100 text-slate-500" : "bg-amber-50 text-amber-700")}><span className={cn("h-1.5 w-1.5 rounded-full", status === "live" ? "animate-pulse bg-red-500" : "bg-current")} />{status}</span>; }
 function CopyButton({ label, value, icon: Icon }: { label: string; value: string; icon: typeof Link2 }) { const [copied, setCopied] = useState(false); return <button onClick={async () => { await navigator.clipboard.writeText(value); setCopied(true); window.setTimeout(() => setCopied(false), 1500); }} className="flex w-full items-center gap-3 rounded-xl border border-slate-200 px-3 py-3 text-left text-sm font-bold text-slate-700 hover:bg-slate-50"><Icon className="h-4 w-4" /><span className="flex-1">{copied ? "Copied" : label}</span>{copied ? <Check className="h-4 w-4 text-emerald-500" /> : null}</button>; }
+function ShareQrButton({ qrUrl, joinUrl, title }: { qrUrl: string; joinUrl: string; title: string }) { const [status, setStatus] = useState<"idle" | "sharing" | "copied">("idle"); async function share() { if (status === "sharing") return; setStatus("sharing"); try { if (navigator.share) { const response = await fetch(qrUrl); const blob = response.ok ? await response.blob() : null; const file = blob ? new File([blob], "live-session-qr.png", { type: "image/png" }) : null; if (file && navigator.canShare?.({ files: [file] })) await navigator.share({ title, text: "Scan this QR code to join the live session.", files: [file] }); else await navigator.share({ title, text: "Join the live session", url: joinUrl }); setStatus("idle"); return; } await navigator.clipboard.writeText(joinUrl); setStatus("copied"); window.setTimeout(() => setStatus("idle"), 1500); } catch (error) { if (!(error instanceof DOMException && error.name === "AbortError")) { await navigator.clipboard.writeText(joinUrl).catch(() => undefined); setStatus("copied"); window.setTimeout(() => setStatus("idle"), 1500); } else setStatus("idle"); } } return <button type="button" onClick={share} className="flex w-full items-center gap-3 rounded-xl border border-slate-200 px-3 py-3 text-left text-sm font-bold text-slate-700 hover:bg-slate-50"><Share2 className="h-4 w-4" /><span className="flex-1">{status === "sharing" ? "Preparing QR code…" : status === "copied" ? "Join link copied" : "Share QR code"}</span>{status === "sharing" ? <LoaderCircle className="h-4 w-4 animate-spin text-slate-400" /> : status === "copied" ? <Check className="h-4 w-4 text-emerald-500" /> : null}</button>; }
 function ShareRow({ label, value }: { label: string; value: string }) { return <div className="flex justify-between gap-4"><dt className="text-slate-400">{label}</dt><dd className="text-right font-bold text-slate-700">{value}</dd></div>; }
 function activityLabel(type: LiveActivityType) { return activityChoices.find((choice) => choice.type === type)?.label || type; }
 function formatCode(code: string) { return `${code.slice(0, 3)} ${code.slice(3)}`; }
