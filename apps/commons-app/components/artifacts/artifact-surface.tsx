@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ChevronLeft,
   ChevronRight,
@@ -37,6 +37,7 @@ export function ArtifactSurface({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [fullscreen, setFullscreen] = useState(false);
+  const surfaceRef = useRef<HTMLElement>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -67,6 +68,23 @@ export function ArtifactSurface({
     load();
   }, [load]);
 
+  useEffect(() => {
+    const handleFullscreenChange = () => {
+      setFullscreen(document.fullscreenElement === surfaceRef.current);
+    };
+    document.addEventListener("fullscreenchange", handleFullscreenChange);
+    return () =>
+      document.removeEventListener("fullscreenchange", handleFullscreenChange);
+  }, []);
+
+  async function toggleFullscreen() {
+    if (document.fullscreenElement === surfaceRef.current) {
+      await document.exitFullscreen();
+      return;
+    }
+    await surfaceRef.current?.requestFullscreen({ navigationUI: "hide" });
+  }
+
   const resolved = useMemo<ArtifactRef>(
     () => ({
       ...artifact,
@@ -80,6 +98,7 @@ export function ArtifactSurface({
 
   return (
     <aside
+      ref={surfaceRef}
       className={cn(
         "relative z-40 flex h-full min-h-0 shrink-0 flex-col overflow-hidden border-l border-stone-200 bg-stone-50 shadow-2xl max-lg:absolute max-lg:inset-0 max-lg:w-full",
         fullscreen
@@ -87,7 +106,12 @@ export function ArtifactSurface({
           : "w-[min(760px,58vw)] min-w-[460px]",
       )}
     >
-      <header className="flex h-14 shrink-0 items-center gap-3 border-b border-stone-200 bg-white px-3">
+      <header
+        className={cn(
+          "flex h-14 shrink-0 items-center gap-3 border-b border-stone-200 bg-white px-3",
+          fullscreen && artifactKind(resolved) === "presentation" && "hidden",
+        )}
+      >
         <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-stone-100 text-stone-600">
           <ArtifactIcon artifact={resolved} className="h-4.5 w-4.5" />
         </span>
@@ -143,7 +167,7 @@ export function ArtifactSurface({
           )}
           <ToolbarButton
             label={fullscreen ? "Exit full screen" : "Full screen"}
-            onClick={() => setFullscreen((value) => !value)}
+            onClick={() => void toggleFullscreen()}
           >
             {fullscreen ? (
               <Minimize2 className="h-4 w-4" />
