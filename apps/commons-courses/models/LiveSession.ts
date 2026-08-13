@@ -19,6 +19,7 @@ export interface ILiveSession extends Document {
   invitedEmails: string[];
   scheduledStart?: Date;
   currentActivityId?: string;
+  stateVersion: number;
   activities: LiveActivity[];
   settings: LiveSessionSettings;
   createdBy: mongoose.Types.ObjectId;
@@ -57,6 +58,7 @@ const LiveActivitySchema = new Schema<LiveActivity>(
     successCriteria: { type: String, trim: true },
     facilitatorNotes: { type: String, trim: true },
     resourceUrl: { type: String, trim: true },
+    materialId: { type: String, trim: true },
     estimatedMinutes: { type: Number, min: 1, max: 480 },
     status: {
       type: String,
@@ -106,6 +108,7 @@ const LiveSessionSchema = new Schema<ILiveSession>(
     invitedEmails: { type: [String], default: [] },
     scheduledStart: Date,
     currentActivityId: String,
+    stateVersion: { type: Number, default: 0, min: 0 },
     activities: { type: [LiveActivitySchema], default: [] },
     settings: { type: LiveSessionSettingsSchema, default: () => ({}) },
     createdBy: { type: Schema.Types.ObjectId, ref: "User", required: true },
@@ -119,4 +122,3 @@ LiveSessionSchema.index({ status: 1, scheduledStart: 1 });
 
 export default mongoose.models.LiveSession ||
   mongoose.model<ILiveSession>("LiveSession", LiveSessionSchema);
-

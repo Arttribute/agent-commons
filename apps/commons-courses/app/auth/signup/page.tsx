@@ -35,6 +35,7 @@ export default async function SignUpPage({ searchParams }: Props) {
             appUrl={appUrl}
             callbackUrl={callbackUrl}
             initialOauthQuery={oauthQuery}
+            directGoogle={callbackUrl.startsWith("/live/") && Boolean(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET)}
           />
         </div>
       </section>

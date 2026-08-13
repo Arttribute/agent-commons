@@ -91,6 +91,7 @@ export async function PATCH(
     session.set(patch);
   }
 
+  session.stateVersion = (session.stateVersion || 0) + 1;
   session.markModified("activities");
   await session.save();
   return NextResponse.json({

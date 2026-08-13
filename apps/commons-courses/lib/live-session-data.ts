@@ -114,6 +114,7 @@ function serializeBase(
   participantCount: number,
   responseCounts: Record<string, number>,
 ): LiveSessionRecord {
+  const currentActivityId = resolveCurrentActivityId(session);
   return {
     id: String(session._id),
     courseId: String(session.courseId),
@@ -127,7 +128,8 @@ function serializeBase(
     access: session.access,
     invitedEmails: session.invitedEmails || [],
     scheduledStart: session.scheduledStart?.toISOString(),
-    currentActivityId: session.currentActivityId,
+    currentActivityId,
+    stateVersion: session.stateVersion || 0,
     activities: session.activities || [],
     settings: session.settings,
     participantCount,
@@ -135,6 +137,14 @@ function serializeBase(
     createdAt: session.createdAt.toISOString(),
     updatedAt: session.updatedAt.toISOString(),
   };
+}
+
+export function resolveCurrentActivityId(session: Pick<ILiveSession, "status" | "currentActivityId" | "activities">) {
+  if (session.status !== "live" && session.status !== "ended") return undefined;
+  const selected = session.activities.find(
+    (activity) => activity.id === session.currentActivityId && activity.status !== "draft",
+  );
+  return selected?.id || session.activities.find((activity) => activity.status === "open")?.id;
 }
 
 function buildActivityResults(
@@ -177,4 +187,3 @@ function buildActivityResults(
     })),
   };
 }
-

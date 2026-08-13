@@ -33,6 +33,7 @@ export function createActivity(
     successCriteria: clean(input.successCriteria),
     facilitatorNotes: clean(input.facilitatorNotes),
     resourceUrl: cleanUrl(input.resourceUrl),
+    materialId: clean(input.materialId),
     estimatedMinutes: clampNumber(input.estimatedMinutes, 1, 480),
     status:
       input.status === "open" || input.status === "closed"
@@ -255,4 +256,3 @@ function clampNumber(input: unknown, min: number, max: number) {
   if (typeof input !== "number" || !Number.isFinite(input)) return undefined;
   return Math.min(max, Math.max(min, Math.round(input)));
 }
-

@@ -114,5 +114,5 @@ export async function GET(
       responses,
       results: visibleResults,
     },
-  });
+  }, { headers: { "Cache-Control": "private, no-store, max-age=0" } });
 }

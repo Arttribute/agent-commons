@@ -249,7 +249,7 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
 
       if (account?.provider !== "google") return true;
 
-      const email = user.email || profile?.email;
+      const email = (user.email || profile?.email)?.trim().toLowerCase();
       if (!email) return false;
 
       try {
@@ -266,14 +266,22 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
           return true;
         }
 
-        const created = await User.create({
-          name: user.name || email.split("@")[0],
-          email,
-          image: user.image,
-          role: "learner",
-          authProvider: "google",
-          emailVerifiedAt: new Date(),
-        });
+        let created;
+        try {
+          created = await User.create({
+            name: user.name || email.split("@")[0],
+            email,
+            image: user.image,
+            role: "learner",
+            authProvider: "google",
+            emailVerifiedAt: new Date(),
+          });
+        } catch (error) {
+          const duplicate = error && typeof error === "object" && "code" in error && error.code === 11000;
+          if (!duplicate) throw error;
+          created = await User.findOne({ email });
+          if (!created) throw error;
+        }
         user.id = created._id.toString();
         user.role = created.role;
         return true;
@@ -375,6 +383,14 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
         session.accessTokenError = token.accessTokenError as string;
       }
       return session;
+    },
+    redirect({ url, baseUrl }) {
+      if (url.startsWith("/") && !url.startsWith("//")) return `${baseUrl}${url}`;
+      try {
+        return new URL(url).origin === new URL(baseUrl).origin ? url : baseUrl;
+      } catch {
+        return baseUrl;
+      }
     },
   },
   pages: {

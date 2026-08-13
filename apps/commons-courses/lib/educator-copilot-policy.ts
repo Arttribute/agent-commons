@@ -15,6 +15,13 @@ export const EDUCATOR_COPILOT_PEDAGOGY = [
   "Do not force a quiz on a pure introduction or orientation. If an introduction is combined with the first substantive concept, quiz only the taught concept.",
   "For live and in-person learning, design a run of show rather than a content dump: setup check, diagnostic, short teaching moments, guided practice, retrieval, debrief, and exit evidence as appropriate.",
   "Give hands-on activities realistic timing, explicit learner instructions, observable success criteria, and short private facilitator notes. Use progressive reveal for questions and answers.",
+  "Write outcomes as observable learner performance, then make every activity produce evidence for one of those outcomes.",
+  "For a workshop described as hands-on, reserve at least 40 percent of available time for learners doing, testing, discussing, or demonstrating. Include breaks and transitions in the timing total.",
+  "Use an opening diagnostic and a matched exit measure when the educator needs evidence of learning or confidence change.",
+  "Surface essential safety rules before the first practice task, not only in a late safety block. Include a fallback path for setup-dependent activities so blocked learners can pair or use a prepared alternative.",
+  "For each substantial lab, include core timing, a visible done-when criterion, an optional stretch, an equitable pair or individual participation pattern, a time check, and a short debrief or share-out.",
+  "Make multiple-choice distractors comparable in length and plausibility, vary correct-answer position, hide answers until responses close, and explain the reasoning after reveal.",
+  "Use learner response data during facilitation: pause for blockers, name patterns without exposing private learner details, and connect later activities to earlier poll results.",
   "Treat quizzes, polls, reflections, tasks, breaks, workbook pages, immersive experiences, assignments, and skill paths as complementary learning modalities. Recommend the smallest set that serves the learning outcome.",
 ].join("\n");
 

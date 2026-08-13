@@ -1,10 +1,10 @@
-import Link from "next/link";
 import { notFound } from "next/navigation";
 import { FlaskConical, Radio } from "lucide-react";
 import { auth } from "@/lib/auth";
 import { connectDB } from "@/lib/db";
 import LiveSession from "@/models/LiveSession";
 import { LiveLearnerRoom } from "@/components/live/live-learner-room";
+import { LiveJoinAuth } from "@/components/live/live-join-auth";
 
 export default async function LiveRoomPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -24,10 +24,7 @@ export default async function LiveRoomPage({ params }: { params: Promise<{ id: s
           <p className="mt-6 text-xs font-bold uppercase tracking-[0.18em] text-slate-400">You’re joining live</p>
           <h1 className="mt-2 text-2xl font-bold tracking-tight">{liveSession.title}</h1>
           <p className="mt-3 text-sm leading-6 text-slate-500">Use your CommonLab account so your workbook responses, progress, and copilot support stay with you. After signing in, you’ll return directly to this room.</p>
-          <div className="mt-7 grid gap-2">
-            <Link href={`/auth/signup?callbackUrl=${encodeURIComponent(callbackUrl)}`} className="rounded-xl bg-slate-950 px-5 py-3 text-center text-sm font-bold text-white">Create an account</Link>
-            <Link href={`/auth/signin?callbackUrl=${encodeURIComponent(callbackUrl)}`} className="rounded-xl border border-slate-200 px-5 py-3 text-center text-sm font-bold text-slate-700 hover:bg-slate-50">I already have an account</Link>
-          </div>
+          <LiveJoinAuth callbackUrl={callbackUrl} googleAvailable={Boolean(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET)} />
         </section>
       </main>
     );
