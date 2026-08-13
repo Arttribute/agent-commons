@@ -27,8 +27,13 @@ FROM public.ecr.aws/docker/library/node:22.11.0-bookworm-slim AS runtime
 RUN apt-get update && apt-get install -y \
     chromium \
     chromium-sandbox \
+    libreoffice-impress \
+    fonts-crosextra-caladea \
+    fonts-crosextra-carlito \
     fonts-liberation \
+    fonts-noto-core \
     fonts-noto-color-emoji \
+    fonts-roboto \
     libatk-bridge2.0-0 \
     libatk1.0-0 \
     libatspi2.0-0 \

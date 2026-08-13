@@ -22,6 +22,10 @@ import * as XLSX from 'xlsx';
 import JSZip from 'jszip';
 import PptxGenJS from 'pptxgenjs';
 import path from 'node:path';
+import os from 'node:os';
+import { execFile } from 'node:child_process';
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { promisify } from 'node:util';
 import {
   PDFArray,
   PDFDict,
@@ -177,6 +181,8 @@ const DEFAULT_PDF_EMBEDDED_IMAGE_PAGES = 40;
 const DEFAULT_PDF_EMBEDDED_IMAGES_PER_PAGE = 4;
 const DEFAULT_PDF_EMBEDDED_IMAGE_MIN_PIXELS = 40_000;
 const DEFAULT_SIGNED_URL_SECONDS = 60 * 30;
+const DEFAULT_PRESENTATION_RENDER_SLIDES = 100;
+const execFileAsync = promisify(execFile);
 
 export function rawImageChannels(
   width: number,
@@ -483,9 +489,7 @@ export class FilesService {
           ),
         ),
       );
-      const imageSlides = slides.filter(
-        (slide) => slide.imageFileId,
-      ).length;
+      const imageSlides = slides.filter((slide) => slide.imageFileId).length;
       const notesSlides = slides.filter((slide) =>
         Boolean(slide.notes?.trim()),
       ).length;
@@ -1709,7 +1713,39 @@ export class FilesService {
     originalName: string,
   ): Promise<ExtractionResult> {
     if (originalName.toLowerCase().endsWith('.odp')) {
-      return this.extractOpenDocument(buffer, 'presentation');
+      const extracted = await this.extractOpenDocument(buffer, 'presentation');
+      const artifacts = await this.renderPresentationSlides(
+        buffer,
+        originalName,
+      );
+      return {
+        ...extracted,
+        artifacts,
+        metadata: {
+          ...extracted.metadata,
+          renderedSlides: artifacts.length,
+          previewRenderer: artifacts.length ? 'libreoffice' : undefined,
+        },
+        status: extracted.text || artifacts.length ? 'ready' : extracted.status,
+      };
+    }
+
+    if (!originalName.toLowerCase().endsWith('.pptx')) {
+      const artifacts = await this.renderPresentationSlides(
+        buffer,
+        originalName,
+      );
+      return {
+        text: '',
+        metadata: {
+          format:
+            path.extname(originalName).slice(1).toLowerCase() || 'presentation',
+          renderedSlides: artifacts.length,
+          previewRenderer: artifacts.length ? 'libreoffice' : undefined,
+        },
+        artifacts,
+        status: artifacts.length ? 'ready' : 'partial',
+      };
     }
     const zip = await JSZip.loadAsync(buffer);
     const slidePaths = Object.keys(zip.files)
@@ -1735,18 +1771,125 @@ export class FilesService {
       );
     }
     const text = slideTexts.join('\n\n');
+    const artifacts = await this.renderPresentationSlides(buffer, originalName);
     return {
       text,
       metadata: {
         format: 'pptx',
         slides: slidePaths.length,
+        renderedSlides: artifacts.length,
+        previewRenderer: artifacts.length ? 'libreoffice' : undefined,
         slideTitles: slideTexts
           .map((slide) => slide.split('\n')[1] ?? '')
           .slice(0, 100),
       },
-      artifacts: [],
-      status: text ? 'ready' : 'partial',
+      artifacts,
+      status: text || artifacts.length ? 'ready' : 'partial',
     };
+  }
+
+  private async renderPresentationSlides(
+    buffer: Buffer,
+    originalName: string,
+  ): Promise<ExtractedArtifact[]> {
+    if (process.env.AGENT_FILE_PRESENTATION_RENDER_ENABLED === 'false') {
+      return [];
+    }
+
+    const workDir = await mkdtemp(
+      path.join(os.tmpdir(), 'commons-presentation-'),
+    );
+    const outputDir = path.join(workDir, 'output');
+    const profileDir = path.join(workDir, 'profile');
+    const safeBaseName = sanitizeFileName(originalName || 'presentation.pptx');
+    const inputPath = path.join(workDir, safeBaseName);
+    const pdfName = `${path.parse(safeBaseName).name}.pdf`;
+    const pdfPath = path.join(outputDir, pdfName);
+
+    try {
+      await Promise.all([
+        mkdir(outputDir, { recursive: true }),
+        mkdir(profileDir, { recursive: true }),
+      ]);
+      await writeFile(inputPath, buffer);
+      const binary =
+        process.env.LIBREOFFICE_BINARY?.trim() || '/usr/bin/soffice';
+      const profileUrl = `file://${profileDir}`;
+      await execFileAsync(
+        binary,
+        [
+          '--headless',
+          '--nologo',
+          '--nolockcheck',
+          '--nodefault',
+          '--norestore',
+          `-env:UserInstallation=${profileUrl}`,
+          '--convert-to',
+          'pdf:impress_pdf_Export',
+          '--outdir',
+          outputDir,
+          inputPath,
+        ],
+        {
+          timeout: Number(
+            process.env.AGENT_FILE_PRESENTATION_RENDER_TIMEOUT_MS ?? 120_000,
+          ),
+          maxBuffer: 2 * 1024 * 1024,
+        },
+      );
+
+      const pdfBuffer = await readFile(pdfPath);
+      const pdfjs = (await import('pdfjs-dist/legacy/build/pdf.mjs')) as any;
+      const pdfjsRoot = path.dirname(
+        require.resolve('pdfjs-dist/package.json'),
+      );
+      const loadingTask = pdfjs.getDocument({
+        data: new Uint8Array(pdfBuffer),
+        disableWorker: true,
+        useSystemFonts: false,
+        standardFontDataUrl: `${path.join(pdfjsRoot, 'standard_fonts')}${path.sep}`,
+        cMapUrl: `${path.join(pdfjsRoot, 'cmaps')}${path.sep}`,
+        cMapPacked: true,
+      });
+      const pdf = await loadingTask.promise;
+      const maxSlides = Math.min(
+        pdf.numPages,
+        Number(
+          process.env.AGENT_FILE_PRESENTATION_RENDER_SLIDES ??
+            DEFAULT_PRESENTATION_RENDER_SLIDES,
+        ),
+      );
+      const artifacts: ExtractedArtifact[] = [];
+      for (let pageNumber = 1; pageNumber <= maxSlides; pageNumber += 1) {
+        const rendered = await this.renderPdfPage(pdf, pageNumber);
+        artifacts.push({
+          kind: 'presentation_slide_image',
+          fileName: `slide-${pageNumber}.png`,
+          mimeType: 'image/png',
+          buffer: rendered.buffer,
+          pageNumber,
+          width: rendered.width,
+          height: rendered.height,
+          metadata: {
+            source: 'libreoffice-presentation-render',
+            renderer: 'libreoffice',
+          },
+        });
+      }
+      await loadingTask.destroy?.();
+      return artifacts;
+    } catch (error) {
+      this.logger.warn(
+        `Could not render presentation ${originalName}: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+      return [];
+    } finally {
+      await rm(workDir, { recursive: true, force: true }).catch(
+        () => undefined,
+      );
+    }
   }
 
   private async extractOpenDocument(
