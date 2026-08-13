@@ -31,6 +31,10 @@ import { CourseAgentDrawer } from "@/components/course-agents/course-agent-drawe
 import { CourseMaterialViewer } from "@/components/course-material-viewer";
 import { cn } from "@/lib/utils";
 import { getCourseThemeStyle } from "@/lib/course-theme";
+import {
+  learnerAvailableActivities,
+  resolveLearnerActivitySelection,
+} from "@/lib/live-learner-selection";
 import type {
   LearnerLiveSession,
   LiveActivity,
@@ -62,26 +66,44 @@ export function LiveLearnerRoom({ sessionId }: { sessionId: string }) {
     "connecting" | "synced" | "reconnecting" | "offline"
   >("connecting");
   const stateVersionRef = useRef(-1);
+  const observedStateVersionRef = useRef(-1);
+  const presentedActivityRef = useRef("");
+  const sessionRef = useRef<LearnerLiveSession | null>(null);
   const requestRef = useRef(0);
   const lastSyncRef = useRef(0);
   const sessionStatus = session?.status;
 
+  const applySelection = useCallback((next: LearnerLiveSession) => {
+    const lastPresentedActivityId = presentedActivityRef.current;
+    setSelectedId((selectedActivityId) =>
+      resolveLearnerActivitySelection({
+        activities: next.activities,
+        currentActivityId: next.currentActivityId,
+        lastPresentedActivityId,
+        pace: next.pace,
+        responses: next.responses,
+        selectedActivityId,
+      }),
+    );
+    presentedActivityRef.current = next.currentActivityId || "";
+  }, []);
+
   const load = useCallback(
     async (quiet = false) => {
-    const requestId = ++requestRef.current;
-    if (!quiet) setLoading(true);
+      const requestId = ++requestRef.current;
+      if (!quiet) setLoading(true);
       const res = await fetch(`/api/live-sessions/${sessionId}`, {
         cache: "no-store",
       }).catch(() => null);
-    if (!res) {
+      if (!res) {
         if (requestId === requestRef.current)
           setConnection(navigator.onLine ? "reconnecting" : "offline");
-      if (!quiet) setLoading(false);
-      return;
-    }
-    const data = await res.json().catch(() => ({}));
-    if (requestId !== requestRef.current) return;
-    if (!res.ok) {
+        if (!quiet) setLoading(false);
+        return;
+      }
+      const data = await res.json().catch(() => ({}));
+      if (requestId !== requestRef.current) return;
+      if (!res.ok) {
         if (data.code === "ENROLLMENT_REQUIRED") {
           setEnrollmentGate({
             courseId: data.course?.id,
@@ -93,31 +115,28 @@ export function LiveLearnerRoom({ sessionId }: { sessionId: string }) {
           });
           setSession(null);
           setNotice("");
-        } else {
-      setNotice(data.error || "Could not enter this live session.");
+        } else if (!quiet) {
+          setNotice(data.error || "Could not enter this live session.");
         }
-      if (!quiet) setLoading(false);
-      return;
-    }
-    const next = data.session as LearnerLiveSession;
+        if (!quiet) setLoading(false);
+        return;
+      }
+      const next = data.session as LearnerLiveSession;
+      if (next.stateVersion < observedStateVersionRef.current) {
+        if (!quiet) setLoading(false);
+        return;
+      }
       setEnrollmentGate(null);
-    setSession(next);
-    stateVersionRef.current = next.stateVersion;
-    lastSyncRef.current = Date.now();
-    setConnection("synced");
-    setSelectedId((current) => {
-        const visible = next.activities.filter(
-          (item) => item.status !== "draft",
-        );
-        const desired =
-          next.pace === "facilitator"
-            ? next.currentActivityId ||
-              visible.find((item) => item.status === "open")?.id
-        : current || visible[0]?.id;
-        return visible.some((item) => item.id === desired)
-          ? desired || ""
-          : visible[0]?.id || "";
-    });
+      sessionRef.current = next;
+      setSession(next);
+      stateVersionRef.current = next.stateVersion;
+      observedStateVersionRef.current = Math.max(
+        observedStateVersionRef.current,
+        next.stateVersion,
+      );
+      lastSyncRef.current = Date.now();
+      setConnection("synced");
+      applySelection(next);
       setValues((current) => ({
         ...Object.fromEntries(
           Object.values(next.responses).map((response) => [
@@ -127,10 +146,49 @@ export function LiveLearnerRoom({ sessionId }: { sessionId: string }) {
         ),
         ...current,
       }));
-    setNotice("");
-    if (!quiet) setLoading(false);
+      setNotice("");
+      if (!quiet) setLoading(false);
     },
-    [sessionId],
+    [applySelection, sessionId],
+  );
+
+  const applyLiveState = useCallback(
+    (state: LiveSessionState) => {
+      observedStateVersionRef.current = Math.max(
+        observedStateVersionRef.current,
+        state.stateVersion,
+      );
+      const current = sessionRef.current;
+      if (!current) return;
+      const activities = current.activities.map((item) => {
+        const updated =
+          state.currentActivity?.id === item.id
+            ? { ...item, ...state.currentActivity }
+            : item;
+        return {
+          ...updated,
+          status: state.activityStatuses[item.id] || updated.status,
+        };
+      });
+      if (
+        state.currentActivity &&
+        !activities.some((item) => item.id === state.currentActivity?.id)
+      ) {
+        activities.push(state.currentActivity);
+      }
+      const next: LearnerLiveSession = {
+        ...current,
+        status: state.status,
+        pace: state.pace,
+        currentActivityId: state.currentActivityId,
+        stateVersion: state.stateVersion,
+        activities,
+      };
+      sessionRef.current = next;
+      setSession(next);
+      applySelection(next);
+    },
+    [applySelection],
   );
 
   useEffect(() => {
@@ -158,26 +216,9 @@ export function LiveLearnerRoom({ sessionId }: { sessionId: string }) {
         const state = payload.state as LiveSessionState;
         lastSyncRef.current = Date.now();
         setConnection("synced");
+        applyLiveState(state);
         if (state.stateVersion !== stateVersionRef.current) {
           await load(true);
-        } else {
-          setSession((current) =>
-            current
-              ? {
-            ...current,
-            status: state.status,
-            pace: state.pace,
-            currentActivityId: state.currentActivityId,
-            activities: current.activities.map((item) => ({
-              ...item,
-              status: state.activityStatuses[item.id] || item.status,
-            })),
-                }
-              : current,
-          );
-          if (state.pace === "facilitator" && state.currentActivityId) {
-            setSelectedId(state.currentActivityId);
-          }
         }
       } catch {
         if (!cancelled)
@@ -196,7 +237,7 @@ export function LiveLearnerRoom({ sessionId }: { sessionId: string }) {
       window.removeEventListener("online", reconnect);
       window.removeEventListener("focus", reconnect);
     };
-  }, [load, sessionId, sessionStatus]);
+  }, [applyLiveState, load, sessionId, sessionStatus]);
 
   useEffect(() => {
     const timer = window.setInterval(() => {
@@ -221,8 +262,15 @@ export function LiveLearnerRoom({ sessionId }: { sessionId: string }) {
     session?.activities.findIndex((item) => item.id === selectedId) ?? -1;
   const response = activity ? session?.responses[activity.id] : undefined;
   const availableActivities = useMemo(
-    () => session?.activities.filter((item) => item.status !== "draft") || [],
-    [session?.activities],
+    () =>
+      session
+        ? learnerAvailableActivities(
+            session.activities,
+            session.currentActivityId,
+            session.responses,
+          )
+        : [],
+    [session],
   );
   const activityPosition = activityIndex >= 0 ? activityIndex + 1 : null;
 
@@ -644,7 +692,10 @@ function WorkbookDrawer({
               const selected = item.id === selectedId;
               const done = Boolean(session.responses[item.id]);
               const canSelect =
-                !locked && (session.pace === "learner" || selected);
+                selected ||
+                (session.pace === "learner" &&
+                  !locked &&
+                  (item.status === "open" || done));
               return (
                 <button
                   key={item.id}
@@ -673,7 +724,9 @@ function WorkbookDrawer({
                           ? "Completed"
                           : locked
                             ? "Upcoming"
-                            : labelFor(item.type)}
+                            : item.status === "closed"
+                              ? "Closed"
+                              : labelFor(item.type)}
                     </span>
                   </span>
                   {locked ? (
@@ -724,7 +777,7 @@ function LearnerActivity({
           ) : null}
         </div>
         <h1 className="mt-6 text-3xl font-bold tracking-tight">
-          {activity.title}
+          {activity.title || labelFor(activity.type)}
         </h1>
         {activity.prompt ? (
           <p className="mt-4 text-lg leading-8 opacity-80">{activity.prompt}</p>
@@ -793,6 +846,8 @@ function LearnerActivity({
           </div>
           {response ? (
             <Saved />
+          ) : activity.status !== "open" ? (
+            <ResponsesClosed />
           ) : (
             <button
               onClick={() => onSubmit()}
@@ -812,6 +867,8 @@ function LearnerActivity({
         <div className="border-t border-slate-100 bg-slate-50 p-5 sm:p-7">
           {response ? (
             <Saved />
+          ) : activity.status !== "open" ? (
+            <ResponsesClosed />
           ) : (
             <button
               onClick={() => onSubmit("complete")}
@@ -822,6 +879,10 @@ function LearnerActivity({
               {activity.type === "break" ? "I’m back" : "Mark as viewed"}
             </button>
           )}
+        </div>
+      ) : activity.status !== "open" && !response ? (
+        <div className="border-t border-slate-100 bg-slate-50 p-5 sm:p-7">
+          <ResponsesClosed />
         </div>
       ) : (
         <div className="border-t border-slate-100 bg-slate-50 p-5 sm:p-7">
@@ -863,6 +924,13 @@ function Saved() {
   return (
     <div className="mt-3 flex items-center justify-center gap-2 rounded-xl bg-emerald-50 px-4 py-3 text-sm font-bold text-emerald-700">
       <CheckCircle2 className="h-4 w-4" /> Response saved
+    </div>
+  );
+}
+function ResponsesClosed() {
+  return (
+    <div className="flex items-center justify-center gap-2 rounded-xl bg-slate-100 px-4 py-3 text-sm font-bold text-slate-600">
+      <LockKeyhole className="h-4 w-4" /> Responses are closed
     </div>
   );
 }

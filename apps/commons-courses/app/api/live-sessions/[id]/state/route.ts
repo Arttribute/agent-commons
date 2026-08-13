@@ -3,7 +3,10 @@ import { Types } from "mongoose";
 import { auth } from "@/lib/auth";
 import { connectDB } from "@/lib/db";
 import { getCourseCollaboratorRole } from "@/lib/educator-auth";
-import { resolveCurrentActivityId } from "@/lib/live-session-data";
+import {
+  learnerSafeActivities,
+  resolveCurrentActivityId,
+} from "@/lib/live-session-data";
 import Course from "@/models/Course";
 import Enrollment from "@/models/Enrollment";
 import LiveParticipant from "@/models/LiveParticipant";
@@ -33,7 +36,7 @@ export async function GET(
 
   await connectDB();
   const session = await LiveSession.findById(id).select(
-    "courseId status pace access invitedEmails currentActivityId stateVersion activities.id activities.status settings.allowLateJoin",
+    "courseId status pace access invitedEmails currentActivityId stateVersion activities settings.allowLateJoin",
   );
   if (!session || session.status === "draft") {
     return NextResponse.json(
@@ -105,21 +108,29 @@ export async function GET(
     }
   }
 
+  const currentActivityId = resolveCurrentActivityId(session);
+  const currentActivity = session.activities.find(
+    (activity: LiveActivity) => activity.id === currentActivityId,
+  );
+
   return NextResponse.json(
     {
-    state: {
-      status: session.status,
-      pace: session.pace,
-      currentActivityId: resolveCurrentActivityId(session),
-      stateVersion: session.stateVersion || 0,
-      activityStatuses: Object.fromEntries(
+      state: {
+        status: session.status,
+        pace: session.pace,
+        currentActivityId,
+        currentActivity: currentActivity
+          ? learnerSafeActivities([currentActivity])[0]
+          : undefined,
+        stateVersion: session.stateVersion || 0,
+        activityStatuses: Object.fromEntries(
           session.activities.map((activity: LiveActivity) => [
             activity.id,
             activity.status,
           ]),
-      ),
-      serverTime: new Date().toISOString(),
-    },
+        ),
+        serverTime: new Date().toISOString(),
+      },
     },
     { headers: noStore },
   );
