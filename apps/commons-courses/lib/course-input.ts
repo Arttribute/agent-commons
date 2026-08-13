@@ -1,4 +1,5 @@
 import { normalizeCourseAgents } from "@/lib/course-agent-defaults";
+import { normalizeCourseTheme, type CourseTheme } from "@/lib/course-theme";
 import {
   getLiveScheduleSummary,
   normalizeCourseStartDate,
@@ -69,6 +70,8 @@ export type CourseInput = {
   imageUrl?: string;
   bannerImageUrl?: string;
   previewImageUrl?: string;
+  catalogVisibility?: "public" | "private";
+  theme?: CourseTheme;
   modules?: Array<{
     title: string;
     description?: string;
@@ -670,6 +673,8 @@ export function normalizeCourseInput(input: CourseInput) {
     imageUrl: normalizeImageUrl(input.imageUrl),
     bannerImageUrl: normalizeImageUrl(input.bannerImageUrl),
     previewImageUrl: normalizeImageUrl(input.previewImageUrl),
+    catalogVisibility: input.catalogVisibility === "private" || input.catalogVisibility === "public" ? input.catalogVisibility : undefined,
+    theme: input.theme ? normalizeCourseTheme(input.theme) : undefined,
     modules,
     skillPack: normalizeSkillPack(input.skillPack),
     skillPacks: normalizeSkillPacks(input.skillPacks),

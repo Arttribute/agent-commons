@@ -1,4 +1,5 @@
 import type { Types } from "mongoose";
+import { normalizeCourseTheme, type CourseTheme } from "@/lib/course-theme";
 import LiveParticipant from "@/models/LiveParticipant";
 import LiveResponse from "@/models/LiveResponse";
 import type { ILiveSession } from "@/models/LiveSession";
@@ -18,6 +19,7 @@ type LiveSessionDocumentLike = ILiveSession & {
 export async function serializeEducatorLiveSession(
   session: LiveSessionDocumentLike,
   courseTitle: string,
+  courseTheme?: Partial<CourseTheme>,
 ): Promise<LiveSessionRecord> {
   const [participantCount, responseCountRows] = await Promise.all([
     LiveParticipant.countDocuments({ sessionId: session._id }),
@@ -29,7 +31,7 @@ export async function serializeEducatorLiveSession(
   const responseCounts = Object.fromEntries(
     responseCountRows.map((row: { _id: string; count: number }) => [row._id, row.count]),
   );
-  return serializeBase(session, courseTitle, participantCount, responseCounts);
+  return serializeBase(session, courseTitle, courseTheme, participantCount, responseCounts);
 }
 
 export async function getParticipants(sessionId: Types.ObjectId) {
@@ -111,6 +113,7 @@ export function learnerSafeActivities(activities: LiveActivity[]) {
 function serializeBase(
   session: LiveSessionDocumentLike,
   courseTitle: string,
+  courseTheme: Partial<CourseTheme> | undefined,
   participantCount: number,
   responseCounts: Record<string, number>,
 ): LiveSessionRecord {
@@ -120,6 +123,7 @@ function serializeBase(
     courseId: String(session.courseId),
     courseSlug: session.courseSlug,
     courseTitle,
+    courseTheme: normalizeCourseTheme(courseTheme),
     title: session.title,
     description: session.description,
     joinCode: session.joinCode,

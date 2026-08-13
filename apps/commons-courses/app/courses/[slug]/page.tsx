@@ -1,5 +1,6 @@
 import Link from "next/link";
 import type { Metadata } from "next";
+import type { CSSProperties } from "react";
 import { notFound } from "next/navigation";
 import { Nav } from "@/components/nav";
 import { CourseOutline } from "@/components/courses/course-outline";
@@ -14,6 +15,7 @@ import { AnalyticsTracker } from "@/components/analytics/analytics-tracker";
 import { RichTextRenderer } from "@/components/rich-text-renderer";
 import { auth } from "@/lib/auth";
 import { getAppBaseUrl } from "@/lib/app-url";
+import { getCourseThemeStyle, type CourseTheme } from "@/lib/course-theme";
 import { connectDB } from "@/lib/db";
 import Course from "@/models/Course";
 import Enrollment from "@/models/Enrollment";
@@ -103,6 +105,7 @@ interface CourseDetailData {
   imageUrl?: string | null;
   bannerImageUrl?: string | null;
   previewImageUrl?: string | null;
+  theme?: CourseTheme;
   skillPack?: {
     enabled?: boolean;
     title?: string;
@@ -460,7 +463,7 @@ export default async function CoursePage({ params, searchParams }: Props) {
     }, 0);
 
   return (
-    <div className="min-h-screen overflow-x-hidden bg-white">
+    <div style={getCourseThemeStyle(course.theme) as CSSProperties} className="min-h-screen overflow-x-hidden bg-[var(--course-background)] text-[var(--course-text)]">
       <AnalyticsTracker
         courseSlug={course.slug}
         page="course.detail"
@@ -473,7 +476,7 @@ export default async function CoursePage({ params, searchParams }: Props) {
       />
       <Nav />
       <main className="pt-16">
-        <section className="border-b border-slate-200 bg-slate-50/70">
+        <section className="border-b border-slate-200 bg-[var(--course-background)]">
           <div className="mx-auto max-w-7xl px-4 py-10 sm:px-6 sm:py-14 lg:px-8 lg:py-16">
             <Link
               href="/courses"

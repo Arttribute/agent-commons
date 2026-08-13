@@ -1,6 +1,6 @@
 "use client";
 
-import { use, useCallback, useEffect, useState } from "react";
+import { use, useCallback, useEffect, useState, type CSSProperties } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { Nav } from "@/components/nav";
@@ -20,6 +20,7 @@ import {
   X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { getCourseThemeStyle, type CourseTheme } from "@/lib/course-theme";
 import type { CourseAgentConfig } from "@/types/course-agent";
 
 interface Props {
@@ -52,6 +53,7 @@ interface CourseLearnData {
   hasStarted?: boolean;
   modules: ModuleData[];
   agents?: CourseAgentConfig[];
+  theme?: CourseTheme;
 }
 
 export default function LearnPage({ params }: Props) {
@@ -383,7 +385,7 @@ export default function LearnPage({ params }: Props) {
     totalLessons > 0 ? Math.round((completedLessons.length / totalLessons) * 100) : 0;
 
   return (
-    <div className="h-dvh bg-white flex flex-col overflow-hidden">
+    <div style={getCourseThemeStyle(course.theme) as CSSProperties} className="h-dvh bg-[var(--course-background)] text-[var(--course-text)] flex flex-col overflow-hidden">
       <AnalyticsTracker
         courseSlug={slug}
         page="course.learn"

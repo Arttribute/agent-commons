@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { Types } from "mongoose";
 import { auth } from "@/lib/auth";
 import { connectDB } from "@/lib/db";
+import { getCourseCollaboratorRole } from "@/lib/educator-auth";
 import {
   getLearnerResponses,
   getSessionResults,
@@ -31,15 +32,18 @@ export async function GET(
   if (!session || session.status === "draft") {
     return NextResponse.json({ error: "Session not found." }, { status: 404 });
   }
-  const course = await Course.findById(session.courseId).select("title published isFree");
+  const course = await Course.findById(session.courseId).select("title published isFree educator collaborators theme");
   if (!course?.published) {
     return NextResponse.json({ error: "Session not found." }, { status: 404 });
   }
   const email = currentUser.user.email?.trim().toLowerCase() || "";
-  if (session.access === "invited" && !session.invitedEmails.includes(email)) {
+  const managesCourse = currentUser.user.role === "admin"
+    || course.educator?.userId?.toString() === currentUser.user.id
+    || Boolean(getCourseCollaboratorRole(course, { userId: currentUser.user.id, email: currentUser.user.email }));
+  if (!managesCourse && session.access === "invited" && !session.invitedEmails.includes(email)) {
     return NextResponse.json({ error: "This session is limited to invited learners." }, { status: 403 });
   }
-  if (session.access === "enrolled") {
+  if (!managesCourse && session.access === "enrolled") {
     const enrolled = await Enrollment.exists({
       userId: currentUser.user.id,
       courseId: session.courseId,
@@ -61,7 +65,7 @@ export async function GET(
       return NextResponse.json({ error: "This session has ended." }, { status: 410 });
     }
   }
-  if (!session.settings.allowLateJoin && session.status === "live") {
+  if (!managesCourse && !session.settings.allowLateJoin && session.status === "live") {
     const existing = await LiveParticipant.exists({
       sessionId: session._id,
       userId: currentUser.user.id,
@@ -84,7 +88,7 @@ export async function GET(
     { new: true, upsert: true },
   );
   const [base, responses, results] = await Promise.all([
-    serializeEducatorLiveSession(session, course.title),
+    serializeEducatorLiveSession(session, course.title, course.theme),
     getLearnerResponses(session._id, participant._id),
     getSessionResults(session, false),
   ]);

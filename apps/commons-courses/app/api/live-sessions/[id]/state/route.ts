@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { Types } from "mongoose";
 import { auth } from "@/lib/auth";
 import { connectDB } from "@/lib/db";
+import { getCourseCollaboratorRole } from "@/lib/educator-auth";
 import { resolveCurrentActivityId } from "@/lib/live-session-data";
 import Course from "@/models/Course";
 import Enrollment from "@/models/Enrollment";
@@ -33,17 +34,20 @@ export async function GET(
   }
 
   const [course, participant] = await Promise.all([
-    Course.findById(session.courseId).select("published"),
+    Course.findById(session.courseId).select("published educator collaborators"),
     LiveParticipant.exists({ sessionId: session._id, userId: currentUser.user.id }),
   ]);
   if (!course?.published) {
     return NextResponse.json({ error: "Session not found." }, { status: 404, headers: noStore });
   }
   const email = currentUser.user.email?.trim().toLowerCase() || "";
-  if (session.access === "invited" && !session.invitedEmails.includes(email)) {
+  const managesCourse = currentUser.user.role === "admin"
+    || course.educator?.userId?.toString() === currentUser.user.id
+    || Boolean(getCourseCollaboratorRole(course, { userId: currentUser.user.id, email: currentUser.user.email }));
+  if (!managesCourse && session.access === "invited" && !session.invitedEmails.includes(email)) {
     return NextResponse.json({ error: "This session is limited to invited learners." }, { status: 403, headers: noStore });
   }
-  if (session.access === "enrolled") {
+  if (!managesCourse && session.access === "enrolled") {
     const enrolled = await Enrollment.exists({
       userId: currentUser.user.id,
       courseId: session.courseId,
