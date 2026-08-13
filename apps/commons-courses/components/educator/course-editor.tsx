@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useState, type CSSProperties } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { CourseAgentEditor } from "@/components/educator/course-agent-editor";
 import { CourseCollaborators } from "@/components/educator/course-collaborators";
@@ -14,6 +14,7 @@ import {
 } from "@/components/educator/access-program-editor";
 import { useToast } from "@/components/toast-provider";
 import { defaultCourseAgents } from "@/lib/course-agent-defaults";
+import { defaultCourseTheme, getCourseThemeStyle, type CourseTheme } from "@/lib/course-theme";
 import type { LiveSchedule } from "@/lib/course-schedule";
 import { cn } from "@/lib/utils";
 import type { CourseAgentConfig } from "@/types/course-agent";
@@ -49,6 +50,8 @@ type CourseForm = {
   currency: string;
   isFree: boolean;
   published: boolean;
+  catalogVisibility: "public" | "private";
+  theme: CourseTheme;
   level: "beginner" | "intermediate" | "advanced";
   courseType: "self-paced" | "live";
   startDate?: string;
@@ -117,6 +120,8 @@ const emptyCourse: CourseForm = {
   currency: "USD",
   isFree: true,
   published: false,
+  catalogVisibility: "public",
+  theme: defaultCourseTheme,
   level: "beginner",
   courseType: "self-paced",
   startDate: "",
@@ -456,6 +461,30 @@ export function CourseEditor({
               Published
             </label>
           </div>
+
+          <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 sm:p-5">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+              <div><h3 className="text-sm font-bold text-slate-900">Course brand</h3><p className="mt-1 max-w-2xl text-xs leading-5 text-slate-500">Choose any brand colors. CommonLab automatically keeps text readable on primary and accent colors.</p></div>
+              <button type="button" onClick={() => setCourse({ ...course, theme: defaultCourseTheme })} className="self-start rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-600">Reset colors</button>
+            </div>
+            <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              {(Object.keys(course.theme) as Array<keyof CourseTheme>).map((key) => (
+                <ColorPicker key={key} label={({ primary: "Primary actions", accent: "Accent", highlight: "Highlight", background: "Page background", surface: "Cards and content", text: "Main text" } as Record<keyof CourseTheme, string>)[key]} value={course.theme[key]} onChange={(value) => setCourse({ ...course, theme: { ...course.theme, [key]: value } })} />
+              ))}
+            </div>
+            <div style={getCourseThemeStyle(course.theme) as CSSProperties} className="mt-5 overflow-hidden rounded-xl border border-slate-200 bg-[var(--course-background)] p-4 text-[var(--course-text)]">
+              <div className="rounded-lg bg-[var(--course-surface)] p-4 shadow-sm"><span className="rounded-full bg-[var(--course-accent)] px-2.5 py-1 text-[10px] font-bold uppercase tracking-widest text-[var(--course-on-accent)]">Live workshop</span><p className="mt-4 text-lg font-bold">{course.title || "Your course title"}</p><p className="mt-1 text-xs opacity-65">This preview shows how your workbook and live activities will feel.</p><div className="mt-4 flex gap-2"><span className="rounded-lg bg-[var(--course-primary)] px-3 py-2 text-xs font-bold text-[var(--course-on-primary)]">Primary action</span><span className="rounded-lg bg-[var(--course-highlight)] px-3 py-2 text-xs font-bold text-[var(--course-on-highlight)]">Highlight</span></div></div>
+            </div>
+          </div>
+
+          <label>
+            <span className="text-sm font-bold text-slate-700">Course discoverability</span>
+            <select className="mt-2 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm" value={course.catalogVisibility} onChange={(event) => setCourse({ ...course, catalogVisibility: event.target.value as CourseForm["catalogVisibility"] })}>
+              <option value="public">Public — visible in the course catalog</option>
+              <option value="private">Private — only educators and enrolled learners</option>
+            </select>
+            <span className="mt-1 block text-xs text-slate-500">Private courses still work with live links and QR codes, but require authorized access.</span>
+          </label>
 
           {course.courseType === "live" && (
             <div className="grid gap-4 md:grid-cols-3">
@@ -983,6 +1012,7 @@ function hydrateCourse(course: CourseResponse): CourseForm {
       ...emptyCourse.emailSettings,
       ...(course.emailSettings || {}),
     },
+    theme: { ...defaultCourseTheme, ...(course.theme || {}) },
   };
 }
 
@@ -1019,6 +1049,8 @@ function getSectionSnapshot(course: CourseForm, section: CourseEditorSection) {
         description: payload.description,
         longDescription: payload.longDescription,
         published: payload.published,
+        catalogVisibility: payload.catalogVisibility,
+        theme: payload.theme,
         level: payload.level,
         courseType: payload.courseType,
         startDate: payload.startDate,

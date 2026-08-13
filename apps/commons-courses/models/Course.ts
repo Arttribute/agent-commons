@@ -5,6 +5,7 @@ import {
 } from "@/lib/course-agent-defaults";
 import type { CourseAgentConfig } from "@/types/course-agent";
 import type { SkillPack } from "@/types/skills";
+import type { CourseTheme } from "@/lib/course-theme";
 
 export interface ILesson {
   title: string;
@@ -146,6 +147,7 @@ export interface ICourse extends Document {
   imageUrl?: string;
   bannerImageUrl?: string;
   previewImageUrl?: string;
+  theme: CourseTheme;
   modules: IModule[];
   skillPack?: SkillPack;
   skillPacks?: SkillPack[];
@@ -219,6 +221,18 @@ const InstallmentPlanSchema = new Schema(
       ],
       default: "module_by_module",
     },
+  },
+  { _id: false },
+);
+
+const CourseThemeSchema = new Schema<CourseTheme>(
+  {
+    primary: { type: String, default: "#0F172A" },
+    accent: { type: String, default: "#71E0E7" },
+    highlight: { type: String, default: "#B8F56D" },
+    background: { type: String, default: "#F8FAFC" },
+    surface: { type: String, default: "#FFFFFF" },
+    text: { type: String, default: "#0F172A" },
   },
   { _id: false },
 );
@@ -741,6 +755,7 @@ const CourseSchema = new Schema<ICourse>(
     imageUrl: String,
     bannerImageUrl: String,
     previewImageUrl: String,
+    theme: { type: CourseThemeSchema, default: () => ({}) },
     modules: [ModuleSchema],
     skillPack: SkillPackSchema,
     skillPacks: { type: [SkillPackSchema], default: [] },

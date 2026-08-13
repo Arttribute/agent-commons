@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, type CSSProperties } from "react";
 import {
   ArrowDown,
   ArrowUp,
@@ -27,6 +27,7 @@ import {
   Users,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { getCourseThemeStyle } from "@/lib/course-theme";
 import type {
   LiveActivity,
   LiveActivityResults,
@@ -212,7 +213,7 @@ export function LiveFacilitatorStudio({ sessionId }: { sessionId: string }) {
   const joinPortal = typeof window === "undefined" ? "/join" : `${window.location.origin}/join`;
 
   return (
-    <div className="space-y-5" data-copilot-target="live-facilitation-studio">
+    <div style={getCourseThemeStyle(data.session.courseTheme) as CSSProperties} className="space-y-5" data-copilot-target="live-facilitation-studio">
       <header className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
         <div className="min-w-0">
           <div className="flex items-center gap-2">
@@ -228,9 +229,9 @@ export function LiveFacilitatorStudio({ sessionId }: { sessionId: string }) {
               <MonitorUp className="h-4 w-4" /> Open room for joining
             </button>
           ) : null}
-          {data.session.status === "lobby" ? (
+          {data.session.status === "lobby" || (data.session.status === "live" && !current) ? (
             <button onClick={() => command("start")} disabled={running || !data.session.activities.length} className="inline-flex items-center gap-2 rounded-xl bg-slate-950 px-4 py-2.5 text-sm font-bold text-white disabled:opacity-40">
-              <Play className="h-4 w-4" /> Present first activity
+              <Play className="h-4 w-4" /> {data.session.status === "live" ? "Restore live activity" : "Present first activity"}
             </button>
           ) : null}
           {data.session.status === "live" ? (
@@ -309,7 +310,7 @@ export function LiveFacilitatorStudio({ sessionId }: { sessionId: string }) {
                 </div>
               </>
             ) : (
-              <div className="p-12 text-center"><Radio className="mx-auto h-7 w-7 text-slate-300" /><h3 className="mt-4 text-lg font-bold text-slate-900">The room is ready</h3><p className="mt-2 text-sm text-slate-500">Open the lobby, invite learners, then start when the room is settled.</p>{data.session.status === "draft" ? <button onClick={() => command("open_lobby")} className="mt-5 rounded-xl bg-slate-950 px-5 py-2.5 text-sm font-bold text-white">Open lobby</button> : data.session.status === "lobby" ? <button onClick={() => command("start")} className="mt-5 rounded-xl bg-slate-950 px-5 py-2.5 text-sm font-bold text-white">Start first activity</button> : null}</div>
+              <div className="p-12 text-center"><Radio className="mx-auto h-7 w-7 text-slate-300" /><h3 className="mt-4 text-lg font-bold text-slate-900">{data.session.status === "live" ? "Restore the live activity" : "The room is ready"}</h3><p className="mt-2 text-sm text-slate-500">{data.session.status === "live" ? "The room is live, but no activity is currently presented. Restore the first activity for everyone." : "Open the lobby, invite learners, then start when the room is settled."}</p>{data.session.status === "draft" ? <button onClick={() => command("open_lobby")} className="mt-5 rounded-xl bg-slate-950 px-5 py-2.5 text-sm font-bold text-white">Open lobby</button> : data.session.status === "lobby" || data.session.status === "live" ? <button onClick={() => command("start")} className="mt-5 rounded-xl bg-slate-950 px-5 py-2.5 text-sm font-bold text-white">{data.session.status === "live" ? "Restore first activity" : "Start first activity"}</button> : null}</div>
             )}
           </section>
           <aside className="space-y-5">

@@ -17,7 +17,7 @@ export async function GET(
   return NextResponse.json({
     sessions: await Promise.all(
       sessions.map((session) =>
-        serializeEducatorLiveSession(session, result.course.title),
+        serializeEducatorLiveSession(session, result.course.title, result.course.theme),
       ),
     ),
   });
@@ -41,8 +41,7 @@ export async function POST(
     createdBy: result.session.userId,
   });
   return NextResponse.json(
-    { session: await serializeEducatorLiveSession(session, result.course.title) },
+    { session: await serializeEducatorLiveSession(session, result.course.title, result.course.theme) },
     { status: 201 },
   );
 }
-

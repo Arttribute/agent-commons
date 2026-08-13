@@ -31,7 +31,7 @@ export async function GET(
   if (authResult.error) return authResult.error;
   const { session, result } = authResult;
   const [serialized, participants, results] = await Promise.all([
-    serializeEducatorLiveSession(session, result.course.title),
+    serializeEducatorLiveSession(session, result.course.title, result.course.theme),
     getParticipants(session._id),
     getSessionResults(session, session.settings.showParticipantNames),
   ]);
@@ -55,16 +55,15 @@ export async function PATCH(
     session.status = "lobby";
   } else if (record.command === "start") {
     session.status = "live";
-    if (!session.currentActivityId) {
-      const first = session.activities[0];
-      if (first) {
-        if (session.pace === "learner") {
-          for (const activity of session.activities) activity.status = "open";
-        } else {
-          first.status = "open";
-        }
-        session.currentActivityId = first.id;
+    const current = session.activities.find((activity: LiveActivity) => activity.id === session.currentActivityId && activity.status === "open");
+    const first = current || session.activities[0];
+    if (first) {
+      if (session.pace === "learner") {
+        for (const activity of session.activities) activity.status = "open";
+      } else {
+        for (const activity of session.activities) activity.status = activity.id === first.id ? "open" : "closed";
       }
+      session.currentActivityId = first.id;
     }
   } else if (record.command === "end") {
     session.status = "ended";
@@ -95,6 +94,6 @@ export async function PATCH(
   session.markModified("activities");
   await session.save();
   return NextResponse.json({
-    session: await serializeEducatorLiveSession(session, result.course.title),
+    session: await serializeEducatorLiveSession(session, result.course.title, result.course.theme),
   });
 }

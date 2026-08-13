@@ -51,6 +51,7 @@ export type LiveSessionRecord = {
   courseId: string;
   courseSlug: string;
   courseTitle: string;
+  courseTheme: import("@/lib/course-theme").CourseTheme;
   title: string;
   description?: string;
   joinCode: string;
