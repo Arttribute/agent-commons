@@ -151,6 +151,8 @@ export interface ICourse extends Document {
   skillPacks?: SkillPack[];
   agents: CourseAgentConfig[];
   published: boolean;
+  /** Public courses appear in discovery. Private courses require educator or enrollment access. */
+  catalogVisibility: "public" | "private";
   /** Pinned as the single hero feature on the landing page */
   isMainFeatured: boolean;
   /** Shown in the "featured courses" section on the landing page */
@@ -199,7 +201,7 @@ const EducatorSchema = new Schema(
     paystackSubaccountCode: String,
     stripeAccountId: String,
   },
-  { _id: false }
+  { _id: false },
 );
 
 const InstallmentPlanSchema = new Schema(
@@ -218,7 +220,7 @@ const InstallmentPlanSchema = new Schema(
       default: "module_by_module",
     },
   },
-  { _id: false }
+  { _id: false },
 );
 
 const AccessCodeSchema = new Schema<ICourseAccessCode>(
@@ -237,7 +239,7 @@ const AccessCodeSchema = new Schema<ICourseAccessCode>(
     redeemedCount: { type: Number, default: 0, min: 0 },
     expiresAt: Date,
   },
-  { _id: false }
+  { _id: false },
 );
 
 const AffiliateProgramSchema = new Schema<ICourseAffiliateProgram>(
@@ -254,7 +256,7 @@ const AffiliateProgramSchema = new Schema<ICourseAffiliateProgram>(
     commissionAmount: { type: Number, default: 10, min: 0 },
     conversions: { type: Number, default: 0, min: 0 },
   },
-  { _id: false }
+  { _id: false },
 );
 
 const EarlyPaymentDiscountSchema = new Schema<ICourseEarlyPaymentDiscount>(
@@ -272,7 +274,7 @@ const EarlyPaymentDiscountSchema = new Schema<ICourseEarlyPaymentDiscount>(
     maxRedemptions: { type: Number, min: 1 },
     redeemedCount: { type: Number, default: 0, min: 0 },
   },
-  { _id: false }
+  { _id: false },
 );
 
 const AccessProgramSchema = new Schema<ICourseAccessProgram>(
@@ -286,7 +288,7 @@ const AccessProgramSchema = new Schema<ICourseAccessProgram>(
     passes: { type: [AccessCodeSchema], default: [] },
     affiliates: { type: [AffiliateProgramSchema], default: [] },
   },
-  { _id: false }
+  { _id: false },
 );
 
 const CourseEmailSettingsSchema = new Schema<ICourseEmailSettings>(
@@ -300,7 +302,7 @@ const CourseEmailSettingsSchema = new Schema<ICourseEmailSettings>(
     replyTo: { type: String, trim: true },
     customIntro: { type: String, trim: true },
   },
-  { _id: false }
+  { _id: false },
 );
 
 const CourseCollaboratorSchema = new Schema<ICourseCollaborator>(
@@ -318,7 +320,7 @@ const CourseCollaboratorSchema = new Schema<ICourseCollaborator>(
     invitedAt: { type: Date, default: Date.now },
     lastInvitedAt: Date,
   },
-  { _id: false }
+  { _id: false },
 );
 
 const CourseAgentSchema = new Schema<CourseAgentConfig>(
@@ -354,18 +356,22 @@ const CourseAgentSchema = new Schema<CourseAgentConfig>(
     },
     instructions: { type: String, default: "" },
   },
-  { _id: false }
+  { _id: false },
 );
 
 const SkillQuestionSchema = new Schema(
   {
     id: { type: String, required: true, trim: true },
     prompt: { type: String, required: true, trim: true },
-    options: { type: [String], required: true, validate: (value: string[]) => value.length >= 2 },
+    options: {
+      type: [String],
+      required: true,
+      validate: (value: string[]) => value.length >= 2,
+    },
     answerIndex: { type: Number, required: true, min: 0 },
     explanation: { type: String, trim: true },
   },
-  { _id: false }
+  { _id: false },
 );
 
 const SkillActivityRequirementSchema = new Schema(
@@ -381,7 +387,7 @@ const SkillActivityRequirementSchema = new Schema(
     description: { type: String, trim: true },
     points: { type: Number, min: 0 },
   },
-  { _id: false }
+  { _id: false },
 );
 
 const AgentSandboxGuideStepSchema = new Schema(
@@ -414,7 +420,7 @@ const AgentSandboxGuideStepSchema = new Schema(
       default: "auto",
     },
   },
-  { _id: false }
+  { _id: false },
 );
 
 const AgentSandboxSkillTemplateSchema = new Schema(
@@ -423,7 +429,7 @@ const AgentSandboxSkillTemplateSchema = new Schema(
     name: { type: String, required: true, trim: true },
     instructions: { type: String, required: true, trim: true },
   },
-  { _id: false }
+  { _id: false },
 );
 
 const AgentSandboxToolTemplateSchema = new Schema(
@@ -445,7 +451,7 @@ const AgentSandboxToolTemplateSchema = new Schema(
     },
     simulated: { type: Boolean, default: true },
   },
-  { _id: false }
+  { _id: false },
 );
 
 const AgentSandboxTaskTemplateSchema = new Schema(
@@ -455,7 +461,7 @@ const AgentSandboxTaskTemplateSchema = new Schema(
     schedule: { type: String, required: true, trim: true },
     description: { type: String, trim: true },
   },
-  { _id: false }
+  { _id: false },
 );
 
 const AgentSandboxWorkflowTemplateSchema = new Schema(
@@ -467,7 +473,7 @@ const AgentSandboxWorkflowTemplateSchema = new Schema(
     edges: { type: [String], default: [] },
     description: { type: String, trim: true },
   },
-  { _id: false }
+  { _id: false },
 );
 
 const AgentSandboxMemoryTemplateSchema = new Schema(
@@ -481,7 +487,7 @@ const AgentSandboxMemoryTemplateSchema = new Schema(
     label: { type: String, required: true, trim: true },
     content: { type: String, required: true, trim: true },
   },
-  { _id: false }
+  { _id: false },
 );
 
 const AgentSandboxComputerFileSchema = new Schema(
@@ -489,7 +495,7 @@ const AgentSandboxComputerFileSchema = new Schema(
     path: { type: String, required: true, trim: true },
     content: { type: String, required: true },
   },
-  { _id: false }
+  { _id: false },
 );
 
 const AgentSandboxComputerTemplateSchema = new Schema(
@@ -499,7 +505,7 @@ const AgentSandboxComputerTemplateSchema = new Schema(
     files: { type: [AgentSandboxComputerFileSchema], default: [] },
     starterCommand: { type: String, trim: true },
   },
-  { _id: false }
+  { _id: false },
 );
 
 const AgentSandboxReviewSchema = new Schema(
@@ -515,7 +521,7 @@ const AgentSandboxReviewSchema = new Schema(
     rubric: { type: String, trim: true },
     model: { type: String, trim: true },
   },
-  { _id: false }
+  { _id: false },
 );
 
 const AgentSandboxIntroSchema = new Schema(
@@ -529,7 +535,7 @@ const AgentSandboxIntroSchema = new Schema(
     infoBody: { type: String, trim: true },
     startLabel: { type: String, trim: true },
   },
-  { _id: false }
+  { _id: false },
 );
 
 const AgentSandboxCompletionSchema = new Schema(
@@ -538,7 +544,7 @@ const AgentSandboxCompletionSchema = new Schema(
     body: { type: String, trim: true },
     primaryActionLabel: { type: String, trim: true },
   },
-  { _id: false }
+  { _id: false },
 );
 
 const AgentSandboxConfigSchema = new Schema(
@@ -622,7 +628,7 @@ const AgentSandboxConfigSchema = new Schema(
       trim: true,
     },
   },
-  { _id: false }
+  { _id: false },
 );
 
 const SkillChallengeSchema = new Schema(
@@ -650,7 +656,7 @@ const SkillChallengeSchema = new Schema(
     sandbox: AgentSandboxConfigSchema,
     questions: { type: [SkillQuestionSchema], default: [] },
   },
-  { _id: false }
+  { _id: false },
 );
 
 const SkillPackSchema = new Schema(
@@ -663,7 +669,7 @@ const SkillPackSchema = new Schema(
     learnerPromise: { type: String, trim: true },
     challenges: { type: [SkillChallengeSchema], default: [] },
   },
-  { _id: false }
+  { _id: false },
 );
 
 const CourseLiveScheduleSchema = new Schema<ICourseLiveSchedule>(
@@ -690,7 +696,7 @@ const CourseLiveScheduleSchema = new Schema<ICourseLiveSchedule>(
     sessionsCount: { type: Number, min: 1 },
     description: { type: String, trim: true },
   },
-  { _id: false }
+  { _id: false },
 );
 
 const CourseSchema = new Schema<ICourse>(
@@ -749,6 +755,11 @@ const CourseSchema = new Schema<ICourse>(
       },
     },
     published: { type: Boolean, default: false },
+    catalogVisibility: {
+      type: String,
+      enum: ["public", "private"],
+      default: "public",
+    },
     isMainFeatured: { type: Boolean, default: false },
     isFeatured: { type: Boolean, default: false },
     // Live-only fields
@@ -758,7 +769,7 @@ const CourseSchema = new Schema<ICourse>(
     maxEnrollments: Number,
     liveSessionUrl: String,
   },
-  { timestamps: true }
+  { timestamps: true },
 );
 
 CourseSchema.pre("validate", function normalizeAgents(next) {
@@ -769,6 +780,7 @@ CourseSchema.pre("validate", function normalizeAgents(next) {
 CourseSchema.index({ "agents.id": 1 });
 CourseSchema.index({ "agents.agentCommonsAgentId": 1 });
 CourseSchema.index({ published: 1, updatedAt: -1, "skillPack.enabled": 1 });
+CourseSchema.index({ published: 1, catalogVisibility: 1, updatedAt: -1 });
 CourseSchema.index({ published: 1, updatedAt: -1, "skillPacks.enabled": 1 });
 CourseSchema.index({ published: 1, slug: 1 });
 CourseSchema.index({ published: 1, "skillPack.slug": 1 });

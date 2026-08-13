@@ -68,7 +68,10 @@ interface RawCourse {
 async function getFeaturedCourses(): Promise<CourseData[]> {
   try {
     await connectDB();
-    const courses = (await Course.find({ published: true })
+    const courses = (await Course.find({
+      published: true,
+      catalogVisibility: { $ne: "private" },
+    })
       .sort({ isMainFeatured: -1, isFeatured: -1, createdAt: 1 })
       .select(
         "title slug tagline price currency isFree courseType level lessonsCount modulesCount duration startDate liveSchedule isMainFeatured isFeatured",
@@ -416,9 +419,21 @@ export default async function HomePage() {
 
           <div className="mt-10 grid gap-4 sm:grid-cols-3">
             {[
-              ["01", "Build", "Create an agent from a lesson template with guided steps."],
-              ["02", "Run", "Test it live with permitted tools and sample data."],
-              ["03", "Review", "Inspect logs, tool calls, and outputs — then iterate."],
+              [
+                "01",
+                "Build",
+                "Create an agent from a lesson template with guided steps.",
+              ],
+              [
+                "02",
+                "Run",
+                "Test it live with permitted tools and sample data.",
+              ],
+              [
+                "03",
+                "Review",
+                "Inspect logs, tool calls, and outputs — then iterate.",
+              ],
             ].map(([num, title, body], index) => (
               <div
                 key={num}
@@ -480,7 +495,10 @@ export default async function HomePage() {
       </section>
 
       {/* Educators */}
-      <section id="educators" className="border-b border-slate-200 bg-white py-16 sm:py-20">
+      <section
+        id="educators"
+        className="border-b border-slate-200 bg-white py-16 sm:py-20"
+      >
         <div className="mx-auto grid max-w-6xl gap-10 px-4 sm:px-6 lg:grid-cols-[380px_1fr] lg:px-8">
           <div>
             <Eyebrow>For educators</Eyebrow>
@@ -624,11 +642,7 @@ export default async function HomePage() {
             </div>
             <div className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
               {skillPacks.map((pack, index) => (
-                <SkillPackCard
-                  key={pack.skillSlug}
-                  pack={pack}
-                  index={index}
-                />
+                <SkillPackCard key={pack.skillSlug} pack={pack} index={index} />
               ))}
             </div>
           </div>

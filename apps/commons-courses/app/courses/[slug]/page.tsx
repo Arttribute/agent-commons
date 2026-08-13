@@ -93,6 +93,12 @@ interface CourseDetailData {
   lessonsCount: number;
   modulesCount: number;
   instructor: string;
+  catalogVisibility?: "public" | "private";
+  educator?: { userId?: unknown };
+  collaborators?: Array<{
+    userId?: unknown;
+    email?: string;
+  }>;
   tags: string[];
   imageUrl?: string | null;
   bannerImageUrl?: string | null;
@@ -147,7 +153,11 @@ interface CoursePresentation {
   gains?: string[];
 }
 
-function formatCoursePrice(course: { isFree: boolean; price: number; currency?: string }) {
+function formatCoursePrice(course: {
+  isFree: boolean;
+  price: number;
+  currency?: string;
+}) {
   if (course.isFree) return "Free";
   if (["kes", "ksh"].includes(course.currency?.toLowerCase() ?? "")) {
     return `Ksh ${course.price.toLocaleString("en-KE")}`;
@@ -191,7 +201,7 @@ function getCourseImageUrl(course?: {
 
 function isAiQuickWinsCourse(course: Pick<CourseDetailData, "slug" | "title">) {
   return /ai.*quick.*wins|quick.*wins.*leaders/i.test(
-    `${course.slug} ${course.title}`
+    `${course.slug} ${course.title}`,
   );
 }
 
@@ -264,7 +274,7 @@ function getCoursePresentation(course: CourseDetailData): CoursePresentation {
       gainTitle: "The real shift",
       gains: [
         "By the end, participants should have a clearer understanding of how AI can support real work, confidence using AI beyond basic prompting, hands-on experience building AI workspaces and automations, and a working system they can apply in their business, team, or daily operations.",
-        "Most importantly, participants stop asking, \"How do I use ChatGPT?\" and start asking, \"Which parts of my work can become smarter, faster, and easier with AI?\"",
+        'Most importantly, participants stop asking, "How do I use ChatGPT?" and start asking, "Which parts of my work can become smarter, faster, and easier with AI?"',
       ],
     };
   }
@@ -305,11 +315,18 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { slug } = await params;
   await connectDB();
   const course = (await Course.findOne({ slug, published: true })
+    .where("catalogVisibility")
+    .ne("private")
     .select("title tagline description imageUrl bannerImageUrl previewImageUrl")
     .lean()) as
     | (Pick<
         CourseDetailData,
-        "title" | "tagline" | "description" | "imageUrl" | "bannerImageUrl" | "previewImageUrl"
+        | "title"
+        | "tagline"
+        | "description"
+        | "imageUrl"
+        | "bannerImageUrl"
+        | "previewImageUrl"
       > & { slug?: string })
     | null;
 
@@ -346,9 +363,10 @@ export default async function CoursePage({ params, searchParams }: Props) {
   const query = searchParams ? await searchParams : {};
   const affiliateCode = query.affiliate || query.ref;
   await connectDB();
-  const course = (await Course.findOne({ slug, published: true }).lean()) as
-    | CourseDetailData
-    | null;
+  const course = (await Course.findOne({
+    slug,
+    published: true,
+  }).lean()) as CourseDetailData | null;
   if (!course) notFound();
   const session = await auth();
   const enrollment = session?.user?.id
@@ -360,6 +378,20 @@ export default async function CoursePage({ params, searchParams }: Props) {
         .lean()) as EnrollmentData | null)
     : null;
   const isEnrolled = Boolean(enrollment);
+  const managesCourse = Boolean(
+    session?.user?.id &&
+      (session.user.role === "admin" ||
+        String(course.educator?.userId || "") === session.user.id ||
+        course.collaborators?.some(
+          (collaborator) =>
+            String(collaborator.userId || "") === session.user.id ||
+            collaborator.email?.toLowerCase() ===
+              session.user.email?.toLowerCase(),
+        )),
+  );
+  if (course.catalogVisibility === "private" && !isEnrolled && !managesCourse) {
+    notFound();
+  }
   const enrollmentProgress = enrollment?.progress ?? 0;
   const bannerImageUrl = course.bannerImageUrl || course.imageUrl || null;
   const startStatus = getCourseStartStatus(course.startDate);
@@ -409,8 +441,7 @@ export default async function CoursePage({ params, searchParams }: Props) {
               id: String(experience._id),
               title: document.title,
               description:
-                document.description ||
-                "An immersive learning experience.",
+                document.description || "An immersive learning experience.",
               estimatedMinutes: document.estimatedMinutes || 8,
               sceneCount: document.scenes.length,
               isFreePreview: experience.isFreePreview,
@@ -470,7 +501,9 @@ export default async function CoursePage({ params, searchParams }: Props) {
                   </span>
                   <span className="inline-flex items-center gap-1 rounded-md bg-lime-200 px-2 py-1 text-xs font-bold text-slate-900">
                     <Wifi className="h-3 w-3" />
-                    {course.courseType === "live" ? "Live programme" : "Self-paced"}
+                    {course.courseType === "live"
+                      ? "Live programme"
+                      : "Self-paced"}
                   </span>
                   {startStatus.label ? (
                     <span className="rounded-md border border-slate-200 bg-white px-2 py-1 text-xs font-bold text-slate-700">
@@ -498,13 +531,25 @@ export default async function CoursePage({ params, searchParams }: Props) {
                 ) : null}
 
                 <div className="grid max-w-3xl gap-px overflow-hidden rounded-lg border border-slate-200 bg-slate-200 sm:grid-cols-3">
-                  <HeroFact icon={Clock} label="Duration" value={course.duration} />
+                  <HeroFact
+                    icon={Clock}
+                    label="Duration"
+                    value={course.duration}
+                  />
                   <HeroFact
                     icon={BookOpen}
                     label="Format"
-                    value={course.courseType === "live" ? "Live cohort" : "Self-paced"}
+                    value={
+                      course.courseType === "live"
+                        ? "Live cohort"
+                        : "Self-paced"
+                    }
                   />
-                  <HeroFact icon={Users} label="Instructor" value={course.instructor} />
+                  <HeroFact
+                    icon={Users}
+                    label="Instructor"
+                    value={course.instructor}
+                  />
                 </div>
 
                 {course.courseType === "live" && (
@@ -555,9 +600,7 @@ export default async function CoursePage({ params, searchParams }: Props) {
               ...(presentation.projectExamples?.length
                 ? [["#projects", "What you will build"]]
                 : []),
-              ...(experiences.length
-                ? [["#experiences", "Experiences"]]
-                : []),
+              ...(experiences.length ? [["#experiences", "Experiences"]] : []),
               ["#curriculum", "Curriculum"],
             ].map(([href, label]) => (
               <a
@@ -777,7 +820,10 @@ function CoursePresentationSections({
             </h2>
             <div className="mt-8 grid gap-x-10 gap-y-5 md:grid-cols-2">
               {presentation.learning.map((item, index) => (
-                <div key={item} className="flex items-start gap-4 border-t border-slate-200 pt-4">
+                <div
+                  key={item}
+                  className="flex items-start gap-4 border-t border-slate-200 pt-4"
+                >
                   <span className="w-6 flex-shrink-0 text-xs font-bold tabular-nums text-lime-700">
                     {String(index + 1).padStart(2, "0")}
                   </span>
@@ -880,7 +926,7 @@ function CoursePresentationSections({
                   </blockquote>
                 ) : (
                   <p key={gain}>{gain}</p>
-                )
+                ),
               )}
             </div>
           </div>
@@ -945,7 +991,7 @@ function PurchaseCard({
     (course.accessProgram?.scholarships?.length || 0) +
     (course.accessProgram?.passes?.length || 0);
   const earlyDiscount = course.accessProgram?.earlyPaymentDiscounts?.find(
-    (rule) => rule.active !== false && rule.deadline
+    (rule) => rule.active !== false && rule.deadline,
   );
 
   return (
@@ -1018,7 +1064,7 @@ function PurchaseCard({
 
 function formatDiscount(
   rule: { amountType?: "percent" | "fixed"; amount?: number },
-  currency?: string
+  currency?: string,
 ) {
   if (rule.amountType === "fixed") {
     return formatCoursePrice({
