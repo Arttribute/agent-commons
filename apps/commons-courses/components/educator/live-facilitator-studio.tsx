@@ -38,7 +38,9 @@ import type {
   LiveSessionRecord,
 } from "@/types/live-session";
 import type { CourseMaterialRecord } from "@/types/course-material";
+import type { LabWorkspaceRecord } from "@/types/lab-workspace";
 import { CourseMaterialViewer } from "@/components/course-material-viewer";
+import { LearnerLabWorkspace } from "@/components/labs/learner-lab-workspace";
 
 type StudioData = {
   session: LiveSessionRecord;
@@ -85,6 +87,7 @@ export function LiveFacilitatorStudio({ sessionId }: { sessionId: string }) {
   const [notice, setNotice] = useState("");
   const [addOpen, setAddOpen] = useState(false);
   const [materials, setMaterials] = useState<CourseMaterialRecord[]>([]);
+  const [labWorkspaces, setLabWorkspaces] = useState<LabWorkspaceRecord[]>([]);
 
   const load = useCallback(
     async (quiet = false) => {
@@ -115,6 +118,9 @@ export function LiveFacilitatorStudio({ sessionId }: { sessionId: string }) {
     void fetch(`/api/educator/courses/${slug}/materials`, { cache: "no-store" })
       .then((res) => (res.ok ? res.json() : null))
       .then((body) => setMaterials(body?.materials || []));
+    void fetch(`/api/educator/courses/${slug}/lab-workspaces`, { cache: "no-store" })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((body) => setLabWorkspaces(body?.workspaces || []));
   }, [data?.session.courseSlug]);
   useEffect(() => {
     if (
@@ -706,6 +712,7 @@ export function LiveFacilitatorStudio({ sessionId }: { sessionId: string }) {
               <ActivityEditor
                 activity={selected}
                 materials={materials}
+                labWorkspaces={labWorkspaces}
                 index={data.session.activities.findIndex(
                   (activity) => activity.id === selected.id,
                 )}
@@ -785,6 +792,11 @@ export function LiveFacilitatorStudio({ sessionId }: { sessionId: string }) {
                       materialId={current.materialId}
                       compact
                     />
+                  </div>
+                ) : null}
+                {current.labWorkspaceId ? (
+                  <div className="border-b border-slate-100 p-4 sm:p-6">
+                    <LearnerLabWorkspace workspaceId={current.labWorkspaceId} compact />
                   </div>
                 ) : null}
                 <LiveResults
@@ -1183,6 +1195,7 @@ function AddMenu({ onAdd }: { onAdd: (type: LiveActivityType) => void }) {
 function ActivityEditor({
   activity,
   materials,
+  labWorkspaces,
   index,
   onChange,
   onMove,
@@ -1190,6 +1203,7 @@ function ActivityEditor({
 }: {
   activity: LiveActivity;
   materials: CourseMaterialRecord[];
+  labWorkspaces: LabWorkspaceRecord[];
   index: number;
   onChange: (patch: Partial<LiveActivity>) => void;
   onMove: (direction: -1 | 1) => void;
@@ -1330,6 +1344,22 @@ function ActivityEditor({
             {materials.map((material) => (
               <option key={material.id} value={material.id}>
                 {material.name}
+              </option>
+            ))}
+          </select>
+        </Field>
+        <Field label="Lab workspace">
+          <select
+            value={activity.labWorkspaceId || ""}
+            onChange={(event) =>
+              onChange({ labWorkspaceId: event.target.value || undefined })
+            }
+            className={inputClass}
+          >
+            <option value="">No attached lab</option>
+            {labWorkspaces.map((workspace) => (
+              <option key={workspace.id} value={workspace.id}>
+                {workspace.title}
               </option>
             ))}
           </select>

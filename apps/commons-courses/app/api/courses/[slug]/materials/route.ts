@@ -1,10 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { serializeCourseMaterial } from "@/lib/course-material-data";
+import { serializeLabWorkspace } from "@/lib/lab-workspace-data";
 import { connectDB } from "@/lib/db";
 import Course from "@/models/Course";
 import CourseMaterial from "@/models/CourseMaterial";
 import Enrollment from "@/models/Enrollment";
+import LabWorkspace from "@/models/LabWorkspace";
 
 export async function GET(
   _req: NextRequest,
@@ -19,5 +21,6 @@ export async function GET(
   const enrolled = await Enrollment.exists({ userId: currentUser.user.id, courseId: course._id, status: { $ne: "cancelled" } });
   if (!enrolled) return NextResponse.json({ error: "Enroll in this course to view its materials." }, { status: 403 });
   const materials = await CourseMaterial.find({ courseId: course._id, visibility: "course" }).sort({ createdAt: -1 });
-  return NextResponse.json({ materials: materials.map(serializeCourseMaterial) });
+  const workspaces = await LabWorkspace.find({ courseId: course._id, visibility: "course" }).sort({ createdAt: -1 });
+  return NextResponse.json({ materials: materials.map(serializeCourseMaterial), workspaces: workspaces.map((workspace) => serializeLabWorkspace(workspace)) });
 }

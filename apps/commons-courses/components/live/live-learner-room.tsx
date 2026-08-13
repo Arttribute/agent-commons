@@ -29,6 +29,7 @@ import {
 } from "lucide-react";
 import { CourseAgentDrawer } from "@/components/course-agents/course-agent-drawer";
 import { CourseMaterialViewer } from "@/components/course-material-viewer";
+import { LearnerLabWorkspace } from "@/components/labs/learner-lab-workspace";
 import { cn } from "@/lib/utils";
 import { getCourseThemeStyle } from "@/lib/course-theme";
 import {
@@ -820,6 +821,11 @@ function LearnerActivity({
       {activity.materialId ? (
         <div className="border-t border-slate-100 p-4 sm:p-6">
           <CourseMaterialViewer materialId={activity.materialId} compact />
+        </div>
+      ) : null}
+      {activity.labWorkspaceId ? (
+        <div className="border-t border-slate-100 p-4 sm:p-6">
+          <LearnerLabWorkspace workspaceId={activity.labWorkspaceId} compact />
         </div>
       ) : null}
       {isChoice ? (

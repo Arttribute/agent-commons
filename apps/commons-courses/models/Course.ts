@@ -13,6 +13,7 @@ export interface ILesson {
   description?: string;
   assetUrl?: string;
   assetAlt?: string;
+  labWorkspaceId?: string;
   isFree: boolean;
 }
 
@@ -175,6 +176,7 @@ const LessonSchema = new Schema<ILesson>({
   description: String,
   assetUrl: String,
   assetAlt: String,
+  labWorkspaceId: String,
   isFree: { type: Boolean, default: false },
 });
 

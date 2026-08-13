@@ -23,6 +23,7 @@ import type {
   SkillPack,
   SkillQuestion,
 } from "@/types/skills";
+import type { LabWorkspaceRecord } from "@/types/lab-workspace";
 
 type Lesson = {
   title: string;
@@ -30,6 +31,7 @@ type Lesson = {
   description?: string;
   assetUrl?: string;
   assetAlt?: string;
+  labWorkspaceId?: string;
   isFree?: boolean;
 };
 
@@ -197,6 +199,7 @@ export function CourseEditor({
   const [selectedSkillPath, setSelectedSkillPath] = useState("primary");
   const [error, setError] = useState("");
   const [draftSavedAt, setDraftSavedAt] = useState<Date | null>(null);
+  const [labWorkspaces, setLabWorkspaces] = useState<LabWorkspaceRecord[]>([]);
   const isFullEditor = section === "all";
   const show = (name: CourseEditorSection) => isFullEditor || section === name;
   const sectionLabel = getSectionLabel(section);
@@ -219,6 +222,13 @@ export function CourseEditor({
       })
       .catch(() => setError("Could not load course."));
   }, [section, slug]);
+
+  useEffect(() => {
+    if (!slug) return;
+    void fetch(`/api/educator/courses/${slug}/lab-workspaces`, { cache: "no-store" })
+      .then((response) => (response.ok ? response.json() : null))
+      .then((body) => setLabWorkspaces(body?.workspaces || []));
+  }, [slug]);
 
   useEffect(() => {
     if (!hasUnsavedChanges || !slug || section === "collaborators") return;
@@ -875,6 +885,17 @@ export function CourseEditor({
                     onChange={(event) => updateLesson(course, setCourse, moduleIndex, lessonIndex, { ...lesson, assetAlt: event.target.value })}
                     className="rounded-lg border border-slate-200 px-3 py-2 text-sm md:col-span-2"
                   />
+                  <label className="text-xs font-bold text-slate-600 md:col-span-4">
+                    Lab workspace
+                    <select
+                      value={lesson.labWorkspaceId || ""}
+                      onChange={(event) => updateLesson(course, setCourse, moduleIndex, lessonIndex, { ...lesson, labWorkspaceId: event.target.value || undefined })}
+                      className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-normal text-slate-700"
+                    >
+                      <option value="">No attached lab</option>
+                      {labWorkspaces.map((workspace) => <option key={workspace.id} value={workspace.id}>{workspace.title}</option>)}
+                    </select>
+                  </label>
                 </div>
               ))}
               <button type="button" onClick={() => {
