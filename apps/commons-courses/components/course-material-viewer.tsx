@@ -14,6 +14,12 @@ import {
   X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import {
+  presentationProgressStorageKey,
+  resolvePresentationSlideIndex,
+} from "@/lib/presentation-progress";
+
+type PresentationSyncMode = "controller" | "follower" | "off";
 
 type MaterialData = {
   id: string;
@@ -32,6 +38,7 @@ export function CourseMaterialViewer({
   presenter = false,
   initialSlide = 1,
   progressKey,
+  syncMode = "controller",
 }: {
   materialId: string;
   compact?: boolean;
@@ -40,6 +47,8 @@ export function CourseMaterialViewer({
   initialSlide?: number;
   /** Keeps slide progress separate when one deck is used in several activities. */
   progressKey?: string;
+  /** Controls whether this viewer drives, follows, or ignores presenter-window sync. */
+  syncMode?: PresentationSyncMode;
 }) {
   const [material, setMaterial] = useState<MaterialData | null>(null);
   const [error, setError] = useState("");
@@ -58,23 +67,36 @@ export function CourseMaterialViewer({
     pointer: null as { x: number; y: number } | null,
   });
   const controlsTimerRef = useRef<number | null>(null);
-  const receivedStateRef = useRef(false);
-  const storageKey = `commonlab-slide:${materialId}:${progressKey || "default"}`;
+  const expectedProgressRef = useRef({ key: "", slide: 0 });
+  const [readyProgressKey, setReadyProgressKey] = useState("");
+  const storageKey = presentationProgressStorageKey({
+    materialId,
+    progressKey,
+    initialSlide,
+  });
   useEffect(() => {
-    setMaterial(null);
-    setError("");
-    receivedStateRef.current = false;
-    let next = Math.max(0, Math.floor(initialSlide) - 1);
+    let saved: string | null = null;
     try {
-      const saved = window.sessionStorage.getItem(storageKey);
-      if (saved !== null && Number.isFinite(Number(saved))) next = Number(saved);
+      saved = window.sessionStorage.getItem(storageKey);
     } catch {
       // Session storage can be disabled without affecting presentation controls.
     }
+    const next = resolvePresentationSlideIndex(initialSlide, saved);
+    expectedProgressRef.current = { key: storageKey, slide: next };
+    setReadyProgressKey("");
+    stateRef.current = { ...stateRef.current, slide: next };
     setSlide(next);
-  }, [initialSlide, materialId, storageKey]);
+  }, [initialSlide, storageKey]);
+  useEffect(() => {
+    const expected = expectedProgressRef.current;
+    if (expected.key === storageKey && expected.slide === slide) {
+      setReadyProgressKey(storageKey);
+    }
+  }, [slide, storageKey]);
   useEffect(() => {
     let cancelled = false;
+    setMaterial(null);
+    setError("");
     fetch(`/api/course-materials/${materialId}`, { cache: "no-store" })
       .then(async (res) => ({
         ok: res.ok,
@@ -103,13 +125,18 @@ export function CourseMaterialViewer({
     setSlide((value) => Math.max(0, Math.min(presentationSlideCount - 1, value)));
   }, [material, presentationSlideCount]);
   useEffect(() => {
-    if (!material || material.kind !== "presentation") return;
+    if (
+      !material ||
+      material.kind !== "presentation" ||
+      readyProgressKey !== storageKey
+    )
+      return;
     try {
       window.sessionStorage.setItem(storageKey, String(slide));
     } catch {
       // Session storage can be disabled without affecting presentation controls.
     }
-  }, [material, slide, storageKey]);
+  }, [material, readyProgressKey, slide, storageKey]);
   useEffect(() => {
     if (!material?.imageUrls.length) return;
     const nearby = [slide - 1, slide + 1, slide + 2]
@@ -133,7 +160,7 @@ export function CourseMaterialViewer({
     stateRef.current = { slide, pointerEnabled, pointer };
   }, [pointer, pointerEnabled, slide]);
   useEffect(() => {
-    if (typeof BroadcastChannel === "undefined") return;
+    if (syncMode === "off" || typeof BroadcastChannel === "undefined") return;
     sourceIdRef.current ||= crypto.randomUUID();
     const channel = new BroadcastChannel(
       `commonlab-presentation:${materialId}`,
@@ -150,7 +177,7 @@ export function CourseMaterialViewer({
     ) => {
       const message = event.data;
       if (!message || message.source === sourceIdRef.current) return;
-      if (message.type === "ready") {
+      if (message.type === "ready" && syncMode === "controller") {
         channel.postMessage({
           type: "state",
           source: sourceIdRef.current,
@@ -158,8 +185,10 @@ export function CourseMaterialViewer({
         });
         return;
       }
-      if (message.type !== "state") return;
-      receivedStateRef.current = true;
+      const acceptsState =
+        (syncMode === "follower" && message.type === "state") ||
+        (syncMode === "controller" && message.type === "command");
+      if (!acceptsState) return;
       if (typeof message.slide === "number")
         setSlide(
           Math.max(0, Math.min(presentationSlideCount - 1, message.slide)),
@@ -168,28 +197,42 @@ export function CourseMaterialViewer({
         setPointerEnabled(message.pointerEnabled);
       setPointer(message.pointer || null);
     };
-    channel.postMessage({ type: "ready", source: sourceIdRef.current });
+    if (syncMode === "follower") {
+      channel.postMessage({ type: "ready", source: sourceIdRef.current });
+    }
     return () => {
       channel.close();
       channelRef.current = null;
     };
-  }, [materialId, presentationSlideCount]);
+  }, [materialId, presentationSlideCount, syncMode]);
   const broadcastState = useCallback(
     (next: Partial<typeof stateRef.current>) => {
       const state = { ...stateRef.current, ...next };
       stateRef.current = state;
       channelRef.current?.postMessage({
-        type: "state",
+        type: syncMode === "follower" ? "command" : "state",
         source: sourceIdRef.current,
         ...state,
       });
     },
-    [],
+    [syncMode],
   );
   useEffect(() => {
-    if (receivedStateRef.current) return;
+    if (
+      syncMode !== "controller" ||
+      readyProgressKey !== storageKey
+    )
+      return;
     broadcastState({ slide, pointerEnabled, pointer });
-  }, [broadcastState, pointer, pointerEnabled, slide]);
+  }, [
+    broadcastState,
+    pointer,
+    pointerEnabled,
+    readyProgressKey,
+    slide,
+    storageKey,
+    syncMode,
+  ]);
   useEffect(() => {
     const handleFullscreenChange = () => {
       const active = document.fullscreenElement === containerRef.current;
@@ -400,7 +443,7 @@ export function CourseMaterialViewer({
             <MousePointer2 className="h-4 w-4" />
           </button>
         ) : null}
-        {material.kind === "presentation" && !presenter ? (
+        {material.kind === "presentation" && !presenter && syncMode !== "off" ? (
           <button
             onClick={openPresenterWindow}
             className="inline-flex items-center gap-2 rounded-lg px-2.5 py-2 text-xs font-bold text-slate-500 hover:bg-slate-100"
