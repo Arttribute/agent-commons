@@ -793,6 +793,8 @@ export function LiveFacilitatorStudio({ sessionId }: { sessionId: string }) {
                   <div className="border-b border-slate-100 p-4 sm:p-6">
                     <CourseMaterialViewer
                       materialId={current.materialId}
+                      initialSlide={current.materialStartSlide}
+                      progressKey={current.id}
                       compact
                     />
                   </div>
@@ -1362,6 +1364,28 @@ function ActivityEditor({
             ))}
           </select>
         </Field>
+        {activity.materialId ? (
+          <Field label="Start at slide">
+            <input
+              type="number"
+              min={1}
+              max={500}
+              value={activity.materialStartSlide || 1}
+              onChange={(event) =>
+                onChange({
+                  materialStartSlide: Math.max(
+                    1,
+                    Number(event.target.value) || 1,
+                  ),
+                })
+              }
+              className={inputClass}
+            />
+            <span className="mt-1.5 block text-[11px] leading-5 text-slate-400">
+              The deck resumes here when this activity is presented.
+            </span>
+          </Field>
+        ) : null}
         <Field label="Lab workspace">
           <select
             value={activity.labWorkspaceId || ""}
@@ -1509,7 +1533,31 @@ function ActivityEditor({
               onChange={(value) => onChange({ showResults: value })}
               label="Reveal results after close"
             />
+            {activity.type === "poll" ? (
+              <Toggle
+                checked={Boolean(activity.allowOther)}
+                onChange={(value) => onChange({ allowOther: value })}
+                label="Allow typed Other"
+              />
+            ) : null}
           </div>
+          {activity.type === "poll" ? (
+            <Field label="Response layout">
+              <select
+                value={activity.responseStyle || "cards"}
+                onChange={(event) =>
+                  onChange({
+                    responseStyle:
+                      event.target.value === "scale" ? "scale" : "cards",
+                  })
+                }
+                className={inputClass}
+              >
+                <option value="cards">Choice cards</option>
+                <option value="scale">Compact scale</option>
+              </select>
+            </Field>
+          ) : null}
         </div>
       ) : null}
       <div className="mt-5 flex flex-wrap gap-4">
@@ -1582,7 +1630,8 @@ function LiveResults({
             );
           })}
         </div>
-      ) : results?.textResponses?.length ? (
+      ) : null}
+      {results?.textResponses?.length ? (
         <div className="mt-5 grid gap-2 sm:grid-cols-2">
           {results.textResponses.slice(-20).map((response) => (
             <div key={response.id} className="rounded-xl bg-slate-50 p-3">
@@ -1597,11 +1646,11 @@ function LiveResults({
             </div>
           ))}
         </div>
-      ) : (
+      ) : !activity.options.length ? (
         <div className="mt-6 rounded-xl border border-dashed border-slate-200 p-8 text-center text-sm text-slate-400">
           Responses will appear here.
         </div>
-      )}
+      ) : null}
     </div>
   );
 }

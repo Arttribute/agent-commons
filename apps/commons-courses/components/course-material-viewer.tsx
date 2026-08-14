@@ -30,10 +30,16 @@ export function CourseMaterialViewer({
   materialId,
   compact = false,
   presenter = false,
+  initialSlide = 1,
+  progressKey,
 }: {
   materialId: string;
   compact?: boolean;
   presenter?: boolean;
+  /** One-based slide number used when no saved progress exists. */
+  initialSlide?: number;
+  /** Keeps slide progress separate when one deck is used in several activities. */
+  progressKey?: string;
 }) {
   const [material, setMaterial] = useState<MaterialData | null>(null);
   const [error, setError] = useState("");
@@ -53,6 +59,20 @@ export function CourseMaterialViewer({
   });
   const controlsTimerRef = useRef<number | null>(null);
   const receivedStateRef = useRef(false);
+  const storageKey = `commonlab-slide:${materialId}:${progressKey || "default"}`;
+  useEffect(() => {
+    setMaterial(null);
+    setError("");
+    receivedStateRef.current = false;
+    let next = Math.max(0, Math.floor(initialSlide) - 1);
+    try {
+      const saved = window.sessionStorage.getItem(storageKey);
+      if (saved !== null && Number.isFinite(Number(saved))) next = Number(saved);
+    } catch {
+      // Session storage can be disabled without affecting presentation controls.
+    }
+    setSlide(next);
+  }, [initialSlide, materialId, storageKey]);
   useEffect(() => {
     let cancelled = false;
     fetch(`/api/course-materials/${materialId}`, { cache: "no-store" })
@@ -78,6 +98,37 @@ export function CourseMaterialViewer({
   );
   const visualSlideCount = material?.imageUrls.length || 0;
   const presentationSlideCount = visualSlideCount || slides.length || 1;
+  useEffect(() => {
+    if (!material) return;
+    setSlide((value) => Math.max(0, Math.min(presentationSlideCount - 1, value)));
+  }, [material, presentationSlideCount]);
+  useEffect(() => {
+    if (!material || material.kind !== "presentation") return;
+    try {
+      window.sessionStorage.setItem(storageKey, String(slide));
+    } catch {
+      // Session storage can be disabled without affecting presentation controls.
+    }
+  }, [material, slide, storageKey]);
+  useEffect(() => {
+    if (!material?.imageUrls.length) return;
+    const nearby = [slide - 1, slide + 1, slide + 2]
+      .filter((index) => index >= 0 && index < material.imageUrls.length)
+      .map((index) => material.imageUrls[index]);
+    const preloads = nearby.map((src) => {
+      const image = new Image();
+      image.decoding = "async";
+      image.src = src;
+      void image.decode().catch(() => undefined);
+      return image;
+    });
+    return () => {
+      preloads.forEach((image) => {
+        image.onload = null;
+        image.onerror = null;
+      });
+    };
+  }, [material?.imageUrls, slide]);
   useEffect(() => {
     stateRef.current = { slide, pointerEnabled, pointer };
   }, [pointer, pointerEnabled, slide]);

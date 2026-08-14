@@ -45,5 +45,11 @@ export async function GET(
     },
     cancel() { stream.destroy(); },
   });
-  return new NextResponse(body, { headers: { "Content-Type": "image/png", "Cache-Control": "private, max-age=300", "X-Content-Type-Options": "nosniff" } });
+  return new NextResponse(body, {
+    headers: {
+      "Content-Type": "image/png",
+      "Cache-Control": "private, max-age=3600, stale-while-revalidate=86400",
+      "X-Content-Type-Options": "nosniff",
+    },
+  });
 }

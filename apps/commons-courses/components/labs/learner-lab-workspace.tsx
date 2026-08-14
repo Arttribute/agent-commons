@@ -657,69 +657,132 @@ function Breadcrumbs({
 }
 
 function MarkdownPreview({ value }: { value: string }) {
+  const lines = value.split(/\r?\n/);
+  const blocks: ReactNode[] = [];
+  for (let index = 0; index < lines.length; index += 1) {
+    const table = readMarkdownTable(lines, index);
+    if (table) {
+      blocks.push(
+        <div key={`table-${index}`} className="my-5 overflow-x-auto rounded-xl border border-stone-200">
+          <table className="min-w-full border-collapse text-left text-xs sm:text-sm">
+            <thead className="bg-stone-100 text-stone-800">
+              <tr>
+                {table.headers.map((cell, cellIndex) => (
+                  <th
+                    key={cellIndex}
+                    className="border-b border-r border-stone-200 px-3 py-2.5 font-semibold last:border-r-0"
+                  >
+                    <InlineMarkdown value={cell} />
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {table.rows.map((row, rowIndex) => (
+                <tr key={rowIndex} className="odd:bg-white even:bg-stone-50/70">
+                  {table.headers.map((_, cellIndex) => (
+                    <td
+                      key={cellIndex}
+                      className="border-b border-r border-stone-100 px-3 py-2.5 align-top last:border-r-0"
+                    >
+                      <InlineMarkdown value={row[cellIndex] || ""} />
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>,
+      );
+      index = table.nextIndex - 1;
+      continue;
+    }
+    const line = lines[index];
+    const heading = line.match(/^(#{1,4})\s+(.+)$/);
+    if (heading) {
+      const level = heading[1].length;
+      blocks.push(
+        <div
+          key={index}
+          className={
+            level === 1
+              ? "mb-5 mt-1 text-2xl font-semibold tracking-tight"
+              : level === 2
+                ? "mb-3 mt-7 text-lg font-semibold"
+                : "mb-2 mt-5 text-sm font-semibold"
+          }
+        >
+          <InlineMarkdown value={heading[2]} />
+        </div>,
+      );
+      continue;
+    }
+    if (/^---+$/.test(line.trim())) {
+      blocks.push(<hr key={index} className="my-6 border-stone-200" />);
+      continue;
+    }
+    const bullet = line.match(/^\s*[-*]\s+(.+)$/);
+    if (bullet) {
+      blocks.push(
+        <div key={index} className="flex gap-2 pl-1">
+          <span className="mt-[11px] h-1 w-1 shrink-0 rounded-full bg-stone-400" />
+          <p><InlineMarkdown value={bullet[1]} /></p>
+        </div>,
+      );
+      continue;
+    }
+    const numbered = line.match(/^\s*(\d+)\.\s+(.+)$/);
+    if (numbered) {
+      blocks.push(
+        <div key={index} className="flex gap-2 pl-1">
+          <span className="min-w-5 font-medium text-stone-400">{numbered[1]}.</span>
+          <p><InlineMarkdown value={numbered[2]} /></p>
+        </div>,
+      );
+      continue;
+    }
+    blocks.push(
+      line.trim() ? (
+        <p key={index}><InlineMarkdown value={line} /></p>
+      ) : (
+        <div key={index} className="h-1" />
+      ),
+    );
+  }
   return (
     <div className="space-y-3 text-sm leading-7">
-      {value.split(/\r?\n/).map((line, index) => {
-        const heading = line.match(/^(#{1,4})\s+(.+)$/);
-        if (heading) {
-          const level = heading[1].length;
-          return (
-            <div
-              key={index}
-              className={
-                level === 1
-                  ? "mb-5 mt-1 text-2xl font-semibold tracking-tight"
-                  : level === 2
-                    ? "mb-3 mt-7 text-lg font-semibold"
-                    : "mb-2 mt-5 text-sm font-semibold"
-              }
-            >
-              <InlineMarkdown value={heading[2]} />
-            </div>
-          );
-        }
-        if (/^---+$/.test(line.trim()))
-          return <hr key={index} className="my-6 border-stone-200" />;
-        const bullet = line.match(/^\s*[-*]\s+(.+)$/);
-        if (bullet)
-          return (
-            <div key={index} className="flex gap-2 pl-1">
-              <span className="mt-[11px] h-1 w-1 shrink-0 rounded-full bg-stone-400" />
-              <p>
-                <InlineMarkdown value={bullet[1]} />
-              </p>
-            </div>
-          );
-        const numbered = line.match(/^\s*(\d+)\.\s+(.+)$/);
-        if (numbered)
-          return (
-            <div key={index} className="flex gap-2 pl-1">
-              <span className="min-w-5 font-medium text-stone-400">
-                {numbered[1]}.
-              </span>
-              <p>
-                <InlineMarkdown value={numbered[2]} />
-              </p>
-            </div>
-          );
-        if (line.startsWith("|"))
-          return (
-            <pre
-              key={index}
-              className="overflow-x-auto whitespace-pre font-mono text-[11px] leading-5 text-stone-600"
-            >
-              {line}
-            </pre>
-          );
-        if (!line.trim()) return <div key={index} className="h-1" />;
-        return (
-          <p key={index}>
-            <InlineMarkdown value={line} />
-          </p>
-        );
-      })}
+      {blocks}
     </div>
   );
+}
+
+function readMarkdownTable(lines: string[], start: number) {
+  if (start + 1 >= lines.length) return null;
+  const headers = markdownTableCells(lines[start]);
+  const divider = markdownTableCells(lines[start + 1]);
+  if (
+    headers.length < 2 ||
+    divider.length !== headers.length ||
+    !divider.every((cell) => /^:?-{3,}:?$/.test(cell))
+  ) {
+    return null;
+  }
+  const rows: string[][] = [];
+  let nextIndex = start + 2;
+  while (nextIndex < lines.length) {
+    const cells = markdownTableCells(lines[nextIndex]);
+    if (!cells.length) break;
+    rows.push(cells);
+    nextIndex += 1;
+  }
+  return { headers, rows, nextIndex };
+}
+
+function markdownTableCells(line: string) {
+  const trimmed = line.trim();
+  if (!trimmed.includes("|")) return [];
+  const body = trimmed.replace(/^\|/, "").replace(/\|$/, "");
+  return body.split("|").map((cell) => cell.trim());
 }
 function InlineMarkdown({ value }: { value: string }) {
   return value.split(/(\*\*[^*]+\*\*|`[^`]+`)/g).map((part, index) =>

@@ -38,6 +38,7 @@ export function createActivity(
     facilitatorNotes: clean(input.facilitatorNotes),
     resourceUrl: cleanUrl(input.resourceUrl),
     materialId: clean(input.materialId),
+    materialStartSlide: clampNumber(input.materialStartSlide, 1, 500),
     labWorkspaceId: clean(input.labWorkspaceId),
     labEntryPath: cleanLabEntryPath(input.labEntryPath),
     estimatedMinutes: clampNumber(input.estimatedMinutes, 1, 480),
@@ -48,6 +49,8 @@ export function createActivity(
     required: Boolean(input.required),
     randomizeOptions: Boolean(input.randomizeOptions),
     showResults: Boolean(input.showResults),
+    allowOther: Boolean(input.allowOther),
+    responseStyle: input.responseStyle === "scale" ? "scale" : "cards",
     points: clampNumber(input.points, 0, 10_000) || 0,
     options: normalizeOptions(input.options),
   };
@@ -180,6 +183,7 @@ export function createFacilitatedWorkshopTemplate(): LiveActivity[] {
         option,
       ),
       showResults: true,
+      responseStyle: "scale",
       required: true,
       estimatedMinutes: 3,
     }),
@@ -196,9 +200,9 @@ export function createFacilitatedWorkshopTemplate(): LiveActivity[] {
       title: "Guided practice",
       prompt: "Try the demonstrated move on the provided example.",
       instructions:
-        "Work individually or in pairs, then submit a short note or link to your artefact.",
+        "Work individually or in pairs, then submit a short note or link to your artifact.",
       successCriteria:
-        "You can show the completed artefact and explain one decision you made.",
+        "You can show the completed artifact and explain one decision you made.",
       facilitatorNotes:
         "Give a time check halfway through and invite one pair to share.",
       required: true,

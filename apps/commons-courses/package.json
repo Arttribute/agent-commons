@@ -19,7 +19,9 @@
     "migrate:moringa-workshop-course": "node scripts/migrate-moringa-workshop-course.mjs",
     "import:moringa-lab-workspace": "node scripts/import-moringa-lab-workspace.mjs",
     "replace:moringa-lab-workspace": "node --experimental-strip-types scripts/replace-moringa-lab-workspace.mjs",
-    "set:moringa-lab-entry-paths": "node scripts/set-moringa-lab-entry-paths.mjs"
+    "set:moringa-lab-entry-paths": "node scripts/set-moringa-lab-entry-paths.mjs",
+    "replace:moringa-presentation": "node scripts/replace-moringa-presentation.mjs",
+    "polish:moringa-live-session": "node scripts/polish-moringa-live-session.mjs"
   },
   "dependencies": {
     "@agent-commons/sdk": "workspace:*",

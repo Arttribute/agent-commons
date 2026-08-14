@@ -35,6 +35,9 @@ import { cn } from "@/lib/utils";
 import { getCourseThemeStyle } from "@/lib/course-theme";
 import {
   canReviseLiveResponse,
+  decodeOtherResponse,
+  encodeOtherResponse,
+  isValidLiveResponse,
   sameLiveResponseValue,
 } from "@/lib/live-response-policy";
 import {
@@ -788,6 +791,10 @@ function LearnerActivity({
   const responseChanged = response
     ? !sameLiveResponseValue(value, response.value)
     : false;
+  const typedOther = decodeOtherResponse(value);
+  const hasValidValue = Boolean(
+    value && isValidLiveResponse(activity, value),
+  );
   return (
     <article className="overflow-hidden rounded-2xl border border-slate-200 bg-[var(--course-surface)]">
       <div className="p-6 sm:p-9">
@@ -835,7 +842,12 @@ function LearnerActivity({
       </div>
       {activity.materialId ? (
         <div className="border-t border-slate-100 p-4 sm:p-6">
-          <CourseMaterialViewer materialId={activity.materialId} compact />
+          <CourseMaterialViewer
+            materialId={activity.materialId}
+            initialSlide={activity.materialStartSlide}
+            progressKey={activity.id}
+            compact
+          />
         </div>
       ) : null}
       {activity.labWorkspaceId ? (
@@ -849,7 +861,22 @@ function LearnerActivity({
       ) : null}
       {isChoice ? (
         <div className="border-t border-slate-100 bg-slate-50 p-5 sm:p-7">
-          <div className="grid gap-3 sm:grid-cols-2">
+          {activity.responseStyle === "scale" ? (
+            <div className="mb-3 flex items-center justify-between gap-4 text-xs font-medium text-slate-500">
+              <span>{scaleEndpoint(activity.options[0]?.label)}</span>
+              <span className="text-right">
+                {scaleEndpoint(activity.options.at(-1)?.label)}
+              </span>
+            </div>
+          ) : null}
+          <div
+            className={cn(
+              "grid gap-3",
+              activity.responseStyle === "scale"
+                ? "grid-cols-5"
+                : "sm:grid-cols-2",
+            )}
+          >
             {orderedOptions(activity, learnerSeed).map((option) => {
               const selected =
                 value === option.id ||
@@ -863,7 +890,10 @@ function LearnerActivity({
                   }
                   onClick={() => onChange(option.id)}
                   className={cn(
-                    "min-h-16 rounded-xl border bg-white p-4 text-left text-sm font-bold transition",
+                    "border bg-white text-sm font-bold transition",
+                    activity.responseStyle === "scale"
+                      ? "aspect-square min-h-12 rounded-full p-2 text-center sm:aspect-auto sm:min-h-16 sm:rounded-xl"
+                      : "min-h-16 rounded-xl p-4 text-left",
                     selected
                       ? "border-slate-950 ring-1 ring-slate-950"
                       : "border-slate-200 hover:border-slate-400",
@@ -873,7 +903,9 @@ function LearnerActivity({
                     response && !result && "disabled:opacity-70",
                   )}
                 >
-                  {option.label}
+                  {activity.responseStyle === "scale"
+                    ? scaleNumber(option.label)
+                    : option.label}
                   {result && option.isCorrect ? (
                     <Check className="ml-2 inline h-4 w-4 text-emerald-600" />
                   ) : null}
@@ -881,12 +913,58 @@ function LearnerActivity({
               );
             })}
           </div>
+          {activity.allowOther ? (
+            <div
+              className={cn(
+                "mt-3 rounded-xl border bg-white p-4 transition",
+                typedOther !== undefined
+                  ? "border-slate-950 ring-1 ring-slate-950"
+                  : "border-slate-200",
+              )}
+            >
+              <button
+                type="button"
+                disabled={
+                  activity.status !== "open" ||
+                  (Boolean(response) && !canRevisePoll)
+                }
+                onClick={() => onChange(encodeOtherResponse(typedOther || ""))}
+                className="flex w-full items-center gap-3 text-left text-sm font-bold disabled:opacity-60"
+              >
+                <span
+                  className={cn(
+                    "h-4 w-4 rounded-full border",
+                    typedOther !== undefined
+                      ? "border-[5px] border-slate-950"
+                      : "border-slate-300",
+                  )}
+                />
+                Other
+              </button>
+              {typedOther !== undefined ? (
+                <input
+                  autoFocus
+                  value={typedOther}
+                  maxLength={500}
+                  disabled={
+                    activity.status !== "open" ||
+                    (Boolean(response) && !canRevisePoll)
+                  }
+                  onChange={(event) =>
+                    onChange(encodeOtherResponse(event.target.value))
+                  }
+                  placeholder="Type your answer…"
+                  className="mt-3 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm font-medium outline-none focus:border-slate-500 disabled:bg-slate-100"
+                />
+              ) : null}
+            </div>
+          ) : null}
           {response && canRevisePoll ? (
             <>
               <Saved message="Response saved · You can change it while the poll is open" />
               <button
                 onClick={() => onSubmit()}
-                disabled={!value || submitting || !responseChanged}
+                disabled={!hasValidValue || submitting || !responseChanged}
                 className="mt-3 inline-flex w-full items-center justify-center gap-2 rounded-xl bg-slate-950 px-5 py-3 text-sm font-bold text-white disabled:opacity-40"
               >
                 {submitting ? (
@@ -904,7 +982,9 @@ function LearnerActivity({
           ) : (
             <button
               onClick={() => onSubmit()}
-              disabled={!value || submitting || activity.status !== "open"}
+              disabled={
+                !hasValidValue || submitting || activity.status !== "open"
+              }
               className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-xl bg-slate-950 px-5 py-3 text-sm font-bold text-white disabled:opacity-40"
             >
               {submitting ? (
@@ -946,7 +1026,7 @@ function LearnerActivity({
             rows={6}
             placeholder={
               activity.type === "task"
-                ? "Add a short response, link, or note about your artefact…"
+                ? "Add a short response, link, or note about your artifact…"
                 : "Write your response…"
             }
             className="w-full resize-y rounded-xl border border-slate-200 bg-white p-4 text-sm leading-6 outline-none focus:border-slate-400 disabled:bg-slate-100"
@@ -1020,6 +1100,12 @@ function orderedOptions(activity: LiveActivity, learnerSeed: string) {
       seeded(`${learnerSeed}:${activity.id}:${a.id}`) -
       seeded(`${learnerSeed}:${activity.id}:${b.id}`),
   );
+}
+function scaleNumber(label = "") {
+  return label.match(/\d+/)?.[0] || label;
+}
+function scaleEndpoint(label = "") {
+  return label.replace(/^\s*\d+\s*[·.-]?\s*/, "").trim();
 }
 function seeded(value: string) {
   let hash = 0;
