@@ -792,9 +792,11 @@ export function LiveFacilitatorStudio({ sessionId }: { sessionId: string }) {
                 {current.materialId ? (
                   <div className="border-b border-slate-100 p-4 sm:p-6">
                     <CourseMaterialViewer
+                      key={current.id}
                       materialId={current.materialId}
                       initialSlide={current.materialStartSlide}
                       progressKey={current.id}
+                      syncMode="controller"
                       compact
                     />
                   </div>

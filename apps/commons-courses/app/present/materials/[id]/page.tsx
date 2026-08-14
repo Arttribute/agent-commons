@@ -8,7 +8,7 @@ export default async function MaterialPresenterPage({
   const { id } = await params;
   return (
     <main className="h-dvh overflow-hidden bg-slate-950">
-      <CourseMaterialViewer materialId={id} presenter />
+      <CourseMaterialViewer materialId={id} syncMode="follower" presenter />
     </main>
   );
 }

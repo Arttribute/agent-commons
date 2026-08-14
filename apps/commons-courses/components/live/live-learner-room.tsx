@@ -843,9 +843,11 @@ function LearnerActivity({
       {activity.materialId ? (
         <div className="border-t border-slate-100 p-4 sm:p-6">
           <CourseMaterialViewer
+            key={activity.id}
             materialId={activity.materialId}
             initialSlide={activity.materialStartSlide}
             progressKey={activity.id}
+            syncMode="off"
             compact
           />
         </div>
