@@ -34,3 +34,18 @@ test("uses the manifest to keep facilitator files out of the learner pack", asyn
   assert.ok(learner.file("notes.md"));
   assert.equal(learner.file("facilitator/key.txt"), null);
 });
+
+test("strips macOS metadata from learner packs", async () => {
+  const zip = new JSZip();
+  zip.file("Pack/00_START_HERE.md", "Start here");
+  zip.file("Pack/.DS_Store", "junk");
+  zip.file("Pack/._00_START_HERE.md", "junk");
+  zip.file("__MACOSX/Pack/._00_START_HERE.md", "junk");
+  const parsed = await parseLabArchive(
+    Buffer.from(await zip.generateAsync({ type: "uint8array" })),
+  );
+  assert.deepEqual(
+    parsed.files.map((file) => file.path),
+    ["00_START_HERE.md"],
+  );
+});

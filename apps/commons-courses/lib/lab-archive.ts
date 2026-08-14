@@ -137,7 +137,11 @@ function findCommonRoot(paths: string[]) {
 }
 
 function isJunk(name: string) {
-  return name.startsWith("__MACOSX/") || /(^|\/)\.DS_Store$/i.test(name);
+  return (
+    name.startsWith("__MACOSX/") ||
+    /(^|\/)\.DS_Store$/i.test(name) ||
+    /(^|\/)\._/.test(name)
+  );
 }
 
 function parseManifest(value: string) {
