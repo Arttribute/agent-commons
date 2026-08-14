@@ -353,6 +353,16 @@ export const educatorCopilotToolCatalog: CopilotToolDefinition[] = [
                 description:
                   "ID of a private course material to present inside this activity.",
               },
+              labWorkspaceId: {
+                type: "string",
+                description:
+                  "ID of a private lab workspace to embed in this activity.",
+              },
+              labEntryPath: {
+                type: "string",
+                description:
+                  "Optional learner-visible file or folder path inside the selected lab workspace. Use this to land learners directly at the materials needed for the activity.",
+              },
               estimatedMinutes: { type: "number" },
               required: { type: "boolean" },
               randomizeOptions: { type: "boolean" },

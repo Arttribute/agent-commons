@@ -60,6 +60,7 @@ const LiveActivitySchema = new Schema<LiveActivity>(
     resourceUrl: { type: String, trim: true },
     materialId: { type: String, trim: true },
     labWorkspaceId: { type: String, trim: true },
+    labEntryPath: { type: String, trim: true },
     estimatedMinutes: { type: Number, min: 1, max: 480 },
     status: {
       type: String,

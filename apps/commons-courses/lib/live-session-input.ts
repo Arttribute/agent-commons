@@ -39,6 +39,7 @@ export function createActivity(
     resourceUrl: cleanUrl(input.resourceUrl),
     materialId: clean(input.materialId),
     labWorkspaceId: clean(input.labWorkspaceId),
+    labEntryPath: cleanLabEntryPath(input.labEntryPath),
     estimatedMinutes: clampNumber(input.estimatedMinutes, 1, 480),
     status:
       input.status === "open" || input.status === "closed"
@@ -50,6 +51,20 @@ export function createActivity(
     points: clampNumber(input.points, 0, 10_000) || 0,
     options: normalizeOptions(input.options),
   };
+}
+
+function cleanLabEntryPath(value: unknown) {
+  const normalized = clean(value)?.replaceAll("\\", "/").replace(/^\/+/, "");
+  if (
+    !normalized ||
+    normalized.length > 500 ||
+    normalized
+      .split("/")
+      .some((segment) => !segment || segment === "." || segment === "..")
+  ) {
+    return undefined;
+  }
+  return normalized;
 }
 
 export function normalizeActivities(input: unknown): LiveActivity[] {

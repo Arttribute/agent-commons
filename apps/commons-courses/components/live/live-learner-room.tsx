@@ -23,6 +23,7 @@ import {
   LoaderCircle,
   LockKeyhole,
   Radio,
+  Save,
   Send,
   Users,
   X,
@@ -32,6 +33,10 @@ import { CourseMaterialViewer } from "@/components/course-material-viewer";
 import { LearnerLabWorkspace } from "@/components/labs/learner-lab-workspace";
 import { cn } from "@/lib/utils";
 import { getCourseThemeStyle } from "@/lib/course-theme";
+import {
+  canReviseLiveResponse,
+  sameLiveResponseValue,
+} from "@/lib/live-response-policy";
 import {
   learnerAvailableActivities,
   resolveLearnerActivitySelection,
@@ -405,8 +410,14 @@ export function LiveLearnerRoom({ sessionId }: { sessionId: string }) {
             <p className="truncate text-xs font-bold sm:text-sm">
               {session.title}
             </p>
-            <p className="text-[9px] font-bold uppercase tracking-widest text-red-600 sm:text-[10px]">
-              {session.status === "ended" ? "Session ended" : "Live now"}
+            <p className="mt-0.5 inline-flex items-center gap-1.5 text-[9px] font-medium text-slate-500 sm:text-[10px]">
+              <span
+                className={cn(
+                  "h-1.5 w-1.5 rounded-full",
+                  session.status === "live" ? "bg-emerald-500" : "bg-slate-300",
+                )}
+              />
+              {session.status === "live" ? "Live" : "Not live"}
             </p>
           </div>
           <span
@@ -773,6 +784,10 @@ function LearnerActivity({
 }) {
   const isChoice = activity.options.length > 0;
   const result = activity.status === "closed" && activity.showResults;
+  const canRevisePoll = canReviseLiveResponse(activity);
+  const responseChanged = response
+    ? !sameLiveResponseValue(value, response.value)
+    : false;
   return (
     <article className="overflow-hidden rounded-2xl border border-slate-200 bg-[var(--course-surface)]">
       <div className="p-6 sm:p-9">
@@ -825,7 +840,11 @@ function LearnerActivity({
       ) : null}
       {activity.labWorkspaceId ? (
         <div className="border-t border-slate-100 p-4 sm:p-6">
-          <LearnerLabWorkspace workspaceId={activity.labWorkspaceId} compact />
+          <LearnerLabWorkspace
+            workspaceId={activity.labWorkspaceId}
+            entryPath={activity.labEntryPath}
+            compact
+          />
         </div>
       ) : null}
       {isChoice ? (
@@ -838,7 +857,10 @@ function LearnerActivity({
               return (
                 <button
                   key={option.id}
-                  disabled={activity.status !== "open" || Boolean(response)}
+                  disabled={
+                    activity.status !== "open" ||
+                    (Boolean(response) && !canRevisePoll)
+                  }
                   onClick={() => onChange(option.id)}
                   className={cn(
                     "min-h-16 rounded-xl border bg-white p-4 text-left text-sm font-bold transition",
@@ -859,7 +881,23 @@ function LearnerActivity({
               );
             })}
           </div>
-          {response ? (
+          {response && canRevisePoll ? (
+            <>
+              <Saved message="Response saved · You can change it while the poll is open" />
+              <button
+                onClick={() => onSubmit()}
+                disabled={!value || submitting || !responseChanged}
+                className="mt-3 inline-flex w-full items-center justify-center gap-2 rounded-xl bg-slate-950 px-5 py-3 text-sm font-bold text-white disabled:opacity-40"
+              >
+                {submitting ? (
+                  <LoaderCircle className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Save className="h-4 w-4" />
+                )}
+                {responseChanged ? "Update response" : "Response is up to date"}
+              </button>
+            </>
+          ) : response ? (
             <Saved />
           ) : activity.status !== "open" ? (
             <ResponsesClosed />
@@ -935,10 +973,10 @@ function LearnerActivity({
   );
 }
 
-function Saved() {
+function Saved({ message = "Response saved" }: { message?: string }) {
   return (
     <div className="mt-3 flex items-center justify-center gap-2 rounded-xl bg-emerald-50 px-4 py-3 text-sm font-bold text-emerald-700">
-      <CheckCircle2 className="h-4 w-4" /> Response saved
+      <CheckCircle2 className="h-4 w-4 shrink-0" /> {message}
     </div>
   );
 }

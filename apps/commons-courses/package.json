@@ -18,7 +18,8 @@
     "set:ai-quick-wins-start-date": "node scripts/set-ai-quick-wins-start-date.mjs",
     "migrate:moringa-workshop-course": "node scripts/migrate-moringa-workshop-course.mjs",
     "import:moringa-lab-workspace": "node scripts/import-moringa-lab-workspace.mjs",
-    "replace:moringa-lab-workspace": "node --experimental-strip-types scripts/replace-moringa-lab-workspace.mjs"
+    "replace:moringa-lab-workspace": "node --experimental-strip-types scripts/replace-moringa-lab-workspace.mjs",
+    "set:moringa-lab-entry-paths": "node scripts/set-moringa-lab-entry-paths.mjs"
   },
   "dependencies": {
     "@agent-commons/sdk": "workspace:*",
