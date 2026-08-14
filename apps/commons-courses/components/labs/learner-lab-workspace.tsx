@@ -23,6 +23,7 @@ import {
   X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { resolveLabWorkspaceEntry } from "@/lib/lab-workspace-entry";
 import type {
   LabWorkspaceFileRecord,
   LabWorkspaceRecord,
@@ -35,9 +36,11 @@ type FolderIndex = Map<
 
 export function LearnerLabWorkspace({
   workspaceId,
+  entryPath,
   compact = false,
 }: {
   workspaceId: string;
+  entryPath?: string;
   compact?: boolean;
 }) {
   const [workspace, setWorkspace] = useState<LabWorkspaceRecord | null>(null);
@@ -54,13 +57,28 @@ export function LearnerLabWorkspace({
         const body = await response.json().catch(() => ({}));
         if (!response.ok)
           throw new Error(body.error || "Could not open this lab.");
-        if (active) setWorkspace(body.workspace);
+        if (!active) return;
+        const next = body.workspace as LabWorkspaceRecord;
+        const entry = resolveLabWorkspaceEntry(next.files, entryPath);
+        setError("");
+        setWorkspace(next);
+        setFolderPath(entry.folderPath);
+        setOpenFile(entry.file || null);
+        setWorkingCopy(
+          entry.file
+            ? (window.localStorage.getItem(
+                storageKey(workspaceId, entry.file.id),
+              ) ??
+                entry.file.preview ??
+                "")
+            : "",
+        );
       })
       .catch((reason) => active && setError(reason.message));
     return () => {
       active = false;
     };
-  }, [workspaceId]);
+  }, [entryPath, workspaceId]);
 
   const folders = useMemo(
     () => buildFolderIndex(workspace?.files || []),

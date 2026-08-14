@@ -32,6 +32,7 @@ export type LiveActivity = {
   resourceUrl?: string;
   materialId?: string;
   labWorkspaceId?: string;
+  labEntryPath?: string;
   estimatedMinutes?: number;
   status: LiveActivityStatus;
   required: boolean;

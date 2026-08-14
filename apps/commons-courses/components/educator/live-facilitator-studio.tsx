@@ -30,6 +30,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { getCourseThemeStyle } from "@/lib/course-theme";
+import { labWorkspaceFolderPaths } from "@/lib/lab-workspace-entry";
 import type {
   LiveActivity,
   LiveActivityResults,
@@ -118,7 +119,9 @@ export function LiveFacilitatorStudio({ sessionId }: { sessionId: string }) {
     void fetch(`/api/educator/courses/${slug}/materials`, { cache: "no-store" })
       .then((res) => (res.ok ? res.json() : null))
       .then((body) => setMaterials(body?.materials || []));
-    void fetch(`/api/educator/courses/${slug}/lab-workspaces`, { cache: "no-store" })
+    void fetch(`/api/educator/courses/${slug}/lab-workspaces`, {
+      cache: "no-store",
+    })
       .then((res) => (res.ok ? res.json() : null))
       .then((body) => setLabWorkspaces(body?.workspaces || []));
   }, [data?.session.courseSlug]);
@@ -796,7 +799,11 @@ export function LiveFacilitatorStudio({ sessionId }: { sessionId: string }) {
                 ) : null}
                 {current.labWorkspaceId ? (
                   <div className="border-b border-slate-100 p-4 sm:p-6">
-                    <LearnerLabWorkspace workspaceId={current.labWorkspaceId} compact />
+                    <LearnerLabWorkspace
+                      workspaceId={current.labWorkspaceId}
+                      entryPath={current.labEntryPath}
+                      compact
+                    />
                   </div>
                 ) : null}
                 <LiveResults
@@ -1231,6 +1238,13 @@ function ActivityEditor({
       ],
     });
   }
+  const selectedLabWorkspace = labWorkspaces.find(
+    (workspace) => workspace.id === activity.labWorkspaceId,
+  );
+  const learnerLabFiles = (selectedLabWorkspace?.files || []).filter(
+    (file) => file.audience === "learner",
+  );
+  const labFolders = labWorkspaceFolderPaths(learnerLabFiles);
   return (
     <section className="rounded-2xl border border-slate-200 bg-white p-5 sm:p-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -1352,7 +1366,10 @@ function ActivityEditor({
           <select
             value={activity.labWorkspaceId || ""}
             onChange={(event) =>
-              onChange({ labWorkspaceId: event.target.value || undefined })
+              onChange({
+                labWorkspaceId: event.target.value || undefined,
+                labEntryPath: undefined,
+              })
             }
             className={inputClass}
           >
@@ -1364,6 +1381,40 @@ function ActivityEditor({
             ))}
           </select>
         </Field>
+        {selectedLabWorkspace ? (
+          <Field label="Open learners at">
+            <select
+              value={activity.labEntryPath || ""}
+              onChange={(event) =>
+                onChange({ labEntryPath: event.target.value || undefined })
+              }
+              className={inputClass}
+            >
+              <option value="">Workspace home</option>
+              {labFolders.length ? (
+                <optgroup label="Folders">
+                  {labFolders.map((path) => (
+                    <option key={path} value={path}>
+                      {labPathLabel(path)}
+                    </option>
+                  ))}
+                </optgroup>
+              ) : null}
+              {learnerLabFiles.length ? (
+                <optgroup label="Files">
+                  {learnerLabFiles.map((file) => (
+                    <option key={file.id} value={file.path}>
+                      {labPathLabel(file.path)}
+                    </option>
+                  ))}
+                </optgroup>
+              ) : null}
+            </select>
+            <span className="mt-1.5 block text-[11px] leading-5 text-slate-400">
+              Learners land here when this activity is presented.
+            </span>
+          </Field>
+        ) : null}
         <Field label="External resource link">
           <input
             type="url"
@@ -1708,6 +1759,17 @@ function ShareRow({ label, value }: { label: string; value: string }) {
 }
 function activityLabel(type: LiveActivityType) {
   return activityChoices.find((choice) => choice.type === type)?.label || type;
+}
+function labPathLabel(path: string) {
+  return path
+    .split("/")
+    .map((segment) =>
+      segment
+        .replace(/\.[^.]+$/, "")
+        .replace(/^\d+_/, "")
+        .replaceAll("_", " "),
+    )
+    .join(" › ");
 }
 function formatCode(code: string) {
   return `${code.slice(0, 3)} ${code.slice(3)}`;
