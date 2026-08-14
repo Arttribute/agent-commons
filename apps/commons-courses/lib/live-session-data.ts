@@ -12,6 +12,7 @@ import type {
   LiveResponseRecord,
   LiveSessionRecord,
 } from "@/types/live-session";
+import { decodeOtherResponse } from "@/lib/live-response-policy";
 
 type LiveSessionDocumentLike = ILiveSession & {
   _id: Types.ObjectId;
@@ -174,6 +175,25 @@ function buildActivityResults(
   revealNames: boolean,
 ): LiveActivityResults {
   if (activity.options.length) {
+    const otherResponses = responses.flatMap((response) => {
+      const values = Array.isArray(response.value)
+        ? response.value
+        : [response.value];
+      return values.flatMap((value) => {
+        const decoded = decodeOtherResponse(value);
+        return decoded === undefined
+          ? []
+          : [
+              {
+                id: String(response._id),
+                participantName: revealNames
+                  ? response.participantId?.displayName || "Learner"
+                  : undefined,
+                value: decoded,
+              },
+            ];
+      });
+    });
     return {
       total: responses.length,
       correct:
@@ -190,6 +210,7 @@ function buildActivityResults(
           return values.includes(option.id);
         }).length,
       })),
+      textResponses: otherResponses.length ? otherResponses : undefined,
     };
   }
   return {

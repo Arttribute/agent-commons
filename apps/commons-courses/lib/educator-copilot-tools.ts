@@ -353,6 +353,11 @@ export const educatorCopilotToolCatalog: CopilotToolDefinition[] = [
                 description:
                   "ID of a private course material to present inside this activity.",
               },
+              materialStartSlide: {
+                type: "number",
+                description:
+                  "Optional one-based slide number where this activity should begin.",
+              },
               labWorkspaceId: {
                 type: "string",
                 description:
@@ -367,6 +372,15 @@ export const educatorCopilotToolCatalog: CopilotToolDefinition[] = [
               required: { type: "boolean" },
               randomizeOptions: { type: "boolean" },
               showResults: { type: "boolean" },
+              allowOther: {
+                type: "boolean",
+                description:
+                  "Allow learners to choose Other and type a response.",
+              },
+              responseStyle: {
+                type: "string",
+                enum: ["cards", "scale"],
+              },
               points: { type: "number" },
               options: {
                 type: "array",

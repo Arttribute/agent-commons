@@ -6,6 +6,7 @@ import LiveParticipant from "@/models/LiveParticipant";
 import LiveResponse from "@/models/LiveResponse";
 import LiveSession from "@/models/LiveSession";
 import type { LiveActivity, LiveActivityOption } from "@/types/live-session";
+import { isValidLiveResponse } from "@/lib/live-response-policy";
 
 export async function POST(
   req: NextRequest,
@@ -36,6 +37,12 @@ export async function POST(
   }
   if (activity.status !== "open") {
     return NextResponse.json({ error: "This activity is not open." }, { status: 409 });
+  }
+  if (!isValidLiveResponse(activity, value)) {
+    return NextResponse.json(
+      { error: "Choose a valid response before submitting." },
+      { status: 400 },
+    );
   }
   if (session.pace === "facilitator" && session.currentActivityId !== activity.id) {
     return NextResponse.json({ error: "Wait for the facilitator to open this activity." }, { status: 409 });

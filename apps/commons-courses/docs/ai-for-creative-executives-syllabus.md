@@ -65,7 +65,7 @@ Chief Creative Officers · Chief Marketing Officers · VPs of Creative · Brand 
 |---|---|---|---|
 | **Module 1** The Creative Executive's AI Landscape | Build the mental model you need to lead AI adoption — not as a technologist, but as the creative decision-maker. | The three-layer stack; evaluation framework; AI readiness self-assessment | Map your organisation's current AI readiness and identify your top three entry points. |
 | **Module 2** AI as Your Creative Director of Staff | Use multimodal assistants — ChatGPT, Claude, Gemini — as a creative chief of staff: ideating, synthesising, critiquing, and turning briefs into strategic options. | Brief → options → decision loop; prompting for creative depth; brand voice encoding; research synthesis | Run the brief-to-options exercise on a live brief from your current work. |
-| **Module 3** Visual, Video, and Voice Exploration | Move from words to sensory artefacts. Use specialist generators to compress the distance from concept to prototype. | Adobe Firefly, Midjourney, Runway, Pika, ElevenLabs; style bibles; storyboards to animatics; voice consent workflow | Generate a three-direction concept board for a current brief; translate the winner into art direction notes. |
+| **Module 3** Visual, Video, and Voice Exploration | Move from words to sensory artifacts. Use specialist generators to compress the distance from concept to prototype. | Adobe Firefly, Midjourney, Runway, Pika, ElevenLabs; style bibles; storyboards to animatics; voice consent workflow | Generate a three-direction concept board for a current brief; translate the winner into art direction notes. |
 | **Module 4** From Prompts to Workflows — Agentic Thinking | Understand what AI agents actually are, see how agentic pipelines work in creative production, and build your first no-code automation. | Agent anatomy; the brief-to-publish pipeline; custom GPT build; n8n workflow design | Build one custom GPT or n8n workflow that solves a recurring task in your creative workflow. |
 | **Module 5** Governance, Rights, and Responsible AI | Build the review gates, provenance practices, and ethical frameworks that let AI-generated creative actually ship. | Content Credentials; IP and rights review; human review gate design; responsible AI principles | Draft a one-page rights and provenance policy for AI-generated assets in your organisation. |
 | **Module 6** Scaling Creative Operations with AI | Pilot wins become organisational capability only when you build systems, not habits. | Creative AI stack design; change management; impact metrics; 90-day roadmap | Complete and present your 90-day Creative AI Roadmap — entry point, tools, one agentic workflow, responsible AI policy. |
@@ -157,7 +157,7 @@ Turning competitive scans, customer interview transcripts, and trend reports int
 
 ### Module 3 — Visual, Video, and Voice Exploration
 
-*Move from words to sensory artefacts. Use specialist generators to compress the distance from concept to prototype — mood boards, animatics, and voice casts in hours, not weeks.*
+*Move from words to sensory artifacts. Use specialist generators to compress the distance from concept to prototype — mood boards, animatics, and voice casts in hours, not weeks.*
 
 **4 LESSONS**
 

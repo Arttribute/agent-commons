@@ -15,6 +15,8 @@ export type LiveActivityType =
 
 export type LiveActivityStatus = "draft" | "open" | "closed";
 
+export type LiveActivityResponseStyle = "cards" | "scale";
+
 export type LiveActivityOption = {
   id: string;
   label: string;
@@ -31,6 +33,8 @@ export type LiveActivity = {
   facilitatorNotes?: string;
   resourceUrl?: string;
   materialId?: string;
+  /** One-based slide number used when this activity first opens. */
+  materialStartSlide?: number;
   labWorkspaceId?: string;
   labEntryPath?: string;
   estimatedMinutes?: number;
@@ -38,6 +42,8 @@ export type LiveActivity = {
   required: boolean;
   randomizeOptions: boolean;
   showResults: boolean;
+  allowOther?: boolean;
+  responseStyle?: LiveActivityResponseStyle;
   points: number;
   options: LiveActivityOption[];
 };
