@@ -51,6 +51,9 @@ Top-ups are deliberately less generous than subscription allowances:
 - Active computer rates are 2/7/14/70 credits per minute for Starter,
   Standard, Performance, and GPU. Metering is wake-to-sleep. With no available
   credits the runtime is stopped; negative credit balances are not permitted.
+  Each wake starts a new metering window. Delayed ticks default to a 10-minute
+  catch-up ceiling so a stale lifecycle cursor cannot bill sleeping time or
+  drain an account in one pass.
 - Persistent workspace retention is included in the subscription computer slot.
   Storage remains measured internally. A future separately billed storage SKU
   should be added only after retained-GB telemetry is reliable; storage may grow
