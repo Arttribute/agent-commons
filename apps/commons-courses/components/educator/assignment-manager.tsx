@@ -11,6 +11,7 @@ type Assignment = {
   lessonIndex?: number;
   points: number;
   published: boolean;
+  kind?: "coursework" | "follow_up";
 };
 
 type Submission = {
@@ -137,7 +138,10 @@ export function AssignmentManager({ slug }: { slug: string }) {
             {assignments.map((assignment) => (
               <div key={assignment._id} className="rounded-lg border border-slate-200 p-4">
                 <div className="flex items-center justify-between gap-3">
-                  <h3 className="font-bold text-slate-900">{assignment.title}</h3>
+                  <div>
+                    {assignment.kind === "follow_up" && <p className="text-[10px] font-bold uppercase tracking-wider text-emerald-700">Continuity check-in</p>}
+                    <h3 className="font-bold text-slate-900">{assignment.title}</h3>
+                  </div>
                   <span className="text-xs text-slate-500">{assignment.points} pts</span>
                 </div>
                 <p className="mt-2 text-sm text-slate-600">{assignment.instructions}</p>
