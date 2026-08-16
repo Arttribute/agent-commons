@@ -9,6 +9,8 @@ type Assignment = {
   moduleIndex?: number;
   lessonIndex?: number;
   points: number;
+  kind?: "coursework" | "follow_up";
+  dueAt?: string;
 };
 
 type Submission = {
@@ -68,7 +70,16 @@ export function AssignmentSubmissions({
 
   return (
     <section className="mt-8 rounded-xl border border-slate-200 bg-white p-5">
-      <h2 className="mb-4 text-lg font-bold text-slate-900">Assignments</h2>
+      <h2 className="mb-1 text-lg font-bold text-slate-900">
+        {visibleAssignments.some((assignment) => assignment.kind === "follow_up")
+          ? "Assignments & check-ins"
+          : "Assignments"}
+      </h2>
+      {visibleAssignments.some((assignment) => assignment.kind === "follow_up") && (
+        <p className="mb-4 text-sm text-slate-500">
+          Keep the learning moving by sharing progress, blockers, and your next step.
+        </p>
+      )}
       <div className="space-y-4">
         {visibleAssignments.map((assignment) => (
           <AssignmentCard
@@ -125,8 +136,21 @@ function AssignmentCard({
   return (
     <div className="rounded-lg bg-slate-50 p-4">
       <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-        <h3 className="font-bold text-slate-900">{assignment.title}</h3>
-        <span className="text-xs text-slate-500">{assignment.points} pts</span>
+        <div>
+          {assignment.kind === "follow_up" && (
+            <p className="mb-1 text-[10px] font-bold uppercase tracking-[0.14em] text-emerald-700">
+              Continuity check-in
+            </p>
+          )}
+          <h3 className="font-bold text-slate-900">{assignment.title}</h3>
+        </div>
+        <span className="text-xs text-slate-500">
+          {assignment.dueAt
+            ? `Due ${new Intl.DateTimeFormat("en", { month: "short", day: "numeric" }).format(new Date(assignment.dueAt))}`
+            : assignment.points > 0
+              ? `${assignment.points} pts`
+              : "Open"}
+        </span>
       </div>
       <p className="mb-4 whitespace-pre-wrap text-sm leading-6 text-slate-700">
         {assignment.instructions}

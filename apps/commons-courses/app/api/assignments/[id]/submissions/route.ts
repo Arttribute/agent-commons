@@ -4,6 +4,7 @@ import { connectDB } from "@/lib/db";
 import { indexSubmissionForSearch } from "@/lib/search-indexers";
 import Assignment from "@/models/Assignment";
 import Enrollment from "@/models/Enrollment";
+import LiveParticipant from "@/models/LiveParticipant";
 import Submission from "@/models/Submission";
 
 export async function POST(
@@ -33,11 +34,33 @@ export async function POST(
     );
   }
 
+  if (
+    assignment.targetUserIds?.length > 0 &&
+    !assignment.targetUserIds.some(
+      (userId: { toString(): string }) => userId.toString() === session.user.id,
+    )
+  ) {
+    return NextResponse.json(
+      { error: "This check-in is not assigned to you." },
+      { status: 403 },
+    );
+  }
+
   const enrollment = await Enrollment.findOne({
     userId: session.user.id,
     courseId: assignment.courseId,
   });
-  if (!enrollment) {
+  const participatedInSourceSession =
+    !enrollment &&
+    assignment.kind === "follow_up" &&
+    assignment.sourceLiveSessionId
+      ? await LiveParticipant.exists({
+          sessionId: assignment.sourceLiveSessionId,
+          userId: session.user.id,
+          courseId: assignment.courseId,
+        })
+      : false;
+  if (!enrollment && !participatedInSourceSession) {
     return NextResponse.json({ error: "Not enrolled." }, { status: 403 });
   }
 

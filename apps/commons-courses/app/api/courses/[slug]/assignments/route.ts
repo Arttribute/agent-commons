@@ -26,13 +26,26 @@ export async function GET(
     userId: session.user.id,
     courseId: course._id,
   });
-  if (!enrollment) {
+  const hasTargetedFollowUp = !enrollment
+    ? await Assignment.exists({
+        courseId: course._id,
+        published: true,
+        kind: "follow_up",
+        targetUserIds: session.user.id,
+      })
+    : true;
+  if (!hasTargetedFollowUp) {
     return NextResponse.json({ error: "Not enrolled." }, { status: 403 });
   }
 
   const assignments = await Assignment.find({
     courseId: course._id,
     published: true,
+    $or: [
+      { targetUserIds: { $exists: false } },
+      { targetUserIds: { $size: 0 } },
+      { targetUserIds: session.user.id },
+    ],
   })
     .sort({ moduleIndex: 1, lessonIndex: 1, createdAt: -1 })
     .lean();
