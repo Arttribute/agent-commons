@@ -9,6 +9,7 @@ export interface ISubmission extends Document {
   status: "submitted" | "reviewed" | "returned";
   score?: number;
   feedback?: string;
+  checkInStatus?: "not_started" | "in_progress" | "blocked" | "completed";
   submittedAt: Date;
   reviewedAt?: Date;
   createdAt: Date;
@@ -33,6 +34,10 @@ const SubmissionSchema = new Schema<ISubmission>(
     },
     score: Number,
     feedback: String,
+    checkInStatus: {
+      type: String,
+      enum: ["not_started", "in_progress", "blocked", "completed"],
+    },
     submittedAt: { type: Date, default: Date.now },
     reviewedAt: Date,
   },

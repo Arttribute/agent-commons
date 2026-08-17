@@ -55,6 +55,7 @@ export function AssignmentSubmissions({
   const visibleAssignments = useMemo(
     () =>
       assignments.filter((assignment) => {
+        if (assignment.kind === "follow_up") return false;
         const moduleMatches =
           assignment.moduleIndex === undefined ||
           assignment.moduleIndex === moduleIndex;

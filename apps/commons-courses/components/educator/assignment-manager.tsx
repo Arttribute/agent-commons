@@ -22,6 +22,7 @@ type Submission = {
   status: string;
   score?: number;
   feedback?: string;
+  checkInStatus?: "not_started" | "in_progress" | "blocked" | "completed";
   userId?: { name?: string; email?: string };
 };
 
@@ -193,6 +194,11 @@ function SubmissionReview({
         </div>
       </div>
       {submission.text && <p className="mb-2 whitespace-pre-wrap text-sm text-slate-700">{submission.text}</p>}
+      {submission.checkInStatus && (
+        <span className="mb-3 inline-flex rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-bold capitalize text-slate-600">
+          {submission.checkInStatus.replace("_", " ")}
+        </span>
+      )}
       {submission.url && (
         <a href={submission.url} target="_blank" className="text-sm font-bold text-slate-900 underline">
           Open submitted link

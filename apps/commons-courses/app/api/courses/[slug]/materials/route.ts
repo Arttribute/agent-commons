@@ -20,7 +20,13 @@ export async function GET(
   if (!course) return NextResponse.json({ error: "Course not found." }, { status: 404 });
   const enrolled = await Enrollment.exists({ userId: currentUser.user.id, courseId: course._id, status: { $ne: "cancelled" } });
   if (!enrolled) return NextResponse.json({ error: "Enroll in this course to view its materials." }, { status: 403 });
-  const materials = await CourseMaterial.find({ courseId: course._id, visibility: "course" }).sort({ createdAt: -1 });
-  const workspaces = await LabWorkspace.find({ courseId: course._id, visibility: "course" }).sort({ createdAt: -1 });
+  const materials = await CourseMaterial.find({
+    courseId: course._id,
+    visibility: { $in: ["course", "live"] },
+  }).sort({ createdAt: -1 });
+  const workspaces = await LabWorkspace.find({
+    courseId: course._id,
+    visibility: { $in: ["course", "live"] },
+  }).sort({ createdAt: -1 });
   return NextResponse.json({ materials: materials.map(serializeCourseMaterial), workspaces: workspaces.map((workspace) => serializeLabWorkspace(workspace)) });
 }

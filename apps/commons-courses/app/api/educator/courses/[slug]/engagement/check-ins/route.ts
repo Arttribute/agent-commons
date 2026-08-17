@@ -62,6 +62,7 @@ export async function POST(
     kind: "follow_up",
     sourceLiveSessionId: liveSession._id,
     targetUserIds: participants.map((participant) => participant.userId),
+    context: String(body.context || "").trim() || undefined,
   });
   await indexAssignmentForSearch(assignment);
 
@@ -80,6 +81,8 @@ export async function POST(
       dueAt: assignment.dueAt,
       points: assignment.points,
       instructions: assignment.instructions,
+      kind: "follow_up",
+      id: String(assignment._id),
     },
     event: "created",
   });
