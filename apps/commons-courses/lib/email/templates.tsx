@@ -148,6 +148,21 @@ export function Paragraph({ children }: { children: React.ReactNode }) {
   return <p style={styles.paragraph}>{children}</p>;
 }
 
+export function Callout({
+  label,
+  children,
+}: {
+  label: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div style={styles.callout}>
+      <p style={styles.calloutLabel}>{label}</p>
+      <p style={styles.calloutText}>{children}</p>
+    </div>
+  );
+}
+
 const styles: Record<string, React.CSSProperties> = {
   body: {
     margin: 0,
@@ -251,6 +266,29 @@ const styles: Record<string, React.CSSProperties> = {
     color: colors.slate,
     fontSize: "15px",
     lineHeight: "24px",
+  },
+  callout: {
+    margin: "0 0 18px",
+    padding: "18px 20px",
+    backgroundColor: "#f0fdf4",
+    border: "1px solid #bbf7d0",
+    borderRadius: "10px",
+  },
+  calloutLabel: {
+    margin: "0 0 7px",
+    color: "#047857",
+    fontSize: "11px",
+    lineHeight: "16px",
+    fontWeight: 800,
+    letterSpacing: "0.08em",
+    textTransform: "uppercase",
+  },
+  calloutText: {
+    margin: 0,
+    color: colors.ink,
+    fontSize: "15px",
+    lineHeight: "24px",
+    fontWeight: 700,
   },
   actionRow: {
     margin: "28px 0 0",

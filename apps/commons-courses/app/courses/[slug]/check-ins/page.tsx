@@ -5,6 +5,7 @@ import { getCourseThemeStyle } from "@/lib/course-theme";
 import { Nav } from "@/components/nav";
 import { LearnerCheckIns } from "@/components/courses/learner-check-ins";
 import Assignment from "@/models/Assignment";
+import CheckInNotification from "@/models/CheckInNotification";
 import Course from "@/models/Course";
 import Enrollment from "@/models/Enrollment";
 import LiveResponse from "@/models/LiveResponse";
@@ -51,6 +52,26 @@ export default async function CourseCheckInsPage({
     .sort({ dueAt: 1, createdAt: -1 })
     .lean();
   const assignmentIds = assignments.map((assignment) => assignment._id);
+  const openedAssignmentId =
+    assignmentIds.find((assignmentId) => String(assignmentId) === checkIn) ||
+    assignmentIds[0];
+  if (openedAssignmentId) {
+    await CheckInNotification.findOneAndUpdate(
+      {
+        assignmentId: openedAssignmentId,
+        userId: currentUser.user.id,
+      },
+      {
+        $min: { openedAt: new Date() },
+        $setOnInsert: {
+          courseId: course._id,
+          email: currentUser.user.email,
+          emailStatus: "not_sent",
+        },
+      },
+      { upsert: true, runValidators: true },
+    );
+  }
   const submissions = assignmentIds.length
     ? await Submission.find({
         assignmentId: { $in: assignmentIds },
