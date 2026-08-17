@@ -7,6 +7,7 @@ import {
 } from "@/lib/course-schedule";
 import { sanitizeRichTextHtml } from "@/lib/rich-text";
 import type { CourseAgentConfig } from "@/types/course-agent";
+import { normalizeEmailBranding } from "@/lib/email/branding";
 import type {
   AgentSandboxCapability,
   AgentSandboxConfig,
@@ -119,6 +120,13 @@ export type CourseInput = {
     agentManaged?: boolean;
     replyTo?: string;
     customIntro?: string;
+    branding?: {
+      enabled?: boolean;
+      senderName?: string;
+      logoUrl?: string;
+      accentColor?: string;
+      footerText?: string;
+    };
   };
 };
 
@@ -706,6 +714,7 @@ export function normalizeCourseInput(input: CourseInput) {
       agentManaged: Boolean(input.emailSettings?.agentManaged),
       replyTo: input.emailSettings?.replyTo?.trim() || undefined,
       customIntro: input.emailSettings?.customIntro?.trim() || undefined,
+      branding: normalizeEmailBranding(input.emailSettings?.branding),
     },
   };
 }

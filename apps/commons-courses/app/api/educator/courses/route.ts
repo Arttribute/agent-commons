@@ -7,6 +7,7 @@ import {
   slugifyCourseTitle,
 } from "@/lib/educator-auth";
 import { normalizeCourseInput } from "@/lib/course-input";
+import { isPaidEducatorPlan } from "@/lib/email/branding";
 import { indexCourseForSearch } from "@/lib/search-indexers";
 import Course from "@/models/Course";
 import EducatorProfile from "@/models/EducatorProfile";
@@ -58,6 +59,15 @@ export async function POST(req: NextRequest) {
 
   const normalized = normalizeCourseBody(body);
   if (normalized instanceof NextResponse) return normalized;
+  if (
+    normalized.emailSettings?.branding?.enabled &&
+    (profile?.status !== "active" || !isPaidEducatorPlan(profile?.plan))
+  ) {
+    return NextResponse.json(
+      { error: "Custom email branding is available on paid educator plans." },
+      { status: 403 },
+    );
+  }
 
   const course = await Course.create({
     ...normalized,

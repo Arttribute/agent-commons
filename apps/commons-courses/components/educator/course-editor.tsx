@@ -88,6 +88,13 @@ type CourseForm = {
     agentManaged: boolean;
     replyTo?: string;
     customIntro?: string;
+    branding: {
+      enabled: boolean;
+      senderName: string;
+      logoUrl: string;
+      accentColor: string;
+      footerText: string;
+    };
   };
   modules: Module[];
   skillPack: SkillPack;
@@ -161,6 +168,13 @@ const emptyCourse: CourseForm = {
     agentManaged: false,
     replyTo: "",
     customIntro: "",
+    branding: {
+      enabled: false,
+      senderName: "",
+      logoUrl: "",
+      accentColor: "#020617",
+      footerText: "",
+    },
   },
   modules: [
     {
@@ -200,6 +214,7 @@ export function CourseEditor({
   const [error, setError] = useState("");
   const [draftSavedAt, setDraftSavedAt] = useState<Date | null>(null);
   const [labWorkspaces, setLabWorkspaces] = useState<LabWorkspaceRecord[]>([]);
+  const [customEmailBranding, setCustomEmailBranding] = useState(false);
   const isFullEditor = section === "all";
   const show = (name: CourseEditorSection) => isFullEditor || section === name;
   const sectionLabel = getSectionLabel(section);
@@ -210,12 +225,24 @@ export function CourseEditor({
   const hasUnsavedChanges = currentSectionSnapshot !== savedSectionSnapshot;
 
   useEffect(() => {
-    if (!slug) return;
+    if (!slug) {
+      void fetch("/api/educator/profile")
+        .then((res) => (res.ok ? res.json() : null))
+        .then((data) => {
+          const profile = data?.profile;
+          setCustomEmailBranding(
+            profile?.status === "active" &&
+              ["starter", "growth", "institution"].includes(profile?.plan),
+          );
+        });
+      return;
+    }
     fetch(`/api/educator/courses/${slug}`)
       .then((res) => res.json())
       .then((data) => {
         const c = data.course;
         if (!c) return;
+        setCustomEmailBranding(Boolean(data.entitlements?.customEmailBranding));
         const nextCourse = hydrateCourse(c);
         setCourse(nextCourse);
         setSavedSectionSnapshot(stringifySectionSnapshot(nextCourse, section));
@@ -324,6 +351,7 @@ export function CourseEditor({
       | "imageUrl"
       | "bannerImageUrl"
       | "previewImageUrl"
+      | "emailSettings.logoUrl"
       | "skillPack.coverUrl"
       | `skillPack.${number}.assetUrl`
       | `skillPacks.${number}.coverUrl`
@@ -348,7 +376,18 @@ export function CourseEditor({
       });
       return;
     }
-    if (field === "skillPack.coverUrl") {
+    if (field === "emailSettings.logoUrl") {
+      setCourse((current) => ({
+        ...current,
+        emailSettings: {
+          ...current.emailSettings,
+          branding: {
+            ...current.emailSettings.branding,
+            logoUrl: data.url,
+          },
+        },
+      }));
+    } else if (field === "skillPack.coverUrl") {
       setCourse((current) => ({
         ...current,
         skillPack: { ...current.skillPack, coverUrl: data.url },
@@ -794,6 +833,98 @@ export function CourseEditor({
             }
           />
         </div>
+        <div className="mt-6 rounded-xl border border-slate-200 bg-slate-50 p-4 sm:p-5">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+            <div>
+              <div className="flex flex-wrap items-center gap-2">
+                <h3 className="font-bold text-slate-950">Custom email branding</h3>
+                <span className="rounded-full bg-slate-950 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-white">Paid feature</span>
+              </div>
+              <p className="mt-1 max-w-2xl text-sm leading-6 text-slate-600">
+                Use your logo, accent color, sender name, and footer while retaining a dependable CommonLab email structure.
+              </p>
+            </div>
+            <label className="flex items-center gap-2 text-sm font-bold text-slate-700">
+              <input
+                type="checkbox"
+                disabled={!customEmailBranding}
+                checked={course.emailSettings.branding.enabled}
+                onChange={(event) =>
+                  setCourse({
+                    ...course,
+                    emailSettings: {
+                      ...course.emailSettings,
+                      branding: {
+                        ...course.emailSettings.branding,
+                        enabled: event.target.checked,
+                      },
+                    },
+                  })
+                }
+              />
+              Enable
+            </label>
+          </div>
+          {!customEmailBranding && (
+            <p className="mt-4 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5 text-sm leading-6 text-amber-900">
+              Upgrade to Starter, Growth, or Institution to apply custom branding to learner emails.
+            </p>
+          )}
+          <fieldset
+            disabled={!customEmailBranding || !course.emailSettings.branding.enabled}
+            className="mt-5 grid gap-4 disabled:opacity-50 md:grid-cols-2"
+          >
+            <label className="block">
+              <span className="text-sm font-bold text-slate-700">Sender display name</span>
+              <input
+                value={course.emailSettings.branding.senderName}
+                maxLength={80}
+                onChange={(event) => setCourse({ ...course, emailSettings: { ...course.emailSettings, branding: { ...course.emailSettings.branding, senderName: event.target.value } } })}
+                placeholder="Your organization"
+                className="mt-2 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-slate-400"
+              />
+            </label>
+            <label className="block">
+              <span className="text-sm font-bold text-slate-700">Accent color</span>
+              <span className="mt-2 flex h-10 items-center gap-3 rounded-lg border border-slate-200 bg-white px-3">
+                <input
+                  type="color"
+                  value={course.emailSettings.branding.accentColor}
+                  onChange={(event) => setCourse({ ...course, emailSettings: { ...course.emailSettings, branding: { ...course.emailSettings.branding, accentColor: event.target.value } } })}
+                  className="h-6 w-8 border-0 bg-transparent p-0"
+                />
+                <span className="text-xs font-semibold text-slate-500">{course.emailSettings.branding.accentColor}</span>
+              </span>
+            </label>
+            <label className="block md:col-span-2">
+              <span className="text-sm font-bold text-slate-700">Logo</span>
+              <input
+                type="url"
+                value={course.emailSettings.branding.logoUrl}
+                onChange={(event) => setCourse({ ...course, emailSettings: { ...course.emailSettings, branding: { ...course.emailSettings.branding, logoUrl: event.target.value } } })}
+                placeholder="https://…"
+                className="mt-2 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-slate-400"
+              />
+              <input
+                type="file"
+                accept="image/png,image/jpeg,image/webp"
+                disabled={uploadingMedia === "emailSettings.logoUrl"}
+                onChange={(event) => uploadMedia("emailSettings.logoUrl", event.target.files?.[0])}
+                className="mt-2 w-full text-xs text-slate-600 file:mr-3 file:rounded-md file:border-0 file:bg-slate-950 file:px-3 file:py-2 file:text-xs file:font-bold file:text-white disabled:opacity-50"
+              />
+            </label>
+            <label className="block md:col-span-2">
+              <span className="text-sm font-bold text-slate-700">Footer message</span>
+              <textarea
+                value={course.emailSettings.branding.footerText}
+                maxLength={240}
+                onChange={(event) => setCourse({ ...course, emailSettings: { ...course.emailSettings, branding: { ...course.emailSettings.branding, footerText: event.target.value } } })}
+                placeholder="A short organization or support message"
+                className="mt-2 min-h-20 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-slate-400"
+              />
+            </label>
+          </fieldset>
+        </div>
       </section>
       )}
 
@@ -1032,6 +1163,10 @@ function hydrateCourse(course: CourseResponse): CourseForm {
     emailSettings: {
       ...emptyCourse.emailSettings,
       ...(course.emailSettings || {}),
+      branding: {
+        ...emptyCourse.emailSettings.branding,
+        ...(course.emailSettings?.branding || {}),
+      },
     },
     theme: { ...defaultCourseTheme, ...(course.theme || {}) },
   };

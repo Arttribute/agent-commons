@@ -6,6 +6,7 @@ import {
 import type { CourseAgentConfig } from "@/types/course-agent";
 import type { SkillPack } from "@/types/skills";
 import type { CourseTheme } from "@/lib/course-theme";
+import type { EmailBranding } from "@/lib/email/branding";
 
 export interface ILesson {
   title: string;
@@ -74,6 +75,7 @@ export interface ICourseEmailSettings {
   agentManaged: boolean;
   replyTo?: string;
   customIntro?: string;
+  branding?: EmailBranding;
 }
 
 export interface ICourseCollaborator {
@@ -317,6 +319,13 @@ const CourseEmailSettingsSchema = new Schema<ICourseEmailSettings>(
     agentManaged: { type: Boolean, default: false },
     replyTo: { type: String, trim: true },
     customIntro: { type: String, trim: true },
+    branding: {
+      enabled: { type: Boolean, default: false },
+      senderName: { type: String, trim: true, maxlength: 80 },
+      logoUrl: { type: String, trim: true },
+      accentColor: { type: String, trim: true },
+      footerText: { type: String, trim: true, maxlength: 240 },
+    },
   },
   { _id: false },
 );

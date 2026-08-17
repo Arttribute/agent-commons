@@ -138,6 +138,7 @@ export async function fulfillCompletedPayment(params: FulfillmentParams) {
     await sendEnrollmentEmail(
       { name: user?.name, email: user?.email },
       {
+        id: String(course._id),
         title: course.title,
         slug: course.slug,
         instructor: course.instructor,
