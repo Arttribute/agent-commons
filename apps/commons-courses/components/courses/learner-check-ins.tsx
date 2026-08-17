@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { FormEvent, useMemo, useState } from "react";
+import { FormEvent, useMemo, useRef, useState } from "react";
 import {
   ArrowLeft,
   CalendarDays,
@@ -159,6 +159,17 @@ function CheckInForm({
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(Boolean(submission));
   const [error, setError] = useState("");
+  const startedRef = useRef(Boolean(submission));
+
+  function markStarted() {
+    if (startedRef.current) return;
+    startedRef.current = true;
+    fetch(`/api/assignments/${checkIn.id}/check-in-progress`, {
+      method: "POST",
+    }).catch(() => {
+      startedRef.current = false;
+    });
+  }
 
   async function submit(event: FormEvent) {
     event.preventDefault();
@@ -203,7 +214,12 @@ function CheckInForm({
         {checkIn.context && (
           <div className="rounded-xl border border-[var(--course-accent,#cbd5e1)] bg-[var(--course-muted,#f8fafc)] p-5">
             <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-slate-500">What you committed to</p>
-            <p className="mt-2 text-base font-semibold leading-7 text-slate-900">“{checkIn.context}”</p>
+            <div
+              tabIndex={0}
+              className="mt-2 max-h-56 overflow-y-auto overscroll-contain pr-2 focus:outline-none focus:ring-2 focus:ring-slate-300 sm:max-h-64"
+            >
+              <p className="whitespace-pre-wrap text-base font-semibold leading-7 text-slate-900">“{checkIn.context}”</p>
+            </div>
           </div>
         )}
 
@@ -217,7 +233,10 @@ function CheckInForm({
                 <button
                   key={item.id}
                   type="button"
-                  onClick={() => setCheckInStatus(item.id)}
+                  onClick={() => {
+                    setCheckInStatus(item.id);
+                    markStarted();
+                  }}
                   className={`flex items-start gap-3 rounded-xl border p-4 text-left ${active ? "border-slate-950 bg-slate-950 text-white" : "border-slate-200 hover:border-slate-400"}`}
                 >
                   <Icon className={`mt-0.5 h-4 w-4 shrink-0 ${active ? "text-emerald-300" : "text-slate-400"}`} />
@@ -235,12 +254,15 @@ function CheckInForm({
             id={`check-in-${checkIn.id}`}
             required
             value={text}
-            onChange={(event) => setText(event.target.value)}
+            onChange={(event) => {
+              setText(event.target.value);
+              if (event.target.value.trim()) markStarted();
+            }}
             placeholder="What have you tried? What happened? What will you do next, or where are you stuck?"
             className="mt-3 min-h-40 w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm leading-6 outline-none focus:border-slate-500"
           />
         </div>
-        <label className="block text-sm font-bold text-slate-900">Evidence or working link <span className="font-normal text-slate-400">(optional)</span><span className="relative mt-2 block"><ExternalLink className="absolute left-3 top-3 h-4 w-4 text-slate-400" /><input value={url} onChange={(event) => setUrl(event.target.value)} placeholder="https://…" className="w-full rounded-xl border border-slate-200 py-2.5 pl-10 pr-3 text-sm font-normal outline-none focus:border-slate-500" /></span></label>
+        <label className="block text-sm font-bold text-slate-900">Evidence or working link <span className="font-normal text-slate-400">(optional)</span><span className="relative mt-2 block"><ExternalLink className="absolute left-3 top-3 h-4 w-4 text-slate-400" /><input value={url} onChange={(event) => { setUrl(event.target.value); if (event.target.value.trim()) markStarted(); }} placeholder="https://…" className="w-full rounded-xl border border-slate-200 py-2.5 pl-10 pr-3 text-sm font-normal outline-none focus:border-slate-500" /></span></label>
         {submission?.feedback && <div className="rounded-xl bg-emerald-50 p-4"><p className="text-xs font-bold uppercase tracking-wider text-emerald-700">Facilitator response</p><p className="mt-2 text-sm leading-6 text-emerald-950">{submission.feedback}</p></div>}
         {error && <p className="rounded-lg bg-red-50 p-3 text-sm text-red-700">{error}</p>}
         <div className="flex flex-col gap-3 border-t border-slate-100 pt-5 sm:flex-row sm:items-center sm:justify-between">

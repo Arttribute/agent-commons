@@ -40,7 +40,7 @@ const AssignmentSchema = new Schema<IAssignment>(
     },
     sourceLiveSessionId: { type: Schema.Types.ObjectId, ref: "LiveSession" },
     targetUserIds: [{ type: Schema.Types.ObjectId, ref: "User" }],
-    context: { type: String, trim: true, maxlength: 2_000 },
+    context: { type: String, trim: true, maxlength: 12_000 },
   },
   { timestamps: true }
 );

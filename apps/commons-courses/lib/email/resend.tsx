@@ -3,9 +3,12 @@ import "server-only";
 import { render } from "@react-email/render";
 import { Resend } from "resend";
 import { getAppBaseUrl } from "@/lib/app-url";
-import { CommonsEmail, DetailList, Paragraph } from "@/lib/email/templates";
+import { Callout, CommonsEmail, DetailList, Paragraph } from "@/lib/email/templates";
+import { truncateEmailText } from "@/lib/email/truncate";
+import CheckInNotification from "@/models/CheckInNotification";
 
 type Recipient = {
+  userId?: string | null;
   email?: string | null;
   name?: string | null;
 };
@@ -22,6 +25,7 @@ type CourseEmailSettings = {
 };
 
 type CourseEmailContext = {
+  id?: string;
   title: string;
   slug: string;
   instructor?: string;
@@ -35,6 +39,7 @@ type AssignmentEmailContext = {
   dueAt?: Date | string | null;
   points?: number;
   instructions?: string;
+  context?: string;
   kind?: "coursework" | "follow_up";
 };
 
@@ -233,66 +238,147 @@ export async function sendAssignmentNotification({
   course,
   assignment,
   event,
+  force = false,
 }: {
   recipients: Recipient[];
   course: CourseEmailContext;
   assignment: AssignmentEmailContext;
   event: "created" | "updated";
+  force?: boolean;
 }) {
   const enabled =
     event === "created"
       ? course.settings?.assignmentCreatedEnabled
       : course.settings?.assignmentUpdatedEnabled;
-  if (!enabled) return;
+  if (!enabled && !force) return [];
 
-  const subjectPrefix = event === "created" ? "New assignment" : "Assignment updated";
-  const to = recipients
-    .map((recipient) => recipient.email)
-    .filter((email): email is string => Boolean(email));
-  if (!to.length) return;
+  const isCheckIn = assignment.kind === "follow_up";
+  const subjectPrefix = isCheckIn
+    ? "Your check-in"
+    : event === "created"
+      ? "New assignment"
+      : "Assignment updated";
+  const deliverable = recipients.filter(
+    (recipient): recipient is Recipient & { email: string } =>
+      Boolean(recipient.email),
+  );
+  if (!deliverable.length) return [];
 
-  await Promise.all(
-    to.map((email) =>
-      sendEmail({
-        to: [email],
+  return Promise.all(
+    deliverable.map(async (recipient) => {
+      const tracking =
+        isCheckIn && assignment.id && course.id && recipient.userId
+          ? await CheckInNotification.findOneAndUpdate(
+              {
+                assignmentId: assignment.id,
+                userId: recipient.userId,
+              },
+              {
+                $set: {
+                  courseId: course.id,
+                  email: recipient.email,
+                  emailStatus: "pending",
+                },
+                $unset: { lastError: 1 },
+              },
+              { upsert: true, new: true, runValidators: true },
+            )
+          : null;
+      const actionHref = absoluteUrl(
+        isCheckIn
+          ? `/courses/${course.slug}/check-ins${assignment.id ? `?checkIn=${assignment.id}` : ""}`
+          : `/courses/${course.slug}/learn`,
+      );
+      const result = await sendEmail({
+        to: [recipient.email],
         subject: `${subjectPrefix}: ${assignment.title}`,
         replyTo: course.settings?.replyTo,
         react: (
           <CommonsEmail
             preview={`${subjectPrefix} in ${course.title}: ${assignment.title}.`}
-            eyebrow={course.title}
-            title={subjectPrefix}
-            intro={`${assignment.title} is ${
-              event === "created" ? "now available" : "updated"
-            } in ${course.title}.`}
+            eyebrow={isCheckIn ? "CommonLab follow-up" : course.title}
+            title={isCheckIn ? "How is your commitment going?" : subjectPrefix}
+            intro={
+              isCheckIn
+                ? `Your facilitators from ${course.title} are checking in on the next step you planned.`
+                : `${assignment.title} is ${
+                    event === "created" ? "now available" : "updated"
+                  } in ${course.title}.`
+            }
             action={{
-              label:
-                assignment.kind === "follow_up"
-                  ? "Open your check-in"
-                  : "View assignment",
-              href: absoluteUrl(
-                assignment.kind === "follow_up"
-                  ? `/courses/${course.slug}/check-ins${assignment.id ? `?checkIn=${assignment.id}` : ""}`
-                  : `/courses/${course.slug}/learn`,
-              ),
+              label: isCheckIn ? "Open your check-in" : "View assignment",
+              href: actionHref,
             }}
             footerNote="You are receiving this course notification because you are enrolled in this CommonLab course."
           >
             <DetailList
               items={[
-                ["Assignment", assignment.title],
+                [isCheckIn ? "Check-in" : "Assignment", assignment.title],
+                ["Course", course.title],
                 ["Due", formatDate(assignment.dueAt)],
-                ["Points", assignment.points ? String(assignment.points) : undefined],
+                [
+                  "Points",
+                  !isCheckIn && assignment.points
+                    ? String(assignment.points)
+                    : undefined,
+                ],
               ]}
             />
+            {isCheckIn && assignment.context ? (
+              <Callout label="What you committed to">
+                {truncateEmailText(assignment.context)}
+              </Callout>
+            ) : null}
             {assignment.instructions ? (
-              <Paragraph>{assignment.instructions.slice(0, 320)}</Paragraph>
+              <Paragraph>{truncateEmailText(assignment.instructions, 320)}</Paragraph>
             ) : null}
           </CommonsEmail>
         ),
-      })
-    )
+      });
+
+      if (tracking) {
+        const providerMessageId =
+          "data" in result && result.data?.id ? result.data.id : undefined;
+        const skipped = "skipped" in result && result.skipped;
+        const errorMessage =
+          "error" in result && result.error
+            ? getErrorMessage(result.error)
+            : undefined;
+        await CheckInNotification.updateOne(
+          { _id: tracking._id },
+          providerMessageId
+            ? {
+                $set: {
+                  emailStatus: "sent",
+                  providerMessageId,
+                  sentAt: new Date(),
+                },
+                $unset: { lastError: 1 },
+              }
+            : {
+                $set: {
+                  emailStatus: skipped ? "skipped" : "failed",
+                  lastError: errorMessage,
+                },
+              },
+        );
+      }
+
+      return {
+        userId: recipient.userId,
+        email: recipient.email,
+        sent: "data" in result && Boolean(result.data?.id),
+      };
+    }),
   );
+}
+
+function getErrorMessage(value: unknown) {
+  if (value instanceof Error) return value.message;
+  if (value && typeof value === "object" && "message" in value) {
+    return String(value.message);
+  }
+  return "Email could not be sent.";
 }
 
 export async function sendCourseCollaboratorInvite({

@@ -12,7 +12,11 @@ type Assignment = {
   points: number;
   published: boolean;
   kind?: "coursework" | "follow_up";
+  context?: string;
+  targetUserIds?: Person[];
 };
+
+type Person = { _id: string; name?: string; email?: string };
 
 type Submission = {
   _id: string;
@@ -23,12 +27,26 @@ type Submission = {
   score?: number;
   feedback?: string;
   checkInStatus?: "not_started" | "in_progress" | "blocked" | "completed";
-  userId?: { name?: string; email?: string };
+  userId?: Person;
+};
+
+type CheckInNotification = {
+  _id: string;
+  assignmentId: string;
+  userId?: Person;
+  email?: string;
+  emailStatus: "not_sent" | "pending" | "sent" | "skipped" | "failed";
+  lastError?: string;
+  sentAt?: string;
+  openedAt?: string;
+  startedAt?: string;
+  submittedAt?: string;
 };
 
 export function AssignmentManager({ slug }: { slug: string }) {
   const [assignments, setAssignments] = useState<Assignment[]>([]);
   const [submissions, setSubmissions] = useState<Submission[]>([]);
+  const [checkInNotifications, setCheckInNotifications] = useState<CheckInNotification[]>([]);
   const [form, setForm] = useState({
     title: "",
     instructions: "",
@@ -43,6 +61,7 @@ export function AssignmentManager({ slug }: { slug: string }) {
     const data = await res.json();
     setAssignments(data.assignments || []);
     setSubmissions(data.submissions || []);
+    setCheckInNotifications(data.checkInNotifications || []);
   }, [slug]);
 
   useEffect(() => {
@@ -53,6 +72,7 @@ export function AssignmentManager({ slug }: { slug: string }) {
         if (cancelled) return;
         setAssignments(data.assignments || []);
         setSubmissions(data.submissions || []);
+        setCheckInNotifications(data.checkInNotifications || []);
       })
       .catch(() => {});
 
@@ -89,6 +109,24 @@ export function AssignmentManager({ slug }: { slug: string }) {
     });
     load();
   }
+
+  async function sendCheckIn(assignmentId: string, userId: string) {
+    const response = await fetch(
+      `/api/educator/assignments/${assignmentId}/notifications`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userIds: [userId] }),
+      },
+    );
+    if (!response.ok) {
+      const data = await response.json().catch(() => ({}));
+      throw new Error(data.error || "Could not send this check-in.");
+    }
+    await load();
+  }
+
+  const followUps = assignments.filter((assignment) => assignment.kind === "follow_up");
 
   return (
     <div className="grid gap-6 lg:grid-cols-[360px_1fr]">
@@ -152,6 +190,15 @@ export function AssignmentManager({ slug }: { slug: string }) {
           </div>
         </ScrollableListFrame>
 
+        {followUps.length > 0 && (
+          <CheckInProgress
+            assignments={followUps}
+            notifications={checkInNotifications}
+            submissions={submissions}
+            onSend={sendCheckIn}
+          />
+        )}
+
         <ScrollableListFrame title="Submissions" count={submissions.length} rowHeight={172}>
           <div className="space-y-3 p-3">
             {submissions.map((submission) => (
@@ -168,6 +215,148 @@ export function AssignmentManager({ slug }: { slug: string }) {
       </div>
     </div>
   );
+}
+
+function CheckInProgress({
+  assignments,
+  notifications,
+  submissions,
+  onSend,
+}: {
+  assignments: Assignment[];
+  notifications: CheckInNotification[];
+  submissions: Submission[];
+  onSend: (assignmentId: string, userId: string) => Promise<void>;
+}) {
+  const [sendingKey, setSendingKey] = useState("");
+  const [error, setError] = useState("");
+  const count = assignments.reduce(
+    (total, assignment) => total + (assignment.targetUserIds?.length || 0),
+    0,
+  );
+
+  async function send(assignmentId: string, userId: string) {
+    const key = `${assignmentId}:${userId}`;
+    setSendingKey(key);
+    setError("");
+    try {
+      await onSend(assignmentId, userId);
+    } catch (sendError) {
+      setError(
+        sendError instanceof Error
+          ? sendError.message
+          : "Could not send this check-in.",
+      );
+    } finally {
+      setSendingKey("");
+    }
+  }
+
+  return (
+    <ScrollableListFrame title="Check-in progress" count={count} rowHeight={250}>
+      <div className="space-y-4 p-3">
+        {error && <p className="rounded-lg bg-red-50 p-3 text-sm text-red-700">{error}</p>}
+        {assignments.map((assignment) => (
+          <section key={assignment._id} className="rounded-xl border border-slate-200 bg-white p-4">
+            <div className="border-b border-slate-100 pb-4">
+              <p className="text-[10px] font-bold uppercase tracking-wider text-emerald-700">Continuity check-in</p>
+              <h3 className="mt-1 font-bold text-slate-950">{assignment.title}</h3>
+              {assignment.context && (
+                <p className="mt-2 max-h-24 overflow-y-auto whitespace-pre-wrap pr-2 text-sm leading-6 text-slate-600">
+                  {assignment.context}
+                </p>
+              )}
+            </div>
+            <div className="divide-y divide-slate-100">
+              {(assignment.targetUserIds || []).map((learner) => {
+                const notification = notifications.find(
+                  (item) =>
+                    item.assignmentId === assignment._id &&
+                    personId(item.userId) === learner._id,
+                );
+                const submission = submissions.find(
+                  (item) =>
+                    item.assignmentId === assignment._id &&
+                    personId(item.userId) === learner._id,
+                );
+                const key = `${assignment._id}:${learner._id}`;
+                return (
+                  <div key={learner._id} className="py-4 first:pt-4 last:pb-0">
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                      <div>
+                        <p className="text-sm font-bold text-slate-900">{learner.name || learner.email || "Learner"}</p>
+                        <p className="mt-0.5 text-xs text-slate-500">{learner.email}</p>
+                      </div>
+                      <button
+                        type="button"
+                        disabled={sendingKey === key}
+                        onClick={() => send(assignment._id, learner._id)}
+                        className="h-9 rounded-lg border border-slate-200 px-3 text-xs font-bold text-slate-700 hover:border-slate-400 disabled:opacity-50"
+                      >
+                        {sendingKey === key ? "Sending…" : notification?.sentAt ? "Resend check-in" : "Send check-in"}
+                      </button>
+                    </div>
+                    <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
+                      <ProgressStep label="Sent" active={Boolean(notification?.sentAt)} date={notification?.sentAt} />
+                      <ProgressStep label="Opened" active={Boolean(notification?.openedAt)} date={notification?.openedAt} />
+                      <ProgressStep label="Responding" active={Boolean(notification?.startedAt)} date={notification?.startedAt} />
+                      <ProgressStep label="Submitted" active={Boolean(submission)} date={notification?.submittedAt} />
+                    </div>
+                    {notification?.emailStatus === "failed" && (
+                      <p className="mt-3 text-xs font-semibold text-red-600">Email failed{notification.lastError ? `: ${notification.lastError}` : "."}</p>
+                    )}
+                    {submission && (
+                      <div className="mt-4 rounded-lg bg-slate-50 p-4">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <p className="text-xs font-bold uppercase tracking-wider text-slate-500">Final response</p>
+                          {submission.checkInStatus && <span className="rounded-full bg-white px-2.5 py-1 text-[11px] font-bold capitalize text-slate-600">{submission.checkInStatus.replace("_", " ")}</span>}
+                        </div>
+                        {submission.text && <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-slate-800">{submission.text}</p>}
+                        {submission.url && <a href={submission.url} target="_blank" className="mt-2 inline-block text-sm font-bold text-slate-900 underline">Open evidence</a>}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </section>
+        ))}
+      </div>
+    </ScrollableListFrame>
+  );
+}
+
+function ProgressStep({
+  label,
+  active,
+  date,
+}: {
+  label: string;
+  active: boolean;
+  date?: string;
+}) {
+  return (
+    <div className={`rounded-lg border px-3 py-2 ${active ? "border-emerald-200 bg-emerald-50" : "border-slate-200 bg-slate-50"}`}>
+      <div className="flex items-center gap-2">
+        <span className={`h-1.5 w-1.5 rounded-full ${active ? "bg-emerald-500" : "bg-slate-300"}`} />
+        <span className={`text-xs font-bold ${active ? "text-emerald-800" : "text-slate-500"}`}>{label}</span>
+      </div>
+      <p className="mt-1 text-[10px] text-slate-400">{date ? formatDate(date) : "Not yet"}</p>
+    </div>
+  );
+}
+
+function personId(person?: Person) {
+  return person?._id ? String(person._id) : "";
+}
+
+function formatDate(value: string) {
+  return new Intl.DateTimeFormat("en", {
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  }).format(new Date(value));
 }
 
 function SubmissionReview({

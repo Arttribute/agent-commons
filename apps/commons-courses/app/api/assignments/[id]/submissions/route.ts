@@ -3,6 +3,7 @@ import { auth } from "@/lib/auth";
 import { connectDB } from "@/lib/db";
 import { indexSubmissionForSearch } from "@/lib/search-indexers";
 import Assignment from "@/models/Assignment";
+import CheckInNotification from "@/models/CheckInNotification";
 import Enrollment from "@/models/Enrollment";
 import LiveParticipant from "@/models/LiveParticipant";
 import Submission from "@/models/Submission";
@@ -84,6 +85,21 @@ export async function POST(
     },
     { upsert: true, new: true, runValidators: true }
   );
+  if (assignment.kind === "follow_up") {
+    await CheckInNotification.findOneAndUpdate(
+      { assignmentId: assignment._id, userId: session.user.id },
+      {
+        $set: { submittedAt: submission.submittedAt },
+        $min: { startedAt: submission.submittedAt },
+        $setOnInsert: {
+          courseId: assignment.courseId,
+          email: session.user.email,
+          emailStatus: "not_sent",
+        },
+      },
+      { upsert: true, runValidators: true },
+    );
+  }
   await indexSubmissionForSearch(submission);
 
   return NextResponse.json({ submission }, { status: 201 });
