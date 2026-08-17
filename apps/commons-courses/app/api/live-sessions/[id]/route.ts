@@ -122,6 +122,24 @@ export async function GET(
     },
     { new: true, upsert: true },
   );
+  const enrollment = await Enrollment.findOneAndUpdate(
+    { userId: currentUser.user.id, courseId: session.courseId },
+    {
+      $setOnInsert: {
+        status: "active",
+        accessLevel: "full",
+        paymentStatus: "free",
+        accessSource: course.isFree ? "free" : "pass",
+        enrolledAt: new Date(),
+      },
+    },
+    { new: true, upsert: true },
+  );
+  if (enrollment.status === "cancelled") {
+    enrollment.status = "active";
+    enrollment.accessLevel = "full";
+    await enrollment.save();
+  }
   const [base, responses, results] = await Promise.all([
     serializeEducatorLiveSession(session, course.title, course.theme),
     getLearnerResponses(session._id, participant._id),
