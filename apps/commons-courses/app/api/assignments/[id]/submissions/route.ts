@@ -72,6 +72,13 @@ export async function POST(
       userId: session.user.id,
       text: body.text,
       url: body.url,
+      checkInStatus:
+        assignment.kind === "follow_up" &&
+        ["not_started", "in_progress", "blocked", "completed"].includes(
+          body.checkInStatus,
+        )
+          ? body.checkInStatus
+          : undefined,
       status: "submitted",
       submittedAt: new Date(),
     },

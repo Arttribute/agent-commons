@@ -30,10 +30,12 @@ type CourseEmailContext = {
 };
 
 type AssignmentEmailContext = {
+  id?: string;
   title: string;
   dueAt?: Date | string | null;
   points?: number;
   instructions?: string;
+  kind?: "coursework" | "follow_up";
 };
 
 const resend = process.env.RESEND_API_KEY
@@ -264,8 +266,15 @@ export async function sendAssignmentNotification({
               event === "created" ? "now available" : "updated"
             } in ${course.title}.`}
             action={{
-              label: "View assignment",
-              href: absoluteUrl(`/courses/${course.slug}/learn`),
+              label:
+                assignment.kind === "follow_up"
+                  ? "Open your check-in"
+                  : "View assignment",
+              href: absoluteUrl(
+                assignment.kind === "follow_up"
+                  ? `/courses/${course.slug}/check-ins${assignment.id ? `?checkIn=${assignment.id}` : ""}`
+                  : `/courses/${course.slug}/learn`,
+              ),
             }}
             footerNote="You are receiving this course notification because you are enrolled in this CommonLab course."
           >
