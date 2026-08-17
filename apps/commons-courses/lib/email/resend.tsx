@@ -5,6 +5,8 @@ import { Resend } from "resend";
 import { getAppBaseUrl } from "@/lib/app-url";
 import { Callout, CommonsEmail, DetailList, Paragraph } from "@/lib/email/templates";
 import { truncateEmailText } from "@/lib/email/truncate";
+import type { EmailBranding } from "@/lib/email/branding";
+import { resolveCourseEmailBranding } from "@/lib/educator-entitlements";
 import CheckInNotification from "@/models/CheckInNotification";
 
 type Recipient = {
@@ -22,6 +24,7 @@ type CourseEmailSettings = {
   agentManaged?: boolean;
   replyTo?: string;
   customIntro?: string;
+  branding?: EmailBranding;
 };
 
 type CourseEmailContext = {
@@ -72,11 +75,13 @@ async function sendEmail({
   subject,
   react,
   replyTo,
+  senderName,
 }: {
   to: string[];
   subject: string;
   react: React.ReactElement;
   replyTo?: string;
+  senderName?: string;
 }) {
   const recipients = to.filter(Boolean);
   if (!recipients.length) return { skipped: true, reason: "missing_recipient" };
@@ -91,7 +96,7 @@ async function sendEmail({
       render(react, { plainText: true }),
     ]);
     const { data, error } = await resend.emails.send({
-      from: fromAddress,
+      from: getFromAddress(senderName),
       to: recipients,
       subject,
       html,
@@ -202,11 +207,16 @@ export async function sendPasswordResetEmail({
 
 export async function sendEnrollmentEmail(user: Recipient, course: CourseEmailContext) {
   if (!course.settings?.enrollmentEnabled || !user.email) return;
+  const branding = await resolveCourseEmailBranding(
+    course.id,
+    course.settings.branding,
+  );
 
   await sendEmail({
     to: [user.email],
     subject: `You're enrolled in ${course.title}`,
     replyTo: course.settings.replyTo,
+    senderName: branding?.senderName,
     react: (
       <CommonsEmail
         preview={`You're enrolled in ${course.title}.`}
@@ -220,6 +230,7 @@ export async function sendEnrollmentEmail(user: Recipient, course: CourseEmailCo
           label: "Go to course",
           href: absoluteUrl(`/courses/${course.slug}/learn`),
         }}
+        branding={branding}
       >
         <DetailList
           items={[
@@ -253,6 +264,10 @@ export async function sendAssignmentNotification({
   if (!enabled && !force) return [];
 
   const isCheckIn = assignment.kind === "follow_up";
+  const branding = await resolveCourseEmailBranding(
+    course.id,
+    course.settings?.branding,
+  );
   const subjectPrefix = isCheckIn
     ? "Your check-in"
     : event === "created"
@@ -293,6 +308,7 @@ export async function sendAssignmentNotification({
         to: [recipient.email],
         subject: `${subjectPrefix}: ${assignment.title}`,
         replyTo: course.settings?.replyTo,
+        senderName: branding?.senderName,
         react: (
           <CommonsEmail
             preview={`${subjectPrefix} in ${course.title}: ${assignment.title}.`}
@@ -310,6 +326,7 @@ export async function sendAssignmentNotification({
               href: actionHref,
             }}
             footerNote="You are receiving this course notification because you are enrolled in this CommonLab course."
+            branding={branding}
           >
             <DetailList
               items={[
@@ -393,11 +410,16 @@ export async function sendCourseCollaboratorInvite({
   role: "co_owner" | "editor";
 }) {
   if (!recipient.email) return;
+  const branding = await resolveCourseEmailBranding(
+    course.id,
+    course.settings?.branding,
+  );
 
   await sendEmail({
     to: [recipient.email],
     subject: `You're invited to collaborate on ${course.title}`,
     replyTo: course.settings?.replyTo,
+    senderName: branding?.senderName,
     react: (
       <CommonsEmail
         preview={`You've been invited to help manage ${course.title} on CommonLab.`}
@@ -408,6 +430,7 @@ export async function sendCourseCollaboratorInvite({
           label: "Open course",
           href: absoluteUrl(`/educator/courses/${course.slug}/edit`),
         }}
+        branding={branding}
       >
         <DetailList
           items={[
@@ -423,4 +446,11 @@ export async function sendCourseCollaboratorInvite({
       </CommonsEmail>
     ),
   });
+}
+
+function getFromAddress(senderName?: string) {
+  if (!senderName) return fromAddress;
+  const address = fromAddress.match(/<([^>]+)>/)?.[1] || fromAddress.trim();
+  const safeName = senderName.replace(/[<>\r\n]/g, "").trim();
+  return safeName ? `${safeName} <${address}>` : fromAddress;
 }

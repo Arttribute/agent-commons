@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { normalizeCourseInput } from "@/lib/course-input";
+import { canUseCustomEmailBranding } from "@/lib/educator-entitlements";
 import {
   canManageCourseCollaborators,
   requireEducatorCourse,
@@ -16,7 +17,11 @@ export async function GET(
   const result = await requireEducatorCourse(slug);
   if (result.error) return result.error;
 
-  return NextResponse.json({ course: result.course });
+  const emailBranding = await canUseCustomEmailBranding(result.course);
+  return NextResponse.json({
+    course: result.course,
+    entitlements: { customEmailBranding: emailBranding },
+  });
 }
 
 export async function PUT(
@@ -32,6 +37,13 @@ export async function PUT(
     const nextSlug = body.slug ? slugifyCourseTitle(body.slug) : result.course.slug;
     const normalized = normalizeCourseBody(body);
     if (normalized instanceof NextResponse) return normalized;
+    const emailBranding = await canUseCustomEmailBranding(result.course);
+    if (normalized.emailSettings?.branding?.enabled && !emailBranding) {
+      return NextResponse.json(
+        { error: "Custom email branding is available on paid educator plans." },
+        { status: 403 },
+      );
+    }
 
     result.course.set({
       ...normalized,

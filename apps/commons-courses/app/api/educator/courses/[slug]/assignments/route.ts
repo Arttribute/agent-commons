@@ -85,6 +85,7 @@ export async function POST(
         return { name: user?.name, email: user?.email };
       }),
       course: {
+        id: String(result.course._id),
         title: result.course.title,
         slug: result.course.slug,
         settings: result.course.emailSettings,

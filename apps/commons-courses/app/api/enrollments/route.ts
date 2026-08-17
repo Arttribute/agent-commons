@@ -67,6 +67,7 @@ export async function POST(req: NextRequest) {
     await sendEnrollmentEmail(
       { name: session.user.name, email: session.user.email },
       {
+        id: String(course._id),
         title: course.title,
         slug: course.slug,
         instructor: course.instructor,
