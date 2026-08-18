@@ -11,7 +11,7 @@ import Enrollment from "@/models/Enrollment";
 import LiveResponse from "@/models/LiveResponse";
 import LiveSession from "@/models/LiveSession";
 import Submission from "@/models/Submission";
-import type { LiveActivity } from "@/types/live-session";
+import type { LiveActivity, LiveResponseValue } from "@/types/live-session";
 
 export default async function CourseCheckInsPage({
   params,
@@ -149,7 +149,13 @@ export default async function CourseCheckInsPage({
   );
 }
 
-function formatResponseValue(value: string | string[]) {
+function formatResponseValue(value: LiveResponseValue) {
+  if (!Array.isArray(value) && typeof value === "object") {
+    const selected = value.items
+      .filter((item) => item.selected)
+      .map((item) => item.text);
+    return selected.length ? selected.join(", ") : value.items.map((item) => item.text).join(", ");
+  }
   const values = Array.isArray(value) ? value : [value];
   return values
     .map((item) =>

@@ -1,4 +1,6 @@
 import type { LiveActivity } from "../types/live-session";
+import type { LiveResponseValue } from "../types/live-session";
+import { normalizePrioritizationResponse } from "./live-response-policy.ts";
 import type {
   EngagementActivity,
   EngagementLearner,
@@ -21,7 +23,7 @@ export type CourseEngagementResponse = {
   participantId: unknown;
   userId: unknown;
   activityId: string;
-  value: string | string[];
+  value: LiveResponseValue;
   correct?: boolean;
   submittedAt: Date | string;
 };
@@ -34,16 +36,26 @@ function percent(value: number, total: number) {
   return total ? Math.round((value / total) * 100) : 0;
 }
 
-function responseLabel(activity: LiveActivity, value: string | string[]) {
+function responseLabel(activity: LiveActivity, value: LiveResponseValue) {
+  if (activity.type === "prioritization") {
+    const response = normalizePrioritizationResponse(activity, value);
+    if (!response) return "No routines saved";
+    const selected = response.items
+      .filter((item) => item.selected)
+      .map((item) => item.text);
+    return selected.length
+      ? `Shortlisted: ${selected.join("; ")} · ${response.items.length} captured`
+      : `${response.items.length} routines captured · shortlist in progress`;
+  }
   const values = Array.isArray(value) ? value : [value];
   return values
     .map((item) => {
-      const other = item.startsWith(OTHER_RESPONSE_PREFIX)
-        ? item.slice(OTHER_RESPONSE_PREFIX.length)
+      const other = String(item).startsWith(OTHER_RESPONSE_PREFIX)
+        ? String(item).slice(OTHER_RESPONSE_PREFIX.length)
         : undefined;
       if (other !== undefined) return other;
       if (item === "complete") return "Completed";
-      return activity.options.find((option) => option.id === item)?.label || item;
+      return activity.options.find((option) => option.id === item)?.label || String(item);
     })
     .join(", ");
 }
@@ -78,7 +90,11 @@ export function buildCourseEngagement(args: {
     const activityResponses = responses.filter((response) => response.activityId === activity.id);
     const correct = activityResponses.filter((response) => response.correct).length;
     const values = activityResponses.flatMap((response) =>
-      Array.isArray(response.value) ? response.value : [response.value],
+      Array.isArray(response.value)
+        ? response.value
+        : typeof response.value === "string"
+          ? [response.value]
+          : [],
     );
     return {
       id: activity.id,

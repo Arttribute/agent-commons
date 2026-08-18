@@ -11,8 +11,12 @@ import type {
   LiveParticipantRecord,
   LiveResponseRecord,
   LiveSessionRecord,
+  LiveResponseValue,
 } from "@/types/live-session";
-import { decodeOtherResponse } from "@/lib/live-response-policy";
+import {
+  decodeOtherResponse,
+  normalizePrioritizationResponse,
+} from "@/lib/live-response-policy";
 
 type LiveSessionDocumentLike = ILiveSession & {
   _id: Types.ObjectId;
@@ -78,7 +82,7 @@ export async function getSessionResults(
       activity,
       activityResponses as unknown as Array<{
         _id: Types.ObjectId;
-        value: string | string[];
+        value: LiveResponseValue;
         correct?: boolean;
         participantId?: { displayName?: string };
       }>,
@@ -101,7 +105,7 @@ export async function getLearnerResponses(
       response.activityId,
       {
         activityId: response.activityId,
-        value: response.value as string | string[],
+        value: response.value as LiveResponseValue,
         correct: response.correct,
         pointsAwarded: response.pointsAwarded,
         submittedAt: response.submittedAt.toISOString(),
@@ -168,12 +172,34 @@ function buildActivityResults(
   activity: LiveActivity,
   responses: Array<{
     _id: Types.ObjectId;
-    value: string | string[];
+    value: LiveResponseValue;
     correct?: boolean;
     participantId?: { displayName?: string };
   }>,
   revealNames: boolean,
 ): LiveActivityResults {
+  if (activity.type === "prioritization") {
+    return {
+      total: responses.length,
+      prioritizations: responses.flatMap((response) => {
+        const value = normalizePrioritizationResponse(activity, response.value);
+        if (!value) return [];
+        return [
+          {
+            id: String(response._id),
+            participantName: revealNames
+              ? response.participantId?.displayName || "Learner"
+              : undefined,
+            items: value.items.map((item) => item.text),
+            selectedItems: value.items
+              .filter((item) => item.selected)
+              .map((item) => item.text),
+            finalized: value.finalized,
+          },
+        ];
+      }),
+    };
+  }
   if (activity.options.length) {
     const otherResponses = responses.flatMap((response) => {
       const values = Array.isArray(response.value)

@@ -1,4 +1,5 @@
 import mongoose, { Document, Schema } from "mongoose";
+import type { LiveResponseValue } from "@/types/live-session";
 
 export interface ILiveResponse extends Document {
   sessionId: mongoose.Types.ObjectId;
@@ -6,7 +7,7 @@ export interface ILiveResponse extends Document {
   activityId: string;
   participantId: mongoose.Types.ObjectId;
   userId: mongoose.Types.ObjectId;
-  value: string | string[];
+  value: LiveResponseValue;
   correct?: boolean;
   pointsAwarded: number;
   submittedAt: Date;
@@ -45,4 +46,3 @@ LiveResponseSchema.index({ sessionId: 1, activityId: 1, submittedAt: -1 });
 
 export default mongoose.models.LiveResponse ||
   mongoose.model<ILiveResponse>("LiveResponse", LiveResponseSchema);
-

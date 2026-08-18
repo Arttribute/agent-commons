@@ -53,7 +53,11 @@ export async function POST(
   if (uploaded.length !== files.length) {
     return NextResponse.json({ error: "One or more files could not be stored in Commons Library." }, { status: 502 });
   }
-  const visibility = form.get("visibility") === "live" ? "live" : "course";
+  const requestedVisibility = form.get("visibility");
+  const visibility =
+    requestedVisibility === "live" || requestedVisibility === "educator"
+      ? requestedVisibility
+      : "course";
   const materials = await CourseMaterial.insertMany(uploaded.map((item, index) => ({
     courseId: result.course._id,
     courseSlug: result.course.slug,

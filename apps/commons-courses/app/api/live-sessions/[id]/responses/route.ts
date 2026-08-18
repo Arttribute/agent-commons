@@ -6,7 +6,10 @@ import LiveParticipant from "@/models/LiveParticipant";
 import LiveResponse from "@/models/LiveResponse";
 import LiveSession from "@/models/LiveSession";
 import type { LiveActivity, LiveActivityOption } from "@/types/live-session";
-import { isValidLiveResponse } from "@/lib/live-response-policy";
+import {
+  isValidLiveResponse,
+  normalizePrioritizationResponse,
+} from "@/lib/live-response-policy";
 
 export async function POST(
   req: NextRequest,
@@ -23,7 +26,12 @@ export async function POST(
   const body = await req.json().catch(() => ({}));
   const activityId = typeof body.activityId === "string" ? body.activityId : "";
   const value = body.value;
-  if (!activityId || (!Array.isArray(value) && typeof value !== "string")) {
+  if (
+    !activityId ||
+    (!Array.isArray(value) &&
+      typeof value !== "string" &&
+      (!value || typeof value !== "object"))
+  ) {
     return NextResponse.json({ error: "activityId and a response are required." }, { status: 400 });
   }
   if (typeof value === "string" && (!value.trim() || value.length > 10_000)) {
@@ -44,6 +52,16 @@ export async function POST(
       { status: 400 },
     );
   }
+  const responseValue =
+    activity.type === "prioritization"
+      ? normalizePrioritizationResponse(activity, value)
+      : value;
+  if (responseValue === undefined) {
+    return NextResponse.json(
+      { error: "Add a valid response before saving." },
+      { status: 400 },
+    );
+  }
   if (session.pace === "facilitator" && session.currentActivityId !== activity.id) {
     return NextResponse.json({ error: "Wait for the facilitator to open this activity." }, { status: 409 });
   }
@@ -54,7 +72,11 @@ export async function POST(
   if (!participant) {
     return NextResponse.json({ error: "Join the session before responding." }, { status: 403 });
   }
-  const selectedValues = Array.isArray(value) ? value.map(String) : [String(value)];
+  const selectedValues = Array.isArray(responseValue)
+    ? responseValue.map(String)
+    : typeof responseValue === "string"
+      ? [responseValue]
+      : [];
   const correctOptions = activity.options
     .filter((option: LiveActivityOption) => option.isCorrect)
     .map((option: LiveActivityOption) => option.id);
@@ -69,7 +91,7 @@ export async function POST(
       $set: {
         courseId: session.courseId,
         userId: currentUser.user.id,
-        value,
+        value: responseValue,
         correct,
         pointsAwarded: correct ? activity.points : 0,
         submittedAt: new Date(),
