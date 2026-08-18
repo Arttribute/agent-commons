@@ -13,7 +13,7 @@ export interface ICourseMaterial extends Document {
   mimeType: string;
   size: number;
   kind: "presentation" | "pdf";
-  visibility: "course" | "live";
+  visibility: "course" | "live" | "educator";
   status: string;
   textPreview?: string;
   createdAt: Date;
@@ -33,7 +33,11 @@ const CourseMaterialSchema = new Schema<ICourseMaterial>({
   mimeType: { type: String, required: true, trim: true },
   size: { type: Number, required: true, min: 0 },
   kind: { type: String, enum: ["presentation", "pdf"], required: true },
-  visibility: { type: String, enum: ["course", "live"], default: "course" },
+  visibility: {
+    type: String,
+    enum: ["course", "live", "educator"],
+    default: "course",
+  },
   status: { type: String, default: "uploaded" },
   textPreview: String,
 }, { timestamps: true });

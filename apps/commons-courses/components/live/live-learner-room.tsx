@@ -22,9 +22,12 @@ import {
   GraduationCap,
   LoaderCircle,
   LockKeyhole,
+  Plus,
   Radio,
   Save,
   Send,
+  Star,
+  Trash2,
   Users,
   X,
 } from "lucide-react";
@@ -37,6 +40,7 @@ import {
   canReviseLiveResponse,
   decodeOtherResponse,
   encodeOtherResponse,
+  isPrioritizationResponse,
   isValidLiveResponse,
   sameLiveResponseValue,
 } from "@/lib/live-response-policy";
@@ -48,6 +52,7 @@ import type {
   LearnerLiveSession,
   LiveActivity,
   LiveResponseRecord,
+  LiveResponseValue,
 } from "@/types/live-session";
 import type { LiveSessionState } from "@/types/live-session";
 
@@ -62,7 +67,7 @@ type EnrollmentGate = {
 export function LiveLearnerRoom({ sessionId }: { sessionId: string }) {
   const [session, setSession] = useState<LearnerLiveSession | null>(null);
   const [selectedId, setSelectedId] = useState("");
-  const [values, setValues] = useState<Record<string, string | string[]>>({});
+  const [values, setValues] = useState<Record<string, LiveResponseValue>>({});
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [notice, setNotice] = useState("");
@@ -288,7 +293,7 @@ export function LiveLearnerRoom({ sessionId }: { sessionId: string }) {
   );
   const activityPosition = activityIndex >= 0 ? activityIndex + 1 : null;
 
-  async function submit(valueOverride?: string | string[]) {
+  async function submit(valueOverride?: LiveResponseValue) {
     if (!activity || submitting) return;
     const value = valueOverride ?? values[activity.id];
     if ((typeof value === "string" && !value.trim()) || value === undefined)
@@ -482,6 +487,7 @@ export function LiveLearnerRoom({ sessionId }: { sessionId: string }) {
           </div>
           {activity ? (
             <LearnerActivity
+              key={activity.id}
               activity={activity}
               learnerSeed={session.participant.id}
               value={values[activity.id]}
@@ -779,11 +785,11 @@ function LearnerActivity({
 }: {
   activity: LiveActivity;
   learnerSeed: string;
-  value?: string | string[];
+  value?: LiveResponseValue;
   response?: LiveResponseRecord;
   submitting: boolean;
-  onChange: (value: string | string[]) => void;
-  onSubmit: (valueOverride?: string | string[]) => void;
+  onChange: (value: LiveResponseValue) => void;
+  onSubmit: (valueOverride?: LiveResponseValue) => void;
 }) {
   const isChoice = activity.options.length > 0;
   const result = activity.status === "closed" && activity.showResults;
@@ -861,7 +867,16 @@ function LearnerActivity({
           />
         </div>
       ) : null}
-      {isChoice ? (
+      {activity.type === "prioritization" ? (
+        <PrioritizationResponsePanel
+          activity={activity}
+          value={value}
+          response={response}
+          submitting={submitting}
+          onChange={onChange}
+          onSubmit={onSubmit}
+        />
+      ) : isChoice ? (
         <div className="border-t border-slate-100 bg-slate-50 p-5 sm:p-7">
           {activity.responseStyle === "scale" ? (
             <div className="mb-3 flex items-center justify-between gap-4 text-xs font-medium text-slate-500">
@@ -1055,6 +1070,249 @@ function LearnerActivity({
   );
 }
 
+function PrioritizationResponsePanel({
+  activity,
+  value,
+  response,
+  submitting,
+  onChange,
+  onSubmit,
+}: {
+  activity: LiveActivity;
+  value?: LiveResponseValue;
+  response?: LiveResponseRecord;
+  submitting: boolean;
+  onChange: (value: LiveResponseValue) => void;
+  onSubmit: (valueOverride?: LiveResponseValue) => void;
+}) {
+  const [draft, setDraft] = useState("");
+  const current = isPrioritizationResponse(value)
+    ? value
+    : { items: [], finalized: false };
+  const maxSelections = activity.maxSelections || 3;
+  const minItems = activity.minItems || 1;
+  const selectedCount = current.items.filter((item) => item.selected).length;
+  const canEdit = activity.status === "open";
+  const readyToFinish =
+    current.items.length >= minItems && selectedCount > 0;
+  const savedValue = response?.value;
+  const changed = savedValue
+    ? !sameLiveResponseValue(current, savedValue)
+    : current.items.length > 0;
+
+  function updateItems(items: typeof current.items) {
+    onChange({ items, finalized: false });
+  }
+
+  function addItem() {
+    const text = draft.replace(/\s+/g, " ").trim();
+    if (!text || current.items.length >= 50) return;
+    if (
+      current.items.some(
+        (item) => item.text.toLocaleLowerCase() === text.toLocaleLowerCase(),
+      )
+    ) {
+      setDraft("");
+      return;
+    }
+    updateItems([
+      ...current.items,
+      { id: crypto.randomUUID(), text: text.slice(0, 280), selected: false },
+    ]);
+    setDraft("");
+  }
+
+  return (
+    <div className="border-t border-slate-100 bg-[var(--course-background)] p-4 sm:p-7">
+      <div className="grid gap-5 lg:grid-cols-[minmax(0,1.2fr)_minmax(280px,0.8fr)]">
+        <section className="rounded-2xl border border-slate-200 bg-[var(--course-surface)] p-4 sm:p-5">
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <p className="text-[10px] font-bold uppercase tracking-[0.18em] opacity-45">
+                Step 1 · Capture
+              </p>
+              <h2 className="mt-1 text-lg font-bold">List every routine</h2>
+              <p className="mt-1 text-xs leading-5 opacity-60">
+                Keep each entry short. Quantity first; you will choose later.
+              </p>
+            </div>
+            <span className="rounded-full bg-[var(--course-background)] px-2.5 py-1 text-xs font-bold opacity-70">
+              {current.items.length}/50
+            </span>
+          </div>
+          {canEdit ? (
+            <div className="mt-4 flex flex-col gap-2 sm:flex-row">
+              <textarea
+                value={draft}
+                maxLength={280}
+                rows={2}
+                onChange={(event) => setDraft(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" && !event.shiftKey) {
+                    event.preventDefault();
+                    addItem();
+                  }
+                }}
+                placeholder={activity.entryLabel || "Add an idea"}
+                className="min-h-12 flex-1 resize-none rounded-xl border border-slate-200 bg-white px-3 py-3 text-sm leading-5 text-slate-950 outline-none focus:border-slate-500"
+              />
+              <button
+                type="button"
+                onClick={addItem}
+                disabled={!draft.trim() || current.items.length >= 50}
+                className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl bg-[var(--course-primary)] px-5 text-sm font-bold text-[var(--course-on-primary)] disabled:opacity-40"
+              >
+                <Plus className="h-4 w-4" /> Add
+              </button>
+            </div>
+          ) : null}
+          <div className="mt-4 max-h-[420px] space-y-2 overflow-y-auto pr-1">
+            {current.items.map((item, index) => (
+              <div
+                key={item.id}
+                className="group flex items-start gap-3 rounded-xl border border-slate-200 bg-white p-3 text-slate-950"
+              >
+                <span className="mt-1 flex h-6 w-6 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-[10px] font-bold text-slate-500">
+                  {index + 1}
+                </span>
+                <input
+                  value={item.text}
+                  maxLength={280}
+                  disabled={!canEdit}
+                  onChange={(event) =>
+                    updateItems(
+                      current.items.map((candidate) =>
+                        candidate.id === item.id
+                          ? { ...candidate, text: event.target.value }
+                          : candidate,
+                      ),
+                    )
+                  }
+                  className="min-w-0 flex-1 bg-transparent text-sm font-medium leading-6 outline-none disabled:opacity-70"
+                />
+                {canEdit ? (
+                  <button
+                    type="button"
+                    onClick={() =>
+                      updateItems(
+                        current.items.filter(
+                          (candidate) => candidate.id !== item.id,
+                        ),
+                      )
+                    }
+                    className="rounded-lg p-1.5 text-slate-300 hover:bg-red-50 hover:text-red-600"
+                    aria-label={`Remove ${item.text}`}
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </button>
+                ) : null}
+              </div>
+            ))}
+            {!current.items.length ? (
+              <div className="rounded-xl border border-dashed border-slate-200 px-5 py-10 text-center text-sm opacity-45">
+                Your routines will collect here.
+              </div>
+            ) : null}
+          </div>
+        </section>
+
+        <section className="rounded-2xl border border-slate-200 bg-[var(--course-surface)] p-4 sm:p-5">
+          <p className="text-[10px] font-bold uppercase tracking-[0.18em] opacity-45">
+            Step 2 · Shortlist
+          </p>
+          <h2 className="mt-1 text-lg font-bold">
+            Choose up to {maxSelections}
+          </h2>
+          <p className="mt-1 text-xs leading-5 opacity-60">
+            {activity.selectionPrompt || "Choose the ideas you want to take forward."}
+          </p>
+          <div className="mt-4 space-y-2">
+            {current.items.map((item) => {
+              const disabled =
+                !canEdit || (!item.selected && selectedCount >= maxSelections);
+              return (
+                <button
+                  key={item.id}
+                  type="button"
+                  disabled={disabled}
+                  onClick={() =>
+                    updateItems(
+                      current.items.map((candidate) =>
+                        candidate.id === item.id
+                          ? { ...candidate, selected: !candidate.selected }
+                          : candidate,
+                      ),
+                    )
+                  }
+                  className={cn(
+                    "flex w-full items-start gap-3 rounded-xl border p-3 text-left text-sm transition",
+                    item.selected
+                      ? "border-[var(--course-primary)] bg-[var(--course-primary)] text-[var(--course-on-primary)]"
+                      : "border-slate-200 bg-white text-slate-800 hover:border-slate-400",
+                    disabled && !item.selected && "opacity-45",
+                  )}
+                >
+                  <Star
+                    className={cn(
+                      "mt-0.5 h-4 w-4 shrink-0",
+                      item.selected && "fill-current",
+                    )}
+                  />
+                  <span className="font-bold leading-5">{item.text}</span>
+                </button>
+              );
+            })}
+          </div>
+          <div className="mt-5 rounded-xl bg-[var(--course-background)] p-3 text-xs leading-5 opacity-70">
+            {selectedCount} selected · Add at least {minItems} routine
+            {minItems === 1 ? "" : "s"} to finish.
+          </div>
+          {response ? (
+            <Saved
+              message={
+                isPrioritizationResponse(response.value) &&
+                response.value.finalized &&
+                !changed
+                  ? "Shortlist saved"
+                  : "Progress saved · You can keep editing while this is open"
+              }
+            />
+          ) : null}
+          {canEdit ? (
+            <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-1 xl:grid-cols-2">
+              <button
+                type="button"
+                onClick={() =>
+                  onSubmit({ items: current.items, finalized: false })
+                }
+                disabled={!current.items.length || submitting || !changed}
+                className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-slate-300 bg-white px-4 text-sm font-bold text-slate-700 disabled:opacity-40"
+              >
+                <Save className="h-4 w-4" /> Save progress
+              </button>
+              <button
+                type="button"
+                onClick={() =>
+                  onSubmit({ items: current.items, finalized: true })
+                }
+                disabled={!readyToFinish || submitting}
+                className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-[var(--course-primary)] px-4 text-sm font-bold text-[var(--course-on-primary)] disabled:opacity-40"
+              >
+                {submitting ? (
+                  <LoaderCircle className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Check className="h-4 w-4" />
+                )}
+                Finish shortlist
+              </button>
+            </div>
+          ) : null}
+        </section>
+      </div>
+    </div>
+  );
+}
+
 function Saved({ message = "Response saved" }: { message?: string }) {
   return (
     <div className="mt-3 flex items-center justify-center gap-2 rounded-xl bg-emerald-50 px-4 py-3 text-sm font-bold text-emerald-700">
@@ -1122,6 +1380,7 @@ function labelFor(type: LiveActivity["type"]) {
       setup_check: "Setup check",
       poll: "Quick poll",
       quiz: "Knowledge check",
+      prioritization: "Capture and shortlist",
       reflection: "Reflection",
       task: "Practice",
       break: "Break",

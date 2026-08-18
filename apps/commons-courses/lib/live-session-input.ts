@@ -16,6 +16,7 @@ const activityTypes: LiveActivityType[] = [
   "setup_check",
   "poll",
   "quiz",
+  "prioritization",
   "reflection",
   "task",
   "break",
@@ -51,6 +52,10 @@ export function createActivity(
     showResults: Boolean(input.showResults),
     allowOther: Boolean(input.allowOther),
     responseStyle: input.responseStyle === "scale" ? "scale" : "cards",
+    entryLabel: clean(input.entryLabel),
+    selectionPrompt: clean(input.selectionPrompt),
+    minItems: clampNumber(input.minItems, 1, 50),
+    maxSelections: clampNumber(input.maxSelections, 1, 10),
     points: clampNumber(input.points, 0, 10_000) || 0,
     options: normalizeOptions(input.options),
   };

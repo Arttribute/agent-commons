@@ -6,7 +6,7 @@ export type CourseMaterialRecord = {
   mimeType: string;
   size: number;
   kind: "presentation" | "pdf";
-  visibility: "course" | "live";
+  visibility: "course" | "live" | "educator";
   fileId?: string;
   storage: "commons" | "gridfs";
   status: string;

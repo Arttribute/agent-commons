@@ -337,6 +337,7 @@ export const educatorCopilotToolCatalog: CopilotToolDefinition[] = [
                   "setup_check",
                   "poll",
                   "quiz",
+                  "prioritization",
                   "reflection",
                   "task",
                   "break",
@@ -380,6 +381,26 @@ export const educatorCopilotToolCatalog: CopilotToolDefinition[] = [
               responseStyle: {
                 type: "string",
                 enum: ["cards", "scale"],
+              },
+              entryLabel: {
+                type: "string",
+                description:
+                  "For prioritization activities, the label learners see while capturing ideas or routines.",
+              },
+              selectionPrompt: {
+                type: "string",
+                description:
+                  "For prioritization activities, the instruction learners see when choosing their shortlist.",
+              },
+              minItems: {
+                type: "number",
+                description:
+                  "For prioritization activities, the minimum number of captured items required before finalising.",
+              },
+              maxSelections: {
+                type: "number",
+                description:
+                  "For prioritization activities, the maximum number of items learners may shortlist.",
               },
               points: { type: "number" },
               options: {

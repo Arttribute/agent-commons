@@ -9,6 +9,7 @@ export type LiveActivityType =
   | "setup_check"
   | "poll"
   | "quiz"
+  | "prioritization"
   | "reflection"
   | "task"
   | "break";
@@ -44,9 +45,29 @@ export type LiveActivity = {
   showResults: boolean;
   allowOther?: boolean;
   responseStyle?: LiveActivityResponseStyle;
+  entryLabel?: string;
+  selectionPrompt?: string;
+  minItems?: number;
+  maxSelections?: number;
   points: number;
   options: LiveActivityOption[];
 };
+
+export type LivePrioritizationItem = {
+  id: string;
+  text: string;
+  selected: boolean;
+};
+
+export type LivePrioritizationResponse = {
+  items: LivePrioritizationItem[];
+  finalized: boolean;
+};
+
+export type LiveResponseValue =
+  | string
+  | string[]
+  | LivePrioritizationResponse;
 
 export type LiveSessionSettings = {
   allowLateJoin: boolean;
@@ -108,7 +129,7 @@ export type LiveParticipantRecord = {
 
 export type LiveResponseRecord = {
   activityId: string;
-  value: string | string[];
+  value: LiveResponseValue;
   correct?: boolean;
   pointsAwarded?: number;
   submittedAt: string;
@@ -122,6 +143,13 @@ export type LiveActivityResults = {
     id: string;
     participantName?: string;
     value: string;
+  }>;
+  prioritizations?: Array<{
+    id: string;
+    participantName?: string;
+    items: string[];
+    selectedItems: string[];
+    finalized: boolean;
   }>;
 };
 

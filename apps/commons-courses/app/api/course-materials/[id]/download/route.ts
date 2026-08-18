@@ -23,6 +23,9 @@ export async function GET(
   const course = await Course.findById(material.courseId);
   if (!course?.published) return NextResponse.json({ error: "Material not found." }, { status: 404 });
   const manages = currentUser.user.role === "admin" || course.educator?.userId?.toString() === currentUser.user.id || Boolean(getCourseCollaboratorRole(course, { userId: currentUser.user.id, email: currentUser.user.email }));
+  if (!manages && material.visibility === "educator") {
+    return NextResponse.json({ error: "This material is limited to course facilitators." }, { status: 403 });
+  }
   if (!manages && material.visibility === "live") {
     const sessionIds = await LiveSession.find({ courseId: material.courseId, "activities.materialId": String(material._id) }).distinct("_id");
     const attended = await LiveParticipant.exists({ sessionId: { $in: sessionIds }, userId: currentUser.user.id });

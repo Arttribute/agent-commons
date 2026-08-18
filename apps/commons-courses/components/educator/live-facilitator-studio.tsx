@@ -67,6 +67,11 @@ const activityChoices: Array<{
   { type: "poll", label: "Poll", hint: "Diagnostic, pulse, or opinion" },
   { type: "quiz", label: "Quiz", hint: "Retrieval with a correct answer" },
   {
+    type: "prioritization",
+    label: "Idea shortlist",
+    hint: "Capture many ideas, then choose priorities",
+  },
+  {
     type: "reflection",
     label: "Reflection",
     hint: "Open response or exit ticket",
@@ -241,6 +246,13 @@ export function LiveFacilitatorStudio({ sessionId }: { sessionId: string }) {
       required: false,
       randomizeOptions: type === "quiz",
       showResults: type === "poll" || type === "quiz" || type === "setup_check",
+      entryLabel: type === "prioritization" ? "Add an idea" : undefined,
+      selectionPrompt:
+        type === "prioritization"
+          ? "Choose the ideas you want to take forward."
+          : undefined,
+      minItems: type === "prioritization" ? 3 : undefined,
+      maxSelections: type === "prioritization" ? 3 : undefined,
       points: type === "quiz" ? 1 : 0,
       options: ["poll", "quiz", "setup_check"].includes(type)
         ? [
@@ -1339,6 +1351,73 @@ function ActivityEditor({
           />
         </Field>
       ) : null}
+      {activity.type === "prioritization" ? (
+        <div className="mt-5 rounded-xl border border-slate-200 bg-slate-50 p-4">
+          <p className="text-xs font-bold uppercase tracking-wide text-slate-600">
+            Capture and shortlist
+          </p>
+          <div className="mt-4 grid gap-4 md:grid-cols-2">
+            <Field label="Entry prompt">
+              <input
+                value={activity.entryLabel || ""}
+                onChange={(event) =>
+                  onChange({ entryLabel: event.target.value })
+                }
+                placeholder="Add a routine"
+                className={inputClass}
+              />
+            </Field>
+            <Field label="Selection prompt">
+              <input
+                value={activity.selectionPrompt || ""}
+                onChange={(event) =>
+                  onChange({ selectionPrompt: event.target.value })
+                }
+                placeholder="Choose what to take forward"
+                className={inputClass}
+              />
+            </Field>
+            <Field label="Minimum entries to finish">
+              <input
+                type="number"
+                min={1}
+                max={50}
+                value={activity.minItems || 3}
+                onChange={(event) =>
+                  onChange({
+                    minItems: Math.max(
+                      1,
+                      Math.min(50, Number(event.target.value) || 1),
+                    ),
+                  })
+                }
+                className={inputClass}
+              />
+            </Field>
+            <Field label="Maximum shortlist size">
+              <input
+                type="number"
+                min={1}
+                max={10}
+                value={activity.maxSelections || 3}
+                onChange={(event) =>
+                  onChange({
+                    maxSelections: Math.max(
+                      1,
+                      Math.min(10, Number(event.target.value) || 1),
+                    ),
+                  })
+                }
+                className={inputClass}
+              />
+            </Field>
+          </div>
+          <p className="mt-3 text-[11px] leading-5 text-slate-500">
+            Learners can add up to 50 entries, save progress, and revise their
+            shortlist while the activity remains open.
+          </p>
+        </div>
+      ) : null}
       <Field label="Private facilitator notes">
         <textarea
           rows={2}
@@ -1648,9 +1727,37 @@ function LiveResults({
             </div>
           ))}
         </div>
-      ) : !activity.options.length ? (
+      ) : !activity.options.length && !results?.prioritizations?.length ? (
         <div className="mt-6 rounded-xl border border-dashed border-slate-200 p-8 text-center text-sm text-slate-400">
           Responses will appear here.
+        </div>
+      ) : null}
+      {results?.prioritizations?.length ? (
+        <div className="mt-5 space-y-3">
+          {results.prioritizations.map((response) => (
+            <div key={response.id} className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+              <div className="flex items-center justify-between gap-3">
+                <p className="text-xs font-bold text-slate-700">
+                  {response.participantName || "Learner response"}
+                </p>
+                <span className="text-[10px] font-bold uppercase tracking-wide text-slate-400">
+                  {response.finalized ? "Shortlist ready" : "In progress"}
+                </span>
+              </div>
+              {response.selectedItems.length ? (
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {response.selectedItems.map((item) => (
+                    <span key={item} className="rounded-full bg-emerald-100 px-2.5 py-1 text-xs font-bold text-emerald-800">
+                      {item}
+                    </span>
+                  ))}
+                </div>
+              ) : null}
+              <p className="mt-3 text-xs leading-5 text-slate-500">
+                {response.items.length} captured
+              </p>
+            </div>
+          ))}
         </div>
       ) : null}
     </div>
