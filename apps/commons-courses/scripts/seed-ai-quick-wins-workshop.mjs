@@ -679,8 +679,6 @@ async function extractPresentationText(bytes) {
 }
 
 async function uploadToCommonsLibrary(assets, principalId, workspaceId) {
-  const apiKey = process.env.AGENT_COMMONS_API_KEY;
-  if (!apiKey) throw new Error("AGENT_COMMONS_API_KEY is required.");
   const form = new FormData();
   for (const asset of assets) {
     form.append(
@@ -691,22 +689,42 @@ async function uploadToCommonsLibrary(assets, principalId, workspaceId) {
   }
   if (workspaceId) form.append("workspaceId", String(workspaceId));
   form.append("storageProvider", "s3");
-  const baseUrl = (
-    process.env.AGENT_COMMONS_API_URL || "https://api.agentcommons.io"
-  ).replace(/\/$/, "");
-  const response = await fetch(`${baseUrl}/v1/files/upload`, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      "x-initiator": String(principalId),
-      "x-owner-id": String(principalId),
-    },
-    body: form,
-  });
+  const adminUploadUrl = process.env.COURSES_ADMIN_UPLOAD_URL?.trim();
+  let response;
+  if (adminUploadUrl) {
+    const adminSecret = process.env.ADMIN_SECRET;
+    if (!adminSecret) throw new Error("ADMIN_SECRET is required.");
+    form.append("ownerEmail", ownerEmail);
+    response = await fetch(adminUploadUrl, {
+      method: "POST",
+      headers: { "x-admin-secret": adminSecret },
+      body: form,
+    });
+  } else {
+    const apiKey = await agentCommonsAccessToken();
+    const baseUrl = (
+      process.env.AGENT_COMMONS_API_URL || "https://api.agentcommons.io"
+    ).replace(/\/$/, "");
+    response = await fetch(`${baseUrl}/v1/files/upload`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "x-initiator": String(principalId),
+        "x-owner-id": String(principalId),
+      },
+      body: form,
+    });
+  }
   const payload = await response.json().catch(() => ({}));
   if (!response.ok || !Array.isArray(payload.data)) {
+    const detail =
+      typeof payload.message === "string"
+        ? payload.message
+        : typeof payload.error === "string"
+          ? payload.error
+          : "Workshop files could not be added to Commons Library.";
     throw new Error(
-      payload.message || "Workshop files could not be added to Commons Library.",
+      `Commons Library upload failed (${response.status}): ${detail}`,
     );
   }
   const byName = new Map(payload.data.map((item) => [item.name, item]));
@@ -719,6 +737,43 @@ async function uploadToCommonsLibrary(assets, principalId, workspaceId) {
     result.set(asset.key, item);
   }
   return result;
+}
+
+async function agentCommonsAccessToken() {
+  if (process.env.AGENT_COMMONS_API_KEY) {
+    return process.env.AGENT_COMMONS_API_KEY;
+  }
+  const issuer = process.env.COMMONS_IDENTITY_ISSUER;
+  const clientId =
+    process.env.AGENT_COMMONS_SERVICE_CLIENT_ID ||
+    process.env.COURSES_VERIFIER_CLIENT_ID;
+  const clientSecret =
+    process.env.AGENT_COMMONS_SERVICE_CLIENT_SECRET ||
+    process.env.COURSES_VERIFIER_CLIENT_SECRET;
+  if (!issuer || !clientId || !clientSecret) {
+    throw new Error(
+      "A Commons API key or Commons Identity service credentials are required.",
+    );
+  }
+  const response = await fetch(`${issuer.replace(/\/$/, "")}/oauth2/token`, {
+    method: "POST",
+    headers: {
+      Authorization: `Basic ${Buffer.from(`${clientId}:${clientSecret}`).toString("base64")}`,
+      "Content-Type": "application/x-www-form-urlencoded",
+    },
+    body: new URLSearchParams({
+      grant_type: "client_credentials",
+      scope: "activity:read",
+      resource: "commons-platform",
+    }),
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok || typeof payload.access_token !== "string") {
+    throw new Error(
+      `Commons Identity token request failed (${response.status}).`,
+    );
+  }
+  return payload.access_token;
 }
 
 async function syncMaterial({
