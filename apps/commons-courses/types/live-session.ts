@@ -2,6 +2,17 @@ export type LiveSessionStatus = "draft" | "lobby" | "live" | "ended";
 
 export type LiveSessionPace = "facilitator" | "learner";
 
+export type LiveSessionPartStatus = "open" | "closed";
+
+export type LiveSessionPart = {
+  id: string;
+  title: string;
+  description?: string;
+  status: LiveSessionPartStatus;
+  pace: LiveSessionPace;
+  activityIds: string[];
+};
+
 export type LiveSessionAccess = "enrolled" | "invited" | "open";
 
 export type LiveActivityType =
@@ -168,8 +179,10 @@ export type LiveSessionRecord = {
   invitedEmails: string[];
   scheduledStart?: string;
   currentActivityId?: string;
+  currentPartId?: string;
   stateVersion: number;
   activities: LiveActivity[];
+  parts: LiveSessionPart[];
   settings: LiveSessionSettings;
   participantCount: number;
   responseCounts: Record<string, number>;
@@ -181,7 +194,9 @@ export type LiveSessionState = {
   status: LiveSessionStatus;
   pace: LiveSessionPace;
   currentActivityId?: string;
+  currentPartId?: string;
   currentActivity?: LiveActivity;
+  parts: LiveSessionPart[];
   learnerCopilot: LiveLearnerCopilotPolicy;
   stateVersion: number;
   activityStatuses: Record<string, LiveActivityStatus>;

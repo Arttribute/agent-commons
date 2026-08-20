@@ -51,6 +51,7 @@ import {
   learnerAvailableActivities,
   resolveLearnerActivitySelection,
 } from "@/lib/live-learner-selection";
+import { effectiveActivityPace } from "@/lib/live-session-parts";
 import type {
   LearnerLiveSession,
   LiveActivity,
@@ -93,12 +94,20 @@ export function LiveLearnerRoom({ sessionId }: { sessionId: string }) {
 
   const applySelection = useCallback((next: LearnerLiveSession) => {
     const lastPresentedActivityId = presentedActivityRef.current;
+    const activePart =
+      next.parts.find((part) => part.id === next.currentPartId) ||
+      next.parts.find((part) => part.status === "open");
+    const activities = activePart
+      ? next.activities.filter((activity) =>
+          activePart.activityIds.includes(activity.id),
+        )
+      : next.activities;
     setSelectedId((selectedActivityId) =>
       resolveLearnerActivitySelection({
-        activities: next.activities,
+        activities,
         currentActivityId: next.currentActivityId,
         lastPresentedActivityId,
-        pace: next.pace,
+        pace: activePart?.pace || next.pace,
         responses: next.responses,
         selectedActivityId,
       }),
@@ -200,6 +209,8 @@ export function LiveLearnerRoom({ sessionId }: { sessionId: string }) {
         status: state.status,
         pace: state.pace,
         currentActivityId: state.currentActivityId,
+        currentPartId: state.currentPartId,
+        parts: state.parts,
         settings: {
           ...current.settings,
           learnerCopilot: state.learnerCopilot,
@@ -281,19 +292,36 @@ export function LiveLearnerRoom({ sessionId }: { sessionId: string }) {
   }, [workbookOpen]);
 
   const activity = session?.activities.find((item) => item.id === selectedId);
-  const activityIndex =
-    session?.activities.findIndex((item) => item.id === selectedId) ?? -1;
+  const { activePart, activeActivities } = useMemo(() => {
+    const part = session
+      ? session.parts.find((item) => item.id === session.currentPartId) ||
+        session.parts.find((item) => item.status === "open")
+      : undefined;
+    return {
+      activePart: part,
+      activeActivities: session
+        ? part
+          ? session.activities.filter((item) =>
+              part.activityIds.includes(item.id),
+            )
+          : session.activities
+        : [],
+    };
+  }, [session]);
+  const activityIndex = activeActivities.findIndex(
+    (item) => item.id === selectedId,
+  );
   const response = activity ? session?.responses[activity.id] : undefined;
   const availableActivities = useMemo(
     () =>
       session
         ? learnerAvailableActivities(
-            session.activities,
+            activeActivities,
             session.currentActivityId,
             session.responses,
           )
         : [],
-    [session],
+    [activeActivities, session],
   );
   const activityPosition = activityIndex >= 0 ? activityIndex + 1 : null;
   const availableActivityIndex = availableActivities.findIndex(
@@ -333,7 +361,12 @@ export function LiveLearnerRoom({ sessionId }: { sessionId: string }) {
         "finalized" in value
           ? Boolean(value.finalized)
           : true;
-      if (session?.pace === "learner" && finalized) goNext();
+      if (
+        session &&
+        effectiveActivityPace(session, activity.id) === "learner" &&
+        finalized
+      )
+        goNext();
     } else setNotice(data.error || "Could not save your response.");
     setSubmitting(false);
   }
@@ -475,18 +508,21 @@ export function LiveLearnerRoom({ sessionId }: { sessionId: string }) {
             <BookOpen className="h-4 w-4" />
             <span className="hidden sm:inline">Activities</span>
             <span className="rounded bg-[var(--course-background)] px-1.5 py-0.5 text-[10px]">
-              {activityPosition || "–"}/{session.activities.length}
+              {activityPosition || "–"}/{activeActivities.length}
             </span>
             <ChevronDown className="hidden h-3.5 w-3.5 opacity-50 sm:block" />
           </button>
         </div>
       </header>
       <div className="mx-auto w-full max-w-[1600px] px-3 py-4 sm:px-6 sm:py-6 lg:px-10 lg:py-8">
+        {session.parts.length ? (
+          <ProgrammePartStrip session={session} activePartId={activePart?.id} />
+        ) : null}
         <section className="min-w-0">
           <div className="mb-3 flex items-center justify-between text-xs opacity-50 sm:mb-4">
             <span>
               {activityPosition
-                ? `Activity ${activityPosition} of ${session.activities.length}`
+                ? `Activity ${activityPosition} of ${activeActivities.length}`
                 : "Waiting for the current activity"}
             </span>
             {activity?.estimatedMinutes ? (
@@ -605,6 +641,66 @@ export function LiveLearnerRoom({ sessionId }: { sessionId: string }) {
   );
 }
 
+function ProgrammePartStrip({
+  session,
+  activePartId,
+}: {
+  session: LearnerLiveSession;
+  activePartId?: string;
+}) {
+  return (
+    <section className="mb-5" aria-label="Programme sessions">
+      <p className="mb-2 text-[10px] font-bold uppercase tracking-[0.18em] opacity-45">
+        Programme sessions
+      </p>
+      <div className="grid gap-2 sm:grid-cols-2 lg:flex">
+        {session.parts.map((part, index) => {
+          const active = part.id === activePartId && part.status === "open";
+          return (
+            <div
+              key={part.id}
+              className={cn(
+                "flex min-w-0 items-center gap-3 rounded-xl border px-3.5 py-3 lg:min-w-64",
+                active
+                  ? "border-[var(--course-primary)] bg-[var(--course-surface)] shadow-sm"
+                  : "border-slate-200 bg-[var(--course-surface)]/60 opacity-70",
+              )}
+            >
+              <span
+                className={cn(
+                  "flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-xs font-bold",
+                  active
+                    ? "bg-[var(--course-primary)] text-[var(--course-on-primary)]"
+                    : "bg-slate-100 text-slate-500",
+                )}
+              >
+                {index + 1}
+              </span>
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-sm font-bold">
+                  {part.title}
+                </span>
+                <span className="mt-0.5 block text-[10px] font-medium opacity-55">
+                  {part.status === "closed"
+                    ? "Not open yet"
+                    : part.pace === "learner"
+                      ? "Move at your own pace"
+                      : "Facilitator guided"}
+                </span>
+              </span>
+              {part.status === "closed" ? (
+                <LockKeyhole className="h-3.5 w-3.5 shrink-0 opacity-50" />
+              ) : (
+                <span className="h-2 w-2 shrink-0 rounded-full bg-emerald-500" />
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
 function EnrollmentRequired({
   gate,
   notice,
@@ -719,7 +815,8 @@ function WorkbookDrawer({
               Activities
             </h2>
             <p className="mt-1 text-xs opacity-55">
-              {session.pace === "facilitator"
+              {(session.parts.find((part) => part.status === "open")?.pace ||
+                session.pace) === "facilitator"
                 ? "Your facilitator controls what appears next."
                 : "Move through the available workbook activities."}
             </p>
@@ -734,57 +831,111 @@ function WorkbookDrawer({
           </button>
         </div>
         <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-3 sm:p-4">
-          <div className="space-y-1.5">
-            {session.activities.map((item, index) => {
-              const locked = item.status === "draft";
-              const selected = item.id === selectedId;
-              const done = Boolean(session.responses[item.id]);
-              const canSelect =
-                selected ||
-                (session.pace === "learner" &&
-                  !locked &&
-                  (item.status === "open" || done));
-              return (
-                <button
-                  key={item.id}
-                  type="button"
-                  disabled={!canSelect}
-                  onClick={() => onSelect(item.id)}
-                  className={cn(
-                    "flex w-full items-center gap-3 rounded-xl border px-3 py-3 text-left transition",
-                    selected
-                      ? "border-transparent bg-[var(--course-primary)] text-[var(--course-on-primary)]"
-                      : "border-transparent hover:border-slate-200 hover:bg-[var(--course-background)]",
-                    !canSelect && !selected && "cursor-default opacity-45",
-                  )}
-                >
-                  <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-current/10 text-[10px] font-bold">
-                    {String(index + 1).padStart(2, "0")}
-                  </span>
-                  <span className="min-w-0 flex-1">
-                    <span className="block text-sm font-bold leading-5">
-                      {item.title || `Activity ${index + 1}`}
+          <div className="space-y-4">
+            {(session.parts.length
+              ? session.parts
+              : [
+                  {
+                    id: "all-activities",
+                    title: "Activities",
+                    status: "open" as const,
+                    pace: session.pace,
+                    activityIds: session.activities.map((item) => item.id),
+                  },
+                ]
+            ).map((part) => (
+              <section key={part.id}>
+                {session.parts.length ? (
+                  <div className="mb-2 flex items-center gap-2 px-2">
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-xs font-bold">
+                        {part.title}
+                      </span>
+                      <span className="text-[10px] opacity-50">
+                        {part.status === "closed"
+                          ? "Not open yet"
+                          : part.pace === "learner"
+                            ? "Self-guided"
+                            : "Facilitator guided"}
+                      </span>
                     </span>
-                    <span className="mt-0.5 block text-[10px] font-bold uppercase tracking-wide opacity-50">
-                      {selected
-                        ? "Showing now"
-                        : done
-                          ? "Completed"
-                          : locked
-                            ? "Upcoming"
-                            : item.status === "closed"
-                              ? "Closed"
-                              : labelFor(item.type)}
-                    </span>
-                  </span>
-                  {locked ? (
-                    <LockKeyhole className="h-3.5 w-3.5 shrink-0" />
-                  ) : done ? (
-                    <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-500" />
-                  ) : null}
-                </button>
-              );
-            })}
+                    {part.status === "closed" ? (
+                      <LockKeyhole className="h-3.5 w-3.5 opacity-40" />
+                    ) : (
+                      <span className="h-2 w-2 rounded-full bg-emerald-500" />
+                    )}
+                  </div>
+                ) : null}
+                {part.status === "open" ? (
+                  <div className="space-y-1.5">
+                    {part.activityIds.flatMap((activityId) => {
+                      const item = session.activities.find(
+                        (activity) => activity.id === activityId,
+                      );
+                      if (!item) return [];
+                      const index = session.activities.findIndex(
+                        (activity) => activity.id === item.id,
+                      );
+                      const locked = item.status === "draft";
+                      const selected = item.id === selectedId;
+                      const done = Boolean(session.responses[item.id]);
+                      const canSelect =
+                        selected ||
+                        (part.pace === "learner" &&
+                          !locked &&
+                          (item.status === "open" || done));
+                      return [
+                        <button
+                          key={item.id}
+                          type="button"
+                          disabled={!canSelect}
+                          onClick={() => onSelect(item.id)}
+                          className={cn(
+                            "flex w-full items-center gap-3 rounded-xl border px-3 py-3 text-left transition",
+                            selected
+                              ? "border-transparent bg-[var(--course-primary)] text-[var(--course-on-primary)]"
+                              : "border-transparent hover:border-slate-200 hover:bg-[var(--course-background)]",
+                            !canSelect &&
+                              !selected &&
+                              "cursor-default opacity-45",
+                          )}
+                        >
+                          <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-current/10 text-[10px] font-bold">
+                            {String(index + 1).padStart(2, "0")}
+                          </span>
+                          <span className="min-w-0 flex-1">
+                            <span className="block text-sm font-bold leading-5">
+                              {item.title || `Activity ${index + 1}`}
+                            </span>
+                            <span className="mt-0.5 block text-[10px] font-bold uppercase tracking-wide opacity-50">
+                              {selected
+                                ? "Showing now"
+                                : done
+                                  ? "Completed"
+                                  : locked
+                                    ? "Upcoming"
+                                    : item.status === "closed"
+                                      ? "Closed"
+                                      : labelFor(item.type)}
+                            </span>
+                          </span>
+                          {locked ? (
+                            <LockKeyhole className="h-3.5 w-3.5 shrink-0" />
+                          ) : done ? (
+                            <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-500" />
+                          ) : null}
+                        </button>,
+                      ];
+                    })}
+                  </div>
+                ) : (
+                  <div className="rounded-xl border border-dashed border-slate-200 px-4 py-4 text-xs leading-5 opacity-55">
+                    This session is visible in your programme and will unlock
+                    when your educator opens it.
+                  </div>
+                )}
+              </section>
+            ))}
           </div>
         </div>
       </section>

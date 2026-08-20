@@ -3,6 +3,7 @@ import type {
   LiveActivity,
   LiveSessionAccess,
   LiveSessionPace,
+  LiveSessionPart,
   LiveSessionSettings,
   LiveSessionStatus,
 } from "@/types/live-session";
@@ -19,8 +20,10 @@ export interface ILiveSession extends Document {
   invitedEmails: string[];
   scheduledStart?: Date;
   currentActivityId?: string;
+  currentPartId?: string;
   stateVersion: number;
   activities: LiveActivity[];
+  parts: LiveSessionPart[];
   settings: LiveSessionSettings;
   createdBy: mongoose.Types.ObjectId;
   createdAt: Date;
@@ -151,6 +154,26 @@ const LiveSessionSettingsSchema = new Schema<LiveSessionSettings>(
   { _id: false },
 );
 
+const LiveSessionPartSchema = new Schema<LiveSessionPart>(
+  {
+    id: { type: String, required: true, trim: true },
+    title: { type: String, required: true, trim: true },
+    description: { type: String, trim: true },
+    status: {
+      type: String,
+      enum: ["open", "closed"],
+      default: "closed",
+    },
+    pace: {
+      type: String,
+      enum: ["facilitator", "learner"],
+      default: "facilitator",
+    },
+    activityIds: { type: [String], default: [] },
+  },
+  { _id: false },
+);
+
 const LiveSessionSchema = new Schema<ILiveSession>(
   {
     courseId: { type: Schema.Types.ObjectId, ref: "Course", required: true },
@@ -176,8 +199,10 @@ const LiveSessionSchema = new Schema<ILiveSession>(
     invitedEmails: { type: [String], default: [] },
     scheduledStart: Date,
     currentActivityId: String,
+    currentPartId: String,
     stateVersion: { type: Number, default: 0, min: 0 },
     activities: { type: [LiveActivitySchema], default: [] },
+    parts: { type: [LiveSessionPartSchema], default: [] },
     settings: { type: LiveSessionSettingsSchema, default: () => ({}) },
     createdBy: { type: Schema.Types.ObjectId, ref: "User", required: true },
   },

@@ -7,6 +7,7 @@ import type {
   LiveScoreCriterion,
   LiveSessionAccess,
   LiveSessionPace,
+  LiveSessionPart,
 } from "@/types/live-session";
 import {
   defaultLiveLearnerCopilotPolicy,
@@ -169,6 +170,49 @@ export function normalizeActivities(input: unknown): LiveActivity[] {
     .filter((activity): activity is LiveActivity => Boolean(activity));
 }
 
+export function normalizeSessionParts(
+  input: unknown,
+  activities: LiveActivity[],
+): LiveSessionPart[] {
+  if (!Array.isArray(input)) return [];
+  const validActivityIds = new Set(activities.map((activity) => activity.id));
+  const assignedActivityIds = new Set<string>();
+  const partIds = new Set<string>();
+  return input.slice(0, 24).flatMap((value, index) => {
+    if (!value || typeof value !== "object") return [];
+    const source = value as Partial<LiveSessionPart>;
+    const sourceId = clean(source.id) || `part-${index + 1}`;
+    const id = sourceId.replace(/[^a-zA-Z0-9_-]/g, "-").slice(0, 80);
+    const title = clean(source.title);
+    if (!id || !title || partIds.has(id)) return [];
+    partIds.add(id);
+    const activityIds = Array.isArray(source.activityIds)
+      ? source.activityIds.flatMap((activityId) => {
+          const normalized = clean(activityId);
+          if (
+            !normalized ||
+            !validActivityIds.has(normalized) ||
+            assignedActivityIds.has(normalized)
+          ) {
+            return [];
+          }
+          assignedActivityIds.add(normalized);
+          return [normalized];
+        })
+      : [];
+    return [
+      {
+        id,
+        title,
+        description: clean(source.description),
+        status: source.status === "open" ? "open" : "closed",
+        pace: source.pace === "learner" ? "learner" : "facilitator",
+        activityIds,
+      },
+    ];
+  });
+}
+
 export function normalizeSessionCreate(input: unknown) {
   const body =
     input && typeof input === "object"
@@ -199,7 +243,10 @@ export function normalizeSessionCreate(input: unknown) {
   };
 }
 
-export function normalizeSessionPatch(input: unknown) {
+export function normalizeSessionPatch(
+  input: unknown,
+  existingActivities: LiveActivity[] = [],
+) {
   const body =
     input && typeof input === "object"
       ? (input as Record<string, unknown>)
@@ -221,8 +268,15 @@ export function normalizeSessionPatch(input: unknown) {
     patch.invitedEmails = normalizeEmails(body.invitedEmails);
   if ("scheduledStart" in body)
     patch.scheduledStart = normalizeDate(body.scheduledStart);
-  if ("activities" in body)
-    patch.activities = normalizeActivities(body.activities);
+  const activities =
+    "activities" in body ? normalizeActivities(body.activities) : undefined;
+  if (activities) patch.activities = activities;
+  if ("parts" in body) {
+    patch.parts = normalizeSessionParts(
+      body.parts,
+      activities || existingActivities,
+    );
+  }
   if (body.settings && typeof body.settings === "object") {
     const settings = body.settings as Record<string, unknown>;
     patch.settings = {

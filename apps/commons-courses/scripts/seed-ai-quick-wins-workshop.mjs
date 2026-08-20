@@ -17,20 +17,170 @@ const slug = "ai-quick-wins-for-leaders";
 const ownerEmail = "bashybaranaba@gmail.com";
 const dryRun = process.argv.includes("--dry-run");
 const force = process.argv.includes("--force");
+const captureMode = process.argv.includes("--capture");
 const previewDir = argument("preview-dir");
 let cachedPdfTools;
-const inputs = {
-  deck: requiredArgument("deck"),
-  workbook: requiredArgument("workbook"),
-  cards: argument("cards"),
-  guide: argument("guide"),
-};
+const inputs = captureMode
+  ? {
+      deck: requiredArgument("deck"),
+      workbook: requiredArgument("workbook"),
+      workbookDocx: requiredArgument("workbook-docx"),
+    }
+  : {
+      deck: requiredArgument("deck"),
+      workbook: requiredArgument("workbook"),
+      cards: argument("cards"),
+      guide: argument("guide"),
+    };
 
 if (!dryRun && !process.env.MONGODB_URI) {
   throw new Error("MONGODB_URI is required.");
 }
 
-await main();
+await (captureMode ? captureMain() : main());
+
+async function captureMain() {
+  const workDir = await mkdtemp(path.join(os.tmpdir(), "quick-wins-capture-"));
+  try {
+    const assets = await prepareCaptureAssets(inputs, workDir);
+    if (dryRun) {
+      console.log(
+        JSON.stringify({
+          dryRun,
+          mode: "capture",
+          files: Object.values(assets).map((asset) => ({
+            name: asset.name,
+            bytes: asset.bytes.length,
+            pages: asset.pages.length,
+          })),
+          activities: createCaptureActivities("preview-material").length,
+        }),
+      );
+      return;
+    }
+    await mongoose.connect(process.env.MONGODB_URI);
+    try {
+      const db = mongoose.connection.db;
+      if (!db) throw new Error("MongoDB connection is unavailable.");
+      const [owner, course] = await Promise.all([
+        db.collection("users").findOne({ email: ownerEmail }),
+        db.collection("courses").findOne({ slug }),
+      ]);
+      if (!owner) throw new Error(`Owner not found: ${ownerEmail}`);
+      if (!course) throw new Error(`Course not found: ${slug}`);
+      if (!owner.identityUserId) {
+        throw new Error(`${ownerEmail} is not connected to Commons Identity.`);
+      }
+      const session = await db.collection("livesessions").findOne({
+        courseId: course._id,
+      });
+      if (!session)
+        throw new Error("AI Quick Wins live programme was not found.");
+      const now = new Date();
+      const commonsFiles = await uploadToCommonsLibrary(
+        Object.values(assets),
+        owner.identityUserId,
+        owner.identityWorkspaceId,
+      );
+      const bucket = new mongo.GridFSBucket(db, {
+        bucketName: "courseMaterials",
+      });
+      const materialByKey = {};
+      for (const asset of Object.values(assets)) {
+        materialByKey[asset.key] = await syncMaterial({
+          db,
+          bucket,
+          course,
+          owner,
+          principalId: owner.identityUserId,
+          asset,
+          commonsFile: commonsFiles.get(asset.key),
+          now,
+        });
+      }
+      const discoverActivities = (session.activities || []).filter(
+        (activity) => !activity.id.startsWith("capture-"),
+      );
+      const captureActivities = createCaptureActivities(
+        String(materialByKey.captureDeck._id),
+      );
+      const activities = [...discoverActivities, ...captureActivities];
+      const discoverPart = {
+        id: "discover",
+        title: "Day 1 · Discover",
+        description:
+          "Map recurring work, unpack task anatomy, and choose the first useful task to offload.",
+        status: "open",
+        pace: "learner",
+        activityIds: discoverActivities.map((activity) => activity.id),
+      };
+      const capturePart = {
+        id: "capture",
+        title: "Day 2 · Capture",
+        description:
+          "Turn the chosen task into a reusable procedure, run it, automate it, and evaluate what breaks.",
+        status: "closed",
+        pace: "facilitator",
+        activityIds: captureActivities.map((activity) => activity.id),
+      };
+      await Promise.all([
+        db.collection("livesessions").updateOne(
+          { _id: session._id },
+          {
+            $set: {
+              title: "AI Quick Wins for Leaders · Live programme",
+              description:
+                "One live programme for Discover, Capture, Expand, and Secure. Educators open each session when the group is ready.",
+              pace: "learner",
+              currentPartId: "discover",
+              activities: activities.map((activity) => ({
+                ...activity,
+                status: activity.id.startsWith("capture-") ? "draft" : "open",
+              })),
+              parts: [discoverPart, capturePart],
+              updatedAt: now,
+            },
+            $inc: { stateVersion: 1 },
+          },
+        ),
+        db.collection("courses").updateOne(
+          { _id: course._id },
+          {
+            $set: {
+              "modules.1.lessons.0.description":
+                "Build a reusable procedure, add a trigger, test it twice, classify failures, and prepare a live demonstration.",
+              updatedAt: now,
+            },
+          },
+        ),
+      ]);
+      console.log(
+        JSON.stringify(
+          {
+            courseId: String(course._id),
+            liveSessionId: String(session._id),
+            joinCode: session.joinCode,
+            discoverActivities: discoverActivities.length,
+            captureActivities: captureActivities.length,
+            parts: [discoverPart, capturePart],
+            materials: Object.fromEntries(
+              Object.entries(materialByKey).map(([key, value]) => [
+                key,
+                { id: String(value._id), name: value.name },
+              ]),
+            ),
+          },
+          null,
+          2,
+        ),
+      );
+    } finally {
+      await mongoose.disconnect();
+    }
+  } finally {
+    await rm(workDir, { recursive: true, force: true });
+  }
+}
 
 async function main() {
   const workDir = await mkdtemp(path.join(os.tmpdir(), "quick-wins-workshop-"));
@@ -697,6 +847,531 @@ function createDiscoverActivities(materialId) {
       2,
     ),
   ];
+}
+
+function createCaptureActivities(materialId) {
+  const field = (id, label, type = "long_text", extra = {}) => ({
+    id,
+    label,
+    type,
+    required: false,
+    ...extra,
+  });
+  const base = (id, title, prompt, slide, minutes, extra = {}) => ({
+    id,
+    type: "content",
+    title,
+    prompt,
+    materialId,
+    materialStartSlide: slide,
+    estimatedMinutes: minutes,
+    status: "draft",
+    required: false,
+    randomizeOptions: false,
+    showResults: false,
+    points: 0,
+    options: [],
+    ...extra,
+  });
+  const worksheet = (
+    id,
+    title,
+    prompt,
+    slide,
+    minutes,
+    worksheetFields,
+    extra = {},
+  ) => ({
+    ...base(id, title, prompt, slide, minutes),
+    type: "worksheet",
+    required: true,
+    worksheetFields,
+    ...extra,
+  });
+  const scale = (id, label) =>
+    field(id, label, "scale", {
+      required: true,
+      min: 0,
+      max: 1,
+      lowLabel: "Not yet",
+      highLabel: "Yes",
+    });
+
+  return [
+    base(
+      "capture-recap",
+      "Where we left off",
+      "Reconnect with the task you selected in Discover and see how its anatomy card becomes an automated task.",
+      1,
+      8,
+      {
+        facilitatorNotes:
+          "Ask learners to keep their Discover task cards available. Tonight they build, test, and demonstrate one real task.",
+      },
+    ),
+    base(
+      "capture-standard",
+      "What good looks like",
+      "Understand the three moves—capture, run, automate—and the seven-test standard for tonight’s build.",
+      8,
+      12,
+    ),
+    worksheet(
+      "capture-extraction",
+      "Extraction prompt and tacit-knowledge questions",
+      "Use your recording transcript to create a draft procedure, then capture the questions that expose what was left unsaid.",
+      12,
+      10,
+      [
+        field(
+          "task-from-discover",
+          "The task I selected in Discover",
+          "short_text",
+          { required: true, section: "Starting point" },
+        ),
+        field(
+          "question-1",
+          "Question 1 the assistant asked that I could not answer immediately",
+          "long_text",
+          { required: true, section: "Tacit knowledge" },
+        ),
+        field("question-2", "Question 2 the assistant asked", "long_text", {
+          section: "Tacit knowledge",
+        }),
+        field("question-3", "Question 3 the assistant asked", "long_text", {
+          section: "Tacit knowledge",
+        }),
+        field(
+          "corrections",
+          "What did the assistant infer incorrectly, and how did you correct it?",
+          "long_text",
+          { section: "Tacit knowledge" },
+        ),
+      ],
+      {
+        sourceActivityId: "discover-final-choice",
+        instructions:
+          "Paste your anatomy card and transcript into your assistant with the extraction prompt shown in the deck. Answer every question in full sentences. If the answer is ‘it depends’, finish the sentence with exactly what it depends on.",
+        successCriteria:
+          "You have a draft procedure plus an explicit record of uncertain assumptions and corrections.",
+      },
+    ),
+    worksheet(
+      "capture-canvas",
+      "The automated-task canvas",
+      "Turn the selected routine into instructions that a colleague—or an automated task—could actually run.",
+      13,
+      20,
+      [
+        field("name", "1. Name it—short and about the task", "short_text", {
+          required: true,
+          section: "Definition",
+        }),
+        field(
+          "preconditions",
+          "2. What must be true before it can start?",
+          "long_text",
+          {
+            required: true,
+            section: "Definition",
+          },
+        ),
+        field(
+          "inputs",
+          "3. Inputs, and where they actually live",
+          "long_text",
+          {
+            required: true,
+            section: "Procedure",
+          },
+        ),
+        field("steps", "4. Steps, in order", "long_text", {
+          required: true,
+          section: "Procedure",
+        }),
+        field("not-use", "5. When should it not be used?", "long_text", {
+          required: true,
+          section: "Boundaries",
+        }),
+        field("never", "6. What must it never do?", "long_text", {
+          required: true,
+          section: "Boundaries",
+        }),
+        field(
+          "decisions",
+          "7. Decision points, and what you weigh at each",
+          "long_text",
+          {
+            required: true,
+            section: "Judgment",
+          },
+        ),
+        field(
+          "exceptions",
+          "8. Exceptions, and what triggers them",
+          "long_text",
+          {
+            required: true,
+            section: "Judgment",
+          },
+        ),
+        field(
+          "quality",
+          "9. Quality bar—what done well looks like",
+          "long_text",
+          {
+            required: true,
+            section: "Quality and control",
+          },
+        ),
+        field(
+          "escalation",
+          "10. What stops and waits for a person—and whom?",
+          "long_text",
+          {
+            required: true,
+            section: "Quality and control",
+          },
+        ),
+        field(
+          "example",
+          "11. One worked example, start to finish",
+          "long_text",
+          {
+            required: true,
+            section: "Example and trigger",
+          },
+        ),
+        field(
+          "description",
+          "12. Description—when should this run?",
+          "long_text",
+          {
+            required: true,
+            section: "Example and trigger",
+            description:
+              "Write this last, after the rest of the procedure is honest.",
+          },
+        ),
+      ],
+      {
+        sourceActivityId: "discover-final-choice",
+        instructions:
+          "Copy the six fields already captured in your Discover anatomy card, then spend your time on the never list, quality bar, escalation, and precise trigger.",
+        successCriteria:
+          "All twelve fields are concrete enough for another person to follow without guessing.",
+      },
+    ),
+    worksheet(
+      "capture-run-and-trigger",
+      "Run it, then put a trigger on it",
+      "Watch the procedure work once on live input before you automate it, then choose where it starts, lands, and stops.",
+      15,
+      20,
+      [
+        field(
+          "live-input",
+          "What fresh, live input did you test it on?",
+          "long_text",
+          {
+            required: true,
+            section: "Run it by hand",
+          },
+        ),
+        field(
+          "observed-output",
+          "What did you observe in the full output?",
+          "long_text",
+          {
+            required: true,
+            section: "Run it by hand",
+          },
+        ),
+        field(
+          "trigger",
+          "The time or event that will trigger it",
+          "long_text",
+          {
+            required: true,
+            section: "Automate it",
+          },
+        ),
+        field(
+          "destination",
+          "Where will the output land—somewhere you already look?",
+          "long_text",
+          {
+            required: true,
+            section: "Automate it",
+          },
+        ),
+        field(
+          "stop",
+          "How do you stop it, and how many seconds does that take?",
+          "long_text",
+          {
+            required: true,
+            section: "Automate it",
+          },
+        ),
+      ],
+      {
+        instructions:
+          "Never automate something you have not watched work once. If you only reach the manual run tonight, record that honestly.",
+      },
+    ),
+    worksheet(
+      "capture-library",
+      "Where this procedure lives",
+      "Make the build organisational knowledge rather than a personal trick on one laptop.",
+      16,
+      5,
+      [
+        field(
+          "location",
+          "Shared folder, workspace, or repository",
+          "long_text",
+          {
+            required: true,
+          },
+        ),
+        field("owner", "Named owner", "short_text", { required: true }),
+        field("author", "Who wrote it?", "short_text"),
+        field("purpose", "What does it do?", "long_text"),
+      ],
+      {
+        successCriteria:
+          "The location is shared and an accountable owner is named.",
+      },
+    ),
+    worksheet(
+      "capture-evaluation",
+      "Score the task and classify what broke",
+      "Run the task twice on live work, score it honestly, then change one thing only before the second run.",
+      17,
+      18,
+      [
+        scale("starts", "It starts itself"),
+        scale("judgment", "It uses my judgment"),
+        scale("consistent", "The output is consistent"),
+        scale("catch-bad", "I would catch a bad output within a day"),
+        scale("lands", "It lands somewhere I already look"),
+        scale("colleague", "Someone else could run it"),
+        scale("stop", "I can stop it in seconds"),
+        field("missed", "Which tests did you miss?", "long_text", {
+          required: true,
+          section: "Failure",
+        }),
+        field(
+          "failure-class",
+          "Failure class: context, constraint, verification, or planning",
+          "short_text",
+          { required: true, section: "Failure" },
+        ),
+        field("run-one", "What failed on run 1?", "long_text", {
+          required: true,
+          section: "Two runs, one change",
+        }),
+        field("change", "The one change you made", "long_text", {
+          required: true,
+          section: "Two runs, one change",
+        }),
+        field("run-two", "Was run 2 better? What changed?", "long_text", {
+          required: true,
+          section: "Two runs, one change",
+        }),
+      ],
+      {
+        instructions:
+          "Five out of seven is a good first build. Context and constraint failures can usually be fixed in the procedure tonight; verification and planning failures become inputs to later sessions.",
+      },
+    ),
+    {
+      ...base(
+        "capture-run-log",
+        "Run log",
+        "Log both runs tonight, then add one card for every daily run or human intervention before Session 3.",
+        18,
+        8,
+      ),
+      type: "card_collection",
+      required: true,
+      minItems: 2,
+      itemTitleFieldId: "date",
+      entryLabel: "Add a run",
+      worksheetFields: [
+        field("date", "Date or run label", "short_text", { required: true }),
+        field(
+          "failure-class",
+          "Class: context, constraint, verification, or planning",
+          "short_text",
+        ),
+        field(
+          "failure",
+          "What failed, or where did you step in?",
+          "long_text",
+          {
+            required: true,
+          },
+        ),
+        field("change", "What did you change?", "long_text"),
+      ],
+      instructions:
+        "The interventions are data, not embarrassment. Add another run whenever the task needs a human to step in.",
+    },
+    worksheet(
+      "capture-demo",
+      "Your three-minute demo card",
+      "Prepare the plain-language story, the actual output, and the honest failure you will show the room.",
+      20,
+      10,
+      [
+        field(
+          "task-cost",
+          "The task, how often it happens, and what it used to cost",
+          "long_text",
+          {
+            required: true,
+          },
+        ),
+        field(
+          "evidence",
+          "What actual run or output will you show?",
+          "long_text",
+          {
+            required: true,
+          },
+        ),
+        field(
+          "failure-fix",
+          "What broke, its class, and whether run 2 improved",
+          "long_text",
+          {
+            required: true,
+          },
+        ),
+        field("question", "One thing you want to ask the room", "long_text"),
+      ],
+      {
+        successCriteria:
+          "The demo shows the output itself and names an honest failure—not just the model or tool used.",
+      },
+    ),
+    base(
+      "capture-what-breaks-next",
+      "What breaks next",
+      "Connect the limits you hit to loops, tools, context, and controls—the components Session 3 adds around your procedure.",
+      24,
+      12,
+    ),
+    worksheet(
+      "capture-assignment",
+      "Let it run, then bring back the wall you hit",
+      "Commit to daily runs and capture the access and information gaps that Session 3 needs to solve.",
+      28,
+      8,
+      [
+        field("start-date", "I will start the daily run on", "date", {
+          required: true,
+          section: "Commitment",
+        }),
+        field(
+          "cannot-reach",
+          "What could the task not do because it could not reach something?",
+          "long_text",
+          {
+            required: true,
+            section: "Questions for Session 3",
+          },
+        ),
+        field(
+          "information-lives",
+          "Where does the information it needs live right now?",
+          "long_text",
+          {
+            required: true,
+            section: "Questions for Session 3",
+          },
+        ),
+        field(
+          "second-task",
+          "Which second task card will you turn into a task?",
+          "short_text",
+          {
+            section: "Build",
+          },
+        ),
+        field(
+          "wall",
+          "The one thing I could not get working tonight",
+          "long_text",
+          {
+            required: true,
+            section: "Bring this back",
+          },
+        ),
+      ],
+      {
+        instructions:
+          "Keep adding to the run log until Session 3. If the information lives in someone’s head, write that down—it is a useful answer.",
+      },
+    ),
+    base(
+      "capture-close",
+      "Commitment and close",
+      "Name the score, the shared location and owner, and the daily-run commitment before leaving the room.",
+      29,
+      2,
+    ),
+  ];
+}
+
+async function prepareCaptureAssets(source, workDir) {
+  const deckBytes = await readFile(source.deck);
+  const deckPdf = await convertToPdf(source.deck, workDir, "capture-deck");
+  const workbookPdf = await readFile(source.workbook);
+  const workbookDocx = await readFile(source.workbookDocx);
+  return {
+    captureDeck: {
+      key: "captureDeck",
+      name: path.basename(source.deck),
+      mimeType:
+        "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+      kind: "presentation",
+      visibility: "course",
+      bytes: deckBytes,
+      pages: await renderPdfPages(deckPdf),
+      textPreview: await extractPresentationText(deckBytes),
+      aliases: ["AI Quick Wins Session 2.pptx"],
+    },
+    captureWorkbookPdf: {
+      key: "captureWorkbookPdf",
+      name: "Session 2 Participant Workbook.pdf",
+      mimeType: "application/pdf",
+      kind: "pdf",
+      visibility: "course",
+      bytes: workbookPdf,
+      pages: [],
+      textPreview: await extractPdfText(workbookPdf),
+    },
+    captureWorkbookDocx: {
+      key: "captureWorkbookDocx",
+      name: "Session 2 Participant Workbook.docx",
+      mimeType:
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      kind: "document",
+      visibility: "course",
+      bytes: workbookDocx,
+      pages: [],
+      textPreview: await extractPdfText(
+        await convertToPdf(
+          source.workbookDocx,
+          workDir,
+          "capture-workbook-docx",
+        ),
+      ),
+    },
+  };
 }
 
 async function prepareAssets(source, workDir) {
