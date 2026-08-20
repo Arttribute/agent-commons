@@ -57,6 +57,19 @@ const LiveWorksheetFieldSchema = new Schema(
   { _id: false },
 );
 
+const LiveScoreCriterionSchema = new Schema(
+  {
+    id: { type: String, required: true, trim: true },
+    label: { type: String, required: true, trim: true },
+    description: { type: String, trim: true },
+    min: { type: Number, required: true, min: 0, max: 20 },
+    max: { type: Number, required: true, min: 1, max: 20 },
+    lowLabel: { type: String, trim: true },
+    highLabel: { type: String, trim: true },
+  },
+  { _id: false },
+);
+
 const LiveActivitySchema = new Schema<LiveActivity>(
   {
     id: { type: String, required: true, trim: true },
@@ -69,6 +82,8 @@ const LiveActivitySchema = new Schema<LiveActivity>(
         "quiz",
         "prioritization",
         "worksheet",
+        "card_collection",
+        "linked_scorecard",
         "reflection",
         "task",
         "break",
@@ -105,6 +120,9 @@ const LiveActivitySchema = new Schema<LiveActivity>(
     minItems: { type: Number, min: 1, max: 50 },
     maxSelections: { type: Number, min: 1, max: 10 },
     worksheetFields: { type: [LiveWorksheetFieldSchema], default: [] },
+    itemTitleFieldId: { type: String, trim: true },
+    sourceActivityId: { type: String, trim: true },
+    scoreCriteria: { type: [LiveScoreCriterionSchema], default: [] },
     points: { type: Number, default: 0, min: 0 },
     options: { type: [LiveActivityOptionSchema], default: [] },
   },

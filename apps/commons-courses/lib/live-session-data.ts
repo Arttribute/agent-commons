@@ -15,6 +15,8 @@ import type {
 } from "@/types/live-session";
 import {
   decodeOtherResponse,
+  normalizeCardCollectionResponse,
+  normalizeLinkedScorecardResponse,
   normalizePrioritizationResponse,
   normalizeWorksheetResponse,
 } from "@/lib/live-response-policy";
@@ -88,6 +90,14 @@ export async function getSessionResults(
         participantId?: { displayName?: string };
       }>,
       revealNames,
+      session.activities.find((item) => item.id === activity.sourceActivityId),
+      responses.filter(
+        (response) => response.activityId === activity.sourceActivityId,
+      ) as unknown as Array<{
+        _id: Types.ObjectId;
+        value: LiveResponseValue;
+        participantId?: { _id?: Types.ObjectId; displayName?: string };
+      }>,
     );
   }
   return results;
@@ -175,9 +185,15 @@ function buildActivityResults(
     _id: Types.ObjectId;
     value: LiveResponseValue;
     correct?: boolean;
-    participantId?: { displayName?: string };
+    participantId?: { _id?: Types.ObjectId; displayName?: string };
   }>,
   revealNames: boolean,
+  sourceActivity?: LiveActivity,
+  sourceResponses: Array<{
+    _id: Types.ObjectId;
+    value: LiveResponseValue;
+    participantId?: { _id?: Types.ObjectId; displayName?: string };
+  }> = [],
 ): LiveActivityResults {
   if (activity.type === "prioritization") {
     return {
@@ -207,19 +223,116 @@ function buildActivityResults(
       worksheets: responses.flatMap((response) => {
         const value = normalizeWorksheetResponse(activity, response.value);
         if (!value) return [];
-        return [{
-          id: String(response._id),
-          participantName: revealNames
-            ? response.participantId?.displayName || "Learner"
-            : undefined,
-          values: (activity.worksheetFields || []).flatMap((field) => {
-            const answer = value.values[field.id];
-            return answer === undefined
-              ? []
-              : [{ fieldId: field.id, label: field.label, value: String(answer) }];
-          }),
-          finalized: value.finalized,
-        }];
+        return [
+          {
+            id: String(response._id),
+            participantName: revealNames
+              ? response.participantId?.displayName || "Learner"
+              : undefined,
+            values: (activity.worksheetFields || []).flatMap((field) => {
+              const answer = value.values[field.id];
+              return answer === undefined
+                ? []
+                : [
+                    {
+                      fieldId: field.id,
+                      label: field.label,
+                      value: String(answer),
+                    },
+                  ];
+            }),
+            finalized: value.finalized,
+          },
+        ];
+      }),
+    };
+  }
+  if (activity.type === "card_collection") {
+    return {
+      total: responses.length,
+      cardCollections: responses.flatMap((response) => {
+        const value = normalizeCardCollectionResponse(activity, response.value);
+        if (!value) return [];
+        return [
+          {
+            id: String(response._id),
+            participantName: revealNames
+              ? response.participantId?.displayName || "Learner"
+              : undefined,
+            items: value.items.map((item) => ({
+              id: item.id,
+              title: String(
+                item.values[activity.itemTitleFieldId || ""] || "Untitled card",
+              ),
+              values: (activity.worksheetFields || []).flatMap((field) => {
+                const answer = item.values[field.id];
+                return answer === undefined
+                  ? []
+                  : [
+                      {
+                        fieldId: field.id,
+                        label: field.label,
+                        value: String(answer),
+                      },
+                    ];
+              }),
+            })),
+            finalized: value.finalized,
+          },
+        ];
+      }),
+    };
+  }
+  if (activity.type === "linked_scorecard" && sourceActivity) {
+    return {
+      total: responses.length,
+      scorecards: responses.flatMap((response) => {
+        const participantId = String(response.participantId?._id || "");
+        const sourceRecord = sourceResponses.find(
+          (candidate) =>
+            String(candidate.participantId?._id || "") === participantId,
+        );
+        const source = normalizeCardCollectionResponse(
+          sourceActivity,
+          sourceRecord?.value,
+        );
+        const value = normalizeLinkedScorecardResponse(
+          activity,
+          response.value,
+          sourceRecord?.value,
+        );
+        if (!source || !value) return [];
+        const titleFieldId =
+          sourceActivity.itemTitleFieldId ||
+          sourceActivity.worksheetFields?.[0]?.id ||
+          "";
+        const titleFor = (id: string) =>
+          String(
+            source.items.find((item) => item.id === id)?.values[titleFieldId] ||
+              "Untitled card",
+          );
+        return [
+          {
+            id: String(response._id),
+            participantName: revealNames
+              ? response.participantId?.displayName || "Learner"
+              : undefined,
+            selectedItemId: value.selectedItemId,
+            selectedTitle: value.selectedItemId
+              ? titleFor(value.selectedItemId)
+              : undefined,
+            selectionReason: value.selectionReason,
+            items: value.items.map((item) => ({
+              sourceItemId: item.sourceItemId,
+              title: titleFor(item.sourceItemId),
+              total: Object.values(item.scores).reduce(
+                (sum, score) => sum + score,
+                0,
+              ),
+            })),
+            finalized: value.finalized,
+          },
+        ];
       }),
     };
   }

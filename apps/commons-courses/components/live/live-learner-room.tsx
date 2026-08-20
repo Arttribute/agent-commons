@@ -40,6 +40,8 @@ import {
   canReviseLiveResponse,
   decodeOtherResponse,
   encodeOtherResponse,
+  isCardCollectionResponse,
+  isLinkedScorecardResponse,
   isPrioritizationResponse,
   isWorksheetResponse,
   isValidLiveResponse,
@@ -54,6 +56,7 @@ import type {
   LiveActivity,
   LiveResponseRecord,
   LiveResponseValue,
+  LiveWorksheetField,
 } from "@/types/live-session";
 import type { LiveSessionState } from "@/types/live-session";
 
@@ -323,7 +326,14 @@ export function LiveLearnerRoom({ sessionId }: { sessionId: string }) {
         sessionRef.current = next;
         return next;
       });
-      if (session?.pace === "learner") goNext();
+      const finalized =
+        value &&
+        typeof value === "object" &&
+        !Array.isArray(value) &&
+        "finalized" in value
+          ? Boolean(value.finalized)
+          : true;
+      if (session?.pace === "learner" && finalized) goNext();
     } else setNotice(data.error || "Could not save your response.");
     setSubmitting(false);
   }
@@ -493,11 +503,20 @@ export function LiveLearnerRoom({ sessionId }: { sessionId: string }) {
               learnerSeed={session.participant.id}
               value={values[activity.id]}
               response={response}
+              sourceActivity={session.activities.find(
+                (item) => item.id === activity.sourceActivityId,
+              )}
+              sourceResponse={
+                activity.sourceActivityId
+                  ? session.responses[activity.sourceActivityId]
+                  : undefined
+              }
               submitting={submitting}
               onChange={(value) =>
                 setValues((current) => ({ ...current, [activity.id]: value }))
               }
               onSubmit={submit}
+              onOpenActivity={setSelectedId}
             />
           ) : (
             <div className="flex min-h-[55dvh] items-center justify-center rounded-2xl border border-slate-200 bg-[var(--course-surface)] p-8 text-center">
@@ -529,9 +548,7 @@ export function LiveLearnerRoom({ sessionId }: { sessionId: string }) {
           {session.pace === "learner" && activity ? (
             <div className="mt-5 flex justify-between">
               <button
-                disabled={
-                  availableActivityIndex <= 0
-                }
+                disabled={availableActivityIndex <= 0}
                 onClick={() => {
                   setSelectedId(
                     availableActivities[availableActivityIndex - 1]?.id ||
@@ -780,17 +797,23 @@ function LearnerActivity({
   learnerSeed,
   value,
   response,
+  sourceActivity,
+  sourceResponse,
   submitting,
   onChange,
   onSubmit,
+  onOpenActivity,
 }: {
   activity: LiveActivity;
   learnerSeed: string;
   value?: LiveResponseValue;
   response?: LiveResponseRecord;
+  sourceActivity?: LiveActivity;
+  sourceResponse?: LiveResponseRecord;
   submitting: boolean;
   onChange: (value: LiveResponseValue) => void;
   onSubmit: (valueOverride?: LiveResponseValue) => void;
+  onOpenActivity: (activityId: string) => void;
 }) {
   const isChoice = activity.options.length > 0;
   const result = activity.status === "closed" && activity.showResults;
@@ -799,9 +822,7 @@ function LearnerActivity({
     ? !sameLiveResponseValue(value, response.value)
     : false;
   const typedOther = decodeOtherResponse(value);
-  const hasValidValue = Boolean(
-    value && isValidLiveResponse(activity, value),
-  );
+  const hasValidValue = Boolean(value && isValidLiveResponse(activity, value));
   return (
     <article className="overflow-hidden rounded-2xl border border-slate-200 bg-[var(--course-surface)]">
       <div className="p-6 sm:p-9">
@@ -868,7 +889,28 @@ function LearnerActivity({
           />
         </div>
       ) : null}
-      {activity.type === "worksheet" ? (
+      {activity.type === "card_collection" ? (
+        <CardCollectionResponsePanel
+          activity={activity}
+          value={value}
+          response={response}
+          submitting={submitting}
+          onChange={onChange}
+          onSubmit={onSubmit}
+        />
+      ) : activity.type === "linked_scorecard" ? (
+        <LinkedScorecardResponsePanel
+          activity={activity}
+          sourceActivity={sourceActivity}
+          sourceResponse={sourceResponse}
+          value={value}
+          response={response}
+          submitting={submitting}
+          onChange={onChange}
+          onSubmit={onSubmit}
+          onOpenActivity={onOpenActivity}
+        />
+      ) : activity.type === "worksheet" ? (
         <WorksheetResponsePanel
           activity={activity}
           value={value}
@@ -1080,6 +1122,535 @@ function LearnerActivity({
   );
 }
 
+function CardCollectionResponsePanel({
+  activity,
+  value,
+  response,
+  submitting,
+  onChange,
+  onSubmit,
+}: {
+  activity: LiveActivity;
+  value?: LiveResponseValue;
+  response?: LiveResponseRecord;
+  submitting: boolean;
+  onChange: (value: LiveResponseValue) => void;
+  onSubmit: (valueOverride?: LiveResponseValue) => void;
+}) {
+  const current = isCardCollectionResponse(value)
+    ? value
+    : { items: [], finalized: false };
+  const [activeId, setActiveId] = useState(current.items[0]?.id || "");
+  const fields = activity.worksheetFields || [];
+  const titleFieldId = activity.itemTitleFieldId || fields[0]?.id;
+  const active = current.items.find((item) => item.id === activeId);
+  const canEdit = activity.status === "open";
+  const changed = response
+    ? !sameLiveResponseValue(current, response.value)
+    : current.items.length > 0;
+  const complete =
+    current.items.length >= (activity.minItems || 1) &&
+    current.items.every((item) =>
+      fields.every(
+        (field) => !field.required || item.values[field.id] !== undefined,
+      ),
+    );
+
+  function changeItems(items: typeof current.items) {
+    onChange({ items, finalized: false });
+  }
+
+  function addCard() {
+    if (!canEdit || current.items.length >= 50) return;
+    const id = crypto.randomUUID();
+    changeItems([...current.items, { id, values: {} }]);
+    setActiveId(id);
+  }
+
+  function updateCard(fieldId: string, nextValue: string | number) {
+    if (!active) return;
+    const values = { ...active.values };
+    if (nextValue === "") delete values[fieldId];
+    else values[fieldId] = nextValue;
+    changeItems(
+      current.items.map((item) =>
+        item.id === active.id ? { ...item, values } : item,
+      ),
+    );
+  }
+
+  function removeCard(id: string) {
+    const items = current.items.filter((item) => item.id !== id);
+    changeItems(items);
+    if (activeId === id) setActiveId(items[0]?.id || "");
+  }
+
+  return (
+    <div className="border-t border-slate-100 bg-[var(--course-background)] p-4 sm:p-7">
+      <div className="mx-auto max-w-5xl">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <p className="text-sm font-bold">Your task anatomy cards</p>
+            <p className="mt-1 text-xs opacity-55">
+              Add as many tasks as useful. Each one stays editable while this
+              activity is open.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={addCard}
+            disabled={!canEdit || current.items.length >= 50}
+            className="inline-flex min-h-10 items-center gap-2 rounded-xl bg-[var(--course-primary)] px-4 text-xs font-bold text-[var(--course-on-primary)] disabled:opacity-40"
+          >
+            <Plus className="h-4 w-4" /> Add task card
+          </button>
+        </div>
+        {current.items.length ? (
+          <div className="mt-5 grid gap-4 lg:grid-cols-[260px_minmax(0,1fr)]">
+            <aside className="space-y-2 rounded-2xl border border-slate-200 bg-[var(--course-surface)] p-3">
+              {current.items.map((item, index) => {
+                const title = String(
+                  item.values[titleFieldId || ""] || "",
+                ).trim();
+                return (
+                  <button
+                    key={item.id}
+                    type="button"
+                    onClick={() => setActiveId(item.id)}
+                    className={cn(
+                      "flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left text-sm transition",
+                      item.id === activeId
+                        ? "bg-[var(--course-primary)] text-[var(--course-on-primary)]"
+                        : "hover:bg-[var(--course-background)]",
+                    )}
+                  >
+                    <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-current/10 text-[10px] font-bold">
+                      {index + 1}
+                    </span>
+                    <span className="min-w-0 flex-1 truncate font-bold">
+                      {title || `Untitled task ${index + 1}`}
+                    </span>
+                  </button>
+                );
+              })}
+            </aside>
+            {active ? (
+              <section className="rounded-2xl border border-slate-200 bg-[var(--course-surface)] p-4 sm:p-6">
+                <div className="flex items-center justify-between gap-3">
+                  <p className="text-xs font-bold uppercase tracking-[0.16em] opacity-50">
+                    Task{" "}
+                    {current.items.findIndex((item) => item.id === active.id) +
+                      1}
+                  </p>
+                  {canEdit ? (
+                    <button
+                      type="button"
+                      onClick={() => removeCard(active.id)}
+                      className="inline-flex items-center gap-1.5 text-xs font-bold text-red-600"
+                    >
+                      <Trash2 className="h-4 w-4" /> Remove
+                    </button>
+                  ) : null}
+                </div>
+                <div className="mt-5 grid gap-5 md:grid-cols-2">
+                  {fields.map((field) => (
+                    <StructuredField
+                      key={field.id}
+                      field={field}
+                      value={active.values[field.id]}
+                      disabled={!canEdit}
+                      onChange={(next) => updateCard(field.id, next)}
+                    />
+                  ))}
+                </div>
+              </section>
+            ) : null}
+          </div>
+        ) : (
+          <button
+            type="button"
+            onClick={addCard}
+            disabled={!canEdit}
+            className="mt-5 flex min-h-48 w-full flex-col items-center justify-center rounded-2xl border border-dashed border-slate-300 bg-[var(--course-surface)] p-8 text-center disabled:opacity-50"
+          >
+            <Plus className="h-6 w-6 opacity-40" />
+            <span className="mt-3 text-sm font-bold">
+              Add your first task card
+            </span>
+            <span className="mt-1 text-xs opacity-50">
+              Unpack one real task at a time.
+            </span>
+          </button>
+        )}
+        {response ? (
+          <Saved message="Task cards saved · You can add or edit cards while this is open" />
+        ) : null}
+        {canEdit && current.items.length ? (
+          <div className="mt-5 grid gap-2 sm:grid-cols-2">
+            <button
+              type="button"
+              onClick={() =>
+                onSubmit({ items: current.items, finalized: false })
+              }
+              disabled={!changed || submitting}
+              className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl border border-slate-300 bg-white px-4 text-sm font-bold text-slate-700 disabled:opacity-40"
+            >
+              <Save className="h-4 w-4" /> Save progress
+            </button>
+            <button
+              type="button"
+              onClick={() =>
+                onSubmit({ items: current.items, finalized: true })
+              }
+              disabled={!complete || submitting}
+              className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl bg-[var(--course-primary)] px-4 text-sm font-bold text-[var(--course-on-primary)] disabled:opacity-40"
+            >
+              {submitting ? (
+                <LoaderCircle className="h-4 w-4 animate-spin" />
+              ) : (
+                <Check className="h-4 w-4" />
+              )}
+              Finish task cards
+            </button>
+          </div>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+function StructuredField({
+  field,
+  value,
+  disabled,
+  onChange,
+}: {
+  field: LiveWorksheetField;
+  value?: string | number;
+  disabled: boolean;
+  onChange: (value: string | number) => void;
+}) {
+  return (
+    <label
+      className={cn("block", field.type === "long_text" && "md:col-span-2")}
+    >
+      <span className="text-sm font-bold leading-6">
+        {field.label}
+        {field.required ? <span className="ml-1 text-red-500">*</span> : null}
+      </span>
+      {field.description ? (
+        <span className="mt-1 block text-xs leading-5 opacity-55">
+          {field.description}
+        </span>
+      ) : null}
+      {field.type === "scale" ? (
+        <div className="mt-3">
+          <div className="grid grid-cols-5 gap-2">
+            {Array.from(
+              { length: (field.max ?? 5) - (field.min ?? 1) + 1 },
+              (_, index) => (field.min ?? 1) + index,
+            ).map((number) => (
+              <button
+                key={number}
+                type="button"
+                disabled={disabled}
+                onClick={() => onChange(number)}
+                className={cn(
+                  "min-h-11 rounded-xl border text-sm font-bold",
+                  value === number
+                    ? "border-[var(--course-primary)] bg-[var(--course-primary)] text-[var(--course-on-primary)]"
+                    : "border-slate-200 bg-white",
+                )}
+              >
+                {number}
+              </button>
+            ))}
+          </div>
+          <div className="mt-2 flex justify-between text-[11px] opacity-50">
+            <span>{field.lowLabel}</span>
+            <span>{field.highLabel}</span>
+          </div>
+        </div>
+      ) : field.type === "long_text" ? (
+        <textarea
+          rows={4}
+          maxLength={10_000}
+          disabled={disabled}
+          value={typeof value === "string" ? value : ""}
+          onChange={(event) => onChange(event.target.value)}
+          placeholder={field.placeholder}
+          className="mt-3 w-full resize-y rounded-xl border border-slate-200 bg-white p-4 text-sm leading-6 text-slate-950 outline-none focus:border-slate-500 disabled:bg-slate-100"
+        />
+      ) : (
+        <input
+          type={field.type === "date" ? "date" : "text"}
+          maxLength={500}
+          disabled={disabled}
+          value={typeof value === "string" ? value : ""}
+          onChange={(event) => onChange(event.target.value)}
+          placeholder={field.placeholder}
+          className="mt-3 w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-950 outline-none focus:border-slate-500 disabled:bg-slate-100"
+        />
+      )}
+    </label>
+  );
+}
+
+function LinkedScorecardResponsePanel({
+  activity,
+  sourceActivity,
+  sourceResponse,
+  value,
+  response,
+  submitting,
+  onChange,
+  onSubmit,
+  onOpenActivity,
+}: {
+  activity: LiveActivity;
+  sourceActivity?: LiveActivity;
+  sourceResponse?: LiveResponseRecord;
+  value?: LiveResponseValue;
+  response?: LiveResponseRecord;
+  submitting: boolean;
+  onChange: (value: LiveResponseValue) => void;
+  onSubmit: (valueOverride?: LiveResponseValue) => void;
+  onOpenActivity: (activityId: string) => void;
+}) {
+  const source = isCardCollectionResponse(sourceResponse?.value)
+    ? sourceResponse.value
+    : undefined;
+  const current = isLinkedScorecardResponse(value)
+    ? value
+    : { items: [], finalized: false };
+  const criteria = activity.scoreCriteria || [];
+  const titleFieldId =
+    sourceActivity?.itemTitleFieldId ||
+    sourceActivity?.worksheetFields?.[0]?.id;
+  const canEdit = activity.status === "open";
+  const changed = response
+    ? !sameLiveResponseValue(current, response.value)
+    : current.items.length > 0;
+
+  if (!source?.items.length) {
+    return (
+      <div className="border-t border-slate-100 bg-[var(--course-background)] p-5 sm:p-7">
+        <div className="mx-auto max-w-xl rounded-2xl border border-slate-200 bg-[var(--course-surface)] p-7 text-center">
+          <p className="text-sm font-bold">Create your task cards first</p>
+          <p className="mt-2 text-xs leading-6 opacity-55">
+            Your saved tasks will appear here automatically—there is nothing to
+            retype.
+          </p>
+          {activity.sourceActivityId ? (
+            <button
+              type="button"
+              onClick={() => onOpenActivity(activity.sourceActivityId || "")}
+              className="mt-5 rounded-xl bg-[var(--course-primary)] px-4 py-3 text-xs font-bold text-[var(--course-on-primary)]"
+            >
+              Open task anatomy cards
+            </button>
+          ) : null}
+        </div>
+      </div>
+    );
+  }
+  const sourceItems = source.items;
+
+  function titleFor(sourceItemId: string) {
+    const item = sourceItems.find((candidate) => candidate.id === sourceItemId);
+    return String(item?.values[titleFieldId || ""] || "Untitled task");
+  }
+
+  function updateScore(
+    sourceItemId: string,
+    criterionId: string,
+    score: number,
+  ) {
+    const existing = current.items.find(
+      (item) => item.sourceItemId === sourceItemId,
+    );
+    const item = {
+      sourceItemId,
+      scores: { ...(existing?.scores || {}), [criterionId]: score },
+    };
+    onChange({
+      ...current,
+      finalized: false,
+      items: existing
+        ? current.items.map((candidate) =>
+            candidate.sourceItemId === sourceItemId ? item : candidate,
+          )
+        : [...current.items, item],
+    });
+  }
+
+  const ready =
+    Boolean(current.selectedItemId) &&
+    Boolean(current.selectionReason?.trim()) &&
+    sourceItems.every((sourceItem) => {
+      const scored = current.items.find(
+        (item) => item.sourceItemId === sourceItem.id,
+      );
+      return criteria.every(
+        (criterion) => scored?.scores[criterion.id] !== undefined,
+      );
+    });
+
+  return (
+    <div className="border-t border-slate-100 bg-[var(--course-background)] p-4 sm:p-7">
+      <div className="mx-auto max-w-5xl space-y-4">
+        <div>
+          <p className="text-sm font-bold">Compare your captured tasks</p>
+          <p className="mt-1 text-xs opacity-55">
+            Score each task, then choose the strongest first task to offload.
+          </p>
+        </div>
+        {sourceItems.map((sourceItem) => {
+          const scored = current.items.find(
+            (item) => item.sourceItemId === sourceItem.id,
+          );
+          const total = Object.values(scored?.scores || {}).reduce(
+            (sum, score) => sum + score,
+            0,
+          );
+          const selected = current.selectedItemId === sourceItem.id;
+          return (
+            <section
+              key={sourceItem.id}
+              className={cn(
+                "overflow-hidden rounded-2xl border bg-[var(--course-surface)]",
+                selected
+                  ? "border-[var(--course-primary)] ring-1 ring-[var(--course-primary)]"
+                  : "border-slate-200",
+              )}
+            >
+              <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 p-4 sm:px-5">
+                <div>
+                  <p className="font-bold">{titleFor(sourceItem.id)}</p>
+                  <p className="mt-1 text-[11px] opacity-50">
+                    Score {total}/
+                    {criteria.reduce(
+                      (sum, criterion) => sum + criterion.max,
+                      0,
+                    )}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  disabled={!canEdit}
+                  onClick={() =>
+                    onChange({
+                      ...current,
+                      selectedItemId: sourceItem.id,
+                      finalized: false,
+                    })
+                  }
+                  className={cn(
+                    "rounded-full border px-3 py-2 text-xs font-bold",
+                    selected
+                      ? "border-[var(--course-primary)] bg-[var(--course-primary)] text-[var(--course-on-primary)]"
+                      : "border-slate-200",
+                  )}
+                >
+                  {selected ? "Chosen first task" : "Choose this task"}
+                </button>
+              </div>
+              <div className="grid gap-4 p-4 sm:p-5 md:grid-cols-2">
+                {criteria.map((criterion) => (
+                  <div key={criterion.id}>
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <p className="text-xs font-bold">{criterion.label}</p>
+                        {criterion.description ? (
+                          <p className="mt-1 text-[11px] leading-5 opacity-50">
+                            {criterion.description}
+                          </p>
+                        ) : null}
+                      </div>
+                      <span className="text-xs font-bold opacity-50">
+                        {scored?.scores[criterion.id] || "–"}
+                      </span>
+                    </div>
+                    <div className="mt-2 grid grid-cols-5 gap-1.5">
+                      {Array.from(
+                        { length: criterion.max - criterion.min + 1 },
+                        (_, index) => criterion.min + index,
+                      ).map((number) => (
+                        <button
+                          key={number}
+                          type="button"
+                          disabled={!canEdit}
+                          onClick={() =>
+                            updateScore(sourceItem.id, criterion.id, number)
+                          }
+                          className={cn(
+                            "min-h-9 rounded-lg border text-xs font-bold",
+                            scored?.scores[criterion.id] === number
+                              ? "border-[var(--course-primary)] bg-[var(--course-primary)] text-[var(--course-on-primary)]"
+                              : "border-slate-200 bg-white",
+                          )}
+                        >
+                          {number}
+                        </button>
+                      ))}
+                    </div>
+                    <div className="mt-1.5 flex justify-between text-[10px] opacity-40">
+                      <span>{criterion.lowLabel}</span>
+                      <span>{criterion.highLabel}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </section>
+          );
+        })}
+        <label className="block rounded-2xl border border-slate-200 bg-[var(--course-surface)] p-4 sm:p-5">
+          <span className="text-sm font-bold">
+            Why is this a safe, useful first build?
+          </span>
+          <textarea
+            rows={3}
+            maxLength={10_000}
+            disabled={!canEdit}
+            value={current.selectionReason || ""}
+            onChange={(event) =>
+              onChange({
+                ...current,
+                selectionReason: event.target.value,
+                finalized: false,
+              })
+            }
+            className="mt-3 w-full resize-y rounded-xl border border-slate-200 bg-white p-4 text-sm leading-6 text-slate-950 outline-none focus:border-slate-500"
+          />
+        </label>
+        {response ? (
+          <Saved message="Scorecard saved · You can revise it while this activity is open" />
+        ) : null}
+        {canEdit ? (
+          <div className="grid gap-2 sm:grid-cols-2">
+            <button
+              type="button"
+              onClick={() => onSubmit({ ...current, finalized: false })}
+              disabled={!changed || submitting}
+              className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl border border-slate-300 bg-white px-4 text-sm font-bold text-slate-700 disabled:opacity-40"
+            >
+              <Save className="h-4 w-4" /> Save progress
+            </button>
+            <button
+              type="button"
+              onClick={() => onSubmit({ ...current, finalized: true })}
+              disabled={!ready || submitting}
+              className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl bg-[var(--course-primary)] px-4 text-sm font-bold text-[var(--course-on-primary)] disabled:opacity-40"
+            >
+              <Check className="h-4 w-4" /> Confirm first task
+            </button>
+          </div>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
 function WorksheetResponsePanel({
   activity,
   value,
@@ -1099,16 +1670,15 @@ function WorksheetResponsePanel({
     ? value
     : { values: {}, finalized: false };
   const fields = activity.worksheetFields || [];
-  const sections = fields.reduce<Array<{ title: string; fields: typeof fields }>>(
-    (groups, field) => {
-      const title = field.section || "Your responses";
-      const existing = groups.find((group) => group.title === title);
-      if (existing) existing.fields.push(field);
-      else groups.push({ title, fields: [field] });
-      return groups;
-    },
-    [],
-  );
+  const sections = fields.reduce<
+    Array<{ title: string; fields: typeof fields }>
+  >((groups, field) => {
+    const title = field.section || "Your responses";
+    const existing = groups.find((group) => group.title === title);
+    if (existing) existing.fields.push(field);
+    else groups.push({ title, fields: [field] });
+    return groups;
+  }, []);
   const answered = fields.filter(
     (field) => current.values[field.id] !== undefined,
   ).length;
@@ -1162,7 +1732,9 @@ function WorksheetResponsePanel({
                   >
                     <span className="text-sm font-bold leading-6">
                       {field.label}
-                      {field.required ? <span className="ml-1 text-red-500">*</span> : null}
+                      {field.required ? (
+                        <span className="ml-1 text-red-500">*</span>
+                      ) : null}
                     </span>
                     {field.description ? (
                       <span className="mt-1 block text-xs leading-5 opacity-55">
@@ -1203,7 +1775,9 @@ function WorksheetResponsePanel({
                         maxLength={10_000}
                         disabled={!canEdit}
                         value={typeof fieldValue === "string" ? fieldValue : ""}
-                        onChange={(event) => update(field.id, event.target.value)}
+                        onChange={(event) =>
+                          update(field.id, event.target.value)
+                        }
                         placeholder={field.placeholder}
                         className="mt-3 w-full resize-y rounded-xl border border-slate-200 bg-white p-4 text-sm leading-6 text-slate-950 outline-none focus:border-slate-500 disabled:bg-slate-100"
                       />
@@ -1213,7 +1787,9 @@ function WorksheetResponsePanel({
                         maxLength={500}
                         disabled={!canEdit}
                         value={typeof fieldValue === "string" ? fieldValue : ""}
-                        onChange={(event) => update(field.id, event.target.value)}
+                        onChange={(event) =>
+                          update(field.id, event.target.value)
+                        }
                         placeholder={field.placeholder}
                         className="mt-3 w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-950 outline-none focus:border-slate-500 disabled:bg-slate-100"
                       />
@@ -1227,7 +1803,9 @@ function WorksheetResponsePanel({
         {response ? (
           <Saved
             message={
-              isWorksheetResponse(response.value) && response.value.finalized && !changed
+              isWorksheetResponse(response.value) &&
+              response.value.finalized &&
+              !changed
                 ? "Workbook section completed"
                 : "Progress saved · You can keep editing while this is open"
             }
@@ -1237,7 +1815,9 @@ function WorksheetResponsePanel({
           <div className="grid gap-2 sm:grid-cols-2">
             <button
               type="button"
-              onClick={() => onSubmit({ values: current.values, finalized: false })}
+              onClick={() =>
+                onSubmit({ values: current.values, finalized: false })
+              }
               disabled={!answered || submitting || !changed}
               className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl border border-slate-300 bg-white px-4 text-sm font-bold text-slate-700 disabled:opacity-40"
             >
@@ -1245,11 +1825,17 @@ function WorksheetResponsePanel({
             </button>
             <button
               type="button"
-              onClick={() => onSubmit({ values: current.values, finalized: true })}
+              onClick={() =>
+                onSubmit({ values: current.values, finalized: true })
+              }
               disabled={!answered || !requiredComplete || submitting}
               className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl bg-[var(--course-primary)] px-4 text-sm font-bold text-[var(--course-on-primary)] disabled:opacity-40"
             >
-              {submitting ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
+              {submitting ? (
+                <LoaderCircle className="h-4 w-4 animate-spin" />
+              ) : (
+                <Check className="h-4 w-4" />
+              )}
               Complete this section
             </button>
           </div>
@@ -1282,8 +1868,7 @@ function PrioritizationResponsePanel({
   const minItems = activity.minItems || 1;
   const selectedCount = current.items.filter((item) => item.selected).length;
   const canEdit = activity.status === "open";
-  const readyToFinish =
-    current.items.length >= minItems && selectedCount > 0;
+  const readyToFinish = current.items.length >= minItems && selectedCount > 0;
   const savedValue = response?.value;
   const changed = savedValue
     ? !sameLiveResponseValue(current, savedValue)
@@ -1413,7 +1998,8 @@ function PrioritizationResponsePanel({
             Choose up to {maxSelections}
           </h2>
           <p className="mt-1 text-xs leading-5 opacity-60">
-            {activity.selectionPrompt || "Choose the ideas you want to take forward."}
+            {activity.selectionPrompt ||
+              "Choose the ideas you want to take forward."}
           </p>
           <div className="mt-4 space-y-2">
             {current.items.map((item) => {
@@ -1571,6 +2157,8 @@ function labelFor(type: LiveActivity["type"]) {
       quiz: "Knowledge check",
       prioritization: "Capture and shortlist",
       worksheet: "Workbook activity",
+      card_collection: "Repeatable cards",
+      linked_scorecard: "Linked scorecard",
       reflection: "Reflection",
       task: "Practice",
       break: "Break",

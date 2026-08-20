@@ -78,6 +78,16 @@ const activityChoices: Array<{
     hint: "Structured fields learners can save and complete",
   },
   {
+    type: "card_collection",
+    label: "Repeatable cards",
+    hint: "Learners add any number of structured cards",
+  },
+  {
+    type: "linked_scorecard",
+    label: "Linked scorecard",
+    hint: "Score and choose from cards captured earlier",
+  },
+  {
     type: "reflection",
     label: "Reflection",
     hint: "Open response or exit ticket",
@@ -260,13 +270,38 @@ export function LiveFacilitatorStudio({ sessionId }: { sessionId: string }) {
       minItems: type === "prioritization" ? 3 : undefined,
       maxSelections: type === "prioritization" ? 3 : undefined,
       worksheetFields:
-        type === "worksheet"
-          ? [{
-              id: crypto.randomUUID(),
-              label: "Workbook question",
-              type: "long_text",
-              required: true,
-            }]
+        type === "worksheet" || type === "card_collection"
+          ? [
+              {
+                id: "card-title",
+                label:
+                  type === "card_collection"
+                    ? "Card title"
+                    : "Workbook question",
+                type: "long_text",
+                required: true,
+              },
+            ]
+          : [],
+      itemTitleFieldId: type === "card_collection" ? "card-title" : undefined,
+      sourceActivityId:
+        type === "linked_scorecard"
+          ? data.session.activities.find(
+              (item) => item.type === "card_collection",
+            )?.id
+          : undefined,
+      scoreCriteria:
+        type === "linked_scorecard"
+          ? [
+              {
+                id: "impact",
+                label: "Impact",
+                min: 1,
+                max: 5,
+                lowLabel: "Low",
+                highLabel: "High",
+              },
+            ]
           : [],
       points: type === "quiz" ? 1 : 0,
       options: ["poll", "quiz", "setup_check"].includes(type)
@@ -741,6 +776,7 @@ export function LiveFacilitatorStudio({ sessionId }: { sessionId: string }) {
             {selected ? (
               <ActivityEditor
                 activity={selected}
+                activities={data.session.activities}
                 materials={materials}
                 labWorkspaces={labWorkspaces}
                 index={data.session.activities.findIndex(
@@ -1232,6 +1268,7 @@ function AddMenu({ onAdd }: { onAdd: (type: LiveActivityType) => void }) {
 
 function ActivityEditor({
   activity,
+  activities,
   materials,
   labWorkspaces,
   index,
@@ -1240,6 +1277,7 @@ function ActivityEditor({
   onRemove,
 }: {
   activity: LiveActivity;
+  activities: LiveActivity[];
   materials: CourseMaterialRecord[];
   labWorkspaces: LabWorkspaceRecord[];
   index: number;
@@ -1456,15 +1494,19 @@ function ActivityEditor({
           </p>
         </div>
       ) : null}
-      {activity.type === "worksheet" ? (
+      {activity.type === "worksheet" || activity.type === "card_collection" ? (
         <div className="mt-5 rounded-xl border border-slate-200 bg-slate-50 p-4">
           <div className="flex items-center justify-between gap-3">
             <div>
               <p className="text-xs font-bold uppercase tracking-wide text-slate-600">
-                Worksheet fields
+                {activity.type === "card_collection"
+                  ? "Fields on every card"
+                  : "Worksheet fields"}
               </p>
               <p className="mt-1 text-[11px] text-slate-500">
-                Group related questions with the same section title.
+                {activity.type === "card_collection"
+                  ? "Learners can create up to 50 cards with this same structure."
+                  : "Group related questions with the same section title."}
               </p>
             </div>
             <button
@@ -1476,8 +1518,48 @@ function ActivityEditor({
             </button>
           </div>
           <div className="mt-4 space-y-3">
+            {activity.type === "card_collection" ? (
+              <div className="grid gap-3 rounded-xl border border-slate-200 bg-white p-4 md:grid-cols-2">
+                <Field label="Card title field">
+                  <select
+                    value={activity.itemTitleFieldId || ""}
+                    onChange={(event) =>
+                      onChange({ itemTitleFieldId: event.target.value })
+                    }
+                    className={inputClass}
+                  >
+                    <option value="">Choose a field</option>
+                    {(activity.worksheetFields || []).map((field) => (
+                      <option key={field.id} value={field.id}>
+                        {field.label}
+                      </option>
+                    ))}
+                  </select>
+                </Field>
+                <Field label="Minimum cards to finish">
+                  <input
+                    type="number"
+                    min={1}
+                    max={50}
+                    value={activity.minItems || 1}
+                    onChange={(event) =>
+                      onChange({
+                        minItems: Math.max(
+                          1,
+                          Math.min(50, Number(event.target.value) || 1),
+                        ),
+                      })
+                    }
+                    className={inputClass}
+                  />
+                </Field>
+              </div>
+            ) : null}
             {(activity.worksheetFields || []).map((field, fieldIndex) => (
-              <div key={field.id} className="rounded-xl border border-slate-200 bg-white p-4">
+              <div
+                key={field.id}
+                className="rounded-xl border border-slate-200 bg-white p-4"
+              >
                 <div className="flex items-center justify-between gap-3">
                   <span className="text-[10px] font-bold uppercase tracking-wide text-slate-400">
                     Field {fieldIndex + 1}
@@ -1486,9 +1568,9 @@ function ActivityEditor({
                     type="button"
                     onClick={() =>
                       onChange({
-                        worksheetFields: (activity.worksheetFields || []).filter(
-                          (candidate) => candidate.id !== field.id,
-                        ),
+                        worksheetFields: (
+                          activity.worksheetFields || []
+                        ).filter((candidate) => candidate.id !== field.id),
                       })
                     }
                     className="p-1 text-slate-300 hover:text-red-600"
@@ -1502,7 +1584,9 @@ function ActivityEditor({
                     <input
                       value={field.label}
                       onChange={(event) =>
-                        updateWorksheetField(field.id, { label: event.target.value })
+                        updateWorksheetField(field.id, {
+                          label: event.target.value,
+                        })
                       }
                       className={inputClass}
                     />
@@ -1512,7 +1596,8 @@ function ActivityEditor({
                       value={field.type}
                       onChange={(event) =>
                         updateWorksheetField(field.id, {
-                          type: event.target.value as LiveWorksheetField["type"],
+                          type: event.target
+                            .value as LiveWorksheetField["type"],
                         })
                       }
                       className={inputClass}
@@ -1527,7 +1612,9 @@ function ActivityEditor({
                     <input
                       value={field.section || ""}
                       onChange={(event) =>
-                        updateWorksheetField(field.id, { section: event.target.value })
+                        updateWorksheetField(field.id, {
+                          section: event.target.value,
+                        })
                       }
                       placeholder="Optional group heading"
                       className={inputClass}
@@ -1537,7 +1624,9 @@ function ActivityEditor({
                     <input
                       value={field.description || ""}
                       onChange={(event) =>
-                        updateWorksheetField(field.id, { description: event.target.value })
+                        updateWorksheetField(field.id, {
+                          description: event.target.value,
+                        })
                       }
                       placeholder="Optional guidance"
                       className={inputClass}
@@ -1552,7 +1641,9 @@ function ActivityEditor({
                           max={20}
                           value={field.min ?? 1}
                           onChange={(event) =>
-                            updateWorksheetField(field.id, { min: Number(event.target.value) })
+                            updateWorksheetField(field.id, {
+                              min: Number(event.target.value),
+                            })
                           }
                           className={inputClass}
                         />
@@ -1564,7 +1655,9 @@ function ActivityEditor({
                           max={20}
                           value={field.max ?? 5}
                           onChange={(event) =>
-                            updateWorksheetField(field.id, { max: Number(event.target.value) })
+                            updateWorksheetField(field.id, {
+                              max: Number(event.target.value),
+                            })
                           }
                           className={inputClass}
                         />
@@ -1575,9 +1668,159 @@ function ActivityEditor({
                 <div className="mt-3">
                   <Toggle
                     checked={field.required}
-                    onChange={(required) => updateWorksheetField(field.id, { required })}
+                    onChange={(required) =>
+                      updateWorksheetField(field.id, { required })
+                    }
                     label="Required to complete"
                   />
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : null}
+      {activity.type === "linked_scorecard" ? (
+        <div className="mt-5 rounded-xl border border-slate-200 bg-slate-50 p-4">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <p className="text-xs font-bold uppercase tracking-wide text-slate-600">
+                Linked scoring criteria
+              </p>
+              <p className="mt-1 text-[11px] text-slate-500">
+                Learners score cards they captured in an earlier repeatable-card
+                activity.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() =>
+                onChange({
+                  scoreCriteria: [
+                    ...(activity.scoreCriteria || []),
+                    {
+                      id: crypto.randomUUID(),
+                      label: "New criterion",
+                      min: 1,
+                      max: 5,
+                    },
+                  ],
+                })
+              }
+              className="inline-flex items-center gap-1 text-xs font-bold text-slate-700"
+            >
+              <Plus className="h-3.5 w-3.5" /> Add criterion
+            </button>
+          </div>
+          <Field label="Source card activity">
+            <select
+              value={activity.sourceActivityId || ""}
+              onChange={(event) =>
+                onChange({ sourceActivityId: event.target.value })
+              }
+              className={inputClass}
+            >
+              <option value="">Choose repeatable cards</option>
+              {activities
+                .filter(
+                  (item) =>
+                    item.type === "card_collection" && item.id !== activity.id,
+                )
+                .map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {item.title}
+                  </option>
+                ))}
+            </select>
+          </Field>
+          <div className="mt-4 space-y-3">
+            {(activity.scoreCriteria || []).map((criterion, criterionIndex) => (
+              <div
+                key={criterion.id}
+                className="rounded-xl border border-slate-200 bg-white p-4"
+              >
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] font-bold uppercase tracking-wide text-slate-400">
+                    Criterion {criterionIndex + 1}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      onChange({
+                        scoreCriteria: (activity.scoreCriteria || []).filter(
+                          (item) => item.id !== criterion.id,
+                        ),
+                      })
+                    }
+                    className="p-1 text-slate-300 hover:text-red-600"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </button>
+                </div>
+                <div className="mt-3 grid gap-3 md:grid-cols-2">
+                  <Field label="Label">
+                    <input
+                      value={criterion.label}
+                      onChange={(event) =>
+                        onChange({
+                          scoreCriteria: (activity.scoreCriteria || []).map(
+                            (item) =>
+                              item.id === criterion.id
+                                ? { ...item, label: event.target.value }
+                                : item,
+                          ),
+                        })
+                      }
+                      className={inputClass}
+                    />
+                  </Field>
+                  <Field label="Help text">
+                    <input
+                      value={criterion.description || ""}
+                      onChange={(event) =>
+                        onChange({
+                          scoreCriteria: (activity.scoreCriteria || []).map(
+                            (item) =>
+                              item.id === criterion.id
+                                ? { ...item, description: event.target.value }
+                                : item,
+                          ),
+                        })
+                      }
+                      className={inputClass}
+                    />
+                  </Field>
+                  <Field label="Low-end label">
+                    <input
+                      value={criterion.lowLabel || ""}
+                      onChange={(event) =>
+                        onChange({
+                          scoreCriteria: (activity.scoreCriteria || []).map(
+                            (item) =>
+                              item.id === criterion.id
+                                ? { ...item, lowLabel: event.target.value }
+                                : item,
+                          ),
+                        })
+                      }
+                      className={inputClass}
+                    />
+                  </Field>
+                  <Field label="High-end label">
+                    <input
+                      value={criterion.highLabel || ""}
+                      onChange={(event) =>
+                        onChange({
+                          scoreCriteria: (activity.scoreCriteria || []).map(
+                            (item) =>
+                              item.id === criterion.id
+                                ? { ...item, highLabel: event.target.value }
+                                : item,
+                          ),
+                        })
+                      }
+                      className={inputClass}
+                    />
+                  </Field>
                 </div>
               </div>
             ))}
@@ -1895,7 +2138,9 @@ function LiveResults({
         </div>
       ) : !activity.options.length &&
         !results?.prioritizations?.length &&
-        !results?.worksheets?.length ? (
+        !results?.worksheets?.length &&
+        !results?.cardCollections?.length &&
+        !results?.scorecards?.length ? (
         <div className="mt-6 rounded-xl border border-dashed border-slate-200 p-8 text-center text-sm text-slate-400">
           Responses will appear here.
         </div>
@@ -1903,7 +2148,10 @@ function LiveResults({
       {results?.prioritizations?.length ? (
         <div className="mt-5 space-y-3">
           {results.prioritizations.map((response) => (
-            <div key={response.id} className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+            <div
+              key={response.id}
+              className="rounded-xl border border-slate-200 bg-slate-50 p-4"
+            >
               <div className="flex items-center justify-between gap-3">
                 <p className="text-xs font-bold text-slate-700">
                   {response.participantName || "Learner response"}
@@ -1915,7 +2163,10 @@ function LiveResults({
               {response.selectedItems.length ? (
                 <div className="mt-3 flex flex-wrap gap-2">
                   {response.selectedItems.map((item) => (
-                    <span key={item} className="rounded-full bg-emerald-100 px-2.5 py-1 text-xs font-bold text-emerald-800">
+                    <span
+                      key={item}
+                      className="rounded-full bg-emerald-100 px-2.5 py-1 text-xs font-bold text-emerald-800"
+                    >
                       {item}
                     </span>
                   ))}
@@ -1931,11 +2182,15 @@ function LiveResults({
       {results?.worksheets?.length ? (
         <div className="mt-5 space-y-3">
           {results.worksheets.map((response) => (
-            <details key={response.id} className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+            <details
+              key={response.id}
+              className="rounded-xl border border-slate-200 bg-slate-50 p-4"
+            >
               <summary className="cursor-pointer list-none text-xs font-bold text-slate-700">
                 <span>{response.participantName || "Learner response"}</span>
                 <span className="ml-2 text-[10px] uppercase tracking-wide text-slate-400">
-                  {response.finalized ? "Completed" : "In progress"} · {response.values.length} fields
+                  {response.finalized ? "Completed" : "In progress"} ·{" "}
+                  {response.values.length} fields
                 </span>
               </summary>
               <dl className="mt-4 space-y-3">
@@ -1951,6 +2206,89 @@ function LiveResults({
                 ))}
               </dl>
             </details>
+          ))}
+        </div>
+      ) : null}
+      {results?.cardCollections?.length ? (
+        <div className="mt-5 space-y-3">
+          {results.cardCollections.map((response) => (
+            <details
+              key={response.id}
+              className="rounded-xl border border-slate-200 bg-slate-50 p-4"
+            >
+              <summary className="cursor-pointer list-none text-xs font-bold text-slate-700">
+                {response.participantName || "Learner response"}
+                <span className="ml-2 text-[10px] uppercase tracking-wide text-slate-400">
+                  {response.finalized ? "Completed" : "In progress"} ·{" "}
+                  {response.items.length} cards
+                </span>
+              </summary>
+              <div className="mt-4 space-y-3">
+                {response.items.map((item) => (
+                  <div
+                    key={item.id}
+                    className="rounded-xl border border-slate-200 bg-white p-4"
+                  >
+                    <p className="text-sm font-bold text-slate-800">
+                      {item.title}
+                    </p>
+                    <dl className="mt-3 grid gap-3 md:grid-cols-2">
+                      {item.values.map((answer) => (
+                        <div key={answer.fieldId}>
+                          <dt className="text-[10px] font-bold uppercase tracking-wide text-slate-400">
+                            {answer.label}
+                          </dt>
+                          <dd className="mt-1 whitespace-pre-wrap text-xs leading-5 text-slate-700">
+                            {answer.value}
+                          </dd>
+                        </div>
+                      ))}
+                    </dl>
+                  </div>
+                ))}
+              </div>
+            </details>
+          ))}
+        </div>
+      ) : null}
+      {results?.scorecards?.length ? (
+        <div className="mt-5 space-y-3">
+          {results.scorecards.map((response) => (
+            <div
+              key={response.id}
+              className="rounded-xl border border-slate-200 bg-slate-50 p-4"
+            >
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <p className="text-xs font-bold text-slate-700">
+                    {response.participantName || "Learner response"}
+                  </p>
+                  <p className="mt-1 text-sm font-bold text-slate-950">
+                    {response.selectedTitle || "Selection in progress"}
+                  </p>
+                </div>
+                <span className="text-[10px] font-bold uppercase tracking-wide text-slate-400">
+                  {response.finalized ? "Confirmed" : "In progress"}
+                </span>
+              </div>
+              {response.selectionReason ? (
+                <p className="mt-3 text-xs leading-5 text-slate-600">
+                  {response.selectionReason}
+                </p>
+              ) : null}
+              <div className="mt-3 flex flex-wrap gap-2">
+                {response.items
+                  .sort((a, b) => b.total - a.total)
+                  .map((item) => (
+                    <span
+                      key={item.sourceItemId}
+                      className="rounded-full bg-white px-2.5 py-1 text-[11px] font-bold text-slate-600"
+                    >
+                      {item.title} · {item.total}
+                    </span>
+                  ))}
+              </div>
+            </div>
           ))}
         </div>
       ) : null}

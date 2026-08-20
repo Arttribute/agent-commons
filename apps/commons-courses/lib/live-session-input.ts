@@ -4,6 +4,7 @@ import type {
   LiveActivityOption,
   LiveActivityType,
   LiveWorksheetField,
+  LiveScoreCriterion,
   LiveSessionAccess,
   LiveSessionPace,
 } from "@/types/live-session";
@@ -19,6 +20,8 @@ const activityTypes: LiveActivityType[] = [
   "quiz",
   "prioritization",
   "worksheet",
+  "card_collection",
+  "linked_scorecard",
   "reflection",
   "task",
   "break",
@@ -59,9 +62,39 @@ export function createActivity(
     minItems: clampNumber(input.minItems, 1, 50),
     maxSelections: clampNumber(input.maxSelections, 1, 10),
     worksheetFields: normalizeWorksheetFields(input.worksheetFields),
+    itemTitleFieldId: clean(input.itemTitleFieldId),
+    sourceActivityId: clean(input.sourceActivityId),
+    scoreCriteria: normalizeScoreCriteria(input.scoreCriteria),
     points: clampNumber(input.points, 0, 10_000) || 0,
     options: normalizeOptions(input.options),
   };
+}
+
+function normalizeScoreCriteria(input: unknown): LiveScoreCriterion[] {
+  if (!Array.isArray(input)) return [];
+  const seen = new Set<string>();
+  return input.slice(0, 20).flatMap((value, index) => {
+    if (!value || typeof value !== "object") return [];
+    const source = value as Partial<LiveScoreCriterion>;
+    const sourceId = clean(source.id) || `criterion-${index + 1}`;
+    const id = sourceId.replace(/[^a-zA-Z0-9_-]/g, "-").slice(0, 80);
+    const label = clean(source.label);
+    if (!id || !label || seen.has(id)) return [];
+    seen.add(id);
+    const min = clampNumber(source.min, 0, 20) ?? 1;
+    const max = clampNumber(source.max, min, 20) ?? 5;
+    return [
+      {
+        id,
+        label,
+        description: clean(source.description),
+        min,
+        max,
+        lowLabel: clean(source.lowLabel),
+        highLabel: clean(source.highLabel),
+      },
+    ];
+  });
 }
 
 function normalizeWorksheetFields(input: unknown): LiveWorksheetField[] {
@@ -79,21 +112,27 @@ function normalizeWorksheetFields(input: unknown): LiveWorksheetField[] {
     const type = allowedTypes.has(String(source.type))
       ? (source.type as LiveWorksheetField["type"])
       : "short_text";
-    const min = type === "scale" ? clampNumber(source.min, 0, 20) ?? 1 : undefined;
-    const max = type === "scale" ? clampNumber(source.max, min || 1, 20) ?? 5 : undefined;
-    return [{
-      id,
-      label,
-      type,
-      section: clean(source.section),
-      description: clean(source.description),
-      placeholder: clean(source.placeholder),
-      required: Boolean(source.required),
-      min,
-      max,
-      lowLabel: clean(source.lowLabel),
-      highLabel: clean(source.highLabel),
-    }];
+    const min =
+      type === "scale" ? (clampNumber(source.min, 0, 20) ?? 1) : undefined;
+    const max =
+      type === "scale"
+        ? (clampNumber(source.max, min || 1, 20) ?? 5)
+        : undefined;
+    return [
+      {
+        id,
+        label,
+        type,
+        section: clean(source.section),
+        description: clean(source.description),
+        placeholder: clean(source.placeholder),
+        required: Boolean(source.required),
+        min,
+        max,
+        lowLabel: clean(source.lowLabel),
+        highLabel: clean(source.highLabel),
+      },
+    ];
   });
 }
 

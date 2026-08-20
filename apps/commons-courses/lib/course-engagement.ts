@@ -1,6 +1,8 @@
 import type { LiveActivity } from "../types/live-session";
 import type { LiveResponseValue } from "../types/live-session";
 import {
+  normalizeCardCollectionResponse,
+  normalizeLinkedScorecardResponse,
   normalizePrioritizationResponse,
   normalizeWorksheetResponse,
 } from "./live-response-policy.ts";
@@ -67,6 +69,44 @@ function responseLabel(activity: LiveActivity, value: LiveResponseValue) {
       .join(" · ");
     return `${response.finalized ? "Completed" : "In progress"} · ${answered}/${total} fields${preview ? ` · ${preview}` : ""}`;
   }
+  if (activity.type === "card_collection") {
+    const response = normalizeCardCollectionResponse(activity, value);
+    if (!response) return "No cards saved";
+    const titleFieldId =
+      activity.itemTitleFieldId || activity.worksheetFields?.[0]?.id || "";
+    const preview = response.items
+      .map((item) => String(item.values[titleFieldId] || "Untitled card"))
+      .slice(0, 3)
+      .join("; ");
+    return `${response.finalized ? "Completed" : "In progress"} · ${response.items.length} cards${preview ? ` · ${preview}` : ""}`;
+  }
+  if (activity.type === "linked_scorecard") {
+    const sourceLike = {
+      items: [{ id: "placeholder", values: {} }],
+      finalized: false,
+    };
+    const raw =
+      value && typeof value === "object" && !Array.isArray(value)
+        ? (value as {
+            items?: Array<{ sourceItemId?: string }>;
+            selectedItemId?: string;
+            finalized?: boolean;
+          })
+        : undefined;
+    if (!raw?.items?.length) return "No scorecard progress saved";
+    sourceLike.items = raw.items.flatMap((item) =>
+      typeof item.sourceItemId === "string"
+        ? [{ id: item.sourceItemId, values: {} }]
+        : [],
+    );
+    const response = normalizeLinkedScorecardResponse(
+      activity,
+      value,
+      sourceLike,
+    );
+    if (!response) return "Scorecard in progress";
+    return `${response.finalized ? "Confirmed" : "In progress"} · ${response.items.length} candidates scored${response.selectedItemId ? " · first task selected" : ""}`;
+  }
   const values = Array.isArray(value) ? value : [value];
   return values
     .map((item) => {
@@ -75,7 +115,10 @@ function responseLabel(activity: LiveActivity, value: LiveResponseValue) {
         : undefined;
       if (other !== undefined) return other;
       if (item === "complete") return "Completed";
-      return activity.options.find((option) => option.id === item)?.label || String(item);
+      return (
+        activity.options.find((option) => option.id === item)?.label ||
+        String(item)
+      );
     })
     .join(", ");
 }
@@ -86,60 +129,89 @@ export function buildCourseEngagement(args: {
   responses: CourseEngagementResponse[];
 }) {
   const { activities, participants, responses } = args;
-  const participantById = new Map(participants.map((item) => [id(item._id), item]));
+  const participantById = new Map(
+    participants.map((item) => [id(item._id), item]),
+  );
   const responseActivities = activities.filter(
-    (activity) => activity.status !== "draft" && activity.type !== "content" && activity.type !== "break",
+    (activity) =>
+      activity.status !== "draft" &&
+      activity.type !== "content" &&
+      activity.type !== "break",
   );
-  const responseActivityIds = new Set(responseActivities.map((activity) => activity.id));
-  const meaningfulResponses = responses.filter((response) => responseActivityIds.has(response.activityId));
-  const engaged = new Set(meaningfulResponses.map((response) => id(response.userId)));
+  const responseActivityIds = new Set(
+    responseActivities.map((activity) => activity.id),
+  );
+  const meaningfulResponses = responses.filter((response) =>
+    responseActivityIds.has(response.activityId),
+  );
+  const engaged = new Set(
+    meaningfulResponses.map((response) => id(response.userId)),
+  );
   const quizResponses = responses.filter((response) =>
-    activities.some((activity) => activity.id === response.activityId && activity.type === "quiz"),
+    activities.some(
+      (activity) =>
+        activity.id === response.activityId && activity.type === "quiz",
+    ),
   );
-  const quizCorrect = quizResponses.filter((response) => response.correct).length;
+  const quizCorrect = quizResponses.filter(
+    (response) => response.correct,
+  ).length;
 
   const summary: EngagementSummary = {
     attendees: participants.length,
     engagedLearners: engaged.size,
     participationRate: percent(engaged.size, participants.length),
     responseCount: responses.length,
-    quizAccuracy: quizResponses.length ? percent(quizCorrect, quizResponses.length) : undefined,
+    quizAccuracy: quizResponses.length
+      ? percent(quizCorrect, quizResponses.length)
+      : undefined,
   };
 
-  const activityInsights: EngagementActivity[] = activities.map((activity, index) => {
-    const activityResponses = responses.filter((response) => response.activityId === activity.id);
-    const correct = activityResponses.filter((response) => response.correct).length;
-    const values = activityResponses.flatMap((response) =>
-      Array.isArray(response.value)
-        ? response.value
-        : typeof response.value === "string"
-          ? [response.value]
-          : [],
-    );
-    return {
-      id: activity.id,
-      index: index + 1,
-      title: activity.title,
-      type: activity.type,
-      responseCount: activityResponses.length,
-      responseRate: percent(activityResponses.length, participants.length),
-      correctRate:
-        activity.type === "quiz" && activityResponses.length
-          ? percent(correct, activityResponses.length)
-          : undefined,
-      options: activity.options.map((option) => {
-        const count = values.filter((value) => value === option.id).length;
-        return { label: option.label, count, percent: percent(count, activityResponses.length) };
-      }),
-      responses: activityResponses.map((response) => ({
-        participantName:
-          participantById.get(id(response.participantId))?.displayName || "Learner",
-        userId: id(response.userId),
-        value: responseLabel(activity, response.value),
-        submittedAt: new Date(response.submittedAt).toISOString(),
-      })),
-    };
-  });
+  const activityInsights: EngagementActivity[] = activities.map(
+    (activity, index) => {
+      const activityResponses = responses.filter(
+        (response) => response.activityId === activity.id,
+      );
+      const correct = activityResponses.filter(
+        (response) => response.correct,
+      ).length;
+      const values = activityResponses.flatMap((response) =>
+        Array.isArray(response.value)
+          ? response.value
+          : typeof response.value === "string"
+            ? [response.value]
+            : [],
+      );
+      return {
+        id: activity.id,
+        index: index + 1,
+        title: activity.title,
+        type: activity.type,
+        responseCount: activityResponses.length,
+        responseRate: percent(activityResponses.length, participants.length),
+        correctRate:
+          activity.type === "quiz" && activityResponses.length
+            ? percent(correct, activityResponses.length)
+            : undefined,
+        options: activity.options.map((option) => {
+          const count = values.filter((value) => value === option.id).length;
+          return {
+            label: option.label,
+            count,
+            percent: percent(count, activityResponses.length),
+          };
+        }),
+        responses: activityResponses.map((response) => ({
+          participantName:
+            participantById.get(id(response.participantId))?.displayName ||
+            "Learner",
+          userId: id(response.userId),
+          value: responseLabel(activity, response.value),
+          submittedAt: new Date(response.submittedAt).toISOString(),
+        })),
+      };
+    },
+  );
 
   const learners: EngagementLearner[] = participants.map((participant) => {
     const learnerResponses = meaningfulResponses.filter(
@@ -163,6 +235,8 @@ export function buildCourseEngagement(args: {
     };
   });
 
-  learners.sort((a, b) => b.responseCount - a.responseCount || a.name.localeCompare(b.name));
+  learners.sort(
+    (a, b) => b.responseCount - a.responseCount || a.name.localeCompare(b.name),
+  );
   return { summary, activities: activityInsights, learners };
 }

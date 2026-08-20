@@ -339,6 +339,8 @@ export const educatorCopilotToolCatalog: CopilotToolDefinition[] = [
                   "quiz",
                   "prioritization",
                   "worksheet",
+                  "card_collection",
+                  "linked_scorecard",
                   "reflection",
                   "task",
                   "break",
@@ -426,6 +428,34 @@ export const educatorCopilotToolCatalog: CopilotToolDefinition[] = [
                     highLabel: { type: "string" },
                   },
                   required: ["label", "type"],
+                },
+              },
+              itemTitleFieldId: {
+                type: "string",
+                description:
+                  "For repeatable cards, the field used as each card's visible title.",
+              },
+              sourceActivityId: {
+                type: "string",
+                description:
+                  "For a linked scorecard, the repeatable-card activity supplying its candidates.",
+              },
+              scoreCriteria: {
+                type: "array",
+                description:
+                  "For a linked scorecard, the scales applied to every source card.",
+                items: {
+                  type: "object",
+                  properties: {
+                    id: { type: "string" },
+                    label: { type: "string" },
+                    description: { type: "string" },
+                    min: { type: "number" },
+                    max: { type: "number" },
+                    lowLabel: { type: "string" },
+                    highLabel: { type: "string" },
+                  },
+                  required: ["label", "min", "max"],
                 },
               },
               points: { type: "number" },

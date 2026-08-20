@@ -8,6 +8,8 @@ import LiveSession from "@/models/LiveSession";
 import type { LiveActivity, LiveActivityOption } from "@/types/live-session";
 import {
   isValidLiveResponse,
+  normalizeCardCollectionResponse,
+  normalizeLinkedScorecardResponse,
   normalizePrioritizationResponse,
   normalizeWorksheetResponse,
 } from "@/lib/live-response-policy";
@@ -33,21 +35,62 @@ export async function POST(
       typeof value !== "string" &&
       (!value || typeof value !== "object"))
   ) {
-    return NextResponse.json({ error: "activityId and a response are required." }, { status: 400 });
+    return NextResponse.json(
+      { error: "activityId and a response are required." },
+      { status: 400 },
+    );
   }
   if (typeof value === "string" && (!value.trim() || value.length > 10_000)) {
-    return NextResponse.json({ error: "Enter a response under 10,000 characters." }, { status: 400 });
+    return NextResponse.json(
+      { error: "Enter a response under 10,000 characters." },
+      { status: 400 },
+    );
   }
   await connectDB();
   const session = await LiveSession.findById(id);
-  const activity = session?.activities.find((item: LiveActivity) => item.id === activityId);
+  const activity = session?.activities.find(
+    (item: LiveActivity) => item.id === activityId,
+  );
   if (!session || !activity) {
     return NextResponse.json({ error: "Activity not found." }, { status: 404 });
   }
   if (activity.status !== "open") {
-    return NextResponse.json({ error: "This activity is not open." }, { status: 409 });
+    return NextResponse.json(
+      { error: "This activity is not open." },
+      { status: 409 },
+    );
   }
-  if (!isValidLiveResponse(activity, value)) {
+  if (
+    session.pace === "facilitator" &&
+    session.currentActivityId !== activity.id
+  ) {
+    return NextResponse.json(
+      { error: "Wait for the facilitator to open this activity." },
+      { status: 409 },
+    );
+  }
+  const participant = await LiveParticipant.findOne({
+    sessionId: session._id,
+    userId: currentUser.user.id,
+  });
+  if (!participant) {
+    return NextResponse.json(
+      { error: "Join the session before responding." },
+      { status: 403 },
+    );
+  }
+  const sourceResponse = activity.sourceActivityId
+    ? await LiveResponse.findOne({
+        sessionId: session._id,
+        activityId: activity.sourceActivityId,
+        participantId: participant._id,
+      }).lean()
+    : null;
+  const sourceValue =
+    sourceResponse && !Array.isArray(sourceResponse)
+      ? (sourceResponse as unknown as { value?: unknown }).value
+      : undefined;
+  if (!isValidLiveResponse(activity, value, sourceValue)) {
     return NextResponse.json(
       { error: "Choose a valid response before submitting." },
       { status: 400 },
@@ -58,22 +101,16 @@ export async function POST(
       ? normalizePrioritizationResponse(activity, value)
       : activity.type === "worksheet"
         ? normalizeWorksheetResponse(activity, value)
-      : value;
+        : activity.type === "card_collection"
+          ? normalizeCardCollectionResponse(activity, value)
+          : activity.type === "linked_scorecard"
+            ? normalizeLinkedScorecardResponse(activity, value, sourceValue)
+            : value;
   if (responseValue === undefined) {
     return NextResponse.json(
       { error: "Add a valid response before saving." },
       { status: 400 },
     );
-  }
-  if (session.pace === "facilitator" && session.currentActivityId !== activity.id) {
-    return NextResponse.json({ error: "Wait for the facilitator to open this activity." }, { status: 409 });
-  }
-  const participant = await LiveParticipant.findOne({
-    sessionId: session._id,
-    userId: currentUser.user.id,
-  });
-  if (!participant) {
-    return NextResponse.json({ error: "Join the session before responding." }, { status: 403 });
   }
   const selectedValues = Array.isArray(responseValue)
     ? responseValue.map(String)
@@ -110,7 +147,9 @@ export async function POST(
       activityId,
       value: response.value,
       correct:
-        activity.showResults && activity.status === "closed" ? response.correct : undefined,
+        activity.showResults && activity.status === "closed"
+          ? response.correct
+          : undefined,
       pointsAwarded: response.pointsAwarded,
       submittedAt: response.submittedAt,
     },
