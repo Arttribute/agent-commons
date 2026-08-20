@@ -293,6 +293,9 @@ export function LiveLearnerRoom({ sessionId }: { sessionId: string }) {
     [session],
   );
   const activityPosition = activityIndex >= 0 ? activityIndex + 1 : null;
+  const availableActivityIndex = availableActivities.findIndex(
+    (item) => item.id === selectedId,
+  );
 
   async function submit(valueOverride?: LiveResponseValue) {
     if (!activity || submitting) return;
@@ -326,11 +329,8 @@ export function LiveLearnerRoom({ sessionId }: { sessionId: string }) {
   }
 
   function goNext() {
-    if (!session) return;
-    const index = availableActivities.findIndex(
-      (item) => item.id === selectedId,
-    );
-    const next = availableActivities[index + 1];
+    if (!session || availableActivityIndex < 0) return;
+    const next = availableActivities[availableActivityIndex + 1];
     if (next) setSelectedId(next.id);
   }
 
@@ -530,16 +530,12 @@ export function LiveLearnerRoom({ sessionId }: { sessionId: string }) {
             <div className="mt-5 flex justify-between">
               <button
                 disabled={
-                  availableActivities.findIndex(
-                    (item) => item.id === activity.id,
-                  ) <= 0
+                  availableActivityIndex <= 0
                 }
                 onClick={() => {
-                  const index = availableActivities.findIndex(
-                    (item) => item.id === activity.id,
-                  );
                   setSelectedId(
-                    availableActivities[index - 1]?.id || activity.id,
+                    availableActivities[availableActivityIndex - 1]?.id ||
+                      activity.id,
                   );
                 }}
                 className="inline-flex items-center gap-2 text-sm font-bold text-slate-500 disabled:opacity-30"
@@ -547,8 +543,12 @@ export function LiveLearnerRoom({ sessionId }: { sessionId: string }) {
                 <ArrowLeft className="h-4 w-4" /> Previous
               </button>
               <button
+                disabled={
+                  availableActivityIndex < 0 ||
+                  availableActivityIndex >= availableActivities.length - 1
+                }
                 onClick={goNext}
-                className="inline-flex items-center gap-2 text-sm font-bold text-slate-700"
+                className="inline-flex items-center gap-2 text-sm font-bold text-slate-700 disabled:opacity-30"
               >
                 Next <ArrowRight className="h-4 w-4" />
               </button>
