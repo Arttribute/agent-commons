@@ -67,6 +67,12 @@ const previewResponse = await app.request("/v1/previews/example-project/");
 if (previewResponse.headers.has("x-frame-options")) {
   failures.push("public preview: gateway must not add x-frame-options");
 }
+if (previewResponse.headers.get("access-control-allow-origin") !== "*") {
+  failures.push("public preview: sandboxed modules require wildcard CORS");
+}
+if (previewResponse.headers.has("access-control-allow-credentials")) {
+  failures.push("public preview: public assets must not allow credentials");
+}
 
 if (failures.length > 0) {
   console.error("Gateway smoke test failed:");

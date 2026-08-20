@@ -23,9 +23,7 @@ export function createGatewayApp() {
     if (isPreviewPath(c.req.path)) return next();
     return securityHeaders(c, next);
   });
-  app.use(
-    "*",
-    cors({
+  const crossOriginHeaders = cors({
       origin: (origin) => {
         const allowed = (process.env.CORS_ORIGINS ?? "")
           .split(",")
@@ -39,8 +37,14 @@ export function createGatewayApp() {
         "x-request-id",
       ],
       exposeHeaders: ["x-request-id", "x-commons-service"],
-    }),
-  );
+    });
+  app.use("*", (c, next) => {
+    // A sandboxed plugin frame intentionally has an opaque `null` origin.
+    // Public preview modules therefore need wildcard CORS and no credentials;
+    // the preview proxy below applies that narrower policy.
+    if (isPreviewPath(c.req.path)) return next();
+    return crossOriginHeaders(c, next);
+  });
   app.use("*", async (c, next) => {
     const requestId = c.req.header("x-request-id") ?? `req_${randomUUID()}`;
     c.set("requestId", requestId);
@@ -65,6 +69,11 @@ export function createGatewayApp() {
     baseUrl: string | undefined,
     targetPath: string,
   ) {
+    const isPreview = isPreviewPath(targetPath);
+    if (isPreview) {
+      c.header("access-control-allow-origin", "*");
+      c.header("cross-origin-resource-policy", "cross-origin");
+    }
     if (!baseUrl) {
       return c.json(
         {
@@ -96,6 +105,11 @@ export function createGatewayApp() {
       duplex: "half",
     } as RequestInit);
     const outputHeaders = new Headers(response.headers);
+    if (isPreview) {
+      outputHeaders.set("access-control-allow-origin", "*");
+      outputHeaders.delete("access-control-allow-credentials");
+      outputHeaders.set("cross-origin-resource-policy", "cross-origin");
+    }
     outputHeaders.set("x-request-id", c.get("requestId"));
     outputHeaders.set("x-commons-service", service);
     return new Response(response.body, {

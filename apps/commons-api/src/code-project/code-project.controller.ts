@@ -168,6 +168,8 @@ export class PublicCodeProjectController {
     const asset = await this.projects.publicAsset(slug, path);
     res.removeHeader('X-Frame-Options');
     res.removeHeader('Cross-Origin-Opener-Policy');
+    res.removeHeader('Access-Control-Allow-Credentials');
+    res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
     res.setHeader('Content-Type', asset.contentType);
     res.setHeader('Cache-Control', asset.cacheControl);
