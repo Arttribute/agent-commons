@@ -13,7 +13,7 @@ phases:
       - SERVICE_NAME="agent-commons-api-${ENVIRONMENT}"
       - if [ "$ENVIRONMENT" = "production" ]; then STACK_NAME="agent-commons-api-service"; else STACK_NAME="agent-commons-api-service-${ENVIRONMENT}"; fi
       - MAX_TASKS="${MAX_TASKS:-4}"
-      - if [ -z "${WEB_SEARCH_PROVIDER:-}" ]; then if [ "$ENVIRONMENT" = "staging" ]; then WEB_SEARCH_PROVIDER=searxng; else WEB_SEARCH_PROVIDER=none; fi; fi
+      - if [ -z "${WEB_SEARCH_PROVIDER:-}" ]; then WEB_SEARCH_PROVIDER=searxng; fi
       - export WEB_SEARCH_PROVIDER
       - if [ -z "${APP_ORIGIN:-}" ]; then if [ "$ENVIRONMENT" = "production" ]; then APP_ORIGIN=https://www.agentcommons.io; else APP_ORIGIN=https://staging.agentcommons.io; fi; fi
       - export APP_ORIGIN

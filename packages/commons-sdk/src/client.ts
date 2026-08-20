@@ -23,6 +23,7 @@ import {
   McpPrompt,
   McpConnectionType,
   Skill,
+  AgentSkill,
   SkillIndex,
   CreateSkillParams,
   UsageAggregation,
@@ -86,6 +87,12 @@ import {
   DeveloperProjectEnvironment,
   DeveloperApiKey,
   CreatedDeveloperApiKey,
+  CapabilityName,
+  CapabilityProviderConfiguration,
+  CapabilityProviderDefinition,
+  CapabilityProviderInput,
+  UiPlugin,
+  CreateUiPluginParams,
 } from "./types";
 
 export interface CommonsRequestOptions {
@@ -1317,12 +1324,26 @@ export class CommonsClient {
       },
 
       get: (skillIdOrSlug: string): Promise<{ data: Skill }> =>
-        this.request("GET", `/v1/skills/${skillIdOrSlug}`),
+        this.request("GET", `/v1/skills/${encodeURIComponent(skillIdOrSlug)}`),
 
       getIndex: (ownerId?: string): Promise<{ data: SkillIndex[] }> => {
         const qs = ownerId ? `?ownerId=${ownerId}` : "";
         return this.request("GET", `/v1/skills/index${qs}`);
       },
+
+      listForAgent: (agentId: string): Promise<{ data: AgentSkill[] }> =>
+        this.request("GET", `/v1/skills/agents/${encodeURIComponent(agentId)}`),
+
+      setAgentAvailability: (
+        skillIdOrSlug: string,
+        agentId: string,
+        isEnabled: boolean,
+      ): Promise<{ data: unknown }> =>
+        this.request(
+          "PUT",
+          `/v1/skills/${encodeURIComponent(skillIdOrSlug)}/agents/${encodeURIComponent(agentId)}`,
+          { isEnabled },
+        ),
 
       create: (params: CreateSkillParams): Promise<{ data: Skill }> =>
         this.request("POST", "/v1/skills", params),
@@ -1331,10 +1352,93 @@ export class CommonsClient {
         skillIdOrSlug: string,
         updates: Partial<CreateSkillParams>,
       ): Promise<{ data: Skill }> =>
-        this.request("PUT", `/v1/skills/${skillIdOrSlug}`, updates),
+        this.request(
+          "PUT",
+          `/v1/skills/${encodeURIComponent(skillIdOrSlug)}`,
+          updates,
+        ),
 
       delete: (skillIdOrSlug: string): Promise<{ deleted: boolean }> =>
-        this.request("DELETE", `/v1/skills/${skillIdOrSlug}`),
+        this.request(
+          "DELETE",
+          `/v1/skills/${encodeURIComponent(skillIdOrSlug)}`,
+        ),
+
+      import: (
+        file: Blob,
+        options?: { fileName?: string; agentId?: string },
+      ): Promise<{ data: Skill }> => {
+        const body = new FormData();
+        body.append("file", file, options?.fileName || "SKILL.md");
+        if (options?.agentId) body.set("agentId", options.agentId);
+        return this.request("POST", "/v1/skills/import", body);
+      },
+    };
+  }
+
+  // ── Capability providers ─────────────────────────────────────────────────
+
+  get providers() {
+    return {
+      list: (): Promise<{
+        catalog: Record<CapabilityName, CapabilityProviderDefinition[]>;
+        configurations: CapabilityProviderConfiguration[];
+      }> => this.request("GET", "/v1/providers"),
+
+      configure: (
+        capability: CapabilityName,
+        input: CapabilityProviderInput,
+      ): Promise<{ data: CapabilityProviderConfiguration }> =>
+        this.request(
+          "PUT",
+          `/v1/providers/${encodeURIComponent(capability)}`,
+          input,
+        ),
+
+      remove: (capability: CapabilityName): Promise<{ deleted: boolean }> =>
+        this.request(
+          "DELETE",
+          `/v1/providers/${encodeURIComponent(capability)}`,
+        ),
+    };
+  }
+
+  // ── Sandboxed UI plugins ─────────────────────────────────────────────────
+
+  get uiPlugins() {
+    return {
+      list: (activeOnly = false): Promise<{ data: UiPlugin[] }> =>
+        this.request(
+          "GET",
+          `/v1/ui-plugins${activeOnly ? "?active=true" : ""}`,
+        ),
+
+      getBySlug: (slug: string): Promise<{ data: UiPlugin }> =>
+        this.request(
+          "GET",
+          `/v1/ui-plugins/slug/${encodeURIComponent(slug)}`,
+        ),
+
+      create: (
+        input: CreateUiPluginParams,
+      ): Promise<{ data: UiPlugin }> =>
+        this.request("PUT", "/v1/ui-plugins", input),
+
+      setStatus: (
+        pluginId: string,
+        status: "draft" | "active" | "disabled",
+      ): Promise<{ data: UiPlugin }> =>
+        this.request(
+          "PUT",
+          `/v1/ui-plugins/${encodeURIComponent(pluginId)}/status`,
+          { status },
+        ),
+
+      delete: (pluginId: string): Promise<{ deleted: boolean }> =>
+        this.request(
+          "DELETE",
+          `/v1/ui-plugins/${encodeURIComponent(pluginId)}`,
+        ),
     };
   }
 
@@ -1975,6 +2079,7 @@ export class CommonsClient {
         source?: string;
         favorite?: boolean;
         sessionId?: string;
+        agentId?: string;
         limit?: number;
         offset?: number;
       }): Promise<{ data: LibraryItem[]; total?: number }> => {
@@ -1985,6 +2090,7 @@ export class CommonsClient {
         if (filter?.favorite !== undefined)
           query.set("favorite", String(filter.favorite));
         if (filter?.sessionId) query.set("sessionId", filter.sessionId);
+        if (filter?.agentId) query.set("agentId", filter.agentId);
         if (filter?.limit !== undefined)
           query.set("limit", String(filter.limit));
         if (filter?.offset !== undefined)

@@ -27,6 +27,7 @@ describe('ComputerService', () => {
       { decrypt: jest.fn() } as any,
       { getEntitlements: jest.fn() } as any,
       { getBalance: jest.fn() } as any,
+      { resolve: jest.fn().mockResolvedValue(null) } as any,
     );
     jest.spyOn(service as any, 'assertCapability').mockResolvedValue({
       enabled: true,
@@ -254,7 +255,9 @@ describe('ComputerService', () => {
       resourceMode: 'elastic',
       storageLimit: '20Gi',
     } as any);
-    jest.spyOn(service as any, 'assertComputerSlot').mockResolvedValue(undefined);
+    jest
+      .spyOn(service as any, 'assertComputerSlot')
+      .mockResolvedValue(undefined);
     jest.spyOn(service, 'getAssignedComputer').mockResolvedValue(null as any);
 
     const returning = jest

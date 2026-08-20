@@ -11,6 +11,80 @@ import {
 describe('FilesService document support', () => {
   const service = new FilesService({} as any, {} as any, {} as any);
 
+  it('reuses an identical Library upload and links it to the current agent session', async () => {
+    const existing = {
+      itemId: 'existing-file',
+      name: 'brief.pdf',
+      mimeType: 'application/pdf',
+      kind: 'pdf',
+      sizeBytes: 12,
+      status: 'ready',
+      textPreview: 'Existing content',
+      extractedTextChars: 16,
+      metadata: { storageProvider: 's3' },
+      ownerUserId: 'user-1',
+      workspaceId: null,
+      sourceAgentId: 'agent-previous',
+      sourceSessionId: 'session-previous',
+      sha256: 'hash',
+      source: 'upload',
+      visibility: 'private',
+      isFavorite: false,
+      deletedAt: null,
+      extractionError: null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+    const db = {
+      query: {
+        libraryItem: { findFirst: jest.fn().mockResolvedValue(existing) },
+      },
+    };
+    const uploadService = new FilesService(db as any, {} as any, {} as any);
+    jest
+      .spyOn(uploadService as any, 'resolveOwnership')
+      .mockResolvedValue({ ownerUserId: 'user-1', workspaceId: null });
+    jest
+      .spyOn(uploadService as any, 'resolveStorageProvider')
+      .mockResolvedValue('s3');
+    jest.spyOn(uploadService as any, 'getArtifacts').mockResolvedValue([]);
+    const link = jest
+      .spyOn(uploadService as any, 'linkArtifactScopes')
+      .mockResolvedValue(undefined);
+    const audit = jest
+      .spyOn(uploadService as any, 'audit')
+      .mockResolvedValue(undefined);
+    const store = jest.spyOn(uploadService as any, 'storeBuffer');
+
+    const result = await (uploadService as any).persistFile({
+      buffer: Buffer.from('same content'),
+      originalName: 'brief-copy.pdf',
+      mimeType: 'application/pdf',
+      ownerId: 'user-1',
+      ownerType: 'user',
+      agentId: 'agent-1',
+      sessionId: 'session-1',
+      deduplicate: true,
+    });
+
+    expect(result).toMatchObject({ fileId: 'existing-file', reused: true });
+    expect(link).toHaveBeenCalledWith(
+      'existing-file',
+      expect.objectContaining({
+        agentId: 'agent-1',
+        sessionId: 'session-1',
+      }),
+    );
+    expect(audit).toHaveBeenCalledWith(
+      'existing-file',
+      'user',
+      'user-1',
+      'reused',
+      expect.objectContaining({ uploadedName: 'brief-copy.pdf' }),
+    );
+    expect(store).not.toHaveBeenCalled();
+  });
+
   it('returns structured and SDK-compatible URLs for uploaded images', async () => {
     const imageService = new FilesService({} as any, {} as any, {} as any);
     jest.spyOn(imageService as any, 'getFileOrThrow').mockResolvedValue({
@@ -22,7 +96,9 @@ describe('FilesService document support', () => {
       textPreview: '',
       metadata: {},
     });
-    jest.spyOn(imageService as any, 'assertCanAccess').mockResolvedValue(undefined);
+    jest
+      .spyOn(imageService as any, 'assertCanAccess')
+      .mockResolvedValue(undefined);
     jest.spyOn(imageService as any, 'getBlobs').mockResolvedValue([]);
     jest.spyOn(imageService as any, 'getArtifacts').mockResolvedValue([
       {
@@ -336,6 +412,11 @@ describe('FilesService document support', () => {
           findFirst: jest.fn(),
         },
       },
+      insert: jest.fn().mockReturnValue({
+        values: jest.fn().mockReturnValue({
+          onConflictDoNothing: jest.fn().mockResolvedValue(undefined),
+        }),
+      }),
     };
     const workspaceService = new FilesService(db as any, {} as any, {} as any);
 

@@ -1,6 +1,7 @@
 import { BadRequestException } from '@nestjs/common';
 import {
   executeWebSearch,
+  resolveAccountWebSearchConfig,
   resolveWebSearchConfig,
 } from './web-search.provider';
 
@@ -103,5 +104,89 @@ describe('web search provider', () => {
         fetcher,
       ),
     ).rejects.toThrow(/429/);
+  });
+
+  it('uses a user-supplied Tavily key without platform search configuration', async () => {
+    const config = resolveAccountWebSearchConfig({
+      provider: 'tavily',
+      credentials: { apiKey: 'tvly-user-key' },
+      settings: { searchDepth: 'basic' },
+    });
+    const fetcher = jest.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          results: [
+            {
+              title: 'Current source',
+              url: 'https://example.com/current',
+              content: 'Fresh result',
+            },
+          ],
+        }),
+        { status: 200 },
+      ),
+    );
+
+    await executeWebSearch(
+      config,
+      { query: 'latest models', count: 5, safeSearch: 'moderate' },
+      fetcher,
+    );
+
+    expect(fetcher.mock.calls[0][0].toString()).toBe(
+      'https://api.tavily.com/search',
+    );
+    expect(fetcher.mock.calls[0][1].method).toBe('POST');
+    expect(fetcher.mock.calls[0][1].headers.Authorization).toBe(
+      'Bearer tvly-user-key',
+    );
+    expect(JSON.parse(fetcher.mock.calls[0][1].body)).toMatchObject({
+      query: 'latest models',
+      max_results: 5,
+    });
+  });
+
+  it('maps a custom JSON search response through declarative paths', async () => {
+    const config = resolveAccountWebSearchConfig({
+      provider: 'custom',
+      endpointUrl: 'https://search.example.com/query',
+      credentials: { apiKey: 'custom-key' },
+      settings: {
+        resultsPath: 'data.hits',
+        titlePath: 'name',
+        urlPath: 'link',
+        descriptionPath: 'snippet',
+      },
+    });
+    const fetcher = jest.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          data: {
+            hits: [
+              {
+                name: 'Mapped title',
+                link: 'https://example.com/mapped',
+                snippet: 'Mapped description',
+              },
+            ],
+          },
+        }),
+        { status: 200 },
+      ),
+    );
+
+    await expect(
+      executeWebSearch(
+        config,
+        { query: 'portable search', count: 3, safeSearch: 'strict' },
+        fetcher,
+      ),
+    ).resolves.toEqual([
+      {
+        title: 'Mapped title',
+        url: 'https://example.com/mapped',
+        description: 'Mapped description',
+      },
+    ]);
   });
 });

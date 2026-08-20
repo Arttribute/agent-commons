@@ -82,7 +82,17 @@ export type {
   // Skills
   Skill,
   SkillIndex,
+  SkillAgentAssignment,
+  AgentSkill,
   CreateSkillParams,
+  CapabilityName,
+  CapabilityProviderDefinition,
+  CapabilityProviderConfiguration,
+  CapabilityProviderInput,
+  UiPlugin,
+  UiPluginSurface,
+  UiPluginPermission,
+  CreateUiPluginParams,
   // Memory
   AgentMemory,
   MemoryStats,

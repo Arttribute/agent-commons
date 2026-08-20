@@ -30,6 +30,7 @@ RUN apt-get update && apt-get install -y \
     libreoffice-impress \
     fonts-crosextra-caladea \
     fonts-crosextra-carlito \
+    ffmpeg \
     fonts-liberation \
     fonts-noto-core \
     fonts-noto-color-emoji \

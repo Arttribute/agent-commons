@@ -393,6 +393,30 @@ describe('client.skills', () => {
     expect(fetch.mock.calls[0][0]).toBe('http://api.test/v1/skills/web-research');
   });
 
+  it('lists the skill catalog and assignment state for an agent', async () => {
+    const fetch = makeFetch({ data: [] });
+    await makeClient(fetch).skills.listForAgent('agent/one');
+    expect(fetch.mock.calls[0][0]).toBe(
+      'http://api.test/v1/skills/agents/agent%2Fone',
+    );
+  });
+
+  it('updates whether an agent can invoke a skill', async () => {
+    const fetch = makeFetch({ data: { isEnabled: false } });
+    await makeClient(fetch).skills.setAgentAvailability(
+      'research skill',
+      'agent/one',
+      false,
+    );
+    expect(fetch.mock.calls[0][0]).toBe(
+      'http://api.test/v1/skills/research%20skill/agents/agent%2Fone',
+    );
+    expect(fetch.mock.calls[0][1].method).toBe('PUT');
+    expect(JSON.parse(fetch.mock.calls[0][1].body)).toEqual({
+      isEnabled: false,
+    });
+  });
+
   it('create — POST /v1/skills', async () => {
     const fetch = makeFetch({ data: {} });
     await makeClient(fetch).skills.create({ slug: 'my-skill', name: 'My Skill', description: 'd', instructions: 'i' });
@@ -403,6 +427,39 @@ describe('client.skills', () => {
     const fetch = makeFetch({ deleted: true });
     await makeClient(fetch).skills.delete('my-skill');
     expect(fetch.mock.calls[0][1].method).toBe('DELETE');
+  });
+});
+
+describe('client modular providers and UI plugins', () => {
+  it('configures a BYOK capability provider', async () => {
+    const fetch = makeFetch({ data: {} });
+    await makeClient(fetch).providers.configure('web_search', {
+      provider: 'tavily',
+      credentials: { apiKey: 'secret' },
+    });
+    expect(fetch.mock.calls[0][0]).toBe(
+      'http://api.test/v1/providers/web_search',
+    );
+    expect(fetch.mock.calls[0][1].method).toBe('PUT');
+  });
+
+  it('activates a sandboxed UI plugin', async () => {
+    const fetch = makeFetch({ data: {} });
+    await makeClient(fetch).uiPlugins.setStatus('plugin/one', 'active');
+    expect(fetch.mock.calls[0][0]).toBe(
+      'http://api.test/v1/ui-plugins/plugin%2Fone/status',
+    );
+    expect(JSON.parse(fetch.mock.calls[0][1].body)).toEqual({
+      status: 'active',
+    });
+  });
+
+  it('filters Library items by agent', async () => {
+    const fetch = makeFetch({ data: [] });
+    await makeClient(fetch).library.list({ agentId: 'agent/one' });
+    expect(fetch.mock.calls[0][0]).toBe(
+      'http://api.test/v1/library?agentId=agent%2Fone',
+    );
   });
 });
 
