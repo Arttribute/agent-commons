@@ -43,6 +43,8 @@ const publicRoutes: Array<[string, RequestInit?]> = [
   ["/v1/oauth/providers/google"],
   ["/v1/oauth/callback/google"],
   ["/v1/billing/webhook", { method: "POST" }],
+  ["/v1/previews/example-project/"],
+  ["/v1/previews/example-project/assets/index.js"],
 ];
 
 for (const [path, init] of publicRoutes) {
@@ -59,6 +61,11 @@ const protectedRoutes = [
 
 for (const path of protectedRoutes) {
   await expectStatus(`protected GET ${path}`, app.request(path), 401);
+}
+
+const previewResponse = await app.request("/v1/previews/example-project/");
+if (previewResponse.headers.has("x-frame-options")) {
+  failures.push("public preview: gateway must not add x-frame-options");
 }
 
 if (failures.length > 0) {

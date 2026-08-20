@@ -8,6 +8,7 @@ describe('UiPluginService manifest boundary', () => {
       projectId: 'project-1',
       workspaceId: null,
       publicUrl: 'https://previews.example.com/weather/',
+      verification: { passed: true },
     });
   });
 
@@ -64,5 +65,26 @@ describe('UiPluginService manifest boundary', () => {
         }),
       }),
     );
+  });
+
+  it('rejects a deployment that has not passed browser verification', async () => {
+    jest.spyOn(service as any, 'assertPublishedProject').mockRestore();
+    const limit = jest.fn().mockResolvedValue([
+      {
+        projectId: 'project-1',
+        workspaceId: null,
+        publicUrl: 'https://previews.example.com/weather/',
+        deploymentStatus: 'ready',
+        verification: { passed: false },
+      },
+    ]);
+    const where = jest.fn().mockReturnValue({ limit });
+    const leftJoin = jest.fn().mockReturnValue({ where });
+    const from = jest.fn().mockReturnValue({ leftJoin });
+    (service as any).db = { select: jest.fn().mockReturnValue({ from }) };
+
+    await expect(
+      (service as any).assertPublishedProject('user-1', 'project-1'),
+    ).rejects.toThrow('must pass testCodeProject');
   });
 });

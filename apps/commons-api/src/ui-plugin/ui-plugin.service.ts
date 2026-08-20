@@ -163,6 +163,7 @@ export class UiPluginService {
         workspaceId: schema.codeProject.workspaceId,
         publicUrl: schema.codeProjectDeployment.publicUrl,
         deploymentStatus: schema.codeProjectDeployment.status,
+        verification: schema.codeProjectDeployment.verification,
       })
       .from(schema.codeProject)
       .leftJoin(
@@ -183,6 +184,11 @@ export class UiPluginService {
     if (row.deploymentStatus !== 'ready' || !row.publicUrl) {
       throw new BadRequestException(
         'Publish and verify the code project before registering it as UI',
+      );
+    }
+    if (row.verification?.passed !== true) {
+      throw new BadRequestException(
+        'The latest deployment must pass testCodeProject before it can be registered as UI',
       );
     }
     return { ...row, publicUrl: row.publicUrl };

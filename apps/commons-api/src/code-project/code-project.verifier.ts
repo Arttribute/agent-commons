@@ -9,9 +9,12 @@ export class CodeProjectVerifier {
     const pageErrors: string[] = [];
     const requestFailures: string[] = [];
     const actionErrors: string[] = [];
+    const embeddingErrors: string[] = [];
     const checks: Array<{
       viewport: string;
       passed: boolean;
+      status: number | null;
+      embeddable: boolean;
       title: string;
       bodyText: string;
     }> = [];
@@ -45,10 +48,15 @@ export class CodeProjectVerifier {
           );
         });
 
-        await page.goto(url, {
+        const navigation = await page.goto(url, {
           waitUntil: 'domcontentloaded',
           timeout: 45_000,
         });
+        const status = navigation?.status() ?? null;
+        const embeddingError = getEmbeddingError(
+          navigation?.headers() ?? {},
+        );
+        if (embeddingError) embeddingErrors.push(embeddingError);
         await page
           .waitForLoadState('networkidle', { timeout: 15_000 })
           .catch(() => undefined);
@@ -72,7 +80,15 @@ export class CodeProjectVerifier {
         const rootChildren = await page.locator('#root > *').count();
         checks.push({
           viewport: viewport.name,
-          passed: bodyText.length > 0 && rootChildren > 0,
+          passed:
+            status !== null &&
+            status >= 200 &&
+            status < 300 &&
+            !embeddingError &&
+            bodyText.length > 0 &&
+            rootChildren > 0,
+          status,
+          embeddable: !embeddingError,
           title,
           bodyText: bodyText.slice(0, 2_000),
         });
@@ -83,7 +99,12 @@ export class CodeProjectVerifier {
     }
 
     const unique = (values: string[]) => [...new Set(values)].slice(0, 30);
-    const errors = unique([...pageErrors, ...consoleErrors, ...actionErrors]);
+    const errors = unique([
+      ...pageErrors,
+      ...consoleErrors,
+      ...actionErrors,
+      ...embeddingErrors,
+    ]);
     return {
       passed:
         checks.every((check) => check.passed) &&
@@ -95,10 +116,32 @@ export class CodeProjectVerifier {
       consoleErrors: unique(consoleErrors),
       pageErrors: unique(pageErrors),
       actionErrors: unique(actionErrors),
+      embeddingErrors: unique(embeddingErrors),
       requestFailures: unique(requestFailures),
       screenshot,
     };
   }
+}
+
+export function getEmbeddingError(headers: Record<string, string>) {
+  const frameOptions = headers['x-frame-options']?.trim();
+  if (frameOptions) {
+    return `Preview cannot be embedded because X-Frame-Options is ${frameOptions}`;
+  }
+  const policy = headers['content-security-policy'] || '';
+  const frameAncestors = policy
+    .split(';')
+    .map((directive) => directive.trim())
+    .find((directive) => directive.toLowerCase().startsWith('frame-ancestors'));
+  if (!frameAncestors) return null;
+  const sources = frameAncestors.split(/\s+/).slice(1);
+  if (
+    sources.includes("'none'") ||
+    (sources.length === 1 && sources[0] === "'self'")
+  ) {
+    return `Preview cannot be embedded because CSP is ${frameAncestors}`;
+  }
+  return null;
 }
 
 async function runAction(

@@ -634,7 +634,9 @@ export function SkillsMarketplaceView({
               key={skill.skillId}
               skill={skill}
               onDelete={handleDelete}
-              onOpen={(id) => router.push(`/studio/skills/${id}`)}
+              onOpen={(id) =>
+                router.push(`/studio/customize/skills/${id}`)
+              }
               onManageAgents={setSelectedSkill}
               isOwner={skill.ownerId === userAddress}
             />
