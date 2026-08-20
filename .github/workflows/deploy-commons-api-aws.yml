@@ -72,7 +72,29 @@ jobs:
               --query 'builds[0].buildStatus' --output text)
             case "$status" in
               SUCCEEDED) exit 0 ;;
-              FAILED|FAULT|STOPPED|TIMED_OUT) exit 1 ;;
+              FAILED|FAULT|STOPPED|TIMED_OUT)
+                echo "CodeBuild finished with status: $status"
+                aws codebuild batch-get-builds \
+                  --ids "${{ steps.build.outputs.id }}" \
+                  --query 'builds[0].phases[?phaseStatus==`FAILED`].{phase:phaseType,contexts:contexts}' \
+                  --output json || true
+
+                log_group=$(aws codebuild batch-get-builds \
+                  --ids "${{ steps.build.outputs.id }}" \
+                  --query 'builds[0].logs.groupName' --output text)
+                log_stream=$(aws codebuild batch-get-builds \
+                  --ids "${{ steps.build.outputs.id }}" \
+                  --query 'builds[0].logs.streamName' --output text)
+                if [ -n "$log_group" ] && [ "$log_group" != "None" ] && \
+                   [ -n "$log_stream" ] && [ "$log_stream" != "None" ]; then
+                  aws logs get-log-events \
+                    --log-group-name "$log_group" \
+                    --log-stream-name "$log_stream" \
+                    --limit 300 \
+                    --query 'events[].message' --output text || true
+                fi
+                exit 1
+                ;;
               *) sleep 15 ;;
             esac
           done
