@@ -128,6 +128,13 @@ export function getEmbeddingError(headers: Record<string, string>) {
   if (frameOptions) {
     return `Preview cannot be embedded because X-Frame-Options is ${frameOptions}`;
   }
+  const allowedOrigin = headers['access-control-allow-origin']?.trim();
+  if (allowedOrigin !== '*') {
+    return 'Preview assets must use Access-Control-Allow-Origin: * so ES modules load inside the opaque sandbox';
+  }
+  if (headers['access-control-allow-credentials']?.toLowerCase() === 'true') {
+    return 'Public preview assets must not allow credentialed cross-origin requests';
+  }
   const policy = headers['content-security-policy'] || '';
   const frameAncestors = policy
     .split(';')
