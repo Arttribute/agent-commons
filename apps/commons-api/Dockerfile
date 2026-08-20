@@ -27,6 +27,7 @@ FROM public.ecr.aws/docker/library/node:22.11.0-bookworm-slim AS runtime
 RUN apt-get update && apt-get install -y \
     chromium \
     chromium-sandbox \
+    ffmpeg \
     fonts-liberation \
     fonts-noto-color-emoji \
     libatk-bridge2.0-0 \

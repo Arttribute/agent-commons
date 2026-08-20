@@ -62,11 +62,11 @@ SEARXNG_BASE_URL=https://search.internal.example
 SEARXNG_SEARCH_COST_USD_PER_CALL=0
 ```
 
-Staging defaults to the repository's authenticated SearXNG container and
-production defaults to `none`. The deployment builds both API and search
-images, rotates an ephemeral shared key, deploys SearXNG as a separate ECS
-Express service, and smoke-tests its JSON endpoint. Set the CodeBuild
-`WEB_SEARCH_PROVIDER` environment variable only to override this default.
+Staging and production default to the repository's authenticated SearXNG
+container. The deployment builds both API and search images, rotates an
+ephemeral shared key, deploys SearXNG as a separate ECS Express service, and
+smoke-tests its JSON endpoint. Set the CodeBuild `WEB_SEARCH_PROVIDER`
+environment variable only to override this default.
 
 The ECS template only injects the Brave secret when Brave is explicitly
 selected. `SEARXNG_SEARCH_COST_USD_PER_CALL` can optionally meter measured

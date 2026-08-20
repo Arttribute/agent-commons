@@ -25,6 +25,8 @@ import { FilesModule } from '~/files';
 import { ComputerModule } from '~/computer';
 import { CodeProjectModule } from '~/code-project';
 import { UsageModule } from '~/modules/usage';
+import { CapabilityProviderModule } from '~/provider';
+import { UiPluginModule } from '~/ui-plugin';
 
 @Module({
   imports: [
@@ -40,6 +42,8 @@ import { UsageModule } from '~/modules/usage';
     CodeProjectModule,
     UsageModule,
     OAuthModule,
+    CapabilityProviderModule,
+    UiPluginModule,
   ],
   controllers: [
     ToolController,

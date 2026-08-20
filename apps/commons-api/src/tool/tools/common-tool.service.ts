@@ -35,8 +35,15 @@ import * as schema from '#/models/schema';
 import { eq } from 'drizzle-orm';
 import {
   executeWebSearch,
+  resolveAccountWebSearchConfig,
   resolveWebSearchConfig,
 } from './web-search.provider';
+import { CapabilityProviderService } from '~/provider';
+import {
+  UiPluginService,
+  type UiPluginPermission,
+  type UiPluginSurface,
+} from '~/ui-plugin';
 
 type ToolExecutionMetadata = {
   agentId?: string;
@@ -652,6 +659,21 @@ export interface CommonTool {
     projectId: string;
   }): Promise<any>;
 
+  /**
+   * Register a published code project as a reviewable Commons page or floating
+   * widget. The plugin remains a draft until its owner explicitly enables it.
+   */
+  registerUiPlugin(props: {
+    agentId?: string;
+    codeProjectId: string;
+    name: string;
+    slug?: string;
+    description?: string;
+    version?: string;
+    surfaces: UiPluginSurface[];
+    permissions?: UiPluginPermission[];
+  }): Promise<any>;
+
   /** Test the public project in desktop and mobile Chromium viewports. */
   testCodeProject(props: {
     agentId?: string;
@@ -856,6 +878,8 @@ export class CommonToolService {
     private moduleRef: ModuleRef,
     private db: DatabaseService,
     private usage: UsageService,
+    private capabilityProviders: CapabilityProviderService,
+    private uiPlugins: UiPluginService,
   ) {}
 
   private async capabilityOwner(agentId: string) {
@@ -1103,15 +1127,21 @@ export class CommonToolService {
       throw new BadRequestException('webSearch requires a non-empty query');
     }
 
-    const config = resolveWebSearchConfig();
     const operationId = metadata?.toolCallId || randomUUID();
     const count = Math.max(1, Math.min(props.count ?? 8, 20));
     const agentId = this.requireToolAgentId(undefined, metadata);
+    const owner = await this.capabilityOwner(agentId);
+    const accountProvider = await this.capabilityProviders.resolve(
+      owner.principalId,
+      'web_search',
+    );
+    const config = accountProvider
+      ? resolveAccountWebSearchConfig(accountProvider)
+      : resolveWebSearchConfig();
     let reservation: Awaited<ReturnType<UsageService['authorizeCapability']>> =
       null;
 
     if (config.costUsdPerCall > 0) {
-      const owner = await this.capabilityOwner(agentId);
       reservation = await this.usage.authorizeCapability({
         principalId: owner.principalId,
         capability: 'web_search',
@@ -1455,7 +1485,9 @@ export class CommonToolService {
 
     // 2) Construct a gateway URL; you may have PINATA_GATEWAY or custom domain
     const cid = pinataResult.IpfsHash;
-    const gatewayUrl = `https://${process.env.GATEWAY_URL ?? 'gateway.pinata.cloud'}/ipfs/${cid}`;
+    const gatewayUrl = `https://${
+      process.env.GATEWAY_URL ?? 'gateway.pinata.cloud'
+    }/ipfs/${cid}`;
 
     // 3) Return IPFS info
     return {
@@ -1824,6 +1856,33 @@ export class CommonToolService {
     });
   }
 
+  async registerUiPlugin(
+    props: {
+      agentId?: string;
+      codeProjectId: string;
+      name: string;
+      slug?: string;
+      description?: string;
+      version?: string;
+      surfaces: UiPluginSurface[];
+      permissions?: UiPluginPermission[];
+    },
+    metadata?: ToolExecutionMetadata,
+  ) {
+    const agentId = this.requireToolAgentId(props.agentId, metadata);
+    const { surfaces, permissions, ...input } = props;
+    const plugin = await this.uiPlugins.createForAgent(agentId, {
+      ...input,
+      manifest: { schemaVersion: '1', surfaces, permissions },
+    });
+    return {
+      ...plugin,
+      reviewRequired: true,
+      message:
+        'The UI plugin is registered as a draft. Its owner must review and enable it in Studio Apps.',
+    };
+  }
+
   async testCodeProject(
     props: {
       agentId?: string;
@@ -2121,7 +2180,11 @@ export class CommonToolService {
         maxTokens,
       });
 
-      const userContent = `${instruction}\n\nData to process:\n${JSON.stringify(data, null, 2)}\n\nProvide a clear, structured result.`;
+      const userContent = `${instruction}\n\nData to process:\n${JSON.stringify(
+        data,
+        null,
+        2,
+      )}\n\nProvide a clear, structured result.`;
 
       const response = await llm.invoke([
         new SystemMessage(
@@ -2166,7 +2229,7 @@ export class CommonToolService {
       apiKey?: string;
       contextId?: string;
     },
-    _metadata?: any,
+    metadata?: ToolExecutionMetadata,
   ): Promise<{
     text: string;
     taskId?: string;
@@ -2175,7 +2238,11 @@ export class CommonToolService {
   }> {
     // ── Local skill lookup ─────────────────────────────────────────────────
     if (props.skillSlug && !props.url) {
-      const skill = await this.skillService.get(props.skillSlug);
+      const agentId = this.requireToolAgentId(undefined, metadata);
+      const skill = await this.skillService.getForAgent(
+        props.skillSlug,
+        agentId,
+      );
       await this.skillService.incrementUsage(props.skillSlug);
       return {
         text: `# ${skill.name}\n\n${skill.instructions}`,
@@ -2202,7 +2269,9 @@ export class CommonToolService {
     };
     if (apiKey) headers['Authorization'] = `Bearer ${apiKey}`;
 
-    const taskId = `skill-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const taskId = `skill-${Date.now()}-${Math.random()
+      .toString(36)
+      .slice(2, 8)}`;
 
     const rpcBody = {
       jsonrpc: '2.0',

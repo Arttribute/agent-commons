@@ -2,7 +2,7 @@ import { BadRequestException } from '@nestjs/common';
 
 export type WebSearchFreshness = 'day' | 'week' | 'month' | 'year';
 export type WebSearchSafeSearch = 'off' | 'moderate' | 'strict';
-export type WebSearchProvider = 'brave' | 'searxng';
+export type WebSearchProvider = 'brave' | 'searxng' | 'tavily' | 'custom';
 
 export type WebSearchInput = {
   query: string;
@@ -24,6 +24,9 @@ export type WebSearchConfig = {
   braveApiKey?: string;
   searxngBaseUrl?: string;
   searxngApiKey?: string;
+  apiKey?: string;
+  endpointUrl?: string;
+  settings?: Record<string, unknown>;
 };
 
 type FetchLike = (
@@ -62,10 +65,10 @@ export function resolveWebSearchConfig(
   const provider: WebSearchProvider | undefined = requestedProvider
     ? (requestedProvider as WebSearchProvider)
     : env.BRAVE_SEARCH_API_KEY
-      ? 'brave'
-      : env.SEARXNG_BASE_URL
-        ? 'searxng'
-        : undefined;
+    ? 'brave'
+    : env.SEARXNG_BASE_URL
+    ? 'searxng'
+    : undefined;
 
   if (!provider) {
     throw new BadRequestException(NOT_CONFIGURED_MESSAGE);
@@ -106,20 +109,48 @@ export function resolveWebSearchConfig(
   };
 }
 
+export function resolveAccountWebSearchConfig(input: {
+  provider: string;
+  endpointUrl?: string;
+  settings?: Record<string, unknown>;
+  credentials?: Record<string, string>;
+}): WebSearchConfig {
+  if (!['brave', 'searxng', 'tavily', 'custom'].includes(input.provider)) {
+    throw new BadRequestException(
+      `Unsupported web search provider "${input.provider}"`,
+    );
+  }
+  const provider = input.provider as WebSearchProvider;
+  const apiKey = input.credentials?.apiKey;
+  if ((provider === 'brave' || provider === 'tavily') && !apiKey) {
+    throw new BadRequestException(`${provider} requires an API key`);
+  }
+  if ((provider === 'searxng' || provider === 'custom') && !input.endpointUrl) {
+    throw new BadRequestException(`${provider} requires an endpoint URL`);
+  }
+  return {
+    provider,
+    costUsdPerCall: 0,
+    braveApiKey: provider === 'brave' ? apiKey : undefined,
+    searxngBaseUrl: provider === 'searxng' ? input.endpointUrl : undefined,
+    searxngApiKey: provider === 'searxng' ? apiKey : undefined,
+    apiKey,
+    endpointUrl: input.endpointUrl,
+    settings: input.settings ?? {},
+  };
+}
+
 export async function executeWebSearch(
   config: WebSearchConfig,
   input: WebSearchInput,
   fetcher: FetchLike = fetch,
 ): Promise<WebSearchResult[]> {
-  const request =
-    config.provider === 'brave'
-      ? buildBraveRequest(config, input)
-      : buildSearxngRequest(config, input);
+  const request = buildSearchRequest(config, input);
 
   let response: Response;
   try {
     response = await fetcher(request.url, {
-      headers: request.headers,
+      ...request.init,
       signal: AbortSignal.timeout(15_000),
     });
   } catch (error) {
@@ -139,7 +170,11 @@ export async function executeWebSearch(
 
   const data: any = await response.json();
   const rawResults =
-    config.provider === 'brave' ? data.web?.results : data.results;
+    config.provider === 'brave'
+      ? data.web?.results
+      : config.provider === 'custom'
+      ? readPath(data, String(config.settings?.resultsPath || 'results'))
+      : data.results;
   if (!Array.isArray(rawResults)) return [];
 
   return rawResults
@@ -151,10 +186,26 @@ export async function executeWebSearch(
             description: item.description,
             publishedAt: item.age,
           }
+        : config.provider === 'custom'
+        ? {
+            title: readPath(
+              item,
+              String(config.settings?.titlePath || 'title'),
+            ),
+            url: readPath(item, String(config.settings?.urlPath || 'url')),
+            description: readPath(
+              item,
+              String(config.settings?.descriptionPath || 'description'),
+            ),
+            publishedAt: readPath(
+              item,
+              String(config.settings?.publishedAtPath || 'publishedAt'),
+            ),
+          }
         : {
             title: item.title,
             url: item.url,
-            description: item.content,
+            description: item.content ?? item.description,
             publishedAt: item.publishedDate ?? item.published_date,
           },
     )
@@ -166,6 +217,13 @@ export async function executeWebSearch(
         item.url.trim().length > 0,
     )
     .slice(0, input.count);
+}
+
+function buildSearchRequest(config: WebSearchConfig, input: WebSearchInput) {
+  if (config.provider === 'brave') return buildBraveRequest(config, input);
+  if (config.provider === 'searxng') return buildSearxngRequest(config, input);
+  if (config.provider === 'tavily') return buildTavilyRequest(config, input);
+  return buildCustomRequest(config, input);
 }
 
 function buildBraveRequest(config: WebSearchConfig, input: WebSearchInput) {
@@ -184,9 +242,11 @@ function buildBraveRequest(config: WebSearchConfig, input: WebSearchInput) {
   }
   return {
     url,
-    headers: {
-      Accept: 'application/json',
-      'X-Subscription-Token': config.braveApiKey!,
+    init: {
+      headers: {
+        Accept: 'application/json',
+        'X-Subscription-Token': config.braveApiKey!,
+      },
     },
   };
 }
@@ -208,11 +268,74 @@ function buildSearxngRequest(config: WebSearchConfig, input: WebSearchInput) {
   }
   return {
     url,
-    headers: {
-      Accept: 'application/json',
-      ...(config.searxngApiKey
-        ? { 'X-Agent-Commons-Search-Key': config.searxngApiKey }
-        : {}),
+    init: {
+      headers: {
+        Accept: 'application/json',
+        ...(config.searxngApiKey
+          ? { 'X-Agent-Commons-Search-Key': config.searxngApiKey }
+          : {}),
+      },
     },
   };
+}
+
+function buildTavilyRequest(config: WebSearchConfig, input: WebSearchInput) {
+  return {
+    url: new URL('https://api.tavily.com/search'),
+    init: {
+      method: 'POST',
+      headers: {
+        Accept: 'application/json',
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${config.apiKey}`,
+      },
+      body: JSON.stringify({
+        query: input.query,
+        max_results: input.count,
+        search_depth: config.settings?.searchDepth || 'basic',
+        ...(input.freshness ? { time_range: input.freshness } : {}),
+      }),
+    },
+  };
+}
+
+function buildCustomRequest(config: WebSearchConfig, input: WebSearchInput) {
+  const method = String(config.settings?.method || 'GET').toUpperCase();
+  if (method !== 'GET' && method !== 'POST') {
+    throw new BadRequestException('Custom search method must be GET or POST');
+  }
+  const url = new URL(config.endpointUrl!);
+  const queryField = String(config.settings?.queryField || 'q');
+  const countField = String(config.settings?.countField || 'count');
+  const headers: Record<string, string> = { Accept: 'application/json' };
+  if (config.apiKey) {
+    const header = String(config.settings?.apiKeyHeader || 'Authorization');
+    const prefix = String(config.settings?.apiKeyPrefix ?? 'Bearer ');
+    headers[header] = `${prefix}${config.apiKey}`;
+  }
+  if (method === 'GET') {
+    url.searchParams.set(queryField, input.query);
+    url.searchParams.set(countField, String(input.count));
+    return { url, init: { headers } };
+  }
+  headers['Content-Type'] = 'application/json';
+  return {
+    url,
+    init: {
+      method,
+      headers,
+      body: JSON.stringify({
+        [queryField]: input.query,
+        [countField]: input.count,
+        freshness: input.freshness,
+        safeSearch: input.safeSearch,
+      }),
+    },
+  };
+}
+
+function readPath(value: any, path: string) {
+  return path
+    .split('.')
+    .reduce((current, segment) => current?.[segment], value);
 }

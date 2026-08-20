@@ -20,6 +20,7 @@ import {
   agentRunProgress,
   type AgentRunProgressEvent,
 } from '~/agent/run-progress';
+import { CapabilityProviderService } from '~/provider';
 
 /** @deprecated Input compatibility only. All assigned computers are persistent. */
 type LegacyComputerLifecycle = 'persistent' | 'ephemeral';
@@ -169,6 +170,7 @@ export class ComputerService {
     private readonly encryption: EncryptionService,
     private readonly entitlements: EntitlementsService,
     private readonly credits: CreditService,
+    private readonly capabilityProviders: CapabilityProviderService,
   ) {}
 
   /**
@@ -318,8 +320,8 @@ export class ComputerService {
       desiredState: !config.enabled
         ? ('disabled' as const)
         : sleeping
-          ? ('sleeping' as const)
-          : ('running' as const),
+        ? ('sleeping' as const)
+        : ('running' as const),
       status: sleeping ? ('sleeping' as const) : computer.status,
       resources: this.publicResources(computer),
       runtimeId: computer.commonOsAgentId,
@@ -612,7 +614,9 @@ export class ComputerService {
         stage: 'computer',
         status: 'running',
         message: 'Booting agent computer',
-        detail: `Persistent workspace - ${this.formatElapsed(Date.now() - now.getTime())}`,
+        detail: `Persistent workspace - ${this.formatElapsed(
+          Date.now() - now.getTime(),
+        )}`,
         payload: {
           progressId: computerId,
           computerId,
@@ -703,7 +707,9 @@ export class ComputerService {
         'PATCH',
         `/computers/${computer.commonOsAgentId}`,
         this.commonOsFleetId()
-          ? `/fleets/${this.commonOsFleetId()}/agents/${computer.commonOsAgentId}`
+          ? `/fleets/${this.commonOsFleetId()}/agents/${
+              computer.commonOsAgentId
+            }`
           : undefined,
         { desiredState: 'stopped' },
         args.agentId,
@@ -839,7 +845,9 @@ export class ComputerService {
         podName:
           commonOs.pod?.podName ??
           (commonOs.pod?.namespaceId
-            ? `computer-${String(commonOs._id ?? computer.commonOsAgentId).replace(/_/g, '-')}`
+            ? `computer-${String(
+                commonOs._id ?? computer.commonOsAgentId,
+              ).replace(/_/g, '-')}`
             : computer.podName),
         resourceProfile:
           commonOs.resources?.profile ?? computer.resourceProfile,
@@ -871,7 +879,7 @@ export class ComputerService {
             : computer.startedAt,
         errorMessage: activeRuntimeIsStale
           ? 'The agent computer stopped responding and will be recovered when it is next started.'
-          : (commonOs.pod?.lastError ?? null),
+          : commonOs.pod?.lastError ?? null,
         updatedAt: new Date(),
       })
       .where(eq(schema.agentComputerInstance.computerId, computerId))
@@ -916,9 +924,13 @@ export class ComputerService {
     const path = normalizeWorkspacePath(args.path);
     const data = await this.commonOsComputerRequest<{ content?: string }>(
       'GET',
-      `/computers/${computer.commonOsAgentId}/workspace/read?path=${encodeURIComponent(path)}`,
+      `/computers/${
+        computer.commonOsAgentId
+      }/workspace/read?path=${encodeURIComponent(path)}`,
       this.commonOsFleetId()
-        ? `/fleets/${this.commonOsFleetId()}/agents/${computer.commonOsAgentId}/workspace/read?path=${encodeURIComponent(path)}`
+        ? `/fleets/${this.commonOsFleetId()}/agents/${
+            computer.commonOsAgentId
+          }/workspace/read?path=${encodeURIComponent(path)}`
         : undefined,
       undefined,
       computer.agentId,
@@ -1042,7 +1054,9 @@ export class ComputerService {
         stage,
         status: 'running',
         message: this.submittingMessageForComputerEvent(args.eventType),
-        detail: `${args.summary} - ${this.formatElapsed(Date.now() - submitStartedAt)}`,
+        detail: `${args.summary} - ${this.formatElapsed(
+          Date.now() - submitStartedAt,
+        )}`,
         payload: {
           progressId,
           computerId: computer.computerId,
@@ -1059,7 +1073,9 @@ export class ComputerService {
         'POST',
         `/computers/${computer.commonOsAgentId}/instructions`,
         this.commonOsFleetId()
-          ? `/fleets/${this.commonOsFleetId()}/agents/${computer.commonOsAgentId}/human-message`
+          ? `/fleets/${this.commonOsFleetId()}/agents/${
+              computer.commonOsAgentId
+            }/human-message`
           : undefined,
         {
           content: args.instruction,
@@ -1131,7 +1147,10 @@ export class ComputerService {
           stage,
           status: 'running',
           message: this.waitingMessageForComputerEvent(args.eventType),
-          detail: `${args.summary} - ${(progress.status ?? 'pending').replace(/_/g, ' ')} - ${this.formatElapsed(progress.elapsedMs)}`,
+          detail: `${args.summary} - ${(progress.status ?? 'pending').replace(
+            /_/g,
+            ' ',
+          )} - ${this.formatElapsed(progress.elapsedMs)}`,
           payload: {
             progressId,
             computerId: computer.computerId,
@@ -1347,7 +1366,11 @@ export class ComputerService {
         args.url ? `Open ${args.url} first.` : 'Use the currently open page.',
         'Wait until the page is interactive. Use browser_inspect and browser_eval to inspect rendered text, the application root, runtime overlays, console errors, page errors, and failed requests.',
         actions.length
-          ? `Perform these actions in order and verify their effects:\n${JSON.stringify(actions, null, 2)}`
+          ? `Perform these actions in order and verify their effects:\n${JSON.stringify(
+              actions,
+              null,
+              2,
+            )}`
           : 'Exercise the primary visible interaction when it is safe and reversible.',
         'Capture a final browser screenshot.',
         'Return a concise test report with passed checks, failed checks, current URL/title, diagnostics, and screenshot status.',
@@ -1391,13 +1414,17 @@ export class ComputerService {
     }).catch(() => []);
     const computer = computers[0];
     const line = computer
-      ? `- ${computer.name} (${computer.computerId}) persistent/${computer.status}${computer.browser?.url ? ` browser=${computer.browser.url}` : ''}`
+      ? `- ${computer.name} (${computer.computerId}) persistent/${
+          computer.status
+        }${computer.browser?.url ? ` browser=${computer.browser.url}` : ''}`
       : '- The persistent computer has not been provisioned yet.';
 
     return [
       '### Persistent computer',
       'This agent can have exactly one isolated CommonOS computer. Its workspace persists across chats and pod restarts.',
-      `Computer use is ${config.allowAgentStart ? 'agent-wakeable' : 'user-wake only'}; resource profile is ${config.resourceProfile}/${config.resourceMode}.`,
+      `Computer use is ${
+        config.allowAgentStart ? 'agent-wakeable' : 'user-wake only'
+      }; resource profile is ${config.resourceProfile}/${config.resourceMode}.`,
       'Use startAgentComputer to wake or attach the assigned computer before computer work. It is idempotent and never creates an extra computer. Use writeComputerFiles for complete source files, runComputerCommand for finite terminal work, readComputerFile for files, and testComputerBrowser for application verification.',
       'Never encode source files in shell heredocs or long commands. writeComputerFiles is the reliable structured file-writing path.',
       'Always keep commands scoped to the task, avoid secrets exfiltration, and summarize created files/screenshots/results for the user.',
@@ -1547,9 +1574,9 @@ export class ComputerService {
     computer: ComputerInstance;
     name: string;
   }) {
-    if (!this.commonOsConfigured()) {
+    if (!(await this.computerProviderConfigured(args.agent))) {
       throw new Error(
-        'CommonOS computer API is not configured. Set COMMON_OS_API_URL and COMMON_OS_API_KEY.',
+        'The selected agent computer provider is not configured.',
       );
     }
 
@@ -1558,8 +1585,8 @@ export class ComputerService {
       runtimeType === 'openclaw' || runtimeType === 'hermes'
         ? runtimeType
         : runtimeType === 'custom'
-          ? 'guest'
-          : 'native';
+        ? 'guest'
+        : 'native';
     const modelApiKey = this.decryptStoredSecret(args.agent.modelApiKey);
     const runtimeConfig = (args.agent.runtimeConfig ?? {}) as Record<
       string,
@@ -1831,7 +1858,9 @@ export class ComputerService {
       if (this.commonOsUseGeneralComputerApi()) {
         if (snapshotSupported) {
           const suffix = lastEventAt
-            ? `?after=${encodeURIComponent(lastEventAt)}${lastEventId ? `&afterId=${encodeURIComponent(lastEventId)}` : ''}`
+            ? `?after=${encodeURIComponent(lastEventAt)}${
+                lastEventId ? `&afterId=${encodeURIComponent(lastEventId)}` : ''
+              }`
             : '';
           try {
             const snapshot = await this.commonOsComputerRequest<{
@@ -1849,7 +1878,9 @@ export class ComputerService {
           } catch (error) {
             snapshotSupported = false;
             this.logger.warn(
-              `CommonOS instruction snapshot is unavailable; using compatibility polling: ${error instanceof Error ? error.message : String(error)}`,
+              `CommonOS instruction snapshot is unavailable; using compatibility polling: ${
+                error instanceof Error ? error.message : String(error)
+              }`,
             );
           }
         }
@@ -1939,7 +1970,9 @@ export class ComputerService {
       } catch (err) {
         if (!legacyFleetPath) throw err;
         this.logger.warn(
-          `CommonOS computer API ${method} ${computerPath} failed; falling back to fleet route: ${err instanceof Error ? err.message : String(err)}`,
+          `CommonOS computer API ${method} ${computerPath} failed; falling back to fleet route: ${
+            err instanceof Error ? err.message : String(err)
+          }`,
         );
       }
     }
@@ -1962,12 +1995,32 @@ export class ComputerService {
     body?: unknown,
     agentCommonsId?: string,
   ): Promise<T> {
-    const apiUrl = this.commonOsApiUrl();
-    const apiKey = this.commonOsApiKey();
-    if (!apiUrl || !apiKey) {
-      throw new Error('CommonOS API credentials are not configured');
+    let apiUrl = this.commonOsApiUrl();
+    let apiKey = this.commonOsApiKey();
+    let basePath = this.commonOsBasePath(apiUrl);
+    if (agentCommonsId) {
+      const agent = await this.db.query.agent.findFirst({
+        where: (table) => eq(table.agentId, agentCommonsId),
+        columns: { ownerUserId: true, owner: true },
+      });
+      const ownerId = agent?.ownerUserId ?? agent?.owner;
+      const configured = ownerId
+        ? await this.capabilityProviders.resolve(ownerId, 'computer')
+        : null;
+      if (configured?.provider === 'custom') {
+        apiUrl = configured.endpointUrl?.replace(/\/$/, '') ?? '';
+        apiKey = configured.credentials.apiKey ?? '';
+        basePath = String(configured.settings.basePath ?? '');
+      } else if (configured && configured.provider !== 'commonos') {
+        throw new Error(
+          `Computer provider "${configured.provider}" has no installed adapter`,
+        );
+      }
     }
-    const url = `${apiUrl}${this.commonOsBasePath(apiUrl)}${path}`;
+    if (!apiUrl || !apiKey) {
+      throw new Error('Agent computer API credentials are not configured');
+    }
+    const url = `${apiUrl}${basePath}${path}`;
     const response = await fetch(url, {
       method,
       headers: {
@@ -2166,7 +2219,7 @@ export class ComputerService {
         }
         normalized.gpuCount = count;
         normalized.gpuType =
-          count > 0 ? (resources.gpu?.type ?? 'nvidia-l4') : null;
+          count > 0 ? resources.gpu?.type ?? 'nvidia-l4' : null;
       }
     }
 
@@ -2341,8 +2394,8 @@ export class ComputerService {
       capability === 'browser'
         ? config.allowBrowser
         : capability === 'terminal'
-          ? config.allowTerminal
-          : config.allowFilesystem;
+        ? config.allowTerminal
+        : config.allowFilesystem;
     if (!allowed) {
       throw new BadRequestException(
         `${capability} access is disabled for this computer`,
@@ -2426,6 +2479,19 @@ export class ComputerService {
         this.commonOsApiKey() &&
         (this.commonOsFleetId() || this.commonOsUseGeneralComputerApi()),
     );
+  }
+
+  private async computerProviderConfigured(
+    agent: typeof schema.agent.$inferSelect,
+  ) {
+    const ownerId = agent.ownerUserId ?? agent.owner;
+    const configured = ownerId
+      ? await this.capabilityProviders.resolve(ownerId, 'computer')
+      : null;
+    if (configured?.provider === 'custom') {
+      return Boolean(configured.endpointUrl && configured.credentials.apiKey);
+    }
+    return this.commonOsConfigured();
   }
 
   private commonOsApiUrl() {

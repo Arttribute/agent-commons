@@ -334,7 +334,9 @@ export class AgentService implements OnModuleInit {
         const httpc: any = (gotMod as any).default || gotMod;
         // Prefer search endpoint when query provided; otherwise list voices
         const url = q
-          ? `https://api.elevenlabs.io/v1/voices/search?query=${encodeURIComponent(q)}`
+          ? `https://api.elevenlabs.io/v1/voices/search?query=${encodeURIComponent(
+              q,
+            )}`
           : `https://api.elevenlabs.io/v1/voices`;
         const res = await httpc.get(url, {
           headers: { 'xi-api-key': apiKey },
@@ -475,7 +477,11 @@ export class AgentService implements OnModuleInit {
 
       ### Agent-to-agent interaction
       - **interactWithAgent** — send a message to another agent and get a response. Pass the returned sessionId to continue the same conversation across calls.
-      - To coordinate groups of agents, use **Spaces** (see below).${childSessionsInfo ? '' : '\n      - You currently have no active agent conversations.'}
+      - To coordinate groups of agents, use **Spaces** (see below).${
+        childSessionsInfo
+          ? ''
+          : '\n      - You currently have no active agent conversations.'
+      }
 
       ### Spaces (multi-agent collaboration)
       Spaces are shared channels where multiple agents and humans can communicate.
@@ -524,6 +530,7 @@ export class AgentService implements OnModuleInit {
       For React prototypes, landing pages, dashboards, and other static frontend experiences, use lightweight code projects first. They do not require a computer and publish to durable low-cost public URLs.
       - **createCodeProject** — create a React project with initial files. **writeCodeProjectFiles** — write complete files directly; never squeeze source code into shell commands.
       - **readCodeProject** — inspect the current files and latest deployment. **publishCodeProject** — compile and publish the project.
+      - **registerUiPlugin** — register a published project as a sandboxed Commons page/widget draft for the user to review and enable.
       - **testCodeProject** — run desktop/mobile Chromium checks, inspect runtime/console/network failures, and test important interactions. A successful build is not enough: test it, fix every reported error, republish, and re-test before saying it works.
       - **exportCodeProjectToComputer** — move the project into the persistent computer when the work needs a backend, arbitrary packages, repository operations, ML/GPU compute, or unrestricted tooling.
       - Lightweight projects support React, CSS, local modules/assets, lucide-react, framer-motion, recharts, clsx, and tailwind-merge. They do not execute a Next.js server or arbitrary build plugins.
@@ -593,7 +600,14 @@ export class AgentService implements OnModuleInit {
     ]);
     const childSessionsInfo =
       childSessions.length > 0
-        ? `\n\nEXISTING CHILD SESSIONS:\nYou have the following ongoing conversations with other agents. Use these sessionIds to continue existing conversations instead of starting new ones:\n${childSessions.map((cs) => `- Agent ${cs.childAgentId}: ${cs.title || 'Untitled conversation'} (sessionId=${cs.childSessionId}, started: ${cs.createdAt})`).join('\n')}`
+        ? `\n\nEXISTING CHILD SESSIONS:\nYou have the following ongoing conversations with other agents. Use these sessionIds to continue existing conversations instead of starting new ones:\n${childSessions
+            .map(
+              (cs) =>
+                `- Agent ${cs.childAgentId}: ${
+                  cs.title || 'Untitled conversation'
+                } (sessionId=${cs.childSessionId}, started: ${cs.createdAt})`,
+            )
+            .join('\n')}`
         : '';
 
     const messages: ChatCompletionMessageParam[] = [
@@ -1069,7 +1083,10 @@ export class AgentService implements OnModuleInit {
                     computerPreparationBlock = [
                       '## COMPUTER PREPARATION',
                       'The user selected Agent Computer for this turn, but the runtime could not be prepared.',
-                      `Reason: ${started?.errorMessage ?? 'Unknown computer provisioning error'}`,
+                      `Reason: ${
+                        started?.errorMessage ??
+                        'Unknown computer provisioning error'
+                      }`,
                       'Explain the limitation and continue without claiming computer access. Do not call computer tools again this turn unless the user changes the computer settings.',
                     ].join('\n');
                   }
@@ -1326,7 +1343,7 @@ export class AgentService implements OnModuleInit {
             : null;
 
           const cliToolSchemas: ChatCompletionTool[] = props.cliContext
-            ? (dynamicCliTools ?? [
+            ? dynamicCliTools ?? [
                 {
                   type: 'function',
                   function: {
@@ -1521,7 +1538,7 @@ export class AgentService implements OnModuleInit {
                     },
                   },
                 },
-              ])
+              ]
             : [];
 
           const llmWithTools = (llm as any).bindTools(
@@ -1700,7 +1717,9 @@ export class AgentService implements OnModuleInit {
                     const timer = setTimeout(() => {
                       cleanup();
                       resolve(
-                        `Error: CLI tool timed out after ${CLI_TOOL_TIMEOUT_MS / 1_000}s`,
+                        `Error: CLI tool timed out after ${
+                          CLI_TOOL_TIMEOUT_MS / 1_000
+                        }s`,
                       );
                     }, CLI_TOOL_TIMEOUT_MS);
 
@@ -1975,7 +1994,16 @@ export class AgentService implements OnModuleInit {
             ]);
             const childSessionsInfo =
               childSessions.length > 0
-                ? `\n\nEXISTING CHILD SESSIONS:\nYou have the following ongoing conversations with other agents. Use these sessionIds to continue existing conversations instead of starting new ones:\n${childSessions.map((cs) => `- Agent ${cs.childAgentId}: ${cs.title || 'Untitled conversation'} (sessionId=${cs.childSessionId}, started: ${cs.createdAt})`).join('\n')}`
+                ? `\n\nEXISTING CHILD SESSIONS:\nYou have the following ongoing conversations with other agents. Use these sessionIds to continue existing conversations instead of starting new ones:\n${childSessions
+                    .map(
+                      (cs) =>
+                        `- Agent ${cs.childAgentId}: ${
+                          cs.title || 'Untitled conversation'
+                        } (sessionId=${cs.childSessionId}, started: ${
+                          cs.createdAt
+                        })`,
+                    )
+                    .join('\n')}`
                 : '';
 
             messages.push({
@@ -2014,7 +2042,9 @@ export class AgentService implements OnModuleInit {
               role: 'system',
               content: `
               You are currently in the following space:
-              - Space ${space.spaceId}: ${space.name || 'Untitled space'} (created: ${space.createdAt})
+              - Space ${space.spaceId}: ${
+                space.name || 'Untitled space'
+              } (created: ${space.createdAt})
               Remember your agent Id is : ${agentId}
 
               You are receiving this message because you are subscribed to this space.
@@ -2122,13 +2152,13 @@ export class AgentService implements OnModuleInit {
           const computerSelectionDetail = computerUnavailable
             ? 'Computer runtime is unavailable for this turn. Do not call computer tools.'
             : computerRequest?.computerIds?.length
-              ? [
-                  `Assigned computer ID: ${computerRequest.computerIds[0]}`,
-                  "This is the agent's one persistent computer and is available through the computer tools. Continue work in its existing workspace across chat sessions.",
-                  'Computer tool calls may omit computerId; if supplied, use the assigned ID above.',
-                  'Do not tell the user you lack computer access while this assigned computer is ready. If the tool fails, report that failure with evidence.',
-                ].join('\n')
-              : 'The assigned computer is not active. Call startAgentComputer before computer-backed work.';
+            ? [
+                `Assigned computer ID: ${computerRequest.computerIds[0]}`,
+                "This is the agent's one persistent computer and is available through the computer tools. Continue work in its existing workspace across chat sessions.",
+                'Computer tool calls may omit computerId; if supplied, use the assigned ID above.',
+                'Do not tell the user you lack computer access while this assigned computer is ready. If the tool fails, report that failure with evidence.',
+              ].join('\n')
+            : 'The assigned computer is not active. Call startAgentComputer before computer-backed work.';
           const computerSelectionBlock = computerRequest?.enabled
             ? [
                 '## USER COMPUTER SELECTION',
@@ -2245,7 +2275,11 @@ export class AgentService implements OnModuleInit {
               messages.push({
                 type: 'user',
                 role: 'user',
-                content: `##TASK_INSTRUCTION[${nextTask.taskId}]: ${nextTask.title}\n\n${nextTask.description ?? ''}${taskContextStr}${taskToolsStr}${taskToolInstructionsStr}`,
+                content: `##TASK_INSTRUCTION[${nextTask.taskId}]: ${
+                  nextTask.title
+                }\n\n${
+                  nextTask.description ?? ''
+                }${taskContextStr}${taskToolsStr}${taskToolInstructionsStr}`,
               } as any);
             }
 
@@ -2289,8 +2323,8 @@ export class AgentService implements OnModuleInit {
                   typeof lastAi?.content === 'string'
                     ? lastAi.content
                     : lastAi?.content
-                      ? JSON.stringify(lastAi.content)
-                      : 'Task completed';
+                    ? JSON.stringify(lastAi.content)
+                    : 'Task completed';
                 await this.db
                   .update(schema.task)
                   .set({
@@ -2378,10 +2412,10 @@ export class AgentService implements OnModuleInit {
             typeof last.content === 'string'
               ? last.content
               : typeof last === 'object' && 'content' in last
-                ? compact(
-                    map((last as any).content, (_) => get(_, 'text')),
-                  ).join('\n')
-                : '';
+              ? compact(map((last as any).content, (_) => get(_, 'text'))).join(
+                  '\n',
+                )
+              : '';
           const lastMessage = finalResult?.messages?.at(-1)?.toDict() ?? {};
           const firstUserMessage = props.messages?.find(
             (m) => m.role === 'user',
@@ -2989,13 +3023,22 @@ export class AgentService implements OnModuleInit {
           })
           .where(eq(schema.agent.agentId, existing.agentId))
           .returning();
-        return updated ?? existing;
+        const resolved = updated ?? existing;
+        await this.skillService.ensurePlatformSkillsForCopilot(
+          resolved.agentId,
+          userId,
+        );
+        return resolved;
       }
+      await this.skillService.ensurePlatformSkillsForCopilot(
+        existing.agentId,
+        userId,
+      );
       return existing;
     }
 
     try {
-      return await this.createAgent({
+      const created = await this.createAgent({
         value: {
           name: 'Commons Copilot',
           owner: userId,
@@ -3016,13 +3059,25 @@ export class AgentService implements OnModuleInit {
           modelId: 'gpt-5.4-mini',
         },
       });
+      await this.skillService.ensurePlatformSkillsForCopilot(
+        created.agentId,
+        userId,
+      );
+      return created;
     } catch (error: any) {
       // Concurrent first requests may race; the partial unique index makes the
       // loser harmless, so return the row created by the winner.
       if (error?.code === '23505') {
-        return this.db.query.agent.findFirst({
+        const created = await this.db.query.agent.findFirst({
           where: (t) => and(eq(t.ownerUserId, userId), eq(t.isDefault, true)),
         });
+        if (created) {
+          await this.skillService.ensurePlatformSkillsForCopilot(
+            created.agentId,
+            userId,
+          );
+        }
+        return created;
       }
       throw error;
     }
