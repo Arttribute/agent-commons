@@ -8,8 +8,23 @@ import {
   getSessionResults,
   serializeEducatorLiveSession,
 } from "@/lib/live-session-data";
-import LiveSession from "@/models/LiveSession";
+import LiveSession, { type ILiveSession } from "@/models/LiveSession";
 import type { LiveActivity } from "@/types/live-session";
+import { activityStatusesForLivePace } from "@/lib/live-session-pacing";
+
+function syncActivityStatusesForPace(
+  session: ILiveSession,
+) {
+  const next = activityStatusesForLivePace({
+    activities: session.activities,
+    currentActivityId: session.currentActivityId,
+    pace: session.pace,
+  });
+  session.currentActivityId = next.currentActivityId;
+  for (const activity of session.activities) {
+    activity.status = next.statuses[activity.id];
+  }
+}
 
 async function authorize(id: string) {
   if (!Types.ObjectId.isValid(id)) return null;
@@ -62,20 +77,7 @@ export async function PATCH(
     session.status = "lobby";
   } else if (record.command === "start") {
     session.status = "live";
-    const current = session.activities.find(
-      (activity: LiveActivity) =>
-        activity.id === session.currentActivityId && activity.status === "open",
-    );
-    const first = current || session.activities[0];
-    if (first) {
-      if (session.pace === "learner") {
-        for (const activity of session.activities) activity.status = "open";
-      } else {
-        for (const activity of session.activities)
-          activity.status = activity.id === first.id ? "open" : "closed";
-      }
-      session.currentActivityId = first.id;
-    }
+    syncActivityStatusesForPace(session);
   } else if (record.command === "end") {
     session.status = "ended";
     for (const activity of session.activities) {
@@ -96,12 +98,7 @@ export async function PATCH(
     }
     session.status = "live";
     session.currentActivityId = activityId;
-    for (const activity of session.activities) {
-      if (activity.id === activityId) activity.status = "open";
-      else if (session.pace === "facilitator" && activity.status === "open") {
-        activity.status = "closed";
-      }
-    }
+    syncActivityStatusesForPace(session);
   } else if (record.command === "close_activity") {
     const activityId =
       typeof record.activityId === "string" ? record.activityId : "";
@@ -116,6 +113,9 @@ export async function PATCH(
     activity.status = "closed";
   } else if (Object.keys(patch).length) {
     session.set(patch);
+    if (session.status === "live" && "pace" in patch) {
+      syncActivityStatusesForPace(session);
+    }
   }
 
   session.stateVersion = (session.stateVersion || 0) + 1;
