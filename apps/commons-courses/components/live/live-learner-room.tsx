@@ -1122,6 +1122,11 @@ function LearnerActivity({
   );
 }
 
+const structuredResponseWorkspaceClass =
+  "flex h-[calc(100dvh-8rem)] min-h-72 max-h-[820px] flex-col";
+const structuredResponseScrollClass =
+  "min-h-0 overflow-y-auto overscroll-contain [scrollbar-gutter:stable]";
+
 function CardCollectionResponsePanel({
   activity,
   value,
@@ -1187,8 +1192,13 @@ function CardCollectionResponsePanel({
 
   return (
     <div className="border-t border-slate-100 bg-[var(--course-background)] p-4 sm:p-7">
-      <div className="mx-auto max-w-5xl">
-        <div className="flex flex-wrap items-center justify-between gap-3">
+      <div
+        className={cn(
+          "mx-auto max-w-5xl",
+          current.items.length && structuredResponseWorkspaceClass,
+        )}
+      >
+        <div className="flex shrink-0 flex-wrap items-center justify-between gap-3">
           <div>
             <p className="text-sm font-bold">Your task anatomy cards</p>
             <p className="mt-1 text-xs opacity-55">
@@ -1206,8 +1216,11 @@ function CardCollectionResponsePanel({
           </button>
         </div>
         {current.items.length ? (
-          <div className="mt-5 grid gap-4 lg:grid-cols-[260px_minmax(0,1fr)]">
-            <aside className="space-y-2 rounded-2xl border border-slate-200 bg-[var(--course-surface)] p-3">
+          <div className="mt-5 grid min-h-0 flex-1 grid-rows-[auto_minmax(0,1fr)] gap-4 lg:grid-cols-[260px_minmax(0,1fr)] lg:grid-rows-1">
+            <aside
+              aria-label="Task cards"
+              className="max-h-36 space-y-2 overflow-y-auto overscroll-contain rounded-2xl border border-slate-200 bg-[var(--course-surface)] p-3 [scrollbar-gutter:stable] lg:max-h-none"
+            >
               {current.items.map((item, index) => {
                 const title = String(
                   item.values[titleFieldId || ""] || "",
@@ -1235,7 +1248,14 @@ function CardCollectionResponsePanel({
               })}
             </aside>
             {active ? (
-              <section className="rounded-2xl border border-slate-200 bg-[var(--course-surface)] p-4 sm:p-6">
+              <section
+                aria-label={`Edit task ${current.items.findIndex((item) => item.id === active.id) + 1}`}
+                tabIndex={0}
+                className={cn(
+                  structuredResponseScrollClass,
+                  "rounded-2xl border border-slate-200 bg-[var(--course-surface)] p-4 outline-none focus-visible:ring-2 focus-visible:ring-[var(--course-primary)] sm:p-6",
+                )}
+              >
                 <div className="flex items-center justify-between gap-3">
                   <p className="text-xs font-bold uppercase tracking-[0.16em] opacity-50">
                     Task{" "}
@@ -1282,36 +1302,40 @@ function CardCollectionResponsePanel({
             </span>
           </button>
         )}
-        {response ? (
-          <Saved message="Task cards saved · You can add or edit cards while this is open" />
-        ) : null}
-        {canEdit && current.items.length ? (
-          <div className="mt-5 grid gap-2 sm:grid-cols-2">
-            <button
-              type="button"
-              onClick={() =>
-                onSubmit({ items: current.items, finalized: false })
-              }
-              disabled={!changed || submitting}
-              className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl border border-slate-300 bg-white px-4 text-sm font-bold text-slate-700 disabled:opacity-40"
-            >
-              <Save className="h-4 w-4" /> Save progress
-            </button>
-            <button
-              type="button"
-              onClick={() =>
-                onSubmit({ items: current.items, finalized: true })
-              }
-              disabled={!complete || submitting}
-              className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl bg-[var(--course-primary)] px-4 text-sm font-bold text-[var(--course-on-primary)] disabled:opacity-40"
-            >
-              {submitting ? (
-                <LoaderCircle className="h-4 w-4 animate-spin" />
-              ) : (
-                <Check className="h-4 w-4" />
-              )}
-              Finish task cards
-            </button>
+        {current.items.length ? (
+          <div className="shrink-0 bg-[var(--course-background)] pt-3 sm:pt-4">
+            {response ? (
+              <Saved message="Task cards saved · You can add or edit cards while this is open" />
+            ) : null}
+            {canEdit ? (
+              <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                <button
+                  type="button"
+                  onClick={() =>
+                    onSubmit({ items: current.items, finalized: false })
+                  }
+                  disabled={!changed || submitting}
+                  className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl border border-slate-300 bg-white px-4 text-sm font-bold text-slate-700 disabled:opacity-40"
+                >
+                  <Save className="h-4 w-4" /> Save progress
+                </button>
+                <button
+                  type="button"
+                  onClick={() =>
+                    onSubmit({ items: current.items, finalized: true })
+                  }
+                  disabled={!complete || submitting}
+                  className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl bg-[var(--course-primary)] px-4 text-sm font-bold text-[var(--course-on-primary)] disabled:opacity-40"
+                >
+                  {submitting ? (
+                    <LoaderCircle className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Check className="h-4 w-4" />
+                  )}
+                  Finish task cards
+                </button>
+              </div>
+            ) : null}
           </div>
         ) : null}
       </div>
@@ -1498,154 +1522,167 @@ function LinkedScorecardResponsePanel({
 
   return (
     <div className="border-t border-slate-100 bg-[var(--course-background)] p-4 sm:p-7">
-      <div className="mx-auto max-w-5xl space-y-4">
-        <div>
+      <div
+        className={cn("mx-auto max-w-5xl", structuredResponseWorkspaceClass)}
+      >
+        <div className="shrink-0">
           <p className="text-sm font-bold">Compare your captured tasks</p>
           <p className="mt-1 text-xs opacity-55">
             Score each task, then choose the strongest first task to offload.
           </p>
         </div>
-        {sourceItems.map((sourceItem) => {
-          const scored = current.items.find(
-            (item) => item.sourceItemId === sourceItem.id,
-          );
-          const total = Object.values(scored?.scores || {}).reduce(
-            (sum, score) => sum + score,
-            0,
-          );
-          const selected = current.selectedItemId === sourceItem.id;
-          return (
-            <section
-              key={sourceItem.id}
-              className={cn(
-                "overflow-hidden rounded-2xl border bg-[var(--course-surface)]",
-                selected
-                  ? "border-[var(--course-primary)] ring-1 ring-[var(--course-primary)]"
-                  : "border-slate-200",
-              )}
-            >
-              <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 p-4 sm:px-5">
-                <div>
-                  <p className="font-bold">{titleFor(sourceItem.id)}</p>
-                  <p className="mt-1 text-[11px] opacity-50">
-                    Score {total}/
-                    {criteria.reduce(
-                      (sum, criterion) => sum + criterion.max,
-                      0,
-                    )}
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  disabled={!canEdit}
-                  onClick={() =>
-                    onChange({
-                      ...current,
-                      selectedItemId: sourceItem.id,
-                      finalized: false,
-                    })
-                  }
-                  className={cn(
-                    "rounded-full border px-3 py-2 text-xs font-bold",
-                    selected
-                      ? "border-[var(--course-primary)] bg-[var(--course-primary)] text-[var(--course-on-primary)]"
-                      : "border-slate-200",
-                  )}
-                >
-                  {selected ? "Chosen first task" : "Choose this task"}
-                </button>
-              </div>
-              <div className="grid gap-4 p-4 sm:p-5 md:grid-cols-2">
-                {criteria.map((criterion) => (
-                  <div key={criterion.id}>
-                    <div className="flex items-start justify-between gap-3">
-                      <div>
-                        <p className="text-xs font-bold">{criterion.label}</p>
-                        {criterion.description ? (
-                          <p className="mt-1 text-[11px] leading-5 opacity-50">
-                            {criterion.description}
-                          </p>
-                        ) : null}
-                      </div>
-                      <span className="text-xs font-bold opacity-50">
-                        {scored?.scores[criterion.id] || "–"}
-                      </span>
-                    </div>
-                    <div className="mt-2 grid grid-cols-5 gap-1.5">
-                      {Array.from(
-                        { length: criterion.max - criterion.min + 1 },
-                        (_, index) => criterion.min + index,
-                      ).map((number) => (
-                        <button
-                          key={number}
-                          type="button"
-                          disabled={!canEdit}
-                          onClick={() =>
-                            updateScore(sourceItem.id, criterion.id, number)
-                          }
-                          className={cn(
-                            "min-h-9 rounded-lg border text-xs font-bold",
-                            scored?.scores[criterion.id] === number
-                              ? "border-[var(--course-primary)] bg-[var(--course-primary)] text-[var(--course-on-primary)]"
-                              : "border-slate-200 bg-white",
-                          )}
-                        >
-                          {number}
-                        </button>
-                      ))}
-                    </div>
-                    <div className="mt-1.5 flex justify-between text-[10px] opacity-40">
-                      <span>{criterion.lowLabel}</span>
-                      <span>{criterion.highLabel}</span>
-                    </div>
+        <div
+          aria-label="Task scorecard"
+          tabIndex={0}
+          className={cn(
+            structuredResponseScrollClass,
+            "mt-4 flex-1 space-y-4 pr-1 outline-none focus-visible:ring-2 focus-visible:ring-[var(--course-primary)]",
+          )}
+        >
+          {sourceItems.map((sourceItem) => {
+            const scored = current.items.find(
+              (item) => item.sourceItemId === sourceItem.id,
+            );
+            const total = Object.values(scored?.scores || {}).reduce(
+              (sum, score) => sum + score,
+              0,
+            );
+            const selected = current.selectedItemId === sourceItem.id;
+            return (
+              <section
+                key={sourceItem.id}
+                className={cn(
+                  "overflow-hidden rounded-2xl border bg-[var(--course-surface)]",
+                  selected
+                    ? "border-[var(--course-primary)] ring-1 ring-[var(--course-primary)]"
+                    : "border-slate-200",
+                )}
+              >
+                <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 p-4 sm:px-5">
+                  <div>
+                    <p className="font-bold">{titleFor(sourceItem.id)}</p>
+                    <p className="mt-1 text-[11px] opacity-50">
+                      Score {total}/
+                      {criteria.reduce(
+                        (sum, criterion) => sum + criterion.max,
+                        0,
+                      )}
+                    </p>
                   </div>
-                ))}
-              </div>
-            </section>
-          );
-        })}
-        <label className="block rounded-2xl border border-slate-200 bg-[var(--course-surface)] p-4 sm:p-5">
-          <span className="text-sm font-bold">
-            Why is this a safe, useful first build?
-          </span>
-          <textarea
-            rows={3}
-            maxLength={10_000}
-            disabled={!canEdit}
-            value={current.selectionReason || ""}
-            onChange={(event) =>
-              onChange({
-                ...current,
-                selectionReason: event.target.value,
-                finalized: false,
-              })
-            }
-            className="mt-3 w-full resize-y rounded-xl border border-slate-200 bg-white p-4 text-sm leading-6 text-slate-950 outline-none focus:border-slate-500"
-          />
-        </label>
-        {response ? (
-          <Saved message="Scorecard saved · You can revise it while this activity is open" />
-        ) : null}
-        {canEdit ? (
-          <div className="grid gap-2 sm:grid-cols-2">
-            <button
-              type="button"
-              onClick={() => onSubmit({ ...current, finalized: false })}
-              disabled={!changed || submitting}
-              className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl border border-slate-300 bg-white px-4 text-sm font-bold text-slate-700 disabled:opacity-40"
-            >
-              <Save className="h-4 w-4" /> Save progress
-            </button>
-            <button
-              type="button"
-              onClick={() => onSubmit({ ...current, finalized: true })}
-              disabled={!ready || submitting}
-              className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl bg-[var(--course-primary)] px-4 text-sm font-bold text-[var(--course-on-primary)] disabled:opacity-40"
-            >
-              <Check className="h-4 w-4" /> Confirm first task
-            </button>
-          </div>
-        ) : null}
+                  <button
+                    type="button"
+                    disabled={!canEdit}
+                    onClick={() =>
+                      onChange({
+                        ...current,
+                        selectedItemId: sourceItem.id,
+                        finalized: false,
+                      })
+                    }
+                    className={cn(
+                      "rounded-full border px-3 py-2 text-xs font-bold",
+                      selected
+                        ? "border-[var(--course-primary)] bg-[var(--course-primary)] text-[var(--course-on-primary)]"
+                        : "border-slate-200",
+                    )}
+                  >
+                    {selected ? "Chosen first task" : "Choose this task"}
+                  </button>
+                </div>
+                <div className="grid gap-4 p-4 sm:p-5 md:grid-cols-2">
+                  {criteria.map((criterion) => (
+                    <div key={criterion.id}>
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <p className="text-xs font-bold">{criterion.label}</p>
+                          {criterion.description ? (
+                            <p className="mt-1 text-[11px] leading-5 opacity-50">
+                              {criterion.description}
+                            </p>
+                          ) : null}
+                        </div>
+                        <span className="text-xs font-bold opacity-50">
+                          {scored?.scores[criterion.id] || "–"}
+                        </span>
+                      </div>
+                      <div className="mt-2 grid grid-cols-5 gap-1.5">
+                        {Array.from(
+                          { length: criterion.max - criterion.min + 1 },
+                          (_, index) => criterion.min + index,
+                        ).map((number) => (
+                          <button
+                            key={number}
+                            type="button"
+                            disabled={!canEdit}
+                            onClick={() =>
+                              updateScore(sourceItem.id, criterion.id, number)
+                            }
+                            className={cn(
+                              "min-h-9 rounded-lg border text-xs font-bold",
+                              scored?.scores[criterion.id] === number
+                                ? "border-[var(--course-primary)] bg-[var(--course-primary)] text-[var(--course-on-primary)]"
+                                : "border-slate-200 bg-white",
+                            )}
+                          >
+                            {number}
+                          </button>
+                        ))}
+                      </div>
+                      <div className="mt-1.5 flex justify-between text-[10px] opacity-40">
+                        <span>{criterion.lowLabel}</span>
+                        <span>{criterion.highLabel}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </section>
+            );
+          })}
+          <label className="block rounded-2xl border border-slate-200 bg-[var(--course-surface)] p-4 sm:p-5">
+            <span className="text-sm font-bold">
+              Why is this a safe, useful first build?
+            </span>
+            <textarea
+              rows={3}
+              maxLength={10_000}
+              disabled={!canEdit}
+              value={current.selectionReason || ""}
+              onChange={(event) =>
+                onChange({
+                  ...current,
+                  selectionReason: event.target.value,
+                  finalized: false,
+                })
+              }
+              className="mt-3 w-full resize-y rounded-xl border border-slate-200 bg-white p-4 text-sm leading-6 text-slate-950 outline-none focus:border-slate-500"
+            />
+          </label>
+        </div>
+        <div className="shrink-0 bg-[var(--course-background)] pt-3 sm:pt-4">
+          {response ? (
+            <Saved message="Scorecard saved · You can revise it while this activity is open" />
+          ) : null}
+          {canEdit ? (
+            <div className="mt-3 grid gap-2 sm:grid-cols-2">
+              <button
+                type="button"
+                onClick={() => onSubmit({ ...current, finalized: false })}
+                disabled={!changed || submitting}
+                className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl border border-slate-300 bg-white px-4 text-sm font-bold text-slate-700 disabled:opacity-40"
+              >
+                <Save className="h-4 w-4" /> Save progress
+              </button>
+              <button
+                type="button"
+                onClick={() => onSubmit({ ...current, finalized: true })}
+                disabled={!ready || submitting}
+                className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl bg-[var(--course-primary)] px-4 text-sm font-bold text-[var(--course-on-primary)] disabled:opacity-40"
+              >
+                <Check className="h-4 w-4" /> Confirm first task
+              </button>
+            </div>
+          ) : null}
+        </div>
       </div>
     </div>
   );
@@ -1699,8 +1736,10 @@ function WorksheetResponsePanel({
 
   return (
     <div className="border-t border-slate-100 bg-[var(--course-background)] p-4 sm:p-7">
-      <div className="mx-auto max-w-4xl space-y-5">
-        <div className="flex flex-wrap items-center justify-between gap-3">
+      <div
+        className={cn("mx-auto max-w-4xl", structuredResponseWorkspaceClass)}
+      >
+        <div className="flex shrink-0 flex-wrap items-center justify-between gap-3">
           <div>
             <p className="text-sm font-bold">Fill in your workbook</p>
             <p className="mt-1 text-xs opacity-55">
@@ -1711,135 +1750,154 @@ function WorksheetResponsePanel({
             {answered}/{fields.length} answered
           </span>
         </div>
-        {sections.map((section) => (
-          <section
-            key={section.title}
-            className="rounded-2xl border border-slate-200 bg-[var(--course-surface)] p-4 sm:p-6"
-          >
-            <h2 className="text-sm font-bold uppercase tracking-[0.14em] opacity-55">
-              {section.title}
-            </h2>
-            <div className="mt-5 grid gap-5 md:grid-cols-2">
-              {section.fields.map((field) => {
-                const fieldValue = current.values[field.id];
-                return (
-                  <label
-                    key={field.id}
-                    className={cn(
-                      "block",
-                      field.type === "long_text" && "md:col-span-2",
-                    )}
-                  >
-                    <span className="text-sm font-bold leading-6">
-                      {field.label}
-                      {field.required ? (
-                        <span className="ml-1 text-red-500">*</span>
-                      ) : null}
-                    </span>
-                    {field.description ? (
-                      <span className="mt-1 block text-xs leading-5 opacity-55">
-                        {field.description}
+        <div
+          aria-label="Workbook fields"
+          tabIndex={0}
+          className={cn(
+            structuredResponseScrollClass,
+            "mt-5 flex-1 space-y-5 pr-1 outline-none focus-visible:ring-2 focus-visible:ring-[var(--course-primary)]",
+          )}
+        >
+          {sections.map((section) => (
+            <section
+              key={section.title}
+              className="rounded-2xl border border-slate-200 bg-[var(--course-surface)] p-4 sm:p-6"
+            >
+              <h2 className="text-sm font-bold uppercase tracking-[0.14em] opacity-55">
+                {section.title}
+              </h2>
+              <div className="mt-5 grid gap-5 md:grid-cols-2">
+                {section.fields.map((field) => {
+                  const fieldValue = current.values[field.id];
+                  return (
+                    <label
+                      key={field.id}
+                      className={cn(
+                        "block",
+                        field.type === "long_text" && "md:col-span-2",
+                      )}
+                    >
+                      <span className="text-sm font-bold leading-6">
+                        {field.label}
+                        {field.required ? (
+                          <span className="ml-1 text-red-500">*</span>
+                        ) : null}
                       </span>
-                    ) : null}
-                    {field.type === "scale" ? (
-                      <div className="mt-3">
-                        <div className="grid grid-cols-5 gap-2">
-                          {Array.from(
-                            { length: (field.max ?? 5) - (field.min ?? 1) + 1 },
-                            (_, index) => (field.min ?? 1) + index,
-                          ).map((number) => (
-                            <button
-                              key={number}
-                              type="button"
-                              disabled={!canEdit}
-                              onClick={() => update(field.id, number)}
-                              className={cn(
-                                "min-h-12 rounded-xl border text-sm font-bold transition",
-                                fieldValue === number
-                                  ? "border-[var(--course-primary)] bg-[var(--course-primary)] text-[var(--course-on-primary)]"
-                                  : "border-slate-200 bg-white hover:border-slate-400",
-                              )}
-                            >
-                              {number}
-                            </button>
-                          ))}
+                      {field.description ? (
+                        <span className="mt-1 block text-xs leading-5 opacity-55">
+                          {field.description}
+                        </span>
+                      ) : null}
+                      {field.type === "scale" ? (
+                        <div className="mt-3">
+                          <div className="grid grid-cols-5 gap-2">
+                            {Array.from(
+                              {
+                                length: (field.max ?? 5) - (field.min ?? 1) + 1,
+                              },
+                              (_, index) => (field.min ?? 1) + index,
+                            ).map((number) => (
+                              <button
+                                key={number}
+                                type="button"
+                                disabled={!canEdit}
+                                onClick={() => update(field.id, number)}
+                                className={cn(
+                                  "min-h-12 rounded-xl border text-sm font-bold transition",
+                                  fieldValue === number
+                                    ? "border-[var(--course-primary)] bg-[var(--course-primary)] text-[var(--course-on-primary)]"
+                                    : "border-slate-200 bg-white hover:border-slate-400",
+                                )}
+                              >
+                                {number}
+                              </button>
+                            ))}
+                          </div>
+                          <div className="mt-2 flex justify-between gap-4 text-[11px] opacity-50">
+                            <span>{field.lowLabel}</span>
+                            <span className="text-right">
+                              {field.highLabel}
+                            </span>
+                          </div>
                         </div>
-                        <div className="mt-2 flex justify-between gap-4 text-[11px] opacity-50">
-                          <span>{field.lowLabel}</span>
-                          <span className="text-right">{field.highLabel}</span>
-                        </div>
-                      </div>
-                    ) : field.type === "long_text" ? (
-                      <textarea
-                        rows={5}
-                        maxLength={10_000}
-                        disabled={!canEdit}
-                        value={typeof fieldValue === "string" ? fieldValue : ""}
-                        onChange={(event) =>
-                          update(field.id, event.target.value)
-                        }
-                        placeholder={field.placeholder}
-                        className="mt-3 w-full resize-y rounded-xl border border-slate-200 bg-white p-4 text-sm leading-6 text-slate-950 outline-none focus:border-slate-500 disabled:bg-slate-100"
-                      />
-                    ) : (
-                      <input
-                        type={field.type === "date" ? "date" : "text"}
-                        maxLength={500}
-                        disabled={!canEdit}
-                        value={typeof fieldValue === "string" ? fieldValue : ""}
-                        onChange={(event) =>
-                          update(field.id, event.target.value)
-                        }
-                        placeholder={field.placeholder}
-                        className="mt-3 w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-950 outline-none focus:border-slate-500 disabled:bg-slate-100"
-                      />
-                    )}
-                  </label>
-                );
-              })}
+                      ) : field.type === "long_text" ? (
+                        <textarea
+                          rows={5}
+                          maxLength={10_000}
+                          disabled={!canEdit}
+                          value={
+                            typeof fieldValue === "string" ? fieldValue : ""
+                          }
+                          onChange={(event) =>
+                            update(field.id, event.target.value)
+                          }
+                          placeholder={field.placeholder}
+                          className="mt-3 w-full resize-y rounded-xl border border-slate-200 bg-white p-4 text-sm leading-6 text-slate-950 outline-none focus:border-slate-500 disabled:bg-slate-100"
+                        />
+                      ) : (
+                        <input
+                          type={field.type === "date" ? "date" : "text"}
+                          maxLength={500}
+                          disabled={!canEdit}
+                          value={
+                            typeof fieldValue === "string" ? fieldValue : ""
+                          }
+                          onChange={(event) =>
+                            update(field.id, event.target.value)
+                          }
+                          placeholder={field.placeholder}
+                          className="mt-3 w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-950 outline-none focus:border-slate-500 disabled:bg-slate-100"
+                        />
+                      )}
+                    </label>
+                  );
+                })}
+              </div>
+            </section>
+          ))}
+        </div>
+        <div className="shrink-0 bg-[var(--course-background)] pt-3 sm:pt-4">
+          {response ? (
+            <Saved
+              message={
+                isWorksheetResponse(response.value) &&
+                response.value.finalized &&
+                !changed
+                  ? "Workbook section completed"
+                  : "Progress saved · You can keep editing while this is open"
+              }
+            />
+          ) : null}
+          {canEdit ? (
+            <div className="mt-3 grid gap-2 sm:grid-cols-2">
+              <button
+                type="button"
+                onClick={() =>
+                  onSubmit({ values: current.values, finalized: false })
+                }
+                disabled={!answered || submitting || !changed}
+                className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl border border-slate-300 bg-white px-4 text-sm font-bold text-slate-700 disabled:opacity-40"
+              >
+                <Save className="h-4 w-4" /> Save progress
+              </button>
+              <button
+                type="button"
+                onClick={() =>
+                  onSubmit({ values: current.values, finalized: true })
+                }
+                disabled={!answered || !requiredComplete || submitting}
+                className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl bg-[var(--course-primary)] px-4 text-sm font-bold text-[var(--course-on-primary)] disabled:opacity-40"
+              >
+                {submitting ? (
+                  <LoaderCircle className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Check className="h-4 w-4" />
+                )}
+                Complete this section
+              </button>
             </div>
-          </section>
-        ))}
-        {response ? (
-          <Saved
-            message={
-              isWorksheetResponse(response.value) &&
-              response.value.finalized &&
-              !changed
-                ? "Workbook section completed"
-                : "Progress saved · You can keep editing while this is open"
-            }
-          />
-        ) : null}
-        {canEdit ? (
-          <div className="grid gap-2 sm:grid-cols-2">
-            <button
-              type="button"
-              onClick={() =>
-                onSubmit({ values: current.values, finalized: false })
-              }
-              disabled={!answered || submitting || !changed}
-              className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl border border-slate-300 bg-white px-4 text-sm font-bold text-slate-700 disabled:opacity-40"
-            >
-              <Save className="h-4 w-4" /> Save progress
-            </button>
-            <button
-              type="button"
-              onClick={() =>
-                onSubmit({ values: current.values, finalized: true })
-              }
-              disabled={!answered || !requiredComplete || submitting}
-              className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl bg-[var(--course-primary)] px-4 text-sm font-bold text-[var(--course-on-primary)] disabled:opacity-40"
-            >
-              {submitting ? (
-                <LoaderCircle className="h-4 w-4 animate-spin" />
-              ) : (
-                <Check className="h-4 w-4" />
-              )}
-              Complete this section
-            </button>
-          </div>
-        ) : null}
+          ) : null}
+        </div>
       </div>
     </div>
   );
