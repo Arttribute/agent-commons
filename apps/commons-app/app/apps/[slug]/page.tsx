@@ -37,10 +37,10 @@ export default function CustomAppPage() {
           <h1 className="font-semibold">Custom app unavailable</h1>
           <p className="mt-2 text-sm text-muted-foreground">{error}</p>
           <Link
-            href="/studio/apps"
+            href="/studio/customize/apps"
             className="mt-5 inline-flex items-center gap-2 text-sm underline"
           >
-            <ArrowLeft className="h-4 w-4" /> Back to Studio Apps
+            <ArrowLeft className="h-4 w-4" /> Back to Customize Apps
           </Link>
         </div>
       </main>
@@ -57,8 +57,8 @@ export default function CustomAppPage() {
     <main className="flex h-screen flex-col bg-page">
       <header className="flex h-14 items-center gap-3 border-b bg-background px-4">
         <Link
-          href="/studio/apps"
-          aria-label="Back to Studio Apps"
+          href="/studio/customize/apps"
+          aria-label="Back to Customize Apps"
           className="rounded-md p-2 hover:bg-muted"
         >
           <ArrowLeft className="h-4 w-4" />

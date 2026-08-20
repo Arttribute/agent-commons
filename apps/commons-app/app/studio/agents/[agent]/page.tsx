@@ -1455,7 +1455,7 @@ function SkillsView({
             <Button
               size="sm"
               variant="outline"
-              onClick={() => router.push("/studio/skills")}
+              onClick={() => router.push("/studio/customize/skills")}
             >
               Manage skills
               <ExternalLink className="ml-1.5 h-3.5 w-3.5" />
@@ -1495,7 +1495,9 @@ function SkillsView({
               >
                 <button
                   type="button"
-                  onClick={() => router.push(`/studio/skills/${skill.skillId}`)}
+                  onClick={() =>
+                    router.push(`/studio/customize/skills/${skill.skillId}`)
+                  }
                   className="flex min-w-0 flex-1 items-start gap-3 text-left"
                 >
                   <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-amber-100 text-base dark:bg-amber-300/15">

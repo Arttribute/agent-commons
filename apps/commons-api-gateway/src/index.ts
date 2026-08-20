@@ -14,7 +14,15 @@ export function createGatewayApp() {
   const app = new Hono<{ Variables: Variables }>();
   const counters = new Map<string, { minute: number; count: number }>();
 
-  app.use("*", secureHeaders());
+  const securityHeaders = secureHeaders();
+  app.use("*", (c, next) => {
+    // Published code-project previews provide their own deliberately strict
+    // sandbox policy. The gateway default includes X-Frame-Options:
+    // SAMEORIGIN, which prevents these cross-origin previews from loading in
+    // the Commons plugin iframe.
+    if (isPreviewPath(c.req.path)) return next();
+    return securityHeaders(c, next);
+  });
   app.use(
     "*",
     cors({
@@ -135,6 +143,19 @@ export function createGatewayApp() {
   // stripe-signature header, verified downstream). Pass it through publicly,
   // preserving the raw body for signature verification.
   app.post("/v1/billing/webhook", (c) =>
+    publicProxy(
+      c,
+      "agent-commons",
+      process.env.AGENT_COMMONS_INTERNAL_URL,
+      c.req.path,
+    ),
+  );
+  // Published code projects are intentionally public, unguessable preview
+  // assets. The upstream only serves projects whose visibility is public and
+  // whose latest deployment is ready. They must bypass credential auth so an
+  // isolated iframe can load HTML and relative assets without receiving a
+  // Commons bearer token.
+  app.get("/v1/previews/*", (c) =>
     publicProxy(
       c,
       "agent-commons",
@@ -355,6 +376,10 @@ if (process.env.COMMONS_GATEWAY_NO_LISTEN !== "true") {
 }
 
 export default app;
+
+function isPreviewPath(path: string) {
+  return path === "/v1/previews" || path.startsWith("/v1/previews/");
+}
 
 function requiredScope(method: string, path: string) {
   if (path.includes("/activity")) return "activity:read";

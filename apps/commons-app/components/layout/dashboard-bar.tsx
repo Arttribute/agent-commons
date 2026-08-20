@@ -9,7 +9,7 @@ import {
   LibraryBig,
   Wrench,
   Workflow,
-  AppWindow,
+  Settings2,
 } from "lucide-react";
 import Link from "next/link";
 import Image from "next/image";
@@ -46,7 +46,12 @@ export const DashboardBar: FC<DashboardBarProps> = ({
       path: "/studio/workflows",
     },
     { key: "library", label: "Library", icon: LibraryBig, path: "/library" },
-    { key: "apps", label: "Apps", icon: AppWindow, path: "/studio/apps" },
+    {
+      key: "customize",
+      label: "Customize",
+      icon: Settings2,
+      path: "/studio/customize/apps",
+    },
   ];
 
   return (

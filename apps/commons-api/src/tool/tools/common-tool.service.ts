@@ -1879,7 +1879,7 @@ export class CommonToolService {
       ...plugin,
       reviewRequired: true,
       message:
-        'The UI plugin is registered as a draft. Its owner must review and enable it in Studio Apps.',
+        'The UI plugin is registered as a draft. Its owner must review and enable it in Studio Customize → Apps.',
     };
   }
 
