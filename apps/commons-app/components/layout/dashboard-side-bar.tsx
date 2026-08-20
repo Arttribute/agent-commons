@@ -14,7 +14,7 @@ import {
   Loader2,
   Wrench,
   Workflow,
-  AppWindow,
+  Settings2,
 } from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { DashboardBar } from "./dashboard-bar";
@@ -39,8 +39,10 @@ export function DashboardSideBar({ username }: { username: string }) {
     if (!pathname) return false;
     // Detail pages ([id] routes) collapse the sidebar; create pages keep the
     // normal expanded sidebar like the studio list pages.
-    return /^\/studio\/(agents|tools|workflows|skills)\/(?!create(?:\/|$))[^/]+/.test(
-      pathname
+    return (
+      /^\/studio\/(agents|tools|workflows|skills)\/(?!create(?:\/|$))[^/]+/.test(
+        pathname
+      ) || /^\/studio\/customize\/skills\/[^/]+/.test(pathname)
     );
   }, [pathname]);
   const sidebarOpen = isOpen && !isLockedDetailRoute;
@@ -58,7 +60,12 @@ export function DashboardSideBar({ username }: { username: string }) {
     if (pathname.startsWith("/studio/tools")) return "tools";
     if (pathname.startsWith("/studio/tasks")) return "tasks";
     if (pathname.startsWith("/studio/workflows")) return "workflows";
-    if (pathname.startsWith("/studio/apps")) return "apps";
+    if (
+      pathname.startsWith("/studio/customize") ||
+      pathname.startsWith("/studio/apps") ||
+      pathname.startsWith("/studio/skills")
+    )
+      return "customize";
     if (pathname.startsWith("/library")) return "library";
     if (pathname.startsWith("/logs")) return "logs";
     if (pathname.startsWith("/spaces")) return "spaces";
@@ -170,10 +177,10 @@ export function DashboardSideBar({ username }: { username: string }) {
                   label: "Library",
                 },
                 {
-                  key: "apps",
-                  icon: AppWindow,
-                  path: "/studio/apps",
-                  label: "Apps",
+                  key: "customize",
+                  icon: Settings2,
+                  path: "/studio/customize/apps",
+                  label: "Customize",
                 },
               ].map(({ key, icon: Icon, path, label }) => (
                 <button

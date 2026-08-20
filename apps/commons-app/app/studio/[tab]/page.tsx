@@ -24,6 +24,7 @@ import { CreateButton, PageHeader } from "@/components/layout/page-header";
 import { useRouter } from "next/navigation";
 import { useAgents } from "@/hooks/use-agents";
 import { normalizePrincipalId } from "@/lib/principal-id";
+import { CustomizeTabs } from "@/components/customize/customize-tabs";
 
 const StudioPage: NextPage = () => {
   const { tab } = useParams() as { tab: string };
@@ -32,7 +33,13 @@ const StudioPage: NextPage = () => {
   const { authState } = useAuth();
   const userAddress = normalizePrincipalId(authState.walletAddress);
 
-  const activeTab = (tab as string) || pathname?.split("/")[2] || "agents";
+  const activeTab =
+    (tab as string) ||
+    (pathname?.startsWith("/studio/customize/")
+      ? pathname.split("/")[3]
+      : pathname?.split("/")[2]) ||
+    "agents";
+  const isCustomize = pathname?.startsWith("/studio/customize/") ?? false;
 
   const [showCreateWorkflowDialog, setShowCreateWorkflowDialog] =
     useState(false);
@@ -301,6 +308,8 @@ const StudioPage: NextPage = () => {
         <CreditsMenu />
         <CreateButton label={createLabel} onClick={handleCreateClick} />
       </PageHeader>
+
+      {isCustomize && <CustomizeTabs />}
 
       <div className="min-h-0 flex-1 overflow-y-auto">{mainContent}</div>
 

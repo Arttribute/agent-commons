@@ -52,7 +52,7 @@ export default function SkillDetailPage({
     return (
       <div className="flex h-full flex-col items-center justify-center gap-3 text-sm text-muted-foreground">
         Skill not found.
-        <Button variant="outline" size="sm" onClick={() => router.push("/studio/skills")}>
+        <Button variant="outline" size="sm" onClick={() => router.push("/studio/customize/skills")}>
           <ArrowLeft className="h-4 w-4" />
           Back to skills
         </Button>
@@ -68,7 +68,7 @@ export default function SkillDetailPage({
             variant="ghost"
             size="icon"
             className="h-8 w-8 shrink-0"
-            onClick={() => router.push("/studio/skills")}
+            onClick={() => router.push("/studio/customize/skills")}
             aria-label="Back to skills"
           >
             <ArrowLeft className="h-4 w-4" />

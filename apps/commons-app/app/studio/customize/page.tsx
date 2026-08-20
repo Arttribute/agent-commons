@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
 
-export default function LegacyAppsPage() {
+export default function CustomizePage() {
   redirect("/studio/customize/apps");
 }
