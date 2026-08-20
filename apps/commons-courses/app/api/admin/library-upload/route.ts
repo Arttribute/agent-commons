@@ -8,6 +8,7 @@ const allowed = new Set([
   "application/pdf",
   "application/vnd.ms-powerpoint",
   "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
 ]);
 const maxSize = 50 * 1024 * 1024;
 
@@ -38,7 +39,7 @@ export async function POST(req: NextRequest) {
   if (invalid) {
     return NextResponse.json(
       {
-        error: `${invalid.name} must be a PDF or PowerPoint file smaller than 50 MB.`,
+        error: `${invalid.name} must be a PDF, PowerPoint, or Word file smaller than 50 MB.`,
       },
       { status: 400 },
     );
