@@ -37,7 +37,7 @@ export async function GET(
 
   await connectDB();
   const session = await LiveSession.findById(id).select(
-    "courseId status pace access invitedEmails currentActivityId stateVersion activities settings",
+    "courseId status pace access invitedEmails currentActivityId currentPartId stateVersion activities parts settings",
   );
   if (!session || session.status === "draft") {
     return NextResponse.json(
@@ -120,12 +120,14 @@ export async function GET(
         status: session.status,
         pace: session.pace,
         currentActivityId,
+        currentPartId: session.currentPartId,
         currentActivity: currentActivity
           ? learnerSafeActivities([currentActivity])[0]
           : undefined,
         learnerCopilot: normalizeLiveLearnerCopilotPolicy(
           session.settings?.learnerCopilot,
         ),
+        parts: session.parts || [],
         stateVersion: session.stateVersion || 0,
         activityStatuses: Object.fromEntries(
           session.activities.map((activity: LiveActivity) => [

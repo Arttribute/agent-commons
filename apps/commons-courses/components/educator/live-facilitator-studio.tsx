@@ -37,6 +37,7 @@ import type {
   LiveActivityType,
   LiveParticipantRecord,
   LiveSessionRecord,
+  LiveSessionPart,
   LiveWorksheetField,
 } from "@/types/live-session";
 import type { CourseMaterialRecord } from "@/types/course-material";
@@ -162,12 +163,23 @@ export function LiveFacilitatorStudio({ sessionId }: { sessionId: string }) {
   const current = data?.session.activities.find(
     (activity) => activity.id === data.session.currentActivityId,
   );
-  const currentIndex = current
-    ? data!.session.activities.findIndex(
-        (activity) => activity.id === current.id,
-      )
-    : -1;
-  const nextActivity = data?.session.activities[currentIndex + 1];
+  const currentPart = data?.session.parts.find(
+    (part) =>
+      part.id === data.session.currentPartId ||
+      part.activityIds.includes(current?.id || ""),
+  );
+  const currentPartActivities = currentPart
+    ? currentPart.activityIds.flatMap((activityId) => {
+        const activity = data?.session.activities.find(
+          (candidate) => candidate.id === activityId,
+        );
+        return activity ? [activity] : [];
+      })
+    : data?.session.activities || [];
+  const currentPartIndex = currentPartActivities.findIndex(
+    (activity) => activity.id === current?.id,
+  );
+  const nextActivity = currentPartActivities[currentPartIndex + 1];
 
   function updateSession(patch: Partial<LiveSessionRecord>) {
     setData((currentData) =>
@@ -202,6 +214,7 @@ export function LiveFacilitatorStudio({ sessionId }: { sessionId: string }) {
         scheduledStart: data.session.scheduledStart,
         settings: data.session.settings,
         activities: data.session.activities,
+        parts: data.session.parts,
       }),
     });
     const next = await res.json().catch(() => ({}));
@@ -212,14 +225,19 @@ export function LiveFacilitatorStudio({ sessionId }: { sessionId: string }) {
     setSaving(false);
   }
 
-  async function command(commandName: string, activityId?: string) {
+  async function command(
+    commandName: string,
+    activityId?: string,
+    partId?: string,
+    pace?: LiveSessionPart["pace"],
+  ) {
     if (running) return;
     setRunning(true);
     setNotice("");
     const res = await fetch(`/api/educator/live-sessions/${sessionId}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ command: commandName, activityId }),
+      body: JSON.stringify({ command: commandName, activityId, partId, pace }),
     });
     const next = await res.json().catch(() => ({}));
     if (res.ok) {
@@ -453,6 +471,17 @@ export function LiveFacilitatorStudio({ sessionId }: { sessionId: string }) {
         </div>
       ) : null}
 
+      {data.session.parts.length ? (
+        <ProgrammeSessionControls
+          parts={data.session.parts}
+          running={running}
+          onOpen={(partId) => command("open_part", undefined, partId)}
+          onPaceChange={(partId, pace) =>
+            command("set_part_pace", undefined, partId, pace)
+          }
+        />
+      ) : null}
+
       {tab === "plan" ? (
         <div className="grid gap-5 xl:grid-cols-[340px_minmax(0,1fr)]">
           <aside className="rounded-2xl border border-slate-200 bg-white p-3">
@@ -547,24 +576,32 @@ export function LiveFacilitatorStudio({ sessionId }: { sessionId: string }) {
                     className={inputClass}
                   />
                 </Field>
-                <Field label="Delivery pace">
-                  <select
-                    value={data.session.pace}
-                    onChange={(event) =>
-                      updateSession({
-                        pace: event.target.value as LiveSessionRecord["pace"],
-                      })
-                    }
-                    className={inputClass}
-                  >
-                    <option value="facilitator">
-                      Facilitator controls each step
-                    </option>
-                    <option value="learner">
-                      Learners move at their own pace
-                    </option>
-                  </select>
-                </Field>
+                {data.session.parts.length ? (
+                  <Field label="Programme delivery">
+                    <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-500">
+                      Pace is set for each programme session above.
+                    </div>
+                  </Field>
+                ) : (
+                  <Field label="Delivery pace">
+                    <select
+                      value={data.session.pace}
+                      onChange={(event) =>
+                        updateSession({
+                          pace: event.target.value as LiveSessionRecord["pace"],
+                        })
+                      }
+                      className={inputClass}
+                    >
+                      <option value="facilitator">
+                        Facilitator controls each step
+                      </option>
+                      <option value="learner">
+                        Learners move at their own pace
+                      </option>
+                    </select>
+                  </Field>
+                )}
                 <Field label="Who can join">
                   <select
                     value={data.session.access}
@@ -982,7 +1019,14 @@ export function LiveFacilitatorStudio({ sessionId }: { sessionId: string }) {
                   <button
                     key={activity.id}
                     onClick={() => command("activate", activity.id)}
-                    disabled={data.session.status === "ended"}
+                    disabled={
+                      data.session.status === "ended" ||
+                      Boolean(
+                        data.session.parts.find((part) =>
+                          part.activityIds.includes(activity.id),
+                        )?.status === "closed",
+                      )
+                    }
                     className={cn(
                       "flex w-full items-center gap-3 rounded-lg px-2.5 py-2 text-left",
                       activity.id === current?.id
@@ -1100,7 +1144,9 @@ export function LiveFacilitatorStudio({ sessionId }: { sessionId: string }) {
                 <ShareRow
                   label="Pace"
                   value={
-                    data.session.pace === "facilitator"
+                    data.session.parts.length
+                      ? "Set per programme session"
+                      : data.session.pace === "facilitator"
                       ? "You control it"
                       : "Learners control it"
                   }
@@ -1127,6 +1173,116 @@ export function LiveFacilitatorStudio({ sessionId }: { sessionId: string }) {
         </div>
       ) : null}
     </div>
+  );
+}
+
+function ProgrammeSessionControls({
+  parts,
+  running,
+  onOpen,
+  onPaceChange,
+}: {
+  parts: LiveSessionPart[];
+  running: boolean;
+  onOpen: (partId: string) => void;
+  onPaceChange: (partId: string, pace: LiveSessionPart["pace"]) => void;
+}) {
+  return (
+    <section className="rounded-2xl border border-slate-200 bg-white p-4 sm:p-5">
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h3 className="text-sm font-bold text-slate-950">
+            Programme sessions
+          </h3>
+          <p className="mt-1 text-xs leading-5 text-slate-500">
+            Keep one learner link. Choose which session is open and how learners
+            move through it.
+          </p>
+        </div>
+        <BookOpen className="h-4 w-4 shrink-0 text-slate-300" />
+      </div>
+      <div className="mt-4 grid gap-3 lg:grid-cols-2">
+        {parts.map((part, index) => {
+          const open = part.status === "open";
+          return (
+            <article
+              key={part.id}
+              className={cn(
+                "rounded-xl border p-4",
+                open
+                  ? "border-emerald-200 bg-emerald-50/40"
+                  : "border-slate-200 bg-slate-50/50",
+              )}
+            >
+              <div className="flex items-start gap-3">
+                <span
+                  className={cn(
+                    "flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-xs font-bold",
+                    open
+                      ? "bg-emerald-600 text-white"
+                      : "bg-white text-slate-500 shadow-sm",
+                  )}
+                >
+                  {index + 1}
+                </span>
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h4 className="truncate text-sm font-bold text-slate-950">
+                      {part.title}
+                    </h4>
+                    <span
+                      className={cn(
+                        "rounded-full px-2 py-0.5 text-[9px] font-bold uppercase tracking-wide",
+                        open
+                          ? "bg-emerald-100 text-emerald-700"
+                          : "bg-slate-200 text-slate-500",
+                      )}
+                    >
+                      {open ? "Open" : "Closed"}
+                    </span>
+                  </div>
+                  {part.description ? (
+                    <p className="mt-1 line-clamp-2 text-xs leading-5 text-slate-500">
+                      {part.description}
+                    </p>
+                  ) : null}
+                </div>
+              </div>
+              <div className="mt-4 flex flex-col gap-2 sm:flex-row">
+                <select
+                  value={part.pace}
+                  disabled={running}
+                  onChange={(event) =>
+                    onPaceChange(
+                      part.id,
+                      event.target.value as LiveSessionPart["pace"],
+                    )
+                  }
+                  className="min-w-0 flex-1 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-700"
+                  aria-label={`${part.title} delivery pace`}
+                >
+                  <option value="learner">Learner self-guided</option>
+                  <option value="facilitator">Educator guided</option>
+                </select>
+                <button
+                  type="button"
+                  disabled={running || open}
+                  onClick={() => onOpen(part.id)}
+                  className={cn(
+                    "rounded-lg px-3 py-2 text-xs font-bold",
+                    open
+                      ? "cursor-default bg-emerald-100 text-emerald-700"
+                      : "bg-slate-950 text-white disabled:opacity-50",
+                  )}
+                >
+                  {open ? "Open to learners" : "Open this session"}
+                </button>
+              </div>
+            </article>
+          );
+        })}
+      </div>
+    </section>
   );
 }
 

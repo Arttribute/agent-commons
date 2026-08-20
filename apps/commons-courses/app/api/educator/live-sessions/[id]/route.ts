@@ -9,12 +9,26 @@ import {
   serializeEducatorLiveSession,
 } from "@/lib/live-session-data";
 import LiveSession, { type ILiveSession } from "@/models/LiveSession";
-import type { LiveActivity } from "@/types/live-session";
+import type { LiveActivity, LiveSessionPart } from "@/types/live-session";
 import { activityStatusesForLivePace } from "@/lib/live-session-pacing";
+import {
+  activityStatusesForParts,
+  firstActivityIdForPart,
+  partForActivity,
+} from "@/lib/live-session-parts";
 
-function syncActivityStatusesForPace(
-  session: ILiveSession,
-) {
+function syncActivityStatusesForPace(session: ILiveSession) {
+  if (session.parts?.length) {
+    const statuses = activityStatusesForParts({
+      activities: session.activities,
+      parts: session.parts,
+      currentActivityId: session.currentActivityId,
+    });
+    for (const activity of session.activities) {
+      activity.status = statuses[activity.id];
+    }
+    return;
+  }
   const next = activityStatusesForLivePace({
     activities: session.activities,
     currentActivityId: session.currentActivityId,
@@ -71,7 +85,7 @@ export async function PATCH(
   const body = await req.json().catch(() => ({}));
   const record =
     body && typeof body === "object" ? (body as Record<string, unknown>) : {};
-  const patch = normalizeSessionPatch(body);
+  const patch = normalizeSessionPatch(body, session.activities);
 
   if (record.command === "open_lobby") {
     session.status = "lobby";
@@ -96,9 +110,64 @@ export async function PATCH(
         { status: 404 },
       );
     }
+    const part = partForActivity(session, activityId);
+    if (part && part.status !== "open") {
+      return NextResponse.json(
+        { error: `Open ${part.title} before presenting its activities.` },
+        { status: 409 },
+      );
+    }
     session.status = "live";
     session.currentActivityId = activityId;
+    if (part) {
+      session.currentPartId = part.id;
+      session.pace = part.pace;
+    }
     syncActivityStatusesForPace(session);
+  } else if (record.command === "open_part") {
+    const partId = typeof record.partId === "string" ? record.partId : "";
+    const part = session.parts.find(
+      (item: LiveSessionPart) => item.id === partId,
+    );
+    if (!part) {
+      return NextResponse.json(
+        { error: "Programme session not found." },
+        { status: 404 },
+      );
+    }
+    for (const item of session.parts)
+      item.status = item.id === partId ? "open" : "closed";
+    session.currentPartId = part.id;
+    session.pace = part.pace;
+    session.currentActivityId = firstActivityIdForPart(
+      session.activities,
+      part,
+    );
+    session.status = "live";
+    syncActivityStatusesForPace(session);
+  } else if (record.command === "set_part_pace") {
+    const partId = typeof record.partId === "string" ? record.partId : "";
+    const pace = record.pace === "learner" ? "learner" : "facilitator";
+    const part = session.parts.find(
+      (item: LiveSessionPart) => item.id === partId,
+    );
+    if (!part) {
+      return NextResponse.json(
+        { error: "Programme session not found." },
+        { status: 404 },
+      );
+    }
+    part.pace = pace;
+    if (part.status === "open") {
+      session.currentPartId = part.id;
+      session.pace = pace;
+      session.currentActivityId = part.activityIds.includes(
+        session.currentActivityId || "",
+      )
+        ? session.currentActivityId
+        : firstActivityIdForPart(session.activities, part);
+      syncActivityStatusesForPace(session);
+    }
   } else if (record.command === "close_activity") {
     const activityId =
       typeof record.activityId === "string" ? record.activityId : "";
@@ -120,6 +189,7 @@ export async function PATCH(
 
   session.stateVersion = (session.stateVersion || 0) + 1;
   session.markModified("activities");
+  session.markModified("parts");
   await session.save();
   return NextResponse.json({
     session: await serializeEducatorLiveSession(

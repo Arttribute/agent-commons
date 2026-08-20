@@ -13,6 +13,10 @@ import {
   normalizePrioritizationResponse,
   normalizeWorksheetResponse,
 } from "@/lib/live-response-policy";
+import {
+  effectiveActivityPace,
+  isActivityPartOpen,
+} from "@/lib/live-session-parts";
 
 export async function POST(
   req: NextRequest,
@@ -54,6 +58,12 @@ export async function POST(
   if (!session || !activity) {
     return NextResponse.json({ error: "Activity not found." }, { status: 404 });
   }
+  if (!isActivityPartOpen(session, activity.id)) {
+    return NextResponse.json(
+      { error: "This programme session is not open yet." },
+      { status: 409 },
+    );
+  }
   if (activity.status !== "open") {
     return NextResponse.json(
       { error: "This activity is not open." },
@@ -61,7 +71,7 @@ export async function POST(
     );
   }
   if (
-    session.pace === "facilitator" &&
+    effectiveActivityPace(session, activity.id) === "facilitator" &&
     session.currentActivityId !== activity.id
   ) {
     return NextResponse.json(

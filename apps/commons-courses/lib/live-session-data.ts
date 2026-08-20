@@ -148,8 +148,10 @@ function serializeBase(
     invitedEmails: session.invitedEmails || [],
     scheduledStart: session.scheduledStart?.toISOString(),
     currentActivityId,
+    currentPartId: session.currentPartId,
     stateVersion: session.stateVersion || 0,
     activities: session.activities || [],
+    parts: session.parts || [],
     settings: {
       allowLateJoin: session.settings?.allowLateJoin !== false,
       showParticipantNames: Boolean(session.settings?.showParticipantNames),
