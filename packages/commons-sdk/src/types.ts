@@ -924,6 +924,21 @@ export interface Skill {
   sourceUrl?: string | null;
   createdAt: string;
   updatedAt: string;
+  assignedAgents?: SkillAgentAssignment[];
+}
+
+export interface SkillAgentAssignment {
+  assignmentId: string;
+  agentId: string;
+  agentName: string;
+  agentAvatar?: string | null;
+  isDefault: boolean;
+  isEnabled: boolean;
+}
+
+export interface AgentSkill extends Skill {
+  assignmentId?: string | null;
+  assigned: boolean;
 }
 
 export interface SkillIndex {
@@ -950,6 +965,83 @@ export interface CreateSkillParams {
   icon?: string;
   source?: string;
   sourceUrl?: string;
+}
+
+// ─── Capability providers ───────────────────────────────────────────────────
+
+export type CapabilityName = "web_search" | "computer" | "wallet";
+
+export interface CapabilityProviderDefinition {
+  id: string;
+  name: string;
+  credentialFields: string[];
+  endpoint?: boolean;
+}
+
+export interface CapabilityProviderConfiguration {
+  id: string;
+  capability: CapabilityName;
+  provider: string;
+  displayName?: string | null;
+  endpointUrl?: string | null;
+  settings: Record<string, unknown>;
+  status: "active" | "disabled";
+  hasCredentials: boolean;
+  updatedAt: string;
+}
+
+export interface CapabilityProviderInput {
+  provider: string;
+  displayName?: string;
+  endpointUrl?: string;
+  settings?: Record<string, unknown>;
+  credentials?: Record<string, string>;
+  status?: "active" | "disabled";
+}
+
+// ─── Sandboxed UI plugins ───────────────────────────────────────────────────
+
+export type UiPluginPermission = "theme.read" | "navigation";
+
+export interface UiPluginSurface {
+  type: "page" | "widget";
+  title?: string;
+  width?: number;
+  height?: number;
+}
+
+export interface UiPlugin {
+  pluginId: string;
+  ownerUserId: string;
+  workspaceId?: string | null;
+  createdByAgentId?: string | null;
+  codeProjectId: string;
+  name: string;
+  slug: string;
+  description?: string | null;
+  version: string;
+  entryUrl: string;
+  manifest: {
+    schemaVersion: "1";
+    surfaces: UiPluginSurface[];
+    permissions: UiPluginPermission[];
+  };
+  status: "draft" | "active" | "disabled";
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CreateUiPluginParams {
+  name: string;
+  slug?: string;
+  description?: string;
+  version?: string;
+  codeProjectId: string;
+  manifest: {
+    schemaVersion?: "1";
+    surfaces: UiPluginSurface[];
+    permissions?: UiPluginPermission[];
+  };
 }
 
 // ─── Memory ───────────────────────────────────────────────────────────────────
@@ -1436,6 +1528,8 @@ export interface AgentWallet {
   label?: string | null;
   isActive: boolean;
   createdAt: string;
+  provider?: string | null;
+  providerWalletId?: string | null;
 }
 
 export interface WalletBalance {

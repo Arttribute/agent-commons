@@ -46,6 +46,7 @@ export class LibraryController {
     @Query('source') source?: string,
     @Query('favorite') favorite?: string,
     @Query('sessionId') sessionId?: string,
+    @Query('agentId') agentId?: string,
     @Query('limit') limit?: string,
     @Query('offset') offset?: string,
   ) {
@@ -55,6 +56,7 @@ export class LibraryController {
       source,
       favorite: favorite === 'true',
       sessionId,
+      agentId,
       limit: limit ? Number(limit) : undefined,
       offset: offset ? Number(offset) : undefined,
     });

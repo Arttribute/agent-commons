@@ -45,6 +45,7 @@ export class LibraryService {
       source?: string;
       favorite?: boolean;
       sessionId?: string;
+      agentId?: string;
       limit?: number;
       offset?: number;
     },
@@ -69,7 +70,25 @@ export class LibraryService {
         : undefined,
       filters.favorite ? eq(schema.libraryItem.isFavorite, true) : undefined,
       filters.sessionId
-        ? eq(schema.libraryItem.sourceSessionId, filters.sessionId)
+        ? or(
+            eq(schema.libraryItem.sourceSessionId, filters.sessionId),
+            this.linkedToScope('session', filters.sessionId),
+          )
+        : undefined,
+      filters.agentId
+        ? or(
+            eq(schema.libraryItem.sourceAgentId, filters.agentId),
+            this.linkedToScope('agent', filters.agentId),
+            sql<boolean>`EXISTS (
+              SELECT 1
+              FROM library_link agent_session_link
+              INNER JOIN session linked_session
+                ON linked_session.session_id::text = agent_session_link.scope_id
+              WHERE agent_session_link.item_id = ${schema.libraryItem.itemId}
+                AND agent_session_link.scope_type = 'session'
+                AND linked_session.agent_id = ${filters.agentId}
+            )`,
+          )
         : undefined,
     ];
     const items = await this.db.query.libraryItem.findMany({
@@ -92,7 +111,9 @@ export class LibraryService {
     return Promise.all(
       items.map(async (item) => ({
         ...this.publicItem(item),
-        sessionTitle: item.sourceSessionId
+        sessionTitle:
+          item.sourceSessionId &&
+          (!filters.agentId || item.sourceAgentId === filters.agentId)
           ? (titleBySession.get(item.sourceSessionId) ?? 'Untitled chat')
           : null,
         previewUrl:
@@ -538,6 +559,15 @@ export class LibraryService {
       return sql<boolean>`${schema.libraryItem.kind} NOT IN ('image', 'app')`;
     }
     return undefined;
+  }
+
+  private linkedToScope(scopeType: 'agent' | 'session', scopeId: string) {
+    return sql<boolean>`EXISTS (
+      SELECT 1 FROM library_link scoped_link
+      WHERE scoped_link.item_id = ${schema.libraryItem.itemId}
+        AND scoped_link.scope_type = ${scopeType}
+        AND scoped_link.scope_id = ${scopeId}
+    )`;
   }
 
   private async getAccessible(itemId: string, principal: LibraryPrincipal) {

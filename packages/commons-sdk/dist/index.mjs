@@ -604,14 +604,71 @@ var CommonsClient = class {
         const qs = params.toString();
         return this.request("GET", `/v1/skills${qs ? `?${qs}` : ""}`);
       },
-      get: (skillIdOrSlug) => this.request("GET", `/v1/skills/${skillIdOrSlug}`),
+      get: (skillIdOrSlug) => this.request("GET", `/v1/skills/${encodeURIComponent(skillIdOrSlug)}`),
       getIndex: (ownerId) => {
         const qs = ownerId ? `?ownerId=${ownerId}` : "";
         return this.request("GET", `/v1/skills/index${qs}`);
       },
+      listForAgent: (agentId) => this.request("GET", `/v1/skills/agents/${encodeURIComponent(agentId)}`),
+      setAgentAvailability: (skillIdOrSlug, agentId, isEnabled) => this.request(
+        "PUT",
+        `/v1/skills/${encodeURIComponent(skillIdOrSlug)}/agents/${encodeURIComponent(agentId)}`,
+        { isEnabled }
+      ),
       create: (params) => this.request("POST", "/v1/skills", params),
-      update: (skillIdOrSlug, updates) => this.request("PUT", `/v1/skills/${skillIdOrSlug}`, updates),
-      delete: (skillIdOrSlug) => this.request("DELETE", `/v1/skills/${skillIdOrSlug}`)
+      update: (skillIdOrSlug, updates) => this.request(
+        "PUT",
+        `/v1/skills/${encodeURIComponent(skillIdOrSlug)}`,
+        updates
+      ),
+      delete: (skillIdOrSlug) => this.request(
+        "DELETE",
+        `/v1/skills/${encodeURIComponent(skillIdOrSlug)}`
+      ),
+      import: (file, options) => {
+        const body = new FormData();
+        body.append("file", file, options?.fileName || "SKILL.md");
+        if (options?.agentId) body.set("agentId", options.agentId);
+        return this.request("POST", "/v1/skills/import", body);
+      }
+    };
+  }
+  // ── Capability providers ─────────────────────────────────────────────────
+  get providers() {
+    return {
+      list: () => this.request("GET", "/v1/providers"),
+      configure: (capability, input) => this.request(
+        "PUT",
+        `/v1/providers/${encodeURIComponent(capability)}`,
+        input
+      ),
+      remove: (capability) => this.request(
+        "DELETE",
+        `/v1/providers/${encodeURIComponent(capability)}`
+      )
+    };
+  }
+  // ── Sandboxed UI plugins ─────────────────────────────────────────────────
+  get uiPlugins() {
+    return {
+      list: (activeOnly = false) => this.request(
+        "GET",
+        `/v1/ui-plugins${activeOnly ? "?active=true" : ""}`
+      ),
+      getBySlug: (slug) => this.request(
+        "GET",
+        `/v1/ui-plugins/slug/${encodeURIComponent(slug)}`
+      ),
+      create: (input) => this.request("PUT", "/v1/ui-plugins", input),
+      setStatus: (pluginId, status) => this.request(
+        "PUT",
+        `/v1/ui-plugins/${encodeURIComponent(pluginId)}/status`,
+        { status }
+      ),
+      delete: (pluginId) => this.request(
+        "DELETE",
+        `/v1/ui-plugins/${encodeURIComponent(pluginId)}`
+      )
     };
   }
   // ── Wallets ───────────────────────────────────────────────────────────────
@@ -989,6 +1046,7 @@ var CommonsClient = class {
         if (filter?.favorite !== void 0)
           query.set("favorite", String(filter.favorite));
         if (filter?.sessionId) query.set("sessionId", filter.sessionId);
+        if (filter?.agentId) query.set("agentId", filter.agentId);
         if (filter?.limit !== void 0)
           query.set("limit", String(filter.limit));
         if (filter?.offset !== void 0)

@@ -14,7 +14,7 @@ import {
 } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { awsCredentialsProvider } from '@vercel/oidc-aws-credentials-provider';
-import { and, eq, gt, inArray, isNull, or } from 'drizzle-orm';
+import { and, eq, gt, inArray, isNull, or, sql } from 'drizzle-orm';
 import crypto from 'crypto';
 import sharp from 'sharp';
 import mammoth from 'mammoth';
@@ -22,6 +22,10 @@ import * as XLSX from 'xlsx';
 import JSZip from 'jszip';
 import PptxGenJS from 'pptxgenjs';
 import path from 'node:path';
+import { execFile } from 'node:child_process';
+import { mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { promisify } from 'node:util';
 import {
   PDFArray,
   PDFDict,
@@ -68,6 +72,8 @@ export type FileAttachmentRef = {
   status: string;
   textPreview?: string | null;
   extractedTextChars: number;
+  /** True when the upload reused an existing Library item with identical bytes. */
+  reused?: boolean;
   artifacts?: Array<{
     artifactId: string;
     kind: string;
@@ -93,6 +99,7 @@ type PersistFileInput = {
   extractedTextOverride?: string;
   additionalArtifacts?: ExtractedArtifact[];
   onPersistenceStage?: (stage: string) => void;
+  deduplicate?: boolean;
 };
 
 type ExtractedArtifact = {
@@ -129,6 +136,8 @@ type LoadedPresentationImage = {
   width: number;
   height: number;
 };
+
+const execFileAsync = promisify(execFile);
 
 export type PdfTextReplacement = {
   /** Exact text copied from readUploadedFile, without the page marker. */
@@ -223,6 +232,7 @@ export class FilesService {
           buffer: file.buffer,
           originalName: file.originalname,
           mimeType: file.mimetype,
+          deduplicate: true,
         }),
       );
     }
@@ -483,9 +493,7 @@ export class FilesService {
           ),
         ),
       );
-      const imageSlides = slides.filter(
-        (slide) => slide.imageFileId,
-      ).length;
+      const imageSlides = slides.filter((slide) => slide.imageFileId).length;
       const notesSlides = slides.filter((slide) =>
         Boolean(slide.notes?.trim()),
       ).length;
@@ -505,7 +513,9 @@ export class FilesService {
             : []),
           ...(notesSlides < slides.length
             ? [
-                `${slides.length - notesSlides} slide(s) do not include speaker notes.`,
+                `${
+                  slides.length - notesSlides
+                } slide(s) do not include speaker notes.`,
               ]
             : []),
         ],
@@ -820,7 +830,7 @@ export class FilesService {
           extractedText.storageBucket,
           extractedText.storagePath,
         )
-      : (file.textPreview ?? '');
+      : file.textPreview ?? '';
     const content = fullText.slice(offset, offset + maxChars);
     const nextOffset = offset + content.length;
     const artifacts = await this.getArtifacts(file.itemId);
@@ -898,36 +908,14 @@ export class FilesService {
     const rowsById = new Map(rows.map((row) => [row.itemId, row]));
     const ordered = ids.map((id) => rowsById.get(id)).filter(Boolean);
     for (const file of ordered) await this.assertCanAccess(file!, context);
-
-    const bindToSessionIds = context.sessionId
-      ? ordered
-          .filter(
-            (file) =>
-              file &&
-              !file.sourceSessionId &&
-              (!file.sourceAgentId || file.sourceAgentId === context.agentId) &&
-              (!context.ownerId ||
-                samePrincipal(file.ownerUserId, context.ownerId)),
-          )
-          .map((file) => file!.itemId)
-      : [];
-    if (bindToSessionIds.length) {
-      await this.db
-        .insert(schema.libraryLink)
-        .values(
-          bindToSessionIds.map((itemId) => ({
-            itemId,
-            scopeType: 'session',
-            scopeId: context.sessionId!,
-          })),
-        )
-        .onConflictDoNothing();
-      for (const file of ordered) {
-        if (file && bindToSessionIds.includes(file.itemId)) {
-          file.sourceSessionId = context.sessionId!;
-        }
-      }
-    }
+    await Promise.all(
+      ordered.map((file) =>
+        this.linkArtifactScopes(file!.itemId, {
+          agentId: context.agentId,
+          sessionId: context.sessionId,
+        }),
+      ),
+    );
 
     const artifacts = ordered.length
       ? await this.db.query.libraryBlob.findMany({
@@ -967,7 +955,13 @@ export class FilesService {
         const preview = file.textPreview
           ? `\nPreview:\n${file.textPreview}`
           : '';
-        return `${index + 1}. ${file.name} (fileId: ${file.fileId}, ${file.kind}, ${file.mimeType}, ${formatBytes(file.sizeBytes)}, status: ${file.status}). Extracted text chars: ${file.extractedTextChars}.${artifactSummary}${preview}`;
+        return `${index + 1}. ${file.name} (fileId: ${file.fileId}, ${
+          file.kind
+        }, ${file.mimeType}, ${formatBytes(file.sizeBytes)}, status: ${
+          file.status
+        }). Extracted text chars: ${
+          file.extractedTextChars
+        }.${artifactSummary}${preview}`;
       }),
     ];
 
@@ -1095,7 +1089,6 @@ export class FilesService {
       );
     }
 
-    const fileId = uuidv4();
     const originalName = sanitizeFileName(input.originalName || 'upload');
     const mimeType = normalizeMimeType(input.mimeType, originalName);
     const kind = classifyFile(mimeType, originalName);
@@ -1110,6 +1103,41 @@ export class FilesService {
       ownership.ownerUserId,
       input.storageProvider,
     );
+    if (input.deduplicate) {
+      updateStage('checking the Library for an identical file');
+      const reusable = await this.db.query.libraryItem.findFirst({
+        where: (table) =>
+          and(
+            sql<boolean>`lower(${table.ownerUserId}) = lower(${ownership.ownerUserId})`,
+            eq(table.sha256, sha256),
+            isNull(table.deletedAt),
+            inArray(table.status, ['ready', 'partial']),
+          ),
+      });
+      if (reusable) {
+        await this.linkArtifactScopes(reusable.itemId, input);
+        await this.audit(
+          reusable.itemId,
+          input.ownerType ?? 'user',
+          input.ownerId ?? ownership.ownerUserId,
+          'reused',
+          {
+            agentId: input.agentId ?? null,
+            sessionId: input.sessionId ?? null,
+            uploadedName: originalName,
+          },
+        );
+        return {
+          ...this.toAttachmentRef(
+            reusable,
+            await this.getArtifacts(reusable.itemId),
+          ),
+          reused: true,
+        };
+      }
+    }
+
+    const fileId = uuidv4();
     const bucket = storageProvider === 's3' ? this.bucketName() : 'ipfs';
     if (storageProvider === 's3') {
       updateStage('checking presentation storage');
@@ -1192,9 +1220,13 @@ export class FilesService {
 
     for (const artifact of extraction.artifacts) {
       updateStage(
-        `storing presentation preview ${artifact.pageNumber ?? persistedArtifacts.length + 1}`,
+        `storing presentation preview ${
+          artifact.pageNumber ?? persistedArtifacts.length + 1
+        }`,
       );
-      const artifactPath = `${basePath}/derived/${sanitizeFileName(artifact.fileName)}`;
+      const artifactPath = `${basePath}/derived/${sanitizeFileName(
+        artifact.fileName,
+      )}`;
       const storedArtifact = await this.storeBuffer(
         storageProvider,
         bucket,
@@ -1309,17 +1341,8 @@ export class FilesService {
         : []),
     ]);
 
-    if (input.sessionId) {
-      updateStage('linking the presentation to the session');
-      await this.db
-        .insert(schema.libraryLink)
-        .values({
-          itemId: fileId,
-          scopeType: 'session',
-          scopeId: input.sessionId,
-        })
-        .onConflictDoNothing();
-    }
+    updateStage('linking the presentation to its agent and session');
+    await this.linkArtifactScopes(fileId, input);
     updateStage('indexing presentation text');
     await this.indexText(fileId, text);
     updateStage('auditing presentation creation');
@@ -1406,7 +1429,9 @@ export class FilesService {
       // Always point pdf.js at its packaged fonts so rendered artifacts match
       // the actual PDF instead of silently dropping most glyphs.
       useSystemFonts: false,
-      standardFontDataUrl: `${path.join(pdfjsRoot, 'standard_fonts')}${path.sep}`,
+      standardFontDataUrl: `${path.join(pdfjsRoot, 'standard_fonts')}${
+        path.sep
+      }`,
       cMapUrl: `${path.join(pdfjsRoot, 'cmaps')}${path.sep}`,
       cMapPacked: true,
     });
@@ -1820,6 +1845,25 @@ export class FilesService {
     kind: 'audio' | 'video',
   ): Promise<ExtractionResult> {
     if (
+      kind === 'video' &&
+      process.env.AGENT_FILE_VIDEO_UNDERSTANDING_ENABLED !== 'false' &&
+      process.env.OPENAI_API_KEY
+    ) {
+      try {
+        return await this.extractVideoUnderstanding(
+          buffer,
+          originalName,
+          mimeType,
+        );
+      } catch (error) {
+        this.logger.warn(
+          `Video understanding failed for ${originalName}: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        );
+      }
+    }
+    if (
       kind === 'audio' &&
       process.env.AGENT_FILE_AUDIO_TRANSCRIPTION_ENABLED === 'true' &&
       process.env.OPENAI_API_KEY
@@ -1866,6 +1910,143 @@ export class FilesService {
       artifacts: [],
       status: 'partial',
     };
+  }
+
+  private async extractVideoUnderstanding(
+    buffer: Buffer,
+    originalName: string,
+    mimeType: string,
+  ): Promise<ExtractionResult> {
+    const directory = await mkdtemp(path.join(tmpdir(), 'commons-video-'));
+    const extension = videoExtension(mimeType, originalName);
+    const inputPath = path.join(directory, `input${extension}`);
+    try {
+      await writeFile(inputPath, buffer);
+      const framePattern = path.join(directory, 'frame-%02d.jpg');
+      const maxFrames = Math.max(
+        3,
+        Math.min(12, Number(process.env.AGENT_FILE_VIDEO_MAX_FRAMES ?? 8)),
+      );
+      await execFileAsync(
+        process.env.FFMPEG_PATH || 'ffmpeg',
+        [
+          '-hide_banner',
+          '-loglevel',
+          'error',
+          '-i',
+          inputPath,
+          '-vf',
+          "fps=1/8,scale='min(1280,iw)':-2",
+          '-frames:v',
+          String(maxFrames),
+          '-q:v',
+          '3',
+          framePattern,
+        ],
+        { maxBuffer: 4 * 1024 * 1024 },
+      );
+      const frameNames = (await readdir(directory))
+        .filter((name) => /^frame-\d+\.jpg$/.test(name))
+        .sort()
+        .slice(0, maxFrames);
+      if (!frameNames.length) throw new Error('No video frames were decoded');
+
+      let transcript = '';
+      const audioPath = path.join(directory, 'audio.mp3');
+      try {
+        await execFileAsync(
+          process.env.FFMPEG_PATH || 'ffmpeg',
+          [
+            '-hide_banner',
+            '-loglevel',
+            'error',
+            '-i',
+            inputPath,
+            '-vn',
+            '-ac',
+            '1',
+            '-ar',
+            '16000',
+            '-b:a',
+            '48k',
+            '-y',
+            audioPath,
+          ],
+          { maxBuffer: 4 * 1024 * 1024 },
+        );
+        const audio = await readFile(audioPath);
+        if (audio.length > 0 && audio.length <= 25 * 1024 * 1024) {
+          const audioFile = new File([new Uint8Array(audio)], 'audio.mp3', {
+            type: 'audio/mpeg',
+          });
+          const transcription = await this.openAI.audio.transcriptions.create({
+            file: audioFile,
+            model:
+              process.env.AGENT_FILE_AUDIO_TRANSCRIPTION_MODEL ||
+              'gpt-4o-mini-transcribe',
+          });
+          transcript = transcription.text?.trim() ?? '';
+        }
+      } catch {
+        // Silent videos and unavailable audio codecs are valid inputs.
+      }
+
+      const frames = await Promise.all(
+        frameNames.map(async (name) => ({
+          type: 'image_url' as const,
+          image_url: {
+            url: `data:image/jpeg;base64,${(
+              await readFile(path.join(directory, name))
+            ).toString('base64')}`,
+            detail: 'low' as const,
+          },
+        })),
+      );
+      const model =
+        process.env.AGENT_FILE_VIDEO_UNDERSTANDING_MODEL || 'gpt-5.4-mini';
+      const completion = await this.openAI.chat.completions.create({
+        model,
+        messages: [
+          {
+            role: 'system',
+            content:
+              'Analyze videos for an AI agent. Produce a concise but complete searchable description with: purpose, chronological actions/events, visible text or UI, spoken instructions, results, and uncertainties. Do not invent details between sampled frames.',
+          },
+          {
+            role: 'user',
+            content: [
+              {
+                type: 'text',
+                text: `Video: ${originalName}\nSampled frames are chronological.${
+                  transcript ? `\nAudio transcript:\n${transcript}` : ''
+                }`,
+              },
+              ...frames,
+            ],
+          },
+        ],
+      });
+      const analysis = completion.choices[0]?.message?.content?.trim() ?? '';
+      const text = [
+        analysis,
+        transcript ? `\n## Transcript\n${transcript}` : '',
+      ]
+        .filter(Boolean)
+        .join('\n');
+      return {
+        text,
+        metadata: {
+          mediaKind: 'video',
+          videoUnderstandingModel: model,
+          sampledFrames: frameNames.length,
+          hasTranscript: Boolean(transcript),
+        },
+        artifacts: [],
+        status: text ? 'ready' : 'partial',
+      };
+    } finally {
+      await rm(directory, { recursive: true, force: true }).catch(() => null);
+    }
   }
 
   private async imageMetadata(buffer: Buffer) {
@@ -1976,6 +2157,29 @@ export class FilesService {
     throw new NotFoundException('File not found');
   }
 
+  private async linkArtifactScopes(
+    itemId: string,
+    input: { agentId?: string | null; sessionId?: string | null },
+  ) {
+    const links = [
+      input.agentId
+        ? { itemId, scopeType: 'agent', scopeId: input.agentId }
+        : null,
+      input.sessionId
+        ? { itemId, scopeType: 'session', scopeId: input.sessionId }
+        : null,
+    ].filter(Boolean) as Array<{
+      itemId: string;
+      scopeType: string;
+      scopeId: string;
+    }>;
+    if (!links.length) return;
+    await this.db
+      .insert(schema.libraryLink)
+      .values(links)
+      .onConflictDoNothing();
+  }
+
   private async downloadText(bucket: string, path: string) {
     if (bucket === 'ipfs') {
       const data = await this.pinata.fetchFile(path);
@@ -2051,8 +2255,8 @@ export class FilesService {
         ServerSideEncryption: process.env.AGENT_FILES_S3_KMS_KEY_ID
           ? 'aws:kms'
           : process.env.AGENT_FILE_S3_SSE === 'false'
-            ? undefined
-            : 'AES256',
+          ? undefined
+          : 'AES256',
         SSEKMSKeyId: process.env.AGENT_FILES_S3_KMS_KEY_ID,
       }),
     );
@@ -2200,7 +2404,9 @@ export class FilesService {
   private capExtractedText(text: string) {
     const max = this.maxExtractedTextChars();
     if (text.length <= max) return text;
-    return `${text.slice(0, max)}\n\n[truncated: showing first ${max} of ${text.length} extracted characters]`;
+    return `${text.slice(0, max)}\n\n[truncated: showing first ${max} of ${
+      text.length
+    } extracted characters]`;
   }
 
   private toAttachmentRef(
@@ -2295,7 +2501,9 @@ export class FilesService {
       }
     } catch (error) {
       this.logger.warn(
-        `Artifact embedding deferred for ${itemId}: ${error instanceof Error ? error.message : String(error)}`,
+        `Artifact embedding deferred for ${itemId}: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
       );
     }
   }
@@ -2320,7 +2528,10 @@ export class FilesService {
                 Bucket: original.storageBucket,
                 Key: original.storagePath,
                 ResponseContentType: file.mimeType,
-                ResponseContentDisposition: `inline; filename="${file.name.replace(/"/g, '')}"`,
+                ResponseContentDisposition: `inline; filename="${file.name.replace(
+                  /"/g,
+                  '',
+                )}"`,
               }) as any,
               {
                 expiresIn: Number(
@@ -2344,12 +2555,14 @@ export class FilesService {
     actorType: 'user' | 'agent' | 'service',
     actorId: string,
     action: string,
+    metadata: Record<string, unknown> = {},
   ) {
     await this.db.insert(schema.libraryAuditEvent).values({
       itemId,
       actorType,
       actorId,
       action,
+      metadata,
     });
   }
 }
@@ -2801,25 +3014,43 @@ async function renderPresentationPreview(
           .slice(0, 2)
           .map(
             (line, lineIndex) =>
-              `<tspan x="${x + 78}" dy="${lineIndex ? 27 : 0}">${escapeXml(line)}</tspan>`,
+              `<tspan x="${x + 78}" dy="${lineIndex ? 27 : 0}">${escapeXml(
+                line,
+              )}</tspan>`,
           )
           .join('');
         const body = wrapPreviewText(card.body, columns === 2 ? 48 : 30)
           .slice(0, 3)
           .map(
             (line, lineIndex) =>
-              `<tspan x="${x + 24}" dy="${lineIndex ? 24 : 0}">${escapeXml(line)}</tspan>`,
+              `<tspan x="${x + 24}" dy="${lineIndex ? 24 : 0}">${escapeXml(
+                line,
+              )}</tspan>`,
           )
           .join('');
         return `<rect x="${x}" y="${y}" width="${width}" height="184" rx="18" fill="#${color}" fill-opacity=".2" stroke="#${color}" stroke-width="2"/>
-          <rect x="${x + 22}" y="${y + 24}" width="42" height="32" rx="8" fill="#${color}"/>
-          <text x="${x + 43}" y="${y + 45}" text-anchor="middle" font-size="13" font-weight="700" fill="#${theme.textColor}">${String(cardIndex + 1).padStart(2, '0')}</text>
-          <text x="${x + 78}" y="${y + 46}" font-size="24" font-weight="700" fill="#${theme.textColor}">${heading}</text>
-          <text x="${x + 24}" y="${y + 96}" font-size="19" fill="#${theme.mutedTextColor}">${body}</text>`;
+          <rect x="${x + 22}" y="${
+          y + 24
+        }" width="42" height="32" rx="8" fill="#${color}"/>
+          <text x="${x + 43}" y="${
+          y + 45
+        }" text-anchor="middle" font-size="13" font-weight="700" fill="#${
+          theme.textColor
+        }">${String(cardIndex + 1).padStart(2, '0')}</text>
+          <text x="${x + 78}" y="${
+          y + 46
+        }" font-size="24" font-weight="700" fill="#${
+          theme.textColor
+        }">${heading}</text>
+          <text x="${x + 24}" y="${y + 96}" font-size="19" fill="#${
+          theme.mutedTextColor
+        }">${body}</text>`;
       })
       .join('');
     const imageMarkup = image
-      ? `<image href="${image.dataUri}" x="${layout === 'image-right' ? 690 : 75}" y="164" width="520" height="475" preserveAspectRatio="xMidYMid meet"/>`
+      ? `<image href="${image.dataUri}" x="${
+          layout === 'image-right' ? 690 : 75
+        }" y="164" width="520" height="475" preserveAspectRatio="xMidYMid meet"/>`
       : '';
     const bodyX = layout === 'image-left' ? 650 : 88;
     const bodyWidth =
@@ -2827,22 +3058,34 @@ async function renderPresentationPreview(
     const svg = `<svg width="1280" height="720" viewBox="0 0 1280 720" xmlns="http://www.w3.org/2000/svg">
       <rect width="1280" height="720" fill="#${background}"/>
       <rect x="70" y="42" width="20" height="70" rx="8" fill="#${accent}"/>
-      <text x="112" y="94" font-family="${escapeXml(theme.headFontFace)}, Arial, sans-serif" font-size="46" font-weight="700" fill="#${theme.textColor}">${escapeXml(spec.title ?? '')}</text>
+      <text x="112" y="94" font-family="${escapeXml(
+        theme.headFontFace,
+      )}, Arial, sans-serif" font-size="46" font-weight="700" fill="#${
+      theme.textColor
+    }">${escapeXml(spec.title ?? '')}</text>
       ${imageMarkup}
       ${cardMarkup}
       ${
         cards.length
           ? ''
-          : `<text x="${bodyX}" y="190" font-family="${escapeXml(theme.bodyFontFace)}, Arial, sans-serif" font-size="28" fill="#${theme.textColor}">
+          : `<text x="${bodyX}" y="190" font-family="${escapeXml(
+              theme.bodyFontFace,
+            )}, Arial, sans-serif" font-size="28" fill="#${theme.textColor}">
           ${bodyLines
             .map(
               (line, lineIndex) =>
-                `<tspan x="${bodyX}" dy="${lineIndex ? 43 : 0}">${escapeXml(line.slice(0, bodyWidth / 14))}</tspan>`,
+                `<tspan x="${bodyX}" dy="${lineIndex ? 43 : 0}">${escapeXml(
+                  line.slice(0, bodyWidth / 14),
+                )}</tspan>`,
             )
             .join('')}
         </text>`
       }
-      <text x="1210" y="685" text-anchor="end" font-family="${escapeXml(theme.bodyFontFace)}, Arial, sans-serif" font-size="15" fill="#${theme.mutedTextColor}">${String(index + 1).padStart(2, '0')}</text>
+      <text x="1210" y="685" text-anchor="end" font-family="${escapeXml(
+        theme.bodyFontFace,
+      )}, Arial, sans-serif" font-size="15" fill="#${
+      theme.mutedTextColor
+    }">${String(index + 1).padStart(2, '0')}</text>
     </svg>`;
     buffer = await sharp(Buffer.from(svg)).png().toBuffer();
   }
@@ -2963,6 +3206,17 @@ function sanitizePathSegment(value: string) {
       .replace(/^-+|-+$/g, '')
       .slice(0, 120) || 'unknown'
   );
+}
+
+function videoExtension(mimeType: string, originalName: string) {
+  const lower = originalName.toLowerCase();
+  const known = ['.mp4', '.m4v', '.mov', '.webm', '.avi'];
+  const fromName = known.find((extension) => lower.endsWith(extension));
+  if (fromName) return fromName;
+  if (mimeType.includes('quicktime')) return '.mov';
+  if (mimeType.includes('webm')) return '.webm';
+  if (mimeType.includes('avi')) return '.avi';
+  return '.mp4';
 }
 
 export function normalizeMimeType(
@@ -3155,7 +3409,9 @@ export async function revisePdfBufferPreservingLayout(
       data: new Uint8Array(sourceBuffer),
       disableWorker: true,
       useSystemFonts: false,
-      standardFontDataUrl: `${path.join(pdfjsRoot, 'standard_fonts')}${path.sep}`,
+      standardFontDataUrl: `${path.join(pdfjsRoot, 'standard_fonts')}${
+        path.sep
+      }`,
       cMapUrl: `${path.join(pdfjsRoot, 'cmaps')}${path.sep}`,
       cMapPacked: true,
     });
@@ -3201,7 +3457,9 @@ export async function revisePdfBufferPreservingLayout(
       );
       if (!selectedItems.length) {
         throw new BadRequestException(
-          `Could not map PDF text "${previewErrorText(find)}" to a visible text region`,
+          `Could not map PDF text "${previewErrorText(
+            find,
+          )}" to a visible text region`,
         );
       }
 
@@ -3218,7 +3476,9 @@ export async function revisePdfBufferPreservingLayout(
       const fontNames = new Set(selectedItems.map((item) => item.fontName));
       if (fontNames.size !== 1) {
         throw new BadRequestException(
-          `The passage "${previewErrorText(find)}" crosses differently styled text. Split it into one replacement per style.`,
+          `The passage "${previewErrorText(
+            find,
+          )}" crosses differently styled text. Split it into one replacement per style.`,
         );
       }
       if (
@@ -3262,7 +3522,9 @@ export async function revisePdfBufferPreservingLayout(
         )
       ) {
         throw new BadRequestException(
-          `The passage "${previewErrorText(find)}" mixes font sizes. Split it into smaller replacements.`,
+          `The passage "${previewErrorText(
+            find,
+          )}" mixes font sizes. Split it into smaller replacements.`,
         );
       }
       const minX = Math.min(...lines.map((line) => line.minX));
@@ -3276,7 +3538,11 @@ export async function revisePdfBufferPreservingLayout(
       );
       if (wrapped.length > lines.length) {
         throw new BadRequestException(
-          `The replacement for "${previewErrorText(find)}" needs ${wrapped.length} lines but the original region has ${lines.length}. Shorten the replacement or split the edit.`,
+          `The replacement for "${previewErrorText(find)}" needs ${
+            wrapped.length
+          } lines but the original region has ${
+            lines.length
+          }. Shorten the replacement or split the edit.`,
         );
       }
 
@@ -3385,7 +3651,9 @@ function findPdfTextMatch(
     }
   }
   throw new BadRequestException(
-    `Could not find occurrence ${occurrence} of "${previewErrorText(find)}" in the source PDF. Copy the exact passage from readUploadedFile.`,
+    `Could not find occurrence ${occurrence} of "${previewErrorText(
+      find,
+    )}" in the source PDF. Copy the exact passage from readUploadedFile.`,
   );
 }
 
@@ -3477,7 +3745,11 @@ function assertPdfFontSupportsText(
   }
   if (missing.size) {
     throw new BadRequestException(
-      `The source PDF embeds a subset of ${fontName} without these replacement glyphs: ${[...missing].join(' ')}. Rephrase the replacement using characters already present in the document so the original font can be preserved.`,
+      `The source PDF embeds a subset of ${fontName} without these replacement glyphs: ${[
+        ...missing,
+      ].join(
+        ' ',
+      )}. Rephrase the replacement using characters already present in the document so the original font can be preserved.`,
     );
   }
 }
@@ -3533,7 +3805,9 @@ function wrapTextToPdfWidth(
   for (const word of words) {
     if (widthOfTextAtSize(word, fontSize) > maxWidth) {
       throw new BadRequestException(
-        `The word "${previewErrorText(word)}" is wider than the original PDF text region`,
+        `The word "${previewErrorText(
+          word,
+        )}" is wider than the original PDF text region`,
       );
     }
     const candidate = current ? `${current} ${word}` : word;
@@ -3780,10 +4054,16 @@ function docxParagraph(text: string, style?: string) {
   const runs = lines
     .map(
       (line, index) =>
-        `${index ? '<w:r><w:br/></w:r>' : ''}<w:r><w:t xml:space="preserve">${escapeXml(line)}</w:t></w:r>`,
+        `${
+          index ? '<w:r><w:br/></w:r>' : ''
+        }<w:r><w:t xml:space="preserve">${escapeXml(line)}</w:t></w:r>`,
     )
     .join('');
-  return `<w:p>${style ? `<w:pPr><w:pStyle w:val="${style}"/></w:pPr>` : '<w:pPr><w:spacing w:after="140" w:line="276" w:lineRule="auto"/></w:pPr>'}${runs}</w:p>`;
+  return `<w:p>${
+    style
+      ? `<w:pPr><w:pStyle w:val="${style}"/></w:pPr>`
+      : '<w:pPr><w:spacing w:after="140" w:line="276" w:lineRule="auto"/></w:pPr>'
+  }${runs}</w:p>`;
 }
 
 function escapeXml(value: string) {

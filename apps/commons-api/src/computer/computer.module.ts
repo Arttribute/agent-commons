@@ -6,9 +6,10 @@ import { ComputerController } from './computer.controller';
 import { ComputerMigrationService } from './computer-migration.service';
 import { ComputerService } from './computer.service';
 import { ComputeMeteringService } from './compute-metering.service';
+import { CapabilityProviderModule } from '~/provider';
 
 @Module({
-  imports: [CreditModule, BillingModule],
+  imports: [CreditModule, BillingModule, CapabilityProviderModule],
   controllers: [ComputerController],
   providers: [
     ComputerMigrationService,

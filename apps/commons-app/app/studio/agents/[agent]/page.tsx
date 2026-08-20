@@ -18,7 +18,6 @@ import {
   ExternalLink,
   FileText,
   Gauge,
-  ImageIcon,
   Loader2,
   MessageSquare,
   Monitor,
@@ -53,6 +52,7 @@ import { AddToAgentBalance } from "@/components/finances/add-to-agent-balance";
 import { AgentTransactions } from "@/components/finances/agent-transactions";
 import { AgentMemoryView } from "@/components/memory/agent-memory-view";
 import { AgentComputerSurface } from "@/components/computers/agent-computer-surface";
+import { AgentArtifactsView } from "@/components/artifacts/agent-artifacts-view";
 import { AgentRuntimeSurface } from "@/components/agents/agent-runtime-surface";
 import {
   RUNTIME_NATIVE_TOOLING,
@@ -89,7 +89,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { useAgents } from "@/hooks/use-agents";
-import { useSkills } from "@/hooks/use-skills";
+import { useAgentSkills } from "@/hooks/use-skills";
 import { useAgentWallet } from "@/hooks/use-wallet";
 import { cn } from "@/lib/utils";
 import { normalizeConversationStarters } from "@/lib/conversation-starters";
@@ -98,7 +98,6 @@ import { normalizeSessionHistory } from "@/lib/session-history";
 import { useAuth } from "@/context/AuthContext";
 import { useAgentContext } from "@/context/AgentContext";
 import type { CommonAgent } from "@/types/agent";
-import type { Skill } from "@agent-commons/sdk";
 
 type SectionKey =
   | "setup"
@@ -109,7 +108,7 @@ type SectionKey =
   | "tasks"
   | "tools"
   | "skills"
-  | "artefacts"
+  | "artifacts"
   | "observability"
   | "usage"
   | "memory"
@@ -124,7 +123,7 @@ const sections: Array<{ key: SectionKey; label: string; icon: typeof Bot }> = [
   { key: "tasks", label: "Tasks", icon: CalendarCheck },
   { key: "tools", label: "Tools", icon: Wrench },
   { key: "skills", label: "Skills", icon: Sparkles },
-  { key: "artefacts", label: "Artefacts", icon: FileText },
+  { key: "artifacts", label: "Artifacts", icon: FileText },
   { key: "observability", label: "Observability", icon: TerminalSquare },
   { key: "usage", label: "Usage", icon: BarChart3 },
   { key: "memory", label: "Memory", icon: Brain },
@@ -268,8 +267,8 @@ function SetupView({
       description: agent.description || "",
       greeting: agent.greeting || "",
       conversationStarters: normalizeConversationStarters(
-      agent.conversationStarters,
-    ),
+        agent.conversationStarters,
+      ),
       a2aEnabled: Boolean((agent as any).a2aEnabled),
       modelProvider: (agent as any).modelProvider || "openai",
       modelId: (agent as any).modelId || "",
@@ -473,8 +472,8 @@ function SetupView({
             <div className="grid gap-1.5">
               <Label>Conversation starters</Label>
               <p className="text-[11px] text-muted-foreground">
-                Two to four work best. The label shows on an equal-width
-                button; clicking it fills the composer with the full prompt.
+                Two to four work best. The label shows on an equal-width button;
+                clicking it fills the composer with the full prompt.
               </p>
               <div className="grid gap-2">
                 {form.conversationStarters.map((starter, index) => (
@@ -1382,59 +1381,34 @@ function SkillsView({
   const isManagedRuntime =
     runtimeType === "openclaw" || runtimeType === "hermes";
   const { runtime } = useAgentRuntime(agentId, isManagedRuntime);
-  const { skills, loading, refresh } = useSkills({
-    ownerId: agentId,
-    ownerType: "agent",
+  const router = useRouter();
+  const { skills, loading, error, setAvailability } = useAgentSkills(agentId);
+  const [search, setSearch] = useState("");
+  const [view, setView] = useState<"assigned" | "all">("assigned");
+  const [updating, setUpdating] = useState<string | null>(null);
+  const [mutationError, setMutationError] = useState("");
+  const visibleSkills = skills.filter((skill) => {
+    if (view === "assigned" && !skill.assigned) return false;
+    const needle = search.trim().toLowerCase();
+    return (
+      !needle ||
+      skill.name.toLowerCase().includes(needle) ||
+      skill.description.toLowerCase().includes(needle) ||
+      skill.tags.some((tag) => tag.toLowerCase().includes(needle))
+    );
   });
-  const [editing, setEditing] = useState<Skill | null>(null);
-  const [draft, setDraft] = useState({
-    name: "",
-    description: "",
-    instructions: "",
-    tags: "",
-  });
-  const [saving, setSaving] = useState(false);
 
-  const beginEdit = (skill?: Skill) => {
-    const next = skill ?? null;
-    setEditing(next);
-    setDraft({
-      name: next?.name ?? "",
-      description: next?.description ?? "",
-      instructions: next?.instructions ?? "",
-      tags: (next?.tags ?? []).join(", "),
-    });
-  };
-
-  const save = async () => {
-    if (!draft.name.trim() || !draft.instructions.trim()) return;
-    setSaving(true);
-    const tags = draft.tags
-      .split(",")
-      .map((tag) => tag.trim())
-      .filter(Boolean);
-    const slug = draft.name
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, "-")
-      .replace(/^-|-$/g, "");
+  const toggleSkill = async (skillId: string, enabled: boolean) => {
+    setUpdating(skillId);
+    setMutationError("");
     try {
-      await fetch(editing ? `/api/skills/${editing.skillId}` : "/api/skills", {
-        method: editing ? "PUT" : "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          ...draft,
-          slug: editing?.slug ?? `${agentId.slice(0, 8)}-${slug || "skill"}`,
-          tags,
-          ownerId: agentId,
-          ownerType: "agent",
-          isPublic: false,
-          source: "user",
-        }),
-      });
-      setEditing(null);
-      refresh();
+      await setAvailability(skillId, enabled);
+    } catch (cause) {
+      setMutationError(
+        cause instanceof Error ? cause.message : "Could not update this skill",
+      );
     } finally {
-      setSaving(false);
+      setUpdating(null);
     }
   };
 
@@ -1442,204 +1416,121 @@ function SkillsView({
     <div className="min-h-0 overflow-auto">
       <SectionHeader
         title="Skills"
-        subtitle="Reusable instructions this agent can follow."
+        subtitle="Choose the reusable playbooks this agent is allowed to invoke."
       />
       {runtime && (
         <div className="mx-auto max-w-5xl px-5 pt-5">
           <RuntimeSkillsNote runtime={runtime} />
         </div>
       )}
-      <div className="mx-auto grid max-w-5xl gap-4 p-5 lg:grid-cols-[minmax(0,1fr)_380px]">
-        <Panel
-          title="Agent skills"
-          action={
-            <Button
-              size="sm"
-              variant="outline"
-              className="h-8 gap-1.5"
-              onClick={() => beginEdit()}
-            >
-              <Plus className="h-3.5 w-3.5" />
-              New
-            </Button>
-          }
-        >
-          {loading ? (
-            <Skeleton className="h-32 w-full" />
-          ) : skills.length === 0 ? (
-            <div className="rounded-lg border border-dashed p-8 text-center text-sm text-muted-foreground">
-              No skills configured for this agent yet.
-            </div>
-          ) : (
-            <div className="space-y-2">
-              {skills.map((skill) => (
+      <div className="mx-auto max-w-5xl p-5">
+        <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="relative w-full sm:max-w-xs">
+            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              placeholder="Search available skills"
+              className="h-9 pl-9"
+            />
+          </div>
+          <div className="flex items-center gap-2">
+            <div className="flex rounded-lg bg-muted p-1">
+              {(["assigned", "all"] as const).map((value) => (
                 <button
-                  key={skill.skillId}
+                  key={value}
                   type="button"
-                  className="w-full rounded-lg border border-border p-3 text-left hover:bg-muted/40"
-                  onClick={() => beginEdit(skill)}
-                >
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <p className="truncate text-sm font-medium">
-                        {skill.name}
-                      </p>
-                      <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">
-                        {skill.description}
-                      </p>
-                    </div>
-                    <Badge
-                      variant={skill.isActive ? "default" : "secondary"}
-                      className="rounded-md"
-                    >
-                      {skill.isActive ? "active" : "inactive"}
-                    </Badge>
-                  </div>
-                  {skill.tags?.length > 0 && (
-                    <div className="mt-2 flex flex-wrap gap-1">
-                      {skill.tags.map((tag) => (
-                        <Badge
-                          key={tag}
-                          variant="outline"
-                          className="rounded-md"
-                        >
-                          {tag}
-                        </Badge>
-                      ))}
-                    </div>
+                  onClick={() => setView(value)}
+                  className={cn(
+                    "rounded-md px-3 py-1.5 text-xs capitalize",
+                    view === value
+                      ? "bg-background font-medium shadow-sm"
+                      : "text-muted-foreground",
                   )}
+                >
+                  {value === "assigned" ? "On this agent" : "All skills"}
                 </button>
               ))}
             </div>
-          )}
-        </Panel>
-        <Panel title={editing ? "Edit skill" : "Create skill"}>
-          <div className="space-y-3">
-            <div className="grid gap-1.5">
-              <Label>Name</Label>
-              <Input
-                value={draft.name}
-                onChange={(e) =>
-                  setDraft((d) => ({ ...d, name: e.target.value }))
-                }
-              />
-            </div>
-            <div className="grid gap-1.5">
-              <Label>Description</Label>
-              <Textarea
-                className="min-h-20"
-                value={draft.description}
-                onChange={(e) =>
-                  setDraft((d) => ({ ...d, description: e.target.value }))
-                }
-              />
-            </div>
-            <div className="grid gap-1.5">
-              <Label>Instructions</Label>
-              <Textarea
-                className="min-h-40 font-mono text-sm"
-                value={draft.instructions}
-                onChange={(e) =>
-                  setDraft((d) => ({ ...d, instructions: e.target.value }))
-                }
-              />
-            </div>
-            <div className="grid gap-1.5">
-              <Label>Tags</Label>
-              <Input
-                value={draft.tags}
-                onChange={(e) =>
-                  setDraft((d) => ({ ...d, tags: e.target.value }))
-                }
-                placeholder="research, writing"
-              />
-            </div>
             <Button
-              className="w-full gap-1.5"
-              disabled={
-                saving || !draft.name.trim() || !draft.instructions.trim()
-              }
-              onClick={save}
+              size="sm"
+              variant="outline"
+              onClick={() => router.push("/studio/skills")}
             >
-              {saving && <Loader2 className="h-3.5 w-3.5 animate-spin" />}Save
-              skill
+              Manage skills
+              <ExternalLink className="ml-1.5 h-3.5 w-3.5" />
             </Button>
           </div>
-        </Panel>
-      </div>
-    </div>
-  );
-}
+        </div>
 
-function ArtefactsView({ sessions, tasks }: { sessions: any[]; tasks: any[] }) {
-  const artefacts = useMemo(() => {
-    const items: any[] = [];
-    for (const session of sessions) {
-      for (const message of session.history ?? []) {
-        const metadataArtifacts =
-          message.metadata?.artifacts ?? message.metadata?.files ?? [];
-        for (const artifact of Array.isArray(metadataArtifacts)
-          ? metadataArtifacts
-          : []) {
-          items.push({
-            ...artifact,
-            source: session.title || "Session",
-            createdAt: message.timestamp || session.createdAt,
-          });
-        }
-      }
-    }
-    for (const task of tasks) {
-      const result = task.resultContent;
-      const taskArtifacts = Array.isArray(result?.artifacts)
-        ? result.artifacts
-        : [];
-      for (const artifact of taskArtifacts)
-        items.push({
-          ...artifact,
-          source: task.title,
-          createdAt: task.createdAt,
-        });
-    }
-    return items;
-  }, [sessions, tasks]);
+        {(error || mutationError) && (
+          <div className="mb-4 rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive">
+            {mutationError || error}
+          </div>
+        )}
 
-  return (
-    <div className="min-h-0 overflow-auto">
-      <SectionHeader
-        title="Artefacts"
-        subtitle="Files, documents, images, and structured outputs produced by this agent when available."
-      />
-      <div className="mx-auto max-w-5xl p-5">
-        {artefacts.length === 0 ? (
-          <div className="rounded-lg border border-dashed p-12 text-center">
-            <ImageIcon className="mx-auto h-10 w-10 text-muted-foreground/40" />
-            <p className="mt-3 text-sm font-medium">No artefacts found</p>
+        {loading ? (
+          <Skeleton className="h-40 w-full" />
+        ) : visibleSkills.length === 0 ? (
+          <div className="rounded-xl border border-dashed p-12 text-center">
+            <Sparkles className="mx-auto h-9 w-9 text-muted-foreground/35" />
+            <p className="mt-3 text-sm font-medium">
+              {view === "assigned" ? "No skills enabled" : "No skills found"}
+            </p>
             <p className="mt-1 text-sm text-muted-foreground">
-              Generated files will appear here once sessions or tasks attach
-              artifact metadata.
+              {view === "assigned"
+                ? "Switch to All skills to choose what this agent can invoke."
+                : "Create a reusable skill in the Skills library."}
             </p>
           </div>
         ) : (
-          <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
-            {artefacts.map((artifact, index) => (
+          <div className="overflow-hidden rounded-xl border bg-background">
+            {visibleSkills.map((skill, index) => (
               <div
-                key={`${artifact.artifactId ?? artifact.name ?? index}`}
-                className="rounded-lg border border-border p-3"
+                key={skill.skillId}
+                className={cn(
+                  "flex items-center gap-4 px-4 py-3",
+                  index > 0 && "border-t",
+                )}
               >
-                <FileText className="h-5 w-5 text-muted-foreground" />
-                <p className="mt-3 truncate text-sm font-medium">
-                  {artifact.name || artifact.artifactId || "Untitled artefact"}
-                </p>
-                <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">
-                  {artifact.description ||
-                    artifact.mimeType ||
-                    artifact.type ||
-                    "Generated output"}
-                </p>
-                <p className="mt-3 text-xs text-muted-foreground">
-                  {artifact.source} · {relative(artifact.createdAt)}
-                </p>
+                <button
+                  type="button"
+                  onClick={() => router.push(`/studio/skills/${skill.skillId}`)}
+                  className="flex min-w-0 flex-1 items-start gap-3 text-left"
+                >
+                  <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-amber-100 text-base dark:bg-amber-300/15">
+                    {skill.icon || <Sparkles className="h-4 w-4" />}
+                  </span>
+                  <span className="min-w-0">
+                    <span className="flex items-center gap-2">
+                      <span className="truncate text-sm font-medium">
+                        {skill.name}
+                      </span>
+                      <Badge variant="outline" className="h-5 text-[10px]">
+                        {skill.ownerType === "platform" ? "Commons" : "Custom"}
+                      </Badge>
+                    </span>
+                    <span className="mt-0.5 block line-clamp-1 text-xs text-muted-foreground">
+                      {skill.description}
+                    </span>
+                  </span>
+                </button>
+                <div className="flex shrink-0 items-center gap-2">
+                  <span className="hidden text-xs text-muted-foreground sm:block">
+                    {skill.assigned ? "Available" : "Unavailable"}
+                  </span>
+                  {updating === skill.skillId && (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />
+                  )}
+                  <Switch
+                    checked={skill.assigned}
+                    disabled={updating === skill.skillId}
+                    onCheckedChange={(checked) =>
+                      toggleSkill(skill.skillId, checked)
+                    }
+                    aria-label={`${skill.assigned ? "Disable" : "Enable"} ${skill.name}`}
+                  />
+                </div>
               </div>
             ))}
           </div>
@@ -2709,7 +2600,10 @@ export default function AgentStudioPage({
   const { agent: agentId } = use(params);
   const router = useRouter();
   const searchParams = useSearchParams();
-  const requestedSection = searchParams.get("section") as SectionKey | null;
+  const rawRequestedSection = searchParams.get("section");
+  const requestedSection = (
+    rawRequestedSection === "artefacts" ? "artifacts" : rawRequestedSection
+  ) as SectionKey | null;
   const requestedSessionId = searchParams.get("session");
   const { authState } = useAuth();
   const userAddress = normalizePrincipalId(authState.walletAddress);
@@ -2748,7 +2642,6 @@ export default function AgentStudioPage({
   const [sessions, setSessions] = useState<any[]>([]);
   const [selectedSession, setSelectedSession] = useState<any>(null);
   const [loadingSession, setLoadingSession] = useState(false);
-  const [tasks, setTasks] = useState<any[]>([]);
   const { renameSession, deleteSession } = useSessionMutations();
 
   const handleRenameSession = useCallback(
@@ -2820,13 +2713,6 @@ export default function AgentStudioPage({
     setSessions(list);
   }, [agentId, userAddress]);
 
-  const loadTasks = useCallback(async () => {
-    if (!agentId) return;
-    const res = await fetch(`/api/tasks?agentId=${agentId}`);
-    const data = await res.json();
-    setTasks(data.data ?? []);
-  }, [agentId]);
-
   const loadSession = useCallback(
     async (sessionId: string) => {
       setLoadingSession(true);
@@ -2850,10 +2736,6 @@ export default function AgentStudioPage({
   useEffect(() => {
     loadSessions();
   }, [loadSessions]);
-  useEffect(() => {
-    loadTasks();
-  }, [loadTasks]);
-
   const requestedSessionLoadedRef = useRef<string | null>(null);
   useEffect(() => {
     if (
@@ -3001,8 +2883,8 @@ export default function AgentStudioPage({
         );
       case "skills":
         return <SkillsView agentId={agentId} runtimeType={agent.runtimeType} />;
-      case "artefacts":
-        return <ArtefactsView sessions={sessions} tasks={tasks} />;
+      case "artifacts":
+        return <AgentArtifactsView agentId={agentId} />;
       case "observability":
         return <ObservabilityView agentId={agentId} />;
       case "usage":

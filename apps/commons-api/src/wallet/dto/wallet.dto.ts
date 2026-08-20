@@ -13,14 +13,16 @@ export interface CreateWalletDto {
 export interface WalletBalanceDto {
   address: string;
   chainId: string;
-  usdc: string;    // formatted USDC balance (6 decimals)
-  native: string;  // formatted native token balance (ETH)
+  usdc: string; // formatted USDC balance (6 decimals)
+  native: string; // formatted native token balance (ETH)
 }
 
 export interface WalletResponseDto {
   id: string;
   agentId: string;
   walletType: WalletType;
+  provider?: string;
+  providerWalletId?: string | null;
   address: string;
   smartAccountAddress?: string | null;
   chainId: string;
