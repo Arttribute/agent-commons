@@ -57,7 +57,10 @@ const PANEL_DEFAULT_WIDTH = 360;
 
 function clampPanelWidth(value: number) {
   if (!Number.isFinite(value)) return PANEL_DEFAULT_WIDTH;
-  return Math.min(PANEL_MAX_WIDTH, Math.max(PANEL_MIN_WIDTH, Math.round(value)));
+  return Math.min(
+    PANEL_MAX_WIDTH,
+    Math.max(PANEL_MIN_WIDTH, Math.round(value))
+  );
 }
 
 export function FloatingCommonsCopilot() {
@@ -100,7 +103,7 @@ function FloatingCommonsCopilotInner() {
   useEffect(() => {
     document.documentElement.style.setProperty(
       "--copilot-panel-width",
-      `${panelWidth}px`,
+      `${panelWidth}px`
     );
   }, [panelWidth]);
 
@@ -131,7 +134,7 @@ function FloatingCommonsCopilotInner() {
       pathname.startsWith("/legal") ||
       pathname.startsWith("/privacy") ||
       pathname.startsWith("/terms"),
-    [authenticated, pathname, ready],
+    [authenticated, pathname, ready]
   );
 
   const loadCopilot = useCallback(async () => {
@@ -157,7 +160,7 @@ function FloatingCommonsCopilotInner() {
     if (!copilot?.agentId) return;
     const response = await fetch(
       `/api/sessions/list?agentId=${encodeURIComponent(copilot.agentId)}`,
-      { cache: "no-store" },
+      { cache: "no-store" }
     );
     if (!response.ok) return;
     const payload = await response.json();
@@ -180,6 +183,22 @@ function FloatingCommonsCopilotInner() {
     return () =>
       window.removeEventListener("copilot-change-created", loadChanges);
   }, [loadChanges]);
+
+  useEffect(() => {
+    const openWithPrompt = (event: Event) => {
+      const detail = (event as CustomEvent<{ text?: string }>).detail;
+      if (!detail?.text?.trim()) return;
+      setOpen(true);
+      setView("chat");
+      setExternalPrompt({
+        id: `external:${Date.now()}`,
+        text: detail.text.trim(),
+      });
+    };
+    window.addEventListener("commons-copilot-prompt", openWithPrompt);
+    return () =>
+      window.removeEventListener("commons-copilot-prompt", openWithPrompt);
+  }, []);
 
   useEffect(() => {
     document.documentElement.classList.toggle("commons-copilot-open", open);
@@ -224,14 +243,14 @@ function FloatingCommonsCopilotInner() {
   // they remain reachable.
   const inlineChanges = sessionId
     ? [...pending, ...recentlyApplied].filter(
-        (change) => !change.sessionId || change.sessionId === sessionId,
+        (change) => !change.sessionId || change.sessionId === sessionId
       )
     : [];
   const attentionSessionIds = [
     ...new Set(
       pending
         .map((change) => change.sessionId)
-        .filter((id): id is string => Boolean(id)),
+        .filter((id): id is string => Boolean(id))
     ),
   ];
 
@@ -263,7 +282,7 @@ function FloatingCommonsCopilotInner() {
   const handleChange = async (
     change: CopilotChange,
     action?: "accept" | "reject" | "revert",
-    reason?: string,
+    reason?: string
   ) => {
     await loadChanges();
     if (!action) return;
@@ -271,15 +290,17 @@ function FloatingCommonsCopilotInner() {
       action === "accept"
         ? "approved"
         : action === "reject"
-          ? "rejected"
-          : "undid";
+        ? "rejected"
+        : "undid";
     const reasonText = reason ? ` Reason: ${reason}` : "";
     const studioUrl = change.resourceId
       ? studioResourceUrl(change.resourceType, change.resourceId)
       : null;
     setExternalPrompt({
       id: `${change.changeId}:${action}:${Date.now()}`,
-      text: `I ${verb} the ${change.resourceType} change “${change.title}”.${reasonText}${
+      text: `I ${verb} the ${change.resourceType} change “${
+        change.title
+      }”.${reasonText}${
         studioUrl ? ` The canonical Studio link is ${studioUrl}.` : ""
       } Acknowledge this review action and explain the resulting state accurately.`,
     });
@@ -303,7 +324,7 @@ function FloatingCommonsCopilotInner() {
       setScopes(
         Array.isArray(payload.data?.copilotScopes)
           ? payload.data.copilotScopes
-          : [],
+          : []
       );
       setSaved(true);
       window.setTimeout(() => setSaved(false), 1600);
@@ -495,14 +516,14 @@ function FloatingCommonsCopilotInner() {
                           "w-full rounded-xl border p-3 text-left transition",
                           mode === value
                             ? "border-foreground bg-muted/50"
-                            : "hover:bg-muted/30",
+                            : "hover:bg-muted/30"
                         )}
                       >
                         <div className="flex gap-3">
                           <span
                             className={cn(
                               "mt-0.5 h-3.5 w-3.5 rounded-full border",
-                              mode === value && "border-4 border-foreground",
+                              mode === value && "border-4 border-foreground"
                             )}
                           />
                           <span>
@@ -534,9 +555,7 @@ function FloatingCommonsCopilotInner() {
                                 setScopes((current) =>
                                   checked
                                     ? [...new Set([...current, value])]
-                                    : current.filter(
-                                        (scope) => scope !== value,
-                                      ),
+                                    : current.filter((scope) => scope !== value)
                                 )
                               }
                             />
@@ -617,7 +636,7 @@ function HeaderIcon({
 
 function pageContext(pathname: string) {
   const match = pathname.match(
-    /^\/studio\/(agents|workflows|tasks|tools|skills)\/([^/]+)/,
+    /^\/studio\/(agents|workflows|tasks|tools|skills)\/([^/]+)/
   );
   if (!match) return { routeName: routeName(pathname) };
   const singular = match[1].slice(0, -1) as
@@ -640,13 +659,13 @@ function pageContext(pathname: string) {
 
 function routeName(pathname: string) {
   const route = pathname.match(
-    /^\/studio\/(agents|workflows|tasks|tools|skills)/,
+    /^\/studio\/(agents|workflows|tasks|tools|skills)/
   )?.[1];
   return route
     ? `${route} list`
     : pathname.startsWith("/studio")
-      ? "Studio"
-      : "Agent Commons";
+    ? "Studio"
+    : "Agent Commons";
 }
 
 function resourceContext(value: Record<string, any>) {
@@ -666,7 +685,7 @@ function resourceContext(value: Record<string, any>) {
   return Object.fromEntries(
     allowed
       .filter((key) => value[key] !== undefined)
-      .map((key) => [key, value[key]]),
+      .map((key) => [key, value[key]])
   );
 }
 

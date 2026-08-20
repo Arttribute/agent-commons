@@ -17,6 +17,7 @@ import { CreateWorkflowDialog } from "@/components/workflows/create-workflow-dia
 import { CreateToolDialog } from "@/components/tools/create-tool-dialog";
 import { TaskManagementView } from "@/components/tasks/task-management-view";
 import { SkillsMarketplaceView } from "@/components/skills/skills-marketplace-view";
+import { UiPluginsView } from "@/components/plugins/ui-plugins-view";
 import { AlertCircle, Loader2 } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { CreateButton, PageHeader } from "@/components/layout/page-header";
@@ -52,9 +53,7 @@ const StudioPage: NextPage = () => {
     loading: loadingAgents,
     error: agentsError,
     refresh: refreshAgents,
-  } = useAgents(
-    activeTab === "agents" ? userAddress : undefined,
-  );
+  } = useAgents(activeTab === "agents" ? userAddress : undefined);
 
   // Agents arrive ordered by latest interaction (falling back to creation);
   // we page through them client-side, 10 floating profiles at a time.
@@ -62,7 +61,9 @@ const StudioPage: NextPage = () => {
   const [agentPageSize, setAgentPageSize] = useState(10);
 
   useEffect(() => {
-    const stored = Number(window.localStorage.getItem("studio-agents-per-page"));
+    const stored = Number(
+      window.localStorage.getItem("studio-agents-per-page")
+    );
     if (AGENT_PAGE_SIZES.includes(stored)) setAgentPageSize(stored);
   }, []);
 
@@ -80,11 +81,8 @@ const StudioPage: NextPage = () => {
 
   const pagedAgents = useMemo(
     () =>
-      agents.slice(
-        agentPage * agentPageSize,
-        (agentPage + 1) * agentPageSize,
-      ),
-    [agents, agentPage, agentPageSize],
+      agents.slice(agentPage * agentPageSize, (agentPage + 1) * agentPageSize),
+    [agents, agentPage, agentPageSize]
   );
 
   const mainContent = useMemo(() => {
@@ -121,6 +119,12 @@ const StudioPage: NextPage = () => {
             />
           </div>
         );
+      case "apps":
+        return (
+          <div className="p-4 sm:p-6">
+            <UiPluginsView />
+          </div>
+        );
       // Only the real /studio/agents route mounts the launcher — it depends on
       // the AgentProvider from that route's layout. The default fallback (for
       // unknown /studio/<x> segments served without that provider) renders just
@@ -136,9 +140,12 @@ const StudioPage: NextPage = () => {
               ) : agentsError ? (
                 <div className="flex h-full flex-col items-center justify-center text-center">
                   <AlertCircle className="mb-3 h-6 w-6 text-red-500" />
-                  <p className="text-sm font-medium">Couldn’t load your agents</p>
+                  <p className="text-sm font-medium">
+                    Couldn’t load your agents
+                  </p>
                   <p className="mt-1 max-w-sm text-xs text-muted-foreground">
-                    Your account is still signed in. The connection to Agent Commons was interrupted.
+                    Your account is still signed in. The connection to Agent
+                    Commons was interrupted.
                   </p>
                   <button
                     type="button"
@@ -219,6 +226,8 @@ const StudioPage: NextPage = () => {
         return "Create new workflow";
       case "skills":
         return "Create new skill";
+      case "apps":
+        return "Create custom app";
       default:
         return "Create new agent";
     }
@@ -248,6 +257,12 @@ const StudioPage: NextPage = () => {
           description:
             "Browse platform skills or create modular capabilities for your agents.",
         };
+      case "apps":
+        return {
+          title: "Apps",
+          description:
+            "Review and manage sandboxed pages and floating widgets built for your workspace.",
+        };
       case "agents":
       default:
         return {
@@ -266,6 +281,15 @@ const StudioPage: NextPage = () => {
       skillCreateRef.current?.();
     } else if (activeTab === "tools") {
       setShowCreateToolDialog(true);
+    } else if (activeTab === "apps") {
+      window.dispatchEvent(
+        new CustomEvent("commons-copilot-prompt", {
+          detail: {
+            prompt:
+              "Help me build a custom Commons UI plugin. Ask what page or floating widget I need, then build, test, and register it as a draft for review.",
+          },
+        })
+      );
     } else {
       router.push("/studio/agents/create");
     }

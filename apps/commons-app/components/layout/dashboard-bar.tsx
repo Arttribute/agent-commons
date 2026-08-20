@@ -9,6 +9,7 @@ import {
   LibraryBig,
   Wrench,
   Workflow,
+  AppWindow,
 } from "lucide-react";
 import Link from "next/link";
 import Image from "next/image";
@@ -21,23 +22,41 @@ interface DashboardBarProps {
   rightSlot?: ReactNode;
 }
 
-export const DashboardBar: FC<DashboardBarProps> = ({ activeTab, rightSlot }) => {
+export const DashboardBar: FC<DashboardBarProps> = ({
+  activeTab,
+  rightSlot,
+}) => {
   const router = useRouter();
 
   const nav = (path: string) => router.push(path);
 
   const navItems = [
-    { key: "agents",    label: "Agents",    icon: Bot,               path: "/studio/agents" },
-    { key: "tools",     label: "Tools",     icon: Wrench,            path: "/studio/tools" },
-    { key: "tasks",     label: "Tasks",     icon: BriefcaseBusiness, path: "/studio/tasks" },
-    { key: "workflows", label: "Workflows", icon: Workflow,          path: "/studio/workflows" },
-    { key: "library",   label: "Library",   icon: LibraryBig,        path: "/library" },
+    { key: "agents", label: "Agents", icon: Bot, path: "/studio/agents" },
+    { key: "tools", label: "Tools", icon: Wrench, path: "/studio/tools" },
+    {
+      key: "tasks",
+      label: "Tasks",
+      icon: BriefcaseBusiness,
+      path: "/studio/tasks",
+    },
+    {
+      key: "workflows",
+      label: "Workflows",
+      icon: Workflow,
+      path: "/studio/workflows",
+    },
+    { key: "library", label: "Library", icon: LibraryBig, path: "/library" },
+    { key: "apps", label: "Apps", icon: AppWindow, path: "/studio/apps" },
   ];
 
   return (
     <div className="w-full">
       <div className="flex h-8 justify-between items-center mb-3 px-1">
-        <Link href="/studio/agents" className="flex items-center" aria-label="Agent Commons">
+        <Link
+          href="/studio/agents"
+          className="flex items-center"
+          aria-label="Agent Commons"
+        >
           <Image
             src="/logo.jpg"
             alt="Agent Commons"

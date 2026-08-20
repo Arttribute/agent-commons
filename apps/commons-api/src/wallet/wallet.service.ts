@@ -9,20 +9,33 @@ import { DatabaseService } from '~/modules/database/database.service';
 import { EncryptionService } from '~/modules/encryption';
 import * as schema from '#/models/schema';
 import { eq, and } from 'drizzle-orm';
-import { createPublicClient, createWalletClient, http, formatUnits, parseUnits, encodeFunctionData } from 'viem';
+import {
+  createPublicClient,
+  createWalletClient,
+  http,
+  formatUnits,
+  parseUnits,
+  encodeFunctionData,
+} from 'viem';
 import { generatePrivateKey, privateKeyToAccount } from 'viem/accounts';
 import { baseSepolia } from '#/lib/baseSepolia';
 import { safeFetch } from '~/utils/safe-fetch';
-import type { CreateWalletDto, WalletBalanceDto, WalletResponseDto } from './dto/wallet.dto';
+import type {
+  CreateWalletDto,
+  WalletBalanceDto,
+  WalletResponseDto,
+} from './dto/wallet.dto';
+import { CapabilityProviderService } from '~/provider';
 
 export interface TransferDto {
   toAddress: string;
-  amount: string;   // human-readable e.g. "10.5"
+  amount: string; // human-readable e.g. "10.5"
   tokenSymbol?: 'USDC' | 'ETH';
 }
 
 /** Base Sepolia USDC contract address */
-const USDC_ADDRESS_BASE_SEPOLIA = '0x036CbD53842c5426634e7929541eC2318f3dCF7e' as const;
+const USDC_ADDRESS_BASE_SEPOLIA =
+  '0x036CbD53842c5426634e7929541eC2318f3dCF7e' as const;
 
 const ERC20_BALANCE_ABI = [
   {
@@ -45,6 +58,7 @@ export class WalletService {
   constructor(
     private db: DatabaseService,
     private encryption: EncryptionService,
+    private capabilityProviders: CapabilityProviderService,
   ) {}
 
   /**
@@ -54,14 +68,64 @@ export class WalletService {
    * - 'erc4337': placeholder — session key flow to be implemented with ZeroDev
    */
   async createWallet(dto: CreateWalletDto): Promise<WalletResponseDto> {
-    const { agentId, walletType = 'eoa', label = 'Primary', chainId = '84532' } = dto;
+    const {
+      agentId,
+      walletType = 'eoa',
+      label = 'Primary',
+      chainId = '84532',
+    } = dto;
+
+    const agent = await this.db.query.agent.findFirst({
+      where: (table) => eq(table.agentId, agentId),
+      columns: { ownerUserId: true, owner: true },
+    });
+    const ownerId = agent?.ownerUserId ?? agent?.owner;
+    const configured = ownerId
+      ? await this.capabilityProviders.resolve(ownerId, 'wallet')
+      : null;
+
+    if (configured?.provider === 'custom') {
+      const remote = await this.customWalletRequest<{
+        walletId?: string;
+        id?: string;
+        address: string;
+        smartAccountAddress?: string;
+      }>(configured, 'POST', '/wallets', { agentId, label, chainId });
+      if (!remote.address) {
+        throw new BadRequestException(
+          'Custom wallet provider did not return an address',
+        );
+      }
+      const [wallet] = await this.db
+        .insert(schema.agentWallet)
+        .values({
+          agentId,
+          walletType: 'external',
+          provider: 'custom',
+          providerWalletId: remote.walletId ?? remote.id ?? remote.address,
+          address: remote.address.toLowerCase(),
+          smartAccountAddress: remote.smartAccountAddress ?? null,
+          chainId,
+          label,
+          isActive: true,
+        })
+        .returning();
+      return this.toResponse(wallet);
+    }
+    if (configured?.provider === 'external' && walletType !== 'external') {
+      throw new BadRequestException(
+        'The selected wallet provider requires an owner-connected external address',
+      );
+    }
 
     let address: string;
     let encryptedPrivateKey: string | undefined;
 
     if (walletType === 'external') {
       if (!dto.externalAddress) {
-        throw new BadRequestException('externalAddress is required for external wallets');
+        throw new BadRequestException(
+          'externalAddress is required for external wallets',
+        );
       }
       address = dto.externalAddress.toLowerCase();
     } else if (walletType === 'eoa' || walletType === 'erc4337') {
@@ -79,6 +143,7 @@ export class WalletService {
       .values({
         agentId,
         walletType,
+        provider: configured?.provider ?? 'commons_mpc',
         address,
         encryptedPrivateKey: encryptedPrivateKey ?? null,
         chainId,
@@ -149,6 +214,17 @@ export class WalletService {
     });
     if (!wallet) throw new NotFoundException(`Wallet ${walletId} not found`);
 
+    if (wallet.provider === 'custom') {
+      const configured = await this.customProviderForWallet(wallet);
+      return this.customWalletRequest<WalletBalanceDto>(
+        configured,
+        'GET',
+        `/wallets/${encodeURIComponent(
+          wallet.providerWalletId ?? wallet.address,
+        )}/balance`,
+      );
+    }
+
     const address = wallet.address as `0x${string}`;
 
     const [nativeBalance, usdcBalance] = await Promise.all([
@@ -173,16 +249,34 @@ export class WalletService {
    * Transfer USDC (or native ETH) from an EOA wallet to another address.
    * The wallet must have an encrypted private key stored (EOA type).
    */
-  async transfer(walletId: string, dto: TransferDto): Promise<{ txHash: string }> {
+  async transfer(
+    walletId: string,
+    dto: TransferDto,
+  ): Promise<{ txHash: string }> {
     const wallet = await this.db.query.agentWallet.findFirst({
       where: (w) => eq(w.id, walletId),
     });
     if (!wallet) throw new NotFoundException(`Wallet ${walletId} not found`);
+    if (wallet.provider === 'custom') {
+      const configured = await this.customProviderForWallet(wallet);
+      return this.customWalletRequest<{ txHash: string }>(
+        configured,
+        'POST',
+        `/wallets/${encodeURIComponent(
+          wallet.providerWalletId ?? wallet.address,
+        )}/transfer`,
+        dto,
+      );
+    }
     if (!wallet.encryptedPrivateKey) {
-      throw new BadRequestException('This wallet has no stored private key — only EOA wallets can send transactions');
+      throw new BadRequestException(
+        'This wallet has no stored private key — only EOA wallets can send transactions',
+      );
     }
 
-    const privateKey = this.decryptKey(wallet.encryptedPrivateKey) as `0x${string}`;
+    const privateKey = this.decryptKey(
+      wallet.encryptedPrivateKey,
+    ) as `0x${string}`;
     const account = privateKeyToAccount(privateKey);
     const to = dto.toAddress as `0x${string}`;
     const tokenSymbol = dto.tokenSymbol ?? 'USDC';
@@ -281,7 +375,9 @@ export class WalletService {
       );
     }
 
-    const privateKey = this.decryptKey(wallet.encryptedPrivateKey) as `0x${string}`;
+    const privateKey = this.decryptKey(
+      wallet.encryptedPrivateKey,
+    ) as `0x${string}`;
     const account = privateKeyToAccount(privateKey);
 
     // Build a viem wallet client for x402 signing
@@ -293,7 +389,10 @@ export class WalletService {
 
     // Select the first matching payment requirement (prefer exact/base-sepolia)
     // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const { createPaymentHeader, selectPaymentRequirements } = require('x402/client');
+    const {
+      createPaymentHeader,
+      selectPaymentRequirements,
+    } = require('x402/client');
     const requirements = selectPaymentRequirements(accepts);
     if (!requirements) {
       throw new Error('x402: no supported payment requirement in 402 response');
@@ -303,7 +402,11 @@ export class WalletService {
       `x402: paying ${requirements.maxAmountRequired} ${requirements.asset} on ${requirements.network} for ${agentId}`,
     );
 
-    const paymentHeader = await createPaymentHeader(viemWalletClient, 1, requirements);
+    const paymentHeader = await createPaymentHeader(
+      viemWalletClient,
+      1,
+      requirements,
+    );
 
     // Retry with payment header
     const retryRes = await safeFetch(url, {
@@ -330,11 +433,66 @@ export class WalletService {
     return this.encryption.decrypt(encryptedValue, iv, tag);
   }
 
-  private toResponse(wallet: typeof schema.agentWallet.$inferSelect): WalletResponseDto {
+  private async customProviderForWallet(
+    wallet: typeof schema.agentWallet.$inferSelect,
+  ) {
+    const agent = await this.db.query.agent.findFirst({
+      where: (table) => eq(table.agentId, wallet.agentId),
+      columns: { ownerUserId: true, owner: true },
+    });
+    const ownerId = agent?.ownerUserId ?? agent?.owner;
+    const configured = ownerId
+      ? await this.capabilityProviders.resolve(ownerId, 'wallet')
+      : null;
+    if (!configured || configured.provider !== 'custom') {
+      throw new BadRequestException(
+        'The custom wallet adapter is no longer configured',
+      );
+    }
+    return configured;
+  }
+
+  private async customWalletRequest<T>(
+    provider: Awaited<ReturnType<CapabilityProviderService['resolve']>> & {},
+    method: 'GET' | 'POST',
+    path: string,
+    body?: unknown,
+  ): Promise<T> {
+    const endpoint = provider?.endpointUrl?.replace(/\/$/, '');
+    if (!endpoint)
+      throw new BadRequestException('Custom wallet endpoint is missing');
+    const response = await fetch(`${endpoint}${path}`, {
+      method,
+      headers: {
+        Accept: 'application/json',
+        ...(provider.credentials.apiKey
+          ? { Authorization: `Bearer ${provider.credentials.apiKey}` }
+          : {}),
+        ...(body !== undefined ? { 'Content-Type': 'application/json' } : {}),
+      },
+      body: body === undefined ? undefined : JSON.stringify(body),
+      signal: AbortSignal.timeout(20_000),
+    });
+    const payload: any = await response.json().catch(() => null);
+    if (!response.ok) {
+      throw new BadRequestException(
+        payload?.message ||
+          payload?.error ||
+          `Wallet provider returned ${response.status}`,
+      );
+    }
+    return payload as T;
+  }
+
+  private toResponse(
+    wallet: typeof schema.agentWallet.$inferSelect,
+  ): WalletResponseDto {
     return {
       id: wallet.id,
       agentId: wallet.agentId,
       walletType: wallet.walletType as any,
+      provider: wallet.provider,
+      providerWalletId: wallet.providerWalletId,
       address: wallet.address,
       smartAccountAddress: wallet.smartAccountAddress,
       chainId: wallet.chainId,

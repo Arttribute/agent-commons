@@ -30,6 +30,8 @@ import { FilesModule } from './files';
 import { ComputerModule } from './computer';
 import { AudioModule } from './audio';
 import { CodeProjectModule } from './code-project';
+import { CapabilityProviderModule } from './provider';
+import { UiPluginModule } from './ui-plugin';
 
 @Module({
   imports: [
@@ -58,6 +60,8 @@ import { CodeProjectModule } from './code-project';
     FilesModule,
     ComputerModule,
     CodeProjectModule,
+    CapabilityProviderModule,
+    UiPluginModule,
     AudioModule,
     MemoryModule,
     WalletModule,

@@ -158,6 +158,8 @@ export const agentWallet = pgTable('agent_wallet', {
   // 'erc4337'        — ERC-4337 smart account with session key
   // 'external'       — owner-connected wallet (platform holds no key)
   walletType: text('wallet_type').notNull().default('eoa'),
+  provider: text('provider').notNull().default('commons_mpc'),
+  providerWalletId: text('provider_wallet_id'),
 
   // The public wallet address (safe to store in plaintext)
   address: text('address').notNull(),
@@ -296,6 +298,61 @@ export const codeProjectDeployment = pgTable(
     projectIdx: index('idx_code_project_deployment_project').on(
       table.projectId,
       table.createdAt,
+    ),
+  }),
+);
+
+/* ─────────────────────────  UI PLUGINS  ───────────────────────── */
+
+export const uiPlugin = pgTable(
+  'ui_plugin',
+  {
+    pluginId: uuid('plugin_id')
+      .default(sql`uuid_generate_v4()`)
+      .primaryKey(),
+    ownerUserId: text('owner_user_id').notNull(),
+    workspaceId: text('workspace_id'),
+    createdByAgentId: text('created_by_agent_id').references(
+      () => agent.agentId,
+      { onDelete: 'set null' },
+    ),
+    codeProjectId: uuid('code_project_id')
+      .notNull()
+      .references(() => codeProject.projectId, { onDelete: 'cascade' }),
+    name: text('name').notNull(),
+    slug: text('slug').notNull(),
+    description: text('description'),
+    version: text('version').default('1.0.0').notNull(),
+    entryUrl: text('entry_url').notNull(),
+    manifest: jsonb('manifest')
+      .$type<{
+        schemaVersion: '1';
+        surfaces: Array<{
+          type: 'page' | 'widget';
+          title?: string;
+          width?: number;
+          height?: number;
+        }>;
+        permissions: Array<'theme.read' | 'navigation'>;
+      }>()
+      .notNull(),
+    status: text('status').default('draft').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .default(sql`timezone('utc', now())`)
+      .notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true })
+      .default(sql`timezone('utc', now())`)
+      .notNull(),
+  },
+  (table) => ({
+    ownerSlugIdx: uniqueIndex('idx_ui_plugin_owner_slug').on(
+      table.ownerUserId,
+      table.slug,
+    ),
+    ownerStatusIdx: index('idx_ui_plugin_owner_status').on(
+      table.ownerUserId,
+      table.status,
+      table.updatedAt,
     ),
   }),
 );
@@ -2544,6 +2601,78 @@ export const skill = pgTable('skill', {
     .default(sql`timezone('utc', now())`)
     .notNull(),
 });
+
+/** Explicit availability of a reusable skill on a particular agent. */
+export const agentSkill = pgTable(
+  'agent_skill',
+  {
+    id: uuid('id')
+      .default(sql`gen_random_uuid()`)
+      .primaryKey(),
+    agentId: text('agent_id')
+      .notNull()
+      .references(() => agent.agentId, { onDelete: 'cascade' }),
+    skillId: text('skill_id')
+      .notNull()
+      .references(() => skill.skillId, { onDelete: 'cascade' }),
+    isEnabled: pgBoolean('is_enabled').default(true).notNull(),
+    assignedBy: text('assigned_by'),
+    config: jsonb('config').$type<Record<string, unknown>>().default({}),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .default(sql`timezone('utc', now())`)
+      .notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true })
+      .default(sql`timezone('utc', now())`)
+      .notNull(),
+  },
+  (table) => ({
+    agentSkillIdx: uniqueIndex('idx_agent_skill_agent_skill').on(
+      table.agentId,
+      table.skillId,
+    ),
+    skillIdx: index('idx_agent_skill_skill').on(table.skillId, table.agentId),
+  }),
+);
+
+/**
+ * Account-level adapters for swappable platform capabilities. Credentials are
+ * encrypted as one JSON envelope so provider-specific secret shapes never
+ * leak into the public settings document.
+ */
+export const capabilityProvider = pgTable(
+  'capability_provider',
+  {
+    id: uuid('id')
+      .default(sql`gen_random_uuid()`)
+      .primaryKey(),
+    ownerId: text('owner_id').notNull(),
+    workspaceId: text('workspace_id'),
+    capability: text('capability').notNull(),
+    provider: text('provider').notNull(),
+    displayName: text('display_name'),
+    endpointUrl: text('endpoint_url'),
+    settings: jsonb('settings').$type<Record<string, unknown>>().default({}),
+    encryptedCredentials: text('encrypted_credentials'),
+    credentialsIv: text('credentials_iv'),
+    credentialsTag: text('credentials_tag'),
+    status: text('status').notNull().default('active'),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .default(sql`timezone('utc', now())`)
+      .notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true })
+      .default(sql`timezone('utc', now())`)
+      .notNull(),
+  },
+  (table) => ({
+    ownerCapabilityIdx: uniqueIndex(
+      'capability_provider_owner_capability_idx',
+    ).on(table.ownerId, table.capability),
+    providerIdx: index('capability_provider_provider_idx').on(
+      table.capability,
+      table.provider,
+    ),
+  }),
+);
 
 /* ─────────────────────────  CREDIT LEDGER  ───────────────────────── */
 

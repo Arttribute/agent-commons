@@ -99,6 +99,7 @@ export default function LibraryPage() {
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
   const [query, setQuery] = useState("");
   const [view, setView] = useState("all");
   const [source, setSource] = useState("all");
@@ -170,6 +171,7 @@ export default function LibraryPage() {
       return;
     setUploading(true);
     setError("");
+    setNotice("");
     try {
       const body = new FormData();
       [...files].forEach((file) => body.append("files", file));
@@ -181,6 +183,17 @@ export default function LibraryPage() {
       const data = await response.json();
       if (!response.ok)
         throw new Error(data?.message || data?.error || "Upload failed");
+      const uploaded = Array.isArray(data?.data) ? data.data : [];
+      const reused = uploaded.filter(
+        (item: { reused?: boolean }) => item.reused,
+      );
+      if (reused.length) {
+        setNotice(
+          reused.length === uploaded.length
+            ? `${reused.length === 1 ? "This file was" : "These files were"} already in your Library, so the existing ${reused.length === 1 ? "item was" : "items were"} reused.`
+            : `${reused.length} duplicate ${reused.length === 1 ? "file was" : "files were"} reused from your Library; only new files were uploaded.`,
+        );
+      }
       await load();
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Upload failed");
@@ -409,6 +422,11 @@ export default function LibraryPage() {
             {error && (
               <div className="mb-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
                 {error}
+              </div>
+            )}
+            {notice && (
+              <div className="mb-4 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
+                {notice}
               </div>
             )}
             {loading ? (
