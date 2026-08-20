@@ -11,6 +11,8 @@ export type LiveActivityType =
   | "quiz"
   | "prioritization"
   | "worksheet"
+  | "card_collection"
+  | "linked_scorecard"
   | "reflection"
   | "task"
   | "break";
@@ -35,6 +37,16 @@ export type LiveWorksheetField = {
   required: boolean;
   min?: number;
   max?: number;
+  lowLabel?: string;
+  highLabel?: string;
+};
+
+export type LiveScoreCriterion = {
+  id: string;
+  label: string;
+  description?: string;
+  min: number;
+  max: number;
   lowLabel?: string;
   highLabel?: string;
 };
@@ -71,6 +83,11 @@ export type LiveActivity = {
   minItems?: number;
   maxSelections?: number;
   worksheetFields?: LiveWorksheetField[];
+  /** Field used as the visible title for each repeatable card. */
+  itemTitleFieldId?: string;
+  /** Activity whose card collection supplies the scorecard candidates. */
+  sourceActivityId?: string;
+  scoreCriteria?: LiveScoreCriterion[];
   points: number;
   options: LiveActivityOption[];
 };
@@ -91,11 +108,35 @@ export type LiveWorksheetResponse = {
   finalized: boolean;
 };
 
+export type LiveCardCollectionItem = {
+  id: string;
+  values: Record<string, string | number>;
+};
+
+export type LiveCardCollectionResponse = {
+  items: LiveCardCollectionItem[];
+  finalized: boolean;
+};
+
+export type LiveScorecardItem = {
+  sourceItemId: string;
+  scores: Record<string, number>;
+};
+
+export type LiveLinkedScorecardResponse = {
+  items: LiveScorecardItem[];
+  selectedItemId?: string;
+  selectionReason?: string;
+  finalized: boolean;
+};
+
 export type LiveResponseValue =
   | string
   | string[]
   | LivePrioritizationResponse
-  | LiveWorksheetResponse;
+  | LiveWorksheetResponse
+  | LiveCardCollectionResponse
+  | LiveLinkedScorecardResponse;
 
 export type LiveSessionSettings = {
   allowLateJoin: boolean;
@@ -183,6 +224,25 @@ export type LiveActivityResults = {
     id: string;
     participantName?: string;
     values: Array<{ fieldId: string; label: string; value: string }>;
+    finalized: boolean;
+  }>;
+  cardCollections?: Array<{
+    id: string;
+    participantName?: string;
+    items: Array<{
+      id: string;
+      title: string;
+      values: Array<{ fieldId: string; label: string; value: string }>;
+    }>;
+    finalized: boolean;
+  }>;
+  scorecards?: Array<{
+    id: string;
+    participantName?: string;
+    selectedItemId?: string;
+    selectedTitle?: string;
+    selectionReason?: string;
+    items: Array<{ sourceItemId: string; title: string; total: number }>;
     finalized: boolean;
   }>;
 };

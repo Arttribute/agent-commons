@@ -33,166 +33,166 @@ if (!dryRun && !process.env.MONGODB_URI) {
 await main();
 
 async function main() {
-const workDir = await mkdtemp(path.join(os.tmpdir(), "quick-wins-workshop-"));
-try {
-  const assets = await prepareAssets(inputs, workDir);
-  if (previewDir) await writePreviews(assets.deck.pages, previewDir);
-  if (dryRun) {
-    console.log(
-      JSON.stringify(
-        {
-          dryRun,
-          files: Object.values(assets).map((asset) => ({
-            name: asset.name,
-            bytes: asset.bytes.length,
-            pages: asset.pages.length,
-            visibility: asset.visibility,
-          })),
-        },
-        null,
-        2,
-      ),
-    );
-    return;
-  }
-
-  await mongoose.connect(process.env.MONGODB_URI);
+  const workDir = await mkdtemp(path.join(os.tmpdir(), "quick-wins-workshop-"));
   try {
-    const db = mongoose.connection.db;
-    if (!db) throw new Error("MongoDB connection is unavailable.");
-    const owner = await db.collection("users").findOne({ email: ownerEmail });
-    if (!owner) throw new Error(`Owner not found: ${ownerEmail}`);
-    const principalId = owner.identityUserId;
-    if (!principalId) {
-      throw new Error(`${ownerEmail} is not connected to Commons Identity.`);
-    }
-    const profile = await db
-      .collection("educatorprofiles")
-      .findOne({ userId: owner._id });
-    const sourceCourse = await db.collection("courses").findOne({
-      slug: "claude-skills-for-everyday-work-moringa",
-    });
-    const now = new Date();
-    const course = await upsertCourse(db, {
-      owner,
-      profile,
-      agents: sourceCourse?.agents || [],
-      now,
-    });
-
-    const existingSession = await db.collection("livesessions").findOne({
-      courseId: course._id,
-      title: "Day 1 · Discover — AI Quick Wins for Leaders",
-    });
-    if (existingSession && existingSession.status !== "draft" && !force) {
-      throw new Error(
-        "The Day 1 session has already been opened. Re-run with --force only if replacing its plan is intentional.",
+    const assets = await prepareAssets(inputs, workDir);
+    if (previewDir) await writePreviews(assets.deck.pages, previewDir);
+    if (dryRun) {
+      console.log(
+        JSON.stringify(
+          {
+            dryRun,
+            files: Object.values(assets).map((asset) => ({
+              name: asset.name,
+              bytes: asset.bytes.length,
+              pages: asset.pages.length,
+              visibility: asset.visibility,
+            })),
+          },
+          null,
+          2,
+        ),
       );
+      return;
     }
 
-    const commonsFiles = await uploadToCommonsLibrary(
-      Object.values(assets),
-      principalId,
-      owner.identityWorkspaceId,
-    );
-    const bucket = new mongo.GridFSBucket(db, {
-      bucketName: "courseMaterials",
-    });
-    const materialByKey = {};
-    for (const asset of Object.values(assets)) {
-      materialByKey[asset.key] = await syncMaterial({
-        db,
-        bucket,
-        course,
+    await mongoose.connect(process.env.MONGODB_URI);
+    try {
+      const db = mongoose.connection.db;
+      if (!db) throw new Error("MongoDB connection is unavailable.");
+      const owner = await db.collection("users").findOne({ email: ownerEmail });
+      if (!owner) throw new Error(`Owner not found: ${ownerEmail}`);
+      const principalId = owner.identityUserId;
+      if (!principalId) {
+        throw new Error(`${ownerEmail} is not connected to Commons Identity.`);
+      }
+      const profile = await db
+        .collection("educatorprofiles")
+        .findOne({ userId: owner._id });
+      const sourceCourse = await db.collection("courses").findOne({
+        slug: "claude-skills-for-everyday-work-moringa",
+      });
+      const now = new Date();
+      const course = await upsertCourse(db, {
         owner,
-        principalId,
-        asset,
-        commonsFile: commonsFiles.get(asset.key),
+        profile,
+        agents: sourceCourse?.agents || [],
         now,
       });
-    }
 
-    const joinCode =
-      existingSession?.joinCode || (await createUniqueJoinCode(db));
-    const activities = createDiscoverActivities(
-      String(materialByKey.deck._id),
-    );
-    const session = await db.collection("livesessions").findOneAndUpdate(
-      {
+      const existingSession = await db.collection("livesessions").findOne({
         courseId: course._id,
         title: "Day 1 · Discover — AI Quick Wins for Leaders",
-      },
-      {
-        $set: {
-          courseSlug: slug,
-          description:
-            "Discover the AI landscape, map the organisation, capture recurring routines, and choose the first safe task to offload.",
-          joinCode,
-          status: "draft",
-          pace: "facilitator",
-          access: "open",
-          invitedEmails: [],
-          activities,
-          settings: {
-            allowLateJoin: true,
-            showParticipantNames: true,
-            showLeaderboard: false,
-            learnerCopilot: {
-              enabled: false,
-              explainCurrentActivity: true,
-              coachResponses: true,
-              useCourseMaterials: true,
-              giveDirectExplanations: false,
-            },
-          },
-          createdBy: owner._id,
-          updatedAt: now,
-        },
-        $unset: { currentActivityId: "" },
-        $setOnInsert: { createdAt: now },
-        $inc: { stateVersion: 1 },
-      },
-      { upsert: true, returnDocument: "after" },
-    );
-    if (!session) throw new Error("Live session could not be created.");
+      });
+      if (existingSession && existingSession.status !== "draft" && !force) {
+        throw new Error(
+          "The Day 1 session has already been opened. Re-run with --force only if replacing its plan is intentional.",
+        );
+      }
 
-    console.log(
-      JSON.stringify(
+      const commonsFiles = await uploadToCommonsLibrary(
+        Object.values(assets),
+        principalId,
+        owner.identityWorkspaceId,
+      );
+      const bucket = new mongo.GridFSBucket(db, {
+        bucketName: "courseMaterials",
+      });
+      const materialByKey = {};
+      for (const asset of Object.values(assets)) {
+        materialByKey[asset.key] = await syncMaterial({
+          db,
+          bucket,
+          course,
+          owner,
+          principalId,
+          asset,
+          commonsFile: commonsFiles.get(asset.key),
+          now,
+        });
+      }
+
+      const joinCode =
+        existingSession?.joinCode || (await createUniqueJoinCode(db));
+      const activities = createDiscoverActivities(
+        String(materialByKey.deck._id),
+      );
+      const session = await db.collection("livesessions").findOneAndUpdate(
         {
-          owner: owner.email,
-          course: {
-            id: String(course._id),
-            slug: course.slug,
-            visibility: course.catalogVisibility,
-          },
-          liveSession: {
-            id: String(session._id),
-            joinCode: session.joinCode,
-            activities: session.activities.length,
-            access: session.access,
-          },
-          materials: Object.fromEntries(
-            Object.entries(materialByKey).map(([key, value]) => [
-              key,
-              {
-                id: String(value._id),
-                name: value.name,
-                visibility: value.visibility,
-                fileId: value.fileId,
-              },
-            ]),
-          ),
+          courseId: course._id,
+          title: "Day 1 · Discover — AI Quick Wins for Leaders",
         },
-        null,
-        2,
-      ),
-    );
+        {
+          $set: {
+            courseSlug: slug,
+            description:
+              "Discover the AI landscape, map the organisation, capture recurring routines, and choose the first safe task to offload.",
+            joinCode,
+            status: "draft",
+            pace: "facilitator",
+            access: "open",
+            invitedEmails: [],
+            activities,
+            settings: {
+              allowLateJoin: true,
+              showParticipantNames: true,
+              showLeaderboard: false,
+              learnerCopilot: {
+                enabled: false,
+                explainCurrentActivity: true,
+                coachResponses: true,
+                useCourseMaterials: true,
+                giveDirectExplanations: false,
+              },
+            },
+            createdBy: owner._id,
+            updatedAt: now,
+          },
+          $unset: { currentActivityId: "" },
+          $setOnInsert: { createdAt: now },
+          $inc: { stateVersion: 1 },
+        },
+        { upsert: true, returnDocument: "after" },
+      );
+      if (!session) throw new Error("Live session could not be created.");
+
+      console.log(
+        JSON.stringify(
+          {
+            owner: owner.email,
+            course: {
+              id: String(course._id),
+              slug: course.slug,
+              visibility: course.catalogVisibility,
+            },
+            liveSession: {
+              id: String(session._id),
+              joinCode: session.joinCode,
+              activities: session.activities.length,
+              access: session.access,
+            },
+            materials: Object.fromEntries(
+              Object.entries(materialByKey).map(([key, value]) => [
+                key,
+                {
+                  id: String(value._id),
+                  name: value.name,
+                  visibility: value.visibility,
+                  fileId: value.fileId,
+                },
+              ]),
+            ),
+          },
+          null,
+          2,
+        ),
+      );
+    } finally {
+      await mongoose.disconnect();
+    }
   } finally {
-    await mongoose.disconnect();
+    await rm(workDir, { recursive: true, force: true });
   }
-} finally {
-  await rm(workDir, { recursive: true, force: true });
-}
 }
 
 async function upsertCourse(db, { owner, profile, agents, now }) {
@@ -357,26 +357,47 @@ function createDiscoverActivities(materialId) {
     worksheetFields,
     ...extra,
   });
-  const taskCardFields = (card) => [
-    field(`task-${card}-name`, "1. Task name", "short_text", {
+  const taskCardFields = () => [
+    field("task-name", "1. Task name", "short_text", {
       required: true,
       placeholder: "Six words or fewer",
-      section: `Task ${card}`,
     }),
-    field(`task-${card}-trigger`, "2. What triggers it?", "long_text", {
+    field("task-trigger", "2. What triggers it?", "long_text", {
       required: true,
-      section: `Task ${card}`,
     }),
-    field(`task-${card}-frequency`, "3. How often, and how long does it take?", "long_text", { section: `Task ${card}` }),
-    field(`task-${card}-tools`, "4. Which tools or apps are involved?", "long_text", { section: `Task ${card}` }),
-    field(`task-${card}-inputs`, "5. What inputs are needed, and where do they live?", "long_text", { section: `Task ${card}` }),
-    field(`task-${card}-steps`, "6. What are the steps?", "long_text", { required: true, section: `Task ${card}` }),
-    field(`task-${card}-judgment`, "7. Where do you pause and think?", "long_text", { section: `Task ${card}` }),
-    field(`task-${card}-exceptions`, "8. What exceptions change the process?", "long_text", { section: `Task ${card}` }),
-    field(`task-${card}-quality`, "9. What separates a good result from a bad one?", "long_text", { required: true, section: `Task ${card}` }),
-    field(`task-${card}-tacit`, "10. What part do you ‘just know’?", "long_text", { section: `Task ${card}` }),
-    field(`task-${card}-loss`, "11. What would be lost if this were delegated?", "long_text", { section: `Task ${card}` }),
-    field(`task-${card}-never`, "12. What should AI never give up?", "long_text", { section: `Task ${card}` }),
+    field(
+      "task-frequency",
+      "3. How often, and how long does it take?",
+      "long_text",
+    ),
+    field("task-tools", "4. Which tools or apps are involved?", "long_text"),
+    field(
+      "task-inputs",
+      "5. What inputs are needed, and where do they live?",
+      "long_text",
+    ),
+    field("task-steps", "6. What are the steps?", "long_text", {
+      required: true,
+    }),
+    field("task-judgment", "7. Where do you pause and think?", "long_text"),
+    field(
+      "task-exceptions",
+      "8. What exceptions change the process?",
+      "long_text",
+    ),
+    field(
+      "task-quality",
+      "9. What separates a good result from a bad one?",
+      "long_text",
+      { required: true },
+    ),
+    field("task-tacit", "10. What part do you ‘just know’?", "long_text"),
+    field(
+      "task-loss",
+      "11. What would be lost if this were delegated?",
+      "long_text",
+    ),
+    field("task-never", "12. What should AI never give up?", "long_text"),
   ];
   const scoreCriteria = [
     ["frequency", "Frequency"],
@@ -387,22 +408,6 @@ function createDiscoverActivities(materialId) {
     ["access", "Data access"],
     ["judgment", "Low judgment density"],
   ];
-  const scorecardFields = [1, 2, 3, 4].flatMap((task) => [
-    field(`score-task-${task}-name`, `Task ${task} name`, "short_text", {
-      required: true,
-      section: `Candidate ${task}`,
-      placeholder: "Copy one of your shortlisted routines",
-    }),
-    ...scoreCriteria.map(([id, label]) =>
-      field(`score-task-${task}-${id}`, label, "scale", {
-        section: `Candidate ${task}`,
-        min: 1,
-        max: 5,
-        lowLabel: "Low",
-        highLabel: "High",
-      }),
-    ),
-  ]);
 
   return [
     content(
@@ -423,9 +428,19 @@ function createDiscoverActivities(materialId) {
       7,
       7,
       [
-        field("outcome", "By the end of session four, I will be able to…", "long_text", { required: true, section: "Outcome contract" }),
-        field("evidence", "The evidence that it worked will be…", "long_text", { required: true, section: "Outcome contract" }),
-        field("signature", "Name or signature", "short_text", { section: "Outcome contract" }),
+        field(
+          "outcome",
+          "By the end of session four, I will be able to…",
+          "long_text",
+          { required: true, section: "Outcome contract" },
+        ),
+        field("evidence", "The evidence that it worked will be…", "long_text", {
+          required: true,
+          section: "Outcome contract",
+        }),
+        field("signature", "Name or signature", "short_text", {
+          section: "Outcome contract",
+        }),
       ],
       {
         instructions:
@@ -492,10 +507,30 @@ function createDiscoverActivities(materialId) {
       24,
       15,
       [
-        field("knowledge", "Knowledge: what does the organisation need to know, and where does it live?", "long_text", { required: true, section: "Organisational foundations" }),
-        field("tools", "Tools: which systems does the organisation actually use?", "long_text", { required: true, section: "Organisational foundations" }),
-        field("procedures", "Procedures: where are repeatable processes written down—or only held in people’s heads?", "long_text", { required: true, section: "Organisational foundations" }),
-        field("rules", "Rules: what policies, boundaries, approvals, and risks must an AI system respect?", "long_text", { required: true, section: "Organisational foundations" }),
+        field(
+          "knowledge",
+          "Knowledge: what does the organisation need to know, and where does it live?",
+          "long_text",
+          { required: true, section: "Organisational foundations" },
+        ),
+        field(
+          "tools",
+          "Tools: which systems does the organisation actually use?",
+          "long_text",
+          { required: true, section: "Organisational foundations" },
+        ),
+        field(
+          "procedures",
+          "Procedures: where are repeatable processes written down—or only held in people’s heads?",
+          "long_text",
+          { required: true, section: "Organisational foundations" },
+        ),
+        field(
+          "rules",
+          "Rules: what policies, boundaries, approvals, and risks must an AI system respect?",
+          "long_text",
+          { required: true, section: "Organisational foundations" },
+        ),
       ],
       {
         instructions:
@@ -510,13 +545,35 @@ function createDiscoverActivities(materialId) {
       8,
       [
         ...[1, 2, 3, 4].flatMap((row) => [
-          field(`tool-${row}`, "Tool", "short_text", { section: `Tool ${row}` }),
-          field(`tool-${row}-frequency`, "How often do you use it?", "short_text", { section: `Tool ${row}` }),
-          field(`tool-${row}-use`, "What do you use it for?", "long_text", { section: `Tool ${row}` }),
-          field(`tool-${row}-trust`, "Where did you stop trusting it?", "long_text", { section: `Tool ${row}` }),
+          field(`tool-${row}`, "Tool", "short_text", {
+            section: `Tool ${row}`,
+          }),
+          field(
+            `tool-${row}-frequency`,
+            "How often do you use it?",
+            "short_text",
+            { section: `Tool ${row}` },
+          ),
+          field(`tool-${row}-use`, "What do you use it for?", "long_text", {
+            section: `Tool ${row}`,
+          }),
+          field(
+            `tool-${row}-trust`,
+            "Where did you stop trusting it?",
+            "long_text",
+            { section: `Tool ${row}` },
+          ),
         ]),
-        field("gave-up", "What have you tried and given up on?", "long_text", { required: true, section: "Patterns" }),
-        field("repeated-context", "Where do you paste the same context again and again?", "long_text", { required: true, section: "Patterns" }),
+        field("gave-up", "What have you tried and given up on?", "long_text", {
+          required: true,
+          section: "Patterns",
+        }),
+        field(
+          "repeated-context",
+          "Where do you paste the same context again and again?",
+          "long_text",
+          { required: true, section: "Patterns" },
+        ),
       ],
       {
         instructions:
@@ -550,40 +607,49 @@ function createDiscoverActivities(materialId) {
       points: 0,
       options: [],
     },
-    ...[1, 2, 3, 4].map((card) =>
-      worksheet(
-        `discover-task-anatomy-${card}`,
-        `Task anatomy card ${card}`,
-        "Unpack one shortlisted routine and surface the judgment hidden inside it.",
+    {
+      ...content(
+        "discover-task-anatomies",
+        "Task anatomy cards",
+        "Unpack each shortlisted routine and surface the judgment hidden inside it.",
         35,
-        8,
-        taskCardFields(card),
-        {
-          instructions:
-            "Work from the real task, not the ideal process. Capture decisions, exceptions, the quality bar, and anything you describe as ‘I just know’. Save progress if you need to return to it.",
-          successCriteria:
-            "You can name the steps, at least one decision point, one exception, and what good looks like.",
-        },
+        20,
       ),
-    ),
-    worksheet(
-      "discover-final-choice",
-      "Choose the first task to offload",
-      "Score your four candidates and choose the first one you will carry through all four sessions.",
-      36,
-      12,
-      [
-        ...scorecardFields,
-        field("selected-task", "The first task I will offload is…", "short_text", { required: true, section: "Decision", placeholder: "Six words or fewer" }),
-        field("selection-reason", "Why is this a safe, useful first build?", "long_text", { required: true, section: "Decision" }),
-      ],
-      {
-        instructions:
-          "Consider frequency, time cost, repeatability, verifiability, reversibility, data access, and judgment density. For a first build, favour something easy to verify and easy to reverse.",
-        successCriteria:
-          "Name one task in six words or fewer and explain why it is a safe, useful first build.",
-      },
-    ),
+      type: "card_collection",
+      required: true,
+      minItems: 1,
+      itemTitleFieldId: "task-name",
+      worksheetFields: taskCardFields(),
+      instructions:
+        "Add one card for every task you want to examine. Work from the real task, not the ideal process. You can create as many cards as you need, save progress, and return to any card.",
+      successCriteria:
+        "Each card names the steps, at least one decision point, an exception, and what good looks like.",
+    },
+    {
+      ...content(
+        "discover-final-choice",
+        "Choose the first task to offload",
+        "Score the tasks you just unpacked and choose the first one you will carry through all four sessions.",
+        36,
+        12,
+      ),
+      type: "linked_scorecard",
+      required: true,
+      sourceActivityId: "discover-task-anatomies",
+      selectionPrompt: "Choose the first task you will offload.",
+      scoreCriteria: scoreCriteria.map(([id, label]) => ({
+        id,
+        label,
+        min: 1,
+        max: 5,
+        lowLabel: "Low",
+        highLabel: "High",
+      })),
+      instructions:
+        "Your task cards are already here. Score each one for frequency, time cost, repeatability, verifiability, reversibility, data access, and judgment density—then choose your first build.",
+      successCriteria:
+        "Choose one task and explain why it is a safe, useful first build.",
+    },
     worksheet(
       "discover-recording-commitment",
       "Your recording commitment",
@@ -591,10 +657,30 @@ function createDiscoverActivities(materialId) {
       37,
       8,
       [
-        field("recorded-task", "The task I will record", "short_text", { required: true, section: "Assignment" }),
-        field("recording-date", "I will record it by", "date", { required: true, section: "Assignment" }),
-        field("support-needed", "What help, access, or support do you need?", "long_text", { section: "Assignment" }),
-        field("commitment", "Write your commitment in one sentence", "long_text", { required: true, section: "Commitment", placeholder: "I am recording ___ by ___." }),
+        field("recorded-task", "The task I will record", "short_text", {
+          required: true,
+          section: "Assignment",
+        }),
+        field("recording-date", "I will record it by", "date", {
+          required: true,
+          section: "Assignment",
+        }),
+        field(
+          "support-needed",
+          "What help, access, or support do you need?",
+          "long_text",
+          { section: "Assignment" },
+        ),
+        field(
+          "commitment",
+          "Write your commitment in one sentence",
+          "long_text",
+          {
+            required: true,
+            section: "Commitment",
+            placeholder: "I am recording ___ by ___.",
+          },
+        ),
       ],
       {
         instructions:
@@ -619,7 +705,12 @@ async function prepareAssets(source, workDir) {
   const deckPages = await renderPdfPages(deckPdf);
   const deckText = await extractPresentationText(deckBytes);
   const documentDefinitions = [
-    ["workbook", source.workbook, "Session 1 Participant Workbook.pdf", "course"],
+    [
+      "workbook",
+      source.workbook,
+      "Session 1 Participant Workbook.pdf",
+      "course",
+    ],
     ["cards", source.cards, "Session 1 Reference Cards.pdf", "course"],
     ["guide", source.guide, "Session 1 Facilitator Guide.pdf", "educator"],
   ].filter(([, sourcePath]) => Boolean(sourcePath));
@@ -946,7 +1037,8 @@ async function syncMaterial({
     await Promise.allSettled(oldIds.map((id) => bucket.delete(id)));
     return material;
   } finally {
-    if (!committed) await Promise.allSettled(newIds.map((id) => bucket.delete(id)));
+    if (!committed)
+      await Promise.allSettled(newIds.map((id) => bucket.delete(id)));
   }
 }
 
@@ -956,10 +1048,7 @@ async function upload(bucket, bytes, filename, contentType) {
     metadata: { private: true },
   });
   await new Promise((resolve, reject) =>
-    Readable.from(bytes)
-      .pipe(stream)
-      .on("finish", resolve)
-      .on("error", reject),
+    Readable.from(bytes).pipe(stream).on("finish", resolve).on("error", reject),
   );
   return stream.id;
 }
@@ -967,7 +1056,9 @@ async function upload(bucket, bytes, filename, contentType) {
 async function createUniqueJoinCode(db) {
   for (let attempt = 0; attempt < 20; attempt += 1) {
     const code = String(Math.floor(100_000 + Math.random() * 900_000));
-    const exists = await db.collection("livesessions").findOne({ joinCode: code });
+    const exists = await db
+      .collection("livesessions")
+      .findOne({ joinCode: code });
     if (!exists) return code;
   }
   throw new Error("A unique live-session join code could not be generated.");
@@ -975,7 +1066,22 @@ async function createUniqueJoinCode(db) {
 
 async function writePreviews(pages, targetDir) {
   await mkdir(targetDir, { recursive: true });
-  const indexes = [0, 6, 7, 17, 20, 23, 30, 31, 33, 34, 35, 36, 37, pages.length - 1].filter(
+  const indexes = [
+    0,
+    6,
+    7,
+    17,
+    20,
+    23,
+    30,
+    31,
+    33,
+    34,
+    35,
+    36,
+    37,
+    pages.length - 1,
+  ].filter(
     (value, index, values) =>
       value >= 0 && value < pages.length && values.indexOf(value) === index,
   );
