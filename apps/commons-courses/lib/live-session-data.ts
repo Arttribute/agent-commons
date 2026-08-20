@@ -16,6 +16,7 @@ import type {
 import {
   decodeOtherResponse,
   normalizePrioritizationResponse,
+  normalizeWorksheetResponse,
 } from "@/lib/live-response-policy";
 
 type LiveSessionDocumentLike = ILiveSession & {
@@ -197,6 +198,28 @@ function buildActivityResults(
             finalized: value.finalized,
           },
         ];
+      }),
+    };
+  }
+  if (activity.type === "worksheet") {
+    return {
+      total: responses.length,
+      worksheets: responses.flatMap((response) => {
+        const value = normalizeWorksheetResponse(activity, response.value);
+        if (!value) return [];
+        return [{
+          id: String(response._id),
+          participantName: revealNames
+            ? response.participantId?.displayName || "Learner"
+            : undefined,
+          values: (activity.worksheetFields || []).flatMap((field) => {
+            const answer = value.values[field.id];
+            return answer === undefined
+              ? []
+              : [{ fieldId: field.id, label: field.label, value: String(answer) }];
+          }),
+          finalized: value.finalized,
+        }];
       }),
     };
   }

@@ -9,6 +9,7 @@ import type { LiveActivity, LiveActivityOption } from "@/types/live-session";
 import {
   isValidLiveResponse,
   normalizePrioritizationResponse,
+  normalizeWorksheetResponse,
 } from "@/lib/live-response-policy";
 
 export async function POST(
@@ -55,6 +56,8 @@ export async function POST(
   const responseValue =
     activity.type === "prioritization"
       ? normalizePrioritizationResponse(activity, value)
+      : activity.type === "worksheet"
+        ? normalizeWorksheetResponse(activity, value)
       : value;
   if (responseValue === undefined) {
     return NextResponse.json(

@@ -10,6 +10,7 @@ export type LiveActivityType =
   | "poll"
   | "quiz"
   | "prioritization"
+  | "worksheet"
   | "reflection"
   | "task"
   | "break";
@@ -17,6 +18,26 @@ export type LiveActivityType =
 export type LiveActivityStatus = "draft" | "open" | "closed";
 
 export type LiveActivityResponseStyle = "cards" | "scale";
+
+export type LiveWorksheetFieldType =
+  | "short_text"
+  | "long_text"
+  | "scale"
+  | "date";
+
+export type LiveWorksheetField = {
+  id: string;
+  label: string;
+  type: LiveWorksheetFieldType;
+  section?: string;
+  description?: string;
+  placeholder?: string;
+  required: boolean;
+  min?: number;
+  max?: number;
+  lowLabel?: string;
+  highLabel?: string;
+};
 
 export type LiveActivityOption = {
   id: string;
@@ -49,6 +70,7 @@ export type LiveActivity = {
   selectionPrompt?: string;
   minItems?: number;
   maxSelections?: number;
+  worksheetFields?: LiveWorksheetField[];
   points: number;
   options: LiveActivityOption[];
 };
@@ -64,10 +86,16 @@ export type LivePrioritizationResponse = {
   finalized: boolean;
 };
 
+export type LiveWorksheetResponse = {
+  values: Record<string, string | number>;
+  finalized: boolean;
+};
+
 export type LiveResponseValue =
   | string
   | string[]
-  | LivePrioritizationResponse;
+  | LivePrioritizationResponse
+  | LiveWorksheetResponse;
 
 export type LiveSessionSettings = {
   allowLateJoin: boolean;
@@ -149,6 +177,12 @@ export type LiveActivityResults = {
     participantName?: string;
     items: string[];
     selectedItems: string[];
+    finalized: boolean;
+  }>;
+  worksheets?: Array<{
+    id: string;
+    participantName?: string;
+    values: Array<{ fieldId: string; label: string; value: string }>;
     finalized: boolean;
   }>;
 };

@@ -12,6 +12,10 @@ import LiveResponse from "@/models/LiveResponse";
 import LiveSession from "@/models/LiveSession";
 import Submission from "@/models/Submission";
 import type { LiveActivity, LiveResponseValue } from "@/types/live-session";
+import {
+  isPrioritizationResponse,
+  isWorksheetResponse,
+} from "@/lib/live-response-policy";
 
 export default async function CourseCheckInsPage({
   params,
@@ -150,11 +154,14 @@ export default async function CourseCheckInsPage({
 }
 
 function formatResponseValue(value: LiveResponseValue) {
-  if (!Array.isArray(value) && typeof value === "object") {
+  if (isPrioritizationResponse(value)) {
     const selected = value.items
       .filter((item) => item.selected)
       .map((item) => item.text);
     return selected.length ? selected.join(", ") : value.items.map((item) => item.text).join(", ");
+  }
+  if (isWorksheetResponse(value)) {
+    return Object.values(value.values).map(String).join(", ");
   }
   const values = Array.isArray(value) ? value : [value];
   return values

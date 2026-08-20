@@ -41,6 +41,7 @@ import {
   decodeOtherResponse,
   encodeOtherResponse,
   isPrioritizationResponse,
+  isWorksheetResponse,
   isValidLiveResponse,
   sameLiveResponseValue,
 } from "@/lib/live-response-policy";
@@ -867,7 +868,16 @@ function LearnerActivity({
           />
         </div>
       ) : null}
-      {activity.type === "prioritization" ? (
+      {activity.type === "worksheet" ? (
+        <WorksheetResponsePanel
+          activity={activity}
+          value={value}
+          response={response}
+          submitting={submitting}
+          onChange={onChange}
+          onSubmit={onSubmit}
+        />
+      ) : activity.type === "prioritization" ? (
         <PrioritizationResponsePanel
           activity={activity}
           value={value}
@@ -1067,6 +1077,185 @@ function LearnerActivity({
         </div>
       )}
     </article>
+  );
+}
+
+function WorksheetResponsePanel({
+  activity,
+  value,
+  response,
+  submitting,
+  onChange,
+  onSubmit,
+}: {
+  activity: LiveActivity;
+  value?: LiveResponseValue;
+  response?: LiveResponseRecord;
+  submitting: boolean;
+  onChange: (value: LiveResponseValue) => void;
+  onSubmit: (valueOverride?: LiveResponseValue) => void;
+}) {
+  const current = isWorksheetResponse(value)
+    ? value
+    : { values: {}, finalized: false };
+  const fields = activity.worksheetFields || [];
+  const sections = fields.reduce<Array<{ title: string; fields: typeof fields }>>(
+    (groups, field) => {
+      const title = field.section || "Your responses";
+      const existing = groups.find((group) => group.title === title);
+      if (existing) existing.fields.push(field);
+      else groups.push({ title, fields: [field] });
+      return groups;
+    },
+    [],
+  );
+  const answered = fields.filter(
+    (field) => current.values[field.id] !== undefined,
+  ).length;
+  const requiredComplete = fields.every(
+    (field) => !field.required || current.values[field.id] !== undefined,
+  );
+  const canEdit = activity.status === "open";
+  const changed = response
+    ? !sameLiveResponseValue(current, response.value)
+    : answered > 0;
+
+  function update(fieldId: string, nextValue: string | number) {
+    const values = { ...current.values };
+    if (nextValue === "") delete values[fieldId];
+    else values[fieldId] = nextValue;
+    onChange({ values, finalized: false });
+  }
+
+  return (
+    <div className="border-t border-slate-100 bg-[var(--course-background)] p-4 sm:p-7">
+      <div className="mx-auto max-w-4xl space-y-5">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <p className="text-sm font-bold">Fill in your workbook</p>
+            <p className="mt-1 text-xs opacity-55">
+              Your progress is private to you and your facilitators.
+            </p>
+          </div>
+          <span className="rounded-full bg-[var(--course-surface)] px-3 py-1.5 text-xs font-bold opacity-70">
+            {answered}/{fields.length} answered
+          </span>
+        </div>
+        {sections.map((section) => (
+          <section
+            key={section.title}
+            className="rounded-2xl border border-slate-200 bg-[var(--course-surface)] p-4 sm:p-6"
+          >
+            <h2 className="text-sm font-bold uppercase tracking-[0.14em] opacity-55">
+              {section.title}
+            </h2>
+            <div className="mt-5 grid gap-5 md:grid-cols-2">
+              {section.fields.map((field) => {
+                const fieldValue = current.values[field.id];
+                return (
+                  <label
+                    key={field.id}
+                    className={cn(
+                      "block",
+                      field.type === "long_text" && "md:col-span-2",
+                    )}
+                  >
+                    <span className="text-sm font-bold leading-6">
+                      {field.label}
+                      {field.required ? <span className="ml-1 text-red-500">*</span> : null}
+                    </span>
+                    {field.description ? (
+                      <span className="mt-1 block text-xs leading-5 opacity-55">
+                        {field.description}
+                      </span>
+                    ) : null}
+                    {field.type === "scale" ? (
+                      <div className="mt-3">
+                        <div className="grid grid-cols-5 gap-2">
+                          {Array.from(
+                            { length: (field.max ?? 5) - (field.min ?? 1) + 1 },
+                            (_, index) => (field.min ?? 1) + index,
+                          ).map((number) => (
+                            <button
+                              key={number}
+                              type="button"
+                              disabled={!canEdit}
+                              onClick={() => update(field.id, number)}
+                              className={cn(
+                                "min-h-12 rounded-xl border text-sm font-bold transition",
+                                fieldValue === number
+                                  ? "border-[var(--course-primary)] bg-[var(--course-primary)] text-[var(--course-on-primary)]"
+                                  : "border-slate-200 bg-white hover:border-slate-400",
+                              )}
+                            >
+                              {number}
+                            </button>
+                          ))}
+                        </div>
+                        <div className="mt-2 flex justify-between gap-4 text-[11px] opacity-50">
+                          <span>{field.lowLabel}</span>
+                          <span className="text-right">{field.highLabel}</span>
+                        </div>
+                      </div>
+                    ) : field.type === "long_text" ? (
+                      <textarea
+                        rows={5}
+                        maxLength={10_000}
+                        disabled={!canEdit}
+                        value={typeof fieldValue === "string" ? fieldValue : ""}
+                        onChange={(event) => update(field.id, event.target.value)}
+                        placeholder={field.placeholder}
+                        className="mt-3 w-full resize-y rounded-xl border border-slate-200 bg-white p-4 text-sm leading-6 text-slate-950 outline-none focus:border-slate-500 disabled:bg-slate-100"
+                      />
+                    ) : (
+                      <input
+                        type={field.type === "date" ? "date" : "text"}
+                        maxLength={500}
+                        disabled={!canEdit}
+                        value={typeof fieldValue === "string" ? fieldValue : ""}
+                        onChange={(event) => update(field.id, event.target.value)}
+                        placeholder={field.placeholder}
+                        className="mt-3 w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-950 outline-none focus:border-slate-500 disabled:bg-slate-100"
+                      />
+                    )}
+                  </label>
+                );
+              })}
+            </div>
+          </section>
+        ))}
+        {response ? (
+          <Saved
+            message={
+              isWorksheetResponse(response.value) && response.value.finalized && !changed
+                ? "Workbook section completed"
+                : "Progress saved · You can keep editing while this is open"
+            }
+          />
+        ) : null}
+        {canEdit ? (
+          <div className="grid gap-2 sm:grid-cols-2">
+            <button
+              type="button"
+              onClick={() => onSubmit({ values: current.values, finalized: false })}
+              disabled={!answered || submitting || !changed}
+              className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl border border-slate-300 bg-white px-4 text-sm font-bold text-slate-700 disabled:opacity-40"
+            >
+              <Save className="h-4 w-4" /> Save progress
+            </button>
+            <button
+              type="button"
+              onClick={() => onSubmit({ values: current.values, finalized: true })}
+              disabled={!answered || !requiredComplete || submitting}
+              className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl bg-[var(--course-primary)] px-4 text-sm font-bold text-[var(--course-on-primary)] disabled:opacity-40"
+            >
+              {submitting ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
+              Complete this section
+            </button>
+          </div>
+        ) : null}
+      </div>
+    </div>
   );
 }
 
@@ -1381,6 +1570,7 @@ function labelFor(type: LiveActivity["type"]) {
       poll: "Quick poll",
       quiz: "Knowledge check",
       prioritization: "Capture and shortlist",
+      worksheet: "Workbook activity",
       reflection: "Reflection",
       task: "Practice",
       break: "Break",

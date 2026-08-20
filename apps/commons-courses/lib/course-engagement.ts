@@ -1,6 +1,9 @@
 import type { LiveActivity } from "../types/live-session";
 import type { LiveResponseValue } from "../types/live-session";
-import { normalizePrioritizationResponse } from "./live-response-policy.ts";
+import {
+  normalizePrioritizationResponse,
+  normalizeWorksheetResponse,
+} from "./live-response-policy.ts";
 import type {
   EngagementActivity,
   EngagementLearner,
@@ -46,6 +49,23 @@ function responseLabel(activity: LiveActivity, value: LiveResponseValue) {
     return selected.length
       ? `Shortlisted: ${selected.join("; ")} · ${response.items.length} captured`
       : `${response.items.length} routines captured · shortlist in progress`;
+  }
+  if (activity.type === "worksheet") {
+    const response = normalizeWorksheetResponse(activity, value);
+    if (!response) return "No worksheet progress saved";
+    const answered = Object.keys(response.values).length;
+    const total = activity.worksheetFields?.length || 0;
+    const preview = (activity.worksheetFields || [])
+      .flatMap((field) => {
+        const answer = response.values[field.id];
+        if (answer === undefined) return [];
+        const text = String(answer).replace(/\s+/g, " ").trim();
+        const concise = text.length > 160 ? `${text.slice(0, 157)}…` : text;
+        return [`${field.label}: ${concise}`];
+      })
+      .slice(0, 3)
+      .join(" · ");
+    return `${response.finalized ? "Completed" : "In progress"} · ${answered}/${total} fields${preview ? ` · ${preview}` : ""}`;
   }
   const values = Array.isArray(value) ? value : [value];
   return values

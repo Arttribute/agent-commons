@@ -338,6 +338,7 @@ export const educatorCopilotToolCatalog: CopilotToolDefinition[] = [
                   "poll",
                   "quiz",
                   "prioritization",
+                  "worksheet",
                   "reflection",
                   "task",
                   "break",
@@ -401,6 +402,31 @@ export const educatorCopilotToolCatalog: CopilotToolDefinition[] = [
                 type: "number",
                 description:
                   "For prioritization activities, the maximum number of items learners may shortlist.",
+              },
+              worksheetFields: {
+                type: "array",
+                description:
+                  "For worksheet activities, the structured fields learners fill in and can save as progress.",
+                items: {
+                  type: "object",
+                  properties: {
+                    id: { type: "string" },
+                    label: { type: "string" },
+                    type: {
+                      type: "string",
+                      enum: ["short_text", "long_text", "scale", "date"],
+                    },
+                    section: { type: "string" },
+                    description: { type: "string" },
+                    placeholder: { type: "string" },
+                    required: { type: "boolean" },
+                    min: { type: "number" },
+                    max: { type: "number" },
+                    lowLabel: { type: "string" },
+                    highLabel: { type: "string" },
+                  },
+                  required: ["label", "type"],
+                },
               },
               points: { type: "number" },
               options: {

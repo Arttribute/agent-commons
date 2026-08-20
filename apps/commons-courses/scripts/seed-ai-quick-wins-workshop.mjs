@@ -22,8 +22,8 @@ let cachedPdfTools;
 const inputs = {
   deck: requiredArgument("deck"),
   workbook: requiredArgument("workbook"),
-  cards: requiredArgument("cards"),
-  guide: requiredArgument("guide"),
+  cards: argument("cards"),
+  guide: argument("guide"),
 };
 
 if (!dryRun && !process.env.MONGODB_URI) {
@@ -335,6 +335,75 @@ function createDiscoverActivities(materialId) {
     options: [],
     ...extra,
   });
+  const field = (id, label, type = "short_text", extra = {}) => ({
+    id,
+    label,
+    type,
+    required: false,
+    ...extra,
+  });
+  const worksheet = (
+    id,
+    title,
+    prompt,
+    slide,
+    minutes,
+    worksheetFields,
+    extra = {},
+  ) => ({
+    ...content(id, title, prompt, slide, minutes),
+    type: "worksheet",
+    required: true,
+    worksheetFields,
+    ...extra,
+  });
+  const taskCardFields = (card) => [
+    field(`task-${card}-name`, "1. Task name", "short_text", {
+      required: true,
+      placeholder: "Six words or fewer",
+      section: `Task ${card}`,
+    }),
+    field(`task-${card}-trigger`, "2. What triggers it?", "long_text", {
+      required: true,
+      section: `Task ${card}`,
+    }),
+    field(`task-${card}-frequency`, "3. How often, and how long does it take?", "long_text", { section: `Task ${card}` }),
+    field(`task-${card}-tools`, "4. Which tools or apps are involved?", "long_text", { section: `Task ${card}` }),
+    field(`task-${card}-inputs`, "5. What inputs are needed, and where do they live?", "long_text", { section: `Task ${card}` }),
+    field(`task-${card}-steps`, "6. What are the steps?", "long_text", { required: true, section: `Task ${card}` }),
+    field(`task-${card}-judgment`, "7. Where do you pause and think?", "long_text", { section: `Task ${card}` }),
+    field(`task-${card}-exceptions`, "8. What exceptions change the process?", "long_text", { section: `Task ${card}` }),
+    field(`task-${card}-quality`, "9. What separates a good result from a bad one?", "long_text", { required: true, section: `Task ${card}` }),
+    field(`task-${card}-tacit`, "10. What part do you ‘just know’?", "long_text", { section: `Task ${card}` }),
+    field(`task-${card}-loss`, "11. What would be lost if this were delegated?", "long_text", { section: `Task ${card}` }),
+    field(`task-${card}-never`, "12. What should AI never give up?", "long_text", { section: `Task ${card}` }),
+  ];
+  const scoreCriteria = [
+    ["frequency", "Frequency"],
+    ["time", "Time cost"],
+    ["repeatability", "Repeatability"],
+    ["verifiability", "Verifiability"],
+    ["reversibility", "Reversibility"],
+    ["access", "Data access"],
+    ["judgment", "Low judgment density"],
+  ];
+  const scorecardFields = [1, 2, 3, 4].flatMap((task) => [
+    field(`score-task-${task}-name`, `Task ${task} name`, "short_text", {
+      required: true,
+      section: `Candidate ${task}`,
+      placeholder: "Copy one of your shortlisted routines",
+    }),
+    ...scoreCriteria.map(([id, label]) =>
+      field(`score-task-${task}-${id}`, label, "scale", {
+        section: `Candidate ${task}`,
+        min: 1,
+        max: 5,
+        lowLabel: "Low",
+        highLabel: "High",
+      }),
+    ),
+  ]);
+
   return [
     content(
       "discover-welcome",
@@ -347,34 +416,37 @@ function createDiscoverActivities(materialId) {
           "Set the promise and the boundary together: this is a build, not a tour of tools.",
       },
     ),
-    {
-      ...content(
-        "discover-outcome-contract",
-        "Your outcome contract",
-        "By the end of Day 4, what will you be able to do—and what observable evidence will prove it worked?",
-        8,
-        5,
-      ),
-      type: "reflection",
-      instructions:
-        "Complete both halves in one sentence. Make the outcome observable enough that a colleague could tell whether it happened.",
-      successCriteria:
-        "Your sentence names a changed action and evidence you could actually observe.",
-      required: true,
-    },
+    worksheet(
+      "discover-outcome-contract",
+      "Your outcome contract",
+      "Define what will change by the end of Day 4 and how you will know it worked.",
+      7,
+      7,
+      [
+        field("outcome", "By the end of session four, I will be able to…", "long_text", { required: true, section: "Outcome contract" }),
+        field("evidence", "The evidence that it worked will be…", "long_text", { required: true, section: "Outcome contract" }),
+        field("signature", "Name or signature", "short_text", { section: "Outcome contract" }),
+      ],
+      {
+        instructions:
+          "Make the outcome observable enough that a colleague could tell whether it happened. Save progress at any point, then complete the section when you are ready.",
+        successCriteria:
+          "Your statement names a changed action and evidence you could actually observe.",
+      },
+    ),
     content(
       "discover-reality-check",
-      "The reality check",
-      "AI adoption is widespread. Reliable value capture is not. These numbers show why leadership and organisational design matter.",
-      9,
-      7,
+      "Why most AI activity does not become value",
+      "Separate experimentation from reliable organisational value, and identify what has to change.",
+      8,
+      10,
     ),
     content(
       "discover-building-blocks",
       "The building blocks of agentic AI",
-      "Place models, skills, tools, workflows, schedules, and connections on one practical map.",
+      "Place models, skills, tools, workflows, schedules, harnesses, and connections on one practical map.",
       14,
-      20,
+      18,
     ),
     {
       id: "discover-ladder-check",
@@ -384,7 +456,7 @@ function createDiscoverActivities(materialId) {
       instructions:
         "Choose honestly. This is a starting point, not a score, and we will revisit it on Day 4.",
       materialId,
-      materialStartSlide: 20,
+      materialStartSlide: 18,
       estimatedMinutes: 4,
       status: "draft",
       required: true,
@@ -407,113 +479,135 @@ function createDiscoverActivities(materialId) {
       "Live build: the daily email triage",
       "Watch one ordinary task climb from a prompt to a reusable skill, connected workflow, and scheduled task.",
       21,
-      20,
+      18,
       {
         facilitatorNotes:
           "Bashy drives; Jessica narrates the business meaning. Do not teach the clicks.",
       },
     ),
-    content(
+    worksheet(
       "discover-foundations",
       "AI in your organisation",
       "Audit the four foundations: knowledge, tools, procedures, and rules.",
       24,
       15,
+      [
+        field("knowledge", "Knowledge: what does the organisation need to know, and where does it live?", "long_text", { required: true, section: "Organisational foundations" }),
+        field("tools", "Tools: which systems does the organisation actually use?", "long_text", { required: true, section: "Organisational foundations" }),
+        field("procedures", "Procedures: where are repeatable processes written down—or only held in people’s heads?", "long_text", { required: true, section: "Organisational foundations" }),
+        field("rules", "Rules: what policies, boundaries, approvals, and risks must an AI system respect?", "long_text", { required: true, section: "Organisational foundations" }),
+      ],
       {
         instructions:
-          "As a group, capture where organisational knowledge lives and which systems the organisation actually runs.",
+          "Capture your own organisation’s current state. Specific systems, documents, and unwritten rules are more useful than general statements.",
+      },
+    ),
+    worksheet(
+      "discover-tool-trust",
+      "Tool and trust inventory",
+      "Where are you already using AI—and where has trust broken down?",
+      31,
+      8,
+      [
+        ...[1, 2, 3, 4].flatMap((row) => [
+          field(`tool-${row}`, "Tool", "short_text", { section: `Tool ${row}` }),
+          field(`tool-${row}-frequency`, "How often do you use it?", "short_text", { section: `Tool ${row}` }),
+          field(`tool-${row}-use`, "What do you use it for?", "long_text", { section: `Tool ${row}` }),
+          field(`tool-${row}-trust`, "Where did you stop trusting it?", "long_text", { section: `Tool ${row}` }),
+        ]),
+        field("gave-up", "What have you tried and given up on?", "long_text", { required: true, section: "Patterns" }),
+        field("repeated-context", "Where do you paste the same context again and again?", "long_text", { required: true, section: "Patterns" }),
+      ],
+      {
+        instructions:
+          "Repeated context is often a reusable skill waiting to be written. Be specific about where trust broke down.",
       },
     ),
     {
-      ...content(
-        "discover-tool-trust",
-        "Tool and trust inventory",
-        "Where are you already using AI—and where has trust broken down?",
-        31,
-        5,
-      ),
-      type: "reflection",
-      instructions:
-        "Name one thing you tried and gave up on, then identify context you repeatedly paste into an AI tool. Repeated context is often a reusable skill waiting to be written.",
-      required: true,
-    },
-    {
       id: "discover-routine-shortlist",
       type: "prioritization",
-      title: "Routine storm: what repeats in your week?",
+      title: "Sweep your week: what repeats?",
       prompt:
-        "Capture as many recurring routines as you can, then shortlist the ones you would most like to automate or offload.",
+        "Capture as many recurring routines as you can, then shortlist four you would most like to automate or offload.",
       instructions:
         "Think across meetings, reporting, communication, approvals, research, follow-up, planning, data entry, and coordination. Keep each routine short and specific. Quantity first; selection second.",
       successCriteria:
-        "You have at least five real routines and a shortlist of up to three automation candidates.",
+        "You have at least eight real routines and a shortlist of four automation candidates.",
       facilitatorNotes:
-        "Give the room three silent minutes for quantity, then ask them to shortlist. If someone stalls, ask what they did three times last week.",
+        "Give the room four silent minutes for quantity, then ask them to shortlist four. If someone stalls, ask what they did three times last week.",
       materialId,
-      materialStartSlide: 32,
-      estimatedMinutes: 12,
+      materialStartSlide: 34,
+      estimatedMinutes: 14,
       status: "draft",
       required: true,
       randomizeOptions: false,
       showResults: false,
       entryLabel: "Add a routine you repeat",
       selectionPrompt:
-        "Choose up to three routines you would feel relieved to automate or offload.",
-      minItems: 5,
-      maxSelections: 3,
+        "Choose four routines you would feel relieved to automate or offload.",
+      minItems: 8,
+      maxSelections: 4,
       points: 0,
       options: [],
     },
-    {
-      ...content(
-        "discover-pair-interview",
-        "Pair interview: unpack one real routine",
-        "Interview your partner about one shortlisted routine and surface the judgment hidden inside it.",
-        33,
-        18,
-      ),
-      type: "task",
-      instructions:
-        "The interviewer asks and writes. Focus especially on decisions, exceptions, the quality bar, and anything described as ‘I just know’. Add a concise note capturing the most important hidden decision or exception you uncovered.",
-      successCriteria:
-        "You can name the steps, at least one decision point, one exception, and what good looks like.",
-      required: true,
-    },
-    {
-      ...content(
-        "discover-final-choice",
-        "Choose the first task to offload",
-        "Score your shortlisted routines and name the first one you will carry through all four days.",
+    ...[1, 2, 3, 4].map((card) =>
+      worksheet(
+        `discover-task-anatomy-${card}`,
+        `Task anatomy card ${card}`,
+        "Unpack one shortlisted routine and surface the judgment hidden inside it.",
         35,
-        10,
-      ),
-      type: "reflection",
-      instructions:
-        "Consider frequency, time cost, repeatability, verifiability, reversibility, data access, and judgment density. For a first build, favour something easy to verify and easy to reverse.",
-      successCriteria:
-        "Name one task in six words or fewer and explain why it is a safe, useful first build.",
-      required: true,
-    },
-    {
-      ...content(
-        "discover-recording-commitment",
-        "Your recording commitment",
-        "What will you record before Day 2, and by when?",
-        36,
         8,
+        taskCardFields(card),
+        {
+          instructions:
+            "Work from the real task, not the ideal process. Capture decisions, exceptions, the quality bar, and anything you describe as ‘I just know’. Save progress if you need to return to it.",
+          successCriteria:
+            "You can name the steps, at least one decision point, one exception, and what good looks like.",
+        },
       ),
-      type: "task",
-      instructions:
-        "Write: ‘I am recording ___ by ___.’ Record one full run with your voice, narrating decisions rather than clicks. Add any support you need before you begin.",
-      successCriteria:
-        "The task and deadline are explicit enough to read aloud to the room.",
-      required: true,
-    },
+    ),
+    worksheet(
+      "discover-final-choice",
+      "Choose the first task to offload",
+      "Score your four candidates and choose the first one you will carry through all four sessions.",
+      36,
+      12,
+      [
+        ...scorecardFields,
+        field("selected-task", "The first task I will offload is…", "short_text", { required: true, section: "Decision", placeholder: "Six words or fewer" }),
+        field("selection-reason", "Why is this a safe, useful first build?", "long_text", { required: true, section: "Decision" }),
+      ],
+      {
+        instructions:
+          "Consider frequency, time cost, repeatability, verifiability, reversibility, data access, and judgment density. For a first build, favour something easy to verify and easy to reverse.",
+        successCriteria:
+          "Name one task in six words or fewer and explain why it is a safe, useful first build.",
+      },
+    ),
+    worksheet(
+      "discover-recording-commitment",
+      "Your recording commitment",
+      "What will you record before Day 2, and by when?",
+      37,
+      8,
+      [
+        field("recorded-task", "The task I will record", "short_text", { required: true, section: "Assignment" }),
+        field("recording-date", "I will record it by", "date", { required: true, section: "Assignment" }),
+        field("support-needed", "What help, access, or support do you need?", "long_text", { section: "Assignment" }),
+        field("commitment", "Write your commitment in one sentence", "long_text", { required: true, section: "Commitment", placeholder: "I am recording ___ by ___." }),
+      ],
+      {
+        instructions:
+          "Record one full run with your voice, narrating decisions rather than clicks. Add any support you need before you begin.",
+        successCriteria:
+          "The task and deadline are explicit enough to read aloud to the room.",
+      },
+    ),
     content(
       "discover-close",
       "Close and next step",
       "Day 2 turns your recording into a reusable skill file that can run consistently.",
-      37,
+      39,
       2,
     ),
   ];
@@ -528,7 +622,7 @@ async function prepareAssets(source, workDir) {
     ["workbook", source.workbook, "Session 1 Participant Workbook.pdf", "course"],
     ["cards", source.cards, "Session 1 Reference Cards.pdf", "course"],
     ["guide", source.guide, "Session 1 Facilitator Guide.pdf", "educator"],
-  ];
+  ].filter(([, sourcePath]) => Boolean(sourcePath));
   const assets = {
     deck: {
       key: "deck",
@@ -540,6 +634,7 @@ async function prepareAssets(source, workDir) {
       bytes: deckBytes,
       pages: deckPages,
       textPreview: deckText,
+      aliases: ["AI Quick Win for Leaders.pptx"],
     },
   };
   for (const [key, sourcePath, name, visibility] of documentDefinitions) {
@@ -559,6 +654,9 @@ async function prepareAssets(source, workDir) {
 }
 
 async function convertToPdf(sourcePath, workDir, prefix) {
+  if (path.extname(sourcePath).toLowerCase() === ".pdf") {
+    return readFile(sourcePath);
+  }
   const inputDir = path.join(workDir, `${prefix}-input`);
   const outputDir = path.join(workDir, `${prefix}-output`);
   const profileDir = path.join(workDir, `${prefix}-profile`);
@@ -789,8 +887,11 @@ async function syncMaterial({
   const collection = db.collection("coursematerials");
   const existing = await collection.findOne({
     courseId: course._id,
-    name: asset.name,
+    name: { $in: [asset.name, ...(asset.aliases || [])] },
   });
+  const materialFilter = existing?._id
+    ? { _id: existing._id }
+    : { courseId: course._id, name: asset.name };
   const newIds = [];
   let committed = false;
   try {
@@ -813,9 +914,10 @@ async function syncMaterial({
       slideIds.push(slideId);
     }
     const material = await collection.findOneAndUpdate(
-      { courseId: course._id, name: asset.name },
+      materialFilter,
       {
         $set: {
+          name: asset.name,
           courseSlug: slug,
           ownerUserId: owner._id,
           ownerPrincipalId: String(principalId),
@@ -873,7 +975,7 @@ async function createUniqueJoinCode(db) {
 
 async function writePreviews(pages, targetDir) {
   await mkdir(targetDir, { recursive: true });
-  const indexes = [0, 7, 31, pages.length - 1].filter(
+  const indexes = [0, 6, 7, 17, 20, 23, 30, 31, 33, 34, 35, 36, 37, pages.length - 1].filter(
     (value, index, values) =>
       value >= 0 && value < pages.length && values.indexOf(value) === index,
   );

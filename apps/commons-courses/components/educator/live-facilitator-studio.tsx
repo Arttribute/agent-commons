@@ -37,6 +37,7 @@ import type {
   LiveActivityType,
   LiveParticipantRecord,
   LiveSessionRecord,
+  LiveWorksheetField,
 } from "@/types/live-session";
 import type { CourseMaterialRecord } from "@/types/course-material";
 import type { LabWorkspaceRecord } from "@/types/lab-workspace";
@@ -70,6 +71,11 @@ const activityChoices: Array<{
     type: "prioritization",
     label: "Idea shortlist",
     hint: "Capture many ideas, then choose priorities",
+  },
+  {
+    type: "worksheet",
+    label: "Fillable worksheet",
+    hint: "Structured fields learners can save and complete",
   },
   {
     type: "reflection",
@@ -253,6 +259,15 @@ export function LiveFacilitatorStudio({ sessionId }: { sessionId: string }) {
           : undefined,
       minItems: type === "prioritization" ? 3 : undefined,
       maxSelections: type === "prioritization" ? 3 : undefined,
+      worksheetFields:
+        type === "worksheet"
+          ? [{
+              id: crypto.randomUUID(),
+              label: "Workbook question",
+              type: "long_text",
+              required: true,
+            }]
+          : [],
       points: type === "quiz" ? 1 : 0,
       options: ["poll", "quiz", "setup_check"].includes(type)
         ? [
@@ -1254,6 +1269,29 @@ function ActivityEditor({
       ],
     });
   }
+  function updateWorksheetField(
+    id: string,
+    patch: Partial<LiveWorksheetField>,
+  ) {
+    onChange({
+      worksheetFields: (activity.worksheetFields || []).map((field) =>
+        field.id === id ? { ...field, ...patch } : field,
+      ),
+    });
+  }
+  function addWorksheetField() {
+    onChange({
+      worksheetFields: [
+        ...(activity.worksheetFields || []),
+        {
+          id: crypto.randomUUID(),
+          label: "New question",
+          type: "short_text",
+          required: false,
+        },
+      ],
+    });
+  }
   const selectedLabWorkspace = labWorkspaces.find(
     (workspace) => workspace.id === activity.labWorkspaceId,
   );
@@ -1416,6 +1454,134 @@ function ActivityEditor({
             Learners can add up to 50 entries, save progress, and revise their
             shortlist while the activity remains open.
           </p>
+        </div>
+      ) : null}
+      {activity.type === "worksheet" ? (
+        <div className="mt-5 rounded-xl border border-slate-200 bg-slate-50 p-4">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <p className="text-xs font-bold uppercase tracking-wide text-slate-600">
+                Worksheet fields
+              </p>
+              <p className="mt-1 text-[11px] text-slate-500">
+                Group related questions with the same section title.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={addWorksheetField}
+              className="inline-flex items-center gap-1 text-xs font-bold text-slate-700"
+            >
+              <Plus className="h-3.5 w-3.5" /> Add field
+            </button>
+          </div>
+          <div className="mt-4 space-y-3">
+            {(activity.worksheetFields || []).map((field, fieldIndex) => (
+              <div key={field.id} className="rounded-xl border border-slate-200 bg-white p-4">
+                <div className="flex items-center justify-between gap-3">
+                  <span className="text-[10px] font-bold uppercase tracking-wide text-slate-400">
+                    Field {fieldIndex + 1}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      onChange({
+                        worksheetFields: (activity.worksheetFields || []).filter(
+                          (candidate) => candidate.id !== field.id,
+                        ),
+                      })
+                    }
+                    className="p-1 text-slate-300 hover:text-red-600"
+                    aria-label={`Remove ${field.label}`}
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </button>
+                </div>
+                <div className="mt-3 grid gap-3 md:grid-cols-2">
+                  <Field label="Question">
+                    <input
+                      value={field.label}
+                      onChange={(event) =>
+                        updateWorksheetField(field.id, { label: event.target.value })
+                      }
+                      className={inputClass}
+                    />
+                  </Field>
+                  <Field label="Field type">
+                    <select
+                      value={field.type}
+                      onChange={(event) =>
+                        updateWorksheetField(field.id, {
+                          type: event.target.value as LiveWorksheetField["type"],
+                        })
+                      }
+                      className={inputClass}
+                    >
+                      <option value="short_text">Short answer</option>
+                      <option value="long_text">Long answer</option>
+                      <option value="scale">Number scale</option>
+                      <option value="date">Date</option>
+                    </select>
+                  </Field>
+                  <Field label="Section title">
+                    <input
+                      value={field.section || ""}
+                      onChange={(event) =>
+                        updateWorksheetField(field.id, { section: event.target.value })
+                      }
+                      placeholder="Optional group heading"
+                      className={inputClass}
+                    />
+                  </Field>
+                  <Field label="Help text">
+                    <input
+                      value={field.description || ""}
+                      onChange={(event) =>
+                        updateWorksheetField(field.id, { description: event.target.value })
+                      }
+                      placeholder="Optional guidance"
+                      className={inputClass}
+                    />
+                  </Field>
+                  {field.type === "scale" ? (
+                    <>
+                      <Field label="Minimum">
+                        <input
+                          type="number"
+                          min={0}
+                          max={20}
+                          value={field.min ?? 1}
+                          onChange={(event) =>
+                            updateWorksheetField(field.id, { min: Number(event.target.value) })
+                          }
+                          className={inputClass}
+                        />
+                      </Field>
+                      <Field label="Maximum">
+                        <input
+                          type="number"
+                          min={1}
+                          max={20}
+                          value={field.max ?? 5}
+                          onChange={(event) =>
+                            updateWorksheetField(field.id, { max: Number(event.target.value) })
+                          }
+                          className={inputClass}
+                        />
+                      </Field>
+                    </>
+                  ) : null}
+                </div>
+                <div className="mt-3">
+                  <Toggle
+                    checked={field.required}
+                    onChange={(required) => updateWorksheetField(field.id, { required })}
+                    label="Required to complete"
+                  />
+                </div>
+              </div>
+            ))}
+          </div>
         </div>
       ) : null}
       <Field label="Private facilitator notes">
@@ -1727,7 +1893,9 @@ function LiveResults({
             </div>
           ))}
         </div>
-      ) : !activity.options.length && !results?.prioritizations?.length ? (
+      ) : !activity.options.length &&
+        !results?.prioritizations?.length &&
+        !results?.worksheets?.length ? (
         <div className="mt-6 rounded-xl border border-dashed border-slate-200 p-8 text-center text-sm text-slate-400">
           Responses will appear here.
         </div>
@@ -1757,6 +1925,32 @@ function LiveResults({
                 {response.items.length} captured
               </p>
             </div>
+          ))}
+        </div>
+      ) : null}
+      {results?.worksheets?.length ? (
+        <div className="mt-5 space-y-3">
+          {results.worksheets.map((response) => (
+            <details key={response.id} className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+              <summary className="cursor-pointer list-none text-xs font-bold text-slate-700">
+                <span>{response.participantName || "Learner response"}</span>
+                <span className="ml-2 text-[10px] uppercase tracking-wide text-slate-400">
+                  {response.finalized ? "Completed" : "In progress"} · {response.values.length} fields
+                </span>
+              </summary>
+              <dl className="mt-4 space-y-3">
+                {response.values.map((answer) => (
+                  <div key={answer.fieldId}>
+                    <dt className="text-[10px] font-bold uppercase tracking-wide text-slate-400">
+                      {answer.label}
+                    </dt>
+                    <dd className="mt-1 whitespace-pre-wrap text-sm leading-6 text-slate-700">
+                      {answer.value}
+                    </dd>
+                  </div>
+                ))}
+              </dl>
+            </details>
           ))}
         </div>
       ) : null}
