@@ -1,5 +1,5 @@
 CREATE TABLE IF NOT EXISTS "ui_plugin" (
-  "plugin_id" uuid PRIMARY KEY DEFAULT uuid_generate_v4() NOT NULL,
+  "plugin_id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
   "owner_user_id" text NOT NULL,
   "workspace_id" text,
   "created_by_agent_id" text REFERENCES "agent"("agent_id") ON DELETE SET NULL,
