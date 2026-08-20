@@ -17,6 +17,7 @@ import {
   CheckCircle2,
   ChevronDown,
   Clock3,
+  Download,
   ExternalLink,
   FlaskConical,
   GraduationCap,
@@ -52,6 +53,10 @@ import {
   resolveLearnerActivitySelection,
 } from "@/lib/live-learner-selection";
 import { effectiveActivityPace } from "@/lib/live-session-parts";
+import {
+  createLearnerWorkbookHtml,
+  learnerWorkbookFilename,
+} from "@/lib/live-workbook-export";
 import type {
   LearnerLiveSession,
   LiveActivity,
@@ -377,6 +382,37 @@ export function LiveLearnerRoom({ sessionId }: { sessionId: string }) {
     if (next) setSelectedId(next.id);
   }
 
+  function downloadWorkbook(activityId?: string) {
+    if (!session) return;
+    const selectedActivity = activityId
+      ? session.activities.find((item) => item.id === activityId)
+      : undefined;
+    if (activityId && !session.responses[activityId]) return;
+    if (!activityId && !Object.keys(session.responses).length) return;
+    const html = createLearnerWorkbookHtml({
+      courseTitle: session.courseTitle,
+      sessionTitle: session.title,
+      learnerName: session.participant.displayName,
+      activities: session.activities,
+      parts: session.parts,
+      responses: session.responses,
+      courseTheme: session.courseTheme,
+      activityId,
+    });
+    const blob = new Blob([html], { type: "text/html;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = learnerWorkbookFilename(
+      session.title,
+      selectedActivity?.title,
+    );
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    window.setTimeout(() => URL.revokeObjectURL(url), 0);
+  }
+
   async function enrollAndEnter() {
     if (!enrollmentGate?.courseId || enrolling) return;
     setEnrolling(true);
@@ -553,6 +589,7 @@ export function LiveLearnerRoom({ sessionId }: { sessionId: string }) {
               }
               onSubmit={submit}
               onOpenActivity={setSelectedId}
+              onDownload={() => downloadWorkbook(activity.id)}
             />
           ) : (
             <div className="flex min-h-[55dvh] items-center justify-center rounded-2xl border border-slate-200 bg-[var(--course-surface)] p-8 text-center">
@@ -618,6 +655,7 @@ export function LiveLearnerRoom({ sessionId }: { sessionId: string }) {
           setSelectedId(activityId);
           setWorkbookOpen(false);
         }}
+        onDownload={() => downloadWorkbook()}
       />
       {session.settings.learnerCopilot.enabled ? (
         <CourseAgentDrawer
@@ -781,14 +819,17 @@ function WorkbookDrawer({
   selectedId,
   onClose,
   onSelect,
+  onDownload,
 }: {
   open: boolean;
   session: LearnerLiveSession;
   selectedId?: string;
   onClose: () => void;
   onSelect: (activityId: string) => void;
+  onDownload: () => void;
 }) {
   if (!open) return null;
+  const responseCount = Object.keys(session.responses).length;
   return (
     <div
       className="fixed inset-0 z-50"
@@ -829,6 +870,25 @@ function WorkbookDrawer({
           >
             <X className="h-4 w-4" />
           </button>
+        </div>
+        <div className="border-b border-slate-200 px-4 py-3 sm:px-6">
+          <button
+            type="button"
+            onClick={onDownload}
+            disabled={!responseCount}
+            className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-[var(--course-primary)] px-4 py-3 text-xs font-bold text-[var(--course-on-primary)] transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-35"
+          >
+            <Download className="h-4 w-4" />
+            Download my workbook
+            {responseCount ? (
+              <span className="rounded-full bg-white/15 px-2 py-0.5 text-[10px]">
+                {responseCount}
+              </span>
+            ) : null}
+          </button>
+          <p className="mt-2 text-center text-[10px] leading-4 opacity-50">
+            Includes your saved responses and works offline.
+          </p>
         </div>
         <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-3 sm:p-4">
           <div className="space-y-4">
@@ -954,6 +1014,7 @@ function LearnerActivity({
   onChange,
   onSubmit,
   onOpenActivity,
+  onDownload,
 }: {
   activity: LiveActivity;
   learnerSeed: string;
@@ -965,6 +1026,7 @@ function LearnerActivity({
   onChange: (value: LiveResponseValue) => void;
   onSubmit: (valueOverride?: LiveResponseValue) => void;
   onOpenActivity: (activityId: string) => void;
+  onDownload: () => void;
 }) {
   const isChoice = activity.options.length > 0;
   const result = activity.status === "closed" && activity.showResults;
@@ -977,15 +1039,28 @@ function LearnerActivity({
   return (
     <article className="overflow-hidden rounded-2xl border border-slate-200 bg-[var(--course-surface)]">
       <div className="p-6 sm:p-9">
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between gap-3">
           <span className="rounded-full bg-[var(--course-accent)] px-2.5 py-1 text-[10px] font-bold uppercase tracking-widest text-[var(--course-on-accent)]">
             {labelFor(activity.type)}
           </span>
-          {activity.required ? (
-            <span className="text-[10px] font-bold uppercase tracking-wide opacity-50">
-              Required
-            </span>
-          ) : null}
+          <span className="flex items-center gap-3">
+            {activity.required ? (
+              <span className="hidden text-[10px] font-bold uppercase tracking-wide opacity-50 sm:inline">
+                Required
+              </span>
+            ) : null}
+            {response ? (
+              <button
+                type="button"
+                onClick={onDownload}
+                className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-2.5 py-1.5 text-[10px] font-bold transition hover:border-slate-300 hover:bg-[var(--course-background)]"
+                title="Download this saved response"
+              >
+                <Download className="h-3.5 w-3.5" />
+                <span className="hidden sm:inline">Download response</span>
+              </button>
+            ) : null}
+          </span>
         </div>
         <h1 className="mt-6 text-3xl font-bold tracking-tight">
           {activity.title || labelFor(activity.type)}
