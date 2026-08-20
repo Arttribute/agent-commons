@@ -14,6 +14,34 @@ test("allows saved poll answers to change only while the poll is open", () => {
   assert.equal(canReviseLiveResponse(activity("poll", "closed")), false);
   assert.equal(canReviseLiveResponse(activity("quiz", "open")), false);
   assert.equal(canReviseLiveResponse(activity("prioritization", "open")), true);
+  assert.equal(canReviseLiveResponse(activity("worksheet", "open")), true);
+});
+
+test("validates worksheet progress and required fields before completion", () => {
+  const worksheet = activity("worksheet", "open");
+  worksheet.worksheetFields = [
+    { id: "outcome", label: "Outcome", type: "long_text", required: true },
+    { id: "confidence", label: "Confidence", type: "scale", required: false, min: 1, max: 5 },
+  ];
+  assert.equal(
+    isValidLiveResponse(worksheet, { values: { confidence: 3 }, finalized: false }),
+    true,
+  );
+  assert.equal(
+    isValidLiveResponse(worksheet, { values: { confidence: 3 }, finalized: true }),
+    false,
+  );
+  assert.equal(
+    isValidLiveResponse(worksheet, {
+      values: { outcome: "Automate my weekly report", confidence: 4 },
+      finalized: true,
+    }),
+    true,
+  );
+  assert.equal(
+    isValidLiveResponse(worksheet, { values: { confidence: 8 }, finalized: false }),
+    false,
+  );
 });
 
 test("validates a multi-entry shortlist while preserving in-progress saves", () => {

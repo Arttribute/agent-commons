@@ -137,3 +137,51 @@ test("summarises captured and shortlisted routines for educators", () => {
     "Shortlisted: Prepare weekly updates · 2 captured",
   );
 });
+
+test("summarises structured worksheet progress for educators", () => {
+  const result = buildCourseEngagement({
+    activities: [
+      {
+        id: "contract",
+        type: "worksheet",
+        title: "Outcome contract",
+        status: "closed",
+        required: true,
+        randomizeOptions: false,
+        showResults: false,
+        points: 0,
+        options: [],
+        worksheetFields: [
+          { id: "outcome", label: "Outcome", type: "long_text", required: true },
+          { id: "evidence", label: "Evidence", type: "long_text", required: true },
+        ],
+      },
+    ],
+    participants: [
+      {
+        _id: "participant-1",
+        userId: "user-1",
+        displayName: "Amina",
+        email: "amina@example.com",
+        status: "active",
+        joinedAt: "2026-08-15T08:00:00.000Z",
+        lastSeenAt: "2026-08-15T16:00:00.000Z",
+      },
+    ],
+    responses: [
+      {
+        participantId: "participant-1",
+        userId: "user-1",
+        activityId: "contract",
+        value: {
+          finalized: true,
+          values: { outcome: "Delegate reporting", evidence: "Two hours saved" },
+        },
+        submittedAt: "2026-08-15T10:00:00.000Z",
+      },
+    ],
+  });
+
+  assert.match(result.activities[0].responses[0].value, /Completed · 2\/2 fields/);
+  assert.match(result.activities[0].responses[0].value, /Delegate reporting/);
+});

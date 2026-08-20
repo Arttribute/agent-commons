@@ -3,6 +3,7 @@ import type {
   LiveActivity,
   LiveActivityOption,
   LiveActivityType,
+  LiveWorksheetField,
   LiveSessionAccess,
   LiveSessionPace,
 } from "@/types/live-session";
@@ -17,6 +18,7 @@ const activityTypes: LiveActivityType[] = [
   "poll",
   "quiz",
   "prioritization",
+  "worksheet",
   "reflection",
   "task",
   "break",
@@ -56,9 +58,43 @@ export function createActivity(
     selectionPrompt: clean(input.selectionPrompt),
     minItems: clampNumber(input.minItems, 1, 50),
     maxSelections: clampNumber(input.maxSelections, 1, 10),
+    worksheetFields: normalizeWorksheetFields(input.worksheetFields),
     points: clampNumber(input.points, 0, 10_000) || 0,
     options: normalizeOptions(input.options),
   };
+}
+
+function normalizeWorksheetFields(input: unknown): LiveWorksheetField[] {
+  if (!Array.isArray(input)) return [];
+  const allowedTypes = new Set(["short_text", "long_text", "scale", "date"]);
+  const seen = new Set<string>();
+  return input.slice(0, 80).flatMap((value, index) => {
+    if (!value || typeof value !== "object") return [];
+    const source = value as Partial<LiveWorksheetField>;
+    const sourceId = clean(source.id) || `field-${index + 1}`;
+    const id = sourceId.replace(/[^a-zA-Z0-9_-]/g, "-").slice(0, 80);
+    const label = clean(source.label);
+    if (!id || !label || seen.has(id)) return [];
+    seen.add(id);
+    const type = allowedTypes.has(String(source.type))
+      ? (source.type as LiveWorksheetField["type"])
+      : "short_text";
+    const min = type === "scale" ? clampNumber(source.min, 0, 20) ?? 1 : undefined;
+    const max = type === "scale" ? clampNumber(source.max, min || 1, 20) ?? 5 : undefined;
+    return [{
+      id,
+      label,
+      type,
+      section: clean(source.section),
+      description: clean(source.description),
+      placeholder: clean(source.placeholder),
+      required: Boolean(source.required),
+      min,
+      max,
+      lowLabel: clean(source.lowLabel),
+      highLabel: clean(source.highLabel),
+    }];
+  });
 }
 
 function cleanLabEntryPath(value: unknown) {

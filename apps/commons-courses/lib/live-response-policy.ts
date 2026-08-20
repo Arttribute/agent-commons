@@ -2,6 +2,7 @@ import type {
   LiveActivity,
   LivePrioritizationResponse,
   LiveResponseValue,
+  LiveWorksheetResponse,
 } from "@/types/live-session";
 
 export const OTHER_RESPONSE_PREFIX = "__other__:";
@@ -23,6 +24,9 @@ export function isValidLiveResponse(
   if (activity.type === "prioritization") {
     return normalizePrioritizationResponse(activity, value) !== undefined;
   }
+  if (activity.type === "worksheet") {
+    return normalizeWorksheetResponse(activity, value) !== undefined;
+  }
   if (!Array.isArray(value) && typeof value !== "string") return false;
   const values = Array.isArray(value) ? value.map(String) : [String(value)];
   if (!values.length || values.some((item) => !item.trim())) return false;
@@ -38,7 +42,9 @@ export function isValidLiveResponse(
 
 export function canReviseLiveResponse(activity: LiveActivity) {
   return (
-    (activity.type === "poll" || activity.type === "prioritization") &&
+    (activity.type === "poll" ||
+      activity.type === "prioritization" ||
+      activity.type === "worksheet") &&
     activity.status === "open"
   );
 }
@@ -58,6 +64,14 @@ export function sameLiveResponseValue(
         })),
       };
     }
+    if (isWorksheetResponse(value)) {
+      return {
+        finalized: value.finalized,
+        values: Object.fromEntries(
+          Object.entries(value.values).sort(([a], [b]) => a.localeCompare(b)),
+        ),
+      };
+    }
     return Array.isArray(value)
       ? [...value].map(String).sort()
       : String(value || "");
@@ -65,6 +79,59 @@ export function sameLiveResponseValue(
   return (
     JSON.stringify(normalize(current)) === JSON.stringify(normalize(saved))
   );
+}
+
+export function isWorksheetResponse(
+  value: unknown,
+): value is LiveWorksheetResponse {
+  return Boolean(
+    value &&
+      typeof value === "object" &&
+      !Array.isArray(value) &&
+      (value as { values?: unknown }).values &&
+      typeof (value as { values?: unknown }).values === "object" &&
+      !Array.isArray((value as { values?: unknown }).values),
+  );
+}
+
+export function normalizeWorksheetResponse(
+  activity: LiveActivity,
+  value: unknown,
+): LiveWorksheetResponse | undefined {
+  if (!isWorksheetResponse(value) || !activity.worksheetFields?.length)
+    return undefined;
+  const values: Record<string, string | number> = {};
+  for (const field of activity.worksheetFields) {
+    const source = value.values[field.id];
+    if (source === undefined || source === null || source === "") continue;
+    if (field.type === "scale") {
+      const number = Number(source);
+      const min = field.min ?? 1;
+      const max = field.max ?? 5;
+      if (!Number.isInteger(number) || number < min || number > max)
+        return undefined;
+      values[field.id] = number;
+      continue;
+    }
+    if (typeof source !== "string") return undefined;
+    const cleaned = source.trim();
+    const limit = field.type === "long_text" ? 10_000 : 500;
+    if (!cleaned || cleaned.length > limit) return undefined;
+    if (field.type === "date" && !/^\d{4}-\d{2}-\d{2}$/.test(cleaned))
+      return undefined;
+    values[field.id] = cleaned;
+  }
+  if (!Object.keys(values).length) return undefined;
+  const finalized = Boolean(value.finalized);
+  if (
+    finalized &&
+    activity.worksheetFields.some(
+      (field) => field.required && values[field.id] === undefined,
+    )
+  ) {
+    return undefined;
+  }
+  return { values, finalized };
 }
 
 export function isPrioritizationResponse(

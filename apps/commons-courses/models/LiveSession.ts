@@ -36,6 +36,27 @@ const LiveActivityOptionSchema = new Schema(
   { _id: false },
 );
 
+const LiveWorksheetFieldSchema = new Schema(
+  {
+    id: { type: String, required: true, trim: true },
+    label: { type: String, required: true, trim: true },
+    type: {
+      type: String,
+      enum: ["short_text", "long_text", "scale", "date"],
+      required: true,
+    },
+    section: { type: String, trim: true },
+    description: { type: String, trim: true },
+    placeholder: { type: String, trim: true },
+    required: { type: Boolean, default: false },
+    min: Number,
+    max: Number,
+    lowLabel: { type: String, trim: true },
+    highLabel: { type: String, trim: true },
+  },
+  { _id: false },
+);
+
 const LiveActivitySchema = new Schema<LiveActivity>(
   {
     id: { type: String, required: true, trim: true },
@@ -47,6 +68,7 @@ const LiveActivitySchema = new Schema<LiveActivity>(
         "poll",
         "quiz",
         "prioritization",
+        "worksheet",
         "reflection",
         "task",
         "break",
@@ -82,6 +104,7 @@ const LiveActivitySchema = new Schema<LiveActivity>(
     selectionPrompt: { type: String, trim: true },
     minItems: { type: Number, min: 1, max: 50 },
     maxSelections: { type: Number, min: 1, max: 10 },
+    worksheetFields: { type: [LiveWorksheetFieldSchema], default: [] },
     points: { type: Number, default: 0, min: 0 },
     options: { type: [LiveActivityOptionSchema], default: [] },
   },
