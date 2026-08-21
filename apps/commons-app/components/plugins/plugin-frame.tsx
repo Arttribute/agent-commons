@@ -52,7 +52,10 @@ export function PluginFrame({
       src={plugin.entryUrl}
       title={title || plugin.name}
       className={className}
-      sandbox="allow-scripts allow-forms allow-popups allow-downloads"
+      // Plugin previews live on the separate API origin. Preserving that
+      // origin lets generated apps use storage and ES modules while the
+      // cross-origin boundary still prevents access to the Commons host DOM.
+      sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-downloads"
       referrerPolicy="no-referrer"
       allow="clipboard-write"
     />
