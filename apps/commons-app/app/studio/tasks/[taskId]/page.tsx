@@ -258,7 +258,7 @@ export default function TaskDetailPage({
           <p className="text-muted-foreground text-sm">Task not found.</p>
           <Button variant="outline" size="sm" onClick={() => router.push("/studio/tasks")}>
             <ArrowLeft className="h-4 w-4 mr-2" />
-            Back to Tasks
+            Back to scheduled tasks
           </Button>
       </div>
     );

@@ -3,14 +3,8 @@
 
 import { FC, ReactNode } from "react";
 import { useRouter } from "next/navigation";
-import {
-  Bot,
-  BriefcaseBusiness,
-  LibraryBig,
-  Wrench,
-  Workflow,
-  Settings2,
-} from "lucide-react";
+import { Bot, LibraryBig, Wrench, Workflow, Settings2 } from "lucide-react";
+import { ClipboardClock } from "@/components/icons/clipboard-clock";
 import Link from "next/link";
 import Image from "next/image";
 import { SearchTrigger } from "@/components/search/search-trigger";
@@ -35,8 +29,8 @@ export const DashboardBar: FC<DashboardBarProps> = ({
     { key: "tools", label: "Tools", icon: Wrench, path: "/studio/tools" },
     {
       key: "tasks",
-      label: "Tasks",
-      icon: BriefcaseBusiness,
+      label: "Scheduled tasks",
+      icon: ClipboardClock,
       path: "/studio/tasks",
     },
     {

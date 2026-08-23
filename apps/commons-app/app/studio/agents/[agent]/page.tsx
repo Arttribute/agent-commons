@@ -9,7 +9,6 @@ import {
   BarChart3,
   Bot,
   Brain,
-  CalendarCheck,
   Check,
   CheckCircle2,
   ChevronRight,
@@ -27,13 +26,14 @@ import {
   Search,
   Server,
   Settings2,
-  Sparkles,
   TerminalSquare,
   Wallet,
   Wrench,
   XCircle,
   Zap,
 } from "lucide-react";
+import { ClipboardClock } from "@/components/icons/clipboard-clock";
+import { SkillIcon } from "@/components/skills/skill-icon";
 import { formatDistanceToNow } from "date-fns";
 import {
   Area,
@@ -120,9 +120,9 @@ const sections: Array<{ key: SectionKey; label: string; icon: typeof Bot }> = [
   { key: "new-session", label: "New session", icon: Plus },
   { key: "sessions", label: "Sessions", icon: MessageSquare },
   { key: "computer", label: "Computer", icon: Monitor },
-  { key: "tasks", label: "Tasks", icon: CalendarCheck },
+  { key: "tasks", label: "Scheduled tasks", icon: ClipboardClock },
   { key: "tools", label: "Tools", icon: Wrench },
-  { key: "skills", label: "Skills", icon: Sparkles },
+  { key: "skills", label: "Skills", icon: Zap },
   { key: "artifacts", label: "Artifacts", icon: FileText },
   { key: "observability", label: "Observability", icon: TerminalSquare },
   { key: "usage", label: "Usage", icon: BarChart3 },
@@ -1473,7 +1473,7 @@ function SkillsView({
           <Skeleton className="h-40 w-full" />
         ) : visibleSkills.length === 0 ? (
           <div className="rounded-xl border border-dashed p-12 text-center">
-            <Sparkles className="mx-auto h-9 w-9 text-muted-foreground/35" />
+            <Zap className="mx-auto h-9 w-9 text-muted-foreground/35" />
             <p className="mt-3 text-sm font-medium">
               {view === "assigned" ? "No skills enabled" : "No skills found"}
             </p>
@@ -1500,9 +1500,7 @@ function SkillsView({
                   }
                   className="flex min-w-0 flex-1 items-start gap-3 text-left"
                 >
-                  <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-amber-100 text-base dark:bg-amber-300/15">
-                    {skill.icon || <Sparkles className="h-4 w-4" />}
-                  </span>
+                  <SkillIcon icon={skill.icon} />
                   <span className="min-w-0">
                     <span className="flex items-center gap-2">
                       <span className="truncate text-sm font-medium">

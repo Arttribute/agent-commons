@@ -7,7 +7,6 @@ import Image from "next/image";
 import { cn } from "@/lib/utils";
 import {
   Bot,
-  BriefcaseBusiness,
   PanelLeft,
   PanelRight,
   LibraryBig,
@@ -16,6 +15,7 @@ import {
   Workflow,
   Settings2,
 } from "lucide-react";
+import { ClipboardClock } from "@/components/icons/clipboard-clock";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { DashboardBar } from "./dashboard-bar";
 import { SidebarAccount } from "./sidebar-account";
@@ -160,9 +160,9 @@ export function DashboardSideBar({ username }: { username: string }) {
                 },
                 {
                   key: "tasks",
-                  icon: BriefcaseBusiness,
+                  icon: ClipboardClock,
                   path: "/studio/tasks",
-                  label: "Tasks",
+                  label: "Scheduled tasks",
                 },
                 {
                   key: "workflows",

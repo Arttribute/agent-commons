@@ -47,7 +47,7 @@ const SCOPES = [
   ["agents", "Agents"],
   ["tools", "Tools"],
   ["skills", "Skills"],
-  ["tasks", "Tasks"],
+  ["tasks", "Scheduled tasks"],
 ] as const;
 
 const PANEL_WIDTH_KEY = "copilot-panel-width";

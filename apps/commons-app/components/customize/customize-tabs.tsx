@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { AppWindow, Sparkles } from "lucide-react";
+import { AppWindow, Zap } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const tabs = [
@@ -16,7 +16,7 @@ const tabs = [
     label: "Skills",
     href: "/studio/customize/skills",
     segment: "/studio/customize/skills",
-    icon: Sparkles,
+    icon: Zap,
   },
 ] as const;
 

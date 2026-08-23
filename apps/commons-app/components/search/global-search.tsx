@@ -15,7 +15,6 @@ import {
   Bot,
   MessageSquare,
   Wrench,
-  BriefcaseBusiness,
   Workflow,
   Earth,
   LibraryBig,
@@ -23,6 +22,7 @@ import {
   Wallet,
   Loader2,
 } from "lucide-react";
+import { ClipboardClock } from "@/components/icons/clipboard-clock";
 import { useAuth } from "@/context/AuthContext";
 import { normalizePrincipalId } from "@/lib/principal-id";
 import { useAgents } from "@/hooks/use-agents";
@@ -38,7 +38,7 @@ interface GlobalSearchProps {
 const NAV_ITEMS = [
   { label: "Agents", path: "/studio/agents", icon: Bot, keywords: "agents" },
   { label: "Tools", path: "/studio/tools", icon: Wrench, keywords: "tools integrations" },
-  { label: "Tasks", path: "/studio/tasks", icon: BriefcaseBusiness, keywords: "tasks queue" },
+  { label: "Scheduled tasks", path: "/studio/tasks", icon: ClipboardClock, keywords: "tasks queue scheduled cron recurring" },
   { label: "Workflows", path: "/studio/workflows", icon: Workflow, keywords: "workflows automation" },
   { label: "Spaces", path: "/spaces", icon: Earth, keywords: "spaces rooms live" },
   { label: "Library", path: "/library", icon: LibraryBig, keywords: "library files documents collections" },
@@ -191,14 +191,14 @@ export function GlobalSearch({ open, onOpenChange }: GlobalSearchProps) {
         {tasks.length > 0 && (
           <>
             <CommandSeparator />
-            <CommandGroup heading="Tasks">
+            <CommandGroup heading="Scheduled tasks">
               {tasks.map((t) => (
                 <CommandItem
                   key={t.taskId}
                   value={`task ${t.title} ${t.taskId}`}
                   onSelect={() => go(`/studio/tasks/${t.taskId}`)}
                 >
-                  <BriefcaseBusiness className="text-muted-foreground" />
+                  <ClipboardClock className="text-muted-foreground" />
                   <span className="truncate">{t.title}</span>
                 </CommandItem>
               ))}
