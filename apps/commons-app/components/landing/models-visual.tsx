@@ -2,7 +2,7 @@ import { Check } from "lucide-react";
 import { BrandLogo } from "@/components/landing/brand-logo";
 
 /**
- * The model picker exactly as an agent's settings present it — the clearest
+ * The model picker exactly as an agent's settings present it, the clearest
  * way to say "swap the model, keep the agent". Model ids are the platform's
  * own provider defaults.
  */

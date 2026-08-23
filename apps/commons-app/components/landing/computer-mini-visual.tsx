@@ -2,7 +2,7 @@ import { FileCode2, FolderClosed, Globe, SquareTerminal } from "lucide-react";
 
 /**
  * The agent computer at carousel scale: the same idea as the full desktop on
- * the old page — a live machine with apps and a workspace — drawn small enough
+ * the old page, a live machine with apps and a workspace, drawn small enough
  * that every label stays crisp instead of being scaled into a blur.
  */
 const APPS = [

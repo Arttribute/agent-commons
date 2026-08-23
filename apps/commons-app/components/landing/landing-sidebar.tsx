@@ -23,7 +23,7 @@ const signInTo = (target: string) =>
 
 /**
  * The signed-out mirror of the studio's DashboardSideBar: same chrome, same
- * rhythm, but entirely static — no session fetch, no client state — so the
+ * rhythm, but entirely static, with no session fetch and no client state, so the
  * landing page paints in one pass. Every row is a real link into the app that
  * routes through sign-in and lands on the section it names.
  */
@@ -74,17 +74,7 @@ export function LandingSidebar() {
         </div>
       </div>
 
-      {/* Where Recents live once you are signed in. */}
-      <div className="mt-5 flex min-h-0 flex-1 flex-col px-3">
-        <div className="px-2 py-1">
-          <span className="text-xs font-medium text-muted-foreground">
-            Recents
-          </span>
-        </div>
-        <p className="px-2 pt-1 text-xs leading-5 text-muted-foreground/80">
-          Your sessions pick up here once you sign in.
-        </p>
-      </div>
+      <div className="flex-1" />
 
       <div className="mt-auto border-t border-border p-2">
         <Link

@@ -53,7 +53,7 @@ const INTEGRATIONS = [
 ];
 
 /**
- * A free-floating cluster of connected tools. No containing card — the
+ * A free-floating cluster of connected tools. No containing card, so the
  * icons sit close together and blend into the page.
  */
 export function IntegrationCloud() {
