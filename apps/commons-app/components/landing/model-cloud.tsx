@@ -17,7 +17,7 @@ const MODELS = [
     name: "google-gemini",
     label: "Google Gemini",
     className: "left-[52%] top-[26%] h-[4.25rem] w-[4.25rem] sm:h-[4.75rem] sm:w-[4.75rem]",
-    // A wide wordmark rather than a glyph — sized to the tile's width.
+    // A wide wordmark rather than a glyph, sized to the tile's width.
     iconSize: 50,
   },
   {
@@ -40,7 +40,7 @@ const MODELS = [
   },
 ];
 
-/** Model providers as a loose, free-floating cluster — same feel as the tools cloud. */
+/** Model providers as a loose, free-floating cluster, the same feel as the tools cloud. */
 export function ModelCloud() {
   return (
     <div className="relative min-h-[260px] sm:min-h-[300px]">

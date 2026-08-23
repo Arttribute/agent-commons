@@ -1,18 +1,17 @@
 import Image from "next/image";
 import Link from "next/link";
-import { ArrowRight, Github } from "lucide-react";
+import { Github } from "lucide-react";
 import { FeatureCarousel } from "@/components/landing/feature-carousel";
 import { HeroComposer } from "@/components/landing/hero-composer";
 import { LandingSidebar } from "@/components/landing/landing-sidebar";
 
 const GITHUB_URL = "https://github.com/Arttribute/agent-commons";
 const DOCS_URL = "https://docs.agentcommons.io/docs";
-const START_URL = "/login?callbackUrl=/studio/agents";
 
 /**
- * The signed-out front door. It is the studio shell — same sidebar, same page
- * canvas — with the composer a visitor would use once inside, and a slow
- * carousel underneath showing what the platform does.
+ * The signed-out front door. It is the studio shell, same sidebar and same
+ * page canvas, showing what the platform does and ending on the composer a
+ * visitor would use once they are inside.
  *
  * Signed-in visitors never reach this page: middleware routes `/` straight to
  * /studio/agents at the edge.
@@ -83,31 +82,14 @@ export default function Home() {
               .
             </h1>
 
-            <div className="mt-5 w-full max-w-[48rem] shrink-0 sm:mt-6">
-              <HeroComposer />
-            </div>
-
-            <div className="mt-6 w-full max-w-[48rem] shrink-0 sm:mt-7">
+            <div className="mt-5 w-full max-w-[52rem] shrink-0 sm:mt-6">
               <FeatureCarousel />
             </div>
 
-            <div className="mt-6 flex shrink-0 flex-col items-center gap-2.5 sm:mt-7">
-              <Link
-                href={START_URL}
-                className="inline-flex h-11 items-center gap-2 rounded-lg bg-neutral-900 px-7 text-sm font-medium text-white shadow-card transition-all hover:-translate-y-0.5 hover:bg-neutral-800"
-              >
-                Get started free
-                <ArrowRight className="h-4 w-4" />
-              </Link>
-              <p className="text-xs text-stone-400">
-                Already have an account?{" "}
-                <Link
-                  href={START_URL}
-                  className="font-medium text-stone-600 underline-offset-4 hover:underline"
-                >
-                  Sign in
-                </Link>
-              </p>
+            {/* The composer closes the page: the last thing a visitor sees is
+                the box they would type into once they are inside. */}
+            <div className="mt-6 w-full max-w-[52rem] shrink-0 sm:mt-7">
+              <HeroComposer />
             </div>
           </div>
         </main>
