@@ -2,13 +2,19 @@
 export function BrandLogo({
   name,
   size = 24,
+  maxWidth,
   className,
 }: {
   /** Icon name inside the logos collection, e.g. "google-gmail" */
   name: string;
-  /** Box the mark is fitted into, in px. Square marks fill it; wide wordmarks
-   *  (Gemini, Meta) shrink to their width so they never spill their tile. */
+  /** Box height in px. Square marks fill it. */
   size?: number;
+  /**
+   * Box width in px. Defaults to `size`, which keeps wide wordmarks (Gemini,
+   * Meta) inside a square tile. Give it more room in a row layout, where a
+   * wordmark should read at the same weight as the square glyphs beside it.
+   */
+  maxWidth?: number;
   className?: string;
 }) {
   return (
@@ -21,7 +27,12 @@ export function BrandLogo({
       <img
         src={`/brand-icons/${name}.svg`}
         alt=""
-        style={{ maxHeight: size, maxWidth: size, height: "auto", width: "auto" }}
+        style={{
+          maxHeight: size,
+          maxWidth: maxWidth ?? size,
+          height: "auto",
+          width: "auto",
+        }}
       />
     </span>
   );
