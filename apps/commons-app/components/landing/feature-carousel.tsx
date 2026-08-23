@@ -10,52 +10,43 @@ import {
   type ReactNode,
 } from "react";
 import { cn } from "@/lib/utils";
-import { FleetVisual } from "@/components/landing/fleet-visual";
+import { AgentsVisual } from "@/components/landing/agents-visual";
 
 /** How long each feature holds before the carousel moves on. */
 const SLIDE_MS = 7000;
-/** Ceiling on how far a visual is enlarged to fill the stage, so the compact
- *  ones (models, terminal) carry the same weight as the wide canvases without
- *  ever looking blown up. */
-const MAX_SCALE = 1.35;
+/** Ceiling on how far a visual is enlarged to fill the stage. */
+const MAX_SCALE = 1.1;
 
 // Only the first slide ships in the initial bundle. The rest load as the
 // carousel reaches them (with the next one preloaded), which keeps the landing
-// page's first paint free of ReactFlow and the other heavy visuals.
-const ComputerVisual = dynamic(
-  () =>
-    import("@/components/landing/computer-visual").then((m) => ({
-      default: m.ComputerVisual,
-    })),
-  { ssr: false },
+// page's first paint free of the heavier visuals.
+const lazyVisual = (load: () => Promise<{ default: () => ReactNode }>) =>
+  dynamic(load, { ssr: false });
+
+const ComputerMiniVisual = lazyVisual(() =>
+  import("@/components/landing/computer-mini-visual").then((m) => ({
+    default: m.ComputerMiniVisual,
+  })),
 );
-const WorkflowVisual = dynamic(
-  () =>
-    import("@/components/landing/workflow-visual").then((m) => ({
-      default: m.WorkflowVisual,
-    })),
-  { ssr: false },
+const FlowVisual = lazyVisual(() =>
+  import("@/components/landing/flow-visual").then((m) => ({
+    default: m.FlowVisual,
+  })),
 );
-const IntegrationCloud = dynamic(
-  () =>
-    import("@/components/landing/integration-cloud").then((m) => ({
-      default: m.IntegrationCloud,
-    })),
-  { ssr: false },
+const PluginsVisual = lazyVisual(() =>
+  import("@/components/landing/plugins-visual").then((m) => ({
+    default: m.PluginsVisual,
+  })),
 );
-const ModelCloud = dynamic(
-  () =>
-    import("@/components/landing/model-cloud").then((m) => ({
-      default: m.ModelCloud,
-    })),
-  { ssr: false },
+const ModelsVisual = lazyVisual(() =>
+  import("@/components/landing/models-visual").then((m) => ({
+    default: m.ModelsVisual,
+  })),
 );
-const DeveloperVisual = dynamic(
-  () =>
-    import("@/components/landing/developer-visual").then((m) => ({
-      default: m.DeveloperVisual,
-    })),
-  { ssr: false },
+const TerminalVisual = lazyVisual(() =>
+  import("@/components/landing/terminal-visual").then((m) => ({
+    default: m.TerminalVisual,
+  })),
 );
 
 type Slide = {
@@ -63,7 +54,7 @@ type Slide = {
   eyebrow: string;
   title: string;
   body: string;
-  /** Design size of the visual; the stage scales it down to fit. */
+  /** Design size of the visual; the stage scales it to fit. */
   width: number;
   height: number;
   render: () => ReactNode;
@@ -75,60 +66,60 @@ const SLIDES: Slide[] = [
     eyebrow: "Agents",
     title: "Every agent in one workspace.",
     body: "Create specialists, give each one a role, and run the whole fleet from a single place.",
-    width: 780,
-    height: 420,
-    render: () => <FleetVisual />,
+    width: 420,
+    height: 200,
+    render: () => <AgentsVisual />,
   },
   {
     id: "computers",
     eyebrow: "Computers",
     title: "A computer for every agent.",
     body: "Persistent cloud desktops with files, a terminal, and a browser — still working when your laptop is closed.",
-    width: 700,
-    height: 450,
-    render: () => <ComputerVisual />,
+    width: 420,
+    height: 200,
+    render: () => <ComputerMiniVisual />,
   },
   {
     id: "workflows",
     eyebrow: "Workflows",
     title: "Automate the work that repeats.",
-    body: "Wire agents, tools, and approvals on one canvas. Run it on a schedule, a webhook, or an event.",
-    width: 760,
-    height: 470,
-    render: () => <WorkflowVisual />,
+    body: "Wire agents, tools, and approvals into one flow. Run it on a schedule, a webhook, or an event.",
+    width: 420,
+    height: 200,
+    render: () => <FlowVisual />,
   },
   {
     id: "tools",
     eyebrow: "Tools",
     title: "Plug into the tools you already use.",
     body: "Gmail, Slack, GitHub, Drive and more in a couple of clicks — or bring your own over MCP.",
-    width: 640,
-    height: 410,
-    render: () => <IntegrationCloud />,
+    width: 420,
+    height: 200,
+    render: () => <PluginsVisual />,
   },
   {
     id: "models",
     eyebrow: "Models",
     title: "Switch models, keep everything else.",
     body: "OpenAI, Anthropic, Google, Mistral, or open weights. Change the model without rebuilding the agent.",
-    width: 620,
-    height: 320,
-    render: () => <ModelCloud />,
+    width: 420,
+    height: 200,
+    render: () => <ModelsVisual />,
   },
   {
     id: "developers",
     eyebrow: "Developers",
     title: "Your agents in any terminal.",
     body: "The agc CLI and the typed SDK put agents, workflows, and computers one command away.",
-    width: 480,
-    height: 350,
-    render: () => <DeveloperVisual />,
+    width: 420,
+    height: 200,
+    render: () => <TerminalVisual />,
   },
 ];
 
 /**
- * Renders a visual at its design size and scales it to fit whatever space the
- * stage has, so every feature keeps its composition on any viewport without a
+ * Renders a visual at its design size and scales it to fit the space the pane
+ * has, so every feature keeps its composition on any viewport without a
  * scrollbar ever appearing.
  */
 function ScaledStage({
@@ -161,12 +152,11 @@ function ScaledStage({
   return (
     <div ref={ref} className="flex h-full w-full items-center justify-center">
       {/* Children only mount once the scale is known. A visual rendered inside
-          a `scale(0)` box measures itself as zero-sized, which leaves canvas
-          visuals like ReactFlow permanently mis-fitted. */}
+          a `scale(0)` box measures itself as zero-sized. */}
       {scale > 0 && (
         <div
           style={{ width, height, transform: `scale(${scale})` }}
-          className="shrink-0 origin-center"
+          className="flex shrink-0 origin-center items-center justify-center"
         >
           {children}
         </div>
@@ -212,13 +202,11 @@ export function FeatureCarousel() {
     return () => window.clearTimeout(timer);
   }, [index, paused, reducedMotion]);
 
-  const active = SLIDES[index];
-
   return (
     <section
       aria-roledescription="carousel"
       aria-label="Agent Commons features"
-      className="flex h-full min-h-0 w-full flex-col"
+      className="w-full"
       onMouseEnter={() => setPaused(true)}
       onMouseLeave={() => setPaused(false)}
       onFocusCapture={() => setPaused(true)}
@@ -228,42 +216,49 @@ export function FeatureCarousel() {
         if (event.key === "ArrowLeft") go(index - 1);
       }}
     >
-      <div className="relative min-h-0 w-full flex-1">
+      <div className="relative h-[210px] w-full overflow-hidden rounded-2xl border border-stone-200 bg-white shadow-card sm:h-[248px]">
         {SLIDES.map((slide, i) => (
           <div
             key={slide.id}
             aria-hidden={i !== index}
             className={cn(
-              "absolute inset-0 transition-opacity duration-700 ease-out",
+              "absolute inset-0 grid grid-cols-1 transition-opacity duration-700 ease-out sm:grid-cols-[minmax(0,1.08fr)_minmax(0,0.92fr)]",
               i === index ? "opacity-100" : "pointer-events-none opacity-0",
             )}
           >
-            {loaded.includes(i) && (
-              <ScaledStage width={slide.width} height={slide.height}>
-                {slide.render()}
-              </ScaledStage>
-            )}
+            <div className="min-h-0 min-w-0 overflow-hidden border-stone-200 bg-[#fcfcfb] p-4 sm:border-r">
+              {loaded.includes(i) && (
+                <ScaledStage width={slide.width} height={slide.height}>
+                  {slide.render()}
+                </ScaledStage>
+              )}
+            </div>
+            <div className="hidden min-w-0 flex-col justify-center px-7 sm:flex">
+              <p className="text-[10px] font-medium uppercase tracking-[0.16em] text-stone-400">
+                {slide.eyebrow}
+              </p>
+              <h2 className="mt-2 text-[1.15rem] font-medium leading-[1.2] tracking-[-0.025em] text-stone-950">
+                {slide.title}
+              </h2>
+              <p className="mt-2 text-[13px] leading-5 text-stone-500">
+                {slide.body}
+              </p>
+            </div>
           </div>
         ))}
       </div>
 
-      <div
-        key={active.id}
-        className="mx-auto mt-4 max-w-xl shrink-0 animate-in fade-in slide-in-from-bottom-2 text-center duration-500 sm:mt-6"
-        aria-live="polite"
-      >
-        <p className="text-[11px] font-medium uppercase tracking-[0.16em] text-stone-400">
-          {active.eyebrow}
-        </p>
-        <h2 className="mt-2 text-[1.35rem] font-medium leading-tight tracking-[-0.03em] text-stone-950 sm:text-[1.6rem]">
-          {active.title}
+      {/* On phones the pane is too narrow to sit beside the art. */}
+      <div key={SLIDES[index].id} className="mt-3 animate-in fade-in duration-500 sm:hidden">
+        <h2 className="text-[1.05rem] font-medium leading-tight tracking-[-0.025em] text-stone-950">
+          {SLIDES[index].title}
         </h2>
-        <p className="mx-auto mt-2 max-w-lg text-sm leading-6 text-stone-500">
-          {active.body}
+        <p className="mt-1.5 text-[13px] leading-5 text-stone-500">
+          {SLIDES[index].body}
         </p>
       </div>
 
-      <div className="mt-4 flex shrink-0 items-center justify-center gap-2 sm:mt-5">
+      <div className="mt-4 flex items-center justify-center gap-2">
         {SLIDES.map((slide, i) => (
           <button
             key={slide.id}
