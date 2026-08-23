@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from "react";
 import {
   Loader2,
-  Sparkles,
+  Zap,
   Search,
   Trash2,
   Globe,
@@ -35,6 +35,7 @@ import {
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
+import { SkillIcon } from "@/components/skills/skill-icon";
 import type { Skill } from "@agent-commons/sdk";
 
 interface SkillsMarketplaceViewProps {
@@ -115,22 +116,39 @@ function SkillCard({
   const enabledAgents = (skill.assignedAgents ?? []).filter(
     (assignment) => assignment.isEnabled
   );
+  const assignmentLabel = enabledAgents.length
+    ? `Available to ${enabledAgents
+        .slice(0, 2)
+        .map((assignment) => assignment.agentName)
+        .join(", ")}${
+        enabledAgents.length > 2 ? ` +${enabledAgents.length - 2}` : ""
+      }`
+    : "Not assigned to an agent";
 
   return (
     <div
-      className="group flex h-full cursor-pointer flex-col rounded-xl border border-border bg-background p-4 transition-all hover:-translate-y-0.5 hover:shadow-md"
+      role="button"
+      tabIndex={0}
+      className="group flex h-full cursor-pointer flex-col rounded-xl border border-border bg-background p-4 transition-colors hover:border-foreground/15 hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
       onClick={() => onOpen(skill.skillId)}
+      onKeyDown={(event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          onOpen(skill.skillId);
+        }
+      }}
     >
-      <div className="flex items-center justify-between gap-2">
-        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-amber-100 text-lg dark:bg-amber-300/15">
-          {skill.icon || (
-            <Sparkles
-              className="h-4 w-4 text-amber-900 dark:text-amber-200"
-              strokeWidth={1.9}
-            />
-          )}
-        </span>
-        <div className="flex shrink-0 items-center gap-1">
+      <div className="flex min-w-0 items-start gap-3">
+        <SkillIcon icon={skill.icon} />
+        <div className="min-w-0 flex-1">
+          <h3 className="truncate text-sm font-medium text-foreground">
+            {skill.name}
+          </h3>
+          <p className="mt-1 line-clamp-2 text-xs leading-5 text-muted-foreground">
+            {skill.description}
+          </p>
+        </div>
+        <div className="flex shrink-0 items-center gap-0.5">
           <VisibilityIcon
             className="h-3.5 w-3.5 text-muted-foreground/60"
             aria-label={skill.isPublic ? "Public" : "Private"}
@@ -139,12 +157,12 @@ function SkillCard({
             <Button
               variant="ghost"
               size="icon"
-              className="h-7 w-7 opacity-0 transition-opacity focus-visible:opacity-100 group-hover:opacity-100"
+              className="h-7 w-7 text-muted-foreground opacity-0 transition-opacity hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100"
               onClick={(event) => {
                 event.stopPropagation();
                 onDelete(skill.skillId);
               }}
-              aria-label="Delete skill"
+              aria-label={`Delete ${skill.name}`}
             >
               <Trash2 className="h-3.5 w-3.5" />
             </Button>
@@ -152,41 +170,26 @@ function SkillCard({
         </div>
       </div>
 
-      <h3 className="mt-3 truncate text-sm font-semibold text-foreground">
-        {skill.name}
-      </h3>
-      <p className="mt-1 line-clamp-2 min-h-[2rem] text-xs leading-4 text-muted-foreground">
-        {skill.description}
-      </p>
-
-      <Button
-        variant="ghost"
-        className="mt-3 h-8 justify-start gap-2 px-2 text-xs font-normal text-muted-foreground"
+      <button
+        type="button"
+        className="mt-3 flex min-w-0 items-center gap-1.5 self-start rounded-md text-left text-xs text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         onClick={(event) => {
           event.stopPropagation();
           onManageAgents(skill);
         }}
+        title={assignmentLabel}
       >
-        <Users className="h-3.5 w-3.5" />
-        <span className="truncate">
-          {enabledAgents.length
-            ? `Available to ${enabledAgents
-                .slice(0, 2)
-                .map((assignment) => assignment.agentName)
-                .join(", ")}${
-                enabledAgents.length > 2 ? ` +${enabledAgents.length - 2}` : ""
-              }`
-            : "Not assigned to an agent"}
-        </span>
-      </Button>
+        <Users className="h-3.5 w-3.5 shrink-0" strokeWidth={1.75} />
+        <span className="truncate">{assignmentLabel}</span>
+      </button>
 
-      <div className="mt-auto flex items-center justify-between gap-2 pt-3">
-        <div className="flex min-w-0 flex-wrap gap-1">
+      <div className="mt-auto flex items-center justify-between gap-3 pt-3">
+        <div className="flex min-w-0 items-center gap-1 overflow-hidden">
           {skill.tags.slice(0, 3).map((tag) => (
             <Badge
               key={tag}
               variant="secondary"
-              className="h-4 px-1.5 text-[10px] font-normal"
+              className="h-5 max-w-[7rem] truncate px-1.5 text-[10px] font-normal"
             >
               {tag}
             </Badge>
@@ -194,14 +197,14 @@ function SkillCard({
           {skill.tags.length > 3 && (
             <Badge
               variant="outline"
-              className="h-4 px-1.5 text-[10px] font-normal text-muted-foreground"
+              className="h-5 px-1.5 text-[10px] font-normal text-muted-foreground"
             >
               +{skill.tags.length - 3}
             </Badge>
           )}
         </div>
-        <span className="shrink-0 text-[11px] text-muted-foreground">
-          {skill.usageCount} uses
+        <span className="shrink-0 text-[11px] tabular-nums text-muted-foreground">
+          {skill.usageCount} {skill.usageCount === 1 ? "use" : "uses"}
         </span>
       </div>
     </div>
@@ -612,23 +615,25 @@ export function SkillsMarketplaceView({
           <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
         </div>
       ) : filtered.length === 0 ? (
-        <div className="flex flex-col items-center justify-center py-16 text-center">
-          <Sparkles className="h-10 w-10 text-muted-foreground/30 mb-3" />
-          <p className="text-sm font-medium text-muted-foreground">
+        <div className="rounded-xl border border-dashed p-12 text-center">
+          <Zap className="mx-auto h-8 w-8 text-muted-foreground/35" />
+          <p className="mt-3 text-sm font-medium">
             {search
               ? "No skills match your search"
               : tab === "mine"
               ? "No skills yet"
               : "No platform skills"}
           </p>
-          {!search && tab === "mine" && (
-            <p className="text-xs text-muted-foreground/60 mt-1">
-              Create your first skill to add custom capabilities to your agents
-            </p>
-          )}
+          <p className="mt-1 text-sm text-muted-foreground">
+            {search
+              ? "Try a different name, description, or tag."
+              : tab === "mine"
+              ? "Create your first skill to add custom capabilities to your agents."
+              : "Platform skills will appear here once they are published."}
+          </p>
         </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
           {filtered.map((skill) => (
             <SkillCard
               key={skill.skillId}

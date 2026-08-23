@@ -2,18 +2,18 @@ import Image from "next/image";
 import Link from "next/link";
 import {
   Bot,
-  BriefcaseBusiness,
   LibraryBig,
   MoreHorizontal,
   Search,
   Wrench,
   Workflow,
 } from "lucide-react";
+import { ClipboardClock } from "@/components/icons/clipboard-clock";
 
 const NAV_ITEMS = [
   { label: "Agents", icon: Bot, target: "/studio/agents" },
   { label: "Tools", icon: Wrench, target: "/studio/tools" },
-  { label: "Tasks", icon: BriefcaseBusiness, target: "/studio/tasks" },
+  { label: "Scheduled tasks", icon: ClipboardClock, target: "/studio/tasks" },
   { label: "Workflows", icon: Workflow, target: "/studio/workflows" },
   { label: "Library", icon: LibraryBig, target: "/library" },
 ];

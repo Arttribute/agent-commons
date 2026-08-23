@@ -13,9 +13,9 @@ import {
   Send,
   Server,
   ShieldCheck,
-  Sparkles,
   Unplug,
   X,
+  Zap,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -1467,7 +1467,7 @@ export function RuntimeSkillsNote({
   const meta = RUNTIME_NATIVE_TOOLING[key];
   return (
     <div className="flex items-start gap-2.5 rounded-lg border border-border bg-muted/20 p-3">
-      <Sparkles className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
+      <Zap className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
       <p className="text-xs text-muted-foreground">{meta.skillsNote}</p>
     </div>
   );

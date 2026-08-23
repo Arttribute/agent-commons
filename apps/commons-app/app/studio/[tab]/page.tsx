@@ -228,7 +228,7 @@ const StudioPage: NextPage = () => {
       case "tools":
         return "Create new tool";
       case "tasks":
-        return "Create new task";
+        return "Create new scheduled task";
       case "workflows":
         return "Create new workflow";
       case "skills":
@@ -249,7 +249,7 @@ const StudioPage: NextPage = () => {
         };
       case "tasks":
         return {
-          title: "Tasks",
+          title: "Scheduled tasks",
           description:
             "Schedule one-off or recurring tasks for your agents to run automatically.",
         };
