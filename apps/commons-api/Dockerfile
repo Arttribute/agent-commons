@@ -65,18 +65,24 @@ WORKDIR /app
 
 ENV NODE_ENV=production \
     PORT=8080 \
+    HOME=/home/commons \
     PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true \
     PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium \
     CHROME_PATH=/usr/bin/chromium \
     PUPPETEER_CACHE_DIR=/tmp/.cache
 
-RUN mkdir -p /tmp/.cache && chmod 777 /tmp/.cache
+RUN groupadd --gid 10001 commons \
+    && useradd --uid 10001 --gid commons --create-home --home-dir /home/commons --shell /usr/sbin/nologin commons \
+    && mkdir -p /tmp/.cache \
+    && chown -R commons:commons /tmp/.cache /home/commons
 
 COPY --from=build /deploy ./
 COPY --from=build /workspace/apps/commons-api/migrations ./migrations
 # scripts/migrate.mjs runs versioned migrations in-container (see buildspec).
 COPY --from=build /workspace/apps/commons-api/scripts ./scripts
 COPY --from=build /workspace/apps/commons-api/platform-skills ./platform-skills
+
+USER commons
 
 EXPOSE 8080
 

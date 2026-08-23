@@ -1001,7 +1001,22 @@ export interface CapabilityProviderInput {
 
 // ─── Sandboxed UI plugins ───────────────────────────────────────────────────
 
-export type UiPluginPermission = "theme.read" | "navigation";
+export type UiPluginPermission = "theme.read" | "navigation" | "storage";
+
+export type UiPluginCapabilityName =
+  | "agents.read"
+  | "tasks.read"
+  | "tasks.write"
+  | "workflows.read"
+  | "workflows.execute"
+  | "library.read"
+  | "tools.read"
+  | "copilot.prompt";
+
+export interface UiPluginCapabilityGrant {
+  name: UiPluginCapabilityName;
+  resourceIds?: string[];
+}
 
 export interface UiPluginSurface {
   type: "page" | "widget";
@@ -1016,15 +1031,18 @@ export interface UiPlugin {
   workspaceId?: string | null;
   createdByAgentId?: string | null;
   codeProjectId: string;
+  deploymentId: string;
   name: string;
   slug: string;
   description?: string | null;
   version: string;
   entryUrl: string;
   manifest: {
-    schemaVersion: "1";
+    schemaVersion: "1" | "2";
     surfaces: UiPluginSurface[];
     permissions: UiPluginPermission[];
+    capabilities?: UiPluginCapabilityGrant[];
+    networkAccess?: { allowedDomains: string[] };
   };
   status: "draft" | "active" | "disabled";
   createdAt: string;
@@ -1038,9 +1056,11 @@ export interface CreateUiPluginParams {
   version?: string;
   codeProjectId: string;
   manifest: {
-    schemaVersion?: "1";
+    schemaVersion?: "1" | "2";
     surfaces: UiPluginSurface[];
     permissions?: UiPluginPermission[];
+    capabilities?: UiPluginCapabilityGrant[];
+    networkAccess?: { allowedDomains?: string[] };
   };
 }
 

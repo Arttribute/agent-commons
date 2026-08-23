@@ -32,6 +32,21 @@ export class UiPluginController {
     };
   }
 
+  @Get(':pluginId')
+  async getById(
+    @Req() request: Request,
+    @Param('pluginId') pluginId: string,
+    @Query('active') active?: string,
+  ) {
+    return {
+      data: await this.plugins.getById(
+        requester(request).principalId,
+        pluginId,
+        { activeOnly: active === 'true' },
+      ),
+    };
+  }
+
   @Put()
   async create(@Req() request: Request, @Body() body: CreateUiPluginInput) {
     const principal = requester(request);
