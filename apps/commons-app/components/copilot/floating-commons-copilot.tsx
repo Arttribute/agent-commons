@@ -89,6 +89,7 @@ function FloatingCommonsCopilotInner() {
   const [externalPrompt, setExternalPrompt] = useState<{
     id: string;
     text: string;
+    mode?: "send" | "draft";
   } | null>(null);
   const [uiContext, setUiContext] = useState<Record<string, unknown>>({});
   const [panelWidth, setPanelWidth] = useState(PANEL_DEFAULT_WIDTH);
@@ -186,13 +187,19 @@ function FloatingCommonsCopilotInner() {
 
   useEffect(() => {
     const openWithPrompt = (event: Event) => {
-      const detail = (event as CustomEvent<{ text?: string }>).detail;
+      const detail = (
+        event as CustomEvent<{
+          text?: string;
+          mode?: "send" | "draft";
+        }>
+      ).detail;
       if (!detail?.text?.trim()) return;
       setOpen(true);
       setView("chat");
       setExternalPrompt({
         id: `external:${Date.now()}`,
         text: detail.text.trim(),
+        mode: detail.mode === "draft" ? "draft" : "send",
       });
     };
     window.addEventListener("commons-copilot-prompt", openWithPrompt);

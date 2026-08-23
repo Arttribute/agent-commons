@@ -12,6 +12,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/hooks/use-toast";
+import { notifyUiPluginsChanged } from "@/lib/ui-plugin-events";
 import type { UiPlugin } from "./types";
 
 export function UiPluginsView() {
@@ -31,36 +32,52 @@ export function UiPluginsView() {
 
   const toggle = async (plugin: UiPlugin, active: boolean) => {
     setSaving(plugin.pluginId);
-    const response = await fetch(`/api/ui-plugins/${plugin.pluginId}/status`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ status: active ? "active" : "disabled" }),
-    });
-    const payload = await response.json().catch(() => ({}));
-    if (!response.ok) {
-      toast({
-        title: "Could not update app",
-        description: payload.message || payload.error || "Please try again.",
-        variant: "destructive",
-      });
-    } else {
+    try {
+      const response = await fetch(
+        `/api/ui-plugins/${plugin.pluginId}/status`,
+        {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ status: active ? "active" : "disabled" }),
+        },
+      );
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        toast({
+          title: "Could not update app",
+          description: payload.message || payload.error || "Please try again.",
+          variant: "destructive",
+        });
+        return;
+      }
       setPlugins((items) =>
         items.map((item) =>
-          item.pluginId === plugin.pluginId ? payload.data : item
-        )
+          item.pluginId === plugin.pluginId ? payload.data : item,
+        ),
       );
+      notifyUiPluginsChanged({
+        pluginId: plugin.pluginId,
+        status: payload.data.status,
+        plugin: payload.data,
+      });
+    } catch {
+      toast({
+        title: "Could not update app",
+        description: "The app registry could not be reached. Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setSaving(null);
     }
-    setSaving(null);
   };
 
   const createWithCopilot = () => {
     window.dispatchEvent(
       new CustomEvent("commons-copilot-prompt", {
         detail: {
-          prompt:
-            "Help me create a custom Commons UI plugin. Ask what I need, then build and test the smallest useful page or floating widget. Register it as a draft for me to review here before it is enabled.",
+          text: "Help me create a custom Commons UI plugin. Infer sensible details from my request, match the Agent Commons look and feel unless I ask for another style, then build, test, and refine the smallest useful page or floating widget. Register the verified result as a draft for me to review here before it is enabled.",
         },
-      })
+      }),
     );
   };
 
@@ -121,14 +138,25 @@ export function UiPluginsView() {
                       .join(" + ")}
                 </p>
                 <p className="mt-1 text-xs text-muted-foreground">
-                  Permissions:{" "}
-                  {plugin.manifest.permissions.length
-                    ? plugin.manifest.permissions.join(", ")
+                  Commons access:{" "}
+                  {plugin.manifest.capabilities?.length
+                    ? plugin.manifest.capabilities
+                        .map((grant) =>
+                          grant.resourceIds?.length
+                            ? `${grant.name} (${grant.resourceIds.length} scoped)`
+                            : grant.name,
+                        )
+                        .join(", ")
                     : "none"}
                 </p>
+                {plugin.manifest.permissions.length > 0 && (
+                  <p className="mt-0.5 text-xs text-muted-foreground">
+                    UI permissions: {plugin.manifest.permissions.join(", ")}
+                  </p>
+                )}
               </div>
               {plugin.manifest.surfaces.some(
-                (surface) => surface.type === "page"
+                (surface) => surface.type === "page",
               ) && (
                 <Link
                   href={`/apps/${encodeURIComponent(plugin.slug)}`}

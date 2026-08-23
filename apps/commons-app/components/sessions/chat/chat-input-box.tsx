@@ -63,6 +63,12 @@ type ComputerConfigState = {
   allowUserSelect?: boolean;
 };
 
+export type ExternalComposerPrompt = {
+  id: string;
+  text: string;
+  mode?: "send" | "draft";
+};
+
 export default function ChatInputBox({
   agentId,
   sessionId,
@@ -99,7 +105,7 @@ export default function ChatInputBox({
   placeholder?: string;
   allowComputer?: boolean;
   uiContext?: Record<string, unknown>;
-  externalPrompt?: { id: string; text: string } | null;
+  externalPrompt?: ExternalComposerPrompt | null;
 }) {
   const isLaunchMode = Boolean(onLaunch);
   const accumulatedRef = useRef("");
@@ -538,11 +544,20 @@ export default function ChatInputBox({
     ) {
       return;
     }
+    if (externalPrompt.mode === "draft") {
+      externalPromptIdRef.current = externalPrompt.id;
+      const draft = externalPrompt.text.trim();
+      setInputText((current) => {
+        const existing = current.trimEnd();
+        return existing ? `${existing}\n\n${draft}` : draft;
+      });
+      return;
+    }
     if (isLoading) return;
     externalPromptIdRef.current = externalPrompt.id;
     handleSend(externalPrompt.text);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [externalPrompt?.id, isLoading]);
+  }, [externalPrompt?.id, externalPrompt?.mode, isLoading, setInputText]);
 
   const openFilePicker = () => {
     if (isLoading) return;
