@@ -272,3 +272,14 @@ body {
 .code-project-light iframe {
   background: white !important;
 }
+
+/* Landing carousel — the active dot fills as its slide holds, so the pace of
+   the showcase is visible before it advances. */
+@keyframes carousel-progress {
+  from {
+    transform: scaleX(0);
+  }
+  to {
+    transform: scaleX(1);
+  }
+}

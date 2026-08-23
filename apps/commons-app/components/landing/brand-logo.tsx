@@ -6,7 +6,8 @@ export function BrandLogo({
 }: {
   /** Icon name inside the logos collection, e.g. "google-gmail" */
   name: string;
-  /** Rendered height in px (width follows the mark's aspect ratio) */
+  /** Box the mark is fitted into, in px. Square marks fill it; wide wordmarks
+   *  (Gemini, Meta) shrink to their width so they never spill their tile. */
   size?: number;
   className?: string;
 }) {
@@ -20,8 +21,7 @@ export function BrandLogo({
       <img
         src={`/brand-icons/${name}.svg`}
         alt=""
-        height={size}
-        style={{ height: size, width: "auto" }}
+        style={{ maxHeight: size, maxWidth: size, height: "auto", width: "auto" }}
       />
     </span>
   );
