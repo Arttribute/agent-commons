@@ -2,15 +2,14 @@ import { Check } from "lucide-react";
 import { BrandLogo } from "@/components/landing/brand-logo";
 
 /**
- * The model picker exactly as an agent's settings present it, the clearest
- * way to say "swap the model, keep the agent". Model ids are the platform's
- * own provider defaults.
+ * The model picker exactly as an agent's settings present it, the clearest way
+ * to say "swap the model, keep the agent". One current flagship per provider.
  */
 const MODELS = [
-  { logo: "openai-icon", id: "gpt-5.4-mini", provider: "OpenAI" },
-  { logo: "claude-icon", id: "claude-sonnet-4-6", provider: "Anthropic" },
-  { logo: "google-gemini", id: "gemini-2.0-flash", provider: "Google" },
-  { logo: "mistral-ai-icon", id: "mistral-large-latest", provider: "Mistral" },
+  { logo: "openai-icon", name: "GPT-5.5", provider: "OpenAI" },
+  { logo: "claude-icon", name: "Claude Opus 5", provider: "Anthropic" },
+  { logo: "google-gemini", name: "Gemini 3 Pro", provider: "Google" },
+  { logo: "mistral-ai-icon", name: "Mistral Large", provider: "Mistral" },
 ];
 const SELECTED = 1;
 
@@ -23,7 +22,7 @@ export function ModelsVisual() {
       <div className="divide-y divide-stone-100">
         {MODELS.map((model, i) => (
           <div
-            key={model.id}
+            key={model.name}
             className={`flex items-center gap-2.5 px-4 py-2.5 ${
               i === SELECTED ? "bg-stone-50" : ""
             }`}
@@ -32,8 +31,8 @@ export function ModelsVisual() {
               <BrandLogo name={model.logo} size={16} maxWidth={28} />
             </span>
             <span className="min-w-0 flex-1">
-              <span className="block truncate font-mono text-[11px] leading-4 text-stone-800">
-                {model.id}
+              <span className="block truncate text-[12px] font-medium leading-4 text-stone-800">
+                {model.name}
               </span>
               <span className="block text-[10px] leading-4 text-stone-400">
                 {model.provider}

@@ -214,7 +214,7 @@ function StartButton() {
   return (
     <Button variant="outline" size="sm" asChild className="w-fit">
       <Link href={START_URL}>
-        Get started free
+        Get started
         <ArrowRight />
       </Link>
     </Button>
@@ -272,13 +272,13 @@ export function FeatureCarousel() {
         if (event.key === "ArrowLeft") go(index - 1);
       }}
     >
-      <div className="relative h-[220px] w-full overflow-hidden rounded-2xl border border-stone-200 bg-white shadow-card sm:h-[300px]">
+      <div className="relative h-[210px] w-full overflow-hidden rounded-2xl border border-stone-200 bg-white shadow-card sm:h-[276px]">
         {SLIDES.map((slide, i) => (
           <div
             key={slide.id}
             aria-hidden={i !== index}
             className={cn(
-              "absolute inset-0 grid grid-cols-1 transition-opacity duration-700 ease-out sm:grid-cols-[minmax(0,1.22fr)_minmax(0,0.78fr)]",
+              "absolute inset-0 grid grid-cols-1 transition-opacity duration-700 ease-out sm:grid-cols-[minmax(0,1.2fr)_minmax(0,0.8fr)]",
               i === index ? "opacity-100" : "pointer-events-none opacity-0",
             )}
           >
@@ -293,17 +293,17 @@ export function FeatureCarousel() {
                 </ScaledStage>
               )}
             </div>
-            <div className="hidden min-w-0 flex-col justify-center px-6 sm:flex">
+            <div className="hidden min-w-0 flex-col justify-center px-5 sm:flex">
               {/* Fixed height, so the button lands on the same line no matter
                   how long the headline and description run. */}
-              <div className="h-[136px]">
+              <div className="h-[148px]">
                 <p className="text-[10px] font-medium uppercase tracking-[0.16em] text-stone-400">
                   {slide.eyebrow}
                 </p>
-                <h2 className="mt-2 text-[1.15rem] font-medium leading-[1.2] tracking-[-0.025em] text-stone-950">
+                <h2 className="mt-2 text-[1.05rem] font-medium leading-[1.25] tracking-[-0.025em] text-stone-950">
                   {slide.title}
                 </h2>
-                <p className="mt-2 text-[13px] leading-5 text-stone-500">
+                <p className="mt-1.5 text-[12.5px] leading-[1.45] text-stone-500">
                   {slide.body}
                 </p>
               </div>
