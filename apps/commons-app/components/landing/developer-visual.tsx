@@ -20,7 +20,7 @@ export function DeveloperVisual() {
         </p>
         <p className="mt-4 text-zinc-200">
           <span className="text-emerald-400">❯</span> agc agents create --name
-          Scout --model gpt-5.4
+          Scout --model gpt-5.5
         </p>
         <div className="mt-2 border-l border-zinc-700 pl-4">
           <p className="flex items-center gap-2 font-sans text-emerald-400">
@@ -30,7 +30,7 @@ export function DeveloperVisual() {
             <span className="text-zinc-600">Name</span>
             <span className="text-zinc-300">Scout</span>
             <span className="text-zinc-600">Model</span>
-            <span className="text-zinc-300">gpt-5.4</span>
+            <span className="text-zinc-300">gpt-5.5</span>
           </p>
         </div>
         <p className="mt-4 text-zinc-200">
