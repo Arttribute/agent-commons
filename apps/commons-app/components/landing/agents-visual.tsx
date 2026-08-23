@@ -3,7 +3,7 @@ import Image from "next/image";
 /**
  * The two copilots that ship with the platform, presented the way the studio
  * presents an agent: a portrait tile, a name, what it does, and whether it is
- * running. Two, not a crowd — a fleet reads as specialists with roles.
+ * running. Two, not a crowd. A fleet reads as specialists with roles.
  */
 const AGENTS = [
   {
