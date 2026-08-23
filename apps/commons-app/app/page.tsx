@@ -2,6 +2,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { ArrowRight, Github } from "lucide-react";
 import { FeatureCarousel } from "@/components/landing/feature-carousel";
+import { HeroComposer } from "@/components/landing/hero-composer";
 import { LandingSidebar } from "@/components/landing/landing-sidebar";
 
 const GITHUB_URL = "https://github.com/Arttribute/agent-commons";
@@ -10,8 +11,8 @@ const START_URL = "/login?callbackUrl=/studio/agents";
 
 /**
  * The signed-out front door. It is the studio shell — same sidebar, same page
- * canvas — with a slow feature carousel where the studio's working view would
- * be, so the first thing a visitor sees is the product they are signing into.
+ * canvas — with the composer a visitor would use once inside, and a slow
+ * carousel underneath showing what the platform does.
  *
  * Signed-in visitors never reach this page: middleware routes `/` straight to
  * /studio/agents at the edge.
@@ -73,8 +74,8 @@ export default function Home() {
             </nav>
           </header>
 
-          <div className="flex min-h-0 flex-1 flex-col items-center justify-center px-5 py-4 sm:px-8 sm:py-6">
-            <h1 className="shrink-0 text-center text-[1.75rem] font-medium leading-[1.1] tracking-[-0.04em] text-stone-950 sm:text-[2.1rem]">
+          <div className="flex min-h-0 flex-1 flex-col items-center justify-center overflow-hidden px-5 py-4 sm:px-8 sm:py-6">
+            <h1 className="shrink-0 text-center text-[1.7rem] font-medium leading-[1.1] tracking-[-0.04em] text-stone-950 sm:text-[2rem]">
               One home for all your{" "}
               <span className="inline-block rounded-md border border-teal-300/70 bg-teal-200 px-[0.18em] leading-[1.15] text-stone-950">
                 agents
@@ -82,13 +83,15 @@ export default function Home() {
               .
             </h1>
 
-            {/* Capped so a tall or narrow viewport centers the whole block
-                instead of stretching the stage around a small visual. */}
-            <div className="mt-4 flex max-h-[500px] min-h-0 w-full max-w-4xl flex-1 flex-col sm:mt-6 sm:max-h-[620px]">
+            <div className="mt-5 w-full max-w-[48rem] shrink-0 sm:mt-6">
+              <HeroComposer />
+            </div>
+
+            <div className="mt-6 w-full max-w-[48rem] shrink-0 sm:mt-7">
               <FeatureCarousel />
             </div>
 
-            <div className="mt-5 flex shrink-0 flex-col items-center gap-3 sm:mt-7">
+            <div className="mt-6 flex shrink-0 flex-col items-center gap-2.5 sm:mt-7">
               <Link
                 href={START_URL}
                 className="inline-flex h-11 items-center gap-2 rounded-lg bg-neutral-900 px-7 text-sm font-medium text-white shadow-card transition-all hover:-translate-y-0.5 hover:bg-neutral-800"
