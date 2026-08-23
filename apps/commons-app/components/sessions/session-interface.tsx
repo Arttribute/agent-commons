@@ -3,7 +3,9 @@
 import { useRef, useEffect, useState, useMemo, useCallback } from "react";
 import { ChevronDown, Loader2, Monitor } from "lucide-react";
 import ExecutionWidget from "@/components/sessions/chat/execution-widget";
-import ChatInputBox from "./chat/chat-input-box";
+import ChatInputBox, {
+  type ExternalComposerPrompt,
+} from "./chat/chat-input-box";
 import InitiatorMessage from "./chat/initiator-message";
 import AgentOutput from "./chat/agent-output";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -77,7 +79,7 @@ interface SessionInterfaceImprovedProps {
   /** Content rendered as part of the conversation, above the composer. */
   conversationAddon?: React.ReactNode;
   uiContext?: Record<string, unknown>;
-  externalPrompt?: { id: string; text: string } | null;
+  externalPrompt?: ExternalComposerPrompt | null;
 }
 
 function ExpandableToolCard({ tools }: { tools: Message[] }) {
