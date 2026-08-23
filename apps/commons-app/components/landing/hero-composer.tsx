@@ -17,6 +17,9 @@ const PROMPTS = [
  * The hero's centerpiece: a replica of the in-app composer that types out
  * example prompts on a loop. Any interaction routes to sign-in and drops the
  * visitor straight into the studio.
+ *
+ * Sizing and chrome track ChatInputBox exactly, so the box a visitor sees here
+ * is the box they get once they are inside.
  */
 export function HeroComposer() {
   const router = useRouter();
@@ -65,26 +68,26 @@ export function HeroComposer() {
       type="button"
       onClick={start}
       aria-label="Start a session on Agent Commons"
-      className="group block w-full cursor-text rounded-[1.35rem] border border-stone-300 bg-white text-left shadow-composer transition-all hover:-translate-y-0.5 hover:border-stone-400 hover:shadow-floating"
+      className="group relative block w-full cursor-text rounded-2xl border border-stone-300 bg-white text-left shadow-composer transition-colors hover:border-stone-400"
     >
-      <div className="min-h-[5rem] px-5 pt-4 text-[15px] leading-6 text-stone-400 sm:text-base">
+      <div className="h-16 p-3 text-sm text-muted-foreground/60">
         {text}
-        <span className="ml-px inline-block h-[1.15em] w-[2px] translate-y-[3px] animate-caret-blink rounded-full bg-stone-400" />
+        <span className="ml-px inline-block h-[1.1em] w-[2px] translate-y-[3px] animate-caret-blink rounded-full bg-stone-400" />
       </div>
-      <div className="flex items-center justify-between px-4 pb-4 pt-1">
-        <div className="flex items-center gap-1.5">
-          <span className="flex h-8 w-8 items-center justify-center rounded-full border border-stone-200 text-stone-500">
+      <div className="flex items-center justify-between px-2 pb-2">
+        <div className="flex items-center gap-1">
+          <span className="rounded-lg p-1.5 text-muted-foreground">
             <Plus className="h-4 w-4" />
           </span>
-          <span className="flex h-8 w-8 items-center justify-center rounded-full text-stone-500">
+          <span className="rounded-lg p-1.5 text-muted-foreground">
             <Monitor className="h-4 w-4" />
           </span>
-          <span className="flex h-8 items-center gap-1.5 rounded-full px-2 text-xs text-stone-500">
-            <Sparkles className="h-3.5 w-3.5" />
+          <span className="flex items-center gap-1.5 rounded-lg p-1.5 text-xs text-muted-foreground">
+            <Sparkles className="h-4 w-4" />
             Auto
           </span>
         </div>
-        <span className="flex h-8 w-8 items-center justify-center rounded-full bg-stone-900 text-white transition-transform group-hover:scale-105">
+        <span className="rounded-lg bg-foreground p-1.5 text-background transition-opacity group-hover:opacity-80">
           <ArrowUp className="h-4 w-4" />
         </span>
       </div>
