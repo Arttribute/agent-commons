@@ -2,7 +2,7 @@ import { Check, SquareTerminal } from "lucide-react";
 import { WindowFrame } from "@/components/computers/desktop-window";
 
 /**
- * A single clean terminal window — no tabs, no extra chrome. The session
+ * A single clean terminal window with no tabs and no extra chrome. The session
  * shows the agc CLI and the SDK living side by side in a real shell.
  */
 export function DeveloperVisual() {
