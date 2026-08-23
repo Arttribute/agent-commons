@@ -530,11 +530,13 @@ export class AgentService implements OnModuleInit {
       For React prototypes, landing pages, dashboards, and other static frontend experiences, use lightweight code projects first. They do not require a computer and publish to durable low-cost public URLs.
       - **createCodeProject** — create a React project with initial files. **writeCodeProjectFiles** — write complete files directly; never squeeze source code into shell commands.
       - **readCodeProject** — inspect the current files and latest deployment. **publishCodeProject** — compile and publish the project.
-      - **registerUiPlugin** — register a published project as a sandboxed Commons page/widget draft for the user to review and enable.
-      - **testCodeProject** — run desktop/mobile Chromium checks, inspect runtime/console/network failures, and test important interactions. A successful build is not enough: test it, fix every reported error, republish, and re-test before saying it works.
+      - **registerUiPlugin** — register a verified deployment as a sandboxed Commons page/widget draft. Request only the capabilities the app uses; the owner reviews and enables it.
+      - **testCodeProject** — run Chromium checks at the intended page/widget surfaces and exact widget size, in responsive light/dark scenarios. Inspect screenshots, runtime/console/network/overflow/accessibility failures, and important interactions. A successful build is not enough: fix, republish, and re-test until it passes before saying it works.
       - **exportCodeProjectToComputer** — move the project into the persistent computer when the work needs a backend, arbitrary packages, repository operations, ML/GPU compute, or unrestricted tooling.
-      - Lightweight projects support React, CSS, local modules/assets, lucide-react, framer-motion, recharts, clsx, and tailwind-merge. They do not execute a Next.js server or arbitrary build plugins.
-      - Prefer one purposeful write containing the complete related files. Iterate until the UI is polished, responsive, interactive, and publicly shareable.
+      - Lightweight projects compile Tailwind and app/globals.css and bundle React, @agent-commons/ui, Lucide, supported Radix primitives, Recharts, Framer Motion, clsx/tailwind-merge, Three/R3F, and Phaser. Use 3D/game libraries only when the task calls for them. Browser CDNs, remote imports, direct external requests, arbitrary packages, Next.js servers, and arbitrary build plugins are unavailable.
+      - Unless the user explicitly requests another visual direction, Commons pages/widgets must feel native to Agent Commons: use @agent-commons/ui semantic tokens and primitives, Space Grotesk, Lucide icons, restrained neutral surfaces, compact controls, and the host light/dark theme. Do not invent a generic black dashboard, browser-default typography, neon gradients, or a disconnected visual system.
+      - Generated code runs in an opaque sandbox. It cannot use cookies, IndexedDB, direct localStorage, or arbitrary network requests. Use the least-privilege Commons host bridge for data, actions, navigation, theme, and permissioned namespaced storage; request only capabilities the app actually exercises.
+      - Design from the exact container dimensions, fit widgets without outer scrolling, handle loading/empty/error states, and prefer one purposeful write containing the complete related files. Test the important interactions on every requested surface in both themes, then fix, republish, and re-test until the verifier passes.
 
       ### Goals
       Goals track high-level objectives across multiple tasks.
@@ -1343,7 +1345,7 @@ export class AgentService implements OnModuleInit {
             : null;
 
           const cliToolSchemas: ChatCompletionTool[] = props.cliContext
-            ? dynamicCliTools ?? [
+            ? (dynamicCliTools ?? [
                 {
                   type: 'function',
                   function: {
@@ -1538,7 +1540,7 @@ export class AgentService implements OnModuleInit {
                     },
                   },
                 },
-              ]
+              ])
             : [];
 
           const llmWithTools = (llm as any).bindTools(
@@ -2152,13 +2154,13 @@ export class AgentService implements OnModuleInit {
           const computerSelectionDetail = computerUnavailable
             ? 'Computer runtime is unavailable for this turn. Do not call computer tools.'
             : computerRequest?.computerIds?.length
-            ? [
-                `Assigned computer ID: ${computerRequest.computerIds[0]}`,
-                "This is the agent's one persistent computer and is available through the computer tools. Continue work in its existing workspace across chat sessions.",
-                'Computer tool calls may omit computerId; if supplied, use the assigned ID above.',
-                'Do not tell the user you lack computer access while this assigned computer is ready. If the tool fails, report that failure with evidence.',
-              ].join('\n')
-            : 'The assigned computer is not active. Call startAgentComputer before computer-backed work.';
+              ? [
+                  `Assigned computer ID: ${computerRequest.computerIds[0]}`,
+                  "This is the agent's one persistent computer and is available through the computer tools. Continue work in its existing workspace across chat sessions.",
+                  'Computer tool calls may omit computerId; if supplied, use the assigned ID above.',
+                  'Do not tell the user you lack computer access while this assigned computer is ready. If the tool fails, report that failure with evidence.',
+                ].join('\n')
+              : 'The assigned computer is not active. Call startAgentComputer before computer-backed work.';
           const computerSelectionBlock = computerRequest?.enabled
             ? [
                 '## USER COMPUTER SELECTION',
@@ -2323,8 +2325,8 @@ export class AgentService implements OnModuleInit {
                   typeof lastAi?.content === 'string'
                     ? lastAi.content
                     : lastAi?.content
-                    ? JSON.stringify(lastAi.content)
-                    : 'Task completed';
+                      ? JSON.stringify(lastAi.content)
+                      : 'Task completed';
                 await this.db
                   .update(schema.task)
                   .set({
@@ -2412,10 +2414,10 @@ export class AgentService implements OnModuleInit {
             typeof last.content === 'string'
               ? last.content
               : typeof last === 'object' && 'content' in last
-              ? compact(map((last as any).content, (_) => get(_, 'text'))).join(
-                  '\n',
-                )
-              : '';
+                ? compact(
+                    map((last as any).content, (_) => get(_, 'text')),
+                  ).join('\n')
+                : '';
           const lastMessage = finalResult?.messages?.at(-1)?.toDict() ?? {};
           const firstUserMessage = props.messages?.find(
             (m) => m.role === 'user',

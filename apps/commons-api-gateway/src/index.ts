@@ -20,29 +20,29 @@ export function createGatewayApp() {
     // sandbox policy. The gateway default includes X-Frame-Options:
     // SAMEORIGIN, which prevents these cross-origin previews from loading in
     // the Commons plugin iframe.
-    if (isPreviewPath(c.req.path)) return next();
+    if (isPluginFramePath(c.req.path)) return next();
     return securityHeaders(c, next);
   });
   const crossOriginHeaders = cors({
-      origin: (origin) => {
-        const allowed = (process.env.CORS_ORIGINS ?? "")
-          .split(",")
-          .map((value) => value.trim());
-        return allowed.includes(origin) ? origin : allowed[0] ?? "";
-      },
-      allowHeaders: [
-        "authorization",
-        "content-type",
-        "idempotency-key",
-        "x-request-id",
-      ],
-      exposeHeaders: ["x-request-id", "x-commons-service"],
-    });
+    origin: (origin) => {
+      const allowed = (process.env.CORS_ORIGINS ?? "")
+        .split(",")
+        .map((value) => value.trim());
+      return allowed.includes(origin) ? origin : (allowed[0] ?? "");
+    },
+    allowHeaders: [
+      "authorization",
+      "content-type",
+      "idempotency-key",
+      "x-request-id",
+    ],
+    exposeHeaders: ["x-request-id", "x-commons-service"],
+  });
   app.use("*", (c, next) => {
     // A sandboxed plugin frame intentionally has an opaque `null` origin.
     // Public preview modules therefore need wildcard CORS and no credentials;
     // the preview proxy below applies that narrower policy.
-    if (isPreviewPath(c.req.path)) return next();
+    if (isPluginFramePath(c.req.path)) return next();
     return crossOriginHeaders(c, next);
   });
   app.use("*", async (c, next) => {
@@ -69,8 +69,8 @@ export function createGatewayApp() {
     baseUrl: string | undefined,
     targetPath: string,
   ) {
-    const isPreview = isPreviewPath(targetPath);
-    if (isPreview) {
+    const isPluginFrame = isPluginFramePath(targetPath);
+    if (isPluginFrame) {
       c.header("access-control-allow-origin", "*");
       c.header("cross-origin-resource-policy", "cross-origin");
     }
@@ -89,7 +89,9 @@ export function createGatewayApp() {
     const url = new URL(targetPath, `${baseUrl.replace(/\/$/, "")}/`);
     const incoming = new URL(c.req.url);
     url.search = incoming.search;
-    const headers = new Headers(c.req.raw.headers);
+    const headers = isPluginFrame
+      ? publicAssetRequestHeaders(c.req.raw.headers)
+      : new Headers(c.req.raw.headers);
     headers.delete("host");
     headers.delete("content-length");
     headers.delete("authorization");
@@ -105,7 +107,7 @@ export function createGatewayApp() {
       duplex: "half",
     } as RequestInit);
     const outputHeaders = new Headers(response.headers);
-    if (isPreview) {
+    if (isPluginFrame) {
       outputHeaders.set("access-control-allow-origin", "*");
       outputHeaders.delete("access-control-allow-credentials");
       outputHeaders.set("cross-origin-resource-policy", "cross-origin");
@@ -170,6 +172,17 @@ export function createGatewayApp() {
   // isolated iframe can load HTML and relative assets without receiving a
   // Commons bearer token.
   app.get("/v1/previews/*", (c) =>
+    publicProxy(
+      c,
+      "agent-commons",
+      process.env.AGENT_COMMONS_INTERNAL_URL,
+      c.req.path,
+    ),
+  );
+  // Trusted relay around an opaque generated-app iframe. It carries no user
+  // data or credential and must be frameable from the configured Commons app
+  // origin, just like the immutable preview it contains.
+  app.get("/v1/ui-plugin-host", (c) =>
     publicProxy(
       c,
       "agent-commons",
@@ -391,8 +404,45 @@ if (process.env.COMMONS_GATEWAY_NO_LISTEN !== "true") {
 
 export default app;
 
-function isPreviewPath(path: string) {
-  return path === "/v1/previews" || path.startsWith("/v1/previews/");
+function isPluginFramePath(path: string) {
+  return (
+    path === "/v1/ui-plugin-host" ||
+    path === "/v1/previews" ||
+    path.startsWith("/v1/previews/")
+  );
+}
+
+/**
+ * Public preview and relay responses never need a Commons identity. Strip all
+ * ambient browser credentials and gateway delegation headers before the
+ * request reaches the API service. This keeps the public content origin
+ * cookieless even when it currently shares the public API hostname.
+ */
+export function publicAssetRequestHeaders(input: HeadersInit) {
+  const headers = new Headers(input);
+  for (const name of [
+    "host",
+    "content-length",
+    "authorization",
+    "proxy-authorization",
+    "cookie",
+    "x-owner-id",
+    "x-initiator",
+    "x-user-id",
+    "x-user-email",
+    "x-commons-actor-id",
+    "x-commons-actor-type",
+    "x-commons-workspace-id",
+    "x-commons-project-id",
+    "x-commons-scopes",
+    "x-commons-request-id",
+    "x-commons-timestamp",
+    "x-commons-signature",
+    "x-commons-internal-secret",
+  ]) {
+    headers.delete(name);
+  }
+  return headers;
 }
 
 function requiredScope(method: string, path: string) {

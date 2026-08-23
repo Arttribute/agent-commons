@@ -27,6 +27,8 @@ import { ComputerService } from '~/computer';
 import {
   CodeProjectService,
   type BrowserCheckAction,
+  type BrowserCheckCapability,
+  type BrowserCheckSurface,
   type CodeProjectFileInput,
 } from '~/code-project';
 import { DatabaseService } from '~/modules/database/database.service';
@@ -41,6 +43,7 @@ import {
 import { CapabilityProviderService } from '~/provider';
 import {
   UiPluginService,
+  type UiPluginCapabilityGrant,
   type UiPluginPermission,
   type UiPluginSurface,
 } from '~/ui-plugin';
@@ -672,13 +675,20 @@ export interface CommonTool {
     version?: string;
     surfaces: UiPluginSurface[];
     permissions?: UiPluginPermission[];
+    /** Least-privilege host capabilities used by the app through @agent-commons/ui. */
+    capabilities?: UiPluginCapabilityGrant[];
   }): Promise<any>;
 
-  /** Test the public project in desktop and mobile Chromium viewports. */
+  /**
+   * Test in real page/widget sizes and themes. Pass the same least-privilege
+   * capabilities intended for registration so populated bridge states run.
+   */
   testCodeProject(props: {
     agentId?: string;
     projectId: string;
     actions?: BrowserCheckAction[];
+    surfaces?: BrowserCheckSurface[];
+    capabilities?: BrowserCheckCapability[];
   }): Promise<any>;
 
   /** Move a lightweight project into this agent's persistent computer. */
@@ -1866,14 +1876,21 @@ export class CommonToolService {
       version?: string;
       surfaces: UiPluginSurface[];
       permissions?: UiPluginPermission[];
+      capabilities?: UiPluginCapabilityGrant[];
     },
     metadata?: ToolExecutionMetadata,
   ) {
     const agentId = this.requireToolAgentId(props.agentId, metadata);
-    const { surfaces, permissions, ...input } = props;
+    const { surfaces, permissions, capabilities, ...input } = props;
     const plugin = await this.uiPlugins.createForAgent(agentId, {
       ...input,
-      manifest: { schemaVersion: '1', surfaces, permissions },
+      manifest: {
+        schemaVersion: '2',
+        surfaces,
+        permissions,
+        capabilities,
+        networkAccess: { allowedDomains: [] },
+      },
     });
     return {
       ...plugin,
@@ -1888,6 +1905,8 @@ export class CommonToolService {
       agentId?: string;
       projectId: string;
       actions?: BrowserCheckAction[];
+      surfaces?: BrowserCheckSurface[];
+      capabilities?: BrowserCheckCapability[];
     },
     metadata?: ToolExecutionMetadata,
   ) {
@@ -1896,6 +1915,8 @@ export class CommonToolService {
       agentId,
       projectId: props.projectId,
       actions: props.actions,
+      surfaces: props.surfaces,
+      capabilities: props.capabilities,
       runId: metadata?.runId,
       toolCallId: metadata?.toolCallId,
     });

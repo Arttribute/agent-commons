@@ -12,6 +12,8 @@ import {
   uniqueIndex,
   index,
   vector,
+  foreignKey,
+  check,
 } from 'drizzle-orm/pg-core';
 import { sql } from 'drizzle-orm';
 import { relations } from 'drizzle-orm';
@@ -299,6 +301,9 @@ export const codeProjectDeployment = pgTable(
       table.projectId,
       table.createdAt,
     ),
+    deploymentProjectIdx: uniqueIndex(
+      'idx_code_project_deployment_id_project',
+    ).on(table.deploymentId, table.projectId),
   }),
 );
 
@@ -319,6 +324,9 @@ export const uiPlugin = pgTable(
     codeProjectId: uuid('code_project_id')
       .notNull()
       .references(() => codeProject.projectId, { onDelete: 'cascade' }),
+    // Nullable only for rollout-safe legacy rows. New registrations always pin
+    // a reviewed deployment; unpinned legacy rows are disabled by migration.
+    deploymentId: uuid('deployment_id'),
     name: text('name').notNull(),
     slug: text('slug').notNull(),
     description: text('description'),
@@ -326,14 +334,27 @@ export const uiPlugin = pgTable(
     entryUrl: text('entry_url').notNull(),
     manifest: jsonb('manifest')
       .$type<{
-        schemaVersion: '1';
+        schemaVersion: '1' | '2';
         surfaces: Array<{
           type: 'page' | 'widget';
           title?: string;
           width?: number;
           height?: number;
         }>;
-        permissions: Array<'theme.read' | 'navigation'>;
+        permissions: Array<'theme.read' | 'navigation' | 'storage'>;
+        capabilities?: Array<{
+          name:
+            | 'agents.read'
+            | 'tasks.read'
+            | 'tasks.write'
+            | 'workflows.read'
+            | 'workflows.execute'
+            | 'library.read'
+            | 'tools.read'
+            | 'copilot.prompt';
+          resourceIds?: string[];
+        }>;
+        networkAccess?: { allowedDomains: string[] };
       }>()
       .notNull(),
     status: text('status').default('draft').notNull(),
@@ -354,6 +375,19 @@ export const uiPlugin = pgTable(
       table.status,
       table.updatedAt,
     ),
+    deploymentIdx: index('idx_ui_plugin_deployment').on(table.deploymentId),
+    activeDeploymentCheck: check(
+      'ui_plugin_active_deployment_check',
+      sql`${table.status} <> 'active' OR ${table.deploymentId} IS NOT NULL`,
+    ),
+    deploymentProjectFk: foreignKey({
+      columns: [table.deploymentId, table.codeProjectId],
+      foreignColumns: [
+        codeProjectDeployment.deploymentId,
+        codeProjectDeployment.projectId,
+      ],
+      name: 'ui_plugin_deployment_project_fk',
+    }).onDelete('cascade'),
   }),
 );
 

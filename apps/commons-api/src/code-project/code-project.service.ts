@@ -4,7 +4,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { createHash } from 'node:crypto';
-import { and, desc, eq, notInArray, sql } from 'drizzle-orm';
+import { and, desc, eq, inArray, notInArray, sql } from 'drizzle-orm';
 import { v4 as uuidv4 } from 'uuid';
 import * as schema from '#/models/schema';
 import { agentRunProgress } from '~/agent/run-progress';
@@ -14,10 +14,13 @@ import { CodeProjectBuilder } from './code-project.builder';
 import { CodeProjectStorage } from './code-project.storage';
 import type {
   BrowserCheckAction,
+  BrowserCheckCapability,
+  BrowserCheckSurface,
   CodeProjectFileInput,
 } from './code-project.types';
 import { CodeProjectVerifier } from './code-project.verifier';
 import { OAuthTokenInjectionService } from '~/oauth/oauth-token-injection.service';
+import { verificationCoversManifest } from '~/ui-plugin/ui-plugin.policy';
 
 const MAX_FILES = 80;
 const MAX_FILE_BYTES = 250_000;
@@ -49,21 +52,25 @@ export class CodeProjectService {
     const projectId = uuidv4();
     const slug = `${slugify(name)}-${projectId.slice(0, 8)}`;
     const ownerUserId = agent.ownerUserId ?? agent.owner;
-    if (!ownerUserId) throw new BadRequestException('A verified project owner is required');
-    const [libraryItem] = await this.db.insert(schema.libraryItem).values({
-      ownerUserId,
-      workspaceId: agent.workspaceId,
-      sourceAgentId: args.agentId,
-      sourceSessionId: args.sessionId,
-      kind: 'app',
-      name,
-      description: args.description?.trim().slice(0, 1_000),
-      mimeType: 'application/vnd.agent-commons.nextjs-project',
-      sizeBytes: 0,
-      sha256: checksum(projectId),
-      source: 'code_project',
-      metadata: { projectId, framework: 'nextjs' },
-    }).returning();
+    if (!ownerUserId)
+      throw new BadRequestException('A verified project owner is required');
+    const [libraryItem] = await this.db
+      .insert(schema.libraryItem)
+      .values({
+        ownerUserId,
+        workspaceId: agent.workspaceId,
+        sourceAgentId: args.agentId,
+        sourceSessionId: args.sessionId,
+        kind: 'app',
+        name,
+        description: args.description?.trim().slice(0, 1_000),
+        mimeType: 'application/vnd.agent-commons.nextjs-project',
+        sizeBytes: 0,
+        sha256: checksum(projectId),
+        source: 'code_project',
+        metadata: { projectId, framework: 'nextjs' },
+      })
+      .returning();
     const [project] = await this.db
       .insert(schema.codeProject)
       .values({
@@ -81,8 +88,20 @@ export class CodeProjectService {
       })
       .returning();
     await this.db.insert(schema.libraryLink).values([
-      { itemId: libraryItem.itemId, scopeType: 'code_project', scopeId: projectId },
-      ...(args.sessionId ? [{ itemId: libraryItem.itemId, scopeType: 'session', scopeId: args.sessionId }] : []),
+      {
+        itemId: libraryItem.itemId,
+        scopeType: 'code_project',
+        scopeId: projectId,
+      },
+      ...(args.sessionId
+        ? [
+            {
+              itemId: libraryItem.itemId,
+              scopeType: 'session',
+              scopeId: args.sessionId,
+            },
+          ]
+        : []),
     ]);
 
     const files = args.files?.length ? args.files : starterFiles(name);
@@ -125,7 +144,9 @@ export class CodeProjectService {
     if (!connection) {
       throw new BadRequestException('Connect GitHub before exporting this app');
     }
-    const token = await this.oauthTokens.getFreshAccessToken(connection.connectionId);
+    const token = await this.oauthTokens.getFreshAccessToken(
+      connection.connectionId,
+    );
     const headers = {
       Authorization: `Bearer ${token}`,
       Accept: 'application/vnd.github+json',
@@ -136,27 +157,63 @@ export class CodeProjectService {
     let fullName: string;
     let repositoryUrl = project.repositoryUrl;
     if (!repositoryUrl) {
-      const repositoryName = slugify(args.repositoryName || project.name).slice(0, 100);
+      const repositoryName = slugify(args.repositoryName || project.name).slice(
+        0,
+        100,
+      );
       const created = await fetch('https://api.github.com/user/repos', {
-        method: 'POST', headers,
-        body: JSON.stringify({ name: repositoryName, private: args.private !== false, description: project.description || `Next.js app created with Agent Commons`, auto_init: false }),
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          name: repositoryName,
+          private: args.private !== false,
+          description:
+            project.description || `Next.js app created with Agent Commons`,
+          auto_init: false,
+        }),
       });
-      const payload = await created.json() as any;
-      if (!created.ok) throw new BadRequestException(payload?.message || 'GitHub repository creation failed');
+      const payload = (await created.json()) as any;
+      if (!created.ok)
+        throw new BadRequestException(
+          payload?.message || 'GitHub repository creation failed',
+        );
       fullName = payload.full_name;
       repositoryUrl = payload.html_url;
     } else {
       const parsed = new URL(repositoryUrl);
-      fullName = parsed.pathname.replace(/^\/+|\/+$/g, '').replace(/\.git$/, '');
+      fullName = parsed.pathname
+        .replace(/^\/+|\/+$/g, '')
+        .replace(/\.git$/, '');
     }
-    const files = await this.db.query.codeProjectFile.findMany({ where: (table) => eq(table.projectId, args.projectId) });
+    const files = await this.db.query.codeProjectFile.findMany({
+      where: (table) => eq(table.projectId, args.projectId),
+    });
     for (const file of files) {
       const endpoint = `https://api.github.com/repos/${fullName}/contents/${file.path.split('/').map(encodeURIComponent).join('/')}`;
-      const existing = await fetch(endpoint, { headers }).then(async (response) => response.ok ? response.json() as Promise<any> : null);
-      const response = await fetch(endpoint, { method: 'PUT', headers, body: JSON.stringify({ message: `Update ${file.path} from Agent Commons`, content: Buffer.from(file.content).toString('base64'), sha: existing?.sha }) });
-      if (!response.ok) { const payload = await response.json() as any; throw new BadRequestException(payload?.message || `Could not push ${file.path}`); }
+      const existing = await fetch(endpoint, { headers }).then(
+        async (response) =>
+          response.ok ? (response.json() as Promise<any>) : null,
+      );
+      const response = await fetch(endpoint, {
+        method: 'PUT',
+        headers,
+        body: JSON.stringify({
+          message: `Update ${file.path} from Agent Commons`,
+          content: Buffer.from(file.content).toString('base64'),
+          sha: existing?.sha,
+        }),
+      });
+      if (!response.ok) {
+        const payload = (await response.json()) as any;
+        throw new BadRequestException(
+          payload?.message || `Could not push ${file.path}`,
+        );
+      }
     }
-    await this.db.update(schema.codeProject).set({ repositoryUrl, updatedAt: new Date() }).where(eq(schema.codeProject.projectId, args.projectId));
+    await this.db
+      .update(schema.codeProject)
+      .set({ repositoryUrl, updatedAt: new Date() })
+      .where(eq(schema.codeProject.projectId, args.projectId));
     return { repositoryUrl, repository: fullName, files: files.length };
   }
 
@@ -263,13 +320,16 @@ export class CodeProjectService {
       });
       if (project?.libraryItemId) {
         const contents = [...merged.values()].join('\n');
-        await tx.update(schema.libraryItem).set({
-          sizeBytes: Buffer.byteLength(contents),
-          sha256: checksum(contents),
-          textPreview: contents.slice(0, 2_000),
-          extractedTextChars: contents.length,
-          updatedAt: new Date(),
-        }).where(eq(schema.libraryItem.itemId, project.libraryItemId));
+        await tx
+          .update(schema.libraryItem)
+          .set({
+            sizeBytes: Buffer.byteLength(contents),
+            sha256: checksum(contents),
+            textPreview: contents.slice(0, 2_000),
+            extractedTextChars: contents.length,
+            updatedAt: new Date(),
+          })
+          .where(eq(schema.libraryItem.itemId, project.libraryItemId));
       }
     });
 
@@ -331,7 +391,10 @@ export class CodeProjectService {
         deployment.deploymentId,
       );
       await this.storage.publish(storagePrefix, built.assets);
-      const publicUrl = this.publicUrl(project.slug);
+      const publicUrl = this.deploymentUrl(
+        project.slug,
+        deployment.deploymentId,
+      );
       await this.db.transaction(async (tx) => {
         await tx
           .update(schema.codeProjectDeployment)
@@ -416,6 +479,8 @@ export class CodeProjectService {
     agentId: string;
     projectId: string;
     actions?: BrowserCheckAction[];
+    surfaces?: BrowserCheckSurface[];
+    capabilities?: BrowserCheckCapability[];
     runId?: string;
     toolCallId?: string;
   }) {
@@ -444,24 +509,31 @@ export class CodeProjectService {
     const result = await this.verifier.verify(
       deployment.publicUrl,
       args.actions ?? [],
+      args.surfaces ?? [{ type: 'page' }],
+      args.capabilities ?? [],
     );
-    let screenshotUrl: string | undefined;
-    if (result.screenshot) {
+    const screenshotUrls: Array<{ name: string; url: string }> = [];
+    const verificationRunId = uuidv4();
+    for (const screenshot of result.screenshots) {
+      const path = `verification/${verificationRunId}/${screenshot.name.replace(/[^a-z0-9-]+/gi, '-')}.png`;
       await this.storage.put(deployment.storagePrefix, {
-        path: 'verification.png',
-        content: result.screenshot,
+        path,
+        content: screenshot.content,
         contentType: 'image/png',
         cacheControl: 'no-cache',
       });
-      screenshotUrl = `${deployment.publicUrl.replace(/\/$/, '')}/verification.png`;
+      screenshotUrls.push({
+        name: screenshot.name,
+        url: `${deployment.publicUrl.replace(/\/$/, '')}/${path}`,
+      });
     }
-    const verification = { ...result, screenshot: undefined, screenshotUrl };
-    await this.db
-      .update(schema.codeProjectDeployment)
-      .set({ verification })
-      .where(
-        eq(schema.codeProjectDeployment.deploymentId, deployment.deploymentId),
-      );
+    const verification = {
+      ...result,
+      screenshots: undefined,
+      screenshotUrl: screenshotUrls[0]?.url,
+      screenshotUrls,
+    };
+    await this.persistVerification(deployment, verification);
     this.emit(
       args.runId,
       result.passed ? 'completed' : 'failed',
@@ -475,6 +547,82 @@ export class CodeProjectService {
       'testCodeProject',
     );
     return verification;
+  }
+
+  private async persistVerification(
+    deployment: typeof schema.codeProjectDeployment.$inferSelect,
+    verification: Record<string, any>,
+  ) {
+    await this.db.transaction(async (tx) => {
+      const [lockedDeployment] = await tx
+        .select({
+          deploymentId: schema.codeProjectDeployment.deploymentId,
+          projectId: schema.codeProjectDeployment.projectId,
+        })
+        .from(schema.codeProjectDeployment)
+        .where(
+          and(
+            eq(
+              schema.codeProjectDeployment.deploymentId,
+              deployment.deploymentId,
+            ),
+            eq(schema.codeProjectDeployment.projectId, deployment.projectId),
+          ),
+        )
+        .limit(1)
+        .for('update');
+      if (!lockedDeployment) {
+        throw new NotFoundException('Code project deployment not found');
+      }
+
+      await tx
+        .update(schema.codeProjectDeployment)
+        .set({ verification })
+        .where(
+          and(
+            eq(
+              schema.codeProjectDeployment.deploymentId,
+              lockedDeployment.deploymentId,
+            ),
+            eq(
+              schema.codeProjectDeployment.projectId,
+              lockedDeployment.projectId,
+            ),
+          ),
+        );
+
+      const activePlugins = await tx
+        .select()
+        .from(schema.uiPlugin)
+        .where(
+          and(
+            eq(schema.uiPlugin.deploymentId, lockedDeployment.deploymentId),
+            eq(schema.uiPlugin.codeProjectId, lockedDeployment.projectId),
+            eq(schema.uiPlugin.status, 'active'),
+          ),
+        )
+        .for('update');
+      const invalidIds = activePlugins
+        .filter(
+          (plugin) =>
+            verification.passed !== true ||
+            verification.schemaVersion !== 2 ||
+            !verificationCoversManifest(verification, plugin.manifest),
+        )
+        .map((plugin) => plugin.pluginId);
+      if (!invalidIds.length) return;
+      await tx
+        .update(schema.uiPlugin)
+        .set({ status: 'disabled', updatedAt: new Date() })
+        .where(
+          and(
+            inArray(schema.uiPlugin.pluginId, invalidIds),
+            eq(schema.uiPlugin.deploymentId, lockedDeployment.deploymentId),
+            eq(schema.uiPlugin.codeProjectId, lockedDeployment.projectId),
+            eq(schema.uiPlugin.status, 'active'),
+          ),
+        );
+    });
   }
 
   async exportToComputer(args: {
@@ -530,16 +678,22 @@ export class CodeProjectService {
     };
   }
 
-  async publicAsset(slug: string, requestedPath?: string) {
+  async publicAsset(
+    slug: string,
+    requestedPath?: string,
+    deploymentId?: string,
+  ) {
     const project = await this.db.query.codeProject.findFirst({
       where: (table) =>
         and(eq(table.slug, slug), eq(table.visibility, 'public')),
     });
     if (!project?.latestDeploymentId) throw new NotFoundException();
+    const selectedDeploymentId = deploymentId ?? project.latestDeploymentId;
     const deployment = await this.db.query.codeProjectDeployment.findFirst({
       where: (table) =>
         and(
-          eq(table.deploymentId, project.latestDeploymentId as string),
+          eq(table.deploymentId, selectedDeploymentId),
+          eq(table.projectId, project.projectId),
           eq(table.status, 'ready'),
         ),
     });
@@ -574,6 +728,10 @@ export class CodeProjectService {
     if (explicit) return `${explicit}/${slug}/`;
     const port = process.env.PORT || '3001';
     return `http://localhost:${port}/v1/previews/${slug}/`;
+  }
+
+  private deploymentUrl(slug: string, deploymentId: string) {
+    return `${this.publicUrl(slug)}deployments/${deploymentId}/`;
   }
 
   private async assertAgent(agentId: string) {
@@ -753,8 +911,33 @@ h1 { margin: 0; font-size: clamp(42px, 8vw, 88px); line-height: 0.95; }
 .lede { margin: 0; color: #52525b; font-size: 18px; }
 `,
     },
-    { path: 'app/layout.tsx', content: `import type { ReactNode } from 'react';\nexport default function RootLayout({ children }: { children: ReactNode }) { return <html lang="en"><body>{children}</body></html>; }\n` },
-    { path: 'next.config.ts', content: `import type { NextConfig } from 'next';\nconst config: NextConfig = { output: 'export' };\nexport default config;\n` },
-    { path: 'package.json', content: JSON.stringify({ scripts: { dev: 'next dev', build: 'next build' }, dependencies: { next: '^15.5.0', react: '^19.0.0', 'react-dom': '^19.0.0' }, devDependencies: { typescript: '^5.0.0', '@types/react': '^19.0.0', '@types/node': '^20.0.0' } }, null, 2) },
+    {
+      path: 'app/layout.tsx',
+      content: `import type { ReactNode } from 'react';\nexport default function RootLayout({ children }: { children: ReactNode }) { return <html lang="en"><body>{children}</body></html>; }\n`,
+    },
+    {
+      path: 'next.config.ts',
+      content: `import type { NextConfig } from 'next';\nconst config: NextConfig = { output: 'export' };\nexport default config;\n`,
+    },
+    {
+      path: 'package.json',
+      content: JSON.stringify(
+        {
+          scripts: { dev: 'next dev', build: 'next build' },
+          dependencies: {
+            next: '^15.5.0',
+            react: '^19.0.0',
+            'react-dom': '^19.0.0',
+          },
+          devDependencies: {
+            typescript: '^5.0.0',
+            '@types/react': '^19.0.0',
+            '@types/node': '^20.0.0',
+          },
+        },
+        null,
+        2,
+      ),
+    },
   ];
 }

@@ -92,6 +92,8 @@ export type {
   UiPlugin,
   UiPluginSurface,
   UiPluginPermission,
+  UiPluginCapabilityName,
+  UiPluginCapabilityGrant,
   CreateUiPluginParams,
   // Memory
   AgentMemory,
