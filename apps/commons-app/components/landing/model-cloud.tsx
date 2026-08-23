@@ -17,7 +17,8 @@ const MODELS = [
     name: "google-gemini",
     label: "Google Gemini",
     className: "left-[52%] top-[26%] h-[4.25rem] w-[4.25rem] sm:h-[4.75rem] sm:w-[4.75rem]",
-    iconSize: 32,
+    // A wide wordmark rather than a glyph — sized to the tile's width.
+    iconSize: 50,
   },
   {
     name: "mistral-ai-icon",
