@@ -2,10 +2,11 @@
 
 import { use, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, Globe, Lock, Sparkles } from "lucide-react";
+import { ArrowLeft, Globe, Lock } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import { SkillIcon } from "@/components/skills/skill-icon";
 import type { Skill } from "@agent-commons/sdk";
 
 export default function SkillDetailPage({
@@ -74,13 +75,7 @@ export default function SkillDetailPage({
             <ArrowLeft className="h-4 w-4" />
           </Button>
           <div className="flex min-w-0 items-center gap-2">
-            <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-border bg-muted/50">
-              {skill.icon ? (
-                <span className="text-sm">{skill.icon}</span>
-              ) : (
-                <Sparkles className="h-4 w-4 text-muted-foreground" />
-              )}
-            </span>
+            <SkillIcon icon={skill.icon} size="sm" />
             <div className="min-w-0">
               <h1 className="truncate text-sm font-semibold">{skill.name}</h1>
               <p className="truncate text-xs text-muted-foreground">{skill.slug}</p>
