@@ -18,9 +18,10 @@ const ownerEmail = "bashybaranaba@gmail.com";
 const dryRun = process.argv.includes("--dry-run");
 const force = process.argv.includes("--force");
 const captureMode = process.argv.includes("--capture");
+const expandMode = process.argv.includes("--expand");
 const previewDir = argument("preview-dir");
 let cachedPdfTools;
-const inputs = captureMode
+const inputs = captureMode || expandMode
   ? {
       deck: requiredArgument("deck"),
       workbook: requiredArgument("workbook"),
@@ -37,7 +38,147 @@ if (!dryRun && !process.env.MONGODB_URI) {
   throw new Error("MONGODB_URI is required.");
 }
 
-await (captureMode ? captureMain() : main());
+await (expandMode ? expandMain() : captureMode ? captureMain() : main());
+
+async function expandMain() {
+  const workDir = await mkdtemp(path.join(os.tmpdir(), "quick-wins-expand-"));
+  try {
+    const assets = await prepareExpandAssets(inputs, workDir);
+    if (dryRun) {
+      console.log(
+        JSON.stringify({
+          dryRun,
+          mode: "expand",
+          files: Object.values(assets).map((asset) => ({
+            name: asset.name,
+            bytes: asset.bytes.length,
+            pages: asset.pages.length,
+          })),
+          activities: createExpandActivities("preview-material").length,
+        }),
+      );
+      return;
+    }
+    await mongoose.connect(process.env.MONGODB_URI);
+    try {
+      const db = mongoose.connection.db;
+      if (!db) throw new Error("MongoDB connection is unavailable.");
+      const [owner, course] = await Promise.all([
+        db.collection("users").findOne({ email: ownerEmail }),
+        db.collection("courses").findOne({ slug }),
+      ]);
+      if (!owner) throw new Error(`Owner not found: ${ownerEmail}`);
+      if (!course) throw new Error(`Course not found: ${slug}`);
+      if (!owner.identityUserId) {
+        throw new Error(`${ownerEmail} is not connected to Commons Identity.`);
+      }
+      const session = await db.collection("livesessions").findOne({
+        courseId: course._id,
+      });
+      if (!session) throw new Error("AI Quick Wins live programme was not found.");
+
+      const now = new Date();
+      const commonsFiles = await uploadToCommonsLibrary(
+        Object.values(assets),
+        owner.identityUserId,
+        owner.identityWorkspaceId,
+      );
+      const bucket = new mongo.GridFSBucket(db, {
+        bucketName: "courseMaterials",
+      });
+      const materialByKey = {};
+      for (const asset of Object.values(assets)) {
+        materialByKey[asset.key] = await syncMaterial({
+          db,
+          bucket,
+          course,
+          owner,
+          principalId: owner.identityUserId,
+          asset,
+          commonsFile: commonsFiles.get(asset.key),
+          now,
+        });
+      }
+
+      const retainedActivities = (session.activities || []).filter(
+        (activity) => !activity.id.startsWith("expand-"),
+      );
+      const expandActivities = createExpandActivities(
+        String(materialByKey.expandDeck._id),
+      );
+      const activities = [...retainedActivities, ...expandActivities];
+      const retainedParts = (session.parts || []).filter(
+        (part) => part.id !== "expand",
+      );
+      const expandPart = {
+        id: "expand",
+        title: "Day 3 · Expand",
+        description:
+          "Diagnose the wall, scope connected systems, map the company brain, and specify a complete harness.",
+        status: "closed",
+        pace: "facilitator",
+        activityIds: expandActivities.map((activity) => activity.id),
+      };
+      const secureIndex = retainedParts.findIndex(
+        (part) => part.id === "secure",
+      );
+      const parts = [...retainedParts];
+      parts.splice(secureIndex < 0 ? parts.length : secureIndex, 0, expandPart);
+
+      await Promise.all([
+        db.collection("livesessions").updateOne(
+          { _id: session._id },
+          {
+            $set: {
+              title: "AI Quick Wins for Leaders · Live programme",
+              description:
+                "One live programme for Discover, Capture, Expand, and Secure. Educators can open any combination of sessions and choose the pace for each.",
+              activities,
+              parts,
+              updatedAt: now,
+            },
+            $inc: { stateVersion: 1 },
+          },
+        ),
+        db.collection("courses").updateOne(
+          { _id: course._id },
+          {
+            $set: {
+              "modules.2.lessons.0.description":
+                "Diagnose the wall your automation hit, scope what it can safely reach, map the first version of the company brain, and build an eleven-field harness specification.",
+              updatedAt: now,
+            },
+          },
+        ),
+      ]);
+
+      console.log(
+        JSON.stringify(
+          {
+            courseId: String(course._id),
+            liveSessionId: String(session._id),
+            joinCode: session.joinCode,
+            retainedActivities: retainedActivities.length,
+            expandActivities: expandActivities.length,
+            parts,
+            materials: Object.fromEntries(
+              Object.entries(materialByKey).map(([key, value]) => [
+                key,
+                { id: String(value._id), name: value.name },
+              ]),
+            ),
+          },
+          null,
+          2,
+        ),
+      );
+    } finally {
+      await mongoose.disconnect();
+    }
+  } finally {
+    await rm(workDir, { recursive: true, force: true });
+  }
+}
 
 async function captureMain() {
   const workDir = await mkdtemp(path.join(os.tmpdir(), "quick-wins-capture-"));
@@ -1324,6 +1465,472 @@ function createCaptureActivities(materialId) {
       2,
     ),
   ];
+}
+
+function createExpandActivities(materialId) {
+  const field = (id, label, type = "short_text", extra = {}) => ({
+    id,
+    label,
+    type,
+    required: false,
+    ...extra,
+  });
+  const base = (id, title, prompt, slide, minutes, extra = {}) => ({
+    id,
+    type: "content",
+    title,
+    prompt,
+    materialId,
+    materialStartSlide: slide,
+    estimatedMinutes: minutes,
+    status: "draft",
+    required: false,
+    randomizeOptions: false,
+    showResults: false,
+    points: 0,
+    options: [],
+    ...extra,
+  });
+  const worksheet = (
+    id,
+    title,
+    prompt,
+    slide,
+    minutes,
+    worksheetFields,
+    extra = {},
+  ) => ({
+    ...base(id, title, prompt, slide, minutes),
+    type: "worksheet",
+    required: true,
+    worksheetFields,
+    ...extra,
+  });
+  const cards = (
+    id,
+    title,
+    prompt,
+    slide,
+    minutes,
+    worksheetFields,
+    itemTitleFieldId,
+    extra = {},
+  ) => ({
+    ...base(id, title, prompt, slide, minutes),
+    type: "card_collection",
+    required: true,
+    minItems: 1,
+    entryLabel: "Add another",
+    itemTitleFieldId,
+    worksheetFields,
+    ...extra,
+  });
+
+  return [
+    base(
+      "expand-welcome",
+      "Expand: turn the wall into a specification",
+      "Reconnect to the workflow you carried through Discover and Capture, then name what it could not reach, know, continue, or ask.",
+      1,
+      5,
+      {
+        facilitatorNotes:
+          "Keep Session 1 and Session 2 open if learners need to retrieve their earlier task anatomy, procedure, evaluation, or failure log.",
+      },
+    ),
+    worksheet(
+      "expand-wall-diagnosis",
+      "The wall your automation hit",
+      "Describe the wall, classify it, and convert the failure into something the harness must provide.",
+      5,
+      10,
+      [
+        field("automation", "The automation this is for", "long_text", {
+          required: true,
+          section: "Your wall",
+        }),
+        field("wall", "What could it not do?", "long_text", {
+          required: true,
+          section: "Your wall",
+        }),
+        field(
+          "kind",
+          "Kind of wall: reach, knowledge, loop, or control",
+          "short_text",
+          { required: true, section: "Diagnosis" },
+        ),
+        field("needs", "What does it need to get past this wall?", "long_text", {
+          required: true,
+          section: "Diagnosis",
+        }),
+        field("owner", "Who owns what it needs?", "short_text", {
+          section: "Diagnosis",
+        }),
+      ],
+      {
+        instructions:
+          "Your wall is not a mistake. Make it concrete enough that another person could tell what must be added around the model.",
+        successCriteria:
+          "The wall is classified and names a specific missing tool, context, loop, or control.",
+      },
+    ),
+    base(
+      "expand-harness-concept",
+      "Agent = model + harness",
+      "Translate the four wall types into the loop, tool interface, context, and controls that surround a model.",
+      8,
+      15,
+      {
+        facilitatorNotes:
+          "Anchor this in familiar management practice: job description, access, briefing, and approval limits.",
+      },
+    ),
+    worksheet(
+      "expand-connection-scope",
+      "Three routes in—and the scope that matters",
+      "Choose the lightest useful route into one system and write the minimum safe scope in one sentence.",
+      13,
+      13,
+      [
+        field("system", "The system my automation needs", "short_text", {
+          required: true,
+          section: "Connection",
+        }),
+        field(
+          "route",
+          "Route: existing connector, files, API, or not yet",
+          "short_text",
+          { required: true, section: "Connection" },
+        ),
+        field(
+          "scope",
+          "The scope I would grant, in one sentence",
+          "long_text",
+          {
+            required: true,
+            section: "Least agency",
+            placeholder:
+              "It may read open opportunities owned by this team, and write nothing.",
+          },
+        ),
+        field("permission-owner", "Who approves this scope?", "short_text", {
+          required: true,
+          section: "Least agency",
+        }),
+      ],
+      {
+        successCriteria:
+          "The scope names operations, records, permissions, and an accountable owner.",
+      },
+    ),
+    cards(
+      "expand-systems-map",
+      "What do we actually run?",
+      "Add every system the organisation uses. For each one, name its owner, what AI could safely read, and what it must never touch.",
+      16,
+      12,
+      [
+        field("system", "System", "short_text", { required: true }),
+        field("owner", "Named owner", "short_text", { required: true }),
+        field("safe-read", "What AI could safely read", "long_text", {
+          required: true,
+        }),
+        field("never-touch", "What it must never touch", "long_text", {
+          required: true,
+        }),
+        field(
+          "hidden-risk",
+          "What is in there that should not be in there?",
+          "long_text",
+        ),
+        field(
+          "priority",
+          "Connection priority: value × safety (1–5)",
+          "scale",
+          { min: 1, max: 5, lowLabel: "Later", highLabel: "First" },
+        ),
+      ],
+      "system",
+      {
+        entryLabel: "Add a system",
+        instructions:
+          "Build this together. Add as many systems as the organisation actually uses; do not stop at the examples on the slide.",
+      },
+    ),
+    base(
+      "expand-company-brain-concept",
+      "Where the organisation keeps what it knows",
+      "Separate a trustworthy company brain from a wiki, search box, pile of documents, or memory trapped inside one tool.",
+      17,
+      10,
+    ),
+    cards(
+      "expand-company-brain-map",
+      "The questions an agent must answer correctly",
+      "Capture the questions that matter, where each answer lives today, who owns it, and whether it is current and queryable.",
+      21,
+      20,
+      [
+        field("question", "Question the agent must answer", "long_text", {
+          required: true,
+        }),
+        field("where", "Where the answer lives today", "long_text", {
+          required: true,
+        }),
+        field("owner", "Named owner", "short_text", { required: true }),
+        field(
+          "current",
+          "Is it current, sourced, and queryable?",
+          "long_text",
+          { required: true },
+        ),
+        field(
+          "v0-priority",
+          "Priority for company brain v0 (1–5)",
+          "scale",
+          { min: 1, max: 5, lowLabel: "Later", highLabel: "Top three" },
+        ),
+        field("target-date", "Owner's target date", "date"),
+      ],
+      "question",
+      {
+        entryLabel: "Add a question",
+        minItems: 3,
+        instructions:
+          "Start with the twelve prompts in the workbook, then add what is specific to this organisation. Mark the three worst, highest-value rows as priority 5 and give each an owner and date.",
+        successCriteria:
+          "At least three high-value questions have a source, owner, current-state assessment, and target date.",
+      },
+    ),
+    worksheet(
+      "expand-harness-canvas",
+      "Your harness specification",
+      "Complete all eleven fields around the automation you have carried through the programme.",
+      23,
+      25,
+      [
+        field("automation", "The automation this is for", "long_text", {
+          required: true,
+          section: "Purpose",
+        }),
+        field("trigger", "1. Trigger: what starts it?", "long_text", {
+          required: true,
+          section: "Run conditions",
+        }),
+        field("inputs", "2. Inputs: what must be present first?", "long_text", {
+          required: true,
+          section: "Run conditions",
+        }),
+        field(
+          "context",
+          "3. Context: what must it know, and from where?",
+          "long_text",
+          { required: true, section: "Reach and knowledge" },
+        ),
+        field(
+          "tools",
+          "4. Tools: what must it reach, read, and write?",
+          "long_text",
+          { required: true, section: "Reach and knowledge" },
+        ),
+        field(
+          "procedure",
+          "5. Procedure: which written task does it follow?",
+          "long_text",
+          { required: true, section: "Procedure" },
+        ),
+        field(
+          "stopping-condition",
+          "6. Stopping condition: how does it know it is done?",
+          "long_text",
+          { required: true, section: "Controls" },
+        ),
+        field(
+          "stop-early",
+          "7. What makes it stop early and ask?",
+          "long_text",
+          { required: true, section: "Controls" },
+        ),
+        field(
+          "destination",
+          "8. Output destination: where does the result go, and to whom?",
+          "long_text",
+          { required: true, section: "Delivery" },
+        ),
+        field(
+          "verification",
+          "9. Verification gate: who checks it, against what?",
+          "long_text",
+          { required: true, section: "Controls" },
+        ),
+        field("owner", "10. Owner: which named person is accountable?", "short_text", {
+          required: true,
+          section: "Ownership",
+        }),
+        field(
+          "limits",
+          "11. Limits and kill switch: the most it may touch, and how to stop it",
+          "long_text",
+          { required: true, section: "Ownership" },
+        ),
+        field(
+          "walls-down",
+          "Which of my walls does this bring down?",
+          "long_text",
+          { required: true, section: "Evidence" },
+        ),
+      ],
+      {
+        instructions:
+          "Fields 6, 7, and 9 must be observable. Do not write ‘when it is done’ or ‘I will check it’. Name the condition, evidence, person, and moment.",
+        successCriteria:
+          "Another person could tell when the automation starts, stops, escalates, is verified, and how to shut it down.",
+      },
+    ),
+    worksheet(
+      "expand-live-connection-evidence",
+      "Take one wall down",
+      "Record the scoped connection, rerun the same procedure, and isolate what changed outside the model.",
+      25,
+      10,
+      [
+        field("wall", "The wall we chose", "long_text", { required: true }),
+        field("connection", "System and exact scope connected", "long_text", {
+          required: true,
+        }),
+        field("before", "What the task could not do before", "long_text", {
+          required: true,
+        }),
+        field("after", "What changed when we reran it", "long_text", {
+          required: true,
+        }),
+        field("remaining", "What is still in the way?", "long_text"),
+      ],
+      {
+        facilitatorNotes:
+          "Use one or two volunteers. Prefer a familiar reporting or finance wall and keep the connection read-only.",
+      },
+    ),
+    base(
+      "expand-stack",
+      "The stack—and what to ignore",
+      "Place prompt, context, harness, and loop engineering on the stack, then deliberately defer meta-harness and autonomous-loop complexity.",
+      26,
+      10,
+      {
+        successCriteria:
+          "Learners can explain why a loop amplifies a weak harness instead of repairing it.",
+      },
+    ),
+    worksheet(
+      "expand-assignment",
+      "The 2am question",
+      "Prepare the evidence and ownership needed for Session 4: Secure.",
+      30,
+      5,
+      [
+        field(
+          "worst-case",
+          "If this system did something wrong at 2am on Saturday, what is the worst thing that could happen?",
+          "long_text",
+          { required: true, section: "The 2am question" },
+        ),
+        field("who-finds-out", "Who would find out—and how?", "long_text", {
+          required: true,
+          section: "The 2am question",
+        }),
+        field(
+          "thin-fields",
+          "Which harness fields are still thin or vague?",
+          "long_text",
+          { section: "Before Session 4" },
+        ),
+        field(
+          "brain-owners",
+          "The three company-brain rows, owners, and next steps",
+          "long_text",
+          { required: true, section: "Before Session 4" },
+        ),
+        field(
+          "connection-change",
+          "If you connect one scoped system, what changed?",
+          "long_text",
+          { section: "Before Session 4" },
+        ),
+        field("remaining-wall", "The wall still in the way", "long_text", {
+          required: true,
+          section: "Commitment",
+        }),
+        field(
+          "commitment",
+          "My commitment",
+          "long_text",
+          {
+            required: true,
+            section: "Commitment",
+            placeholder:
+              "I am answering the 2am question before Session 4, in writing.",
+          },
+        ),
+      ],
+      {
+        facilitatorNotes:
+          "Close by reading out the three company-brain owners and having each learner say the commitment aloud.",
+      },
+    ),
+  ];
+}
+
+async function prepareExpandAssets(source, workDir) {
+  const deckBytes = await readFile(source.deck);
+  const deckPdf = await convertToPdf(source.deck, workDir, "expand-deck");
+  const renderedPages = await renderPdfPages(deckPdf);
+  const deckPages =
+    renderedPages.length === 64 ? renderedPages.slice(0, 32) : renderedPages;
+  const presentationText = await extractPresentationText(deckBytes);
+  const workbookPdf = await readFile(source.workbook);
+  const workbookDocx = await readFile(source.workbookDocx);
+  return {
+    expandDeck: {
+      key: "expandDeck",
+      name: path.basename(source.deck),
+      mimeType:
+        "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+      kind: "presentation",
+      visibility: "course",
+      bytes: deckBytes,
+      pages: deckPages,
+      textPreview: presentationText.split("--- Slide 33 ---")[0].trim(),
+      aliases: ["AI Quick Wins Session 3.pptx"],
+    },
+    expandWorkbookPdf: {
+      key: "expandWorkbookPdf",
+      name: "Session 3 Participant Workbook.pdf",
+      mimeType: "application/pdf",
+      kind: "pdf",
+      visibility: "course",
+      bytes: workbookPdf,
+      pages: [],
+      textPreview: await extractPdfText(workbookPdf),
+    },
+    expandWorkbookDocx: {
+      key: "expandWorkbookDocx",
+      name: "Session 3 Participant Workbook.docx",
+      mimeType:
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      kind: "document",
+      visibility: "course",
+      bytes: workbookDocx,
+      pages: [],
+      textPreview: await extractPdfText(
+        await convertToPdf(
+          source.workbookDocx,
+          workDir,
+          "expand-workbook-docx",
+        ),
+      ),
+    },
+  };
 }
 
 async function prepareCaptureAssets(source, workDir) {

@@ -476,6 +476,7 @@ export function LiveFacilitatorStudio({ sessionId }: { sessionId: string }) {
           parts={data.session.parts}
           running={running}
           onOpen={(partId) => command("open_part", undefined, partId)}
+          onClose={(partId) => command("close_part", undefined, partId)}
           onPaceChange={(partId, pace) =>
             command("set_part_pace", undefined, partId, pace)
           }
@@ -1180,11 +1181,13 @@ function ProgrammeSessionControls({
   parts,
   running,
   onOpen,
+  onClose,
   onPaceChange,
 }: {
   parts: LiveSessionPart[];
   running: boolean;
   onOpen: (partId: string) => void;
+  onClose: (partId: string) => void;
   onPaceChange: (partId: string, pace: LiveSessionPart["pace"]) => void;
 }) {
   return (
@@ -1195,8 +1198,8 @@ function ProgrammeSessionControls({
             Programme sessions
           </h3>
           <p className="mt-1 text-xs leading-5 text-slate-500">
-            Keep one learner link. Choose which session is open and how learners
-            move through it.
+            Keep one learner link. Open any combination of sessions and choose
+            how learners move through each one.
           </p>
         </div>
         <BookOpen className="h-4 w-4 shrink-0 text-slate-300" />
@@ -1266,16 +1269,16 @@ function ProgrammeSessionControls({
                 </select>
                 <button
                   type="button"
-                  disabled={running || open}
-                  onClick={() => onOpen(part.id)}
+                  disabled={running}
+                  onClick={() => (open ? onClose(part.id) : onOpen(part.id))}
                   className={cn(
                     "rounded-lg px-3 py-2 text-xs font-bold",
                     open
-                      ? "cursor-default bg-emerald-100 text-emerald-700"
+                      ? "border border-emerald-200 bg-white text-emerald-700"
                       : "bg-slate-950 text-white disabled:opacity-50",
                   )}
                 >
-                  {open ? "Open to learners" : "Open this session"}
+                  {open ? "Close to learners" : "Open this session"}
                 </button>
               </div>
             </article>

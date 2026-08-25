@@ -22,6 +22,7 @@ import {
   Paperclip,
   PenLine,
   Plug,
+  Radio,
   Settings2,
   Sparkles,
   Trash2,
@@ -841,6 +842,9 @@ function actionIcon(action: EducatorCopilotAction) {
       return <BookOpen className="mt-0.5 h-4 w-4 text-amber-600" />;
     case "update_experience_world":
       return <Globe2 className="mt-0.5 h-4 w-4 text-violet-600" />;
+    case "create_live_session":
+    case "update_live_session":
+      return <Radio className="mt-0.5 h-4 w-4 text-emerald-600" />;
     case "update_course_lesson":
     case "update_module":
     case "update_skill_path":

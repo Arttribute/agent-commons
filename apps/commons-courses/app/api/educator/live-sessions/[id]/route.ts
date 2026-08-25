@@ -135,8 +135,7 @@ export async function PATCH(
         { status: 404 },
       );
     }
-    for (const item of session.parts)
-      item.status = item.id === partId ? "open" : "closed";
+    part.status = "open";
     session.currentPartId = part.id;
     session.pace = part.pace;
     session.currentActivityId = firstActivityIdForPart(
@@ -144,6 +143,33 @@ export async function PATCH(
       part,
     );
     session.status = "live";
+    syncActivityStatusesForPace(session);
+  } else if (record.command === "close_part") {
+    const partId = typeof record.partId === "string" ? record.partId : "";
+    const part = session.parts.find(
+      (item: LiveSessionPart) => item.id === partId,
+    );
+    if (!part) {
+      return NextResponse.json(
+        { error: "Programme session not found." },
+        { status: 404 },
+      );
+    }
+    part.status = "closed";
+    const currentIsClosing = part.activityIds.includes(
+      session.currentActivityId || "",
+    );
+    if (currentIsClosing || session.currentPartId === part.id) {
+      const nextPart = session.parts.find(
+        (item: LiveSessionPart) => item.status === "open",
+      );
+      session.currentPartId = nextPart?.id;
+      session.pace = nextPart?.pace || session.pace;
+      session.currentActivityId = firstActivityIdForPart(
+        session.activities,
+        nextPart,
+      );
+    }
     syncActivityStatusesForPace(session);
   } else if (record.command === "set_part_pace") {
     const partId = typeof record.partId === "string" ? record.partId : "";

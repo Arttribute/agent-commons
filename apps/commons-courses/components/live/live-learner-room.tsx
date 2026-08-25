@@ -99,24 +99,37 @@ export function LiveLearnerRoom({ sessionId }: { sessionId: string }) {
 
   const applySelection = useCallback((next: LearnerLiveSession) => {
     const lastPresentedActivityId = presentedActivityRef.current;
-    const activePart =
+    const presentedChanged =
+      Boolean(next.currentActivityId) &&
+      next.currentActivityId !== lastPresentedActivityId;
+    const presentedPart =
       next.parts.find((part) => part.id === next.currentPartId) ||
       next.parts.find((part) => part.status === "open");
-    const activities = activePart
-      ? next.activities.filter((activity) =>
-          activePart.activityIds.includes(activity.id),
-        )
-      : next.activities;
-    setSelectedId((selectedActivityId) =>
-      resolveLearnerActivitySelection({
+    setSelectedId((selectedActivityId) => {
+      const selectedPart = next.parts.find(
+        (part) =>
+          part.status === "open" &&
+          part.activityIds.includes(selectedActivityId),
+      );
+      const activePart =
+        (presentedChanged ? presentedPart : selectedPart) || presentedPart;
+      const activities = activePart
+        ? next.activities.filter((activity) =>
+            activePart.activityIds.includes(activity.id),
+          )
+        : next.activities;
+      return resolveLearnerActivitySelection({
         activities,
-        currentActivityId: next.currentActivityId,
+        currentActivityId:
+          activePart?.id === presentedPart?.id
+            ? next.currentActivityId
+            : undefined,
         lastPresentedActivityId,
         pace: activePart?.pace || next.pace,
         responses: next.responses,
         selectedActivityId,
-      }),
-    );
+      });
+    });
     presentedActivityRef.current = next.currentActivityId || "";
   }, []);
 
@@ -299,7 +312,11 @@ export function LiveLearnerRoom({ sessionId }: { sessionId: string }) {
   const activity = session?.activities.find((item) => item.id === selectedId);
   const { activePart, activeActivities } = useMemo(() => {
     const part = session
-      ? session.parts.find((item) => item.id === session.currentPartId) ||
+      ? session.parts.find(
+          (item) =>
+            item.status === "open" && item.activityIds.includes(selectedId),
+        ) ||
+        session.parts.find((item) => item.id === session.currentPartId) ||
         session.parts.find((item) => item.status === "open")
       : undefined;
     return {
@@ -312,7 +329,7 @@ export function LiveLearnerRoom({ sessionId }: { sessionId: string }) {
           : session.activities
         : [],
     };
-  }, [session]);
+  }, [selectedId, session]);
   const activityIndex = activeActivities.findIndex(
     (item) => item.id === selectedId,
   );
@@ -552,7 +569,23 @@ export function LiveLearnerRoom({ sessionId }: { sessionId: string }) {
       </header>
       <div className="mx-auto w-full max-w-[1600px] px-3 py-4 sm:px-6 sm:py-6 lg:px-10 lg:py-8">
         {session.parts.length ? (
-          <ProgrammePartStrip session={session} activePartId={activePart?.id} />
+          <ProgrammePartStrip
+            session={session}
+            activePartId={activePart?.id}
+            onSelect={(partId) => {
+              const part = session.parts.find((item) => item.id === partId);
+              const firstAvailable = part?.activityIds
+                .map((id) => session.activities.find((item) => item.id === id))
+                .find(
+                  (item) =>
+                    item &&
+                    (item.status === "open" ||
+                      item.id === session.currentActivityId ||
+                      Boolean(session.responses[item.id])),
+                );
+              if (firstAvailable) setSelectedId(firstAvailable.id);
+            }}
+          />
         ) : null}
         <section className="min-w-0">
           <div className="mb-3 flex items-center justify-between text-xs opacity-50 sm:mb-4">
@@ -682,9 +715,11 @@ export function LiveLearnerRoom({ sessionId }: { sessionId: string }) {
 function ProgrammePartStrip({
   session,
   activePartId,
+  onSelect,
 }: {
   session: LearnerLiveSession;
   activePartId?: string;
+  onSelect: (partId: string) => void;
 }) {
   return (
     <section className="mb-5" aria-label="Programme sessions">
@@ -695,13 +730,20 @@ function ProgrammePartStrip({
         {session.parts.map((part, index) => {
           const active = part.id === activePartId && part.status === "open";
           return (
-            <div
+            <button
+              type="button"
               key={part.id}
+              disabled={part.status === "closed"}
+              onClick={() => onSelect(part.id)}
               className={cn(
-                "flex min-w-0 items-center gap-3 rounded-xl border px-3.5 py-3 lg:min-w-64",
+                "flex min-w-0 items-center gap-3 rounded-xl border px-3.5 py-3 text-left transition lg:min-w-64",
                 active
                   ? "border-[var(--course-primary)] bg-[var(--course-surface)] shadow-sm"
                   : "border-slate-200 bg-[var(--course-surface)]/60 opacity-70",
+                part.status === "open" &&
+                  !active &&
+                  "hover:border-[var(--course-primary)] hover:opacity-100",
+                part.status === "closed" && "cursor-default",
               )}
             >
               <span
@@ -731,7 +773,7 @@ function ProgrammePartStrip({
               ) : (
                 <span className="h-2 w-2 shrink-0 rounded-full bg-emerald-500" />
               )}
-            </div>
+            </button>
           );
         })}
       </div>

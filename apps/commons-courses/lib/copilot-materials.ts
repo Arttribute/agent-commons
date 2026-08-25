@@ -1,4 +1,5 @@
 import zlib from "node:zlib";
+import JSZip from "jszip";
 
 export type MaterialExtract = {
   name: string;
@@ -43,6 +44,30 @@ export async function extractMaterial(
     };
   }
 
+  if (/\.docx$/i.test(file.name)) {
+    const text = await extractOpenXmlText(buffer, "docx", maxTextChars);
+    return {
+      name: file.name,
+      type,
+      size: file.size,
+      text:
+        text ||
+        "Word document uploaded, but no extractable text was found.",
+    };
+  }
+
+  if (/\.pptx$/i.test(file.name)) {
+    const text = await extractOpenXmlText(buffer, "pptx", maxTextChars);
+    return {
+      name: file.name,
+      type,
+      size: file.size,
+      text:
+        text ||
+        "PowerPoint uploaded, but no extractable slide text was found.",
+    };
+  }
+
   if (
     type.startsWith("text/") ||
     /\.(md|markdown|txt|csv|json)$/i.test(file.name)
@@ -59,7 +84,7 @@ export async function extractMaterial(
     name: file.name,
     type,
     size: file.size,
-    text: `Uploaded unsupported file type ${type}. Use text, PDF, or image files for best results.`,
+    text: `Uploaded unsupported file type ${type}. Use Word, PowerPoint, text, PDF, or image files for best results.`,
   };
 }
 
@@ -139,12 +164,84 @@ export function guessMimeType(name: string) {
   if (/\.docx$/i.test(name)) {
     return "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
   }
+  if (/\.pptx$/i.test(name)) {
+    return "application/vnd.openxmlformats-officedocument.presentationml.presentation";
+  }
   if (/\.xlsx?$/i.test(name)) {
     return "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
   }
   if (/\.(png|jpg|jpeg|webp)$/i.test(name)) return "image/*";
   if (/\.(md|markdown|txt|csv|json)$/i.test(name)) return "text/plain";
   return "application/octet-stream";
+}
+
+async function extractOpenXmlText(
+  buffer: Buffer,
+  kind: "docx" | "pptx",
+  maxTextChars: number,
+) {
+  try {
+    const archive = await JSZip.loadAsync(buffer);
+    if (kind === "docx") {
+      const document = archive.file("word/document.xml");
+      if (!document) return "";
+      return xmlToText(await document.async("string"))
+        .replace(/\n{3,}/g, "\n\n")
+        .trim()
+        .slice(0, maxTextChars);
+    }
+
+    const slideFiles = Object.keys(archive.files)
+      .filter((name) => /^ppt\/slides\/slide\d+\.xml$/i.test(name))
+      .sort((left, right) => slideNumber(left) - slideNumber(right));
+    const slides: string[] = [];
+    for (const [index, name] of slideFiles.entries()) {
+      const entry = archive.file(name);
+      if (!entry) continue;
+      const text = xmlToText(await entry.async("string")).trim();
+      slides.push(`--- Slide ${index + 1} ---\n${text || "[No text]"}`);
+      if (slides.join("\n\n").length >= maxTextChars) break;
+    }
+    return slides.join("\n\n").slice(0, maxTextChars);
+  } catch {
+    return "";
+  }
+}
+
+function slideNumber(name: string) {
+  return Number(name.match(/slide(\d+)\.xml$/i)?.[1] || 0);
+}
+
+function xmlToText(xml: string) {
+  return decodeXmlEntities(
+    xml
+      .replace(/<w:tab\b[^>]*\/>/gi, "\t")
+      .replace(/<a:br\b[^>]*\/>/gi, "\n")
+      .replace(/<w:br\b[^>]*\/>/gi, "\n")
+      .replace(/<\/w:p>/gi, "\n")
+      .replace(/<\/w:tr>/gi, "\n")
+      .replace(/<\/w:tc>/gi, "\t")
+      .replace(/<\/a:p>/gi, "\n")
+      .replace(/<[^>]+>/g, ""),
+  )
+    .replace(/[ \t]+\n/g, "\n")
+    .replace(/[ \t]{2,}/g, " ")
+    .trim();
+}
+
+function decodeXmlEntities(value: string) {
+  return value
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&apos;/g, "'")
+    .replace(/&amp;/g, "&")
+    .replace(/&#(\d+);/g, (_, digits: string) =>
+      String.fromCodePoint(Number(digits)),
+    )
+    .replace(/&#x([\da-f]+);/gi, (_, digits: string) =>
+      String.fromCodePoint(Number.parseInt(digits, 16)),
+    );
 }
 
 function formatBytes(bytes: number) {
