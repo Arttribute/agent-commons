@@ -5,15 +5,24 @@ import type { CopilotUser } from "@/lib/educator-copilot-agent";
 import { buildManagedCoursesFilter } from "@/lib/educator-auth";
 import { resolveEducatorCopilotImageUrl } from "@/lib/educator-copilot-files";
 import {
+  defaultLiveLearnerCopilotPolicy,
+  normalizeLiveLearnerCopilotPolicy,
+} from "@/lib/live-copilot-policy";
+import {
   describeExperienceCopilotImpact,
   EXPERIENCE_COPILOT_WORLD_GUIDE,
 } from "@/lib/experience-ai";
 import { normalizeExperienceDocument } from "@/lib/experience-schema";
 import { uploadCourseMediaToS3 } from "@/lib/media-storage";
-import { createJoinCode, normalizeActivities } from "@/lib/live-session-input";
+import {
+  createJoinCode,
+  normalizeActivities,
+  normalizeSessionParts,
+} from "@/lib/live-session-input";
 import { indexCourseForSearch } from "@/lib/search-indexers";
 import Assignment from "@/models/Assignment";
 import Course from "@/models/Course";
+import CourseMaterial from "@/models/CourseMaterial";
 import Enrollment from "@/models/Enrollment";
 import ExperienceProject from "@/models/ExperienceProject";
 import LiveParticipant from "@/models/LiveParticipant";
@@ -28,7 +37,11 @@ import type {
   EducatorCopilotPageContext,
 } from "@/types/educator-copilot";
 import type { SkillChallenge, SkillPack, SkillQuestion } from "@/types/skills";
-import type { LiveActivity } from "@/types/live-session";
+import type {
+  LiveActivity,
+  LiveSessionPart,
+  LiveSessionSettings,
+} from "@/types/live-session";
 
 /** JSON-schema tool catalog handed to the agent run as cliTools. */
 export type CopilotToolDefinition = {
@@ -275,6 +288,28 @@ export const educatorCopilotToolCatalog: CopilotToolDefinition[] = [
     },
   },
   {
+    name: "get_live_session",
+    description:
+      "Read one complete managed live programme, including stateVersion, every activity and structured field, programme-session parts, independent open/closed state, pacing, learner-copilot policy, and material references. Always call this before update_live_session.",
+    parameters: {
+      type: "object",
+      properties: {
+        sessionId: { type: "string" },
+      },
+      required: ["sessionId"],
+    },
+  },
+  {
+    name: "list_course_materials",
+    description:
+      "List the private presentations and PDFs already attached to a managed course. Use returned material IDs when mapping slides or documents to live activities.",
+    parameters: {
+      type: "object",
+      properties: { courseSlug: { type: "string" } },
+      required: ["courseSlug"],
+    },
+  },
+  {
     name: "read_attachment",
     description:
       "Read the full extracted text of a file the educator uploaded in this chat session. Use whenever the educator refers to an uploaded file.",
@@ -346,6 +381,11 @@ export const educatorCopilotToolCatalog: CopilotToolDefinition[] = [
                   "break",
                 ],
               },
+              id: {
+                type: "string",
+                description:
+                  "Stable activity ID. Always provide one when activities are grouped into programme sessions or when updating an existing programme.",
+              },
               title: { type: "string" },
               prompt: { type: "string" },
               instructions: { type: "string" },
@@ -356,6 +396,11 @@ export const educatorCopilotToolCatalog: CopilotToolDefinition[] = [
                 type: "string",
                 description:
                   "ID of a private course material to present inside this activity.",
+              },
+              materialAttachmentName: {
+                type: "string",
+                description:
+                  "Exact uploaded PowerPoint or PDF filename to attach to the course and present in this activity. Prefer this for a source file uploaded in the current chat.",
               },
               materialStartSlide: {
                 type: "number",
@@ -474,9 +519,77 @@ export const educatorCopilotToolCatalog: CopilotToolDefinition[] = [
             required: ["type", "title"],
           },
         },
+        sourceMaterials: {
+          type: "array",
+          description:
+            "Exact uploaded PowerPoint/PDF filenames that should become private course/live materials. Activities can reference them with materialAttachmentName.",
+          items: { type: "string" },
+        },
+        parts: {
+          type: "array",
+          description:
+            "Programme sessions or days. Each part has independent availability and pacing; multiple parts may be open at once.",
+          items: {
+            type: "object",
+            properties: {
+              id: { type: "string" },
+              title: { type: "string" },
+              description: { type: "string" },
+              status: { type: "string", enum: ["open", "closed"] },
+              pace: { type: "string", enum: ["facilitator", "learner"] },
+              activityIds: { type: "array", items: { type: "string" } },
+            },
+            required: ["id", "title", "status", "pace", "activityIds"],
+          },
+        },
+        learnerCopilot: {
+          type: "object",
+          description:
+            "Whether the learner copilot appears and what it may do during this programme.",
+          properties: {
+            enabled: { type: "boolean" },
+            explainCurrentActivity: { type: "boolean" },
+            coachResponses: { type: "boolean" },
+            useCourseMaterials: { type: "boolean" },
+            giveDirectExplanations: { type: "boolean" },
+          },
+        },
         reason: { type: "string" },
       },
       required: ["courseSlug", "title", "activities"],
+    },
+  },
+  {
+    name: "update_live_session",
+    description:
+      "Update an existing live programme after reading it with get_live_session. Supports the complete run of show, independent programme-session parts, pacing, availability, learner-copilot policy, and uploaded deck/PDF attachment mapping. Preserve stable activity IDs so learner responses remain connected. This is approval-gated in manual mode.",
+    parameters: {
+      type: "object",
+      properties: {
+        courseSlug: { type: "string" },
+        sessionId: { type: "string" },
+        baseVersion: { type: "number" },
+        title: { type: "string" },
+        description: { type: "string" },
+        pace: { type: "string", enum: ["facilitator", "learner"] },
+        access: { type: "string", enum: ["enrolled", "invited", "open"] },
+        activities: {
+          type: "array",
+          description:
+            "Complete replacement activity list. Use the same activity object structure as create_live_session and preserve IDs.",
+          items: { type: "object" },
+        },
+        parts: {
+          type: "array",
+          description:
+            "Complete replacement programme-session list. Multiple parts can have status open simultaneously.",
+          items: { type: "object" },
+        },
+        sourceMaterials: { type: "array", items: { type: "string" } },
+        learnerCopilot: { type: "object" },
+        reason: { type: "string" },
+      },
+      required: ["courseSlug", "sessionId", "baseVersion"],
     },
   },
   {
@@ -803,6 +916,10 @@ async function runTool(
       return toolListAssignments(ctx, args);
     case "list_live_sessions":
       return toolListLiveSessions(ctx, args);
+    case "get_live_session":
+      return toolGetLiveSession(ctx, args);
+    case "list_course_materials":
+      return toolListCourseMaterials(ctx, args);
     case "read_attachment":
       return toolReadAttachment(ctx, args);
     case "update_lesson":
@@ -814,6 +931,7 @@ async function runTool(
     case "update_skill_path":
     case "update_skill_challenge":
     case "create_live_session":
+    case "update_live_session":
       return toolContentWrite(ctx, name, args);
     case "update_experience_world":
       return toolExperienceWrite(ctx, args);
@@ -1156,12 +1274,16 @@ async function toolListLiveSessions(
         courseTitle: course?.title,
         courseSlug: course?.slug,
         status: session.status,
+        stateVersion: session.stateVersion,
         pace: session.pace,
         access: session.access,
         joinCode: session.joinCode,
         participants: participantsBySession.get(String(session._id)) || 0,
         scheduledStart: session.scheduledStart,
         currentActivityId: session.currentActivityId,
+        currentPartId: session.currentPartId,
+        parts: session.parts,
+        settings: session.settings,
         activities: session.activities.map(
           (activity: LiveActivity, index: number) => ({
             index,
@@ -1178,6 +1300,66 @@ async function toolListLiveSessions(
         updatedAt: session.updatedAt,
       };
     }),
+  };
+}
+
+async function toolGetLiveSession(
+  ctx: CopilotToolContext,
+  args: Record<string, unknown>,
+) {
+  const sessionId = cleanString(args.sessionId);
+  if (!sessionId || !Types.ObjectId.isValid(sessionId)) {
+    return { error: "A valid sessionId from list_live_sessions is required." };
+  }
+  const session = await findManagedLiveSession(ctx.user, sessionId);
+  if (!session) {
+    return {
+      error:
+        "Live programme not found or it does not belong to a managed course.",
+    };
+  }
+  return {
+    sessionId: String(session._id),
+    courseSlug: session.courseSlug,
+    title: session.title,
+    description: session.description,
+    status: session.status,
+    stateVersion: session.stateVersion,
+    pace: session.pace,
+    access: session.access,
+    currentActivityId: session.currentActivityId,
+    currentPartId: session.currentPartId,
+    activities: session.activities,
+    parts: session.parts,
+    settings: session.settings,
+    facilitatorHref: `/educator/courses/${session.courseSlug}/live/${String(session._id)}`,
+  };
+}
+
+async function toolListCourseMaterials(
+  ctx: CopilotToolContext,
+  args: Record<string, unknown>,
+) {
+  const courseSlug = cleanString(args.courseSlug);
+  if (!courseSlug) return { error: "courseSlug is required." };
+  const course = await findManagedCourse(ctx.user, courseSlug);
+  if (!course) return { error: `No managed course "${courseSlug}".` };
+  const materials = await CourseMaterial.find({ courseId: course._id })
+    .sort({ createdAt: -1 })
+    .lean();
+  return {
+    courseSlug,
+    total: materials.length,
+    materials: materials.map((material) => ({
+      materialId: String(material._id),
+      name: material.name,
+      kind: material.kind,
+      mimeType: material.mimeType,
+      size: material.size,
+      visibility: material.visibility,
+      status: material.status,
+      textPreview: truncate(material.textPreview, 800),
+    })),
   };
 }
 
@@ -1524,6 +1706,9 @@ async function persistContentAttachments(
   name: string,
   args: Record<string, unknown>,
 ) {
+  if (name === "create_live_session" || name === "update_live_session") {
+    return prepareLiveSessionMaterials(ctx, args);
+  }
   if (
     name !== "update_lesson" &&
     name !== "add_lesson" &&
@@ -1607,6 +1792,101 @@ async function persistContentAttachments(
   else if (name === "add_module") prepared.module = replace(args.module);
   else prepared.patch = replace(args.patch);
   return prepared;
+}
+
+async function prepareLiveSessionMaterials(
+  ctx: CopilotToolContext,
+  args: Record<string, unknown>,
+) {
+  const courseSlug = cleanString(args.courseSlug);
+  const course = courseSlug
+    ? await findManagedCourse(ctx.user, courseSlug)
+    : null;
+  if (!course) return args;
+  const requestedNames = new Set(
+    (Array.isArray(args.sourceMaterials) ? args.sourceMaterials : [])
+      .map(cleanString)
+      .filter((name): name is string => Boolean(name)),
+  );
+  for (const raw of Array.isArray(args.activities) ? args.activities : []) {
+    const name = cleanString(asRecord(raw).materialAttachmentName);
+    if (name) requestedNames.add(name);
+  }
+  if (!requestedNames.size) return args;
+
+  const planned: Array<
+    NonNullable<
+      Extract<
+        EducatorCopilotAction,
+        { type: "create_live_session" }
+      >["session"]["materials"]
+    >[number]
+  > = [];
+  const materialIds = new Map<string, string>();
+  for (const requestedName of requestedNames) {
+    const normalized = requestedName.toLowerCase();
+    const material = ctx.materials.find(
+      (candidate) => candidate.name.toLowerCase() === normalized,
+    );
+    if (!material) {
+      throw new Error(
+        `Source material “${requestedName}” was not uploaded in this chat. Use an exact filename from read_attachment.`,
+      );
+    }
+    const isPdf =
+      material.type === "application/pdf" || /\.pdf$/i.test(material.name);
+    const isPresentation =
+      material.type.includes("presentation") || /\.pptx?$/i.test(material.name);
+    if (!isPdf && !isPresentation) {
+      throw new Error(
+        `Source material “${material.name}” cannot be presented directly. Use its PDF or PowerPoint version; Word files can still be read to design activities.`,
+      );
+    }
+    if (!material.fileId) {
+      throw new Error(
+        `Source material “${material.name}” is not in durable file storage. Upload it again and retry.`,
+      );
+    }
+    const existing = await CourseMaterial.findOne({ fileId: material.fileId });
+    if (existing && String(existing.courseId) !== String(course._id)) {
+      throw new Error(
+        `Source material “${material.name}” is already attached to another course. Upload a new copy for this course.`,
+      );
+    }
+    const id = existing ? String(existing._id) : String(new Types.ObjectId());
+    materialIds.set(normalized, id);
+    planned.push({
+      id,
+      fileId: material.fileId,
+      name: material.name,
+      mimeType: material.type,
+      size: material.size,
+      kind: isPdf ? "pdf" : "presentation",
+      visibility: "course",
+      textPreview: material.text.slice(0, 30_000),
+      ownerPrincipalId:
+        ctx.user.identityUserId || ctx.user.email || ctx.user.id,
+      existing: Boolean(existing),
+    });
+  }
+
+  const preparedActivities = (Array.isArray(args.activities)
+    ? args.activities
+    : []
+  ).map((raw) => {
+    const activity = { ...asRecord(raw) };
+    const attachmentName = cleanString(activity.materialAttachmentName);
+    if (attachmentName) {
+      activity.materialId = materialIds.get(attachmentName.toLowerCase());
+    }
+    delete activity.materialAttachmentName;
+    return activity;
+  });
+  return {
+    ...args,
+    activities: preparedActivities,
+    _plannedMaterials: planned,
+  };
 }
 
 async function persistUploadedCopilotImage(
@@ -1776,7 +2056,8 @@ type ContentWriteAction = Extract<
       | "create_skill_path"
       | "update_skill_path"
       | "update_skill_challenge"
-      | "create_live_session";
+      | "create_live_session"
+      | "update_live_session";
   }
 >;
 
@@ -1814,17 +2095,62 @@ function buildContentAction(
         pace,
         access,
         activities,
+        parts: normalizeSessionParts(args.parts, activities),
+        settings: normalizeCopilotLiveSettings(args.learnerCopilot),
+        materials: normalizePlannedMaterials(args._plannedMaterials),
       },
-      preview: activities
-        .map(
-          (activity, index) =>
-            `${index + 1}. ${activity.title} · ${activity.type}${
-              activity.estimatedMinutes
-                ? ` · ${activity.estimatedMinutes} min`
-                : ""
-            }`,
-        )
-        .join("\n"),
+      preview: previewLiveProgramme(
+        activities,
+        normalizeSessionParts(args.parts, activities),
+      ),
+    };
+  }
+
+  if (name === "update_live_session") {
+    const sessionId = cleanString(args.sessionId);
+    const baseVersion = toIndex(args.baseVersion);
+    if (!sessionId || !Types.ObjectId.isValid(sessionId) || baseVersion === null)
+      return null;
+    const patch: Extract<
+      EducatorCopilotAction,
+      { type: "update_live_session" }
+    >["patch"] = {};
+    const title = cleanString(args.title);
+    if (title) patch.title = title;
+    if ("description" in args)
+      patch.description = cleanString(args.description);
+    if (args.pace === "learner" || args.pace === "facilitator")
+      patch.pace = args.pace;
+    if (
+      args.access === "open" ||
+      args.access === "invited" ||
+      args.access === "enrolled"
+    )
+      patch.access = args.access;
+    if (Array.isArray(args.activities)) {
+      patch.activities = normalizeActivities(args.activities);
+      if (!patch.activities.length) return null;
+    }
+    if (Array.isArray(args.parts)) {
+      if (!patch.activities) return null;
+      patch.parts = normalizeSessionParts(args.parts, patch.activities);
+    }
+    if (args.learnerCopilot && typeof args.learnerCopilot === "object")
+      patch.settings = normalizeCopilotLiveSettings(args.learnerCopilot);
+    const materials = normalizePlannedMaterials(args._plannedMaterials);
+    if (materials.length) patch.materials = materials;
+    if (!Object.keys(patch).length) return null;
+    return {
+      ...base,
+      type: "update_live_session",
+      label: `Update live programme${title ? ` “${title}”` : ""}`,
+      courseSlug,
+      sessionId,
+      baseVersion,
+      patch,
+      preview: patch.activities
+        ? previewLiveProgramme(patch.activities, patch.parts || [])
+        : previewFromPatch(patch as Record<string, unknown>),
     };
   }
 
@@ -2199,11 +2525,18 @@ export async function applyEducatorCopilotAction({
 
   try {
     if (action.type === "create_live_session") {
+      await ensureCourseMaterials(
+        course,
+        ctxUserObjectId(user),
+        action.session.materials || [],
+      );
       let joinCode = createJoinCode();
       while (await LiveSession.exists({ joinCode }))
         joinCode = createJoinCode();
+      const session = { ...action.session };
+      delete session.materials;
       const liveSession = await LiveSession.create({
-        ...action.session,
+        ...session,
         courseId: course._id,
         courseSlug: course.slug,
         joinCode,
@@ -2225,6 +2558,51 @@ export async function applyEducatorCopilotAction({
         ...action,
         status: "applied",
         result: `Created the live session. Review and facilitate it at /educator/courses/${course.slug}/live/${String(liveSession._id)}.`,
+      };
+    }
+    if (action.type === "update_live_session") {
+      const liveSession = await findManagedLiveSession(user, action.sessionId);
+      if (!liveSession || String(liveSession.courseId) !== String(course._id)) {
+        return {
+          ...action,
+          status: "failed",
+          result: "Live programme not found.",
+        };
+      }
+      if (liveSession.stateVersion !== action.baseVersion) {
+        return {
+          ...action,
+          status: "failed",
+          result:
+            "The live programme changed after this proposal was created. Ask the copilot to reread it and prepare a fresh edit.",
+        };
+      }
+      await ensureCourseMaterials(
+        course,
+        ctxUserObjectId(user),
+        action.patch.materials || [],
+      );
+      const patch = { ...action.patch };
+      delete patch.materials;
+      if (patch.activities) {
+        const validIds = new Set(patch.activities.map((activity) => activity.id));
+        if (
+          liveSession.currentActivityId &&
+          !validIds.has(liveSession.currentActivityId)
+        ) {
+          liveSession.currentActivityId = undefined;
+        }
+      }
+      Object.assign(liveSession, patch);
+      liveSession.stateVersion += 1;
+      liveSession.markModified("activities");
+      liveSession.markModified("parts");
+      liveSession.markModified("settings");
+      await liveSession.save();
+      return {
+        ...action,
+        status: "applied",
+        result: `Updated the live programme. Review it at /educator/courses/${course.slug}/live/${String(liveSession._id)}. Existing learner responses remain stored against their stable activity IDs.`,
       };
     }
     switch (action.type) {
@@ -2469,6 +2847,60 @@ async function findManagedExperience(user: CopilotUser, experienceId: string) {
     ...managedFilter(user),
   });
   return course ? project : null;
+}
+
+async function findManagedLiveSession(user: CopilotUser, sessionId: string) {
+  const session = await LiveSession.findById(sessionId);
+  if (!session) return null;
+  const course = await Course.exists({
+    _id: session.courseId,
+    ...managedFilter(user),
+  });
+  return course ? session : null;
+}
+
+function ctxUserObjectId(user: CopilotUser) {
+  if (!Types.ObjectId.isValid(user.id)) {
+    throw new Error("The educator account has an invalid local user ID.");
+  }
+  return new Types.ObjectId(user.id);
+}
+
+async function ensureCourseMaterials(
+  course: { _id: unknown; slug: string },
+  ownerUserId: Types.ObjectId,
+  materials: NonNullable<
+    Extract<
+      EducatorCopilotAction,
+      { type: "create_live_session" }
+    >["session"]["materials"]
+  >,
+) {
+  for (const material of materials) {
+    if (material.existing) continue;
+    await CourseMaterial.updateOne(
+      { _id: new Types.ObjectId(material.id) },
+      {
+        $setOnInsert: {
+          courseId: course._id,
+          courseSlug: course.slug,
+          ownerUserId,
+          ownerPrincipalId: material.ownerPrincipalId,
+          fileId: material.fileId,
+          storage: "commons",
+          slideGridFsIds: [],
+          name: material.name,
+          mimeType: material.mimeType,
+          size: material.size,
+          kind: material.kind,
+          visibility: material.visibility,
+          status: "uploaded",
+          textPreview: material.textPreview,
+        },
+      },
+      { upsert: true },
+    );
+  }
 }
 
 function recountCourse(course: {
@@ -2723,6 +3155,64 @@ function previewSkillPathPatch(
     );
   }
   return metadata.join("\n").slice(0, 1200);
+}
+
+function normalizeCopilotLiveSettings(value: unknown): LiveSessionSettings {
+  return {
+    allowLateJoin: true,
+    showParticipantNames: false,
+    showLeaderboard: false,
+    learnerCopilot: normalizeLiveLearnerCopilotPolicy(
+      value && typeof value === "object"
+        ? value
+        : defaultLiveLearnerCopilotPolicy,
+    ),
+  };
+}
+
+function normalizePlannedMaterials(value: unknown) {
+  if (!Array.isArray(value)) return [];
+  return value.filter(
+    (item): item is NonNullable<
+      Extract<
+        EducatorCopilotAction,
+        { type: "create_live_session" }
+      >["session"]["materials"]
+    >[number] =>
+      Boolean(
+        item &&
+          typeof item === "object" &&
+          cleanString(asRecord(item).id) &&
+          cleanString(asRecord(item).fileId) &&
+          cleanString(asRecord(item).name),
+      ),
+  );
+}
+
+function previewLiveProgramme(
+  activities: LiveActivity[],
+  parts: LiveSessionPart[],
+) {
+  const activityById = new Map(
+    activities.map((activity) => [activity.id, activity]),
+  );
+  const rows = parts.length
+    ? parts.flatMap((part) => [
+        `${part.status === "open" ? "Open" : "Closed"} · ${part.title} · ${part.pace === "learner" ? "learner-paced" : "facilitator-paced"}`,
+        ...part.activityIds.flatMap((id, index) => {
+          const activity = activityById.get(id);
+          return activity
+            ? [
+                `  ${index + 1}. ${activity.title} · ${activity.type}${activity.estimatedMinutes ? ` · ${activity.estimatedMinutes} min` : ""}`,
+              ]
+            : [];
+        }),
+      ])
+    : activities.map(
+        (activity, index) =>
+          `${index + 1}. ${activity.title} · ${activity.type}${activity.estimatedMinutes ? ` · ${activity.estimatedMinutes} min` : ""}`,
+      );
+  return rows.join("\n").slice(0, 2_000);
 }
 
 function previewFromPatch(patch: Record<string, unknown>) {

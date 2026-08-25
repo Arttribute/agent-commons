@@ -71,6 +71,25 @@ test("an educator-guided open part exposes only the presented activity", () => {
   );
 });
 
+test("keeps multiple programme sessions available at the same time", () => {
+  const multipleOpen = parts.map((part) => ({
+    ...part,
+    status: "open" as const,
+  }));
+  assert.deepEqual(
+    activityStatusesForParts({
+      activities,
+      parts: multipleOpen,
+      currentActivityId: "capture-1",
+    }),
+    {
+      "discover-1": "open",
+      "capture-1": "open",
+      "capture-2": "closed",
+    },
+  );
+});
+
 function activity(id: string): LiveActivity {
   return {
     id,
