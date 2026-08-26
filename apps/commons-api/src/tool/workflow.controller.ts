@@ -247,8 +247,8 @@ export class WorkflowController {
       taskId?: string;
       inputData?: Record<string, any>;
       inputs?: Record<string, any>; // Accept both inputData and inputs
-      userId?: string;
     },
+    @Req() req: Request,
   ) {
     const executionId = await this.workflowExecutor.executeWorkflow({
       workflowId,
@@ -256,7 +256,7 @@ export class WorkflowController {
       sessionId: body.sessionId,
       taskId: body.taskId,
       inputData: body.inputData || body.inputs || {},
-      userId: body.userId,
+      userId: resolveCallerId(req),
     });
 
     // Fetch and return the execution details

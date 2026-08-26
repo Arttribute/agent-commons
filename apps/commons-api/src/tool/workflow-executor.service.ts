@@ -55,6 +55,30 @@ interface NodeExecutionResult {
   duration: number;
 }
 
+const APPROVAL_SENSITIVE_KEY =
+  /(authorization|cookie|secret|password|passwd|token|api[-_]?key|private[-_]?key|credential)/i;
+
+/** Stable, bounded approval evidence with credentials excluded before hashing. */
+function approvalEvidence(
+  value: unknown,
+  depth = 0,
+): unknown {
+  if (value == null || typeof value === 'boolean' || typeof value === 'number')
+    return value;
+  if (typeof value === 'string') return value.slice(0, 2000);
+  if (depth >= 4) return '[max-depth]';
+  if (Array.isArray(value))
+    return value.slice(0, 50).map((item) => approvalEvidence(item, depth + 1));
+  if (typeof value !== 'object') return String(value);
+  return Object.fromEntries(
+    Object.entries(value as Record<string, unknown>)
+      .filter(([key]) => !APPROVAL_SENSITIVE_KEY.test(key))
+      .sort(([left], [right]) => left.localeCompare(right))
+      .slice(0, 50)
+      .map(([key, child]) => [key, approvalEvidence(child, depth + 1)]),
+  );
+}
+
 /** Thrown by human_approval nodes to pause execution mid-graph. */
 class HumanApprovalPauseError extends Error {
   constructor(
@@ -266,10 +290,18 @@ export class WorkflowExecutorService {
       workflow?.definition,
       pausedAtNode,
     );
-    const responseFieldNames = Object.keys(approvalData ?? {}).slice(0, 50);
+    const safeApprovalData = approvalEvidence(approvalData ?? {}) as Record<
+      string,
+      unknown
+    >;
+    const responseFieldNames = Object.keys(safeApprovalData).slice(0, 50);
+    const approvalNote =
+      typeof approvalData?.note === 'string'
+        ? approvalData.note.trim().slice(0, 2000)
+        : undefined;
     const responseHash = approvalData
       ? `sha256:${createHash('sha256')
-          .update(JSON.stringify({ responseFieldNames }))
+          .update(JSON.stringify(safeApprovalData))
           .digest('hex')}`
       : undefined;
     this.ensureResumedWorkflowProvenance(
@@ -312,6 +344,7 @@ export class WorkflowExecutorService {
             prompt: approvalPrompt,
             responseFieldNames,
             responseHash,
+            note: approvalNote,
           },
         },
       },
@@ -380,7 +413,10 @@ export class WorkflowExecutorService {
         approvalToken: null as any,
       })
       .where(eq(schema.workflowExecution.executionId, executionId));
-    this.ensureResumedWorkflowProvenance(execution);
+    this.ensureResumedWorkflowProvenance(
+      execution,
+      (execution as any).workflow?.ownerId,
+    );
     this.recordWorkflowEvent(executionId, {
       category: 'system',
       eventType: 'workflow.decision.human_approval',

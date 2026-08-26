@@ -60,6 +60,7 @@ export interface ProvenanceLineageMetadata {
       questionIds?: string[];
       responseFieldNames?: string[];
       responseHash?: string;
+      note?: string;
       reason?: string;
     };
   };

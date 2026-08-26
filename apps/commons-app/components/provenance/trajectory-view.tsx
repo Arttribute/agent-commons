@@ -74,9 +74,10 @@ type Lineage = {
       reviewerId?: string;
       reviewerType?: string;
       prompt?: string;
-      responseFieldNames?: string[];
-      responseHash?: string;
-      reason?: string;
+    responseFieldNames?: string[];
+    responseHash?: string;
+    note?: string;
+    reason?: string;
     };
   };
 };
@@ -104,7 +105,9 @@ type Event = {
   contentHash?: string;
 };
 type Trajectory = {
-  sessionId: string;
+  sessionId?: string;
+  scopeType?: string;
+  scopeId?: string;
   runs: Run[];
   events: Event[];
   cursor?: string;
@@ -150,7 +153,15 @@ const ms = (value?: number) =>
       ? `${(value / 1000).toFixed(1)}s`
       : `${Math.round(value)}ms`;
 
-export function TrajectoryView({ sessionId }: { sessionId: string }) {
+type TrajectoryViewProps =
+  | { sessionId: string; scopeType?: never; scopeId?: never }
+  | { sessionId?: never; scopeType: string; scopeId: string };
+
+export function TrajectoryView({
+  sessionId,
+  scopeType,
+  scopeId,
+}: TrajectoryViewProps) {
   const [data, setData] = useState<Trajectory | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [selected, setSelected] = useState<Event | null>(null);
@@ -158,11 +169,15 @@ export function TrajectoryView({ sessionId }: { sessionId: string }) {
   const [detailMode, setDetailMode] = useState<"simple" | "expert">("simple");
   const cursor = useRef<string | undefined>(undefined);
   const load = useCallback(async () => {
-    const suffix = cursor.current
+    const supportsIncremental = Boolean(sessionId);
+    const suffix = supportsIncremental && cursor.current
       ? `?since=${encodeURIComponent(cursor.current)}`
       : "";
+    const endpoint = sessionId
+      ? `/api/provenance/sessions/${encodeURIComponent(sessionId)}`
+      : `/api/provenance/scopes/${encodeURIComponent(scopeType!)}/${encodeURIComponent(scopeId!)}`;
     const response = await fetch(
-      `/api/provenance/sessions/${encodeURIComponent(sessionId)}${suffix}`,
+      `${endpoint}${suffix}`,
       { cache: "no-store" },
     );
     const body = await response.json().catch(() => ({}));
@@ -214,10 +229,15 @@ export function TrajectoryView({ sessionId }: { sessionId: string }) {
         },
       };
     });
-    cursor.current = body.data.cursor ?? cursor.current;
+    if (supportsIncremental)
+      cursor.current = body.data.cursor ?? cursor.current;
     setError(null);
-  }, [sessionId]);
+  }, [scopeId, scopeType, sessionId]);
   useEffect(() => {
+    cursor.current = undefined;
+    setData(null);
+    setSelected(null);
+    setError(null);
     void load().catch((e) => setError(e.message));
   }, [load]);
   useEffect(() => {
@@ -610,6 +630,11 @@ function SimpleReport({ events }: { events: Event[] }) {
               {item.approval?.reason && (
                 <span className="mt-1 block text-xs text-destructive">
                   Reason: {item.approval.reason}
+                </span>
+              )}
+              {item.approval?.note && (
+                <span className="mt-1 block text-xs">
+                  Review note: {item.approval.note}
                 </span>
               )}
             </div>
