@@ -131,10 +131,11 @@ jobs:
                     --max-results 20 \
                     --query '{serviceDeployments:serviceDeployments[*].{arn:serviceDeploymentArn,status:status,statusReason:statusReason,createdAt:createdAt,startedAt:startedAt,finishedAt:finishedAt,targetRevision:targetServiceRevisionArn}}' \
                     --output json)
-                  available_secret_keys=$(aws secretsmanager get-secret-value \
+                  available_secret_json=$(aws secretsmanager get-secret-value \
                     --secret-id "$RUNTIME_SECRET_ARN" \
                     --query SecretString \
-                    --output text | jq -c 'keys | sort')
+                    --output text)
+                  available_secret_keys=$(jq -c 'keys | sort' <<<"$available_secret_json")
                   required_secret_keys=$(sed \
                     -e '/^[[:space:]]*#/d' \
                     -e '/^[[:space:]]*$/d' \
@@ -143,13 +144,39 @@ jobs:
                     --argjson required "$required_secret_keys" \
                     --argjson available "$available_secret_keys" \
                     '$required - $available')
+
+                  # Re-run the pending migrations from the most recently pushed
+                  # API image and capture the real error through the diagnostic
+                  # S3 channel. The GitHub deploy role intentionally cannot read
+                  # CodeBuild's CloudWatch stream.
+                  image_tag=$(aws ecr describe-images \
+                    --repository-name "$ECR_REPOSITORY" \
+                    --query 'sort_by(imageDetails,& imagePushedAt)[-1].imageTags[?contains(@, `-search`) == `false`] | [0]' \
+                    --output text)
+                  image_uri="${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${ECR_REPOSITORY}:${image_tag}"
+                  aws ecr get-login-password --region "$AWS_REGION" | \
+                    docker login --username AWS --password-stdin \
+                      "${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com" >/dev/null
+                  set +e
+                  docker run --rm \
+                    -e POSTGRES_HOST="$(jq -r .POSTGRES_HOST <<<"$available_secret_json")" \
+                    -e POSTGRES_PORT="$(jq -r .POSTGRES_PORT <<<"$available_secret_json")" \
+                    -e POSTGRES_DATABASE="$(jq -r .POSTGRES_DATABASE <<<"$available_secret_json")" \
+                    -e POSTGRES_USER="$(jq -r .POSTGRES_USER <<<"$available_secret_json")" \
+                    -e POSTGRES_PASSWORD="$(jq -r .POSTGRES_PASSWORD <<<"$available_secret_json")" \
+                    -e POSTGRES_SSL="$(jq -r '.POSTGRES_SSL // "disable"' <<<"$available_secret_json")" \
+                    "$image_uri" node scripts/migrate.mjs > /tmp/migration-probe.log 2>&1
+                  migration_exit=$?
+                  set -e
                   jq -n \
                     --argjson stack "$stack_json" \
                     --argjson service "$service_json" \
                     --argjson deploymentList "$deployment_list" \
                     --argjson availableSecretKeys "$available_secret_keys" \
                     --argjson missingSecretKeys "$missing_secret_keys" \
-                    '{stack: $stack, service: $service, deploymentList: $deploymentList, runtimeSecret: {availableKeys: $availableSecretKeys, missingKeys: $missingSecretKeys}}' \
+                    --argjson migrationExit "$migration_exit" \
+                    --rawfile migrationLog /tmp/migration-probe.log \
+                    '{stack: $stack, service: $service, deploymentList: $deploymentList, runtimeSecret: {availableKeys: $availableSecretKeys, missingKeys: $missingSecretKeys}, migrationProbe: {exitCode: $migrationExit, log: $migrationLog}}' \
                     > /tmp/service-deployment.json
                   curl --fail-with-body --silent --show-error -X PUT -H 'Content-Type:' --data-binary @/tmp/service-deployment.json "$DIAGNOSTIC_PUT_URL"
           YAML
