@@ -75,7 +75,8 @@ phases:
             -e POSTGRES_USER="$(echo "$SECRET_JSON" | jq -r .POSTGRES_USER)" \
             -e POSTGRES_PASSWORD="$(echo "$SECRET_JSON" | jq -r .POSTGRES_PASSWORD)" \
             -e POSTGRES_SSL="$(echo "$SECRET_JSON" | jq -r '.POSTGRES_SSL // "disable"')" \
-            "$IMAGE_URI" node scripts/migrate.mjs
+            --entrypoint node \
+            "$IMAGE_URI" scripts/migrate.mjs
         fi
       - trap 'kill "${ALARM_GUARD_PID:-}" 2>/dev/null || true; wait "${ALARM_GUARD_PID:-}" 2>/dev/null || true; infra/aws/set-express-alarm-threshold.sh "$SERVICE_NAME" 1 || true' EXIT
       # Non-fatal: the RollbackAlarm does not exist until the service is first
