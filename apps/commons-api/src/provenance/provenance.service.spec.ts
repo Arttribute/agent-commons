@@ -144,6 +144,7 @@ describe('ProvenanceService', () => {
           sourceType: 'upload',
           sourceUri: 'https://example.com/brand.pdf',
           contentHash: 'sha256:abc',
+          embeddingModel: 'text-embedding-3-small',
         },
       ],
     });
@@ -155,6 +156,13 @@ describe('ProvenanceService', () => {
       algorithm: 'hybrid',
       semanticWeight: 0.75,
       lexicalWeight: 0.25,
+      embedding: {
+        model: 'text-embedding-3-small',
+        dimensions: 1536,
+        normalizationVersion: 'agent-commons-library-v1',
+        computedBy: 'agent-commons',
+        vectorIncluded: false,
+      },
       results: [
         {
           itemId: 'item-1',
@@ -162,6 +170,8 @@ describe('ProvenanceService', () => {
           rank: 1,
           sourceType: 'upload',
           contentHash: 'sha256:abc',
+          embeddingModel: 'text-embedding-3-small',
+          embeddingCacheKey: expect.stringMatching(/^sha256:/),
         },
       ],
     });
