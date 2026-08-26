@@ -4,6 +4,12 @@ env:
   shell: bash
 
 phases:
+  install:
+    runtime-versions:
+      nodejs: 22
+    commands:
+      - set -euo pipefail
+      - corepack enable && corepack prepare pnpm@9.15.3 --activate
   pre_build:
     commands:
       - set -euo pipefail
@@ -17,13 +23,13 @@ phases:
       - export WEB_SEARCH_PROVIDER
       - if [ -z "${APP_ORIGIN:-}" ]; then if [ "$ENVIRONMENT" = "production" ]; then APP_ORIGIN=https://www.agentcommons.io; else APP_ORIGIN=https://staging.agentcommons.io; fi; fi
       - export APP_ORIGIN
+      - export PUPPETEER_SKIP_DOWNLOAD=true
       - IMAGE_TAG="${ENVIRONMENT}-${CODEBUILD_RESOLVED_SOURCE_VERSION:-manual}-${CODEBUILD_BUILD_NUMBER}"
       - IMAGE_URI="${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${ECR_REPOSITORY}:${IMAGE_TAG}"
       - SEARCH_IMAGE_URI="${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${ECR_REPOSITORY}:${IMAGE_TAG}-search"
       - aws ecr get-login-password --region "$AWS_REGION" | docker login --username AWS --password-stdin "${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com"
   build:
     commands:
-      - corepack enable && corepack prepare pnpm@9.15.3 --activate
       - pnpm install --filter commons-api... --frozen-lockfile
       - >-
         pnpm --filter commons-api test -- --runInBand --forceExit
