@@ -29,6 +29,7 @@ phases:
       - if [ "$WEB_SEARCH_PROVIDER" = "searxng" ]; then docker push "$SEARCH_IMAGE_URI"; fi
   post_build:
     commands:
+      - test "${CODEBUILD_BUILD_SUCCEEDING:-0}" = "1"
       # Apply ordered, ledger-backed migrations before starting code that may
       # depend on them. Break-glass deploys can opt out with RUN_MIGRATIONS=false.
       - |
