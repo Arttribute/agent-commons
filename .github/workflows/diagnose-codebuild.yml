@@ -145,22 +145,21 @@ jobs:
                     --argjson available "$available_secret_keys" \
                     '$required - $available')
 
-                  # Re-run the pending migrations from the most recently pushed
-                  # API image and capture the real error through the diagnostic
+                  # Re-run the pending migrations from the uploaded source and
+                  # capture the real error through the diagnostic
                   # S3 channel. The GitHub deploy role intentionally cannot read
                   # CodeBuild's CloudWatch stream.
-                  aws ecr get-login-password --region "$AWS_REGION" | \
-                    docker login --username AWS --password-stdin \
-                      "${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com" >/dev/null
+                  corepack enable pnpm
+                  corepack prepare pnpm@9.15.3 --activate
+                  pnpm install --frozen-lockfile --filter commons-api...
                   set +e
-                  docker run --rm \
-                    -e POSTGRES_HOST="$(jq -r .POSTGRES_HOST <<<"$available_secret_json")" \
-                    -e POSTGRES_PORT="$(jq -r .POSTGRES_PORT <<<"$available_secret_json")" \
-                    -e POSTGRES_DATABASE="$(jq -r .POSTGRES_DATABASE <<<"$available_secret_json")" \
-                    -e POSTGRES_USER="$(jq -r .POSTGRES_USER <<<"$available_secret_json")" \
-                    -e POSTGRES_PASSWORD="$(jq -r .POSTGRES_PASSWORD <<<"$available_secret_json")" \
-                    -e POSTGRES_SSL="$(jq -r '.POSTGRES_SSL // "disable"' <<<"$available_secret_json")" \
-                    "$TARGET_IMAGE_URI" node scripts/migrate.mjs > /tmp/migration-probe.log 2>&1
+                  POSTGRES_HOST="$(jq -r .POSTGRES_HOST <<<"$available_secret_json")" \
+                  POSTGRES_PORT="$(jq -r .POSTGRES_PORT <<<"$available_secret_json")" \
+                  POSTGRES_DATABASE="$(jq -r .POSTGRES_DATABASE <<<"$available_secret_json")" \
+                  POSTGRES_USER="$(jq -r .POSTGRES_USER <<<"$available_secret_json")" \
+                  POSTGRES_PASSWORD="$(jq -r .POSTGRES_PASSWORD <<<"$available_secret_json")" \
+                  POSTGRES_SSL="$(jq -r '.POSTGRES_SSL // "disable"' <<<"$available_secret_json")" \
+                    pnpm --filter commons-api migrate > /tmp/migration-probe.log 2>&1
                   migration_exit=$?
                   set -e
                   jq -n \
@@ -177,20 +176,12 @@ jobs:
           YAML
           )
 
-          resolved_source=$(aws codebuild batch-get-builds --ids "$BUILD_ID" --query 'builds[0].resolvedSourceVersion' --output text)
-          build_number=$(aws codebuild batch-get-builds --ids "$BUILD_ID" --query 'builds[0].buildNumber' --output text)
-          account_id=$(aws codebuild batch-get-builds --ids "$BUILD_ID" --query 'builds[0].environment.environmentVariables[?name==`AWS_ACCOUNT_ID`].value | [0]' --output text)
-          repository=$(aws codebuild batch-get-builds --ids "$BUILD_ID" --query 'builds[0].environment.environmentVariables[?name==`ECR_REPOSITORY`].value | [0]' --output text)
-          target_image_uri="${account_id}.dkr.ecr.${AWS_REGION}.amazonaws.com/${repository}:${resolved_source}-${build_number}"
-
           environment_overrides=$(jq -nc \
             --arg putUrl "$put_url" \
             --arg stackName "$STACK_NAME" \
-            --arg targetImageUri "$target_image_uri" \
             '[
               {name:"DIAGNOSTIC_PUT_URL", value:$putUrl, type:"PLAINTEXT"},
-              {name:"STACK_NAME", value:$stackName, type:"PLAINTEXT"},
-              {name:"TARGET_IMAGE_URI", value:$targetImageUri, type:"PLAINTEXT"}
+              {name:"STACK_NAME", value:$stackName, type:"PLAINTEXT"}
             ]')
 
           diagnostic_build_id=$(aws codebuild start-build \
