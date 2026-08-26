@@ -21,15 +21,42 @@ RUN pnpm --filter commons-api build \
     && pnpm --filter commons-api deploy --prod --ignore-scripts /deploy \
     && cp -r apps/commons-api/dist /deploy/dist
 
+FROM cgr.dev/chainguard/wolfi-base:latest AS browser
+
+# Wolfi's public Chromium package can lag the browser security channel. Fetch a
+# pinned Chrome for Testing build from Google's release bucket and verify its
+# digest, so the runtime is current and reproducible without silently accepting
+# a mutable download.
+ARG CHROME_VERSION=152.0.7977.64
+ARG CHROME_SHA256=8b592f066af71f054aab2cc80fc26f73c775c6d44ebb99d16ade924b24756c2e
+RUN apk add --no-cache ca-certificates curl unzip \
+    && curl --fail --show-error --silent --location \
+      "https://storage.googleapis.com/chrome-for-testing-public/${CHROME_VERSION}/linux64/chrome-linux64.zip" \
+      --output /tmp/chrome.zip \
+    && echo "${CHROME_SHA256}  /tmp/chrome.zip" | sha256sum -c - \
+    && unzip -q /tmp/chrome.zip -d /opt \
+    && rm /tmp/chrome.zip
+
 FROM cgr.dev/chainguard/node:latest-dev AS runtime
 
-# Chromium and its runtime libraries are required by the web capture service.
+# Chrome's runtime libraries are required by the pluggable web capture service.
 USER root
 RUN apk add --no-cache \
-    chromium \
     ffmpeg \
     font-liberation \
-    font-noto-emoji
+    font-noto-emoji \
+    font-opensans \
+    fontconfig \
+    gtk-3 \
+    icu-data-full \
+    libnss \
+    mesa \
+    mesa-glx \
+    nss \
+    systemd \
+    xdg-utils
+
+COPY --from=browser /opt/chrome-linux64 /opt/chrome-linux64
 
 WORKDIR /app
 
@@ -37,8 +64,8 @@ ENV NODE_ENV=production \
     PORT=8080 \
     HOME=/home/node \
     PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true \
-    PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium \
-    CHROME_PATH=/usr/bin/chromium \
+    PUPPETEER_EXECUTABLE_PATH=/opt/chrome-linux64/chrome \
+    CHROME_PATH=/opt/chrome-linux64/chrome \
     PUPPETEER_CACHE_DIR=/tmp/.cache
 
 RUN mkdir -p /tmp/.cache /home/node \
